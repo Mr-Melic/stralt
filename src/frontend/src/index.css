@@ -1,0 +1,702 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+/* DOFUS-style design system variables */
+:root {
+  --dofus-bg-primary: 0.05 0 0;
+  --dofus-bg-panel: 0.08 0 0;
+  --dofus-bg-panel-dark: 0.04 0 0;
+  --dofus-border-gold: 0.52 0.25 29;
+  --dofus-border-gold-dim: 0.32 0.15 29;
+  --dofus-text-gold: 0.65 0.22 29;
+  --dofus-text-silver: 0.8 0.08 250;
+  --dofus-text-dim: 0.45 0.06 250;
+  --dofus-ap-color: 0.55 0.18 262;
+  --dofus-mp-color: 0.52 0.2 150;
+  --dofus-hp-color: 0.55 0.25 29;
+  --dofus-xp-color: 0.5 0.22 310;
+  --dofus-accent-glow: rgba(192, 57, 43, 0.3);
+
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  --accent: 0.52 0.25 29;
+  --accent-foreground: 0.05 0 0;
+  --background: 0.05 0 0;
+  --border: 0.2 0.08 29;
+  --card: 0.1 0 0;
+  --card-foreground: 0.96 0 0;
+  --destructive: 0.55 0.25 29;
+  --destructive-foreground: 0.96 0 0;
+  --foreground: 0.96 0 0;
+  --input: 0.08 0 0;
+  --input-foreground: 0.96 0 0;
+  --muted: 0.35 0 0;
+  --muted-foreground: 0.65 0 0;
+  --popover: 0.08 0 0;
+  --popover-foreground: 0.96 0 0;
+  --primary: 0.5 0.22 262;
+  --primary-foreground: 0.96 0 0;
+  --ring: 0.52 0.25 29;
+  --secondary: 0.45 0.18 29;
+  --secondary-foreground: 0.96 0 0;
+  --success: 0.5 0.2 150;
+  --success-foreground: 0.05 0 0;
+  --warning: 0.6 0.22 75;
+  --warning-foreground: 0.05 0 0;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: var(--font-body);
+  }
+
+  html,
+  body,
+  #root {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  body {
+    background: oklch(var(--background));
+    color: oklch(var(--foreground));
+    line-height: 1.6;
+    overscroll-behavior: none;
+  }
+}
+
+@layer components {
+  .isometric-tile {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+
+  .dungeon-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .room-preview {
+    aspect-ratio: 1;
+    background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+    border-radius: 0.5rem;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .room-preview::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.1) 2px,
+      rgba(255, 255, 255, 0.1) 4px
+    );
+  }
+
+  .tool-button {
+    @apply transition-all duration-200 ease-in-out;
+  }
+
+  .tool-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .tool-button.active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+}
+
+@layer components {
+  .dofus-panel {
+    background: linear-gradient(
+      135deg,
+      oklch(var(--dofus-bg-panel)) 0%,
+      oklch(var(--dofus-bg-primary)) 100%
+    );
+    border: 1px solid oklch(var(--dofus-border-gold-dim));
+    box-shadow: 0 0 15px oklch(var(--dofus-border-gold) / 0.15), inset 0 1px 0
+      oklch(var(--dofus-border-gold) / 0.1);
+  }
+  .dofus-panel-header {
+    background: linear-gradient(
+      90deg,
+      oklch(0.1 0 0) 0%,
+      oklch(var(--dofus-bg-primary)) 100%
+    );
+    border-bottom: 1px solid oklch(var(--dofus-border-gold-dim));
+    padding: 6px 10px;
+  }
+  .dofus-stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+  }
+  .dofus-stat-label {
+    color: oklch(var(--dofus-text-dim));
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .dofus-stat-value {
+    color: oklch(var(--dofus-text-silver));
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .dofus-orb {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border: 2px solid;
+    box-shadow: 0 0 10px currentColor, inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    flex-shrink: 0;
+    position: relative;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .dofus-orb:hover {
+    transform: scale(1.08);
+    box-shadow: 0 0 18px currentColor, inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .dofus-orb-lg {
+    width: 56px;
+    height: 56px;
+  }
+  .dofus-ap-orb {
+    background: radial-gradient(
+      circle at 35% 35%,
+      oklch(0.5 0.2 262),
+      oklch(0.2 0.08 262)
+    );
+    border-color: oklch(var(--dofus-ap-color));
+    color: oklch(0.72 0.15 262);
+  }
+  .dofus-mp-orb {
+    background: radial-gradient(
+      circle at 35% 35%,
+      oklch(0.5 0.18 150),
+      oklch(0.2 0.08 150)
+    );
+    border-color: oklch(var(--dofus-mp-color));
+    color: oklch(0.72 0.15 150);
+  }
+  .dofus-hp-orb {
+    background: radial-gradient(
+      circle at 35% 35%,
+      oklch(0.5 0.22 29),
+      oklch(0.2 0.1 29)
+    );
+    border-color: oklch(var(--dofus-hp-color));
+    color: oklch(0.72 0.18 29);
+  }
+  .dofus-portrait-frame {
+    border: 2px solid oklch(var(--dofus-border-gold));
+    border-radius: 6px;
+    box-shadow: 0 0 12px oklch(var(--dofus-border-gold) / 0.25), inset 0 0 8px
+      oklch(0 0 0 / 0.6);
+    background: linear-gradient(
+      135deg,
+      oklch(var(--dofus-bg-panel-dark)) 0%,
+      oklch(var(--dofus-bg-panel)) 100%
+    );
+    overflow: hidden;
+    position: relative;
+  }
+  .dofus-portrait-frame::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      135deg,
+      oklch(var(--dofus-border-gold) / 0.05) 0%,
+      transparent 60%
+    );
+    pointer-events: none;
+    z-index: 1;
+  }
+  .dofus-xp-bar {
+    height: 6px;
+    background: oklch(var(--dofus-xp-color) / 0.18);
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid oklch(var(--dofus-xp-color) / 0.25);
+  }
+  .dofus-xp-bar-fill {
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      oklch(0.48 0.22 310),
+      oklch(0.52 0.22 310),
+      oklch(0.56 0.2 310)
+    );
+    border-radius: 3px;
+    transition: width 0.5s ease;
+    box-shadow: 0 0 6px oklch(var(--dofus-xp-color) / 0.7);
+  }
+  .dofus-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 100px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .dofus-badge-red-accent {
+    background: oklch(var(--dofus-border-gold) / 0.18);
+    border: 1px solid oklch(var(--dofus-border-gold-dim));
+    color: oklch(var(--dofus-text-gold));
+  }
+  .dofus-badge-gold {
+    background: oklch(var(--dofus-border-gold) / 0.18);
+    border: 1px solid oklch(var(--dofus-border-gold-dim));
+    color: oklch(var(--dofus-text-gold));
+  }
+  .dofus-badge-blue {
+    background: oklch(0.55 0.18 262 / 0.18);
+    border: 1px solid oklch(0.4 0.14 262 / 0.6);
+    color: oklch(0.72 0.15 262);
+  }
+  .dofus-badge-red {
+    background: oklch(0.55 0.25 29 / 0.18);
+    border: 1px solid oklch(0.4 0.18 29 / 0.6);
+    color: oklch(0.72 0.18 29);
+  }
+  .dofus-spell-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+    background: oklch(0.96 0 0 / 0.04);
+    border: 1px solid oklch(var(--dofus-border-gold-dim));
+  }
+  .dofus-spell-card:hover {
+    background: oklch(var(--dofus-border-gold) / 0.1);
+    border-color: oklch(var(--dofus-border-gold));
+    box-shadow: 0 0 8px oklch(var(--dofus-border-gold) / 0.2);
+    transform: translateY(-1px);
+  }
+  .dofus-spell-card.selected {
+    background: oklch(var(--dofus-border-gold) / 0.22);
+    border-color: oklch(var(--dofus-border-gold));
+    box-shadow: 0 0 12px var(--dofus-accent-glow);
+  }
+  .dofus-spell-card.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  /* ─── Stat Gem Panel ─────────────────────────────────────────────────── */
+  .stat-gem-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 10px 10px;
+    background: linear-gradient(
+      160deg,
+      oklch(var(--dofus-bg-panel)) 0%,
+      oklch(var(--dofus-bg-panel-dark)) 100%
+    );
+    border: 1.5px solid #c0392b;
+    border-radius: 10px;
+    box-shadow: 0 0 14px rgba(192, 57, 43, 0.25), inset 0 1px 0
+      rgba(255, 255, 255, 0.06);
+    /* overflow-visible so the heart can overflow the top */
+    overflow: visible;
+    position: relative;
+  }
+
+  /* Wrapper that allows the HeartGem SVG to overflow the panel top edge */
+  .stat-gem-heart-overflow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: -24px; /* pull heart up above panel border */
+    overflow: visible;
+  }
+
+  .stat-gem-label {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    margin-top: 2px;
+    font-family: var(--font-display);
+  }
+
+  .stat-gem-value {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: oklch(0.88 0.12 29);
+  }
+
+  .stat-gem-sep {
+    font-size: 11px;
+    color: oklch(0.5 0.08 29);
+    margin: 0 1px;
+  }
+
+  .stat-gem-max {
+    font-size: 11px;
+    font-weight: 600;
+    color: oklch(0.55 0.08 29);
+  }
+
+  .stat-gem-badge-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    padding-bottom: 2px;
+  }
+
+  .stat-gem-badge {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    overflow: visible;
+  }
+
+  .stat-gem-badge-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    font-family: var(--font-display);
+    margin-top: -2px;
+  }
+  .dofus-turn-timer {
+    position: relative;
+    width: 46px;
+    height: 46px;
+    flex-shrink: 0;
+  }
+  .dofus-turn-timer svg {
+    transform: rotate(-90deg);
+  }
+  .dofus-turn-timer-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: oklch(var(--dofus-text-gold));
+  }
+  .dofus-turn-indicator {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 4px;
+  }
+  .dofus-turn-indicator.player {
+    color: oklch(0.96 0 0);
+    background: oklch(0.55 0.18 262 / 0.12);
+    border: 1px solid oklch(0.55 0.18 262 / 0.3);
+    text-shadow: 0 0 10px oklch(0.72 0.15 262 / 0.4);
+  }
+  .dofus-turn-indicator.enemy {
+    color: oklch(0.72 0.18 29);
+    background: oklch(0.55 0.25 29 / 0.12);
+    border: 1px solid oklch(0.55 0.25 29 / 0.3);
+    text-shadow: 0 0 10px oklch(0.72 0.18 29 / 0.4);
+  }
+  .dofus-section-header {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: oklch(var(--dofus-text-gold));
+    padding: 5px 10px 4px;
+    background: linear-gradient(
+      90deg,
+      oklch(var(--dofus-border-gold) / 0.1) 0%,
+      transparent 100%
+    );
+    border-bottom: 1px solid oklch(var(--dofus-border-gold) / 0.15);
+    margin-bottom: 8px;
+  }
+  .dofus-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+  .dofus-scrollbar::-webkit-scrollbar-track {
+    background: oklch(var(--dofus-bg-panel-dark));
+  }
+  .dofus-scrollbar::-webkit-scrollbar-thumb {
+    background: oklch(var(--dofus-border-gold-dim));
+    border-radius: 2px;
+  }
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/assets/fonts/SpaceGrotesk.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/JetBrainsMono.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@layer utilities {
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  .glow {
+    box-shadow: 0 0 20px rgba(147, 51, 234, 0.3);
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+  }
+
+  .glow-red {
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+  }
+
+  .glow-yellow {
+    box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2d3748;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a5568;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #718096;
+}
+
+/* Animation keyframes */
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(147, 51, 234, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(147, 51, 234, 0.5);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUpFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Canvas specific styles */
+canvas {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+  /* Prevent context menu on right click */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Touch-specific improvements */
+canvas.touch-none {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Modal backdrop blur */
+.modal-backdrop {
+  backdrop-filter: blur(4px);
+}
+
+/* Responsive grid adjustments */
+@media (max-width: 768px) {
+  .dungeon-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Improve touch targets on mobile */
+  .tool-button {
+    min-height: 44px;
+  }
+
+  /* Prevent zoom on double tap */
+  canvas {
+    touch-action: pan-x pan-y;
+  }
+}
+
+@media (min-width: 1280px) {
+  .dungeon-grid {
+    grid-template-columns: 1fr 2fr 1fr;
+  }
+}
+
+/* Prevent text selection during drag operations */
+.select-none {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Cursor states for better UX */
+.cursor-grab {
+  cursor: grab;
+  cursor: -webkit-grab;
+}
+
+.cursor-grabbing {
+  cursor: grabbing;
+  cursor: -webkit-grabbing;
+}
+
+.cursor-crosshair {
+  cursor: crosshair;
+}
+
+/* Prevent overscroll behavior on mobile */
+html,
+body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Improve mobile viewport handling */
+@media (max-width: 768px) {
+  body {
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+  }
+}
+
+/* ── Spell icon glow styles (static, no animation) ─────────────────────── */
+.spell-glow-fire {
+  box-shadow: 0 0 6px 1px rgba(255, 100, 20, 0.45), inset 0 0 5px
+    rgba(255, 120, 20, 0.15);
+}
+.spell-glow-ice {
+  box-shadow: 0 0 6px 1px rgba(80, 160, 255, 0.45), inset 0 0 5px
+    rgba(100, 170, 255, 0.15);
+}
+.spell-glow-drain {
+  box-shadow: 0 0 6px 1px rgba(160, 40, 220, 0.45), inset 0 0 5px
+    rgba(170, 50, 230, 0.15);
+}
+.spell-glow-heal {
+  box-shadow: 0 0 6px 1px rgba(30, 200, 100, 0.45), inset 0 0 5px
+    rgba(40, 210, 110, 0.15);
+}
+.spell-glow-lightning {
+  box-shadow: 0 0 6px 1px rgba(240, 220, 40, 0.45), inset 0 0 5px
+    rgba(250, 230, 50, 0.15);
+}
+.spell-glow-poison {
+  box-shadow: 0 0 6px 1px rgba(100, 200, 30, 0.45), inset 0 0 5px
+    rgba(110, 210, 40, 0.15);
+}
+.spell-glow-shadow {
+  box-shadow: 0 0 6px 1px rgba(90, 20, 140, 0.5), inset 0 0 5px
+    rgba(100, 25, 150, 0.18);
+}
+.spell-glow-holy {
+  box-shadow: 0 0 6px 1px rgba(240, 200, 40, 0.45), inset 0 0 5px
+    rgba(250, 210, 50, 0.15);
+}
+.spell-glow-physical {
+  box-shadow: 0 0 6px 1px rgba(240, 240, 240, 0.38), inset 0 0 5px
+    rgba(250, 250, 250, 0.12);
+}
+.spell-glow-default {
+  box-shadow: 0 0 6px 1px rgba(200, 30, 30, 0.45), inset 0 0 5px
+    rgba(210, 40, 40, 0.15);
+}
+/* Paused when on cooldown */
+.spell-glow-paused {
+  opacity: 0.5;
+}
+
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+  70% {
+    opacity: 0.9;
+    transform: translateX(-50%) scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.95);
+  }
+}

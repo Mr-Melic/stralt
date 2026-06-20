@@ -1,0 +1,23 @@
+{
+  "overview": "ÆSTRALTØ is an isometric tile-based tactics RPG with vampire/cosmic aesthetics. Players explore procedurally generated maps, battle enemies in turn-based tactical combat, and manage three persistent characters through a deep progression system.",
+  "features": [
+    "Enemy Register bestiary with all monsters and bosses",
+    "Stronger magnetic UI panels that never overlap",
+    "Shadow sizes reduced by 50%+ so they never exceed tile boundaries",
+    "Doka coins centered on tiles like portals",
+    "Cloud animation removed for better performance",
+    "Block depth sort fixed using full 2D coordinate check",
+    "Unified void tile + block walkability validation with flood-fill",
+    "Modular draggable UI panels with top-bar snap"
+  ],
+  "category": "game",
+  "tags": [
+    "game",
+    "rpg",
+    "isometric",
+    "tactics",
+    "vampire",
+    "cosmic"
+  ],
+  "last_updated": "2026-05-14T20:59:22.796Z"
+}
