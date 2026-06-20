@@ -1,4 +1,4 @@
-import { u as useActor, a as useQuery, D as DEFAULT_BOSS_CONFIGS, r as reactExports, b as useGetEnemyConfigs, c as useGetRegionConfigs, d as useGetPlayerSpriteConfigs, e as useGetSpellConfigs, f as useGetMapModifiers, g as useGetGameConfig, h as useAdminSetEnemyConfig, i as useAdminDeleteEnemyConfig, j as useAdminSetRegionConfig, k as useAdminDeleteRegionConfig, l as useAdminSetPlayerSpriteConfig, m as useAdminDeletePlayerSpriteConfig, n as useAdminSetSpellConfig, o as useAdminDeleteSpellConfig, p as useAdminSetMapModifier, q as useAdminDeleteMapModifier, s as useAdminSetGameConfig, t as useGetAchievementConfigs, v as useAdminSetAchievementConfig, w as useAdminDeleteAchievementConfig, x as useGetEnemyNames, y as useInitDefaultNames, z as useAdminAddEnemyName, A as useAdminDeleteEnemyName, R as React, B as jsxRuntimeExports, C as ue, P as Principal, E as useAssignUserRole, F as useSetBossConfig, G as useDeleteBossConfig, H as BOSS_IDS, I as BossAbility } from "./index-BedqBfty.js";
+import { u as useActor, a as useQuery, D as DEFAULT_BOSS_CONFIGS, r as reactExports, b as useGetEnemyConfigs, c as useGetRegionConfigs, d as useGetPlayerSpriteConfigs, e as useGetSpellConfigs, f as useGetMapModifiers, g as useGetGameConfig, h as useAdminSetEnemyConfig, i as useAdminDeleteEnemyConfig, j as useAdminSetRegionConfig, k as useAdminDeleteRegionConfig, l as useAdminSetPlayerSpriteConfig, m as useAdminDeletePlayerSpriteConfig, n as useAdminSetSpellConfig, o as useAdminDeleteSpellConfig, p as useAdminSetMapModifier, q as useAdminDeleteMapModifier, s as useAdminSetGameConfig, t as useGetAchievementConfigs, v as useAdminSetAchievementConfig, w as useAdminDeleteAchievementConfig, x as useGetEnemyNames, y as useInitDefaultNames, z as useAdminAddEnemyName, A as useAdminDeleteEnemyName, R as React, B as jsxRuntimeExports, C as ue, P as Principal, E as useAssignUserRole, F as logDebugWarn, G as useSetBossConfig, H as useDeleteBossConfig, I as BOSS_IDS, J as BossAbility } from "./index-Bf3GmYZG.js";
 function withTimeout(promise, ms = 1e4) {
   return Promise.race([
     promise,
@@ -4090,7 +4090,8 @@ const VisualsTab = () => {
         const arr = JSON.parse(v);
         if (Array.isArray(arr)) return arr;
       }
-    } catch {
+    } catch (e) {
+      logDebugWarn("UI", "AdminDashboard palette load failed", String(e));
     }
     return [];
   })();

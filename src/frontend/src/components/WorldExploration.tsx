@@ -55,6 +55,12 @@ import {
   getEffectiveEnemyStats,
   getEffectiveStats,
 } from "../utils/battleFixes";
+import {
+  logDebugError,
+  logDebugInfo,
+  logDebugWarn,
+} from "../utils/debugLogger";
+import { RewardInput, resolveBattleRewards } from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -6024,15 +6030,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         lastPortalRef.current = { x: portal.x, y: portal.y };
         bossRushActiveRef.current = true;
         startBossRush();
-        // M1 — persist room entry so progress survives tab close mid-run
-        const currentRoom = BOSS_RUSH_ROOMS[bossRushState.currentRoom];
-        void advanceBossRushRoom(
-          currentRoom?.dokaReward ?? 100,
-          currentRoom?.xpReward ?? 100,
-        );
-        if (bossRushActiveRef.current) {
-          handleBattleEnd(true, 0, 0, []);
-        }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
         return;
@@ -10002,7 +9999,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   `pbv_covenant_buff_${userId}_slot${characterSlot}`,
                   "3",
                 );
-              } catch {}
+              } catch (e) {
+                logDebugWarn(
+                  "MAP",
+                  "Shrine covenant buff save failed",
+                  String(e),
+                );
+              }
             }
             shrineAchievementRef.current += 1;
             try {
@@ -10010,7 +10013,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 `pbv_shrine_count_${userId}_slot${characterSlot}`,
                 String(shrineAchievementRef.current),
               );
-            } catch {}
+            } catch (e) {
+              logDebugWarn("MAP", "Shrine count save failed", String(e));
+            }
             setShrineCompleted(true);
             isShrineRoomRef.current = false;
           }
@@ -10724,13 +10729,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Handle battle end - FIXED: Properly return to overworld and remove enemies
   // biome-ignore lint/correctness/useExhaustiveDependencies: cleanupBattle is stable (useCallback with stable refs)
   const handleBattleEnd = useCallback(
-    (
+    async (
       victory: boolean,
       expGained?: number,
       hitsDealt?: number,
       enemiesDefeated?: Array<{ name: string; level: number }>,
     ) => {
-      console.log("BATTLE_END triggered", {
+      logDebugInfo("BATTLE", "BATTLE_END triggered", {
         path: "handleBattleEnd",
         victory,
         isBossRush: bossRushActiveRef.current,
@@ -10738,10 +10743,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // M3 FIX: Idempotency guard — bail out immediately if we've already
       // run the battle-end logic once for this battle.
       // BOSS RUSH FIX: reset the guard for each boss rush room so every
-      // room can trigger rewards independently.
-      if (bossRushActiveRef.current) {
-        battleEndedRef.current = false;
-      }
       if (battleEndedRef.current) return;
       battleEndedRef.current = true;
       const _battleEndGen = aiGenerationRef.current;
@@ -10757,7 +10758,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           characterStats.hp,
           maxHp,
         );
-        console.log("CHALLENGE_EVAL", JSON.stringify(challengeResults));
+        logDebugInfo(
+          "CHALLENGE",
+          "CHALLENGE_EVAL",
+          JSON.stringify(challengeResults),
+        );
         // Snapshot challenge state BEFORE cleanup wipes it
         const challengeCompleted =
           challengeAccepted && currentChallenge
@@ -10878,24 +10883,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               "#ffd700",
             );
           }
-          // H2 FIX: Persist dungeon chain bonus to backend immediately
-          if (!dungeonCompletionSavedRef.current && actor) {
-            dungeonCompletionSavedRef.current = true;
-            const dungeonSaveSlot = BigInt(characterSlot);
-            const dungeonSaveUpdate = { dokaBalance: BigInt(newDokaBalance) };
-            (async () => {
-              try {
-                await actor.updateCharacter(dungeonSaveSlot, dungeonSaveUpdate);
-              } catch (err) {
-                console.warn("[PBV] Character save failed:", err);
-                pendingSavesRef.current.push(() =>
-                  actor.updateCharacter(dungeonSaveSlot, dungeonSaveUpdate),
-                );
-              }
-            })();
-          }
 
           let finalRecapData: BattleRecapData | null = null;
+          let didLevelUp = false;
+          const _recapData = await resolveBattleRewards(actor, characterSlot, {
+            victory,
+            enemiesDefeated: enemiesDefeated || [],
+            completedChallenges: [],
+            dungeonMultiplier: 1,
+            baseDoka: totalDoka || 0,
+            baseXp: finalExp || 0,
+          });
+          void _recapData;
 
           setCharacterStats((prev) => {
             let newExp = prev.exp + finalExp;
@@ -10945,9 +10944,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
             // FIX 2: Scale stats 5%/level; AP & MP only at multiples of level 25
             const levelsGained = newLevel - prev.level;
-            if (levelsGained > 0) {
-              playSound("level_up");
-            }
+            didLevelUp = levelsGained > 0;
+            // playSound moved to after setCharacterStats
             let scaledHp = prev.hp;
             let scaledAp = prev.ap;
             let scaledMp = prev.mp;
@@ -10997,82 +10995,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
           // Remove all enemies from map after victory
           setEnemies([]);
-
-          // FIX 2: Persist all character progress to backend after battle
-          // We compute the final stats inline (same logic as setCharacterStats above)
-          if (actor && finalRecapData) {
-            void (async () => {
-              try {
-                // Re-derive final stats using same level-up loop
-                const prevStats = characterStats;
-                const { currentLevel: newLevel2, currentXP: newExp2 } =
-                  finalRecapData;
-                const levelsGained2 = newLevel2 - prevStats.level;
-                let fHp = prevStats.hp;
-                let fAp = prevStats.ap;
-                let fMp = prevStats.mp;
-                let fInit = prevStats.init;
-                let fRes = prevStats.res;
-                let fChc = prevStats.chc;
-                let fSp = prevStats.sp;
-                let fWr = prevStats.wr;
-                let fSr = prevStats.sr;
-                let fScp = prevStats.scp;
-                let fWp = prevStats.wp;
-                const SG2 = 0.05;
-                for (let g = 0; g < levelsGained2; g++) {
-                  const gl = prevStats.level + g + 1;
-                  fHp = Math.max(1, Math.ceil(fHp * (1 + SG2)));
-                  fInit = Math.max(1, Math.ceil(fInit * (1 + SG2)));
-                  fRes = Math.max(0, Math.ceil(fRes * (1 + SG2)));
-                  fChc = Math.max(1, Math.ceil(fChc * (1 + SG2)));
-                  fSp = Math.max(1, Math.ceil(fSp * (1 + SG2)));
-                  fWr = Math.max(0, Math.ceil(fWr * (1 + SG2)));
-                  fSr = Math.max(0, Math.ceil(fSr * (1 + SG2)));
-                  fScp = Math.max(1, Math.ceil(fScp * (1 + SG2)));
-                  fWp = Math.max(1, Math.ceil(fWp * (1 + SG2)));
-                  if (gl % 25 === 0) {
-                    fAp += 1;
-                    fMp += 1;
-                  }
-                }
-                const spellKeys = Object.keys(spellLevels);
-                const spellVals = spellKeys.map((k) =>
-                  BigInt(spellLevels[k] ?? 0),
-                );
-                await actor.updateCharacter(BigInt(characterSlot), {
-                  name: characterName,
-                  pieceType: pieceType,
-                  colors: [colors.primary, colors.secondary, colors.accent],
-                  pixelPattern: "",
-                  rotation: BigInt(0),
-                  level: BigInt(newLevel2),
-                  experience: BigInt(newExp2),
-                  dokaBalance: BigInt(newDokaBalance + challengeDokaReward),
-                  stats: {
-                    hp: BigInt(fHp),
-                    ap: BigInt(fAp),
-                    mp: BigInt(fMp),
-                    sp: BigInt(fSp),
-                    wr: BigInt(fWr),
-                    sr: BigInt(fSr),
-                    scp: BigInt(fScp),
-                    wp: BigInt(fWp),
-                    init: BigInt(fInit),
-                    res: BigInt(fRes),
-                    chc: BigInt(fChc),
-                    atk: BigInt(0),
-                    resilience: BigInt(0),
-                    evasion: BigInt(0),
-                  },
-                  spellLevelKeys: spellKeys,
-                  spellLevelValues: spellVals,
-                });
-              } catch (err) {
-                console.error("[save] battle stats save failed:", err);
-              }
-            })();
-          }
 
           // Show recap after a brief delay so state settles
           // ── Achievement checks after victory ──────────────────────────────────
@@ -11144,10 +11066,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           // Show recap popup immediately — no timer, no guard
           if (finalRecapData) {
-            console.log("REWARDS_COMPUTED", JSON.stringify(finalRecapData));
+            logDebugInfo(
+              "BATTLE",
+              "REWARDS_COMPUTED",
+              JSON.stringify(finalRecapData),
+            );
             if (onShowBattleSummary) {
-              console.log("SET showSummary=true");
+              logDebugInfo("BATTLE", "SET showSummary=true");
               onShowBattleSummary(finalRecapData);
+            }
+            // Play level-up sound AFTER state has settled and popup is shown
+            if (didLevelUp) {
+              playSound("level_up");
             }
           }
         } else {
@@ -11160,11 +11090,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }));
         }
       } catch (err) {
-        console.error("Reward computation error", err);
+        logDebugError("BATTLE", "Reward computation error", String(err));
         if (onShowBattleSummary) {
           onShowBattleSummary({
-            xpGained: 0,
-            dokaGained: 0,
+            xpEarned: 0,
+            dokaEarned: 0,
             enemiesDefeated: [],
             message: "Error computing rewards — check debug console",
           } as any);
@@ -11190,6 +11120,155 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       calcEnemyMaxHp,
     ],
   );
+
+  function handleBossRushRoomClear() {
+    // Idempotency guard
+    if (battleEndedRef.current) return;
+    battleEndedRef.current = true;
+
+    // ── 1. ADVANCE ROOM FIRST AND UNCONDITIONALLY ──
+    const currentRoomIndex = bossRushState.currentRoom;
+    const _currentRoom = BOSS_RUSH_ROOMS[currentRoomIndex];
+
+    // Advance room progress
+    void advanceBossRushRoom();
+
+    // Generate next room map unconditionally
+    const nextRoomIndex = bossRushState.currentRoom + 1;
+    const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
+    if (nextRoomDef) {
+      const { map: nextMap, spawnPosition } = generateRandomMap();
+      if (nextMap) {
+        setCurrentMap(nextMap);
+        if (spawnPosition) {
+          setPlayerPosition({ ...spawnPosition });
+        }
+        // Spawn bosses for this room
+        const newEnemies: any[] = [];
+        if (nextRoomDef.boss1Id) {
+          newEnemies.push({
+            id: `boss-rush-${nextRoomIndex}-0`,
+            pieceType: nextRoomDef.boss1Name || "Boss 1",
+            x: 4,
+            y: 5,
+            level: characterStats.level + 2,
+            hp: 100,
+            maxHp: 100,
+            ap: 6,
+            mp: 3,
+            initiative: 10,
+            attack: 20,
+            defense: 10,
+            resistance: 5,
+            spells: [],
+            isBoss: true,
+            isLeader: false,
+            behavior: "aggressive",
+            family: "boss",
+            statusEffects: [],
+            activeEffects: [],
+          });
+        }
+        if (nextRoomDef.boss2Id) {
+          newEnemies.push({
+            id: `boss-rush-${nextRoomIndex}-1`,
+            pieceType: nextRoomDef.boss2Name || "Boss 2",
+            x: 6,
+            y: 5,
+            level: characterStats.level + 2,
+            hp: 100,
+            maxHp: 100,
+            ap: 6,
+            mp: 3,
+            initiative: 10,
+            attack: 20,
+            defense: 10,
+            resistance: 5,
+            spells: [],
+            isBoss: true,
+            isLeader: false,
+            behavior: "aggressive",
+            family: "boss",
+            statusEffects: [],
+            activeEffects: [],
+          });
+        }
+        setEnemies(newEnemies);
+      }
+    }
+
+    // ── 2. REWARDS + POPUP (non-blocking, wrapped in try/catch) ──
+    try {
+      const defeatedList = _battleEnemies.map((e) => ({
+        name: e.pieceType,
+        level: e.level,
+      }));
+      const expGained =
+        defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) ||
+        Number(characterStats.level) * 20;
+
+      // Compute Doka rewards
+      const dokaPerEnemy = Math.max(
+        5,
+        Math.floor(Number(characterStats.level) * 1.5),
+      );
+      let totalDoka = defeatedList.length * dokaPerEnemy;
+
+      // Apply boss rush multiplier (fixed at 1 — per-room multipliers removed)
+      const roomMultiplier = 1;
+      totalDoka = Math.floor(totalDoka * roomMultiplier);
+
+      // Challenge rewards (placeholder — challenges evaluated elsewhere)
+      const challengeDokaReward = 0;
+      const completedChallenges: string[] = [];
+
+      // Atomic read-modify-write persist
+      const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
+      const newXp = (characterStats.exp || 0) + expGained;
+
+      setDokaBalance(newDokaBalance);
+      setCharacterStats((prev) => ({ ...prev, exp: newXp }));
+
+      // Persist to backend
+      if (actor) {
+        void actor.addDoka(BigInt(totalDoka + challengeDokaReward));
+        void actor.updateCharacterStats({
+          ...characterStats,
+          xp: newXp,
+        });
+      }
+
+      // Build recap data
+      const finalRecapData = {
+        mapTitle: `Boss Rush - Room ${currentRoomIndex + 1}`,
+        xpEarned: expGained,
+        hitsDealt: battleHitsRef.current,
+        enemiesDefeated: defeatedList,
+        currentXP: characterStats.exp || 0,
+        xpForNextLevel: (characterStats.level || 1) * 100,
+        currentLevel: characterStats.level || 1,
+        dokaEarned: totalDoka + challengeDokaReward,
+        dokaBreakdown: defeatedList.map((e) => ({
+          enemyName: e.name,
+          level: e.level,
+          doka: Math.floor(dokaPerEnemy * roomMultiplier),
+        })),
+        dokaFromVictory: totalDoka,
+        dokaFromChallenges: challengeDokaReward,
+        completedChallenges,
+        isBossRush: true,
+        bossRushRoom: currentRoomIndex + 1,
+      };
+
+      // Set popup state (non-blocking overlay)
+      if (onShowBattleSummary) onShowBattleSummary(finalRecapData);
+    } catch (err) {
+      logDebugError("BOSS", "BossRush reward/popup error", String(err));
+    }
+
+    // Clear battle state
+    cleanupBattle();
+  }
 
   // Handle player death
   const _handlePlayerDeath = useCallback(() => {
@@ -11621,7 +11700,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const expGained =
         defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) ||
         Number(characterStats.level) * 20;
-      handleBattleEnd(true, expGained, battleHitsRef.current, defeatedList);
+      if (bossRushActiveRef.current) {
+        handleBossRushRoomClear();
+      } else {
+        handleBattleEnd(true, expGained, battleHitsRef.current, defeatedList);
+      }
     }
   }, [inBattle, enemies.length]);
 

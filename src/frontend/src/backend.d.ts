@@ -503,6 +503,17 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    applyRewards(slot: bigint, dokaDelta: bigint, xpDelta: bigint): Promise<{
+        __kind__: "ok";
+        ok: {
+            newLevel: bigint;
+            newXp: bigint;
+            newDoka: bigint;
+        };
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     /**
      * / Admin-only: assign a role to another principal.
@@ -637,7 +648,13 @@ export interface backendInterface {
      * / Public: returns all boss configs.
      */
     getAllBossConfigs(): Promise<Array<BossConfig>>;
-    getAllCharacters(): Promise<Array<[Principal, CharacterSlots]>>;
+    getAllCharacters(): Promise<{
+        __kind__: "ok";
+        ok: Array<[Principal, CharacterSlots]>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     /**
      * / Returns the current app version string.
      */

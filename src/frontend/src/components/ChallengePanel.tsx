@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { logDebugWarn } from "../utils/debugLogger";
 
 export type ChallengeTier = "easy" | "hard" | "legendary";
 
@@ -157,7 +158,9 @@ export default function ChallengePanel({
         const saved = JSON.parse(raw);
         if (saved?.pos) return saved.pos;
       }
-    } catch {}
+    } catch (e) {
+      logDebugWarn("UI", "ChallengePanel layout load failed", String(e));
+    }
     return {
       x: Math.max(
         0,
@@ -184,7 +187,9 @@ export default function ChallengePanel({
             STORAGE_KEY_PREFIX + userId,
             JSON.stringify({ pos: p, folded: f }),
           );
-        } catch {}
+        } catch (e) {
+          logDebugWarn("UI", "ChallengePanel layout save failed", String(e));
+        }
       }, 400);
     },
     [userId],

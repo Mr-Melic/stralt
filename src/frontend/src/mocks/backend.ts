@@ -104,7 +104,7 @@ export const mockBackend: backendInterface = {
   assignCallerUserRole: async (_user: Principal, _role: UserRole) => undefined,
   createCharacter: async (_slot: bigint, _character: Character) => okResult,
   deleteCharacter: async (_slot: bigint) => okResult,
-  getAllCharacters: async () => [],
+  getAllCharacters: async () => ({ __kind__: "ok" as const, ok: [] }),
   getCallerUserProfile: async (): Promise<UserProfile | null> => ({ name: "Player One" }),
   getCallerUserRole: async () => "user" as unknown as UserRole,
   getCharacter: async (_slot: bigint): Promise<CharacterSlot> => sampleCharacter,
@@ -251,6 +251,9 @@ export const mockBackend: backendInterface = {
   getColorPalette: async (): Promise<string> => "",
   adminSetBossRushConfig: async (_config: string): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }> => ({ __kind__: "ok" as const, ok: null }),
   getBossRushConfig: async (): Promise<string> => "",
+
+  applyRewards: async (_slot: bigint, _dokaDelta: bigint, _xpDelta: bigint) =>
+    ({ __kind__: "ok" as const, ok: { newDoka: BigInt(0), newXp: BigInt(0), newLevel: BigInt(1) } }),
 
   // Shop admin — principal-based methods
   adminGrantDoka: async (_targetPrincipal: Principal, _amount: bigint) => ({ __kind__: "ok" as const, ok: null as null }),

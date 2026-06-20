@@ -21,6 +21,9 @@ export interface BattleRecapData {
   dungeonMaxDepth?: number;
   /** BOSS: name of defeated boss, if this was a boss battle */
   bossDefeated?: string;
+  /** Absolute new balances returned by backend applyRewards */
+  newDoka?: number;
+  newXp?: number;
 }
 
 interface PostBattleRecapProps {

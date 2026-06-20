@@ -395,6 +395,20 @@ export const idlService = IDL.Service({
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
+  'applyRewards' : IDL.Func(
+      [IDL.Nat, IDL.Nat, IDL.Nat],
+      [
+        IDL.Variant({
+          'ok' : IDL.Record({
+            'newLevel' : IDL.Nat,
+            'newXp' : IDL.Nat,
+            'newDoka' : IDL.Nat,
+          }),
+          'err' : IDL.Text,
+        }),
+      ],
+      [],
+    ),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'assignUserRole' : IDL.Func(
       [IDL.Principal, IDL.Text],
@@ -466,7 +480,12 @@ export const idlService = IDL.Service({
   'getAllBossConfigs' : IDL.Func([], [IDL.Vec(BossConfig)], ['query']),
   'getAllCharacters' : IDL.Func(
       [],
-      [IDL.Vec(IDL.Tuple(IDL.Principal, CharacterSlots))],
+      [
+        IDL.Variant({
+          'ok' : IDL.Vec(IDL.Tuple(IDL.Principal, CharacterSlots)),
+          'err' : IDL.Text,
+        }),
+      ],
       ['query'],
     ),
   'getAppVersion' : IDL.Func([], [IDL.Text], ['query']),
@@ -1103,6 +1122,20 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
+    'applyRewards' : IDL.Func(
+        [IDL.Nat, IDL.Nat, IDL.Nat],
+        [
+          IDL.Variant({
+            'ok' : IDL.Record({
+              'newLevel' : IDL.Nat,
+              'newXp' : IDL.Nat,
+              'newDoka' : IDL.Nat,
+            }),
+            'err' : IDL.Text,
+          }),
+        ],
+        [],
+      ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'assignUserRole' : IDL.Func(
         [IDL.Principal, IDL.Text],
@@ -1174,7 +1207,12 @@ export const idlFactory = ({ IDL }) => {
     'getAllBossConfigs' : IDL.Func([], [IDL.Vec(BossConfig)], ['query']),
     'getAllCharacters' : IDL.Func(
         [],
-        [IDL.Vec(IDL.Tuple(IDL.Principal, CharacterSlots))],
+        [
+          IDL.Variant({
+            'ok' : IDL.Vec(IDL.Tuple(IDL.Principal, CharacterSlots)),
+            'err' : IDL.Text,
+          }),
+        ],
         ['query'],
       ),
     'getAppVersion' : IDL.Func([], [IDL.Text], ['query']),

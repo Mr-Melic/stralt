@@ -439,6 +439,11 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
+  'applyRewards' : ActorMethod<
+    [bigint, bigint, bigint],
+    { 'ok' : { 'newLevel' : bigint, 'newXp' : bigint, 'newDoka' : bigint } } |
+      { 'err' : string }
+  >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   /**
    * / Admin-only: assign a role to another principal.
@@ -551,7 +556,11 @@ export interface _SERVICE {
    * / Public: returns all boss configs.
    */
   'getAllBossConfigs' : ActorMethod<[], Array<BossConfig>>,
-  'getAllCharacters' : ActorMethod<[], Array<[Principal, CharacterSlots]>>,
+  'getAllCharacters' : ActorMethod<
+    [],
+    { 'ok' : Array<[Principal, CharacterSlots]> } |
+      { 'err' : string }
+  >,
   /**
    * / Returns the current app version string.
    */

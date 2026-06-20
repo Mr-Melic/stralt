@@ -190,7 +190,7 @@ export function useBossRush(
     })();
   }, [actor, characterSlot, principal]);
 
-  const [rewardMultiplier, setRewardMultiplier] = useState(1.0);
+  const [_rewardMultiplier, setRewardMultiplier] = useState(1.0);
 
   // Load admin-configured reward multiplier
   useEffect(() => {
@@ -214,49 +214,40 @@ export function useBossRush(
     setBossRushState({ ...INITIAL_STATE, active: true });
   }, []);
 
-  const advanceBossRushRoom = useCallback(
-    async (dokaEarned: number, xpEarned: number) => {
-      let nextRoomSnapshot = 0;
-      let completedSnapshot = false;
+  const advanceBossRushRoom = useCallback(async () => {
+    let nextRoomSnapshot = 0;
+    let completedSnapshot = false;
 
-      setBossRushState((prev) => {
-        const nextRoom = prev.currentRoom + 1;
-        const complete = nextRoom >= BOSS_RUSH_ROOMS.length;
-        nextRoomSnapshot = complete ? prev.currentRoom : nextRoom;
-        completedSnapshot = complete;
-        return {
-          ...prev,
-          currentRoom: nextRoomSnapshot,
-          complete,
-          totalDokaEarned: prev.totalDokaEarned + dokaEarned,
-          totalXpEarned: prev.totalXpEarned + xpEarned,
-        };
-      });
+    setBossRushState((prev) => {
+      const nextRoom = prev.currentRoom + 1;
+      const complete = nextRoom >= BOSS_RUSH_ROOMS.length;
+      nextRoomSnapshot = complete ? prev.currentRoom : nextRoom;
+      completedSnapshot = complete;
+      return {
+        ...prev,
+        currentRoom: nextRoomSnapshot,
+        complete,
+        // Room state only — rewards are handled by resolveBattleRewards
+      };
+    });
 
-      if (actor) {
-        try {
-          const slot = BigInt(characterSlot ?? 0);
-          const roomIdx = BigInt(
-            completedSnapshot ? nextRoomSnapshot : nextRoomSnapshot - 1,
-          );
+    if (actor) {
+      try {
+        const slot = BigInt(characterSlot ?? 0);
+        const roomIdx = BigInt(
+          completedSnapshot ? nextRoomSnapshot : nextRoomSnapshot - 1,
+        );
 
-          // M1 — Persist current room entry so progress survives tab close mid-run
-          await actor.setBossRushProgress?.(slot, nextRoomSnapshot);
+        // M1 — Persist current room entry so progress survives tab close mid-run
+        await actor.setBossRushProgress?.(slot, nextRoomSnapshot);
 
-          // Complete the room with scaled rewards (no BigInt wrapping — backend takes plain Nat)
-          await actor.completeBossRushRoom?.(
-            slot,
-            roomIdx,
-            Math.round(dokaEarned * rewardMultiplier),
-            Math.round(xpEarned * rewardMultiplier),
-          );
-        } catch (e) {
-          console.error("[BossRush] Failed to save room progress:", e);
-        }
+        // Complete the room with scaled rewards (no BigInt wrapping — backend takes plain Nat)
+        await actor.completeBossRushRoom?.(slot, roomIdx, 0, 0);
+      } catch (e) {
+        console.error("[BossRush] Failed to save room progress:", e);
       }
-    },
-    [actor, characterSlot, rewardMultiplier],
-  );
+    }
+  }, [actor, characterSlot]);
 
   const abortBossRush = useCallback(async () => {
     setBossRushState(INITIAL_STATE);

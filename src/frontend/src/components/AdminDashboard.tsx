@@ -50,6 +50,7 @@ import type {
   SpellConfig,
   TierSpawnConfig,
 } from "../types/gameTypes";
+import { logDebugWarn } from "../utils/debugLogger";
 
 // ── defaults ─────────────────────────────────────────────────────────────────
 
@@ -4031,7 +4032,9 @@ const VisualsTab: React.FC = () => {
         const arr = JSON.parse(v) as string[];
         if (Array.isArray(arr)) return arr;
       }
-    } catch {}
+    } catch (e) {
+      logDebugWarn("UI", "AdminDashboard palette load failed", String(e));
+    }
     return [];
   })();
 

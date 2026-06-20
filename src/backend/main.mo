@@ -38,8 +38,11 @@ actor {
         userProfiles.get(caller);
     };
 
-    public query func getUserProfile(user : Principal) : async ?UserProfile {
-        userProfiles.get(user);
+    public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
+        if (caller != user) {
+            return null;
+        };
+        userProfiles.get(caller);
     };
 
     public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
@@ -284,8 +287,11 @@ actor {
         };
     };
 
-    public query func getAllCharacters() : async [(Principal, CharacterSlots)] {
-        characterSlots.entries().toArray();
+    public query ({ caller }) func getAllCharacters() : async { #ok : [(Principal, CharacterSlots)]; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        #ok(characterSlots.entries().toArray());
     };
 
     // ─── Admin types ────────────────────────────────────────────────────
@@ -1192,6 +1198,35 @@ actor {
         #ok;
     };
 
+    public shared ({ caller }) func applyRewards(slot : Nat, dokaDelta : Nat, xpDelta : Nat) : async { #ok : { newDoka : Nat; newXp : Nat; newLevel : Nat }; #err : Text } {
+      if (caller.isAnonymous()) { return #err "Anonymous caller" };
+      if (bannedPrincipals.containsKey(caller.toText())) { return #err "Account banned" };
+      let charSlots = switch (characterSlots.get(caller)) { case (?cs) { cs }; case null { return #err "No characters" } };
+      let characterOpt = switch (slot) { case 0 { charSlots.slot1 }; case 1 { charSlots.slot2 }; case 2 { charSlots.slot3 }; case _ { return #err "Invalid slot" } };
+      let character = switch (characterOpt) { case (?c) { c }; case null { return #err "Empty slot" } };
+      var newXp = character.experience + xpDelta;
+      var newLevel = character.level;
+      func pow2(n : Nat) : Nat { var r = 1; var i = 0; while (i < n) { r *= 2; i += 1 }; r };
+      label lvlLoop while (true) {
+        let xpToNext = 100 * pow2(newLevel);
+        if (newXp < xpToNext) { break lvlLoop };
+        newXp -= xpToNext;
+        newLevel += 1;
+      };
+      let updatedChar = { character with experience = newXp; level = newLevel };
+      let newSlots = switch (slot) {
+        case 0 { { charSlots with slot1 = ?updatedChar } };
+        case 1 { { charSlots with slot2 = ?updatedChar } };
+        case 2 { { charSlots with slot3 = ?updatedChar } };
+        case _ { charSlots };
+      };
+      characterSlots.add(caller, newSlots);
+      let currentDoka = switch (dokaBalances.get(caller)) { case (?d) { d }; case null { 0 } };
+      let newDoka = currentDoka + dokaDelta;
+      dokaBalances.add(caller, newDoka);
+      #ok({ newDoka = newDoka; newXp = newXp; newLevel = newLevel })
+    };
+
     /// Retrieve the full Character record for a given slot.
     public query ({ caller }) func getCharacterStats(slot : Nat) : async { #ok : Character; #err : Text } {
         if (slot < 1 or slot > 3) {
@@ -1399,7 +1434,10 @@ actor {
     };
 
     /// Public: return the achievement progress records for the given principal.
-    public query func getPlayerAchievements(player : Principal) : async [AdminTypes.AchievementProgress] {
+    public query ({ caller }) func getPlayerAchievements(player : Principal) : async [AdminTypes.AchievementProgress] {
+        if (caller != player) {
+            return [];
+        };
         let principalText = player.toText();
         achievementProgress.values()
           .filter(func(v : AdminTypes.AchievementProgress) : Bool { v.principalId == principalText })
@@ -1780,7 +1818,10 @@ actor {
     let dungeonRecords = Map.empty<Principal, AdminTypes.DungeonRecord>();
 
     /// Returns a player's current dungeon chain record (null if never entered a dungeon).
-    public query func getDungeonRecord(principal : Principal) : async ?AdminTypes.DungeonRecord {
+    public query ({ caller }) func getDungeonRecord(principal : Principal) : async ?AdminTypes.DungeonRecord {
+        if (caller != principal) {
+            return null;
+        };
         dungeonRecords.get(principal);
     };
 
@@ -2185,7 +2226,10 @@ actor {
     };
 
     /// Returns (currentRoom, highestRoomCompleted, totalBossRushRuns) for any player+slot.
-    public query func getBossRushState(userId : Principal, slot : Nat) : async (Nat, Nat, Nat) {
+    public query ({ caller }) func getBossRushState(userId : Principal, slot : Nat) : async (Nat, Nat, Nat) {
+        if (caller != userId) {
+            return (0, 0, 0);
+        };
         switch (bossRushStates.get(_bossRushKey(userId, slot))) {
             case null { (0, 0, 0) };
             case (?s) { (s.currentRoom, s.highestRoomCompleted, s.totalBossRushRuns) };

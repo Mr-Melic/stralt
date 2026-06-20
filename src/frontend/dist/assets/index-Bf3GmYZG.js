@@ -28655,6 +28655,20 @@ Service({
     [Variant({ "ok": Null, "err": Text })],
     []
   ),
+  "applyRewards": Func(
+    [Nat, Nat, Nat],
+    [
+      Variant({
+        "ok": Record({
+          "newLevel": Nat,
+          "newXp": Nat,
+          "newDoka": Nat
+        }),
+        "err": Text
+      })
+    ],
+    []
+  ),
   "assignCallerUserRole": Func([Principal2, UserRole], [], []),
   "assignUserRole": Func(
     [Principal2, Text],
@@ -28726,7 +28740,12 @@ Service({
   "getAllBossConfigs": Func([], [Vec(BossConfig)], ["query"]),
   "getAllCharacters": Func(
     [],
-    [Vec(Tuple(Principal2, CharacterSlots))],
+    [
+      Variant({
+        "ok": Vec(Tuple(Principal2, CharacterSlots)),
+        "err": Text
+      })
+    ],
     ["query"]
   ),
   "getAppVersion": Func([], [Text], ["query"]),
@@ -29359,6 +29378,20 @@ const idlFactory = ({ IDL: IDL2 }) => {
       [IDL2.Variant({ "ok": IDL2.Null, "err": IDL2.Text })],
       []
     ),
+    "applyRewards": IDL2.Func(
+      [IDL2.Nat, IDL2.Nat, IDL2.Nat],
+      [
+        IDL2.Variant({
+          "ok": IDL2.Record({
+            "newLevel": IDL2.Nat,
+            "newXp": IDL2.Nat,
+            "newDoka": IDL2.Nat
+          }),
+          "err": IDL2.Text
+        })
+      ],
+      []
+    ),
     "assignCallerUserRole": IDL2.Func([IDL2.Principal, UserRole2], [], []),
     "assignUserRole": IDL2.Func(
       [IDL2.Principal, IDL2.Text],
@@ -29430,7 +29463,12 @@ const idlFactory = ({ IDL: IDL2 }) => {
     "getAllBossConfigs": IDL2.Func([], [IDL2.Vec(BossConfig2)], ["query"]),
     "getAllCharacters": IDL2.Func(
       [],
-      [IDL2.Vec(IDL2.Tuple(IDL2.Principal, CharacterSlots2))],
+      [
+        IDL2.Variant({
+          "ok": IDL2.Vec(IDL2.Tuple(IDL2.Principal, CharacterSlots2)),
+          "err": IDL2.Text
+        })
+      ],
       ["query"]
     ),
     "getAppVersion": IDL2.Func([], [IDL2.Text], ["query"]),
@@ -30133,17 +30171,31 @@ class Backend {
       return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
     }
   }
+  async applyRewards(arg0, arg1, arg2) {
+    if (this.processError) {
+      try {
+        const result = await this.actor.applyRewards(arg0, arg1, arg2);
+        return from_candid_variant_n17(this._uploadFile, this._downloadFile, result);
+      } catch (e) {
+        this.processError(e);
+        throw new Error("unreachable");
+      }
+    } else {
+      const result = await this.actor.applyRewards(arg0, arg1, arg2);
+      return from_candid_variant_n17(this._uploadFile, this._downloadFile, result);
+    }
+  }
   async assignCallerUserRole(arg0, arg1) {
     if (this.processError) {
       try {
-        const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n17(this._uploadFile, this._downloadFile, arg1));
+        const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n18(this._uploadFile, this._downloadFile, arg1));
         return result;
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
-      const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n17(this._uploadFile, this._downloadFile, arg1));
+      const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n18(this._uploadFile, this._downloadFile, arg1));
       return result;
     }
   }
@@ -30248,14 +30300,14 @@ class Backend {
   async createCharacter(arg0, arg1) {
     if (this.processError) {
       try {
-        const result = await this.actor.createCharacter(arg0, to_candid_Character_n19(this._uploadFile, this._downloadFile, arg1));
+        const result = await this.actor.createCharacter(arg0, to_candid_Character_n20(this._uploadFile, this._downloadFile, arg1));
         return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
-      const result = await this.actor.createCharacter(arg0, to_candid_Character_n19(this._uploadFile, this._downloadFile, arg1));
+      const result = await this.actor.createCharacter(arg0, to_candid_Character_n20(this._uploadFile, this._downloadFile, arg1));
       return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
     }
   }
@@ -30375,14 +30427,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getAllCharacters();
-        return from_candid_vec_n21(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n22(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getAllCharacters();
-      return from_candid_vec_n21(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n22(this._uploadFile, this._downloadFile, result);
     }
   }
   async getAppVersion() {
@@ -30403,28 +30455,28 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getBannedPrincipals();
-        return from_candid_variant_n33(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getBannedPrincipals();
-      return from_candid_variant_n33(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
     }
   }
   async getBossConfig(arg0) {
     if (this.processError) {
       try {
         const result = await this.actor.getBossConfig(arg0);
-        return from_candid_opt_n34(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n36(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getBossConfig(arg0);
-      return from_candid_opt_n34(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n36(this._uploadFile, this._downloadFile, result);
     }
   }
   async getBossPortalAssignments() {
@@ -30495,14 +30547,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getBuffInventory(arg0);
-        return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n37(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getBuffInventory(arg0);
-      return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n37(this._uploadFile, this._downloadFile, result);
     }
   }
   async getCallerDokaBalance() {
@@ -30523,42 +30575,42 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getCallerUserProfile();
-        return from_candid_opt_n36(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n38(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCallerUserProfile();
-      return from_candid_opt_n36(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n38(this._uploadFile, this._downloadFile, result);
     }
   }
   async getCallerUserRole() {
     if (this.processError) {
       try {
         const result = await this.actor.getCallerUserRole();
-        return from_candid_UserRole_n37(this._uploadFile, this._downloadFile, result);
+        return from_candid_UserRole_n39(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCallerUserRole();
-      return from_candid_UserRole_n37(this._uploadFile, this._downloadFile, result);
+      return from_candid_UserRole_n39(this._uploadFile, this._downloadFile, result);
     }
   }
   async getChangelog(arg0) {
     if (this.processError) {
       try {
         const result = await this.actor.getChangelog(arg0);
-        return from_candid_opt_n30(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n32(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getChangelog(arg0);
-      return from_candid_opt_n30(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n32(this._uploadFile, this._downloadFile, result);
     }
   }
   async getChangelogShownVersion(arg0) {
@@ -30579,42 +30631,42 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getCharacter(arg0);
-        return from_candid_CharacterSlot_n25(this._uploadFile, this._downloadFile, result);
+        return from_candid_CharacterSlot_n27(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCharacter(arg0);
-      return from_candid_CharacterSlot_n25(this._uploadFile, this._downloadFile, result);
+      return from_candid_CharacterSlot_n27(this._uploadFile, this._downloadFile, result);
     }
   }
   async getCharacterSlots() {
     if (this.processError) {
       try {
         const result = await this.actor.getCharacterSlots();
-        return from_candid_CharacterSlots_n23(this._uploadFile, this._downloadFile, result);
+        return from_candid_CharacterSlots_n25(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCharacterSlots();
-      return from_candid_CharacterSlots_n23(this._uploadFile, this._downloadFile, result);
+      return from_candid_CharacterSlots_n25(this._uploadFile, this._downloadFile, result);
     }
   }
   async getCharacterStats(arg0) {
     if (this.processError) {
       try {
         const result = await this.actor.getCharacterStats(arg0);
-        return from_candid_variant_n39(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n41(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCharacterStats(arg0);
-      return from_candid_variant_n39(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n41(this._uploadFile, this._downloadFile, result);
     }
   }
   async getColorPalette() {
@@ -30649,28 +30701,28 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getDungeonRecord(arg0);
-        return from_candid_opt_n40(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n42(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getDungeonRecord(arg0);
-      return from_candid_opt_n40(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n42(this._uploadFile, this._downloadFile, result);
     }
   }
   async getEnemyConfigs() {
     if (this.processError) {
       try {
         const result = await this.actor.getEnemyConfigs();
-        return from_candid_vec_n41(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n43(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getEnemyConfigs();
-      return from_candid_vec_n41(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n43(this._uploadFile, this._downloadFile, result);
     }
   }
   async getEnemyHPForLevel(arg0, arg1) {
@@ -30803,14 +30855,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getPlayerSpriteConfigs();
-        return from_candid_vec_n44(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n46(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getPlayerSpriteConfigs();
-      return from_candid_vec_n44(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n46(this._uploadFile, this._downloadFile, result);
     }
   }
   async getPurchases() {
@@ -30831,28 +30883,28 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getRegionConfigs();
-        return from_candid_vec_n47(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n49(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getRegionConfigs();
-      return from_candid_vec_n47(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n49(this._uploadFile, this._downloadFile, result);
     }
   }
   async getSessionState(arg0) {
     if (this.processError) {
       try {
         const result = await this.actor.getSessionState(arg0);
-        return from_candid_variant_n54(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n56(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getSessionState(arg0);
-      return from_candid_variant_n54(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n56(this._uploadFile, this._downloadFile, result);
     }
   }
   async getShopPackages() {
@@ -30887,14 +30939,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getSpellConfigs();
-        return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n57(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getSpellConfigs();
-      return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n57(this._uploadFile, this._downloadFile, result);
     }
   }
   async getTierSpawnConfig() {
@@ -30915,14 +30967,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getUserProfile(arg0);
-        return from_candid_opt_n36(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n38(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getUserProfile(arg0);
-      return from_candid_opt_n36(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n38(this._uploadFile, this._downloadFile, result);
     }
   }
   async getUserRole() {
@@ -30957,14 +31009,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.initiatePurchase(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-        return from_candid_variant_n58(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n60(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.initiatePurchase(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-      return from_candid_variant_n58(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n60(this._uploadFile, this._downloadFile, result);
     }
   }
   async isCallerAdmin() {
@@ -31041,14 +31093,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.purchaseBuff(arg0, arg1);
-        return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n37(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.purchaseBuff(arg0, arg1);
-      return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n37(this._uploadFile, this._downloadFile, result);
     }
   }
   async renameCharacter(arg0, arg1) {
@@ -31278,14 +31330,14 @@ class Backend {
   async updateCharacter(arg0, arg1) {
     if (this.processError) {
       try {
-        const result = await this.actor.updateCharacter(arg0, to_candid_Character_n19(this._uploadFile, this._downloadFile, arg1));
+        const result = await this.actor.updateCharacter(arg0, to_candid_Character_n20(this._uploadFile, this._downloadFile, arg1));
         return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
-      const result = await this.actor.updateCharacter(arg0, to_candid_Character_n19(this._uploadFile, this._downloadFile, arg1));
+      const result = await this.actor.updateCharacter(arg0, to_candid_Character_n20(this._uploadFile, this._downloadFile, arg1));
       return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
     }
   }
@@ -31335,57 +31387,54 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.useBuffItem(arg0, arg1);
-        return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n37(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.useBuffItem(arg0, arg1);
-      return from_candid_variant_n35(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n37(this._uploadFile, this._downloadFile, result);
     }
   }
 }
-function from_candid_BattleEffect_n51(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n52(_uploadFile, _downloadFile, value);
+function from_candid_BattleEffect_n53(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n54(_uploadFile, _downloadFile, value);
 }
-function from_candid_CharacterSlot_n25(_uploadFile, _downloadFile, value) {
-  return from_candid_opt_n26(_uploadFile, _downloadFile, value);
+function from_candid_CharacterSlot_n27(_uploadFile, _downloadFile, value) {
+  return from_candid_opt_n28(_uploadFile, _downloadFile, value);
 }
-function from_candid_CharacterSlots_n23(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n24(_uploadFile, _downloadFile, value);
+function from_candid_CharacterSlots_n25(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n26(_uploadFile, _downloadFile, value);
 }
-function from_candid_Character_n27(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n28(_uploadFile, _downloadFile, value);
+function from_candid_Character_n29(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n30(_uploadFile, _downloadFile, value);
 }
-function from_candid_EnemyConfig_n42(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n43(_uploadFile, _downloadFile, value);
+function from_candid_EnemyConfig_n44(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n45(_uploadFile, _downloadFile, value);
 }
-function from_candid_PlayerSpriteConfig_n45(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n46(_uploadFile, _downloadFile, value);
+function from_candid_PlayerSpriteConfig_n47(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n48(_uploadFile, _downloadFile, value);
 }
-function from_candid_RegionConfig_n48(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n49(_uploadFile, _downloadFile, value);
+function from_candid_RegionConfig_n50(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n51(_uploadFile, _downloadFile, value);
 }
-function from_candid_SpellConfig_n56(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n57(_uploadFile, _downloadFile, value);
+function from_candid_SpellConfig_n58(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n59(_uploadFile, _downloadFile, value);
 }
-function from_candid_UserRole_n37(_uploadFile, _downloadFile, value) {
-  return from_candid_variant_n38(_uploadFile, _downloadFile, value);
+function from_candid_UserRole_n39(_uploadFile, _downloadFile, value) {
+  return from_candid_variant_n40(_uploadFile, _downloadFile, value);
 }
-function from_candid_opt_n26(_uploadFile, _downloadFile, value) {
-  return value.length === 0 ? null : from_candid_Character_n27(_uploadFile, _downloadFile, value[0]);
-}
-function from_candid_opt_n29(_uploadFile, _downloadFile, value) {
-  return value.length === 0 ? null : value[0];
-}
-function from_candid_opt_n30(_uploadFile, _downloadFile, value) {
-  return value.length === 0 ? null : value[0];
+function from_candid_opt_n28(_uploadFile, _downloadFile, value) {
+  return value.length === 0 ? null : from_candid_Character_n29(_uploadFile, _downloadFile, value[0]);
 }
 function from_candid_opt_n31(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
 function from_candid_opt_n32(_uploadFile, _downloadFile, value) {
+  return value.length === 0 ? null : value[0];
+}
+function from_candid_opt_n33(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
 function from_candid_opt_n34(_uploadFile, _downloadFile, value) {
@@ -31394,36 +31443,39 @@ function from_candid_opt_n34(_uploadFile, _downloadFile, value) {
 function from_candid_opt_n36(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n40(_uploadFile, _downloadFile, value) {
+function from_candid_opt_n38(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n24(_uploadFile, _downloadFile, value) {
+function from_candid_opt_n42(_uploadFile, _downloadFile, value) {
+  return value.length === 0 ? null : value[0];
+}
+function from_candid_record_n26(_uploadFile, _downloadFile, value) {
   return {
-    slot1: from_candid_CharacterSlot_n25(_uploadFile, _downloadFile, value.slot1),
-    slot2: from_candid_CharacterSlot_n25(_uploadFile, _downloadFile, value.slot2),
-    slot3: from_candid_CharacterSlot_n25(_uploadFile, _downloadFile, value.slot3)
+    slot1: from_candid_CharacterSlot_n27(_uploadFile, _downloadFile, value.slot1),
+    slot2: from_candid_CharacterSlot_n27(_uploadFile, _downloadFile, value.slot2),
+    slot3: from_candid_CharacterSlot_n27(_uploadFile, _downloadFile, value.slot3)
   };
 }
-function from_candid_record_n28(_uploadFile, _downloadFile, value) {
+function from_candid_record_n30(_uploadFile, _downloadFile, value) {
   return {
     rotation: value.rotation,
-    activeSpells: record_opt_to_undefined(from_candid_opt_n29(_uploadFile, _downloadFile, value.activeSpells)),
+    activeSpells: record_opt_to_undefined(from_candid_opt_n31(_uploadFile, _downloadFile, value.activeSpells)),
     pieceType: value.pieceType,
     name: value.name,
-    covenantBuff: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.covenantBuff)),
+    covenantBuff: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.covenantBuff)),
     level: value.level,
     experience: value.experience,
     stats: value.stats,
     spellLevelKeys: value.spellLevelKeys,
-    shrineCount: record_opt_to_undefined(from_candid_opt_n31(_uploadFile, _downloadFile, value.shrineCount)),
+    shrineCount: record_opt_to_undefined(from_candid_opt_n33(_uploadFile, _downloadFile, value.shrineCount)),
     spellLevelValues: value.spellLevelValues,
-    bloodBalance: record_opt_to_undefined(from_candid_opt_n31(_uploadFile, _downloadFile, value.bloodBalance)),
-    bossRushMasterComplete: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.bossRushMasterComplete)),
+    bloodBalance: record_opt_to_undefined(from_candid_opt_n33(_uploadFile, _downloadFile, value.bloodBalance)),
+    bossRushMasterComplete: record_opt_to_undefined(from_candid_opt_n34(_uploadFile, _downloadFile, value.bossRushMasterComplete)),
     colors: value.colors,
     pixelPattern: value.pixelPattern
   };
 }
-function from_candid_record_n43(_uploadFile, _downloadFile, value) {
+function from_candid_record_n45(_uploadFile, _downloadFile, value) {
   return {
     ap: value.ap,
     hp: value.hp,
@@ -31433,45 +31485,45 @@ function from_candid_record_n43(_uploadFile, _downloadFile, value) {
     levelMin: value.levelMin,
     name: value.name,
     initStat: value.initStat,
-    spriteUrl: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.spriteUrl)),
+    spriteUrl: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.spriteUrl)),
     regions: value.regions
   };
 }
-function from_candid_record_n46(_uploadFile, _downloadFile, value) {
+function from_candid_record_n48(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     rightWalkFrames: value.rightWalkFrames,
     name: value.name,
-    frontUrl: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.frontUrl)),
+    frontUrl: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.frontUrl)),
     frontWalkFrames: value.frontWalkFrames,
     characterPieceType: value.characterPieceType,
-    rightUrl: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.rightUrl)),
+    rightUrl: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.rightUrl)),
     leftWalkFrames: value.leftWalkFrames,
     backWalkFrames: value.backWalkFrames,
-    leftUrl: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.leftUrl)),
-    backUrl: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.backUrl))
+    leftUrl: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.leftUrl)),
+    backUrl: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.backUrl))
   };
 }
-function from_candid_record_n49(_uploadFile, _downloadFile, value) {
+function from_candid_record_n51(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     backgroundColor: value.backgroundColor,
     levelMax: value.levelMax,
     levelMin: value.levelMin,
     name: value.name,
-    battleEffects: from_candid_vec_n50(_uploadFile, _downloadFile, value.battleEffects)
+    battleEffects: from_candid_vec_n52(_uploadFile, _downloadFile, value.battleEffects)
   };
 }
-function from_candid_record_n52(_uploadFile, _downloadFile, value) {
+function from_candid_record_n54(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     value: value.value,
     name: value.name,
     description: value.description,
-    effectType: from_candid_variant_n53(_uploadFile, _downloadFile, value.effectType)
+    effectType: from_candid_variant_n55(_uploadFile, _downloadFile, value.effectType)
   };
 }
-function from_candid_record_n57(_uploadFile, _downloadFile, value) {
+function from_candid_record_n59(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     aoe: value.aoe,
@@ -31479,7 +31531,7 @@ function from_candid_record_n57(_uploadFile, _downloadFile, value) {
     damage: value.damage,
     lineOfSight: value.lineOfSight,
     freeCells: value.freeCells,
-    effectParams: record_opt_to_undefined(from_candid_opt_n30(_uploadFile, _downloadFile, value.effectParams)),
+    effectParams: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.effectParams)),
     mpCost: value.mpCost,
     isPhysical: value.isPhysical,
     name: value.name,
@@ -31504,10 +31556,10 @@ function from_candid_record_n57(_uploadFile, _downloadFile, value) {
     cooldown: value.cooldown
   };
 }
-function from_candid_tuple_n22(_uploadFile, _downloadFile, value) {
+function from_candid_tuple_n24(_uploadFile, _downloadFile, value) {
   return [
     value[0],
-    from_candid_CharacterSlots_n23(_uploadFile, _downloadFile, value[1])
+    from_candid_CharacterSlots_n25(_uploadFile, _downloadFile, value[1])
   ];
 }
 function from_candid_variant_n1(_uploadFile, _downloadFile, value) {
@@ -31519,7 +31571,7 @@ function from_candid_variant_n1(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n3(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n17(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31528,7 +31580,16 @@ function from_candid_variant_n3(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n33(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n22(_uploadFile, _downloadFile, value) {
+  return "ok" in value ? {
+    __kind__: "ok",
+    ok: from_candid_vec_n23(_uploadFile, _downloadFile, value.ok)
+  } : "err" in value ? {
+    __kind__: "err",
+    err: value.err
+  } : value;
+}
+function from_candid_variant_n3(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31546,13 +31607,10 @@ function from_candid_variant_n35(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n38(_uploadFile, _downloadFile, value) {
-  return "admin" in value ? "admin" : "user" in value ? "user" : "guest" in value ? "guest" : value;
-}
-function from_candid_variant_n39(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n37(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
-    ok: from_candid_Character_n27(_uploadFile, _downloadFile, value.ok)
+    ok: value.ok
   } : "err" in value ? {
     __kind__: "err",
     err: value.err
@@ -31567,10 +31625,22 @@ function from_candid_variant_n4(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n53(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n40(_uploadFile, _downloadFile, value) {
+  return "admin" in value ? "admin" : "user" in value ? "user" : "guest" in value ? "guest" : value;
+}
+function from_candid_variant_n41(_uploadFile, _downloadFile, value) {
+  return "ok" in value ? {
+    __kind__: "ok",
+    ok: from_candid_Character_n29(_uploadFile, _downloadFile, value.ok)
+  } : "err" in value ? {
+    __kind__: "err",
+    err: value.err
+  } : value;
+}
+function from_candid_variant_n55(_uploadFile, _downloadFile, value) {
   return "damage" in value ? "damage" : "buff" in value ? "buff" : "debuff" in value ? "debuff" : value;
 }
-function from_candid_variant_n54(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n56(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31579,7 +31649,7 @@ function from_candid_variant_n54(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n58(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n60(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31588,29 +31658,29 @@ function from_candid_variant_n58(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_vec_n21(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_tuple_n22(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n23(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_tuple_n24(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n41(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_EnemyConfig_n42(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n43(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_EnemyConfig_n44(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n44(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_PlayerSpriteConfig_n45(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n46(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_PlayerSpriteConfig_n47(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n47(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_RegionConfig_n48(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n49(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_RegionConfig_n50(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n50(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_BattleEffect_n51(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n52(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_BattleEffect_n53(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n55(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_SpellConfig_n56(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n57(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_SpellConfig_n58(_uploadFile, _downloadFile, x3));
 }
 function to_candid_BattleEffect_n12(_uploadFile, _downloadFile, value) {
   return to_candid_record_n13(_uploadFile, _downloadFile, value);
 }
-function to_candid_Character_n19(_uploadFile, _downloadFile, value) {
-  return to_candid_record_n20(_uploadFile, _downloadFile, value);
+function to_candid_Character_n20(_uploadFile, _downloadFile, value) {
+  return to_candid_record_n21(_uploadFile, _downloadFile, value);
 }
 function to_candid_EnemyConfig_n5(_uploadFile, _downloadFile, value) {
   return to_candid_record_n6(_uploadFile, _downloadFile, value);
@@ -31624,8 +31694,8 @@ function to_candid_RegionConfig_n9(_uploadFile, _downloadFile, value) {
 function to_candid_SpellConfig_n15(_uploadFile, _downloadFile, value) {
   return to_candid_record_n16(_uploadFile, _downloadFile, value);
 }
-function to_candid_UserRole_n17(_uploadFile, _downloadFile, value) {
-  return to_candid_variant_n18(_uploadFile, _downloadFile, value);
+function to_candid_UserRole_n18(_uploadFile, _downloadFile, value) {
+  return to_candid_variant_n19(_uploadFile, _downloadFile, value);
 }
 function to_candid_opt_n2(_uploadFile, _downloadFile, value) {
   return value === null ? candid_none() : candid_some(value);
@@ -31682,7 +31752,7 @@ function to_candid_record_n16(_uploadFile, _downloadFile, value) {
     cooldown: value.cooldown
   };
 }
-function to_candid_record_n20(_uploadFile, _downloadFile, value) {
+function to_candid_record_n21(_uploadFile, _downloadFile, value) {
   return {
     rotation: value.rotation,
     activeSpells: value.activeSpells ? candid_some(value.activeSpells) : candid_none(),
@@ -31739,7 +31809,7 @@ function to_candid_variant_n14(_uploadFile, _downloadFile, value) {
     debuff: null
   } : value;
 }
-function to_candid_variant_n18(_uploadFile, _downloadFile, value) {
+function to_candid_variant_n19(_uploadFile, _downloadFile, value) {
   return value == "admin" ? {
     admin: null
   } : value == "user" ? {
@@ -47233,7 +47303,7 @@ function useBossRush(actor, characterSlot, principal) {
       }
     })();
   }, [actor, characterSlot, principal]);
-  const [rewardMultiplier, setRewardMultiplier] = reactExports.useState(1);
+  const [_rewardMultiplier, setRewardMultiplier] = reactExports.useState(1);
   reactExports.useEffect(() => {
     if (!actor) return;
     (async () => {
@@ -47253,45 +47323,35 @@ function useBossRush(actor, characterSlot, principal) {
   const startBossRush = reactExports.useCallback(() => {
     setBossRushState({ ...INITIAL_STATE, active: true });
   }, []);
-  const advanceBossRushRoom = reactExports.useCallback(
-    async (dokaEarned, xpEarned) => {
-      var _a3, _b3;
-      let nextRoomSnapshot = 0;
-      let completedSnapshot = false;
-      setBossRushState((prev) => {
-        const nextRoom = prev.currentRoom + 1;
-        const complete = nextRoom >= BOSS_RUSH_ROOMS.length;
-        nextRoomSnapshot = complete ? prev.currentRoom : nextRoom;
-        completedSnapshot = complete;
-        return {
-          ...prev,
-          currentRoom: nextRoomSnapshot,
-          complete,
-          totalDokaEarned: prev.totalDokaEarned + dokaEarned,
-          totalXpEarned: prev.totalXpEarned + xpEarned
-        };
-      });
-      if (actor) {
-        try {
-          const slot = BigInt(characterSlot ?? 0);
-          const roomIdx = BigInt(
-            completedSnapshot ? nextRoomSnapshot : nextRoomSnapshot - 1
-          );
-          await ((_a3 = actor.setBossRushProgress) == null ? void 0 : _a3.call(actor, slot, nextRoomSnapshot));
-          await ((_b3 = actor.completeBossRushRoom) == null ? void 0 : _b3.call(
-            actor,
-            slot,
-            roomIdx,
-            Math.round(dokaEarned * rewardMultiplier),
-            Math.round(xpEarned * rewardMultiplier)
-          ));
-        } catch (e) {
-          console.error("[BossRush] Failed to save room progress:", e);
-        }
+  const advanceBossRushRoom = reactExports.useCallback(async () => {
+    var _a3, _b3;
+    let nextRoomSnapshot = 0;
+    let completedSnapshot = false;
+    setBossRushState((prev) => {
+      const nextRoom = prev.currentRoom + 1;
+      const complete = nextRoom >= BOSS_RUSH_ROOMS.length;
+      nextRoomSnapshot = complete ? prev.currentRoom : nextRoom;
+      completedSnapshot = complete;
+      return {
+        ...prev,
+        currentRoom: nextRoomSnapshot,
+        complete
+        // Room state only — rewards are handled by resolveBattleRewards
+      };
+    });
+    if (actor) {
+      try {
+        const slot = BigInt(characterSlot ?? 0);
+        const roomIdx = BigInt(
+          completedSnapshot ? nextRoomSnapshot : nextRoomSnapshot - 1
+        );
+        await ((_a3 = actor.setBossRushProgress) == null ? void 0 : _a3.call(actor, slot, nextRoomSnapshot));
+        await ((_b3 = actor.completeBossRushRoom) == null ? void 0 : _b3.call(actor, slot, roomIdx, 0, 0));
+      } catch (e) {
+        console.error("[BossRush] Failed to save room progress:", e);
       }
-    },
-    [actor, characterSlot, rewardMultiplier]
-  );
+    }
+  }, [actor, characterSlot]);
   const abortBossRush = reactExports.useCallback(async () => {
     var _a3;
     setBossRushState(INITIAL_STATE);
@@ -47379,6 +47439,89 @@ function evaluateChallenges(refs, playerHp, playerMaxHp) {
     status: refs.challengeTotalDamageRef.current >= 500 ? "completed" : "on_track"
   });
   return results;
+}
+let _buffer = [];
+const _subscribers = [];
+function logDebug(category, level, message, data) {
+  const entry = {
+    ts: performance.now(),
+    category,
+    level,
+    message,
+    data
+  };
+  _buffer.push(entry);
+  if (_buffer.length > 200) _buffer = _buffer.slice(-200);
+  for (const sub of _subscribers) {
+    try {
+      sub(entry);
+    } catch {
+    }
+  }
+  return;
+}
+function logDebugInfo(category, message, data) {
+  logDebug(category, "info", message, data);
+}
+function logDebugWarn(category, message, data) {
+  logDebug(category, "warn", message, data);
+}
+function logDebugError(category, message, data) {
+  logDebug(category, "error", message, data);
+}
+async function resolveBattleRewards(actor, selectedSlot, input) {
+  const {
+    victory,
+    enemiesDefeated,
+    completedChallenges,
+    dungeonMultiplier,
+    bossRushRoomReward,
+    baseDoka,
+    baseXp
+  } = input;
+  let dokaDelta = 0;
+  let xpDelta = 0;
+  if (victory) {
+    dokaDelta += Math.floor(baseDoka * dungeonMultiplier);
+    xpDelta += Math.floor(baseXp * dungeonMultiplier);
+  }
+  let dokaFromChallenges = 0;
+  for (const ch of completedChallenges) {
+    dokaFromChallenges += ch.dokaReward;
+  }
+  dokaDelta += dokaFromChallenges;
+  if (bossRushRoomReward) {
+    dokaDelta += bossRushRoomReward.doka;
+    xpDelta += bossRushRoomReward.xp;
+  }
+  dokaDelta = Math.max(0, dokaDelta);
+  xpDelta = Math.max(0, xpDelta);
+  const result = await actor.applyRewards(
+    BigInt(selectedSlot),
+    BigInt(dokaDelta),
+    BigInt(xpDelta)
+  );
+  if ("err" in result) {
+    throw new Error(`applyRewards failed: ${result.err}`);
+  }
+  const { newDoka, newXp, newLevel } = result.ok;
+  const recap = {
+    xpEarned: xpDelta,
+    dokaEarned: dokaDelta,
+    dokaFromVictory: victory ? Math.floor(baseDoka * dungeonMultiplier) : 0,
+    dokaFromChallenges,
+    completedChallenges: completedChallenges.map((c2) => c2.name),
+    enemiesDefeated,
+    currentLevel: Number(newLevel),
+    currentXP: Number(newXp),
+    newDoka: Number(newDoka),
+    newXp: Number(newXp),
+    xpForNextLevel: 0,
+    mapTitle: "",
+    hitsDealt: 0,
+    dokaBreakdown: []
+  };
+  return recap;
 }
 const BUFF_ITEMS = [
   {
@@ -47991,7 +48134,8 @@ function ChallengePanel({
         const saved = JSON.parse(raw);
         if (saved == null ? void 0 : saved.pos) return saved.pos;
       }
-    } catch {
+    } catch (e) {
+      logDebugWarn("UI", "ChallengePanel layout load failed", String(e));
     }
     return {
       x: Math.max(
@@ -48012,7 +48156,8 @@ function ChallengePanel({
             STORAGE_KEY_PREFIX + userId,
             JSON.stringify({ pos: p2, folded: f })
           );
-        } catch {
+        } catch (e) {
+          logDebugWarn("UI", "ChallengePanel layout save failed", String(e));
         }
       }, 400);
     },
@@ -53996,14 +54141,6 @@ const WorldExplorationInner = ({
         lastPortalRef.current = { x: portal.x, y: portal.y };
         bossRushActiveRef.current = true;
         startBossRush();
-        const currentRoom = BOSS_RUSH_ROOMS2[bossRushState.currentRoom];
-        void advanceBossRushRoom(
-          (currentRoom == null ? void 0 : currentRoom.dokaReward) ?? 100,
-          (currentRoom == null ? void 0 : currentRoom.xpReward) ?? 100
-        );
-        if (bossRushActiveRef.current) {
-          handleBattleEnd(true, 0, 0, []);
-        }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
         return;
@@ -57069,7 +57206,12 @@ const WorldExplorationInner = ({
                   `pbv_covenant_buff_${userId}_slot${characterSlot}`,
                   "3"
                 );
-              } catch {
+              } catch (e) {
+                logDebugWarn(
+                  "MAP",
+                  "Shrine covenant buff save failed",
+                  String(e)
+                );
               }
             }
             shrineAchievementRef.current += 1;
@@ -57078,7 +57220,8 @@ const WorldExplorationInner = ({
                 `pbv_shrine_count_${userId}_slot${characterSlot}`,
                 String(shrineAchievementRef.current)
               );
-            } catch {
+            } catch (e) {
+              logDebugWarn("MAP", "Shrine count save failed", String(e));
             }
             setShrineCompleted(true);
             isShrineRoomRef.current = false;
@@ -57588,16 +57731,13 @@ const WorldExplorationInner = ({
     maxHp
   ]);
   const handleBattleEnd = reactExports.useCallback(
-    (victory, expGained, hitsDealt, enemiesDefeated) => {
+    async (victory, expGained, hitsDealt, enemiesDefeated) => {
       var _a4, _b4;
-      console.log("BATTLE_END triggered", {
+      logDebugInfo("BATTLE", "BATTLE_END triggered", {
         path: "handleBattleEnd",
         victory,
         isBossRush: bossRushActiveRef.current
       });
-      if (bossRushActiveRef.current) {
-        battleEndedRef.current = false;
-      }
       if (battleEndedRef.current) return;
       battleEndedRef.current = true;
       const _battleEndGen = aiGenerationRef.current;
@@ -57613,7 +57753,11 @@ const WorldExplorationInner = ({
           characterStats.hp,
           maxHp
         );
-        console.log("CHALLENGE_EVAL", JSON.stringify(challengeResults));
+        logDebugInfo(
+          "CHALLENGE",
+          "CHALLENGE_EVAL",
+          JSON.stringify(challengeResults)
+        );
         const challengeCompleted = challengeAccepted && currentChallenge ? isChallengeCompleted(currentChallenge, {
           turnCount: challengeTurnCountRef.current,
           totalDamage: challengeTotalDamageRef.current,
@@ -57687,22 +57831,16 @@ const WorldExplorationInner = ({
               "#ffd700"
             );
           }
-          if (!dungeonCompletionSavedRef.current && actor) {
-            dungeonCompletionSavedRef.current = true;
-            const dungeonSaveSlot = BigInt(characterSlot);
-            const dungeonSaveUpdate = { dokaBalance: BigInt(newDokaBalance) };
-            (async () => {
-              try {
-                await actor.updateCharacter(dungeonSaveSlot, dungeonSaveUpdate);
-              } catch (err) {
-                console.warn("[PBV] Character save failed:", err);
-                pendingSavesRef.current.push(
-                  () => actor.updateCharacter(dungeonSaveSlot, dungeonSaveUpdate)
-                );
-              }
-            })();
-          }
           let finalRecapData = null;
+          let didLevelUp = false;
+          const _recapData = await resolveBattleRewards(actor, characterSlot, {
+            victory,
+            enemiesDefeated: enemiesDefeated || [],
+            completedChallenges: [],
+            dungeonMultiplier: 1,
+            baseDoka: totalDoka || 0,
+            baseXp: finalExp || 0
+          });
           setCharacterStats((prev) => {
             var _a5;
             let newExp = prev.exp + finalExp;
@@ -57735,9 +57873,7 @@ const WorldExplorationInner = ({
               bossDefeated: activeBossConf ? activeBossConf.name : void 0
             };
             const levelsGained = newLevel - prev.level;
-            if (levelsGained > 0) {
-              playSound("level_up");
-            }
+            didLevelUp = levelsGained > 0;
             let scaledHp = prev.hp;
             let scaledAp = prev.ap;
             let scaledMp = prev.mp;
@@ -57785,77 +57921,6 @@ const WorldExplorationInner = ({
             };
           });
           setEnemies([]);
-          if (actor && finalRecapData) {
-            void (async () => {
-              try {
-                const prevStats = characterStats;
-                const { currentLevel: newLevel2, currentXP: newExp2 } = finalRecapData;
-                const levelsGained2 = newLevel2 - prevStats.level;
-                let fHp = prevStats.hp;
-                let fAp = prevStats.ap;
-                let fMp = prevStats.mp;
-                let fInit = prevStats.init;
-                let fRes = prevStats.res;
-                let fChc = prevStats.chc;
-                let fSp = prevStats.sp;
-                let fWr = prevStats.wr;
-                let fSr = prevStats.sr;
-                let fScp = prevStats.scp;
-                let fWp = prevStats.wp;
-                const SG2 = 0.05;
-                for (let g2 = 0; g2 < levelsGained2; g2++) {
-                  const gl = prevStats.level + g2 + 1;
-                  fHp = Math.max(1, Math.ceil(fHp * (1 + SG2)));
-                  fInit = Math.max(1, Math.ceil(fInit * (1 + SG2)));
-                  fRes = Math.max(0, Math.ceil(fRes * (1 + SG2)));
-                  fChc = Math.max(1, Math.ceil(fChc * (1 + SG2)));
-                  fSp = Math.max(1, Math.ceil(fSp * (1 + SG2)));
-                  fWr = Math.max(0, Math.ceil(fWr * (1 + SG2)));
-                  fSr = Math.max(0, Math.ceil(fSr * (1 + SG2)));
-                  fScp = Math.max(1, Math.ceil(fScp * (1 + SG2)));
-                  fWp = Math.max(1, Math.ceil(fWp * (1 + SG2)));
-                  if (gl % 25 === 0) {
-                    fAp += 1;
-                    fMp += 1;
-                  }
-                }
-                const spellKeys = Object.keys(spellLevels);
-                const spellVals = spellKeys.map(
-                  (k2) => BigInt(spellLevels[k2] ?? 0)
-                );
-                await actor.updateCharacter(BigInt(characterSlot), {
-                  name: characterName,
-                  pieceType,
-                  colors: [colors.primary, colors.secondary, colors.accent],
-                  pixelPattern: "",
-                  rotation: BigInt(0),
-                  level: BigInt(newLevel2),
-                  experience: BigInt(newExp2),
-                  dokaBalance: BigInt(newDokaBalance + challengeDokaReward),
-                  stats: {
-                    hp: BigInt(fHp),
-                    ap: BigInt(fAp),
-                    mp: BigInt(fMp),
-                    sp: BigInt(fSp),
-                    wr: BigInt(fWr),
-                    sr: BigInt(fSr),
-                    scp: BigInt(fScp),
-                    wp: BigInt(fWp),
-                    init: BigInt(fInit),
-                    res: BigInt(fRes),
-                    chc: BigInt(fChc),
-                    atk: BigInt(0),
-                    resilience: BigInt(0),
-                    evasion: BigInt(0)
-                  },
-                  spellLevelKeys: spellKeys,
-                  spellLevelValues: spellVals
-                });
-              } catch (err) {
-                console.error("[save] battle stats save failed:", err);
-              }
-            })();
-          }
           const recap = finalRecapData;
           if (recap) {
             const newLevel = recap.currentLevel;
@@ -57908,10 +57973,17 @@ const WorldExplorationInner = ({
             }
           }
           if (finalRecapData) {
-            console.log("REWARDS_COMPUTED", JSON.stringify(finalRecapData));
+            logDebugInfo(
+              "BATTLE",
+              "REWARDS_COMPUTED",
+              JSON.stringify(finalRecapData)
+            );
             if (onShowBattleSummary) {
-              console.log("SET showSummary=true");
+              logDebugInfo("BATTLE", "SET showSummary=true");
               onShowBattleSummary(finalRecapData);
+            }
+            if (didLevelUp) {
+              playSound("level_up");
             }
           }
         } else {
@@ -57923,11 +57995,11 @@ const WorldExplorationInner = ({
           }));
         }
       } catch (err) {
-        console.error("Reward computation error", err);
+        logDebugError("BATTLE", "Reward computation error", String(err));
         if (onShowBattleSummary) {
           onShowBattleSummary({
-            xpGained: 0,
-            dokaGained: 0,
+            xpEarned: 0,
+            dokaEarned: 0,
             enemiesDefeated: [],
             message: "Error computing rewards — check debug console"
           });
@@ -57953,6 +58025,124 @@ const WorldExplorationInner = ({
       calcEnemyMaxHp
     ]
   );
+  function handleBossRushRoomClear() {
+    if (battleEndedRef.current) return;
+    battleEndedRef.current = true;
+    const currentRoomIndex = bossRushState.currentRoom;
+    void advanceBossRushRoom();
+    const nextRoomIndex = bossRushState.currentRoom + 1;
+    const nextRoomDef = BOSS_RUSH_ROOMS2[nextRoomIndex];
+    if (nextRoomDef) {
+      const { map: nextMap, spawnPosition } = generateRandomMap();
+      if (nextMap) {
+        setCurrentMap(nextMap);
+        if (spawnPosition) {
+          setPlayerPosition({ ...spawnPosition });
+        }
+        const newEnemies = [];
+        if (nextRoomDef.boss1Id) {
+          newEnemies.push({
+            id: `boss-rush-${nextRoomIndex}-0`,
+            pieceType: nextRoomDef.boss1Name || "Boss 1",
+            x: 4,
+            y: 5,
+            level: characterStats.level + 2,
+            hp: 100,
+            maxHp: 100,
+            ap: 6,
+            mp: 3,
+            initiative: 10,
+            attack: 20,
+            defense: 10,
+            resistance: 5,
+            spells: [],
+            isBoss: true,
+            isLeader: false,
+            behavior: "aggressive",
+            family: "boss",
+            statusEffects: [],
+            activeEffects: []
+          });
+        }
+        if (nextRoomDef.boss2Id) {
+          newEnemies.push({
+            id: `boss-rush-${nextRoomIndex}-1`,
+            pieceType: nextRoomDef.boss2Name || "Boss 2",
+            x: 6,
+            y: 5,
+            level: characterStats.level + 2,
+            hp: 100,
+            maxHp: 100,
+            ap: 6,
+            mp: 3,
+            initiative: 10,
+            attack: 20,
+            defense: 10,
+            resistance: 5,
+            spells: [],
+            isBoss: true,
+            isLeader: false,
+            behavior: "aggressive",
+            family: "boss",
+            statusEffects: [],
+            activeEffects: []
+          });
+        }
+        setEnemies(newEnemies);
+      }
+    }
+    try {
+      const defeatedList = _battleEnemies.map((e) => ({
+        name: e.pieceType,
+        level: e.level
+      }));
+      const expGained = defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) || Number(characterStats.level) * 20;
+      const dokaPerEnemy = Math.max(
+        5,
+        Math.floor(Number(characterStats.level) * 1.5)
+      );
+      let totalDoka = defeatedList.length * dokaPerEnemy;
+      const roomMultiplier = 1;
+      totalDoka = Math.floor(totalDoka * roomMultiplier);
+      const challengeDokaReward = 0;
+      const completedChallenges = [];
+      const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
+      const newXp = (characterStats.exp || 0) + expGained;
+      setDokaBalance(newDokaBalance);
+      setCharacterStats((prev) => ({ ...prev, exp: newXp }));
+      if (actor) {
+        void actor.addDoka(BigInt(totalDoka + challengeDokaReward));
+        void actor.updateCharacterStats({
+          ...characterStats,
+          xp: newXp
+        });
+      }
+      const finalRecapData = {
+        mapTitle: `Boss Rush - Room ${currentRoomIndex + 1}`,
+        xpEarned: expGained,
+        hitsDealt: battleHitsRef.current,
+        enemiesDefeated: defeatedList,
+        currentXP: characterStats.exp || 0,
+        xpForNextLevel: (characterStats.level || 1) * 100,
+        currentLevel: characterStats.level || 1,
+        dokaEarned: totalDoka + challengeDokaReward,
+        dokaBreakdown: defeatedList.map((e) => ({
+          enemyName: e.name,
+          level: e.level,
+          doka: Math.floor(dokaPerEnemy * roomMultiplier)
+        })),
+        dokaFromVictory: totalDoka,
+        dokaFromChallenges: challengeDokaReward,
+        completedChallenges,
+        isBossRush: true,
+        bossRushRoom: currentRoomIndex + 1
+      };
+      if (onShowBattleSummary) onShowBattleSummary(finalRecapData);
+    } catch (err) {
+      logDebugError("BOSS", "BossRush reward/popup error", String(err));
+    }
+    cleanupBattle();
+  }
   const _handlePlayerDeath = reactExports.useCallback(() => {
     onDebugLog == null ? void 0 : onDebugLog("PLAYER_DEATH", "Player HP reached 0");
     setShowGameOver(true);
@@ -58294,7 +58484,11 @@ const WorldExplorationInner = ({
         level: e.level
       }));
       const expGained = defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) || Number(characterStats.level) * 20;
-      handleBattleEnd(true, expGained, battleHitsRef.current, defeatedList);
+      if (bossRushActiveRef.current) {
+        handleBossRushRoomClear();
+      } else {
+        handleBattleEnd(true, expGained, battleHitsRef.current, defeatedList);
+      }
     }
   }, [inBattle, enemies.length]);
   const canvasAreaRef = reactExports.useRef(null);
@@ -64969,7 +65163,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Dup962S1.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DR1WgntH.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
@@ -65410,10 +65604,11 @@ export {
   ue as C,
   DEFAULT_BOSS_CONFIGS as D,
   useAssignUserRole as E,
-  useSetBossConfig as F,
-  useDeleteBossConfig as G,
-  BOSS_IDS as H,
-  BossAbility as I,
+  logDebugWarn as F,
+  useSetBossConfig as G,
+  useDeleteBossConfig as H,
+  BOSS_IDS as I,
+  BossAbility as J,
   Principal$1 as P,
   React$2 as R,
   useQuery as a,

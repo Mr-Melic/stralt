@@ -412,6 +412,15 @@ service : {
                                                       err: text;
                                                       ok;
                                                     });
+  applyRewards: (slot: nat, dokaDelta: nat, xpDelta: nat) ->
+   (variant {
+      err: text;
+      ok: record {
+            newDoka: nat;
+            newLevel: nat;
+            newXp: nat;
+          };
+    });
   assignCallerUserRole: (user: principal, role: UserRole) -> ();
   /// Admin-only: assign a role to another principal.
   /// M1: rate-limited — the same caller cannot change roles more than once per 30 s.
@@ -496,10 +505,14 @@ service : {
                          }) query;
   /// Public: returns all boss configs.
   getAllBossConfigs: () -> (vec BossConfig) query;
-  getAllCharacters: () -> (vec record {
-                                 principal;
-                                 CharacterSlots;
-                               }) query;
+  getAllCharacters: () ->
+   (variant {
+      err: text;
+      ok: vec record {
+                principal;
+                CharacterSlots;
+              };
+    }) query;
   /// Returns the current app version string.
   getAppVersion: () -> (text) query;
   /// Admin query: returns the list of all currently banned principals.
