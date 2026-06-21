@@ -1,3 +1,4 @@
+import type { SummonUnitDef } from "../engine/summonSpawn";
 // Local game type stubs — used until backend migration generates real types
 // These mirror the shape used by CharacterSelection, CharacterCreation, GameFlow, useQueries
 
@@ -161,7 +162,7 @@ export interface SpellConfig {
   range: bigint;
   effectType: string;
   // Extended fields (graceful fallback if backend hasn't added them yet)
-  spellType?: "damage" | "heal" | "drain";
+  spellType?: "damage" | "heal" | "drain" | "summon";
   healAmount?: number;
   isPhysical?: boolean;
   // New fields
@@ -217,6 +218,8 @@ export interface SpellConfig {
   isBarrier?: boolean;
   isTrap?: boolean;
   isMark?: boolean;
+  isSummon?: boolean;
+  summonUnitDef?: SummonUnitDef;
 }
 
 // ── Active Effect (buff/debuff/DoT state machine) ──────────────────────────────

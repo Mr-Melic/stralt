@@ -1,0 +1,280 @@
+function distance(a, b) {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
+function findNearestEnemy(summon, ctx) {
+  const range = 20;
+  let nearest = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let dx = -range; dx <= range; dx++) {
+    for (let dy = -range; dy <= range; dy++) {
+      const cell = { x: summon.x + dx, y: summon.y + dy };
+      const combatant = ctx.getCombatantAt(cell);
+      if (combatant && combatant.side !== summon.side) {
+        const dist = Math.abs(dx) + Math.abs(dy);
+        if (dist < bestDist) {
+          bestDist = dist;
+          nearest = {
+            id: combatant.id,
+            side: combatant.side,
+            cell,
+            hp: 0,
+            // ctx doesn't expose hp; we'll use the cell for targeting
+            maxHp: 0
+          };
+        }
+      }
+    }
+  }
+  return nearest;
+}
+function findAllies(summon, ctx) {
+  const allies = [];
+  const range = 20;
+  for (let dx = -range; dx <= range; dx++) {
+    for (let dy = -range; dy <= range; dy++) {
+      const cell = { x: summon.x + dx, y: summon.y + dy };
+      const combatant = ctx.getCombatantAt(cell);
+      if (combatant && combatant.side === summon.side && combatant.id !== summon.id) {
+        allies.push({ id: combatant.id, cell });
+      }
+    }
+  }
+  return allies;
+}
+function getAdjacentEnemies(summon, ctx) {
+  const enemies = [];
+  const dirs = [
+    { x: 1, y: 0 },
+    { x: -1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: -1 }
+  ];
+  for (const d of dirs) {
+    const cell = { x: summon.x + d.x, y: summon.y + d.y };
+    const combatant = ctx.getCombatantAt(cell);
+    if (combatant && combatant.side !== summon.side) {
+      enemies.push({ id: combatant.id, cell });
+    }
+  }
+  return enemies;
+}
+function moveToward(summon, target, ctx) {
+  const dx = target.x - summon.x;
+  const dy = target.y - summon.y;
+  const stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+  const stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+  const candidates = [];
+  if (stepX !== 0) candidates.push({ x: summon.x + stepX, y: summon.y });
+  if (stepY !== 0) candidates.push({ x: summon.x, y: summon.y + stepY });
+  if (stepX !== 0 && stepY !== 0) {
+    candidates.push({ x: summon.x + stepX, y: summon.y + stepY });
+  }
+  for (const cell of candidates) {
+    if (ctx.isCellFree(cell)) {
+      summon.x = cell.x;
+      summon.y = cell.y;
+      return true;
+    }
+  }
+  return false;
+}
+function moveAway(summon, threat, ctx) {
+  const dx = summon.x - threat.x;
+  const dy = summon.y - threat.y;
+  const stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+  const stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+  const candidates = [];
+  if (stepX !== 0) candidates.push({ x: summon.x + stepX, y: summon.y });
+  if (stepY !== 0) candidates.push({ x: summon.x, y: summon.y + stepY });
+  if (stepX !== 0 && stepY !== 0) {
+    candidates.push({ x: summon.x + stepX, y: summon.y + stepY });
+  }
+  for (const cell of candidates) {
+    if (ctx.isCellFree(cell)) {
+      summon.x = cell.x;
+      summon.y = cell.y;
+      return true;
+    }
+  }
+  return false;
+}
+function attackAdjacent(summon, ctx, damage) {
+  const adjacent = getAdjacentEnemies(summon, ctx);
+  if (adjacent.length === 0) return false;
+  const target = adjacent[0];
+  ctx.dealDamage(target.id, damage, { isPhysical: true });
+  ctx.log(
+    `${summon.name} attacks ${target.id} for ${damage} damage!`,
+    "#f87171"
+  );
+  return true;
+}
+function runHunter(summon, ctx) {
+  const enemy = findNearestEnemy(summon, ctx);
+  if (!enemy) {
+    ctx.log(`${summon.name} (Hunter) sees no enemies.`, "#9ca3af");
+    return;
+  }
+  const dist = distance(summon, enemy.cell);
+  if (dist <= 1) {
+    const dmg = Math.round(summon.level * 2.5 + 4);
+    attackAdjacent(summon, ctx, dmg);
+  } else {
+    const moved = moveToward(summon, enemy.cell, ctx);
+    if (moved) {
+      ctx.log(`${summon.name} (Hunter) moves toward the enemy.`, "#60a5fa");
+    } else {
+      ctx.log(`${summon.name} (Hunter) is blocked.`, "#9ca3af");
+    }
+  }
+}
+function runGuardian(summon, ctx) {
+  const selfAdjacent = getAdjacentEnemies(summon, ctx);
+  if (selfAdjacent.length > 0) {
+    const dmg = Math.round(summon.level * 1.2 + 2);
+    attackAdjacent(summon, ctx, dmg);
+    return;
+  }
+  const allies = findAllies(summon, ctx);
+  for (const ally of allies) {
+    const dirs = [
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 }
+    ];
+    for (const d of dirs) {
+      const cell = { x: ally.cell.x + d.x, y: ally.cell.y + d.y };
+      const combatant = ctx.getCombatantAt(cell);
+      if (combatant && combatant.side !== summon.side) {
+        if (distance(summon, cell) <= 3) {
+          const moved = moveToward(summon, cell, ctx);
+          if (moved) {
+            ctx.log(
+              `${summon.name} (Guardian) moves to protect an ally.`,
+              "#60a5fa"
+            );
+          }
+          return;
+        }
+      }
+    }
+  }
+  ctx.log(`${summon.name} (Guardian) holds position.`, "#9ca3af");
+}
+function runArcher(summon, ctx) {
+  const enemy = findNearestEnemy(summon, ctx);
+  if (!enemy) {
+    ctx.log(`${summon.name} (Archer) sees no enemies.`, "#9ca3af");
+    return;
+  }
+  const dist = distance(summon, enemy.cell);
+  const adjacentEnemies = getAdjacentEnemies(summon, ctx);
+  if (adjacentEnemies.length > 0) {
+    const moved2 = moveAway(summon, adjacentEnemies[0].cell, ctx);
+    if (moved2) {
+      ctx.log(`${summon.name} (Archer) retreats to keep distance.`, "#60a5fa");
+    } else {
+      ctx.log(`${summon.name} (Archer) is cornered!`, "#f87171");
+    }
+    return;
+  }
+  if (dist <= 3) {
+    const dmg = Math.round(summon.level * 2 + 3);
+    ctx.dealDamage(enemy.id, dmg, { isPhysical: false });
+    ctx.log(
+      `${summon.name} (Archer) shoots ${enemy.id} for ${dmg} damage!`,
+      "#f87171"
+    );
+    return;
+  }
+  const moved = moveToward(summon, enemy.cell, ctx);
+  if (moved) {
+    ctx.log(`${summon.name} (Archer) moves into range.`, "#60a5fa");
+  } else {
+    ctx.log(`${summon.name} (Archer) is blocked.`, "#9ca3af");
+  }
+}
+function runBomber(summon, ctx) {
+  const enemy = findNearestEnemy(summon, ctx);
+  if (!enemy) {
+    ctx.log(`${summon.name} (Bomber) sees no enemies.`, "#9ca3af");
+    return;
+  }
+  const dist = distance(summon, enemy.cell);
+  if (dist <= 1 || summon.turnsRemaining <= 1) {
+    const aoeDmg = Math.round(summon.level * 3 + 6);
+    const dirs = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: -1, y: 0 },
+      { x: 0, y: 1 },
+      { x: 0, y: -1 }
+    ];
+    for (const d of dirs) {
+      const cell = { x: summon.x + d.x, y: summon.y + d.y };
+      const combatant = ctx.getCombatantAt(cell);
+      if (combatant && combatant.side !== summon.side) {
+        ctx.dealDamage(combatant.id, aoeDmg, { isPhysical: true });
+      }
+    }
+    ctx.log(
+      `${summon.name} (Bomber) EXPLODES for ${aoeDmg} AoE damage and is destroyed!`,
+      "#f59e0b"
+    );
+    summon.hp = 0;
+    return;
+  }
+  const moved = moveToward(summon, enemy.cell, ctx);
+  if (moved) {
+    ctx.log(`${summon.name} (Bomber) rushes toward the enemy.`, "#60a5fa");
+  } else {
+    ctx.log(`${summon.name} (Bomber) is blocked.`, "#9ca3af");
+  }
+}
+function runHealer(summon, ctx) {
+  const allies = findAllies(summon, ctx);
+  let owner = allies.find((a) => !a.id.startsWith("summon-"));
+  if (!owner && allies.length > 0) owner = allies[0];
+  if (!owner) {
+    ctx.log(`${summon.name} (Healer) finds no owner to heal.`, "#9ca3af");
+    return;
+  }
+  const healAmount = Math.round(summon.level * 1.5 + 3);
+  ctx.heal(owner.id, healAmount);
+  ctx.log(
+    `${summon.name} (Healer) heals ${owner.id} for ${healAmount} HP.`,
+    "#4ade80"
+  );
+  const distToOwner = distance(summon, owner.cell);
+  if (distToOwner > 1) {
+    const moved = moveToward(summon, owner.cell, ctx);
+    if (moved) {
+      ctx.log(`${summon.name} (Healer) moves closer to its owner.`, "#60a5fa");
+    }
+  }
+}
+function runSummonAI(summon, ctx) {
+  switch (summon.summonAI) {
+    case "hunter":
+      runHunter(summon, ctx);
+      break;
+    case "guardian":
+      runGuardian(summon, ctx);
+      break;
+    case "archer":
+      runArcher(summon, ctx);
+      break;
+    case "bomber":
+      runBomber(summon, ctx);
+      break;
+    case "healer":
+      runHealer(summon, ctx);
+      break;
+    default:
+      ctx.log(`${summon.name} has unknown AI: ${summon.summonAI}`, "#9ca3af");
+  }
+}
+export {
+  runSummonAI
+};

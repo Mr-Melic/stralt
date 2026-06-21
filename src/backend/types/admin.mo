@@ -295,6 +295,74 @@ module {
     /// imageUrl — URL of the uploaded banner image.
     /// linkUrl  — destination URL opened in a new tab when clicked.
     /// isActive — false means the slot is empty (no ad shown).
+    /// A player character slot with stats, appearance, and progress.
+    public type CharacterSlot = {
+        id            : Text;
+        name          : Text;
+        pieceType     : Text;
+        level         : Nat;
+        xp            : Nat;
+        hp            : Nat;
+        maxHp         : Nat;
+        ap            : Nat;
+        mp            : Nat;
+        sp            : Nat;
+        wr            : Nat;
+        sr            : Nat;
+        scp           : Nat;
+        wp            : Nat;
+        res           : Nat;
+        chc           : Nat;
+        init          : Nat;
+        fail          : Nat;
+        equippedSpells: [Text];
+        spellLevels   : [(Text, Nat)];
+        inventory     : [BuffInventoryItem];
+        appearance    : { skinColor : Text; eyeColor : Text; hairColor : Text };
+    };
+
+    /// A user profile tied to a Principal.
+    public type UserProfile = {
+        name : Text;
+    };
+
+    /// A sprite configuration for player characters.
+    public type SpriteConfig = {
+        id                 : Text;
+        name               : Text;
+        characterPieceType : Text;
+        frontUrl           : ?Text;
+        rightUrl           : ?Text;
+        leftUrl            : ?Text;
+        backUrl            : ?Text;
+        frontWalkFrames    : [Text];
+        rightWalkFrames    : [Text];
+        leftWalkFrames     : [Text];
+        backWalkFrames     : [Text];
+    };
+
+    /// A color palette configuration.
+    public type ColorPalette = {
+        primary   : Text;
+        secondary : Text;
+        accent    : Text;
+        background: Text;
+        text      : Text;
+    };
+
+    /// Boss rush state for a player.
+    public type BossRushState = {
+        currentRoom   : Nat;
+        totalRooms    : Nat;
+        bestRoom      : Nat;
+        completed     : Bool;
+        rewardClaimed : Bool;
+    };
+
+    /// An advertisement box shown on the login page.
+    /// imageUrl — URL of the uploaded banner image.
+    /// linkUrl  — destination URL opened in a new tab when clicked.
+    /// isActive — false means the slot is empty (no ad shown).
     public type AdBox = {
         imageUrl : Text;
         linkUrl  : Text;

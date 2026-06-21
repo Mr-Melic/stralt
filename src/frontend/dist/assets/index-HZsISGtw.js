@@ -44764,6 +44764,106 @@ const MapModifiersPanel = ({
     }
   );
 };
+function renderSummonAura(ctx, enemy, screenX, screenY) {
+  if (enemy.isSummon && enemy.side === "player") {
+    ctx.save();
+    ctx.shadowColor = "#00ffaa";
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = "#00ffaa";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(screenX - 16, screenY - 16, 32, 32);
+    ctx.restore();
+  }
+}
+async function handleSummonTurn(enemy, ctx) {
+  if (enemy.isSummon && enemy.side === "player") {
+    const { runSummonAI } = await __vitePreload(async () => {
+      const { runSummonAI: runSummonAI2 } = await import("./summonAI-CNbtLCyR.js");
+      return { runSummonAI: runSummonAI2 };
+    }, true ? [] : void 0);
+    runSummonAI(enemy, ctx);
+    return true;
+  }
+  return false;
+}
+function decrementSummonLifespan(enemies, log2) {
+  for (const e of enemies) {
+    if (e.isSummon) {
+      e.turnsRemaining = (e.turnsRemaining || 1) - 1;
+      if (e.turnsRemaining <= 0) {
+        e.hp = 0;
+        log2(`${e.name} fades away...`, "#888");
+      }
+    }
+  }
+  return enemies.filter((e) => e.hp > 0);
+}
+function buildSpellContext(log2) {
+  return {
+    rng: () => Math.random(),
+    getEffectiveStat: () => 0,
+    dealDamage: () => 0,
+    heal: () => {
+    },
+    applyEffect: () => {
+    },
+    placeBarrier: () => {
+    },
+    spawnUnit: () => {
+    },
+    log: log2,
+    isCellFree: () => true,
+    getCombatantAt: () => null
+  };
+}
+function getPlayerSideTargets(enemies) {
+  return enemies.filter((e) => e.side === "player" || e.isPlayer);
+}
+function spawnSummonUnit(cell, spell, ownerId, level, enemies, turnOrder, log2, computeEnemyStats2) {
+  const unitDef = spell.summonUnitDef;
+  if (!unitDef) return;
+  const stats = computeEnemyStats2(level, unitDef.pieceType, spell.id);
+  const maxHp = Math.round(stats.hp * (unitDef.hpScale || 1));
+  const summonId = `summon-${Math.random().toString(36).slice(2)}`;
+  const summon = {
+    id: summonId,
+    name: spell.name.replace("Summon ", ""),
+    x: cell.x,
+    y: cell.y,
+    hp: maxHp,
+    maxHp,
+    side: "player",
+    isSummon: true,
+    summonAI: spell.summonAI || "hunter",
+    ownerId,
+    turnsRemaining: spell.summonLifespan || 3,
+    level,
+    pieceType: unitDef.pieceType,
+    ...stats,
+    effects: [],
+    statusEffects: []
+  };
+  enemies.push(summon);
+  const entry = {
+    id: summonId,
+    name: summon.name,
+    initiative: stats.init,
+    hp: summon.hp,
+    maxHp: summon.maxHp,
+    isPlayer: false,
+    isSummon: true,
+    summonAI: summon.summonAI,
+    ownerId,
+    turnsRemaining: summon.turnsRemaining,
+    side: "player",
+    pieceType: summon.pieceType,
+    level,
+    stats
+  };
+  turnOrder.push(entry);
+  turnOrder.sort((a2, b2) => b2.initiative - a2.initiative);
+  log2(`${summon.name} appears!`, "#5cf08a");
+}
 function getAdjacentTiles(x3, y2, allTiles, occupied = []) {
   const dirs = [
     [0, -1],
@@ -49703,7 +49803,7 @@ const WorldExplorationInner = ({
         id: `bl-${Date.now()}-${Math.random()}`,
         timestamp: nowTimestamp(),
         text,
-        color
+        color: color ?? "#ffffff"
       });
     },
     [addBattleLogEntry]
@@ -50567,6 +50667,136 @@ const WorldExplorationInner = ({
         targetType: "area",
         areaShape: "circle",
         areaRadius: 2
+      },
+      {
+        id: "summon-dire-wolf",
+        name: "Summon Dire Wolf",
+        description: "Summons a Dire Wolf that hunts enemies.",
+        iconEmoji: "🐺",
+        apCost: BigInt(3),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon",
+        isSummon: true,
+        summonAI: "hunter",
+        summonUnitDef: {
+          pieceType: "wolf",
+          level: 1,
+          hpScale: 1,
+          damageScale: 1
+        },
+        summonLifespan: 4,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground",
+        areaShape: "single",
+        areaRadius: 0
+      },
+      {
+        id: "summon-sentinel",
+        name: "Summon Sentinel",
+        description: "Summons a Sentinel that guards you.",
+        iconEmoji: "🛡️",
+        apCost: BigInt(3),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon",
+        isSummon: true,
+        summonAI: "guardian",
+        summonUnitDef: {
+          pieceType: "golem",
+          level: 1,
+          hpScale: 1.5,
+          damageScale: 0.6
+        },
+        summonLifespan: 5,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground",
+        areaShape: "single",
+        areaRadius: 0
+      },
+      {
+        id: "summon-archer",
+        name: "Summon Archer",
+        description: "Summons an Archer that kites enemies.",
+        iconEmoji: "🏹",
+        apCost: BigInt(3),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon",
+        isSummon: true,
+        summonAI: "archer",
+        summonUnitDef: {
+          pieceType: "archer",
+          level: 1,
+          hpScale: 0.7,
+          damageScale: 1.2
+        },
+        summonLifespan: 4,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground",
+        areaShape: "single",
+        areaRadius: 0
+      },
+      {
+        id: "summon-bomber",
+        name: "Summon Bomber",
+        description: "Summons a Bomber that rushes and explodes.",
+        iconEmoji: "💣",
+        apCost: BigInt(2),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon",
+        isSummon: true,
+        summonAI: "bomber",
+        summonUnitDef: {
+          pieceType: "bomber",
+          level: 1,
+          hpScale: 0.5,
+          damageScale: 1.5
+        },
+        summonLifespan: 3,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground",
+        areaShape: "single",
+        areaRadius: 0
+      },
+      {
+        id: "summon-wisp",
+        name: "Summon Wisp",
+        description: "Summons a Wisp that heals allies.",
+        iconEmoji: "✨",
+        apCost: BigInt(2),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon",
+        isSummon: true,
+        summonAI: "healer",
+        summonUnitDef: {
+          pieceType: "wisp",
+          level: 1,
+          hpScale: 0.6,
+          damageScale: 0
+        },
+        summonLifespan: 5,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground",
+        areaShape: "single",
+        areaRadius: 0
       }
     ],
     [physicalAttackSpell]
@@ -53609,7 +53839,7 @@ const WorldExplorationInner = ({
           cameraVelocityRef.current = { x: 0, y: 0 };
           if (cameraFollowTimerRef.current !== null)
             clearTimeout(cameraFollowTimerRef.current);
-          cameraFollowTimerRef.current = window.setTimeout(() => {
+          setTimeout(() => {
             cameraFollowTimerRef.current = null;
             updateCameraToFollowPlayer();
           }, 100);
@@ -54757,29 +54987,42 @@ const WorldExplorationInner = ({
           }
           if (barrierTileSnapshot.has(`${x3},${y2}`)) {
             ctx.save();
+            const bw = effectiveTileW;
+            const bh = effectiveTileH;
+            const topH = bh * 0.35;
             ctx.beginPath();
             ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(
-              screenPos.x + effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2
-            );
-            ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-            ctx.lineTo(
-              screenPos.x - effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2
-            );
+            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2);
+            ctx.lineTo(screenPos.x, screenPos.y + bh);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
             ctx.closePath();
-            ctx.fillStyle = "rgba(100,60,220,0.45)";
+            ctx.fillStyle = "rgba(42,36,51,0.96)";
             ctx.fill();
-            ctx.strokeStyle = "rgba(160,100,255,0.9)";
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x, screenPos.y - topH);
+            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.closePath();
+            ctx.fillStyle = "#4a4060";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
+            ctx.closePath();
+            ctx.fillStyle = "rgba(74,64,96,0.6)";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x, screenPos.y - topH);
+            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.closePath();
+            ctx.strokeStyle = "rgba(120,100,160,0.9)";
             ctx.lineWidth = 2;
             ctx.stroke();
-            ctx.font = `${Math.round(effectiveTileH * 0.55)}px serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.globalAlpha = 0.85;
-            ctx.fillText("🧱", screenPos.x, screenPos.y + effectiveTileH / 2);
-            ctx.globalAlpha = 1;
             ctx.restore();
           }
           if (spellTiles.has(`${x3},${y2}`)) {
@@ -55068,6 +55311,9 @@ const WorldExplorationInner = ({
             ctx.ellipse(footX, footY, sw, sh, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
+          }
+          if (enemy.isSummon && enemy.side === "player") {
+            renderSummonAura(ctx, enemy, screenPos.x, screenPos.y);
           }
           if (enemy.isMoving) {
             ctx.save();
@@ -56064,6 +56310,19 @@ const WorldExplorationInner = ({
               }
               return;
             }
+            if (spell.isSummon && spell.summonUnitDef) {
+              spawnSummonUnit(
+                gridPos,
+                spell,
+                "player",
+                characterStats.level,
+                enemies,
+                turnOrderRef.current,
+                logBattleEntry,
+                computeEnemyStats
+              );
+              return;
+            }
             if (spell.isMark) {
               const tileKey = `${gridPos.x},${gridPos.y}`;
               markedTilesRef.current.add(tileKey);
@@ -56150,6 +56409,13 @@ const WorldExplorationInner = ({
                 }
               ] : []
             ];
+            if (targetsToHit.length === 0) {
+              logBattleEntry(
+                `No target in range for ${spell.name}!`,
+                "#94a3b8"
+              );
+              return;
+            }
             for (const hitTarget of targetsToHit) {
               const targetEnemy2 = hitTarget.id === "__player__" ? void 0 : hitTarget;
               let finalDmg;
@@ -58121,6 +58387,7 @@ const WorldExplorationInner = ({
                 }
               }
               barrierTilesRef.current = updatedBarriers;
+              setEnemies(decrementSummonLifespan(enemies, logBattleEntry));
             }
             if (isPlagueZone) {
               setCharacterStats((s2) => ({ ...s2, hp: Math.max(0, s2.hp - 2) }));
@@ -58247,6 +58514,15 @@ const WorldExplorationInner = ({
     const mySessionVersion = sessionVersionRef.current;
     let watchdog;
     const timeout2 = setTimeout(() => {
+      const summonEnemy = enemies.find((e) => e.id === enemyId);
+      if ((summonEnemy == null ? void 0 : summonEnemy.isSummon) && summonEnemy.side === "player") {
+        handleSummonTurn(summonEnemy, buildSpellContext(logBattleEntry)).then(
+          (handled) => {
+            if (handled) setTimeout(() => advanceTurnRef.current(), 600);
+          }
+        );
+        return;
+      }
       if (enemyTurnAbortRef.current) {
         clearTimeout(watchdog);
         pendingTimeoutsRef.current.delete(watchdog);
@@ -58324,7 +58600,9 @@ const WorldExplorationInner = ({
           pieceType: pieceType ?? "pawn"
         } : null;
         if (playerCELike) {
-          const enemiesForBossAI = turnOrderRef.current.filter((c2) => c2.type === "enemy" && c2.id !== enemyId).map((c2) => {
+          const enemiesForBossAI = getPlayerSideTargets(
+            turnOrderRef.current
+          ).filter((c2) => c2.id !== enemyId).filter((c2) => c2.type === "enemy" && c2.id !== enemyId).map((c2) => {
             const wE = enemies.find((e) => e.id === c2.id) ?? { x: 0, y: 0 };
             return {
               id: c2.id,
@@ -64731,7 +65009,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-D6w6VFLM.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-B1qOC6RF.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

@@ -384,6 +384,8 @@ actor {
         };
     };
 
+
+
     // Purge old spell IDs that are no longer part of the registry.
     // This runs on every canister start / upgrade so stale entries are always removed.
     do {

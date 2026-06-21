@@ -40,6 +40,14 @@ import MapModifiersPanel from "./MapModifiersPanel";
 import PostBattleRecap from "./PostBattleRecap";
 import type { BattleRecapData } from "./PostBattleRecap";
 
+import {
+  buildSpellContext,
+  decrementSummonLifespan,
+  getPlayerSideTargets,
+  handleSummonTurn,
+  renderSummonAura,
+} from "../engine/summonIntegration";
+import { spawnSummonUnit } from "../engine/summonSpawn";
 import { useBossAI } from "../hooks/useBossAI";
 import { useBossRush } from "../hooks/useBossRush";
 import {
@@ -232,6 +240,16 @@ interface Enemy {
   family?: EnemyFamily;
   aiTier?: number;
   _plagueSpawned?: boolean;
+  /** Side in combat: player, enemy, or summon */
+  side?: "player" | "enemy";
+  /** True if this unit is a summoned ally */
+  isSummon?: boolean;
+  /** AI behavior kind for summoned units */
+  summonAI?: string;
+  /** Owner combatant id for summons */
+  ownerId?: string;
+  /** Turns remaining before summon fades */
+  turnsRemaining?: number;
   campTurnCount?: number;
   escapeRouteTriggered?: boolean;
 }
@@ -1533,13 +1551,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // ── Battle log helper (nowTimestamp / calcScaledDamage are module-level pure fns) ──
   const logBattleEntry = useCallback(
-    (text: string, color: string) => {
+    (text: string, color?: string) => {
       if (!addBattleLogEntry) return;
       addBattleLogEntry({
         id: `bl-${Date.now()}-${Math.random()}`,
         timestamp: nowTimestamp(),
         text,
-        color,
+        color: color ?? "#ffffff",
       });
     },
     [addBattleLogEntry],
@@ -2557,6 +2575,136 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         targetType: "area" as const,
         areaShape: "circle" as const,
         areaRadius: 2,
+      },
+      {
+        id: "summon-dire-wolf",
+        name: "Summon Dire Wolf",
+        description: "Summons a Dire Wolf that hunts enemies.",
+        iconEmoji: "\uD83D\uDC3A",
+        apCost: BigInt(3),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon" as const,
+        isSummon: true,
+        summonAI: "hunter",
+        summonUnitDef: {
+          pieceType: "wolf",
+          level: 1,
+          hpScale: 1.0,
+          damageScale: 1.0,
+        },
+        summonLifespan: 4,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground" as const,
+        areaShape: "single" as const,
+        areaRadius: 0,
+      },
+      {
+        id: "summon-sentinel",
+        name: "Summon Sentinel",
+        description: "Summons a Sentinel that guards you.",
+        iconEmoji: "\uD83D\uDEE1\uFE0F",
+        apCost: BigInt(3),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon" as const,
+        isSummon: true,
+        summonAI: "guardian",
+        summonUnitDef: {
+          pieceType: "golem",
+          level: 1,
+          hpScale: 1.5,
+          damageScale: 0.6,
+        },
+        summonLifespan: 5,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground" as const,
+        areaShape: "single" as const,
+        areaRadius: 0,
+      },
+      {
+        id: "summon-archer",
+        name: "Summon Archer",
+        description: "Summons an Archer that kites enemies.",
+        iconEmoji: "\uD83C\uDFF9",
+        apCost: BigInt(3),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon" as const,
+        isSummon: true,
+        summonAI: "archer",
+        summonUnitDef: {
+          pieceType: "archer",
+          level: 1,
+          hpScale: 0.7,
+          damageScale: 1.2,
+        },
+        summonLifespan: 4,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground" as const,
+        areaShape: "single" as const,
+        areaRadius: 0,
+      },
+      {
+        id: "summon-bomber",
+        name: "Summon Bomber",
+        description: "Summons a Bomber that rushes and explodes.",
+        iconEmoji: "\uD83D\uDCA3",
+        apCost: BigInt(2),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon" as const,
+        isSummon: true,
+        summonAI: "bomber",
+        summonUnitDef: {
+          pieceType: "bomber",
+          level: 1,
+          hpScale: 0.5,
+          damageScale: 1.5,
+        },
+        summonLifespan: 3,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground" as const,
+        areaShape: "single" as const,
+        areaRadius: 0,
+      },
+      {
+        id: "summon-wisp",
+        name: "Summon Wisp",
+        description: "Summons a Wisp that heals allies.",
+        iconEmoji: "\u2728",
+        apCost: BigInt(2),
+        mpCost: BigInt(0),
+        damage: BigInt(0),
+        range: BigInt(2),
+        effectType: "summon",
+        spellType: "summon" as const,
+        isSummon: true,
+        summonAI: "healer",
+        summonUnitDef: {
+          pieceType: "wisp",
+          level: 1,
+          hpScale: 0.6,
+          damageScale: 0,
+        },
+        summonLifespan: 5,
+        usableByPlayer: true,
+        usableByEnemy: false,
+        targetType: "ground" as const,
+        areaShape: "single" as const,
+        areaRadius: 0,
       },
     ],
     [physicalAttackSpell],
@@ -6329,7 +6477,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           cameraVelocityRef.current = { x: 0, y: 0 };
           if (cameraFollowTimerRef.current !== null)
             clearTimeout(cameraFollowTimerRef.current);
-          cameraFollowTimerRef.current = window.setTimeout(() => {
+          setTimeout(() => {
             cameraFollowTimerRef.current = null;
             updateCameraToFollowPlayer();
           }, 100);
@@ -7841,32 +7989,50 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ctx.restore();
           }
 
-          // H3 Barrier tile — purple/blue semi-transparent overlay
+          // H3 Barrier tile — solid dark block
           if (barrierTileSnapshot.has(`${x},${y}`)) {
             ctx.save();
+            // Draw a solid raised-cube block on top of the floor tile
+            const bw = effectiveTileW;
+            const bh = effectiveTileH;
+            const topH = bh * 0.35;
+            // Main face (darker)
             ctx.beginPath();
             ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(
-              screenPos.x + effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
-            ctx.lineTo(screenPos.x, screenPos.y + effectiveTileH);
-            ctx.lineTo(
-              screenPos.x - effectiveTileW / 2,
-              screenPos.y + effectiveTileH / 2,
-            );
+            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2);
+            ctx.lineTo(screenPos.x, screenPos.y + bh);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
             ctx.closePath();
-            ctx.fillStyle = "rgba(100,60,220,0.45)";
+            ctx.fillStyle = "rgba(42,36,51,0.96)";
             ctx.fill();
-            ctx.strokeStyle = "rgba(160,100,255,0.9)";
+            // Top face (lighter purple-gray)
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x, screenPos.y - topH);
+            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.closePath();
+            ctx.fillStyle = "#4a4060";
+            ctx.fill();
+            // Left edge highlight
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
+            ctx.closePath();
+            ctx.fillStyle = "rgba(74,64,96,0.6)";
+            ctx.fill();
+            // Outline
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x, screenPos.y - topH);
+            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
+            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
+            ctx.closePath();
+            ctx.strokeStyle = "rgba(120,100,160,0.9)";
             ctx.lineWidth = 2;
             ctx.stroke();
-            ctx.font = `${Math.round(effectiveTileH * 0.55)}px serif`;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.globalAlpha = 0.85;
-            ctx.fillText("🧱", screenPos.x, screenPos.y + effectiveTileH / 2);
-            ctx.globalAlpha = 1;
             ctx.restore();
           }
 
@@ -8206,6 +8372,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ctx.ellipse(footX, footY, sw, sh, 0, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
+          }
+
+          // Summon aura (friendly tint for player-side summons)
+          if (enemy.isSummon && enemy.side === "player") {
+            renderSummonAura(ctx, enemy, screenPos.x, screenPos.y);
           }
 
           if (enemy.isMoving) {
@@ -9509,6 +9680,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
               return;
             }
+            if (spell.isSummon && spell.summonUnitDef) {
+              spawnSummonUnit(
+                gridPos,
+                spell,
+                "player",
+                characterStats.level,
+                enemies,
+                turnOrderRef.current,
+                logBattleEntry,
+                computeEnemyStats as (
+                  level: number,
+                  pieceType: string,
+                  seedKey: string,
+                ) => any,
+              );
+              return;
+            }
 
             // Mark spell: place a mark on the target tile
             if (spell.isMark) {
@@ -9636,6 +9824,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   ]
                 : []),
             ];
+
+            if (targetsToHit.length === 0) {
+              logBattleEntry(
+                `No target in range for ${spell.name}!`,
+                "#94a3b8",
+              );
+              return;
+            }
 
             for (const hitTarget of targetsToHit) {
               const targetEnemy =
@@ -12212,6 +12408,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
               }
               barrierTilesRef.current = updatedBarriers;
+              setEnemies(decrementSummonLifespan(enemies, logBattleEntry));
             }
             // Plague Zone: all units lose 2 HP at start of each turn
             if (isPlagueZone) {
@@ -12381,6 +12578,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // H2 fix: declare watchdog first so timeout callback can reference it (forward reference fix)
     let watchdog: ReturnType<typeof setTimeout>;
     const timeout = setTimeout(() => {
+      const summonEnemy = enemies.find((e: any) => e.id === enemyId);
+      if (summonEnemy?.isSummon && summonEnemy.side === "player") {
+        handleSummonTurn(summonEnemy, buildSpellContext(logBattleEntry)).then(
+          (handled) => {
+            if (handled) setTimeout(() => advanceTurnRef.current(), 600);
+          },
+        );
+        return;
+      }
       if (enemyTurnAbortRef.current) {
         clearTimeout(watchdog);
         pendingTimeoutsRef.current.delete(watchdog);
@@ -12478,7 +12684,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           : null;
         if (playerCELike) {
           type _CELike2 = import("../types/bossTypes").CombatantEntryLike;
-          const enemiesForBossAI: _CELike2[] = turnOrderRef.current
+          const enemiesForBossAI: _CELike2[] = getPlayerSideTargets(
+            turnOrderRef.current,
+          )
+            .filter((c: any) => c.id !== enemyId)
             .filter((c) => c.type === "enemy" && c.id !== enemyId)
             .map((c) => {
               const wE = enemies.find((e) => e.id === c.id) ?? { x: 0, y: 0 };

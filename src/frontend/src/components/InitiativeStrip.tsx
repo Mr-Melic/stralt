@@ -25,6 +25,16 @@ export interface CombatantEntry {
   bossId?: string;
   /** Current boss phase (1 or 2) */
   currentBossPhase?: 1 | 2;
+  /** Side in combat: player, enemy, or summon */
+  side?: "player" | "enemy";
+  /** True if this unit is a summoned ally */
+  isSummon?: boolean;
+  /** AI behavior kind for summoned units */
+  summonAI?: string;
+  /** Owner combatant id for summons */
+  ownerId?: string;
+  /** Turns remaining before summon fades */
+  turnsRemaining?: number;
 }
 
 interface InitiativeStripProps {
