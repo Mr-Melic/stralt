@@ -271,6 +271,8 @@ interface Enemy {
   turnsRemaining?: number;
   campTurnCount?: number;
   escapeRouteTriggered?: boolean;
+  /** True if this enemy is a boss minion (e.g. ghost boss) */
+  isBossMinion?: boolean;
 }
 
 const TILE_WIDTH = 80;
@@ -7960,6 +7962,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ctx.globalAlpha = 0.8 + 0.2 * Math.sin(Date.now() * 0.01);
           }
           if (enemy.isBoss && enemy.bossId) {
+            const isPhased =
+              enemy.bossId === "final_pawn" &&
+              (bossStateRef.current?.invincibleTurnsLeft ?? 0) > 0;
+            if (isPhased) {
+              ctx.save();
+              ctx.globalAlpha = 0.15;
+            }
             const _bpU = getBossPixelPattern(enemy.bossId);
             drawPixelPattern(
               ctx,
@@ -7969,6 +7978,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               _bpU.colors,
               { x: enemy.scaleX, y: enemy.scaleY },
             );
+            if (isPhased) {
+              ctx.font = "bold 10px Arial";
+              ctx.textAlign = "center";
+              ctx.fillStyle = "rgba(180,180,220,0.6)";
+              ctx.fillText(
+                "Phased",
+                screenPos.x,
+                screenPos.y - CHARACTER_Y_OFFSET - 6,
+              );
+              ctx.restore();
+            }
+          } else if (enemy.assignedName === "Ghost" || enemy.isBossMinion) {
+            ctx.save();
+            ctx.globalAlpha = 1.0;
+            ctx.shadowColor = "#aaddff";
+            ctx.shadowBlur = 10;
+            const familyPatU = getEnemyFamilyPixelPattern(
+              enemy.family ?? "default",
+            );
+            const familyColorMapU = getEnemyFamilyColors(
+              enemy.family ?? "default",
+            );
+            drawPixelPattern(
+              ctx,
+              familyPatU,
+              screenPos.x,
+              screenPos.y - CHARACTER_Y_OFFSET,
+              {
+                primary: familyColorMapU[1] ?? "#888888",
+                secondary: familyColorMapU[2] ?? "#555555",
+                accent: familyColorMapU[3] ?? "#aaaaaa",
+              },
+              { x: enemy.scaleX, y: enemy.scaleY },
+            );
+            ctx.restore();
           } else if (enemy.family && enemy.family !== "default") {
             const familyPatU = getEnemyFamilyPixelPattern(enemy.family);
             const familyColorMapU = getEnemyFamilyColors(enemy.family);

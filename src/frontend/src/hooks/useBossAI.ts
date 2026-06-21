@@ -767,7 +767,19 @@ export const decideFinalPawnAction: BossDecisionFn = (
     };
   }
 
-  // Phase 1: weak attack
+  // Phase 1: ranged attack when within ~3 tiles but not adjacent
+  const d = dist(boss, player);
+  if (d <= 3 && d > 1) {
+    return {
+      type: "attack",
+      targetId: player.id,
+      targetX: player.x,
+      targetY: player.y,
+      logMessage: `${boss.name} hurls a feeble projectile from afar!`,
+    };
+  }
+
+  // Phase 1: weak melee attack
   if (isAdjacent(boss, player)) {
     const baseAtk = attackPlayer(boss, player);
     if (Math.random() < 0.2) {

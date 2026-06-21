@@ -46993,6 +46993,16 @@ const decideFinalPawnAction = (boss, player, allEnemies, allTiles, bossState, _c
       logMessage: "The Final Pawn waits, impervious to all damage."
     };
   }
+  const d2 = dist(boss, player);
+  if (d2 <= 3 && d2 > 1) {
+    return {
+      type: "attack",
+      targetId: player.id,
+      targetX: player.x,
+      targetY: player.y,
+      logMessage: `${boss.name} hurls a feeble projectile from afar!`
+    };
+  }
   if (isAdjacent(boss, player)) {
     const baseAtk = attackPlayer(boss, player);
     if (Math.random() < 0.2) {
@@ -54618,7 +54628,7 @@ const WorldExplorationInner = ({
     enemies
   ]);
   const render = reactExports.useCallback(() => {
-    var _a4, _b4, _c3;
+    var _a4, _b4, _c3, _d3;
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (canvas.width === 0 || canvas.height === 0) return;
@@ -55322,6 +55332,11 @@ const WorldExplorationInner = ({
             ctx.globalAlpha = 0.8 + 0.2 * Math.sin(Date.now() * 0.01);
           }
           if (enemy.isBoss && enemy.bossId) {
+            const isPhased = enemy.bossId === "final_pawn" && (((_c3 = bossStateRef.current) == null ? void 0 : _c3.invincibleTurnsLeft) ?? 0) > 0;
+            if (isPhased) {
+              ctx.save();
+              ctx.globalAlpha = 0.15;
+            }
             const _bpU = getBossPixelPattern(enemy.bossId);
             drawPixelPattern(
               ctx,
@@ -55331,6 +55346,41 @@ const WorldExplorationInner = ({
               _bpU.colors,
               { x: enemy.scaleX, y: enemy.scaleY }
             );
+            if (isPhased) {
+              ctx.font = "bold 10px Arial";
+              ctx.textAlign = "center";
+              ctx.fillStyle = "rgba(180,180,220,0.6)";
+              ctx.fillText(
+                "Phased",
+                screenPos.x,
+                screenPos.y - CHARACTER_Y_OFFSET - 6
+              );
+              ctx.restore();
+            }
+          } else if (enemy.assignedName === "Ghost" || enemy.isBossMinion) {
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.shadowColor = "#aaddff";
+            ctx.shadowBlur = 10;
+            const familyPatU = getEnemyFamilyPixelPattern(
+              enemy.family ?? "default"
+            );
+            const familyColorMapU = getEnemyFamilyColors(
+              enemy.family ?? "default"
+            );
+            drawPixelPattern(
+              ctx,
+              familyPatU,
+              screenPos.x,
+              screenPos.y - CHARACTER_Y_OFFSET,
+              {
+                primary: familyColorMapU[1] ?? "#888888",
+                secondary: familyColorMapU[2] ?? "#555555",
+                accent: familyColorMapU[3] ?? "#aaaaaa"
+              },
+              { x: enemy.scaleX, y: enemy.scaleY }
+            );
+            ctx.restore();
           } else if (enemy.family && enemy.family !== "default") {
             const familyPatU = getEnemyFamilyPixelPattern(enemy.family);
             const familyColorMapU = getEnemyFamilyColors(enemy.family);
@@ -55686,7 +55736,7 @@ const WorldExplorationInner = ({
       const hoverScreen = gridToScreen(hoveredTile.x, hoveredTile.y);
       const dist2 = Math.abs(hoveredTile.x - playerPosition.x) + Math.abs(hoveredTile.y - playerPosition.y);
       const mpCost = isSlimeFloodRef.current ? dist2 * 2 : dist2;
-      if (dist2 > 0 && ((_c3 = currentMap.tiles[hoveredTile.y]) == null ? void 0 : _c3[hoveredTile.x]) === "floor") {
+      if (dist2 > 0 && ((_d3 = currentMap.tiles[hoveredTile.y]) == null ? void 0 : _d3[hoveredTile.x]) === "floor") {
         ctx.save();
         ctx.font = "bold 12px Arial";
         ctx.textAlign = "center";
@@ -65009,7 +65059,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DM_Xcdkd.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Q0P-92LC.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
