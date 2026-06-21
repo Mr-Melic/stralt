@@ -10880,7 +10880,79 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }, 100);
       } catch (err) {
         console.error("[death] death realm generation failed:", err);
-        setShowGameOver(true);
+        // Safe fallback: build an all-floor death-realm-like map with one portal
+        const safeTiles: TileType[][] = Array(WORLD_GRID_SIZE)
+          .fill(null)
+          .map(() => Array(WORLD_GRID_SIZE).fill("floor" as TileType));
+        safeTiles[4][4] = "portal";
+        const fallbackMap: GameMap = {
+          id: `map-fallback-${Date.now()}`,
+          tiles: safeTiles,
+          portals: [{ x: 4, y: 4, color: "blue" as const, animationOffset: 0 }],
+          levelZone: { name: "Death Realm", minLevel: 1, maxLevel: 5 },
+          tilePatterns: {},
+          colorFamily: { r1: 55, g1: 45, b1: 80, r2: 75, g2: 60, b2: 105 },
+          wallPalette: ["#3a2a4a", "#4a3a5e"],
+          isDeathRealm: true,
+          isRestMap: false,
+          hazardTiles: new Map(),
+          voidTiles: new Map(),
+        };
+        let fallbackSpawn: PlayerPosition = { x: 1, y: 1 };
+        let foundFallback = false;
+        for (let fy = 0; fy < safeTiles.length && !foundFallback; fy++) {
+          for (
+            let fx = 0;
+            fx < (safeTiles[fy]?.length ?? 0) && !foundFallback;
+            fx++
+          ) {
+            if ((safeTiles[fy]?.[fx] as string) === "floor") {
+              fallbackSpawn = { x: fx, y: fy };
+              foundFallback = true;
+            }
+          }
+        }
+        currentMapRef.current = fallbackMap;
+        setCurrentMap(fallbackMap);
+        setPlayerPosition(fallbackSpawn);
+        setPlayerView("front");
+        const fbScreenPos = gridToScreen(fallbackSpawn.x, fallbackSpawn.y);
+        const fbCenterX = canvasSize.width / 2;
+        const fbCenterY = canvasSize.height / 2;
+        const fbCamX = fbCenterX - fbScreenPos.x;
+        const fbCamY = fbCenterY - fbScreenPos.y;
+        cameraRef.current = { x: fbCamX, y: fbCamY };
+        targetCameraRef.current = { x: fbCamX, y: fbCamY };
+        cameraVelocityRef.current = { x: 0, y: 0 };
+        transitionInProgressRef.current = false;
+        setTransitionInProgress(false);
+        lastPortalRef.current = null;
+        setMapCount((prev) => prev + 1);
+        setCharacterStats((prev) => ({
+          ...prev,
+          hp: Math.max(
+            1,
+            Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5),
+          ),
+        }));
+        setEnemies([]);
+        toast(
+          "💀 You have fallen... find a portal to escape the Death Realm.",
+          {
+            duration: 5000,
+            style: {
+              background: "#1a0a0a",
+              border: "1px solid #8b0000",
+              color: "#ffaaaa",
+            },
+          },
+        );
+        if (cameraFollowTimerRef.current !== null)
+          clearTimeout(cameraFollowTimerRef.current);
+        cameraFollowTimerRef.current = window.setTimeout(() => {
+          cameraFollowTimerRef.current = null;
+          updateCameraToFollowPlayer();
+        }, 100);
       }
     }, 300);
     // eslint-disable-next-line react-hooks/exhaustive-deps

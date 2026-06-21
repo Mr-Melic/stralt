@@ -44587,47 +44587,56 @@ const GameOverModal = ({
   xpLost,
   dokaLost
 }) => {
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialog, { open: isOpen, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogContent, { className: "bg-gray-800 border-red-500", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogHeader, { children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center mb-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Skull, { className: "w-16 h-16 text-red-500" }) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogTitle, { className: "text-center text-2xl text-red-400", children: "Game Over" }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogDescription, { className: "text-center text-gray-300 space-y-2", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block", children: "You have been defeated in battle! You respawn on a new map — but at a cost." }),
-        xpLost !== void 0 && xpLost > 0 || dokaLost !== void 0 && dokaLost > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "span",
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    AlertDialog,
+    {
+      open: isOpen,
+      onOpenChange: (open) => {
+        if (!open) onRespawn();
+      },
+      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogContent, { className: "bg-gray-800 border-red-500", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogHeader, { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex items-center justify-center mb-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Skull, { className: "w-16 h-16 text-red-500" }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogTitle, { className: "text-center text-2xl text-red-400", children: "Game Over" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogDescription, { className: "text-center text-gray-300 space-y-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block", children: "You have been defeated in battle! You respawn on a new map — but at a cost." }),
+            xpLost !== void 0 && xpLost > 0 || dokaLost !== void 0 && dokaLost > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "span",
+              {
+                className: "block mt-2 rounded px-3 py-2 text-sm font-bold",
+                style: {
+                  background: "rgba(139,0,0,0.35)",
+                  border: "1px solid rgba(220,38,38,0.5)",
+                  color: "#fca5a5"
+                },
+                children: [
+                  xpLost !== void 0 && xpLost > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "block", children: [
+                    "📉 −",
+                    xpLost,
+                    " XP lost (20% penalty)"
+                  ] }),
+                  dokaLost !== void 0 && dokaLost > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "block", children: [
+                    "💸 −",
+                    dokaLost,
+                    " Doka lost (40% penalty)"
+                  ] })
+                ]
+              }
+            ) : null,
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block text-xs text-gray-400 mt-1", children: "Your level is preserved. Keep fighting!" })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogFooter, { className: "flex justify-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+          AlertDialogAction,
           {
-            className: "block mt-2 rounded px-3 py-2 text-sm font-bold",
-            style: {
-              background: "rgba(139,0,0,0.35)",
-              border: "1px solid rgba(220,38,38,0.5)",
-              color: "#fca5a5"
-            },
-            children: [
-              xpLost !== void 0 && xpLost > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "block", children: [
-                "📉 −",
-                xpLost,
-                " XP lost (20% penalty)"
-              ] }),
-              dokaLost !== void 0 && dokaLost > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "block", children: [
-                "💸 −",
-                dokaLost,
-                " Doka lost (40% penalty)"
-              ] })
-            ]
+            onClick: onRespawn,
+            className: "bg-purple-600 hover:bg-purple-700 text-white px-8 py-2",
+            children: "Respawn on New Map"
           }
-        ) : null,
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block text-xs text-gray-400 mt-1", children: "Your level is preserved. Keep fighting!" })
+        ) })
       ] })
-    ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogFooter, { className: "flex justify-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-      AlertDialogAction,
-      {
-        onClick: onRespawn,
-        className: "bg-purple-600 hover:bg-purple-700 text-white px-8 py-2",
-        children: "Respawn on New Map"
-      }
-    ) })
-  ] }) });
+    }
+  );
 };
 const MODIFIER_EMOJI = {
   slime_flood: "🟢",
@@ -58105,7 +58114,7 @@ const WorldExplorationInner = ({
     activeEffectsRef.current = [];
     setActiveEffects([]);
     deathRealmTimerRef.current = window.setTimeout(() => {
-      var _a5;
+      var _a5, _b4, _c3;
       const ctx = (_a5 = canvasRef.current) == null ? void 0 : _a5.getContext("2d");
       if (!ctx) return;
       deathRealmTimerRef.current = null;
@@ -58158,7 +58167,72 @@ const WorldExplorationInner = ({
         }, 100);
       } catch (err) {
         console.error("[death] death realm generation failed:", err);
-        setShowGameOver(true);
+        const safeTiles = Array(WORLD_GRID_SIZE).fill(null).map(() => Array(WORLD_GRID_SIZE).fill("floor"));
+        safeTiles[4][4] = "portal";
+        const fallbackMap = {
+          id: `map-fallback-${Date.now()}`,
+          tiles: safeTiles,
+          portals: [{ x: 4, y: 4, color: "blue", animationOffset: 0 }],
+          levelZone: { name: "Death Realm", minLevel: 1, maxLevel: 5 },
+          tilePatterns: {},
+          colorFamily: { r1: 55, g1: 45, b1: 80, r2: 75, g2: 60, b2: 105 },
+          wallPalette: ["#3a2a4a", "#4a3a5e"],
+          isDeathRealm: true,
+          isRestMap: false,
+          hazardTiles: /* @__PURE__ */ new Map(),
+          voidTiles: /* @__PURE__ */ new Map()
+        };
+        let fallbackSpawn = { x: 1, y: 1 };
+        let foundFallback = false;
+        for (let fy = 0; fy < safeTiles.length && !foundFallback; fy++) {
+          for (let fx = 0; fx < (((_b4 = safeTiles[fy]) == null ? void 0 : _b4.length) ?? 0) && !foundFallback; fx++) {
+            if (((_c3 = safeTiles[fy]) == null ? void 0 : _c3[fx]) === "floor") {
+              fallbackSpawn = { x: fx, y: fy };
+              foundFallback = true;
+            }
+          }
+        }
+        currentMapRef.current = fallbackMap;
+        setCurrentMap(fallbackMap);
+        setPlayerPosition(fallbackSpawn);
+        setPlayerView("front");
+        const fbScreenPos = gridToScreen(fallbackSpawn.x, fallbackSpawn.y);
+        const fbCenterX = canvasSize.width / 2;
+        const fbCenterY = canvasSize.height / 2;
+        const fbCamX = fbCenterX - fbScreenPos.x;
+        const fbCamY = fbCenterY - fbScreenPos.y;
+        cameraRef.current = { x: fbCamX, y: fbCamY };
+        targetCameraRef.current = { x: fbCamX, y: fbCamY };
+        cameraVelocityRef.current = { x: 0, y: 0 };
+        transitionInProgressRef.current = false;
+        setTransitionInProgress(false);
+        lastPortalRef.current = null;
+        setMapCount((prev) => prev + 1);
+        setCharacterStats((prev) => ({
+          ...prev,
+          hp: Math.max(
+            1,
+            Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5)
+          )
+        }));
+        setEnemies([]);
+        ue(
+          "💀 You have fallen... find a portal to escape the Death Realm.",
+          {
+            duration: 5e3,
+            style: {
+              background: "#1a0a0a",
+              border: "1px solid #8b0000",
+              color: "#ffaaaa"
+            }
+          }
+        );
+        if (cameraFollowTimerRef.current !== null)
+          clearTimeout(cameraFollowTimerRef.current);
+        cameraFollowTimerRef.current = window.setTimeout(() => {
+          cameraFollowTimerRef.current = null;
+          updateCameraToFollowPlayer();
+        }, 100);
       }
     }, 300);
   }, [(characterStats == null ? void 0 : characterStats.hp) ?? 0, inBattle]);
@@ -65095,7 +65169,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BIqaLsBz.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-tdbknKT1.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

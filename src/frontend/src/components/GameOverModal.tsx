@@ -24,7 +24,12 @@ const GameOverModal: React.FC<GameOverModalProps> = ({
   dokaLost,
 }) => {
   return (
-    <AlertDialog open={isOpen}>
+    <AlertDialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onRespawn();
+      }}
+    >
       <AlertDialogContent className="bg-gray-800 border-red-500">
         <AlertDialogHeader>
           <div className="flex items-center justify-center mb-4">
