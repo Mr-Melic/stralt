@@ -41,6 +41,20 @@ import PostBattleRecap from "./PostBattleRecap";
 import type { BattleRecapData } from "./PostBattleRecap";
 
 import {
+  calcScaledDamage,
+  computeAITier,
+  computeEnemyStats,
+  loadTierConfig,
+  pickEnemyLevelFromTiers,
+  seededRng,
+} from "../engine/combatMath";
+import {
+  applyVoidTiles,
+  checkVoidConnectivity,
+  countWalkableVoid,
+  pickMapArchetype,
+} from "../engine/mapGen";
+import {
   buildSpellContext,
   decrementSummonLifespan,
   getPlayerSideTargets,
@@ -48,6 +62,11 @@ import {
   renderSummonAura,
 } from "../engine/summonIntegration";
 import { spawnSummonUnit } from "../engine/summonSpawn";
+import {
+  getCameraFollowSpeed,
+  getSessionVersion,
+  nowTimestamp,
+} from "../engine/worldHelpers";
 import { useBossAI } from "../hooks/useBossAI";
 import { useBossRush } from "../hooks/useBossRush";
 import {
@@ -273,17 +292,7 @@ const ENEMY_MOVE_INTERVAL_MAX = 5000; // 5 seconds maximum between moves
 const _ENEMY_MOVEMENT_RANGE = 3; // Maximum tiles an enemy can move in one action
 const _ENEMY_MOVEMENT_SPEED = 800; // Duration of enemy movement animation
 
-// Adaptive camera follow speed based on screen size
-// Adaptive camera follow speed based on screen size
-const getCameraFollowSpeed = (screenWidth: number, isMobile: boolean) => {
-  if (isMobile) {
-    return 0.35; // Much snappier on mobile — tight follow
-  }
-  if (screenWidth < 1200) {
-    return 0.12; // Slightly slower for medium screens
-  }
-  return 0.08; // Much slower for large screens
-};
+// Adaptive camera follow speed imported from ../engine/worldHelpers
 
 // ── Tier-based enemy spawn system ─────────────────────────────────────────
 // Tiers are `tierSize` levels wide. Player tier = floor((level-1)/tierSize).
@@ -291,251 +300,9 @@ const getCameraFollowSpeed = (screenWidth: number, isMobile: boolean) => {
 // 5% ±3+ (split evenly among remaining).
 // Config is stored in localStorage (editable via admin panel).
 
-export interface TierSpawnConfig {
-  tierSize: number;
-  sameTierPercent: number;
-  adjacentTierPercent: number;
-  twoAwayPercent: number;
-  threeOrMorePercent: number;
-  levelVarianceChance?: number;
-}
+// nowTimestamp imported from ../engine/worldHelpers
 
-const DEFAULT_TIER_CONFIG: TierSpawnConfig = {
-  tierSize: 10,
-  sameTierPercent: 60,
-  adjacentTierPercent: 20,
-  twoAwayPercent: 10,
-  threeOrMorePercent: 5,
-};
-
-let _cachedBackendTierConfig: TierSpawnConfig | null = null;
-
-function loadTierConfig(): TierSpawnConfig {
-  if (_cachedBackendTierConfig) return _cachedBackendTierConfig;
-  try {
-    const raw = localStorage.getItem("pbv_tier_spawn_config");
-    if (raw) return { ...DEFAULT_TIER_CONFIG, ...JSON.parse(raw) };
-  } catch (e) {
-    console.warn("[AI] Tier config load failed, using safe defaults:", e);
-  }
-  return DEFAULT_TIER_CONFIG;
-}
-const AI_TIER_VARIANCE_CHANCE = 0.3;
-
-const computeAITier = (enemyLevel: number): number => {
-  let baseTier: number;
-  if (enemyLevel <= 10) baseTier = 1;
-  else if (enemyLevel <= 30) baseTier = 2;
-  else if (enemyLevel <= 60) baseTier = 3;
-  else if (enemyLevel <= 100) baseTier = 4;
-  else if (enemyLevel <= 150) baseTier = 5;
-  else if (enemyLevel <= 250) baseTier = 6;
-  else if (enemyLevel <= 400) baseTier = 7;
-  else if (enemyLevel <= 600) baseTier = 8;
-  else if (enemyLevel <= 900) baseTier = 9;
-  else baseTier = 10;
-  if (Math.random() < AI_TIER_VARIANCE_CHANCE) {
-    return Math.floor(Math.random() * 10) + 1;
-  }
-  return baseTier;
-};
-
-function pickEnemyLevelFromTiers(playerLevel: number): number {
-  const cfg = loadTierConfig();
-  const ts = Math.max(1, cfg.tierSize);
-  const playerTier = Math.floor((playerLevel - 1) / ts);
-  const maxTier = Math.floor(999 / ts); // cap for reasonable range
-
-  // Level variance roll — 15% default chance to shift tier ±1 (admin-configurable)
-  const _lvlVarChance = (cfg.levelVarianceChance ?? 15) / 100;
-  const _lvlVarRoll = Math.random();
-  let _tierAdj = 0;
-  if (_lvlVarRoll < _lvlVarChance) _tierAdj = -1;
-  else if (_lvlVarRoll > 1 - _lvlVarChance) _tierAdj = 1;
-  const adjustedPlayerTier = Math.max(
-    0,
-    Math.min(maxTier, playerTier + _tierAdj),
-  );
-
-  // Build weighted candidates
-  const same = Math.min(100, cfg.sameTierPercent);
-  const adj = Math.min(100 - same, cfg.adjacentTierPercent);
-  const twoAway = Math.min(100 - same - adj, cfg.twoAwayPercent);
-  const _threeMore = Math.max(0, 100 - same - adj - twoAway);
-
-  const rand = Math.random() * 100;
-  let chosenTier: number;
-
-  if (rand < same) {
-    chosenTier = adjustedPlayerTier;
-  } else if (rand < same + adj) {
-    // ±1 tier
-    const side = Math.random() < 0.5 ? 1 : -1;
-    chosenTier = Math.max(0, adjustedPlayerTier + side);
-  } else if (rand < same + adj + twoAway) {
-    // ±2 tier
-    const side = Math.random() < 0.5 ? 2 : -2;
-    chosenTier = Math.max(0, adjustedPlayerTier + side);
-  } else {
-    // ±3 or more — biased toward ±3 but can go higher
-    const dist = 3 + Math.floor(Math.random() * 4); // 3..6
-    const side = Math.random() < 0.5 ? 1 : -1;
-    chosenTier = Math.max(
-      0,
-      Math.min(maxTier, adjustedPlayerTier + side * dist),
-    );
-  }
-
-  // Convert tier index to a level in that tier's range
-  const tierMin = chosenTier * ts + 1;
-  const tierMax = (chosenTier + 1) * ts; // no upper cap for last tier
-  return Math.max(
-    1,
-    Math.floor(Math.random() * (tierMax - tierMin + 1)) + tierMin,
-  );
-}
-
-// Seeded pseudo-random number generator (pure, deterministic per grid position)
-function computeEnemyStats(
-  level: number,
-  pieceType: ChessPieceType,
-  seedKey: string | number,
-) {
-  const rng = seededRng(
-    typeof seedKey === "string"
-      ? seedKey.split("").reduce((a, c) => a + c.charCodeAt(0), 0)
-      : seedKey,
-  );
-  const base = Math.max(1, level);
-  const pieceMultipliers: Record<
-    ChessPieceType,
-    {
-      sp: number;
-      wr: number;
-      sr: number;
-      scp: number;
-      wp: number;
-      init: number;
-      res: number;
-      chc: number;
-    }
-  > = {
-    pawn: {
-      sp: 0.85,
-      wr: 0.85,
-      sr: 0.85,
-      scp: 0.85,
-      wp: 0.85,
-      init: 0.85,
-      res: 0.85,
-      chc: 0.85,
-    },
-    rook: {
-      sp: 0.8,
-      wr: 1.3,
-      sr: 1.2,
-      scp: 0.8,
-      wp: 1.1,
-      init: 1.1,
-      res: 1.35,
-      chc: 0.7,
-    },
-    knight: {
-      sp: 0.85,
-      wr: 1.25,
-      sr: 1.15,
-      scp: 0.85,
-      wp: 1.05,
-      init: 1.2,
-      res: 1.25,
-      chc: 0.8,
-    },
-    bishop: {
-      sp: 1.3,
-      wr: 0.75,
-      sr: 0.85,
-      scp: 1.25,
-      wp: 0.9,
-      init: 1.0,
-      res: 0.7,
-      chc: 1.2,
-    },
-    queen: {
-      sp: 1.25,
-      wr: 0.8,
-      sr: 0.9,
-      scp: 1.2,
-      wp: 0.95,
-      init: 1.1,
-      res: 0.75,
-      chc: 1.15,
-    },
-    king: {
-      sp: 1.0,
-      wr: 1.0,
-      sr: 1.0,
-      scp: 1.0,
-      wp: 1.0,
-      init: 1.0,
-      res: 1.0,
-      chc: 1.0,
-    },
-  };
-  const mult = pieceMultipliers[pieceType] ?? pieceMultipliers.king;
-  const roll = (min: number, max: number, m: number) => {
-    const raw = min + rng() * (max - min);
-    return Math.max(1, Math.round(raw * m));
-  };
-  return {
-    sp: roll(3, 6 + base * 1.2, mult.sp),
-    wr: roll(2, 4 + base * 1.0, mult.wr),
-    sr: roll(2, 4 + base * 1.0, mult.sr),
-    scp: roll(3, 6 + base * 1.2, mult.scp),
-    wp: roll(3, 6 + base * 1.2, mult.wp),
-    init: roll(3, 6 + base * 1.2, mult.init),
-    res: roll(2, 4 + base * 0.9, mult.res),
-    chc: roll(1, 3 + base * 0.7, mult.chc),
-  };
-}
-
-function seededRng(seed: number): () => number {
-  let val = Math.abs(seed) + 1;
-  return () => {
-    val = (val * 16807) % 2147483647;
-    return (val - 1) / 2147483646;
-  };
-}
-
-// Pure helpers — module-level so they never appear in useCallback dep arrays
-function nowTimestamp(): string {
-  const d = new Date();
-  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
-}
-
-function calcScaledDamage(
-  baseDamage: number,
-  _casterLevel: number,
-  spellUpgradeLevel = 0,
-): number {
-  // Base damage from spellbook PLUS upgrade bonus (+3% per level)
-  return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
-}
-
-// ── FIX-2: Session-version helpers — kill stale callbacks after error-boundary reload ──
-// When the CanvasErrorBoundary reloads the page it increments this counter in
-// localStorage first. Every new session reads it as its own version number.
-// AI setTimeout callbacks capture mySessionVersion at creation and abort if the
-// stored version has changed, preventing ghost actions from a previous crash session.
-const getSessionVersion = (): number => {
-  try {
-    return Number.parseInt(
-      localStorage.getItem("pbv_session_version") ?? "0",
-      10,
-    );
-  } catch {
-    return 0;
-  }
-};
+// getSessionVersion imported from ../engine/worldHelpers
 const _incrementSessionVersion = (): number => {
   try {
     const v = getSessionVersion() + 1;
@@ -717,199 +484,6 @@ class CanvasErrorBoundary extends Component<
   }
 }
 
-const MAP_ARCHETYPES = [
-  {
-    type: "openField" as const,
-    fillDensity: 0.22,
-    smoothPasses: 2,
-    weight: 25,
-  },
-  {
-    type: "corridorMaze" as const,
-    fillDensity: 0.55,
-    smoothPasses: 4,
-    weight: 15,
-  },
-  {
-    type: "fortress" as const,
-    fillDensity: 0.4,
-    smoothPasses: 3,
-    weight: 15,
-  },
-  {
-    type: "ruinsIslands" as const,
-    fillDensity: 0.3,
-    smoothPasses: 2,
-    weight: 15,
-  },
-  { type: "arena" as const, fillDensity: 0.12, smoothPasses: 1, weight: 10 },
-  {
-    type: "asymmetric" as const,
-    fillDensity: 0.35,
-    smoothPasses: 3,
-    weight: 10,
-  },
-  {
-    type: "chessboard" as const,
-    fillDensity: 0.5,
-    smoothPasses: 2,
-    weight: 10,
-  },
-];
-function pickMapArchetype() {
-  const totalWeight = MAP_ARCHETYPES.reduce((s, a) => s + a.weight, 0);
-  let r = Math.random() * totalWeight;
-  for (const a of MAP_ARCHETYPES) {
-    r -= a.weight;
-    if (r <= 0) return a;
-  }
-  return MAP_ARCHETYPES[0];
-}
-
-// Void tile helpers for organic map shapes — defined outside component to avoid useCallback dep issues
-function countWalkableVoid(
-  tilesArr: string[][],
-  vt: Set<string>,
-  w: number,
-  h: number,
-): number {
-  let n = 0;
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      if ((tilesArr[y]?.[x] as string) !== "wall" && !vt.has(`${x},${y}`)) n++;
-  return n;
-}
-function checkVoidConnectivity(
-  tilesArr: string[][],
-  vt: Set<string>,
-  w: number,
-  h: number,
-): boolean {
-  let sx = -1;
-  let sy = -1;
-  outer: for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      if ((tilesArr[y]?.[x] as string) !== "wall" && !vt.has(`${x},${y}`)) {
-        sx = x;
-        sy = y;
-        break outer;
-      }
-  if (sx < 0) return true;
-  const vis = new Set<string>();
-  const q = [`${sx},${sy}`];
-  while (q.length > 0) {
-    const k = q.shift()!;
-    if (vis.has(k)) continue;
-    vis.add(k);
-    const ps = k.split(",");
-    const kx = Number(ps[0]);
-    const ky = Number(ps[1]);
-    for (const d of [
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1],
-    ] as [number, number][]) {
-      const nx = kx + d[0];
-      const ny = ky + d[1];
-      const nk = `${nx},${ny}`;
-      if (
-        tilesArr[ny]?.[nx] &&
-        (tilesArr[ny][nx] as string) !== "wall" &&
-        !vt.has(nk) &&
-        !vis.has(nk)
-      )
-        q.push(nk);
-    }
-  }
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++)
-      if (
-        (tilesArr[y]?.[x] as string) !== "wall" &&
-        !vt.has(`${x},${y}`) &&
-        !vis.has(`${x},${y}`)
-      )
-        return false;
-  return true;
-}
-function applyVoidTiles(
-  tilesArr: string[][],
-  arch: string,
-  vt: Set<string>,
-  prot: Set<string>,
-  mw: number,
-  mh: number,
-): void {
-  const ec =
-    arch === "arena"
-      ? 0.04
-      : arch === "corridorMaze"
-        ? 0.18
-        : arch === "ruinsIslands"
-          ? 0.32
-          : 0.13;
-  for (let x = 0; x < mw; x++)
-    for (let y = 0; y < mh; y++) {
-      if ((tilesArr[y]?.[x] as string) === "wall" || prot.has(`${x},${y}`))
-        continue;
-      if (
-        (x <= 1 || y <= 1 || x >= mw - 2 || y >= mh - 2) &&
-        Math.random() < ec
-      )
-        vt.add(`${x},${y}`);
-    }
-  if (arch === "corridorMaze" || arch === "arena") return;
-  const cc =
-    arch === "ruinsIslands"
-      ? 5 + Math.floor(Math.random() * 3)
-      : 2 + Math.floor(Math.random() * 2);
-  const mw2 = countWalkableVoid(tilesArr, vt, mw, mh) * 0.55;
-  for (let c = 0; c < cc; c++) {
-    const ad: string[] = [];
-    let at = 0;
-    let cx = 0;
-    let cy = 0;
-    do {
-      cx = 2 + Math.floor(Math.random() * (mw - 4));
-      cy = 2 + Math.floor(Math.random() * (mh - 4));
-      at++;
-    } while (
-      at < 20 &&
-      ((tilesArr[cy]?.[cx] as string) === "wall" ||
-        vt.has(`${cx},${cy}`) ||
-        prot.has(`${cx},${cy}`))
-    );
-    if (at >= 20) continue;
-    const sz = 2 + Math.floor(Math.random() * 3);
-    const q = [`${cx},${cy}`];
-    while (ad.length < sz && q.length > 0) {
-      const k = q.shift()!;
-      if (vt.has(k) || prot.has(k)) continue;
-      const p = k.split(",");
-      const kx = Number(p[0]);
-      const ky = Number(p[1]);
-      if (!tilesArr[ky]?.[kx] || (tilesArr[ky][kx] as string) === "wall")
-        continue;
-      ad.push(k);
-      vt.add(k);
-      for (const d of [
-        [-1, 0],
-        [1, 0],
-        [0, -1],
-        [0, 1],
-      ] as [number, number][])
-        q.push(`${kx + d[0]},${ky + d[1]}`);
-    }
-    if (countWalkableVoid(tilesArr, vt, mw, mh) < mw2) {
-      for (const k of ad) vt.delete(k);
-    }
-  }
-  // M3 fix: run connectivity check once after all clusters placed
-  if (!checkVoidConnectivity(tilesArr, vt, mw, mh)) {
-    vt.clear();
-  }
-}
-
 const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   dokaBalance,
   onDokaBalanceChange,
@@ -977,24 +551,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             "pbv_tier_spawn_config",
             JSON.stringify(tierCfg),
           );
-          _cachedBackendTierConfig = {
-            ...DEFAULT_TIER_CONFIG,
-            tierSize: Number(tierCfg.tierSize ?? DEFAULT_TIER_CONFIG.tierSize),
+          const dtc = loadTierConfig();
+          const merged: typeof dtc = {
+            ...dtc,
+            tierSize: Number(tierCfg.tierSize ?? dtc.tierSize),
             sameTierPercent: Number(
-              tierCfg.sameTierPercent ?? DEFAULT_TIER_CONFIG.sameTierPercent,
+              tierCfg.sameTierPercent ?? dtc.sameTierPercent,
             ),
             adjacentTierPercent: Number(
-              tierCfg.adjacentTierPercent ??
-                DEFAULT_TIER_CONFIG.adjacentTierPercent,
+              tierCfg.adjacentTierPercent ?? dtc.adjacentTierPercent,
             ),
             twoAwayPercent: Number(
-              tierCfg.twoAwayPercent ?? DEFAULT_TIER_CONFIG.twoAwayPercent,
+              tierCfg.twoAwayPercent ?? dtc.twoAwayPercent,
             ),
             threeOrMorePercent: Number(
-              tierCfg.threeOrMorePercent ??
-                DEFAULT_TIER_CONFIG.threeOrMorePercent,
+              tierCfg.threeOrMorePercent ?? dtc.threeOrMorePercent,
             ),
           };
+          localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(merged));
         }
         tierConfigRef.current = loadTierConfig();
       } catch (_e) {

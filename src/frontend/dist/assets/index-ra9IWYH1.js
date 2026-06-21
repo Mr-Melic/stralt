@@ -44764,6 +44764,323 @@ const MapModifiersPanel = ({
     }
   );
 };
+const DEFAULT_TIER_CONFIG = {
+  tierSize: 10,
+  sameTierPercent: 60,
+  adjacentTierPercent: 20,
+  twoAwayPercent: 10,
+  threeOrMorePercent: 5
+};
+function loadTierConfig() {
+  try {
+    const raw = localStorage.getItem("pbv_tier_spawn_config");
+    if (raw) return { ...DEFAULT_TIER_CONFIG, ...JSON.parse(raw) };
+  } catch (e) {
+    console.warn("[AI] Tier config load failed, using safe defaults:", e);
+  }
+  return DEFAULT_TIER_CONFIG;
+}
+const AI_TIER_VARIANCE_CHANCE = 0.3;
+const computeAITier = (enemyLevel) => {
+  let baseTier;
+  if (enemyLevel <= 10) baseTier = 1;
+  else if (enemyLevel <= 30) baseTier = 2;
+  else if (enemyLevel <= 60) baseTier = 3;
+  else if (enemyLevel <= 100) baseTier = 4;
+  else if (enemyLevel <= 150) baseTier = 5;
+  else if (enemyLevel <= 250) baseTier = 6;
+  else if (enemyLevel <= 400) baseTier = 7;
+  else if (enemyLevel <= 600) baseTier = 8;
+  else if (enemyLevel <= 900) baseTier = 9;
+  else baseTier = 10;
+  if (Math.random() < AI_TIER_VARIANCE_CHANCE) {
+    return Math.floor(Math.random() * 10) + 1;
+  }
+  return baseTier;
+};
+function pickEnemyLevelFromTiers(playerLevel) {
+  const cfg = loadTierConfig();
+  const ts = Math.max(1, cfg.tierSize);
+  const playerTier = Math.floor((playerLevel - 1) / ts);
+  const maxTier = Math.floor(999 / ts);
+  const _lvlVarChance = (cfg.levelVarianceChance ?? 15) / 100;
+  const _lvlVarRoll = Math.random();
+  let _tierAdj = 0;
+  if (_lvlVarRoll < _lvlVarChance) _tierAdj = -1;
+  else if (_lvlVarRoll > 1 - _lvlVarChance) _tierAdj = 1;
+  const adjustedPlayerTier = Math.max(
+    0,
+    Math.min(maxTier, playerTier + _tierAdj)
+  );
+  const same = Math.min(100, cfg.sameTierPercent);
+  const adj = Math.min(100 - same, cfg.adjacentTierPercent);
+  const twoAway = Math.min(100 - same - adj, cfg.twoAwayPercent);
+  const rand = Math.random() * 100;
+  let chosenTier;
+  if (rand < same) {
+    chosenTier = adjustedPlayerTier;
+  } else if (rand < same + adj) {
+    const side = Math.random() < 0.5 ? 1 : -1;
+    chosenTier = Math.max(0, adjustedPlayerTier + side);
+  } else if (rand < same + adj + twoAway) {
+    const side = Math.random() < 0.5 ? 2 : -2;
+    chosenTier = Math.max(0, adjustedPlayerTier + side);
+  } else {
+    const dist2 = 3 + Math.floor(Math.random() * 4);
+    const side = Math.random() < 0.5 ? 1 : -1;
+    chosenTier = Math.max(
+      0,
+      Math.min(maxTier, adjustedPlayerTier + side * dist2)
+    );
+  }
+  const tierMin = chosenTier * ts + 1;
+  const tierMax = (chosenTier + 1) * ts;
+  return Math.max(
+    1,
+    Math.floor(Math.random() * (tierMax - tierMin + 1)) + tierMin
+  );
+}
+function computeEnemyStats(level, pieceType, seedKey) {
+  const rng = seededRng(
+    typeof seedKey === "string" ? seedKey.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0) : seedKey
+  );
+  const base = Math.max(1, level);
+  const pieceMultipliers = {
+    pawn: {
+      sp: 0.85,
+      wr: 0.85,
+      sr: 0.85,
+      scp: 0.85,
+      wp: 0.85,
+      init: 0.85,
+      res: 0.85,
+      chc: 0.85
+    },
+    rook: {
+      sp: 0.8,
+      wr: 1.3,
+      sr: 1.2,
+      scp: 0.8,
+      wp: 1.1,
+      init: 1.1,
+      res: 1.35,
+      chc: 0.7
+    },
+    knight: {
+      sp: 0.85,
+      wr: 1.25,
+      sr: 1.15,
+      scp: 0.85,
+      wp: 1.05,
+      init: 1.2,
+      res: 1.25,
+      chc: 0.8
+    },
+    bishop: {
+      sp: 1.3,
+      wr: 0.75,
+      sr: 0.85,
+      scp: 1.25,
+      wp: 0.9,
+      init: 1,
+      res: 0.7,
+      chc: 1.2
+    },
+    queen: {
+      sp: 1.25,
+      wr: 0.8,
+      sr: 0.9,
+      scp: 1.2,
+      wp: 0.95,
+      init: 1.1,
+      res: 0.75,
+      chc: 1.15
+    },
+    king: {
+      sp: 1,
+      wr: 1,
+      sr: 1,
+      scp: 1,
+      wp: 1,
+      init: 1,
+      res: 1,
+      chc: 1
+    }
+  };
+  const mult = pieceMultipliers[pieceType] ?? pieceMultipliers.king;
+  const roll = (min, max, m2) => {
+    const raw = min + rng() * (max - min);
+    return Math.max(1, Math.round(raw * m2));
+  };
+  return {
+    sp: roll(3, 6 + base * 1.2, mult.sp),
+    wr: roll(2, 4 + base * 1, mult.wr),
+    sr: roll(2, 4 + base * 1, mult.sr),
+    scp: roll(3, 6 + base * 1.2, mult.scp),
+    wp: roll(3, 6 + base * 1.2, mult.wp),
+    init: roll(3, 6 + base * 1.2, mult.init),
+    res: roll(2, 4 + base * 0.9, mult.res),
+    chc: roll(1, 3 + base * 0.7, mult.chc)
+  };
+}
+function seededRng(seed) {
+  let val = Math.abs(seed) + 1;
+  return () => {
+    val = val * 16807 % 2147483647;
+    return (val - 1) / 2147483646;
+  };
+}
+function calcScaledDamage(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
+  return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
+}
+const MAP_ARCHETYPES = [
+  {
+    type: "openField",
+    fillDensity: 0.22,
+    smoothPasses: 2,
+    weight: 25
+  },
+  {
+    type: "corridorMaze",
+    fillDensity: 0.55,
+    smoothPasses: 4,
+    weight: 15
+  },
+  {
+    type: "fortress",
+    fillDensity: 0.4,
+    smoothPasses: 3,
+    weight: 15
+  },
+  {
+    type: "ruinsIslands",
+    fillDensity: 0.3,
+    smoothPasses: 2,
+    weight: 15
+  },
+  { type: "arena", fillDensity: 0.12, smoothPasses: 1, weight: 10 },
+  {
+    type: "asymmetric",
+    fillDensity: 0.35,
+    smoothPasses: 3,
+    weight: 10
+  },
+  {
+    type: "chessboard",
+    fillDensity: 0.5,
+    smoothPasses: 2,
+    weight: 10
+  }
+];
+function pickMapArchetype() {
+  const totalWeight = MAP_ARCHETYPES.reduce((s2, a2) => s2 + a2.weight, 0);
+  let r2 = Math.random() * totalWeight;
+  for (const a2 of MAP_ARCHETYPES) {
+    r2 -= a2.weight;
+    if (r2 <= 0) return a2;
+  }
+  return MAP_ARCHETYPES[0];
+}
+function countWalkableVoid(tilesArr, vt, w2, h2) {
+  var _a3;
+  let n = 0;
+  for (let y2 = 0; y2 < h2; y2++)
+    for (let x3 = 0; x3 < w2; x3++)
+      if (((_a3 = tilesArr[y2]) == null ? void 0 : _a3[x3]) !== "wall" && !vt.has(`${x3},${y2}`)) n++;
+  return n;
+}
+function checkVoidConnectivity(tilesArr, vt, w2, h2) {
+  var _a3, _b3, _c2;
+  let sx = -1;
+  let sy = -1;
+  outer: for (let y2 = 0; y2 < h2; y2++)
+    for (let x3 = 0; x3 < w2; x3++)
+      if (((_a3 = tilesArr[y2]) == null ? void 0 : _a3[x3]) !== "wall" && !vt.has(`${x3},${y2}`)) {
+        sx = x3;
+        sy = y2;
+        break outer;
+      }
+  if (sx < 0) return true;
+  const vis = /* @__PURE__ */ new Set();
+  const q2 = [`${sx},${sy}`];
+  while (q2.length > 0) {
+    const k2 = q2.shift();
+    if (vis.has(k2)) continue;
+    vis.add(k2);
+    const ps = k2.split(",");
+    const kx = Number(ps[0]);
+    const ky = Number(ps[1]);
+    for (const d2 of [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1]
+    ]) {
+      const nx = kx + d2[0];
+      const ny = ky + d2[1];
+      const nk = `${nx},${ny}`;
+      if (((_b3 = tilesArr[ny]) == null ? void 0 : _b3[nx]) && tilesArr[ny][nx] !== "wall" && !vt.has(nk) && !vis.has(nk))
+        q2.push(nk);
+    }
+  }
+  for (let y2 = 0; y2 < h2; y2++)
+    for (let x3 = 0; x3 < w2; x3++)
+      if (((_c2 = tilesArr[y2]) == null ? void 0 : _c2[x3]) !== "wall" && !vt.has(`${x3},${y2}`) && !vis.has(`${x3},${y2}`))
+        return false;
+  return true;
+}
+function applyVoidTiles$1(tilesArr, arch, vt, prot, mw, mh) {
+  var _a3, _b3, _c2;
+  const ec = arch === "arena" ? 0.04 : arch === "corridorMaze" ? 0.18 : arch === "ruinsIslands" ? 0.32 : 0.13;
+  for (let x3 = 0; x3 < mw; x3++)
+    for (let y2 = 0; y2 < mh; y2++) {
+      if (((_a3 = tilesArr[y2]) == null ? void 0 : _a3[x3]) === "wall" || prot.has(`${x3},${y2}`))
+        continue;
+      if ((x3 <= 1 || y2 <= 1 || x3 >= mw - 2 || y2 >= mh - 2) && Math.random() < ec)
+        vt.add(`${x3},${y2}`);
+    }
+  if (arch === "corridorMaze" || arch === "arena") return;
+  const cc = arch === "ruinsIslands" ? 5 + Math.floor(Math.random() * 3) : 2 + Math.floor(Math.random() * 2);
+  const mw2 = countWalkableVoid(tilesArr, vt, mw, mh) * 0.55;
+  for (let c2 = 0; c2 < cc; c2++) {
+    const ad = [];
+    let at = 0;
+    let cx2 = 0;
+    let cy = 0;
+    do {
+      cx2 = 2 + Math.floor(Math.random() * (mw - 4));
+      cy = 2 + Math.floor(Math.random() * (mh - 4));
+      at++;
+    } while (at < 20 && (((_b3 = tilesArr[cy]) == null ? void 0 : _b3[cx2]) === "wall" || vt.has(`${cx2},${cy}`) || prot.has(`${cx2},${cy}`)));
+    if (at >= 20) continue;
+    const sz = 2 + Math.floor(Math.random() * 3);
+    const q2 = [`${cx2},${cy}`];
+    while (ad.length < sz && q2.length > 0) {
+      const k2 = q2.shift();
+      if (vt.has(k2) || prot.has(k2)) continue;
+      const p2 = k2.split(",");
+      const kx = Number(p2[0]);
+      const ky = Number(p2[1]);
+      if (!((_c2 = tilesArr[ky]) == null ? void 0 : _c2[kx]) || tilesArr[ky][kx] === "wall")
+        continue;
+      ad.push(k2);
+      vt.add(k2);
+      for (const d2 of [
+        [-1, 0],
+        [1, 0],
+        [0, -1],
+        [0, 1]
+      ])
+        q2.push(`${kx + d2[0]},${ky + d2[1]}`);
+    }
+    if (countWalkableVoid(tilesArr, vt, mw, mh) < mw2) {
+      for (const k2 of ad) vt.delete(k2);
+    }
+  }
+  if (!checkVoidConnectivity(tilesArr, vt, mw, mh)) {
+    vt.clear();
+  }
+}
 function renderSummonAura(ctx, enemy, screenX, screenY) {
   if (enemy.isSummon && enemy.side === "player") {
     ctx.save();
@@ -44863,6 +45180,29 @@ function spawnSummonUnit(cell, spell, ownerId, level, enemies, turnOrder, log2, 
   turnOrder.push(entry);
   turnOrder.sort((a2, b2) => b2.initiative - a2.initiative);
   log2(`${summon.name} appears!`, "#5cf08a");
+}
+function nowTimestamp() {
+  const d2 = /* @__PURE__ */ new Date();
+  return `${d2.getHours().toString().padStart(2, "0")}:${d2.getMinutes().toString().padStart(2, "0")}`;
+}
+function getCameraFollowSpeed(screenWidth, isMobile) {
+  if (isMobile) {
+    return 0.35;
+  }
+  if (screenWidth < 1200) {
+    return 0.12;
+  }
+  return 0.08;
+}
+function getSessionVersion() {
+  try {
+    return Number.parseInt(
+      localStorage.getItem("pbv_session_version") ?? "0",
+      10
+    );
+  } catch {
+    return 0;
+  }
 }
 function getAdjacentTiles(x3, y2, allTiles, occupied = []) {
   const dirs = [
@@ -45171,7 +45511,7 @@ function applyAttackAllLines(params) {
     );
   return { damageToPlayer, damageToTargets, logMessages: msgs };
 }
-function applyVoidTiles$1(params) {
+function applyVoidTiles(params) {
   const { bossEntry, allTiles } = params;
   const dirs = [
     [0, -2],
@@ -46065,7 +46405,7 @@ function applyBossAbility(ability, params, extra = {}) {
     case BossAbility.ATTACK_ALL_LINES:
       return applyAttackAllLines(params);
     case BossAbility.VOID_TILES:
-      return applyVoidTiles$1(params);
+      return applyVoidTiles(params);
     case BossAbility.COMPOUNDING_ROT:
       return applyCompoundingRot(params);
     case BossAbility.SPLIT_ROOKS:
@@ -48891,200 +49231,6 @@ const CAMERA_SMOOTHING_FACTOR = 0.85;
 const CHARACTER_Y_OFFSET = -9;
 const ENEMY_MOVE_INTERVAL_MIN = 2e3;
 const ENEMY_MOVE_INTERVAL_MAX = 5e3;
-const getCameraFollowSpeed = (screenWidth, isMobile) => {
-  if (isMobile) {
-    return 0.35;
-  }
-  if (screenWidth < 1200) {
-    return 0.12;
-  }
-  return 0.08;
-};
-const DEFAULT_TIER_CONFIG = {
-  tierSize: 10,
-  sameTierPercent: 60,
-  adjacentTierPercent: 20,
-  twoAwayPercent: 10,
-  threeOrMorePercent: 5
-};
-let _cachedBackendTierConfig = null;
-function loadTierConfig() {
-  if (_cachedBackendTierConfig) return _cachedBackendTierConfig;
-  try {
-    const raw = localStorage.getItem("pbv_tier_spawn_config");
-    if (raw) return { ...DEFAULT_TIER_CONFIG, ...JSON.parse(raw) };
-  } catch (e) {
-    console.warn("[AI] Tier config load failed, using safe defaults:", e);
-  }
-  return DEFAULT_TIER_CONFIG;
-}
-const AI_TIER_VARIANCE_CHANCE = 0.3;
-const computeAITier = (enemyLevel) => {
-  let baseTier;
-  if (enemyLevel <= 10) baseTier = 1;
-  else if (enemyLevel <= 30) baseTier = 2;
-  else if (enemyLevel <= 60) baseTier = 3;
-  else if (enemyLevel <= 100) baseTier = 4;
-  else if (enemyLevel <= 150) baseTier = 5;
-  else if (enemyLevel <= 250) baseTier = 6;
-  else if (enemyLevel <= 400) baseTier = 7;
-  else if (enemyLevel <= 600) baseTier = 8;
-  else if (enemyLevel <= 900) baseTier = 9;
-  else baseTier = 10;
-  if (Math.random() < AI_TIER_VARIANCE_CHANCE) {
-    return Math.floor(Math.random() * 10) + 1;
-  }
-  return baseTier;
-};
-function pickEnemyLevelFromTiers(playerLevel) {
-  const cfg = loadTierConfig();
-  const ts = Math.max(1, cfg.tierSize);
-  const playerTier = Math.floor((playerLevel - 1) / ts);
-  const maxTier = Math.floor(999 / ts);
-  const _lvlVarChance = (cfg.levelVarianceChance ?? 15) / 100;
-  const _lvlVarRoll = Math.random();
-  let _tierAdj = 0;
-  if (_lvlVarRoll < _lvlVarChance) _tierAdj = -1;
-  else if (_lvlVarRoll > 1 - _lvlVarChance) _tierAdj = 1;
-  const adjustedPlayerTier = Math.max(
-    0,
-    Math.min(maxTier, playerTier + _tierAdj)
-  );
-  const same = Math.min(100, cfg.sameTierPercent);
-  const adj = Math.min(100 - same, cfg.adjacentTierPercent);
-  const twoAway = Math.min(100 - same - adj, cfg.twoAwayPercent);
-  const rand = Math.random() * 100;
-  let chosenTier;
-  if (rand < same) {
-    chosenTier = adjustedPlayerTier;
-  } else if (rand < same + adj) {
-    const side = Math.random() < 0.5 ? 1 : -1;
-    chosenTier = Math.max(0, adjustedPlayerTier + side);
-  } else if (rand < same + adj + twoAway) {
-    const side = Math.random() < 0.5 ? 2 : -2;
-    chosenTier = Math.max(0, adjustedPlayerTier + side);
-  } else {
-    const dist2 = 3 + Math.floor(Math.random() * 4);
-    const side = Math.random() < 0.5 ? 1 : -1;
-    chosenTier = Math.max(
-      0,
-      Math.min(maxTier, adjustedPlayerTier + side * dist2)
-    );
-  }
-  const tierMin = chosenTier * ts + 1;
-  const tierMax = (chosenTier + 1) * ts;
-  return Math.max(
-    1,
-    Math.floor(Math.random() * (tierMax - tierMin + 1)) + tierMin
-  );
-}
-function computeEnemyStats(level, pieceType, seedKey) {
-  const rng = seededRng(
-    typeof seedKey === "string" ? seedKey.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0) : seedKey
-  );
-  const base = Math.max(1, level);
-  const pieceMultipliers = {
-    pawn: {
-      sp: 0.85,
-      wr: 0.85,
-      sr: 0.85,
-      scp: 0.85,
-      wp: 0.85,
-      init: 0.85,
-      res: 0.85,
-      chc: 0.85
-    },
-    rook: {
-      sp: 0.8,
-      wr: 1.3,
-      sr: 1.2,
-      scp: 0.8,
-      wp: 1.1,
-      init: 1.1,
-      res: 1.35,
-      chc: 0.7
-    },
-    knight: {
-      sp: 0.85,
-      wr: 1.25,
-      sr: 1.15,
-      scp: 0.85,
-      wp: 1.05,
-      init: 1.2,
-      res: 1.25,
-      chc: 0.8
-    },
-    bishop: {
-      sp: 1.3,
-      wr: 0.75,
-      sr: 0.85,
-      scp: 1.25,
-      wp: 0.9,
-      init: 1,
-      res: 0.7,
-      chc: 1.2
-    },
-    queen: {
-      sp: 1.25,
-      wr: 0.8,
-      sr: 0.9,
-      scp: 1.2,
-      wp: 0.95,
-      init: 1.1,
-      res: 0.75,
-      chc: 1.15
-    },
-    king: {
-      sp: 1,
-      wr: 1,
-      sr: 1,
-      scp: 1,
-      wp: 1,
-      init: 1,
-      res: 1,
-      chc: 1
-    }
-  };
-  const mult = pieceMultipliers[pieceType] ?? pieceMultipliers.king;
-  const roll = (min, max, m2) => {
-    const raw = min + rng() * (max - min);
-    return Math.max(1, Math.round(raw * m2));
-  };
-  return {
-    sp: roll(3, 6 + base * 1.2, mult.sp),
-    wr: roll(2, 4 + base * 1, mult.wr),
-    sr: roll(2, 4 + base * 1, mult.sr),
-    scp: roll(3, 6 + base * 1.2, mult.scp),
-    wp: roll(3, 6 + base * 1.2, mult.wp),
-    init: roll(3, 6 + base * 1.2, mult.init),
-    res: roll(2, 4 + base * 0.9, mult.res),
-    chc: roll(1, 3 + base * 0.7, mult.chc)
-  };
-}
-function seededRng(seed) {
-  let val = Math.abs(seed) + 1;
-  return () => {
-    val = val * 16807 % 2147483647;
-    return (val - 1) / 2147483646;
-  };
-}
-function nowTimestamp() {
-  const d2 = /* @__PURE__ */ new Date();
-  return `${d2.getHours().toString().padStart(2, "0")}:${d2.getMinutes().toString().padStart(2, "0")}`;
-}
-function calcScaledDamage(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
-  return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
-}
-const getSessionVersion = () => {
-  try {
-    return Number.parseInt(
-      localStorage.getItem("pbv_session_version") ?? "0",
-      10
-    );
-  } catch {
-    return 0;
-  }
-};
 class CanvasErrorBoundary extends reactExports.Component {
   constructor(props) {
     super(props);
@@ -49259,154 +49405,6 @@ class CanvasErrorBoundary extends reactExports.Component {
     return this.props.children;
   }
 }
-const MAP_ARCHETYPES = [
-  {
-    type: "openField",
-    fillDensity: 0.22,
-    smoothPasses: 2,
-    weight: 25
-  },
-  {
-    type: "corridorMaze",
-    fillDensity: 0.55,
-    smoothPasses: 4,
-    weight: 15
-  },
-  {
-    type: "fortress",
-    fillDensity: 0.4,
-    smoothPasses: 3,
-    weight: 15
-  },
-  {
-    type: "ruinsIslands",
-    fillDensity: 0.3,
-    smoothPasses: 2,
-    weight: 15
-  },
-  { type: "arena", fillDensity: 0.12, smoothPasses: 1, weight: 10 },
-  {
-    type: "asymmetric",
-    fillDensity: 0.35,
-    smoothPasses: 3,
-    weight: 10
-  },
-  {
-    type: "chessboard",
-    fillDensity: 0.5,
-    smoothPasses: 2,
-    weight: 10
-  }
-];
-function pickMapArchetype() {
-  const totalWeight = MAP_ARCHETYPES.reduce((s2, a2) => s2 + a2.weight, 0);
-  let r2 = Math.random() * totalWeight;
-  for (const a2 of MAP_ARCHETYPES) {
-    r2 -= a2.weight;
-    if (r2 <= 0) return a2;
-  }
-  return MAP_ARCHETYPES[0];
-}
-function countWalkableVoid(tilesArr, vt, w2, h2) {
-  var _a3;
-  let n = 0;
-  for (let y2 = 0; y2 < h2; y2++)
-    for (let x3 = 0; x3 < w2; x3++)
-      if (((_a3 = tilesArr[y2]) == null ? void 0 : _a3[x3]) !== "wall" && !vt.has(`${x3},${y2}`)) n++;
-  return n;
-}
-function checkVoidConnectivity(tilesArr, vt, w2, h2) {
-  var _a3, _b3, _c2;
-  let sx = -1;
-  let sy = -1;
-  outer: for (let y2 = 0; y2 < h2; y2++)
-    for (let x3 = 0; x3 < w2; x3++)
-      if (((_a3 = tilesArr[y2]) == null ? void 0 : _a3[x3]) !== "wall" && !vt.has(`${x3},${y2}`)) {
-        sx = x3;
-        sy = y2;
-        break outer;
-      }
-  if (sx < 0) return true;
-  const vis = /* @__PURE__ */ new Set();
-  const q2 = [`${sx},${sy}`];
-  while (q2.length > 0) {
-    const k2 = q2.shift();
-    if (vis.has(k2)) continue;
-    vis.add(k2);
-    const ps = k2.split(",");
-    const kx = Number(ps[0]);
-    const ky = Number(ps[1]);
-    for (const d2 of [
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1]
-    ]) {
-      const nx = kx + d2[0];
-      const ny = ky + d2[1];
-      const nk = `${nx},${ny}`;
-      if (((_b3 = tilesArr[ny]) == null ? void 0 : _b3[nx]) && tilesArr[ny][nx] !== "wall" && !vt.has(nk) && !vis.has(nk))
-        q2.push(nk);
-    }
-  }
-  for (let y2 = 0; y2 < h2; y2++)
-    for (let x3 = 0; x3 < w2; x3++)
-      if (((_c2 = tilesArr[y2]) == null ? void 0 : _c2[x3]) !== "wall" && !vt.has(`${x3},${y2}`) && !vis.has(`${x3},${y2}`))
-        return false;
-  return true;
-}
-function applyVoidTiles(tilesArr, arch, vt, prot, mw, mh) {
-  var _a3, _b3, _c2;
-  const ec = arch === "arena" ? 0.04 : arch === "corridorMaze" ? 0.18 : arch === "ruinsIslands" ? 0.32 : 0.13;
-  for (let x3 = 0; x3 < mw; x3++)
-    for (let y2 = 0; y2 < mh; y2++) {
-      if (((_a3 = tilesArr[y2]) == null ? void 0 : _a3[x3]) === "wall" || prot.has(`${x3},${y2}`))
-        continue;
-      if ((x3 <= 1 || y2 <= 1 || x3 >= mw - 2 || y2 >= mh - 2) && Math.random() < ec)
-        vt.add(`${x3},${y2}`);
-    }
-  if (arch === "corridorMaze" || arch === "arena") return;
-  const cc = arch === "ruinsIslands" ? 5 + Math.floor(Math.random() * 3) : 2 + Math.floor(Math.random() * 2);
-  const mw2 = countWalkableVoid(tilesArr, vt, mw, mh) * 0.55;
-  for (let c2 = 0; c2 < cc; c2++) {
-    const ad = [];
-    let at = 0;
-    let cx2 = 0;
-    let cy = 0;
-    do {
-      cx2 = 2 + Math.floor(Math.random() * (mw - 4));
-      cy = 2 + Math.floor(Math.random() * (mh - 4));
-      at++;
-    } while (at < 20 && (((_b3 = tilesArr[cy]) == null ? void 0 : _b3[cx2]) === "wall" || vt.has(`${cx2},${cy}`) || prot.has(`${cx2},${cy}`)));
-    if (at >= 20) continue;
-    const sz = 2 + Math.floor(Math.random() * 3);
-    const q2 = [`${cx2},${cy}`];
-    while (ad.length < sz && q2.length > 0) {
-      const k2 = q2.shift();
-      if (vt.has(k2) || prot.has(k2)) continue;
-      const p2 = k2.split(",");
-      const kx = Number(p2[0]);
-      const ky = Number(p2[1]);
-      if (!((_c2 = tilesArr[ky]) == null ? void 0 : _c2[kx]) || tilesArr[ky][kx] === "wall")
-        continue;
-      ad.push(k2);
-      vt.add(k2);
-      for (const d2 of [
-        [-1, 0],
-        [1, 0],
-        [0, -1],
-        [0, 1]
-      ])
-        q2.push(`${kx + d2[0]},${ky + d2[1]}`);
-    }
-    if (countWalkableVoid(tilesArr, vt, mw, mh) < mw2) {
-      for (const k2 of ad) vt.delete(k2);
-    }
-  }
-  if (!checkVoidConnectivity(tilesArr, vt, mw, mh)) {
-    vt.clear();
-  }
-}
 const WorldExplorationInner = ({
   dokaBalance,
   onDokaBalanceChange,
@@ -49468,22 +49466,24 @@ const WorldExplorationInner = ({
             "pbv_tier_spawn_config",
             JSON.stringify(tierCfg)
           );
-          _cachedBackendTierConfig = {
-            ...DEFAULT_TIER_CONFIG,
-            tierSize: Number(tierCfg.tierSize ?? DEFAULT_TIER_CONFIG.tierSize),
+          const dtc = loadTierConfig();
+          const merged = {
+            ...dtc,
+            tierSize: Number(tierCfg.tierSize ?? dtc.tierSize),
             sameTierPercent: Number(
-              tierCfg.sameTierPercent ?? DEFAULT_TIER_CONFIG.sameTierPercent
+              tierCfg.sameTierPercent ?? dtc.sameTierPercent
             ),
             adjacentTierPercent: Number(
-              tierCfg.adjacentTierPercent ?? DEFAULT_TIER_CONFIG.adjacentTierPercent
+              tierCfg.adjacentTierPercent ?? dtc.adjacentTierPercent
             ),
             twoAwayPercent: Number(
-              tierCfg.twoAwayPercent ?? DEFAULT_TIER_CONFIG.twoAwayPercent
+              tierCfg.twoAwayPercent ?? dtc.twoAwayPercent
             ),
             threeOrMorePercent: Number(
-              tierCfg.threeOrMorePercent ?? DEFAULT_TIER_CONFIG.threeOrMorePercent
+              tierCfg.threeOrMorePercent ?? dtc.threeOrMorePercent
             )
           };
+          localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(merged));
         }
         tierConfigRef.current = loadTierConfig();
       } catch (_e3) {
@@ -53098,7 +53098,7 @@ const WorldExplorationInner = ({
       for (const p2 of portals) {
         _voidProt.add(`${p2.x},${p2.y}`);
       }
-      applyVoidTiles(
+      applyVoidTiles$1(
         tiles,
         _arch.type,
         voidTiles,
@@ -65009,7 +65009,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-B1qOC6RF.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DM_Xcdkd.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
