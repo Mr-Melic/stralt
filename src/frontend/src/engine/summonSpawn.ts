@@ -6,7 +6,9 @@
 
 export interface SummonUnitDef {
   pieceType: string;
+  level: number;
   hpScale?: number;
+  damageScale?: number;
 }
 
 export interface SpawnedSummon {

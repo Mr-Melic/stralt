@@ -25,7 +25,9 @@ import type {
   ActiveEffect,
   AdminGameConfig,
   BattleLogEntry,
+  ChessPieceType,
   DokaLootItem,
+  Enemy,
   SpellConfig,
 } from "../types/gameTypes";
 import AchievementToast from "./AchievementToast";
@@ -40,6 +42,18 @@ import MapModifiersPanel from "./MapModifiersPanel";
 import PostBattleRecap from "./PostBattleRecap";
 import type { BattleRecapData } from "./PostBattleRecap";
 
+import {
+  CHARACTER_Y_OFFSET,
+  ENEMY_MOVE_INTERVAL_MAX,
+  ENEMY_MOVE_INTERVAL_MIN,
+  MAX_ENEMIES,
+  MAX_HAZARD_TILES,
+  MOVEMENT_DURATION,
+  TILE_HEIGHT,
+  TILE_WIDTH,
+  WORLD_GRID_SIZE,
+} from "../data/gameConstants";
+import { physicalAttackSpell, starterSpells } from "../data/spellData";
 import {
   calcScaledDamage,
   computeAITier,
@@ -115,75 +129,55 @@ interface WorldExplorationProps {
 
 type TileType = "floor" | "wall" | "portal";
 type ViewDirection = "front" | "back" | "left" | "right";
-type ChessPieceType = "king" | "queen" | "pawn" | "rook" | "bishop" | "knight";
-
-type HazardType = "lava" | "ice" | "spikes";
-
+type HazardType =
+  | "spike"
+  | "poison"
+  | "fire"
+  | "ice"
+  | "void"
+  | "lava"
+  | "spikes";
 type PortalColor =
-  | "black"
   | "blue"
   | "red"
-  | "dungeon"
-  | "boss"
+  | "green"
+  | "purple"
+  | "gold"
+  | "black"
   | "rest"
+  | "boss"
+  | "dungeon"
   | "bossRush";
-
 interface GameMap {
   id: string;
   tiles: TileType[][];
-  portals: {
-    x: number;
-    y: number;
-    color: PortalColor;
-    animationOffset: number;
-    /** True for the special dungeon-entry portal (crimson whirlpool) */
-    isDungeonEntry?: boolean;
-    /** True when this portal leads to a boss encounter map */
-    isBossPortal?: boolean;
-    /** Boss id this portal leads to (only for boss portals) */
-    bossPortalId?: string;
-    /** True when this portal leads to a rest map */
-    isRestPortal?: boolean;
-    /** True when this portal exits a rest map back to the world */
-    isRestExit?: boolean;
-    /** Where a rest-exit portal leads back to */
-    restExitType?: "normal" | "dungeon" | "boss";
-    /** True when this portal leads to the Boss Rush mode */
-    isBossRushPortal?: boolean;
-  }[];
-  levelZone: LevelZone;
-  tilePatterns: { [key: string]: number[][] }; // Store unique patterns per tile
-  colorFamily: {
-    // per-map tile color family, chosen once at generation time
-    r1: number;
-    g1: number;
-    b1: number; // dark end
-    r2: number;
-    g2: number;
-    b2: number; // light end
-  };
-  // per-map wall palette: array of 2-4 hex colors from a harmonious palette
-  wallPalette: string[];
-  /** True when this map is the death realm (no enemies, no walls) */
-  isDeathRealm?: boolean;
-  /** True when this map is a rest area (no enemies, whitish-grey theme) */
-  isRestMap?: boolean;
-  /** EXP5: Hazard tiles keyed by "x,y" → hazard type */
-  hazardTiles: Map<string, HazardType>;
-  voidTiles?: Set<string>;
+  width?: number;
+  height?: number;
+  startX?: number;
+  startY?: number;
+  endX?: number;
+  endY?: number;
+  portals: any[];
+  levelZone: any;
+  tilePatterns: any;
+  colorFamily: any;
+  wallPalette: any;
+  isDeathRealm: boolean;
+  isRestMap: boolean;
+  hazardTiles: any;
+  voidTiles: any;
 }
-
 interface LevelZone {
+  id?: string;
   name: string;
   minLevel: number;
   maxLevel: number;
+  mapArchetype?: string;
 }
-
 interface PlayerPosition {
   x: number;
   y: number;
 }
-
 interface PathNode {
   x: number;
   y: number;
@@ -192,11 +186,13 @@ interface PathNode {
   f: number;
   parent?: PathNode;
 }
-
 interface CharacterStats {
   hp: number;
+  maxHp: number;
   ap: number;
+  maxAp: number;
   mp: number;
+  maxMp: number;
   sp: number;
   wr: number;
   sr: number;
@@ -205,92 +201,16 @@ interface CharacterStats {
   init: number;
   res: number;
   chc: number;
+  fail: number;
   level: number;
   exp: number;
   expToNext: number;
 }
 
-interface Enemy {
-  id: string;
-  x: number;
-  y: number;
-  pieceType: ChessPieceType;
-  currentView: ViewDirection;
-  isMoving: boolean;
-  movementPath: PlayerPosition[];
-  currentStepIndex: number;
-  movementStartTime: number;
-  initialDelay: number;
-  hasStartedMoving: boolean;
-  spawnTime: number;
-  scaleX: number;
-  scaleY: number;
-  level: number;
-  // NEW: Enhanced movement properties for visible random movement
-  nextMoveTime: number;
-  movementSpeed: number;
-  movementRange: number;
-  isWandering: boolean;
-  wanderTarget: PlayerPosition | null;
-  lastMoveTime: number;
-  // Battle spells assigned at battle start
-  spells?: import("../types/gameTypes").SpellConfig[];
-  enraged?: boolean;
-  // Combat stats seeded at battle start
-  hp: number;
-  maxHp: number;
-  damage: number;
-  res: number; // 0-15, resistance %
-  sp: number; // 0-15, spell-power resistance %
-  chc: number; // 0-10, critical hit chance %
-  init: number;
-  wr: number;
-  sr: number;
-  scp: number;
-  wp: number;
-  /** Ancient name assigned at spawn time from the admin-managed names list */
-  assignedName?: string;
-  /** True if this enemy is the designated group leader in a battle */
-  isLeader?: boolean;
-  /** Number of allies that have died since this enemy became leader (stacks stat boost) */
-  leaderBoostCount?: number;
-  isBoss?: boolean;
-  bossId?: string;
-  family?: EnemyFamily;
-  aiTier?: number;
-  _plagueSpawned?: boolean;
-  /** Side in combat: player, enemy, or summon */
-  side?: "player" | "enemy";
-  /** True if this unit is a summoned ally */
-  isSummon?: boolean;
-  /** AI behavior kind for summoned units */
-  summonAI?: string;
-  /** Owner combatant id for summons */
-  ownerId?: string;
-  /** Turns remaining before summon fades */
-  turnsRemaining?: number;
-  campTurnCount?: number;
-  escapeRouteTriggered?: boolean;
-  /** True if this enemy is a boss minion (e.g. ghost boss) */
-  isBossMinion?: boolean;
-}
-
-const TILE_WIDTH = 80;
-const TILE_HEIGHT = 40;
-const WORLD_GRID_SIZE = 16;
-const MAX_HAZARD_TILES = 50;
-const MAX_ENEMIES = 20;
-const MOVEMENT_DURATION = 600;
 const _CAMERA_DEADZONE = 30;
 const _CAMERA_MAX_OFFSET = 150;
 const CAMERA_SMOOTHING_FACTOR = 0.85;
 
-// UPDATED: Character positioning offset - adjusted to -9 units for improved visual centering on tiles
-const CHARACTER_Y_OFFSET = -9; // Changed from -4 to -9 for improved visual centering on tiles
-
-// NEW: Enemy movement constants for visible random movement
-const ENEMY_MOVE_INTERVAL_MIN = 2000; // 2 seconds minimum between moves
-const ENEMY_MOVE_INTERVAL_MAX = 5000; // 5 seconds maximum between moves
 const _ENEMY_MOVEMENT_RANGE = 3; // Maximum tiles an enemy can move in one action
 const _ENEMY_MOVEMENT_SPEED = 800; // Duration of enemy movement animation
 
@@ -1604,687 +1524,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     y: number;
   } | null>(null);
 
-  // Physical attack — always available as a spell slot (can be upgraded)
-  const physicalAttackSpell: SpellConfig = useMemo(
-    () => ({
-      id: "physical_attack",
-      name: "Strike",
-      description: "A direct physical attack. Only RES applies (not SP).",
-      iconEmoji: "\uD83D\uDC4A",
-      apCost: BigInt(2),
-      mpCost: BigInt(0),
-      damage: BigInt(10),
-      range: BigInt(1),
-      effectType: "damage",
-      spellType: "damage" as const,
-      isPhysical: true,
-      targetType: "enemy" as const,
-      areaShape: "single" as const,
-      areaRadius: 0,
-      isBaseSpell: true,
-    }),
-    [],
-  );
-
-  // Fallback starter spells when backend has none — includes all new spell types
-  // All starter spells are base/innate — they are always owned and never removable
-  const starterSpells: SpellConfig[] = useMemo(
-    () => [
-      { ...physicalAttackSpell, isBaseSpell: true as const },
-
-      {
-        id: "starter-shield",
-        name: "Shield",
-        description: "A magical shield that increases RES by 30% for 3 turns",
-        iconEmoji: "\uD83D\uDEE1\uFE0F",
-        apCost: BigInt(2),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "buff",
-        spellType: "damage" as const,
-        buffStat: "res",
-        buffModifier: 1.3,
-        buffDuration: 3,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "starter-poison",
-        name: "Poison Arrow",
-        description: "A poison arrow that deals 4 damage each turn for 3 turns",
-        iconEmoji: "\u2620\uFE0F",
-        apCost: BigInt(2),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(4),
-        effectType: "dot",
-        spellType: "damage" as const,
-        isDotSpell: true,
-        dotType: "poison" as const,
-        dotDamage: 4,
-        dotDamagePerTurn: 4,
-        dotDuration: 3,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "starter-blast",
-        name: "Chain Lightning",
-        description: "Hits primary target then bounces to 2 nearest enemies",
-        iconEmoji: "\u26A1",
-        apCost: BigInt(4),
-        mpCost: BigInt(0),
-        damage: BigInt(20),
-        range: BigInt(4),
-        effectType: "damage",
-        spellType: "damage" as const,
-        hitsMultiple: true,
-        bounces: 2,
-        targetType: "area" as const,
-        areaShape: "circle" as const,
-        areaRadius: 2,
-      },
-      {
-        id: "starter-heal",
-        name: "Blood Mend",
-        description: "Heal yourself for 12 HP and gain +15% CHC for 2 turns",
-        iconEmoji: "\u2764\uFE0F",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "heal",
-        spellType: "heal" as const,
-        healAmount: 12,
-        buffStat: "chc",
-        buffModifier: 0.15,
-        buffDuration: 2,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "starter-drain",
-        name: "Life Drain",
-        description:
-          "Drain 10 HP from enemy and gain 5 HP, reduce target SP by 20% for 2 turns",
-        iconEmoji: "\uD83C\uDF00",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(10),
-        range: BigInt(2),
-        effectType: "drain",
-        spellType: "drain" as const,
-        healAmount: 5,
-        debuffStat: "sp",
-        debuffModifier: 0.8,
-        debuffDuration: 2,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "starter-frost",
-        name: "Frost Bolt",
-        description: "Deal 20 damage and reduce target MP by -1 for 1 turn",
-        iconEmoji: "\u2744\uFE0F",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(20),
-        range: BigInt(4),
-        effectType: "damage",
-        spellType: "damage" as const,
-        debuffStat: "mp",
-        debuffModifier: -1,
-        debuffDuration: 1,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      // New unique spells
-      {
-        id: "spell-swap",
-        name: "Swap",
-        description: "Teleport caster and target to each other's cells",
-        iconEmoji: "\uD83D\uDD04",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(3),
-        effectType: "teleport",
-        spellType: "damage" as const,
-        isSwap: true,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-mark",
-        name: "Mark",
-        description:
-          "Mark target tile — next spell on that tile deals x2 damage",
-        iconEmoji: "\uD83C\uDFAF",
-        apCost: BigInt(2),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(4),
-        effectType: "debuff",
-        spellType: "damage" as const,
-        isMark: true,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-barrier",
-        name: "Barrier",
-        description:
-          "Places a temporary solid block on a free tile for 2 turns",
-        iconEmoji: "\uD83E\uDDF1",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(2),
-        effectType: "defense",
-        spellType: "damage" as const,
-        isBarrier: true,
-        freeCells: true,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-mirror",
-        name: "Mirror",
-        description: "Reflects the next incoming spell back at the attacker",
-        iconEmoji: "\uD83E\uDEA9",
-        apCost: BigInt(4),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "defense",
-        spellType: "damage" as const,
-        isMirror: true,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-timestep",
-        name: "Timestep",
-        description: "Resets your AP and MP to full. Once per battle.",
-        iconEmoji: "\u23F1\uFE0F",
-        apCost: BigInt(0),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "buff",
-        spellType: "damage" as const,
-        isTimestep: true,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-sacrifice",
-        name: "Sacrifice",
-        description:
-          "Lose 20% of own HP to deal 3x that amount as damage to target",
-        iconEmoji: "\uD83D\uDC80",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(1),
-        effectType: "damage",
-        spellType: "damage" as const,
-        isSacrifice: true,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-lifesteal-nova",
-        name: "Lifesteal Nova",
-        description:
-          "AoE drain: damages all adjacent tiles, heals caster 10 per hit",
-        iconEmoji: "\uD83C\uDF11",
-        apCost: BigInt(5),
-        mpCost: BigInt(0),
-        damage: BigInt(20),
-        range: BigInt(1),
-        effectType: "drain",
-        spellType: "drain" as const,
-        healAmount: 10,
-        hitsMultiple: true,
-        hitsAllies: false,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "area" as const,
-        areaShape: "circle" as const,
-        areaRadius: 2,
-      },
-      {
-        id: "spell-enrage",
-        name: "Enrage",
-        description: "Buff own DMG by +40% for 2 turns",
-        iconEmoji: "\uD83D\uDE21",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "buff",
-        spellType: "damage" as const,
-        buffStat: "dmg",
-        buffModifier: 1.4,
-        buffDuration: 2,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-iron-skin",
-        name: "Iron Skin",
-        description: "Buff own RES by +30% for 3 turns",
-        iconEmoji: "\uD83D\uDEE1\uFE0F",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "buff",
-        spellType: "damage" as const,
-        buffStat: "res",
-        buffModifier: 1.3,
-        buffDuration: 3,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-haste",
-        name: "Haste",
-        description: "Buff own MP by +2 for 1 turn",
-        iconEmoji: "\uD83D\uDCA8",
-        apCost: BigInt(2),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "buff",
-        spellType: "damage" as const,
-        buffStat: "mp",
-        buffModifier: 2,
-        buffDuration: 1,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-weaken",
-        name: "Weaken",
-        description: "Reduce target DMG by -30% for 2 turns",
-        iconEmoji: "\uD83D\uDE29",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(3),
-        effectType: "debuff",
-        spellType: "damage" as const,
-        debuffStat: "dmg",
-        debuffModifier: 0.7,
-        debuffDuration: 2,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-slow",
-        name: "Slow",
-        description: "Reduce target MP by -2 for 2 turns",
-        iconEmoji: "\uD83D\uDC0C",
-        apCost: BigInt(2),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(3),
-        effectType: "debuff",
-        spellType: "damage" as const,
-        debuffStat: "mp",
-        debuffModifier: -2,
-        debuffDuration: 2,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-expose",
-        name: "Expose",
-        description:
-          "Deal 15 damage + debuff target RES and SP by -20% for 2 turns",
-        iconEmoji: "\uD83D\uDD0D",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(15),
-        range: BigInt(3),
-        effectType: "damage",
-        spellType: "damage" as const,
-        debuffStat: "res_sp",
-        debuffModifier: 0.8,
-        debuffDuration: 2,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-venom-strike",
-        name: "Venom Strike",
-        description: "Apply venom (4 dmg/turn for 3 turns). No upfront damage.",
-        iconEmoji: "\uD83D\uDC0D",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(2),
-        effectType: "dot",
-        spellType: "damage" as const,
-        isDotSpell: true,
-        dotType: "venom" as const,
-        dotDamage: 4,
-        dotDamagePerTurn: 4,
-        dotDuration: 3,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-rallying-cry",
-        name: "Rallying Cry",
-        description: "Heal self for 20 + buff own CHC by +15% for 2 turns",
-        iconEmoji: "\uD83D\uDCE3",
-        apCost: BigInt(4),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(0),
-        effectType: "heal",
-        spellType: "heal" as const,
-        healAmount: 20,
-        buffStat: "chc",
-        buffModifier: 0.15,
-        buffDuration: 2,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "self" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-drain-courage",
-        name: "Drain Courage",
-        description:
-          "Drain target for 18 (heal self 9) + reduce target AP by -1 next turn",
-        iconEmoji: "\uD83D\uDCA7",
-        apCost: BigInt(4),
-        mpCost: BigInt(0),
-        damage: BigInt(18),
-        range: BigInt(2),
-        effectType: "drain",
-        spellType: "drain" as const,
-        healAmount: 9,
-        debuffStat: "ap",
-        debuffModifier: -1,
-        debuffDuration: 1,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-cursed-wound",
-        name: "Cursed Wound",
-        description:
-          "Deal 22 damage + reduce target heal received by -50% for 2 turns",
-        iconEmoji: "\uD83E\uDE78",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(22),
-        range: BigInt(3),
-        effectType: "damage",
-        spellType: "damage" as const,
-        debuffStat: "healRecv",
-        debuffModifier: 0.5,
-        debuffDuration: 2,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-shadow-veil",
-        name: "Shadow Veil",
-        description:
-          "Deal 18 dark damage and reduce target RES+SP by -15% for 2 turns",
-        iconEmoji: "\uD83D\uDC7B",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(18),
-        range: BigInt(3),
-        effectType: "damage",
-        spellType: "damage" as const,
-        debuffStat: "res_sp",
-        debuffModifier: 0.85,
-        debuffDuration: 2,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-inferno",
-        name: "Inferno",
-        description:
-          "Intense fire blast \u2014 burns target for 8 dmg/turn for 3 turns",
-        iconEmoji: "\uD83D\uDD25",
-        apCost: BigInt(5),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(3),
-        effectType: "dot",
-        spellType: "damage" as const,
-        isDotSpell: true,
-        dotType: "burn" as const,
-        dotDamage: 8,
-        dotDamagePerTurn: 8,
-        dotDuration: 3,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        cooldown: 3,
-        targetType: "enemy" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "spell-frost-nova",
-        name: "Frost Nova",
-        description:
-          "AoE ice burst around caster — deals 15 damage and slows all nearby",
-        iconEmoji: "\u2744\uFE0F",
-        apCost: BigInt(4),
-        mpCost: BigInt(0),
-        damage: BigInt(15),
-        range: BigInt(1),
-        effectType: "damage",
-        spellType: "damage" as const,
-        hitsMultiple: true,
-        debuffStat: "mp",
-        debuffModifier: -1,
-        debuffDuration: 1,
-        usableByPlayer: true,
-        usableByEnemy: true,
-        targetType: "area" as const,
-        areaShape: "circle" as const,
-        areaRadius: 2,
-      },
-      {
-        id: "summon-dire-wolf",
-        name: "Summon Dire Wolf",
-        description: "Summons a Dire Wolf that hunts enemies.",
-        iconEmoji: "\uD83D\uDC3A",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(2),
-        effectType: "summon",
-        spellType: "summon" as const,
-        isSummon: true,
-        summonAI: "hunter",
-        summonUnitDef: {
-          pieceType: "wolf",
-          level: 1,
-          hpScale: 1.0,
-          damageScale: 1.0,
-        },
-        summonLifespan: 4,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "ground" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "summon-sentinel",
-        name: "Summon Sentinel",
-        description: "Summons a Sentinel that guards you.",
-        iconEmoji: "\uD83D\uDEE1\uFE0F",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(2),
-        effectType: "summon",
-        spellType: "summon" as const,
-        isSummon: true,
-        summonAI: "guardian",
-        summonUnitDef: {
-          pieceType: "golem",
-          level: 1,
-          hpScale: 1.5,
-          damageScale: 0.6,
-        },
-        summonLifespan: 5,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "ground" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "summon-archer",
-        name: "Summon Archer",
-        description: "Summons an Archer that kites enemies.",
-        iconEmoji: "\uD83C\uDFF9",
-        apCost: BigInt(3),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(2),
-        effectType: "summon",
-        spellType: "summon" as const,
-        isSummon: true,
-        summonAI: "archer",
-        summonUnitDef: {
-          pieceType: "archer",
-          level: 1,
-          hpScale: 0.7,
-          damageScale: 1.2,
-        },
-        summonLifespan: 4,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "ground" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "summon-bomber",
-        name: "Summon Bomber",
-        description: "Summons a Bomber that rushes and explodes.",
-        iconEmoji: "\uD83D\uDCA3",
-        apCost: BigInt(2),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(2),
-        effectType: "summon",
-        spellType: "summon" as const,
-        isSummon: true,
-        summonAI: "bomber",
-        summonUnitDef: {
-          pieceType: "bomber",
-          level: 1,
-          hpScale: 0.5,
-          damageScale: 1.5,
-        },
-        summonLifespan: 3,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "ground" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-      {
-        id: "summon-wisp",
-        name: "Summon Wisp",
-        description: "Summons a Wisp that heals allies.",
-        iconEmoji: "\u2728",
-        apCost: BigInt(2),
-        mpCost: BigInt(0),
-        damage: BigInt(0),
-        range: BigInt(2),
-        effectType: "summon",
-        spellType: "summon" as const,
-        isSummon: true,
-        summonAI: "healer",
-        summonUnitDef: {
-          pieceType: "wisp",
-          level: 1,
-          hpScale: 0.6,
-          damageScale: 0,
-        },
-        summonLifespan: 5,
-        usableByPlayer: true,
-        usableByEnemy: false,
-        targetType: "ground" as const,
-        areaShape: "single" as const,
-        areaRadius: 0,
-      },
-    ],
-    [physicalAttackSpell],
-  );
+  // starterSpells and physicalAttackSpell are imported from ../data/spellData
 
   // Spell pool for enemy assignment = backend spells if any, else fallback starters
   const OLD_SPELL_NAMES_SET = new Set([
@@ -2338,7 +1578,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       base.unshift({ ...physicalAttackSpell, isBaseSpell: true });
     }
     return base;
-  }, [starterSpells, physicalAttackSpell]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Owned spells = base spells UNION acquired spells (backend), deduplicated by id
   // If a spell exists in both, the base version wins (preserves isBaseSpell flag)
@@ -2626,8 +1867,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const expToNext = Math.floor(100 * 2 ** (savedLevel - 1));
     return {
       hp: s?.hp != null ? Number(s.hp) : 100,
+      maxHp: s?.hp != null ? Number(s.hp) : 100,
       ap: s?.ap != null ? Number(s.ap) : 4,
+      maxAp: s?.ap != null ? Number(s.ap) : 4,
       mp: s?.mp != null ? Number(s.mp) : 3,
+      maxMp: s?.mp != null ? Number(s.mp) : 3,
       sp: s?.sp != null ? Number(s.sp) : 2,
       wr: s?.wr != null ? Number(s.wr) : 0,
       sr: s?.sr != null ? Number(s.sr) : 0,
@@ -2636,6 +1880,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       init: s?.init != null ? Number(s.init) : 10,
       res: s?.res != null ? Number(s.res) : 0,
       chc: s?.chc != null ? Number(s.chc) : 1,
+      fail: 0,
       level: savedLevel,
       exp: savedExp,
       expToNext,
@@ -3950,6 +3195,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         black: ["#000000", "#333333", "#666666"],
         blue: ["#001133", "#003366", "#0066cc"],
         red: ["#330011", "#660033", "#cc0066"],
+        green: ["#003311", "#006633", "#00cc66"],
+        purple: ["#220033", "#550066", "#9900cc"],
+        gold: ["#332200", "#665500", "#cc9900"],
         dungeon: ["#4a0000", "#8b0000", "#cc0000"],
         boss: ["#1a0033", "#5b1fa0", "#9333ea"],
         bossRush: ["#1a0040", "#9900cc", "#ff66ff"],
@@ -5220,6 +4468,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       wallPalette,
       hazardTiles,
       voidTiles,
+      isDeathRealm: false,
+      isRestMap: false,
     };
 
     // Spawn at map center — ensure center tile is not a void tile
@@ -5322,7 +4572,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       colorFamily: drColorFamily,
       wallPalette: drWallPalette,
       isDeathRealm: true,
+      isRestMap: false,
       hazardTiles: new Map(), // No hazards in Death Realm
+      voidTiles: new Map(),
     };
     let spawnPos = { x: 1, y: 1 };
     outerLoop: for (let ry = 0; ry < map.tiles.length; ry++) {
@@ -5392,6 +4644,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       colorFamily: { r1: 200, g1: 200, b1: 205, r2: 220, g2: 220, b2: 225 },
       hazardTiles: new Map(),
       isRestMap: true,
+      isDeathRealm: false,
+      voidTiles: new Map(),
     };
     // Spawn near center of rest map
     const center = Math.floor(size / 2);
@@ -5711,7 +4965,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentStepIndex: 0,
             movementStartTime: 0,
             initialDelay,
-            hasStartedMoving: false,
             spawnTime: currentTime,
             scaleX: scaleFactors.scaleX,
             scaleY: scaleFactors.scaleY,
@@ -5845,7 +5098,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           en.family = fam;
           en.hp = Math.max(1, Math.round(en.hp * m.hpMult));
           en.maxHp = en.hp;
-          en.damage = Math.max(1, Math.round(en.damage * m.dmgMult));
+          en.damage = Math.max(1, Math.round((en.damage ?? 0) * m.dmgMult));
           en.res = m.res;
           en.sp = m.spRes;
           en.aiTier = computeAITier(en.level ?? 1);
@@ -6333,7 +5586,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentStepIndex: 0,
             movementStartTime: 0,
             initialDelay: 500,
-            hasStartedMoving: false,
             spawnTime: Date.now(),
             scaleX: 1.4,
             scaleY: 1.4,
@@ -6371,6 +5623,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             wp: 10,
             assignedName: bossConf.name,
             isLeader: true,
+            family: "boss",
           },
         ];
         // Initialise boss state
@@ -6728,9 +5981,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // Skip if enemy is already moving
         if (enemy.isMoving) {
           // Check if current movement is complete
-          const elapsed = currentTime - enemy.movementStartTime;
+          const elapsed = currentTime - enemy.movementStartTime!;
           const stepDuration =
-            enemy.movementSpeed / Math.max(enemy.movementPath.length, 1);
+            enemy.movementSpeed! / Math.max(enemy.movementPath.length, 1);
           const targetStepIndex = Math.floor(elapsed / stepDuration);
 
           if (targetStepIndex >= enemy.movementPath.length) {
@@ -6755,7 +6008,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               wanderTarget: null,
             };
           }
-          if (targetStepIndex > enemy.currentStepIndex) {
+          if (targetStepIndex > enemy.currentStepIndex!) {
             // Update current step and position during movement
             const newPosition = enemy.movementPath[targetStepIndex];
 
@@ -6791,7 +6044,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentMap.tiles,
             enemy.x,
             enemy.y,
-            enemy.movementRange,
+            enemy.movementRange!,
           );
 
           if (target) {
@@ -7995,10 +7248,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ctx.shadowColor = "#aaddff";
             ctx.shadowBlur = 10;
             const familyPatU = getEnemyFamilyPixelPattern(
-              enemy.family ?? "default",
+              (enemy.family as EnemyFamily) ?? "default",
             );
             const familyColorMapU = getEnemyFamilyColors(
-              enemy.family ?? "default",
+              (enemy.family as EnemyFamily) ?? "default",
             );
             drawPixelPattern(
               ctx,
@@ -8014,8 +7267,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             ctx.restore();
           } else if (enemy.family && enemy.family !== "default") {
-            const familyPatU = getEnemyFamilyPixelPattern(enemy.family);
-            const familyColorMapU = getEnemyFamilyColors(enemy.family);
+            const familyPatU = getEnemyFamilyPixelPattern(
+              enemy.family as EnemyFamily,
+            );
+            const familyColorMapU = getEnemyFamilyColors(
+              enemy.family as EnemyFamily,
+            );
             drawPixelPattern(
               ctx,
               familyPatU,
@@ -8120,7 +7377,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (enemy.isWandering && !enemy.isMoving) {
             const pulseAlpha =
               0.3 +
-              0.2 * Math.sin(Date.now() * 0.005 + enemy.spawnTime * 0.001);
+              0.2 * Math.sin(Date.now() * 0.005 + enemy.spawnTime! * 0.001);
             ctx.save();
             ctx.globalAlpha = pulseAlpha;
             ctx.strokeStyle = "#4ade80";
@@ -11684,7 +10941,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         colorFamily: { r1: 55, g1: 45, b1: 80, r2: 75, g2: 60, b2: 105 },
         wallPalette: ["#3a2a4a", "#4a3a5e"],
         isDeathRealm: true,
+        isRestMap: false,
         hazardTiles: new Map(),
+        voidTiles: new Map(),
       };
       // Dynamic fallback: find first walkable floor tile
       let foundFallback = false;
@@ -12827,6 +12086,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   scp: 5,
                   wp: 5,
                   assignedName: s.parentBossId ? "Minion" : "Ghost",
+                  ap: 0,
+                  mp: 0,
+                  atk: 0,
+                  family: "",
+                  tier: "",
+                  intelligence: 0,
+                  aiStrategy: "",
+                  spellCooldowns: {},
+                  activeEffects: [],
                 }));
                 setEnemies((prev) => {
                   const spawnSlots = Math.max(0, MAX_ENEMIES - prev.length);

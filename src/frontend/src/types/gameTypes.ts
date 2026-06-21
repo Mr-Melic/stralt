@@ -219,6 +219,8 @@ export interface SpellConfig {
   isTrap?: boolean;
   isMark?: boolean;
   isSummon?: boolean;
+  summonAI?: string;
+  summonLifespan?: number;
   summonUnitDef?: SummonUnitDef;
 }
 
@@ -248,13 +250,17 @@ export interface Enemy {
   hp: number;
   /** Maximum HP seeded at battle start (level * 10 formula) */
   maxHp: number;
-  ap: number;
-  mp: number;
-  atk: number;
+  ap?: number;
+  mp?: number;
+  atk?: number;
   res: number;
   sp: number;
   chc: number;
   init: number;
+  wr?: number;
+  sr?: number;
+  scp?: number;
+  wp?: number;
   pieceType: ChessPieceType;
   /** Spells assigned at battle start */
   spells?: SpellConfig[];
@@ -266,6 +272,45 @@ export interface Enemy {
   isLeader?: boolean;
   /** Number of non-leader allies that have died since leadership assigned (each death stacks a stat boost) */
   leaderBoostCount?: number;
+  // Movement & rendering fields
+  currentView: "front" | "back" | "left" | "right";
+  isMoving: boolean;
+  movementPath: { x: number; y: number }[];
+  scaleX: number;
+  scaleY: number;
+  nextMoveTime: number;
+  lastMoveTime?: number;
+  // AI & meta fields
+  family: string;
+  tier?: string;
+  intelligence?: number;
+  aiStrategy?: string;
+  spellCooldowns?: Record<string, number>;
+  activeEffects?: ActiveEffect[];
+  wanderTarget?: { x: number; y: number } | null;
+  // Summon fields
+  isSummon?: boolean;
+  summonAI?: string;
+  summonLifespan?: number;
+  ownerId?: string;
+  turnsRemaining?: number;
+  side?: "player" | "enemy";
+  // Movement & AI fields
+  damage?: number;
+  aiTier?: number;
+  currentStepIndex?: number;
+  movementStartTime?: number;
+  movementSpeed?: number;
+  isWandering?: boolean;
+  movementRange?: number;
+  initialDelay?: number;
+  // Boss fields
+  isBoss?: boolean;
+  bossId?: string;
+  isBossMinion?: boolean;
+  spawnTime?: number;
+  campTurnCount?: number;
+  escapeRouteTriggered?: boolean;
 }
 
 export interface DokaLootItem {
