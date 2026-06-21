@@ -46,13 +46,15 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
       claimMut.mutate(achievement.id, {
-        onSuccess: () => {
-          onDokaBalanceChange(achievement.dokaReward);
-          toast.success(
-            `🏆 Claimed ${achievement.dokaReward.toLocaleString()} Doka!`,
-          );
+        onSuccess: (result) => {
+          if ("ok" in result) {
+            const granted = Number(result.ok);
+            onDokaBalanceChange(granted);
+            toast.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
+          } else if ("err" in result) {
+            toast.error(`Failed to claim reward: ${result.err}`);
+          }
         },
-        onError: () => toast.error("Failed to claim reward"),
       });
     },
     [claimMut, onDokaBalanceChange],

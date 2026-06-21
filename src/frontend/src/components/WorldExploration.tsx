@@ -10238,7 +10238,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // BOSS RUSH FIX: reset the guard for each boss rush room so every
       if (battleEndedRef.current) return;
       battleEndedRef.current = true;
-      const _battleEndGen = aiGenerationRef.current;
       try {
         const challengeResults = evaluateChallenges(
           {
@@ -10281,6 +10280,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // pending timeouts, turn-timer interval, jackpot timer, VFX, battle flags,
         // mirror/barrier/spellRange/enemyPath caches, and idleTurnCount.
         cleanupBattle();
+        const _battleEndGen = aiGenerationRef.current;
         setInBattle(false);
         playSound("battle_end");
         setBattleEnemies([]);

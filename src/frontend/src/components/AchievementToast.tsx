@@ -43,15 +43,30 @@ const AchievementToast: React.FC<AchievementToastProps> = ({
     };
   }, [onDismiss]);
 
+  const handleClick = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    onDismiss();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleClick();
+    }
+  };
+
   // Slide down from just above the top bar, then settle below it
   const translateY =
     phase === "in" ? "-20px" : phase === "out" ? "-20px" : "0px";
   const opacity = phase === "visible" ? 1 : 0;
 
   return (
-    <div
+    <button
+      type="button"
       data-ocid="achievement_toast"
       aria-live="polite"
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
       style={{
         position: "fixed",
         // sit just below the 44px top bar so it never overlaps the header
@@ -74,7 +89,7 @@ const AchievementToast: React.FC<AchievementToastProps> = ({
         padding: "9px 14px",
         minWidth: 220,
         maxWidth: 300,
-        pointerEvents: "none",
+        cursor: "pointer",
       }}
     >
       {/* Gold trophy icon */}
@@ -157,7 +172,7 @@ const AchievementToast: React.FC<AchievementToastProps> = ({
           50% { transform: scale(1.18); }
         }
       `}</style>
-    </div>
+    </button>
   );
 };
 

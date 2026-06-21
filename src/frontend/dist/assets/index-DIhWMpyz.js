@@ -33450,13 +33450,15 @@ const AchievementsPanel = ({
   const handleClaim = reactExports.useCallback(
     (achievement) => {
       claimMut.mutate(achievement.id, {
-        onSuccess: () => {
-          onDokaBalanceChange(achievement.dokaReward);
-          ue.success(
-            `🏆 Claimed ${achievement.dokaReward.toLocaleString()} Doka!`
-          );
-        },
-        onError: () => ue.error("Failed to claim reward")
+        onSuccess: (result) => {
+          if ("ok" in result) {
+            const granted = Number(result.ok);
+            onDokaBalanceChange(granted);
+            ue.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
+          } else if ("err" in result) {
+            ue.error(`Failed to claim reward: ${result.err}`);
+          }
+        }
       });
     },
     [claimMut, onDokaBalanceChange]
@@ -42775,13 +42777,26 @@ const AchievementToast = ({
       clearTimeout(dismissTimer);
     };
   }, [onDismiss]);
+  const handleClick = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    onDismiss();
+  };
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleClick();
+    }
+  };
   const translateY = phase === "in" ? "-20px" : phase === "out" ? "-20px" : "0px";
   const opacity = phase === "visible" ? 1 : 0;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "div",
+    "button",
     {
+      type: "button",
       "data-ocid": "achievement_toast",
       "aria-live": "polite",
+      onClick: handleClick,
+      onKeyDown: handleKeyDown,
       style: {
         position: "fixed",
         // sit just below the 44px top bar so it never overlaps the header
@@ -42802,7 +42817,7 @@ const AchievementToast = ({
         padding: "9px 14px",
         minWidth: 220,
         maxWidth: 300,
-        pointerEvents: "none"
+        cursor: "pointer"
       },
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -57635,7 +57650,6 @@ const WorldExplorationInner = ({
       });
       if (battleEndedRef.current) return;
       battleEndedRef.current = true;
-      const _battleEndGen = aiGenerationRef.current;
       try {
         const challengeResults = evaluateChallenges(
           {
@@ -57664,6 +57678,7 @@ const WorldExplorationInner = ({
         const _challengeXpReward = challengeCompleted ? ((_b4 = currentChallenge == null ? void 0 : currentChallenge.rewards) == null ? void 0 : _b4.xp) || 0 : 0;
         const _completedChallengeName = challengeCompleted ? (currentChallenge == null ? void 0 : currentChallenge.description) || (currentChallenge == null ? void 0 : currentChallenge.id) || "Challenge" : null;
         cleanupBattle();
+        const _battleEndGen = aiGenerationRef.current;
         setInBattle(false);
         playSound("battle_end");
         setBattleEnemies([]);
@@ -65080,7 +65095,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DAqnf2tb.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BIqaLsBz.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
