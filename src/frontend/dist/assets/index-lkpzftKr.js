@@ -54240,6 +54240,7 @@ const WorldExplorationInner = ({
     isFrozenTerrain
   ]);
   const getSpellRangeTiles = reactExports.useCallback(() => {
+    var _a4;
     if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current)
       return /* @__PURE__ */ new Set();
     const spell = activeSpells.find((s2) => s2.id === selectedSpellIdRef.current);
@@ -54285,8 +54286,28 @@ const WorldExplorationInner = ({
       spell.modifiableRange ? spell.id : void 0
     );
     const tiles = /* @__PURE__ */ new Set();
+    if (targetType === "ground" || spell.isBarrier) {
+      const occupied = /* @__PURE__ */ new Set();
+      for (const e of enemies) occupied.add(`${e.x},${e.y}`);
+      occupied.add(`${playerPosition.x},${playerPosition.y}`);
+      for (let dx = -range; dx <= range; dx++) {
+        for (let dy = -range; dy <= range; dy++) {
+          const nx = playerPosition.x + dx;
+          const ny = playerPosition.y + dy;
+          if (nx < 0 || ny < 0 || nx >= WORLD_GRID_SIZE || ny >= WORLD_GRID_SIZE)
+            continue;
+          if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) continue;
+          if (barrierTilesRef.current.has(`${nx},${ny}`)) continue;
+          const key = `${nx},${ny}`;
+          if (!occupied.has(key) && ((_a4 = currentMap.tiles[ny]) == null ? void 0 : _a4[nx]) !== "wall") {
+            tiles.add(key);
+          }
+        }
+      }
+      return tiles;
+    }
     const hasLoS = (tx, ty) => {
-      var _a4;
+      var _a5;
       if (!currentMap) return true;
       let x0 = playerPosition.x;
       let y0 = playerPosition.y;
@@ -54299,7 +54320,7 @@ const WorldExplorationInner = ({
       let err = ddx - ddy;
       while (true) {
         if ((x0 !== playerPosition.x || y0 !== playerPosition.y) && (x0 !== x1 || y0 !== y1)) {
-          if (((_a4 = currentMap.tiles[y0]) == null ? void 0 : _a4[x0]) === "wall") return false;
+          if (((_a5 = currentMap.tiles[y0]) == null ? void 0 : _a5[x0]) === "wall") return false;
         }
         if (x0 === x1 && y0 === y1) break;
         const e2 = 2 * err;
@@ -64710,7 +64731,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CHC2LsOW.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-D6w6VFLM.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

@@ -203,7 +203,7 @@ export interface SpellConfig {
   /** Cooldown in turns after casting. 0 = no cooldown. */
   cooldown?: number;
   /** Targeting metadata — single source of truth for preview and cast logic */
-  targetType?: "self" | "ally" | "enemy" | "area" | "line" | "all";
+  targetType?: "self" | "ally" | "enemy" | "ground" | "area" | "line" | "all";
   areaShape?: "circle" | "cone" | "line" | "cross" | "single";
   areaRadius?: number;
 

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { useIsMobile } from "../hooks/use-mobile";
+
 import { useActor } from "../hooks/useActor";
 import {
   useGetAchievementConfigs,
@@ -7209,6 +7210,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return allTiles;
     }
+
     const baseRange = spell.maxRange ?? Math.max(1, Number(spell.range));
     const minR = spell.minRange ?? 1;
     const range = getEffectiveSpellRange(
@@ -7216,6 +7218,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       spell.modifiableRange ? spell.id : undefined,
     );
     const tiles = new Set<string>();
+
+    if (targetType === "ground" || spell.isBarrier) {
+      const occupied = new Set<string>();
+      for (const e of enemies) occupied.add(`${e.x},${e.y}`);
+      occupied.add(`${playerPosition.x},${playerPosition.y}`);
+      for (let dx = -range; dx <= range; dx++) {
+        for (let dy = -range; dy <= range; dy++) {
+          const nx = playerPosition.x + dx;
+          const ny = playerPosition.y + dy;
+          if (
+            nx < 0 ||
+            ny < 0 ||
+            nx >= WORLD_GRID_SIZE ||
+            ny >= WORLD_GRID_SIZE
+          )
+            continue;
+          if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) continue;
+          if (barrierTilesRef.current.has(`${nx},${ny}`)) continue;
+          const key = `${nx},${ny}`;
+          if (!occupied.has(key) && currentMap.tiles[ny]?.[nx] !== "wall") {
+            tiles.add(key);
+          }
+        }
+      }
+      return tiles;
+    }
 
     // Helper: Bresenham line-of-sight — tests every grid cell the ray passes through
     const hasLoS = (tx: number, ty: number): boolean => {
