@@ -50862,7 +50862,7 @@ const WorldExplorationInner = ({
     },
     []
   );
-  const calculatePlayerDamage = reactExports.useCallback(
+  const computeDamage = reactExports.useCallback(
     (baseDamage, spellId, targetEnemy, gridPos, isPhysical, isCrit, effects) => {
       let dmg = baseDamage;
       let breakdownParts = [`Base ${dmg}`];
@@ -50883,7 +50883,6 @@ const WorldExplorationInner = ({
       const markKey = `${gridPos.x},${gridPos.y}`;
       if (markedTilesRef.current.has(markKey)) {
         dmg *= 2;
-        markedTilesRef.current.delete(markKey);
         breakdownParts.push(`×2 mark = ${dmg}`);
       }
       if (isCrit) {
@@ -50891,20 +50890,40 @@ const WorldExplorationInner = ({
         breakdownParts.push(`CRIT ×2 = ${dmg}`);
       }
       const enemyResMod = getStatModifier(targetEnemy.id, "res", effects);
-      const resReduction = Math.floor(targetEnemy.res * enemyResMod);
+      const effectiveRes = targetEnemy.res * enemyResMod;
       if (isPhysical) {
-        dmg = Math.max(1, dmg - resReduction);
-        if (resReduction > 0)
-          breakdownParts.push(`-${resReduction} RES = ${dmg}`);
+        dmg = Math.max(1, Math.round(dmg * (100 / (100 + effectiveRes))));
+        if (effectiveRes > 0)
+          breakdownParts.push(`RES ${effectiveRes.toFixed(1)}% = ${dmg}`);
       } else {
         const enemySpMod = getStatModifier(targetEnemy.id, "sp", effects);
-        const spReduction = Math.floor(targetEnemy.sp * enemySpMod);
-        dmg = Math.max(1, dmg - spReduction);
-        if (spReduction > 0) breakdownParts.push(`-${spReduction} SP = ${dmg}`);
+        const effectiveSp = targetEnemy.sp * enemySpMod;
+        dmg = Math.max(1, Math.round(dmg * (100 / (100 + effectiveSp))));
+        if (effectiveSp > 0)
+          breakdownParts.push(`SP ${effectiveSp.toFixed(1)}% = ${dmg}`);
       }
       return { finalDamage: dmg, breakdown: breakdownParts.join(" → ") };
     },
     [characterStats.level, getStatModifier]
+  );
+  const calculatePlayerDamage = reactExports.useCallback(
+    (baseDamage, spellId, targetEnemy, gridPos, isPhysical, isCrit, effects) => {
+      const result = computeDamage(
+        baseDamage,
+        spellId,
+        targetEnemy,
+        gridPos,
+        isPhysical,
+        isCrit,
+        effects
+      );
+      const markKey = `${gridPos.x},${gridPos.y}`;
+      if (markedTilesRef.current.has(markKey)) {
+        markedTilesRef.current.delete(markKey);
+      }
+      return result;
+    },
+    [computeDamage]
   );
   const maxHp = reactExports.useMemo(() => {
     const growthRate = (levelUpConfig.statGrowthPercent ?? 5) / 100;
@@ -55098,12 +55117,16 @@ const WorldExplorationInner = ({
               (s2) => s2.id === selectedSpellIdRef.current
             );
             const baseDmg = spell ? Number(spell.damage) : 0;
-            const spellUpgLvl = spell ? spellLevelsRef.current[spell.id] ?? 0 : 0;
-            const scaledDmg = calcScaledDamage(
+            spell ? spellLevelsRef.current[spell.id] ?? 0 : 0;
+            const scaledDmg = spell ? computeDamage(
               baseDmg,
-              characterStats.level,
-              spellUpgLvl
-            );
+              spell.id,
+              enemy,
+              { x: enemy.x, y: enemy.y },
+              spell.isPhysical || false,
+              false,
+              activeEffectsRef.current
+            ).finalDamage : 0;
             ctx.save();
             ctx.fillStyle = "#ff4444";
             ctx.strokeStyle = "#220000";
@@ -55778,10 +55801,7 @@ const WorldExplorationInner = ({
           if (!isPhysical) {
             const failRoll = Math.random() * 100;
             if (failRoll < spellFailChance) {
-              logBattleEntry(
-                `Your ${spell.name} fizzled! (spell failed)`,
-                "#AAAAAA"
-              );
+              logBattleEntry(`${spell.name} fizzled!`, "#AAAAAA");
               setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
               if (currentBattleAp - apCost <= 0) {
                 selectedSpellIdRef.current = null;
@@ -56280,15 +56300,18 @@ const WorldExplorationInner = ({
                 }
               }
               if (isDrainSpell && hitTarget === targetsToHit[0]) {
-                const healAmt = spell.healAmount ?? 0;
-                const finalHeal = isCrit ? healAmt * 2 : healAmt;
-                if (finalHeal > 0) {
+                const drainPercent = spell.drainPercent || 0.5;
+                const healAmt = Math.min(
+                  maxHp - characterStats.hp,
+                  Math.round(finalDmg * drainPercent)
+                );
+                if (healAmt > 0) {
                   setCharacterStats((prev) => ({
                     ...prev,
-                    hp: Math.min(maxHp, prev.hp + finalHeal)
+                    hp: Math.min(maxHp, prev.hp + healAmt)
                   }));
                   logBattleEntry(
-                    `Life Drain restored ${finalHeal} HP to you`,
+                    `${spell.name} drained ${healAmt} HP!`,
                     "#22c55e"
                   );
                 }
@@ -56442,10 +56465,7 @@ const WorldExplorationInner = ({
           if (!isPhysical) {
             const failRoll = Math.random() * 100;
             if (failRoll < spellFailChance) {
-              logBattleEntry(
-                `Your ${spell.name} fizzled! (spell failed)`,
-                "#AAAAAA"
-              );
+              logBattleEntry(`${spell.name} fizzled!`, "#AAAAAA");
               setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
               if (currentBattleAp - apCost <= 0) {
                 selectedSpellIdRef.current = null;
@@ -56602,15 +56622,18 @@ const WorldExplorationInner = ({
                 );
               }
               if (isDrainSpell) {
-                const healAmt = spell.healAmount ?? 0;
-                const finalHeal = isCrit ? healAmt * 2 : healAmt;
-                if (finalHeal > 0) {
+                const drainPercent = spell.drainPercent || 0.5;
+                const healAmt = Math.min(
+                  maxHp - characterStats.hp,
+                  Math.round(finalDmg * drainPercent)
+                );
+                if (healAmt > 0) {
                   setCharacterStats((prev) => ({
                     ...prev,
-                    hp: Math.min(maxHp, prev.hp + finalHeal)
+                    hp: Math.min(maxHp, prev.hp + healAmt)
                   }));
                   logBattleEntry(
-                    `Life Drain restored ${finalHeal} HP to you`,
+                    `${spell.name} drained ${healAmt} HP!`,
                     "#22c55e"
                   );
                 }
@@ -56666,6 +56689,7 @@ const WorldExplorationInner = ({
       enemyHpMap,
       characterStats.level,
       characterStats.chc,
+      characterStats.hp,
       logBattleEntry,
       spellLevels,
       spellFailChance,
@@ -64686,7 +64710,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-C_S06QzY.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CHC2LsOW.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
