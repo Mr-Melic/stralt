@@ -33426,369 +33426,26 @@ function useDeleteBossConfig() {
     }
   });
 }
-const STORAGE_PREFIX = "pbv_panel_layout_";
-const SNAP_THRESHOLD = 80;
-const SNAP_GAP = 10;
-const panelRegistry = {};
-function loadLayout(userId) {
-  try {
-    const raw = localStorage.getItem(STORAGE_PREFIX + userId);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-function saveLayout(userId, panelId, state) {
-  try {
-    const existing = loadLayout(userId);
-    existing[panelId] = state;
-    localStorage.setItem(STORAGE_PREFIX + userId, JSON.stringify(existing));
-  } catch {
-  }
-}
-function computeSnapPosition(movedId, pos, w2, h2) {
-  let { x: x3, y: y2 } = pos;
-  let bestSnapX = null;
-  let bestSnapY = null;
-  for (const [otherId, other] of Object.entries(panelRegistry)) {
-    if (otherId === movedId) continue;
-    const rToL = Math.abs(x3 + w2 - other.x);
-    const lToR = Math.abs(x3 - (other.x + other.w));
-    const bToT = Math.abs(y2 + h2 - other.y);
-    const tToB = Math.abs(y2 - (other.y + other.h));
-    if (rToL < SNAP_THRESHOLD && (!bestSnapX || rToL < bestSnapX.dist)) {
-      bestSnapX = { val: other.x - w2 - SNAP_GAP, dist: rToL };
-    }
-    if (lToR < SNAP_THRESHOLD && (!bestSnapX || lToR < bestSnapX.dist)) {
-      bestSnapX = { val: other.x + other.w + SNAP_GAP, dist: lToR };
-    }
-    if (bToT < SNAP_THRESHOLD && (!bestSnapY || bToT < bestSnapY.dist)) {
-      bestSnapY = { val: other.y - h2 - SNAP_GAP, dist: bToT };
-    }
-    if (tToB < SNAP_THRESHOLD && (!bestSnapY || tToB < bestSnapY.dist)) {
-      bestSnapY = { val: other.y + other.h + SNAP_GAP, dist: tToB };
-    }
-  }
-  if (bestSnapX) x3 = bestSnapX.val;
-  if (bestSnapY) y2 = bestSnapY.val;
-  const TOP_BAR_BOTTOM = 44;
-  const TOP_BAR_SNAP_ZONE = 60;
-  const TOP_BAR_SNAP_TARGET = TOP_BAR_BOTTOM + 4;
-  if (Math.abs(y2 - TOP_BAR_BOTTOM) < TOP_BAR_SNAP_ZONE) {
-    y2 = TOP_BAR_SNAP_TARGET;
-  }
-  const MAX_PASSES = 5;
-  for (let pass = 0; pass < MAX_PASSES; pass++) {
-    let resolved = true;
-    for (const [otherId, other] of Object.entries(panelRegistry)) {
-      if (otherId === movedId) continue;
-      const overlapX = x3 < other.x + other.w && x3 + w2 > other.x;
-      const overlapY = y2 < other.y + other.h && y2 + h2 > other.y;
-      if (!overlapX || !overlapY) continue;
-      const pushRight = other.x + other.w - x3 + SNAP_GAP;
-      const pushLeft = x3 + w2 - other.x + SNAP_GAP;
-      const pushDown = other.y + other.h - y2 + SNAP_GAP;
-      const pushUp = y2 + h2 - other.y + SNAP_GAP;
-      const minPush = Math.min(pushRight, pushLeft, pushDown, pushUp);
-      if (minPush === pushRight) {
-        x3 = other.x + other.w + SNAP_GAP;
-      } else if (minPush === pushLeft) {
-        x3 = other.x - w2 - SNAP_GAP;
-      } else if (minPush === pushDown) {
-        y2 = other.y + other.h + SNAP_GAP;
-      } else {
-        y2 = other.y - h2 - SNAP_GAP;
-      }
-      if (y2 < TOP_BAR_SNAP_TARGET) y2 = TOP_BAR_SNAP_TARGET;
-      resolved = false;
-    }
-    if (resolved) break;
-  }
-  return { x: x3, y: y2 };
-}
-const DraggablePanel = ({
-  panelId,
-  title,
-  userId = "guest",
-  defaultPosition,
-  defaultFolded = false,
-  children,
-  className,
-  style: style2,
-  zIndex = 100,
-  onFoldChange
-}) => {
-  const [position, setPosition] = reactExports.useState(
-    defaultPosition
-  );
-  const [folded, setFolded] = reactExports.useState(defaultFolded);
-  const [isDragging, setIsDragging] = reactExports.useState(false);
-  const [loaded, setLoaded] = reactExports.useState(false);
-  const panelRef = reactExports.useRef(null);
-  const dragState = reactExports.useRef({
-    startMouseX: 0,
-    startMouseY: 0,
-    startPanelX: 0,
-    startPanelY: 0,
-    active: false
-  });
-  const lastSnappedPos = reactExports.useRef(null);
-  const saveDebounceRef = reactExports.useRef(null);
-  const currentPosRef = reactExports.useRef(position);
-  const currentFoldedRef = reactExports.useRef(folded);
-  const panelInstanceIdRef = reactExports.useRef(0);
-  reactExports.useEffect(() => {
-    panelInstanceIdRef.current += 1;
-    const layout = loadLayout(userId);
-    if (layout[panelId]) {
-      const saved = layout[panelId];
-      setPosition({ x: saved.x, y: saved.y });
-      setFolded(saved.folded);
-      currentPosRef.current = { x: saved.x, y: saved.y };
-      currentFoldedRef.current = saved.folded;
-    }
-    setLoaded(true);
-  }, [panelId, userId]);
-  const scheduleSave = reactExports.useCallback(
-    (pos, fold) => {
-      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
-      const myInstance = panelInstanceIdRef.current;
-      saveDebounceRef.current = setTimeout(() => {
-        if (panelInstanceIdRef.current !== myInstance) return;
-        saveLayout(userId, panelId, { x: pos.x, y: pos.y, folded: fold });
-      }, 500);
-    },
-    [userId, panelId]
-  );
-  const clampPosition = reactExports.useCallback(
-    (x3, y2) => {
-      const el = panelRef.current;
-      if (!el) return { x: x3, y: y2 };
-      const w2 = el.offsetWidth;
-      const h2 = el.offsetHeight;
-      const maxX = Math.max(0, window.innerWidth - w2);
-      const maxY = Math.max(0, window.innerHeight - h2);
-      return {
-        x: Math.min(Math.max(0, x3), maxX),
-        y: Math.min(Math.max(0, y2), maxY)
-      };
-    },
-    []
-  );
-  const onMouseDown = reactExports.useCallback((e) => {
-    e.preventDefault();
-    dragState.current.startMouseX = e.clientX;
-    dragState.current.startMouseY = e.clientY;
-    dragState.current.startPanelX = currentPosRef.current.x;
-    dragState.current.startPanelY = currentPosRef.current.y;
-    dragState.current.active = true;
-    setIsDragging(true);
-  }, []);
-  const onTouchStart = reactExports.useCallback((e) => {
-    const touch = e.touches[0];
-    dragState.current.startMouseX = touch.clientX;
-    dragState.current.startMouseY = touch.clientY;
-    dragState.current.startPanelX = currentPosRef.current.x;
-    dragState.current.startPanelY = currentPosRef.current.y;
-    dragState.current.active = true;
-    setIsDragging(true);
-  }, []);
-  reactExports.useEffect(() => {
-    const onMove = (clientX, clientY) => {
-      if (!dragState.current.active) return;
-      const dx = clientX - dragState.current.startMouseX;
-      const dy = clientY - dragState.current.startMouseY;
-      const rawX = dragState.current.startPanelX + dx;
-      const rawY = dragState.current.startPanelY + dy;
-      const clamped = clampPosition(rawX, rawY);
-      currentPosRef.current = clamped;
-      setPosition(clamped);
-    };
-    const onEnd = () => {
-      if (!dragState.current.active) return;
-      dragState.current.active = false;
-      setIsDragging(false);
-      const el = panelRef.current;
-      if (el) {
-        const w2 = el.offsetWidth;
-        const h2 = el.offsetHeight;
-        const snapped = computeSnapPosition(
-          panelId,
-          currentPosRef.current,
-          w2,
-          h2
-        );
-        const maxX = Math.max(0, window.innerWidth - w2);
-        const maxY = Math.max(0, window.innerHeight - h2);
-        snapped.x = Math.min(Math.max(0, snapped.x), maxX);
-        snapped.y = Math.min(Math.max(0, snapped.y), maxY);
-        currentPosRef.current = snapped;
-        lastSnappedPos.current = snapped;
-        setPosition(snapped);
-      }
-      scheduleSave(currentPosRef.current, currentFoldedRef.current);
-    };
-    const handleMouseMove = (e) => onMove(e.clientX, e.clientY);
-    const handleTouchMove = (e) => {
-      const t = e.touches[0];
-      onMove(t.clientX, t.clientY);
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", onEnd);
-    window.addEventListener("touchmove", handleTouchMove, { passive: true });
-    window.addEventListener("touchend", onEnd);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", onEnd);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", onEnd);
-    };
-  }, [clampPosition, scheduleSave]);
-  const handleFoldToggle = reactExports.useCallback(() => {
-    const next = !currentFoldedRef.current;
-    currentFoldedRef.current = next;
-    setFolded(next);
-    scheduleSave(currentPosRef.current, next);
-    onFoldChange == null ? void 0 : onFoldChange(next);
-  }, [scheduleSave, onFoldChange]);
-  reactExports.useEffect(() => {
-    const el = panelRef.current;
-    if (!el) return;
-    const update = () => {
-      panelRegistry[panelId] = {
-        x: currentPosRef.current.x,
-        y: currentPosRef.current.y,
-        w: el.offsetWidth,
-        h: el.offsetHeight
-      };
-    };
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      delete panelRegistry[panelId];
-      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
-    };
-  }, [panelId]);
-  reactExports.useEffect(() => {
-    const existing = panelRegistry[panelId];
-    if (existing) {
-      panelRegistry[panelId] = { ...existing, x: position.x, y: position.y };
-    }
-  }, [panelId, position.x, position.y]);
-  if (!loaded) return null;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "div",
-    {
-      ref: panelRef,
-      "data-ocid": `draggable_panel.${panelId}`,
-      className: className ? `${className} stone-frame` : "stone-frame",
-      style: {
-        position: "fixed",
-        left: position.x,
-        top: position.y,
-        zIndex,
-        userSelect: "none",
-        touchAction: "none",
-        borderRadius: 14,
-        minWidth: 60,
-        ...style2
-      },
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "div",
-          {
-            "data-ocid": `draggable_panel.${panelId}.header`,
-            onMouseDown,
-            onTouchStart,
-            className: "stone-header",
-            style: {
-              borderRadius: folded ? 12 : "12px 12px 0 0",
-              padding: "4px 8px",
-              cursor: isDragging ? "grabbing" : "grab",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 6,
-              pointerEvents: "auto"
-            },
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "span",
-                {
-                  className: "stone-header-title",
-                  style: {
-                    fontSize: 10,
-                    flex: 1,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis"
-                  },
-                  children: title
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "button",
-                {
-                  type: "button",
-                  "data-ocid": `draggable_panel.${panelId}.fold_button`,
-                  onClick: (e) => {
-                    e.stopPropagation();
-                    handleFoldToggle();
-                  },
-                  className: "stone-btn-slate",
-                  style: {
-                    fontSize: 12,
-                    lineHeight: 1,
-                    padding: "0 4px",
-                    flexShrink: 0,
-                    pointerEvents: "auto"
-                  },
-                  "aria-label": folded ? "Expand panel" : "Fold panel",
-                  children: folded ? "▲" : "▼"
-                }
-              )
-            ]
-          }
-        ),
-        !folded && /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "div",
-          {
-            className: "stone-well",
-            style: {
-              pointerEvents: "auto",
-              borderRadius: "0 0 12px 12px",
-              overflow: "visible"
-            },
-            children
-          }
-        )
-      ]
-    }
-  );
-};
 const AchievementsPanel = ({
-  userId = "guest",
+  userId: _userId,
   dokaBalance: _dokaBalance,
   onDokaBalanceChange,
   isOpen,
   onClose
 }) => {
-  const [internalOpen, setInternalOpen] = reactExports.useState(false);
-  const open = isOpen !== void 0 ? isOpen : internalOpen;
-  const setOpen = (v2) => {
-    const next = typeof v2 === "function" ? v2(open) : v2;
-    setInternalOpen(next);
-    if (!next && onClose) onClose();
-  };
   const { data: configs = [], isLoading: configsLoading } = useGetAchievementConfigs();
   const { data: progress = [], isLoading: progressLoading } = useGetPlayerAchievements();
   const claimMut = useClaimAchievementReward();
+  const progressMap = reactExports.useMemo(() => {
+    const map = /* @__PURE__ */ new Map();
+    for (const p2 of progress) {
+      map.set(p2.achievementId, { unlocked: p2.unlocked, claimed: p2.claimed });
+    }
+    return map;
+  }, [progress]);
   const getProgress = reactExports.useCallback(
-    (id) => progress.find((p2) => p2.achievementId === id),
-    [progress]
+    (id) => progressMap.get(id),
+    [progressMap]
   );
   const handleClaim = reactExports.useCallback(
     (achievement) => {
@@ -33804,230 +33461,221 @@ const AchievementsPanel = ({
     },
     [claimMut, onDokaBalanceChange]
   );
-  const unclaimedCount = configs.filter((cfg) => {
-    const p2 = getProgress(cfg.id);
-    return (p2 == null ? void 0 : p2.unlocked) && !p2.claimed;
-  }).length;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-      "button",
-      {
-        type: "button",
-        "data-ocid": "achievements.open_modal_button",
-        onClick: () => setOpen((v2) => !v2),
-        style: {
-          position: "fixed",
-          top: 8,
-          right: 280,
-          zIndex: 200,
-          background: open ? "rgba(180,140,20,0.25)" : "rgba(10,10,15,0.88)",
-          border: "1px solid #8b0000",
-          borderRadius: 6,
-          color: "#f0c040",
-          fontSize: 18,
-          width: 36,
-          height: 36,
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "background 0.15s",
-          boxShadow: open ? "0 0 14px rgba(180,140,20,0.4)" : "0 2px 8px rgba(139,0,0,0.3)"
-        },
-        "aria-label": "Toggle achievements panel",
-        children: [
-          "🏆",
-          unclaimedCount > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "span",
-            {
-              style: {
-                position: "absolute",
-                top: -4,
-                right: -4,
-                background: "#c0392b",
-                color: "#fff",
-                borderRadius: "50%",
-                width: 14,
-                height: 14,
-                fontSize: 9,
-                fontWeight: 700,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                lineHeight: 1
-              },
-              children: unclaimedCount
-            }
-          )
-        ]
-      }
-    ),
-    open && /* @__PURE__ */ jsxRuntimeExports.jsx(
-      DraggablePanel,
-      {
-        panelId: "achievements_panel",
-        title: "🏆 Achievements",
-        userId,
-        defaultPosition: { x: Math.max(0, window.innerWidth - 340), y: 60 },
-        defaultFolded: false,
-        zIndex: 201,
-        style: { width: 320 },
-        children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "div",
-          {
-            "data-ocid": "achievements.panel",
-            style: { maxHeight: 480, overflowY: "auto", padding: "8px 0" },
-            children: [
-              (configsLoading || progressLoading) && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
+  const activeConfigs = reactExports.useMemo(
+    () => configs.filter((cfg) => cfg.active),
+    [configs]
+  );
+  if (!isOpen) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      "data-ocid": "achievements.dialog",
+      style: {
+        position: "fixed",
+        inset: 0,
+        zIndex: 9500,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.72)",
+        backdropFilter: "blur(4px)"
+      },
+      onClick: (e) => e.target === e.currentTarget && (onClose == null ? void 0 : onClose()),
+      onKeyDown: (e) => {
+        if (e.key === "Escape") onClose == null ? void 0 : onClose();
+      },
+      "aria-modal": "true",
+      "aria-label": "Achievements",
+      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          className: "stone-frame",
+          style: {
+            width: "min(520px, 94vw)",
+            maxHeight: "80vh",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden"
+          },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-header flex items-center justify-between px-5 py-3 shrink-0", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Trophy, { size: 18, style: { color: "#f0c44a" } }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-header-title", style: { fontSize: 16 }, children: "Feats" })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
                 {
-                  "data-ocid": "achievements.loading_state",
+                  type: "button",
+                  "data-ocid": "achievements.close_button",
+                  onClick: onClose,
+                  "aria-label": "Close achievements",
+                  className: "stone-btn-slate",
                   style: {
-                    padding: "20px",
-                    textAlign: "center",
-                    color: "#5a6a7a",
-                    fontSize: 12
+                    width: 30,
+                    height: 30,
+                    padding: 0,
+                    fontSize: 18,
+                    lineHeight: 1
                   },
-                  children: "Loading achievements…"
+                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(X, { size: 16 })
                 }
-              ),
-              !configsLoading && !progressLoading && configs.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  "data-ocid": "achievements.empty_state",
-                  style: {
-                    padding: "20px",
-                    textAlign: "center",
-                    color: "#5a6a7a",
-                    fontSize: 12
-                  },
-                  children: "No achievements configured yet"
-                }
-              ),
-              configs.filter((cfg) => cfg.active).map((cfg, i) => {
-                const p2 = getProgress(cfg.id);
-                const unlocked = (p2 == null ? void 0 : p2.unlocked) ?? false;
-                const claimed = (p2 == null ? void 0 : p2.claimed) ?? false;
-                return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    "data-ocid": `achievements.item.${i + 1}`,
-                    style: {
-                      display: "flex",
-                      gap: 10,
-                      alignItems: "flex-start",
-                      padding: "8px 12px",
-                      borderBottom: "1px solid rgba(139,0,0,0.2)",
-                      opacity: unlocked ? 1 : 0.5
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        "div",
-                        {
-                          style: {
-                            fontSize: 22,
-                            flexShrink: 0,
-                            filter: unlocked ? "drop-shadow(0 0 6px rgba(240,192,64,0.6))" : "grayscale(1)"
-                          },
-                          children: claimed ? "✅" : unlocked ? "🏆" : "🔒"
-                        }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "div",
-                          {
-                            style: {
-                              color: unlocked ? "#f0c040" : "#5a6a7a",
-                              fontWeight: 700,
-                              fontSize: 12,
-                              marginBottom: 2
-                            },
-                            children: cfg.name
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "div",
-                          {
-                            style: {
-                              color: "#4a5a6a",
-                              fontSize: 10,
-                              lineHeight: 1.4,
-                              marginBottom: 4
-                            },
-                            children: cfg.description
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                          "div",
-                          {
-                            style: {
-                              fontSize: 10,
-                              color: "#c8961a",
-                              fontWeight: 700
-                            },
-                            children: [
-                              "🪙 ",
-                              cfg.dokaReward.toLocaleString(),
-                              " Doka"
-                            ]
-                          }
-                        )
-                      ] }),
-                      unlocked && !claimed && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                        "button",
-                        {
-                          type: "button",
-                          "data-ocid": `achievements.claim_button.${i + 1}`,
-                          onClick: () => handleClaim(cfg),
-                          disabled: claimMut.isPending,
-                          style: {
-                            background: "linear-gradient(135deg, #5a0000, #8b0000)",
-                            border: "1px solid #dc2626",
-                            borderRadius: 5,
-                            color: "#fde8e8",
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "4px 8px",
-                            cursor: "pointer",
-                            flexShrink: 0,
-                            whiteSpace: "nowrap",
-                            letterSpacing: "0.05em",
-                            textTransform: "uppercase",
-                            boxShadow: "0 0 8px rgba(220, 38, 38, 0.3)"
-                          },
-                          children: [
-                            "Claim",
-                            " ",
-                            cfg.dokaReward > 0n ? `+${cfg.dokaReward.toLocaleString()}🪙` : ""
-                          ]
-                        }
-                      ),
-                      claimed && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        "span",
-                        {
-                          "data-ocid": `achievements.claimed_badge.${i + 1}`,
-                          style: {
-                            fontSize: 9,
-                            color: "#2ecc71",
-                            fontWeight: 700,
-                            flexShrink: 0,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.06em"
-                          },
-                          children: "Claimed"
-                        }
-                      )
-                    ]
-                  },
-                  cfg.id
-                );
-              })
-            ]
-          }
-        )
-      }
-    )
-  ] });
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                className: "stone-well",
+                style: { overflowY: "auto", flex: 1, padding: 2 },
+                children: [
+                  (configsLoading || progressLoading) && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "div",
+                    {
+                      "data-ocid": "achievements.loading_state",
+                      className: "stone-well",
+                      style: {
+                        padding: 32,
+                        textAlign: "center",
+                        color: "#8a8090",
+                        fontSize: 13
+                      },
+                      children: "Loading achievements…"
+                    }
+                  ),
+                  !configsLoading && !progressLoading && activeConfigs.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "div",
+                    {
+                      "data-ocid": "achievements.empty_state",
+                      className: "stone-well",
+                      style: {
+                        padding: 32,
+                        textAlign: "center",
+                        color: "#8a8090",
+                        fontSize: 13
+                      },
+                      children: "No achievements configured yet"
+                    }
+                  ),
+                  !configsLoading && !progressLoading && activeConfigs.map((cfg, i) => {
+                    const p2 = getProgress(cfg.id);
+                    const unlocked = (p2 == null ? void 0 : p2.unlocked) ?? false;
+                    const claimed = (p2 == null ? void 0 : p2.claimed) ?? false;
+                    return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "div",
+                      {
+                        "data-ocid": `achievements.item.${i + 1}`,
+                        style: {
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "flex-start",
+                          padding: "10px 14px",
+                          borderBottom: "1px solid rgba(139,0,0,0.15)",
+                          opacity: unlocked ? 1 : 0.5
+                        },
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "div",
+                            {
+                              style: {
+                                fontSize: 22,
+                                flexShrink: 0,
+                                filter: unlocked ? "drop-shadow(0 0 6px rgba(240,192,64,0.6))" : "grayscale(1)"
+                              },
+                              children: claimed ? "✅" : unlocked ? "🏆" : "🔒"
+                            }
+                          ),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  color: unlocked ? "#f0c44a" : "#8a8090",
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  marginBottom: 2,
+                                  fontFamily: "var(--font-display)"
+                                },
+                                children: cfg.name
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  color: "#6a7a8a",
+                                  fontSize: 11,
+                                  lineHeight: 1.4,
+                                  marginBottom: 4,
+                                  fontFamily: "var(--font-body)"
+                                },
+                                children: cfg.description
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "div",
+                              {
+                                style: {
+                                  fontSize: 10,
+                                  color: "#f0c44a",
+                                  fontWeight: 700,
+                                  fontFamily: "var(--font-display)"
+                                },
+                                children: [
+                                  "🪙 ",
+                                  cfg.dokaReward.toLocaleString(),
+                                  " Doka"
+                                ]
+                              }
+                            )
+                          ] }),
+                          unlocked && !claimed && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "button",
+                            {
+                              type: "button",
+                              "data-ocid": `achievements.claim_button.${i + 1}`,
+                              onClick: () => handleClaim(cfg),
+                              disabled: claimMut.isPending,
+                              className: "stone-btn-crimson",
+                              style: {
+                                fontSize: 10,
+                                padding: "4px 10px",
+                                borderRadius: 6,
+                                flexShrink: 0,
+                                whiteSpace: "nowrap"
+                              },
+                              children: [
+                                "Claim",
+                                " ",
+                                cfg.dokaReward > 0n ? `+${cfg.dokaReward.toLocaleString()}🪙` : ""
+                              ]
+                            }
+                          ),
+                          claimed && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "span",
+                            {
+                              "data-ocid": `achievements.claimed_badge.${i + 1}`,
+                              className: "stone-pill stone-pill-green",
+                              style: {
+                                fontSize: 9,
+                                fontWeight: 700,
+                                flexShrink: 0
+                              },
+                              children: "Claimed"
+                            }
+                          )
+                        ]
+                      },
+                      cfg.id
+                    );
+                  })
+                ]
+              }
+            )
+          ]
+        }
+      )
+    }
+  );
 };
 const BOSS_ABILITY_DESCRIPTIONS = {
   [BossAbility.REFLECT_SHIELD]: "Boss reflects a portion of incoming damage back to the attacker. Use low-damage, high-frequency attacks or wait for the shield to expire.",
@@ -34488,6 +34136,553 @@ const BossGuideModal = ({ open, onClose }) => {
                   },
                   boss.id
                 ))
+              }
+            )
+          ]
+        }
+      )
+    }
+  );
+};
+const BUFF_ITEMS = [
+  {
+    id: "health_potion",
+    name: "Health Potion",
+    icon: "🧪",
+    description: "Restore 30% of max HP",
+    cost: 50,
+    maxStack: 5
+  },
+  {
+    id: "greater_health_potion",
+    name: "Greater Potion",
+    icon: "💊",
+    description: "Restore 70% of max HP",
+    cost: 120,
+    maxStack: 5
+  },
+  {
+    id: "battle_elixir",
+    name: "Battle Elixir",
+    icon: "⚡",
+    description: "+3 AP this turn (battle)",
+    cost: 80,
+    maxStack: 5
+  },
+  {
+    id: "swift_boots",
+    name: "Swift Boots",
+    icon: "👟",
+    description: "+2 MP this turn (battle)",
+    cost: 90,
+    maxStack: 5
+  },
+  {
+    id: "shield_charm",
+    name: "Shield Charm",
+    icon: "🛡️",
+    description: "Absorb next 20 damage",
+    cost: 100,
+    maxStack: 5
+  },
+  {
+    id: "fury_potion",
+    name: "Fury Potion",
+    icon: "💢",
+    description: "+25% damage for 3 turns",
+    cost: 150,
+    maxStack: 5
+  }
+];
+function loadInventory(principalId) {
+  try {
+    const raw = localStorage.getItem(`${principalId}_inventory`);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+function saveInventory(principalId, inv) {
+  try {
+    localStorage.setItem(`${principalId}_inventory`, JSON.stringify(inv));
+  } catch {
+  }
+}
+const sectionStyle = {
+  padding: "6px 8px"
+};
+const tabButtonStyle = (_active) => ({
+  flex: 1,
+  padding: "4px 0",
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  borderRadius: 3,
+  cursor: "pointer"
+});
+const itemCardStyle = {
+  borderRadius: 5,
+  padding: "6px 8px",
+  display: "flex",
+  flexDirection: "column",
+  gap: 3,
+  position: "relative"
+};
+const buyBtnStyle = (canAfford) => ({
+  marginTop: 4,
+  padding: "3px 0",
+  fontSize: 10,
+  fontWeight: 700,
+  borderRadius: 3,
+  cursor: canAfford ? "pointer" : "not-allowed",
+  width: "100%"
+});
+const getBtnStyle = (canUse) => ({
+  marginTop: 3,
+  padding: "3px 0",
+  fontSize: 10,
+  fontWeight: 700,
+  borderRadius: 3,
+  cursor: canUse ? "pointer" : "not-allowed",
+  width: "100%"
+});
+const BuffShop = ({
+  dokaBalance,
+  onDeductDoka,
+  onUseItem,
+  isPlayerTurn,
+  inBattle,
+  userId,
+  principalId,
+  isOpen,
+  onClose
+}) => {
+  const storageKey = principalId ?? userId ?? "guest";
+  const [inventory, setInventory] = reactExports.useState(
+    () => loadInventory(storageKey)
+  );
+  const [activeTab, setActiveTab] = reactExports.useState("shop");
+  const prevKeyRef = reactExports.useRef(storageKey);
+  reactExports.useEffect(() => {
+    if (prevKeyRef.current !== storageKey) {
+      prevKeyRef.current = storageKey;
+      setInventory(loadInventory(storageKey));
+    }
+  }, [storageKey]);
+  reactExports.useEffect(() => {
+    saveInventory(storageKey, inventory);
+  }, [inventory, storageKey]);
+  const handleBuy = reactExports.useCallback(
+    (item) => {
+      if (dokaBalance < item.cost) return;
+      if (inBattle) return;
+      const current = inventory[item.id] ?? 0;
+      if (current >= item.maxStack) return;
+      onDeductDoka(item.cost);
+      setInventory((prev) => ({
+        ...prev,
+        [item.id]: (prev[item.id] ?? 0) + 1
+      }));
+    },
+    [dokaBalance, inventory, inBattle, onDeductDoka]
+  );
+  const handleUse = reactExports.useCallback(
+    (itemId) => {
+      if (!inBattle || !isPlayerTurn) return;
+      const count2 = inventory[itemId] ?? 0;
+      if (count2 <= 0) return;
+      onUseItem(itemId);
+      setInventory((prev) => {
+        const next = prev[itemId] ? prev[itemId] - 1 : 0;
+        return { ...prev, [itemId]: Math.max(0, next) };
+      });
+    },
+    [inventory, inBattle, isPlayerTurn, onUseItem]
+  );
+  const totalItems = BUFF_ITEMS.reduce(
+    (acc, it2) => acc + (inventory[it2.id] ?? 0),
+    0
+  );
+  if (!isOpen) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      "data-ocid": "buff_shop.dialog",
+      style: {
+        position: "fixed",
+        inset: 0,
+        zIndex: 9500,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "rgba(0,0,0,0.72)",
+        backdropFilter: "blur(4px)"
+      },
+      onClick: (e) => e.target === e.currentTarget && (onClose == null ? void 0 : onClose()),
+      onKeyDown: (e) => {
+        if (e.key === "Escape") onClose == null ? void 0 : onClose();
+      },
+      "aria-modal": "true",
+      "aria-label": "Item Shop",
+      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          className: "stone-frame",
+          style: {
+            width: "min(520px, 94vw)",
+            maxHeight: "80vh",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden"
+          },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-header flex items-center justify-between px-5 py-3 shrink-0", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 18 }, children: "⚗️" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-header-title", style: { fontSize: 16 }, children: "Item Shop" })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "buff_shop.close_button",
+                  onClick: onClose,
+                  "aria-label": "Close shop",
+                  className: "stone-btn-slate",
+                  style: {
+                    width: 30,
+                    height: 30,
+                    padding: 0,
+                    fontSize: 18,
+                    lineHeight: 1
+                  },
+                  children: "×"
+                }
+              )
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                className: "stone-well",
+                style: { overflowY: "auto", flex: 1, padding: 2 },
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-header", style: sectionStyle, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "span",
+                    {
+                      className: "stone-pill stone-pill-gold",
+                      style: {
+                        fontSize: 10,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "2px 8px"
+                      },
+                      children: [
+                        dokaBalance.toLocaleString(),
+                        " Doka",
+                        inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#e74c3c", fontSize: 9, marginLeft: 4 }, children: "(buy outside battle)" })
+                      ]
+                    }
+                  ) }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      className: "stone-well",
+                      style: {
+                        display: "flex",
+                        gap: 4,
+                        padding: "5px 8px"
+                      },
+                      children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "button",
+                          {
+                            type: "button",
+                            "data-ocid": "buff_shop.shop_tab",
+                            className: activeTab === "shop" ? "stone-btn-crimson" : "stone-btn-slate",
+                            style: tabButtonStyle(),
+                            onClick: () => setActiveTab("shop"),
+                            children: "Shop"
+                          }
+                        ),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "button",
+                          {
+                            type: "button",
+                            "data-ocid": "buff_shop.inventory_tab",
+                            className: activeTab === "inventory" ? "stone-btn-crimson" : "stone-btn-slate",
+                            style: tabButtonStyle(),
+                            onClick: () => setActiveTab("inventory"),
+                            children: [
+                              "Inventory",
+                              totalItems > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "span",
+                                {
+                                  className: "stone-pill-crimson",
+                                  style: { marginLeft: 4, fontSize: 9, padding: "0 4px" },
+                                  children: totalItems
+                                }
+                              )
+                            ]
+                          }
+                        )
+                      ]
+                    }
+                  ),
+                  activeTab === "shop" && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "div",
+                    {
+                      style: {
+                        padding: "6px 8px",
+                        display: "grid",
+                        gridTemplateColumns: "1fr 1fr",
+                        gap: 6,
+                        maxHeight: 340,
+                        overflowY: "auto"
+                      },
+                      children: BUFF_ITEMS.map((item) => {
+                        const owned = inventory[item.id] ?? 0;
+                        const canAfford = dokaBalance >= item.cost && !inBattle;
+                        const atMax = owned >= item.maxStack;
+                        return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "div",
+                          {
+                            "data-ocid": `buff_shop.item.${item.id}`,
+                            className: "stone-well",
+                            style: itemCardStyle,
+                            children: [
+                              owned > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                "span",
+                                {
+                                  style: {
+                                    position: "absolute",
+                                    top: 4,
+                                    right: 4,
+                                    background: "#c0392b",
+                                    color: "#fff",
+                                    fontSize: 8,
+                                    fontWeight: 700,
+                                    borderRadius: 8,
+                                    padding: "0 4px",
+                                    lineHeight: "14px"
+                                  },
+                                  children: [
+                                    "×",
+                                    owned
+                                  ]
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "div",
+                                {
+                                  style: {
+                                    fontSize: 18,
+                                    lineHeight: 1,
+                                    textAlign: "center"
+                                  },
+                                  children: item.icon
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "div",
+                                {
+                                  style: {
+                                    color: "#e0c8a0",
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    textAlign: "center",
+                                    lineHeight: 1.2
+                                  },
+                                  children: item.name
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "div",
+                                {
+                                  style: {
+                                    color: "#887766",
+                                    fontSize: 8,
+                                    textAlign: "center",
+                                    lineHeight: 1.3
+                                  },
+                                  children: item.description
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                "div",
+                                {
+                                  style: {
+                                    color: "#f1c40f",
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    textAlign: "center"
+                                  },
+                                  children: [
+                                    item.cost,
+                                    " Doka"
+                                  ]
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "button",
+                                {
+                                  type: "button",
+                                  "data-ocid": `buff_shop.buy_button.${item.id}`,
+                                  className: canAfford && !atMax ? "stone-btn-crimson" : "stone-btn-slate",
+                                  style: buyBtnStyle(canAfford && !atMax),
+                                  disabled: !canAfford || atMax,
+                                  onClick: () => handleBuy(item),
+                                  children: atMax ? "Max" : "Buy"
+                                }
+                              )
+                            ]
+                          },
+                          item.id
+                        );
+                      })
+                    }
+                  ),
+                  activeTab === "inventory" && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      style: {
+                        padding: "6px 8px",
+                        maxHeight: 340,
+                        overflowY: "auto"
+                      },
+                      children: [
+                        BUFF_ITEMS.filter((it2) => (inventory[it2.id] ?? 0) > 0).length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "div",
+                          {
+                            "data-ocid": "buff_shop.empty_state",
+                            style: {
+                              color: "#556677",
+                              fontSize: 10,
+                              textAlign: "center",
+                              padding: "18px 0"
+                            },
+                            children: [
+                              "No items in inventory.",
+                              /* @__PURE__ */ jsxRuntimeExports.jsx("br", {}),
+                              "Buy items in the Shop tab."
+                            ]
+                          }
+                        ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "div",
+                          {
+                            style: {
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: 5
+                            },
+                            children: BUFF_ITEMS.filter((it2) => (inventory[it2.id] ?? 0) > 0).map(
+                              (item) => {
+                                const count2 = inventory[item.id] ?? 0;
+                                const canUse = inBattle && isPlayerTurn && count2 > 0;
+                                return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                  "div",
+                                  {
+                                    "data-ocid": `buff_shop.inv_item.${item.id}`,
+                                    className: "stone-well",
+                                    style: {
+                                      ...itemCardStyle,
+                                      flexDirection: "row",
+                                      alignItems: "center",
+                                      gap: 8
+                                    },
+                                    children: [
+                                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 18, flexShrink: 0 }, children: item.icon }),
+                                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                          "div",
+                                          {
+                                            style: {
+                                              color: "#e0c8a0",
+                                              fontSize: 9,
+                                              fontWeight: 700,
+                                              lineHeight: 1.2
+                                            },
+                                            children: [
+                                              item.name,
+                                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                                "span",
+                                                {
+                                                  style: {
+                                                    color: "#c0392b",
+                                                    marginLeft: 4,
+                                                    fontWeight: 800
+                                                  },
+                                                  children: [
+                                                    "×",
+                                                    count2
+                                                  ]
+                                                }
+                                              )
+                                            ]
+                                          }
+                                        ),
+                                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "div",
+                                          {
+                                            style: {
+                                              color: "#887766",
+                                              fontSize: 8,
+                                              lineHeight: 1.3,
+                                              marginTop: 1,
+                                              overflow: "hidden",
+                                              textOverflow: "ellipsis",
+                                              whiteSpace: "nowrap"
+                                            },
+                                            children: item.description
+                                          }
+                                        )
+                                      ] }),
+                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                        "button",
+                                        {
+                                          type: "button",
+                                          "data-ocid": `buff_shop.use_button.${item.id}`,
+                                          className: canUse ? "stone-btn-crimson" : "stone-btn-slate",
+                                          style: {
+                                            ...getBtnStyle(canUse),
+                                            width: 38,
+                                            flexShrink: 0,
+                                            marginTop: 0
+                                          },
+                                          disabled: !canUse,
+                                          onClick: () => handleUse(item.id),
+                                          title: !inBattle ? "Only usable in battle" : !isPlayerTurn ? "Wait for your turn" : "Use item",
+                                          children: "Use"
+                                        }
+                                      )
+                                    ]
+                                  },
+                                  item.id
+                                );
+                              }
+                            )
+                          }
+                        ),
+                        !inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "p",
+                          {
+                            style: {
+                              color: "#556677",
+                              fontSize: 8,
+                              textAlign: "center",
+                              marginTop: 8,
+                              lineHeight: 1.5
+                            },
+                            children: "Items can only be used during your battle turn."
+                          }
+                        )
+                      ]
+                    }
+                  )
+                ]
               }
             )
           ]
@@ -41425,6 +41620,349 @@ const CharacterSelection = ({
     )
   ] });
 };
+const STORAGE_PREFIX = "pbv_panel_layout_";
+const SNAP_THRESHOLD = 80;
+const SNAP_GAP = 10;
+const panelRegistry = {};
+function loadLayout(userId) {
+  try {
+    const raw = localStorage.getItem(STORAGE_PREFIX + userId);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+function saveLayout(userId, panelId, state) {
+  try {
+    const existing = loadLayout(userId);
+    existing[panelId] = state;
+    localStorage.setItem(STORAGE_PREFIX + userId, JSON.stringify(existing));
+  } catch {
+  }
+}
+function computeSnapPosition(movedId, pos, w2, h2) {
+  let { x: x3, y: y2 } = pos;
+  let bestSnapX = null;
+  let bestSnapY = null;
+  for (const [otherId, other] of Object.entries(panelRegistry)) {
+    if (otherId === movedId) continue;
+    const rToL = Math.abs(x3 + w2 - other.x);
+    const lToR = Math.abs(x3 - (other.x + other.w));
+    const bToT = Math.abs(y2 + h2 - other.y);
+    const tToB = Math.abs(y2 - (other.y + other.h));
+    if (rToL < SNAP_THRESHOLD && (!bestSnapX || rToL < bestSnapX.dist)) {
+      bestSnapX = { val: other.x - w2 - SNAP_GAP, dist: rToL };
+    }
+    if (lToR < SNAP_THRESHOLD && (!bestSnapX || lToR < bestSnapX.dist)) {
+      bestSnapX = { val: other.x + other.w + SNAP_GAP, dist: lToR };
+    }
+    if (bToT < SNAP_THRESHOLD && (!bestSnapY || bToT < bestSnapY.dist)) {
+      bestSnapY = { val: other.y - h2 - SNAP_GAP, dist: bToT };
+    }
+    if (tToB < SNAP_THRESHOLD && (!bestSnapY || tToB < bestSnapY.dist)) {
+      bestSnapY = { val: other.y + other.h + SNAP_GAP, dist: tToB };
+    }
+  }
+  if (bestSnapX) x3 = bestSnapX.val;
+  if (bestSnapY) y2 = bestSnapY.val;
+  const TOP_BAR_BOTTOM = 44;
+  const TOP_BAR_SNAP_ZONE = 60;
+  const TOP_BAR_SNAP_TARGET = TOP_BAR_BOTTOM + 4;
+  if (Math.abs(y2 - TOP_BAR_BOTTOM) < TOP_BAR_SNAP_ZONE) {
+    y2 = TOP_BAR_SNAP_TARGET;
+  }
+  const MAX_PASSES = 5;
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let resolved = true;
+    for (const [otherId, other] of Object.entries(panelRegistry)) {
+      if (otherId === movedId) continue;
+      const overlapX = x3 < other.x + other.w && x3 + w2 > other.x;
+      const overlapY = y2 < other.y + other.h && y2 + h2 > other.y;
+      if (!overlapX || !overlapY) continue;
+      const pushRight = other.x + other.w - x3 + SNAP_GAP;
+      const pushLeft = x3 + w2 - other.x + SNAP_GAP;
+      const pushDown = other.y + other.h - y2 + SNAP_GAP;
+      const pushUp = y2 + h2 - other.y + SNAP_GAP;
+      const minPush = Math.min(pushRight, pushLeft, pushDown, pushUp);
+      if (minPush === pushRight) {
+        x3 = other.x + other.w + SNAP_GAP;
+      } else if (minPush === pushLeft) {
+        x3 = other.x - w2 - SNAP_GAP;
+      } else if (minPush === pushDown) {
+        y2 = other.y + other.h + SNAP_GAP;
+      } else {
+        y2 = other.y - h2 - SNAP_GAP;
+      }
+      if (y2 < TOP_BAR_SNAP_TARGET) y2 = TOP_BAR_SNAP_TARGET;
+      resolved = false;
+    }
+    if (resolved) break;
+  }
+  return { x: x3, y: y2 };
+}
+const DraggablePanel = ({
+  panelId,
+  title,
+  userId = "guest",
+  defaultPosition,
+  defaultFolded = false,
+  children,
+  className,
+  style: style2,
+  zIndex = 100,
+  onFoldChange
+}) => {
+  const [position, setPosition] = reactExports.useState(
+    defaultPosition
+  );
+  const [folded, setFolded] = reactExports.useState(defaultFolded);
+  const [isDragging, setIsDragging] = reactExports.useState(false);
+  const [loaded, setLoaded] = reactExports.useState(false);
+  const panelRef = reactExports.useRef(null);
+  const dragState = reactExports.useRef({
+    startMouseX: 0,
+    startMouseY: 0,
+    startPanelX: 0,
+    startPanelY: 0,
+    active: false
+  });
+  const lastSnappedPos = reactExports.useRef(null);
+  const saveDebounceRef = reactExports.useRef(null);
+  const currentPosRef = reactExports.useRef(position);
+  const currentFoldedRef = reactExports.useRef(folded);
+  const panelInstanceIdRef = reactExports.useRef(0);
+  reactExports.useEffect(() => {
+    panelInstanceIdRef.current += 1;
+    const layout = loadLayout(userId);
+    if (layout[panelId]) {
+      const saved = layout[panelId];
+      setPosition({ x: saved.x, y: saved.y });
+      setFolded(saved.folded);
+      currentPosRef.current = { x: saved.x, y: saved.y };
+      currentFoldedRef.current = saved.folded;
+    }
+    setLoaded(true);
+  }, [panelId, userId]);
+  const scheduleSave = reactExports.useCallback(
+    (pos, fold) => {
+      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+      const myInstance = panelInstanceIdRef.current;
+      saveDebounceRef.current = setTimeout(() => {
+        if (panelInstanceIdRef.current !== myInstance) return;
+        saveLayout(userId, panelId, { x: pos.x, y: pos.y, folded: fold });
+      }, 500);
+    },
+    [userId, panelId]
+  );
+  const clampPosition = reactExports.useCallback(
+    (x3, y2) => {
+      const el = panelRef.current;
+      if (!el) return { x: x3, y: y2 };
+      const w2 = el.offsetWidth;
+      const h2 = el.offsetHeight;
+      const maxX = Math.max(0, window.innerWidth - w2);
+      const maxY = Math.max(0, window.innerHeight - h2);
+      return {
+        x: Math.min(Math.max(0, x3), maxX),
+        y: Math.min(Math.max(0, y2), maxY)
+      };
+    },
+    []
+  );
+  const onMouseDown = reactExports.useCallback((e) => {
+    e.preventDefault();
+    dragState.current.startMouseX = e.clientX;
+    dragState.current.startMouseY = e.clientY;
+    dragState.current.startPanelX = currentPosRef.current.x;
+    dragState.current.startPanelY = currentPosRef.current.y;
+    dragState.current.active = true;
+    setIsDragging(true);
+  }, []);
+  const onTouchStart = reactExports.useCallback((e) => {
+    const touch = e.touches[0];
+    dragState.current.startMouseX = touch.clientX;
+    dragState.current.startMouseY = touch.clientY;
+    dragState.current.startPanelX = currentPosRef.current.x;
+    dragState.current.startPanelY = currentPosRef.current.y;
+    dragState.current.active = true;
+    setIsDragging(true);
+  }, []);
+  reactExports.useEffect(() => {
+    const onMove = (clientX, clientY) => {
+      if (!dragState.current.active) return;
+      const dx = clientX - dragState.current.startMouseX;
+      const dy = clientY - dragState.current.startMouseY;
+      const rawX = dragState.current.startPanelX + dx;
+      const rawY = dragState.current.startPanelY + dy;
+      const clamped = clampPosition(rawX, rawY);
+      currentPosRef.current = clamped;
+      setPosition(clamped);
+    };
+    const onEnd = () => {
+      if (!dragState.current.active) return;
+      dragState.current.active = false;
+      setIsDragging(false);
+      const el = panelRef.current;
+      if (el) {
+        const w2 = el.offsetWidth;
+        const h2 = el.offsetHeight;
+        const snapped = computeSnapPosition(
+          panelId,
+          currentPosRef.current,
+          w2,
+          h2
+        );
+        const maxX = Math.max(0, window.innerWidth - w2);
+        const maxY = Math.max(0, window.innerHeight - h2);
+        snapped.x = Math.min(Math.max(0, snapped.x), maxX);
+        snapped.y = Math.min(Math.max(0, snapped.y), maxY);
+        currentPosRef.current = snapped;
+        lastSnappedPos.current = snapped;
+        setPosition(snapped);
+      }
+      scheduleSave(currentPosRef.current, currentFoldedRef.current);
+    };
+    const handleMouseMove = (e) => onMove(e.clientX, e.clientY);
+    const handleTouchMove = (e) => {
+      const t = e.touches[0];
+      onMove(t.clientX, t.clientY);
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", onEnd);
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
+    window.addEventListener("touchend", onEnd);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", onEnd);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, [clampPosition, scheduleSave]);
+  const handleFoldToggle = reactExports.useCallback(() => {
+    const next = !currentFoldedRef.current;
+    currentFoldedRef.current = next;
+    setFolded(next);
+    scheduleSave(currentPosRef.current, next);
+    onFoldChange == null ? void 0 : onFoldChange(next);
+  }, [scheduleSave, onFoldChange]);
+  reactExports.useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const update = () => {
+      panelRegistry[panelId] = {
+        x: currentPosRef.current.x,
+        y: currentPosRef.current.y,
+        w: el.offsetWidth,
+        h: el.offsetHeight
+      };
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      delete panelRegistry[panelId];
+      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    };
+  }, [panelId]);
+  reactExports.useEffect(() => {
+    const existing = panelRegistry[panelId];
+    if (existing) {
+      panelRegistry[panelId] = { ...existing, x: position.x, y: position.y };
+    }
+  }, [panelId, position.x, position.y]);
+  if (!loaded) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      ref: panelRef,
+      "data-ocid": `draggable_panel.${panelId}`,
+      className: className ? `${className} stone-frame` : "stone-frame",
+      style: {
+        position: "fixed",
+        left: position.x,
+        top: position.y,
+        zIndex,
+        userSelect: "none",
+        touchAction: "none",
+        borderRadius: 14,
+        minWidth: 60,
+        ...style2
+      },
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "div",
+          {
+            "data-ocid": `draggable_panel.${panelId}.header`,
+            onMouseDown,
+            onTouchStart,
+            className: "stone-header",
+            style: {
+              borderRadius: folded ? 12 : "12px 12px 0 0",
+              padding: "4px 8px",
+              cursor: isDragging ? "grabbing" : "grab",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 6,
+              pointerEvents: "auto"
+            },
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  className: "stone-header-title",
+                  style: {
+                    fontSize: 10,
+                    flex: 1,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis"
+                  },
+                  children: title
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": `draggable_panel.${panelId}.fold_button`,
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    handleFoldToggle();
+                  },
+                  className: "stone-btn-slate",
+                  style: {
+                    fontSize: 12,
+                    lineHeight: 1,
+                    padding: "0 4px",
+                    flexShrink: 0,
+                    pointerEvents: "auto"
+                  },
+                  "aria-label": folded ? "Expand panel" : "Fold panel",
+                  children: folded ? "▲" : "▼"
+                }
+              )
+            ]
+          }
+        ),
+        !folded && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            className: "stone-well",
+            style: {
+              pointerEvents: "auto",
+              borderRadius: "0 0 12px 12px",
+              overflow: "visible"
+            },
+            children
+          }
+        )
+      ]
+    }
+  );
+};
 const CHAT_COLORS = [
   "#e74c3c",
   "#e67e22",
@@ -42649,6 +43187,7 @@ const BattleUIPanel = ({
   maxBattleAp,
   maxBattleMp,
   onEndTurn,
+  onEndBattle,
   spellCooldowns = {},
   userId
 }) => {
@@ -42960,7 +43499,7 @@ const BattleUIPanel = ({
                           onClick: onSetWalk,
                           className: `
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
-                    ${battleActionMode === "walk" ? "stone-btn-crimson" : "stone-btn-slate opacity-55"}
+                    ${battleActionMode === "walk" ? "stone-btn-emerald" : "stone-btn-slate opacity-55"}
                     ${currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `,
                           children: "🚶 WALK"
@@ -42974,10 +43513,27 @@ const BattleUIPanel = ({
                           onClick: onSetAttack,
                           className: `
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
-                    ${battleActionMode === "attack" ? "stone-btn-crimson" : "stone-btn-slate opacity-55"}
+                    ${battleActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
                     ${currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `,
                           children: "⚔️ ATTACK"
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        "button",
+                        {
+                          type: "button",
+                          "data-ocid": "battle_ui.end_battle_button",
+                          onClick: () => {
+                            if (window.confirm("Leave battle? You will die.")) {
+                              onEndBattle == null ? void 0 : onEndBattle();
+                            }
+                          },
+                          className: "\n                    px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150\n                    stone-btn-slate\n                    cursor-pointer\n                  ",
+                          children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(Skull, { size: 12 }),
+                            "FLEE"
+                          ]
                         }
                       ),
                       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -43291,306 +43847,6 @@ const BattleUIPanel = ({
       document.body
     )
   ] });
-};
-const BoostToggle = ({
-  boostMode,
-  onToggle,
-  regionEffects,
-  inBattle = false,
-  userId
-}) => {
-  const [visible, setVisible] = reactExports.useState(true);
-  const onToggleRef = reactExports.useRef(onToggle);
-  reactExports.useEffect(() => {
-    onToggleRef.current = onToggle;
-  });
-  reactExports.useEffect(() => {
-    onToggleRef.current("xp");
-  }, []);
-  if (!visible) {
-    return /* @__PURE__ */ jsxRuntimeExports.jsx(
-      DraggablePanel,
-      {
-        panelId: "boost-toggle",
-        title: "Boost",
-        userId,
-        defaultPosition: { x: Math.max(0, window.innerWidth - 230), y: 200 },
-        defaultFolded: true,
-        zIndex: 110,
-        style: { width: 200 },
-        children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "button",
-          {
-            type: "button",
-            "data-ocid": "boost_toggle.open_modal_button",
-            onClick: () => setVisible(true),
-            style: {
-              background: "rgba(10,6,20,0.88)",
-              border: "none",
-              color: "#ff7675",
-              fontSize: 11,
-              padding: "4px 10px",
-              cursor: "pointer",
-              pointerEvents: "auto",
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-              width: "100%"
-            },
-            children: "⚡ BOOST"
-          }
-        )
-      }
-    );
-  }
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(
-    DraggablePanel,
-    {
-      panelId: "boost-toggle",
-      title: "Boost",
-      userId,
-      defaultPosition: { x: Math.max(0, window.innerWidth - 230), y: 200 },
-      defaultFolded: false,
-      zIndex: 110,
-      style: { width: 200 },
-      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "div",
-        {
-          "data-ocid": "boost_toggle.panel",
-          style: {
-            width: 200,
-            background: "linear-gradient(180deg, #0d0610 0%, #0a0414 100%)",
-            pointerEvents: "none",
-            overflow: "hidden"
-          },
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "5px 8px",
-                  background: "rgba(192,57,43,0.18)",
-                  borderBottom: "1px solid rgba(192,57,43,0.35)",
-                  pointerEvents: "auto"
-                },
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 5 }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11 }, children: "⚡" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "span",
-                      {
-                        style: {
-                          color: "#ff7675",
-                          fontSize: 9,
-                          fontWeight: 800,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase"
-                        },
-                        children: "Battle Boost"
-                      }
-                    )
-                  ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 5 }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "span",
-                      {
-                        style: {
-                          background: boostMode === "xp" ? "rgba(142,68,173,0.3)" : "rgba(241,196,15,0.2)",
-                          border: boostMode === "xp" ? "1px solid rgba(155,89,182,0.6)" : "1px solid rgba(241,196,15,0.4)",
-                          color: boostMode === "xp" ? "#c39bd3" : "#f1c40f",
-                          fontSize: 8,
-                          fontWeight: 700,
-                          padding: "1px 5px",
-                          borderRadius: 3
-                        },
-                        children: [
-                          "+50% ",
-                          boostMode === "xp" ? "XP" : "DOKA"
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "boost_toggle.close_button",
-                        onClick: () => setVisible(false),
-                        style: {
-                          background: "transparent",
-                          border: "none",
-                          color: "rgba(192,57,43,0.7)",
-                          cursor: "pointer",
-                          fontSize: 12,
-                          lineHeight: 1,
-                          padding: 0,
-                          pointerEvents: "auto"
-                        },
-                        "aria-label": "Hide boost toggle",
-                        children: "×"
-                      }
-                    )
-                  ] })
-                ]
-              }
-            ),
-            inBattle && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 5,
-                  padding: "4px 8px",
-                  background: "rgba(139,0,0,0.35)",
-                  borderBottom: "1px solid rgba(192,57,43,0.4)"
-                },
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10 }, children: "🔒" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "span",
-                    {
-                      style: {
-                        color: "rgba(255,100,100,0.85)",
-                        fontSize: 8,
-                        fontWeight: 800,
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase"
-                      },
-                      children: "Locked during battle"
-                    }
-                  )
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  gap: 4,
-                  padding: "6px 8px",
-                  borderBottom: "1px solid rgba(192,57,43,0.2)",
-                  pointerEvents: "auto",
-                  opacity: inBattle ? 0.45 : 1,
-                  position: "relative"
-                },
-                children: [
-                  inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      style: {
-                        position: "absolute",
-                        inset: 0,
-                        zIndex: 5,
-                        cursor: "not-allowed",
-                        pointerEvents: "auto"
-                      }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "button",
-                    {
-                      type: "button",
-                      "data-ocid": "boost_toggle.tab",
-                      onClick: () => !inBattle && onToggle("xp"),
-                      disabled: inBattle,
-                      style: {
-                        flex: 1,
-                        padding: "4px 0",
-                        borderRadius: 4,
-                        border: boostMode === "xp" ? "1px solid rgba(155,89,182,0.7)" : "1px solid rgba(255,255,255,0.08)",
-                        background: boostMode === "xp" ? "linear-gradient(135deg, rgba(142,68,173,0.45) 0%, rgba(108,52,131,0.3) 100%)" : "rgba(255,255,255,0.04)",
-                        color: boostMode === "xp" ? "#e056fd" : "rgba(255,255,255,0.35)",
-                        fontSize: 10,
-                        fontWeight: boostMode === "xp" ? 800 : 500,
-                        cursor: inBattle ? "not-allowed" : "pointer",
-                        transition: "all 0.2s",
-                        boxShadow: boostMode === "xp" ? "0 0 8px rgba(155,89,182,0.3), inset 0 0 6px rgba(155,89,182,0.1)" : "none",
-                        letterSpacing: "0.04em"
-                      },
-                      children: "🔮 XP Boost"
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "button",
-                    {
-                      type: "button",
-                      "data-ocid": "boost_toggle.tab",
-                      onClick: () => !inBattle && onToggle("rewards"),
-                      disabled: inBattle,
-                      style: {
-                        flex: 1,
-                        padding: "4px 0",
-                        borderRadius: 4,
-                        border: boostMode === "rewards" ? "1px solid rgba(241,196,15,0.6)" : "1px solid rgba(255,255,255,0.08)",
-                        background: boostMode === "rewards" ? "linear-gradient(135deg, rgba(241,196,15,0.3) 0%, rgba(230,126,34,0.2) 100%)" : "rgba(255,255,255,0.04)",
-                        color: boostMode === "rewards" ? "#f9ca24" : "rgba(255,255,255,0.35)",
-                        fontSize: 10,
-                        fontWeight: boostMode === "rewards" ? 800 : 500,
-                        cursor: inBattle ? "not-allowed" : "pointer",
-                        transition: "all 0.2s",
-                        boxShadow: boostMode === "rewards" ? "0 0 8px rgba(241,196,15,0.25), inset 0 0 6px rgba(241,196,15,0.1)" : "none",
-                        letterSpacing: "0.04em"
-                      },
-                      children: "💰 Rewards"
-                    }
-                  )
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "5px 8px 7px" }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  style: {
-                    color: "rgba(192,57,43,0.8)",
-                    fontSize: 8,
-                    fontWeight: 800,
-                    letterSpacing: "0.08em",
-                    textTransform: "uppercase",
-                    marginBottom: 4
-                  },
-                  children: "Map Effects"
-                }
-              ),
-              regionEffects.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  style: {
-                    color: "rgba(255,255,255,0.25)",
-                    fontSize: 9,
-                    fontStyle: "italic"
-                  },
-                  children: "No special effects"
-                }
-              ) : /* @__PURE__ */ jsxRuntimeExports.jsx("ul", { style: { margin: 0, padding: 0, listStyle: "none" }, children: regionEffects.map((effect, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "li",
-                {
-                  style: {
-                    color: "rgba(255,118,117,0.85)",
-                    fontSize: 9,
-                    paddingLeft: 6,
-                    marginBottom: 2,
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 4
-                  },
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#c0392b", flexShrink: 0 }, children: "▸" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: effect })
-                  ]
-                },
-                i
-              )) })
-            ] })
-          ]
-        }
-      )
-    }
-  );
 };
 const MONSTERS = [
   {
@@ -46964,493 +47220,6 @@ async function resolveBattleRewards(actor, selectedSlot, input) {
   };
   return recap;
 }
-const BUFF_ITEMS = [
-  {
-    id: "health_potion",
-    name: "Health Potion",
-    icon: "🧪",
-    description: "Restore 30% of max HP",
-    cost: 50,
-    maxStack: 5
-  },
-  {
-    id: "greater_health_potion",
-    name: "Greater Potion",
-    icon: "💊",
-    description: "Restore 70% of max HP",
-    cost: 120,
-    maxStack: 5
-  },
-  {
-    id: "battle_elixir",
-    name: "Battle Elixir",
-    icon: "⚡",
-    description: "+3 AP this turn (battle)",
-    cost: 80,
-    maxStack: 5
-  },
-  {
-    id: "swift_boots",
-    name: "Swift Boots",
-    icon: "👟",
-    description: "+2 MP this turn (battle)",
-    cost: 90,
-    maxStack: 5
-  },
-  {
-    id: "shield_charm",
-    name: "Shield Charm",
-    icon: "🛡️",
-    description: "Absorb next 20 damage",
-    cost: 100,
-    maxStack: 5
-  },
-  {
-    id: "fury_potion",
-    name: "Fury Potion",
-    icon: "💢",
-    description: "+25% damage for 3 turns",
-    cost: 150,
-    maxStack: 5
-  }
-];
-function loadInventory(principalId) {
-  try {
-    const raw = localStorage.getItem(`${principalId}_inventory`);
-    if (!raw) return {};
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-function saveInventory(principalId, inv) {
-  try {
-    localStorage.setItem(`${principalId}_inventory`, JSON.stringify(inv));
-  } catch {
-  }
-}
-const PANEL_STYLE = {
-  width: 248
-};
-const sectionStyle = {
-  padding: "6px 8px"
-};
-const tabButtonStyle = (_active) => ({
-  flex: 1,
-  padding: "4px 0",
-  fontSize: 10,
-  fontWeight: 700,
-  letterSpacing: "0.06em",
-  textTransform: "uppercase",
-  borderRadius: 3,
-  cursor: "pointer"
-});
-const itemCardStyle = {
-  borderRadius: 5,
-  padding: "6px 8px",
-  display: "flex",
-  flexDirection: "column",
-  gap: 3,
-  position: "relative"
-};
-const buyBtnStyle = (canAfford) => ({
-  marginTop: 4,
-  padding: "3px 0",
-  fontSize: 10,
-  fontWeight: 700,
-  borderRadius: 3,
-  cursor: canAfford ? "pointer" : "not-allowed",
-  width: "100%"
-});
-const getBtnStyle = (canUse) => ({
-  marginTop: 3,
-  padding: "3px 0",
-  fontSize: 10,
-  fontWeight: 700,
-  borderRadius: 3,
-  cursor: canUse ? "pointer" : "not-allowed",
-  width: "100%"
-});
-const BuffShop = ({
-  dokaBalance,
-  onDeductDoka,
-  onUseItem,
-  isPlayerTurn,
-  inBattle,
-  userId,
-  principalId
-}) => {
-  const storageKey = principalId ?? userId ?? "guest";
-  const [inventory, setInventory] = reactExports.useState(
-    () => loadInventory(storageKey)
-  );
-  const [activeTab, setActiveTab] = reactExports.useState("shop");
-  const prevKeyRef = reactExports.useRef(storageKey);
-  reactExports.useEffect(() => {
-    if (prevKeyRef.current !== storageKey) {
-      prevKeyRef.current = storageKey;
-      setInventory(loadInventory(storageKey));
-    }
-  }, [storageKey]);
-  reactExports.useEffect(() => {
-    saveInventory(storageKey, inventory);
-  }, [inventory, storageKey]);
-  const handleBuy = reactExports.useCallback(
-    (item) => {
-      if (dokaBalance < item.cost) return;
-      if (inBattle) return;
-      const current = inventory[item.id] ?? 0;
-      if (current >= item.maxStack) return;
-      onDeductDoka(item.cost);
-      setInventory((prev) => ({
-        ...prev,
-        [item.id]: (prev[item.id] ?? 0) + 1
-      }));
-    },
-    [dokaBalance, inventory, inBattle, onDeductDoka]
-  );
-  const handleUse = reactExports.useCallback(
-    (itemId) => {
-      if (!inBattle || !isPlayerTurn) return;
-      const count2 = inventory[itemId] ?? 0;
-      if (count2 <= 0) return;
-      onUseItem(itemId);
-      setInventory((prev) => {
-        const next = prev[itemId] ? prev[itemId] - 1 : 0;
-        return { ...prev, [itemId]: Math.max(0, next) };
-      });
-    },
-    [inventory, inBattle, isPlayerTurn, onUseItem]
-  );
-  const totalItems = BUFF_ITEMS.reduce(
-    (acc, it2) => acc + (inventory[it2.id] ?? 0),
-    0
-  );
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    DraggablePanel,
-    {
-      panelId: "buff-shop-panel",
-      title: "⚗️ Item Shop",
-      userId,
-      defaultPosition: { x: Math.max(0, window.innerWidth - 500), y: 54 },
-      defaultFolded: false,
-      zIndex: 200,
-      style: PANEL_STYLE,
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-header", style: sectionStyle, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "span",
-          {
-            className: "stone-pill stone-pill-gold",
-            style: {
-              fontSize: 10,
-              fontWeight: 700,
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-              padding: "2px 8px"
-            },
-            children: [
-              dokaBalance.toLocaleString(),
-              " Doka",
-              inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#e74c3c", fontSize: 9, marginLeft: 4 }, children: "(buy outside battle)" })
-            ]
-          }
-        ) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "div",
-          {
-            className: "stone-well",
-            style: {
-              display: "flex",
-              gap: 4,
-              padding: "5px 8px"
-            },
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "button",
-                {
-                  type: "button",
-                  "data-ocid": "buff_shop.shop_tab",
-                  className: activeTab === "shop" ? "stone-btn-crimson" : "stone-btn-slate",
-                  style: tabButtonStyle(),
-                  onClick: () => setActiveTab("shop"),
-                  children: "Shop"
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "button",
-                {
-                  type: "button",
-                  "data-ocid": "buff_shop.inventory_tab",
-                  className: activeTab === "inventory" ? "stone-btn-crimson" : "stone-btn-slate",
-                  style: tabButtonStyle(),
-                  onClick: () => setActiveTab("inventory"),
-                  children: [
-                    "Inventory",
-                    totalItems > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "span",
-                      {
-                        className: "stone-pill-crimson",
-                        style: { marginLeft: 4, fontSize: 9, padding: "0 4px" },
-                        children: totalItems
-                      }
-                    )
-                  ]
-                }
-              )
-            ]
-          }
-        ),
-        activeTab === "shop" && /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "div",
-          {
-            style: {
-              padding: "6px 8px",
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 6,
-              maxHeight: 340,
-              overflowY: "auto"
-            },
-            children: BUFF_ITEMS.map((item) => {
-              const owned = inventory[item.id] ?? 0;
-              const canAfford = dokaBalance >= item.cost && !inBattle;
-              const atMax = owned >= item.maxStack;
-              return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "div",
-                {
-                  "data-ocid": `buff_shop.item.${item.id}`,
-                  className: "stone-well",
-                  style: itemCardStyle,
-                  children: [
-                    owned > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "span",
-                      {
-                        style: {
-                          position: "absolute",
-                          top: 4,
-                          right: 4,
-                          background: "#c0392b",
-                          color: "#fff",
-                          fontSize: 8,
-                          fontWeight: 700,
-                          borderRadius: 8,
-                          padding: "0 4px",
-                          lineHeight: "14px"
-                        },
-                        children: [
-                          "×",
-                          owned
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        style: { fontSize: 18, lineHeight: 1, textAlign: "center" },
-                        children: item.icon
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        style: {
-                          color: "#e0c8a0",
-                          fontSize: 9,
-                          fontWeight: 700,
-                          textAlign: "center",
-                          lineHeight: 1.2
-                        },
-                        children: item.name
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        style: {
-                          color: "#887766",
-                          fontSize: 8,
-                          textAlign: "center",
-                          lineHeight: 1.3
-                        },
-                        children: item.description
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "div",
-                      {
-                        style: {
-                          color: "#f1c40f",
-                          fontSize: 9,
-                          fontWeight: 700,
-                          textAlign: "center"
-                        },
-                        children: [
-                          item.cost,
-                          " Doka"
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": `buff_shop.buy_button.${item.id}`,
-                        className: canAfford && !atMax ? "stone-btn-crimson" : "stone-btn-slate",
-                        style: buyBtnStyle(canAfford && !atMax),
-                        disabled: !canAfford || atMax,
-                        onClick: () => handleBuy(item),
-                        children: atMax ? "Max" : "Buy"
-                      }
-                    )
-                  ]
-                },
-                item.id
-              );
-            })
-          }
-        ),
-        activeTab === "inventory" && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "div",
-          {
-            style: {
-              padding: "6px 8px",
-              maxHeight: 340,
-              overflowY: "auto"
-            },
-            children: [
-              BUFF_ITEMS.filter((it2) => (inventory[it2.id] ?? 0) > 0).length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "div",
-                {
-                  "data-ocid": "buff_shop.empty_state",
-                  style: {
-                    color: "#556677",
-                    fontSize: 10,
-                    textAlign: "center",
-                    padding: "18px 0"
-                  },
-                  children: [
-                    "No items in inventory.",
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("br", {}),
-                    "Buy items in the Shop tab."
-                  ]
-                }
-              ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 5
-                  },
-                  children: BUFF_ITEMS.filter((it2) => (inventory[it2.id] ?? 0) > 0).map(
-                    (item) => {
-                      const count2 = inventory[item.id] ?? 0;
-                      const canUse = inBattle && isPlayerTurn && count2 > 0;
-                      return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                        "div",
-                        {
-                          "data-ocid": `buff_shop.inv_item.${item.id}`,
-                          className: "stone-well",
-                          style: {
-                            ...itemCardStyle,
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 8
-                          },
-                          children: [
-                            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 18, flexShrink: 0 }, children: item.icon }),
-                            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
-                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                "div",
-                                {
-                                  style: {
-                                    color: "#e0c8a0",
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    lineHeight: 1.2
-                                  },
-                                  children: [
-                                    item.name,
-                                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                      "span",
-                                      {
-                                        style: {
-                                          color: "#c0392b",
-                                          marginLeft: 4,
-                                          fontWeight: 800
-                                        },
-                                        children: [
-                                          "×",
-                                          count2
-                                        ]
-                                      }
-                                    )
-                                  ]
-                                }
-                              ),
-                              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "div",
-                                {
-                                  style: {
-                                    color: "#887766",
-                                    fontSize: 8,
-                                    lineHeight: 1.3,
-                                    marginTop: 1,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap"
-                                  },
-                                  children: item.description
-                                }
-                              )
-                            ] }),
-                            /* @__PURE__ */ jsxRuntimeExports.jsx(
-                              "button",
-                              {
-                                type: "button",
-                                "data-ocid": `buff_shop.use_button.${item.id}`,
-                                className: canUse ? "stone-btn-crimson" : "stone-btn-slate",
-                                style: {
-                                  ...getBtnStyle(canUse),
-                                  width: 38,
-                                  flexShrink: 0,
-                                  marginTop: 0
-                                },
-                                disabled: !canUse,
-                                onClick: () => handleUse(item.id),
-                                title: !inBattle ? "Only usable in battle" : !isPlayerTurn ? "Wait for your turn" : "Use item",
-                                children: "Use"
-                              }
-                            )
-                          ]
-                        },
-                        item.id
-                      );
-                    }
-                  )
-                }
-              ),
-              !inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "p",
-                {
-                  style: {
-                    color: "#556677",
-                    fontSize: 8,
-                    textAlign: "center",
-                    marginTop: 8,
-                    lineHeight: 1.5
-                  },
-                  children: "Items can only be used during your battle turn."
-                }
-              )
-            ]
-          }
-        )
-      ]
-    }
-  );
-};
 const DEFAULT_CHALLENGES = [
   {
     id: "easy_1",
@@ -49109,6 +48878,89 @@ function pickEnemyLevelFromTiers(playerLevel) {
     Math.floor(Math.random() * (tierMax - tierMin + 1)) + tierMin
   );
 }
+function computeEnemyStats(level, pieceType, seedKey) {
+  const rng = seededRng(
+    typeof seedKey === "string" ? seedKey.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0) : seedKey
+  );
+  const base = Math.max(1, level);
+  const pieceMultipliers = {
+    pawn: {
+      sp: 0.85,
+      wr: 0.85,
+      sr: 0.85,
+      scp: 0.85,
+      wp: 0.85,
+      init: 0.85,
+      res: 0.85,
+      chc: 0.85
+    },
+    rook: {
+      sp: 0.8,
+      wr: 1.3,
+      sr: 1.2,
+      scp: 0.8,
+      wp: 1.1,
+      init: 1.1,
+      res: 1.35,
+      chc: 0.7
+    },
+    knight: {
+      sp: 0.85,
+      wr: 1.25,
+      sr: 1.15,
+      scp: 0.85,
+      wp: 1.05,
+      init: 1.2,
+      res: 1.25,
+      chc: 0.8
+    },
+    bishop: {
+      sp: 1.3,
+      wr: 0.75,
+      sr: 0.85,
+      scp: 1.25,
+      wp: 0.9,
+      init: 1,
+      res: 0.7,
+      chc: 1.2
+    },
+    queen: {
+      sp: 1.25,
+      wr: 0.8,
+      sr: 0.9,
+      scp: 1.2,
+      wp: 0.95,
+      init: 1.1,
+      res: 0.75,
+      chc: 1.15
+    },
+    king: {
+      sp: 1,
+      wr: 1,
+      sr: 1,
+      scp: 1,
+      wp: 1,
+      init: 1,
+      res: 1,
+      chc: 1
+    }
+  };
+  const mult = pieceMultipliers[pieceType] ?? pieceMultipliers.king;
+  const roll = (min, max, m2) => {
+    const raw = min + rng() * (max - min);
+    return Math.max(1, Math.round(raw * m2));
+  };
+  return {
+    sp: roll(3, 6 + base * 1.2, mult.sp),
+    wr: roll(2, 4 + base * 1, mult.wr),
+    sr: roll(2, 4 + base * 1, mult.sr),
+    scp: roll(3, 6 + base * 1.2, mult.scp),
+    wp: roll(3, 6 + base * 1.2, mult.wp),
+    init: roll(3, 6 + base * 1.2, mult.init),
+    res: roll(2, 4 + base * 0.9, mult.res),
+    chc: roll(1, 3 + base * 0.7, mult.chc)
+  };
+}
 function seededRng(seed) {
   let val = Math.abs(seed) + 1;
   return () => {
@@ -49456,6 +49308,8 @@ function applyVoidTiles(tilesArr, arch, vt, prot, mw, mh) {
   }
 }
 const WorldExplorationInner = ({
+  dokaBalance,
+  onDokaBalanceChange,
   character,
   dungeon: _dungeon,
   characterSlot = 1,
@@ -49645,9 +49499,6 @@ const WorldExplorationInner = ({
   const [_battleEnemies, setBattleEnemies] = reactExports.useState([]);
   const battleEnemiesRef = reactExports.useRef([]);
   const [showGameOver, setShowGameOver] = reactExports.useState(false);
-  const [dokaBalance, setDokaBalance] = reactExports.useState(
-    () => (character == null ? void 0 : character.dokaBalance) != null ? Number(character.dokaBalance) : (character == null ? void 0 : character.bloodBalance) != null ? Number(character.bloodBalance) : 0
-  );
   const [currentChallenge, setCurrentChallenge] = reactExports.useState(
     null
   );
@@ -49685,13 +49536,6 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     dungeonChainMaxDepthRef.current = dungeonChainMaxDepth;
   }, [dungeonChainMaxDepth]);
-  reactExports.useEffect(() => {
-    if (!actor) return;
-    actor.getDokaBalance().then((bal) => {
-      setDokaBalance(Number(bal));
-    }).catch(() => {
-    });
-  }, [actor]);
   const DUNGEON_DOKA_MULTIPLIERS = [1, 1.5, 2, 2.5, 3, 4];
   const dungeonDokaMultiplier = dungeonChainActive ? DUNGEON_DOKA_MULTIPLIERS[Math.min(dungeonChainDepth, 5)] ?? 1 : 1;
   const dungeonDokaMultiplierRef = reactExports.useRef(1);
@@ -49988,7 +49832,7 @@ const WorldExplorationInner = ({
   const [selectedPkg, setSelectedPkg] = reactExports.useState(null);
   const [shopCustomerData, setShopCustomerData] = reactExports.useState({});
   const [shopProofFile, setShopProofFile] = reactExports.useState(null);
-  const [boostMode, setBoostMode] = reactExports.useState("xp");
+  const [boostMode, _setBoostMode] = reactExports.useState("xp");
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
@@ -50003,7 +49847,7 @@ const WorldExplorationInner = ({
           BigInt(characterSlot),
           newName
         );
-        setDokaBalance((prev) => Math.max(0, prev - 100));
+        onDokaBalanceChange(Math.max(0, dokaBalance - 100));
         ue.success(`Name changed to "${newName}"`);
         setShowRenameModal(false);
         setRenameInput("");
@@ -50913,7 +50757,7 @@ const WorldExplorationInner = ({
     (spellId, cost) => {
       if (dokaBalance < cost) return;
       const newDoka = dokaBalance - cost;
-      setDokaBalance(newDoka);
+      onDokaBalanceChange(newDoka);
       setSpellLevels((prev) => {
         const next = { ...prev, [spellId]: (prev[spellId] ?? 0) + 1 };
         try {
@@ -50976,7 +50820,7 @@ const WorldExplorationInner = ({
         return next;
       });
     },
-    [dokaBalance, actor, character, characterSlot, nsKey]
+    [dokaBalance, onDokaBalanceChange, actor, character, characterSlot, nsKey]
   );
   const [characterStats, setCharacterStats] = reactExports.useState(() => {
     const savedLevel = (character == null ? void 0 : character.level) != null ? Number(character.level) : 1;
@@ -51000,13 +50844,6 @@ const WorldExplorationInner = ({
       expToNext
     };
   });
-  reactExports.useEffect(() => {
-    if (!character) return;
-    const backendDoka = character.dokaBalance != null ? Number(character.dokaBalance) : character.bloodBalance != null ? Number(character.bloodBalance) : null;
-    if (backendDoka != null && !inBattle) {
-      setDokaBalance(backendDoka);
-    }
-  }, [character, inBattle]);
   const getStatModifier = reactExports.useCallback(
     (targetId, stat, activeEffectsSnap) => {
       let multiplier = 1;
@@ -51480,7 +51317,7 @@ const WorldExplorationInner = ({
       ]
     }
   };
-  const currentRegionEffects = (() => {
+  (() => {
     const level = characterStats.level;
     const match = regionConfigs.find(
       (r2) => level >= Number(r2.levelMin) && level <= Number(r2.levelMax)
@@ -53504,9 +53341,11 @@ const WorldExplorationInner = ({
             hp: Math.max(1, Math.round(enemyLevel * 8 + 20)),
             maxHp: Math.max(1, Math.round(enemyLevel * 8 + 20)),
             damage: Math.max(1, Math.round(enemyLevel * 2 + 3)),
-            res: 0,
-            sp: 0,
-            chc: 0,
+            ...computeEnemyStats(
+              enemyLevel,
+              pieceType,
+              `enemy-${enemies2.length}-${currentTime}`
+            ),
             family: "default",
             assignedName
           });
@@ -53613,7 +53452,8 @@ const WorldExplorationInner = ({
       characterStats,
       isAdjacentToPortal,
       generateEnemyScaleFactors,
-      enemyNamesFromQuery
+      enemyNamesFromQuery,
+      pieceType
     ]
   );
   const updateCameraToFollowPlayer = reactExports.useCallback(() => {
@@ -53846,7 +53686,7 @@ const WorldExplorationInner = ({
       } else if (isInsideChain) {
         if (currentDepth >= maxDepth) {
           const chainBonus = maxDepth * 50;
-          setDokaBalance((prev) => prev + chainBonus);
+          onDokaBalanceChange(dokaBalance + chainBonus);
           chainJustCompleted = true;
           nextDungeonDepth = 0;
           setDungeonChainActive(false);
@@ -53986,6 +53826,11 @@ const WorldExplorationInner = ({
             res: Math.min(50, bossConf.baseStats.res),
             sp: Math.min(50, bossConf.baseStats.sp),
             chc: bossConf.baseStats.chc,
+            init: bossConf.baseStats.init ?? Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
+            wr: 10,
+            sr: 10,
+            scp: 10,
+            wp: 10,
             assignedName: bossConf.name,
             isLeader: true
           }
@@ -54243,7 +54088,7 @@ const WorldExplorationInner = ({
     setDungeonChainDepth,
     setDungeonChainMaxDepth,
     setDungeonChainBaseLevel,
-    setDokaBalance
+    onDokaBalanceChange
   ]);
   const updateEnemyMovement = reactExports.useCallback(() => {
     if (inBattleRef.current) return;
@@ -55970,21 +55815,25 @@ const WorldExplorationInner = ({
             return;
           }
           if (isShieldSpell && isPlayerTile) {
-            const shieldAmt = spell.healAmount ?? 0;
-            const shieldDur = spell.buffDuration ?? 3;
-            applyActiveEffect({
-              id: `player-shield-${Date.now()}`,
-              effectName: `${spell.name} Shield`,
-              type: "buff",
-              targetId: "player",
-              duration: shieldDur,
-              iconEmoji: "🛡️",
-              description: `+${shieldAmt} shield for ${shieldDur} turns`
-            });
-            logBattleEntry(
-              `You cast ${spell.name} and gained a shield of ${shieldAmt} for ${shieldDur} turns!`,
-              "#60a5fa"
-            );
+            if (spell.buffStat && spell.buffModifier) {
+              const pct = Math.round((spell.buffModifier - 1) * 100);
+              const shieldDur = spell.buffDuration ?? 3;
+              applyActiveEffect({
+                id: `player-shield-${Date.now()}`,
+                effectName: `${spell.name} Shield`,
+                type: "buff",
+                targetId: "player",
+                stat: spell.buffStat,
+                modifier: spell.buffModifier,
+                duration: shieldDur,
+                iconEmoji: "🛡️",
+                description: `+${pct}% ${spell.buffStat.toUpperCase()} for ${shieldDur} turns`
+              });
+              logBattleEntry(
+                `You cast ${spell.name}: +${pct}% ${spell.buffStat.toUpperCase()} for ${shieldDur} turns!`,
+                "#60a5fa"
+              );
+            }
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             if (currentBattleAp - apCost <= 0) {
               selectedSpellIdRef.current = null;
@@ -56867,7 +56716,7 @@ const WorldExplorationInner = ({
           }
           if (newPos.x === shrineAltarPosRef.current.x && newPos.y === shrineAltarPosRef.current.y) {
             const _purePath = !shrinePathViolatedRef.current;
-            setDokaBalance((prev) => prev + 300);
+            onDokaBalanceChange(dokaBalance + 300);
             if (_purePath) {
               covenantBuffMapsRef.current = 3;
               try {
@@ -56901,7 +56750,7 @@ const WorldExplorationInner = ({
             (loot) => !loot.collected && loot.tileX === newPos.x && loot.tileY === newPos.y
           );
           if (!hit) return prev;
-          setDokaBalance((b2) => b2 + hit.value);
+          onDokaBalanceChange(dokaBalance + hit.value);
           playSound("doka_collected", String(hit.value));
           groundDokaPickupCountRef.current += 1;
           try {
@@ -57027,7 +56876,9 @@ const WorldExplorationInner = ({
     currentMap,
     applyActiveEffect,
     userId,
-    characterSlot
+    characterSlot,
+    dokaBalance,
+    onDokaBalanceChange
   ]);
   reactExports.useEffect(() => {
     if (!isMoving) {
@@ -57198,20 +57049,8 @@ const WorldExplorationInner = ({
       const enemyPositions = enemies.map((e) => ({ x: e.x, y: e.y }));
       const newPlayerPos = findFreeCellFarFrom(enemyPositions, 3, tiles);
       const occupiedPositions = [playerPosition];
-      const updatedEnemies = enemies.map((e, idx) => {
-        const statRng = seededRng(e.level * 31 + idx * 7 + 13);
-        const enemyRes = Math.min(
-          15,
-          Math.floor(statRng() * (5 + e.level * 0.5))
-        );
-        const enemySp = Math.min(
-          15,
-          Math.floor(statRng() * (5 + e.level * 0.5))
-        );
-        const enemyChc = Math.min(
-          10,
-          Math.floor(statRng() * (3 + e.level * 0.2))
-        );
+      const updatedEnemies = enemies.map((e) => {
+        const stats = computeEnemyStats(e.level, e.pieceType, e.id);
         const newPos = findFreeCellFarFrom(occupiedPositions, 3, tiles);
         if (newPos) {
           occupiedPositions.push(newPos);
@@ -57221,9 +57060,14 @@ const WorldExplorationInner = ({
             y: newPos.y,
             isMoving: false,
             movementPath: [],
-            res: enemyRes,
-            sp: enemySp,
-            chc: enemyChc
+            sp: stats.sp,
+            wr: stats.wr,
+            sr: stats.sr,
+            scp: stats.scp,
+            wp: stats.wp,
+            init: stats.init,
+            res: stats.res,
+            chc: stats.chc
           };
         }
         occupiedPositions.push({ x: e.x, y: e.y });
@@ -57231,9 +57075,14 @@ const WorldExplorationInner = ({
           ...e,
           isMoving: false,
           movementPath: [],
-          res: enemyRes,
-          sp: enemySp,
-          chc: enemyChc
+          sp: stats.sp,
+          wr: stats.wr,
+          sr: stats.sr,
+          scp: stats.scp,
+          wp: stats.wp,
+          init: stats.init,
+          res: stats.res,
+          chc: stats.chc
         };
       });
       dustMotesRef.current = [];
@@ -57270,7 +57119,7 @@ const WorldExplorationInner = ({
         return {
           id: e.id,
           type: "enemy",
-          initiative: isBossEnemy ? (bossConf == null ? void 0 : bossConf.baseStats.init) ?? Math.max(1, 8 + e.level - 1) : Math.max(1, 8 + e.level - 1),
+          initiative: isBossEnemy ? (bossConf == null ? void 0 : bossConf.baseStats.init) ?? Math.max(1, 8 + e.level - 1) : e.init,
           name: e.assignedName ?? e.pieceType,
           pieceIcon: isBossEnemy ? (bossConf == null ? void 0 : bossConf.iconEmoji) ?? "☠" : "☠",
           hp: isBossEnemy ? (bossConf == null ? void 0 : bossConf.baseStats.hp) ?? calcEnemyMaxHp(e.level) : calcEnemyMaxHp(e.level),
@@ -57278,6 +57127,13 @@ const WorldExplorationInner = ({
           level: e.level,
           pieceType: e.pieceType,
           spells: e.spells,
+          sp: e.sp,
+          wr: e.wr,
+          sr: e.sr,
+          scp: e.scp,
+          wp: e.wp,
+          res: e.res,
+          chc: e.chc,
           isBoss: isBossEnemy,
           bossId: isBossEnemy ? currentBossConfigRef.current.id : void 0,
           currentBossPhase: isBossEnemy ? 1 : void 0
@@ -57485,39 +57341,65 @@ const WorldExplorationInner = ({
           const activeBossConf = currentBossConfigRef.current;
           const bossDokaMultiplier = activeBossConf ? activeBossConf.rewardDokaMultiplier : 1;
           const totalDoka = boostMode === "rewards" ? Math.round(rawDoka * 1.5 * chainMult * bossDokaMultiplier) : Math.round(rawDoka * chainMult * bossDokaMultiplier);
-          const _recapData = await resolveBattleRewards(actor, characterSlot, {
-            victory,
-            enemiesDefeated: enemiesDefeated || [],
-            completedChallenges: challengeCompleted ? [
-              {
-                name: "Battle Challenge",
-                dokaReward: challengeDokaReward || 0
-              }
-            ] : [],
-            dungeonMultiplier: chainMult || 1,
-            baseDoka: totalDoka || 0,
-            baseXp: finalExp || 0
-          });
-          const _rewardRecap = _recapData;
-          setCharacterStats((prev) => ({
-            ...prev,
-            exp: _rewardRecap.newXp ?? characterStats.exp,
-            level: _rewardRecap.currentLevel,
-            hp: 50 + prev.level * 10,
-            mp: 5 + Math.floor(prev.level / 10),
-            ap: 6 + Math.floor(prev.level / 20)
-          }));
-          setDokaBalance(_rewardRecap.newDoka ?? dokaBalance);
           const finalRecapData = {
-            ..._rewardRecap,
             mapTitle: ((_c3 = currentMapRef.current) == null ? void 0 : _c3.id) || "Unknown",
+            xpEarned: finalExp,
+            dokaEarned: totalDoka,
             hitsDealt: battleHitsRef.current,
             enemiesDefeated: enemiesDefeated || [],
+            currentLevel: characterStats.level,
+            currentXP: characterStats.exp,
+            xpForNextLevel: (characterStats.level || 1) * 100,
+            dokaBreakdown: [],
+            completedChallenges: challengeCompleted ? ["Battle Challenge"] : [],
             dungeonMultiplier: chainMult || 1,
             bossDefeated: ((_d3 = currentBossConfigRef.current) == null ? void 0 : _d3.name) || void 0
           };
-          if (onShowBattleSummary) onShowBattleSummary(finalRecapData);
+          logDebugInfo(
+            "BATTLE",
+            "Victory recap built",
+            JSON.stringify(finalRecapData)
+          );
+          if (onShowBattleSummary) {
+            onShowBattleSummary(finalRecapData);
+            logDebugInfo("BATTLE", "onShowBattleSummary fired for victory");
+          }
           setEnemies([]);
+          try {
+            const _recapData = await resolveBattleRewards(
+              actor,
+              characterSlot,
+              {
+                victory,
+                enemiesDefeated: enemiesDefeated || [],
+                completedChallenges: challengeCompleted ? [
+                  {
+                    name: "Battle Challenge",
+                    dokaReward: challengeDokaReward || 0
+                  }
+                ] : [],
+                dungeonMultiplier: chainMult || 1,
+                baseDoka: totalDoka || 0,
+                baseXp: finalExp || 0
+              }
+            );
+            const _rewardRecap = _recapData;
+            setCharacterStats((prev) => ({
+              ...prev,
+              exp: _rewardRecap.newXp ?? characterStats.exp,
+              level: _rewardRecap.currentLevel,
+              hp: 50 + prev.level * 10,
+              mp: 5 + Math.floor(prev.level / 10),
+              ap: 6 + Math.floor(prev.level / 20)
+            }));
+            onDokaBalanceChange(_rewardRecap.newDoka ?? dokaBalance);
+          } catch (persistErr) {
+            logDebugInfo(
+              "BATTLE",
+              "Reward persistence failed (non-blocking)",
+              String(persistErr)
+            );
+          }
           const recap = finalRecapData;
           if (recap) {
             const newLevel = recap.currentLevel;
@@ -57567,21 +57449,6 @@ const WorldExplorationInner = ({
                 `☠️ BOSS DEFEATED: ${activeBossConf.name}!`,
                 "#c084fc"
               );
-            }
-          }
-          if (finalRecapData) {
-            logDebugInfo(
-              "BATTLE",
-              "REWARDS_COMPUTED",
-              JSON.stringify(finalRecapData)
-            );
-            if (onShowBattleSummary) {
-              logDebugInfo("BATTLE", "SET showSummary=true");
-              onShowBattleSummary(finalRecapData);
-            }
-            const didLevelUp = _rewardRecap.currentLevel > characterStats.level;
-            if (didLevelUp) {
-              playSound("level_up");
             }
           }
         } else {
@@ -57711,7 +57578,7 @@ const WorldExplorationInner = ({
       const completedChallenges = [];
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
       const newXp = (characterStats.exp || 0) + expGained;
-      setDokaBalance(newDokaBalance);
+      onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
       const finalRecapData = {
         mapTitle: `Boss Rush - Room ${currentRoomIndex + 1}`,
@@ -57752,13 +57619,13 @@ const WorldExplorationInner = ({
       if (characterStats.hp <= 0 && !deathTriggeredRef.current) {
         deathTriggeredRef.current = true;
         const xpLost = Math.floor(characterStats.exp * 0.2);
-        const dokaLost = Math.floor(dokaBalance * 0.4);
+        const dokaLost2 = Math.floor(dokaBalance * 0.4);
         const newXp = Math.max(0, characterStats.exp - xpLost);
-        const newDoka = Math.max(0, dokaBalance - dokaLost);
+        const newDoka2 = Math.max(0, dokaBalance - dokaLost2);
         if (actor) {
           actor.applyRewards(characterSlot, 0, -xpLost).catch(() => {
           });
-          actor.applyRewards(characterSlot, -dokaLost, 0).catch(() => {
+          actor.applyRewards(characterSlot, -dokaLost2, 0).catch(() => {
           });
         }
         setCharacterStats((prev) => ({
@@ -57766,11 +57633,11 @@ const WorldExplorationInner = ({
           exp: newXp,
           hp: Math.floor((50 + prev.level * 10) * 0.5)
         }));
-        setDokaBalance(newDoka);
+        onDokaBalanceChange(newDoka2);
         const defeatRecap = {
           isDefeat: true,
           xpLost,
-          dokaLost,
+          dokaLost: dokaLost2,
           xpEarned: 0,
           dokaEarned: 0,
           currentLevel: characterStats.level,
@@ -57806,31 +57673,29 @@ const WorldExplorationInner = ({
       deathXpLostRef.current = xpLost;
       return { ...prev, exp: newExp };
     });
-    setDokaBalance((prev) => {
-      const dokaLost = Math.floor(prev * 0.4);
-      const newDoka = Math.max(0, prev - dokaLost);
-      const xpLostAccurate = deathXpLostRef.current;
-      setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
-      if (actor) {
-        (async () => {
-          try {
-            await actor.applyRewards(
-              BigInt(characterSlot),
-              BigInt(0),
-              BigInt(-xpLostAccurate)
-            );
-            await actor.applyRewards(
-              BigInt(characterSlot),
-              BigInt(-dokaLost),
-              BigInt(0)
-            );
-          } catch (err) {
-            console.error("[death-save] failed:", err);
-          }
-        })();
-      }
-      return newDoka;
-    });
+    const dokaLost = Math.floor(dokaBalance * 0.4);
+    const newDoka = Math.max(0, dokaBalance - dokaLost);
+    const xpLostAccurate = deathXpLostRef.current;
+    setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
+    if (actor) {
+      (async () => {
+        try {
+          await actor.applyRewards(
+            BigInt(characterSlot),
+            BigInt(0),
+            BigInt(-xpLostAccurate)
+          );
+          await actor.applyRewards(
+            BigInt(characterSlot),
+            BigInt(-dokaLost),
+            BigInt(0)
+          );
+        } catch (err) {
+          console.error("[death-save] failed:", err);
+        }
+      })();
+    }
+    onDokaBalanceChange(newDoka);
     cleanupMap();
     dungeonChainActiveRef.current = false;
     dungeonChainDepthRef.current = 0;
@@ -58827,6 +58692,14 @@ const WorldExplorationInner = ({
                   res: 0,
                   sp: 0,
                   chc: 0,
+                  init: Math.max(
+                    1,
+                    8 + Math.max(1, currentBossConfig.baseStats.init - 2) - 1
+                  ),
+                  wr: 5,
+                  sr: 5,
+                  scp: 5,
+                  wp: 5,
                   assignedName: s2.parentBossId ? "Minion" : "Ghost"
                 }));
                 setEnemies((prev) => {
@@ -60497,16 +60370,6 @@ const WorldExplorationInner = ({
                 }
               ),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
-                BoostToggle,
-                {
-                  boostMode,
-                  onToggle: setBoostMode,
-                  regionEffects: currentRegionEffects,
-                  inBattle,
-                  userId
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "canvas",
                 {
                   ref: canvasRef,
@@ -60530,18 +60393,10 @@ const WorldExplorationInner = ({
                 }
               ),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
-                AchievementsPanel,
-                {
-                  userId,
-                  dokaBalance,
-                  onDokaBalanceChange: (reward) => setDokaBalance((prev) => prev + reward)
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx(
                 BuffShop,
                 {
                   dokaBalance,
-                  onDeductDoka: (amount) => setDokaBalance((prev) => Math.max(0, prev - amount)),
+                  onDeductDoka: (amount) => onDokaBalanceChange(Math.max(0, dokaBalance - amount)),
                   onUseItem: handleUseItem,
                   isPlayerTurn: battlePhase === "player" && inBattle,
                   inBattle,
@@ -61034,7 +60889,7 @@ const WorldExplorationInner = ({
                               const isJackpot = Math.random() < 5e-3;
                               if (isJackpot) {
                                 setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
-                                setDokaBalance((prev) => Math.max(0, prev - 1));
+                                onDokaBalanceChange(Math.max(0, dokaBalance - 1));
                                 setJackpotHealVisible(true);
                                 if (jackpotHealTimerRef.current)
                                   clearTimeout(jackpotHealTimerRef.current);
@@ -61096,7 +60951,7 @@ const WorldExplorationInner = ({
                                 hp: Math.min(maxHp, prev.hp + hpToAdd)
                               }));
                               challengeHealUsedRef.current = true;
-                              setDokaBalance((prev) => Math.max(0, prev - dokaCost));
+                              onDokaBalanceChange(Math.max(0, dokaBalance - dokaCost));
                               if (actor) {
                                 const newHp = Math.min(
                                   maxHp,
@@ -61607,6 +61462,7 @@ const WorldExplorationInner = ({
             },
             currentBattleAp,
             currentBattleMp,
+            onEndBattle: () => _handlePlayerDeath(),
             onEndTurn: () => {
               if (battlePhase !== "player") return;
               advanceTurn();
@@ -62204,7 +62060,7 @@ const WorldExplorationInner = ({
                           }
                           const autoCreditTimer = setTimeout(() => {
                             pendingTimeoutsRef.current.delete(autoCreditTimer);
-                            setDokaBalance((prev) => prev + selectedPkg.dokaAmount);
+                            onDokaBalanceChange(dokaBalance + selectedPkg.dokaAmount);
                             ue.success(
                               `${selectedPkg.dokaAmount.toLocaleString()} Doka credited!`
                             );
@@ -62289,7 +62145,11 @@ const GameFlow = ({
   userProfile,
   isAdmin,
   onOpenAdmin,
-  onShowBattleSummary
+  onShowBattleSummary,
+  selectedCharacter: selectedCharacterProp,
+  boostMode = "xp",
+  onBoostToggle
+  // onShopToggle removed — shop is now handled internally via showShop state
 }) => {
   const [currentStage, setCurrentStage] = reactExports.useState("selection");
   const [selectedCharacter, setSelectedCharacter] = reactExports.useState(
@@ -62307,6 +62167,7 @@ const GameFlow = ({
   const [showLeaderboard, setShowLeaderboard] = reactExports.useState(false);
   const [showAchievements, setShowAchievements] = reactExports.useState(false);
   const [showBossGuide, setShowBossGuide] = reactExports.useState(false);
+  const [showShop, setShowShop] = reactExports.useState(false);
   const [dokaBalance, setDokaBalance] = reactExports.useState(0);
   const addBattleLogEntry = reactExports.useCallback((entry) => {
     setBattleLogEntries((prev) => {
@@ -62378,7 +62239,9 @@ const GameFlow = ({
           onTransitionChange: setIsTransitioning,
           userId: String(userProfile.id ?? userProfile.name ?? "guest"),
           onDebugLog: addDebugLog,
-          onShowBattleSummary
+          onShowBattleSummary,
+          dokaBalance,
+          onDokaBalanceChange: setDokaBalance
         }
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -62407,25 +62270,70 @@ const GameFlow = ({
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-blue text-[10px]", children: "Map" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-20 h-1.5 stone-inset rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "div",
-            {
-              className: "h-full bg-purple-500 rounded-full",
-              style: { width: "60%" }
-            }
-          ) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-20 h-1.5 stone-inset rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "div",
-            {
-              className: "h-full bg-red-500 rounded-full",
-              style: { width: "80%" }
-            }
-          ) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1 min-w-[140px]", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-bar-label", children: "XP" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-bar-value", children: [
+                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.xp) ?? 0,
+                " /",
+                " ",
+                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.xpToNextLevel) ?? 100
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-bar-track", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "stone-bar-fill stone-bar-fill-xp",
+                style: {
+                  width: `${Math.min(100, ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.xp) ?? 0) / ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.xpToNextLevel) || 1) * 100)}%`
+                }
+              }
+            ) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mt-0.5", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-bar-label", children: "BLOOD" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-bar-value", children: [
+                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.blood) ?? 0,
+                " /",
+                " ",
+                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.maxBlood) ?? 100
+              ] })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-bar-track", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "stone-bar-fill stone-bar-fill-blood",
+                style: {
+                  width: `${Math.min(100, ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.blood) ?? 0) / ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.maxBlood) || 1) * 100)}%`
+                }
+              }
+            ) })
+          ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-coin w-5 h-5 text-[9px]" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs font-bold", style: { color: "#f0c44a" }, children: dokaBalance })
           ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-gold text-[10px]", children: "🛒" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              "data-ocid": "game.shop_button",
+              onClick: () => setShowShop((v2) => !v2),
+              className: "stone-btn-slate stone-nav-btn flex items-center gap-1.5 px-3 py-1.5 text-xs",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(ShoppingCart, { size: 14 }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "SHOP" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "button",
+            {
+              type: "button",
+              onClick: onBoostToggle,
+              className: `stone-pill ${boostMode === "xp" ? "stone-pill-purple" : "stone-pill-gold"} text-xs px-2 py-1`,
+              children: boostMode === "xp" ? "⚡ XP" : "💰 RWD"
+            }
+          ),
           /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-crimson text-[10px]", children: "Zone" })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
@@ -62493,6 +62401,20 @@ const GameFlow = ({
           onDokaBalanceChange: setDokaBalance,
           isOpen: showAchievements,
           onClose: () => setShowAchievements(false)
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        BuffShop,
+        {
+          dokaBalance,
+          onDeductDoka: (amount) => setDokaBalance((prev) => prev - amount),
+          onUseItem: () => {
+          },
+          isPlayerTurn: false,
+          inBattle: false,
+          userId: String(userProfile.id ?? userProfile.name ?? "guest"),
+          isOpen: showShop,
+          onClose: () => setShowShop(false)
         }
       )
     ] });
@@ -64764,7 +64686,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Dwf5R11Q.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-C_S06QzY.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
@@ -65025,6 +64947,11 @@ function App() {
     return () => window.removeEventListener("resize", check);
   }, []);
   const [showAdmin, setShowAdmin] = reactExports.useState(false);
+  const [selectedCharacter, _setSelectedCharacter] = reactExports.useState(
+    null
+  );
+  const [boostMode, setBoostMode] = reactExports.useState("xp");
+  const [_showShop, _setShowShop] = reactExports.useState(false);
   const [battleSummary, setBattleSummary] = reactExports.useState(
     null
   );
@@ -65143,6 +65070,9 @@ function App() {
                 /* @__PURE__ */ jsxRuntimeExports.jsx(
                   GameFlow,
                   {
+                    selectedCharacter,
+                    boostMode,
+                    onBoostToggle: () => setBoostMode((m2) => m2 === "xp" ? "rewards" : "xp"),
                     userProfile,
                     isAdmin,
                     onOpenAdmin: () => setShowAdmin(true),

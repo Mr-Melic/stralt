@@ -35,6 +35,14 @@ export interface Character {
   experience?: bigint;
   /** Single source of truth for Doka — maps to per-principal backend balance */
   dokaBalance?: bigint;
+  /** Current XP toward next level (frontend-computed, not backend) */
+  xp?: number;
+  /** XP required to reach the next level (frontend-computed, not backend) */
+  xpToNextLevel?: number;
+  /** Current Blood balance (frontend alias for bloodBalance) */
+  blood?: number;
+  /** Maximum Blood capacity (frontend-computed, not backend) */
+  maxBlood?: number;
   stats?: CharacterStatFields;
   spellLevelKeys?: string[];
   spellLevelValues?: (bigint | number)[];

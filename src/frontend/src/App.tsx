@@ -8,6 +8,7 @@ import ProfileSetup from "./components/ProfileSetup";
 import StarfieldBackground from "./components/StarfieldBackground";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetCallerUserProfile, useGetUserRole } from "./hooks/useQueries";
+import type { Character } from "./types/gameTypes";
 
 /** Current app version — bump this on every deploy to force re-login and show changelog. */
 const APP_VERSION = "v163";
@@ -275,6 +276,13 @@ function App() {
   // Admin dashboard state
   const [showAdmin, setShowAdmin] = useState(false);
 
+  // Character, boost, and shop state for header integration
+  const [selectedCharacter, _setSelectedCharacter] = useState<Character | null>(
+    null,
+  );
+  const [boostMode, setBoostMode] = useState<"xp" | "rewards">("xp");
+  const [_showShop, _setShowShop] = useState(false);
+
   // Root-level battle summary popup state — survives battle→exploration transition
   const [battleSummary, setBattleSummary] = useState<BattleRecapData | null>(
     null,
@@ -405,6 +413,12 @@ function App() {
         {showGame && userProfile && (
           <>
             <GameFlow
+              selectedCharacter={selectedCharacter}
+              boostMode={boostMode}
+              onBoostToggle={() =>
+                setBoostMode((m) => (m === "xp" ? "rewards" : "xp"))
+              }
+              // Shop is now a modal inside GameFlow
               userProfile={userProfile}
               isAdmin={isAdmin}
               onOpenAdmin={() => setShowAdmin(true)}

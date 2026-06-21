@@ -1,4 +1,4 @@
-import { BookOpen, Swords } from "lucide-react";
+import { BookOpen, Skull, Swords } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -45,6 +45,7 @@ export interface BattleUIPanelProps {
   /** H6 fix: the player’s actual maximum MP this battle (characterStats.mp, grows +1/25 levels). */
   maxBattleMp?: number;
   // End turn
+  onEndBattle?: () => void;
   onEndTurn: () => void;
   // Spell cooldowns
   spellCooldowns?: Record<string, number>;
@@ -75,6 +76,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   maxBattleAp,
   maxBattleMp,
   onEndTurn,
+  onEndBattle,
   spellCooldowns = {},
   userId,
 }) => {
@@ -396,7 +398,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   onClick={onSetWalk}
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
-                    ${battleActionMode === "walk" ? "stone-btn-crimson" : "stone-btn-slate opacity-55"}
+                    ${battleActionMode === "walk" ? "stone-btn-emerald" : "stone-btn-slate opacity-55"}
                     ${currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `}
                 >
@@ -408,11 +410,28 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   onClick={onSetAttack}
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
-                    ${battleActionMode === "attack" ? "stone-btn-crimson" : "stone-btn-slate opacity-55"}
+                    ${battleActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
                     ${currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `}
                 >
                   ⚔️ ATTACK
+                </button>
+                <button
+                  type="button"
+                  data-ocid="battle_ui.end_battle_button"
+                  onClick={() => {
+                    if (window.confirm("Leave battle? You will die.")) {
+                      onEndBattle?.();
+                    }
+                  }}
+                  className="
+                    px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
+                    stone-btn-slate
+                    cursor-pointer
+                  "
+                >
+                  <Skull size={12} />
+                  FLEE
                 </button>
                 <button
                   type="button"

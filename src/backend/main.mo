@@ -1202,7 +1202,7 @@ actor {
       if (caller.isAnonymous()) { return #err "Anonymous caller" };
       if (bannedPrincipals.containsKey(caller.toText())) { return #err "Account banned" };
       let charSlots = switch (characterSlots.get(caller)) { case (?cs) { cs }; case null { return #err "No characters" } };
-      let characterOpt = switch (slot) { case 0 { charSlots.slot1 }; case 1 { charSlots.slot2 }; case 2 { charSlots.slot3 }; case _ { return #err "Invalid slot" } };
+      let characterOpt = switch (slot) { case 1 { charSlots.slot1 }; case 2 { charSlots.slot2 }; case 3 { charSlots.slot3 }; case _ { return #err "Invalid slot" } };
       let character = switch (characterOpt) { case (?c) { c }; case null { return #err "Empty slot" } };
       var newXp = character.experience + xpDelta;
       var newLevel = character.level;
@@ -1215,9 +1215,9 @@ actor {
       };
       let updatedChar = { character with experience = newXp; level = newLevel };
       let newSlots = switch (slot) {
-        case 0 { { charSlots with slot1 = ?updatedChar } };
-        case 1 { { charSlots with slot2 = ?updatedChar } };
-        case 2 { { charSlots with slot3 = ?updatedChar } };
+        case 1 { { charSlots with slot1 = ?updatedChar } };
+        case 2 { { charSlots with slot2 = ?updatedChar } };
+        case 3 { { charSlots with slot3 = ?updatedChar } };
         case _ { charSlots };
       };
       characterSlots.add(caller, newSlots);

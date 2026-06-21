@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Crown, LogOut, Trophy } from "lucide-react";
+import { ArrowLeft, Crown, LogOut, ShoppingCart, Trophy } from "lucide-react";
 import React from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetLeaderboard } from "../hooks/useLeaderboardQueries";
 import type {
@@ -12,6 +12,7 @@ import type {
 } from "../types/gameTypes";
 import AchievementsPanel from "./AchievementsPanel";
 import BossGuideModal from "./BossGuideModal";
+import BuffShop from "./BuffShop";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
 import ChatPanel from "./ChatPanel";
@@ -25,6 +26,10 @@ interface GameFlowProps {
   isAdmin?: boolean;
   onOpenAdmin?: () => void;
   onShowBattleSummary?: (data: BattleRecapData) => void;
+  selectedCharacter?: Character | null;
+  boostMode?: "xp" | "rewards";
+  onBoostToggle?: () => void;
+  // onShopToggle removed — shop is now handled internally via showShop state
 }
 
 const GameFlow: React.FC<GameFlowProps> = ({
@@ -32,6 +37,10 @@ const GameFlow: React.FC<GameFlowProps> = ({
   isAdmin,
   onOpenAdmin,
   onShowBattleSummary,
+  selectedCharacter: selectedCharacterProp,
+  boostMode = "xp",
+  onBoostToggle,
+  // onShopToggle removed — shop is now handled internally via showShop state
 }) => {
   const [currentStage, setCurrentStage] = useState<GameStage>("selection");
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(
@@ -54,7 +63,9 @@ const GameFlow: React.FC<GameFlowProps> = ({
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
   const [showBossGuide, setShowBossGuide] = useState(false);
+  const [showShop, setShowShop] = useState(false);
   const [dokaBalance, setDokaBalance] = useState(0);
+  // actor removed — not used in this component
 
   const addBattleLogEntry = useCallback((entry: BattleLogEntry) => {
     // E3: Cap battle log at 500 entries to prevent unbounded growth and lag.
@@ -149,6 +160,8 @@ const GameFlow: React.FC<GameFlowProps> = ({
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
           onDebugLog={addDebugLog}
           onShowBattleSummary={onShowBattleSummary}
+          dokaBalance={dokaBalance}
+          onDokaBalanceChange={setDokaBalance}
         />
         <ChatPanel
           playerName={userProfile.name}
@@ -170,17 +183,37 @@ const GameFlow: React.FC<GameFlowProps> = ({
               🧛 {userProfile.name}
             </span>
             <span className="stone-pill stone-pill-blue text-[10px]">Map</span>
-            <div className="w-20 h-1.5 stone-inset rounded-full overflow-hidden">
-              <div
-                className="h-full bg-purple-500 rounded-full"
-                style={{ width: "60%" }}
-              />
-            </div>
-            <div className="w-20 h-1.5 stone-inset rounded-full overflow-hidden">
-              <div
-                className="h-full bg-red-500 rounded-full"
-                style={{ width: "80%" }}
-              />
+            <div className="flex flex-col gap-1 min-w-[140px]">
+              <div className="flex items-center justify-between">
+                <span className="stone-bar-label">XP</span>
+                <span className="stone-bar-value">
+                  {selectedCharacterProp?.xp ?? 0} /{" "}
+                  {selectedCharacterProp?.xpToNextLevel ?? 100}
+                </span>
+              </div>
+              <div className="stone-bar-track">
+                <div
+                  className="stone-bar-fill stone-bar-fill-xp"
+                  style={{
+                    width: `${Math.min(100, ((selectedCharacterProp?.xp ?? 0) / (selectedCharacterProp?.xpToNextLevel || 1)) * 100)}%`,
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-0.5">
+                <span className="stone-bar-label">BLOOD</span>
+                <span className="stone-bar-value">
+                  {selectedCharacterProp?.blood ?? 0} /{" "}
+                  {selectedCharacterProp?.maxBlood ?? 100}
+                </span>
+              </div>
+              <div className="stone-bar-track">
+                <div
+                  className="stone-bar-fill stone-bar-fill-blood"
+                  style={{
+                    width: `${Math.min(100, ((selectedCharacterProp?.blood ?? 0) / (selectedCharacterProp?.maxBlood || 1)) * 100)}%`,
+                  }}
+                />
+              </div>
             </div>
             <div className="flex items-center gap-1">
               <div className="stone-coin w-5 h-5 text-[9px]" />
@@ -188,7 +221,22 @@ const GameFlow: React.FC<GameFlowProps> = ({
                 {dokaBalance}
               </span>
             </div>
-            <span className="stone-pill stone-pill-gold text-[10px]">🛒</span>
+            <button
+              type="button"
+              data-ocid="game.shop_button"
+              onClick={() => setShowShop((v) => !v)}
+              className="stone-btn-slate stone-nav-btn flex items-center gap-1.5 px-3 py-1.5 text-xs"
+            >
+              <ShoppingCart size={14} />
+              <span>SHOP</span>
+            </button>
+            <button
+              type="button"
+              onClick={onBoostToggle}
+              className={`stone-pill ${boostMode === "xp" ? "stone-pill-purple" : "stone-pill-gold"} text-xs px-2 py-1`}
+            >
+              {boostMode === "xp" ? "⚡ XP" : "💰 RWD"}
+            </button>
             <span className="stone-pill stone-pill-crimson text-[10px]">
               Zone
             </span>
@@ -254,6 +302,20 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onDokaBalanceChange={setDokaBalance}
           isOpen={showAchievements}
           onClose={() => setShowAchievements(false)}
+        />
+
+        {/* Shop modal */}
+        <BuffShop
+          dokaBalance={dokaBalance}
+          onDeductDoka={(amount) => setDokaBalance((prev) => prev - amount)}
+          onUseItem={() => {
+            /* item use handled by WorldExploration */
+          }}
+          isPlayerTurn={false}
+          inBattle={false}
+          userId={String(userProfile.id ?? userProfile.name ?? "guest")}
+          isOpen={showShop}
+          onClose={() => setShowShop(false)}
         />
       </>
     );

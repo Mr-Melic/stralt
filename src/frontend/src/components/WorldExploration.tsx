@@ -70,6 +70,8 @@ import StatusEffectBadge from "./StatusEffectBadge";
 let _fbNameIdx = 0;
 
 interface WorldExplorationProps {
+  dokaBalance: number;
+  onDokaBalanceChange: (val: number) => void;
   character: any;
   dungeon: any;
   characterSlot?: number;
@@ -213,6 +215,11 @@ interface Enemy {
   res: number; // 0-15, resistance %
   sp: number; // 0-15, spell-power resistance %
   chc: number; // 0-10, critical hit chance %
+  init: number;
+  wr: number;
+  sr: number;
+  scp: number;
+  wp: number;
   /** Ancient name assigned at spawn time from the admin-managed names list */
   assignedName?: string;
   /** True if this enemy is the designated group leader in a battle */
@@ -370,6 +377,108 @@ function pickEnemyLevelFromTiers(playerLevel: number): number {
 }
 
 // Seeded pseudo-random number generator (pure, deterministic per grid position)
+function computeEnemyStats(
+  level: number,
+  pieceType: ChessPieceType,
+  seedKey: string | number,
+) {
+  const rng = seededRng(
+    typeof seedKey === "string"
+      ? seedKey.split("").reduce((a, c) => a + c.charCodeAt(0), 0)
+      : seedKey,
+  );
+  const base = Math.max(1, level);
+  const pieceMultipliers: Record<
+    ChessPieceType,
+    {
+      sp: number;
+      wr: number;
+      sr: number;
+      scp: number;
+      wp: number;
+      init: number;
+      res: number;
+      chc: number;
+    }
+  > = {
+    pawn: {
+      sp: 0.85,
+      wr: 0.85,
+      sr: 0.85,
+      scp: 0.85,
+      wp: 0.85,
+      init: 0.85,
+      res: 0.85,
+      chc: 0.85,
+    },
+    rook: {
+      sp: 0.8,
+      wr: 1.3,
+      sr: 1.2,
+      scp: 0.8,
+      wp: 1.1,
+      init: 1.1,
+      res: 1.35,
+      chc: 0.7,
+    },
+    knight: {
+      sp: 0.85,
+      wr: 1.25,
+      sr: 1.15,
+      scp: 0.85,
+      wp: 1.05,
+      init: 1.2,
+      res: 1.25,
+      chc: 0.8,
+    },
+    bishop: {
+      sp: 1.3,
+      wr: 0.75,
+      sr: 0.85,
+      scp: 1.25,
+      wp: 0.9,
+      init: 1.0,
+      res: 0.7,
+      chc: 1.2,
+    },
+    queen: {
+      sp: 1.25,
+      wr: 0.8,
+      sr: 0.9,
+      scp: 1.2,
+      wp: 0.95,
+      init: 1.1,
+      res: 0.75,
+      chc: 1.15,
+    },
+    king: {
+      sp: 1.0,
+      wr: 1.0,
+      sr: 1.0,
+      scp: 1.0,
+      wp: 1.0,
+      init: 1.0,
+      res: 1.0,
+      chc: 1.0,
+    },
+  };
+  const mult = pieceMultipliers[pieceType] ?? pieceMultipliers.king;
+  const roll = (min: number, max: number, m: number) => {
+    const raw = min + rng() * (max - min);
+    return Math.max(1, Math.round(raw * m));
+  };
+  return {
+    sp: roll(3, 6 + base * 1.2, mult.sp),
+    wr: roll(2, 4 + base * 1.0, mult.wr),
+    sr: roll(2, 4 + base * 1.0, mult.sr),
+    scp: roll(3, 6 + base * 1.2, mult.scp),
+    wp: roll(3, 6 + base * 1.2, mult.wp),
+    init: roll(3, 6 + base * 1.2, mult.init),
+    res: roll(2, 4 + base * 0.9, mult.res),
+    chc: roll(1, 3 + base * 0.7, mult.chc),
+  };
+}
+
 function seededRng(seed: number): () => number {
   let val = Math.abs(seed) + 1;
   return () => {
@@ -783,6 +892,8 @@ function applyVoidTiles(
 }
 
 const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
+  dokaBalance,
+  onDokaBalanceChange,
   character,
   dungeon: _dungeon,
   characterSlot = 1,
@@ -1060,13 +1171,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const battleEnemiesRef = useRef<Enemy[]>([]); // mirrors _battleEnemies for stable ref access in callbacks
   const [showGameOver, setShowGameOver] = useState(false);
 
-  const [dokaBalance, setDokaBalance] = useState(() =>
-    character?.dokaBalance != null
-      ? Number(character.dokaBalance)
-      : character?.bloodBalance != null
-        ? Number(character.bloodBalance)
-        : 0,
-  );
+  // dokaBalance is now a prop from GameFlow (single source of truth)
   const [currentChallenge, setCurrentChallenge] = useState<Challenge | null>(
     null,
   );
@@ -1109,18 +1214,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     dungeonChainMaxDepthRef.current = dungeonChainMaxDepth;
   }, [dungeonChainMaxDepth]);
-  useEffect(() => {
-    if (!actor) return;
-    // If character didn't have dokaBalance, fetch from backend
-    actor
-      .getDokaBalance()
-      .then((bal) => {
-        setDokaBalance(Number(bal));
-      })
-      .catch(() => {
-        /* ignore */
-      });
-  }, [actor]);
+  // dokaBalance loaded by GameFlow; no local fetch needed
   // Doka multiplier inside dungeon chain (depth 0 = normal; depth 1-5 = 1.5x..4x)
   const DUNGEON_DOKA_MULTIPLIERS = [1, 1.5, 2.0, 2.5, 3.0, 4.0];
   const dungeonDokaMultiplier = dungeonChainActive
@@ -1642,7 +1736,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [shopProofFile, setShopProofFile] = useState<File | null>(null);
 
   // Boost toggle state
-  const [boostMode, setBoostMode] = useState<"xp" | "rewards">("xp");
+  const [boostMode, _setBoostMode] = useState<"xp" | "rewards">("xp");
 
   // Simple rename handler — calls backend renameCharacter and deducts Doka locally
   const handleRenameCharacter = async () => {
@@ -1659,7 +1753,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           BigInt(characterSlot),
           newName,
         );
-        setDokaBalance((prev) => Math.max(0, prev - 100));
+        onDokaBalanceChange(Math.max(0, dokaBalance - 100));
         toast.success(`Name changed to "${newName}"`);
         setShowRenameModal(false);
         setRenameInput("");
@@ -2727,7 +2821,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     (spellId: string, cost: number) => {
       if (dokaBalance < cost) return;
       const newDoka = dokaBalance - cost;
-      setDokaBalance(newDoka);
+      onDokaBalanceChange(newDoka);
       setSpellLevels((prev) => {
         const next = { ...prev, [spellId]: (prev[spellId] ?? 0) + 1 };
         try {
@@ -2795,7 +2889,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return next;
       });
     },
-    [dokaBalance, actor, character, characterSlot, nsKey],
+    [dokaBalance, onDokaBalanceChange, actor, character, characterSlot, nsKey],
   );
 
   // Character stats with experience system — restore from backend character if available
@@ -2823,19 +2917,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     };
   });
 
-  // Re-sync dokaBalance from backend character when it changes (e.g. after refresh/re-login)
-  useEffect(() => {
-    if (!character) return;
-    const backendDoka =
-      character.dokaBalance != null
-        ? Number(character.dokaBalance)
-        : character.bloodBalance != null
-          ? Number(character.bloodBalance)
-          : null;
-    if (backendDoka != null && !inBattle) {
-      setDokaBalance(backendDoka);
-    }
-  }, [character, inBattle]);
+  // Doka balance is owned by GameFlow; no re-sync needed here.
 
   // Get effective stat modifier for a combatant from active effects
   const getStatModifier = useCallback(
@@ -3382,7 +3464,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   };
 
   // Determine current region from backend configs matching player level
-  const currentRegionEffects = (() => {
+  const _currentRegionEffects = (() => {
     const level = characterStats.level;
     const match = regionConfigs.find(
       (r) => level >= Number(r.levelMin) && level <= Number(r.levelMax),
@@ -5892,9 +5974,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             hp: Math.max(1, Math.round(enemyLevel * 8 + 20)),
             maxHp: Math.max(1, Math.round(enemyLevel * 8 + 20)),
             damage: Math.max(1, Math.round(enemyLevel * 2 + 3)),
-            res: 0,
-            sp: 0,
-            chc: 0,
+            ...computeEnemyStats(
+              enemyLevel,
+              pieceType,
+              `enemy-${enemies.length}-${currentTime}`,
+            ),
             family: "default" as EnemyFamily,
             assignedName,
           });
@@ -6024,6 +6108,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       isAdjacentToPortal,
       generateEnemyScaleFactors,
       enemyNamesFromQuery,
+      pieceType,
     ],
   );
 
@@ -6339,7 +6424,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (currentDepth >= maxDepth) {
           // CHAIN COMPLETED — award bonus and reset
           const chainBonus = maxDepth * 50;
-          setDokaBalance((prev) => prev + chainBonus);
+          onDokaBalanceChange(dokaBalance + chainBonus);
           chainJustCompleted = true;
           nextDungeonDepth = 0;
           setDungeonChainActive(false);
@@ -6524,6 +6609,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             res: Math.min(50, bossConf.baseStats.res),
             sp: Math.min(50, bossConf.baseStats.sp),
             chc: bossConf.baseStats.chc,
+            init:
+              bossConf.baseStats.init ??
+              Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
+            wr: 10,
+            sr: 10,
+            scp: 10,
+            wp: 10,
             assignedName: bossConf.name,
             isLeader: true,
           },
@@ -6862,7 +6954,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     setDungeonChainDepth,
     setDungeonChainMaxDepth,
     setDungeonChainBaseLevel,
-    setDokaBalance,
+    onDokaBalanceChange,
   ]);
 
   // NEW: Enhanced enemy movement system with visible random wandering
@@ -9094,23 +9186,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
 
-          // Shield spell: apply buff to player (self-cast)
+          // Shield / self-buff spells — use buffStat/buffModifier, not healAmount
           if (isShieldSpell && isPlayerTile) {
-            const shieldAmt = spell.healAmount ?? 0;
-            const shieldDur = spell.buffDuration ?? 3;
-            applyActiveEffect({
-              id: `player-shield-${Date.now()}`,
-              effectName: `${spell.name} Shield`,
-              type: "buff",
-              targetId: "player",
-              duration: shieldDur,
-              iconEmoji: "🛡️",
-              description: `+${shieldAmt} shield for ${shieldDur} turns`,
-            });
-            logBattleEntry(
-              `You cast ${spell.name} and gained a shield of ${shieldAmt} for ${shieldDur} turns!`,
-              "#60a5fa",
-            );
+            if (spell.buffStat && spell.buffModifier) {
+              const pct = Math.round((spell.buffModifier - 1) * 100);
+              const shieldDur = spell.buffDuration ?? 3;
+              applyActiveEffect({
+                id: `player-shield-${Date.now()}`,
+                effectName: `${spell.name} Shield`,
+                type: "buff",
+                targetId: "player",
+                stat: spell.buffStat,
+                modifier: spell.buffModifier,
+                duration: shieldDur,
+                iconEmoji: "🛡️",
+                description: `+${pct}% ${spell.buffStat.toUpperCase()} for ${shieldDur} turns`,
+              });
+              logBattleEntry(
+                `You cast ${spell.name}: +${pct}% ${spell.buffStat.toUpperCase()} for ${shieldDur} turns!`,
+                "#60a5fa",
+              );
+            }
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             if (currentBattleAp - apCost <= 0) {
               selectedSpellIdRef.current = null;
@@ -10248,7 +10344,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newPos.y === shrineAltarPosRef.current.y
           ) {
             const _purePath = !shrinePathViolatedRef.current;
-            setDokaBalance((prev) => prev + 300);
+            onDokaBalanceChange(dokaBalance + 300);
             if (_purePath) {
               covenantBuffMapsRef.current = 3;
               try {
@@ -10288,7 +10384,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           if (!hit) return prev;
           // Trigger collection
-          setDokaBalance((b) => b + hit.value);
+          onDokaBalanceChange(dokaBalance + hit.value);
           playSound("doka_collected", String(hit.value));
           // Track ground doka pickup count for achievement
           groundDokaPickupCountRef.current += 1;
@@ -10441,6 +10537,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     applyActiveEffect,
     userId,
     characterSlot,
+    dokaBalance,
+    onDokaBalanceChange,
   ]);
 
   // FIXED: Check portal interaction whenever player position changes
@@ -10711,21 +10809,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Teleport each enemy to a UNIQUE free cell >= 3 Chebyshev from the player
       // We track already-occupied positions so enemies don't stack on the same tile
       const occupiedPositions: { x: number; y: number }[] = [playerPosition];
-      const updatedEnemies = enemies.map((e, idx) => {
-        // Seed enemy RES/SP/CHC from level + index so values are deterministic per enemy
-        const statRng = seededRng(e.level * 31 + idx * 7 + 13);
-        const enemyRes = Math.min(
-          15,
-          Math.floor(statRng() * (5 + e.level * 0.5)),
-        );
-        const enemySp = Math.min(
-          15,
-          Math.floor(statRng() * (5 + e.level * 0.5)),
-        );
-        const enemyChc = Math.min(
-          10,
-          Math.floor(statRng() * (3 + e.level * 0.2)),
-        );
+      const updatedEnemies = enemies.map((e) => {
+        const stats = computeEnemyStats(e.level, e.pieceType, e.id);
         const newPos = findFreeCellFarFrom(occupiedPositions, 3, tiles);
         if (newPos) {
           // Claim this position so the next enemy picks a different one
@@ -10736,9 +10821,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             y: newPos.y,
             isMoving: false,
             movementPath: [],
-            res: enemyRes,
-            sp: enemySp,
-            chc: enemyChc,
+            sp: stats.sp,
+            wr: stats.wr,
+            sr: stats.sr,
+            scp: stats.scp,
+            wp: stats.wp,
+            init: stats.init,
+            res: stats.res,
+            chc: stats.chc,
           };
         }
         // Fallback: keep original position but still freeze movement
@@ -10747,9 +10837,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ...e,
           isMoving: false,
           movementPath: [],
-          res: enemyRes,
-          sp: enemySp,
-          chc: enemyChc,
+          sp: stats.sp,
+          wr: stats.wr,
+          sr: stats.sr,
+          scp: stats.scp,
+          wp: stats.wp,
+          init: stats.init,
+          res: stats.res,
+          chc: stats.chc,
         };
       });
 
@@ -10800,7 +10895,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           type: "enemy",
           initiative: isBossEnemy
             ? (bossConf?.baseStats.init ?? Math.max(1, 8 + e.level - 1))
-            : Math.max(1, 8 + e.level - 1),
+            : e.init,
           name: e.assignedName ?? e.pieceType,
           pieceIcon: isBossEnemy ? (bossConf?.iconEmoji ?? "☠") : "☠",
           hp: isBossEnemy
@@ -10812,6 +10907,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           level: e.level,
           pieceType: e.pieceType,
           spells: e.spells,
+          sp: e.sp,
+          wr: e.wr,
+          sr: e.sr,
+          scp: e.scp,
+          wp: e.wp,
+          res: e.res,
+          chc: e.chc,
           isBoss: isBossEnemy,
           bossId: isBossEnemy ? currentBossConfigRef.current!.id : undefined,
           currentBossPhase: isBossEnemy ? (1 as 1 | 2) : undefined,
@@ -11128,47 +11230,75 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // NOTE: Local state updated above; persistence is handled by resolveBattleRewards below.
           // Do NOT call updateCharacter here — rewards must ONLY persist via applyRewards.
 
-          const _recapData = await resolveBattleRewards(actor, characterSlot, {
-            victory,
-            enemiesDefeated: enemiesDefeated || [],
-            completedChallenges: challengeCompleted
-              ? [
-                  {
-                    name: "Battle Challenge",
-                    dokaReward: challengeDokaReward || 0,
-                  },
-                ]
-              : [],
-            dungeonMultiplier: chainMult || 1,
-            baseDoka: totalDoka || 0,
-            baseXp: finalExp || 0,
-          });
-          const _rewardRecap = _recapData;
-
-          setCharacterStats((prev) => ({
-            ...prev,
-            exp: _rewardRecap.newXp ?? characterStats.exp,
-            level: _rewardRecap.currentLevel,
-            hp: 50 + prev.level * 10,
-            mp: 5 + Math.floor(prev.level / 10),
-            ap: 6 + Math.floor(prev.level / 20),
-          }));
-          setDokaBalance(_rewardRecap.newDoka ?? dokaBalance);
-
+          // Build and show recap IMMEDIATELY — never block on persistence
           const finalRecapData: BattleRecapData = {
-            ..._rewardRecap,
             mapTitle: currentMapRef.current?.id || "Unknown",
+            xpEarned: finalExp,
+            dokaEarned: totalDoka,
             hitsDealt: battleHitsRef.current,
             enemiesDefeated: enemiesDefeated || [],
+            currentLevel: characterStats.level,
+            currentXP: characterStats.exp,
+            xpForNextLevel: (characterStats.level || 1) * 100,
+            dokaBreakdown: [],
+            completedChallenges: challengeCompleted ? ["Battle Challenge"] : [],
             dungeonMultiplier: chainMult || 1,
             bossDefeated: currentBossConfigRef.current?.name || undefined,
           };
-          if (onShowBattleSummary) onShowBattleSummary(finalRecapData);
+
+          logDebugInfo(
+            "BATTLE",
+            "Victory recap built",
+            JSON.stringify(finalRecapData),
+          );
+          if (onShowBattleSummary) {
+            onShowBattleSummary(finalRecapData);
+            logDebugInfo("BATTLE", "onShowBattleSummary fired for victory");
+          }
 
           // Remove all enemies from map after victory
           setEnemies([]);
 
-          // Show recap after a brief delay so state settles
+          // Persist rewards in a separate try/catch so failures never hide the recap
+          try {
+            const _recapData = await resolveBattleRewards(
+              actor,
+              characterSlot,
+              {
+                victory,
+                enemiesDefeated: enemiesDefeated || [],
+                completedChallenges: challengeCompleted
+                  ? [
+                      {
+                        name: "Battle Challenge",
+                        dokaReward: challengeDokaReward || 0,
+                      },
+                    ]
+                  : [],
+                dungeonMultiplier: chainMult || 1,
+                baseDoka: totalDoka || 0,
+                baseXp: finalExp || 0,
+              },
+            );
+            const _rewardRecap = _recapData;
+
+            setCharacterStats((prev) => ({
+              ...prev,
+              exp: _rewardRecap.newXp ?? characterStats.exp,
+              level: _rewardRecap.currentLevel,
+              hp: 50 + prev.level * 10,
+              mp: 5 + Math.floor(prev.level / 10),
+              ap: 6 + Math.floor(prev.level / 20),
+            }));
+            onDokaBalanceChange(_rewardRecap.newDoka ?? dokaBalance);
+          } catch (persistErr) {
+            logDebugInfo(
+              "BATTLE",
+              "Reward persistence failed (non-blocking)",
+              String(persistErr),
+            );
+          }
+
           // ── Achievement checks after victory ──────────────────────────────────
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
           const recap = finalRecapData as BattleRecapData | null;
@@ -11234,23 +11364,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 `☠️ BOSS DEFEATED: ${activeBossConf.name}!`,
                 "#c084fc",
               );
-            }
-          }
-          // Show recap popup immediately — no timer, no guard
-          if (finalRecapData) {
-            logDebugInfo(
-              "BATTLE",
-              "REWARDS_COMPUTED",
-              JSON.stringify(finalRecapData),
-            );
-            if (onShowBattleSummary) {
-              logDebugInfo("BATTLE", "SET showSummary=true");
-              onShowBattleSummary(finalRecapData);
-            }
-            // Play level-up sound AFTER state has settled and popup is shown
-            const didLevelUp = _rewardRecap.currentLevel > characterStats.level;
-            if (didLevelUp) {
-              playSound("level_up");
             }
           }
         } else {
@@ -11404,7 +11517,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
       const newXp = (characterStats.exp || 0) + expGained;
 
-      setDokaBalance(newDokaBalance);
+      onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
       // Rewards persisted via applyRewards in resolveBattleRewards
@@ -11479,7 +11592,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           exp: newXp,
           hp: Math.floor((50 + prev.level * 10) * 0.5),
         }));
-        setDokaBalance(newDoka);
+        onDokaBalanceChange(newDoka);
         const defeatRecap: any = {
           isDefeat: true,
           xpLost,
@@ -11522,31 +11635,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       deathXpLostRef.current = xpLost;
       return { ...prev, exp: newExp };
     });
-    setDokaBalance((prev) => {
-      const dokaLost = Math.floor(prev * 0.4);
-      const newDoka = Math.max(0, prev - dokaLost);
-      const xpLostAccurate = deathXpLostRef.current;
-      setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
-      if (actor) {
-        (async () => {
-          try {
-            await actor.applyRewards(
-              BigInt(characterSlot),
-              BigInt(0),
-              BigInt(-xpLostAccurate),
-            );
-            await actor.applyRewards(
-              BigInt(characterSlot),
-              BigInt(-dokaLost),
-              BigInt(0),
-            );
-          } catch (err) {
-            console.error("[death-save] failed:", err);
-          }
-        })();
-      }
-      return newDoka;
-    });
+    const dokaLost = Math.floor(dokaBalance * 0.4);
+    const newDoka = Math.max(0, dokaBalance - dokaLost);
+    const xpLostAccurate = deathXpLostRef.current;
+    setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
+    if (actor) {
+      (async () => {
+        try {
+          await actor.applyRewards(
+            BigInt(characterSlot),
+            BigInt(0),
+            BigInt(-xpLostAccurate),
+          );
+          await actor.applyRewards(
+            BigInt(characterSlot),
+            BigInt(-dokaLost),
+            BigInt(0),
+          );
+        } catch (err) {
+          console.error("[death-save] failed:", err);
+        }
+      })();
+    }
+    onDokaBalanceChange(newDoka);
     // ── UNIFIED CLEANUP on defeat: terminates all timers, AI, VFX, caches
     // DEATH REALM FIX: Use cleanupMap() here (not just cleanupBattle()) so that
     // all particle refs are also fully reset before entering
@@ -12817,6 +12928,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   res: 0,
                   sp: 0,
                   chc: 0,
+                  init: Math.max(
+                    1,
+                    8 + Math.max(1, currentBossConfig.baseStats.init - 2) - 1,
+                  ),
+                  wr: 5,
+                  sr: 5,
+                  scp: 5,
+                  wp: 5,
                   assignedName: s.parentBossId ? "Minion" : "Ghost",
                 }));
                 setEnemies((prev) => {
@@ -14678,18 +14797,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           overflow: "hidden",
         }}
       >
-        {/* MapModifiersPanel and BoostToggle are now draggable — rendered as fixed overlays by DraggablePanel */}
+        {/* MapModifiersPanel is now a draggable overlay */}
         <MapModifiersPanel
           modifiers={mapModifiers.filter((m) =>
             activeMapModifierTypes.has(m.modifierType),
           )}
-          userId={userId}
-        />
-        <BoostToggle
-          boostMode={boostMode}
-          onToggle={setBoostMode}
-          regionEffects={currentRegionEffects}
-          inBattle={inBattle}
           userId={userId}
         />
         <canvas
@@ -14713,20 +14825,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           onTouchEnd={handleCanvasTouch}
         />
 
-        {/* Achievements panel button + panel */}
-        <AchievementsPanel
-          userId={userId}
-          dokaBalance={dokaBalance}
-          onDokaBalanceChange={(reward) =>
-            setDokaBalance((prev) => prev + reward)
-          }
-        />
+        {/* Achievements panel is now rendered from GameFlow.tsx */}
 
         {/* EXP6: Item (Buff) Shop draggable panel */}
         <BuffShop
           dokaBalance={dokaBalance}
           onDeductDoka={(amount) =>
-            setDokaBalance((prev) => Math.max(0, prev - amount))
+            onDokaBalanceChange(Math.max(0, dokaBalance - amount))
           }
           onUseItem={handleUseItem}
           isPlayerTurn={battlePhase === "player" && inBattle}
@@ -15180,7 +15285,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       if (isJackpot) {
                         // Full heal — only spend 1 Doka for the jackpot
                         setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
-                        setDokaBalance((prev) => Math.max(0, prev - 1));
+                        onDokaBalanceChange(Math.max(0, dokaBalance - 1));
                         // Banner
                         setJackpotHealVisible(true);
                         if (jackpotHealTimerRef.current)
@@ -15249,7 +15354,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         hp: Math.min(maxHp, prev.hp + hpToAdd),
                       }));
                       challengeHealUsedRef.current = true;
-                      setDokaBalance((prev) => Math.max(0, prev - dokaCost));
+                      onDokaBalanceChange(Math.max(0, dokaBalance - dokaCost));
                       // Auto-save
                       if (actor) {
                         const newHp = Math.min(
@@ -15733,6 +15838,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }}
         currentBattleAp={currentBattleAp}
         currentBattleMp={currentBattleMp}
+        onEndBattle={() => _handlePlayerDeath()}
         onEndTurn={() => {
           if (battlePhase !== "player") return;
           advanceTurn();
@@ -16295,7 +16401,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     // so it is cancelled on unmount and never fires on stale state.
                     const autoCreditTimer = setTimeout(() => {
                       pendingTimeoutsRef.current.delete(autoCreditTimer);
-                      setDokaBalance((prev) => prev + selectedPkg.dokaAmount);
+                      onDokaBalanceChange(dokaBalance + selectedPkg.dokaAmount);
                       toast.success(
                         `${selectedPkg.dokaAmount.toLocaleString()} Doka credited!`,
                       );
