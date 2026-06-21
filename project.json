@@ -1,17 +1,23 @@
 {
-  "overview": "ÆSTRALTØ is a modular isometric tile-based tactics RPG with chess-inspired characters, procedural maps, turn-based battles, and a vampire aesthetic.",
+  "overview": "A modular isometric tile-based tactics RPG with chess-inspired combat, procedural maps, and a carved-stone dark slate UI with crimson accent.",
   "features": [
-    "Safe zone map rendering fix",
-    "Battle log clarity improvements",
-    "Damage multiplier consistency with unified calculation"
+    "Turn-based tactical battles with chess piece characters",
+    "Procedurally generated maps with various archetypes",
+    "Character management with three persistent slots",
+    "Spell system with buffs, debuffs, and elemental effects",
+    "Boss encounters with phase-based abilities",
+    "Admin dashboard for game configuration",
+    "Real-time battle HUD with initiative timeline and spell bar",
+    "Click-to-inspect stat popup on initiative portraits"
   ],
   "category": "game",
   "tags": [
     "rpg",
     "tactics",
-    "isometric",
     "chess",
-    "vampire"
+    "procedural",
+    "dark-theme",
+    "carved-stone-ui"
   ],
-  "last_updated": "2026-06-20T23:20:30.496Z"
+  "last_updated": "2026-06-21T09:18:25.520Z"
 }

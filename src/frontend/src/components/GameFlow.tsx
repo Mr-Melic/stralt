@@ -159,56 +159,82 @@ const GameFlow: React.FC<GameFlowProps> = ({
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
           debugLogs={debugLogs}
         />
-        {/* Top-right fixed buttons in game mode */}
-        <div
-          style={{
-            position: "fixed",
-            top: 12,
-            right: 16,
-            zIndex: 9000,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
-        >
-          <button
-            type="button"
-            data-ocid="game.leaderboard_button"
-            onClick={() => setShowLeaderboard((v) => !v)}
-            style={gameModeButtonStyle(showLeaderboard)}
-          >
-            <Trophy size={13} />
-            <span>Board</span>
-          </button>
-          <button
-            type="button"
-            data-ocid="game.achievements_button"
-            onClick={() => setShowAchievements((v) => !v)}
-            style={gameModeButtonStyle(showAchievements)}
-          >
-            <span style={{ fontSize: 13 }}>🏆</span>
-            <span>Feats</span>
-          </button>
-          <button
-            type="button"
-            data-ocid="game.boss_guide_button"
-            onClick={() => setShowBossGuide((v) => !v)}
-            style={gameModeButtonStyle(showBossGuide)}
-          >
-            <Crown size={13} />
-            <span>Bosses</span>
-          </button>
-          {isAdmin && onOpenAdmin && (
+        {/* Unified top bar in game mode */}
+        <div className="fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12">
+          {/* Left side: player chip, map pill, XP bar, Blood bar, Doka coin, shop icon, Zone tag */}
+          <div className="flex items-center gap-2">
+            <span
+              className="text-xs font-bold"
+              style={{ color: "#f0c44a", fontFamily: "var(--font-display)" }}
+            >
+              🧛 {userProfile.name}
+            </span>
+            <span className="stone-pill stone-pill-blue text-[10px]">Map</span>
+            <div className="w-20 h-1.5 stone-inset rounded-full overflow-hidden">
+              <div
+                className="h-full bg-purple-500 rounded-full"
+                style={{ width: "60%" }}
+              />
+            </div>
+            <div className="w-20 h-1.5 stone-inset rounded-full overflow-hidden">
+              <div
+                className="h-full bg-red-500 rounded-full"
+                style={{ width: "80%" }}
+              />
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="stone-coin w-5 h-5 text-[9px]" />
+              <span className="text-xs font-bold" style={{ color: "#f0c44a" }}>
+                {dokaBalance}
+              </span>
+            </div>
+            <span className="stone-pill stone-pill-gold text-[10px]">🛒</span>
+            <span className="stone-pill stone-pill-crimson text-[10px]">
+              Zone
+            </span>
+          </div>
+
+          {/* Right side: nav buttons */}
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              data-ocid="game.admin_button"
-              onClick={onOpenAdmin}
-              style={gameModeButtonStyle(false, true)}
+              data-ocid="game.leaderboard_button"
+              onClick={() => setShowLeaderboard((v) => !v)}
+              className={`${showLeaderboard ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
             >
-              <span style={{ fontSize: 13 }}>🛡️</span>
-              <span>Admin</span>
+              <Trophy size={13} />
+              <span>Board</span>
             </button>
-          )}
+            <button
+              type="button"
+              data-ocid="game.achievements_button"
+              onClick={() => setShowAchievements((v) => !v)}
+              className={`${showAchievements ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
+            >
+              <span className="text-[13px]">🏆</span>
+              <span>Feats</span>
+            </button>
+            <button
+              type="button"
+              data-ocid="game.boss_guide_button"
+              onClick={() => setShowBossGuide((v) => !v)}
+              className={`${showBossGuide ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
+            >
+              <Crown size={13} />
+              <span>Bosses</span>
+            </button>
+            {isAdmin && onOpenAdmin && (
+              <button
+                type="button"
+                data-ocid="game.admin_button"
+                onClick={onOpenAdmin}
+                className="stone-btn-crimson stone-nav-btn"
+              >
+                <span className="text-[13px]">🛡️</span>
+                <span>Admin</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Boss Guide modal */}
@@ -263,122 +289,79 @@ const GameFlow: React.FC<GameFlowProps> = ({
       className="fixed inset-0 flex flex-col overflow-hidden"
       style={{ zIndex: 10, background: "#0d0f1a" }}
     >
-      {/* DOFUS-style top bar */}
-      <header
-        className="dofus-panel-header flex items-center px-4 h-12 shrink-0 z-30"
-        style={{ borderBottom: "1px solid var(--dofus-border-gold-dim)" }}
-      >
-        <div className="flex items-center justify-between w-full">
-          <div className="flex items-center space-x-3">
-            {showBackButton && (
-              <button
-                type="button"
-                onClick={handleBackToSelection}
-                className="flex items-center space-x-2 px-3 py-1 text-sm rounded transition-colors"
-                style={{
-                  background: "rgba(200,150,42,0.12)",
-                  border: "1px solid var(--dofus-border-gold-dim)",
-                  color: "var(--dofus-text-gold)",
-                }}
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Back</span>
-              </button>
-            )}
-            <div>
-              <h1
-                className="text-sm font-bold"
-                style={{
-                  color: "var(--dofus-text-gold)",
-                  fontFamily: "serif",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Paper Baby Vampires
-              </h1>
-              <p className="text-xs" style={{ color: "var(--dofus-text-dim)" }}>
-                Welcome, {userProfile.name}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-3">
-            <div className="hidden md:flex items-center space-x-2 text-xs">
-              {(["character"] as const).map((stage, i) => (
-                <React.Fragment key={stage}>
-                  {i > 0 && (
-                    <div
-                      className="w-3 h-px"
-                      style={{ background: "var(--dofus-border-gold-dim)" }}
-                    />
-                  )}
-                  <div
-                    className="px-2 py-1 rounded text-xs"
-                    style={{
-                      background:
-                        currentStage === stage
-                          ? "rgba(200,150,42,0.2)"
-                          : "rgba(255,255,255,0.04)",
-                      border: `1px solid ${currentStage === stage ? "var(--dofus-border-gold)" : "var(--dofus-border-gold-dim)"}`,
-                      color:
-                        currentStage === stage
-                          ? "var(--dofus-text-gold)"
-                          : "var(--dofus-text-dim)",
-                    }}
-                  >
-                    {stage === "character" ? "Character" : "Dungeon"}
-                  </div>
-                </React.Fragment>
-              ))}
-            </div>
-            {isAdmin && onOpenAdmin && (
-              <button
-                type="button"
-                data-ocid="game.admin_button"
-                onClick={onOpenAdmin}
-                style={{
-                  background: "linear-gradient(135deg, #6a0a0a, #c0392b)",
-                  border: "1px solid #e74c3c",
-                  borderRadius: 6,
-                  color: "#fde",
-                  padding: "5px 12px",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  fontFamily: "'Space Grotesk', system-ui, sans-serif",
-                  boxShadow: "0 0 8px rgba(192,57,43,0.35)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                <span style={{ fontSize: 12 }}>🛡️</span> Admin
-              </button>
-            )}
+      {/* Carved-stone top bar */}
+      <header className="stone-top-bar flex items-center justify-between gap-2 px-4 h-12 shrink-0 z-30">
+        <div className="flex items-center gap-3">
+          {showBackButton && (
             <button
               type="button"
-              onClick={handleLogout}
-              className="flex items-center space-x-2 px-3 py-1 text-sm rounded transition-colors"
+              onClick={handleBackToSelection}
+              className="stone-btn-slate stone-nav-btn"
+            >
+              <ArrowLeft size={14} />
+              <span className="hidden sm:inline">Back</span>
+            </button>
+          )}
+          <div>
+            <h1
+              className="text-sm font-bold"
               style={{
-                background: "rgba(200,150,42,0.08)",
-                border: "1px solid var(--dofus-border-gold-dim)",
-                color: "var(--dofus-text-dim)",
+                color: "#f0c44a",
+                fontFamily: "var(--font-display)",
+                letterSpacing: "0.05em",
               }}
             >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Log Out</span>
-            </button>
+              Paper Baby Vampires
+            </h1>
+            <p className="text-xs" style={{ color: "#8a8090" }}>
+              Welcome,{" "}
+              <span style={{ color: "#d8463f" }}>{userProfile.name}</span>
+            </p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2 text-xs">
+            {(["character"] as const).map((stage, i) => (
+              <React.Fragment key={stage}>
+                {i > 0 && (
+                  <div
+                    className="w-3 h-px"
+                    style={{ background: "rgba(216,70,63,.3)" }}
+                  />
+                )}
+                <span
+                  className={`px-2 py-1 rounded text-xs ${currentStage === stage ? "stone-pill-gold" : "stone-pill text-[#8a8090]"}`}
+                >
+                  {stage === "character" ? "Character" : "Dungeon"}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+          {isAdmin && onOpenAdmin && (
+            <button
+              type="button"
+              data-ocid="game.admin_button"
+              onClick={onOpenAdmin}
+              className="stone-btn-crimson stone-nav-btn"
+            >
+              <span className="text-[12px]">🛡️</span>
+              <span>Admin</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="stone-btn-slate stone-nav-btn"
+          >
+            <LogOut size={14} />
+            <span className="hidden sm:inline">Log Out</span>
+          </button>
         </div>
       </header>
 
       {/* Main Content */}
-      <main
-        className="flex-1 overflow-y-auto"
-        style={{ background: "#0d0f1a" }}
-      >
+      <main className="flex-1 overflow-y-auto stone-well">
         {renderCurrentStage()}
       </main>
     </div>
@@ -386,34 +369,6 @@ const GameFlow: React.FC<GameFlowProps> = ({
 };
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-function gameModeButtonStyle(
-  active: boolean,
-  danger = false,
-): React.CSSProperties {
-  const base = danger ? "#6a0a0a, #c0392b" : "#1a0506, #5a0d1a";
-  const activeBg = danger ? "#8a1a1a, #e04030" : "#3a0a10, #8a1a2a";
-  return {
-    background: `linear-gradient(135deg, ${active ? activeBg : base})`,
-    border: `1px solid ${active ? "#e74c3c" : "#6b0000"}`,
-    borderRadius: 6,
-    color: "#fde",
-    padding: "5px 10px",
-    fontSize: 11,
-    fontWeight: 800,
-    cursor: "pointer",
-    letterSpacing: "0.06em",
-    textTransform: "uppercase" as const,
-    fontFamily: "'Space Grotesk', system-ui, sans-serif",
-    boxShadow: active
-      ? "0 0 14px rgba(220,38,38,0.6)"
-      : "0 0 8px rgba(139,0,0,0.35)",
-    display: "flex",
-    alignItems: "center",
-    gap: 5,
-    transition: "all 0.15s",
-  };
-}
 
 // ─── Leaderboard Modal ───────────────────────────────────────────────────────
 
@@ -444,43 +399,20 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       role="presentation"
     >
       <div
+        className="stone-frame"
         style={{
-          background: "#120406",
-          border: "1px solid #6b0000",
-          borderRadius: 10,
           width: "min(640px, 94vw)",
           maxHeight: "80vh",
           display: "flex",
           flexDirection: "column",
-          boxShadow:
-            "0 0 40px rgba(192,57,43,0.35), 0 8px 32px rgba(0,0,0,0.8)",
           overflow: "hidden",
         }}
       >
         {/* Header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "14px 20px",
-            borderBottom: "1px solid rgba(139,0,0,0.35)",
-            background: "linear-gradient(135deg, #1a0506, #2a0810)",
-            flexShrink: 0,
-          }}
-        >
+        <div className="stone-header flex items-center justify-between px-5 py-3 shrink-0">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Trophy size={18} style={{ color: "#dc2626" }} />
-            <span
-              style={{
-                color: "#fca5a5",
-                fontWeight: 800,
-                fontSize: 16,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                fontFamily: "'Space Grotesk', system-ui, sans-serif",
-              }}
-            >
+            <Trophy size={18} style={{ color: "#d8463f" }} />
+            <span className="stone-header-title" style={{ fontSize: 16 }}>
               Leaderboard
             </span>
           </div>
@@ -489,18 +421,12 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             data-ocid="leaderboard.close_button"
             onClick={onClose}
             aria-label="Close leaderboard"
+            className="stone-btn-slate"
             style={{
-              background: "rgba(220,38,38,0.12)",
-              border: "1px solid rgba(220,38,38,0.3)",
-              borderRadius: 5,
-              color: "#fca5a5",
-              cursor: "pointer",
-              fontSize: 18,
               width: 30,
               height: 30,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              padding: 0,
+              fontSize: 18,
               lineHeight: 1,
             }}
           >
@@ -509,14 +435,18 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
 
         {/* Body */}
-        <div style={{ overflowY: "auto", flex: 1 }}>
+        <div
+          className="stone-well"
+          style={{ overflowY: "auto", flex: 1, padding: 2 }}
+        >
           {isLoading && (
             <div
               data-ocid="leaderboard.loading_state"
+              className="stone-well"
               style={{
                 padding: 32,
                 textAlign: "center",
-                color: "#5a3a3a",
+                color: "#8a8090",
                 fontSize: 13,
               }}
             >
@@ -527,10 +457,11 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           {!isLoading && entries.length === 0 && (
             <div
               data-ocid="leaderboard.empty_state"
+              className="stone-well"
               style={{
                 padding: 32,
                 textAlign: "center",
-                color: "#5a3a3a",
+                color: "#8a8090",
                 fontSize: 13,
               }}
             >
@@ -653,13 +584,12 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
 
         <div
+          className="stone-well"
           style={{
             padding: "8px 20px",
-            borderTop: "1px solid rgba(139,0,0,0.2)",
-            color: "#5a3a3a",
+            color: "#8a8090",
             fontSize: 10,
             textAlign: "center",
-            background: "#0e0203",
             flexShrink: 0,
           }}
         >

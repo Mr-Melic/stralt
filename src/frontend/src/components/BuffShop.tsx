@@ -110,26 +110,20 @@ const PANEL_STYLE: React.CSSProperties = {
 
 const sectionStyle: React.CSSProperties = {
   padding: "6px 8px",
-  borderBottom: "1px solid rgba(139,0,0,0.35)",
 };
 
-const tabButtonStyle = (active: boolean): React.CSSProperties => ({
+const tabButtonStyle = (_active: boolean): React.CSSProperties => ({
   flex: 1,
   padding: "4px 0",
   fontSize: 10,
   fontWeight: 700,
   letterSpacing: "0.06em",
   textTransform: "uppercase" as const,
-  background: active ? "rgba(139,0,0,0.4)" : "transparent",
-  border: active ? "1px solid #8b0000" : "1px solid transparent",
   borderRadius: 3,
-  color: active ? "#ff8888" : "#996666",
   cursor: "pointer",
 });
 
 const itemCardStyle: React.CSSProperties = {
-  background: "rgba(255,255,255,0.03)",
-  border: "1px solid rgba(139,0,0,0.3)",
   borderRadius: 5,
   padding: "6px 8px",
   display: "flex",
@@ -143,12 +137,7 @@ const buyBtnStyle = (canAfford: boolean): React.CSSProperties => ({
   padding: "3px 0",
   fontSize: 10,
   fontWeight: 700,
-  background: canAfford
-    ? "linear-gradient(135deg,#6a0a0a,#c0392b)"
-    : "rgba(40,15,15,0.7)",
-  border: `1px solid ${canAfford ? "#c0392b" : "#5a2020"}`,
   borderRadius: 3,
-  color: canAfford ? "#fff" : "#6a3a3a",
   cursor: canAfford ? "pointer" : "not-allowed",
   width: "100%",
 });
@@ -158,12 +147,7 @@ const getBtnStyle = (canUse: boolean): React.CSSProperties => ({
   padding: "3px 0",
   fontSize: 10,
   fontWeight: 700,
-  background: canUse
-    ? "linear-gradient(135deg,#0a3a6a,#1a6ac0)"
-    : "rgba(15,20,40,0.7)",
-  border: `1px solid ${canUse ? "#1a6ac0" : "#1a2a5a"}`,
   borderRadius: 3,
-  color: canUse ? "#a0cfff" : "#3a4a6a",
   cursor: canUse ? "pointer" : "not-allowed",
   width: "100%",
 });
@@ -243,18 +227,19 @@ const BuffShop: React.FC<BuffShopProps> = ({
       style={PANEL_STYLE}
     >
       {/* Doka balance */}
-      <div style={sectionStyle}>
+      <div className="stone-header" style={sectionStyle}>
         <span
+          className="stone-pill stone-pill-gold"
           style={{
-            color: "#f1c40f",
             fontSize: 10,
             fontWeight: 700,
             display: "flex",
             alignItems: "center",
             gap: 4,
+            padding: "2px 8px",
           }}
         >
-          💰 {dokaBalance.toLocaleString()} Doka
+          {dokaBalance.toLocaleString()} Doka
           {inBattle && (
             <span style={{ color: "#e74c3c", fontSize: 9, marginLeft: 4 }}>
               (buy outside battle)
@@ -265,16 +250,19 @@ const BuffShop: React.FC<BuffShopProps> = ({
 
       {/* Tab switcher */}
       <div
+        className="stone-well"
         style={{
           display: "flex",
           gap: 4,
           padding: "5px 8px",
-          borderBottom: "1px solid rgba(139,0,0,0.35)",
         }}
       >
         <button
           type="button"
           data-ocid="buff_shop.shop_tab"
+          className={
+            activeTab === "shop" ? "stone-btn-crimson" : "stone-btn-slate"
+          }
           style={tabButtonStyle(activeTab === "shop")}
           onClick={() => setActiveTab("shop")}
         >
@@ -283,20 +271,17 @@ const BuffShop: React.FC<BuffShopProps> = ({
         <button
           type="button"
           data-ocid="buff_shop.inventory_tab"
+          className={
+            activeTab === "inventory" ? "stone-btn-crimson" : "stone-btn-slate"
+          }
           style={tabButtonStyle(activeTab === "inventory")}
           onClick={() => setActiveTab("inventory")}
         >
           Inventory
           {totalItems > 0 && (
             <span
-              style={{
-                marginLeft: 4,
-                background: "#c0392b",
-                color: "#fff",
-                fontSize: 9,
-                borderRadius: 8,
-                padding: "0 4px",
-              }}
+              className="stone-pill-crimson"
+              style={{ marginLeft: 4, fontSize: 9, padding: "0 4px" }}
             >
               {totalItems}
             </span>
@@ -324,6 +309,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
               <div
                 key={item.id}
                 data-ocid={`buff_shop.item.${item.id}`}
+                className="stone-well"
                 style={itemCardStyle}
               >
                 {/* Count badge */}
@@ -384,6 +370,11 @@ const BuffShop: React.FC<BuffShopProps> = ({
                 <button
                   type="button"
                   data-ocid={`buff_shop.buy_button.${item.id}`}
+                  className={
+                    canAfford && !atMax
+                      ? "stone-btn-crimson"
+                      : "stone-btn-slate"
+                  }
                   style={buyBtnStyle(canAfford && !atMax)}
                   disabled={!canAfford || atMax}
                   onClick={() => handleBuy(item)}
@@ -436,6 +427,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
                     <div
                       key={item.id}
                       data-ocid={`buff_shop.inv_item.${item.id}`}
+                      className="stone-well"
                       style={{
                         ...itemCardStyle,
                         flexDirection: "row",
@@ -483,6 +475,9 @@ const BuffShop: React.FC<BuffShopProps> = ({
                       <button
                         type="button"
                         data-ocid={`buff_shop.use_button.${item.id}`}
+                        className={
+                          canUse ? "stone-btn-crimson" : "stone-btn-slate"
+                        }
                         style={{
                           ...getBtnStyle(canUse),
                           width: 38,

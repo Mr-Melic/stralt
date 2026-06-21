@@ -31,35 +31,21 @@ export default function StatusEffectBadge({ effect }: StatusEffectBadgeProps) {
   const label = formatEffectLabel(effect);
   const turns = effect.duration;
 
-  const borderColor =
+  const pillClass =
     effect.type === "buff"
-      ? "rgba(34,197,94,0.7)"
+      ? "stone-pill-green"
       : effect.type === "dot"
-        ? "rgba(234,179,8,0.7)"
-        : "rgba(239,68,68,0.7)";
-
-  const bgColor =
-    effect.type === "buff"
-      ? "rgba(34,197,94,0.12)"
-      : effect.type === "dot"
-        ? "rgba(234,179,8,0.12)"
-        : "rgba(239,68,68,0.12)";
+        ? "stone-pill-gold"
+        : "stone-pill-crimson";
 
   return (
     <div
       data-ocid={`status_effect.${effect.targetId}.${effect.effectName}.badge`}
       title={`${effect.description} — ${turns} turn${turns !== 1 ? "s" : ""} remaining`}
+      className={pillClass}
       style={{
-        display: "inline-flex",
-        alignItems: "center",
         gap: 4,
-        padding: "2px 6px",
         borderRadius: 4,
-        border: `1px solid ${borderColor}`,
-        background: bgColor,
-        color: "#fff",
-        fontSize: 10,
-        fontWeight: 700,
         whiteSpace: "nowrap",
         lineHeight: 1,
       }}

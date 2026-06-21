@@ -357,7 +357,7 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
     <div
       ref={panelRef}
       data-ocid={`draggable_panel.${panelId}`}
-      className={className}
+      className={className ? `${className} stone-frame` : "stone-frame"}
       style={{
         position: "fixed",
         left: position.x,
@@ -365,11 +365,7 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
         zIndex,
         userSelect: "none",
         touchAction: "none",
-        borderRadius: 4,
-        border: "1px solid #8b0000",
-        background: "rgba(10,10,15,0.92)",
-        boxShadow:
-          "0 4px 24px rgba(139,0,0,0.3), inset 0 0 12px rgba(0,0,0,0.5)",
+        borderRadius: 14,
         minWidth: 60,
         ...style,
       }}
@@ -379,10 +375,9 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
         data-ocid={`draggable_panel.${panelId}.header`}
         onMouseDown={onMouseDown}
         onTouchStart={onTouchStart}
+        className="stone-header"
         style={{
-          background: "#1a0a0a",
-          borderBottom: folded ? "none" : "1px solid #8b0000",
-          borderRadius: folded ? 4 : "4px 4px 0 0",
+          borderRadius: folded ? 12 : "12px 12px 0 0",
           padding: "4px 8px",
           cursor: isDragging ? "grabbing" : "grab",
           display: "flex",
@@ -393,12 +388,9 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
         }}
       >
         <span
+          className="stone-header-title"
           style={{
-            color: "#ff6666",
             fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "1px",
-            textTransform: "uppercase",
             flex: 1,
             whiteSpace: "nowrap",
             overflow: "hidden",
@@ -414,14 +406,11 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
             e.stopPropagation();
             handleFoldToggle();
           }}
+          className="stone-btn-slate"
           style={{
-            background: "transparent",
-            border: "none",
-            color: "#cc4444",
             fontSize: 12,
             lineHeight: 1,
-            cursor: "pointer",
-            padding: "0 2px",
+            padding: "0 4px",
             flexShrink: 0,
             pointerEvents: "auto",
           }}
@@ -434,10 +423,11 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
       {/* Content */}
       {!folded && (
         <div
+          className="stone-well"
           style={{
             pointerEvents: "auto",
-            borderRadius: "0 0 4px 4px",
-            overflow: "hidden",
+            borderRadius: "0 0 12px 12px",
+            overflow: "visible",
           }}
         >
           {children}

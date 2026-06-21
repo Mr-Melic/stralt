@@ -51,42 +51,6 @@ interface ChatPanelProps {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ActorAny = Record<string, any>;
 
-const tabBtnStyle = (
-  active: boolean,
-  activeColor: string,
-): React.CSSProperties => ({
-  flex: 1,
-  padding: "6px 4px",
-  fontSize: 9,
-  fontWeight: 700,
-  letterSpacing: "0.06em",
-  textTransform: "uppercase",
-  cursor: "pointer",
-  border: "none",
-  borderBottom: active ? `2px solid ${activeColor}` : "2px solid transparent",
-  background: active ? `${activeColor}26` : "transparent",
-  color: active ? "#e8c8c8" : "rgba(200,140,140,0.5)",
-  transition: "all 0.15s",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 3,
-});
-
-const badgeStyle = (bg: string): React.CSSProperties => ({
-  background: bg,
-  color: "#fff",
-  borderRadius: 999,
-  fontSize: 9,
-  fontWeight: 700,
-  minWidth: 14,
-  height: 14,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "0 3px",
-});
-
 /**
  * Renders a battle log line with inline resistance-breakdown tokens highlighted.
  * Tokens enclosed in |[...]| are rendered in muted blue/grey to show absorbed damage.
@@ -441,411 +405,390 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     >
       <div
         data-ocid="chat.panel"
+        className="stone-frame"
         style={{
           width: 300,
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          background: "linear-gradient(160deg, #15080a 0%, #0d0f1a 100%)",
           fontFamily: "var(--font-body)",
         }}
       >
-        {/* Header */}
-        <button
-          type="button"
-          data-ocid="chat.toggle"
-          onClick={toggleExpanded}
+        <div
+          className="stone-well"
           style={{
             display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "8px 12px",
-            cursor: "pointer",
-            background:
-              "linear-gradient(90deg, rgba(192,57,43,0.18) 0%, rgba(13,15,26,0) 100%)",
-            borderBottom: expanded ? "1px solid rgba(192,57,43,0.35)" : "none",
-            border: "none",
-            width: "100%",
-            textAlign: "left",
+            flexDirection: "column",
+            overflow: "hidden",
+            flex: 1,
           }}
         >
-          <MessageSquare
-            size={15}
-            style={{ color: "#c0392b", flexShrink: 0 }}
-          />
-          <span
+          {/* Header — single bar, toggles open/close, tabs inline when expanded */}
+          <button
+            type="button"
+            data-ocid="chat.toggle"
+            onClick={toggleExpanded}
+            className="stone-header"
             style={{
-              color: "#e8c8c8",
-              fontWeight: 700,
-              fontSize: 12,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 14,
+              padding: "8px 12px",
+              cursor: "pointer",
+              border: "none",
+              width: "100%",
+              textAlign: "left",
             }}
           >
-            Chat
-          </span>
-          {totalUnread > 0 && !expanded && (
+            <MessageSquare
+              size={15}
+              style={{ color: "#d8463f", flexShrink: 0 }}
+            />
             <span
-              data-ocid="chat.unread_badge"
-              style={{
-                background: "#c0392b",
-                color: "#fff",
-                borderRadius: 999,
-                fontSize: 10,
-                fontWeight: 700,
-                minWidth: 18,
-                height: 18,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: "0 4px",
-                marginRight: 4,
-              }}
+              className="stone-header-title"
+              style={{ fontSize: 12, letterSpacing: "0.08em", flexShrink: 0 }}
             >
-              {totalUnread > 99 ? "99+" : totalUnread}
+              Chat
             </span>
-          )}
-          {expanded ? (
-            <ChevronDown size={14} style={{ color: "#c0392b" }} />
-          ) : (
-            <ChevronUp size={14} style={{ color: "#c0392b" }} />
-          )}
-        </button>
 
-        {expanded && (
-          <>
-            {/* Channel tabs */}
-            <div
-              style={{
-                display: "flex",
-                borderBottom: "1px solid rgba(192,57,43,0.3)",
-              }}
-            >
-              <button
-                type="button"
-                data-ocid="chat.tab.general"
-                onClick={() => setActiveChannel("general")}
-                style={tabBtnStyle(activeChannel === "general", "#c0392b")}
+            {expanded && (
+              <div
+                className="flex flex-nowrap"
+                style={{ gap: 2, flex: 1, overflow: "hidden" }}
               >
-                General
-                {unreadGeneral > 0 && activeChannel !== "general" && (
-                  <span style={badgeStyle("#c0392b")}>
-                    {unreadGeneral > 99 ? "99+" : unreadGeneral}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                data-ocid="chat.tab.battlelog"
-                onClick={() => setActiveChannel("battlelog")}
-                style={tabBtnStyle(activeChannel === "battlelog", "#c0392b")}
-              >
-                Battle Log
-                {unreadBattleLog > 0 && activeChannel !== "battlelog" && (
-                  <span style={badgeStyle("#c0392b")}>
-                    {unreadBattleLog > 99 ? "99+" : unreadBattleLog}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                data-ocid="chat.tab.status"
-                onClick={() => setActiveChannel("status")}
-                style={tabBtnStyle(activeChannel === "status", "#9b59b6")}
-              >
-                Status
-                {unreadStatus > 0 && activeChannel !== "status" && (
-                  <span style={badgeStyle("#9b59b6")}>
-                    {unreadStatus > 99 ? "99+" : unreadStatus}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                data-ocid="chat.tab.debug"
-                onClick={() => setActiveChannel("debug")}
-                style={tabBtnStyle(activeChannel === "debug", "#27ae60")}
-              >
-                Debug
-              </button>
-            </div>
+                {(
+                  [
+                    ["general", "General", unreadGeneral],
+                    ["battlelog", "Battle Log", unreadBattleLog],
+                    ["status", "Status", unreadStatus],
+                    ["debug", "Debug", 0],
+                  ] as const
+                ).map(([key, label, unread]) => {
+                  const isActive = activeChannel === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      data-ocid={`chat.tab.${key}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveChannel(key);
+                      }}
+                      className={`flex items-center justify-center gap-1 py-1 px-2 text-[9px] font-semibold uppercase tracking-wider border-0 rounded-md transition-colors duration-150 cursor-pointer whitespace-nowrap ${
+                        isActive
+                          ? "text-[#d8463f] font-bold"
+                          : "text-[#8a8090] hover:text-[#cdbfd2]"
+                      }`}
+                      style={{ fontFamily: "var(--font-body)" }}
+                    >
+                      {label}
+                      {unread > 0 && !isActive && (
+                        <span
+                          className="inline-flex items-center justify-center rounded-full text-white text-[9px] font-bold min-w-[14px] h-[14px] px-[3px]"
+                          style={{
+                            background:
+                              key === "status" ? "#c79cff" : "#d8463f",
+                          }}
+                        >
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-            {/* Message list */}
-            <div
-              ref={listRef}
-              data-ocid="chat.message_list"
-              className="dofus-scrollbar"
-              style={{
-                height: 280,
-                overflowY: "auto",
-                padding: "8px 10px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 3,
-              }}
-            >
-              {activeChannel === "general" &&
-                (messages.length === 0 ? (
-                  <div
-                    data-ocid="chat.general.empty_state"
-                    style={{
-                      color: "rgba(200,140,140,0.4)",
-                      fontSize: 11,
-                      textAlign: "center",
-                      marginTop: 16,
-                    }}
-                  >
-                    No messages yet. Say something!
-                  </div>
-                ) : (
-                  messages.map((msg) => {
-                    const isSelf = msg.playerName === playerName;
-                    return (
+            <span style={{ marginLeft: "auto", flexShrink: 0 }}>
+              {totalUnread > 0 && !expanded && (
+                <span
+                  data-ocid="chat.unread_badge"
+                  className="stone-pill stone-pill-crimson"
+                  style={{
+                    minWidth: 18,
+                    height: 18,
+                    padding: "0 4px",
+                    marginRight: 4,
+                    fontSize: 10,
+                  }}
+                >
+                  {totalUnread > 99 ? "99+" : totalUnread}
+                </span>
+              )}
+              {expanded ? (
+                <ChevronDown size={14} style={{ color: "#d8463f" }} />
+              ) : (
+                <ChevronUp size={14} style={{ color: "#d8463f" }} />
+              )}
+            </span>
+          </button>
+
+          {expanded && (
+            <>
+              {/* Message list */}
+              <div
+                ref={listRef}
+                data-ocid="chat.message_list"
+                className="dofus-scrollbar"
+                style={{
+                  height: 280,
+                  overflowY: "auto",
+                  padding: "8px 10px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 3,
+                }}
+              >
+                {activeChannel === "general" &&
+                  (messages.length === 0 ? (
+                    <div
+                      data-ocid="chat.general.empty_state"
+                      className="text-muted-foreground"
+                      style={{
+                        fontSize: 11,
+                        textAlign: "center",
+                        marginTop: 16,
+                        opacity: 0.5,
+                      }}
+                    >
+                      No messages yet. Say something!
+                    </div>
+                  ) : (
+                    messages.map((msg) => {
+                      const isSelf = msg.playerName === playerName;
+                      return (
+                        <div
+                          key={String(msg.id)}
+                          style={{
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            wordBreak: "break-word",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "rgba(160,160,170,0.7)",
+                              fontSize: 10,
+                              marginRight: 5,
+                              fontVariantNumeric: "tabular-nums",
+                            }}
+                          >
+                            [{formatTime(msg.timestampMs)}]
+                          </span>
+                          <span
+                            style={{
+                              color: isSelf ? SELF_COLOR : msg.colorHex,
+                              fontWeight: 600,
+                              marginRight: 4,
+                            }}
+                          >
+                            {msg.playerName}:
+                          </span>
+                          <span
+                            style={{
+                              color: isSelf
+                                ? "#d0f0ff"
+                                : "rgba(235,235,245,0.88)",
+                            }}
+                          >
+                            {msg.text}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ))}
+                {activeChannel === "battlelog" &&
+                  (battleLogEntries.length === 0 ? (
+                    <div
+                      data-ocid="chat.battlelog.empty_state"
+                      className="text-muted-foreground"
+                      style={{
+                        fontSize: 11,
+                        textAlign: "center",
+                        marginTop: 16,
+                        opacity: 0.5,
+                      }}
+                    >
+                      No battle actions yet.
+                    </div>
+                  ) : (
+                    battleLogEntries.map((entry) => (
                       <div
-                        key={String(msg.id)}
+                        key={entry.id}
+                        data-ocid="chat.battlelog.entry"
                         style={{
-                          fontSize: 12,
+                          fontSize: 11,
                           lineHeight: 1.5,
                           wordBreak: "break-word",
                         }}
                       >
                         <span
                           style={{
-                            color: "rgba(160,160,170,0.7)",
+                            color: "rgba(160,160,170,0.6)",
                             fontSize: 10,
                             marginRight: 5,
                             fontVariantNumeric: "tabular-nums",
                           }}
                         >
-                          [{formatTime(msg.timestampMs)}]
+                          [{entry.timestamp}]
                         </span>
-                        <span
-                          style={{
-                            color: isSelf ? SELF_COLOR : msg.colorHex,
-                            fontWeight: 600,
-                            marginRight: 4,
-                          }}
-                        >
-                          {msg.playerName}:
-                        </span>
-                        <span
-                          style={{
-                            color: isSelf
-                              ? "#d0f0ff"
-                              : "rgba(235,235,245,0.88)",
-                          }}
-                        >
-                          {msg.text}
-                        </span>
+                        <BattleLogText text={entry.text} color={entry.color} />
                       </div>
-                    );
-                  })
-                ))}
-              {activeChannel === "battlelog" &&
-                (battleLogEntries.length === 0 ? (
+                    ))
+                  ))}
+                {activeChannel === "status" && renderStatusContent()}
+                {activeChannel === "debug" && (
                   <div
-                    data-ocid="chat.battlelog.empty_state"
                     style={{
-                      color: "rgba(200,140,140,0.4)",
-                      fontSize: 11,
-                      textAlign: "center",
-                      marginTop: 16,
+                      padding: "8px",
+                      color: "#aaa",
+                      fontFamily: "monospace",
+                      fontSize: "11px",
+                      overflowY: "auto",
+                      height: "100%",
                     }}
                   >
-                    No battle actions yet.
-                  </div>
-                ) : (
-                  battleLogEntries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      data-ocid="chat.battlelog.entry"
-                      style={{
-                        fontSize: 11,
-                        lineHeight: 1.5,
-                        wordBreak: "break-word",
-                      }}
-                    >
-                      <span
+                    {!debugLogs || debugLogs.length === 0 ? (
+                      <div
+                        className="text-muted-foreground"
                         style={{
-                          color: "rgba(160,160,170,0.6)",
-                          fontSize: 10,
-                          marginRight: 5,
-                          fontVariantNumeric: "tabular-nums",
+                          textAlign: "center",
+                          marginTop: 20,
+                          opacity: 0.5,
                         }}
                       >
-                        [{entry.timestamp}]
-                      </span>
-                      <BattleLogText text={entry.text} color={entry.color} />
-                    </div>
-                  ))
-                ))}
-              {activeChannel === "status" && renderStatusContent()}
-              {activeChannel === "debug" && (
+                        No debug events yet.
+                      </div>
+                    ) : (
+                      <div>
+                        {debugLogs
+                          .slice()
+                          .reverse()
+                          .map((log) => (
+                            <div
+                              key={log}
+                              style={{
+                                padding: "2px 4px",
+                                borderBottom: "1px solid #222",
+                                whiteSpace: "pre-wrap",
+                                wordBreak: "break-all",
+                              }}
+                            >
+                              {log}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              {activeChannel === "general" ? (
                 <div
                   style={{
-                    padding: "8px",
-                    color: "#aaa",
-                    fontFamily: "monospace",
-                    fontSize: "11px",
-                    overflowY: "auto",
-                    height: "100%",
+                    display: "flex",
+                    gap: 6,
+                    padding: "8px 10px",
+                    borderTop: "1px solid rgba(216,70,63,0.3)",
+                    background: "rgba(0,0,0,0.3)",
                   }}
                 >
-                  {!debugLogs || debugLogs.length === 0 ? (
-                    <div
-                      style={{
-                        color: "#666",
-                        textAlign: "center",
-                        marginTop: 20,
-                      }}
-                    >
-                      No debug events yet.
-                    </div>
-                  ) : (
-                    <div>
-                      {debugLogs
-                        .slice()
-                        .reverse()
-                        .map((log) => (
-                          <div
-                            key={log}
-                            style={{
-                              padding: "2px 4px",
-                              borderBottom: "1px solid #222",
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-all",
-                            }}
-                          >
-                            {log}
-                          </div>
-                        ))}
-                    </div>
-                  )}
+                  <input
+                    ref={inputRef}
+                    data-ocid="chat.input"
+                    type="text"
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Say something..."
+                    maxLength={200}
+                    className="stone-inset"
+                    style={{
+                      flex: 1,
+                      fontSize: 12,
+                      padding: "5px 8px",
+                      fontFamily: "var(--font-body)",
+                    }}
+                  />
+                  <button
+                    type="button"
+                    data-ocid="chat.send_button"
+                    onClick={handleSend}
+                    disabled={!inputText.trim() || isSending}
+                    className="stone-btn-crimson"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      padding: 0,
+                      flexShrink: 0,
+                      opacity: inputText.trim() && !isSending ? 1 : 0.4,
+                      cursor:
+                        inputText.trim() && !isSending
+                          ? "pointer"
+                          : "not-allowed",
+                    }}
+                  >
+                    <Send size={14} />
+                  </button>
                 </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            {activeChannel === "general" ? (
-              <div
-                style={{
-                  display: "flex",
-                  gap: 6,
-                  padding: "8px 10px",
-                  borderTop: "1px solid rgba(192,57,43,0.3)",
-                  background: "rgba(0,0,0,0.3)",
-                }}
-              >
-                <input
-                  ref={inputRef}
-                  data-ocid="chat.input"
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Say something..."
-                  maxLength={200}
+              ) : activeChannel === "battlelog" ? (
+                <div
                   style={{
-                    flex: 1,
-                    background: "rgba(10,5,8,0.8)",
-                    border: "1px solid rgba(192,57,43,0.5)",
-                    borderRadius: 4,
-                    color: "#f0e8e8",
-                    fontSize: 12,
-                    padding: "5px 8px",
-                    outline: "none",
-                    fontFamily: "var(--font-body)",
-                  }}
-                />
-                <button
-                  type="button"
-                  data-ocid="chat.send_button"
-                  onClick={handleSend}
-                  disabled={!inputText.trim() || isSending}
-                  style={{
-                    background:
-                      inputText.trim() && !isSending
-                        ? "#c0392b"
-                        : "rgba(192,57,43,0.25)",
-                    border: "1px solid rgba(192,57,43,0.6)",
-                    borderRadius: 4,
-                    color:
-                      inputText.trim() && !isSending
-                        ? "#fff"
-                        : "rgba(255,255,255,0.35)",
-                    cursor:
-                      inputText.trim() && !isSending
-                        ? "pointer"
-                        : "not-allowed",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    width: 32,
-                    height: 32,
-                    flexShrink: 0,
-                    transition: "background 0.15s",
+                    justifyContent: "space-between",
+                    padding: "6px 10px",
+                    borderTop: "1px solid rgba(216,70,63,0.3)",
+                    background: "rgba(0,0,0,0.3)",
                   }}
                 >
-                  <Send size={14} />
-                </button>
-              </div>
-            ) : activeChannel === "battlelog" ? (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "6px 10px",
-                  borderTop: "1px solid rgba(192,57,43,0.3)",
-                  background: "rgba(0,0,0,0.3)",
-                }}
-              >
-                <span
+                  <span
+                    className="text-muted-foreground"
+                    style={{
+                      fontSize: 10,
+                      letterSpacing: "0.04em",
+                      opacity: 0.5,
+                    }}
+                  >
+                    {battleLogEntries.length} actions
+                  </span>
+                  <button
+                    type="button"
+                    data-ocid="chat.battlelog.clear_button"
+                    onClick={() => onClearBattleLog?.()}
+                    className="stone-btn-slate"
+                    style={{
+                      fontSize: 10,
+                      padding: "3px 10px",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Clear log
+                  </button>
+                </div>
+              ) : (
+                <div
                   style={{
-                    color: "rgba(200,140,140,0.5)",
-                    fontSize: 10,
-                    letterSpacing: "0.04em",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "6px 10px",
+                    borderTop: "1px solid rgba(199,156,255,0.3)",
+                    background: "rgba(0,0,0,0.3)",
                   }}
                 >
-                  {battleLogEntries.length} actions
-                </span>
-                <button
-                  type="button"
-                  data-ocid="chat.battlelog.clear_button"
-                  onClick={() => onClearBattleLog?.()}
-                  style={{
-                    background: "rgba(192,57,43,0.15)",
-                    border: "1px solid rgba(192,57,43,0.4)",
-                    borderRadius: 4,
-                    color: "rgba(220,130,130,0.8)",
-                    fontSize: 10,
-                    padding: "3px 10px",
-                    cursor: "pointer",
-                    letterSpacing: "0.05em",
-                  }}
-                >
-                  Clear log
-                </button>
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "6px 10px",
-                  borderTop: "1px solid rgba(155,89,182,0.3)",
-                  background: "rgba(0,0,0,0.3)",
-                }}
-              >
-                <span style={{ color: "rgba(200,140,200,0.5)", fontSize: 10 }}>
-                  {activeEffects.length} active effect
-                  {activeEffects.length !== 1 ? "s" : ""}
-                </span>
-              </div>
-            )}
-          </>
-        )}
+                  <span
+                    className="text-muted-foreground"
+                    style={{ fontSize: 10, opacity: 0.5 }}
+                  >
+                    {activeEffects.length} active effect
+                    {activeEffects.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </DraggablePanel>
   );

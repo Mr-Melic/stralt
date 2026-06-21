@@ -107,6 +107,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
     >
       <div
         data-ocid="initiative.strip"
+        className="stone-well"
         style={{
           width: 62,
           maxHeight: "70vh",
@@ -121,23 +122,13 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
         {/* Phase indicator */}
         <div
           data-ocid="initiative.phase_indicator"
+          className={
+            battlePhase === "player" ? "stone-pill-crimson" : "stone-well"
+          }
           style={{
             textAlign: "center",
             padding: "5px 3px",
             borderRadius: 6,
-            background:
-              battlePhase === "player"
-                ? "rgba(220,30,30,0.28)"
-                : "rgba(40,0,0,0.55)",
-            border: `2px solid ${
-              battlePhase === "player"
-                ? "rgba(255,80,80,0.75)"
-                : "rgba(120,0,0,0.55)"
-            }`,
-            boxShadow:
-              battlePhase === "player"
-                ? "0 0 10px rgba(255,60,60,0.35)"
-                : "none",
             marginBottom: 2,
           }}
         >
@@ -278,36 +269,20 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
               tabIndex={!isPlayer ? 0 : undefined}
             >
               <div
+                className={
+                  isActive
+                    ? isLeader
+                      ? "stone-pill-gold"
+                      : "stone-pill-crimson"
+                    : "stone-well"
+                }
                 style={{
                   width: 54,
                   height: 62,
                   borderRadius: 7,
-                  background: isActive
-                    ? isPlayer
-                      ? "rgba(220,30,30,0.38)"
-                      : "rgba(70,10,10,0.58)"
-                    : "rgba(20,10,20,0.65)",
-                  border: isActive
-                    ? isLeader
-                      ? "2px solid rgba(255,210,0,0.9)"
-                      : isPlayer
-                        ? "2px solid rgba(255,90,90,0.95)"
-                        : "2px solid rgba(180,0,0,0.78)"
-                    : isLeader
-                      ? "1px solid rgba(255,190,0,0.55)"
-                      : "1px solid rgba(139,0,0,0.32)",
                   transform: isActive ? "scale(1.07)" : "scale(0.96)",
                   opacity: isActive ? 1 : 0.6,
                   transition: "all 0.25s ease",
-                  boxShadow: isActive
-                    ? isLeader
-                      ? "0 0 16px rgba(255,200,0,0.55)"
-                      : isPlayer
-                        ? "0 0 16px rgba(255,60,60,0.55)"
-                        : "0 0 12px rgba(180,0,0,0.45)"
-                    : isLeader
-                      ? "0 0 6px rgba(255,190,0,0.25)"
-                      : "none",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",

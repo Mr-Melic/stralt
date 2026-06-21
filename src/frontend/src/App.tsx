@@ -342,7 +342,7 @@ function App() {
           position: "fixed",
           inset: 0,
           zIndex: 20,
-          overflow: "hidden",
+          overflow: "visible",
         }}
       >
         {/* Landing page — not authenticated */}

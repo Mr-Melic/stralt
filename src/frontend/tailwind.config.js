@@ -46,6 +46,10 @@ export default {
         'dofus-panel': '0 0 15px oklch(var(--dofus-border-gold) / 0.15), inset 0 1px 0 oklch(var(--dofus-border-gold) / 0.1)',
         'dofus-orb': '0 0 10px currentColor, inset 0 1px 0 rgba(255, 255, 255, 0.12)',
         'dofus-inset': 'inset 0 2px 6px rgba(0,0,0,0.6), inset 0 -1px 0 oklch(var(--dofus-border-gold) / 0.08)',
+        'stone-panel': '0 14px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.10)',
+        'stone-inset': 'inset 0 1px 3px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.04)',
+        'stone-extrude': 'inset 0 1px 0 rgba(255,255,255,0.32), inset 0 -2px 4px rgba(0,0,0,0.3), 0 3px 0 #6e1512, 0 4px 8px rgba(0,0,0,0.4)',
+        'stone-glow': '0 0 12px rgba(216,70,63,0.35), inset 0 1px 0 rgba(255,255,255,0.10)',
       },
       keyframes: {
         'fade-in': {
@@ -68,6 +72,10 @@ export default {
           '0%, 100%': { opacity: '0' },
           '50%': { opacity: '1' },
         },
+        'stone-pulse': {
+          '0%, 100%': { boxShadow: '0 0 12px rgba(216,70,63,0.35), inset 0 1px 0 rgba(255,255,255,0.10)' },
+          '50%': { boxShadow: '0 0 20px rgba(216,70,63,0.55), inset 0 1px 0 rgba(255,255,255,0.15)' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
@@ -75,6 +83,7 @@ export default {
         'pulse-glow': 'pulse-glow 2s ease-in-out infinite',
         'orb-shimmer': 'orb-shimmer 1.5s ease-in-out infinite',
         'star-twinkle': 'star-twinkle 2s ease-in-out infinite',
+        'stone-pulse': 'stone-pulse 2s ease-in-out infinite',
       },
       borderRadius: {
         'none': '0',

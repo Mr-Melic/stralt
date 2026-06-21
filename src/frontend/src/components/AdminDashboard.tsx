@@ -145,55 +145,59 @@ const newBattleEffect = (): BattleEffect => ({
 // ── design tokens ────────────────────────────────────────────────────────────
 
 const C = {
-  bg0: "#060810",
-  bg1: "#0d0f1a",
-  bg2: "#111422",
-  bg3: "#171b2e",
-  gold: "#c0392b",
-  goldDim: "#c0392b44",
-  goldBright: "#e74c3c",
-  silver: "#c0ccd8",
-  dim: "#5a6a7a",
-  dimmer: "#3a4a5a",
-  red: "#c0392b",
-  green: "#2ecc71",
-  blue: "#4a9adf",
-};
+  bg0: "#13161f",
+  bg1: "#1d2230",
+  bg2: "#1a1e2b",
+  bg3: "#242a3a",
+  gold: "#f0c44a",
+  goldBright: "#ffe89a",
+  goldDim: "#5c4a1f",
+  red: "#d8463f",
+  blue: "#86c4ff",
+  green: "#56d18a",
+  silver: "#b8b0c8",
+  dim: "#8a8090",
+  dimmer: "#5a5060",
+} as const;
 
 // ── shared primitives ─────────────────────────────────────────────────────────
 
 const inputStyle = (err?: boolean): React.CSSProperties => ({
   width: "100%",
-  background: C.bg0,
-  border: `1px solid ${err ? C.red : C.goldDim}`,
-  borderRadius: 5,
-  color: C.silver,
+  background: "linear-gradient(180deg,#13141c,#0e0f16)",
+  border: `1px solid ${err ? "#c0392b" : "rgba(192,57,43,0.27)"}`,
+  borderRadius: 8,
+  color: "#c0ccd8",
   padding: "7px 10px",
   fontSize: 12,
   outline: "none",
-  transition: "border-color 0.15s",
-  fontFamily: "'Space Grotesk', system-ui, sans-serif",
+  transition: "box-shadow 0.15s",
+  fontFamily: "'Saira', system-ui, sans-serif",
+  boxShadow:
+    "inset 0 1px 3px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.04)",
 });
 
 const labelStyle: React.CSSProperties = {
-  color: C.gold,
+  color: "#d8463f",
   fontSize: 10,
   fontWeight: 700,
   letterSpacing: "0.1em",
   textTransform: "uppercase",
   marginBottom: 4,
   display: "block",
+  fontFamily: "'Saira', system-ui, sans-serif",
 };
 
 const sectionHeadStyle: React.CSSProperties = {
-  color: C.gold,
+  color: "#d8463f",
   fontSize: 9,
   fontWeight: 800,
   letterSpacing: "0.16em",
   textTransform: "uppercase",
   marginBottom: 10,
   paddingBottom: 5,
-  borderBottom: `1px solid ${C.goldDim}`,
+  borderBottom: "1px solid rgba(216,70,63,0.25)",
+  fontFamily: "'Saira', system-ui, sans-serif",
 };
 
 function Btn({
@@ -211,43 +215,19 @@ function Btn({
   small?: boolean;
   type?: "button" | "submit";
 }) {
-  const styles: React.CSSProperties = {
-    padding: small ? "4px 10px" : "7px 16px",
-    borderRadius: 5,
-    fontSize: small ? 10 : 11,
-    fontWeight: 700,
-    cursor: "pointer",
-    letterSpacing: "0.07em",
-    textTransform: "uppercase",
-    transition: "opacity 0.15s, transform 0.1s",
-    border: "none",
-    fontFamily: "'Space Grotesk', system-ui, sans-serif",
-    ...(variant === "gold"
-      ? {
-          background: `linear-gradient(135deg, #8b1a14, ${C.gold})`,
-          color: "#fde",
-          boxShadow: "0 2px 8px rgba(192,57,43,0.35)",
-        }
-      : variant === "red"
-        ? {
-            background: `linear-gradient(135deg, #6a1010, ${C.red})`,
-            color: "#fde",
-            boxShadow: "0 2px 6px rgba(192,57,43,0.3)",
-          }
-        : variant === "blue"
-          ? {
-              background: `linear-gradient(135deg, #1a3a6a, ${C.blue})`,
-              color: "#def",
-              boxShadow: "0 2px 6px rgba(74,154,223,0.25)",
-            }
-          : {
-              background: "transparent",
-              color: C.dim,
-              border: `1px solid ${C.goldDim}`,
-            }),
-  };
+  const base =
+    "inline-flex items-center justify-center gap-1.5 border-none cursor-pointer transition-all duration-150 ease-in-out font-bold uppercase tracking-wider";
+  const size = small
+    ? "px-2.5 py-1 text-[10px] rounded-lg"
+    : "px-4 py-1.5 text-[11px] rounded-xl";
+  const cls =
+    variant === "gold" || variant === "red"
+      ? `${base} ${size} stone-btn-crimson`
+      : variant === "blue"
+        ? `${base} ${size} stone-btn-slate text-[#86c4ff]`
+        : `${base} ${size} bg-transparent text-[#5a6a7a] border border-[rgba(192,57,43,0.27)] hover:text-[#cdbfd2]`;
   return (
-    <button type={type} onClick={onClick} data-ocid={ocid} style={styles}>
+    <button type={type} onClick={onClick} data-ocid={ocid} className={cls}>
       {children}
     </button>
   );
@@ -272,7 +252,7 @@ function Field({
 }) {
   const id = ocid ?? label.toLowerCase().replace(/\s+/g, "-");
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div className="mb-2.5">
       <label htmlFor={id} style={labelStyle}>
         {label}
       </label>
@@ -283,7 +263,10 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         data-ocid={ocid}
-        style={inputStyle(err)}
+        className="stone-inset w-full px-2.5 py-1.5 text-xs text-[#c0ccd8] font-['Saira',system-ui,sans-serif]"
+        style={{
+          border: `1px solid ${err ? "#c0392b" : "transparent"}`,
+        }}
       />
     </div>
   );
@@ -301,29 +284,8 @@ function StatRow({
   ocid?: string;
 }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        marginBottom: 8,
-        background: C.bg0,
-        borderRadius: 5,
-        padding: "6px 12px",
-        border: `1px solid ${C.goldDim}`,
-      }}
-    >
-      <span
-        style={{
-          color: C.gold,
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          textTransform: "uppercase",
-          width: 72,
-          flexShrink: 0,
-        }}
-      >
+    <div className="flex items-center gap-3 mb-2 px-3 py-1.5 rounded-lg stone-inset border border-[rgba(192,57,43,0.15)]">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-[#d8463f] w-[72px] shrink-0 font-['Saira',system-ui,sans-serif]">
         {label}
       </span>
       <input
@@ -334,16 +296,7 @@ function StatRow({
           onChange(BigInt(Math.max(0, Number.parseInt(e.target.value) || 0)))
         }
         data-ocid={ocid}
-        style={{
-          flex: 1,
-          background: "transparent",
-          border: "none",
-          color: C.silver,
-          fontSize: 13,
-          fontWeight: 600,
-          outline: "none",
-          fontFamily: "'Space Grotesk', system-ui, sans-serif",
-        }}
+        className="flex-1 bg-transparent border-none text-[13px] font-semibold text-[#c0ccd8] outline-none font-['Saira',system-ui,sans-serif]"
       />
     </div>
   );
@@ -351,16 +304,8 @@ function StatRow({
 
 function PanelCard({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        background: C.bg2,
-        border: `1px solid ${C.goldDim}`,
-        borderRadius: 8,
-        marginBottom: 8,
-        overflow: "hidden",
-      }}
-    >
-      {children}
+    <div className="stone-frame mb-2">
+      <div className="stone-well p-3">{children}</div>
     </div>
   );
 }
@@ -465,7 +410,8 @@ const EnemyPresets: React.FC<{
   return (
     <div
       style={{
-        background: C.bg0,
+        background:
+          "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: "12px 14px",
@@ -502,7 +448,7 @@ const EnemyPresets: React.FC<{
         </Btn>
       </div>
       {presets.length === 0 ? (
-        <p style={{ color: C.dimmer, fontSize: 11 }}>No presets saved yet.</p>
+        <p style={{ color: "#6a6070", fontSize: 11 }}>No presets saved yet.</p>
       ) : (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {presets.map((p, i) => (
@@ -513,13 +459,14 @@ const EnemyPresets: React.FC<{
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-                background: C.bg1,
+                background:
+                  "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
                 border: `1px solid ${C.goldDim}`,
                 borderRadius: 5,
                 padding: "4px 10px",
               }}
             >
-              <span style={{ color: C.silver, fontSize: 11, fontWeight: 700 }}>
+              <span style={{ color: "#c0ccd8", fontSize: 11, fontWeight: 700 }}>
                 {p.name}
               </span>
               <button
@@ -678,7 +625,8 @@ const EnemyEditor: React.FC<{
           flexWrap: "wrap",
           gap: 8,
           marginBottom: 16,
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           borderRadius: 6,
           padding: "10px 12px",
           border: `1px solid ${C.goldDim}`,
@@ -722,7 +670,7 @@ const EnemyEditor: React.FC<{
           );
         })}
         {regions.length === 0 && (
-          <span style={{ color: C.dimmer, fontSize: 11 }}>
+          <span style={{ color: "#6a6070", fontSize: 11 }}>
             No regions configured yet — add some first
           </span>
         )}
@@ -837,7 +785,7 @@ const RegionEditor: React.FC<{
                 padding: 2,
               }}
             />
-            <span style={{ color: C.silver, fontSize: 12 }}>
+            <span style={{ color: "#c0ccd8", fontSize: 12 }}>
               {cfg.backgroundColor}
             </span>
           </div>
@@ -856,7 +804,8 @@ const RegionEditor: React.FC<{
             gap: 10,
             alignItems: "center",
             marginBottom: 6,
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
             padding: "7px 12px",
             borderRadius: 6,
             border: `1px solid ${C.goldDim}`,
@@ -873,7 +822,7 @@ const RegionEditor: React.FC<{
           >
             <span
               style={{
-                color: C.goldBright,
+                color: "#f0c44a",
                 fontWeight: 700,
                 fontSize: 12,
               }}
@@ -887,14 +836,14 @@ const RegionEditor: React.FC<{
                 borderRadius: 20,
                 padding: "1px 7px",
                 fontSize: 10,
-                color: C.gold,
+                color: "#f0c44a",
                 letterSpacing: "0.06em",
                 textTransform: "uppercase",
               }}
             >
               {Object.keys(fx.effectType)[0]}
             </span>
-            <span style={{ color: C.dim, fontSize: 11 }}>
+            <span style={{ color: "#8a8090", fontSize: 11 }}>
               +{String(fx.value)}
             </span>
           </div>
@@ -931,7 +880,8 @@ const RegionEditor: React.FC<{
           gap: 8,
           alignItems: "end",
           marginTop: 6,
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           padding: "10px 12px",
           borderRadius: 6,
           border: `1px solid ${C.goldDim}`,
@@ -969,10 +919,11 @@ const RegionEditor: React.FC<{
             }
             data-ocid="admin.region.effect.type_select"
             style={{
-              background: C.bg0,
+              background:
+                "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
               border: `1px solid ${C.goldDim}`,
               borderRadius: 5,
-              color: C.silver,
+              color: "#c0ccd8",
               padding: "7px 10px",
               fontSize: 12,
               outline: "none",
@@ -1065,7 +1016,8 @@ function WalkFrameSection({
         border: `1px solid ${C.goldDim}`,
         borderRadius: 6,
         overflow: "hidden",
-        background: C.bg0,
+        background:
+          "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
       }}
     >
       {/* Section header / toggle */}
@@ -1082,7 +1034,7 @@ function WalkFrameSection({
           background: "transparent",
           border: "none",
           cursor: "pointer",
-          color: C.gold,
+          color: "#f0c44a",
           fontSize: 10,
           fontWeight: 700,
           letterSpacing: "0.1em",
@@ -1123,7 +1075,7 @@ function WalkFrameSection({
             >
               <span
                 style={{
-                  color: C.dimmer,
+                  color: "#6a6070",
                   fontSize: 10,
                   width: 56,
                   flexShrink: 0,
@@ -1258,7 +1210,8 @@ const SpriteEditorForm: React.FC<{
         <div
           style={{
             marginBottom: 14,
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
             border: `1px solid ${C.goldDim}`,
             borderRadius: 8,
             padding: 12,
@@ -1273,7 +1226,7 @@ const SpriteEditorForm: React.FC<{
               height: 72,
               border: `2px solid ${C.goldDim}`,
               borderRadius: 6,
-              background: C.bg1,
+              background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -1297,7 +1250,7 @@ const SpriteEditorForm: React.FC<{
               />
             ) : (
               <span
-                style={{ color: C.dimmer, fontSize: 10, textAlign: "center" }}
+                style={{ color: "#6a6070", fontSize: 10, textAlign: "center" }}
               >
                 No preview
               </span>
@@ -1306,7 +1259,7 @@ const SpriteEditorForm: React.FC<{
           <div>
             <div
               style={{
-                color: C.silver,
+                color: "#c0ccd8",
                 fontWeight: 700,
                 fontSize: 13,
                 marginBottom: 4,
@@ -1314,7 +1267,7 @@ const SpriteEditorForm: React.FC<{
             >
               {cfg.name || "Unnamed Character"}
             </div>
-            <div style={{ color: C.dim, fontSize: 10 }}>
+            <div style={{ color: "#8a8090", fontSize: 10 }}>
               {cfg.characterPieceType.charAt(0).toUpperCase() +
                 cfg.characterPieceType.slice(1)}
             </div>
@@ -1401,7 +1354,7 @@ const SpriteEditorForm: React.FC<{
           padding: "12px 20px",
           display: "flex",
           gap: 10,
-          background: C.bg1,
+          background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
           justifyContent: "flex-end",
         }}
       >
@@ -1502,7 +1455,7 @@ const SpriteList: React.FC<{
         style={{
           display: "flex",
           flexDirection: "column",
-          background: C.bg1,
+          background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
           borderRight: `1px solid ${C.goldDim}`,
           overflow: "hidden",
         }}
@@ -1520,7 +1473,7 @@ const SpriteList: React.FC<{
         >
           <h3
             style={{
-              color: C.goldBright,
+              color: "#f0c44a",
               margin: 0,
               fontSize: 13,
               fontWeight: 800,
@@ -1546,7 +1499,7 @@ const SpriteList: React.FC<{
             <div
               data-ocid="admin.sprites.loading_state"
               style={{
-                color: C.dim,
+                color: "#8a8090",
                 fontSize: 11,
                 textAlign: "center",
                 padding: 24,
@@ -1562,7 +1515,7 @@ const SpriteList: React.FC<{
               style={{
                 textAlign: "center",
                 padding: "32px 16px",
-                color: C.dimmer,
+                color: "#6a6070",
                 fontSize: 12,
               }}
             >
@@ -1610,7 +1563,8 @@ const SpriteList: React.FC<{
                     height: 36,
                     border: `1px solid ${isActive ? C.gold : C.goldDim}`,
                     borderRadius: 6,
-                    background: C.bg0,
+                    background:
+                      "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1630,7 +1584,7 @@ const SpriteList: React.FC<{
                       }}
                     />
                   ) : (
-                    <span style={{ color: C.goldBright, fontSize: 18 }}>
+                    <span style={{ color: "#f0c44a", fontSize: 18 }}>
                       {PIECE_ICONS[s.characterPieceType] ?? "♙"}
                     </span>
                   )}
@@ -1658,7 +1612,7 @@ const SpriteList: React.FC<{
                       borderRadius: 10,
                       padding: "1px 7px",
                       fontSize: 9,
-                      color: C.gold,
+                      color: "#f0c44a",
                       textTransform: "capitalize",
                       letterSpacing: "0.05em",
                       marginTop: 2,
@@ -1683,7 +1637,7 @@ const SpriteList: React.FC<{
                       background: "transparent",
                       border: `1px solid ${C.goldDim}`,
                       borderRadius: 4,
-                      color: C.dim,
+                      color: "#8a8090",
                       padding: "3px 7px",
                       fontSize: 11,
                       cursor: "pointer",
@@ -1722,7 +1676,8 @@ const SpriteList: React.FC<{
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
         }}
       >
         {editingCfg ? (
@@ -1741,7 +1696,7 @@ const SpriteList: React.FC<{
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              color: C.dimmer,
+              color: "#6a6070",
               gap: 12,
             }}
           >
@@ -1794,7 +1749,7 @@ const SpriteList: React.FC<{
         >
           <div
             style={{
-              background: C.bg2,
+              background: "linear-gradient(180deg,#13141c,#0e0f16)",
               border: `1px solid ${C.red}`,
               borderRadius: 10,
               padding: "28px 32px",
@@ -1810,7 +1765,7 @@ const SpriteList: React.FC<{
             </div>
             <h3
               style={{
-                color: C.goldBright,
+                color: "#f0c44a",
                 textAlign: "center",
                 margin: "0 0 10px",
                 fontSize: 15,
@@ -1821,7 +1776,7 @@ const SpriteList: React.FC<{
             </h3>
             <p
               style={{
-                color: C.dim,
+                color: "#8a8090",
                 fontSize: 12,
                 textAlign: "center",
                 marginBottom: 20,
@@ -1871,7 +1826,7 @@ const EnemyList: React.FC<{
       <div>
         <h3
           style={{
-            color: C.goldBright,
+            color: "#f0c44a",
             margin: 0,
             fontSize: 14,
             fontWeight: 800,
@@ -1880,7 +1835,7 @@ const EnemyList: React.FC<{
         >
           Enemy Configurations
         </h3>
-        <p style={{ color: C.dim, fontSize: 11, margin: "3px 0 0" }}>
+        <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
           {enemies.length} enemi{enemies.length === 1 ? "y" : "es"} configured
         </p>
       </div>
@@ -1892,7 +1847,12 @@ const EnemyList: React.FC<{
     {loading && (
       <div
         data-ocid="admin.enemies.loading_state"
-        style={{ color: C.dim, fontSize: 12, textAlign: "center", padding: 24 }}
+        style={{
+          color: "#8a8090",
+          fontSize: 12,
+          textAlign: "center",
+          padding: 24,
+        }}
       >
         Loading enemies…
       </div>
@@ -1904,7 +1864,7 @@ const EnemyList: React.FC<{
         style={{
           textAlign: "center",
           padding: "40px 0",
-          color: C.dimmer,
+          color: "#6a6070",
           fontSize: 13,
           border: `1px dashed ${C.dimmer}`,
           borderRadius: 8,
@@ -1948,7 +1908,7 @@ const EnemyList: React.FC<{
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                color: C.silver,
+                color: "#c0ccd8",
                 fontWeight: 700,
                 fontSize: 13,
                 marginBottom: 2,
@@ -2036,7 +1996,7 @@ const RegionList: React.FC<{
       <div>
         <h3
           style={{
-            color: C.goldBright,
+            color: "#f0c44a",
             margin: 0,
             fontSize: 14,
             fontWeight: 800,
@@ -2045,7 +2005,7 @@ const RegionList: React.FC<{
         >
           Region Configurations
         </h3>
-        <p style={{ color: C.dim, fontSize: 11, margin: "3px 0 0" }}>
+        <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
           {regions.length} region{regions.length === 1 ? "" : "s"} defined
         </p>
       </div>
@@ -2057,7 +2017,12 @@ const RegionList: React.FC<{
     {loading && (
       <div
         data-ocid="admin.regions.loading_state"
-        style={{ color: C.dim, fontSize: 12, textAlign: "center", padding: 24 }}
+        style={{
+          color: "#8a8090",
+          fontSize: 12,
+          textAlign: "center",
+          padding: 24,
+        }}
       >
         Loading regions…
       </div>
@@ -2069,7 +2034,7 @@ const RegionList: React.FC<{
         style={{
           textAlign: "center",
           padding: "40px 0",
-          color: C.dimmer,
+          color: "#6a6070",
           fontSize: 13,
           border: `1px dashed ${C.dimmer}`,
           borderRadius: 8,
@@ -2106,7 +2071,7 @@ const RegionList: React.FC<{
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                color: C.silver,
+                color: "#c0ccd8",
                 fontWeight: 700,
                 fontSize: 13,
                 marginBottom: 2,
@@ -2129,7 +2094,7 @@ const RegionList: React.FC<{
                   borderRadius: 20,
                   padding: "1px 7px",
                   fontSize: 10,
-                  color: C.gold,
+                  color: "#f0c44a",
                 }}
               >
                 Lv {String(r.levelMin)}–{String(r.levelMax)}
@@ -2148,7 +2113,7 @@ const RegionList: React.FC<{
                 {r.battleEffects.length === 1 ? "" : "s"}
               </span>
               {r.battleEffects.slice(0, 2).map((fx) => (
-                <span key={fx.id} style={{ color: C.dim, fontSize: 10 }}>
+                <span key={fx.id} style={{ color: "#8a8090", fontSize: 10 }}>
                   {fx.name}
                 </span>
               ))}
@@ -2373,7 +2338,8 @@ const SpellEditor: React.FC<{
             alignItems: "center",
             gap: 8,
             padding: "7px 10px",
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
             border: `1px solid ${C.goldDim}`,
             borderRadius: 5,
           }}
@@ -2414,7 +2380,8 @@ const SpellEditor: React.FC<{
             alignItems: "center",
             gap: 8,
             padding: "7px 10px",
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
             border: `1px solid ${C.goldDim}`,
             borderRadius: 5,
           }}
@@ -2447,7 +2414,8 @@ const SpellEditor: React.FC<{
             alignItems: "center",
             gap: 8,
             padding: "7px 10px",
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
             border: `1px solid ${C.goldDim}`,
             borderRadius: 5,
           }}
@@ -2480,7 +2448,8 @@ const SpellEditor: React.FC<{
             alignItems: "center",
             gap: 8,
             padding: "7px 10px",
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
             border: `1px solid ${C.goldDim}`,
             borderRadius: 5,
           }}
@@ -2545,7 +2514,7 @@ const SpellEditor: React.FC<{
         <div style={{ gridColumn: "1 / -1", marginBottom: 10 }}>
           <p
             style={{
-              color: C.goldBright,
+              color: "#f0c44a",
               fontSize: 10,
               fontWeight: 800,
               textTransform: "uppercase",
@@ -2579,7 +2548,8 @@ const SpellEditor: React.FC<{
                   alignItems: "center",
                   gap: 6,
                   padding: "5px 8px",
-                  background: C.bg0,
+                  background:
+                    "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                   border: `1px solid ${C.goldDim}`,
                   borderRadius: 4,
                 }}
@@ -2649,7 +2619,7 @@ const SpellEditor: React.FC<{
           <div style={{ gridColumn: "1 / -1", marginBottom: 10 }}>
             <p
               style={{
-                color: C.goldBright,
+                color: "#f0c44a",
                 fontSize: 10,
                 fontWeight: 800,
                 textTransform: "uppercase",
@@ -2659,7 +2629,7 @@ const SpellEditor: React.FC<{
             >
               {cfg.aoe ? "AoE" : "Range"} Hit Pattern (click tiles to toggle)
             </p>
-            <p style={{ color: C.dim, fontSize: 9, margin: "0 0 8px" }}>
+            <p style={{ color: "#8a8090", fontSize: 9, margin: "0 0 8px" }}>
               Center tile (🟡) = caster position. Click others to mark hit tiles
               (red).{" "}
               {cfg.aoe
@@ -2739,7 +2709,7 @@ const SpellEditor: React.FC<{
                   background: "transparent",
                   border: `1px solid ${C.goldDim}`,
                   borderRadius: 3,
-                  color: C.dim,
+                  color: "#8a8090",
                   cursor: "pointer",
                   fontSize: 10,
                 }}
@@ -2766,14 +2736,14 @@ const SpellEditor: React.FC<{
                   background: "transparent",
                   border: `1px solid ${C.goldDim}`,
                   borderRadius: 3,
-                  color: C.dim,
+                  color: "#8a8090",
                   cursor: "pointer",
                   fontSize: 10,
                 }}
               >
                 Reset to Default
               </button>
-              <span style={{ color: C.dimmer, fontSize: 9 }}>
+              <span style={{ color: "#6a6070", fontSize: 9 }}>
                 {(cfg.hitTiles as [number, number][] | undefined)?.length ?? 0}{" "}
                 tiles selected
               </span>
@@ -2883,7 +2853,7 @@ const SpellEditor: React.FC<{
             data-ocid="admin.spell.buffmodifier_input"
             style={{ ...inputStyle(), opacity: cfg.buffStat ? 1 : 0.4 }}
           />
-          <p style={{ color: C.dimmer, fontSize: 9, margin: "2px 0 0" }}>
+          <p style={{ color: "#6a6070", fontSize: 9, margin: "2px 0 0" }}>
             1.0=no change, 1.4=+40%
           </p>
         </div>
@@ -2952,7 +2922,7 @@ const SpellEditor: React.FC<{
             data-ocid="admin.spell.debuffmodifier_input"
             style={{ ...inputStyle(), opacity: cfg.debuffStat ? 1 : 0.4 }}
           />
-          <p style={{ color: C.dimmer, fontSize: 9, margin: "2px 0 0" }}>
+          <p style={{ color: "#6a6070", fontSize: 9, margin: "2px 0 0" }}>
             MP/AP: negative=reduce. Others: 0.7=-30%
           </p>
         </div>
@@ -3097,7 +3067,8 @@ const SpellEditor: React.FC<{
               alignItems: "center",
               gap: 6,
               padding: "5px 8px",
-              background: C.bg0,
+              background:
+                "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
               border: `1px solid ${C.goldDim}`,
               borderRadius: 4,
             }}
@@ -3131,7 +3102,8 @@ const SpellEditor: React.FC<{
           display: "flex",
           alignItems: "center",
           gap: 14,
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 8,
           padding: "10px 14px",
@@ -3155,10 +3127,10 @@ const SpellEditor: React.FC<{
           {cfg.iconEmoji || "❔"}
         </div>
         <div>
-          <div style={{ color: C.goldBright, fontWeight: 800, fontSize: 13 }}>
+          <div style={{ color: "#f0c44a", fontWeight: 800, fontSize: 13 }}>
             {cfg.name || "Unnamed Spell"}
           </div>
-          <div style={{ color: C.dim, fontSize: 11, marginTop: 2 }}>
+          <div style={{ color: "#8a8090", fontSize: 11, marginTop: 2 }}>
             {cfg.description || "No description"}
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
@@ -3227,7 +3199,7 @@ const SpellList: React.FC<{
       <div>
         <h3
           style={{
-            color: C.goldBright,
+            color: "#f0c44a",
             margin: 0,
             fontSize: 14,
             fontWeight: 800,
@@ -3236,7 +3208,7 @@ const SpellList: React.FC<{
         >
           Spell Configurations
         </h3>
-        <p style={{ color: C.dim, fontSize: 11, margin: "3px 0 0" }}>
+        <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
           {spells.length} spell{spells.length === 1 ? "" : "s"} configured
         </p>
       </div>
@@ -3248,7 +3220,12 @@ const SpellList: React.FC<{
     {loading && (
       <div
         data-ocid="admin.spells.loading_state"
-        style={{ color: C.dim, fontSize: 12, textAlign: "center", padding: 24 }}
+        style={{
+          color: "#8a8090",
+          fontSize: 12,
+          textAlign: "center",
+          padding: 24,
+        }}
       >
         Loading spells…
       </div>
@@ -3260,7 +3237,7 @@ const SpellList: React.FC<{
         style={{
           textAlign: "center",
           padding: "40px 0",
-          color: C.dimmer,
+          color: "#6a6070",
           fontSize: 13,
           border: `1px dashed ${C.dimmer}`,
           borderRadius: 8,
@@ -3304,7 +3281,7 @@ const SpellList: React.FC<{
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                color: C.silver,
+                color: "#c0ccd8",
                 fontWeight: 700,
                 fontSize: 13,
                 marginBottom: 2,
@@ -3342,7 +3319,7 @@ const SpellList: React.FC<{
                 </span>
               ))}
               {s.description && (
-                <span style={{ color: C.dimmer, fontSize: 10 }}>
+                <span style={{ color: "#6a6070", fontSize: 10 }}>
                   {s.description.slice(0, 40)}
                   {s.description.length > 40 ? "…" : ""}
                 </span>
@@ -3467,7 +3444,7 @@ const TierConfigTab: React.FC = () => {
     <div data-ocid="admin.tiers_tab" style={{ padding: 24 }}>
       <h3
         style={{
-          color: C.goldBright,
+          color: "#f0c44a",
           margin: "0 0 4px",
           fontSize: 14,
           fontWeight: 800,
@@ -3476,7 +3453,7 @@ const TierConfigTab: React.FC = () => {
       >
         Enemy Tier Spawn System
       </h3>
-      <p style={{ color: C.dim, fontSize: 11, margin: "0 0 20px" }}>
+      <p style={{ color: "#8a8090", fontSize: 11, margin: "0 0 20px" }}>
         Configure how likely players are to encounter same-tier vs
         higher/lower-tier enemies. All percentages must sum to 100.
       </p>
@@ -3484,7 +3461,7 @@ const TierConfigTab: React.FC = () => {
       {/* Config inputs */}
       <div
         style={{
-          background: C.bg2,
+          background: "linear-gradient(180deg,#13141c,#0e0f16)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 8,
           padding: "16px 20px",
@@ -3515,7 +3492,7 @@ const TierConfigTab: React.FC = () => {
               data-ocid="admin.tier.tiersize_input"
               style={inputStyle()}
             />
-            <p style={{ color: C.dimmer, fontSize: 10, margin: "4px 0 0" }}>
+            <p style={{ color: "#6a6070", fontSize: 10, margin: "4px 0 0" }}>
               e.g. 10 means levels 1–10 = Tier 1, 11–20 = Tier 2, etc.
             </p>
           </div>
@@ -3628,7 +3605,7 @@ const TierConfigTab: React.FC = () => {
       {/* Preview table */}
       <div
         style={{
-          background: C.bg2,
+          background: "linear-gradient(180deg,#13141c,#0e0f16)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 8,
           overflow: "hidden",
@@ -3662,7 +3639,7 @@ const TierConfigTab: React.FC = () => {
                   <th
                     key={h}
                     style={{
-                      color: C.gold,
+                      color: "#f0c44a",
                       padding: "8px 12px",
                       textAlign: "left",
                       fontWeight: 700,
@@ -3683,22 +3660,22 @@ const TierConfigTab: React.FC = () => {
                 >
                   <td
                     style={{
-                      color: C.silver,
+                      color: "#c0ccd8",
                       padding: "7px 12px",
                       fontWeight: 700,
                     }}
                   >
                     Lv {row.level}
                   </td>
-                  <td style={{ color: C.goldBright, padding: "7px 12px" }}>
+                  <td style={{ color: "#f0c44a", padding: "7px 12px" }}>
                     T{row.tier}
                   </td>
-                  <td style={{ color: C.dim, padding: "7px 12px" }}>
+                  <td style={{ color: "#8a8090", padding: "7px 12px" }}>
                     {row.tierMin}–{row.tierMax}
                   </td>
                   <td
                     style={{
-                      color: C.green,
+                      color: "#56d18a",
                       padding: "7px 12px",
                       fontWeight: 700,
                     }}
@@ -3709,11 +3686,11 @@ const TierConfigTab: React.FC = () => {
                     {row.adjLow} / {row.adjHigh} (
                     {Math.floor(cfg.adjacentTierPercent / 2)}% each)
                   </td>
-                  <td style={{ color: C.gold, padding: "7px 12px" }}>
+                  <td style={{ color: "#f0c44a", padding: "7px 12px" }}>
                     {row.twoLow} / {row.twoHigh} (
                     {Math.floor(cfg.twoAwayPercent / 2)}% each)
                   </td>
-                  <td style={{ color: C.dim, padding: "7px 12px" }}>
+                  <td style={{ color: "#8a8090", padding: "7px 12px" }}>
                     {row.threePlus}
                   </td>
                 </tr>
@@ -3761,7 +3738,7 @@ const SettingsTab: React.FC = () => {
     <div data-ocid="admin.settings_tab" style={{ padding: 20 }}>
       <h3
         style={{
-          color: C.goldBright,
+          color: "#f0c44a",
           margin: "0 0 6px",
           fontSize: 14,
           fontWeight: 800,
@@ -3772,7 +3749,7 @@ const SettingsTab: React.FC = () => {
       </h3>
       <p
         style={{
-          color: C.dim,
+          color: "#8a8090",
           fontSize: 11,
           marginBottom: 24,
           lineHeight: 1.5,
@@ -3784,7 +3761,8 @@ const SettingsTab: React.FC = () => {
       <p style={sectionHeadStyle}>Transfer Admin Role</p>
       <div
         style={{
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.red}44`,
           borderRadius: 8,
           padding: "16px 18px",
@@ -3793,7 +3771,7 @@ const SettingsTab: React.FC = () => {
       >
         <p
           style={{
-            color: C.dim,
+            color: "#8a8090",
             fontSize: 11,
             marginBottom: 16,
             lineHeight: 1.6,
@@ -3832,18 +3810,19 @@ const SettingsTab: React.FC = () => {
       </div>
 
       <p style={sectionHeadStyle}>Default Spells Preset</p>
-      <p style={{ color: C.dimmer, fontSize: 11, marginBottom: 12 }}>
+      <p style={{ color: "#6a6070", fontSize: 11, marginBottom: 12 }}>
         Use the Spells tab to add, edit, or remove spells available to players.
       </p>
       <div style={{ display: "flex", gap: 8 }}>
         <div
           style={{
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
             border: `1px solid ${C.goldDim}`,
             borderRadius: 6,
             padding: "10px 14px",
             fontSize: 11,
-            color: C.dim,
+            color: "#8a8090",
           }}
         >
           Navigate to <strong style={{ color: C.gold }}>Spells</strong> in the
@@ -3899,7 +3878,7 @@ const LevelUpConfigPanel: React.FC = () => {
   return (
     <div
       style={{
-        background: C.bg2,
+        background: "linear-gradient(180deg,#13141c,#0e0f16)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: "16px 20px",
@@ -3933,7 +3912,7 @@ const LevelUpConfigPanel: React.FC = () => {
             style={inputStyle()}
             data-ocid="admin.levelup.maxrange_input"
           />
-          <p style={{ color: C.dimmer, fontSize: 10, margin: "3px 0 0" }}>
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
             Max range a spell can reach (default 5)
           </p>
         </div>
@@ -3958,7 +3937,7 @@ const LevelUpConfigPanel: React.FC = () => {
             style={inputStyle()}
             data-ocid="admin.levelup.rangegrowth_input"
           />
-          <p style={{ color: C.dimmer, fontSize: 10, margin: "3px 0 0" }}>
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
             Every N player levels, +1 to all spell ranges
           </p>
         </div>
@@ -3982,7 +3961,7 @@ const LevelUpConfigPanel: React.FC = () => {
             style={inputStyle()}
             data-ocid="admin.levelup.failbase_input"
           />
-          <p style={{ color: C.dimmer, fontSize: 10, margin: "3px 0 0" }}>
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
             Default 20% at level 1
           </p>
         </div>
@@ -4009,7 +3988,7 @@ const LevelUpConfigPanel: React.FC = () => {
             style={inputStyle()}
             data-ocid="admin.levelup.failred_input"
           />
-          <p style={{ color: C.dimmer, fontSize: 10, margin: "3px 0 0" }}>
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
             0.1 = reaches 0% at level 200
           </p>
         </div>
@@ -4077,7 +4056,7 @@ const VisualsTab: React.FC = () => {
     <div data-ocid="admin.visuals_tab" style={{ padding: 20 }}>
       <h3
         style={{
-          color: C.goldBright,
+          color: "#f0c44a",
           margin: "0 0 6px",
           fontSize: 14,
           fontWeight: 800,
@@ -4088,7 +4067,7 @@ const VisualsTab: React.FC = () => {
       </h3>
       <p
         style={{
-          color: C.dim,
+          color: "#8a8090",
           fontSize: 11,
           marginBottom: 20,
           lineHeight: 1.5,
@@ -4100,7 +4079,7 @@ const VisualsTab: React.FC = () => {
       <p style={sectionHeadStyle}>Map Paper Vertex Colors</p>
       <p
         style={{
-          color: C.dimmer,
+          color: "#6a6070",
           fontSize: 11,
           marginBottom: 14,
           lineHeight: 1.5,
@@ -4124,7 +4103,8 @@ const VisualsTab: React.FC = () => {
               display: "flex",
               alignItems: "center",
               gap: 12,
-              background: C.bg0,
+              background:
+                "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
               borderRadius: 6,
               padding: "8px 12px",
               border: `1px solid ${C.goldDim}`,
@@ -4152,7 +4132,7 @@ const VisualsTab: React.FC = () => {
                 data-ocid={`admin.visuals.color_slot.${i + 1}`}
                 style={{ accentColor: C.gold, width: 14, height: 14 }}
               />
-              <span style={{ color: C.silver, fontSize: 11, width: 52 }}>
+              <span style={{ color: "#c0ccd8", fontSize: 11, width: 52 }}>
                 Color {i + 1}
               </span>
             </label>
@@ -4198,7 +4178,8 @@ const VisualsTab: React.FC = () => {
           display: "flex",
           gap: 8,
           marginBottom: 20,
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           borderRadius: 6,
           padding: 12,
           border: `1px solid ${C.goldDim}`,
@@ -4220,7 +4201,7 @@ const VisualsTab: React.FC = () => {
             />
           ))
         ) : (
-          <span style={{ color: C.dimmer, fontSize: 11 }}>
+          <span style={{ color: "#6a6070", fontSize: 11 }}>
             True random — all slots disabled
           </span>
         )}
@@ -4350,7 +4331,8 @@ const ModifierEditor: React.FC<{
       {/* Global settings */}
       <div
         style={{
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 5,
           padding: "10px 14px",
@@ -4439,7 +4421,8 @@ const ModifierEditor: React.FC<{
           alignItems: "center",
           gap: 8,
           marginBottom: 16,
-          background: C.bg0,
+          background:
+            "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 5,
           padding: "7px 12px",
@@ -4523,7 +4506,7 @@ const AchievementEditor: React.FC<{
     <div
       data-ocid="admin.achievement_editor"
       style={{
-        background: C.bg2,
+        background: "linear-gradient(180deg,#13141c,#0e0f16)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: 20,
@@ -4792,7 +4775,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       >
         <div
           style={{
-            background: C.bg2,
+            background: "linear-gradient(180deg,#13141c,#0e0f16)",
             border: `1px solid ${C.gold}`,
             borderRadius: 12,
             padding: "36px 40px",
@@ -4807,7 +4790,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           <div style={{ fontSize: 36, marginBottom: 16 }}>🛡️</div>
           <h2
             style={{
-              color: C.goldBright,
+              color: "#f0c44a",
               margin: "0 0 12px",
               fontSize: 18,
               fontWeight: 800,
@@ -4817,7 +4800,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           >
             Admin Access Required
           </h2>
-          <p style={{ color: C.dim, fontSize: 13, marginBottom: 24 }}>
+          <p style={{ color: "#8a8090", fontSize: 13, marginBottom: 24 }}>
             Only the first player who logged in has admin access. Log in with
             the admin Internet Identity to use this dashboard.
           </p>
@@ -4910,7 +4893,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           padding: "0 20px",
           height: 52,
           flexShrink: 0,
-          background: C.bg1,
+          background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
           borderBottom: `1px solid ${C.goldDim}`,
           boxShadow: "0 2px 16px rgba(192,57,43,0.1)",
         }}
@@ -4927,7 +4910,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           <div>
             <span
               style={{
-                color: C.goldBright,
+                color: "#f0c44a",
                 fontWeight: 800,
                 fontSize: 14,
                 letterSpacing: "0.1em",
@@ -4938,7 +4921,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             </span>
             <span
               style={{
-                color: C.dim,
+                color: "#8a8090",
                 fontSize: 10,
                 marginLeft: 10,
                 letterSpacing: "0.06em",
@@ -4953,7 +4936,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             <span
               data-ocid="admin.loading_state"
               style={{
-                color: C.gold,
+                color: "#f0c44a",
                 fontSize: 11,
                 letterSpacing: "0.06em",
                 animation: "pulse 1.5s infinite",
@@ -4975,7 +4958,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           style={{
             width: 180,
             flexShrink: 0,
-            background: C.bg1,
+            background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
             borderRight: `1px solid ${C.goldDim}`,
             padding: "16px 0",
             display: "flex",
@@ -5041,10 +5024,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   marginBottom: 6,
                 }}
               >
-                <span style={{ color: C.dim, fontSize: 10 }}>{label}</span>
+                <span style={{ color: "#8a8090", fontSize: 10 }}>{label}</span>
                 <span
                   style={{
-                    color: C.goldBright,
+                    color: "#f0c44a",
                     fontSize: 12,
                     fontWeight: 700,
                   }}
@@ -5061,7 +5044,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           style={{
             flex: 1,
             overflow: "auto",
-            background: C.bg0,
+            background:
+              "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           }}
         >
           {/* ENEMIES */}
@@ -5268,7 +5252,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 <div>
                   <h3
                     style={{
-                      color: C.goldBright,
+                      color: "#f0c44a",
                       margin: 0,
                       fontSize: 16,
                       fontWeight: 800,
@@ -5279,7 +5263,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   </h3>
                   <p
                     style={{
-                      color: C.dim,
+                      color: "#8a8090",
                       fontSize: 11,
                       margin: "4px 0 0",
                     }}
@@ -5295,7 +5279,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                     borderRadius: 20,
                     padding: "4px 12px",
                     fontSize: 11,
-                    color: C.gold,
+                    color: "#f0c44a",
                     fontWeight: 700,
                   }}
                 >
@@ -5309,7 +5293,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   style={{
                     textAlign: "center",
                     padding: 40,
-                    color: C.dim,
+                    color: "#8a8090",
                     fontSize: 13,
                   }}
                 >
@@ -5323,7 +5307,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   style={{
                     textAlign: "center",
                     padding: "40px 0",
-                    color: C.dimmer,
+                    color: "#6a6070",
                     fontSize: 13,
                     border: `1px dashed ${C.dimmer}`,
                     borderRadius: 8,
@@ -5364,7 +5348,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <th
                             key={h}
                             style={{
-                              color: C.gold,
+                              color: "#f0c44a",
                               fontWeight: 800,
                               textAlign: "left",
                               padding: "8px 10px",
@@ -5392,7 +5376,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <td
                             style={{
                               padding: "8px 10px",
-                              color: C.dim,
+                              color: "#8a8090",
                               fontWeight: 700,
                             }}
                           >
@@ -5401,7 +5385,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <td
                             style={{
                               padding: "8px 10px",
-                              color: C.silver,
+                              color: "#c0ccd8",
                               whiteSpace: "nowrap",
                             }}
                           >
@@ -5418,7 +5402,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <td
                             style={{
                               padding: "8px 10px",
-                              color: C.dim,
+                              color: "#8a8090",
                               maxWidth: 160,
                               overflow: "hidden",
                               textOverflow: "ellipsis",
@@ -5437,7 +5421,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <td
                             style={{
                               padding: "8px 10px",
-                              color: C.goldBright,
+                              color: "#f0c44a",
                               fontWeight: 700,
                               textAlign: "right",
                               whiteSpace: "nowrap",
@@ -5448,7 +5432,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <td
                             style={{
                               padding: "8px 10px",
-                              color: C.silver,
+                              color: "#c0ccd8",
                               textAlign: "right",
                               whiteSpace: "nowrap",
                             }}
@@ -5483,7 +5467,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <td
                             style={{
                               padding: "8px 10px",
-                              color: C.dim,
+                              color: "#8a8090",
                               whiteSpace: "nowrap",
                             }}
                           >
@@ -5528,7 +5512,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                                 📄 View
                               </button>
                             ) : (
-                              <span style={{ color: C.dimmer, fontSize: 10 }}>
+                              <span style={{ color: "#6a6070", fontSize: 10 }}>
                                 None
                               </span>
                             )}
@@ -5555,7 +5539,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               <div
                 data-ocid="admin.doka_spawn_config"
                 style={{
-                  background: C.bg0,
+                  background:
+                    "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                   border: `1px solid ${C.goldDim}`,
                   borderRadius: 8,
                   padding: "14px 16px",
@@ -5658,7 +5643,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   </Btn>
                   {gameConfigSaved && (
                     <span
-                      style={{ color: C.green, fontSize: 11, fontWeight: 700 }}
+                      style={{
+                        color: "#56d18a",
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
                     >
                       ✓ Saved!
                     </span>
@@ -5669,7 +5658,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               {/* Global chance info box */}
               <div
                 style={{
-                  background: C.bg0,
+                  background:
+                    "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                   border: `1px solid ${C.goldDim}`,
                   borderRadius: 7,
                   padding: "10px 14px",
@@ -5683,7 +5673,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 <div>
                   <div
                     style={{
-                      color: C.goldBright,
+                      color: "#f0c44a",
                       fontWeight: 700,
                       fontSize: 12,
                       marginBottom: 2,
@@ -5691,7 +5681,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   >
                     Global Modifier System
                   </div>
-                  <div style={{ color: C.dim, fontSize: 11 }}>
+                  <div style={{ color: "#8a8090", fontSize: 11 }}>
                     Each active modifier has its own trigger chance (%). When
                     the player enters a new map through a portal, each modifier
                     independently rolls against its chance. Default: 20%. Set a
@@ -5710,7 +5700,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 <div>
                   <h3
                     style={{
-                      color: C.goldBright,
+                      color: "#f0c44a",
                       margin: 0,
                       fontSize: 14,
                       fontWeight: 800,
@@ -5719,7 +5709,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   >
                     Map Modifiers
                   </h3>
-                  <p style={{ color: C.dim, fontSize: 11, margin: "3px 0 0" }}>
+                  <p
+                    style={{
+                      color: "#8a8090",
+                      fontSize: 11,
+                      margin: "3px 0 0",
+                    }}
+                  >
                     {modifiers.length} modifier
                     {modifiers.length === 1 ? "" : "s"} defined
                   </p>
@@ -5741,7 +5737,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               {dashState.editingModifierId ? (
                 <div
                   style={{
-                    background: C.bg2,
+                    background: "linear-gradient(180deg,#13141c,#0e0f16)",
                     border: `1px solid ${C.goldDim}`,
                     borderRadius: 8,
                     padding: 20,
@@ -5793,7 +5789,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   {modifierQ.isLoading && (
                     <div
                       style={{
-                        color: C.dim,
+                        color: "#8a8090",
                         fontSize: 12,
                         textAlign: "center",
                         padding: 24,
@@ -5808,7 +5804,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       style={{
                         textAlign: "center",
                         padding: "40px 0",
-                        color: C.dimmer,
+                        color: "#6a6070",
                         fontSize: 13,
                         border: `1px dashed ${C.dimmer}`,
                         borderRadius: 8,
@@ -5839,7 +5835,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             style={{
-                              color: C.silver,
+                              color: "#c0ccd8",
                               fontWeight: 700,
                               fontSize: 13,
                               marginBottom: 2,
@@ -5866,7 +5862,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                               {mod.active ? "Active" : "Inactive"}
                             </span>
                           </div>
-                          <div style={{ color: C.dim, fontSize: 11 }}>
+                          <div style={{ color: "#8a8090", fontSize: 11 }}>
                             {mod.description}
                           </div>
                           <div
@@ -5876,7 +5872,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                               borderRadius: 20,
                               padding: "1px 7px",
                               fontSize: 10,
-                              color: C.gold,
+                              color: "#f0c44a",
                               display: "inline-block",
                               marginTop: 4,
                             }}
@@ -5942,7 +5938,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 <div>
                   <h3
                     style={{
-                      color: C.goldBright,
+                      color: "#f0c44a",
                       margin: 0,
                       fontSize: 16,
                       fontWeight: 800,
@@ -5951,7 +5947,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   >
                     Achievements
                   </h3>
-                  <p style={{ color: C.dim, fontSize: 11, margin: "4px 0 0" }}>
+                  <p
+                    style={{
+                      color: "#8a8090",
+                      fontSize: 11,
+                      margin: "4px 0 0",
+                    }}
+                  >
                     Configure player achievements and Doka rewards
                   </p>
                 </div>
@@ -6016,7 +6018,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         style={{
                           textAlign: "center",
                           padding: "40px 0",
-                          color: C.dimmer,
+                          color: "#6a6070",
                           fontSize: 13,
                           border: `1px dashed ${C.dimmer}`,
                           borderRadius: 8,
@@ -6046,7 +6048,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div
                             style={{
-                              color: C.silver,
+                              color: "#c0ccd8",
                               fontWeight: 700,
                               fontSize: 13,
                               marginBottom: 2,
@@ -6073,7 +6075,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           </div>
                           <div
                             style={{
-                              color: C.dim,
+                              color: "#8a8090",
                               fontSize: 11,
                               marginBottom: 4,
                             }}
@@ -6088,7 +6090,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                                 borderRadius: 20,
                                 padding: "1px 7px",
                                 fontSize: 10,
-                                color: C.gold,
+                                color: "#f0c44a",
                               }}
                             >
                               🪙 {ach.dokaReward.toLocaleString()} Doka
@@ -6429,7 +6431,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 <div>
                   <h3
                     style={{
-                      color: C.goldBright,
+                      color: "#f0c44a",
                       margin: 0,
                       fontSize: 16,
                       fontWeight: 800,
@@ -6438,7 +6440,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   >
                     Enemy Names
                   </h3>
-                  <p style={{ color: C.dim, fontSize: 11, margin: "4px 0 0" }}>
+                  <p
+                    style={{
+                      color: "#8a8090",
+                      fontSize: 11,
+                      margin: "4px 0 0",
+                    }}
+                  >
                     Ancient names assigned to enemies — max 1 per enemy per map.
                   </p>
                 </div>
@@ -6450,7 +6458,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       borderRadius: 20,
                       padding: "4px 12px",
                       fontSize: 11,
-                      color: C.gold,
+                      color: "#f0c44a",
                       fontWeight: 700,
                     }}
                   >
@@ -6489,11 +6497,12 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   }}
                   style={{
                     flex: 1,
-                    background: C.bg1,
+                    background:
+                      "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
                     border: `1px solid ${C.goldDim}`,
                     borderRadius: 6,
                     padding: "8px 12px",
-                    color: C.silver,
+                    color: "#c0ccd8",
                     fontSize: 13,
                     fontFamily: "'Space Grotesk', system-ui, sans-serif",
                     outline: "none",
@@ -6524,7 +6533,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   style={{
                     textAlign: "center",
                     padding: 40,
-                    color: C.dim,
+                    color: "#8a8090",
                     fontSize: 13,
                   }}
                 >
@@ -6538,7 +6547,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                     style={{
                       textAlign: "center",
                       padding: "40px 0",
-                      color: C.dimmer,
+                      color: "#6a6070",
                       fontSize: 13,
                       border: `1px dashed ${C.dimmer}`,
                       borderRadius: 8,
@@ -6564,12 +6573,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        background: C.bg1,
+                        background:
+                          "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
                         border: `1px solid ${C.goldDim}`,
                         borderRadius: 20,
                         padding: "4px 10px 4px 14px",
                         fontSize: 12,
-                        color: C.silver,
+                        color: "#c0ccd8",
                         fontWeight: 600,
                       }}
                     >
@@ -6587,7 +6597,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           background: "none",
                           border: "none",
                           cursor: "pointer",
-                          color: C.red,
+                          color: "#d8463f",
                           fontSize: 14,
                           lineHeight: 1,
                           padding: 0,
@@ -6696,7 +6706,7 @@ function PhaseEditor({
   return (
     <div
       style={{
-        background: C.bg1,
+        background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: "14px 16px",
@@ -6901,7 +6911,7 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
         <div>
           <h2
             style={{
-              color: C.goldBright,
+              color: "#f0c44a",
               margin: 0,
               fontSize: 15,
               fontWeight: 800,
@@ -6911,7 +6921,7 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
           >
             Boss Editor
           </h2>
-          <p style={{ color: C.dim, margin: 0, fontSize: 11 }}>
+          <p style={{ color: "#8a8090", margin: 0, fontSize: 11 }}>
             Configure all 19 bosses. Changes save to localStorage and take
             effect on the next boss encounter.
           </p>
@@ -6944,11 +6954,11 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
               <span style={{ fontSize: 20 }}>{draft.iconEmoji}</span>
               <div style={{ flex: 1 }}>
                 <div
-                  style={{ color: C.goldBright, fontWeight: 700, fontSize: 13 }}
+                  style={{ color: "#f0c44a", fontWeight: 700, fontSize: 13 }}
                 >
                   {draft.name}
                 </div>
-                <div style={{ color: C.dim, fontSize: 10, marginTop: 2 }}>
+                <div style={{ color: "#8a8090", fontSize: 10, marginTop: 2 }}>
                   {draft.pieceType.charAt(0).toUpperCase() +
                     draft.pieceType.slice(1)}
                   {" — "}
@@ -6969,7 +6979,7 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
                   flexShrink: 0,
                 }}
               />
-              <span style={{ color: C.dim, fontSize: 16 }}>
+              <span style={{ color: "#8a8090", fontSize: 16 }}>
                 {isOpen ? "▲" : "▼"}
               </span>
             </button>

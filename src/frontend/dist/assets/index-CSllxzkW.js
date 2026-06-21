@@ -27942,31 +27942,31 @@ const createLucideIcon = (iconName, iconNode) => {
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$o = [
+const __iconNode$q = [
   ["path", { d: "M8 3 4 7l4 4", key: "9rb6wj" }],
   ["path", { d: "M4 7h16", key: "6tx8e3" }],
   ["path", { d: "m16 21 4-4-4-4", key: "siv7j2" }],
   ["path", { d: "M20 17H4", key: "h6l3hr" }]
 ];
-const ArrowLeftRight = createLucideIcon("arrow-left-right", __iconNode$o);
+const ArrowLeftRight = createLucideIcon("arrow-left-right", __iconNode$q);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$n = [
+const __iconNode$p = [
   ["path", { d: "m12 19-7-7 7-7", key: "1l729n" }],
   ["path", { d: "M19 12H5", key: "x3x0zl" }]
 ];
-const ArrowLeft = createLucideIcon("arrow-left", __iconNode$n);
+const ArrowLeft = createLucideIcon("arrow-left", __iconNode$p);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$m = [
+const __iconNode$o = [
   ["path", { d: "M12 7v14", key: "1akyts" }],
   [
     "path",
@@ -27976,23 +27976,39 @@ const __iconNode$m = [
     }
   ]
 ];
-const BookOpen = createLucideIcon("book-open", __iconNode$m);
+const BookOpen = createLucideIcon("book-open", __iconNode$o);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$l = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
-const Check = createLucideIcon("check", __iconNode$l);
+const __iconNode$n = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
+const Check = createLucideIcon("check", __iconNode$n);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$k = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
-const ChevronDown = createLucideIcon("chevron-down", __iconNode$k);
+const __iconNode$m = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
+const ChevronDown = createLucideIcon("chevron-down", __iconNode$m);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$l = [["path", { d: "m15 18-6-6 6-6", key: "1wnfg3" }]];
+const ChevronLeft = createLucideIcon("chevron-left", __iconNode$l);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$k = [["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]];
+const ChevronRight = createLucideIcon("chevron-right", __iconNode$k);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -33668,7 +33684,7 @@ const DraggablePanel = ({
     {
       ref: panelRef,
       "data-ocid": `draggable_panel.${panelId}`,
-      className,
+      className: className ? `${className} stone-frame` : "stone-frame",
       style: {
         position: "fixed",
         left: position.x,
@@ -33676,10 +33692,7 @@ const DraggablePanel = ({
         zIndex,
         userSelect: "none",
         touchAction: "none",
-        borderRadius: 4,
-        border: "1px solid #8b0000",
-        background: "rgba(10,10,15,0.92)",
-        boxShadow: "0 4px 24px rgba(139,0,0,0.3), inset 0 0 12px rgba(0,0,0,0.5)",
+        borderRadius: 14,
         minWidth: 60,
         ...style2
       },
@@ -33690,10 +33703,9 @@ const DraggablePanel = ({
             "data-ocid": `draggable_panel.${panelId}.header`,
             onMouseDown,
             onTouchStart,
+            className: "stone-header",
             style: {
-              background: "#1a0a0a",
-              borderBottom: folded ? "none" : "1px solid #8b0000",
-              borderRadius: folded ? 4 : "4px 4px 0 0",
+              borderRadius: folded ? 12 : "12px 12px 0 0",
               padding: "4px 8px",
               cursor: isDragging ? "grabbing" : "grab",
               display: "flex",
@@ -33706,12 +33718,9 @@ const DraggablePanel = ({
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "span",
                 {
+                  className: "stone-header-title",
                   style: {
-                    color: "#ff6666",
                     fontSize: 10,
-                    fontWeight: 700,
-                    letterSpacing: "1px",
-                    textTransform: "uppercase",
                     flex: 1,
                     whiteSpace: "nowrap",
                     overflow: "hidden",
@@ -33729,14 +33738,11 @@ const DraggablePanel = ({
                     e.stopPropagation();
                     handleFoldToggle();
                   },
+                  className: "stone-btn-slate",
                   style: {
-                    background: "transparent",
-                    border: "none",
-                    color: "#cc4444",
                     fontSize: 12,
                     lineHeight: 1,
-                    cursor: "pointer",
-                    padding: "0 2px",
+                    padding: "0 4px",
                     flexShrink: 0,
                     pointerEvents: "auto"
                   },
@@ -33750,10 +33756,11 @@ const DraggablePanel = ({
         !folded && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
           {
+            className: "stone-well",
             style: {
               pointerEvents: "auto",
-              borderRadius: "0 0 4px 4px",
-              overflow: "hidden"
+              borderRadius: "0 0 12px 12px",
+              overflow: "visible"
             },
             children
           }
@@ -40888,7 +40895,7 @@ const CharacterPreview = ({ character, size = 120, view = "front" }) => {
   reactExports.useEffect(() => {
     drawPreview();
   }, [drawPreview]);
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "relative", style: { width: size, height: size }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
     "canvas",
     {
       ref: canvasRef,
@@ -40901,7 +40908,7 @@ const CharacterPreview = ({ character, size = 120, view = "front" }) => {
         height: size
       }
     }
-  );
+  ) });
 };
 const XpBar = ({
   experience,
@@ -40913,52 +40920,19 @@ const XpBar = ({
   const needed = xpForLevel(lvl);
   const progressXp = Math.max(0, xp - cumulativeStart);
   const pct = Math.min(100, Math.max(0, progressXp / needed * 100));
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "6px 0" }, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-      "div",
-      {
-        style: {
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 5,
-          alignItems: "center"
-        },
-        children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "span",
-            {
-              style: {
-                fontSize: 10,
-                fontWeight: 800,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                color: "#e74c3c",
-                background: "rgba(200,150,42,0.12)",
-                border: "1px solid #8b1a1a",
-                borderRadius: 3,
-                padding: "1px 6px"
-              },
-              children: [
-                "LV ",
-                lvl
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "span",
-            {
-              style: { color: "#a55eea", fontSize: 10, fontFamily: "monospace" },
-              children: [
-                progressXp.toLocaleString(),
-                " / ",
-                needed.toLocaleString(),
-                " XP"
-              ]
-            }
-          )
-        ]
-      }
-    ),
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "py-1.5", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex justify-between items-center mb-1", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-pill stone-pill-crimson text-[10px] font-extrabold tracking-widest uppercase", children: [
+        "LV ",
+        lvl
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[10px] font-mono text-[#a55eea]", children: [
+        progressXp.toLocaleString(),
+        " / ",
+        needed.toLocaleString(),
+        " XP"
+      ] })
+    ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "dofus-xp-bar", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "dofus-xp-bar-fill", style: { width: `${pct}%` } }) })
   ] });
 };
@@ -40982,81 +40956,28 @@ const SlotCard = React$2.memo(
       {
         onMouseEnter: () => setHovered(true),
         onMouseLeave: () => setHovered(false),
-        style: {
-          background: character ? "linear-gradient(160deg,#171b2e 0%,#0d0f1a 60%,#101420 100%)" : "linear-gradient(160deg,#0f1220 0%,#0d0f1a 100%)",
-          border: character ? `1px solid ${hovered ? "#c0392b" : "rgba(200,150,42,0.38)"}` : "1px dashed #2a3040",
-          borderRadius: 12,
-          overflow: "hidden",
-          boxShadow: character ? hovered ? "0 0 36px rgba(192,57,43,0.28), 0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(192,57,43,0.18)" : "0 0 18px rgba(200,150,42,0.12), 0 4px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(200,150,42,0.07)" : hovered ? "0 0 16px rgba(200,150,42,0.06)" : "0 4px 12px rgba(0,0,0,0.3)",
-          transition: "box-shadow 0.25s, border-color 0.25s, background 0.25s",
-          position: "relative"
-        },
+        className: `stone-frame relative overflow-hidden transition-all duration-250 ${character ? hovered ? "border-[#c0392b] shadow-[0_0_36px_rgba(192,57,43,0.28),0_8px_24px_rgba(0,0,0,0.5)]" : "border-[rgba(200,150,42,0.38)] shadow-[0_0_18px_rgba(200,150,42,0.12),0_4px_16px_rgba(0,0,0,0.4)]" : hovered ? "border-dashed border-[#2a3040] shadow-[0_0_16px_rgba(200,150,42,0.06)]" : "border-dashed border-[#2a3040] shadow-[0_4px_12px_rgba(0,0,0,0.3)]"}`,
         children: [
           character && /* @__PURE__ */ jsxRuntimeExports.jsx(
             "div",
             {
+              className: "absolute top-0 left-[15%] right-[15%] h-0.5 transition-colors duration-250",
               style: {
-                position: "absolute",
-                top: 0,
-                left: "15%",
-                right: "15%",
-                height: 2,
-                background: hovered ? "linear-gradient(90deg,transparent,#c0392b,transparent)" : "linear-gradient(90deg,transparent,#8b1a1a,transparent)",
-                transition: "background 0.25s"
+                background: hovered ? "linear-gradient(90deg,transparent,#c0392b,transparent)" : "linear-gradient(90deg,transparent,#8b1a1a,transparent)"
               }
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "div",
-            {
-              style: {
-                background: "linear-gradient(90deg,#1a1e30 0%,#0d0f1a 100%)",
-                borderBottom: "1px solid #1e2436",
-                padding: "10px 16px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between"
-              },
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "span",
-                  {
-                    style: {
-                      color: "#6a7a8a",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em"
-                    },
-                    children: [
-                      "\\u2694 Slot ",
-                      slotNumber
-                    ]
-                  }
-                ),
-                character && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    style: {
-                      background: "rgba(200,150,42,0.15)",
-                      border: "1px solid #8b1a1a",
-                      borderRadius: 5,
-                      padding: "2px 9px",
-                      color: "#e74c3c",
-                      fontSize: 10,
-                      fontWeight: 800,
-                      letterSpacing: "0.08em"
-                    },
-                    children: [
-                      "LVL ",
-                      (_a3 = character.level) == null ? void 0 : _a3.toString()
-                    ]
-                  }
-                )
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "16px 16px 20px" }, children: character ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-header flex items-center justify-between px-4 py-2.5", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-header-title text-[10px]", children: [
+              "\\u2694 Slot ",
+              slotNumber
+            ] }),
+            character && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-pill stone-pill-crimson text-[10px]", children: [
+              "LVL ",
+              (_a3 = character.level) == null ? void 0 : _a3.toString()
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "p-4 pb-5", children: character ? /* @__PURE__ */ jsxRuntimeExports.jsx(
             FilledSlot,
             {
               character,
@@ -41076,178 +40997,102 @@ const SlotCard = React$2.memo(
 );
 const FilledSlot = ({ character, view, onRotate, onPlay, onEdit, onDelete, isDeleting }) => {
   var _a3, _b3, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 12 }, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 14 }, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { position: "relative", flexShrink: 0 }, children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-3", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3.5", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "relative flex-shrink-0 flex flex-col items-center gap-1.5", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "div",
           {
+            className: "flex items-center gap-2 px-3 py-1.5",
             style: {
-              width: 112,
-              height: 112,
-              border: "2px solid #c0392b",
-              borderRadius: 10,
-              overflow: "hidden",
-              background: "#0a0c14",
-              boxShadow: "0 0 18px rgba(192,57,43,0.35), inset 0 0 10px rgba(192,57,43,0.1)",
-              position: "relative"
+              background: "linear-gradient(180deg,#2a2230,#160d14)",
+              borderRadius: 12,
+              boxShadow: "0 6px 14px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12)"
             },
             children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx(CharacterPreview, { character, size: 112, view }),
-              [0, 1, 2, 3].map((i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  style: {
-                    position: "absolute",
-                    width: 8,
-                    height: 8,
-                    borderStyle: "solid",
-                    borderColor: "#c0392b",
-                    borderWidth: "1.5px",
-                    borderRight: i % 2 === 0 ? "none" : "1.5px solid #c0392b",
-                    borderLeft: i % 2 === 1 ? "none" : "1.5px solid #c0392b",
-                    borderBottom: i < 2 ? "none" : "1.5px solid #c0392b",
-                    borderTop: i >= 2 ? "none" : "1.5px solid #c0392b",
-                    top: i < 2 ? 2 : void 0,
-                    bottom: i >= 2 ? 2 : void 0,
-                    left: i % 2 === 0 ? 2 : void 0,
-                    right: i % 2 === 1 ? 2 : void 0
-                  }
-                },
-                i
-              ))
-            ]
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "button",
-          {
-            type: "button",
-            onClick: onRotate,
-            title: "Rotate view",
-            style: {
-              position: "absolute",
-              top: -8,
-              right: -8,
-              width: 24,
-              height: 24,
-              background: "#141726",
-              border: "1px solid #c0392b",
-              borderRadius: "50%",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#e74c3c",
-              boxShadow: "0 0 6px rgba(192,57,43,0.3)"
-            },
-            children: /* @__PURE__ */ jsxRuntimeExports.jsx(RotateCw, { style: { width: 11, height: 11 } })
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "div",
-          {
-            style: {
-              position: "absolute",
-              bottom: -10,
-              left: 0,
-              right: 0,
-              textAlign: "center"
-            },
-            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "span",
-              {
-                style: {
-                  fontSize: 9,
-                  color: "#e74c3c",
-                  background: "#0d0f1a",
-                  padding: "2px 6px",
-                  borderRadius: 3,
-                  border: "1px solid #8b1a1a",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em"
-                },
-                children: view
-              }
-            )
-          }
-        )
-      ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          "div",
-          {
-            style: {
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              marginBottom: 6
-            },
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: "#c0392b", fontSize: 18 }, children: [
-                character.pieceType === "king" && "♔",
-                character.pieceType === "queen" && "♕",
-                character.pieceType === "pawn" && "♙",
-                character.pieceType === "rook" && "♖",
-                character.pieceType === "bishop" && "♗",
-                character.pieceType === "knight" && "♘"
-              ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "span",
+                "button",
                 {
+                  type: "button",
+                  "data-ocid": "character_selection.turn_left",
+                  onClick: onRotate,
+                  title: "Turn left",
+                  className: "w-6 h-6 rounded flex items-center justify-center",
                   style: {
-                    color: "#e74c3c",
-                    fontWeight: 800,
-                    fontSize: 16,
-                    fontFamily: "serif",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    textShadow: "0 0 10px rgba(240,192,96,0.4)"
+                    background: "rgba(192,57,43,.15)",
+                    border: "1px solid rgba(192,57,43,.3)"
                   },
-                  children: character.name
+                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronLeft, { className: "w-3.5 h-3.5 text-[#e74c3c]" })
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] font-bold uppercase tracking-wider text-[#8a8090]", children: view }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "character_selection.turn_right",
+                  onClick: onRotate,
+                  title: "Turn right",
+                  className: "w-6 h-6 rounded flex items-center justify-center",
+                  style: {
+                    background: "rgba(192,57,43,.15)",
+                    border: "1px solid rgba(192,57,43,.3)"
+                  },
+                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronRight, { className: "w-3.5 h-3.5 text-[#e74c3c]" })
                 }
               )
             ]
           }
         ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "div",
-          {
-            style: {
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              background: "rgba(192,57,43,0.1)",
-              border: "1px solid #8b1a1a",
-              borderRadius: 4,
-              padding: "2px 8px",
-              marginBottom: 8
-            },
-            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "span",
-              {
-                style: {
-                  fontSize: 10,
-                  color: "#6a7a8a",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em"
-                },
-                children: character.pieceType
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-frame relative w-[112px] h-[112px] overflow-hidden", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-well w-full h-full flex items-center justify-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx(CharacterPreview, { character, size: 112, view }) }),
+          [0, 1, 2, 3].map((i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              className: "absolute w-2 h-2 border-[1.5px] border-[#c0392b]",
+              style: {
+                borderRight: i % 2 === 0 ? "none" : "1.5px solid #c0392b",
+                borderLeft: i % 2 === 1 ? "none" : "1.5px solid #c0392b",
+                borderBottom: i < 2 ? "none" : "1.5px solid #c0392b",
+                borderTop: i >= 2 ? "none" : "1.5px solid #c0392b",
+                top: i < 2 ? 2 : void 0,
+                bottom: i >= 2 ? 2 : void 0,
+                left: i % 2 === 0 ? 2 : void 0,
+                right: i % 2 === 1 ? 2 : void 0
               }
-            )
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 4, marginTop: 4 }, children: (_a3 = character.colors) == null ? void 0 : _a3.slice(0, 3).map((c2, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+            },
+            i
+          ))
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-crimson text-[9px] uppercase tracking-wider", children: view }) })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex-1 min-w-0", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5 mb-1.5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[#c0392b] text-lg", children: [
+            character.pieceType === "king" && "♔",
+            character.pieceType === "queen" && "♕",
+            character.pieceType === "pawn" && "♙",
+            character.pieceType === "rook" && "♖",
+            character.pieceType === "bishop" && "♗",
+            character.pieceType === "knight" && "♘"
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "span",
+            {
+              className: "text-[#e74c3c] font-extrabold text-base font-display truncate whitespace-nowrap",
+              style: { textShadow: "0 0 10px rgba(240,192,96,0.4)" },
+              children: character.name
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-crimson text-[10px] mb-2 inline-flex", children: character.pieceType }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-1 mt-1", children: (_a3 = character.colors) == null ? void 0 : _a3.slice(0, 3).map((c2, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
           {
             title: c2,
+            className: "w-4 h-4 rounded border border-[rgba(192,57,43,0.3)]",
             style: {
-              width: 16,
-              height: 16,
-              borderRadius: 4,
               background: c2,
-              border: "1px solid rgba(192,57,43,0.3)",
               boxShadow: `0 0 4px ${c2}55`
             }
           },
@@ -41262,119 +41107,70 @@ const FilledSlot = ({ character, view, onRotate, onPlay, onEdit, onDelete, isDel
         level: character.level ?? BigInt(1)
       }
     ),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-      "div",
-      {
-        style: {
-          position: "relative",
-          background: "rgba(0,0,0,0.3)",
-          border: "1px solid rgba(192,57,43,0.1)",
-          borderRadius: 8,
-          padding: "8px 10px",
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "5px 10px",
-          overflow: "hidden"
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-well relative p-2 grid grid-cols-2 gap-x-2.5 gap-y-1 overflow-hidden", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(BloodParticles, { intensity: "subtle" }),
+      [
+        {
+          label: "HP",
+          value: ((_c2 = (_b3 = character.stats) == null ? void 0 : _b3.hp) == null ? void 0 : _c2.toString()) ?? "100",
+          color: "#e74c3c",
+          gemColor: "#e74c3c"
         },
-        children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(BloodParticles, { intensity: "subtle" }),
-          [
-            {
-              label: "HP",
-              value: ((_c2 = (_b3 = character.stats) == null ? void 0 : _b3.hp) == null ? void 0 : _c2.toString()) ?? "100",
-              color: "#e74c3c",
-              icon: "♥"
-            },
-            {
-              label: "AP",
-              value: ((_e2 = (_d2 = character.stats) == null ? void 0 : _d2.ap) == null ? void 0 : _e2.toString()) ?? "10",
-              color: "#5b9cf0",
-              icon: "⚡"
-            },
-            {
-              label: "MP",
-              value: ((_g2 = (_f2 = character.stats) == null ? void 0 : _f2.mp) == null ? void 0 : _g2.toString()) ?? "5",
-              color: "#27ae60",
-              icon: "◈"
-            },
-            {
-              label: "INIT",
-              value: ((_j2 = ((_h2 = character.stats) == null ? void 0 : _h2.init) ?? ((_i2 = character.stats) == null ? void 0 : _i2.atk)) == null ? void 0 : _j2.toString()) ?? "10",
-              color: "#f39c12",
-              icon: "★"
-            }
-          ].map(({ label, value, color, icon }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                background: `${color}12`,
-                border: `1px solid ${color}22`,
-                borderRadius: 5,
-                padding: "3px 7px"
-              },
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color, fontSize: 11, lineHeight: 1 }, children: icon }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "span",
-                  {
-                    style: {
-                      color: "#6a7a8a",
-                      fontSize: 9,
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.06em",
-                      flex: 1
-                    },
-                    children: label
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "span",
-                  {
-                    style: {
-                      color,
-                      fontSize: 12,
-                      fontWeight: 800,
-                      textShadow: `0 0 6px ${color}88`
-                    },
-                    children: value
-                  }
-                )
-              ]
-            },
-            label
-          ))
-        ]
-      }
-    ),
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, marginTop: 4 }, children: [
+        {
+          label: "AP",
+          value: ((_e2 = (_d2 = character.stats) == null ? void 0 : _d2.ap) == null ? void 0 : _e2.toString()) ?? "10",
+          color: "#5b9cf0",
+          gemColor: "#5b9cf0"
+        },
+        {
+          label: "MP",
+          value: ((_g2 = (_f2 = character.stats) == null ? void 0 : _f2.mp) == null ? void 0 : _g2.toString()) ?? "5",
+          color: "#27ae60",
+          gemColor: "#27ae60"
+        },
+        {
+          label: "INIT",
+          value: ((_j2 = ((_h2 = character.stats) == null ? void 0 : _h2.init) ?? ((_i2 = character.stats) == null ? void 0 : _i2.atk)) == null ? void 0 : _j2.toString()) ?? "10",
+          color: "#f39c12",
+          gemColor: "#f39c12"
+        }
+      ].map(({ label, value, color, gemColor }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          className: "stone-inset flex items-center gap-1.5 px-1.5 py-0.5",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "stone-gem",
+                style: { color: gemColor, background: gemColor }
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[9px] font-bold uppercase tracking-wider text-[#6a7a8a] flex-1", children: label }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "span",
+              {
+                className: "text-xs font-extrabold",
+                style: { color, textShadow: `0 0 6px ${color}88` },
+                children: value
+              }
+            )
+          ]
+        },
+        label
+      ))
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-2 mt-1", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "button",
         {
           type: "button",
           "data-ocid": "character_selection.play_button",
           onClick: onPlay,
+          className: "stone-btn-crimson flex-1 py-2.5",
           style: {
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 6,
-            padding: "11px 0",
-            borderRadius: 8,
-            cursor: "pointer",
             background: "linear-gradient(135deg,#a0721a,#c0392b,#e8b840)",
-            border: "1px solid #c0392b",
-            color: "#0d0f1a",
-            fontWeight: 900,
-            fontSize: 13,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            boxShadow: "0 0 16px rgba(192,57,43,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
-            transition: "box-shadow 0.2s, transform 0.1s"
+            color: "#0d0f1a"
           },
           onMouseEnter: (e) => {
             e.currentTarget.style.boxShadow = "0 0 28px rgba(200,150,42,0.55), inset 0 1px 0 rgba(255,255,255,0.2)";
@@ -41385,7 +41181,7 @@ const FilledSlot = ({ character, view, onRotate, onPlay, onEdit, onDelete, isDel
             e.currentTarget.style.transform = "translateY(0)";
           },
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Play, { style: { width: 14, height: 14 } }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(Play, { className: "w-3.5 h-3.5" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Play" })
           ]
         }
@@ -41397,33 +41193,8 @@ const FilledSlot = ({ character, view, onRotate, onPlay, onEdit, onDelete, isDel
           "data-ocid": "character_selection.edit_button",
           onClick: onEdit,
           title: "Edit character",
-          style: {
-            width: 40,
-            height: 40,
-            borderRadius: 8,
-            cursor: "pointer",
-            flexShrink: 0,
-            background: "rgba(200,150,42,0.06)",
-            border: "1px solid #8b1a1a",
-            color: "#c0392b",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.1s"
-          },
-          onMouseEnter: (e) => {
-            e.currentTarget.style.background = "rgba(200,150,42,0.2)";
-            e.currentTarget.style.borderColor = "#c0392b";
-            e.currentTarget.style.boxShadow = "0 0 10px rgba(192,57,43,0.35)";
-            e.currentTarget.style.transform = "translateY(-1px)";
-          },
-          onMouseLeave: (e) => {
-            e.currentTarget.style.background = "rgba(200,150,42,0.06)";
-            e.currentTarget.style.borderColor = "#8b1a1a";
-            e.currentTarget.style.boxShadow = "none";
-            e.currentTarget.style.transform = "translateY(0)";
-          },
-          children: /* @__PURE__ */ jsxRuntimeExports.jsx(SquarePen, { style: { width: 15, height: 15 } })
+          className: "stone-btn-slate w-10 h-10 p-0 flex items-center justify-center",
+          children: /* @__PURE__ */ jsxRuntimeExports.jsx(SquarePen, { className: "w-4 h-4" })
         }
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialog, { children: [
@@ -41434,20 +41205,10 @@ const FilledSlot = ({ character, view, onRotate, onPlay, onEdit, onDelete, isDel
             "data-ocid": "character_selection.delete_button",
             disabled: isDeleting,
             title: "Delete character",
+            className: "stone-btn-slate w-10 h-10 p-0 flex items-center justify-center disabled:opacity-50",
             style: {
-              width: 40,
-              height: 40,
-              borderRadius: 8,
-              cursor: isDeleting ? "not-allowed" : "pointer",
-              flexShrink: 0,
               background: "rgba(231,76,60,0.08)",
-              border: "1px solid #7a1a1a",
-              color: "#e74c3c",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: isDeleting ? 0.5 : 1,
-              transition: "background 0.2s, border-color 0.2s, box-shadow 0.2s"
+              color: "#e74c3c"
             },
             onMouseEnter: (e) => {
               if (!isDeleting) {
@@ -41458,160 +41219,70 @@ const FilledSlot = ({ character, view, onRotate, onPlay, onEdit, onDelete, isDel
             },
             onMouseLeave: (e) => {
               e.currentTarget.style.background = "rgba(231,76,60,0.08)";
-              e.currentTarget.style.borderColor = "#7a1a1a";
+              e.currentTarget.style.borderColor = "transparent";
               e.currentTarget.style.boxShadow = "none";
             },
-            children: isDeleting ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "div",
-              {
-                className: "animate-spin",
-                style: {
-                  width: 14,
-                  height: 14,
-                  border: "2px solid #e74c3c",
-                  borderTopColor: "transparent",
-                  borderRadius: "50%"
-                }
-              }
-            ) : /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { style: { width: 15, height: 15 } })
+            children: isDeleting ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "animate-spin w-3.5 h-3.5 border-2 border-[#e74c3c] border-t-transparent rounded-full" }) : /* @__PURE__ */ jsxRuntimeExports.jsx(Trash2, { className: "w-4 h-4" })
           }
         ) }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-          AlertDialogContent,
-          {
-            style: {
-              background: "#141726",
-              border: "1px solid #8b1a1a",
-              boxShadow: "0 0 30px rgba(200,150,42,0.2)"
-            },
-            children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogHeader, { children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogTitle, { style: { color: "#e74c3c", fontFamily: "serif" }, children: "Delete Character" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogDescription, { style: { color: "#c0ccd8" }, children: [
-                  "Delete “",
-                  character.name,
-                  "”? This action cannot be undone."
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogFooter, { children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  AlertDialogCancel,
-                  {
-                    style: {
-                      background: "#1a1e30",
-                      color: "#c0ccd8",
-                      border: "1px solid #2a3040"
-                    },
-                    children: "Cancel"
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  AlertDialogAction,
-                  {
-                    "data-ocid": "character_selection.delete_confirm_button",
-                    onClick: onDelete,
-                    style: {
-                      background: "linear-gradient(135deg,#5a1010,#7a1a1a)",
-                      border: "1px solid #c0392b",
-                      color: "#fff"
-                    },
-                    children: "Delete"
-                  }
-                )
-              ] })
-            ]
-          }
-        )
+        /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogContent, { className: "stone-frame", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-well p-6", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogHeader, { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogTitle, { className: "text-[#e74c3c] font-display", children: "Delete Character" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogDescription, { className: "text-[#c0ccd8]", children: [
+              "Delete “",
+              character.name,
+              "”? This action cannot be undone."
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(AlertDialogFooter, { className: "mt-4", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialogCancel, { className: "stone-btn-slate", children: "Cancel" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              AlertDialogAction,
+              {
+                "data-ocid": "character_selection.delete_confirm_button",
+                onClick: onDelete,
+                className: "stone-btn-crimson",
+                children: "Delete"
+              }
+            )
+          ] })
+        ] }) })
       ] })
     ] })
   ] });
 };
-const EmptySlot = ({ onCreate }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-  "div",
-  {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "36px 16px",
-      gap: 16
-    },
-    children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "div",
-        {
-          style: {
-            width: 80,
-            height: 80,
-            borderRadius: "50%",
-            background: "radial-gradient(circle,rgba(200,150,42,0.06) 0%,transparent 70%)",
-            border: "2px dashed #8b1a1a",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "border-color 0.2s"
-          },
-          children: /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { style: { width: 32, height: 32, color: "#8b1a1a" } })
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(
-        "p",
-        {
-          style: {
-            color: "#6a7a8a",
-            fontSize: 12,
-            margin: 0,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            fontWeight: 600
-          },
-          children: "Empty Slot"
-        }
-      ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "button",
-        {
-          type: "button",
-          "data-ocid": "character_selection.create_button",
-          onClick: onCreate,
-          style: {
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "11px 28px",
-            borderRadius: 8,
-            cursor: "pointer",
-            background: "linear-gradient(135deg,#1a1e30,#141726)",
-            border: "1px solid #8b1a1a",
-            color: "#e74c3c",
-            fontWeight: 700,
-            fontSize: 13,
-            letterSpacing: "0.04em",
-            width: "100%",
-            justifyContent: "center",
-            boxShadow: "0 0 10px rgba(192,57,43,0.1)",
-            transition: "box-shadow 0.2s, border-color 0.2s, transform 0.1s"
-          },
-          onMouseEnter: (e) => {
-            e.currentTarget.style.boxShadow = "0 0 18px rgba(200,150,42,0.28)";
-            e.currentTarget.style.borderColor = "#c0392b";
-            e.currentTarget.style.transform = "translateY(-1px)";
-          },
-          onMouseLeave: (e) => {
-            e.currentTarget.style.boxShadow = "0 0 10px rgba(192,57,43,0.1)";
-            e.currentTarget.style.borderColor = "#8b1a1a";
-            e.currentTarget.style.transform = "translateY(0)";
-          },
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { style: { width: 15, height: 15 } }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Create Character" })
-          ]
-        }
-      )
-    ]
-  }
-);
+const EmptySlot = ({ onCreate }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col items-center justify-center py-9 px-4 gap-4", children: [
+  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-frame w-20 h-20 rounded-full flex items-center justify-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-well w-full h-full rounded-full flex items-center justify-center", children: /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { className: "w-8 h-8 text-[#8b1a1a]" }) }) }),
+  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[#6a7a8a] text-xs uppercase tracking-widest font-semibold m-0", children: "Empty Slot" }),
+  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "button",
+    {
+      type: "button",
+      "data-ocid": "character_selection.create_button",
+      onClick: onCreate,
+      className: "stone-btn-crimson w-full justify-center py-2.5",
+      style: {
+        background: "linear-gradient(135deg,#1a1e30,#141726)",
+        color: "#e74c3c",
+        boxShadow: "0 0 10px rgba(192,57,43,0.1)"
+      },
+      onMouseEnter: (e) => {
+        e.currentTarget.style.boxShadow = "0 0 18px rgba(200,150,42,0.28)";
+        e.currentTarget.style.borderColor = "#c0392b";
+        e.currentTarget.style.transform = "translateY(-1px)";
+      },
+      onMouseLeave: (e) => {
+        e.currentTarget.style.boxShadow = "0 0 10px rgba(192,57,43,0.1)";
+        e.currentTarget.style.borderColor = "transparent";
+        e.currentTarget.style.transform = "translateY(0)";
+      },
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(Plus, { className: "w-4 h-4" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Create Character" })
+      ]
+    }
+  )
+] });
 const CharacterSelection = ({
   userProfile,
   onCreateCharacter,
@@ -41650,214 +41321,109 @@ const CharacterSelection = ({
     [deleteCharacterMutation]
   );
   if (isLoading) {
-    return /* @__PURE__ */ jsxRuntimeExports.jsx(
-      "div",
-      {
-        style: {
-          position: "fixed",
-          inset: 0,
-          background: "#0d0f1a",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 20
-        },
-        children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "div",
-            {
-              className: "animate-spin",
-              style: {
-                width: 56,
-                height: 56,
-                border: "3px solid #c0392b",
-                borderTopColor: "transparent",
-                borderRadius: "50%",
-                margin: "0 auto 16px",
-                boxShadow: "0 0 20px rgba(192,57,43,0.3)"
-              }
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "p",
-            {
-              style: {
-                color: "#c0ccd8",
-                fontFamily: "serif",
-                letterSpacing: "0.06em"
-              },
-              children: "Loading character slots\\u2026"
-            }
-          )
-        ] })
-      }
-    );
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-[#0d0f1a] flex items-center justify-center z-20", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-orb w-14 h-14 mx-auto mb-4 animate-spin border-[3px] border-[#c0392b] border-t-transparent" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[#c0ccd8] font-body tracking-wider", children: "Loading character slots\\u2026" })
+    ] }) });
   }
   if (isError) {
-    return /* @__PURE__ */ jsxRuntimeExports.jsx(
-      "div",
-      {
-        style: {
-          position: "fixed",
-          inset: 0,
-          background: "#0d0f1a",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 20
-        },
-        children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center" }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "p",
-            {
-              style: { color: "#e74c3c", fontFamily: "serif", marginBottom: 16 },
-              children: "Failed to load character slots."
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "button",
-            {
-              type: "button",
-              onClick: () => refetch(),
-              style: {
-                padding: "10px 24px",
-                background: "transparent",
-                border: "2px solid #c0392b",
-                borderRadius: 6,
-                color: "#e74c3c",
-                cursor: "pointer",
-                fontFamily: "serif",
-                fontSize: 14
-              },
-              children: "Retry"
-            }
-          )
-        ] })
-      }
-    );
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "fixed inset-0 bg-[#0d0f1a] flex items-center justify-center z-20", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-[#e74c3c] font-display mb-4", children: "Failed to load character slots." }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "button",
+        {
+          type: "button",
+          onClick: () => refetch(),
+          className: "stone-btn-crimson",
+          children: "Retry"
+        }
+      )
+    ] }) });
   }
   const slots = [
     { number: 1, character: (characterSlots == null ? void 0 : characterSlots.slot1) ?? null },
     { number: 2, character: (characterSlots == null ? void 0 : characterSlots.slot2) ?? null },
     { number: 3, character: (characterSlots == null ? void 0 : characterSlots.slot3) ?? null }
   ];
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "div",
-    {
-      style: {
-        minHeight: "100%",
-        width: "100%",
-        background: "#0d0f1a",
-        overflowY: "auto",
-        padding: "36px 24px 40px",
-        boxSizing: "border-box",
-        position: "relative",
-        zIndex: 20
-      },
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { textAlign: "center", marginBottom: 40 }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "div",
-            {
-              style: {
-                width: 180,
-                height: 1,
-                background: "linear-gradient(90deg,transparent,#c0392b,transparent)",
-                margin: "0 auto 20px"
-              }
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "div",
-            {
-              style: {
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 10,
-                marginBottom: 10
-              },
-              children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "h1",
-                {
-                  style: {
-                    fontSize: 28,
-                    fontWeight: 900,
-                    background: "linear-gradient(90deg,#c0392b,#e74c3c,#e8b840,#c0392b)",
-                    WebkitBackgroundClip: "text",
-                    WebkitTextFillColor: "transparent",
-                    backgroundClip: "text",
-                    fontFamily: "serif",
-                    letterSpacing: "0.1em",
-                    margin: 0,
-                    textShadow: "none"
-                  },
-                  children: "Choose your Paper Baby Vampire!"
-                }
-              )
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: "#6a7a8a", fontSize: 14, margin: 0 }, children: [
-            "Welcome,",
-            " ",
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "span",
-              {
-                style: {
-                  color: "#e74c3c",
-                  fontWeight: 700,
-                  textShadow: "0 0 10px rgba(240,192,96,0.3)"
-                },
-                children: userProfile.name
-              }
-            ),
-            ". Select a character or create a new one."
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "div",
-            {
-              style: {
-                width: 180,
-                height: 1,
-                background: "linear-gradient(90deg,transparent,#c0392b,transparent)",
-                margin: "20px auto 0"
-              }
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "div",
-          {
-            "data-ocid": "character_selection.list",
-            style: {
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit,minmax(290px,1fr))",
-              gap: 22,
-              maxWidth: 1040,
-              margin: "0 auto"
-            },
-            children: slots.map(({ number, character }) => {
-              const slotChar = character;
-              return /* @__PURE__ */ jsxRuntimeExports.jsx(
-                SlotCard,
-                {
-                  slotNumber: number,
-                  character: slotChar,
-                  viewIndex: previewViews[number],
-                  onRotate: () => rotatePreview(number),
-                  onPlay: () => slotChar && onPlayCharacter(slotChar, number),
-                  onEdit: () => slotChar && onEditCharacter(number, slotChar),
-                  onDelete: () => handleDeleteCharacter(number),
-                  onCreate: () => onCreateCharacter(number),
-                  isDeleting: deletingSlot === number
-                },
-                number
-              );
-            })
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-h-full w-full bg-[#0d0f1a] overflow-y-auto py-9 px-6 pb-10 relative z-20", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center mb-10", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "div",
+        {
+          className: "h-px mx-auto mb-5",
+          style: {
+            width: 180,
+            background: "linear-gradient(90deg,transparent,#c0392b,transparent)"
           }
-        )
-      ]
-    }
-  );
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "inline-flex items-center gap-2.5 mb-2.5", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "h1",
+        {
+          className: "text-[28px] font-black font-display tracking-widest m-0",
+          style: {
+            background: "linear-gradient(90deg,#c0392b,#e74c3c,#e8b840,#c0392b)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text"
+          },
+          children: "Choose your Paper Baby Vampire!"
+        }
+      ) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-[#6a7a8a] text-sm m-0", children: [
+        "Welcome,",
+        " ",
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "span",
+          {
+            className: "text-[#e74c3c] font-bold",
+            style: { textShadow: "0 0 10px rgba(240,192,96,0.3)" },
+            children: userProfile.name
+          }
+        ),
+        ". Select a character or create a new one."
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "div",
+        {
+          className: "h-px mx-auto mt-5",
+          style: {
+            width: 180,
+            background: "linear-gradient(90deg,transparent,#c0392b,transparent)"
+          }
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "div",
+      {
+        "data-ocid": "character_selection.list",
+        className: "grid gap-5 mx-auto",
+        style: {
+          gridTemplateColumns: "repeat(auto-fit,minmax(290px,1fr))",
+          maxWidth: 1040
+        },
+        children: slots.map(({ number, character }) => {
+          const slotChar = character;
+          return /* @__PURE__ */ jsxRuntimeExports.jsx(
+            SlotCard,
+            {
+              slotNumber: number,
+              character: slotChar,
+              viewIndex: previewViews[number],
+              onRotate: () => rotatePreview(number),
+              onPlay: () => slotChar && onPlayCharacter(slotChar, number),
+              onEdit: () => slotChar && onEditCharacter(number, slotChar),
+              onDelete: () => handleDeleteCharacter(number),
+              onCreate: () => onCreateCharacter(number),
+              isDeleting: deletingSlot === number
+            },
+            number
+          );
+        })
+      }
+    )
+  ] });
 };
 const CHAT_COLORS = [
   "#e74c3c",
@@ -41883,37 +41449,6 @@ function formatTime(tsMs) {
   const mm = d2.getMinutes().toString().padStart(2, "0");
   return `${hh}:${mm}`;
 }
-const tabBtnStyle = (active, activeColor) => ({
-  flex: 1,
-  padding: "6px 4px",
-  fontSize: 9,
-  fontWeight: 700,
-  letterSpacing: "0.06em",
-  textTransform: "uppercase",
-  cursor: "pointer",
-  border: "none",
-  borderBottom: active ? `2px solid ${activeColor}` : "2px solid transparent",
-  background: active ? `${activeColor}26` : "transparent",
-  color: active ? "#e8c8c8" : "rgba(200,140,140,0.5)",
-  transition: "all 0.15s",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 3
-});
-const badgeStyle = (bg) => ({
-  background: bg,
-  color: "#fff",
-  borderRadius: 999,
-  fontSize: 9,
-  fontWeight: 700,
-  minWidth: 14,
-  height: 14,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "0 3px"
-});
 const BattleLogText = ({
   text,
   color
@@ -42238,437 +41773,418 @@ const ChatPanel = ({
       defaultFolded: false,
       zIndex: 9e3,
       style: { width: 300 },
-      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      children: /* @__PURE__ */ jsxRuntimeExports.jsx(
         "div",
         {
           "data-ocid": "chat.panel",
+          className: "stone-frame",
           style: {
             width: 300,
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
-            background: "linear-gradient(160deg, #15080a 0%, #0d0f1a 100%)",
             fontFamily: "var(--font-body)"
           },
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "button",
-              {
-                type: "button",
-                "data-ocid": "chat.toggle",
-                onClick: toggleExpanded,
-                style: {
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  background: "linear-gradient(90deg, rgba(192,57,43,0.18) 0%, rgba(13,15,26,0) 100%)",
-                  borderBottom: expanded ? "1px solid rgba(192,57,43,0.35)" : "none",
-                  border: "none",
-                  width: "100%",
-                  textAlign: "left"
-                },
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    MessageSquare,
-                    {
-                      size: 15,
-                      style: { color: "#c0392b", flexShrink: 0 }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "span",
-                    {
-                      style: {
-                        color: "#e8c8c8",
-                        fontWeight: 700,
-                        fontSize: 12,
-                        letterSpacing: "0.08em",
-                        textTransform: "uppercase",
-                        flex: 1
-                      },
-                      children: "Chat"
-                    }
-                  ),
-                  totalUnread > 0 && !expanded && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "span",
-                    {
-                      "data-ocid": "chat.unread_badge",
-                      style: {
-                        background: "#c0392b",
-                        color: "#fff",
-                        borderRadius: 999,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        minWidth: 18,
-                        height: 18,
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: "0 4px",
-                        marginRight: 4
-                      },
-                      children: totalUnread > 99 ? "99+" : totalUnread
-                    }
-                  ),
-                  expanded ? /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronDown, { size: 14, style: { color: "#c0392b" } }) : /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronUp, { size: 14, style: { color: "#c0392b" } })
-                ]
-              }
-            ),
-            expanded && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    borderBottom: "1px solid rgba(192,57,43,0.3)"
-                  },
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "chat.tab.general",
-                        onClick: () => setActiveChannel("general"),
-                        style: tabBtnStyle(activeChannel === "general", "#c0392b"),
-                        children: [
-                          "General",
-                          unreadGeneral > 0 && activeChannel !== "general" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: badgeStyle("#c0392b"), children: unreadGeneral > 99 ? "99+" : unreadGeneral })
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "chat.tab.battlelog",
-                        onClick: () => setActiveChannel("battlelog"),
-                        style: tabBtnStyle(activeChannel === "battlelog", "#c0392b"),
-                        children: [
-                          "Battle Log",
-                          unreadBattleLog > 0 && activeChannel !== "battlelog" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: badgeStyle("#c0392b"), children: unreadBattleLog > 99 ? "99+" : unreadBattleLog })
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "chat.tab.status",
-                        onClick: () => setActiveChannel("status"),
-                        style: tabBtnStyle(activeChannel === "status", "#9b59b6"),
-                        children: [
-                          "Status",
-                          unreadStatus > 0 && activeChannel !== "status" && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: badgeStyle("#9b59b6"), children: unreadStatus > 99 ? "99+" : unreadStatus })
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "chat.tab.debug",
-                        onClick: () => setActiveChannel("debug"),
-                        style: tabBtnStyle(activeChannel === "debug", "#27ae60"),
-                        children: "Debug"
-                      }
-                    )
-                  ]
-                }
-              ),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "div",
-                {
-                  ref: listRef,
-                  "data-ocid": "chat.message_list",
-                  className: "dofus-scrollbar",
-                  style: {
-                    height: 280,
-                    overflowY: "auto",
-                    padding: "8px 10px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 3
-                  },
-                  children: [
-                    activeChannel === "general" && (messages.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        "data-ocid": "chat.general.empty_state",
-                        style: {
-                          color: "rgba(200,140,140,0.4)",
-                          fontSize: 11,
-                          textAlign: "center",
-                          marginTop: 16
-                        },
-                        children: "No messages yet. Say something!"
-                      }
-                    ) : messages.map((msg) => {
-                      const isSelf = msg.playerName === playerName;
-                      return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "div",
+            {
+              className: "stone-well",
+              style: {
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                flex: 1
+              },
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    type: "button",
+                    "data-ocid": "chat.toggle",
+                    onClick: toggleExpanded,
+                    className: "stone-header",
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      border: "none",
+                      width: "100%",
+                      textAlign: "left"
+                    },
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        MessageSquare,
+                        {
+                          size: 15,
+                          style: { color: "#d8463f", flexShrink: 0 }
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "span",
+                        {
+                          className: "stone-header-title",
+                          style: { fontSize: 12, letterSpacing: "0.08em", flexShrink: 0 },
+                          children: "Chat"
+                        }
+                      ),
+                      expanded && /* @__PURE__ */ jsxRuntimeExports.jsx(
                         "div",
                         {
-                          style: {
-                            fontSize: 12,
-                            lineHeight: 1.5,
-                            wordBreak: "break-word"
-                          },
+                          className: "flex flex-nowrap",
+                          style: { gap: 2, flex: 1, overflow: "hidden" },
                           children: [
-                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                              "span",
+                            ["general", "General", unreadGeneral],
+                            ["battlelog", "Battle Log", unreadBattleLog],
+                            ["status", "Status", unreadStatus],
+                            ["debug", "Debug", 0]
+                          ].map(([key, label, unread]) => {
+                            const isActive = activeChannel === key;
+                            return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "button",
                               {
-                                style: {
-                                  color: "rgba(160,160,170,0.7)",
-                                  fontSize: 10,
-                                  marginRight: 5,
-                                  fontVariantNumeric: "tabular-nums"
+                                type: "button",
+                                "data-ocid": `chat.tab.${key}`,
+                                onClick: (e) => {
+                                  e.stopPropagation();
+                                  setActiveChannel(key);
                                 },
+                                className: `flex items-center justify-center gap-1 py-1 px-2 text-[9px] font-semibold uppercase tracking-wider border-0 rounded-md transition-colors duration-150 cursor-pointer whitespace-nowrap ${isActive ? "text-[#d8463f] font-bold" : "text-[#8a8090] hover:text-[#cdbfd2]"}`,
+                                style: { fontFamily: "var(--font-body)" },
                                 children: [
-                                  "[",
-                                  formatTime(msg.timestampMs),
-                                  "]"
+                                  label,
+                                  unread > 0 && !isActive && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "span",
+                                    {
+                                      className: "inline-flex items-center justify-center rounded-full text-white text-[9px] font-bold min-w-[14px] h-[14px] px-[3px]",
+                                      style: {
+                                        background: key === "status" ? "#c79cff" : "#d8463f"
+                                      },
+                                      children: unread > 99 ? "99+" : unread
+                                    }
+                                  )
                                 ]
-                              }
-                            ),
-                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                              "span",
-                              {
-                                style: {
-                                  color: isSelf ? SELF_COLOR : msg.colorHex,
-                                  fontWeight: 600,
-                                  marginRight: 4
-                                },
-                                children: [
-                                  msg.playerName,
-                                  ":"
-                                ]
-                              }
-                            ),
-                            /* @__PURE__ */ jsxRuntimeExports.jsx(
-                              "span",
-                              {
-                                style: {
-                                  color: isSelf ? "#d0f0ff" : "rgba(235,235,245,0.88)"
-                                },
-                                children: msg.text
-                              }
-                            )
-                          ]
-                        },
-                        String(msg.id)
-                      );
-                    })),
-                    activeChannel === "battlelog" && (battleLogEntries.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        "data-ocid": "chat.battlelog.empty_state",
-                        style: {
-                          color: "rgba(200,140,140,0.4)",
-                          fontSize: 11,
-                          textAlign: "center",
-                          marginTop: 16
-                        },
-                        children: "No battle actions yet."
-                      }
-                    ) : battleLogEntries.map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "div",
-                      {
-                        "data-ocid": "chat.battlelog.entry",
-                        style: {
-                          fontSize: 11,
-                          lineHeight: 1.5,
-                          wordBreak: "break-word"
-                        },
-                        children: [
-                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                            "span",
+                              },
+                              key
+                            );
+                          })
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { marginLeft: "auto", flexShrink: 0 }, children: [
+                        totalUnread > 0 && !expanded && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "span",
+                          {
+                            "data-ocid": "chat.unread_badge",
+                            className: "stone-pill stone-pill-crimson",
+                            style: {
+                              minWidth: 18,
+                              height: 18,
+                              padding: "0 4px",
+                              marginRight: 4,
+                              fontSize: 10
+                            },
+                            children: totalUnread > 99 ? "99+" : totalUnread
+                          }
+                        ),
+                        expanded ? /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronDown, { size: 14, style: { color: "#d8463f" } }) : /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronUp, { size: 14, style: { color: "#d8463f" } })
+                      ] })
+                    ]
+                  }
+                ),
+                expanded && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      ref: listRef,
+                      "data-ocid": "chat.message_list",
+                      className: "dofus-scrollbar",
+                      style: {
+                        height: 280,
+                        overflowY: "auto",
+                        padding: "8px 10px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 3
+                      },
+                      children: [
+                        activeChannel === "general" && (messages.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "div",
+                          {
+                            "data-ocid": "chat.general.empty_state",
+                            className: "text-muted-foreground",
+                            style: {
+                              fontSize: 11,
+                              textAlign: "center",
+                              marginTop: 16,
+                              opacity: 0.5
+                            },
+                            children: "No messages yet. Say something!"
+                          }
+                        ) : messages.map((msg) => {
+                          const isSelf = msg.playerName === playerName;
+                          return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "div",
                             {
                               style: {
-                                color: "rgba(160,160,170,0.6)",
-                                fontSize: 10,
-                                marginRight: 5,
-                                fontVariantNumeric: "tabular-nums"
+                                fontSize: 12,
+                                lineHeight: 1.5,
+                                wordBreak: "break-word"
                               },
                               children: [
-                                "[",
-                                entry.timestamp,
-                                "]"
+                                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                  "span",
+                                  {
+                                    style: {
+                                      color: "rgba(160,160,170,0.7)",
+                                      fontSize: 10,
+                                      marginRight: 5,
+                                      fontVariantNumeric: "tabular-nums"
+                                    },
+                                    children: [
+                                      "[",
+                                      formatTime(msg.timestampMs),
+                                      "]"
+                                    ]
+                                  }
+                                ),
+                                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                  "span",
+                                  {
+                                    style: {
+                                      color: isSelf ? SELF_COLOR : msg.colorHex,
+                                      fontWeight: 600,
+                                      marginRight: 4
+                                    },
+                                    children: [
+                                      msg.playerName,
+                                      ":"
+                                    ]
+                                  }
+                                ),
+                                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "span",
+                                  {
+                                    style: {
+                                      color: isSelf ? "#d0f0ff" : "rgba(235,235,245,0.88)"
+                                    },
+                                    children: msg.text
+                                  }
+                                )
                               ]
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(BattleLogText, { text: entry.text, color: entry.color })
-                        ]
-                      },
-                      entry.id
-                    ))),
-                    activeChannel === "status" && renderStatusContent(),
-                    activeChannel === "debug" && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        style: {
-                          padding: "8px",
-                          color: "#aaa",
-                          fontFamily: "monospace",
-                          fontSize: "11px",
-                          overflowY: "auto",
-                          height: "100%"
-                        },
-                        children: !debugLogs || debugLogs.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            },
+                            String(msg.id)
+                          );
+                        })),
+                        activeChannel === "battlelog" && (battleLogEntries.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
                           "div",
                           {
+                            "data-ocid": "chat.battlelog.empty_state",
+                            className: "text-muted-foreground",
                             style: {
-                              color: "#666",
+                              fontSize: 11,
                               textAlign: "center",
-                              marginTop: 20
+                              marginTop: 16,
+                              opacity: 0.5
                             },
-                            children: "No debug events yet."
+                            children: "No battle actions yet."
                           }
-                        ) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: debugLogs.slice().reverse().map((log2) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        ) : battleLogEntries.map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "div",
+                          {
+                            "data-ocid": "chat.battlelog.entry",
+                            style: {
+                              fontSize: 11,
+                              lineHeight: 1.5,
+                              wordBreak: "break-word"
+                            },
+                            children: [
+                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                "span",
+                                {
+                                  style: {
+                                    color: "rgba(160,160,170,0.6)",
+                                    fontSize: 10,
+                                    marginRight: 5,
+                                    fontVariantNumeric: "tabular-nums"
+                                  },
+                                  children: [
+                                    "[",
+                                    entry.timestamp,
+                                    "]"
+                                  ]
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(BattleLogText, { text: entry.text, color: entry.color })
+                            ]
+                          },
+                          entry.id
+                        ))),
+                        activeChannel === "status" && renderStatusContent(),
+                        activeChannel === "debug" && /* @__PURE__ */ jsxRuntimeExports.jsx(
                           "div",
                           {
                             style: {
-                              padding: "2px 4px",
-                              borderBottom: "1px solid #222",
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-all"
+                              padding: "8px",
+                              color: "#aaa",
+                              fontFamily: "monospace",
+                              fontSize: "11px",
+                              overflowY: "auto",
+                              height: "100%"
                             },
-                            children: log2
-                          },
-                          log2
-                        )) })
-                      }
-                    )
-                  ]
-                }
-              ),
-              activeChannel === "general" ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    gap: 6,
-                    padding: "8px 10px",
-                    borderTop: "1px solid rgba(192,57,43,0.3)",
-                    background: "rgba(0,0,0,0.3)"
-                  },
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "input",
-                      {
-                        ref: inputRef,
-                        "data-ocid": "chat.input",
-                        type: "text",
-                        value: inputText,
-                        onChange: (e) => setInputText(e.target.value),
-                        onKeyDown: handleKeyDown,
-                        placeholder: "Say something...",
-                        maxLength: 200,
-                        style: {
-                          flex: 1,
-                          background: "rgba(10,5,8,0.8)",
-                          border: "1px solid rgba(192,57,43,0.5)",
-                          borderRadius: 4,
-                          color: "#f0e8e8",
-                          fontSize: 12,
-                          padding: "5px 8px",
-                          outline: "none",
-                          fontFamily: "var(--font-body)"
+                            children: !debugLogs || debugLogs.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                className: "text-muted-foreground",
+                                style: {
+                                  textAlign: "center",
+                                  marginTop: 20,
+                                  opacity: 0.5
+                                },
+                                children: "No debug events yet."
+                              }
+                            ) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: debugLogs.slice().reverse().map((log2) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  padding: "2px 4px",
+                                  borderBottom: "1px solid #222",
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-all"
+                                },
+                                children: log2
+                              },
+                              log2
+                            )) })
+                          }
+                        )
+                      ]
+                    }
+                  ),
+                  activeChannel === "general" ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        gap: 6,
+                        padding: "8px 10px",
+                        borderTop: "1px solid rgba(216,70,63,0.3)",
+                        background: "rgba(0,0,0,0.3)"
+                      },
+                      children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "input",
+                          {
+                            ref: inputRef,
+                            "data-ocid": "chat.input",
+                            type: "text",
+                            value: inputText,
+                            onChange: (e) => setInputText(e.target.value),
+                            onKeyDown: handleKeyDown,
+                            placeholder: "Say something...",
+                            maxLength: 200,
+                            className: "stone-inset",
+                            style: {
+                              flex: 1,
+                              fontSize: 12,
+                              padding: "5px 8px",
+                              fontFamily: "var(--font-body)"
+                            }
+                          }
+                        ),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "button",
+                          {
+                            type: "button",
+                            "data-ocid": "chat.send_button",
+                            onClick: handleSend,
+                            disabled: !inputText.trim() || isSending,
+                            className: "stone-btn-crimson",
+                            style: {
+                              width: 32,
+                              height: 32,
+                              padding: 0,
+                              flexShrink: 0,
+                              opacity: inputText.trim() && !isSending ? 1 : 0.4,
+                              cursor: inputText.trim() && !isSending ? "pointer" : "not-allowed"
+                            },
+                            children: /* @__PURE__ */ jsxRuntimeExports.jsx(Send, { size: 14 })
+                          }
+                        )
+                      ]
+                    }
+                  ) : activeChannel === "battlelog" ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "6px 10px",
+                        borderTop: "1px solid rgba(216,70,63,0.3)",
+                        background: "rgba(0,0,0,0.3)"
+                      },
+                      children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "span",
+                          {
+                            className: "text-muted-foreground",
+                            style: {
+                              fontSize: 10,
+                              letterSpacing: "0.04em",
+                              opacity: 0.5
+                            },
+                            children: [
+                              battleLogEntries.length,
+                              " actions"
+                            ]
+                          }
+                        ),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "button",
+                          {
+                            type: "button",
+                            "data-ocid": "chat.battlelog.clear_button",
+                            onClick: () => onClearBattleLog == null ? void 0 : onClearBattleLog(),
+                            className: "stone-btn-slate",
+                            style: {
+                              fontSize: 10,
+                              padding: "3px 10px",
+                              letterSpacing: "0.05em"
+                            },
+                            children: "Clear log"
+                          }
+                        )
+                      ]
+                    }
+                  ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "6px 10px",
+                        borderTop: "1px solid rgba(199,156,255,0.3)",
+                        background: "rgba(0,0,0,0.3)"
+                      },
+                      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        "span",
+                        {
+                          className: "text-muted-foreground",
+                          style: { fontSize: 10, opacity: 0.5 },
+                          children: [
+                            activeEffects.length,
+                            " active effect",
+                            activeEffects.length !== 1 ? "s" : ""
+                          ]
                         }
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "chat.send_button",
-                        onClick: handleSend,
-                        disabled: !inputText.trim() || isSending,
-                        style: {
-                          background: inputText.trim() && !isSending ? "#c0392b" : "rgba(192,57,43,0.25)",
-                          border: "1px solid rgba(192,57,43,0.6)",
-                          borderRadius: 4,
-                          color: inputText.trim() && !isSending ? "#fff" : "rgba(255,255,255,0.35)",
-                          cursor: inputText.trim() && !isSending ? "pointer" : "not-allowed",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          width: 32,
-                          height: 32,
-                          flexShrink: 0,
-                          transition: "background 0.15s"
-                        },
-                        children: /* @__PURE__ */ jsxRuntimeExports.jsx(Send, { size: 14 })
-                      }
-                    )
-                  ]
-                }
-              ) : activeChannel === "battlelog" ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "6px 10px",
-                    borderTop: "1px solid rgba(192,57,43,0.3)",
-                    background: "rgba(0,0,0,0.3)"
-                  },
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "span",
-                      {
-                        style: {
-                          color: "rgba(200,140,140,0.5)",
-                          fontSize: 10,
-                          letterSpacing: "0.04em"
-                        },
-                        children: [
-                          battleLogEntries.length,
-                          " actions"
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "chat.battlelog.clear_button",
-                        onClick: () => onClearBattleLog == null ? void 0 : onClearBattleLog(),
-                        style: {
-                          background: "rgba(192,57,43,0.15)",
-                          border: "1px solid rgba(192,57,43,0.4)",
-                          borderRadius: 4,
-                          color: "rgba(220,130,130,0.8)",
-                          fontSize: 10,
-                          padding: "3px 10px",
-                          cursor: "pointer",
-                          letterSpacing: "0.05em"
-                        },
-                        children: "Clear log"
-                      }
-                    )
-                  ]
-                }
-              ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "6px 10px",
-                    borderTop: "1px solid rgba(155,89,182,0.3)",
-                    background: "rgba(0,0,0,0.3)"
-                  },
-                  children: /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: "rgba(200,140,200,0.5)", fontSize: 10 }, children: [
-                    activeEffects.length,
-                    " active effect",
-                    activeEffects.length !== 1 ? "s" : ""
-                  ] })
-                }
-              )
-            ] })
-          ]
+                      )
+                    }
+                  )
+                ] })
+              ]
+            }
+          )
         }
       )
     }
@@ -42839,6 +42355,269 @@ const AchievementToast = ({
     }
   );
 };
+const STAT_COLORS = {
+  SP: "violet",
+  WR: "orange",
+  SR: "blue",
+  SCP: "periwinkle",
+  WP: "lightslate",
+  RES: "green",
+  INIT: "amber",
+  CHC: "gold",
+  FAIL: "crimson"
+};
+function StatPopup({
+  combatant,
+  unitStats,
+  unitEffects,
+  onClose,
+  style: style2,
+  anchorRect
+}) {
+  if (!combatant) return null;
+  const stats = unitStats[combatant.id] || {};
+  const effects = unitEffects[combatant.id] || [];
+  const hp = stats.hp ?? combatant.hp ?? 0;
+  const maxHp = stats.maxHp ?? combatant.maxHp ?? 1;
+  const hpPct = maxHp > 0 ? hp / maxHp * 100 : 0;
+  const statEntries = [
+    { key: "SP", label: "SP", value: stats.sp ?? 0 },
+    { key: "WR", label: "WR", value: stats.wr ?? 0 },
+    { key: "SR", label: "SR", value: stats.sr ?? 0 },
+    { key: "SCP", label: "SCP", value: stats.scp ?? 0 },
+    { key: "WP", label: "WP", value: stats.wp ?? 0 },
+    { key: "RES", label: "RES", value: stats.res ?? 0 },
+    { key: "INIT", label: "INIT", value: stats.init ?? 0 },
+    { key: "CHC", label: "CHC", value: stats.chc ?? 0 }
+  ];
+  const popupWidth = 248;
+  const popupHeight = 320;
+  const margin = 12;
+  let left = 0;
+  let top = 0;
+  if (anchorRect) {
+    left = anchorRect.left + anchorRect.width / 2 - popupWidth / 2;
+    top = anchorRect.top - popupHeight - 10;
+    left = Math.max(
+      margin,
+      Math.min(left, window.innerWidth - popupWidth - margin)
+    );
+    top = Math.max(
+      margin,
+      Math.min(top, window.innerHeight - popupHeight - margin)
+    );
+  }
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      className: "stone-popup-portal",
+      style: {
+        position: "fixed",
+        left,
+        top,
+        zIndex: 9999,
+        ...style2
+      },
+      "aria-label": "Combatant stats",
+      tabIndex: -1,
+      onClick: (e) => e.stopPropagation(),
+      onKeyDown: (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onClose();
+        }
+      },
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-popup-arrow-portal" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-popup-inner", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "10px"
+              },
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    className: "stone-battle-portrait",
+                    style: { width: 40, height: 40, fontSize: 20 },
+                    children: combatant.pieceIcon
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1 }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: "8px" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "span",
+                      {
+                        style: {
+                          fontFamily: "Baloo 2",
+                          fontWeight: 700,
+                          color: "#e8e6ef"
+                        },
+                        children: combatant.name
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "span",
+                      {
+                        className: `stone-pill-${combatant.id === "player" ? "crimson" : "slate"}`,
+                        children: [
+                          "LVL ",
+                          combatant.level
+                        ]
+                      }
+                    )
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      style: { fontFamily: "Saira", fontSize: 11, color: "#8a8090" },
+                      children: [
+                        combatant.pieceType,
+                        " ",
+                        combatant.id === "player" ? "(You)" : "· Enemy"
+                      ]
+                    }
+                  )
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "button",
+                  {
+                    type: "button",
+                    onClick: onClose,
+                    className: "stone-btn-slate",
+                    style: { width: 28, height: 28, padding: 0, borderRadius: 6 },
+                    children: "✕"
+                  }
+                )
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: "10px" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontFamily: "Saira",
+                  fontSize: 11,
+                  color: "#8a8090",
+                  marginBottom: 4
+                },
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "HEALTH" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                    hp,
+                    " / ",
+                    maxHp
+                  ] })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-battle-hp-bar", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: "stone-battle-hp-bar-fill",
+                style: { width: `${hpPct}%` }
+              }
+            ) })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              style: {
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "6px",
+                marginBottom: "10px"
+              },
+              children: statEntries.map(({ key, label, value }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "div",
+                {
+                  className: `stone-stat-chip stone-stat-chip-${STAT_COLORS[key]}`,
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-gem", style: { width: 10, height: 10 } }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: label }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: "auto", fontWeight: 700 }, children: value })
+                  ]
+                },
+                key
+              ))
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "div",
+            {
+              className: "stone-stat-chip stone-stat-chip-crimson",
+              style: { marginBottom: "10px" },
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-gem", style: { width: 10, height: 10 } }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "FAIL" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { marginLeft: "auto", fontWeight: 700 }, children: stats.fail ?? 0 })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                style: {
+                  fontFamily: "Saira",
+                  fontSize: 11,
+                  color: "#8a8090",
+                  marginBottom: 6
+                },
+                children: "ACTIVE EFFECTS"
+              }
+            ),
+            effects.length > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: "6px" }, children: effects.map((effect, idx) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                className: effect.type === "buff" ? "stone-effect-chip-buff" : "stone-effect-chip-debuff",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: effect.iconEmoji || "●" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+                    effect.stat,
+                    " ",
+                    effect.modifier > 0 ? `+${effect.modifier}` : effect.modifier
+                  ] }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "span",
+                    {
+                      className: "stone-pill-slate",
+                      style: { fontSize: 10, padding: "1px 4px" },
+                      children: [
+                        effect.turnsRemaining,
+                        "T"
+                      ]
+                    }
+                  )
+                ]
+              },
+              `${effect.stat}-${effect.modifier}-${effect.turnsRemaining}-${idx}`
+            )) }) : /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                style: {
+                  fontFamily: "Saira",
+                  fontSize: 12,
+                  color: "#8a8090",
+                  fontStyle: "italic"
+                },
+                children: "No active effects"
+              }
+            )
+          ] })
+        ] })
+      ]
+    }
+  );
+}
 const PIECE_SYMBOLS = {
   king: "♚",
   queen: "♛",
@@ -42874,942 +42653,644 @@ const BattleUIPanel = ({
   userId
 }) => {
   const forceUpdate = spellSelectionVersion;
-  const selectedIdRef = React$2.useRef(null);
-  const [_cardSelectionVersion, setCardSelectionVersion] = React$2.useState(0);
-  const handleCardClick = (id) => {
-    selectedIdRef.current = selectedIdRef.current === id ? null : id;
-    setCardSelectionVersion((v2) => v2 + 1);
-  };
+  const [selectedCombatantId, setSelectedCombatantId] = reactExports.useState(
+    null
+  );
+  const [popupAnchor, setPopupAnchor] = reactExports.useState(null);
+  const chipRefs = reactExports.useRef(/* @__PURE__ */ new Map());
+  const selectedCombatant = selectedCombatantId ? turnOrder.find((c2) => c2.id === selectedCombatantId) : null;
+  const unitStats = {};
+  const unitEffects = {};
+  for (const c2 of turnOrder) {
+    const extra = c2;
+    unitStats[c2.id] = {
+      hp: c2.hp,
+      maxHp: c2.maxHp,
+      sp: extra.sp ?? 0,
+      wr: extra.wr ?? 0,
+      sr: extra.sr ?? 0,
+      scp: extra.scp ?? 0,
+      wp: extra.wp ?? 0,
+      res: extra.res ?? 0,
+      init: c2.initiative,
+      chc: extra.chc ?? 0,
+      fail: extra.fail ?? 0
+    };
+    unitEffects[c2.id] = Array.isArray(extra.activeEffects) ? extra.activeEffects : [];
+  }
+  reactExports.useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === "Escape") setSelectedCombatantId(null);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
   const currentCombatant = turnOrder[currentTurnIndex];
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(
-    DraggablePanel,
-    {
-      "data-version": forceUpdate,
-      panelId: "battle-ui-panel",
-      title: "Battle",
-      userId,
-      defaultPosition: {
-        x: Math.max(0, window.innerWidth / 2 - 350),
-        y: Math.max(0, window.innerHeight - 220)
-      },
-      defaultFolded: false,
-      zIndex: 200,
-      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "div",
-        {
-          "data-ocid": "battle_ui.panel",
-          style: {
-            background: "linear-gradient(180deg, rgba(10,8,20,0.98) 0%, rgba(18,8,24,0.99) 100%)",
-            borderTop: "2px solid rgba(180,20,20,0.8)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 0,
-            minWidth: isMobile ? 320 : 620,
-            maxWidth: isMobile ? 360 : 800
-          },
-          children: [
-            inBattle && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "6px 10px 4px",
-                  borderBottom: "1px solid rgba(139,0,0,0.35)",
-                  flexWrap: "wrap"
-                },
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      "data-ocid": "battle_ui.initiative_strip",
-                      style: {
-                        display: "flex",
-                        gap: 3,
-                        alignItems: "center",
-                        flexShrink: 0
-                      },
-                      children: turnOrder.map((c2, idx) => {
-                        const isActive = idx === currentTurnIndex;
-                        const isPlayer = c2.type === "player";
-                        const symbol = isPlayer ? c2.pieceIcon : PIECE_SYMBOLS[c2.pieceType ?? ""] ?? "☠";
-                        const extraStats = c2;
-                        const isLeader = !isPlayer && c2.isLeader === true;
-                        const isSelected = selectedIdRef.current === c2.id;
-                        const hpPct = Math.max(
-                          0,
-                          Math.min(100, c2.hp / c2.maxHp * 100)
-                        );
-                        return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                          "div",
-                          {
-                            "data-ocid": `battle_ui.initiative.item.${idx + 1}`,
-                            style: { position: "relative", display: "inline-flex" },
-                            children: [
-                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                "button",
-                                {
-                                  type: "button",
-                                  title: `${c2.name} Lv.${c2.level} — INIT ${c2.initiative}`,
-                                  onClick: () => {
-                                    if (!isPlayer) handleCardClick(c2.id);
-                                  },
-                                  style: {
-                                    width: 34,
-                                    height: 40,
-                                    borderRadius: 5,
-                                    background: isActive ? isPlayer ? "rgba(220,30,30,0.40)" : "rgba(70,10,10,0.65)" : "rgba(20,10,20,0.70)",
-                                    border: isActive ? isPlayer ? "2px solid rgba(255,90,90,0.95)" : "2px solid rgba(180,0,0,0.80)" : "1px solid rgba(139,0,0,0.32)",
-                                    transform: isActive ? "scale(1.08)" : "scale(0.94)",
-                                    opacity: isActive ? 1 : 0.6,
-                                    transition: "all 0.2s",
-                                    boxShadow: isActive ? "0 0 12px rgba(255,50,50,0.45)" : "none",
-                                    cursor: isPlayer ? "default" : "pointer",
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    padding: "2px",
-                                    position: "relative",
-                                    overflow: "hidden",
-                                    flexShrink: 0
-                                  },
-                                  children: [
-                                    isActive && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "div",
-                                      {
-                                        style: {
-                                          position: "absolute",
-                                          top: 2,
-                                          right: 2,
-                                          width: 5,
-                                          height: 5,
-                                          borderRadius: "50%",
-                                          background: isPlayer ? "#ff4444" : "#880000",
-                                          boxShadow: "0 0 4px rgba(255,50,50,0.8)",
-                                          animation: "pulse 1s ease-in-out infinite"
-                                        }
-                                      }
-                                    ),
-                                    extraStats.enraged && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "div",
-                                      {
-                                        style: {
-                                          position: "absolute",
-                                          top: 1,
-                                          left: 1,
-                                          fontSize: 7,
-                                          lineHeight: 1
-                                        },
-                                        children: "\\uD83D\\uDD25"
-                                      }
-                                    ),
-                                    isLeader && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "div",
-                                      {
-                                        style: {
-                                          position: "absolute",
-                                          top: 1,
-                                          right: isActive ? 8 : 2,
-                                          fontSize: 8,
-                                          lineHeight: 1,
-                                          filter: "drop-shadow(0 0 2px rgba(255,210,0,0.9))",
-                                          zIndex: 3
-                                        },
-                                        title: "Leader",
-                                        children: "\\uD83D\\uDC51"
-                                      }
-                                    ),
-                                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "span",
-                                      {
-                                        style: {
-                                          fontSize: 16,
-                                          lineHeight: 1,
-                                          color: isActive ? isPlayer ? "#ffcccc" : "#ff8888" : "rgba(200,120,120,0.65)",
-                                          filter: isActive ? "drop-shadow(0 0 4px rgba(255,80,80,0.7))" : "none"
-                                        },
-                                        children: symbol
-                                      }
-                                    ),
-                                    !isPlayer && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "div",
-                                      {
-                                        style: {
-                                          width: 28,
-                                          height: 2,
-                                          background: "rgba(255,255,255,0.1)",
-                                          borderRadius: 1,
-                                          overflow: "hidden",
-                                          marginTop: 1
-                                        },
-                                        children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                          "div",
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      DraggablePanel,
+      {
+        "data-version": forceUpdate,
+        panelId: "battle-ui-panel",
+        title: "Battle",
+        userId,
+        defaultPosition: {
+          x: Math.max(0, window.innerWidth / 2 - 350),
+          y: Math.max(0, window.innerHeight - 220)
+        },
+        defaultFolded: false,
+        zIndex: 200,
+        children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "div",
+          {
+            "data-ocid": "battle_ui.panel",
+            className: "stone-frame",
+            style: {
+              display: "flex",
+              flexDirection: "column",
+              gap: 0,
+              minWidth: isMobile ? 320 : 620,
+              maxWidth: isMobile ? 360 : 1180,
+              margin: "0 auto"
+            },
+            children: [
+              inBattle && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "div",
+                {
+                  className: "stone-header",
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "6px 10px 4px",
+                    flexWrap: "wrap"
+                  },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "div",
+                      {
+                        "data-ocid": "battle_ui.initiative_strip",
+                        className: "flex flex-col flex-1 min-w-0",
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "text-[8px] font-black uppercase tracking-[0.2em] text-[rgba(200,80,80,0.6)] mb-1 pl-0.5", children: "Initiative" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex gap-[7px] items-center", children: turnOrder.map((c2, idx) => {
+                            const isActive = idx === currentTurnIndex;
+                            const isPlayer = c2.type === "player";
+                            const symbol = isPlayer ? c2.pieceIcon : PIECE_SYMBOLS[c2.pieceType ?? ""] ?? "☠";
+                            const extraStats = c2;
+                            const isLeader = !isPlayer && c2.isLeader === true;
+                            const hpPct = Math.max(
+                              0,
+                              Math.min(100, c2.hp / c2.maxHp * 100)
+                            );
+                            return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "div",
+                              {
+                                "data-ocid": `battle_ui.initiative.item.${idx + 1}`,
+                                className: "stone-battle-chip",
+                                children: [
+                                  isActive && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-battle-caret" }),
+                                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                    "button",
+                                    {
+                                      type: "button",
+                                      title: `${c2.name} Lv.${c2.level} — INIT ${c2.initiative}`,
+                                      ref: (el) => {
+                                        if (el) chipRefs.current.set(c2.id, el);
+                                      },
+                                      onClick: () => {
+                                        var _a3;
+                                        const rect = (_a3 = chipRefs.current.get(c2.id)) == null ? void 0 : _a3.getBoundingClientRect();
+                                        setPopupAnchor(rect || null);
+                                        setSelectedCombatantId(
+                                          c2.id === selectedCombatantId ? null : c2.id
+                                        );
+                                      },
+                                      className: `
+                            stone-battle-portrait
+                            ${isPlayer ? "stone-battle-portrait-self" : "stone-battle-portrait-enemy"}
+                            ${isActive ? "scale-105" : "opacity-70 scale-95"}
+                            transition-all duration-200
+                            cursor-pointer
+                          `,
+                                      style: {
+                                        background: isPlayer ? "radial-gradient(circle at 40% 35%, rgba(216,70,63,0.25), rgba(40,20,20,0.8))" : "radial-gradient(circle at 40% 35%, rgba(80,80,90,0.2), rgba(20,20,25,0.8))"
+                                      },
+                                      children: [
+                                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "span",
                                           {
-                                            style: {
-                                              height: "100%",
-                                              width: `${hpPct}%`,
-                                              background: hpPct > 50 ? "#27ae60" : hpPct > 25 ? "#e67e22" : "#e74c3c",
-                                              borderRadius: 1,
-                                              transition: "width 0.3s ease"
-                                            }
+                                            className: `
+                              absolute -top-1.5 -right-1.5 z-10
+                              min-w-[16px] h-[16px] px-0.5
+                              rounded-full
+                              text-[8px] font-black leading-none
+                              flex items-center justify-center
+                              ${isPlayer ? "stone-pill-crimson" : "stone-pill-gold"}
+                              shadow-lg
+                            `,
+                                            children: c2.level
+                                          }
+                                        ),
+                                        extraStats.enraged && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "absolute top-0.5 left-0.5 text-[8px] leading-none z-10", children: "🔥" }),
+                                        isLeader && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "span",
+                                          {
+                                            className: "absolute top-0.5 right-4 text-[9px] leading-none z-10 drop-shadow-[0_0_2px_rgba(255,210,0,0.9)]",
+                                            title: "Leader",
+                                            children: "👑"
+                                          }
+                                        ),
+                                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "span",
+                                          {
+                                            className: `
+                              text-[20px] leading-none select-none
+                              ${isActive ? isPlayer ? "text-[#ffcccc] drop-shadow-[0_0_4px_rgba(255,80,80,0.7)]" : "text-[#ff8888] drop-shadow-[0_0_4px_rgba(255,80,80,0.7)]" : "text-[rgba(200,120,120,0.65)]"}
+                            `,
+                                            children: symbol
                                           }
                                         )
-                                      }
-                                    )
-                                  ]
-                                }
-                              ),
-                              isSelected && !isPlayer && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                "div",
-                                {
-                                  "data-ocid": `battle_ui.initiative.tooltip.${idx + 1}`,
-                                  style: {
-                                    position: "absolute",
-                                    bottom: 48,
-                                    left: 0,
-                                    zIndex: 300,
-                                    minWidth: 170,
-                                    background: "#0a0a0f",
-                                    border: "1.5px solid #8b0000",
-                                    borderRadius: 8,
-                                    padding: "10px 12px",
-                                    boxShadow: "0 0 18px rgba(139,0,0,0.5), 0 4px 16px rgba(0,0,0,0.8)",
-                                    pointerEvents: "none"
-                                  },
-                                  children: [
-                                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                      ]
+                                    }
+                                  ),
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-battle-hp-bar", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "div",
+                                    {
+                                      className: "stone-battle-hp-fill",
+                                      style: { width: `${hpPct}%` }
+                                    }
+                                  ) })
+                                ]
+                              },
+                              c2.id
+                            );
+                          }) })
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-px self-stretch bg-[rgba(139,0,0,0.4)] flex-shrink-0" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "div",
+                      {
+                        "data-ocid": "battle_ui.phase_indicator",
+                        className: "flex flex-col items-center gap-px flex-shrink-0 min-w-[48px]",
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "div",
+                            {
+                              className: `text-sm ${battlePhase === "player" ? "drop-shadow-[0_0_4px_rgba(255,80,80,0.8)]" : ""}`,
+                              children: battlePhase === "player" ? "⚔️" : "💀"
+                            }
+                          ),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "div",
+                            {
+                              className: `text-[7px] font-black uppercase tracking-widest ${battlePhase === "player" ? "text-[rgba(255,140,140,0.95)]" : "text-[rgba(200,80,80,0.8)]"}`,
+                              children: battlePhase === "player" ? "YOUR" : "ENEMY"
+                            }
+                          ),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "div",
+                            {
+                              "data-ocid": "battle_ui.timer",
+                              className: `px-[5px] py-px rounded text-xs font-black tabular-nums ${turnTimeLeft <= 7 ? "stone-pill-crimson animate-pulse" : turnTimeLeft <= 15 ? "stone-pill-gold" : "stone-pill-green"}`,
+                              children: [
+                                turnTimeLeft,
+                                "s"
+                              ]
+                            }
+                          ),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-[7px] font-bold text-[rgba(200,80,80,0.5)]", children: [
+                            "T",
+                            battleTurn
+                          ] })
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-px self-stretch bg-[rgba(139,0,0,0.4)] flex-shrink-0" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "div",
+                      {
+                        "data-ocid": "battle_ui.resources",
+                        className: "flex flex-col gap-[3px] flex-shrink-0",
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-orb flex items-center gap-1 rounded px-2 py-0.5", children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px]", children: "⚡" }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[11px] font-extrabold text-[#74b9ff] tabular-nums", children: [
+                              currentBattleAp,
+                              " AP"
+                            ] }),
+                            maxBattleAp != null && maxBattleAp > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  width: 30,
+                                  height: 3,
+                                  background: "rgba(255,255,255,0.1)",
+                                  borderRadius: 2,
+                                  overflow: "hidden"
+                                },
+                                children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "div",
+                                  {
+                                    style: {
+                                      height: "100%",
+                                      width: `${Math.min(100, currentBattleAp / maxBattleAp * 100)}%`,
+                                      background: "#74b9ff",
+                                      borderRadius: 2,
+                                      transition: "width 0.3s ease"
+                                    }
+                                  }
+                                )
+                              }
+                            )
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "div",
+                            {
+                              className: "stone-orb flex items-center gap-1 rounded px-2 py-0.5",
+                              style: {
+                                background: "rgba(20,80,40,0.5)",
+                                borderColor: "rgba(46,204,113,0.4)"
+                              },
+                              children: [
+                                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px]", children: "👣" }),
+                                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[11px] font-extrabold text-[#2ecc71] tabular-nums", children: [
+                                  currentBattleMp,
+                                  " MP"
+                                ] }),
+                                maxBattleMp != null && maxBattleMp > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "div",
+                                  {
+                                    style: {
+                                      width: 30,
+                                      height: 3,
+                                      background: "rgba(255,255,255,0.1)",
+                                      borderRadius: 2,
+                                      overflow: "hidden"
+                                    },
+                                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(
                                       "div",
                                       {
                                         style: {
-                                          marginBottom: 6,
-                                          display: "flex",
-                                          alignItems: "center",
-                                          gap: 4
-                                        },
-                                        children: [
-                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                            "span",
-                                            {
-                                              style: {
-                                                color: "#ff7675",
-                                                fontWeight: 800,
-                                                fontSize: 11
-                                              },
-                                              children: c2.name.toUpperCase()
-                                            }
-                                          ),
-                                          extraStats.enraged && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                            "span",
-                                            {
-                                              style: {
-                                                color: "#ff4500",
-                                                fontWeight: 900,
-                                                fontSize: 9
-                                              },
-                                              children: "ENRAGED!"
-                                            }
-                                          ),
-                                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                            "span",
-                                            {
-                                              style: {
-                                                color: "rgba(255,180,80,0.8)",
-                                                fontSize: 10
-                                              },
-                                              children: [
-                                                "Lv.",
-                                                c2.level
-                                              ]
-                                            }
-                                          )
-                                        ]
-                                      }
-                                    ),
-                                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "div",
-                                      {
-                                        style: { display: "flex", flexWrap: "wrap", gap: 4 },
-                                        children: [
-                                          ["❤", "HP", `${c2.hp}/${c2.maxHp}`, "#e74c3c"],
-                                          ["⚡", "AP", extraStats.ap ?? "?", "#4a9adf"],
-                                          ["👣", "MP", extraStats.mp ?? "?", "#2ecc71"],
-                                          ["🗡️", "ATK", extraStats.atk ?? "?", "#e67e22"],
-                                          ["🛡️", "RES", extraStats.res ?? 0, "#9b59b6"],
-                                          ["💎", "SP", extraStats.sp ?? 0, "#1abc9c"],
-                                          ["✨", "CHC", extraStats.chc ?? 0, "#f1c40f"]
-                                        ].map(([icon, label, val, color]) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                          "div",
-                                          {
-                                            style: {
-                                              background: `${color}18`,
-                                              border: `1px solid ${color}44`,
-                                              borderRadius: 4,
-                                              padding: "2px 5px",
-                                              fontSize: 9,
-                                              color,
-                                              fontWeight: 700,
-                                              whiteSpace: "nowrap"
-                                            },
-                                            children: [
-                                              icon,
-                                              " ",
-                                              label,
-                                              ": ",
-                                              val
-                                            ]
-                                          },
-                                          label
-                                        ))
+                                          height: "100%",
+                                          width: `${Math.min(100, currentBattleMp / maxBattleMp * 100)}%`,
+                                          background: "#2ecc71",
+                                          borderRadius: 2,
+                                          transition: "width 0.3s ease"
+                                        }
                                       }
                                     )
-                                  ]
-                                }
-                              )
-                            ]
-                          },
-                          c2.id
-                        );
-                      })
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      style: {
-                        width: 1,
-                        alignSelf: "stretch",
-                        background: "rgba(139,0,0,0.4)",
-                        flexShrink: 0
+                                  }
+                                )
+                              ]
+                            }
+                          )
+                        ]
                       }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                    "div",
-                    {
-                      "data-ocid": "battle_ui.phase_indicator",
-                      style: {
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 1,
-                        flexShrink: 0,
-                        minWidth: 48
-                      },
-                      children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "div",
-                          {
-                            style: {
-                              fontSize: 14,
-                              filter: battlePhase === "player" ? "drop-shadow(0 0 4px rgba(255,80,80,0.8))" : "none"
-                            },
-                            children: battlePhase === "player" ? "⚔️" : "💀"
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "div",
-                          {
-                            style: {
-                              fontSize: 7,
-                              fontWeight: 900,
-                              color: battlePhase === "player" ? "rgba(255,140,140,0.95)" : "rgba(200,80,80,0.8)",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.1em"
-                            },
-                            children: battlePhase === "player" ? "YOUR" : "ENEMY"
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                          "div",
-                          {
-                            "data-ocid": "battle_ui.timer",
-                            style: {
-                              padding: "1px 5px",
-                              borderRadius: 3,
-                              background: turnTimeLeft <= 7 ? "rgba(180,10,10,0.55)" : turnTimeLeft <= 15 ? "rgba(180,120,0,0.5)" : "rgba(0,100,40,0.4)",
-                              border: turnTimeLeft <= 7 ? "1px solid rgba(255,60,60,0.7)" : turnTimeLeft <= 15 ? "1px solid rgba(241,196,15,0.5)" : "1px solid rgba(39,174,96,0.5)",
-                              color: turnTimeLeft <= 7 ? "#ff6b6b" : turnTimeLeft <= 15 ? "#f1c40f" : "#2ecc71",
-                              fontSize: 12,
-                              fontWeight: 900,
-                              fontVariantNumeric: "tabular-nums",
-                              animation: turnTimeLeft <= 7 ? "pulse 0.6s ease-in-out infinite" : "none"
-                            },
-                            children: [
-                              turnTimeLeft,
-                              "s"
-                            ]
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                          "div",
-                          {
-                            style: {
-                              fontSize: 7,
-                              color: "rgba(200,80,80,0.5)",
-                              fontWeight: 700
-                            },
-                            children: [
-                              "T",
-                              battleTurn
-                            ]
-                          }
-                        )
-                      ]
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      style: {
-                        width: 1,
-                        alignSelf: "stretch",
-                        background: "rgba(139,0,0,0.4)",
-                        flexShrink: 0
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-px self-stretch bg-[rgba(139,0,0,0.4)] flex-shrink-0" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex gap-1 items-center flex-shrink-0", children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "button",
+                        {
+                          type: "button",
+                          "data-ocid": "battle_ui.walk_button",
+                          onClick: onSetWalk,
+                          className: `
+                    px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
+                    ${battleActionMode === "walk" ? "stone-btn-crimson" : "stone-btn-slate opacity-55"}
+                    ${currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                  `,
+                          children: "🚶 WALK"
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "button",
+                        {
+                          type: "button",
+                          "data-ocid": "battle_ui.attack_button",
+                          onClick: onSetAttack,
+                          className: `
+                    px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
+                    ${battleActionMode === "attack" ? "stone-btn-crimson" : "stone-btn-slate opacity-55"}
+                    ${currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                  `,
+                          children: "⚔️ ATTACK"
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "button",
+                        {
+                          type: "button",
+                          "data-ocid": "battle_ui.end_turn_button",
+                          onClick: onEndTurn,
+                          disabled: battlePhase !== "player",
+                          className: `
+                    px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
+                    ${battlePhase === "player" ? "stone-btn-crimson" : "stone-btn-slate opacity-50 cursor-not-allowed"}
+                  `,
+                          children: "END TURN"
+                        }
+                      )
+                    ] }),
+                    currentCombatant && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "div",
+                      {
+                        className: `
+                    ml-auto text-[9px] font-bold tracking-wider uppercase flex-shrink-0
+                    ${battlePhase === "player" ? "text-[#ff9999]" : "text-[rgba(200,80,80,0.7)]"}
+                  `,
+                        children: battlePhase === "player" ? "YOUR TURN" : `${currentCombatant.name.slice(0, 6)}'S TURN`
                       }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                    "div",
-                    {
-                      "data-ocid": "battle_ui.resources",
-                      style: {
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 3,
-                        flexShrink: 0
-                      },
-                      children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                          "div",
-                          {
-                            style: {
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4,
-                              background: "rgba(20,40,100,0.5)",
-                              border: "1px solid rgba(74,154,223,0.4)",
-                              borderRadius: 4,
-                              padding: "2px 8px"
-                            },
-                            children: [
-                              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10 }, children: "⚡" }),
-                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                "span",
-                                {
-                                  style: {
-                                    fontSize: 11,
-                                    fontWeight: 800,
-                                    color: "#74b9ff",
-                                    fontVariantNumeric: "tabular-nums"
-                                  },
-                                  children: [
-                                    currentBattleAp,
-                                    " AP"
-                                  ]
-                                }
-                              ),
-                              maxBattleAp != null && maxBattleAp > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "div",
-                                {
-                                  style: {
-                                    width: 30,
-                                    height: 3,
-                                    background: "rgba(255,255,255,0.1)",
-                                    borderRadius: 2,
-                                    overflow: "hidden"
-                                  },
-                                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                    "div",
-                                    {
-                                      style: {
-                                        height: "100%",
-                                        width: `${Math.min(100, currentBattleAp / maxBattleAp * 100)}%`,
-                                        background: "#74b9ff",
-                                        borderRadius: 2,
-                                        transition: "width 0.3s ease"
-                                      }
-                                    }
-                                  )
-                                }
-                              )
-                            ]
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                          "div",
-                          {
-                            style: {
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4,
-                              background: "rgba(20,80,40,0.5)",
-                              border: "1px solid rgba(46,204,113,0.4)",
-                              borderRadius: 4,
-                              padding: "2px 8px"
-                            },
-                            children: [
-                              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 10 }, children: "👣" }),
-                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                "span",
-                                {
-                                  style: {
-                                    fontSize: 11,
-                                    fontWeight: 800,
-                                    color: "#2ecc71",
-                                    fontVariantNumeric: "tabular-nums"
-                                  },
-                                  children: [
-                                    currentBattleMp,
-                                    " MP"
-                                  ]
-                                }
-                              ),
-                              maxBattleMp != null && maxBattleMp > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "div",
-                                {
-                                  style: {
-                                    width: 30,
-                                    height: 3,
-                                    background: "rgba(255,255,255,0.1)",
-                                    borderRadius: 2,
-                                    overflow: "hidden"
-                                  },
-                                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                    "div",
-                                    {
-                                      style: {
-                                        height: "100%",
-                                        width: `${Math.min(100, currentBattleMp / maxBattleMp * 100)}%`,
-                                        background: "#2ecc71",
-                                        borderRadius: 2,
-                                        transition: "width 0.3s ease"
-                                      }
-                                    }
-                                  )
-                                }
-                              )
-                            ]
-                          }
-                        )
-                      ]
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      style: {
-                        width: 1,
-                        alignSelf: "stretch",
-                        background: "rgba(139,0,0,0.4)",
-                        flexShrink: 0
-                      }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                    "div",
-                    {
-                      style: {
-                        display: "flex",
-                        gap: 4,
-                        alignItems: "center",
-                        flexShrink: 0
-                      },
-                      children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "button",
-                          {
-                            type: "button",
-                            "data-ocid": "battle_ui.walk_button",
-                            onClick: onSetWalk,
-                            style: {
-                              padding: "4px 8px",
-                              borderRadius: 5,
-                              border: battleActionMode === "walk" ? "2px solid #27ae60" : "2px solid rgba(39,174,96,0.4)",
-                              background: battleActionMode === "walk" ? "rgba(39,174,96,0.28)" : "rgba(10,20,14,0.85)",
-                              color: battleActionMode === "walk" ? "#2ecc71" : "rgba(46,204,113,0.55)",
-                              fontWeight: 800,
-                              fontSize: 10,
-                              cursor: currentBattleMp > 0 ? "pointer" : "not-allowed",
-                              letterSpacing: "0.04em",
-                              opacity: currentBattleMp <= 0 ? 0.45 : 1,
-                              transition: "all 0.15s"
-                            },
-                            children: "🚶 WALK"
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "button",
-                          {
-                            type: "button",
-                            "data-ocid": "battle_ui.attack_button",
-                            onClick: onSetAttack,
-                            style: {
-                              padding: "4px 8px",
-                              borderRadius: 5,
-                              border: battleActionMode === "attack" ? "2px solid rgba(200,30,30,0.9)" : "2px solid rgba(200,30,30,0.35)",
-                              background: battleActionMode === "attack" ? "rgba(180,20,20,0.32)" : "rgba(20,8,8,0.85)",
-                              color: battleActionMode === "attack" ? "#ff6b6b" : "rgba(255,107,107,0.5)",
-                              fontWeight: 800,
-                              fontSize: 10,
-                              cursor: currentBattleAp > 0 ? "pointer" : "not-allowed",
-                              opacity: currentBattleAp <= 0 ? 0.45 : 1,
-                              transition: "all 0.15s"
-                            },
-                            children: "⚔️ ATTACK"
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "button",
-                          {
-                            type: "button",
-                            "data-ocid": "battle_ui.end_turn_button",
-                            onClick: onEndTurn,
-                            disabled: battlePhase !== "player",
-                            style: {
-                              padding: "4px 8px",
-                              borderRadius: 5,
-                              border: battlePhase === "player" ? "2px solid rgba(241,196,15,0.6)" : "2px solid rgba(80,60,0,0.35)",
-                              background: "rgba(30,22,0,0.85)",
-                              color: battlePhase === "player" ? "#f1c40f" : "rgba(150,120,0,0.45)",
-                              fontWeight: 800,
-                              fontSize: 10,
-                              cursor: battlePhase === "player" ? "pointer" : "not-allowed",
-                              opacity: battlePhase !== "player" ? 0.5 : 1,
-                              transition: "all 0.15s"
-                            },
-                            children: "END TURN"
-                          }
-                        )
-                      ]
-                    }
-                  ),
-                  currentCombatant && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      style: {
-                        marginLeft: "auto",
-                        fontSize: 9,
-                        color: battlePhase === "player" ? "#ff9999" : "rgba(200,80,80,0.7)",
-                        fontWeight: 700,
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
-                        flexShrink: 0
-                      },
-                      children: battlePhase === "player" ? "YOUR TURN" : `${currentCombatant.name.slice(0, 6)}'S TURN`
-                    }
-                  )
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "6px 10px 8px",
-                  flexWrap: "nowrap",
-                  overflowX: "auto"
-                },
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    )
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 px-2.5 pt-1.5 pb-2 flex-nowrap overflow-x-auto", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    type: "button",
+                    "data-ocid": "battle_ui.spellbook_button",
+                    onClick: onOpenSpellbook,
+                    title: "Open Spellbook",
+                    className: "stone-btn-slate w-11 h-[52px] rounded-md flex flex-col items-center justify-center gap-0.5 flex-shrink-0 transition-all duration-150",
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[8px] leading-none opacity-80", children: "Book" })
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-px h-11 bg-[rgba(180,20,20,0.3)] flex-shrink-0" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 5 }, children: [0, 1, 2, 3, 4, 5, 6, 7].map((slotIndex) => {
+                  const spell = activeSpells[slotIndex] ?? null;
+                  const isSelected = (spell == null ? void 0 : spell.id) === selectedSpellIdRef.current;
+                  const isEmpty = !spell;
+                  const isPhysical = (spell == null ? void 0 : spell.isPhysical) ?? false;
+                  const isHeal = (spell == null ? void 0 : spell.spellType) === "heal" || (spell == null ? void 0 : spell.spellType) === "drain";
+                  const cdTurns = spell ? spellCooldowns[spell.id] ?? 0 : 0;
+                  const isOnCooldown = cdTurns > 0;
+                  const spellTitle = spell ? `${spell.name} — ${spell.description} | ${isHeal ? `Heals: ${spell.healAmount ?? 0} HP` : `Damage: ${Number(spell.damage)}`} | ${Number(spell.apCost)} AP | Range: ${Number(
+                    spell.range
+                  )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}` : `Empty slot ${slotIndex + 1}`;
+                  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
                     "button",
                     {
                       type: "button",
-                      "data-ocid": "battle_ui.spellbook_button",
-                      onClick: onOpenSpellbook,
-                      title: "Open Spellbook",
+                      "data-ocid": `battle_ui.spell.${slotIndex + 1}`,
+                      onClick: () => {
+                        if (spell && !isOnCooldown) onSelectSpell(spell.id);
+                      },
+                      disabled: isEmpty || isOnCooldown,
+                      title: spellTitle,
                       style: {
                         width: 44,
                         height: 52,
                         borderRadius: 6,
-                        background: "rgba(140,20,20,0.18)",
-                        border: "2px solid rgba(180,20,20,0.55)",
-                        color: "#ff6b6b",
-                        cursor: "pointer",
+                        background: isEmpty ? "rgba(255,255,255,0.03)" : isSelected ? isPhysical ? "rgba(139,90,30,0.4)" : isHeal ? "rgba(30,140,80,0.4)" : "rgba(220,30,30,0.35)" : isPhysical ? "rgba(100,60,10,0.45)" : isHeal ? "rgba(20,100,50,0.35)" : "rgba(80,15,15,0.45)",
+                        border: isEmpty ? "2px dashed rgba(180,20,20,0.25)" : isSelected ? isPhysical ? "2px solid rgba(200,140,40,0.9)" : isHeal ? "2px solid rgba(50,200,100,0.9)" : "2px solid rgba(255,80,80,0.9)" : isPhysical ? "2px solid rgba(180,120,30,0.6)" : isHeal ? "2px solid rgba(40,160,80,0.6)" : "2px solid rgba(180,20,20,0.55)",
+                        cursor: isEmpty || isOnCooldown ? "default" : "pointer",
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 2,
+                        position: "relative",
+                        transition: "all 0.12s",
+                        boxShadow: isSelected ? isPhysical ? "0 0 14px rgba(200,140,40,0.5)" : isHeal ? "0 0 14px rgba(50,200,100,0.5)" : "0 0 14px rgba(255,60,60,0.5)" : "0 2px 5px rgba(0,0,0,0.35)",
                         flexShrink: 0,
-                        transition: "all 0.15s"
+                        opacity: isOnCooldown ? 0.5 : 1
                       },
                       children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 8, lineHeight: 1, opacity: 0.8 }, children: "Book" })
-                      ]
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      style: {
-                        width: 1,
-                        height: 44,
-                        background: "rgba(180,20,20,0.3)",
-                        flexShrink: 0
-                      }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 5 }, children: [0, 1, 2, 3, 4, 5, 6, 7].map((slotIndex) => {
-                    const spell = activeSpells[slotIndex] ?? null;
-                    const isSelected = (spell == null ? void 0 : spell.id) === selectedSpellIdRef.current;
-                    const isEmpty = !spell;
-                    const isPhysical = (spell == null ? void 0 : spell.isPhysical) ?? false;
-                    const isHeal = (spell == null ? void 0 : spell.spellType) === "heal" || (spell == null ? void 0 : spell.spellType) === "drain";
-                    const cdTurns = spell ? spellCooldowns[spell.id] ?? 0 : 0;
-                    const isOnCooldown = cdTurns > 0;
-                    const spellTitle = spell ? `${spell.name} — ${spell.description} | ${isHeal ? `Heals: ${spell.healAmount ?? 0} HP` : `Damage: ${Number(spell.damage)}`} | ${Number(spell.apCost)} AP | Range: ${Number(
-                      spell.range
-                    )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}` : `Empty slot ${slotIndex + 1}`;
-                    return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": `battle_ui.spell.${slotIndex + 1}`,
-                        onClick: () => {
-                          if (spell && !isOnCooldown) onSelectSpell(spell.id);
-                        },
-                        disabled: isEmpty || isOnCooldown,
-                        title: spellTitle,
-                        style: {
-                          width: 44,
-                          height: 52,
-                          borderRadius: 6,
-                          background: isEmpty ? "rgba(255,255,255,0.03)" : isSelected ? isPhysical ? "rgba(139,90,30,0.4)" : isHeal ? "rgba(30,140,80,0.4)" : "rgba(220,30,30,0.35)" : isPhysical ? "rgba(100,60,10,0.45)" : isHeal ? "rgba(20,100,50,0.35)" : "rgba(80,15,15,0.45)",
-                          border: isEmpty ? "2px dashed rgba(180,20,20,0.25)" : isSelected ? isPhysical ? "2px solid rgba(200,140,40,0.9)" : isHeal ? "2px solid rgba(50,200,100,0.9)" : "2px solid rgba(255,80,80,0.9)" : isPhysical ? "2px solid rgba(180,120,30,0.6)" : isHeal ? "2px solid rgba(40,160,80,0.6)" : "2px solid rgba(180,20,20,0.55)",
-                          cursor: isEmpty || isOnCooldown ? "default" : "pointer",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 2,
-                          position: "relative",
-                          transition: "all 0.12s",
-                          boxShadow: isSelected ? isPhysical ? "0 0 14px rgba(200,140,40,0.5)" : isHeal ? "0 0 14px rgba(50,200,100,0.5)" : "0 0 14px rgba(255,60,60,0.5)" : "0 2px 5px rgba(0,0,0,0.35)",
-                          flexShrink: 0,
-                          opacity: isOnCooldown ? 0.5 : 1
-                        },
-                        children: [
-                          isOnCooldown && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "div",
+                        isOnCooldown && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "div",
+                          {
+                            style: {
+                              position: "absolute",
+                              inset: 0,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              background: "rgba(0,0,0,0.4)",
+                              borderRadius: 5,
+                              zIndex: 10,
+                              pointerEvents: "none"
+                            },
+                            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "span",
+                              {
+                                style: {
+                                  fontSize: 16,
+                                  fontWeight: 900,
+                                  color: "#ff3333",
+                                  textShadow: "0 0 6px rgba(255,0,0,0.8)",
+                                  fontVariantNumeric: "tabular-nums",
+                                  lineHeight: 1
+                                },
+                                children: cdTurns
+                              }
+                            )
+                          }
+                        ),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "span",
+                          {
+                            style: {
+                              position: "absolute",
+                              top: 1,
+                              left: 2,
+                              fontSize: 7,
+                              color: "rgba(255,255,255,0.35)",
+                              fontWeight: 700,
+                              lineHeight: 1
+                            },
+                            children: slotIndex + 1
+                          }
+                        ),
+                        isPhysical && !isEmpty && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "span",
+                          {
+                            style: {
+                              position: "absolute",
+                              top: 1,
+                              right: 2,
+                              fontSize: 6,
+                              color: "rgba(200,140,40,0.8)",
+                              fontWeight: 700,
+                              lineHeight: 1
+                            },
+                            children: "PHY"
+                          }
+                        ),
+                        isEmpty ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14, opacity: 0.2 }, children: "✦" }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "span",
                             {
                               style: {
-                                position: "absolute",
-                                inset: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                background: "rgba(0,0,0,0.4)",
-                                borderRadius: 5,
-                                zIndex: 10,
-                                pointerEvents: "none"
+                                fontSize: 17,
+                                lineHeight: 1,
+                                filter: isPhysical ? "drop-shadow(0 1px 3px rgba(200,140,40,0.5))" : isHeal ? "drop-shadow(0 1px 3px rgba(50,200,100,0.4))" : "drop-shadow(0 1px 3px rgba(255,60,60,0.4))"
                               },
-                              children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "span",
-                                {
-                                  style: {
-                                    fontSize: 16,
-                                    fontWeight: 900,
-                                    color: "#ff3333",
-                                    textShadow: "0 0 6px rgba(255,0,0,0.8)",
-                                    fontVariantNumeric: "tabular-nums",
-                                    lineHeight: 1
-                                  },
-                                  children: cdTurns
-                                }
-                              )
+                              children: spell.iconEmoji || "🔮"
                             }
                           ),
                           /* @__PURE__ */ jsxRuntimeExports.jsx(
                             "span",
                             {
                               style: {
-                                position: "absolute",
-                                top: 1,
-                                left: 2,
-                                fontSize: 7,
-                                color: "rgba(255,255,255,0.35)",
+                                fontSize: 6,
+                                color: isSelected ? isHeal ? "#90ffcc" : "#ff9999" : "rgba(255,220,220,0.7)",
                                 fontWeight: 700,
+                                textAlign: "center",
+                                maxWidth: 42,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
                                 lineHeight: 1
                               },
-                              children: slotIndex + 1
+                              children: spell.name
                             }
                           ),
-                          isPhysical && !isEmpty && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
                             "span",
                             {
                               style: {
                                 position: "absolute",
-                                top: 1,
+                                bottom: 1,
                                 right: 2,
                                 fontSize: 6,
-                                color: "rgba(200,140,40,0.8)",
-                                fontWeight: 700,
-                                lineHeight: 1
+                                fontWeight: 800,
+                                color: "#74b9ff",
+                                background: "rgba(20,40,100,0.7)",
+                                padding: "0 2px",
+                                borderRadius: 2,
+                                lineHeight: "10px"
                               },
-                              children: "PHY"
+                              children: [
+                                Number(spell.apCost),
+                                "AP"
+                              ]
                             }
-                          ),
-                          isEmpty ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14, opacity: 0.2 }, children: "✦" }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-                            /* @__PURE__ */ jsxRuntimeExports.jsx(
-                              "span",
-                              {
-                                style: {
-                                  fontSize: 17,
-                                  lineHeight: 1,
-                                  filter: isPhysical ? "drop-shadow(0 1px 3px rgba(200,140,40,0.5))" : isHeal ? "drop-shadow(0 1px 3px rgba(50,200,100,0.4))" : "drop-shadow(0 1px 3px rgba(255,60,60,0.4))"
-                                },
-                                children: spell.iconEmoji || "🔮"
-                              }
-                            ),
-                            /* @__PURE__ */ jsxRuntimeExports.jsx(
-                              "span",
-                              {
-                                style: {
-                                  fontSize: 6,
-                                  color: isSelected ? isHeal ? "#90ffcc" : "#ff9999" : "rgba(255,220,220,0.7)",
-                                  fontWeight: 700,
-                                  textAlign: "center",
-                                  maxWidth: 42,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                  lineHeight: 1
-                                },
-                                children: spell.name
-                              }
-                            ),
-                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                              "span",
-                              {
-                                style: {
-                                  position: "absolute",
-                                  bottom: 1,
-                                  right: 2,
-                                  fontSize: 6,
-                                  fontWeight: 800,
-                                  color: "#74b9ff",
-                                  background: "rgba(20,40,100,0.7)",
-                                  padding: "0 2px",
-                                  borderRadius: 2,
-                                  lineHeight: "10px"
-                                },
-                                children: [
-                                  Number(spell.apCost),
-                                  "AP"
-                                ]
-                              }
-                            )
-                          ] })
-                        ]
-                      },
-                      slotIndex
-                    );
-                  }) }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      style: {
-                        width: 1,
-                        height: 44,
-                        background: "rgba(180,20,20,0.3)",
-                        flexShrink: 0
-                      }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                    "button",
-                    {
-                      type: "button",
-                      "data-ocid": "battle_ui.attack_nearest_button",
-                      onClick: onAttackNearest,
-                      disabled: !canAttackNearest,
-                      title: isMobile ? "Attack nearest" : "Attack nearest [S]",
-                      style: {
-                        minWidth: 58,
-                        height: 52,
-                        borderRadius: 7,
-                        background: canAttackNearest ? "rgba(200,30,30,0.32)" : "rgba(60,10,10,0.35)",
-                        border: canAttackNearest ? "2px solid rgba(255,70,70,0.9)" : "2px solid rgba(140,20,20,0.35)",
-                        color: canAttackNearest ? "#ff7070" : "rgba(200,80,80,0.3)",
-                        cursor: canAttackNearest ? "pointer" : "not-allowed",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 2,
-                        flexShrink: 0,
-                        transition: "all 0.12s",
-                        boxShadow: canAttackNearest ? "0 0 12px rgba(220,30,30,0.45)" : "none",
-                        position: "relative"
-                      },
-                      children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(Swords, { size: 15 }),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "span",
-                          {
-                            style: {
-                              fontSize: 7,
-                              fontWeight: 800,
-                              letterSpacing: "0.04em",
-                              lineHeight: 1,
-                              textAlign: "center"
-                            },
-                            children: "NEAREST"
-                          }
-                        ),
-                        !isMobile && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "span",
-                          {
-                            style: {
-                              position: "absolute",
-                              top: 2,
-                              right: 4,
-                              fontSize: 7,
-                              fontWeight: 700,
-                              color: "rgba(255,120,120,0.55)",
-                              lineHeight: 1
-                            },
-                            children: "S"
-                          }
-                        )
+                          )
+                        ] })
                       ]
+                    },
+                    slotIndex
+                  );
+                }) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    style: {
+                      width: 1,
+                      height: 44,
+                      background: "rgba(180,20,20,0.3)",
+                      flexShrink: 0
                     }
-                  ),
-                  inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      "data-ocid": "battle_ui.status",
-                      className: "animate-pulse",
-                      style: {
-                        marginLeft: 4,
-                        padding: "4px 8px",
-                        borderRadius: 18,
-                        background: "rgba(220,20,20,0.2)",
-                        border: "1px solid rgba(220,20,20,0.5)",
-                        color: "#ff6b6b",
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: "0.05em",
-                        whiteSpace: "nowrap",
-                        flexShrink: 0
-                      },
-                      children: "⚔️ BATTLE"
-                    }
-                  )
-                ]
-              }
-            )
-          ]
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    type: "button",
+                    "data-ocid": "battle_ui.attack_nearest_button",
+                    onClick: onAttackNearest,
+                    disabled: !canAttackNearest,
+                    title: isMobile ? "Attack nearest" : "Attack nearest [S]",
+                    style: {
+                      minWidth: 58,
+                      height: 52,
+                      borderRadius: 7,
+                      background: canAttackNearest ? "rgba(200,30,30,0.32)" : "rgba(60,10,10,0.35)",
+                      border: canAttackNearest ? "2px solid rgba(255,70,70,0.9)" : "2px solid rgba(140,20,20,0.35)",
+                      color: canAttackNearest ? "#ff7070" : "rgba(200,80,80,0.3)",
+                      cursor: canAttackNearest ? "pointer" : "not-allowed",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      flexShrink: 0,
+                      transition: "all 0.12s",
+                      boxShadow: canAttackNearest ? "0 0 12px rgba(220,30,30,0.45)" : "none",
+                      position: "relative"
+                    },
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(Swords, { size: 15 }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "span",
+                        {
+                          style: {
+                            fontSize: 7,
+                            fontWeight: 800,
+                            letterSpacing: "0.04em",
+                            lineHeight: 1,
+                            textAlign: "center"
+                          },
+                          children: "NEAREST"
+                        }
+                      ),
+                      !isMobile && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "span",
+                        {
+                          style: {
+                            position: "absolute",
+                            top: 2,
+                            right: 4,
+                            fontSize: 7,
+                            fontWeight: 700,
+                            color: "rgba(255,120,120,0.55)",
+                            lineHeight: 1
+                          },
+                          children: "S"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    "data-ocid": "battle_ui.status",
+                    className: "animate-pulse",
+                    style: {
+                      marginLeft: 4,
+                      padding: "4px 8px",
+                      borderRadius: 18,
+                      background: "rgba(220,20,20,0.2)",
+                      border: "1px solid rgba(220,20,20,0.5)",
+                      color: "#ff6b6b",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: "0.05em",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0
+                    },
+                    children: "⚔️ BATTLE"
+                  }
+                )
+              ] })
+            ]
+          }
+        )
+      }
+    ),
+    selectedCombatant && popupAnchor && reactDomExports.createPortal(
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        StatPopup,
+        {
+          combatant: selectedCombatant,
+          unitStats,
+          unitEffects,
+          anchorRect: popupAnchor,
+          onClose: () => setSelectedCombatantId(null)
         }
-      )
-    }
-  );
+      ),
+      document.body
+    )
+  ] });
 };
 const BoostToggle = ({
   boostMode,
@@ -47552,25 +47033,19 @@ const PANEL_STYLE = {
   width: 248
 };
 const sectionStyle = {
-  padding: "6px 8px",
-  borderBottom: "1px solid rgba(139,0,0,0.35)"
+  padding: "6px 8px"
 };
-const tabButtonStyle = (active) => ({
+const tabButtonStyle = (_active) => ({
   flex: 1,
   padding: "4px 0",
   fontSize: 10,
   fontWeight: 700,
   letterSpacing: "0.06em",
   textTransform: "uppercase",
-  background: active ? "rgba(139,0,0,0.4)" : "transparent",
-  border: active ? "1px solid #8b0000" : "1px solid transparent",
   borderRadius: 3,
-  color: active ? "#ff8888" : "#996666",
   cursor: "pointer"
 });
 const itemCardStyle = {
-  background: "rgba(255,255,255,0.03)",
-  border: "1px solid rgba(139,0,0,0.3)",
   borderRadius: 5,
   padding: "6px 8px",
   display: "flex",
@@ -47583,10 +47058,7 @@ const buyBtnStyle = (canAfford) => ({
   padding: "3px 0",
   fontSize: 10,
   fontWeight: 700,
-  background: canAfford ? "linear-gradient(135deg,#6a0a0a,#c0392b)" : "rgba(40,15,15,0.7)",
-  border: `1px solid ${canAfford ? "#c0392b" : "#5a2020"}`,
   borderRadius: 3,
-  color: canAfford ? "#fff" : "#6a3a3a",
   cursor: canAfford ? "pointer" : "not-allowed",
   width: "100%"
 });
@@ -47595,10 +47067,7 @@ const getBtnStyle = (canUse) => ({
   padding: "3px 0",
   fontSize: 10,
   fontWeight: 700,
-  background: canUse ? "linear-gradient(135deg,#0a3a6a,#1a6ac0)" : "rgba(15,20,40,0.7)",
-  border: `1px solid ${canUse ? "#1a6ac0" : "#1a2a5a"}`,
   borderRadius: 3,
-  color: canUse ? "#a0cfff" : "#3a4a6a",
   cursor: canUse ? "pointer" : "not-allowed",
   width: "100%"
 });
@@ -47668,19 +47137,19 @@ const BuffShop = ({
       zIndex: 200,
       style: PANEL_STYLE,
       children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: sectionStyle, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-header", style: sectionStyle, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "span",
           {
+            className: "stone-pill stone-pill-gold",
             style: {
-              color: "#f1c40f",
               fontSize: 10,
               fontWeight: 700,
               display: "flex",
               alignItems: "center",
-              gap: 4
+              gap: 4,
+              padding: "2px 8px"
             },
             children: [
-              "💰 ",
               dokaBalance.toLocaleString(),
               " Doka",
               inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#e74c3c", fontSize: 9, marginLeft: 4 }, children: "(buy outside battle)" })
@@ -47690,11 +47159,11 @@ const BuffShop = ({
         /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "div",
           {
+            className: "stone-well",
             style: {
               display: "flex",
               gap: 4,
-              padding: "5px 8px",
-              borderBottom: "1px solid rgba(139,0,0,0.35)"
+              padding: "5px 8px"
             },
             children: [
               /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -47702,7 +47171,8 @@ const BuffShop = ({
                 {
                   type: "button",
                   "data-ocid": "buff_shop.shop_tab",
-                  style: tabButtonStyle(activeTab === "shop"),
+                  className: activeTab === "shop" ? "stone-btn-crimson" : "stone-btn-slate",
+                  style: tabButtonStyle(),
                   onClick: () => setActiveTab("shop"),
                   children: "Shop"
                 }
@@ -47712,21 +47182,16 @@ const BuffShop = ({
                 {
                   type: "button",
                   "data-ocid": "buff_shop.inventory_tab",
-                  style: tabButtonStyle(activeTab === "inventory"),
+                  className: activeTab === "inventory" ? "stone-btn-crimson" : "stone-btn-slate",
+                  style: tabButtonStyle(),
                   onClick: () => setActiveTab("inventory"),
                   children: [
                     "Inventory",
                     totalItems > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
                       "span",
                       {
-                        style: {
-                          marginLeft: 4,
-                          background: "#c0392b",
-                          color: "#fff",
-                          fontSize: 9,
-                          borderRadius: 8,
-                          padding: "0 4px"
-                        },
+                        className: "stone-pill-crimson",
+                        style: { marginLeft: 4, fontSize: 9, padding: "0 4px" },
                         children: totalItems
                       }
                     )
@@ -47755,6 +47220,7 @@ const BuffShop = ({
                 "div",
                 {
                   "data-ocid": `buff_shop.item.${item.id}`,
+                  className: "stone-well",
                   style: itemCardStyle,
                   children: [
                     owned > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -47830,6 +47296,7 @@ const BuffShop = ({
                       {
                         type: "button",
                         "data-ocid": `buff_shop.buy_button.${item.id}`,
+                        className: canAfford && !atMax ? "stone-btn-crimson" : "stone-btn-slate",
                         style: buyBtnStyle(canAfford && !atMax),
                         disabled: !canAfford || atMax,
                         onClick: () => handleBuy(item),
@@ -47884,6 +47351,7 @@ const BuffShop = ({
                         "div",
                         {
                           "data-ocid": `buff_shop.inv_item.${item.id}`,
+                          className: "stone-well",
                           style: {
                             ...itemCardStyle,
                             flexDirection: "row",
@@ -47942,6 +47410,7 @@ const BuffShop = ({
                               {
                                 type: "button",
                                 "data-ocid": `buff_shop.use_button.${item.id}`,
+                                className: canUse ? "stone-btn-crimson" : "stone-btn-slate",
                                 style: {
                                   ...getBtnStyle(canUse),
                                   width: 38,
@@ -49507,24 +48976,16 @@ function formatEffectLabel(effect) {
 function StatusEffectBadge({ effect }) {
   const label = formatEffectLabel(effect);
   const turns = effect.duration;
-  const borderColor = effect.type === "buff" ? "rgba(34,197,94,0.7)" : effect.type === "dot" ? "rgba(234,179,8,0.7)" : "rgba(239,68,68,0.7)";
-  const bgColor = effect.type === "buff" ? "rgba(34,197,94,0.12)" : effect.type === "dot" ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)";
+  const pillClass = effect.type === "buff" ? "stone-pill-green" : effect.type === "dot" ? "stone-pill-gold" : "stone-pill-crimson";
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "div",
     {
       "data-ocid": `status_effect.${effect.targetId}.${effect.effectName}.badge`,
       title: `${effect.description} — ${turns} turn${turns !== 1 ? "s" : ""} remaining`,
+      className: pillClass,
       style: {
-        display: "inline-flex",
-        alignItems: "center",
         gap: 4,
-        padding: "2px 6px",
         borderRadius: 4,
-        border: `1px solid ${borderColor}`,
-        background: bgColor,
-        color: "#fff",
-        fontSize: 10,
-        fontWeight: 700,
         whiteSpace: "nowrap",
         lineHeight: 1
       },
@@ -50184,7 +49645,9 @@ const WorldExplorationInner = ({
   const [_battleEnemies, setBattleEnemies] = reactExports.useState([]);
   const battleEnemiesRef = reactExports.useRef([]);
   const [showGameOver, setShowGameOver] = reactExports.useState(false);
-  const [dokaBalance, setDokaBalance] = reactExports.useState(0);
+  const [dokaBalance, setDokaBalance] = reactExports.useState(
+    () => (character == null ? void 0 : character.dokaBalance) != null ? Number(character.dokaBalance) : (character == null ? void 0 : character.bloodBalance) != null ? Number(character.bloodBalance) : 0
+  );
   const [currentChallenge, setCurrentChallenge] = reactExports.useState(
     null
   );
@@ -50222,6 +49685,13 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     dungeonChainMaxDepthRef.current = dungeonChainMaxDepth;
   }, [dungeonChainMaxDepth]);
+  reactExports.useEffect(() => {
+    if (!actor) return;
+    actor.getDokaBalance().then((bal) => {
+      setDokaBalance(Number(bal));
+    }).catch(() => {
+    });
+  }, [actor]);
   const DUNGEON_DOKA_MULTIPLIERS = [1, 1.5, 2, 2.5, 3, 4];
   const dungeonDokaMultiplier = dungeonChainActive ? DUNGEON_DOKA_MULTIPLIERS[Math.min(dungeonChainDepth, 5)] ?? 1 : 1;
   const dungeonDokaMultiplierRef = reactExports.useRef(1);
@@ -51530,6 +51000,13 @@ const WorldExplorationInner = ({
       expToNext
     };
   });
+  reactExports.useEffect(() => {
+    if (!character) return;
+    const backendDoka = character.dokaBalance != null ? Number(character.dokaBalance) : character.bloodBalance != null ? Number(character.bloodBalance) : null;
+    if (backendDoka != null && !inBattle) {
+      setDokaBalance(backendDoka);
+    }
+  }, [character, inBattle]);
   const getStatModifier = reactExports.useCallback(
     (targetId, stat, activeEffectsSnap) => {
       let multiplier = 1;
@@ -55890,6 +55367,34 @@ const WorldExplorationInner = ({
             playerScreenPos.y - CHARACTER_Y_OFFSET,
             colors
           );
+          {
+            const arrowSize = 6;
+            const arrowY = playerScreenPos.y - CHARACTER_Y_OFFSET - 8;
+            const arrowX = playerScreenPos.x;
+            ctx.save();
+            ctx.fillStyle = "#d8463f";
+            ctx.beginPath();
+            if (playerView === "front") {
+              ctx.moveTo(arrowX, arrowY + arrowSize);
+              ctx.lineTo(arrowX - arrowSize * 0.7, arrowY - arrowSize * 0.5);
+              ctx.lineTo(arrowX + arrowSize * 0.7, arrowY - arrowSize * 0.5);
+            } else if (playerView === "back") {
+              ctx.moveTo(arrowX, arrowY - arrowSize);
+              ctx.lineTo(arrowX - arrowSize * 0.7, arrowY + arrowSize * 0.5);
+              ctx.lineTo(arrowX + arrowSize * 0.7, arrowY + arrowSize * 0.5);
+            } else if (playerView === "left") {
+              ctx.moveTo(arrowX - arrowSize, arrowY);
+              ctx.lineTo(arrowX + arrowSize * 0.5, arrowY - arrowSize * 0.7);
+              ctx.lineTo(arrowX + arrowSize * 0.5, arrowY + arrowSize * 0.7);
+            } else {
+              ctx.moveTo(arrowX + arrowSize, arrowY);
+              ctx.lineTo(arrowX - arrowSize * 0.5, arrowY - arrowSize * 0.7);
+              ctx.lineTo(arrowX - arrowSize * 0.5, arrowY + arrowSize * 0.7);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
           if (inBattleRef.current) {
             const playerEffects = activeEffectsRef.current.filter(
               (e) => e.targetId === "player"
@@ -57894,8 +57399,8 @@ const WorldExplorationInner = ({
     maxHp
   ]);
   const handleBattleEnd = reactExports.useCallback(
-    async (victory, expGained, hitsDealt, enemiesDefeated) => {
-      var _a4, _b4;
+    async (victory, expGained, _hitsDealt, enemiesDefeated) => {
+      var _a4, _b4, _c3, _d3, _e3;
       logDebugInfo("BATTLE", "BATTLE_END triggered", {
         path: "handleBattleEnd",
         victory,
@@ -57929,8 +57434,8 @@ const WorldExplorationInner = ({
           maxApUsedInTurn: challengeMaxApThisTurnRef.current
         }) : false;
         const challengeDokaReward = challengeCompleted ? ((_a4 = currentChallenge == null ? void 0 : currentChallenge.rewards) == null ? void 0 : _a4.doka) || 0 : 0;
-        const challengeXpReward = challengeCompleted ? ((_b4 = currentChallenge == null ? void 0 : currentChallenge.rewards) == null ? void 0 : _b4.xp) || 0 : 0;
-        const completedChallengeName = challengeCompleted ? (currentChallenge == null ? void 0 : currentChallenge.description) || (currentChallenge == null ? void 0 : currentChallenge.id) || "Challenge" : null;
+        const _challengeXpReward = challengeCompleted ? ((_b4 = currentChallenge == null ? void 0 : currentChallenge.rewards) == null ? void 0 : _b4.xp) || 0 : 0;
+        const _completedChallengeName = challengeCompleted ? (currentChallenge == null ? void 0 : currentChallenge.description) || (currentChallenge == null ? void 0 : currentChallenge.id) || "Challenge" : null;
         cleanupBattle();
         setInBattle(false);
         playSound("battle_end");
@@ -57980,109 +57485,38 @@ const WorldExplorationInner = ({
           const activeBossConf = currentBossConfigRef.current;
           const bossDokaMultiplier = activeBossConf ? activeBossConf.rewardDokaMultiplier : 1;
           const totalDoka = boostMode === "rewards" ? Math.round(rawDoka * 1.5 * chainMult * bossDokaMultiplier) : Math.round(rawDoka * chainMult * bossDokaMultiplier);
-          const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
-          setDokaBalance(newDokaBalance);
-          if (challengeCompleted && currentChallenge) {
-            if (challengeXpReward > 0) {
-              setCharacterStats((prev) => ({
-                ...prev,
-                xp: (prev.xp ?? 0) + challengeXpReward
-              }));
-            }
-            logBattleEntry(
-              `Challenge Complete: ${currentChallenge.description} (+${challengeDokaReward} Doka)`,
-              "#ffd700"
-            );
-          }
-          let finalRecapData = null;
-          let didLevelUp = false;
           const _recapData = await resolveBattleRewards(actor, characterSlot, {
             victory,
             enemiesDefeated: enemiesDefeated || [],
-            completedChallenges: [],
-            dungeonMultiplier: 1,
+            completedChallenges: challengeCompleted ? [
+              {
+                name: "Battle Challenge",
+                dokaReward: challengeDokaReward || 0
+              }
+            ] : [],
+            dungeonMultiplier: chainMult || 1,
             baseDoka: totalDoka || 0,
             baseXp: finalExp || 0
           });
-          setCharacterStats((prev) => {
-            var _a5;
-            let newExp = prev.exp + finalExp;
-            let newLevel = prev.level;
-            let newExpToNext = prev.expToNext;
-            let remainingExp = newExp;
-            while (remainingExp >= newExpToNext) {
-              remainingExp -= newExpToNext;
-              newLevel += 1;
-              newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
-            }
-            finalRecapData = {
-              mapTitle: currentMap ? `${((_a5 = currentMap.levelZone) == null ? void 0 : _a5.name) ?? "Unknown"} (Map #${mapCount})` : `Map #${mapCount}`,
-              xpEarned: finalExp,
-              hitsDealt: hitsDealt || 0,
-              enemiesDefeated: defeated,
-              currentXP: remainingExp,
-              xpForNextLevel: newExpToNext,
-              currentLevel: newLevel,
-              dokaEarned: totalDoka + challengeDokaReward,
-              dokaFromVictory: totalDoka,
-              dokaFromChallenges: challengeDokaReward,
-              completedChallenges: completedChallengeName ? [completedChallengeName] : [],
-              dokaBreakdown,
-              // EXP8: include dungeon chain info so recap can show multiplier
-              dungeonMultiplier: dungeonChainActiveRef.current && chainMult > 1 ? chainMult : void 0,
-              dungeonDepth: dungeonChainActiveRef.current ? dungeonChainDepthRef.current : void 0,
-              dungeonMaxDepth: dungeonChainActiveRef.current ? dungeonChainMaxDepthRef.current : void 0,
-              // BOSS: victory message if a boss was defeated
-              bossDefeated: activeBossConf ? activeBossConf.name : void 0
-            };
-            const levelsGained = newLevel - prev.level;
-            didLevelUp = levelsGained > 0;
-            let scaledHp = prev.hp;
-            let scaledAp = prev.ap;
-            let scaledMp = prev.mp;
-            let scaledInit = prev.init;
-            let scaledRes = prev.res;
-            let scaledChc = prev.chc;
-            let scaledSp = prev.sp;
-            let scaledWr = prev.wr;
-            let scaledSr = prev.sr;
-            let scaledScp = prev.scp;
-            let scaledWp = prev.wp;
-            const SG = 0.05;
-            for (let g2 = 0; g2 < levelsGained; g2++) {
-              const gl = prev.level + g2 + 1;
-              scaledHp = Math.max(1, Math.ceil(scaledHp * (1 + SG)));
-              scaledInit = Math.max(1, Math.ceil(scaledInit * (1 + SG)));
-              scaledRes = Math.max(0, Math.ceil(scaledRes * (1 + SG)));
-              scaledChc = Math.max(1, Math.ceil(scaledChc * (1 + SG)));
-              scaledSp = Math.max(1, Math.ceil(scaledSp * (1 + SG)));
-              scaledWr = Math.max(0, Math.ceil(scaledWr * (1 + SG)));
-              scaledSr = Math.max(0, Math.ceil(scaledSr * (1 + SG)));
-              scaledScp = Math.max(1, Math.ceil(scaledScp * (1 + SG)));
-              scaledWp = Math.max(1, Math.ceil(scaledWp * (1 + SG)));
-              if (gl % 25 === 0) {
-                scaledAp += 1;
-                scaledMp += 1;
-              }
-            }
-            return {
-              ...prev,
-              exp: remainingExp,
-              level: newLevel,
-              expToNext: newExpToNext,
-              hp: scaledHp,
-              ap: scaledAp,
-              mp: scaledMp,
-              init: scaledInit,
-              res: scaledRes,
-              chc: scaledChc,
-              sp: scaledSp,
-              wr: scaledWr,
-              sr: scaledSr,
-              scp: scaledScp,
-              wp: scaledWp
-            };
-          });
+          const _rewardRecap = _recapData;
+          setCharacterStats((prev) => ({
+            ...prev,
+            exp: _rewardRecap.newXp ?? characterStats.exp,
+            level: _rewardRecap.currentLevel,
+            hp: 50 + prev.level * 10,
+            mp: 5 + Math.floor(prev.level / 10),
+            ap: 6 + Math.floor(prev.level / 20)
+          }));
+          setDokaBalance(_rewardRecap.newDoka ?? dokaBalance);
+          const finalRecapData = {
+            ..._rewardRecap,
+            mapTitle: ((_c3 = currentMapRef.current) == null ? void 0 : _c3.id) || "Unknown",
+            hitsDealt: battleHitsRef.current,
+            enemiesDefeated: enemiesDefeated || [],
+            dungeonMultiplier: chainMult || 1,
+            bossDefeated: ((_d3 = currentBossConfigRef.current) == null ? void 0 : _d3.name) || void 0
+          };
+          if (onShowBattleSummary) onShowBattleSummary(finalRecapData);
           setEnemies([]);
           const recap = finalRecapData;
           if (recap) {
@@ -58145,6 +57579,7 @@ const WorldExplorationInner = ({
               logDebugInfo("BATTLE", "SET showSummary=true");
               onShowBattleSummary(finalRecapData);
             }
+            const didLevelUp = _rewardRecap.currentLevel > characterStats.level;
             if (didLevelUp) {
               playSound("level_up");
             }
@@ -58161,10 +57596,15 @@ const WorldExplorationInner = ({
         logDebugError("BATTLE", "Reward computation error", String(err));
         if (onShowBattleSummary) {
           onShowBattleSummary({
+            mapTitle: ((_e3 = currentMapRef.current) == null ? void 0 : _e3.id) || "Unknown",
             xpEarned: 0,
             dokaEarned: 0,
+            hitsDealt: 0,
             enemiesDefeated: [],
-            message: "Error computing rewards — check debug console"
+            currentXP: characterStats.exp,
+            xpForNextLevel: (characterStats.level || 1) * 100,
+            currentLevel: characterStats.level,
+            dokaBreakdown: []
           });
         }
       }
@@ -58273,13 +57713,6 @@ const WorldExplorationInner = ({
       const newXp = (characterStats.exp || 0) + expGained;
       setDokaBalance(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
-      if (actor) {
-        void actor.addDoka(BigInt(totalDoka + challengeDokaReward));
-        void actor.updateCharacterStats({
-          ...characterStats,
-          xp: newXp
-        });
-      }
       const finalRecapData = {
         mapTitle: `Boss Rush - Room ${currentRoomIndex + 1}`,
         xpEarned: expGained,
@@ -58314,8 +57747,54 @@ const WorldExplorationInner = ({
   const deathXpLostRef = reactExports.useRef(0);
   const deathTriggeredRef = reactExports.useRef(false);
   reactExports.useEffect(() => {
+    var _a4;
     if (!inBattle) {
-      deathTriggeredRef.current = false;
+      if (characterStats.hp <= 0 && !deathTriggeredRef.current) {
+        deathTriggeredRef.current = true;
+        const xpLost = Math.floor(characterStats.exp * 0.2);
+        const dokaLost = Math.floor(dokaBalance * 0.4);
+        const newXp = Math.max(0, characterStats.exp - xpLost);
+        const newDoka = Math.max(0, dokaBalance - dokaLost);
+        if (actor) {
+          actor.applyRewards(characterSlot, 0, -xpLost).catch(() => {
+          });
+          actor.applyRewards(characterSlot, -dokaLost, 0).catch(() => {
+          });
+        }
+        setCharacterStats((prev) => ({
+          ...prev,
+          exp: newXp,
+          hp: Math.floor((50 + prev.level * 10) * 0.5)
+        }));
+        setDokaBalance(newDoka);
+        const defeatRecap = {
+          isDefeat: true,
+          xpLost,
+          dokaLost,
+          xpEarned: 0,
+          dokaEarned: 0,
+          currentLevel: characterStats.level,
+          currentXP: newXp,
+          xpForNextLevel: (characterStats.level || 1) * 100,
+          enemiesDefeated: [],
+          hitsDealt: 0,
+          mapTitle: ((_a4 = currentMapRef.current) == null ? void 0 : _a4.id) || "Unknown"
+        };
+        if (onShowBattleSummary) onShowBattleSummary(defeatRecap);
+        if (deathRealmTimerRef.current !== null)
+          clearTimeout(deathRealmTimerRef.current);
+        deathRealmTimerRef.current = window.setTimeout(() => {
+          deathRealmTimerRef.current = null;
+          const { map: deathMap, spawnPosition: drSpawn } = generateDeathRealmMap();
+          currentMapRef.current = deathMap;
+          setCurrentMap(deathMap);
+          setPlayerPosition(drSpawn || { x: 2, y: 2 });
+          setEnemies([]);
+          setInBattle(false);
+          cleanupBattle();
+          deathTriggeredRef.current = false;
+        }, 1500);
+      }
       return;
     }
     if (characterStats.hp > 0) return;
@@ -58333,39 +57812,18 @@ const WorldExplorationInner = ({
       const xpLostAccurate = deathXpLostRef.current;
       setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
       if (actor) {
-        const newExp2 = Math.max(0, characterStats.exp - xpLostAccurate);
         (async () => {
           try {
-            await actor.updateCharacter(BigInt(characterSlot), {
-              name: characterName,
-              pieceType,
-              colors: [colors.primary, colors.secondary, colors.accent],
-              pixelPattern: "",
-              rotation: BigInt(0),
-              level: BigInt(characterStats.level),
-              experience: BigInt(newExp2),
-              dokaBalance: BigInt(newDoka),
-              stats: {
-                hp: BigInt(characterStats.hp),
-                ap: BigInt(characterStats.ap),
-                mp: BigInt(characterStats.mp),
-                sp: BigInt(characterStats.sp),
-                wr: BigInt(characterStats.wr),
-                sr: BigInt(characterStats.sr),
-                scp: BigInt(characterStats.scp),
-                wp: BigInt(characterStats.wp),
-                init: BigInt(characterStats.init),
-                res: BigInt(characterStats.res),
-                chc: BigInt(characterStats.chc),
-                atk: BigInt(0),
-                resilience: BigInt(0),
-                evasion: BigInt(0)
-              },
-              spellLevelKeys: Object.keys(spellLevels),
-              spellLevelValues: Object.keys(spellLevels).map(
-                (k2) => BigInt(spellLevels[k2] ?? 0)
-              )
-            });
+            await actor.applyRewards(
+              BigInt(characterSlot),
+              BigInt(0),
+              BigInt(-xpLostAccurate)
+            );
+            await actor.applyRewards(
+              BigInt(characterSlot),
+              BigInt(-dokaLost),
+              BigInt(0)
+            );
           } catch (err) {
             console.error("[death-save] failed:", err);
           }
@@ -58396,8 +57854,8 @@ const WorldExplorationInner = ({
     activeEffectsRef.current = [];
     setActiveEffects([]);
     deathRealmTimerRef.current = window.setTimeout(() => {
-      var _a4;
-      const ctx = (_a4 = canvasRef.current) == null ? void 0 : _a4.getContext("2d");
+      var _a5;
+      const ctx = (_a5 = canvasRef.current) == null ? void 0 : _a5.getContext("2d");
       if (!ctx) return;
       deathRealmTimerRef.current = null;
       try {
@@ -60930,26 +60388,11 @@ const WorldExplorationInner = ({
                   ]
                 }
               ),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 4 }, children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "span",
-                  {
-                    style: {
-                      background: "rgba(241,196,15,0.1)",
-                      border: "1px solid rgba(241,196,15,0.3)",
-                      color: "#f1c40f",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                      whiteSpace: "nowrap"
-                    },
-                    children: [
-                      "💰 ",
-                      dokaBalance.toLocaleString()
-                    ]
-                  }
-                ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1.5", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-pill stone-pill-gold text-[10px] font-bold whitespace-nowrap min-w-[60px] justify-center", children: [
+                  "💰 ",
+                  dokaBalance.toLocaleString()
+                ] }),
                 /* @__PURE__ */ jsxRuntimeExports.jsx(
                   "button",
                   {
@@ -62950,74 +62393,96 @@ const GameFlow = ({
           debugLogs
         }
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-        "div",
-        {
-          style: {
-            position: "fixed",
-            top: 12,
-            right: 16,
-            zIndex: 9e3,
-            display: "flex",
-            alignItems: "center",
-            gap: 6
-          },
-          children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "button",
-              {
-                type: "button",
-                "data-ocid": "game.leaderboard_button",
-                onClick: () => setShowLeaderboard((v2) => !v2),
-                style: gameModeButtonStyle(showLeaderboard),
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(Trophy, { size: 13 }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Board" })
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "button",
-              {
-                type: "button",
-                "data-ocid": "game.achievements_button",
-                onClick: () => setShowAchievements((v2) => !v2),
-                style: gameModeButtonStyle(showAchievements),
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13 }, children: "🏆" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Feats" })
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "button",
-              {
-                type: "button",
-                "data-ocid": "game.boss_guide_button",
-                onClick: () => setShowBossGuide((v2) => !v2),
-                style: gameModeButtonStyle(showBossGuide),
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(Crown, { size: 13 }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Bosses" })
-                ]
-              }
-            ),
-            isAdmin && onOpenAdmin && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "button",
-              {
-                type: "button",
-                "data-ocid": "game.admin_button",
-                onClick: onOpenAdmin,
-                style: gameModeButtonStyle(false, true),
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13 }, children: "🛡️" }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Admin" })
-                ]
-              }
-            )
-          ]
-        }
-      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "span",
+            {
+              className: "text-xs font-bold",
+              style: { color: "#f0c44a", fontFamily: "var(--font-display)" },
+              children: [
+                "🧛 ",
+                userProfile.name
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-blue text-[10px]", children: "Map" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-20 h-1.5 stone-inset rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              className: "h-full bg-purple-500 rounded-full",
+              style: { width: "60%" }
+            }
+          ) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-20 h-1.5 stone-inset rounded-full overflow-hidden", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "div",
+            {
+              className: "h-full bg-red-500 rounded-full",
+              style: { width: "80%" }
+            }
+          ) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-coin w-5 h-5 text-[9px]" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs font-bold", style: { color: "#f0c44a" }, children: dokaBalance })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-gold text-[10px]", children: "🛒" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-crimson text-[10px]", children: "Zone" })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              "data-ocid": "game.leaderboard_button",
+              onClick: () => setShowLeaderboard((v2) => !v2),
+              className: `${showLeaderboard ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Trophy, { size: 13 }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Board" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              "data-ocid": "game.achievements_button",
+              onClick: () => setShowAchievements((v2) => !v2),
+              className: `${showAchievements ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[13px]", children: "🏆" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Feats" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              "data-ocid": "game.boss_guide_button",
+              onClick: () => setShowBossGuide((v2) => !v2),
+              className: `${showBossGuide ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Crown, { size: 13 }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Bosses" })
+              ]
+            }
+          ),
+          isAdmin && onOpenAdmin && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              "data-ocid": "game.admin_button",
+              onClick: onOpenAdmin,
+              className: "stone-btn-crimson stone-nav-btn",
+              children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[13px]", children: "🛡️" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Admin" })
+              ]
+            }
+          )
+        ] })
+      ] }),
       showBossGuide && /* @__PURE__ */ jsxRuntimeExports.jsx(BossGuideModal, { onClose: () => setShowBossGuide(false), open: true }),
       showLeaderboard && /* @__PURE__ */ jsxRuntimeExports.jsx(LeaderboardModal, { onClose: () => setShowLeaderboard(false) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -63063,155 +62528,89 @@ const GameFlow = ({
       className: "fixed inset-0 flex flex-col overflow-hidden",
       style: { zIndex: 10, background: "#0d0f1a" },
       children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "header",
-          {
-            className: "dofus-panel-header flex items-center px-4 h-12 shrink-0 z-30",
-            style: { borderBottom: "1px solid var(--dofus-border-gold-dim)" },
-            children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between w-full", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center space-x-3", children: [
-                showBackButton && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "button",
-                  {
-                    type: "button",
-                    onClick: handleBackToSelection,
-                    className: "flex items-center space-x-2 px-3 py-1 text-sm rounded transition-colors",
-                    style: {
-                      background: "rgba(200,150,42,0.12)",
-                      border: "1px solid var(--dofus-border-gold-dim)",
-                      color: "var(--dofus-text-gold)"
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { className: "w-4 h-4" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hidden sm:inline", children: "Back" })
-                    ]
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "h1",
-                    {
-                      className: "text-sm font-bold",
-                      style: {
-                        color: "var(--dofus-text-gold)",
-                        fontFamily: "serif",
-                        letterSpacing: "0.05em"
-                      },
-                      children: "Paper Baby Vampires"
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs", style: { color: "var(--dofus-text-dim)" }, children: [
-                    "Welcome, ",
-                    userProfile.name
-                  ] })
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center space-x-3", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "hidden md:flex items-center space-x-2 text-xs", children: ["character"].map((stage, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(React$2.Fragment, { children: [
-                  i > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      className: "w-3 h-px",
-                      style: { background: "var(--dofus-border-gold-dim)" }
-                    }
-                  ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "div",
-                    {
-                      className: "px-2 py-1 rounded text-xs",
-                      style: {
-                        background: currentStage === stage ? "rgba(200,150,42,0.2)" : "rgba(255,255,255,0.04)",
-                        border: `1px solid ${currentStage === stage ? "var(--dofus-border-gold)" : "var(--dofus-border-gold-dim)"}`,
-                        color: currentStage === stage ? "var(--dofus-text-gold)" : "var(--dofus-text-dim)"
-                      },
-                      children: stage === "character" ? "Character" : "Dungeon"
-                    }
-                  )
-                ] }, stage)) }),
-                isAdmin && onOpenAdmin && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "button",
-                  {
-                    type: "button",
-                    "data-ocid": "game.admin_button",
-                    onClick: onOpenAdmin,
-                    style: {
-                      background: "linear-gradient(135deg, #6a0a0a, #c0392b)",
-                      border: "1px solid #e74c3c",
-                      borderRadius: 6,
-                      color: "#fde",
-                      padding: "5px 12px",
-                      fontSize: 11,
-                      fontWeight: 800,
-                      cursor: "pointer",
-                      letterSpacing: "0.06em",
-                      textTransform: "uppercase",
-                      fontFamily: "'Space Grotesk', system-ui, sans-serif",
-                      boxShadow: "0 0 8px rgba(192,57,43,0.35)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 5
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 12 }, children: "🛡️" }),
-                      " Admin"
-                    ]
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "button",
-                  {
-                    type: "button",
-                    onClick: handleLogout,
-                    className: "flex items-center space-x-2 px-3 py-1 text-sm rounded transition-colors",
-                    style: {
-                      background: "rgba(200,150,42,0.08)",
-                      border: "1px solid var(--dofus-border-gold-dim)",
-                      color: "var(--dofus-text-dim)"
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx(LogOut, { className: "w-4 h-4" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hidden sm:inline", children: "Log Out" })
-                    ]
-                  }
-                )
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { className: "stone-top-bar flex items-center justify-between gap-2 px-4 h-12 shrink-0 z-30", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3", children: [
+            showBackButton && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                onClick: handleBackToSelection,
+                className: "stone-btn-slate stone-nav-btn",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(ArrowLeft, { size: 14 }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hidden sm:inline", children: "Back" })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "h1",
+                {
+                  className: "text-sm font-bold",
+                  style: {
+                    color: "#f0c44a",
+                    fontFamily: "var(--font-display)",
+                    letterSpacing: "0.05em"
+                  },
+                  children: "Paper Baby Vampires"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "text-xs", style: { color: "#8a8090" }, children: [
+                "Welcome,",
+                " ",
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#d8463f" }, children: userProfile.name })
               ] })
             ] })
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "main",
-          {
-            className: "flex-1 overflow-y-auto",
-            style: { background: "#0d0f1a" },
-            children: renderCurrentStage()
-          }
-        )
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "hidden md:flex items-center gap-2 text-xs", children: ["character"].map((stage, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(React$2.Fragment, { children: [
+              i > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "div",
+                {
+                  className: "w-3 h-px",
+                  style: { background: "rgba(216,70,63,.3)" }
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "span",
+                {
+                  className: `px-2 py-1 rounded text-xs ${currentStage === stage ? "stone-pill-gold" : "stone-pill text-[#8a8090]"}`,
+                  children: stage === "character" ? "Character" : "Dungeon"
+                }
+              )
+            ] }, stage)) }),
+            isAdmin && onOpenAdmin && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                "data-ocid": "game.admin_button",
+                onClick: onOpenAdmin,
+                className: "stone-btn-crimson stone-nav-btn",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[12px]", children: "🛡️" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Admin" })
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "button",
+              {
+                type: "button",
+                onClick: handleLogout,
+                className: "stone-btn-slate stone-nav-btn",
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(LogOut, { size: 14 }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "hidden sm:inline", children: "Log Out" })
+                ]
+              }
+            )
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("main", { className: "flex-1 overflow-y-auto stone-well", children: renderCurrentStage() })
       ]
     }
   );
 };
-function gameModeButtonStyle(active, danger = false) {
-  const base = danger ? "#6a0a0a, #c0392b" : "#1a0506, #5a0d1a";
-  const activeBg = danger ? "#8a1a1a, #e04030" : "#3a0a10, #8a1a2a";
-  return {
-    background: `linear-gradient(135deg, ${active ? activeBg : base})`,
-    border: `1px solid ${active ? "#e74c3c" : "#6b0000"}`,
-    borderRadius: 6,
-    color: "#fde",
-    padding: "5px 10px",
-    fontSize: 11,
-    fontWeight: 800,
-    cursor: "pointer",
-    letterSpacing: "0.06em",
-    textTransform: "uppercase",
-    fontFamily: "'Space Grotesk', system-ui, sans-serif",
-    boxShadow: active ? "0 0 14px rgba(220,38,38,0.6)" : "0 0 8px rgba(139,0,0,0.35)",
-    display: "flex",
-    alignItems: "center",
-    gap: 5,
-    transition: "all 0.15s"
-  };
-}
 const LeaderboardModal = ({ onClose }) => {
   const { data: entries = [], isLoading } = useGetLeaderboard();
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -63237,228 +62636,200 @@ const LeaderboardModal = ({ onClose }) => {
       children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "div",
         {
+          className: "stone-frame",
           style: {
-            background: "#120406",
-            border: "1px solid #6b0000",
-            borderRadius: 10,
             width: "min(640px, 94vw)",
             maxHeight: "80vh",
             display: "flex",
             flexDirection: "column",
-            boxShadow: "0 0 40px rgba(192,57,43,0.35), 0 8px 32px rgba(0,0,0,0.8)",
             overflow: "hidden"
           },
           children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "14px 20px",
-                  borderBottom: "1px solid rgba(139,0,0,0.35)",
-                  background: "linear-gradient(135deg, #1a0506, #2a0810)",
-                  flexShrink: 0
-                },
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(Trophy, { size: 18, style: { color: "#dc2626" } }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "span",
-                      {
-                        style: {
-                          color: "#fca5a5",
-                          fontWeight: 800,
-                          fontSize: 16,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                          fontFamily: "'Space Grotesk', system-ui, sans-serif"
-                        },
-                        children: "Leaderboard"
-                      }
-                    )
-                  ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                    "button",
-                    {
-                      type: "button",
-                      "data-ocid": "leaderboard.close_button",
-                      onClick: onClose,
-                      "aria-label": "Close leaderboard",
-                      style: {
-                        background: "rgba(220,38,38,0.12)",
-                        border: "1px solid rgba(220,38,38,0.3)",
-                        borderRadius: 5,
-                        color: "#fca5a5",
-                        cursor: "pointer",
-                        fontSize: 18,
-                        width: 30,
-                        height: 30,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        lineHeight: 1
-                      },
-                      children: "×"
-                    }
-                  )
-                ]
-              }
-            ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { overflowY: "auto", flex: 1 }, children: [
-              isLoading && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "stone-header flex items-center justify-between px-5 py-3 shrink-0", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Trophy, { size: 18, style: { color: "#d8463f" } }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-header-title", style: { fontSize: 16 }, children: "Leaderboard" })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
                 {
-                  "data-ocid": "leaderboard.loading_state",
+                  type: "button",
+                  "data-ocid": "leaderboard.close_button",
+                  onClick: onClose,
+                  "aria-label": "Close leaderboard",
+                  className: "stone-btn-slate",
                   style: {
-                    padding: 32,
-                    textAlign: "center",
-                    color: "#5a3a3a",
-                    fontSize: 13
+                    width: 30,
+                    height: 30,
+                    padding: 0,
+                    fontSize: 18,
+                    lineHeight: 1
                   },
-                  children: "Loading rankings…"
-                }
-              ),
-              !isLoading && entries.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                "div",
-                {
-                  "data-ocid": "leaderboard.empty_state",
-                  style: {
-                    padding: 32,
-                    textAlign: "center",
-                    color: "#5a3a3a",
-                    fontSize: 13
-                  },
-                  children: "No players on the board yet — defeat some enemies to appear here!"
-                }
-              ),
-              !isLoading && entries.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "table",
-                {
-                  style: {
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    fontSize: 12
-                  },
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "tr",
-                      {
-                        style: {
-                          background: "rgba(139,0,0,0.25)",
-                          position: "sticky",
-                          top: 0
-                        },
-                        children: ["Rank", "Name", "Level", "Kills", "Achievements"].map((col) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "th",
-                          {
-                            style: {
-                              padding: "9px 14px",
-                              color: "#dc2626",
-                              fontWeight: 700,
-                              textAlign: col === "Rank" || col === "Level" || col === "Kills" || col === "Achievements" ? "right" : "left",
-                              letterSpacing: "0.06em",
-                              textTransform: "uppercase",
-                              fontSize: 10,
-                              borderBottom: "1px solid rgba(139,0,0,0.3)"
-                            },
-                            children: col
-                          },
-                          col
-                        ))
-                      }
-                    ) }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: entries.slice(0, 50).map((entry, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "tr",
-                      {
-                        "data-ocid": `leaderboard.item.${i + 1}`,
-                        style: {
-                          borderBottom: "1px solid rgba(139,0,0,0.12)",
-                          background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent"
-                        },
-                        children: [
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "td",
-                            {
-                              style: {
-                                padding: "8px 14px",
-                                color: rankColor(i),
-                                fontWeight: 700,
-                                textAlign: "right",
-                                minWidth: 48
-                              },
-                              children: rankLabel(i)
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "td",
-                            {
-                              style: {
-                                padding: "8px 14px",
-                                color: "#f5c6c6",
-                                maxWidth: 180,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap"
-                              },
-                              children: entry.playerName || "Unknown"
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "td",
-                            {
-                              style: {
-                                padding: "8px 14px",
-                                color: "#a8d4f0",
-                                fontWeight: 600,
-                                textAlign: "right"
-                              },
-                              children: entry.level.toLocaleString()
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "td",
-                            {
-                              style: {
-                                padding: "8px 14px",
-                                color: "#dc2626",
-                                fontWeight: 600,
-                                textAlign: "right"
-                              },
-                              children: entry.killCount.toLocaleString()
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "td",
-                            {
-                              style: {
-                                padding: "8px 14px",
-                                color: "#f0c040",
-                                fontWeight: 600,
-                                textAlign: "right"
-                              },
-                              children: entry.achievementsCompleted.toLocaleString()
-                            }
-                          )
-                        ]
-                      },
-                      entry.principalId
-                    )) })
-                  ]
+                  children: "×"
                 }
               )
             ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsxs(
               "div",
               {
+                className: "stone-well",
+                style: { overflowY: "auto", flex: 1, padding: 2 },
+                children: [
+                  isLoading && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "div",
+                    {
+                      "data-ocid": "leaderboard.loading_state",
+                      className: "stone-well",
+                      style: {
+                        padding: 32,
+                        textAlign: "center",
+                        color: "#8a8090",
+                        fontSize: 13
+                      },
+                      children: "Loading rankings…"
+                    }
+                  ),
+                  !isLoading && entries.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "div",
+                    {
+                      "data-ocid": "leaderboard.empty_state",
+                      className: "stone-well",
+                      style: {
+                        padding: 32,
+                        textAlign: "center",
+                        color: "#8a8090",
+                        fontSize: 13
+                      },
+                      children: "No players on the board yet — defeat some enemies to appear here!"
+                    }
+                  ),
+                  !isLoading && entries.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "table",
+                    {
+                      style: {
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: 12
+                      },
+                      children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          "tr",
+                          {
+                            style: {
+                              background: "rgba(139,0,0,0.25)",
+                              position: "sticky",
+                              top: 0
+                            },
+                            children: ["Rank", "Name", "Level", "Kills", "Achievements"].map((col) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "th",
+                              {
+                                style: {
+                                  padding: "9px 14px",
+                                  color: "#dc2626",
+                                  fontWeight: 700,
+                                  textAlign: col === "Rank" || col === "Level" || col === "Kills" || col === "Achievements" ? "right" : "left",
+                                  letterSpacing: "0.06em",
+                                  textTransform: "uppercase",
+                                  fontSize: 10,
+                                  borderBottom: "1px solid rgba(139,0,0,0.3)"
+                                },
+                                children: col
+                              },
+                              col
+                            ))
+                          }
+                        ) }),
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: entries.slice(0, 50).map((entry, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "tr",
+                          {
+                            "data-ocid": `leaderboard.item.${i + 1}`,
+                            style: {
+                              borderBottom: "1px solid rgba(139,0,0,0.12)",
+                              background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent"
+                            },
+                            children: [
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "td",
+                                {
+                                  style: {
+                                    padding: "8px 14px",
+                                    color: rankColor(i),
+                                    fontWeight: 700,
+                                    textAlign: "right",
+                                    minWidth: 48
+                                  },
+                                  children: rankLabel(i)
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "td",
+                                {
+                                  style: {
+                                    padding: "8px 14px",
+                                    color: "#f5c6c6",
+                                    maxWidth: 180,
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap"
+                                  },
+                                  children: entry.playerName || "Unknown"
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "td",
+                                {
+                                  style: {
+                                    padding: "8px 14px",
+                                    color: "#a8d4f0",
+                                    fontWeight: 600,
+                                    textAlign: "right"
+                                  },
+                                  children: entry.level.toLocaleString()
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "td",
+                                {
+                                  style: {
+                                    padding: "8px 14px",
+                                    color: "#dc2626",
+                                    fontWeight: 600,
+                                    textAlign: "right"
+                                  },
+                                  children: entry.killCount.toLocaleString()
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "td",
+                                {
+                                  style: {
+                                    padding: "8px 14px",
+                                    color: "#f0c040",
+                                    fontWeight: 600,
+                                    textAlign: "right"
+                                  },
+                                  children: entry.achievementsCompleted.toLocaleString()
+                                }
+                              )
+                            ]
+                          },
+                          entry.principalId
+                        )) })
+                      ]
+                    }
+                  )
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                className: "stone-well",
                 style: {
                   padding: "8px 20px",
-                  borderTop: "1px solid rgba(139,0,0,0.2)",
-                  color: "#5a3a3a",
+                  color: "#8a8090",
                   fontSize: 10,
                   textAlign: "center",
-                  background: "#0e0203",
                   flexShrink: 0
                 },
                 children: [
@@ -64219,7 +63590,7 @@ const PostBattleRecap = ({
               "div",
               {
                 style: {
-                  background: "linear-gradient(90deg, oklch(var(--dofus-bg-primary)) 0%, oklch(0.09 0.015 40) 100%)",
+                  background: data.isDefeat ? "linear-gradient(90deg, oklch(0.08 0.02 25) 0%, oklch(0.06 0.015 20) 100%)" : "linear-gradient(90deg, oklch(var(--dofus-bg-primary)) 0%, oklch(0.09 0.015 40) 100%)",
                   borderBottom: "1px solid oklch(var(--dofus-border-gold-dim))",
                   padding: "14px 20px 10px",
                   display: "flex",
@@ -64229,7 +63600,7 @@ const PostBattleRecap = ({
                 },
                 children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 10 }, children: [
-                    data.bossDefeated && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    data.bossDefeated && !data.isDefeat && /* @__PURE__ */ jsxRuntimeExports.jsxs(
                       "div",
                       {
                         style: {
@@ -64264,19 +63635,19 @@ const PostBattleRecap = ({
                         ]
                       }
                     ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 22 }, children: "⚔️" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 22 }, children: data.isDefeat ? "💀" : "⚔️" }),
                     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
                       /* @__PURE__ */ jsxRuntimeExports.jsx(
                         "div",
                         {
                           style: {
-                            color: "oklch(var(--dofus-text-gold))",
+                            color: data.isDefeat ? "#ff4444" : "oklch(var(--dofus-text-gold))",
                             fontWeight: 800,
                             fontSize: 16,
                             letterSpacing: "0.06em",
                             textTransform: "uppercase"
                           },
-                          children: "Battle Complete!"
+                          children: data.isDefeat ? "Defeated" : "Battle Complete!"
                         }
                       ),
                       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -64329,89 +63700,138 @@ const PostBattleRecap = ({
               }
             ),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "16px 20px 20px" }, children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(RecapSection, { icon: "✨", title: "Experience Earned", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: 8
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                        "span",
-                        {
-                          style: {
-                            fontSize: 22,
-                            fontWeight: 800,
-                            color: "oklch(0.75 0.22 310)"
-                          },
-                          children: [
-                            "+",
-                            data.xpEarned,
-                            " XP"
-                          ]
-                        }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                        "span",
-                        {
-                          style: {
-                            fontSize: 11,
-                            color: "oklch(var(--dofus-text-dim))"
-                          },
-                          children: [
-                            "Level ",
-                            data.currentLevel
-                          ]
-                        }
-                      )
-                    ]
-                  }
-                ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "dofus-xp-bar", style: { borderRadius: 4 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "div",
-                  {
-                    className: "dofus-xp-bar-fill",
-                    style: {
-                      width: `${xpPercent}%`,
-                      borderRadius: 4,
-                      transition: "width 1s cubic-bezier(0.34,1.56,0.64,1)"
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                RecapSection,
+                {
+                  icon: "✨",
+                  title: data.isDefeat ? "XP Lost" : "Experience Earned",
+                  children: data.isDefeat ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between"
+                      },
+                      children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "span",
+                          {
+                            style: {
+                              fontSize: 22,
+                              fontWeight: 800,
+                              color: "#ff4444"
+                            },
+                            children: [
+                              "-",
+                              data.xpLost || 0,
+                              " XP"
+                            ]
+                          }
+                        ),
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "span",
+                          {
+                            style: {
+                              fontSize: 11,
+                              color: "oklch(var(--dofus-text-dim))"
+                            },
+                            children: [
+                              "Level ",
+                              data.currentLevel
+                            ]
+                          }
+                        )
+                      ]
                     }
-                  }
-                ) }),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      justifyContent: "space-between",
-                      marginTop: 4
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                        "span",
-                        {
-                          style: { fontSize: 9, color: "oklch(var(--dofus-text-dim))" },
-                          children: [
-                            data.currentXP,
-                            " / ",
-                            data.xpForNextLevel,
-                            " XP"
-                          ]
+                  ) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "div",
+                      {
+                        style: {
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: 8
+                        },
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "span",
+                            {
+                              style: {
+                                fontSize: 22,
+                                fontWeight: 800,
+                                color: "oklch(0.75 0.22 310)"
+                              },
+                              children: [
+                                "+",
+                                data.xpEarned,
+                                " XP"
+                              ]
+                            }
+                          ),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "span",
+                            {
+                              style: {
+                                fontSize: 11,
+                                color: "oklch(var(--dofus-text-dim))"
+                              },
+                              children: [
+                                "Level ",
+                                data.currentLevel
+                              ]
+                            }
+                          )
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "dofus-xp-bar", style: { borderRadius: 4 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "div",
+                      {
+                        className: "dofus-xp-bar-fill",
+                        style: {
+                          width: `${xpPercent}%`,
+                          borderRadius: 4,
+                          transition: "width 1s cubic-bezier(0.34,1.56,0.64,1)"
                         }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 9, color: "oklch(0.75 0.22 310)" }, children: [
-                        xpUntilNext,
-                        " XP until Level ",
-                        data.currentLevel + 1
-                      ] })
-                    ]
-                  }
-                )
-              ] }),
+                      }
+                    ) }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "div",
+                      {
+                        style: {
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginTop: 4
+                        },
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "span",
+                            {
+                              style: {
+                                fontSize: 9,
+                                color: "oklch(var(--dofus-text-dim))"
+                              },
+                              children: [
+                                data.currentXP,
+                                " / ",
+                                data.xpForNextLevel,
+                                " XP"
+                              ]
+                            }
+                          ),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { fontSize: 9, color: "oklch(0.75 0.22 310)" }, children: [
+                            xpUntilNext,
+                            " XP until Level ",
+                            data.currentLevel + 1
+                          ] })
+                        ]
+                      }
+                    )
+                  ] })
+                }
+              ),
               /* @__PURE__ */ jsxRuntimeExports.jsx(RecapSection, { icon: "🗡️", title: "Battle Stats", children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
                 "div",
                 {
@@ -64496,150 +63916,189 @@ const PostBattleRecap = ({
                   ))
                 }
               ) }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(RecapSection, { icon: "🪙", title: "Doka Earned", children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: data.dokaBreakdown.length > 0 ? 8 : 0
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                        "span",
-                        {
-                          style: {
-                            fontSize: 20,
-                            fontWeight: 800,
-                            color: "oklch(0.78 0.2 48)"
-                          },
-                          children: [
-                            "+",
-                            data.dokaEarned.toLocaleString(),
-                            " Doka"
-                          ]
-                        }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13 }, children: "💰" })
-                    ]
-                  }
-                ),
-                data.dungeonMultiplier && data.dungeonMultiplier > 1 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "div",
-                  {
-                    "data-ocid": "post_battle_recap.dungeon_bonus",
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "5px 8px",
-                      marginBottom: 8,
-                      background: "rgba(139,0,0,0.18)",
-                      border: "1px solid rgba(204,0,0,0.45)",
-                      borderRadius: 5
-                    },
-                    children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: "⚔️" }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "div",
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                RecapSection,
+                {
+                  icon: "🪙",
+                  title: data.isDefeat ? "Doka Lost" : "Doka Earned",
+                  children: data.isDefeat ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between"
+                      },
+                      children: [
+                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "span",
                           {
                             style: {
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: "#ff6666",
-                              letterSpacing: "0.05em"
+                              fontSize: 20,
+                              fontWeight: 800,
+                              color: "#ff4444"
                             },
-                            children: "DUNGEON CHAIN BONUS"
+                            children: [
+                              "-",
+                              data.dokaLost || 0,
+                              " Doka"
+                            ]
                           }
                         ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { fontSize: 9, color: "#aa5555", marginTop: 1 }, children: [
-                          "Depth ",
-                          data.dungeonDepth ?? 1,
-                          "/",
-                          data.dungeonMaxDepth ?? "?",
-                          " ",
-                          "— ",
-                          data.dungeonMultiplier,
-                          "× Doka multiplier applied"
-                        ] })
-                      ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                        "span",
-                        {
-                          style: {
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: "#ff4444",
-                            flexShrink: 0
-                          },
-                          children: [
-                            "×",
-                            data.dungeonMultiplier
-                          ]
-                        }
-                      )
-                    ]
-                  }
-                ),
-                data.dokaBreakdown.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                  "div",
-                  {
-                    className: "dofus-scrollbar",
-                    style: { maxHeight: 90, overflowY: "auto" },
-                    children: data.dokaBreakdown.map((d2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13 }, children: "💰" })
+                      ]
+                    }
+                  ) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
                       "div",
                       {
-                        "data-ocid": `post_battle_recap.doka.${i + 1}`,
                         style: {
                           display: "flex",
-                          justifyContent: "space-between",
                           alignItems: "center",
-                          padding: "3px 5px",
-                          marginBottom: 2,
-                          background: "rgba(200,150,42,0.05)",
-                          border: "1px solid rgba(200,150,42,0.1)",
-                          borderRadius: 3
+                          justifyContent: "space-between",
+                          marginBottom: data.dokaBreakdown.length > 0 ? 8 : 0
                         },
                         children: [
                           /* @__PURE__ */ jsxRuntimeExports.jsxs(
                             "span",
                             {
                               style: {
-                                fontSize: 10,
-                                color: "oklch(var(--dofus-text-dim))"
-                              },
-                              children: [
-                                d2.enemyName,
-                                " (Lv.",
-                                d2.level,
-                                ")"
-                              ]
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                            "span",
-                            {
-                              style: {
-                                fontSize: 10,
-                                fontWeight: 700,
+                                fontSize: 20,
+                                fontWeight: 800,
                                 color: "oklch(0.78 0.2 48)"
                               },
                               children: [
                                 "+",
-                                d2.doka.toLocaleString()
+                                data.dokaEarned.toLocaleString(),
+                                " Doka"
+                              ]
+                            }
+                          ),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13 }, children: "💰" })
+                        ]
+                      }
+                    ),
+                    data.dungeonMultiplier && data.dungeonMultiplier > 1 && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "div",
+                      {
+                        "data-ocid": "post_battle_recap.dungeon_bonus",
+                        style: {
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "5px 8px",
+                          marginBottom: 8,
+                          background: "rgba(139,0,0,0.18)",
+                          border: "1px solid rgba(204,0,0,0.45)",
+                          borderRadius: 5
+                        },
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14 }, children: "⚔️" }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: "#ff6666",
+                                  letterSpacing: "0.05em"
+                                },
+                                children: "DUNGEON CHAIN BONUS"
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "div",
+                              {
+                                style: { fontSize: 9, color: "#aa5555", marginTop: 1 },
+                                children: [
+                                  "Depth ",
+                                  data.dungeonDepth ?? 1,
+                                  "/",
+                                  data.dungeonMaxDepth ?? "?",
+                                  " — ",
+                                  data.dungeonMultiplier,
+                                  "× Doka multiplier applied"
+                                ]
+                              }
+                            )
+                          ] }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "span",
+                            {
+                              style: {
+                                fontSize: 12,
+                                fontWeight: 800,
+                                color: "#ff4444",
+                                flexShrink: 0
+                              },
+                              children: [
+                                "×",
+                                data.dungeonMultiplier
                               ]
                             }
                           )
                         ]
-                      },
-                      `doka-${d2.enemyName}-${d2.level}-${i}`
-                    ))
-                  }
-                )
-              ] }),
+                      }
+                    ),
+                    data.dokaBreakdown.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "div",
+                      {
+                        className: "dofus-scrollbar",
+                        style: { maxHeight: 90, overflowY: "auto" },
+                        children: data.dokaBreakdown.map((d2, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "div",
+                          {
+                            "data-ocid": `post_battle_recap.doka.${i + 1}`,
+                            style: {
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "3px 5px",
+                              marginBottom: 2,
+                              background: "rgba(200,150,42,0.05)",
+                              border: "1px solid rgba(200,150,42,0.1)",
+                              borderRadius: 3
+                            },
+                            children: [
+                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                "span",
+                                {
+                                  style: {
+                                    fontSize: 10,
+                                    color: "oklch(var(--dofus-text-dim))"
+                                  },
+                                  children: [
+                                    d2.enemyName,
+                                    " (Lv.",
+                                    d2.level,
+                                    ")"
+                                  ]
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                "span",
+                                {
+                                  style: {
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    color: "oklch(0.78 0.2 48)"
+                                  },
+                                  children: [
+                                    "+",
+                                    d2.doka.toLocaleString()
+                                  ]
+                                }
+                              )
+                            ]
+                          },
+                          `doka-${d2.enemyName}-${d2.level}-${i}`
+                        ))
+                      }
+                    )
+                  ] })
+                }
+              ),
               newlyUnlockedAchievements.length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(RecapSection, { icon: "🏆", title: "Achievements Unlocked", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "div",
                 {
@@ -64746,7 +64205,7 @@ const PostBattleRecap = ({
                     e.currentTarget.style.background = "linear-gradient(135deg, rgba(200,150,42,0.3) 0%, rgba(200,150,42,0.15) 100%)";
                     e.currentTarget.style.boxShadow = "0 0 12px oklch(var(--dofus-border-gold) / 0.2)";
                   },
-                  children: "Continue Exploring →"
+                  children: data.isDefeat ? "Respawn →" : "Continue Exploring →"
                 }
               )
             ] })
@@ -65305,7 +64764,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-1HoBYkYM.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Dwf5R11Q.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
@@ -65627,7 +65086,7 @@ function App() {
               position: "fixed",
               inset: 0,
               zIndex: 20,
-              overflow: "hidden"
+              overflow: "visible"
             },
             children: [
               !isAuthenticated && /* @__PURE__ */ jsxRuntimeExports.jsx(LandingPage, { onAdminLogin: () => setShowAdmin(true) }),

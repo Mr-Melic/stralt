@@ -1,4 +1,4 @@
-import { u as useActor, a as useQuery, D as DEFAULT_BOSS_CONFIGS, r as reactExports, b as useGetEnemyConfigs, c as useGetRegionConfigs, d as useGetPlayerSpriteConfigs, e as useGetSpellConfigs, f as useGetMapModifiers, g as useGetGameConfig, h as useAdminSetEnemyConfig, i as useAdminDeleteEnemyConfig, j as useAdminSetRegionConfig, k as useAdminDeleteRegionConfig, l as useAdminSetPlayerSpriteConfig, m as useAdminDeletePlayerSpriteConfig, n as useAdminSetSpellConfig, o as useAdminDeleteSpellConfig, p as useAdminSetMapModifier, q as useAdminDeleteMapModifier, s as useAdminSetGameConfig, t as useGetAchievementConfigs, v as useAdminSetAchievementConfig, w as useAdminDeleteAchievementConfig, x as useGetEnemyNames, y as useInitDefaultNames, z as useAdminAddEnemyName, A as useAdminDeleteEnemyName, R as React, B as jsxRuntimeExports, C as ue, P as Principal, E as useAssignUserRole, F as logDebugWarn, G as useSetBossConfig, H as useDeleteBossConfig, I as BOSS_IDS, J as BossAbility } from "./index-YvI2AeSW.js";
+import { u as useActor, a as useQuery, D as DEFAULT_BOSS_CONFIGS, r as reactExports, b as useGetEnemyConfigs, c as useGetRegionConfigs, d as useGetPlayerSpriteConfigs, e as useGetSpellConfigs, f as useGetMapModifiers, g as useGetGameConfig, h as useAdminSetEnemyConfig, i as useAdminDeleteEnemyConfig, j as useAdminSetRegionConfig, k as useAdminDeleteRegionConfig, l as useAdminSetPlayerSpriteConfig, m as useAdminDeletePlayerSpriteConfig, n as useAdminSetSpellConfig, o as useAdminDeleteSpellConfig, p as useAdminSetMapModifier, q as useAdminDeleteMapModifier, s as useAdminSetGameConfig, t as useGetAchievementConfigs, v as useAdminSetAchievementConfig, w as useAdminDeleteAchievementConfig, x as useGetEnemyNames, y as useInitDefaultNames, z as useAdminAddEnemyName, A as useAdminDeleteEnemyName, R as React, B as jsxRuntimeExports, C as ue, P as Principal, E as useAssignUserRole, F as logDebugWarn, G as useSetBossConfig, H as useDeleteBossConfig, I as BOSS_IDS, J as BossAbility } from "./index-CSllxzkW.js";
 function withTimeout(promise, ms = 1e4) {
   return Promise.race([
     promise,
@@ -128,50 +128,53 @@ const newBattleEffect = () => ({
   value: BigInt(0)
 });
 const C = {
-  bg0: "#060810",
-  bg1: "#0d0f1a",
-  bg2: "#111422",
-  bg3: "#171b2e",
-  gold: "#c0392b",
-  goldDim: "#c0392b44",
-  goldBright: "#e74c3c",
-  silver: "#c0ccd8",
-  dim: "#5a6a7a",
-  dimmer: "#3a4a5a",
-  red: "#c0392b",
-  green: "#2ecc71",
-  blue: "#4a9adf"
+  bg0: "#13161f",
+  bg1: "#1d2230",
+  bg2: "#1a1e2b",
+  bg3: "#242a3a",
+  gold: "#f0c44a",
+  goldBright: "#ffe89a",
+  goldDim: "#5c4a1f",
+  red: "#d8463f",
+  blue: "#86c4ff",
+  green: "#56d18a",
+  silver: "#b8b0c8",
+  dim: "#8a8090",
+  dimmer: "#5a5060"
 };
 const inputStyle = (err) => ({
   width: "100%",
-  background: C.bg0,
-  border: `1px solid ${err ? C.red : C.goldDim}`,
-  borderRadius: 5,
-  color: C.silver,
+  background: "linear-gradient(180deg,#13141c,#0e0f16)",
+  border: `1px solid ${err ? "#c0392b" : "rgba(192,57,43,0.27)"}`,
+  borderRadius: 8,
+  color: "#c0ccd8",
   padding: "7px 10px",
   fontSize: 12,
   outline: "none",
-  transition: "border-color 0.15s",
-  fontFamily: "'Space Grotesk', system-ui, sans-serif"
+  transition: "box-shadow 0.15s",
+  fontFamily: "'Saira', system-ui, sans-serif",
+  boxShadow: "inset 0 1px 3px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.04)"
 });
 const labelStyle = {
-  color: C.gold,
+  color: "#d8463f",
   fontSize: 10,
   fontWeight: 700,
   letterSpacing: "0.1em",
   textTransform: "uppercase",
   marginBottom: 4,
-  display: "block"
+  display: "block",
+  fontFamily: "'Saira', system-ui, sans-serif"
 };
 const sectionHeadStyle = {
-  color: C.gold,
+  color: "#d8463f",
   fontSize: 9,
   fontWeight: 800,
   letterSpacing: "0.16em",
   textTransform: "uppercase",
   marginBottom: 10,
   paddingBottom: 5,
-  borderBottom: `1px solid ${C.goldDim}`
+  borderBottom: "1px solid rgba(216,70,63,0.25)",
+  fontFamily: "'Saira', system-ui, sans-serif"
 };
 function Btn({
   variant,
@@ -181,36 +184,10 @@ function Btn({
   small,
   type = "button"
 }) {
-  const styles = {
-    padding: small ? "4px 10px" : "7px 16px",
-    borderRadius: 5,
-    fontSize: small ? 10 : 11,
-    fontWeight: 700,
-    cursor: "pointer",
-    letterSpacing: "0.07em",
-    textTransform: "uppercase",
-    transition: "opacity 0.15s, transform 0.1s",
-    border: "none",
-    fontFamily: "'Space Grotesk', system-ui, sans-serif",
-    ...variant === "gold" ? {
-      background: `linear-gradient(135deg, #8b1a14, ${C.gold})`,
-      color: "#fde",
-      boxShadow: "0 2px 8px rgba(192,57,43,0.35)"
-    } : variant === "red" ? {
-      background: `linear-gradient(135deg, #6a1010, ${C.red})`,
-      color: "#fde",
-      boxShadow: "0 2px 6px rgba(192,57,43,0.3)"
-    } : variant === "blue" ? {
-      background: `linear-gradient(135deg, #1a3a6a, ${C.blue})`,
-      color: "#def",
-      boxShadow: "0 2px 6px rgba(74,154,223,0.25)"
-    } : {
-      background: "transparent",
-      color: C.dim,
-      border: `1px solid ${C.goldDim}`
-    }
-  };
-  return /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type, onClick, "data-ocid": ocid, style: styles, children });
+  const base = "inline-flex items-center justify-center gap-1.5 border-none cursor-pointer transition-all duration-150 ease-in-out font-bold uppercase tracking-wider";
+  const size = small ? "px-2.5 py-1 text-[10px] rounded-lg" : "px-4 py-1.5 text-[11px] rounded-xl";
+  const cls = variant === "gold" || variant === "red" ? `${base} ${size} stone-btn-crimson` : variant === "blue" ? `${base} ${size} stone-btn-slate text-[#86c4ff]` : `${base} ${size} bg-transparent text-[#5a6a7a] border border-[rgba(192,57,43,0.27)] hover:text-[#cdbfd2]`;
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type, onClick, "data-ocid": ocid, className: cls, children });
 }
 function Field({
   label,
@@ -222,7 +199,7 @@ function Field({
   err
 }) {
   const id = ocid ?? label.toLowerCase().replace(/\s+/g, "-");
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 10 }, children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mb-2.5", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: id, style: labelStyle, children: label }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       "input",
@@ -233,7 +210,10 @@ function Field({
         onChange: (e) => onChange(e.target.value),
         placeholder,
         "data-ocid": ocid,
-        style: inputStyle(err)
+        className: "stone-inset w-full px-2.5 py-1.5 text-xs text-[#c0ccd8] font-['Saira',system-ui,sans-serif]",
+        style: {
+          border: `1px solid ${err ? "#c0392b" : "transparent"}`
+        }
       }
     )
   ] });
@@ -244,73 +224,23 @@ function StatRow({
   onChange,
   ocid
 }) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "div",
-    {
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        marginBottom: 8,
-        background: C.bg0,
-        borderRadius: 5,
-        padding: "6px 12px",
-        border: `1px solid ${C.goldDim}`
-      },
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "span",
-          {
-            style: {
-              color: C.gold,
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.1em",
-              textTransform: "uppercase",
-              width: 72,
-              flexShrink: 0
-            },
-            children: label
-          }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "input",
-          {
-            type: "number",
-            value: String(value),
-            min: 0,
-            onChange: (e) => onChange(BigInt(Math.max(0, Number.parseInt(e.target.value) || 0))),
-            "data-ocid": ocid,
-            style: {
-              flex: 1,
-              background: "transparent",
-              border: "none",
-              color: C.silver,
-              fontSize: 13,
-              fontWeight: 600,
-              outline: "none",
-              fontFamily: "'Space Grotesk', system-ui, sans-serif"
-            }
-          }
-        )
-      ]
-    }
-  );
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 mb-2 px-3 py-1.5 rounded-lg stone-inset border border-[rgba(192,57,43,0.15)]", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] font-bold uppercase tracking-wider text-[#d8463f] w-[72px] shrink-0 font-['Saira',system-ui,sans-serif]", children: label }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "input",
+      {
+        type: "number",
+        value: String(value),
+        min: 0,
+        onChange: (e) => onChange(BigInt(Math.max(0, Number.parseInt(e.target.value) || 0))),
+        "data-ocid": ocid,
+        className: "flex-1 bg-transparent border-none text-[13px] font-semibold text-[#c0ccd8] outline-none font-['Saira',system-ui,sans-serif]"
+      }
+    )
+  ] });
 }
 function PanelCard({ children }) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsx(
-    "div",
-    {
-      style: {
-        background: C.bg2,
-        border: `1px solid ${C.goldDim}`,
-        borderRadius: 8,
-        marginBottom: 8,
-        overflow: "hidden"
-      },
-      children
-    }
-  );
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-frame mb-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-well p-3", children }) });
 }
 const TabErrorBanner = ({ tabName, onRetry }) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
   "div",
@@ -399,7 +329,7 @@ const EnemyPresets = ({ currentConfig, onLoad }) => {
     "div",
     {
       style: {
-        background: C.bg0,
+        background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: "12px 14px",
@@ -444,7 +374,7 @@ const EnemyPresets = ({ currentConfig, onLoad }) => {
             ]
           }
         ),
-        presets.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 11 }, children: "No presets saved yet." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 }, children: presets.map((p, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        presets.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 11 }, children: "No presets saved yet." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 6 }, children: presets.map((p, i) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "div",
           {
             "data-ocid": `admin.enemy.preset.item.${i + 1}`,
@@ -452,13 +382,13 @@ const EnemyPresets = ({ currentConfig, onLoad }) => {
               display: "flex",
               alignItems: "center",
               gap: 6,
-              background: C.bg1,
+              background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
               border: `1px solid ${C.goldDim}`,
               borderRadius: 5,
               padding: "4px 10px"
             },
             children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.silver, fontSize: 11, fontWeight: 700 }, children: p.name }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#c0ccd8", fontSize: 11, fontWeight: 700 }, children: p.name }),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 "button",
                 {
@@ -639,7 +569,7 @@ const EnemyEditor = ({ initial, regions, onSave, onCancel, saving }) => {
           flexWrap: "wrap",
           gap: 8,
           marginBottom: 16,
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           borderRadius: 6,
           padding: "10px 12px",
           border: `1px solid ${C.goldDim}`
@@ -683,7 +613,7 @@ const EnemyEditor = ({ initial, regions, onSave, onCancel, saving }) => {
               r.id
             );
           }),
-          regions.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.dimmer, fontSize: 11 }, children: "No regions configured yet — add some first" })
+          regions.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#6a6070", fontSize: 11 }, children: "No regions configured yet — add some first" })
         ]
       }
     ),
@@ -804,7 +734,7 @@ const RegionEditor = ({ initial, onSave, onCancel, saving }) => {
                   }
                 }
               ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.silver, fontSize: 12 }, children: cfg.backgroundColor })
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#c0ccd8", fontSize: 12 }, children: cfg.backgroundColor })
             ] })
           ] })
         ]
@@ -823,7 +753,7 @@ const RegionEditor = ({ initial, onSave, onCancel, saving }) => {
           gap: 10,
           alignItems: "center",
           marginBottom: 6,
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           padding: "7px 12px",
           borderRadius: 6,
           border: `1px solid ${C.goldDim}`
@@ -844,7 +774,7 @@ const RegionEditor = ({ initial, onSave, onCancel, saving }) => {
                   "span",
                   {
                     style: {
-                      color: C.goldBright,
+                      color: "#f0c44a",
                       fontWeight: 700,
                       fontSize: 12
                     },
@@ -860,14 +790,14 @@ const RegionEditor = ({ initial, onSave, onCancel, saving }) => {
                       borderRadius: 20,
                       padding: "1px 7px",
                       fontSize: 10,
-                      color: C.gold,
+                      color: "#f0c44a",
                       letterSpacing: "0.06em",
                       textTransform: "uppercase"
                     },
                     children: Object.keys(fx.effectType)[0]
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: C.dim, fontSize: 11 }, children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: "#8a8090", fontSize: 11 }, children: [
                   "+",
                   String(fx.value)
                 ] })
@@ -909,7 +839,7 @@ const RegionEditor = ({ initial, onSave, onCancel, saving }) => {
           gap: 8,
           alignItems: "end",
           marginTop: 6,
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           padding: "10px 12px",
           borderRadius: 6,
           border: `1px solid ${C.goldDim}`,
@@ -946,10 +876,10 @@ const RegionEditor = ({ initial, onSave, onCancel, saving }) => {
                 })),
                 "data-ocid": "admin.region.effect.type_select",
                 style: {
-                  background: C.bg0,
+                  background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                   border: `1px solid ${C.goldDim}`,
                   borderRadius: 5,
-                  color: C.silver,
+                  color: "#c0ccd8",
                   padding: "7px 10px",
                   fontSize: 12,
                   outline: "none"
@@ -1040,7 +970,7 @@ function WalkFrameSection({
         border: `1px solid ${C.goldDim}`,
         borderRadius: 6,
         overflow: "hidden",
-        background: C.bg0
+        background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)"
       },
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -1058,7 +988,7 @@ function WalkFrameSection({
               background: "transparent",
               border: "none",
               cursor: "pointer",
-              color: C.gold,
+              color: "#f0c44a",
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: "0.1em",
@@ -1103,7 +1033,7 @@ function WalkFrameSection({
                   "span",
                   {
                     style: {
-                      color: C.dimmer,
+                      color: "#6a6070",
                       fontSize: 10,
                       width: 56,
                       flexShrink: 0
@@ -1235,7 +1165,7 @@ const SpriteEditorForm = ({ initial, onSave, onCancel, saving }) => {
             {
               style: {
                 marginBottom: 14,
-                background: C.bg0,
+                background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                 border: `1px solid ${C.goldDim}`,
                 borderRadius: 8,
                 padding: 12,
@@ -1252,7 +1182,7 @@ const SpriteEditorForm = ({ initial, onSave, onCancel, saving }) => {
                       height: 72,
                       border: `2px solid ${C.goldDim}`,
                       borderRadius: 6,
-                      background: C.bg1,
+                      background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -1277,7 +1207,7 @@ const SpriteEditorForm = ({ initial, onSave, onCancel, saving }) => {
                     ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
                       "span",
                       {
-                        style: { color: C.dimmer, fontSize: 10, textAlign: "center" },
+                        style: { color: "#6a6070", fontSize: 10, textAlign: "center" },
                         children: "No preview"
                       }
                     )
@@ -1288,7 +1218,7 @@ const SpriteEditorForm = ({ initial, onSave, onCancel, saving }) => {
                     "div",
                     {
                       style: {
-                        color: C.silver,
+                        color: "#c0ccd8",
                         fontWeight: 700,
                         fontSize: 13,
                         marginBottom: 4
@@ -1296,7 +1226,7 @@ const SpriteEditorForm = ({ initial, onSave, onCancel, saving }) => {
                       children: cfg.name || "Unnamed Character"
                     }
                   ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: C.dim, fontSize: 10 }, children: cfg.characterPieceType.charAt(0).toUpperCase() + cfg.characterPieceType.slice(1) })
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#8a8090", fontSize: 10 }, children: cfg.characterPieceType.charAt(0).toUpperCase() + cfg.characterPieceType.slice(1) })
                 ] })
               ]
             }
@@ -1391,7 +1321,7 @@ const SpriteEditorForm = ({ initial, onSave, onCancel, saving }) => {
               padding: "12px 20px",
               display: "flex",
               gap: 10,
-              background: C.bg1,
+              background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
               justifyContent: "flex-end"
             },
             children: [
@@ -1475,7 +1405,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
             style: {
               display: "flex",
               flexDirection: "column",
-              background: C.bg1,
+              background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
               borderRight: `1px solid ${C.goldDim}`,
               overflow: "hidden"
             },
@@ -1496,7 +1426,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                       "h3",
                       {
                         style: {
-                          color: C.goldBright,
+                          color: "#f0c44a",
                           margin: 0,
                           fontSize: 13,
                           fontWeight: 800,
@@ -1525,7 +1455,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                   {
                     "data-ocid": "admin.sprites.loading_state",
                     style: {
-                      color: C.dim,
+                      color: "#8a8090",
                       fontSize: 11,
                       textAlign: "center",
                       padding: 24
@@ -1540,7 +1470,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                     style: {
                       textAlign: "center",
                       padding: "32px 16px",
-                      color: C.dimmer,
+                      color: "#6a6070",
                       fontSize: 12
                     },
                     children: [
@@ -1585,7 +1515,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                               height: 36,
                               border: `1px solid ${isActive ? C.gold : C.goldDim}`,
                               borderRadius: 6,
-                              background: C.bg0,
+                              background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
@@ -1604,7 +1534,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                                   imageRendering: "pixelated"
                                 }
                               }
-                            ) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.goldBright, fontSize: 18 }, children: PIECE_ICONS[s.characterPieceType] ?? "♙" })
+                            ) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#f0c44a", fontSize: 18 }, children: PIECE_ICONS[s.characterPieceType] ?? "♙" })
                           }
                         ),
                         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [
@@ -1632,7 +1562,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                                 borderRadius: 10,
                                 padding: "1px 7px",
                                 fontSize: 9,
-                                color: C.gold,
+                                color: "#f0c44a",
                                 textTransform: "capitalize",
                                 letterSpacing: "0.05em",
                                 marginTop: 2
@@ -1659,7 +1589,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                                     background: "transparent",
                                     border: `1px solid ${C.goldDim}`,
                                     borderRadius: 4,
-                                    color: C.dim,
+                                    color: "#8a8090",
                                     padding: "3px 7px",
                                     fontSize: 11,
                                     cursor: "pointer"
@@ -1706,7 +1636,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
-              background: C.bg0
+              background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)"
             },
             children: editingCfg ? /* @__PURE__ */ jsxRuntimeExports.jsx(
               SpriteEditorForm,
@@ -1726,7 +1656,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  color: C.dimmer,
+                  color: "#6a6070",
                   gap: 12
                 },
                 children: [
@@ -1779,7 +1709,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
               "div",
               {
                 style: {
-                  background: C.bg2,
+                  background: "linear-gradient(180deg,#13141c,#0e0f16)",
                   border: `1px solid ${C.red}`,
                   borderRadius: 10,
                   padding: "28px 32px",
@@ -1799,7 +1729,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                     "h3",
                     {
                       style: {
-                        color: C.goldBright,
+                        color: "#f0c44a",
                         textAlign: "center",
                         margin: "0 0 10px",
                         fontSize: 15,
@@ -1812,7 +1742,7 @@ const SpriteList = ({ sprites, loading, saving, onSave, onDelete }) => {
                     "p",
                     {
                       style: {
-                        color: C.dim,
+                        color: "#8a8090",
                         fontSize: 12,
                         textAlign: "center",
                         marginBottom: 20
@@ -1865,7 +1795,7 @@ const EnemyList = ({ enemies, loading, onAdd, onEdit, onDelete }) => /* @__PURE_
             "h3",
             {
               style: {
-                color: C.goldBright,
+                color: "#f0c44a",
                 margin: 0,
                 fontSize: 14,
                 fontWeight: 800,
@@ -1874,7 +1804,7 @@ const EnemyList = ({ enemies, loading, onAdd, onEdit, onDelete }) => /* @__PURE_
               children: "Enemy Configurations"
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: C.dim, fontSize: 11, margin: "3px 0 0" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: "#8a8090", fontSize: 11, margin: "3px 0 0" }, children: [
             enemies.length,
             " enemi",
             enemies.length === 1 ? "y" : "es",
@@ -1889,7 +1819,12 @@ const EnemyList = ({ enemies, loading, onAdd, onEdit, onDelete }) => /* @__PURE_
     "div",
     {
       "data-ocid": "admin.enemies.loading_state",
-      style: { color: C.dim, fontSize: 12, textAlign: "center", padding: 24 },
+      style: {
+        color: "#8a8090",
+        fontSize: 12,
+        textAlign: "center",
+        padding: 24
+      },
       children: "Loading enemies…"
     }
   ),
@@ -1900,7 +1835,7 @@ const EnemyList = ({ enemies, loading, onAdd, onEdit, onDelete }) => /* @__PURE_
       style: {
         textAlign: "center",
         padding: "40px 0",
-        color: C.dimmer,
+        color: "#6a6070",
         fontSize: 13,
         border: `1px dashed ${C.dimmer}`,
         borderRadius: 8
@@ -1946,7 +1881,7 @@ const EnemyList = ({ enemies, loading, onAdd, onEdit, onDelete }) => /* @__PURE_
             "div",
             {
               style: {
-                color: C.silver,
+                color: "#c0ccd8",
                 fontWeight: 700,
                 fontSize: 13,
                 marginBottom: 2
@@ -2033,7 +1968,7 @@ const RegionList = ({ regions, loading, onAdd, onEdit, onDelete }) => /* @__PURE
             "h3",
             {
               style: {
-                color: C.goldBright,
+                color: "#f0c44a",
                 margin: 0,
                 fontSize: 14,
                 fontWeight: 800,
@@ -2042,7 +1977,7 @@ const RegionList = ({ regions, loading, onAdd, onEdit, onDelete }) => /* @__PURE
               children: "Region Configurations"
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: C.dim, fontSize: 11, margin: "3px 0 0" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: "#8a8090", fontSize: 11, margin: "3px 0 0" }, children: [
             regions.length,
             " region",
             regions.length === 1 ? "" : "s",
@@ -2057,7 +1992,12 @@ const RegionList = ({ regions, loading, onAdd, onEdit, onDelete }) => /* @__PURE
     "div",
     {
       "data-ocid": "admin.regions.loading_state",
-      style: { color: C.dim, fontSize: 12, textAlign: "center", padding: 24 },
+      style: {
+        color: "#8a8090",
+        fontSize: 12,
+        textAlign: "center",
+        padding: 24
+      },
       children: "Loading regions…"
     }
   ),
@@ -2068,7 +2008,7 @@ const RegionList = ({ regions, loading, onAdd, onEdit, onDelete }) => /* @__PURE
       style: {
         textAlign: "center",
         padding: "40px 0",
-        color: C.dimmer,
+        color: "#6a6070",
         fontSize: 13,
         border: `1px dashed ${C.dimmer}`,
         borderRadius: 8
@@ -2110,7 +2050,7 @@ const RegionList = ({ regions, loading, onAdd, onEdit, onDelete }) => /* @__PURE
             "div",
             {
               style: {
-                color: C.silver,
+                color: "#c0ccd8",
                 fontWeight: 700,
                 fontSize: 13,
                 marginBottom: 2
@@ -2137,7 +2077,7 @@ const RegionList = ({ regions, loading, onAdd, onEdit, onDelete }) => /* @__PURE
                       borderRadius: 20,
                       padding: "1px 7px",
                       fontSize: 10,
-                      color: C.gold
+                      color: "#f0c44a"
                     },
                     children: [
                       "Lv ",
@@ -2165,7 +2105,7 @@ const RegionList = ({ regions, loading, onAdd, onEdit, onDelete }) => /* @__PURE
                     ]
                   }
                 ),
-                r.battleEffects.slice(0, 2).map((fx) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.dim, fontSize: 10 }, children: fx.name }, fx.id))
+                r.battleEffects.slice(0, 2).map((fx) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#8a8090", fontSize: 10 }, children: fx.name }, fx.id))
               ]
             }
           )
@@ -2408,7 +2348,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                 alignItems: "center",
                 gap: 8,
                 padding: "7px 10px",
-                background: C.bg0,
+                background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                 border: `1px solid ${C.goldDim}`,
                 borderRadius: 5
               },
@@ -2459,7 +2399,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                 alignItems: "center",
                 gap: 8,
                 padding: "7px 10px",
-                background: C.bg0,
+                background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                 border: `1px solid ${C.goldDim}`,
                 borderRadius: 5
               },
@@ -2500,7 +2440,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                 alignItems: "center",
                 gap: 8,
                 padding: "7px 10px",
-                background: C.bg0,
+                background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                 border: `1px solid ${C.goldDim}`,
                 borderRadius: 5
               },
@@ -2541,7 +2481,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                 alignItems: "center",
                 gap: 8,
                 padding: "7px 10px",
-                background: C.bg0,
+                background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                 border: `1px solid ${C.goldDim}`,
                 borderRadius: 5
               },
@@ -2619,7 +2559,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
               "p",
               {
                 style: {
-                  color: C.goldBright,
+                  color: "#f0c44a",
                   fontSize: 10,
                   fontWeight: 800,
                   textTransform: "uppercase",
@@ -2652,7 +2592,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                       alignItems: "center",
                       gap: 6,
                       padding: "5px 8px",
-                      background: C.bg0,
+                      background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                       border: `1px solid ${C.goldDim}`,
                       borderRadius: 4
                     },
@@ -2725,7 +2665,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
               "p",
               {
                 style: {
-                  color: C.goldBright,
+                  color: "#f0c44a",
                   fontSize: 10,
                   fontWeight: 800,
                   textTransform: "uppercase",
@@ -2738,7 +2678,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                 ]
               }
             ),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: C.dim, fontSize: 9, margin: "0 0 8px" }, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: "#8a8090", fontSize: 9, margin: "0 0 8px" }, children: [
               "Center tile (🟡) = caster position. Click others to mark hit tiles (red).",
               " ",
               cfg.aoe ? "All marked tiles are hit around the target." : "Defines valid target offsets from caster."
@@ -2814,7 +2754,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                         background: "transparent",
                         border: `1px solid ${C.goldDim}`,
                         borderRadius: 3,
-                        color: C.dim,
+                        color: "#8a8090",
                         cursor: "pointer",
                         fontSize: 10
                       },
@@ -2843,14 +2783,14 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                         background: "transparent",
                         border: `1px solid ${C.goldDim}`,
                         borderRadius: 3,
-                        color: C.dim,
+                        color: "#8a8090",
                         cursor: "pointer",
                         fontSize: 10
                       },
                       children: "Reset to Default"
                     }
                   ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: C.dimmer, fontSize: 9 }, children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: "#6a6070", fontSize: 9 }, children: [
                     ((_a = cfg.hitTiles) == null ? void 0 : _a.length) ?? 0,
                     " ",
                     "tiles selected"
@@ -2951,7 +2891,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                 style: { ...inputStyle(), opacity: cfg.buffStat ? 1 : 0.4 }
               }
             ),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 9, margin: "2px 0 0" }, children: "1.0=no change, 1.4=+40%" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 9, margin: "2px 0 0" }, children: "1.0=no change, 1.4=+40%" })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 10 }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "admin.spell.buffduration_input", style: labelStyle, children: "Buff Duration (turns)" }),
@@ -3016,7 +2956,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
                 style: { ...inputStyle(), opacity: cfg.debuffStat ? 1 : 0.4 }
               }
             ),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 9, margin: "2px 0 0" }, children: "MP/AP: negative=reduce. Others: 0.7=-30%" })
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 9, margin: "2px 0 0" }, children: "MP/AP: negative=reduce. Others: 0.7=-30%" })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 10 }, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "admin.spell.debuffduration_input", style: labelStyle, children: "Debuff Duration (turns)" }),
@@ -3156,7 +3096,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
               alignItems: "center",
               gap: 6,
               padding: "5px 8px",
-              background: C.bg0,
+              background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
               border: `1px solid ${C.goldDim}`,
               borderRadius: 4
             },
@@ -3198,7 +3138,7 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
           display: "flex",
           alignItems: "center",
           gap: 14,
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 8,
           padding: "10px 14px",
@@ -3224,8 +3164,8 @@ const SpellEditor = ({ initial, onSave, onCancel, saving }) => {
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: C.goldBright, fontWeight: 800, fontSize: 13 }, children: cfg.name || "Unnamed Spell" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: C.dim, fontSize: 11, marginTop: 2 }, children: cfg.description || "No description" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#f0c44a", fontWeight: 800, fontSize: 13 }, children: cfg.name || "Unnamed Spell" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#8a8090", fontSize: 11, marginTop: 2 }, children: cfg.description || "No description" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 8, marginTop: 4 }, children: [
               [`⚡ ${String(cfg.apCost)} AP`, C.blue],
               [`💧 ${String(cfg.mpCost)} MP`, C.green],
@@ -3288,7 +3228,7 @@ const SpellList = ({ spells, loading, onAdd, onEdit, onDelete }) => /* @__PURE__
             "h3",
             {
               style: {
-                color: C.goldBright,
+                color: "#f0c44a",
                 margin: 0,
                 fontSize: 14,
                 fontWeight: 800,
@@ -3297,7 +3237,7 @@ const SpellList = ({ spells, loading, onAdd, onEdit, onDelete }) => /* @__PURE__
               children: "Spell Configurations"
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: C.dim, fontSize: 11, margin: "3px 0 0" }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: "#8a8090", fontSize: 11, margin: "3px 0 0" }, children: [
             spells.length,
             " spell",
             spells.length === 1 ? "" : "s",
@@ -3312,7 +3252,12 @@ const SpellList = ({ spells, loading, onAdd, onEdit, onDelete }) => /* @__PURE__
     "div",
     {
       "data-ocid": "admin.spells.loading_state",
-      style: { color: C.dim, fontSize: 12, textAlign: "center", padding: 24 },
+      style: {
+        color: "#8a8090",
+        fontSize: 12,
+        textAlign: "center",
+        padding: 24
+      },
       children: "Loading spells…"
     }
   ),
@@ -3323,7 +3268,7 @@ const SpellList = ({ spells, loading, onAdd, onEdit, onDelete }) => /* @__PURE__
       style: {
         textAlign: "center",
         padding: "40px 0",
-        color: C.dimmer,
+        color: "#6a6070",
         fontSize: 13,
         border: `1px dashed ${C.dimmer}`,
         borderRadius: 8
@@ -3369,7 +3314,7 @@ const SpellList = ({ spells, loading, onAdd, onEdit, onDelete }) => /* @__PURE__
             "div",
             {
               style: {
-                color: C.silver,
+                color: "#c0ccd8",
                 fontWeight: 700,
                 fontSize: 13,
                 marginBottom: 2
@@ -3408,7 +3353,7 @@ const SpellList = ({ spells, loading, onAdd, onEdit, onDelete }) => /* @__PURE__
                   },
                   label
                 )),
-                s.description && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: C.dimmer, fontSize: 10 }, children: [
+                s.description && /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: "#6a6070", fontSize: 10 }, children: [
                   s.description.slice(0, 40),
                   s.description.length > 40 ? "…" : ""
                 ] })
@@ -3511,7 +3456,7 @@ const TierConfigTab = () => {
       "h3",
       {
         style: {
-          color: C.goldBright,
+          color: "#f0c44a",
           margin: "0 0 4px",
           fontSize: 14,
           fontWeight: 800,
@@ -3520,12 +3465,12 @@ const TierConfigTab = () => {
         children: "Enemy Tier Spawn System"
       }
     ),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dim, fontSize: 11, margin: "0 0 20px" }, children: "Configure how likely players are to encounter same-tier vs higher/lower-tier enemies. All percentages must sum to 100." }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#8a8090", fontSize: 11, margin: "0 0 20px" }, children: "Configure how likely players are to encounter same-tier vs higher/lower-tier enemies. All percentages must sum to 100." }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs(
       "div",
       {
         style: {
-          background: C.bg2,
+          background: "linear-gradient(180deg,#13141c,#0e0f16)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 8,
           padding: "16px 20px",
@@ -3557,7 +3502,7 @@ const TierConfigTab = () => {
                       style: inputStyle()
                     }
                   ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 10, margin: "4px 0 0" }, children: "e.g. 10 means levels 1–10 = Tier 1, 11–20 = Tier 2, etc." })
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 10, margin: "4px 0 0" }, children: "e.g. 10 means levels 1–10 = Tier 1, 11–20 = Tier 2, etc." })
                 ] }),
                 /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 12 }, children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "tier.same", style: labelStyle, children: "Same Tier % (default 60)" }),
@@ -3674,7 +3619,7 @@ const TierConfigTab = () => {
       "div",
       {
         style: {
-          background: C.bg2,
+          background: "linear-gradient(180deg,#13141c,#0e0f16)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 8,
           overflow: "hidden"
@@ -3707,7 +3652,7 @@ const TierConfigTab = () => {
                   "th",
                   {
                     style: {
-                      color: C.gold,
+                      color: "#f0c44a",
                       padding: "8px 12px",
                       textAlign: "left",
                       fontWeight: 700,
@@ -3727,7 +3672,7 @@ const TierConfigTab = () => {
                         "td",
                         {
                           style: {
-                            color: C.silver,
+                            color: "#c0ccd8",
                             padding: "7px 12px",
                             fontWeight: 700
                           },
@@ -3737,11 +3682,11 @@ const TierConfigTab = () => {
                           ]
                         }
                       ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { color: C.goldBright, padding: "7px 12px" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { color: "#f0c44a", padding: "7px 12px" }, children: [
                         "T",
                         row.tier
                       ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { color: C.dim, padding: "7px 12px" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { color: "#8a8090", padding: "7px 12px" }, children: [
                         row.tierMin,
                         "–",
                         row.tierMax
@@ -3750,7 +3695,7 @@ const TierConfigTab = () => {
                         "td",
                         {
                           style: {
-                            color: C.green,
+                            color: "#56d18a",
                             padding: "7px 12px",
                             fontWeight: 700
                           },
@@ -3768,7 +3713,7 @@ const TierConfigTab = () => {
                         Math.floor(cfg.adjacentTierPercent / 2),
                         "% each)"
                       ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { color: C.gold, padding: "7px 12px" }, children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: { color: "#f0c44a", padding: "7px 12px" }, children: [
                         row.twoLow,
                         " / ",
                         row.twoHigh,
@@ -3776,7 +3721,7 @@ const TierConfigTab = () => {
                         Math.floor(cfg.twoAwayPercent / 2),
                         "% each)"
                       ] }),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { color: C.dim, padding: "7px 12px" }, children: row.threePlus })
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { color: "#8a8090", padding: "7px 12px" }, children: row.threePlus })
                     ]
                   },
                   row.level
@@ -3821,7 +3766,7 @@ const SettingsTab = () => {
       "h3",
       {
         style: {
-          color: C.goldBright,
+          color: "#f0c44a",
           margin: "0 0 6px",
           fontSize: 14,
           fontWeight: 800,
@@ -3834,7 +3779,7 @@ const SettingsTab = () => {
       "p",
       {
         style: {
-          color: C.dim,
+          color: "#8a8090",
           fontSize: 11,
           marginBottom: 24,
           lineHeight: 1.5
@@ -3847,7 +3792,7 @@ const SettingsTab = () => {
       "div",
       {
         style: {
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.red}44`,
           borderRadius: 8,
           padding: "16px 18px",
@@ -3858,7 +3803,7 @@ const SettingsTab = () => {
             "p",
             {
               style: {
-                color: C.dim,
+                color: "#8a8090",
                 fontSize: 11,
                 marginBottom: 16,
                 lineHeight: 1.6
@@ -3905,17 +3850,17 @@ const SettingsTab = () => {
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: sectionHeadStyle, children: "Default Spells Preset" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 11, marginBottom: 12 }, children: "Use the Spells tab to add, edit, or remove spells available to players." }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 11, marginBottom: 12 }, children: "Use the Spells tab to add, edit, or remove spells available to players." }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 8 }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
       "div",
       {
         style: {
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 6,
           padding: "10px 14px",
           fontSize: 11,
-          color: C.dim
+          color: "#8a8090"
         },
         children: [
           "Navigate to ",
@@ -3968,7 +3913,7 @@ const LevelUpConfigPanel = () => {
     "div",
     {
       style: {
-        background: C.bg2,
+        background: "linear-gradient(180deg,#13141c,#0e0f16)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: "16px 20px",
@@ -4003,7 +3948,7 @@ const LevelUpConfigPanel = () => {
                     "data-ocid": "admin.levelup.maxrange_input"
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 10, margin: "3px 0 0" }, children: "Max range a spell can reach (default 5)" })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 10, margin: "3px 0 0" }, children: "Max range a spell can reach (default 5)" })
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 10 }, children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "levelup.rangegrowth", style: labelStyle, children: "Range +1 Every N Levels" }),
@@ -4025,7 +3970,7 @@ const LevelUpConfigPanel = () => {
                     "data-ocid": "admin.levelup.rangegrowth_input"
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 10, margin: "3px 0 0" }, children: "Every N player levels, +1 to all spell ranges" })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 10, margin: "3px 0 0" }, children: "Every N player levels, +1 to all spell ranges" })
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 10 }, children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "levelup.failbase", style: labelStyle, children: "Base Spell Fail % (Lv1)" }),
@@ -4046,7 +3991,7 @@ const LevelUpConfigPanel = () => {
                     "data-ocid": "admin.levelup.failbase_input"
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 10, margin: "3px 0 0" }, children: "Default 20% at level 1" })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 10, margin: "3px 0 0" }, children: "Default 20% at level 1" })
               ] }),
               /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 10 }, children: [
                 /* @__PURE__ */ jsxRuntimeExports.jsx("label", { htmlFor: "levelup.failred", style: labelStyle, children: "Fail % Reduction/Level" }),
@@ -4070,7 +4015,7 @@ const LevelUpConfigPanel = () => {
                     "data-ocid": "admin.levelup.failred_input"
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dimmer, fontSize: 10, margin: "3px 0 0" }, children: "0.1 = reaches 0% at level 200" })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6a6070", fontSize: 10, margin: "3px 0 0" }, children: "0.1 = reaches 0% at level 200" })
               ] })
             ]
           }
@@ -4129,7 +4074,7 @@ const VisualsTab = () => {
       "h3",
       {
         style: {
-          color: C.goldBright,
+          color: "#f0c44a",
           margin: "0 0 6px",
           fontSize: 14,
           fontWeight: 800,
@@ -4142,7 +4087,7 @@ const VisualsTab = () => {
       "p",
       {
         style: {
-          color: C.dim,
+          color: "#8a8090",
           fontSize: 11,
           marginBottom: 20,
           lineHeight: 1.5
@@ -4155,7 +4100,7 @@ const VisualsTab = () => {
       "p",
       {
         style: {
-          color: C.dimmer,
+          color: "#6a6070",
           fontSize: 11,
           marginBottom: 14,
           lineHeight: 1.5
@@ -4179,7 +4124,7 @@ const VisualsTab = () => {
               display: "flex",
               alignItems: "center",
               gap: 12,
-              background: C.bg0,
+              background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
               borderRadius: 6,
               padding: "8px 12px",
               border: `1px solid ${C.goldDim}`
@@ -4210,7 +4155,7 @@ const VisualsTab = () => {
                         style: { accentColor: C.gold, width: 14, height: 14 }
                       }
                     ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: C.silver, fontSize: 11, width: 52 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: "#c0ccd8", fontSize: 11, width: 52 }, children: [
                       "Color ",
                       i + 1
                     ] })
@@ -4267,7 +4212,7 @@ const VisualsTab = () => {
           display: "flex",
           gap: 8,
           marginBottom: 20,
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           borderRadius: 6,
           padding: 12,
           border: `1px solid ${C.goldDim}`
@@ -4286,7 +4231,7 @@ const VisualsTab = () => {
             }
           },
           col
-        )) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.dimmer, fontSize: 11 }, children: "True random — all slots disabled" })
+        )) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#6a6070", fontSize: 11 }, children: "True random — all slots disabled" })
       }
     ),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 10, flexDirection: "column" }, children: [
@@ -4411,7 +4356,7 @@ const ModifierEditor = ({ initial, onSave, onCancel, saving }) => {
       "div",
       {
         style: {
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 5,
           padding: "10px 14px",
@@ -4511,7 +4456,7 @@ const ModifierEditor = ({ initial, onSave, onCancel, saving }) => {
           alignItems: "center",
           gap: 8,
           marginBottom: 16,
-          background: C.bg0,
+          background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
           border: `1px solid ${C.goldDim}`,
           borderRadius: 5,
           padding: "7px 12px"
@@ -4594,7 +4539,7 @@ const AchievementEditor = ({ initial, onSave, onCancel, saving }) => {
     {
       "data-ocid": "admin.achievement_editor",
       style: {
-        background: C.bg2,
+        background: "linear-gradient(180deg,#13141c,#0e0f16)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: 20,
@@ -4856,7 +4801,7 @@ const AdminDashboard = ({
           "div",
           {
             style: {
-              background: C.bg2,
+              background: "linear-gradient(180deg,#13141c,#0e0f16)",
               border: `1px solid ${C.gold}`,
               borderRadius: 12,
               padding: "36px 40px",
@@ -4872,7 +4817,7 @@ const AdminDashboard = ({
                 "h2",
                 {
                   style: {
-                    color: C.goldBright,
+                    color: "#f0c44a",
                     margin: "0 0 12px",
                     fontSize: 18,
                     fontWeight: 800,
@@ -4882,7 +4827,7 @@ const AdminDashboard = ({
                   children: "Admin Access Required"
                 }
               ),
-              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dim, fontSize: 13, marginBottom: 24 }, children: "Only the first player who logged in has admin access. Log in with the admin Internet Identity to use this dashboard." }),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#8a8090", fontSize: 13, marginBottom: 24 }, children: "Only the first player who logged in has admin access. Log in with the admin Internet Identity to use this dashboard." }),
               /* @__PURE__ */ jsxRuntimeExports.jsx(
                 Btn,
                 {
@@ -4959,7 +4904,7 @@ const AdminDashboard = ({
               padding: "0 20px",
               height: 52,
               flexShrink: 0,
-              background: C.bg1,
+              background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
               borderBottom: `1px solid ${C.goldDim}`,
               boxShadow: "0 2px 16px rgba(192,57,43,0.1)"
             },
@@ -4980,7 +4925,7 @@ const AdminDashboard = ({
                     "span",
                     {
                       style: {
-                        color: C.goldBright,
+                        color: "#f0c44a",
                         fontWeight: 800,
                         fontSize: 14,
                         letterSpacing: "0.1em",
@@ -4993,7 +4938,7 @@ const AdminDashboard = ({
                     "span",
                     {
                       style: {
-                        color: C.dim,
+                        color: "#8a8090",
                         fontSize: 10,
                         marginLeft: 10,
                         letterSpacing: "0.06em"
@@ -5009,7 +4954,7 @@ const AdminDashboard = ({
                   {
                     "data-ocid": "admin.loading_state",
                     style: {
-                      color: C.gold,
+                      color: "#f0c44a",
                       fontSize: 11,
                       letterSpacing: "0.06em",
                       animation: "pulse 1.5s infinite"
@@ -5029,7 +4974,7 @@ const AdminDashboard = ({
               style: {
                 width: 180,
                 flexShrink: 0,
-                background: C.bg1,
+                background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
                 borderRight: `1px solid ${C.goldDim}`,
                 padding: "16px 0",
                 display: "flex",
@@ -5091,12 +5036,12 @@ const AdminDashboard = ({
                           marginBottom: 6
                         },
                         children: [
-                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.dim, fontSize: 10 }, children: label }),
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#8a8090", fontSize: 10 }, children: label }),
                           /* @__PURE__ */ jsxRuntimeExports.jsx(
                             "span",
                             {
                               style: {
-                                color: C.goldBright,
+                                color: "#f0c44a",
                                 fontSize: 12,
                                 fontWeight: 700
                               },
@@ -5118,7 +5063,7 @@ const AdminDashboard = ({
               style: {
                 flex: 1,
                 overflow: "auto",
-                background: C.bg0
+                background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)"
               },
               children: [
                 dashState.tab === "enemies" && (enemyQ.isError ? /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -5304,7 +5249,7 @@ const AdminDashboard = ({
                             "h3",
                             {
                               style: {
-                                color: C.goldBright,
+                                color: "#f0c44a",
                                 margin: 0,
                                 fontSize: 16,
                                 fontWeight: 800,
@@ -5317,7 +5262,7 @@ const AdminDashboard = ({
                             "p",
                             {
                               style: {
-                                color: C.dim,
+                                color: "#8a8090",
                                 fontSize: 11,
                                 margin: "4px 0 0"
                               },
@@ -5334,7 +5279,7 @@ const AdminDashboard = ({
                               borderRadius: 20,
                               padding: "4px 12px",
                               fontSize: 11,
-                              color: C.gold,
+                              color: "#f0c44a",
                               fontWeight: 700
                             },
                             children: [
@@ -5353,7 +5298,7 @@ const AdminDashboard = ({
                       style: {
                         textAlign: "center",
                         padding: 40,
-                        color: C.dim,
+                        color: "#8a8090",
                         fontSize: 13
                       },
                       children: "Loading purchase records…"
@@ -5366,7 +5311,7 @@ const AdminDashboard = ({
                       style: {
                         textAlign: "center",
                         padding: "40px 0",
-                        color: C.dimmer,
+                        color: "#6a6070",
                         fontSize: 13,
                         border: `1px dashed ${C.dimmer}`,
                         borderRadius: 8
@@ -5401,7 +5346,7 @@ const AdminDashboard = ({
                           "th",
                           {
                             style: {
-                              color: C.gold,
+                              color: "#f0c44a",
                               fontWeight: 800,
                               textAlign: "left",
                               padding: "8px 10px",
@@ -5430,7 +5375,7 @@ const AdminDashboard = ({
                                   {
                                     style: {
                                       padding: "8px 10px",
-                                      color: C.dim,
+                                      color: "#8a8090",
                                       fontWeight: 700
                                     },
                                     children: i + 1
@@ -5441,7 +5386,7 @@ const AdminDashboard = ({
                                   {
                                     style: {
                                       padding: "8px 10px",
-                                      color: C.silver,
+                                      color: "#c0ccd8",
                                       whiteSpace: "nowrap"
                                     },
                                     children: [
@@ -5456,7 +5401,7 @@ const AdminDashboard = ({
                                   {
                                     style: {
                                       padding: "8px 10px",
-                                      color: C.dim,
+                                      color: "#8a8090",
                                       maxWidth: 160,
                                       overflow: "hidden",
                                       textOverflow: "ellipsis",
@@ -5475,7 +5420,7 @@ const AdminDashboard = ({
                                   {
                                     style: {
                                       padding: "8px 10px",
-                                      color: C.goldBright,
+                                      color: "#f0c44a",
                                       fontWeight: 700,
                                       textAlign: "right",
                                       whiteSpace: "nowrap"
@@ -5491,7 +5436,7 @@ const AdminDashboard = ({
                                   {
                                     style: {
                                       padding: "8px 10px",
-                                      color: C.silver,
+                                      color: "#c0ccd8",
                                       textAlign: "right",
                                       whiteSpace: "nowrap"
                                     },
@@ -5530,7 +5475,7 @@ const AdminDashboard = ({
                                   {
                                     style: {
                                       padding: "8px 10px",
-                                      color: C.dim,
+                                      color: "#8a8090",
                                       whiteSpace: "nowrap"
                                     },
                                     children: rec.timestamp ? new Date(rec.timestamp).toLocaleString(
@@ -5568,7 +5513,7 @@ const AdminDashboard = ({
                                     },
                                     children: "📄 View"
                                   }
-                                ) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.dimmer, fontSize: 10 }, children: "None" }) })
+                                ) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#6a6070", fontSize: 10 }, children: "None" }) })
                               ]
                             },
                             rec.id ?? i
@@ -5591,7 +5536,7 @@ const AdminDashboard = ({
                     {
                       "data-ocid": "admin.doka_spawn_config",
                       style: {
-                        background: C.bg0,
+                        background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                         border: `1px solid ${C.goldDim}`,
                         borderRadius: 8,
                         padding: "14px 16px",
@@ -5697,7 +5642,11 @@ const AdminDashboard = ({
                           gameConfigSaved && /* @__PURE__ */ jsxRuntimeExports.jsx(
                             "span",
                             {
-                              style: { color: C.green, fontSize: 11, fontWeight: 700 },
+                              style: {
+                                color: "#56d18a",
+                                fontSize: 11,
+                                fontWeight: 700
+                              },
                               children: "✓ Saved!"
                             }
                           )
@@ -5709,7 +5658,7 @@ const AdminDashboard = ({
                     "div",
                     {
                       style: {
-                        background: C.bg0,
+                        background: "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
                         border: `1px solid ${C.goldDim}`,
                         borderRadius: 7,
                         padding: "10px 14px",
@@ -5725,7 +5674,7 @@ const AdminDashboard = ({
                             "div",
                             {
                               style: {
-                                color: C.goldBright,
+                                color: "#f0c44a",
                                 fontWeight: 700,
                                 fontSize: 12,
                                 marginBottom: 2
@@ -5733,7 +5682,7 @@ const AdminDashboard = ({
                               children: "Global Modifier System"
                             }
                           ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: C.dim, fontSize: 11 }, children: "Each active modifier has its own trigger chance (%). When the player enters a new map through a portal, each modifier independently rolls against its chance. Default: 20%. Set a modifier's trigger chance in the editor below." })
+                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#8a8090", fontSize: 11 }, children: "Each active modifier has its own trigger chance (%). When the player enters a new map through a portal, each modifier independently rolls against its chance. Default: 20%. Set a modifier's trigger chance in the editor below." })
                         ] })
                       ]
                     }
@@ -5753,7 +5702,7 @@ const AdminDashboard = ({
                             "h3",
                             {
                               style: {
-                                color: C.goldBright,
+                                color: "#f0c44a",
                                 margin: 0,
                                 fontSize: 14,
                                 fontWeight: 800,
@@ -5762,12 +5711,22 @@ const AdminDashboard = ({
                               children: "Map Modifiers"
                             }
                           ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { color: C.dim, fontSize: 11, margin: "3px 0 0" }, children: [
-                            modifiers.length,
-                            " modifier",
-                            modifiers.length === 1 ? "" : "s",
-                            " defined"
-                          ] })
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "p",
+                            {
+                              style: {
+                                color: "#8a8090",
+                                fontSize: 11,
+                                margin: "3px 0 0"
+                              },
+                              children: [
+                                modifiers.length,
+                                " modifier",
+                                modifiers.length === 1 ? "" : "s",
+                                " defined"
+                              ]
+                            }
+                          )
                         ] }),
                         /* @__PURE__ */ jsxRuntimeExports.jsx(
                           Btn,
@@ -5788,7 +5747,7 @@ const AdminDashboard = ({
                     "div",
                     {
                       style: {
-                        background: C.bg2,
+                        background: "linear-gradient(180deg,#13141c,#0e0f16)",
                         border: `1px solid ${C.goldDim}`,
                         borderRadius: 8,
                         padding: 20
@@ -5836,7 +5795,7 @@ const AdminDashboard = ({
                       "div",
                       {
                         style: {
-                          color: C.dim,
+                          color: "#8a8090",
                           fontSize: 12,
                           textAlign: "center",
                           padding: 24
@@ -5851,7 +5810,7 @@ const AdminDashboard = ({
                         style: {
                           textAlign: "center",
                           padding: "40px 0",
-                          color: C.dimmer,
+                          color: "#6a6070",
                           fontSize: 13,
                           border: `1px dashed ${C.dimmer}`,
                           borderRadius: 8
@@ -5879,7 +5838,7 @@ const AdminDashboard = ({
                               "div",
                               {
                                 style: {
-                                  color: C.silver,
+                                  color: "#c0ccd8",
                                   fontWeight: 700,
                                   fontSize: 13,
                                   marginBottom: 2,
@@ -5906,7 +5865,7 @@ const AdminDashboard = ({
                                 ]
                               }
                             ),
-                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: C.dim, fontSize: 11 }, children: mod.description }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#8a8090", fontSize: 11 }, children: mod.description }),
                             /* @__PURE__ */ jsxRuntimeExports.jsx(
                               "div",
                               {
@@ -5916,7 +5875,7 @@ const AdminDashboard = ({
                                   borderRadius: 20,
                                   padding: "1px 7px",
                                   fontSize: 10,
-                                  color: C.gold,
+                                  color: "#f0c44a",
                                   display: "inline-block",
                                   marginTop: 4
                                 },
@@ -5982,7 +5941,7 @@ const AdminDashboard = ({
                             "h3",
                             {
                               style: {
-                                color: C.goldBright,
+                                color: "#f0c44a",
                                 margin: 0,
                                 fontSize: 16,
                                 fontWeight: 800,
@@ -5991,7 +5950,17 @@ const AdminDashboard = ({
                               children: "Achievements"
                             }
                           ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dim, fontSize: 11, margin: "4px 0 0" }, children: "Configure player achievements and Doka rewards" })
+                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "p",
+                            {
+                              style: {
+                                color: "#8a8090",
+                                fontSize: 11,
+                                margin: "4px 0 0"
+                              },
+                              children: "Configure player achievements and Doka rewards"
+                            }
+                          )
                         ] }),
                         /* @__PURE__ */ jsxRuntimeExports.jsx(
                           Btn,
@@ -6045,7 +6014,7 @@ const AdminDashboard = ({
                         style: {
                           textAlign: "center",
                           padding: "40px 0",
-                          color: C.dimmer,
+                          color: "#6a6070",
                           fontSize: 13,
                           border: `1px dashed ${C.dimmer}`,
                           borderRadius: 8
@@ -6073,7 +6042,7 @@ const AdminDashboard = ({
                               "div",
                               {
                                 style: {
-                                  color: C.silver,
+                                  color: "#c0ccd8",
                                   fontWeight: 700,
                                   fontSize: 13,
                                   marginBottom: 2,
@@ -6104,7 +6073,7 @@ const AdminDashboard = ({
                               "div",
                               {
                                 style: {
-                                  color: C.dim,
+                                  color: "#8a8090",
                                   fontSize: 11,
                                   marginBottom: 4
                                 },
@@ -6121,7 +6090,7 @@ const AdminDashboard = ({
                                     borderRadius: 20,
                                     padding: "1px 7px",
                                     fontSize: 10,
-                                    color: C.gold
+                                    color: "#f0c44a"
                                   },
                                   children: [
                                     "🪙 ",
@@ -6464,7 +6433,7 @@ const AdminDashboard = ({
                             "h3",
                             {
                               style: {
-                                color: C.goldBright,
+                                color: "#f0c44a",
                                 margin: 0,
                                 fontSize: 16,
                                 fontWeight: 800,
@@ -6473,7 +6442,17 @@ const AdminDashboard = ({
                               children: "Enemy Names"
                             }
                           ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dim, fontSize: 11, margin: "4px 0 0" }, children: "Ancient names assigned to enemies — max 1 per enemy per map." })
+                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "p",
+                            {
+                              style: {
+                                color: "#8a8090",
+                                fontSize: 11,
+                                margin: "4px 0 0"
+                              },
+                              children: "Ancient names assigned to enemies — max 1 per enemy per map."
+                            }
+                          )
                         ] }),
                         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
                           /* @__PURE__ */ jsxRuntimeExports.jsxs(
@@ -6485,7 +6464,7 @@ const AdminDashboard = ({
                                 borderRadius: 20,
                                 padding: "4px 12px",
                                 fontSize: 11,
-                                color: C.gold,
+                                color: "#f0c44a",
                                 fontWeight: 700
                               },
                               children: [
@@ -6530,11 +6509,11 @@ const AdminDashboard = ({
                         },
                         style: {
                           flex: 1,
-                          background: C.bg1,
+                          background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
                           border: `1px solid ${C.goldDim}`,
                           borderRadius: 6,
                           padding: "8px 12px",
-                          color: C.silver,
+                          color: "#c0ccd8",
                           fontSize: 13,
                           fontFamily: "'Space Grotesk', system-ui, sans-serif",
                           outline: "none"
@@ -6569,7 +6548,7 @@ const AdminDashboard = ({
                       style: {
                         textAlign: "center",
                         padding: 40,
-                        color: C.dim,
+                        color: "#8a8090",
                         fontSize: 13
                       },
                       children: "Loading names…"
@@ -6582,7 +6561,7 @@ const AdminDashboard = ({
                       style: {
                         textAlign: "center",
                         padding: "40px 0",
-                        color: C.dimmer,
+                        color: "#6a6070",
                         fontSize: 13,
                         border: `1px dashed ${C.dimmer}`,
                         borderRadius: 8
@@ -6602,12 +6581,12 @@ const AdminDashboard = ({
                         display: "flex",
                         alignItems: "center",
                         gap: 6,
-                        background: C.bg1,
+                        background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
                         border: `1px solid ${C.goldDim}`,
                         borderRadius: 20,
                         padding: "4px 10px 4px 14px",
                         fontSize: 12,
-                        color: C.silver,
+                        color: "#c0ccd8",
                         fontWeight: 600
                       },
                       children: [
@@ -6625,7 +6604,7 @@ const AdminDashboard = ({
                               background: "none",
                               border: "none",
                               cursor: "pointer",
-                              color: C.red,
+                              color: "#d8463f",
                               fontSize: 14,
                               lineHeight: 1,
                               padding: 0,
@@ -6721,7 +6700,7 @@ function PhaseEditor({
     "div",
     {
       style: {
-        background: C.bg1,
+        background: "linear-gradient(180deg,#1d2230,#13161f 60%,#0f121a)",
         border: `1px solid ${C.goldDim}`,
         borderRadius: 8,
         padding: "14px 16px",
@@ -6922,7 +6901,7 @@ const BossesTab = ({ spells }) => {
                   "h2",
                   {
                     style: {
-                      color: C.goldBright,
+                      color: "#f0c44a",
                       margin: 0,
                       fontSize: 15,
                       fontWeight: 800,
@@ -6932,7 +6911,7 @@ const BossesTab = ({ spells }) => {
                     children: "Boss Editor"
                   }
                 ),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: C.dim, margin: 0, fontSize: 11 }, children: "Configure all 19 bosses. Changes save to localStorage and take effect on the next boss encounter." })
+                /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#8a8090", margin: 0, fontSize: 11 }, children: "Configure all 19 bosses. Changes save to localStorage and take effect on the next boss encounter." })
               ] })
             ]
           }
@@ -6964,11 +6943,11 @@ const BossesTab = ({ spells }) => {
                     /* @__PURE__ */ jsxRuntimeExports.jsx(
                       "div",
                       {
-                        style: { color: C.goldBright, fontWeight: 700, fontSize: 13 },
+                        style: { color: "#f0c44a", fontWeight: 700, fontSize: 13 },
                         children: draft.name
                       }
                     ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: C.dim, fontSize: 10, marginTop: 2 }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: "#8a8090", fontSize: 10, marginTop: 2 }, children: [
                       draft.pieceType.charAt(0).toUpperCase() + draft.pieceType.slice(1),
                       " — ",
                       "Phase 2 @ ",
@@ -6995,7 +6974,7 @@ const BossesTab = ({ spells }) => {
                       }
                     }
                   ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: C.dim, fontSize: 16 }, children: isOpen ? "▲" : "▼" })
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#8a8090", fontSize: 16 }, children: isOpen ? "▲" : "▼" })
                 ]
               }
             ),

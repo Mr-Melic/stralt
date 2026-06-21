@@ -24,6 +24,10 @@ export interface BattleRecapData {
   /** Absolute new balances returned by backend applyRewards */
   newDoka?: number;
   newXp?: number;
+  /** DEFEAT: penalty recap fields */
+  isDefeat?: boolean;
+  xpLost?: number;
+  dokaLost?: number;
 }
 
 interface PostBattleRecapProps {
@@ -109,8 +113,9 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
         {/* Header */}
         <div
           style={{
-            background:
-              "linear-gradient(90deg, oklch(var(--dofus-bg-primary)) 0%, oklch(0.09 0.015 40) 100%)",
+            background: data.isDefeat
+              ? "linear-gradient(90deg, oklch(0.08 0.02 25) 0%, oklch(0.06 0.015 20) 100%)"
+              : "linear-gradient(90deg, oklch(var(--dofus-bg-primary)) 0%, oklch(0.09 0.015 40) 100%)",
             borderBottom: "1px solid oklch(var(--dofus-border-gold-dim))",
             padding: "14px 20px 10px",
             display: "flex",
@@ -120,7 +125,7 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {data.bossDefeated && (
+            {data.bossDefeated && !data.isDefeat && (
               <div
                 style={{
                   textAlign: "center",
@@ -150,18 +155,20 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
                 </div>
               </div>
             )}
-            <span style={{ fontSize: 22 }}>⚔️</span>
+            <span style={{ fontSize: 22 }}>{data.isDefeat ? "💀" : "⚔️"}</span>
             <div>
               <div
                 style={{
-                  color: "oklch(var(--dofus-text-gold))",
+                  color: data.isDefeat
+                    ? "#ff4444"
+                    : "oklch(var(--dofus-text-gold))",
                   fontWeight: 800,
                   fontSize: 16,
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
                 }}
               >
-                Battle Complete!
+                {data.isDefeat ? "Defeated" : "Battle Complete!"}
               </div>
               <div
                 style={{
@@ -211,60 +218,96 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
 
         <div style={{ padding: "16px 20px 20px" }}>
           {/* XP Section */}
-          <RecapSection icon="✨" title="Experience Earned">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 22,
-                  fontWeight: 800,
-                  color: "oklch(0.75 0.22 310)",
-                }}
-              >
-                +{data.xpEarned} XP
-              </span>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "oklch(var(--dofus-text-dim))",
-                }}
-              >
-                Level {data.currentLevel}
-              </span>
-            </div>
-            {/* XP bar */}
-            <div className="dofus-xp-bar" style={{ borderRadius: 4 }}>
+          <RecapSection
+            icon="✨"
+            title={data.isDefeat ? "XP Lost" : "Experience Earned"}
+          >
+            {data.isDefeat ? (
               <div
-                className="dofus-xp-bar-fill"
                 style={{
-                  width: `${xpPercent}%`,
-                  borderRadius: 4,
-                  transition: "width 1s cubic-bezier(0.34,1.56,0.64,1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
                 }}
-              />
-            </div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: 4,
-              }}
-            >
-              <span
-                style={{ fontSize: 9, color: "oklch(var(--dofus-text-dim))" }}
               >
-                {data.currentXP} / {data.xpForNextLevel} XP
-              </span>
-              <span style={{ fontSize: 9, color: "oklch(0.75 0.22 310)" }}>
-                {xpUntilNext} XP until Level {data.currentLevel + 1}
-              </span>
-            </div>
+                <span
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 800,
+                    color: "#ff4444",
+                  }}
+                >
+                  -{data.xpLost || 0} XP
+                </span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "oklch(var(--dofus-text-dim))",
+                  }}
+                >
+                  Level {data.currentLevel}
+                </span>
+              </div>
+            ) : (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 22,
+                      fontWeight: 800,
+                      color: "oklch(0.75 0.22 310)",
+                    }}
+                  >
+                    +{data.xpEarned} XP
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "oklch(var(--dofus-text-dim))",
+                    }}
+                  >
+                    Level {data.currentLevel}
+                  </span>
+                </div>
+                {/* XP bar */}
+                <div className="dofus-xp-bar" style={{ borderRadius: 4 }}>
+                  <div
+                    className="dofus-xp-bar-fill"
+                    style={{
+                      width: `${xpPercent}%`,
+                      borderRadius: 4,
+                      transition: "width 1s cubic-bezier(0.34,1.56,0.64,1)",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginTop: 4,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 9,
+                      color: "oklch(var(--dofus-text-dim))",
+                    }}
+                  >
+                    {data.currentXP} / {data.xpForNextLevel} XP
+                  </span>
+                  <span style={{ fontSize: 9, color: "oklch(0.75 0.22 310)" }}>
+                    {xpUntilNext} XP until Level {data.currentLevel + 1}
+                  </span>
+                </div>
+              </div>
+            )}
           </RecapSection>
 
           {/* Battle Stats */}
@@ -338,109 +381,138 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
           )}
 
           {/* Doka Earnings */}
-          <RecapSection icon="🪙" title="Doka Earned">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: data.dokaBreakdown.length > 0 ? 8 : 0,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 20,
-                  fontWeight: 800,
-                  color: "oklch(0.78 0.2 48)",
-                }}
-              >
-                +{data.dokaEarned.toLocaleString()} Doka
-              </span>
-              <span style={{ fontSize: 13 }}>💰</span>
-            </div>
-            {/* EXP8: Dungeon chain multiplier badge */}
-            {data.dungeonMultiplier && data.dungeonMultiplier > 1 && (
+          <RecapSection
+            icon="🪙"
+            title={data.isDefeat ? "Doka Lost" : "Doka Earned"}
+          >
+            {data.isDefeat ? (
               <div
-                data-ocid="post_battle_recap.dungeon_bonus"
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
-                  padding: "5px 8px",
-                  marginBottom: 8,
-                  background: "rgba(139,0,0,0.18)",
-                  border: "1px solid rgba(204,0,0,0.45)",
-                  borderRadius: 5,
+                  justifyContent: "space-between",
                 }}
               >
-                <span style={{ fontSize: 14 }}>⚔️</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: "#ff6666",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    DUNGEON CHAIN BONUS
-                  </div>
-                  <div style={{ fontSize: 9, color: "#aa5555", marginTop: 1 }}>
-                    Depth {data.dungeonDepth ?? 1}/{data.dungeonMaxDepth ?? "?"}{" "}
-                    — {data.dungeonMultiplier}× Doka multiplier applied
-                  </div>
-                </div>
                 <span
                   style={{
-                    fontSize: 12,
+                    fontSize: 20,
                     fontWeight: 800,
                     color: "#ff4444",
-                    flexShrink: 0,
                   }}
                 >
-                  ×{data.dungeonMultiplier}
+                  -{data.dokaLost || 0} Doka
                 </span>
+                <span style={{ fontSize: 13 }}>💰</span>
               </div>
-            )}
-            {data.dokaBreakdown.length > 0 && (
-              <div
-                className="dofus-scrollbar"
-                style={{ maxHeight: 90, overflowY: "auto" }}
-              >
-                {data.dokaBreakdown.map((d, i) => (
-                  <div
-                    key={`doka-${d.enemyName}-${d.level}-${i}`}
-                    data-ocid={`post_battle_recap.doka.${i + 1}`}
+            ) : (
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: data.dokaBreakdown.length > 0 ? 8 : 0,
+                  }}
+                >
+                  <span
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "3px 5px",
-                      marginBottom: 2,
-                      background: "rgba(200,150,42,0.05)",
-                      border: "1px solid rgba(200,150,42,0.1)",
-                      borderRadius: 3,
+                      fontSize: 20,
+                      fontWeight: 800,
+                      color: "oklch(0.78 0.2 48)",
                     }}
                   >
+                    +{data.dokaEarned.toLocaleString()} Doka
+                  </span>
+                  <span style={{ fontSize: 13 }}>💰</span>
+                </div>
+                {/* EXP8: Dungeon chain multiplier badge */}
+                {data.dungeonMultiplier && data.dungeonMultiplier > 1 && (
+                  <div
+                    data-ocid="post_battle_recap.dungeon_bonus"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "5px 8px",
+                      marginBottom: 8,
+                      background: "rgba(139,0,0,0.18)",
+                      border: "1px solid rgba(204,0,0,0.45)",
+                      borderRadius: 5,
+                    }}
+                  >
+                    <span style={{ fontSize: 14 }}>⚔️</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "#ff6666",
+                          letterSpacing: "0.05em",
+                        }}
+                      >
+                        DUNGEON CHAIN BONUS
+                      </div>
+                      <div
+                        style={{ fontSize: 9, color: "#aa5555", marginTop: 1 }}
+                      >
+                        Depth {data.dungeonDepth ?? 1}/
+                        {data.dungeonMaxDepth ?? "?"} — {data.dungeonMultiplier}
+                        × Doka multiplier applied
+                      </div>
+                    </div>
                     <span
                       style={{
-                        fontSize: 10,
-                        color: "oklch(var(--dofus-text-dim))",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: "#ff4444",
+                        flexShrink: 0,
                       }}
                     >
-                      {d.enemyName} (Lv.{d.level})
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        color: "oklch(0.78 0.2 48)",
-                      }}
-                    >
-                      +{d.doka.toLocaleString()}
+                      ×{data.dungeonMultiplier}
                     </span>
                   </div>
-                ))}
+                )}
+                {data.dokaBreakdown.length > 0 && (
+                  <div
+                    className="dofus-scrollbar"
+                    style={{ maxHeight: 90, overflowY: "auto" }}
+                  >
+                    {data.dokaBreakdown.map((d, i) => (
+                      <div
+                        key={`doka-${d.enemyName}-${d.level}-${i}`}
+                        data-ocid={`post_battle_recap.doka.${i + 1}`}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "3px 5px",
+                          marginBottom: 2,
+                          background: "rgba(200,150,42,0.05)",
+                          border: "1px solid rgba(200,150,42,0.1)",
+                          borderRadius: 3,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: "oklch(var(--dofus-text-dim))",
+                          }}
+                        >
+                          {d.enemyName} (Lv.{d.level})
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: "oklch(0.78 0.2 48)",
+                          }}
+                        >
+                          +{d.doka.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </RecapSection>
@@ -548,7 +620,7 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
                 "0 0 12px oklch(var(--dofus-border-gold) / 0.2)";
             }}
           >
-            Continue Exploring →
+            {data.isDefeat ? "Respawn →" : "Continue Exploring →"}
           </button>
         </div>
       </div>

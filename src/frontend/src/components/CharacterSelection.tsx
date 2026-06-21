@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Castle,
+  ChevronLeft,
   ChevronRight,
   Crown,
   Edit,
@@ -26,6 +27,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDeleteCharacter, useGetCharacterSlots } from "../hooks/useQueries";
 import type { Character, UserProfile } from "../types/gameTypes";
 import BloodParticles from "./BloodParticles";
+
+/* ── Stone-style helpers removed — using .stone-* utility classes ───────── */
 
 interface CharacterSelectionProps {
   userProfile: UserProfile;
@@ -370,17 +373,19 @@ const CharacterPreview: React.FC<{
   }, [drawPreview]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      width={internalSize}
-      height={internalSize}
-      style={{
-        imageRendering: "pixelated",
-        display: "block",
-        width: size,
-        height: size,
-      }}
-    />
+    <div className="relative" style={{ width: size, height: size }}>
+      <canvas
+        ref={canvasRef}
+        width={internalSize}
+        height={internalSize}
+        style={{
+          imageRendering: "pixelated",
+          display: "block",
+          width: size,
+          height: size,
+        }}
+      />
+    </div>
   );
 };
 
@@ -396,33 +401,12 @@ const XpBar: React.FC<{ experience: bigint; level: bigint }> = ({
   const pct = Math.min(100, Math.max(0, (progressXp / needed) * 100));
 
   return (
-    <div style={{ padding: "6px 0" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 5,
-          alignItems: "center",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "#e74c3c",
-            background: "rgba(200,150,42,0.12)",
-            border: "1px solid #8b1a1a",
-            borderRadius: 3,
-            padding: "1px 6px",
-          }}
-        >
+    <div className="py-1.5">
+      <div className="flex justify-between items-center mb-1">
+        <span className="stone-pill stone-pill-crimson text-[10px] font-extrabold tracking-widest uppercase">
           LV {lvl}
         </span>
-        <span
-          style={{ color: "#a55eea", fontSize: 10, fontFamily: "monospace" }}
-        >
+        <span className="text-[10px] font-mono text-[#a55eea]">
           {progressXp.toLocaleString()} / {needed.toLocaleString()} XP
         </span>
       </div>
@@ -483,84 +467,41 @@ const SlotCard: React.FC<SlotCardProps> = React.memo(
       <div
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        style={{
-          background: character
-            ? "linear-gradient(160deg,#171b2e 0%,#0d0f1a 60%,#101420 100%)"
-            : "linear-gradient(160deg,#0f1220 0%,#0d0f1a 100%)",
-          border: character
-            ? `1px solid ${hovered ? "#c0392b" : "rgba(200,150,42,0.38)"}`
-            : "1px dashed #2a3040",
-          borderRadius: 12,
-          overflow: "hidden",
-          boxShadow: character
+        className={`stone-frame relative overflow-hidden transition-all duration-250 ${
+          character
             ? hovered
-              ? "0 0 36px rgba(192,57,43,0.28), 0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(192,57,43,0.18)"
-              : "0 0 18px rgba(200,150,42,0.12), 0 4px 16px rgba(0,0,0,0.4), inset 0 1px 0 rgba(200,150,42,0.07)"
+              ? "border-[#c0392b] shadow-[0_0_36px_rgba(192,57,43,0.28),0_8px_24px_rgba(0,0,0,0.5)]"
+              : "border-[rgba(200,150,42,0.38)] shadow-[0_0_18px_rgba(200,150,42,0.12),0_4px_16px_rgba(0,0,0,0.4)]"
             : hovered
-              ? "0 0 16px rgba(200,150,42,0.06)"
-              : "0 4px 12px rgba(0,0,0,0.3)",
-          transition: "box-shadow 0.25s, border-color 0.25s, background 0.25s",
-          position: "relative",
-        }}
+              ? "border-dashed border-[#2a3040] shadow-[0_0_16px_rgba(200,150,42,0.06)]"
+              : "border-dashed border-[#2a3040] shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
+        }`}
       >
         {/* Top gold accent line */}
         {character && (
           <div
+            className="absolute top-0 left-[15%] right-[15%] h-0.5 transition-colors duration-250"
             style={{
-              position: "absolute",
-              top: 0,
-              left: "15%",
-              right: "15%",
-              height: 2,
               background: hovered
                 ? "linear-gradient(90deg,transparent,#c0392b,transparent)"
                 : "linear-gradient(90deg,transparent,#8b1a1a,transparent)",
-              transition: "background 0.25s",
             }}
           />
         )}
 
         {/* Slot header */}
-        <div
-          style={{
-            background: "linear-gradient(90deg,#1a1e30 0%,#0d0f1a 100%)",
-            borderBottom: "1px solid #1e2436",
-            padding: "10px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}
-        >
-          <span
-            style={{
-              color: "#6a7a8a",
-              fontSize: 10,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-            }}
-          >
+        <div className="stone-header flex items-center justify-between px-4 py-2.5">
+          <span className="stone-header-title text-[10px]">
             \u2694 Slot {slotNumber}
           </span>
           {character && (
-            <div
-              style={{
-                background: "rgba(200,150,42,0.15)",
-                border: "1px solid #8b1a1a",
-                borderRadius: 5,
-                padding: "2px 9px",
-                color: "#e74c3c",
-                fontSize: 10,
-                fontWeight: 800,
-                letterSpacing: "0.08em",
-              }}
-            >
+            <span className="stone-pill stone-pill-crimson text-[10px]">
               LVL {character.level?.toString()}
-            </div>
+            </span>
           )}
         </div>
 
-        <div style={{ padding: "16px 16px 20px" }}>
+        <div className="p-4 pb-5">
           {character ? (
             <FilledSlot
               character={character}
@@ -599,36 +540,62 @@ const FilledSlot: React.FC<{
   onDelete: () => void;
   isDeleting: boolean;
 }> = ({ character, view, onRotate, onPlay, onEdit, onDelete, isDeleting }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+  <div className="flex flex-col gap-3">
     {/* Preview row */}
-    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-      <div style={{ position: "relative", flexShrink: 0 }}>
-        {/* Gold glow frame */}
+    <div className="flex items-center gap-3.5">
+      <div className="relative flex-shrink-0 flex flex-col items-center gap-1.5">
+        {/* Arrow bulb — above the sprite */}
         <div
+          className="flex items-center gap-2 px-3 py-1.5"
           style={{
-            width: 112,
-            height: 112,
-            border: "2px solid #c0392b",
-            borderRadius: 10,
-            overflow: "hidden",
-            background: "#0a0c14",
+            background: "linear-gradient(180deg,#2a2230,#160d14)",
+            borderRadius: 12,
             boxShadow:
-              "0 0 18px rgba(192,57,43,0.35), inset 0 0 10px rgba(192,57,43,0.1)",
-            position: "relative",
+              "0 6px 14px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12)",
           }}
         >
-          <CharacterPreview character={character} size={112} view={view} />
+          <button
+            type="button"
+            data-ocid="character_selection.turn_left"
+            onClick={onRotate}
+            title="Turn left"
+            className="w-6 h-6 rounded flex items-center justify-center"
+            style={{
+              background: "rgba(192,57,43,.15)",
+              border: "1px solid rgba(192,57,43,.3)",
+            }}
+          >
+            <ChevronLeft className="w-3.5 h-3.5 text-[#e74c3c]" />
+          </button>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#8a8090]">
+            {view}
+          </span>
+          <button
+            type="button"
+            data-ocid="character_selection.turn_right"
+            onClick={onRotate}
+            title="Turn right"
+            className="w-6 h-6 rounded flex items-center justify-center"
+            style={{
+              background: "rgba(192,57,43,.15)",
+              border: "1px solid rgba(192,57,43,.3)",
+            }}
+          >
+            <ChevronRight className="w-3.5 h-3.5 text-[#e74c3c]" />
+          </button>
+        </div>
+
+        {/* Gold glow frame */}
+        <div className="stone-frame relative w-[112px] h-[112px] overflow-hidden">
+          <div className="stone-well w-full h-full flex items-center justify-center">
+            <CharacterPreview character={character} size={112} view={view} />
+          </div>
           {/* Corner accents */}
           {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
+              className="absolute w-2 h-2 border-[1.5px] border-[#c0392b]"
               style={{
-                position: "absolute",
-                width: 8,
-                height: 8,
-                borderStyle: "solid",
-                borderColor: "#c0392b",
-                borderWidth: "1.5px",
                 borderRight: i % 2 === 0 ? "none" : "1.5px solid #c0392b",
                 borderLeft: i % 2 === 1 ? "none" : "1.5px solid #c0392b",
                 borderBottom: i < 2 ? "none" : "1.5px solid #c0392b",
@@ -641,64 +608,15 @@ const FilledSlot: React.FC<{
             />
           ))}
         </div>
-        <button
-          type="button"
-          onClick={onRotate}
-          title="Rotate view"
-          style={{
-            position: "absolute",
-            top: -8,
-            right: -8,
-            width: 24,
-            height: 24,
-            background: "#141726",
-            border: "1px solid #c0392b",
-            borderRadius: "50%",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#e74c3c",
-            boxShadow: "0 0 6px rgba(192,57,43,0.3)",
-          }}
-        >
-          <RotateCw style={{ width: 11, height: 11 }} />
-        </button>
-        <div
-          style={{
-            position: "absolute",
-            bottom: -10,
-            left: 0,
-            right: 0,
-            textAlign: "center",
-          }}
-        >
-          <span
-            style={{
-              fontSize: 9,
-              color: "#e74c3c",
-              background: "#0d0f1a",
-              padding: "2px 6px",
-              borderRadius: 3,
-              border: "1px solid #8b1a1a",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}
-          >
+        <div className="text-center">
+          <span className="stone-pill stone-pill-crimson text-[9px] uppercase tracking-wider">
             {view}
           </span>
         </div>
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            marginBottom: 6,
-          }}
-        >
-          <span style={{ color: "#c0392b", fontSize: 18 }}>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <span className="text-[#c0392b] text-lg">
             {character.pieceType === "king" && "\u2654"}
             {character.pieceType === "queen" && "\u2655"}
             {character.pieceType === "pawn" && "\u2659"}
@@ -707,56 +625,25 @@ const FilledSlot: React.FC<{
             {character.pieceType === "knight" && "\u2658"}
           </span>
           <span
-            style={{
-              color: "#e74c3c",
-              fontWeight: 800,
-              fontSize: 16,
-              fontFamily: "serif",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              textShadow: "0 0 10px rgba(240,192,96,0.4)",
-            }}
+            className="text-[#e74c3c] font-extrabold text-base font-display truncate whitespace-nowrap"
+            style={{ textShadow: "0 0 10px rgba(240,192,96,0.4)" }}
           >
             {character.name}
           </span>
         </div>
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            background: "rgba(192,57,43,0.1)",
-            border: "1px solid #8b1a1a",
-            borderRadius: 4,
-            padding: "2px 8px",
-            marginBottom: 8,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 10,
-              color: "#6a7a8a",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}
-          >
-            {character.pieceType}
-          </span>
-        </div>
-        <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+        <span className="stone-pill stone-pill-crimson text-[10px] mb-2 inline-flex">
+          {character.pieceType}
+        </span>
+        <div className="flex gap-1 mt-1">
           {(character.colors as string[] | undefined)
             ?.slice(0, 3)
             .map((c: string, i: number) => (
               <div
                 key={`color-${i}-${c}`}
                 title={c}
+                className="w-4 h-4 rounded border border-[rgba(192,57,43,0.3)]"
                 style={{
-                  width: 16,
-                  height: 16,
-                  borderRadius: 4,
                   background: c,
-                  border: "1px solid rgba(192,57,43,0.3)",
                   boxShadow: `0 0 4px ${c}55`,
                 }}
               />
@@ -772,79 +659,49 @@ const FilledSlot: React.FC<{
     />
 
     {/* Stats grid */}
-    <div
-      style={{
-        position: "relative",
-        background: "rgba(0,0,0,0.3)",
-        border: "1px solid rgba(192,57,43,0.1)",
-        borderRadius: 8,
-        padding: "8px 10px",
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: "5px 10px",
-        overflow: "hidden",
-      }}
-    >
+    <div className="stone-well relative p-2 grid grid-cols-2 gap-x-2.5 gap-y-1 overflow-hidden">
       <BloodParticles intensity="subtle" />
       {[
         {
           label: "HP",
           value: character.stats?.hp?.toString() ?? "100",
           color: "#e74c3c",
-          icon: "♥",
+          gemColor: "#e74c3c",
         },
         {
           label: "AP",
           value: character.stats?.ap?.toString() ?? "10",
           color: "#5b9cf0",
-          icon: "⚡",
+          gemColor: "#5b9cf0",
         },
         {
           label: "MP",
           value: character.stats?.mp?.toString() ?? "5",
           color: "#27ae60",
-          icon: "◈",
+          gemColor: "#27ae60",
         },
         {
           label: "INIT",
           value:
             (character.stats?.init ?? character.stats?.atk)?.toString() ?? "10",
           color: "#f39c12",
-          icon: "★",
+          gemColor: "#f39c12",
         },
-      ].map(({ label, value, color, icon }) => (
+      ].map(({ label, value, color, gemColor }) => (
         <div
           key={label}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            background: `${color}12`,
-            border: `1px solid ${color}22`,
-            borderRadius: 5,
-            padding: "3px 7px",
-          }}
+          className="stone-inset flex items-center gap-1.5 px-1.5 py-0.5"
         >
-          <span style={{ color, fontSize: 11, lineHeight: 1 }}>{icon}</span>
-          <span
-            style={{
-              color: "#6a7a8a",
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              flex: 1,
-            }}
-          >
+          <div
+            className="stone-gem"
+            style={{ color: gemColor, background: gemColor }}
+          />
+          <span className="text-[9px] font-bold uppercase tracking-wider text-[#6a7a8a] flex-1">
             {label}
           </span>
           <span
-            style={{
-              color,
-              fontSize: 12,
-              fontWeight: 800,
-              textShadow: `0 0 6px ${color}88`,
-            }}
+            className="text-xs font-extrabold"
+            style={{ color, textShadow: `0 0 6px ${color}88` }}
           >
             {value}
           </span>
@@ -853,30 +710,15 @@ const FilledSlot: React.FC<{
     </div>
 
     {/* Actions */}
-    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+    <div className="flex gap-2 mt-1">
       <button
         type="button"
         data-ocid="character_selection.play_button"
         onClick={onPlay}
+        className="stone-btn-crimson flex-1 py-2.5"
         style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 6,
-          padding: "11px 0",
-          borderRadius: 8,
-          cursor: "pointer",
           background: "linear-gradient(135deg,#a0721a,#c0392b,#e8b840)",
-          border: "1px solid #c0392b",
           color: "#0d0f1a",
-          fontWeight: 900,
-          fontSize: 13,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          boxShadow:
-            "0 0 16px rgba(192,57,43,0.3), inset 0 1px 0 rgba(255,255,255,0.15)",
-          transition: "box-shadow 0.2s, transform 0.1s",
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.boxShadow =
@@ -889,7 +731,7 @@ const FilledSlot: React.FC<{
           e.currentTarget.style.transform = "translateY(0)";
         }}
       >
-        <Play style={{ width: 14, height: 14 }} />
+        <Play className="w-3.5 h-3.5" />
         <span>Play</span>
       </button>
       <button
@@ -897,35 +739,9 @@ const FilledSlot: React.FC<{
         data-ocid="character_selection.edit_button"
         onClick={onEdit}
         title="Edit character"
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: 8,
-          cursor: "pointer",
-          flexShrink: 0,
-          background: "rgba(200,150,42,0.06)",
-          border: "1px solid #8b1a1a",
-          color: "#c0392b",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition:
-            "background 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.1s",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = "rgba(200,150,42,0.2)";
-          e.currentTarget.style.borderColor = "#c0392b";
-          e.currentTarget.style.boxShadow = "0 0 10px rgba(192,57,43,0.35)";
-          e.currentTarget.style.transform = "translateY(-1px)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "rgba(200,150,42,0.06)";
-          e.currentTarget.style.borderColor = "#8b1a1a";
-          e.currentTarget.style.boxShadow = "none";
-          e.currentTarget.style.transform = "translateY(0)";
-        }}
+        className="stone-btn-slate w-10 h-10 p-0 flex items-center justify-center"
       >
-        <Edit style={{ width: 15, height: 15 }} />
+        <Edit className="w-4 h-4" />
       </button>
       <AlertDialog>
         <AlertDialogTrigger asChild>
@@ -934,20 +750,10 @@ const FilledSlot: React.FC<{
             data-ocid="character_selection.delete_button"
             disabled={isDeleting}
             title="Delete character"
+            className="stone-btn-slate w-10 h-10 p-0 flex items-center justify-center disabled:opacity-50"
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 8,
-              cursor: isDeleting ? "not-allowed" : "pointer",
-              flexShrink: 0,
               background: "rgba(231,76,60,0.08)",
-              border: "1px solid #7a1a1a",
               color: "#e74c3c",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: isDeleting ? 0.5 : 1,
-              transition: "background 0.2s, border-color 0.2s, box-shadow 0.2s",
             }}
             onMouseEnter={(e) => {
               if (!isDeleting) {
@@ -958,64 +764,41 @@ const FilledSlot: React.FC<{
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = "rgba(231,76,60,0.08)";
-              e.currentTarget.style.borderColor = "#7a1a1a";
+              e.currentTarget.style.borderColor = "transparent";
               e.currentTarget.style.boxShadow = "none";
             }}
           >
             {isDeleting ? (
-              <div
-                className="animate-spin"
-                style={{
-                  width: 14,
-                  height: 14,
-                  border: "2px solid #e74c3c",
-                  borderTopColor: "transparent",
-                  borderRadius: "50%",
-                }}
-              />
+              <div className="animate-spin w-3.5 h-3.5 border-2 border-[#e74c3c] border-t-transparent rounded-full" />
             ) : (
-              <Trash2 style={{ width: 15, height: 15 }} />
+              <Trash2 className="w-4 h-4" />
             )}
           </button>
         </AlertDialogTrigger>
-        <AlertDialogContent
-          style={{
-            background: "#141726",
-            border: "1px solid #8b1a1a",
-            boxShadow: "0 0 30px rgba(200,150,42,0.2)",
-          }}
-        >
-          <AlertDialogHeader>
-            <AlertDialogTitle style={{ color: "#e74c3c", fontFamily: "serif" }}>
-              Delete Character
-            </AlertDialogTitle>
-            <AlertDialogDescription style={{ color: "#c0ccd8" }}>
-              Delete &ldquo;{character.name}&rdquo;? This action cannot be
-              undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              style={{
-                background: "#1a1e30",
-                color: "#c0ccd8",
-                border: "1px solid #2a3040",
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              data-ocid="character_selection.delete_confirm_button"
-              onClick={onDelete}
-              style={{
-                background: "linear-gradient(135deg,#5a1010,#7a1a1a)",
-                border: "1px solid #c0392b",
-                color: "#fff",
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
+        <AlertDialogContent className="stone-frame">
+          <div className="stone-well p-6">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-[#e74c3c] font-display">
+                Delete Character
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-[#c0ccd8]">
+                Delete &ldquo;{character.name}&rdquo;? This action cannot be
+                undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter className="mt-4">
+              <AlertDialogCancel className="stone-btn-slate">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                data-ocid="character_selection.delete_confirm_button"
+                onClick={onDelete}
+                className="stone-btn-crimson"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </div>
         </AlertDialogContent>
       </AlertDialog>
     </div>
@@ -1023,65 +806,24 @@ const FilledSlot: React.FC<{
 );
 
 const EmptySlot: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
-  <div
-    style={{
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "36px 16px",
-      gap: 16,
-    }}
-  >
-    <div
-      style={{
-        width: 80,
-        height: 80,
-        borderRadius: "50%",
-        background:
-          "radial-gradient(circle,rgba(200,150,42,0.06) 0%,transparent 70%)",
-        border: "2px dashed #8b1a1a",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        transition: "border-color 0.2s",
-      }}
-    >
-      <Plus style={{ width: 32, height: 32, color: "#8b1a1a" }} />
+  <div className="flex flex-col items-center justify-center py-9 px-4 gap-4">
+    <div className="stone-frame w-20 h-20 rounded-full flex items-center justify-center">
+      <div className="stone-well w-full h-full rounded-full flex items-center justify-center">
+        <Plus className="w-8 h-8 text-[#8b1a1a]" />
+      </div>
     </div>
-    <p
-      style={{
-        color: "#6a7a8a",
-        fontSize: 12,
-        margin: 0,
-        textTransform: "uppercase",
-        letterSpacing: "0.1em",
-        fontWeight: 600,
-      }}
-    >
+    <p className="text-[#6a7a8a] text-xs uppercase tracking-widest font-semibold m-0">
       Empty Slot
     </p>
     <button
       type="button"
       data-ocid="character_selection.create_button"
       onClick={onCreate}
+      className="stone-btn-crimson w-full justify-center py-2.5"
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "11px 28px",
-        borderRadius: 8,
-        cursor: "pointer",
         background: "linear-gradient(135deg,#1a1e30,#141726)",
-        border: "1px solid #8b1a1a",
         color: "#e74c3c",
-        fontWeight: 700,
-        fontSize: 13,
-        letterSpacing: "0.04em",
-        width: "100%",
-        justifyContent: "center",
         boxShadow: "0 0 10px rgba(192,57,43,0.1)",
-        transition: "box-shadow 0.2s, border-color 0.2s, transform 0.1s",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.boxShadow = "0 0 18px rgba(200,150,42,0.28)";
@@ -1090,11 +832,11 @@ const EmptySlot: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.boxShadow = "0 0 10px rgba(192,57,43,0.1)";
-        e.currentTarget.style.borderColor = "#8b1a1a";
+        e.currentTarget.style.borderColor = "transparent";
         e.currentTarget.style.transform = "translateY(0)";
       }}
     >
-      <Plus style={{ width: 15, height: 15 }} />
+      <Plus className="w-4 h-4" />
       <span>Create Character</span>
     </button>
   </div>
@@ -1145,37 +887,10 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
 
   if (isLoading) {
     return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "#0d0f1a",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 20,
-        }}
-      >
-        <div style={{ textAlign: "center" }}>
-          <div
-            className="animate-spin"
-            style={{
-              width: 56,
-              height: 56,
-              border: "3px solid #c0392b",
-              borderTopColor: "transparent",
-              borderRadius: "50%",
-              margin: "0 auto 16px",
-              boxShadow: "0 0 20px rgba(192,57,43,0.3)",
-            }}
-          />
-          <p
-            style={{
-              color: "#c0ccd8",
-              fontFamily: "serif",
-              letterSpacing: "0.06em",
-            }}
-          >
+      <div className="fixed inset-0 bg-[#0d0f1a] flex items-center justify-center z-20">
+        <div className="text-center">
+          <div className="stone-orb w-14 h-14 mx-auto mb-4 animate-spin border-[3px] border-[#c0392b] border-t-transparent" />
+          <p className="text-[#c0ccd8] font-body tracking-wider">
             Loading character slots\u2026
           </p>
         </div>
@@ -1185,36 +900,15 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
 
   if (isError) {
     return (
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "#0d0f1a",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 20,
-        }}
-      >
-        <div style={{ textAlign: "center" }}>
-          <p
-            style={{ color: "#e74c3c", fontFamily: "serif", marginBottom: 16 }}
-          >
+      <div className="fixed inset-0 bg-[#0d0f1a] flex items-center justify-center z-20">
+        <div className="text-center">
+          <p className="text-[#e74c3c] font-display mb-4">
             Failed to load character slots.
           </p>
           <button
             type="button"
             onClick={() => refetch()}
-            style={{
-              padding: "10px 24px",
-              background: "transparent",
-              border: "2px solid #c0392b",
-              borderRadius: 6,
-              color: "#e74c3c",
-              cursor: "pointer",
-              fontFamily: "serif",
-              fontSize: 14,
-            }}
+            className="stone-btn-crimson"
           >
             Retry
           </button>
@@ -1230,76 +924,48 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
   ];
 
   return (
-    <div
-      style={{
-        minHeight: "100%",
-        width: "100%",
-        background: "#0d0f1a",
-        overflowY: "auto",
-        padding: "36px 24px 40px",
-        boxSizing: "border-box",
-        position: "relative",
-        zIndex: 20,
-      }}
-    >
+    <div className="min-h-full w-full bg-[#0d0f1a] overflow-y-auto py-9 px-6 pb-10 relative z-20">
       {/* Page header */}
-      <div style={{ textAlign: "center", marginBottom: 40 }}>
+      <div className="text-center mb-10">
         {/* Decorative line */}
         <div
+          className="h-px mx-auto mb-5"
           style={{
             width: 180,
-            height: 1,
             background:
               "linear-gradient(90deg,transparent,#c0392b,transparent)",
-            margin: "0 auto 20px",
           }}
         />
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 10,
-          }}
-        >
+        <div className="inline-flex items-center gap-2.5 mb-2.5">
           <h1
+            className="text-[28px] font-black font-display tracking-widest m-0"
             style={{
-              fontSize: 28,
-              fontWeight: 900,
               background:
                 "linear-gradient(90deg,#c0392b,#e74c3c,#e8b840,#c0392b)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",
-              fontFamily: "serif",
-              letterSpacing: "0.1em",
-              margin: 0,
-              textShadow: "none",
             }}
           >
             Choose your Paper Baby Vampire!
           </h1>
         </div>
-        <p style={{ color: "#6a7a8a", fontSize: 14, margin: 0 }}>
+        <p className="text-[#6a7a8a] text-sm m-0">
           Welcome,{" "}
           <span
-            style={{
-              color: "#e74c3c",
-              fontWeight: 700,
-              textShadow: "0 0 10px rgba(240,192,96,0.3)",
-            }}
+            className="text-[#e74c3c] font-bold"
+            style={{ textShadow: "0 0 10px rgba(240,192,96,0.3)" }}
           >
             {userProfile.name}
           </span>
           . Select a character or create a new one.
         </p>
         <div
+          className="h-px mx-auto mt-5"
           style={{
             width: 180,
-            height: 1,
             background:
               "linear-gradient(90deg,transparent,#c0392b,transparent)",
-            margin: "20px auto 0",
           }}
         />
       </div>
@@ -1307,12 +973,10 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
       {/* 3-slot grid */}
       <div
         data-ocid="character_selection.list"
+        className="grid gap-5 mx-auto"
         style={{
-          display: "grid",
           gridTemplateColumns: "repeat(auto-fit,minmax(290px,1fr))",
-          gap: 22,
           maxWidth: 1040,
-          margin: "0 auto",
         }}
       >
         {slots.map(({ number, character }) => {

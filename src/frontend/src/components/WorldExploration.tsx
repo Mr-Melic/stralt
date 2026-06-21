@@ -1060,7 +1060,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const battleEnemiesRef = useRef<Enemy[]>([]); // mirrors _battleEnemies for stable ref access in callbacks
   const [showGameOver, setShowGameOver] = useState(false);
 
-  const [dokaBalance, setDokaBalance] = useState(0);
+  const [dokaBalance, setDokaBalance] = useState(() =>
+    character?.dokaBalance != null
+      ? Number(character.dokaBalance)
+      : character?.bloodBalance != null
+        ? Number(character.bloodBalance)
+        : 0,
+  );
   const [currentChallenge, setCurrentChallenge] = useState<Challenge | null>(
     null,
   );
@@ -1103,6 +1109,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     dungeonChainMaxDepthRef.current = dungeonChainMaxDepth;
   }, [dungeonChainMaxDepth]);
+  useEffect(() => {
+    if (!actor) return;
+    // If character didn't have dokaBalance, fetch from backend
+    actor
+      .getDokaBalance()
+      .then((bal) => {
+        setDokaBalance(Number(bal));
+      })
+      .catch(() => {
+        /* ignore */
+      });
+  }, [actor]);
   // Doka multiplier inside dungeon chain (depth 0 = normal; depth 1-5 = 1.5x..4x)
   const DUNGEON_DOKA_MULTIPLIERS = [1, 1.5, 2.0, 2.5, 3.0, 4.0];
   const dungeonDokaMultiplier = dungeonChainActive
@@ -2804,6 +2822,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       expToNext,
     };
   });
+
+  // Re-sync dokaBalance from backend character when it changes (e.g. after refresh/re-login)
+  useEffect(() => {
+    if (!character) return;
+    const backendDoka =
+      character.dokaBalance != null
+        ? Number(character.dokaBalance)
+        : character.bloodBalance != null
+          ? Number(character.bloodBalance)
+          : null;
+    if (backendDoka != null && !inBattle) {
+      setDokaBalance(backendDoka);
+    }
+  }, [character, inBattle]);
 
   // Get effective stat modifier for a combatant from active effects
   const getStatModifier = useCallback(
@@ -8245,6 +8277,39 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             colors,
           );
 
+          // Direction arrow indicating player facing
+          {
+            const arrowSize = 6;
+            const arrowY = playerScreenPos.y - CHARACTER_Y_OFFSET - 8;
+            const arrowX = playerScreenPos.x;
+            ctx.save();
+            ctx.fillStyle = "#d8463f";
+            ctx.beginPath();
+            if (playerView === "front") {
+              // pointing down (toward camera)
+              ctx.moveTo(arrowX, arrowY + arrowSize);
+              ctx.lineTo(arrowX - arrowSize * 0.7, arrowY - arrowSize * 0.5);
+              ctx.lineTo(arrowX + arrowSize * 0.7, arrowY - arrowSize * 0.5);
+            } else if (playerView === "back") {
+              // pointing up (away from camera)
+              ctx.moveTo(arrowX, arrowY - arrowSize);
+              ctx.lineTo(arrowX - arrowSize * 0.7, arrowY + arrowSize * 0.5);
+              ctx.lineTo(arrowX + arrowSize * 0.7, arrowY + arrowSize * 0.5);
+            } else if (playerView === "left") {
+              // pointing left
+              ctx.moveTo(arrowX - arrowSize, arrowY);
+              ctx.lineTo(arrowX + arrowSize * 0.5, arrowY - arrowSize * 0.7);
+              ctx.lineTo(arrowX + arrowSize * 0.5, arrowY + arrowSize * 0.7);
+            } else {
+              // right
+              ctx.moveTo(arrowX + arrowSize, arrowY);
+              ctx.lineTo(arrowX - arrowSize * 0.5, arrowY - arrowSize * 0.7);
+              ctx.lineTo(arrowX - arrowSize * 0.5, arrowY + arrowSize * 0.7);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
           // Status effect icons above player sprite
           if (inBattleRef.current) {
             const playerEffects = activeEffectsRef.current.filter(
@@ -10924,7 +10989,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     async (
       victory: boolean,
       expGained?: number,
-      hitsDealt?: number,
+      _hitsDealt?: number,
       enemiesDefeated?: Array<{ name: string; level: number }>,
     ) => {
       logDebugInfo("BATTLE", "BATTLE_END triggered", {
@@ -10969,10 +11034,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const challengeDokaReward = challengeCompleted
           ? currentChallenge?.rewards?.doka || 0
           : 0;
-        const challengeXpReward = challengeCompleted
+        const _challengeXpReward = challengeCompleted
           ? currentChallenge?.rewards?.xp || 0
           : 0;
-        const completedChallengeName = challengeCompleted
+        const _completedChallengeName = challengeCompleted
           ? currentChallenge?.description || currentChallenge?.id || "Challenge"
           : null;
         // ── UNIFIED CLEANUP: terminates ALL timers, intervals, AI callbacks, VFX ──
@@ -11060,130 +11125,45 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ? Math.round(rawDoka * 1.5 * chainMult * bossDokaMultiplier)
               : Math.round(rawDoka * chainMult * bossDokaMultiplier);
 
-          // Add to persistent Doka balance — compute once so both state and backend use the same value
-          const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
-          setDokaBalance(newDokaBalance);
-          if (challengeCompleted && currentChallenge) {
-            if (challengeXpReward > 0) {
-              setCharacterStats((prev: any) => ({
-                ...prev,
-                xp: (prev.xp ?? 0) + challengeXpReward,
-              }));
-            }
-            logBattleEntry(
-              `Challenge Complete: ${currentChallenge.description} (+${challengeDokaReward} Doka)`,
-              "#ffd700",
-            );
-          }
+          // NOTE: Local state updated above; persistence is handled by resolveBattleRewards below.
+          // Do NOT call updateCharacter here — rewards must ONLY persist via applyRewards.
 
-          let finalRecapData: BattleRecapData | null = null;
-          let didLevelUp = false;
           const _recapData = await resolveBattleRewards(actor, characterSlot, {
             victory,
             enemiesDefeated: enemiesDefeated || [],
-            completedChallenges: [],
-            dungeonMultiplier: 1,
+            completedChallenges: challengeCompleted
+              ? [
+                  {
+                    name: "Battle Challenge",
+                    dokaReward: challengeDokaReward || 0,
+                  },
+                ]
+              : [],
+            dungeonMultiplier: chainMult || 1,
             baseDoka: totalDoka || 0,
             baseXp: finalExp || 0,
           });
-          void _recapData;
+          const _rewardRecap = _recapData;
 
-          setCharacterStats((prev) => {
-            let newExp = prev.exp + finalExp;
-            let newLevel = prev.level;
-            let newExpToNext = prev.expToNext;
+          setCharacterStats((prev) => ({
+            ...prev,
+            exp: _rewardRecap.newXp ?? characterStats.exp,
+            level: _rewardRecap.currentLevel,
+            hp: 50 + prev.level * 10,
+            mp: 5 + Math.floor(prev.level / 10),
+            ap: 6 + Math.floor(prev.level / 20),
+          }));
+          setDokaBalance(_rewardRecap.newDoka ?? dokaBalance);
 
-            // Level-up: 100 XP for level 1->2, doubles each time (100*2^(level-1))
-            let remainingExp = newExp;
-            while (remainingExp >= newExpToNext) {
-              remainingExp -= newExpToNext;
-              newLevel += 1;
-              newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
-            }
-
-            // Build recap data with final XP values
-            finalRecapData = {
-              mapTitle: currentMap
-                ? `${currentMap.levelZone?.name ?? "Unknown"} (Map #${mapCount})`
-                : `Map #${mapCount}`,
-              xpEarned: finalExp,
-              hitsDealt: hitsDealt || 0,
-              enemiesDefeated: defeated,
-              currentXP: remainingExp,
-              xpForNextLevel: newExpToNext,
-              currentLevel: newLevel,
-              dokaEarned: totalDoka + challengeDokaReward,
-              dokaFromVictory: totalDoka,
-              dokaFromChallenges: challengeDokaReward,
-              completedChallenges: completedChallengeName
-                ? [completedChallengeName]
-                : [],
-              dokaBreakdown,
-              // EXP8: include dungeon chain info so recap can show multiplier
-              dungeonMultiplier:
-                dungeonChainActiveRef.current && chainMult > 1
-                  ? chainMult
-                  : undefined,
-              dungeonDepth: dungeonChainActiveRef.current
-                ? dungeonChainDepthRef.current
-                : undefined,
-              dungeonMaxDepth: dungeonChainActiveRef.current
-                ? dungeonChainMaxDepthRef.current
-                : undefined,
-              // BOSS: victory message if a boss was defeated
-              bossDefeated: activeBossConf ? activeBossConf.name : undefined,
-            };
-
-            // FIX 2: Scale stats 5%/level; AP & MP only at multiples of level 25
-            const levelsGained = newLevel - prev.level;
-            didLevelUp = levelsGained > 0;
-            // playSound moved to after setCharacterStats
-            let scaledHp = prev.hp;
-            let scaledAp = prev.ap;
-            let scaledMp = prev.mp;
-            let scaledInit = prev.init;
-            let scaledRes = prev.res;
-            let scaledChc = prev.chc;
-            let scaledSp = prev.sp;
-            let scaledWr = prev.wr;
-            let scaledSr = prev.sr;
-            let scaledScp = prev.scp;
-            let scaledWp = prev.wp;
-            const SG = 0.05;
-            for (let g = 0; g < levelsGained; g++) {
-              const gl = prev.level + g + 1;
-              scaledHp = Math.max(1, Math.ceil(scaledHp * (1 + SG)));
-              scaledInit = Math.max(1, Math.ceil(scaledInit * (1 + SG)));
-              scaledRes = Math.max(0, Math.ceil(scaledRes * (1 + SG)));
-              scaledChc = Math.max(1, Math.ceil(scaledChc * (1 + SG)));
-              scaledSp = Math.max(1, Math.ceil(scaledSp * (1 + SG)));
-              scaledWr = Math.max(0, Math.ceil(scaledWr * (1 + SG)));
-              scaledSr = Math.max(0, Math.ceil(scaledSr * (1 + SG)));
-              scaledScp = Math.max(1, Math.ceil(scaledScp * (1 + SG)));
-              scaledWp = Math.max(1, Math.ceil(scaledWp * (1 + SG)));
-              if (gl % 25 === 0) {
-                scaledAp += 1;
-                scaledMp += 1;
-              }
-            }
-            return {
-              ...prev,
-              exp: remainingExp,
-              level: newLevel,
-              expToNext: newExpToNext,
-              hp: scaledHp,
-              ap: scaledAp,
-              mp: scaledMp,
-              init: scaledInit,
-              res: scaledRes,
-              chc: scaledChc,
-              sp: scaledSp,
-              wr: scaledWr,
-              sr: scaledSr,
-              scp: scaledScp,
-              wp: scaledWp,
-            };
-          });
+          const finalRecapData: BattleRecapData = {
+            ..._rewardRecap,
+            mapTitle: currentMapRef.current?.id || "Unknown",
+            hitsDealt: battleHitsRef.current,
+            enemiesDefeated: enemiesDefeated || [],
+            dungeonMultiplier: chainMult || 1,
+            bossDefeated: currentBossConfigRef.current?.name || undefined,
+          };
+          if (onShowBattleSummary) onShowBattleSummary(finalRecapData);
 
           // Remove all enemies from map after victory
           setEnemies([]);
@@ -11268,6 +11248,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               onShowBattleSummary(finalRecapData);
             }
             // Play level-up sound AFTER state has settled and popup is shown
+            const didLevelUp = _rewardRecap.currentLevel > characterStats.level;
             if (didLevelUp) {
               playSound("level_up");
             }
@@ -11285,11 +11266,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         logDebugError("BATTLE", "Reward computation error", String(err));
         if (onShowBattleSummary) {
           onShowBattleSummary({
+            mapTitle: currentMapRef.current?.id || "Unknown",
             xpEarned: 0,
             dokaEarned: 0,
+            hitsDealt: 0,
             enemiesDefeated: [],
-            message: "Error computing rewards — check debug console",
-          } as any);
+            currentXP: characterStats.exp,
+            xpForNextLevel: (characterStats.level || 1) * 100,
+            currentLevel: characterStats.level,
+            dokaBreakdown: [],
+          });
         }
       }
     },
@@ -11414,21 +11400,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const challengeDokaReward = 0;
       const completedChallenges: string[] = [];
 
-      // Atomic read-modify-write persist
+      // Rewards persisted via applyRewards in resolveBattleRewards
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
       const newXp = (characterStats.exp || 0) + expGained;
 
       setDokaBalance(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
-      // Persist to backend
-      if (actor) {
-        void actor.addDoka(BigInt(totalDoka + challengeDokaReward));
-        void actor.updateCharacterStats({
-          ...characterStats,
-          xp: newXp,
-        });
-      }
+      // Rewards persisted via applyRewards in resolveBattleRewards
+      // if (actor) {
+      //   void actor.addDoka(BigInt(totalDoka + challengeDokaReward));
+      //   void actor.updateCharacterStats({
+      //     ...characterStats,
+      //     xp: newXp,
+      //   });
+      // }
 
       // Build recap data
       const finalRecapData = {
@@ -11478,7 +11464,51 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
   useEffect(() => {
     if (!inBattle) {
-      deathTriggeredRef.current = false;
+      if (characterStats.hp <= 0 && !deathTriggeredRef.current) {
+        deathTriggeredRef.current = true;
+        const xpLost = Math.floor(characterStats.exp * 0.2);
+        const dokaLost = Math.floor(dokaBalance * 0.4);
+        const newXp = Math.max(0, characterStats.exp - xpLost);
+        const newDoka = Math.max(0, dokaBalance - dokaLost);
+        if (actor) {
+          actor.applyRewards(characterSlot, 0, -xpLost).catch(() => {});
+          actor.applyRewards(characterSlot, -dokaLost, 0).catch(() => {});
+        }
+        setCharacterStats((prev) => ({
+          ...prev,
+          exp: newXp,
+          hp: Math.floor((50 + prev.level * 10) * 0.5),
+        }));
+        setDokaBalance(newDoka);
+        const defeatRecap: any = {
+          isDefeat: true,
+          xpLost,
+          dokaLost,
+          xpEarned: 0,
+          dokaEarned: 0,
+          currentLevel: characterStats.level,
+          currentXP: newXp,
+          xpForNextLevel: (characterStats.level || 1) * 100,
+          enemiesDefeated: [],
+          hitsDealt: 0,
+          mapTitle: currentMapRef.current?.id || "Unknown",
+        };
+        if (onShowBattleSummary) onShowBattleSummary(defeatRecap);
+        if (deathRealmTimerRef.current !== null)
+          clearTimeout(deathRealmTimerRef.current);
+        deathRealmTimerRef.current = window.setTimeout(() => {
+          deathRealmTimerRef.current = null;
+          const { map: deathMap, spawnPosition: drSpawn } =
+            generateDeathRealmMap();
+          currentMapRef.current = deathMap;
+          setCurrentMap(deathMap);
+          setPlayerPosition(drSpawn || { x: 2, y: 2 });
+          setEnemies([]);
+          setInBattle(false);
+          cleanupBattle();
+          deathTriggeredRef.current = false;
+        }, 1500);
+      }
       return;
     }
     if (characterStats.hp > 0) return;
@@ -11498,39 +11528,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const xpLostAccurate = deathXpLostRef.current;
       setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
       if (actor) {
-        const newExp2 = Math.max(0, characterStats.exp - xpLostAccurate);
         (async () => {
           try {
-            await actor.updateCharacter(BigInt(characterSlot), {
-              name: characterName,
-              pieceType,
-              colors: [colors.primary, colors.secondary, colors.accent],
-              pixelPattern: "",
-              rotation: BigInt(0),
-              level: BigInt(characterStats.level),
-              experience: BigInt(newExp2),
-              dokaBalance: BigInt(newDoka),
-              stats: {
-                hp: BigInt(characterStats.hp),
-                ap: BigInt(characterStats.ap),
-                mp: BigInt(characterStats.mp),
-                sp: BigInt(characterStats.sp),
-                wr: BigInt(characterStats.wr),
-                sr: BigInt(characterStats.sr),
-                scp: BigInt(characterStats.scp),
-                wp: BigInt(characterStats.wp),
-                init: BigInt(characterStats.init),
-                res: BigInt(characterStats.res),
-                chc: BigInt(characterStats.chc),
-                atk: BigInt(0),
-                resilience: BigInt(0),
-                evasion: BigInt(0),
-              },
-              spellLevelKeys: Object.keys(spellLevels),
-              spellLevelValues: Object.keys(spellLevels).map((k) =>
-                BigInt(spellLevels[k] ?? 0),
-              ),
-            });
+            await actor.applyRewards(
+              BigInt(characterSlot),
+              BigInt(0),
+              BigInt(-xpLostAccurate),
+            );
+            await actor.applyRewards(
+              BigInt(characterSlot),
+              BigInt(-dokaLost),
+              BigInt(0),
+            );
           } catch (err) {
             console.error("[death-save] failed:", err);
           }
@@ -14582,19 +14591,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           </span>
         </div>
         {/* Doka balance chip + Shop button */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          <span
-            style={{
-              background: "rgba(241,196,15,0.1)",
-              border: "1px solid rgba(241,196,15,0.3)",
-              color: "#f1c40f",
-              fontSize: 10,
-              fontWeight: 700,
-              padding: "2px 8px",
-              borderRadius: 4,
-              whiteSpace: "nowrap",
-            }}
-          >
+        <div className="flex items-center gap-1.5">
+          <span className="stone-pill stone-pill-gold text-[10px] font-bold whitespace-nowrap min-w-[60px] justify-center">
             💰 {dokaBalance.toLocaleString()}
           </span>
           <button
