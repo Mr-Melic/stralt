@@ -1,23 +1,22 @@
 {
-  "overview": "A modular isometric tile-based tactics RPG with chess-inspired combat, procedural maps, and a carved-stone dark slate UI with crimson accent.",
+  "overview": "A modular, isometric, tile-based tactics RPG inspired by chess, cosmic/vampire aesthetics, and games like DOFUS and Wakfu.",
   "features": [
-    "Turn-based tactical battles with chess piece characters",
-    "Procedurally generated maps with various archetypes",
-    "Character management with three persistent slots",
-    "Spell system with buffs, debuffs, and elemental effects",
-    "Boss encounters with phase-based abilities",
-    "Admin dashboard for game configuration",
-    "Real-time battle HUD with initiative timeline and spell bar",
-    "Click-to-inspect stat popup on initiative portraits"
+    "Turn-based tactical battles",
+    "Procedurally generated maps",
+    "Character management with XP and spells",
+    "Enemy AI with advanced tactics",
+    "Boss encounters and Boss Rush",
+    "Chat panel with channels and debug logging",
+    "Admin dashboard"
   ],
   "category": "game",
   "tags": [
     "rpg",
     "tactics",
-    "chess",
-    "procedural",
-    "dark-theme",
-    "carved-stone-ui"
+    "isometric",
+    "chess-inspired",
+    "dofus-themed",
+    "turn-based"
   ],
-  "last_updated": "2026-06-21T09:18:25.520Z"
+  "last_updated": "2026-06-21T19:59:12.103Z"
 }

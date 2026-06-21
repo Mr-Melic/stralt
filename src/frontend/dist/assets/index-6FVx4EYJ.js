@@ -27983,16 +27983,34 @@ const BookOpen = createLucideIcon("book-open", __iconNode$o);
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$n = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
-const Check = createLucideIcon("check", __iconNode$n);
+const __iconNode$n = [
+  ["path", { d: "m8 2 1.88 1.88", key: "fmnt4t" }],
+  ["path", { d: "M14.12 3.88 16 2", key: "qol33r" }],
+  ["path", { d: "M9 7.13v-1a3.003 3.003 0 1 1 6 0v1", key: "d7y7pr" }],
+  [
+    "path",
+    {
+      d: "M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6",
+      key: "xs1cw7"
+    }
+  ],
+  ["path", { d: "M12 20v-9", key: "1qisl0" }],
+  ["path", { d: "M6.53 9C4.6 8.8 3 7.1 3 5", key: "32zzws" }],
+  ["path", { d: "M6 13H2", key: "82j7cp" }],
+  ["path", { d: "M3 21c0-2.1 1.7-3.9 3.8-4", key: "4p0ekp" }],
+  ["path", { d: "M20.97 5c0 2.1-1.6 3.8-3.5 4", key: "18gb23" }],
+  ["path", { d: "M22 13h-4", key: "1jl80f" }],
+  ["path", { d: "M17.2 17c2.1.1 3.8 1.9 3.8 4", key: "k3fwyw" }]
+];
+const Bug = createLucideIcon("bug", __iconNode$n);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$m = [["path", { d: "m6 9 6 6 6-6", key: "qrunsl" }]];
-const ChevronDown = createLucideIcon("chevron-down", __iconNode$m);
+const __iconNode$m = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
+const Check = createLucideIcon("check", __iconNode$m);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28015,15 +28033,7 @@ const ChevronRight = createLucideIcon("chevron-right", __iconNode$k);
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$j = [["path", { d: "m18 15-6-6-6 6", key: "153udz" }]];
-const ChevronUp = createLucideIcon("chevron-up", __iconNode$j);
-/**
- * @license lucide-react v0.511.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$i = [
+const __iconNode$j = [
   [
     "path",
     {
@@ -28033,7 +28043,19 @@ const __iconNode$i = [
   ],
   ["path", { d: "M5 21h14", key: "11awu3" }]
 ];
-const Crown = createLucideIcon("crown", __iconNode$i);
+const Crown = createLucideIcon("crown", __iconNode$j);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$i = [
+  ["path", { d: "m16 17 5-5-5-5", key: "1bji2h" }],
+  ["path", { d: "M21 12H9", key: "dn1m92" }],
+  ["path", { d: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", key: "1uf3rs" }]
+];
+const LogOut = createLucideIcon("log-out", __iconNode$i);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28041,11 +28063,9 @@ const Crown = createLucideIcon("crown", __iconNode$i);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$h = [
-  ["path", { d: "m16 17 5-5-5-5", key: "1bji2h" }],
-  ["path", { d: "M21 12H9", key: "dn1m92" }],
-  ["path", { d: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", key: "1uf3rs" }]
+  ["path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", key: "1lielz" }]
 ];
-const LogOut = createLucideIcon("log-out", __iconNode$h);
+const MessageSquare = createLucideIcon("message-square", __iconNode$h);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28053,16 +28073,6 @@ const LogOut = createLucideIcon("log-out", __iconNode$h);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$g = [
-  ["path", { d: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z", key: "1lielz" }]
-];
-const MessageSquare = createLucideIcon("message-square", __iconNode$g);
-/**
- * @license lucide-react v0.511.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$f = [
   [
     "path",
     {
@@ -28072,15 +28082,26 @@ const __iconNode$f = [
   ],
   ["path", { d: "m15 5 4 4", key: "1mk7zo" }]
 ];
-const Pencil = createLucideIcon("pencil", __iconNode$f);
+const Pencil = createLucideIcon("pencil", __iconNode$g);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$e = [["polygon", { points: "6 3 20 12 6 21 6 3", key: "1oa8hb" }]];
-const Play = createLucideIcon("play", __iconNode$e);
+const __iconNode$f = [["polygon", { points: "6 3 20 12 6 21 6 3", key: "1oa8hb" }]];
+const Play = createLucideIcon("play", __iconNode$f);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$e = [
+  ["path", { d: "M5 12h14", key: "1ays0h" }],
+  ["path", { d: "M12 5v14", key: "s699le" }]
+];
+const Plus = createLucideIcon("plus", __iconNode$e);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28088,10 +28109,10 @@ const Play = createLucideIcon("play", __iconNode$e);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$d = [
-  ["path", { d: "M5 12h14", key: "1ays0h" }],
-  ["path", { d: "M12 5v14", key: "s699le" }]
+  ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", key: "1357e3" }],
+  ["path", { d: "M3 3v5h5", key: "1xhq8a" }]
 ];
-const Plus = createLucideIcon("plus", __iconNode$d);
+const RotateCcw = createLucideIcon("rotate-ccw", __iconNode$d);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28099,10 +28120,10 @@ const Plus = createLucideIcon("plus", __iconNode$d);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$c = [
-  ["path", { d: "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8", key: "1357e3" }],
-  ["path", { d: "M3 3v5h5", key: "1xhq8a" }]
+  ["path", { d: "M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8", key: "1p45f6" }],
+  ["path", { d: "M21 3v5h-5", key: "1q7to0" }]
 ];
-const RotateCcw = createLucideIcon("rotate-ccw", __iconNode$c);
+const RotateCw = createLucideIcon("rotate-cw", __iconNode$c);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28110,17 +28131,6 @@ const RotateCcw = createLucideIcon("rotate-ccw", __iconNode$c);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$b = [
-  ["path", { d: "M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8", key: "1p45f6" }],
-  ["path", { d: "M21 3v5h-5", key: "1q7to0" }]
-];
-const RotateCw = createLucideIcon("rotate-cw", __iconNode$b);
-/**
- * @license lucide-react v0.511.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$a = [
   [
     "path",
     {
@@ -28131,14 +28141,14 @@ const __iconNode$a = [
   ["path", { d: "M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7", key: "1ydtos" }],
   ["path", { d: "M7 3v4a1 1 0 0 0 1 1h7", key: "t51u73" }]
 ];
-const Save = createLucideIcon("save", __iconNode$a);
+const Save = createLucideIcon("save", __iconNode$b);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$9 = [
+const __iconNode$a = [
   [
     "path",
     {
@@ -28148,14 +28158,14 @@ const __iconNode$9 = [
   ],
   ["path", { d: "m21.854 2.147-10.94 10.939", key: "12cjpa" }]
 ];
-const Send = createLucideIcon("send", __iconNode$9);
+const Send = createLucideIcon("send", __iconNode$a);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$8 = [
+const __iconNode$9 = [
   ["circle", { cx: "8", cy: "21", r: "1", key: "jimo8o" }],
   ["circle", { cx: "19", cy: "21", r: "1", key: "13723u" }],
   [
@@ -28166,7 +28176,21 @@ const __iconNode$8 = [
     }
   ]
 ];
-const ShoppingCart = createLucideIcon("shopping-cart", __iconNode$8);
+const ShoppingCart = createLucideIcon("shopping-cart", __iconNode$9);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$8 = [
+  ["path", { d: "m18 14 4 4-4 4", key: "10pe0f" }],
+  ["path", { d: "m18 2 4 4-4 4", key: "pucp1d" }],
+  ["path", { d: "M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22", key: "1ailkh" }],
+  ["path", { d: "M2 6h1.972a4 4 0 0 1 3.6 2.2", key: "km57vx" }],
+  ["path", { d: "M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45", key: "os18l9" }]
+];
+const Shuffle = createLucideIcon("shuffle", __iconNode$8);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28174,20 +28198,6 @@ const ShoppingCart = createLucideIcon("shopping-cart", __iconNode$8);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$7 = [
-  ["path", { d: "m18 14 4 4-4 4", key: "10pe0f" }],
-  ["path", { d: "m18 2 4 4-4 4", key: "pucp1d" }],
-  ["path", { d: "M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22", key: "1ailkh" }],
-  ["path", { d: "M2 6h1.972a4 4 0 0 1 3.6 2.2", key: "km57vx" }],
-  ["path", { d: "M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45", key: "os18l9" }]
-];
-const Shuffle = createLucideIcon("shuffle", __iconNode$7);
-/**
- * @license lucide-react v0.511.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$6 = [
   ["path", { d: "m12.5 17-.5-1-.5 1h1z", key: "3me087" }],
   [
     "path",
@@ -28199,7 +28209,27 @@ const __iconNode$6 = [
   ["circle", { cx: "15", cy: "12", r: "1", key: "1tmaij" }],
   ["circle", { cx: "9", cy: "12", r: "1", key: "1vctgf" }]
 ];
-const Skull = createLucideIcon("skull", __iconNode$6);
+const Skull = createLucideIcon("skull", __iconNode$7);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$6 = [
+  [
+    "path",
+    {
+      d: "M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z",
+      key: "4pj2yx"
+    }
+  ],
+  ["path", { d: "M20 3v4", key: "1olli1" }],
+  ["path", { d: "M22 5h-4", key: "1gvqau" }],
+  ["path", { d: "M4 17v2", key: "vumght" }],
+  ["path", { d: "M5 18H3", key: "zchphs" }]
+];
+const Sparkles = createLucideIcon("sparkles", __iconNode$6);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -31872,6 +31902,45 @@ function useGetLeaderboard() {
     enabled: !!actor && !actorFetching,
     staleTime: 3e4
   });
+}
+let _buffer = [];
+const _subscribers = [];
+function logDebug(category, level, message, data) {
+  const entry = {
+    ts: performance.now(),
+    category,
+    level,
+    message,
+    data
+  };
+  _buffer.push(entry);
+  if (_buffer.length > 200) _buffer = _buffer.slice(-200);
+  for (const sub of _subscribers) {
+    try {
+      sub(entry);
+    } catch {
+    }
+  }
+  return;
+}
+function logDebugInfo(category, message, data) {
+  logDebug(category, "info", message, data);
+}
+function logDebugWarn(category, message, data) {
+  logDebug(category, "warn", message, data);
+}
+function logDebugError(category, message, data) {
+  logDebug(category, "error", message, data);
+}
+function subscribeDebugLogs(callback) {
+  _subscribers.push(callback);
+  return () => {
+    const idx = _subscribers.indexOf(callback);
+    if (idx !== -1) _subscribers.splice(idx, 1);
+  };
+}
+function getDebugLogBuffer() {
+  return _buffer;
 }
 function deepNormalizeBigInts(value) {
   if (value === null || value === void 0) return value;
@@ -41989,6 +42058,25 @@ function formatTime(tsMs) {
   const mm = d2.getMinutes().toString().padStart(2, "0");
   return `${hh}:${mm}`;
 }
+function formatDebugTime(ts) {
+  const d2 = new Date(ts);
+  const hh = d2.getHours().toString().padStart(2, "0");
+  const mm = d2.getMinutes().toString().padStart(2, "0");
+  const ss = d2.getSeconds().toString().padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+function levelColor(level) {
+  switch (level) {
+    case "error":
+      return "#ef4444";
+    case "warn":
+      return "#f59e0b";
+    case "info":
+      return "#3b82f6";
+    default:
+      return "#8a8090";
+  }
+}
 const BattleLogText = ({
   text,
   color
@@ -42046,10 +42134,9 @@ const ChatPanel = ({
   onClearBattleLog,
   userId,
   activeEffects = [],
-  isPaused = false,
-  debugLogs = []
+  isPaused = false
 }) => {
-  const [expanded, setExpanded] = reactExports.useState(false);
+  const [isFolded, setIsFolded] = reactExports.useState(false);
   const [activeChannel, setActiveChannel] = reactExports.useState("general");
   const [messages, setMessages] = reactExports.useState([]);
   const [inputText, setInputText] = reactExports.useState("");
@@ -42058,6 +42145,10 @@ const ChatPanel = ({
   const [unreadStatus, setUnreadStatus] = reactExports.useState(0);
   const [myColor] = reactExports.useState(randomColor);
   const [isSending, setIsSending] = reactExports.useState(false);
+  const [debugEntries, setDebugEntries] = reactExports.useState([]);
+  const [expandedDebugIds, setExpandedDebugIds] = reactExports.useState(
+    /* @__PURE__ */ new Set()
+  );
   const lastSeenIdRef = reactExports.useRef(0n);
   const lastSeenBattleLogCount = reactExports.useRef(0);
   const lastSeenStatusCountRef = reactExports.useRef(0);
@@ -42065,9 +42156,31 @@ const ChatPanel = ({
   const inputRef = reactExports.useRef(null);
   const { actor } = useActor();
   reactExports.useEffect(() => {
+    setDebugEntries([...getDebugLogBuffer()]);
+    const unsub = subscribeDebugLogs((entry) => {
+      setDebugEntries((prev) => {
+        const next = [...prev, entry];
+        if (next.length > 300) return next.slice(-300);
+        return next;
+      });
+    });
+    return unsub;
+  }, []);
+  reactExports.useEffect(() => {
+    const onKey = (e) => {
+      if (e.shiftKey && e.key === "d" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault();
+        setActiveChannel("debug");
+        if (isFolded) setIsFolded(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFolded]);
+  reactExports.useEffect(() => {
     const newCount = activeEffects.length;
     if (newCount > lastSeenStatusCountRef.current) {
-      if (!expanded || activeChannel !== "status") {
+      if (isFolded || activeChannel !== "status") {
         setUnreadStatus(
           (prev) => prev + (newCount - lastSeenStatusCountRef.current)
         );
@@ -42079,11 +42192,11 @@ const ChatPanel = ({
       lastSeenStatusCountRef.current = 0;
       setUnreadStatus(0);
     }
-  }, [activeEffects.length, expanded, activeChannel]);
+  }, [activeEffects.length, isFolded, activeChannel]);
   reactExports.useEffect(() => {
     const newCount = battleLogEntries.length;
     if (newCount > lastSeenBattleLogCount.current) {
-      if (!expanded || activeChannel !== "battlelog") {
+      if (isFolded || activeChannel !== "battlelog") {
         setUnreadBattleLog(
           (prev) => prev + (newCount - lastSeenBattleLogCount.current)
         );
@@ -42095,7 +42208,7 @@ const ChatPanel = ({
       lastSeenBattleLogCount.current = 0;
       setUnreadBattleLog(0);
     }
-  }, [battleLogEntries.length, expanded, activeChannel]);
+  }, [battleLogEntries.length, isFolded, activeChannel]);
   const fetchMessages = reactExports.useCallback(async () => {
     if (!actor) return;
     let didTimeout = false;
@@ -42112,7 +42225,7 @@ const ChatPanel = ({
       clearTimeout(timeoutId);
       if (!Array.isArray(raw)) return;
       setMessages(raw);
-      if (!expanded || activeChannel !== "general") {
+      if (isFolded || activeChannel !== "general") {
         const newMsgs = raw.filter(
           (m2) => m2.id > lastSeenIdRef.current
         );
@@ -42130,7 +42243,7 @@ const ChatPanel = ({
       clearTimeout(timeoutId);
       if (didTimeout) return;
     }
-  }, [actor, expanded, activeChannel]);
+  }, [actor, isFolded, activeChannel]);
   const isPausedRef = reactExports.useRef(isPaused);
   reactExports.useEffect(() => {
     isPausedRef.current = isPaused;
@@ -42154,18 +42267,18 @@ const ChatPanel = ({
     return () => clearInterval(id);
   }, [fetchMessages, isPaused]);
   reactExports.useEffect(() => {
-    if (expanded && listRef.current) {
+    if (!isFolded && listRef.current) {
       listRef.current.scrollTop = listRef.current.scrollHeight;
     }
   }, [
     messages.length,
     battleLogEntries.length,
     activeEffects.length,
-    expanded,
+    isFolded,
     activeChannel
   ]);
   reactExports.useEffect(() => {
-    if (expanded) {
+    if (!isFolded) {
       if (activeChannel === "general") {
         setUnreadGeneral(0);
         lastSeenIdRef.current = messages.reduce(
@@ -42185,7 +42298,7 @@ const ChatPanel = ({
       }, 80);
     }
   }, [
-    expanded,
+    isFolded,
     activeChannel,
     messages,
     battleLogEntries.length,
@@ -42207,8 +42320,6 @@ const ChatPanel = ({
   const handleKeyDown = (e) => {
     if (e.key === "Enter") handleSend();
   };
-  const toggleExpanded = () => setExpanded((v2) => !v2);
-  const totalUnread = unreadGeneral + unreadBattleLog + unreadStatus;
   const renderStatusContent = () => {
     if (activeEffects.length === 0) {
       return /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -42313,6 +42424,7 @@ const ChatPanel = ({
       defaultFolded: false,
       zIndex: 9e3,
       style: { width: 300 },
+      onFoldChange: (folded) => setIsFolded(folded),
       children: /* @__PURE__ */ jsxRuntimeExports.jsx(
         "div",
         {
@@ -42336,103 +42448,52 @@ const ChatPanel = ({
                 flex: 1
               },
               children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                  "button",
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
                   {
-                    type: "button",
-                    "data-ocid": "chat.toggle",
-                    onClick: toggleExpanded,
-                    className: "stone-header",
+                    className: "flex",
                     style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 14,
-                      padding: "8px 12px",
-                      cursor: "pointer",
-                      border: "none",
-                      width: "100%",
-                      textAlign: "left"
+                      gap: 2,
+                      padding: "6px 8px",
+                      borderBottom: "1px solid rgba(216,70,63,0.15)",
+                      background: "rgba(0,0,0,0.15)"
                     },
                     children: [
-                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        MessageSquare,
+                      ["general", "General", unreadGeneral, MessageSquare],
+                      ["battlelog", "Battle", unreadBattleLog, Swords],
+                      ["status", "Status", unreadStatus, Sparkles],
+                      ["debug", "Debug", 0, Bug]
+                    ].map(([key, label, unread, Icon2]) => {
+                      const isActive = activeChannel === key;
+                      return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        "button",
                         {
-                          size: 15,
-                          style: { color: "#d8463f", flexShrink: 0 }
-                        }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        "span",
-                        {
-                          className: "stone-header-title",
-                          style: { fontSize: 12, letterSpacing: "0.08em", flexShrink: 0 },
-                          children: "Chat"
-                        }
-                      ),
-                      expanded && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                        "div",
-                        {
-                          className: "flex flex-nowrap",
-                          style: { gap: 2, flex: 1, overflow: "hidden" },
+                          type: "button",
+                          "data-ocid": `chat.tab.${key}`,
+                          onClick: () => setActiveChannel(key),
+                          className: `flex items-center justify-center gap-1 py-1 px-2 text-[9px] font-semibold uppercase tracking-wider border-0 rounded-md transition-colors duration-150 cursor-pointer whitespace-nowrap ${isActive ? "text-[#d8463f] font-bold" : "text-[#8a8090] hover:text-[#cdbfd2]"}`,
+                          style: { fontFamily: "var(--font-body)", flex: 1 },
                           children: [
-                            ["general", "General", unreadGeneral],
-                            ["battlelog", "Battle Log", unreadBattleLog],
-                            ["status", "Status", unreadStatus],
-                            ["debug", "Debug", 0]
-                          ].map(([key, label, unread]) => {
-                            const isActive = activeChannel === key;
-                            return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                              "button",
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(Icon2, { size: 12 }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: label }),
+                            unread > 0 && !isActive && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "span",
                               {
-                                type: "button",
-                                "data-ocid": `chat.tab.${key}`,
-                                onClick: (e) => {
-                                  e.stopPropagation();
-                                  setActiveChannel(key);
+                                className: "inline-flex items-center justify-center rounded-full text-white text-[9px] font-bold min-w-[14px] h-[14px] px-[3px]",
+                                style: {
+                                  background: key === "status" ? "#c79cff" : "#d8463f"
                                 },
-                                className: `flex items-center justify-center gap-1 py-1 px-2 text-[9px] font-semibold uppercase tracking-wider border-0 rounded-md transition-colors duration-150 cursor-pointer whitespace-nowrap ${isActive ? "text-[#d8463f] font-bold" : "text-[#8a8090] hover:text-[#cdbfd2]"}`,
-                                style: { fontFamily: "var(--font-body)" },
-                                children: [
-                                  label,
-                                  unread > 0 && !isActive && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                    "span",
-                                    {
-                                      className: "inline-flex items-center justify-center rounded-full text-white text-[9px] font-bold min-w-[14px] h-[14px] px-[3px]",
-                                      style: {
-                                        background: key === "status" ? "#c79cff" : "#d8463f"
-                                      },
-                                      children: unread > 99 ? "99+" : unread
-                                    }
-                                  )
-                                ]
-                              },
-                              key
-                            );
-                          })
-                        }
-                      ),
-                      /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { marginLeft: "auto", flexShrink: 0 }, children: [
-                        totalUnread > 0 && !expanded && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "span",
-                          {
-                            "data-ocid": "chat.unread_badge",
-                            className: "stone-pill stone-pill-crimson",
-                            style: {
-                              minWidth: 18,
-                              height: 18,
-                              padding: "0 4px",
-                              marginRight: 4,
-                              fontSize: 10
-                            },
-                            children: totalUnread > 99 ? "99+" : totalUnread
-                          }
-                        ),
-                        expanded ? /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronDown, { size: 14, style: { color: "#d8463f" } }) : /* @__PURE__ */ jsxRuntimeExports.jsx(ChevronUp, { size: 14, style: { color: "#d8463f" } })
-                      ] })
-                    ]
+                                children: unread > 99 ? "99+" : unread
+                              }
+                            )
+                          ]
+                        },
+                        key
+                      );
+                    })
                   }
                 ),
-                expanded && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
                   /* @__PURE__ */ jsxRuntimeExports.jsxs(
                     "div",
                     {
@@ -42564,6 +42625,7 @@ const ChatPanel = ({
                         activeChannel === "debug" && /* @__PURE__ */ jsxRuntimeExports.jsx(
                           "div",
                           {
+                            "data-ocid": "chat.debug.list",
                             style: {
                               padding: "8px",
                               color: "#aaa",
@@ -42572,9 +42634,10 @@ const ChatPanel = ({
                               overflowY: "auto",
                               height: "100%"
                             },
-                            children: !debugLogs || debugLogs.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            children: debugEntries.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
                               "div",
                               {
+                                "data-ocid": "chat.debug.empty_state",
                                 className: "text-muted-foreground",
                                 style: {
                                   textAlign: "center",
@@ -42583,19 +42646,124 @@ const ChatPanel = ({
                                 },
                                 children: "No debug events yet."
                               }
-                            ) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: debugLogs.slice().reverse().map((log2) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
                               "div",
                               {
                                 style: {
-                                  padding: "2px 4px",
-                                  borderBottom: "1px solid #222",
-                                  whiteSpace: "pre-wrap",
-                                  wordBreak: "break-all"
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 4
                                 },
-                                children: log2
-                              },
-                              log2
-                            )) })
+                                children: debugEntries.slice().reverse().map((entry, idx) => {
+                                  const isExpanded = expandedDebugIds.has(idx);
+                                  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                    "button",
+                                    {
+                                      type: "button",
+                                      "data-ocid": "chat.debug.entry",
+                                      style: {
+                                        padding: "4px 6px",
+                                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                                        cursor: entry.data !== void 0 ? "pointer" : "default",
+                                        background: "transparent",
+                                        border: "none",
+                                        textAlign: "left",
+                                        width: "100%"
+                                      },
+                                      onClick: () => {
+                                        if (entry.data === void 0) return;
+                                        setExpandedDebugIds((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(idx)) next.delete(idx);
+                                          else next.add(idx);
+                                          return next;
+                                        });
+                                      },
+                                      disabled: entry.data === void 0,
+                                      children: [
+                                        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                          "div",
+                                          {
+                                            style: {
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 6,
+                                              flexWrap: "wrap"
+                                            },
+                                            children: [
+                                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                                "span",
+                                                {
+                                                  style: {
+                                                    color: "rgba(160,160,170,0.6)",
+                                                    fontSize: 10,
+                                                    fontVariantNumeric: "tabular-nums"
+                                                  },
+                                                  children: formatDebugTime(entry.ts)
+                                                }
+                                              ),
+                                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                                "span",
+                                                {
+                                                  style: {
+                                                    color: levelColor(entry.level),
+                                                    fontWeight: 700,
+                                                    fontSize: 9,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.04em"
+                                                  },
+                                                  children: entry.level
+                                                }
+                                              ),
+                                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                                "span",
+                                                {
+                                                  style: {
+                                                    color: "rgba(200,190,200,0.5)",
+                                                    fontSize: 9,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.04em"
+                                                  },
+                                                  children: entry.category
+                                                }
+                                              ),
+                                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                                "span",
+                                                {
+                                                  style: {
+                                                    color: "rgba(235,235,245,0.85)",
+                                                    fontSize: 11
+                                                  },
+                                                  children: entry.message
+                                                }
+                                              )
+                                            ]
+                                          }
+                                        ),
+                                        isExpanded && entry.data !== void 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "pre",
+                                          {
+                                            style: {
+                                              marginTop: 4,
+                                              padding: "4px 6px",
+                                              background: "rgba(0,0,0,0.3)",
+                                              borderRadius: 4,
+                                              fontSize: 10,
+                                              color: "rgba(200,200,210,0.7)",
+                                              whiteSpace: "pre-wrap",
+                                              wordBreak: "break-all",
+                                              overflowX: "auto"
+                                            },
+                                            children: JSON.stringify(entry.data, null, 2)
+                                          }
+                                        )
+                                      ]
+                                    },
+                                    `${entry.ts}-${idx}`
+                                  );
+                                })
+                              }
+                            )
                           }
                         )
                       ]
@@ -48278,35 +48446,6 @@ function evaluateChallenges(refs, playerHp, playerMaxHp) {
     status: refs.challengeTotalDamageRef.current >= 500 ? "completed" : "on_track"
   });
   return results;
-}
-let _buffer = [];
-const _subscribers = [];
-function logDebug(category, level, message, data) {
-  const entry = {
-    ts: performance.now(),
-    category,
-    level,
-    message,
-    data
-  };
-  _buffer.push(entry);
-  if (_buffer.length > 200) _buffer = _buffer.slice(-200);
-  for (const sub of _subscribers) {
-    try {
-      sub(entry);
-    } catch {
-    }
-  }
-  return;
-}
-function logDebugInfo(category, message, data) {
-  logDebug(category, "info", message, data);
-}
-function logDebugWarn(category, message, data) {
-  logDebug(category, "warn", message, data);
-}
-function logDebugError(category, message, data) {
-  logDebug(category, "error", message, data);
 }
 async function resolveBattleRewards(actor, selectedSlot, input) {
   const {
@@ -55447,7 +55586,7 @@ const WorldExplorationInner = ({
             const levelLabel = `L${enemy.level}`;
             const playerLvl = (characterStats == null ? void 0 : characterStats.level) ?? 1;
             const levelDiff = enemy.level - playerLvl;
-            const levelColor = levelDiff <= 0 ? "#00e676" : levelDiff <= 10 ? "#ff9800" : levelDiff <= 100 ? "#f44336" : "#ce93d8";
+            const levelColor2 = levelDiff <= 0 ? "#00e676" : levelDiff <= 10 ? "#ff9800" : levelDiff <= 100 ? "#f44336" : "#ce93d8";
             const nameY = screenPos.y - 34;
             const levelY = nameY + 14;
             ctx.save();
@@ -55459,7 +55598,7 @@ const WorldExplorationInner = ({
             ctx.fillStyle = isLeader ? "#ffd700" : "#ffffff";
             ctx.fillText(enemyName, screenPos.x, nameY);
             ctx.strokeText(levelLabel, screenPos.x, levelY);
-            ctx.fillStyle = levelColor;
+            ctx.fillStyle = levelColor2;
             ctx.fillText(levelLabel, screenPos.x, levelY);
             ctx.restore();
           }
@@ -62646,6 +62785,7 @@ const GameFlow = ({
   );
   const [activeEffects, setActiveEffects] = reactExports.useState([]);
   const [isInBattle, setIsInBattle] = reactExports.useState(false);
+  const prevIsInBattleRef = reactExports.useRef(false);
   const [isTransitioning, setIsTransitioning] = reactExports.useState(false);
   const [showLeaderboard, setShowLeaderboard] = reactExports.useState(false);
   const [showAchievements, setShowAchievements] = reactExports.useState(false);
@@ -62662,15 +62802,12 @@ const GameFlow = ({
     setBattleLogEntries([]);
     setActiveEffects([]);
   }, []);
-  const [debugLogs, setDebugLogs] = reactExports.useState([]);
-  const addDebugLog = reactExports.useCallback((event, detail) => {
-    const now2 = /* @__PURE__ */ new Date();
-    const time = now2.toTimeString().slice(0, 8);
-    setDebugLogs((prev) => [
-      ...prev.slice(-199),
-      `[${time}] ${event}: ${detail}`
-    ]);
-  }, []);
+  reactExports.useEffect(() => {
+    if (!prevIsInBattleRef.current && isInBattle) {
+      clearBattleLog();
+    }
+    prevIsInBattleRef.current = isInBattle;
+  }, [isInBattle, clearBattleLog]);
   const { clear } = useInternetIdentity();
   const queryClient2 = useQueryClient();
   const handleLogout = async () => {
@@ -62716,12 +62853,14 @@ const GameFlow = ({
           dungeon: dungeonData,
           characterSlot: activeSlot,
           addBattleLogEntry,
-          onBattleEnd: clearBattleLog,
           onActiveEffectsChange: setActiveEffects,
-          onInBattleChange: setIsInBattle,
+          onInBattleChange: (inBattle) => {
+            prevIsInBattleRef.current = isInBattle;
+            setIsInBattle(inBattle);
+          },
           onTransitionChange: setIsTransitioning,
           userId: String(userProfile.id ?? userProfile.name ?? "guest"),
-          onDebugLog: addDebugLog,
+          onDebugLog: (event, detail) => logDebugInfo("GENERAL", event, detail),
           onShowBattleSummary,
           dokaBalance,
           onDokaBalanceChange: setDokaBalance
@@ -62735,8 +62874,7 @@ const GameFlow = ({
           onClearBattleLog: clearBattleLog,
           activeEffects,
           isPaused: isInBattle || isTransitioning,
-          userId: String(userProfile.id ?? userProfile.name ?? "guest"),
-          debugLogs
+          userId: String(userProfile.id ?? userProfile.name ?? "guest")
         }
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12", children: [
@@ -65169,7 +65307,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-tdbknKT1.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Bz_zNpPA.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Crown, LogOut, ShoppingCart, Trophy } from "lucide-react";
 import React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetLeaderboard } from "../hooks/useLeaderboardQueries";
 import type {
@@ -10,6 +10,7 @@ import type {
   Character,
   UserProfile,
 } from "../types/gameTypes";
+import { logDebugInfo } from "../utils/debugLogger";
 import AchievementsPanel from "./AchievementsPanel";
 import BossGuideModal from "./BossGuideModal";
 import BuffShop from "./BuffShop";
@@ -59,6 +60,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
   );
   const [activeEffects, setActiveEffects] = useState<ActiveEffect[]>([]);
   const [isInBattle, setIsInBattle] = useState(false);
+  const prevIsInBattleRef = useRef(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
@@ -81,15 +83,15 @@ const GameFlow: React.FC<GameFlowProps> = ({
     setActiveEffects([]);
   }, []);
 
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const addDebugLog = useCallback((event: string, detail: string) => {
-    const now = new Date();
-    const time = now.toTimeString().slice(0, 8);
-    setDebugLogs((prev) => [
-      ...prev.slice(-199),
-      `[${time}] ${event}: ${detail}`,
-    ]);
-  }, []);
+  // Battle-entry clear: wipe battle log when entering a new battle (false→true)
+  useEffect(() => {
+    if (!prevIsInBattleRef.current && isInBattle) {
+      clearBattleLog();
+    }
+    prevIsInBattleRef.current = isInBattle;
+  }, [isInBattle, clearBattleLog]);
+
+  // addDebugLog removed — debug events now route through logDebugInfo directly
 
   const { clear } = useInternetIdentity();
   const queryClient = useQueryClient();
@@ -153,12 +155,15 @@ const GameFlow: React.FC<GameFlowProps> = ({
           dungeon={dungeonData}
           characterSlot={activeSlot}
           addBattleLogEntry={addBattleLogEntry}
-          onBattleEnd={clearBattleLog}
+          // onBattleEnd removed — battle log is cleared on battle ENTRY (false→true)
           onActiveEffectsChange={setActiveEffects}
-          onInBattleChange={setIsInBattle}
+          onInBattleChange={(inBattle) => {
+            prevIsInBattleRef.current = isInBattle;
+            setIsInBattle(inBattle);
+          }}
           onTransitionChange={setIsTransitioning}
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
-          onDebugLog={addDebugLog}
+          onDebugLog={(event, detail) => logDebugInfo("GENERAL", event, detail)}
           onShowBattleSummary={onShowBattleSummary}
           dokaBalance={dokaBalance}
           onDokaBalanceChange={setDokaBalance}
@@ -170,7 +175,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
           activeEffects={activeEffects}
           isPaused={isInBattle || isTransitioning}
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
-          debugLogs={debugLogs}
+          // debugLogs removed — ChatPanel now sources from structured debugLogger buffer
         />
         {/* Unified top bar in game mode */}
         <div className="fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12">

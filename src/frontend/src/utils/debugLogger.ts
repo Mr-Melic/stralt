@@ -20,7 +20,7 @@ export type LogCategory =
 const IS_DEV =
   typeof process !== "undefined" && process.env.NODE_ENV === "development";
 
-interface DebugLogEntry {
+export interface DebugLogEntry {
   ts: number;
   category: LogCategory;
   level: LogLevel;
