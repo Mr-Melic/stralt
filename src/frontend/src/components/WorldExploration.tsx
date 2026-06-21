@@ -50,11 +50,7 @@ import {
 import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
-import {
-  evaluateChallenges,
-  getEffectiveEnemyStats,
-  getEffectiveStats,
-} from "../utils/battleFixes";
+import { evaluateChallenges } from "../utils/battleFixes";
 import {
   logDebugError,
   logDebugInfo,
@@ -70,6 +66,7 @@ import ChallengePanel, {
 } from "./ChallengePanel";
 import type { ChallengePanelProgress } from "./ChallengePanel";
 import SpellbookModal from "./SpellbookModal";
+import StatusEffectBadge from "./StatusEffectBadge";
 let _fbNameIdx = 0;
 
 interface WorldExplorationProps {
@@ -1411,9 +1408,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Active effects (buff/debuff/DoT) state machine
   const [activeEffects, setActiveEffects] = useState<ActiveEffect[]>([]);
   const activeEffectsRef = useRef<ActiveEffect[]>([]);
-  const [_enemyActiveEffects, setEnemyActiveEffects] = useState<
-    Record<string, ActiveEffect[]>
-  >({});
+  // enemy effects are stored in activeEffects with targetId === enemy.id
   // activeEffectsRef sync removed — ref is set synchronously at every mutation site
   const timestepUsedRef = useRef(false);
   const playerApWasDebuffedRef = useRef(false);
@@ -1423,25 +1418,76 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     onActiveEffectsChange?.(activeEffects);
   }, [activeEffects, onActiveEffectsChange]);
 
+  // ── Battle log helper (nowTimestamp / calcScaledDamage are module-level pure fns) ──
+  const logBattleEntry = useCallback(
+    (text: string, color: string) => {
+      if (!addBattleLogEntry) return;
+      addBattleLogEntry({
+        id: `bl-${Date.now()}-${Math.random()}`,
+        timestamp: nowTimestamp(),
+        text,
+        color,
+      });
+    },
+    [addBattleLogEntry],
+  );
+
   // Helper: apply or refresh an active effect
-  const applyActiveEffect = useCallback((effect: ActiveEffect) => {
-    setActiveEffects((prev) => {
-      // Replace existing same-name+target effect, or append
-      const existing = prev.findIndex(
-        (e) =>
-          e.targetId === effect.targetId && e.effectName === effect.effectName,
-      );
-      let next: ActiveEffect[];
-      if (existing >= 0) {
-        next = [...prev];
-        next[existing] = effect;
-      } else {
-        next = [...prev, effect];
+  const applyActiveEffect = useCallback(
+    (effect: ActiveEffect) => {
+      setActiveEffects((prev) => {
+        // Replace existing same-name+target effect, or append
+        const existing = prev.findIndex(
+          (e) =>
+            e.targetId === effect.targetId &&
+            e.effectName === effect.effectName,
+        );
+        let next: ActiveEffect[];
+        if (existing >= 0) {
+          next = [...prev];
+          next[existing] = effect;
+        } else {
+          next = [...prev, effect];
+        }
+        activeEffectsRef.current = next;
+        return next;
+      });
+      // Log effect application with explicit stat, magnitude, and duration
+      const effectType = effect.type;
+      const stat = effect.stat;
+      const modifier = effect.modifier;
+      const isDot =
+        effectType === "dot" &&
+        effect.dotDamagePerTurn !== undefined &&
+        effect.dotDamagePerTurn > 0;
+      if (!isDot && stat && modifier !== undefined) {
+        const isPercentStat = stat !== "mp" && stat !== "ap";
+        const signedMag = isPercentStat
+          ? modifier > 1
+            ? `+${Math.round((modifier - 1) * 100)}%`
+            : `${Math.round((modifier - 1) * 100)}%`
+          : modifier > 0
+            ? `+${modifier}`
+            : `${modifier}`;
+        const color = effectType === "buff" ? "#22c55e" : "#a855f7";
+        const targetName =
+          effect.targetId === "player" ? "you" : effect.targetId;
+        logBattleEntry(
+          `${effect.effectName}: ${signedMag} ${stat.toUpperCase()} on ${targetName} (${effect.duration} turns)`,
+          color,
+        );
+      } else if (isDot) {
+        const color = effect.targetId === "player" ? "#eab308" : "#a855f7";
+        const targetName =
+          effect.targetId === "player" ? "you" : effect.targetId;
+        logBattleEntry(
+          `${effect.effectName}: ${effect.dotDamagePerTurn} dmg/turn on ${targetName} (${effect.duration} turns)`,
+          color,
+        );
       }
-      activeEffectsRef.current = next;
-      return next;
-    });
-  }, []);
+    },
+    [logBattleEntry],
+  );
 
   // Helper: remove expired effects at start of each turn, apply DoT
   // M-5: reads/writes activeEffectsRef.current directly to avoid stale closure captures;
@@ -1474,47 +1520,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 : "poisoned";
             const newDur = eff.duration - 1;
             if (targetId === "player") {
-              setCharacterStats((s) => ({ ...s, hp: Math.max(0, s.hp - dot) }));
-              if (addBattleLogEntry) {
-                addBattleLogEntry({
-                  id: `dot-${Date.now()}-${Math.random()}`,
-                  timestamp: nowTimestamp(),
-                  text:
-                    newDur > 0
-                      ? `You take ${dot} from ${dotLabel} (${newDur} turns remaining)`
-                      : `The ${dotLabel} effect wears off`,
-                  color: "#eab308",
-                });
+              playerTakesDamage(dot, `${dotLabel} DoT`);
+              if (logBattleEntry) {
+                const dotLabel2 = eff.effectName || "DoT";
+                const tickColor = "#eab308";
+                logBattleEntry(
+                  `${dotLabel2} ticks ${dot} dmg on you (${newDur} turns left)`,
+                  tickColor,
+                );
               }
             } else {
-              setEnemyHpMap((hpMap) => {
-                const cur = hpMap[targetId] ?? 0;
-                const newHp = Math.max(0, cur - dot);
-                setTurnOrder((to) =>
-                  to.map((c) => (c.id === targetId ? { ...c, hp: newHp } : c)),
+              enemyTakesDamage(targetId, dot, "dot", `${dotLabel} DoT`);
+              if (logBattleEntry) {
+                const dotLabel2 = eff.effectName || "DoT";
+                const tickColor = "#a855f7";
+                logBattleEntry(
+                  `${dotLabel2} ticks ${dot} dmg on ${eff.targetId} (${newDur} turns left)`,
+                  tickColor,
                 );
-                if (newHp <= 0) {
-                  setEnemies((enemies) =>
-                    enemies.filter((e) => e.id !== targetId),
-                  );
-                  setTurnOrder((to) => to.filter((c) => c.id !== targetId));
-                  activeEffectsRef.current = activeEffectsRef.current.filter(
-                    (e) => e.targetId !== eff.targetId,
-                  );
-                  setActiveEffects([...activeEffectsRef.current]);
-                }
-                return { ...hpMap, [targetId]: newHp };
-              });
-              if (addBattleLogEntry) {
-                addBattleLogEntry({
-                  id: `dot-${Date.now()}-${Math.random()}`,
-                  timestamp: nowTimestamp(),
-                  text:
-                    newDur > 0
-                      ? `Enemy takes ${dot} from ${dotLabel} (${newDur} turns remaining)`
-                      : `Enemy's ${dotLabel} effect wears off`,
-                  color: "#a855f7",
-                });
               }
             }
             // Keep or drop based on remaining duration
@@ -1526,51 +1549,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (newDur > 0) {
             next.push({ ...eff, duration: newDur });
           }
-          // else expired — drop it
+          const stat = eff.stat;
+          const modifier = eff.modifier;
+          if (stat && modifier !== undefined) {
+            const isPercentStat = stat !== "mp" && stat !== "ap";
+            const signedMag = isPercentStat
+              ? modifier > 1
+                ? `+${Math.round((modifier - 1) * 100)}%`
+                : `${Math.round((modifier - 1) * 100)}%`
+              : modifier > 0
+                ? `+${modifier}`
+                : `${modifier}`;
+            logBattleEntry(
+              `${eff.effectName || "Effect"} expired (${signedMag} ${stat.toUpperCase()} ended)`,
+              "#94a3b8",
+            );
+          }
         }
         // M-5: also update ref immediately so subsequent reads in the same turn are fresh
         activeEffectsRef.current = next;
         return next;
       });
-      // Tick enemy effect durations after player effects
-      setEnemyActiveEffects((prev) => {
-        const next: Record<string, ActiveEffect[]> = {};
-        for (const [enemyId, effects] of Object.entries(prev)) {
-          const ticked = effects
-            .map((e) => ({ ...e, duration: e.duration - 1 }))
-            .filter((e) => e.duration > 0);
-          if (ticked.length > 0) next[enemyId] = ticked;
-        }
-        return next;
-      });
+      // enemy effects are stored in activeEffects with targetId === enemy.id, so they are already ticked above
     },
-    [addBattleLogEntry],
+    [logBattleEntry],
   );
 
-  // Get effective stat modifier for a combatant from active effects
-  const getStatModifier = useCallback(
-    (
-      targetId: string,
-      stat: string,
-      activeEffectsSnap: ActiveEffect[],
-    ): number => {
-      let multiplier = 1;
-      let additive = 0;
-      for (const eff of activeEffectsSnap) {
-        if (eff.targetId !== targetId || eff.stat !== stat) continue;
-        if (eff.type === "buff" || eff.type === "debuff") {
-          if (stat === "mp" || stat === "ap") {
-            additive += eff.modifier ?? 0;
-          } else {
-            multiplier *= eff.modifier ?? 1;
-          }
-        }
-      }
-      return stat === "mp" || stat === "ap" ? additive : multiplier;
-    },
-    [],
-  );
-
+  // ── Centralized damage helpers moved to after characterStats & logBattleEntry declarations ──
   // Battle action mode: 'walk' uses MP for movement, 'attack' uses AP for spells
 
   // Refs for volatile values used inside canvas render callback (must be after declarations)
@@ -2775,20 +2780,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [dokaBalance, actor, character, characterSlot, nsKey],
   );
 
-  // ── Battle log helper (nowTimestamp / calcScaledDamage are module-level pure fns) ──
-  const logBattleEntry = useCallback(
-    (text: string, color: string) => {
-      if (!addBattleLogEntry) return;
-      addBattleLogEntry({
-        id: `bl-${Date.now()}-${Math.random()}`,
-        timestamp: nowTimestamp(),
-        text,
-        color,
-      });
-    },
-    [addBattleLogEntry],
-  );
-
   // Character stats with experience system — restore from backend character if available
   const [characterStats, setCharacterStats] = useState<CharacterStats>(() => {
     const savedLevel = character?.level != null ? Number(character.level) : 1;
@@ -2814,6 +2805,89 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     };
   });
 
+  // Get effective stat modifier for a combatant from active effects
+  const getStatModifier = useCallback(
+    (
+      targetId: string,
+      stat: string,
+      activeEffectsSnap: ActiveEffect[],
+    ): number => {
+      let multiplier = 1;
+      let additive = 0;
+      for (const eff of activeEffectsSnap) {
+        if (eff.targetId !== targetId || eff.stat !== stat) continue;
+        if (eff.type === "buff" || eff.type === "debuff") {
+          if (stat === "mp" || stat === "ap") {
+            additive += eff.modifier ?? 0;
+          } else {
+            multiplier *= eff.modifier ?? 1;
+          }
+        }
+      }
+      return stat === "mp" || stat === "ap" ? additive : multiplier;
+    },
+    [],
+  );
+
+  const calculatePlayerDamage = useCallback(
+    (
+      baseDamage: number,
+      spellId: string,
+      targetEnemy: Enemy,
+      gridPos: { x: number; y: number },
+      isPhysical: boolean,
+      isCrit: boolean,
+      effects: ActiveEffect[],
+    ): { finalDamage: number; breakdown: string } => {
+      let dmg = baseDamage;
+      let breakdownParts: string[] = [`Base ${dmg}`];
+
+      const scaledDmg = calcScaledDamage(
+        dmg,
+        characterStats.level,
+        spellLevelsRef.current[spellId] ?? 0,
+      );
+      if (scaledDmg !== dmg) {
+        dmg = scaledDmg;
+        breakdownParts.push(`scaled = ${dmg}`);
+      }
+
+      const dmgMod = getStatModifier("player", "dmg", effects);
+      if (dmgMod !== 1) {
+        dmg = Math.floor(dmg * dmgMod);
+        breakdownParts.push(`×${dmgMod.toFixed(1)} buff = ${dmg}`);
+      }
+
+      const markKey = `${gridPos.x},${gridPos.y}`;
+      if (markedTilesRef.current.has(markKey)) {
+        dmg *= 2;
+        markedTilesRef.current.delete(markKey);
+        breakdownParts.push(`×2 mark = ${dmg}`);
+      }
+
+      if (isCrit) {
+        dmg *= 2;
+        breakdownParts.push(`CRIT ×2 = ${dmg}`);
+      }
+
+      const enemyResMod = getStatModifier(targetEnemy.id, "res", effects);
+      const resReduction = Math.floor(targetEnemy.res * enemyResMod);
+      if (isPhysical) {
+        dmg = Math.max(1, dmg - resReduction);
+        if (resReduction > 0)
+          breakdownParts.push(`-${resReduction} RES = ${dmg}`);
+      } else {
+        const enemySpMod = getStatModifier(targetEnemy.id, "sp", effects);
+        const spReduction = Math.floor(targetEnemy.sp * enemySpMod);
+        dmg = Math.max(1, dmg - spReduction);
+        if (spReduction > 0) breakdownParts.push(`-${spReduction} SP = ${dmg}`);
+      }
+
+      return { finalDamage: dmg, breakdown: breakdownParts.join(" → ") };
+    },
+    [characterStats.level, getStatModifier],
+  );
+
   // Feature 1: Passive HP regen — 1 HP every 10 seconds out of battle when not at full HP
   const maxHp = useMemo(() => {
     // Derive max HP from base (100) with level scaling based on levelUpConfig
@@ -2822,6 +2896,55 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       100 * (1 + ((characterStats?.level ?? 1) - 1) * growthRate),
     );
   }, [characterStats?.level, levelUpConfig.statGrowthPercent]);
+
+  const playerTakesDamage = useCallback(
+    (incomingDamage: number, source: string): number => {
+      let dmg = incomingDamage;
+      const effRes =
+        Number(characterStats.res) *
+        getStatModifier("player", "res", activeEffectsRef.current);
+      dmg = Math.max(1, Math.round(dmg * (100 / (100 + effRes))));
+      if (shieldHpRef.current > 0) {
+        const absorb = Math.min(shieldHpRef.current, dmg);
+        shieldHpRef.current -= absorb;
+        dmg -= absorb;
+        if (absorb > 0)
+          logBattleEntry(`Shield absorbed ${absorb} damage`, "#a855f7");
+      }
+      const newHp = Math.max(0, characterStats.hp - dmg);
+      setCharacterStats((prev) => ({ ...prev, hp: newHp }));
+      logBattleEntry(`Player took ${dmg} damage from ${source}`, "#ef4444");
+      return dmg;
+    },
+    [characterStats.res, characterStats.hp, getStatModifier, logBattleEntry],
+  );
+
+  const enemyTakesDamage = useCallback(
+    (
+      enemyId: string,
+      incomingDamage: number,
+      casterId: string,
+      source: string,
+    ): number => {
+      const enemy = enemies.find((e) => e.id === enemyId);
+      if (!enemy) return 0;
+      const effRes =
+        Number(enemy.res) *
+        getStatModifier(enemyId, "res", activeEffectsRef.current);
+      const effDmg =
+        incomingDamage *
+        getStatModifier(casterId, "dmg", activeEffectsRef.current);
+      const dmg = Math.max(1, Math.round(effDmg * (100 / (100 + effRes))));
+      const newHp = Math.max(0, enemy.hp - dmg);
+      setEnemyHpMap((prev) => ({ ...prev, [enemyId]: newHp }));
+      setEnemies((prev) =>
+        prev.map((e) => (e.id === enemyId ? { ...e, hp: newHp } : e)),
+      );
+      logBattleEntry(`${enemyId} took ${dmg} damage from ${source}`, "#ef4444");
+      return dmg;
+    },
+    [enemies, getStatModifier, logBattleEntry],
+  );
 
   // EXP6: Handle item use from BuffShop
   const handleUseItem = useCallback(
@@ -5350,7 +5473,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     map: GameMap;
     spawnPosition: { x: number; y: number };
   } => {
-    const size = 12;
+    const size = WORLD_GRID_SIZE;
     const tiles: TileType[][] = [];
     for (let y = 0; y < size; y++) {
       const row: TileType[] = [];
@@ -5877,7 +6000,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // On MOBILE: tight follow with smooth easing
   const updateCameraToFollowPlayer = useCallback(() => {
     // Rest / Death Realm maps: center camera on the player so they stay visible
-    if (currentMap?.isRestMap || currentMap?.isDeathRealm) {
+    if (
+      currentMapRef.current?.isRestMap ||
+      currentMapRef.current?.isDeathRealm
+    ) {
       const playerScreenPos = gridToScreen(playerPosition.x, playerPosition.y);
       const centerX = canvasSize.width / 2;
       const centerY = canvasSize.height / 2;
@@ -5962,8 +6088,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     effectiveDeadzone,
     effectiveMaxOffset,
     isMobile,
-    currentMap?.isRestMap,
-    currentMap?.isDeathRealm,
   ]);
 
   // FIXED: Robust portal interaction system that triggers immediately when player steps on portal
@@ -6057,7 +6181,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           cameraRef.current = { x: camX, y: camY };
           targetCameraRef.current = { x: camX, y: camY };
           cameraVelocityRef.current = { x: 0, y: 0 };
-          updateCameraToFollowPlayer();
+          if (cameraFollowTimerRef.current !== null)
+            clearTimeout(cameraFollowTimerRef.current);
+          cameraFollowTimerRef.current = window.setTimeout(() => {
+            cameraFollowTimerRef.current = null;
+            updateCameraToFollowPlayer();
+          }, 100);
           transitionInProgressRef.current = false;
           setTransitionInProgress(false);
           setMapCount((prev) => prev + 1);
@@ -7238,10 +7367,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     for (let y = 0; y < WORLD_GRID_SIZE; y++) {
       // ── E. Sine-wave shimmer: per-row brightness offset ─────────────────────
+      if (!currentMap.tiles[y]) continue;
       const shimmerAlpha = Math.max(0, Math.sin(now * 0.0008 + y * 0.3) * 0.03);
 
       // Pass 1: floor tiles for this row
       for (let x = 0; x < WORLD_GRID_SIZE; x++) {
+        if (currentMap.tiles[y][x] === undefined) continue;
         if (currentMap?.voidTiles?.has(`${x},${y}`)) continue;
         const tileType = currentMap.tiles[y][x];
         if (tileType !== "wall") {
@@ -7584,8 +7715,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
       }
 
+      if (!currentMap.tiles[y]) continue;
       // Pass 2b: wall blocks for this row (enemies/player drawn in unified pass below)
       for (let x = 0; x < WORLD_GRID_SIZE; x++) {
+        if (currentMap.tiles[y][x] === undefined) continue;
         if (currentMap.tiles[y][x] === "wall") {
           const screenPos = gridToScreen(x, y);
           wallDepthItems.push({
@@ -8923,10 +9056,56 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
 
+          // Timestep: restore AP and MP to full once per battle
+          if (spell.isTimestep) {
+            if (timestepUsedRef.current) {
+              logBattleEntry(
+                "Timestep can only be used once per battle!",
+                "#fbbf24",
+              );
+              return;
+            }
+            timestepUsedRef.current = true;
+            const maxAp =
+              Number(characterStats.ap) +
+              getStatModifier("player", "ap", activeEffectsRef.current);
+            const maxMp =
+              Number(characterStats.mp) +
+              getStatModifier("player", "mp", activeEffectsRef.current);
+            setCurrentBattleAp(maxAp);
+            setCurrentBattleMp(maxMp);
+            logBattleEntry("Timestep! AP and MP restored to full", "#22d3ee");
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            return;
+          }
+
           // Check if an enemy is on clicked tile
           const targetEnemy = enemies.find(
             (e) => e.x === gridPos.x && e.y === gridPos.y,
           );
+
+          // Sacrifice: lose 20% HP, deal 3x that as damage
+          if (spell.isSacrifice) {
+            const hpLoss = Math.floor(characterStats.hp * 0.2);
+            const newHp = Math.max(1, characterStats.hp - hpLoss);
+            setCharacterStats((prev) => ({ ...prev, hp: newHp }));
+            logBattleEntry(`Sacrifice! Lost ${hpLoss} HP`, "#ef4444");
+            if (targetEnemy) {
+              const sacrificeDmg = hpLoss * 3;
+              enemyTakesDamage(
+                targetEnemy.id,
+                sacrificeDmg,
+                "player",
+                "Sacrifice",
+              );
+              logBattleEntry(
+                `Sacrifice dealt ${sacrificeDmg} damage to ${targetEnemy.id}`,
+                "#ef4444",
+              );
+            }
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            return;
+          }
 
           // Swap spell: swap player position with target enemy
           if (isSwapSpell && targetEnemy) {
@@ -9130,33 +9309,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               return;
             }
 
-            // Combo check: if this tile is marked and spell is damage/drain, apply +25% bonus
-            let comboMultiplier = 1;
-            if (
-              !spell.isMark &&
-              (spell.spellType === "damage" || spell.spellType === "drain")
-            ) {
-              const tileKey = `${gridPos.x},${gridPos.y}`;
-              if (markedTilesRef.current.has(tileKey)) {
-                comboMultiplier = 1.25;
-                markedTilesRef.current.delete(tileKey);
-                logBattleEntry("[COMBO] Mark bonus! +25% damage", "#ffd700");
-                playSound("combo", spell.name);
-                // Show combo text overlay on canvas
-                if (targetEnemy) {
-                  const cs = gridToScreen(targetEnemy.x, targetEnemy.y);
-                  comboTextRef.current = {
-                    text: "+COMBO!",
-                    x: cs.x,
-                    y: cs.y - 50,
-                    alpha: 1,
-                    born: Date.now(),
-                  };
-                }
-              }
-            }
-            void comboMultiplier; // used below in damage calcs
-
             // H2: Mirror — if the primary target enemy has mirror active, redirect damage back
             if (
               targetEnemy &&
@@ -9266,23 +9418,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ];
 
             for (const hitTarget of targetsToHit) {
-              // Feature 5: Apply SP and RES stacking — read from the enemy's seeded stats
-              const enemySp = hitTarget.sp ?? 0;
-              const enemyRes = hitTarget.res ?? 0;
+              const targetEnemy =
+                hitTarget.id === "__player__"
+                  ? undefined
+                  : (hitTarget as Enemy);
               let finalDmg: number;
-              if (isPhysical) {
-                finalDmg = Math.max(
-                  1,
-                  Math.round(preCritDmgBM * (1 - enemyRes / 100)),
+              if (hitTarget.id !== "__player__" && targetEnemy) {
+                const { finalDamage, breakdown } = calculatePlayerDamage(
+                  preCritDmgBM,
+                  spell.id,
+                  targetEnemy,
+                  gridPos,
+                  isPhysical,
+                  isCrit,
+                  activeEffectsRef.current,
                 );
+                finalDmg = finalDamage;
+                logBattleEntry(breakdown, "#fbbf24");
               } else {
-                finalDmg = Math.max(
-                  1,
-                  Math.round(
-                    preCritDmgBM * (1 - enemySp / 100) * (1 - enemyRes / 100),
-                  ),
-                );
+                finalDmg = preCritDmgBM;
               }
+
               // Void Mirror reflect — synchronous, no timers
               if ((hitTarget as Enemy)?.family === "void_mirror") {
                 const voidReflect = Math.floor(preCritDmgBM * 0.25);
@@ -9331,6 +9487,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   );
                 }
               }
+              const enemySp = hitTarget.sp ?? 0;
+              const enemyRes = hitTarget.res ?? 0;
               const resistedAmt = preCritDmgBM - finalDmg;
               battleHitsRef.current += 1;
               // ── #21 RES/SP resistance breakdown for battle log ─────────────────
@@ -9384,6 +9542,40 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 turnOrderRef.current = newOrder;
                 return newOrder;
               });
+
+              // Chain Lightning bounce
+              if (
+                spell.bounces &&
+                spell.bounces > 0 &&
+                hitTarget &&
+                hitTarget.id &&
+                hitTarget.id !== "__player__"
+              ) {
+                const otherEnemies = enemies.filter(
+                  (e) => e.id !== hitTarget.id && (e.hp ?? 0) > 0,
+                );
+                const sorted = otherEnemies.sort((a, b) => {
+                  const distA =
+                    Math.abs(a.x - hitTarget.x) + Math.abs(a.y - hitTarget.y);
+                  const distB =
+                    Math.abs(b.x - hitTarget.x) + Math.abs(b.y - hitTarget.y);
+                  return distA - distB;
+                });
+                const bounceTargets = sorted.slice(0, spell.bounces);
+                bounceTargets.forEach((bounceEnemy, idx) => {
+                  const bounceDmg = Math.floor(finalDmg * 0.5 ** (idx + 1));
+                  enemyTakesDamage(
+                    bounceEnemy.id,
+                    bounceDmg,
+                    "player",
+                    `${spell.name} bounce`,
+                  );
+                  logBattleEntry(
+                    `${spell.name} bounced to ${bounceEnemy.id} for ${bounceDmg} damage!`,
+                    "#fbbf24",
+                  );
+                });
+              }
 
               // hitsAllies player-sentinel: deduct damage from the player's own HP
               if (hitTarget.id === "__player__") {
@@ -10323,7 +10515,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // H2 FIX: Clear active effects state and ref so status icons don't linger after victory
     activeEffectsRef.current = [];
     setActiveEffects([]);
-    setEnemyActiveEffects({});
+    // enemy effects are stored in activeEffects with targetId === enemy.id, already cleared above
   }, [onDebugLog]);
 
   // cleanupMap: runs cleanupBattle then also clears map-level particle/effect state.
@@ -13272,12 +13464,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   "sp",
                   activeEffectsRef.current,
                 ) as number);
-              const effectivePlayerStats = getEffectiveStats(
-                characterStats as any,
-                activeEffects,
-              );
               const plResEff =
-                Math.max(0, Number(effectivePlayerStats.res)) *
+                Math.max(0, Number(characterStats.res)) *
                 (getStatModifier(
                   "player",
                   "res",
@@ -13300,10 +13488,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   Math.round(
                     dmgAC *
                       (1 -
-                        (getEffectiveEnemyStats(
-                          enemy as any,
-                          activeEffects.filter((e) => e.targetId === enemy.id),
-                        ).res ?? 0) /
+                        (Number(enemy.res) *
+                          getStatModifier(enemy.id, "res", activeEffects)) /
                           100),
                   ),
                 );
@@ -13342,33 +13528,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   .filter(Boolean)
                   .join(", ");
                 const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
-                // EXP6: Shield Charm absorbs damage first
-                let shieldedDmg = dmg;
-                if (shieldHpRef.current > 0) {
-                  const absorbed = Math.min(shieldHpRef.current, shieldedDmg);
-                  shieldHpRef.current = Math.max(
-                    0,
-                    shieldHpRef.current - absorbed,
-                  );
-                  shieldedDmg = Math.max(0, shieldedDmg - absorbed);
-                  if (absorbed > 0)
-                    logBattleEntry(
-                      `🛡️ Shield absorbed ${absorbed} dmg! (${shieldHpRef.current} remaining)`,
-                      "#818cf8",
-                    );
-                }
-                setCharacterStats((prev) => ({
-                  ...prev,
-                  hp: Math.max(0, prev.hp - shieldedDmg),
-                }));
+                const actualDmg = playerTakesDamage(
+                  dmg,
+                  `${enemy.pieceType} spell ${chosenSpell.name}`,
+                );
                 logBattleEntry(
                   isCrit
                     ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}`
-                    : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${dmg} dmg${resNote}`,
+                    : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
                   isCrit ? "#FFD700" : "#ef4444",
                 );
-                if (shieldedDmg > 0)
-                  logBattleEntry(`You lost ${shieldedDmg} HP!`, "#eab308");
+                if (actualDmg > 0)
+                  logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
                 playSound("player_damage", enemy.pieceType);
                 if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
                   applyActiveEffect({
@@ -13777,6 +13948,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       spell.targetType === "self" && spell.effectType === "heal";
     const isPhysical = spell.isPhysical ?? false;
 
+    // Self-buff spells (e.g. Shield, Iron Skin) apply before any target logic
+    if (spell.buffStat && spell.buffDuration) {
+      applyActiveEffect({
+        id: `buff-${Date.now()}`,
+        effectName: spell.name,
+        type: "buff",
+        targetId: "player",
+        stat: spell.buffStat,
+        modifier: spell.buffModifier ?? 1,
+        duration: spell.buffDuration,
+        iconEmoji: spell.iconEmoji,
+        description: `${spell.buffStat} +${Math.round(((spell.buffModifier ?? 1) - 1) * 100)}%`,
+      });
+      logBattleEntry(
+        `${spell.name}: self-buff ${spell.buffStat} for ${spell.buffDuration} turns`,
+        "#22c55e",
+      );
+    }
+
     // Heal spells target player, not enemies
     if (isHealSpell) {
       const baseHealAmt = spell.healAmount ?? 0;
@@ -13796,24 +13986,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         `${isCrit ? "CRITICAL! " : ""}You healed ${finalHeal} HP with ${spell.name}`,
         isCrit ? "#FFD700" : "#22c55e",
       );
-      // Apply buff from heal spell (e.g. Rallying Cry)
-      if (spell.buffStat && spell.buffDuration) {
-        applyActiveEffect({
-          id: `eff-${Date.now()}`,
-          effectName: spell.name,
-          type: "buff",
-          targetId: "player",
-          stat: spell.buffStat,
-          modifier: spell.buffModifier ?? 1,
-          duration: spell.buffDuration,
-          iconEmoji: spell.iconEmoji,
-          description: `+${Math.round(((spell.buffModifier ?? 1) - 1) * 100)}% ${spell.buffStat}`,
-        });
-        logBattleEntry(
-          `${spell.name} buff applied: ${spell.buffStat} for ${spell.buffDuration} turns`,
-          "#22c55e",
-        );
-      }
       battleHitsRef.current += 1;
       setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
       if (currentBattleAp - apCost <= 0) {
@@ -13879,75 +14051,45 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     challengePhysicalOnlyRef.current = false;
 
-    const effectivePlayerStats = getEffectiveStats(
-      characterStats as any,
-      activeEffects,
-    );
-    const effectiveEnemy = getEffectiveEnemyStats(
-      nearest as any,
-      activeEffects.filter((e) => e.targetId === nearest.id),
-    );
-
     const baseDamage = Number(spell.damage);
-    // Apply player DMG buff/debuff from active effects
-    const dmgMod = getStatModifier("player", "dmg", activeEffects);
-    const scaledBase = Math.max(1, Math.round(baseDamage * dmgMod));
     const rawDmg = calcScaledDamage(
-      scaledBase,
-      (effectivePlayerStats as any).level,
+      baseDamage,
+      Number(characterStats.level),
       spellLevels[spell.id] ?? 0,
     );
     // Feature 7: Crit check — apply CHC buff from active effects
     const chcBuff = getStatModifier("player", "chc", activeEffects);
     const effectiveChc =
-      Number(effectivePlayerStats.chc) +
+      Number(characterStats.chc) +
       (typeof chcBuff === "number" ? chcBuff * 100 : 0);
     const isCrit = Math.random() * 100 < effectiveChc;
-    const preCritDmg = isCrit ? rawDmg * 2 : rawDmg;
-    // Feature 5: SP + RES — read from the nearest enemy's seeded stats, apply active debuffs
-    const enemySp =
-      Math.max(0, effectiveEnemy.sp ?? 0) *
-      (getStatModifier(nearest.id, "sp", activeEffects) as number);
-    const enemyRes =
-      Math.max(0, effectiveEnemy.res ?? 0) *
-      (getStatModifier(nearest.id, "res", activeEffects) as number);
-    const finalDmg = Math.max(
-      1,
-      isPhysical
-        ? Math.round(preCritDmg * (1 - enemyRes / 100))
-        : Math.round(preCritDmg * (1 - enemySp / 100) * (1 - enemyRes / 100)),
+
+    const { finalDamage, breakdown } = calculatePlayerDamage(
+      rawDmg,
+      spell.id,
+      nearest,
+      { x: nearest.x, y: nearest.y },
+      isPhysical,
+      isCrit,
+      activeEffectsRef.current,
     );
+    const finalDmg = finalDamage;
+    logBattleEntry(breakdown, "#fbbf24");
 
     // Record player spell type for Adaptive Resistance AI
     recordPlayerSpellType(spell.effectType ?? "damage");
-    battleHitsRef.current += 1;
-    const prevHpNearest =
-      enemyHpMap[nearest.id] ?? calcEnemyMaxHp(nearest.level);
-    const newHpNearest = Math.max(0, prevHpNearest - finalDmg);
-    // FEATURE 6: Inline RES/SP resistance note in attackNearest
-    const resistedAmtN = preCritDmg - finalDmg;
-    const spRedN = isPhysical ? 0 : Math.round(preCritDmg * (enemySp / 100));
-    const resRedN = isPhysical
-      ? Math.round(preCritDmg * (enemyRes / 100))
-      : Math.round(preCritDmg * (1 - enemySp / 100) * (enemyRes / 100));
-    const resPartsN: string[] = [];
-    if (spRedN > 0) resPartsN.push(`-${spRedN}SP`);
-    if (resRedN > 0) resPartsN.push(`-${resRedN}RES`);
-    const resNoteN =
-      resistedAmtN > 0 ? ` |[${resPartsN.join("+")}=>${finalDmg}]|` : "";
-    if (isCrit) {
-      logBattleEntry(
-        `CRITICAL HIT! You cast ${spell.name} on ${nearest.pieceType}: ${rawDmg}x2=${preCritDmg} dmg${resNoteN}`,
-        "#FFD700",
-      );
-    } else {
-      logBattleEntry(
-        `You cast ${spell.name} on ${nearest.pieceType} for ${finalDmg} dmg${resNoteN}`,
-        "#22c55e",
-      );
-    }
+    const actualDmg = enemyTakesDamage(
+      nearest.id,
+      finalDmg,
+      "player",
+      `spell ${spell.name}`,
+    );
+    const newHpNearest = Math.max(
+      0,
+      (enemyHpMap[nearest.id] ?? calcEnemyMaxHp(nearest.level)) - actualDmg,
+    );
     logBattleEntry(
-      `${nearest.pieceType} lost ${finalDmg} HP (now ${newHpNearest}/${calcEnemyMaxHp(nearest.level)})`,
+      `${nearest.pieceType} lost ${actualDmg} HP (now ${newHpNearest}/${calcEnemyMaxHp(nearest.level)})`,
       "#a855f7",
     );
     if (newHpNearest <= 0) {
@@ -13996,26 +14138,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // This debuffs enemy AP, not player — no flag needed
         }
       }
-      // Wire enemy-targeted debuffs into enemyActiveEffects
-      if (spell.effectType === "debuff" && nearest) {
-        setEnemyActiveEffects((prev) => ({
-          ...prev,
-          [nearest.id]: [
-            ...(prev[nearest.id] || []),
-            {
-              id: `enemy-debuff-${Date.now()}`,
-              effectName: spell.name,
-              type: "debuff",
-              targetId: nearest.id,
-              stat: spell.debuffStat || "res",
-              modifier: spell.debuffModifier ?? -20,
-              duration: spell.debuffDuration ?? 3,
-              iconEmoji: spell.iconEmoji,
-              description: `${spell.name} debuff`,
-            } as ActiveEffect,
-          ],
-        }));
-      }
+
       // M9: Apply DoT using dotDamagePerTurn as canonical field
       if ((spell.dotDamagePerTurn ?? spell.dotDamage) && spell.dotDuration) {
         const dotPptN = spell.dotDamagePerTurn ?? spell.dotDamage ?? 0;
@@ -14034,24 +14157,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           "#a855f7",
         );
       }
-    }
-    // Apply self buffs
-    if (spell.buffStat && spell.buffDuration) {
-      applyActiveEffect({
-        id: `buff-${Date.now()}`,
-        effectName: spell.name,
-        type: "buff",
-        targetId: "player",
-        stat: spell.buffStat,
-        modifier: spell.buffModifier ?? 1,
-        duration: spell.buffDuration,
-        iconEmoji: spell.iconEmoji,
-        description: `${spell.buffStat} +${Math.round(((spell.buffModifier ?? 1) - 1) * 100)}%`,
-      });
-      logBattleEntry(
-        `${spell.name}: self-buff ${spell.buffStat} for ${spell.buffDuration} turns`,
-        "#22c55e",
-      );
     }
     setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
     if (currentBattleAp - apCost <= 0) {
@@ -14082,6 +14187,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     applyActiveEffect,
     recordPlayerSpellType,
     calcEnemyMaxHp,
+    enemyTakesDamage,
+    calculatePlayerDamage,
   ]);
 
   const [noTargetFlash, setNoTargetFlash] = useState(false);
@@ -15006,6 +15113,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 </div>
               ))}
             </div>
+
+            {/* Player active status effects */}
+            {inBattle && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 4,
+                  padding: "4px 10px 8px",
+                  borderBottom: "1px solid var(--dofus-border-gold-dim)",
+                }}
+              >
+                {activeEffects
+                  .filter((e) => e.targetId === "player")
+                  .map((eff) => (
+                    <StatusEffectBadge
+                      key={`${eff.targetId}-${eff.effectName}`}
+                      effect={eff}
+                      isPlayer
+                    />
+                  ))}
+                {activeEffects.filter((e) => e.targetId === "player").length ===
+                  0 && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      color: "var(--dofus-text-dim)",
+                      opacity: 0.6,
+                    }}
+                  >
+                    No active effects
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Doka-to-HP healing — only outside battle, when HP is not full */}
@@ -15407,6 +15549,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     <div
                       style={{ display: "flex", alignItems: "center", gap: 4 }}
                     >
+                      {/* Enemy active status effects */}
+                      {activeEffects.filter((e) => e.targetId === enemy.id)
+                        .length > 0 && (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexWrap: "wrap",
+                            gap: 3,
+                            marginLeft: 4,
+                          }}
+                        >
+                          {activeEffects
+                            .filter((e) => e.targetId === enemy.id)
+                            .map((eff) => (
+                              <StatusEffectBadge
+                                key={`${eff.targetId}-${eff.effectName}`}
+                                effect={eff}
+                              />
+                            ))}
+                        </div>
+                      )}
                       <span
                         className="dofus-badge"
                         style={{

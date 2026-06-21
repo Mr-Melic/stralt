@@ -47376,46 +47376,6 @@ function useBossRush(actor, characterSlot, principal) {
     BOSS_RUSH_ROOMS
   };
 }
-function getEffectiveStats(baseStats, effects) {
-  const effective = { ...baseStats };
-  for (const effect of effects) {
-    if (effect.stat && effect.modifier !== void 0) {
-      const current = Number(
-        effective[effect.stat]
-      );
-      if (effect.type === "buff" && effect.modifier > 0) {
-        effective[effect.stat] = Math.floor(
-          current * (1 + Math.abs(effect.modifier) / 100)
-        );
-      } else if (effect.type === "debuff" && effect.modifier < 0) {
-        effective[effect.stat] = Math.floor(
-          current * (1 - Math.abs(effect.modifier) / 100)
-        );
-      } else if (effect.type === "dot") ;
-    }
-  }
-  return effective;
-}
-function getEffectiveEnemyStats(enemy, effects) {
-  const effective = { ...enemy };
-  for (const effect of effects) {
-    if (effect.stat && effect.modifier !== void 0) {
-      const current = Number(
-        effective[effect.stat]
-      );
-      if (effect.type === "buff" && effect.modifier > 0) {
-        effective[effect.stat] = Math.floor(
-          current * (1 + Math.abs(effect.modifier) / 100)
-        );
-      } else if (effect.type === "debuff" && effect.modifier < 0) {
-        effective[effect.stat] = Math.floor(
-          current * (1 - Math.abs(effect.modifier) / 100)
-        );
-      } else if (effect.type === "dot") ;
-    }
-  }
-  return effective;
-}
 function evaluateChallenges(refs, playerHp, playerMaxHp) {
   const results = [];
   results.push({
@@ -49529,6 +49489,67 @@ const SpellbookModal = ({
     }
   );
 };
+function formatEffectLabel(effect) {
+  const stat = effect.stat ?? "";
+  const modifier = effect.modifier ?? 1;
+  if (effect.type === "dot") {
+    const dmg = effect.dotDamagePerTurn ?? 0;
+    return `${effect.effectName} ${dmg}/turn`;
+  }
+  if (stat === "mp" || stat === "ap") {
+    const sign2 = modifier >= 0 ? "+" : "";
+    return `${stat.toUpperCase()} ${sign2}${modifier}`;
+  }
+  const pct = Math.round((modifier - 1) * 100);
+  const sign = pct >= 0 ? "+" : "";
+  return `${stat.toUpperCase()} ${sign}${pct}%`;
+}
+function StatusEffectBadge({ effect }) {
+  const label = formatEffectLabel(effect);
+  const turns = effect.duration;
+  const borderColor = effect.type === "buff" ? "rgba(34,197,94,0.7)" : effect.type === "dot" ? "rgba(234,179,8,0.7)" : "rgba(239,68,68,0.7)";
+  const bgColor = effect.type === "buff" ? "rgba(34,197,94,0.12)" : effect.type === "dot" ? "rgba(234,179,8,0.12)" : "rgba(239,68,68,0.12)";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      "data-ocid": `status_effect.${effect.targetId}.${effect.effectName}.badge`,
+      title: `${effect.description} — ${turns} turn${turns !== 1 ? "s" : ""} remaining`,
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "2px 6px",
+        borderRadius: 4,
+        border: `1px solid ${borderColor}`,
+        background: bgColor,
+        color: "#fff",
+        fontSize: 10,
+        fontWeight: 700,
+        whiteSpace: "nowrap",
+        lineHeight: 1
+      },
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11 }, children: effect.iconEmoji }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: label }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "span",
+          {
+            style: {
+              fontSize: 9,
+              opacity: 0.75,
+              fontWeight: 600,
+              marginLeft: 2
+            },
+            children: [
+              turns,
+              "t"
+            ]
+          }
+        )
+      ]
+    }
+  );
+}
 let _fbNameIdx = 0;
 const TILE_WIDTH = 80;
 const TILE_HEIGHT = 40;
@@ -50356,28 +50377,63 @@ const WorldExplorationInner = ({
   const playerSpellTypeHistoryRef = reactExports.useRef([]);
   const [activeEffects, setActiveEffects] = reactExports.useState([]);
   const activeEffectsRef = reactExports.useRef([]);
-  const [_enemyActiveEffects, setEnemyActiveEffects] = reactExports.useState({});
   const timestepUsedRef = reactExports.useRef(false);
   const playerApWasDebuffedRef = reactExports.useRef(false);
   reactExports.useEffect(() => {
     onActiveEffectsChange == null ? void 0 : onActiveEffectsChange(activeEffects);
   }, [activeEffects, onActiveEffectsChange]);
-  const applyActiveEffect = reactExports.useCallback((effect) => {
-    setActiveEffects((prev) => {
-      const existing = prev.findIndex(
-        (e) => e.targetId === effect.targetId && e.effectName === effect.effectName
-      );
-      let next;
-      if (existing >= 0) {
-        next = [...prev];
-        next[existing] = effect;
-      } else {
-        next = [...prev, effect];
+  const logBattleEntry = reactExports.useCallback(
+    (text, color) => {
+      if (!addBattleLogEntry) return;
+      addBattleLogEntry({
+        id: `bl-${Date.now()}-${Math.random()}`,
+        timestamp: nowTimestamp(),
+        text,
+        color
+      });
+    },
+    [addBattleLogEntry]
+  );
+  const applyActiveEffect = reactExports.useCallback(
+    (effect) => {
+      setActiveEffects((prev) => {
+        const existing = prev.findIndex(
+          (e) => e.targetId === effect.targetId && e.effectName === effect.effectName
+        );
+        let next;
+        if (existing >= 0) {
+          next = [...prev];
+          next[existing] = effect;
+        } else {
+          next = [...prev, effect];
+        }
+        activeEffectsRef.current = next;
+        return next;
+      });
+      const effectType = effect.type;
+      const stat = effect.stat;
+      const modifier = effect.modifier;
+      const isDot = effectType === "dot" && effect.dotDamagePerTurn !== void 0 && effect.dotDamagePerTurn > 0;
+      if (!isDot && stat && modifier !== void 0) {
+        const isPercentStat = stat !== "mp" && stat !== "ap";
+        const signedMag = isPercentStat ? modifier > 1 ? `+${Math.round((modifier - 1) * 100)}%` : `${Math.round((modifier - 1) * 100)}%` : modifier > 0 ? `+${modifier}` : `${modifier}`;
+        const color = effectType === "buff" ? "#22c55e" : "#a855f7";
+        const targetName = effect.targetId === "player" ? "you" : effect.targetId;
+        logBattleEntry(
+          `${effect.effectName}: ${signedMag} ${stat.toUpperCase()} on ${targetName} (${effect.duration} turns)`,
+          color
+        );
+      } else if (isDot) {
+        const color = effect.targetId === "player" ? "#eab308" : "#a855f7";
+        const targetName = effect.targetId === "player" ? "you" : effect.targetId;
+        logBattleEntry(
+          `${effect.effectName}: ${effect.dotDamagePerTurn} dmg/turn on ${targetName} (${effect.duration} turns)`,
+          color
+        );
       }
-      activeEffectsRef.current = next;
-      return next;
-    });
-  }, []);
+    },
+    [logBattleEntry]
+  );
   const processActiveEffects = reactExports.useCallback(
     (targetId) => {
       const prev = activeEffectsRef.current;
@@ -50393,41 +50449,24 @@ const WorldExplorationInner = ({
             const dotLabel = eff.effectName.toLowerCase().includes("burn") ? "burning" : eff.effectName.toLowerCase().includes("bleed") ? "bleeding" : "poisoned";
             const newDur2 = eff.duration - 1;
             if (targetId === "player") {
-              setCharacterStats((s2) => ({ ...s2, hp: Math.max(0, s2.hp - dot) }));
-              if (addBattleLogEntry) {
-                addBattleLogEntry({
-                  id: `dot-${Date.now()}-${Math.random()}`,
-                  timestamp: nowTimestamp(),
-                  text: newDur2 > 0 ? `You take ${dot} from ${dotLabel} (${newDur2} turns remaining)` : `The ${dotLabel} effect wears off`,
-                  color: "#eab308"
-                });
+              playerTakesDamage(dot, `${dotLabel} DoT`);
+              if (logBattleEntry) {
+                const dotLabel2 = eff.effectName || "DoT";
+                const tickColor = "#eab308";
+                logBattleEntry(
+                  `${dotLabel2} ticks ${dot} dmg on you (${newDur2} turns left)`,
+                  tickColor
+                );
               }
             } else {
-              setEnemyHpMap((hpMap) => {
-                const cur = hpMap[targetId] ?? 0;
-                const newHp = Math.max(0, cur - dot);
-                setTurnOrder(
-                  (to) => to.map((c2) => c2.id === targetId ? { ...c2, hp: newHp } : c2)
+              enemyTakesDamage(targetId, dot, "dot", `${dotLabel} DoT`);
+              if (logBattleEntry) {
+                const dotLabel2 = eff.effectName || "DoT";
+                const tickColor = "#a855f7";
+                logBattleEntry(
+                  `${dotLabel2} ticks ${dot} dmg on ${eff.targetId} (${newDur2} turns left)`,
+                  tickColor
                 );
-                if (newHp <= 0) {
-                  setEnemies(
-                    (enemies2) => enemies2.filter((e) => e.id !== targetId)
-                  );
-                  setTurnOrder((to) => to.filter((c2) => c2.id !== targetId));
-                  activeEffectsRef.current = activeEffectsRef.current.filter(
-                    (e) => e.targetId !== eff.targetId
-                  );
-                  setActiveEffects([...activeEffectsRef.current]);
-                }
-                return { ...hpMap, [targetId]: newHp };
-              });
-              if (addBattleLogEntry) {
-                addBattleLogEntry({
-                  id: `dot-${Date.now()}-${Math.random()}`,
-                  timestamp: nowTimestamp(),
-                  text: newDur2 > 0 ? `Enemy takes ${dot} from ${dotLabel} (${newDur2} turns remaining)` : `Enemy's ${dotLabel} effect wears off`,
-                  color: "#a855f7"
-                });
               }
             }
             if (newDur2 > 0) next.push({ ...eff, duration: newDur2 });
@@ -50437,38 +50476,22 @@ const WorldExplorationInner = ({
           if (newDur > 0) {
             next.push({ ...eff, duration: newDur });
           }
+          const stat = eff.stat;
+          const modifier = eff.modifier;
+          if (stat && modifier !== void 0) {
+            const isPercentStat = stat !== "mp" && stat !== "ap";
+            const signedMag = isPercentStat ? modifier > 1 ? `+${Math.round((modifier - 1) * 100)}%` : `${Math.round((modifier - 1) * 100)}%` : modifier > 0 ? `+${modifier}` : `${modifier}`;
+            logBattleEntry(
+              `${eff.effectName || "Effect"} expired (${signedMag} ${stat.toUpperCase()} ended)`,
+              "#94a3b8"
+            );
+          }
         }
         activeEffectsRef.current = next;
         return next;
       });
-      setEnemyActiveEffects((prev2) => {
-        const next = {};
-        for (const [enemyId, effects] of Object.entries(prev2)) {
-          const ticked = effects.map((e) => ({ ...e, duration: e.duration - 1 })).filter((e) => e.duration > 0);
-          if (ticked.length > 0) next[enemyId] = ticked;
-        }
-        return next;
-      });
     },
-    [addBattleLogEntry]
-  );
-  const getStatModifier = reactExports.useCallback(
-    (targetId, stat, activeEffectsSnap) => {
-      let multiplier = 1;
-      let additive = 0;
-      for (const eff of activeEffectsSnap) {
-        if (eff.targetId !== targetId || eff.stat !== stat) continue;
-        if (eff.type === "buff" || eff.type === "debuff") {
-          if (stat === "mp" || stat === "ap") {
-            additive += eff.modifier ?? 0;
-          } else {
-            multiplier *= eff.modifier ?? 1;
-          }
-        }
-      }
-      return stat === "mp" || stat === "ap" ? additive : multiplier;
-    },
-    []
+    [logBattleEntry]
   );
   const [battleActionMode, setBattleActionMode] = reactExports.useState(
     "walk"
@@ -51485,18 +51508,6 @@ const WorldExplorationInner = ({
     },
     [dokaBalance, actor, character, characterSlot, nsKey]
   );
-  const logBattleEntry = reactExports.useCallback(
-    (text, color) => {
-      if (!addBattleLogEntry) return;
-      addBattleLogEntry({
-        id: `bl-${Date.now()}-${Math.random()}`,
-        timestamp: nowTimestamp(),
-        text,
-        color
-      });
-    },
-    [addBattleLogEntry]
-  );
   const [characterStats, setCharacterStats] = reactExports.useState(() => {
     const savedLevel = (character == null ? void 0 : character.level) != null ? Number(character.level) : 1;
     const savedExp = (character == null ? void 0 : character.experience) != null ? Number(character.experience) : 0;
@@ -51519,12 +51530,110 @@ const WorldExplorationInner = ({
       expToNext
     };
   });
+  const getStatModifier = reactExports.useCallback(
+    (targetId, stat, activeEffectsSnap) => {
+      let multiplier = 1;
+      let additive = 0;
+      for (const eff of activeEffectsSnap) {
+        if (eff.targetId !== targetId || eff.stat !== stat) continue;
+        if (eff.type === "buff" || eff.type === "debuff") {
+          if (stat === "mp" || stat === "ap") {
+            additive += eff.modifier ?? 0;
+          } else {
+            multiplier *= eff.modifier ?? 1;
+          }
+        }
+      }
+      return stat === "mp" || stat === "ap" ? additive : multiplier;
+    },
+    []
+  );
+  const calculatePlayerDamage = reactExports.useCallback(
+    (baseDamage, spellId, targetEnemy, gridPos, isPhysical, isCrit, effects) => {
+      let dmg = baseDamage;
+      let breakdownParts = [`Base ${dmg}`];
+      const scaledDmg = calcScaledDamage(
+        dmg,
+        characterStats.level,
+        spellLevelsRef.current[spellId] ?? 0
+      );
+      if (scaledDmg !== dmg) {
+        dmg = scaledDmg;
+        breakdownParts.push(`scaled = ${dmg}`);
+      }
+      const dmgMod = getStatModifier("player", "dmg", effects);
+      if (dmgMod !== 1) {
+        dmg = Math.floor(dmg * dmgMod);
+        breakdownParts.push(`×${dmgMod.toFixed(1)} buff = ${dmg}`);
+      }
+      const markKey = `${gridPos.x},${gridPos.y}`;
+      if (markedTilesRef.current.has(markKey)) {
+        dmg *= 2;
+        markedTilesRef.current.delete(markKey);
+        breakdownParts.push(`×2 mark = ${dmg}`);
+      }
+      if (isCrit) {
+        dmg *= 2;
+        breakdownParts.push(`CRIT ×2 = ${dmg}`);
+      }
+      const enemyResMod = getStatModifier(targetEnemy.id, "res", effects);
+      const resReduction = Math.floor(targetEnemy.res * enemyResMod);
+      if (isPhysical) {
+        dmg = Math.max(1, dmg - resReduction);
+        if (resReduction > 0)
+          breakdownParts.push(`-${resReduction} RES = ${dmg}`);
+      } else {
+        const enemySpMod = getStatModifier(targetEnemy.id, "sp", effects);
+        const spReduction = Math.floor(targetEnemy.sp * enemySpMod);
+        dmg = Math.max(1, dmg - spReduction);
+        if (spReduction > 0) breakdownParts.push(`-${spReduction} SP = ${dmg}`);
+      }
+      return { finalDamage: dmg, breakdown: breakdownParts.join(" → ") };
+    },
+    [characterStats.level, getStatModifier]
+  );
   const maxHp = reactExports.useMemo(() => {
     const growthRate = (levelUpConfig.statGrowthPercent ?? 5) / 100;
     return Math.floor(
       100 * (1 + (((characterStats == null ? void 0 : characterStats.level) ?? 1) - 1) * growthRate)
     );
   }, [characterStats == null ? void 0 : characterStats.level, levelUpConfig.statGrowthPercent]);
+  const playerTakesDamage = reactExports.useCallback(
+    (incomingDamage, source) => {
+      let dmg = incomingDamage;
+      const effRes = Number(characterStats.res) * getStatModifier("player", "res", activeEffectsRef.current);
+      dmg = Math.max(1, Math.round(dmg * (100 / (100 + effRes))));
+      if (shieldHpRef.current > 0) {
+        const absorb = Math.min(shieldHpRef.current, dmg);
+        shieldHpRef.current -= absorb;
+        dmg -= absorb;
+        if (absorb > 0)
+          logBattleEntry(`Shield absorbed ${absorb} damage`, "#a855f7");
+      }
+      const newHp = Math.max(0, characterStats.hp - dmg);
+      setCharacterStats((prev) => ({ ...prev, hp: newHp }));
+      logBattleEntry(`Player took ${dmg} damage from ${source}`, "#ef4444");
+      return dmg;
+    },
+    [characterStats.res, characterStats.hp, getStatModifier, logBattleEntry]
+  );
+  const enemyTakesDamage = reactExports.useCallback(
+    (enemyId, incomingDamage, casterId, source) => {
+      const enemy = enemies.find((e) => e.id === enemyId);
+      if (!enemy) return 0;
+      const effRes = Number(enemy.res) * getStatModifier(enemyId, "res", activeEffectsRef.current);
+      const effDmg = incomingDamage * getStatModifier(casterId, "dmg", activeEffectsRef.current);
+      const dmg = Math.max(1, Math.round(effDmg * (100 / (100 + effRes))));
+      const newHp = Math.max(0, enemy.hp - dmg);
+      setEnemyHpMap((prev) => ({ ...prev, [enemyId]: newHp }));
+      setEnemies(
+        (prev) => prev.map((e) => e.id === enemyId ? { ...e, hp: newHp } : e)
+      );
+      logBattleEntry(`${enemyId} took ${dmg} damage from ${source}`, "#ef4444");
+      return dmg;
+    },
+    [enemies, getStatModifier, logBattleEntry]
+  );
   const handleUseItem = reactExports.useCallback(
     (itemType) => {
       const logItem = (msg, color = "#22c55e") => {
@@ -53620,7 +53729,7 @@ const WorldExplorationInner = ({
     return { map, spawnPosition: spawnPos };
   }, []);
   const generateRestMap = reactExports.useCallback(() => {
-    const size = 12;
+    const size = WORLD_GRID_SIZE;
     const tiles = [];
     for (let y2 = 0; y2 < size; y2++) {
       const row = [];
@@ -54031,7 +54140,8 @@ const WorldExplorationInner = ({
     ]
   );
   const updateCameraToFollowPlayer = reactExports.useCallback(() => {
-    if ((currentMap == null ? void 0 : currentMap.isRestMap) || (currentMap == null ? void 0 : currentMap.isDeathRealm)) {
+    var _a4, _b4;
+    if (((_a4 = currentMapRef.current) == null ? void 0 : _a4.isRestMap) || ((_b4 = currentMapRef.current) == null ? void 0 : _b4.isDeathRealm)) {
       const playerScreenPos2 = gridToScreen(playerPosition.x, playerPosition.y);
       const centerX2 = canvasSize.width / 2;
       const centerY2 = canvasSize.height / 2;
@@ -54096,9 +54206,7 @@ const WorldExplorationInner = ({
     shouldFollowPlayer,
     effectiveDeadzone,
     effectiveMaxOffset,
-    isMobile,
-    currentMap == null ? void 0 : currentMap.isRestMap,
-    currentMap == null ? void 0 : currentMap.isDeathRealm
+    isMobile
   ]);
   const checkPortalInteraction = reactExports.useCallback(() => {
     var _a4, _b4, _c3, _d3, _e3, _f3;
@@ -54163,7 +54271,12 @@ const WorldExplorationInner = ({
           cameraRef.current = { x: camX, y: camY };
           targetCameraRef.current = { x: camX, y: camY };
           cameraVelocityRef.current = { x: 0, y: 0 };
-          updateCameraToFollowPlayer();
+          if (cameraFollowTimerRef.current !== null)
+            clearTimeout(cameraFollowTimerRef.current);
+          cameraFollowTimerRef.current = window.setTimeout(() => {
+            cameraFollowTimerRef.current = null;
+            updateCameraToFollowPlayer();
+          }, 100);
           transitionInProgressRef.current = false;
           setTransitionInProgress(false);
           setMapCount((prev) => prev + 1);
@@ -55020,8 +55133,10 @@ const WorldExplorationInner = ({
     const wallDepthItems = [];
     const portalDepthItems = [];
     for (let y2 = 0; y2 < WORLD_GRID_SIZE; y2++) {
+      if (!currentMap.tiles[y2]) continue;
       const shimmerAlpha = Math.max(0, Math.sin(now2 * 8e-4 + y2 * 0.3) * 0.03);
       for (let x3 = 0; x3 < WORLD_GRID_SIZE; x3++) {
+        if (currentMap.tiles[y2][x3] === void 0) continue;
         if ((_a4 = currentMap == null ? void 0 : currentMap.voidTiles) == null ? void 0 : _a4.has(`${x3},${y2}`)) continue;
         const tileType = currentMap.tiles[y2][x3];
         if (tileType !== "wall") {
@@ -55328,7 +55443,9 @@ const WorldExplorationInner = ({
           }
         }
       }
+      if (!currentMap.tiles[y2]) continue;
       for (let x3 = 0; x3 < WORLD_GRID_SIZE; x3++) {
+        if (currentMap.tiles[y2][x3] === void 0) continue;
         if (currentMap.tiles[y2][x3] === "wall") {
           const screenPos = gridToScreen(x3, y2);
           wallDepthItems.push({
@@ -56372,9 +56489,47 @@ const WorldExplorationInner = ({
             }
             return;
           }
+          if (spell.isTimestep) {
+            if (timestepUsedRef.current) {
+              logBattleEntry(
+                "Timestep can only be used once per battle!",
+                "#fbbf24"
+              );
+              return;
+            }
+            timestepUsedRef.current = true;
+            const maxAp = Number(characterStats.ap) + getStatModifier("player", "ap", activeEffectsRef.current);
+            const maxMp = Number(characterStats.mp) + getStatModifier("player", "mp", activeEffectsRef.current);
+            setCurrentBattleAp(maxAp);
+            setCurrentBattleMp(maxMp);
+            logBattleEntry("Timestep! AP and MP restored to full", "#22d3ee");
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            return;
+          }
           const targetEnemy = enemies.find(
             (e) => e.x === gridPos.x && e.y === gridPos.y
           );
+          if (spell.isSacrifice) {
+            const hpLoss = Math.floor(characterStats.hp * 0.2);
+            const newHp = Math.max(1, characterStats.hp - hpLoss);
+            setCharacterStats((prev) => ({ ...prev, hp: newHp }));
+            logBattleEntry(`Sacrifice! Lost ${hpLoss} HP`, "#ef4444");
+            if (targetEnemy) {
+              const sacrificeDmg = hpLoss * 3;
+              enemyTakesDamage(
+                targetEnemy.id,
+                sacrificeDmg,
+                "player",
+                "Sacrifice"
+              );
+              logBattleEntry(
+                `Sacrifice dealt ${sacrificeDmg} damage to ${targetEnemy.id}`,
+                "#ef4444"
+              );
+            }
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            return;
+          }
           if (isSwapSpell && targetEnemy) {
             const playerOldX = playerPosition.x;
             const playerOldY = playerPosition.y;
@@ -56531,24 +56686,6 @@ const WorldExplorationInner = ({
               }
               return;
             }
-            if (!spell.isMark && (spell.spellType === "damage" || spell.spellType === "drain")) {
-              const tileKey = `${gridPos.x},${gridPos.y}`;
-              if (markedTilesRef.current.has(tileKey)) {
-                markedTilesRef.current.delete(tileKey);
-                logBattleEntry("[COMBO] Mark bonus! +25% damage", "#ffd700");
-                playSound("combo", spell.name);
-                if (targetEnemy) {
-                  const cs = gridToScreen(targetEnemy.x, targetEnemy.y);
-                  comboTextRef.current = {
-                    text: "+COMBO!",
-                    x: cs.x,
-                    y: cs.y - 50,
-                    alpha: 1,
-                    born: Date.now()
-                  };
-                }
-              }
-            }
             if (targetEnemy && !spell.hitsMultiple && !spell.aoe && mirrorUnitsRef.current.has(targetEnemy.id)) {
               mirrorUnitsRef.current.delete(targetEnemy.id);
               const baseDmgMirror = Number(spell.damage);
@@ -56619,21 +56756,22 @@ const WorldExplorationInner = ({
               ] : []
             ];
             for (const hitTarget of targetsToHit) {
-              const enemySp = hitTarget.sp ?? 0;
-              const enemyRes = hitTarget.res ?? 0;
+              const targetEnemy2 = hitTarget.id === "__player__" ? void 0 : hitTarget;
               let finalDmg;
-              if (isPhysical) {
-                finalDmg = Math.max(
-                  1,
-                  Math.round(preCritDmgBM * (1 - enemyRes / 100))
+              if (hitTarget.id !== "__player__" && targetEnemy2) {
+                const { finalDamage, breakdown } = calculatePlayerDamage(
+                  preCritDmgBM,
+                  spell.id,
+                  targetEnemy2,
+                  gridPos,
+                  isPhysical,
+                  isCrit,
+                  activeEffectsRef.current
                 );
+                finalDmg = finalDamage;
+                logBattleEntry(breakdown, "#fbbf24");
               } else {
-                finalDmg = Math.max(
-                  1,
-                  Math.round(
-                    preCritDmgBM * (1 - enemySp / 100) * (1 - enemyRes / 100)
-                  )
-                );
+                finalDmg = preCritDmgBM;
               }
               if ((hitTarget == null ? void 0 : hitTarget.family) === "void_mirror") {
                 const voidReflect = Math.floor(preCritDmgBM * 0.25);
@@ -56671,6 +56809,8 @@ const WorldExplorationInner = ({
                   );
                 }
               }
+              const enemySp = hitTarget.sp ?? 0;
+              const enemyRes = hitTarget.res ?? 0;
               const resistedAmt = preCritDmgBM - finalDmg;
               battleHitsRef.current += 1;
               const spReduction = isPhysical ? 0 : Math.round(preCritDmgBM * (enemySp / 100));
@@ -56713,6 +56853,30 @@ const WorldExplorationInner = ({
                 turnOrderRef.current = newOrder;
                 return newOrder;
               });
+              if (spell.bounces && spell.bounces > 0 && hitTarget && hitTarget.id && hitTarget.id !== "__player__") {
+                const otherEnemies = enemies.filter(
+                  (e) => e.id !== hitTarget.id && (e.hp ?? 0) > 0
+                );
+                const sorted = otherEnemies.sort((a2, b2) => {
+                  const distA = Math.abs(a2.x - hitTarget.x) + Math.abs(a2.y - hitTarget.y);
+                  const distB = Math.abs(b2.x - hitTarget.x) + Math.abs(b2.y - hitTarget.y);
+                  return distA - distB;
+                });
+                const bounceTargets = sorted.slice(0, spell.bounces);
+                bounceTargets.forEach((bounceEnemy, idx) => {
+                  const bounceDmg = Math.floor(finalDmg * 0.5 ** (idx + 1));
+                  enemyTakesDamage(
+                    bounceEnemy.id,
+                    bounceDmg,
+                    "player",
+                    `${spell.name} bounce`
+                  );
+                  logBattleEntry(
+                    `${spell.name} bounced to ${bounceEnemy.id} for ${bounceDmg} damage!`,
+                    "#fbbf24"
+                  );
+                });
+              }
               if (hitTarget.id === "__player__") {
                 setCharacterStats((prev) => ({
                   ...prev,
@@ -57450,7 +57614,6 @@ const WorldExplorationInner = ({
     battleEndedRef.current = false;
     activeEffectsRef.current = [];
     setActiveEffects([]);
-    setEnemyActiveEffects({});
   }, [onDebugLog]);
   const cleanupMap = reactExports.useCallback(() => {
     cleanupPhaseRef.current = "timers";
@@ -59686,11 +59849,7 @@ const WorldExplorationInner = ({
                 "sp",
                 activeEffectsRef.current
               );
-              const effectivePlayerStats = getEffectiveStats(
-                characterStats,
-                activeEffects
-              );
-              const plResEff = Math.max(0, Number(effectivePlayerStats.res)) * getStatModifier(
+              const plResEff = Math.max(0, Number(characterStats.res)) * getStatModifier(
                 "player",
                 "res",
                 activeEffectsRef.current
@@ -59705,10 +59864,7 @@ const WorldExplorationInner = ({
                 const mirrorDmg = Math.max(
                   1,
                   Math.round(
-                    dmgAC * (1 - (getEffectiveEnemyStats(
-                      enemy,
-                      activeEffects.filter((e) => e.targetId === enemy.id)
-                    ).res ?? 0) / 100)
+                    dmgAC * (1 - Number(enemy.res) * getStatModifier(enemy.id, "res", activeEffects) / 100)
                   )
                 );
                 const curEnemyHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
@@ -59743,30 +59899,16 @@ const WorldExplorationInner = ({
                   resR > 0 ? `-${resR} RES` : ""
                 ].filter(Boolean).join(", ");
                 const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
-                let shieldedDmg = dmg;
-                if (shieldHpRef.current > 0) {
-                  const absorbed = Math.min(shieldHpRef.current, shieldedDmg);
-                  shieldHpRef.current = Math.max(
-                    0,
-                    shieldHpRef.current - absorbed
-                  );
-                  shieldedDmg = Math.max(0, shieldedDmg - absorbed);
-                  if (absorbed > 0)
-                    logBattleEntry(
-                      `🛡️ Shield absorbed ${absorbed} dmg! (${shieldHpRef.current} remaining)`,
-                      "#818cf8"
-                    );
-                }
-                setCharacterStats((prev) => ({
-                  ...prev,
-                  hp: Math.max(0, prev.hp - shieldedDmg)
-                }));
+                const actualDmg = playerTakesDamage(
+                  dmg,
+                  `${enemy.pieceType} spell ${chosenSpell.name}`
+                );
                 logBattleEntry(
-                  isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${dmg} dmg${resNote}`,
+                  isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
                   isCrit ? "#FFD700" : "#ef4444"
                 );
-                if (shieldedDmg > 0)
-                  logBattleEntry(`You lost ${shieldedDmg} HP!`, "#eab308");
+                if (actualDmg > 0)
+                  logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
                 playSound("player_damage", enemy.pieceType);
                 if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
                   applyActiveEffect({
@@ -60120,6 +60262,23 @@ const WorldExplorationInner = ({
     spell.spellType ?? "damage";
     const isHealSpell = spell.targetType === "self" && spell.effectType === "heal";
     const isPhysical = spell.isPhysical ?? false;
+    if (spell.buffStat && spell.buffDuration) {
+      applyActiveEffect({
+        id: `buff-${Date.now()}`,
+        effectName: spell.name,
+        type: "buff",
+        targetId: "player",
+        stat: spell.buffStat,
+        modifier: spell.buffModifier ?? 1,
+        duration: spell.buffDuration,
+        iconEmoji: spell.iconEmoji,
+        description: `${spell.buffStat} +${Math.round(((spell.buffModifier ?? 1) - 1) * 100)}%`
+      });
+      logBattleEntry(
+        `${spell.name}: self-buff ${spell.buffStat} for ${spell.buffDuration} turns`,
+        "#22c55e"
+      );
+    }
     if (isHealSpell) {
       const baseHealAmt = spell.healAmount ?? 0;
       const healRecvMod = getStatModifier("player", "healRecv", activeEffects);
@@ -60134,23 +60293,6 @@ const WorldExplorationInner = ({
         `${isCrit2 ? "CRITICAL! " : ""}You healed ${finalHeal} HP with ${spell.name}`,
         isCrit2 ? "#FFD700" : "#22c55e"
       );
-      if (spell.buffStat && spell.buffDuration) {
-        applyActiveEffect({
-          id: `eff-${Date.now()}`,
-          effectName: spell.name,
-          type: "buff",
-          targetId: "player",
-          stat: spell.buffStat,
-          modifier: spell.buffModifier ?? 1,
-          duration: spell.buffDuration,
-          iconEmoji: spell.iconEmoji,
-          description: `+${Math.round(((spell.buffModifier ?? 1) - 1) * 100)}% ${spell.buffStat}`
-        });
-        logBattleEntry(
-          `${spell.name} buff applied: ${spell.buffStat} for ${spell.buffDuration} turns`,
-          "#22c55e"
-        );
-      }
       battleHitsRef.current += 1;
       setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
       if (currentBattleAp - apCost <= 0) {
@@ -60206,56 +60348,39 @@ const WorldExplorationInner = ({
       return;
     }
     challengePhysicalOnlyRef.current = false;
-    const effectivePlayerStats = getEffectiveStats(
-      characterStats,
-      activeEffects
-    );
-    const effectiveEnemy = getEffectiveEnemyStats(
-      nearest,
-      activeEffects.filter((e) => e.targetId === nearest.id)
-    );
     const baseDamage = Number(spell.damage);
-    const dmgMod = getStatModifier("player", "dmg", activeEffects);
-    const scaledBase = Math.max(1, Math.round(baseDamage * dmgMod));
     const rawDmg = calcScaledDamage(
-      scaledBase,
-      effectivePlayerStats.level,
+      baseDamage,
+      Number(characterStats.level),
       spellLevels[spell.id] ?? 0
     );
     const chcBuff = getStatModifier("player", "chc", activeEffects);
-    const effectiveChc = Number(effectivePlayerStats.chc) + (typeof chcBuff === "number" ? chcBuff * 100 : 0);
+    const effectiveChc = Number(characterStats.chc) + (typeof chcBuff === "number" ? chcBuff * 100 : 0);
     const isCrit = Math.random() * 100 < effectiveChc;
-    const preCritDmg = isCrit ? rawDmg * 2 : rawDmg;
-    const enemySp = Math.max(0, effectiveEnemy.sp ?? 0) * getStatModifier(nearest.id, "sp", activeEffects);
-    const enemyRes = Math.max(0, effectiveEnemy.res ?? 0) * getStatModifier(nearest.id, "res", activeEffects);
-    const finalDmg = Math.max(
-      1,
-      isPhysical ? Math.round(preCritDmg * (1 - enemyRes / 100)) : Math.round(preCritDmg * (1 - enemySp / 100) * (1 - enemyRes / 100))
+    const { finalDamage, breakdown } = calculatePlayerDamage(
+      rawDmg,
+      spell.id,
+      nearest,
+      { x: nearest.x, y: nearest.y },
+      isPhysical,
+      isCrit,
+      activeEffectsRef.current
     );
+    const finalDmg = finalDamage;
+    logBattleEntry(breakdown, "#fbbf24");
     recordPlayerSpellType(spell.effectType ?? "damage");
-    battleHitsRef.current += 1;
-    const prevHpNearest = enemyHpMap[nearest.id] ?? calcEnemyMaxHp(nearest.level);
-    const newHpNearest = Math.max(0, prevHpNearest - finalDmg);
-    const resistedAmtN = preCritDmg - finalDmg;
-    const spRedN = isPhysical ? 0 : Math.round(preCritDmg * (enemySp / 100));
-    const resRedN = isPhysical ? Math.round(preCritDmg * (enemyRes / 100)) : Math.round(preCritDmg * (1 - enemySp / 100) * (enemyRes / 100));
-    const resPartsN = [];
-    if (spRedN > 0) resPartsN.push(`-${spRedN}SP`);
-    if (resRedN > 0) resPartsN.push(`-${resRedN}RES`);
-    const resNoteN = resistedAmtN > 0 ? ` |[${resPartsN.join("+")}=>${finalDmg}]|` : "";
-    if (isCrit) {
-      logBattleEntry(
-        `CRITICAL HIT! You cast ${spell.name} on ${nearest.pieceType}: ${rawDmg}x2=${preCritDmg} dmg${resNoteN}`,
-        "#FFD700"
-      );
-    } else {
-      logBattleEntry(
-        `You cast ${spell.name} on ${nearest.pieceType} for ${finalDmg} dmg${resNoteN}`,
-        "#22c55e"
-      );
-    }
+    const actualDmg = enemyTakesDamage(
+      nearest.id,
+      finalDmg,
+      "player",
+      `spell ${spell.name}`
+    );
+    const newHpNearest = Math.max(
+      0,
+      (enemyHpMap[nearest.id] ?? calcEnemyMaxHp(nearest.level)) - actualDmg
+    );
     logBattleEntry(
-      `${nearest.pieceType} lost ${finalDmg} HP (now ${newHpNearest}/${calcEnemyMaxHp(nearest.level)})`,
+      `${nearest.pieceType} lost ${actualDmg} HP (now ${newHpNearest}/${calcEnemyMaxHp(nearest.level)})`,
       "#a855f7"
     );
     if (newHpNearest <= 0) {
@@ -60297,25 +60422,6 @@ const WorldExplorationInner = ({
         );
         if (spell.debuffStat === "ap") ;
       }
-      if (spell.effectType === "debuff" && nearest) {
-        setEnemyActiveEffects((prev) => ({
-          ...prev,
-          [nearest.id]: [
-            ...prev[nearest.id] || [],
-            {
-              id: `enemy-debuff-${Date.now()}`,
-              effectName: spell.name,
-              type: "debuff",
-              targetId: nearest.id,
-              stat: spell.debuffStat || "res",
-              modifier: spell.debuffModifier ?? -20,
-              duration: spell.debuffDuration ?? 3,
-              iconEmoji: spell.iconEmoji,
-              description: `${spell.name} debuff`
-            }
-          ]
-        }));
-      }
       if ((spell.dotDamagePerTurn ?? spell.dotDamage) && spell.dotDuration) {
         const dotPptN = spell.dotDamagePerTurn ?? spell.dotDamage ?? 0;
         applyActiveEffect({
@@ -60333,23 +60439,6 @@ const WorldExplorationInner = ({
           "#a855f7"
         );
       }
-    }
-    if (spell.buffStat && spell.buffDuration) {
-      applyActiveEffect({
-        id: `buff-${Date.now()}`,
-        effectName: spell.name,
-        type: "buff",
-        targetId: "player",
-        stat: spell.buffStat,
-        modifier: spell.buffModifier ?? 1,
-        duration: spell.buffDuration,
-        iconEmoji: spell.iconEmoji,
-        description: `${spell.buffStat} +${Math.round(((spell.buffModifier ?? 1) - 1) * 100)}%`
-      });
-      logBattleEntry(
-        `${spell.name}: self-buff ${spell.buffStat} for ${spell.buffDuration} turns`,
-        "#22c55e"
-      );
     }
     setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
     if (currentBattleAp - apCost <= 0) {
@@ -60377,7 +60466,9 @@ const WorldExplorationInner = ({
     getStatModifier,
     applyActiveEffect,
     recordPlayerSpellType,
-    calcEnemyMaxHp
+    calcEnemyMaxHp,
+    enemyTakesDamage,
+    calculatePlayerDamage
   ]);
   const [noTargetFlash, setNoTargetFlash] = reactExports.useState(false);
   if (showGameOver) {
@@ -61438,6 +61529,39 @@ const WorldExplorationInner = ({
                               orb.label
                             ))
                           }
+                        ),
+                        inBattle && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "div",
+                          {
+                            style: {
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 4,
+                              padding: "4px 10px 8px",
+                              borderBottom: "1px solid var(--dofus-border-gold-dim)"
+                            },
+                            children: [
+                              activeEffects.filter((e) => e.targetId === "player").map((eff) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                StatusEffectBadge,
+                                {
+                                  effect: eff,
+                                  isPlayer: true
+                                },
+                                `${eff.targetId}-${eff.effectName}`
+                              )),
+                              activeEffects.filter((e) => e.targetId === "player").length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "span",
+                                {
+                                  style: {
+                                    fontSize: 10,
+                                    color: "var(--dofus-text-dim)",
+                                    opacity: 0.6
+                                  },
+                                  children: "No active effects"
+                                }
+                              )
+                            ]
+                          }
                         )
                       ]
                     }
@@ -61862,6 +61986,24 @@ const WorldExplorationInner = ({
                                     {
                                       style: { display: "flex", alignItems: "center", gap: 4 },
                                       children: [
+                                        activeEffects.filter((e) => e.targetId === enemy.id).length > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "div",
+                                          {
+                                            style: {
+                                              display: "flex",
+                                              flexWrap: "wrap",
+                                              gap: 3,
+                                              marginLeft: 4
+                                            },
+                                            children: activeEffects.filter((e) => e.targetId === enemy.id).map((eff) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                              StatusEffectBadge,
+                                              {
+                                                effect: eff
+                                              },
+                                              `${eff.targetId}-${eff.effectName}`
+                                            ))
+                                          }
+                                        ),
                                         /* @__PURE__ */ jsxRuntimeExports.jsxs(
                                           "span",
                                           {
@@ -65163,7 +65305,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DR1WgntH.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-1HoBYkYM.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
