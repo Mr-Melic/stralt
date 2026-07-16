@@ -1,0 +1,116 @@
+/**
+ * Pure turn-queue maintenance helpers.
+ *
+ * Centralizes the "a combatant left the queue" bookkeeping that previously
+ * leaked out of sync between `setTurnOrder` (React state) and the parallel
+ * refs (`turnOrderRef`, `currentTurnIndexRef`) that the turn-advance logic
+ * at WorldExploration.tsx line 10436-10448 reads synchronously.
+ *
+ * The advance rule (WX line 10447) is:
+ *   nextIdx = (prevIdx + 1) % prevOrder.length
+ * so `currentTurnIndexRef.current` points at the combatant whose turn it
+ * currently IS. When a combatant is removed:
+ *   - removed index < current  -> shift current down by 1 (same combatant stays active)
+ *   - removed index == current -> the next advance will land on the combatant that
+ *     shifted into this slot; keep the numeric index, but if it now points past the
+ *     end of the shorter array, wrap it with modulo so it stays in range.
+ *   - removed index > current  -> no adjustment needed.
+ *
+ * This module is React-free and DOM-free at runtime. It imports only the
+ * CombatantEntry TYPE (erased at compile time), matching the engine's
+ * React-free runtime convention.
+ */
+
+import type { CombatantEntry } from "../components/InitiativeStrip";
+
+/** Mutable-ref shape for the turn-order array. */
+export type TurnOrderRef = { current: CombatantEntry[] };
+
+/** Mutable-ref shape for the active-turn index. */
+export type CurrentTurnIndexRef = { current: number };
+
+/** React state setter for the turn-order array. */
+export type SetTurnOrder = (
+  updater: (prev: CombatantEntry[]) => CombatantEntry[],
+) => void;
+
+/**
+ * Remove a combatant from the turn queue and keep all parallel state in sync.
+ *
+ * Filters `deadId` out of the turn-order array, syncs `turnOrderRef.current`
+ * to the new array, adjusts `currentTurnIndexRef.current` based on where the
+ * removed entry sat relative to the active turn, and calls `setTurnOrder`
+ * with the new array.
+ *
+ * Index adjustment rules (applied after filtering out the dead entry):
+ *   - removedIdx <  currentIdx -> decrement currentIdx by 1 (the same
+ *     combatant stays active; everything after the gap shifts down).
+ *   - removedIdx === currentIdx -> the removed combatant WAS the active
+ *     turn (e.g. a summon expiring during its own turn). Set currentIdx to
+ *     `removedIdx % newOrder.length` so the numeric position is preserved
+ *     and now points at the combatant that shifted into the dead slot —
+ *     i.e. the NEXT valid entry. This is the expiry-during-own-turn case.
+ *   - removedIdx >  currentIdx -> leave currentIdx unchanged (the active
+ *     combatant is unaffected; only later entries moved).
+ *
+ * Edge cases: when `newOrder` is empty the index is forced to 0. When the
+ * preserved position would land past the end of the shorter array it is
+ * wrapped with modulo so it stays in range.
+ *
+ * Pure with respect to external state: it only mutates the two refs it is
+ * handed and invokes the one setter it is handed. No other side effects.
+ */
+export function removeCombatantFromTurnQueue(
+  turnOrder: CombatantEntry[],
+  turnOrderRef: TurnOrderRef,
+  currentTurnIndexRef: CurrentTurnIndexRef,
+  deadId: string,
+  setTurnOrder: SetTurnOrder,
+): void {
+  const removedIdx = turnOrder.findIndex((c) => c.id === deadId);
+  if (removedIdx === -1) {
+    // Not in the queue — nothing to do. Still sync the ref in case the caller
+    // passed a stale array; this is a no-op when they match.
+    turnOrderRef.current = turnOrder;
+    return;
+  }
+
+  const newOrder = turnOrder.filter((c) => c.id !== deadId);
+
+  // Adjust the active-turn index based on the removed entry's position
+  // relative to the current turn. See the doc comment above for the three
+  // cases; the `===` branch is the expiry-during-own-turn fix.
+  let newIdx: number;
+  if (newOrder.length === 0) {
+    newIdx = 0;
+  } else if (removedIdx < currentTurnIndexRef.current) {
+    // Earlier entry removed: same combatant stays active, shift index down.
+    newIdx = currentTurnIndexRef.current - 1;
+  } else if (removedIdx === currentTurnIndexRef.current) {
+    // The active combatant itself was removed (e.g. a summon expiring during
+    // its own turn). Preserve the numeric position so it now points at the
+    // combatant that shifted into the dead slot — the next valid entry —
+    // wrapping with modulo to stay in range.
+    newIdx = removedIdx % newOrder.length;
+  } else {
+    // Later entry removed: active combatant is unaffected.
+    newIdx = currentTurnIndexRef.current;
+  }
+
+  // Defensive clamp: keep the index inside [0, newOrder.length - 1]. The
+  // branches above already produce in-range values, but this guards against
+  // any future caller passing an out-of-range currentTurnIndexRef.
+  if (newIdx < 0) {
+    newIdx = 0;
+  } else if (newIdx >= newOrder.length && newOrder.length > 0) {
+    newIdx = newIdx % newOrder.length;
+  }
+  currentTurnIndexRef.current = newIdx;
+
+  // Sync the ref BEFORE the state update so any synchronous reader (e.g. the
+  // turn-advance gate at WX line 10640) sees a fresh value, matching the
+  // existing pattern at castHelpers.ts line 374.
+  turnOrderRef.current = newOrder;
+
+  setTurnOrder(() => newOrder);
+}
