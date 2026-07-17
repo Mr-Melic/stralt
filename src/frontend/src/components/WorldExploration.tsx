@@ -1847,6 +1847,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       !actor
     )
       return;
+    // BREAK 2a: Reset the loadedForCharacter guard whenever the character
+    // identity changes. If the key matches the last successful load AND the
+    // bar is not dirty, skip — this prevents the load effect from re-firing
+    // mid-battle or on ownedSpells identity churn (the dep array still
+    // includes ownedSpells, but the guard makes those re-runs no-ops).
+    const _charKey = `${userId}:${characterSlot}`;
+    if (
+      loadedForCharacterRef.current !== null &&
+      loadedForCharacterRef.current !== _charKey
+    ) {
+      loadedForCharacterRef.current = null;
+    }
+    if (
+      loadedForCharacterRef.current === _charKey &&
+      !spellBarDirtyRef.current
+    ) {
+      logDebugInfo(
+        "SPELLS",
+        "[SPELLBAR-BISECT] load skipped (already loaded for character)",
+        { userId, characterSlot, charKey: _charKey },
+      );
+      return;
+    }
     // [SPELLBAR-BISECT] load effect fired log: dev-gated signal that the
     // spell-bar load effect actually ran for this deps change. Paired with
     // the dirty-guard check below so the user can see exactly when the load
@@ -1856,6 +1879,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       characterSlot,
       ownedCount: ownedSpells.length,
       dirty: spellBarDirtyRef.current,
+      charKey: _charKey,
+      prevCharKey: loadedForCharacterRef.current,
     });
     let cancelled = false;
     (async () => {
@@ -1965,6 +1990,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
       } catch (e) {
         console.warn("[SpellLoad] Failed to load spells from backend:", e);
+      }
+      // BREAK 2a: Mark this character as loaded ONLY if the effect wasn't
+      // cancelled mid-flight. A cancelled load (deps changed again before
+      // the await resolved) leaves the guard unset so the next run re-loads.
+      if (!cancelled) {
+        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
+        logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load completed, guard set", {
+          charKey: `${userId}:${characterSlot}`,
+        });
       }
     })();
     return () => {
@@ -2085,6 +2119,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // false. Backend remains authoritative — the guard only blocks the stale
   // clobber during the in-flight save window.
   const spellBarDirtyRef = useRef<boolean>(false);
+  // BREAK 2b: One-shot retry guard for the debounced spell-bar save. When the
+  // backend returns #err, dirty is KEPT set (not cleared) and exactly ONE retry
+  // is scheduled with a 2000ms backoff. This ref ensures the retry fires at
+  // most once per #err — never recursively. Cleared when the retry fires.
+  const spellBarRetryScheduledRef = useRef<boolean>(false);
+  // BREAK 2a: loadedForCharacterRef guards the spell-bar load effect so it
+  // runs ONCE per (userId, characterSlot) load — never mid-battle and never
+  // re-firing on ownedSpells identity churn. Keyed as `${userId}:${slot}`.
+  // Reset to null when userId/characterSlot changes (handled at the top of the
+  // load effect). The load effect skips when the key already matches AND the
+  // bar is not dirty (a pending save still needs the next load to re-sync).
+  const loadedForCharacterRef = useRef<string | null>(null);
 
   // FIX 2c: Ref mirror of handleSetActiveSpells so cleanupBattle (a useCallback
   // with a stable identity) can call the LATEST handler without re-creating
@@ -2213,25 +2259,47 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 "[SpellOrderSave] setSpellBarOrder #err:",
                 spellBarErrMsg(result),
               );
+              // BREAK 2b: On #err, KEEP dirty SET (do NOT clear) so the load
+              // effect does not clobber the user's intended order with the
+              // stale backend value. Schedule exactly ONE retry with backoff,
+              // guarded by spellBarRetryScheduledRef so it never recurses.
+              if (!spellBarRetryScheduledRef.current) {
+                spellBarRetryScheduledRef.current = true;
+                logDebugInfo(
+                  "SPELLS",
+                  "[SPELLBAR-BISECT] #err, dirty kept, retry scheduled",
+                  {
+                    msg: spellBarErrMsg(result),
+                    slot: characterSlot,
+                    orderIds,
+                  },
+                );
+                setTimeout(() => {
+                  // Clear the guard when the retry fires so a future #err can
+                  // schedule again. Re-fire the debounced save ONCE using the
+                  // current spell-bar snapshot (activeSpellsRef mirrors the
+                  // activeSpells useMemo, which is derived from activeSpellIds).
+                  spellBarRetryScheduledRef.current = false;
+                  handleSetActiveSpellsRef.current?.(activeSpellsRef.current);
+                }, 2000);
+              }
             } else {
               logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
                 slot: characterSlot,
                 orderIds,
               });
+              // BREAK 2b: Clear dirty ONLY on #ok. The save landed and the
+              // backend now holds the authoritative order, so the load effect
+              // may overwrite activeSpellIds again.
+              spellBarDirtyRef.current = false;
+              logDebugInfo(
+                "SPELLS",
+                "[SPELLBAR-BISECT] save resolved #ok, dirty cleared",
+                {
+                  orderIds,
+                },
+              );
             }
-            // SPELLBAR-DIRTY GUARD: clear on resolve (#ok OR #err). The save
-            // landed (or the backend rejected it — in which case the next load
-            // effect run will re-sync from the authoritative backend value),
-            // so the load effect may overwrite activeSpellIds again.
-            spellBarDirtyRef.current = false;
-            logDebugInfo(
-              "SPELLS",
-              "[SPELLBAR-BISECT] save resolved, dirty cleared",
-              {
-                ok: !isSpellBarErr(result),
-                orderIds,
-              },
-            );
           })
           .catch((e: unknown) => {
             logDebugError("SPELLS", "[SPELLBAR] save failed", {
@@ -8886,15 +8954,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       // --- BATTLE MODE ---
       if (inBattle) {
-        // Part 4(a): [CLICK] entry instrumentation (throttled once/sec).
+        // BREAK 1: UNCONDITIONAL throttled [CLICK] entry log at the VERY TOP
+        // of the battle branch, BEFORE the notPlayerTurn guard and any
+        // sub-branch. Includes entityAtTile so silence is impossible — every
+        // battle click now logs unconditionally at entry with the exact
+        // diagnostic (inBattle, currentEntry, entityAtTile) the user needs.
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _allowed = _entry?.type === "player";
+          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y,
+          );
           logClickGuard("battle.entry", {
-            phase: battlePhase,
+            tile: gridPos,
+            hasSelection: !!selectedSpellIdRef.current,
+            selectedSpellId: selectedSpellIdRef.current,
+            entityAtTile: _entityAtTile
+              ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType }
+              : null,
+            inBattle,
+            battlePhase,
             currentEntry: _entry?.type,
             currentId: _entry?.id,
-            allowed: _allowed,
           });
         }
         // Part 3: Desync-proof click guard. PRIMARY gate is the turn-truth
@@ -9269,15 +9349,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       // Reuse same logic as mouse click
       if (inBattle) {
-        // Part 4(a): [CLICK] entry instrumentation (throttled once/sec).
+        // BREAK 1: UNCONDITIONAL throttled [CLICK] entry log at the VERY TOP
+        // of the battle branch, BEFORE the notPlayerTurn guard and any
+        // sub-branch. Mirrors the mouse handler. Includes entityAtTile so
+        // silence is impossible — every battle touch now logs unconditionally
+        // at entry with the exact diagnostic (inBattle, currentEntry,
+        // entityAtTile) the user needs.
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _allowed = _entry?.type === "player";
+          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y,
+          );
           logClickGuard("battle.entry.touch", {
-            phase: battlePhase,
+            tile: gridPos,
+            hasSelection: !!selectedSpellIdRef.current,
+            selectedSpellId: selectedSpellIdRef.current,
+            entityAtTile: _entityAtTile
+              ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType }
+              : null,
+            inBattle,
+            battlePhase,
             currentEntry: _entry?.type,
             currentId: _entry?.id,
-            allowed: _allowed,
           });
         }
         // Part 3: Desync-proof touch guard (mirrors the click handler).
@@ -10310,6 +10403,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Reset battle-scoped refs
       timestepUsedRef.current = false;
       playerApWasDebuffedRef.current = false;
+      // BREAK 3(a): Defensively clear the one-shot death guard at every battle
+      // start. If a prior battle's death path failed to reset it (e.g. an
+      // aborted flee or a crash mid-deathRealmTimer), the next battle's death
+      // would be silently swallowed. This makes the guard battle-scoped.
+      deathTriggeredRef.current = false;
       // Reset per-battle achievement tracking
       battleCritHitsRef.current = 0;
       battleBetrayalOccurredRef.current = false;

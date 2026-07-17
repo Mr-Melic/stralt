@@ -881,8 +881,11 @@ export interface _SERVICE {
   >,
   /**
    * / Set the player-arranged spell bar order for the character in the given slot.
-   * / Validates that every id is owned by the character (present in spellLevelKeys),
-   * / that the list length is capped at 8, and persists the order into spellBarOrder.
+   * / FILTERS out any id not owned by the character (not in spellLevelKeys) and
+   * / persists the remaining ids into spellBarOrder. The spell bar is a UI
+   * / preference, not an authorization surface, so unknown ids are dropped
+   * / rather than rejecting the whole save. Keeps the slot 1-3 guard and the
+   * / max-8 cap as structural validation.
    */
   'setSpellBarOrder' : ActorMethod<
     [bigint, Array<string>],

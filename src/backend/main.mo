@@ -1109,8 +1109,11 @@ actor {
     };
 
     /// Set the player-arranged spell bar order for the character in the given slot.
-    /// Validates that every id is owned by the character (present in spellLevelKeys),
-    /// that the list length is capped at 8, and persists the order into spellBarOrder.
+    /// FILTERS out any id not owned by the character (not in spellLevelKeys) and
+    /// persists the remaining ids into spellBarOrder. The spell bar is a UI
+    /// preference, not an authorization surface, so unknown ids are dropped
+    /// rather than rejecting the whole save. Keeps the slot 1-3 guard and the
+    /// max-8 cap as structural validation.
     public shared ({ caller }) func setSpellBarOrder(slot : Nat, spellIds : [Text]) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: must be logged in");
@@ -1134,14 +1137,18 @@ actor {
             case _ { return #err("Invalid slot") };
         };
 
-        // Validate every id is owned by the character (present in spellLevelKeys).
-        for (id in spellIds.values()) {
-            if (not (character.spellLevelKeys.contains(id))) {
-                return #err("Unowned spell id: " # id);
-            };
-        };
+        // FILTER unknown ids and save the rest. The spell bar is a UI
+        // preference, not an authorization surface — strict rejection belongs
+        // to gameplay actions (casting/learning), not bar layout. spellLevelKeys
+        // is only populated at upgradeSpell/createCharacter/saveBattleStats, so
+        // for characters whose frontend never seeded the starter/spell catalog
+        // ids, an unfiltered save would reject the whole bar. Filtering fixes
+        // this for all existing characters without a migration.
+        let filtered : [Text] = spellIds.filter(
+            func(id : Text) : Bool { character.spellLevelKeys.contains(id) },
+        );
 
-        let updatedCharacter : Character = { character with spellBarOrder = ?spellIds };
+        let updatedCharacter : Character = { character with spellBarOrder = ?filtered };
 
         let updatedSlots = switch (slot) {
             case 1 { { existingSlots with slot1 = ?updatedCharacter } };

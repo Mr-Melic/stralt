@@ -56442,11 +56442,25 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     if (!userId || characterSlot === null || characterSlot === void 0 || !actor)
       return;
+    const _charKey = `${userId}:${characterSlot}`;
+    if (loadedForCharacterRef.current !== null && loadedForCharacterRef.current !== _charKey) {
+      loadedForCharacterRef.current = null;
+    }
+    if (loadedForCharacterRef.current === _charKey && !spellBarDirtyRef.current) {
+      logDebugInfo(
+        "SPELLS",
+        "[SPELLBAR-BISECT] load skipped (already loaded for character)",
+        { userId, characterSlot, charKey: _charKey }
+      );
+      return;
+    }
     logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load effect fired", {
       userId,
       characterSlot,
       ownedCount: ownedSpells.length,
-      dirty: spellBarDirtyRef.current
+      dirty: spellBarDirtyRef.current,
+      charKey: _charKey,
+      prevCharKey: loadedForCharacterRef.current
     });
     let cancelled = false;
     (async () => {
@@ -56534,6 +56548,12 @@ const WorldExplorationInner = ({
       } catch (e) {
         console.warn("[SpellLoad] Failed to load spells from backend:", e);
       }
+      if (!cancelled) {
+        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
+        logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load completed, guard set", {
+          charKey: `${userId}:${characterSlot}`
+        });
+      }
     })();
     return () => {
       cancelled = true;
@@ -56595,6 +56615,8 @@ const WorldExplorationInner = ({
   const setSpellBarOrderDebounceRef = reactExports.useRef(null);
   const pendingSpellBarRef = reactExports.useRef(null);
   const spellBarDirtyRef = reactExports.useRef(false);
+  const spellBarRetryScheduledRef = reactExports.useRef(false);
+  const loadedForCharacterRef = reactExports.useRef(null);
   const handleSetActiveSpellsRef = reactExports.useRef(
     () => {
     }
@@ -56654,21 +56676,37 @@ const WorldExplorationInner = ({
               "[SpellOrderSave] setSpellBarOrder #err:",
               spellBarErrMsg(result)
             );
+            if (!spellBarRetryScheduledRef.current) {
+              spellBarRetryScheduledRef.current = true;
+              logDebugInfo(
+                "SPELLS",
+                "[SPELLBAR-BISECT] #err, dirty kept, retry scheduled",
+                {
+                  msg: spellBarErrMsg(result),
+                  slot: characterSlot,
+                  orderIds
+                }
+              );
+              setTimeout(() => {
+                var _a4;
+                spellBarRetryScheduledRef.current = false;
+                (_a4 = handleSetActiveSpellsRef.current) == null ? void 0 : _a4.call(handleSetActiveSpellsRef, activeSpellsRef.current);
+              }, 2e3);
+            }
           } else {
             logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
               slot: characterSlot,
               orderIds
             });
+            spellBarDirtyRef.current = false;
+            logDebugInfo(
+              "SPELLS",
+              "[SPELLBAR-BISECT] save resolved #ok, dirty cleared",
+              {
+                orderIds
+              }
+            );
           }
-          spellBarDirtyRef.current = false;
-          logDebugInfo(
-            "SPELLS",
-            "[SPELLBAR-BISECT] save resolved, dirty cleared",
-            {
-              ok: !isSpellBarErr(result),
-              orderIds
-            }
-          );
         }).catch((e) => {
           logDebugError("SPELLS", "[SPELLBAR] save failed", {
             error: String(e),
@@ -61948,12 +61986,18 @@ const WorldExplorationInner = ({
       if (inBattle) {
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _allowed = (_entry == null ? void 0 : _entry.type) === "player";
+          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y
+          );
           logClickGuard("battle.entry", {
-            phase: battlePhase,
+            tile: gridPos,
+            hasSelection: !!selectedSpellIdRef.current,
+            selectedSpellId: selectedSpellIdRef.current,
+            entityAtTile: _entityAtTile ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType } : null,
+            inBattle,
+            battlePhase,
             currentEntry: _entry == null ? void 0 : _entry.type,
-            currentId: _entry == null ? void 0 : _entry.id,
-            allowed: _allowed
+            currentId: _entry == null ? void 0 : _entry.id
           });
         }
         {
@@ -62246,12 +62290,18 @@ const WorldExplorationInner = ({
       if (inBattle) {
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _allowed = (_entry == null ? void 0 : _entry.type) === "player";
+          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y
+          );
           logClickGuard("battle.entry.touch", {
-            phase: battlePhase,
+            tile: gridPos,
+            hasSelection: !!selectedSpellIdRef.current,
+            selectedSpellId: selectedSpellIdRef.current,
+            entityAtTile: _entityAtTile ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType } : null,
+            inBattle,
+            battlePhase,
             currentEntry: _entry == null ? void 0 : _entry.type,
-            currentId: _entry == null ? void 0 : _entry.id,
-            allowed: _allowed
+            currentId: _entry == null ? void 0 : _entry.id
           });
         }
         {
@@ -63019,6 +63069,7 @@ const WorldExplorationInner = ({
       battleHitsRef.current = 0;
       timestepUsedRef.current = false;
       playerApWasDebuffedRef.current = false;
+      deathTriggeredRef.current = false;
       battleCritHitsRef.current = 0;
       battleBetrayalOccurredRef.current = false;
       battleDoubleBetrayelOccurredRef.current = false;
@@ -70686,7 +70737,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-TfTQ1jyr.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BKnt6QYq.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
