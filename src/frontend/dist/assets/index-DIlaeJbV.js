@@ -44288,7 +44288,7 @@ function StatPopup({
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     "div",
     {
-      className: "stone-popup-portal",
+      className: "stone-popup-portal stone-popup-portal-animate",
       style: {
         position: "fixed",
         left,
@@ -44509,6 +44509,7 @@ const BattleUIPanel = ({
   activeSpells,
   selectedSpellIdRef,
   spellSelectionVersion,
+  hasSelectedSpell = false,
   onSelectSpell,
   onOpenSpellbook,
   onAttackNearest,
@@ -44636,6 +44637,7 @@ const BattleUIPanel = ({
                                       },
                                       onClick: () => {
                                         var _a3;
+                                        if (hasSelectedSpell) return;
                                         const rect = (_a3 = chipRefs.current.get(c2.id)) == null ? void 0 : _a3.getBoundingClientRect();
                                         setPopupAnchor(rect || null);
                                         setSelectedCombatantId(
@@ -55690,6 +55692,10 @@ const WorldExplorationInner = ({
   const isInitializedRef = reactExports.useRef(false);
   const transitionInProgressRef = reactExports.useRef(false);
   const lastPortalRef = reactExports.useRef(null);
+  const sealedPortalAnnouncedRef = reactExports.useRef(null);
+  const prevIsMovingRef = reactExports.useRef(false);
+  const checkPortalInteractionRef = reactExports.useRef(() => {
+  });
   const dprRef = reactExports.useRef(window.devicePixelRatio || 1);
   const fadeOverlayRef = reactExports.useRef({ opacity: 0, direction: "none" });
   const comboTextRef = reactExports.useRef(null);
@@ -56523,19 +56529,6 @@ const WorldExplorationInner = ({
     } catch {
     }
     if (actor) {
-      (async () => {
-        try {
-          const spellBigInts = ids.filter(
-            (id) => id !== null && id !== void 0 && id !== ""
-          ).map((id) => BigInt(id));
-          await actor.saveActiveSpells(
-            BigInt(characterSlot),
-            spellBigInts
-          );
-        } catch (e) {
-          console.warn("[SpellSave] Backend save failed:", e);
-        }
-      })();
       const ownedIdSet = new Set(ownedSpells.map((s2) => s2.id));
       const orderIds = ids.filter(
         (id) => id !== null && id !== void 0 && id !== "" && ownedIdSet.has(id)
@@ -59222,7 +59215,7 @@ const WorldExplorationInner = ({
     isMobile
   ]);
   const checkPortalInteraction = reactExports.useCallback(() => {
-    var _a4, _b4, _c3, _d3, _e3, _f3;
+    var _a4, _b4, _c3, _d3, _e3, _f3, _g2;
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return;
     if (!currentMap) return;
@@ -59244,6 +59237,7 @@ const WorldExplorationInner = ({
     if (!portal) {
       setTransitionInProgress(false);
       transitionInProgressRef.current = false;
+      sealedPortalAnnouncedRef.current = null;
       return;
     }
     if (portal) {
@@ -59264,10 +59258,16 @@ const WorldExplorationInner = ({
         _s2InteractRunMode,
         activeHostilesRemaining(combatantsRef.current) === 0
       )) {
-        logBattleEntry(
-          "🔒 The way forward is sealed until every foe falls.",
-          "#8a6a3a"
-        );
+        if (((_a4 = sealedPortalAnnouncedRef.current) == null ? void 0 : _a4.portalKey) !== portalKey) {
+          logBattleEntry(
+            "🔒 The way forward is sealed until every foe falls.",
+            "#8a6a3a"
+          );
+          sealedPortalAnnouncedRef.current = {
+            portalKey,
+            announcedAt: Date.now()
+          };
+        }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
         return;
@@ -59423,7 +59423,7 @@ const WorldExplorationInner = ({
             "REST_MAP_PLAYER",
             restSpawn,
             "MAP_DIMS",
-            ((_a4 = restMap.tiles[0]) == null ? void 0 : _a4.length) || 0,
+            ((_b4 = restMap.tiles[0]) == null ? void 0 : _b4.length) || 0,
             restMap.tiles.length || 0
           );
           console.log(
@@ -59550,9 +59550,9 @@ const WorldExplorationInner = ({
       }
       currentMapRef.current = newMap;
       setCurrentMap(newMap);
-      if ((_b4 = newMap == null ? void 0 : newMap.tiles) == null ? void 0 : _b4.length) {
+      if ((_c3 = newMap == null ? void 0 : newMap.tiles) == null ? void 0 : _c3.length) {
         const _miRows = newMap.tiles.length;
-        const _miCols = ((_c3 = newMap.tiles[0]) == null ? void 0 : _c3.length) ?? 0;
+        const _miCols = ((_d3 = newMap.tiles[0]) == null ? void 0 : _d3.length) ?? 0;
         let _miWalls = 0;
         const _miChoke = /* @__PURE__ */ new Set();
         const _miBN = /* @__PURE__ */ new Set();
@@ -59682,7 +59682,7 @@ const WorldExplorationInner = ({
         );
       }
       const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
-      const _portal = (_d3 = newMap.portals) == null ? void 0 : _d3[0];
+      const _portal = (_e3 = newMap.portals) == null ? void 0 : _e3[0];
       if (_portal) {
         const { tiles: _tiles, spawns: _spawns } = ensureReachability(
           newMap.tiles,
@@ -59795,7 +59795,7 @@ const WorldExplorationInner = ({
         const walkable = [];
         for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
           for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (((_e3 = newMap.tiles[gy]) == null ? void 0 : _e3[gx]) === "floor" && !((_f3 = newMap.voidTiles) == null ? void 0 : _f3.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
+            if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !((_g2 = newMap.voidTiles) == null ? void 0 : _g2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
               walkable.push({ x: gx, y: gy });
             }
           }
@@ -62345,11 +62345,14 @@ const WorldExplorationInner = ({
     dokaBalance,
     onDokaBalanceChange
   ]);
+  checkPortalInteractionRef.current = checkPortalInteraction;
   reactExports.useEffect(() => {
-    if (!isMoving) {
-      checkPortalInteraction();
+    const wasMoving = prevIsMovingRef.current;
+    prevIsMovingRef.current = isMoving;
+    if (!isMoving && wasMoving) {
+      checkPortalInteractionRef.current();
     }
-  }, [checkPortalInteraction, isMoving]);
+  }, [isMoving]);
   const findFreeCellFarFrom = reactExports.useCallback(
     (positions, minDist, tiles) => {
       var _a4;
@@ -67027,6 +67030,7 @@ const WorldExplorationInner = ({
             activeSpells,
             selectedSpellIdRef,
             spellSelectionVersion,
+            hasSelectedSpell: !!selectedSpellIdRef.current,
             onSelectSpell: (id) => {
               if (!inBattle || currentBattleAp > 0) {
                 selectedSpellIdRef.current = id;
@@ -70329,7 +70333,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CqL2rHyP.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-B3mFytyx.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

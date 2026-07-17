@@ -619,6 +619,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const isInitializedRef = useRef(false);
   const transitionInProgressRef = useRef(false);
   const lastPortalRef = useRef<{ x: number; y: number } | null>(null);
+  // Edge-trigger for the sealed-portal announcement. Remembers which locked
+  // portal was last announced so the "way forward is sealed" log fires exactly
+  // once per on-portal dwell, re-arms when the player steps off, and always
+  // re-announces on a fresh interact after leaving.
+  const sealedPortalAnnouncedRef = useRef<{
+    portalKey: string;
+    announcedAt: number;
+  } | null>(null);
+  // EDIT 3 — Edge-trigger for the portal-check effect. The effect must only
+  // fire checkPortalInteraction() on the actual isMoving false-transition, not
+  // on every checkPortalInteraction identity change (its deps array is large
+  // and changes on many unrelated state updates). prevIsMovingRef tracks the
+  // previous isMoving value; checkPortalInteractionRef holds the latest
+  // callback so the effect's deps array can stay [isMoving] only.
+  const prevIsMovingRef = useRef(false);
+  const checkPortalInteractionRef = useRef<() => void>(() => {});
   const dprRef = useRef<number>(window.devicePixelRatio || 1);
   // ── Visual enhancement refs (avoid useState to prevent re-renders) ──────────
   // Fade overlay for portal transitions
@@ -1932,6 +1948,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     typeof setTimeout
   > | null>(null);
 
+  // SINGLE-AUTHORITY spell-bar update path.
+  //
+  // spellBarOrder (the [Text] id list on the Character record) is the ONE
+  // source of truth for BOTH the spell-bar CONTENT and its ORDER. This handler
+  // is the only path that mutates the bar: it (a) updates the local state the
+  // bar renders from (activeSpellIds → activeSpells useMemo), and (b) persists
+  // via the existing debounced setSpellBarOrder save below.
+  //
+  // The old divergent saveActiveSpells(BigInt[]) call has been REMOVED — it
+  // wrote a SEPARATE backend field (activeSpells: ?[Nat]) that the load effect
+  // (@~1777) never reads, so it could only ever drift from spellBarOrder and
+  // cause the bar to revert on reload. spellBarOrder is now the single
+  // authority; no new backend field or endpoint was added.
+  //
+  // STORAGE DISCIPLINE: persistence is ONE compact [Text] array field
+  // (spellBarOrder) on the character — a single tiny blob, debounced writes
+  // only on change. No per-slot records, no chatty per-item writes.
+  //
   // Equip/swap handler: ONLY changes the slot -> spellId mapping.
   // It must NEVER add to or remove from ownedSpells. The underlying
   // spell library (ownedSpells) is immutable with respect to equipping.
@@ -1941,38 +1975,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const ids = [...spells, ...Array(8).fill(null)]
       .slice(0, 8)
       .map((s) => (s as SpellConfig | null)?.id ?? null);
-    // Update the slot mapping — activeSpells will re-derive automatically via useMemo
+    // (a) Update the slot mapping — activeSpells re-derives via useMemo.
     setActiveSpellIds(ids.filter((id): id is string => id !== null));
     try {
-      // M6: Persist only IDs so stale SpellConfig data can never be saved to localStorage
+      // localStorage is a CACHE only — backend (spellBarOrder) is authoritative.
       localStorage.setItem(nsKey("pbv_active_spells"), JSON.stringify(ids));
     } catch {
       // ignore
     }
-    // A2b: Persist active spell IDs to backend so loadout survives device/browser changes
+    // (b) Persist via the SINGLE debounced setSpellBarOrder save.
+    // Pre-filter to owned ids + cap at 8 to avoid unnecessary backend errors
+    // (backend remains authoritative). The debounce coalesces rapid equip/swap
+    // clicks into a single backend call (matches ChallengePanel.tsx line 212
+    // and DraggablePanel.tsx line 187).
     if (actor) {
-      (async () => {
-        try {
-          const spellBigInts = ids
-            .filter(
-              (id): id is string =>
-                id !== null && id !== undefined && id !== "",
-            )
-            .map((id) => BigInt(id));
-          await (actor as ActorAny).saveActiveSpells(
-            BigInt(characterSlot),
-            spellBigInts,
-          );
-        } catch (e) {
-          console.warn("[SpellSave] Backend save failed:", e);
-        }
-      })();
-
-      // STEP 2: Debounced authoritative save of the spell-bar ORDER via
-      // setSpellBarOrder (string[]). This is the ORDER persistence path —
-      // distinct from saveActiveSpells above which persists the session-state
-      // activeSpells field. Pre-filter to owned ids + cap at 8 to avoid
-      // unnecessary backend errors (backend remains authoritative).
       const ownedIdSet = new Set(ownedSpells.map((s) => s.id));
       const orderIds = ids
         .filter(
@@ -5360,6 +5376,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // C1 FIX: No portal found — release the lock to prevent permanent stuck state
       setTransitionInProgress(false);
       transitionInProgressRef.current = false;
+      // EDIT 2 — Player stepped off any portal: re-arm the sealed-portal
+      // announcement so the next on-portal dwell logs exactly once more.
+      sealedPortalAnnouncedRef.current = null;
       return;
     }
     if (portal) {
@@ -5396,10 +5415,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           activeHostilesRemaining(combatantsRef.current) === 0,
         )
       ) {
-        logBattleEntry(
-          "🔒 The way forward is sealed until every foe falls.",
-          "#8a6a3a",
-        );
+        // EDIT 2 — Edge-trigger the "sealed" announcement so it fires exactly
+        // once per on-portal dwell. sealedPortalAnnouncedRef remembers the last
+        // announced portalKey; we only log when the key differs (first dwell on
+        // this portal). The ref is cleared in the no-portal-found branch above
+        // when the player steps off, re-arming it for the next entry.
+        if (sealedPortalAnnouncedRef.current?.portalKey !== portalKey) {
+          logBattleEntry(
+            "🔒 The way forward is sealed until every foe falls.",
+            "#8a6a3a",
+          );
+          sealedPortalAnnouncedRef.current = {
+            portalKey,
+            announcedAt: Date.now(),
+          };
+        }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
         return;
@@ -8648,7 +8678,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setBattleActionMode("attack");
           }
         } else {
-          // Attack mode: cast selected spell on clicked tile if in range
+          // Attack mode: cast selected spell on clicked tile if in range.
+          // Precedence: spell SELECTED (selectedSpellIdRef.current non-null) AND
+          // tile is a legal target (spellTiles.has(tile)) → CAST, always.
+          // No spell selected → silent return (inspect opens only via the
+          // BattleUIPanel initiative chip button, NOT via canvas click).
           if (!selectedSpellIdRef.current) return;
           if (currentBattleAp <= 0) {
             selectedSpellIdRef.current = null;
@@ -8663,6 +8697,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) return;
+          // [CLICK] cast-branch debug — dev-only, never ships to players.
+          if (import.meta.env.DEV) {
+            // eslint-disable-next-line no-console
+            console.log("[CLICK] cast branch", {
+              spellId: spell.id,
+              spellName: spell.name,
+              tile: gridPos,
+              apCost: Number(spell.apCost),
+              currentBattleAp,
+            });
+          }
           // Arcane Surge: spells cost 1 less AP (minimum 1)
           const apCost = mapModifierRegistry.applyApCost(
             Number(spell.apCost),
@@ -8887,6 +8932,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) return;
+          // [CLICK] cast-branch debug — dev-only, never ships to players.
+          // Mirrors the mouse handler so touch devices get the same trace.
+          if (import.meta.env.DEV) {
+            // eslint-disable-next-line no-console
+            console.log("[CLICK] cast branch (touch)", {
+              spellId: spell.id,
+              spellName: spell.name,
+              tile: gridPos,
+              apCost: Number(spell.apCost),
+              currentBattleAp,
+            });
+          }
           // Arcane Surge: spells cost 1 less AP (minimum 1)
           const apCost = mapModifierRegistry.applyApCost(
             Number(spell.apCost),
@@ -9232,12 +9289,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     onDokaBalanceChange,
   ]);
   // FIXED: Check portal interaction whenever player position changes
+  // EDIT 3 — Edge-trigger: only fire checkPortalInteraction() on the actual
+  // isMoving false-transition (moving → stopped), NOT on every
+  // checkPortalInteraction identity change. The callback's deps array is large
+  // (24+ entries) so its identity flips on many unrelated state updates; without
+  // this guard the check re-ran even for a stationary player, which is what
+  // re-triggered the sealed-portal log spam (now also deduped via
+  // sealedPortalAnnouncedRef above). We keep the latest callback in a ref so
+  // the effect's deps array can be [isMoving] only.
+  checkPortalInteractionRef.current = checkPortalInteraction;
   useEffect(() => {
-    if (!isMoving) {
-      // Only check portal interaction when not moving to avoid conflicts
-      checkPortalInteraction();
+    const wasMoving = prevIsMovingRef.current;
+    prevIsMovingRef.current = isMoving;
+    if (!isMoving && wasMoving) {
+      // Player just stopped — check the tile they landed on.
+      checkPortalInteractionRef.current();
     }
-  }, [checkPortalInteraction, isMoving]);
+  }, [isMoving]);
   // Check for battle trigger
   // Check for battle trigger — fires when player is exactly 1 Chebyshev step from any enemy
   // Helper: find a free cell at least minDist Chebyshev away from all given positions
@@ -14639,6 +14707,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         activeSpells={activeSpells}
         selectedSpellIdRef={selectedSpellIdRef}
         spellSelectionVersion={spellSelectionVersion}
+        hasSelectedSpell={!!selectedSpellIdRef.current}
         onSelectSpell={(id) => {
           if (!inBattle || currentBattleAp > 0) {
             selectedSpellIdRef.current = id;

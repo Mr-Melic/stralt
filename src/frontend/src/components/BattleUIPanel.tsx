@@ -23,6 +23,15 @@ export interface BattleUIPanelProps {
   activeSpells: SpellConfig[];
   selectedSpellIdRef: React.MutableRefObject<string | null>;
   spellSelectionVersion: number;
+  /**
+   * Click-precedence gate for the initiative chip inspect popup.
+   * When a spell is selected (true), clicking a portrait chip must NOT open
+   * inspect — the user intends to cast on the canvas, not inspect. Inspect
+   * opens from the chip ONLY when no spell is selected (false).
+   * Forced inspect is available via right-click / long-press on the canvas
+   * (handled separately), not via the chip.
+   */
+  hasSelectedSpell?: boolean;
   onSelectSpell: (id: string) => void;
   onOpenSpellbook: () => void;
   onAttackNearest?: () => void;
@@ -58,6 +67,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   activeSpells,
   selectedSpellIdRef,
   spellSelectionVersion,
+  hasSelectedSpell = false,
   onSelectSpell,
   onOpenSpellbook,
   onAttackNearest,
@@ -203,6 +213,14 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                             if (el) chipRefs.current.set(c.id, el);
                           }}
                           onClick={() => {
+                            // Click-precedence: if a spell is selected, the
+                            // user intends to cast on the canvas, not inspect.
+                            // Chip click is a no-op so inspect does NOT open
+                            // and steal the cast intent. Inspect opens from the
+                            // chip ONLY when no spell is selected. Forced
+                            // inspect is via right-click / long-press on the
+                            // canvas (handled in WorldExploration), not here.
+                            if (hasSelectedSpell) return;
                             const rect = chipRefs.current
                               .get(c.id)
                               ?.getBoundingClientRect();

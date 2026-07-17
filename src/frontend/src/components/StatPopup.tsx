@@ -68,7 +68,7 @@ export default function StatPopup({
 
   return (
     <div
-      className="stone-popup-portal"
+      className="stone-popup-portal stone-popup-portal-animate"
       style={{
         position: "fixed",
         left,

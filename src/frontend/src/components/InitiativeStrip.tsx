@@ -105,6 +105,13 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
 
   if (turnOrder.length === 0) return null;
 
+  // Row-wrap threshold: ~8 entries per row. When the entry count exceeds this,
+  // the strip wraps into a second row (chronological order left→right, top row
+  // first). As combatants die/expire the count drops and the strip re-flows
+  // back to one row automatically via flex-wrap.
+  const ROW_THRESHOLD = 8;
+  const isCompact = turnOrder.length > ROW_THRESHOLD;
+
   return (
     <DraggablePanel
       panelId="initiative-strip"
@@ -123,8 +130,10 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
           maxHeight: "70vh",
           overflowY: "auto",
           display: "flex",
-          flexDirection: "column",
-          gap: 4,
+          flexDirection: "row",
+          flexWrap: "wrap",
+          justifyContent: "center",
+          gap: isCompact ? 2 : 4,
           padding: "6px 4px",
           scrollbarWidth: "none",
         }}
@@ -140,6 +149,9 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
             padding: "5px 3px",
             borderRadius: 6,
             marginBottom: 2,
+            width: "100%",
+            flexBasis: "100%",
+            boxSizing: "border-box",
           }}
         >
           <div
@@ -234,6 +246,9 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
             paddingBottom: 3,
             borderBottom: "1px solid rgba(139,0,0,0.4)",
             marginBottom: 2,
+            width: "100%",
+            flexBasis: "100%",
+            boxSizing: "border-box",
           }}
         >
           TURN {battleTurn}
@@ -287,10 +302,16 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                     : "stone-well"
                 }
                 style={{
-                  width: 54,
-                  height: 62,
+                  width: isCompact ? 46 : 54,
+                  height: isCompact ? 54 : 62,
                   borderRadius: 7,
-                  transform: isActive ? "scale(1.07)" : "scale(0.96)",
+                  transform: isActive
+                    ? isCompact
+                      ? "scale(1.06)"
+                      : "scale(1.07)"
+                    : isCompact
+                      ? "scale(0.95)"
+                      : "scale(0.96)",
                   opacity: isActive ? 1 : 0.6,
                   transition: "all 0.25s ease",
                   display: "flex",
@@ -364,7 +385,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                 {/* Chess piece icon */}
                 <div
                   style={{
-                    fontSize: 22,
+                    fontSize: isCompact ? 18 : 22,
                     lineHeight: 1,
                     color: isPlayer
                       ? isActive
@@ -406,7 +427,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                     letterSpacing: "0.04em",
                     textAlign: "center",
                     lineHeight: 1,
-                    maxWidth: 50,
+                    maxWidth: isCompact ? 42 : 50,
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
@@ -431,7 +452,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                 {!isPlayer && (
                   <div
                     style={{
-                      width: 46,
+                      width: isCompact ? 38 : 46,
                       height: 3,
                       background: "rgba(255,255,255,0.1)",
                       borderRadius: 2,
@@ -478,7 +499,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                       padding: "1px 4px",
                       borderRadius: 3,
                       textAlign: "center",
-                      width: 46,
+                      width: isCompact ? 38 : 46,
                       boxSizing: "border-box",
                       whiteSpace: "nowrap",
                       overflow: "hidden",

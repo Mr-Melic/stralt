@@ -1,6 +1,8 @@
-// Migration: add `spellBarOrder : ?[Text]` to each Character record.
-// Old characters (saved before this field existed) get spellBarOrder = null,
-// which the load path treats as "derive default order once and persist".
+// Migration: passthrough for `characterSlots`.
+// The previously deployed canister already added `spellBarOrder : ?[Text]` to
+// each Character record, so the deployed stable signature includes it. This
+// migration's OldActor mirrors that deployed signature (OldCharacter includes
+// spellBarOrder) and passes characterSlots through unchanged on upgrade.
 //
 // Only `characterSlots` is consumed/produced here; all other actor fields are
 // inherited from the previous actor version (see migrating-motoko-actors skill:
@@ -25,7 +27,9 @@ module {
     killCount : Nat;
   };
 
-  // Old Character — no spellBarOrder.
+  // Old Character — already includes spellBarOrder (the previously deployed
+  // canister added this field, so the deployed stable signature has it).
+  // The migration's OldActor must match the deployed signature exactly.
   type OldCharacter = {
     name : Text;
     pieceType : Text;
@@ -41,11 +45,12 @@ module {
     covenantBuff : ?Text;
     shrineCount : ?Nat;
     activeSpells : ?[Nat];
+    spellBarOrder : ?[Text];
     bossRushMasterComplete : ?Bool;
   };
 
-  // New Character — adds spellBarOrder : ?[Text].
-  type NewCharacter = OldCharacter and { spellBarOrder : ?[Text] };
+  // New Character — identical shape to Old (spellBarOrder already present).
+  type NewCharacter = OldCharacter;
 
   type OldCharacterSlot = ?OldCharacter;
   type NewCharacterSlot = ?NewCharacter;
@@ -70,7 +75,7 @@ module {
     characterSlots : Map.Map<Principal, NewCharacterSlots>;
   };
 
-  // Add spellBarOrder = null to each present Character in each slot.
+  // Pass characterSlots through unchanged (spellBarOrder already present).
   public func run(old : OldActor) : NewActor {
     let characterSlots = old.characterSlots.map<Principal, OldCharacterSlots, NewCharacterSlots>(
       func(_p, slots) {
@@ -84,10 +89,8 @@ module {
     { characterSlots };
   };
 
+  // spellBarOrder already exists in the deployed Character; pass through unchanged.
   func migrateSlot(slot : OldCharacterSlot) : NewCharacterSlot {
-    switch (slot) {
-      case null null;
-      case (?c) ?({ c with spellBarOrder = null : ?[Text] });
-    };
+    slot;
   };
 };

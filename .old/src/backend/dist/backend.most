@@ -175,6 +175,7 @@ type OldCharacter__687079152 =
     pixelPattern : Text;
     rotation : Nat;
     shrineCount : ?Nat;
+    spellBarOrder : ?[Text];
     spellLevelKeys : [Text];
     spellLevelValues : [Nat];
     stats : CharacterStats__796715770
