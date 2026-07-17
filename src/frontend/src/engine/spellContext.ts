@@ -14,6 +14,7 @@
  *   resolveSpellCast(spell, caster, target, ctx, helpers);
  */
 
+import type { SpellConfig } from "../types/gameTypes";
 import type {
   ActiveEffectLike,
   PlayerCastEnemy,
@@ -60,6 +61,15 @@ export interface SpellContextDeps {
     lifespan: number,
     spell: any,
   ) => void;
+  /**
+   * Enemy-side summon spawn callback. Used by enemy summoner archetypes to
+   * spawn an enemy-side summon through the same pipeline as player summons.
+   * Optional — when absent, enemy summoner casts are no-ops.
+   */
+  spawnEnemySummon?: (
+    gridPos: { x: number; y: number },
+    spell: SpellConfig,
+  ) => void;
   /** Wraps logBattleEntry. */
   log: (msg: string, color?: string, isSummon?: boolean) => void;
   /** Wraps the existing grid lookup used by movement/targeting. */
@@ -84,6 +94,7 @@ export function createSpellContext(deps: SpellContextDeps): SpellContext {
     applyEffect: deps.applyEffect,
     placeBarrier: deps.placeBarrier,
     spawnUnit: deps.spawnUnit,
+    spawnEnemySummon: deps.spawnEnemySummon,
     log: deps.log,
     isCellFree: deps.isCellFree,
     getCombatantAt: deps.getCombatantAt,
@@ -214,6 +225,7 @@ export function createPlayerSpellContext(
     applyEffect: deps.applyEffect,
     placeBarrier: deps.placeBarrier,
     spawnUnit: deps.spawnUnit,
+    spawnEnemySummon: deps.spawnEnemySummon,
     log: deps.log,
     isCellFree: deps.isCellFree,
     getCombatantAt: deps.getCombatantAt,

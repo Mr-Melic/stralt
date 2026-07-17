@@ -31,6 +31,8 @@ import {
   ENEMY_HEAL_ALLY_THRESHOLD_PCT,
   ENEMY_REACHABLE_STEP_BUDGET,
   ENEMY_RETREAT_HP_PCT,
+  ENEMY_SUMMON_CAP,
+  ENEMY_SUMMON_COOLDOWN_TURNS,
   ENEMY_THREAT_VALUES,
   ENEMY_UTILITY_WEIGHTS,
   ENEMY_WOUNDED_SACRIFICE_HP_PCT,
@@ -80,6 +82,7 @@ export type EnemyArchetype =
   | "charger" // melee, commits only when it can reach
   | "flanker" // paths to side/rear tiles, avoids tackle zones
   | "berserker" // never retreats, always presses
+  | "summoner" // spawns allied summons (wolf/archer) instead of attacking
   | "generic"; // fallback: nearest-target melee/ranged hybrid
 
 /** The decision output consumed by the WX call site. */
@@ -217,6 +220,19 @@ export interface DecideEnemyContext {
   focusAlreadySet: boolean;
   /** Mark focus as set for this turn (prevents every enemy re-choosing). */
   markFocusSet: () => void;
+  /**
+   * Battle turn on which this summoner last cast a summon spell, or null if
+   * it has not summoned yet. Consumed by `decideSummonerAction` to enforce
+   * the `ENEMY_SUMMON_COOLDOWN_TURNS` "every other turn" cadence. Only read
+   * when `currentTurn` is also provided.
+   */
+  lastSummonTurn?: number | null;
+  /**
+   * Current battle turn number. When provided alongside `lastSummonTurn`,
+   * `decideSummonerAction` skips casting if the summoner summoned within the
+   * last `ENEMY_SUMMON_COOLDOWN_TURNS` turns.
+   */
+  currentTurn?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -1549,6 +1565,94 @@ export function decideSummonAction(
     default:
       return decideSummonHunter(summon, ctx, opponents, reachable, origin);
   }
+}
+
+/**
+ * Summoner (enemy-only archetype): instead of attacking, the enemy casts one
+ * of its assigned summon spells (wolf/archer) on a tile between itself and an
+ * ally, mid-way to the player. Skips when no summon spell is assigned, when
+ * the enemy-side summon cap is reached, when on cooldown, or when no
+ * placement can be derived.
+ *
+ * The "every other turn" cadence is enforced via `ENEMY_SUMMON_COOLDOWN_TURNS`
+ * using `ctx.lastSummonTurn` + `ctx.currentTurn`. The cap (`ENEMY_SUMMON_CAP`)
+ * is the other guard, mirroring the player-side `summonCount` gate.
+ */
+export function decideSummonerAction(
+  enemy: AICombatant,
+  ctx: DecideEnemyContext,
+): EnemyAction {
+  const summonSpell =
+    (ctx.assignedSpells ?? []).find(
+      (s) => s.isSummon === true && s.usableByEnemy !== false,
+    ) ?? null;
+
+  if (!summonSpell) {
+    return {
+      archetype: "summoner",
+      kind: "skip",
+      spell: null,
+      targetId: null,
+      destination: { x: enemy.x, y: enemy.y },
+      intent: "no summon spell",
+      intentColor: "#ef4444",
+      retreating: false,
+    };
+  }
+
+  const existingEnemySummons = ctx.combatants.filter(
+    (c) => c.isSummon === true && c.side === "enemy",
+  );
+  if (existingEnemySummons.length >= ENEMY_SUMMON_CAP) {
+    return {
+      archetype: "summoner",
+      kind: "skip",
+      spell: null,
+      targetId: null,
+      destination: { x: enemy.x, y: enemy.y },
+      intent: "summon cap reached",
+      intentColor: "#ef4444",
+      retreating: false,
+    };
+  }
+
+  // Cooldown: skip if this summoner cast a summon within the last
+  // ENEMY_SUMMON_COOLDOWN_TURNS turns. Only enforced when both ctx.currentTurn
+  // and ctx.lastSummonTurn are provided (the WX summoner branch wires both).
+  if (
+    ctx.currentTurn != null &&
+    ctx.lastSummonTurn != null &&
+    ctx.currentTurn - ctx.lastSummonTurn < ENEMY_SUMMON_COOLDOWN_TURNS
+  ) {
+    return {
+      archetype: "summoner",
+      kind: "skip",
+      spell: null,
+      targetId: null,
+      destination: { x: enemy.x, y: enemy.y },
+      intent: "summon cooldown",
+      intentColor: "#ef4444",
+      retreating: false,
+    };
+  }
+
+  const player = ctx.combatants.find((c) => c.side === "player" && !c.isSummon);
+  const ally = ctx.combatants.find(
+    (c) => c.side === "enemy" && c.id !== enemy.id && !c.isSummon,
+  );
+  const midX = player && ally ? Math.round((player.x + ally.x) / 2) : enemy.x;
+  const midY = player && ally ? Math.round((player.y + ally.y) / 2) : enemy.y;
+
+  return {
+    archetype: "summoner",
+    kind: "cast",
+    spell: summonSpell,
+    targetId: null,
+    destination: { x: midX, y: midY },
+    intent: "summon",
+    intentColor: "#ef4444",
+    retreating: false,
+  };
 }
 
 /**

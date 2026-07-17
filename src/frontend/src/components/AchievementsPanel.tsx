@@ -48,6 +48,27 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
     [progressMap],
   );
 
+  // Rollback helper: undo any stale optimistic claimed=true flip for the given
+  // achievement id and force a refetch of the authoritative backend state.
+  // Used both when the backend returns #err (e.g. "not yet unlocked") and when
+  // the mutation fails at the transport layer (onError). Without this, a stale
+  // cache entry could keep the row showing "Claimed" even though the backend
+  // rejected the claim, so the UI would lie about persisted state.
+  const rollbackClaimed = useCallback(
+    (achievementId: string) => {
+      queryClient.setQueryData(
+        ["playerAchievements"],
+        (old: AchievementProgress[] | undefined) =>
+          old?.map((p) =>
+            p.achievementId === achievementId ? { ...p, claimed: false } : p,
+          ),
+      );
+      queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
+      queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+    },
+    [queryClient],
+  );
+
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
       claimMut.mutate(achievement.id, {
@@ -72,12 +93,24 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
             onDokaBalanceChange(dokaBalance + granted);
             toast.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
           } else if ("err" in result) {
+            // Backend rejected the claim (e.g. "Achievement not yet unlocked"
+            // or "already claimed"). Undo any optimistic claimed=true flip so
+            // the row reflects the real backend state, then refetch.
+            rollbackClaimed(achievement.id);
             toast.error(`Failed to claim reward: ${result.err}`);
           }
         },
+        onError: (error) => {
+          // Transport-level failure (replica down, timeout, etc.). The mutation
+          // never reached a definitive #ok/#err, so we cannot trust any
+          // optimistic state. Roll back and refetch the authoritative state.
+          rollbackClaimed(achievement.id);
+          const msg = error instanceof Error ? error.message : "Network error";
+          toast.error(`Failed to claim reward: ${msg}`);
+        },
       });
     },
-    [claimMut, onDokaBalanceChange, queryClient, dokaBalance],
+    [claimMut, onDokaBalanceChange, queryClient, dokaBalance, rollbackClaimed],
   );
 
   const activeConfigs = useMemo(

@@ -46,6 +46,8 @@ import {
   CHARACTER_Y_OFFSET,
   ENEMY_MOVE_INTERVAL_MAX,
   ENEMY_MOVE_INTERVAL_MIN,
+  ENEMY_SUMMONER_CHANCE_BASE,
+  ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE,
   MAX_ENEMIES,
   MAX_HAZARD_TILES,
   MOVEMENT_DURATION,
@@ -84,6 +86,7 @@ import {
   type EnemyAction,
   decideEnemyAction,
   decideSummonAction,
+  decideSummonerAction,
 } from "../engine/enemyAI";
 import {
   applyVoidTiles,
@@ -115,6 +118,10 @@ import {
   type SummonUnitDef,
   resolvePlayerCast,
 } from "../engine/spellEngine";
+import {
+  type SummonExecutorHelpers,
+  executeSummonAction,
+} from "../engine/summonExecutor";
 import {
   buildSpellContext,
   decrementSummonLifespan,
@@ -984,6 +991,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const _phaseChangeCounterRef = useRef(0);
 
   const enemyTurnInProgressRef = useRef(false);
+  // Ref holding the enemy-side summon spawn callback so the enemy turn
+  // executor (a different closure from the SpellContext builder) can
+  // invoke it when a summoner enemy decides to cast a summon spell.
+  const spawnEnemySummonRef = useRef<
+    ((cell: { x: number; y: number }, spell: any) => void) | null
+  >(null);
   // Per-enemy HP tracking (keyed by enemy.id)
   const [enemyHpMap, setEnemyHpMap] = useState<Record<string, number>>({});
   // Track enraged enemies by id
@@ -1029,6 +1042,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // ── Spell cooldown tracking: enemyId → spellId → turns remaining ──────────
   const enemyCooldownsRef = useRef<Map<string, Map<string, number>>>(new Map());
+  // ── Enemy summoner cooldown: enemyId → battle turn of last summon cast ────
+  // Enforces ENEMY_SUMMON_COOLDOWN_TURNS "every other turn" cadence. Read by
+  // decideSummonerAction via ctx.lastSummonTurn; written after a successful
+  // spawnEnemySummon. Cleared on battle start alongside enemyCooldownsRef.
+  const enemySummonCooldownRef = useRef<Map<string, number>>(new Map());
   const battleSpellsRef = useRef<SpellConfig[]>([]);
 
   // ── #17 Modifiable Range: delta bonus per spell id, expires after duration turns ──
@@ -8913,6 +8931,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // M-3: Clear accumulated cooldown maps so old battle data doesn't bleed
     //      into the next battle (prevents GC stalls from pileup after 10+ battles)
     enemyCooldownsRef.current = new Map();
+    enemySummonCooldownRef.current = new Map();
     spellCooldownsRef.current.clear();
     setSpellCooldownVersion((v) => v + 1);
     setEnemyCooldowns({});
@@ -9129,6 +9148,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ...e,
         spells: assignEnemySpells(updatedEnemies.length),
       }));
+
+      const summonerChance =
+        ENEMY_SUMMONER_CHANCE_BASE +
+        characterStats.level * ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE;
+      const wolfSpell = starterSpells.find((s) => s.id === "summon-dire-wolf");
+      const archerSpell = starterSpells.find((s) => s.id === "summon-archer");
+      for (const e of enemiesWithSpells) {
+        if (!e.isSummon && !e.isSummoner && Math.random() < summonerChance) {
+          e.isSummoner = true;
+          const summonSpell = Math.random() < 0.5 ? wolfSpell : archerSpell;
+          if (summonSpell) e.spells = [...(e.spells ?? []), summonSpell];
+        }
+      }
 
       const playerEntry: CombatantEntry = {
         id: "player",
@@ -10856,6 +10888,122 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               return { id: "__player__", side: "player" as Side };
             return null;
           },
+          spawnEnemySummon: (cell: { x: number; y: number }, spell: any) => {
+            // Self-assign to the ref so the enemy turn executor closure
+            // (a different scope from this SpellContext builder) can invoke
+            // the latest version of this callback when a summoner enemy
+            // decides to cast a summon spell.
+            spawnEnemySummonRef.current = (
+              c: { x: number; y: number },
+              s: any,
+            ) => {
+              const unitDef: SummonUnitDef | undefined =
+                s?.summonUnitDef ??
+                starterSpells.find((sp: any) => sp.id === s?.id)?.summonUnitDef;
+              if (!unitDef) return;
+              const { summon, turnOrderEntry } = spawnSummonUnit(
+                c,
+                {
+                  id: `enemy-summon-${unitDef.pieceType}`,
+                  name: `Enemy Summon ${unitDef.pieceType}`,
+                  summonUnitDef: unitDef,
+                  summonLifespan: 0,
+                  summonAI: unitDef.pieceType,
+                },
+                "enemy",
+                characterStats.level,
+                logBattleEntry,
+                computeEnemyStats as (
+                  level: number,
+                  pieceType: string,
+                  seedKey: string,
+                ) => any,
+                0,
+                {
+                  tiles: (currentMap?.tiles ?? []).map((row: any) =>
+                    (row ?? []).map((t: any) => t !== "wall"),
+                  ),
+                  barriers: new Set(barrierTilesRef.current.keys()),
+                  voidTiles: currentMap?.voidTiles ?? new Set<string>(),
+                  portals: new Set(
+                    (currentMap?.portals ?? []).map(
+                      (p: any) => `${p.x},${p.y}`,
+                    ),
+                  ),
+                  isOccupied: (oc: { x: number; y: number }) =>
+                    enemiesRef.current.some(
+                      (e: any) => e.x === oc.x && e.y === oc.y,
+                    ) ||
+                    (playerPosition.x === oc.x && playerPosition.y === oc.y),
+                } satisfies OccupancyContext,
+              );
+              const { enemies: newEnemies, turnOrder: newTurnOrder } =
+                applySummonResult(
+                  summon,
+                  turnOrderEntry,
+                  "enemy",
+                  enemiesRef.current,
+                  turnOrderRef.current,
+                );
+              setEnemies(newEnemies);
+              setBattleEnemies(newEnemies);
+              setTurnOrder(newTurnOrder);
+              turnOrderRef.current = newTurnOrder;
+              enemiesRef.current = newEnemies;
+            };
+            // Invoke the same logic inline for the SpellContext caller.
+            const unitDef: SummonUnitDef | undefined =
+              spell?.summonUnitDef ??
+              starterSpells.find((s: any) => s.id === spell?.id)?.summonUnitDef;
+            if (!unitDef) return;
+            const { summon, turnOrderEntry } = spawnSummonUnit(
+              cell,
+              {
+                id: `enemy-summon-${unitDef.pieceType}`,
+                name: `Enemy Summon ${unitDef.pieceType}`,
+                summonUnitDef: unitDef,
+                summonLifespan: 0,
+                summonAI: unitDef.pieceType,
+              },
+              "enemy",
+              characterStats.level,
+              logBattleEntry,
+              computeEnemyStats as (
+                level: number,
+                pieceType: string,
+                seedKey: string,
+              ) => any,
+              0,
+              {
+                tiles: (currentMap?.tiles ?? []).map((row: any) =>
+                  (row ?? []).map((t: any) => t !== "wall"),
+                ),
+                barriers: new Set(barrierTilesRef.current.keys()),
+                voidTiles: currentMap?.voidTiles ?? new Set<string>(),
+                portals: new Set(
+                  (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+                ),
+                isOccupied: (c: { x: number; y: number }) =>
+                  enemiesRef.current.some(
+                    (e: any) => e.x === c.x && e.y === c.y,
+                  ) ||
+                  (playerPosition.x === c.x && playerPosition.y === c.y),
+              } satisfies OccupancyContext,
+            );
+            const { enemies: newEnemies, turnOrder: newTurnOrder } =
+              applySummonResult(
+                summon,
+                turnOrderEntry,
+                "enemy",
+                enemiesRef.current,
+                turnOrderRef.current,
+              );
+            setEnemies(newEnemies);
+            setBattleEnemies(newEnemies);
+            setTurnOrder(newTurnOrder);
+            turnOrderRef.current = newTurnOrder;
+            enemiesRef.current = newEnemies;
+          },
         });
         // Build AI context for the summon (first-class AI combatant via decideSummonAction).
         const summonCombatants = enemiesRef.current
@@ -10956,85 +11104,75 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           },
         };
         const action = decideSummonAction(summonEnemy, aiCtx);
-        // Apply the action via the SpellContext.
-        if (action.kind === "cast" && action.spell && action.targetId) {
-          const target = enemiesRef.current.find(
-            (e: any) => e.id === action.targetId,
-          );
-          if (action.spell.damage > 0 && target) {
-            summonCtx.dealDamage(
-              action.targetId,
-              calcScaledDamage(
-                Number(action.spell.damage),
-                summonEnemy.level,
-                0,
-              ),
+        // Apply the action via the shared summon executor (engine/summonExecutor).
+        // Reuse the OccupancyContext built above for spawnSummonUnit so movement
+        // validation shares the same occupancy source as spawn fallback.
+        const summonOccupancyCtx: OccupancyContext = {
+          tiles: aiGrid,
+          barriers: aiBarriers,
+          voidTiles: aiVoid,
+          portals: aiPortals,
+          isOccupied: (c: { x: number; y: number }) =>
+            enemiesRef.current.some((e: any) => e.x === c.x && e.y === c.y) ||
+            (playerPosition.x === c.x && playerPosition.y === c.y),
+        };
+        const executorHelpers: SummonExecutorHelpers = {
+          calcScaledDamage,
+          occupancyCtx: summonOccupancyCtx,
+          worldGridSize: WORLD_GRID_SIZE,
+          mpCostPerTile: 1,
+          meleeApCost: 1,
+          getEnemyById: (id: string) =>
+            enemiesRef.current.find((e: any) => e.id === id),
+          getAoEVictims: (primaryId: string, blastR: number) => {
+            const primary = enemiesRef.current.find(
+              (e: any) => e.id === primaryId,
             );
-            // AoE: when the spell has an area radius, apply the same damage to
-            // every enemy within Chebyshev distance areaRadius of the primary
-            // target (excluding the primary target, already damaged above).
-            if ((action.spell.areaRadius ?? 0) > 0 && target) {
-              const blastR = Number(action.spell.areaRadius);
-              const baseDmg = calcScaledDamage(
-                Number(action.spell.damage),
-                summonEnemy.level,
-                0,
-              );
-              for (const e of enemiesRef.current) {
-                if (e.id === action.targetId) continue;
-                if (e.side === summonEnemy.side) continue;
-                const dx = Math.abs((e.x ?? 0) - (target.x ?? 0));
-                const dy = Math.abs((e.y ?? 0) - (target.y ?? 0));
-                if (Math.max(dx, dy) <= blastR) {
-                  summonCtx.dealDamage(e.id, baseDmg);
-                }
-              }
-            }
-            // Bomber dies on detonation: a bomber summon sacrifices itself when
-            // it casts (kamikaze behavior). Drop HP to 0 after damage applies.
-            if (summonEnemy.summonAI === "bomber") {
-              summonEnemy.hp = 0;
-            }
-          } else if ((action.spell.healAmount ?? 0) > 0) {
-            summonCtx.heal(action.targetId, action.spell.healAmount ?? 0);
-          } else {
-            summonCtx.applyEffect({
-              effectName: action.spell.name ?? action.spell.effectType,
-              type: (action.spell.effectType === "buff"
-                ? "buff"
-                : action.spell.effectType === "debuff"
-                  ? "debuff"
-                  : "dot") as "buff" | "debuff" | "dot",
-              targetId: action.targetId,
-              duration:
-                action.spell.buffDuration ??
-                action.spell.debuffDuration ??
-                action.spell.dotDuration ??
-                1,
-              iconEmoji: action.spell.iconEmoji ?? "✨",
-              description: action.spell.description ?? "",
+            if (!primary) return [];
+            return enemiesRef.current.filter((e: any) => {
+              if (e.id === primaryId) return false;
+              if (e.side === summonEnemy.side) return false;
+              const dx = Math.abs((e.x ?? 0) - (primary.x ?? 0));
+              const dy = Math.abs((e.y ?? 0) - (primary.y ?? 0));
+              return Math.max(dx, dy) <= blastR;
             });
-          }
-        } else if (action.kind === "melee" && action.targetId) {
-          const target = enemiesRef.current.find(
-            (e: any) => e.id === action.targetId,
-          );
-          if (target)
-            summonCtx.dealDamage(
-              action.targetId,
-              calcScaledDamage(
-                summonEnemy.atk ?? summonEnemy.level,
-                summonEnemy.level,
-                0,
-              ),
-            );
-        } else {
-          summonCtx.log(
-            action.intent ?? `${summonEnemy.pieceType} holds.`,
-            "#a78bfa",
-            true,
-          );
-        }
+          },
+        };
+        const execResult = executeSummonAction(
+          action,
+          summonEnemy,
+          summonCtx,
+          executorHelpers,
+        );
+        // Apply the executor's returned state to enemiesRef + setEnemies via
+        // the same direct-position-mutation pattern the enemy branch uses.
+        setEnemies((prev: any[]) =>
+          prev.map((e: any) =>
+            e.id === enemyId
+              ? {
+                  ...e,
+                  x: execResult.newPosition.x,
+                  y: execResult.newPosition.y,
+                  currentAp: execResult.currentAp,
+                  currentMp: execResult.currentMp,
+                  hp: execResult.hp,
+                }
+              : e,
+          ),
+        );
+        enemiesRef.current = enemiesRef.current.map((e: any) =>
+          e.id === enemyId
+            ? {
+                ...e,
+                x: execResult.newPosition.x,
+                y: execResult.newPosition.y,
+                currentAp: execResult.currentAp,
+                currentMp: execResult.currentMp,
+                hp: execResult.hp,
+              }
+            : e,
+        );
+        setBattleEnemies(enemiesRef.current);
         // Always advance the turn — no stalls.
         // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
         // useEffect gate (line ~10639) does not early-return on the next
@@ -11883,15 +12021,62 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             markFocusSet: () => {
               focusTurnRef.current = battleTurn;
             },
+            // Enemy summoner cooldown: only read by decideSummonerAction.
+            // lastSummonTurn is null when the summoner has not yet cast.
+            currentTurn: battleTurn,
+            lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null,
           };
 
-          const action = decideEnemyAction(enemy, aiCtx);
+          const action = enemy.isSummoner
+            ? decideSummonerAction(
+                {
+                  ...enemy,
+                  name: enemy.assignedName ?? String(enemy.pieceType),
+                  side: "enemy" as const,
+                },
+                aiCtx,
+              )
+            : decideEnemyAction(enemy, aiCtx);
+          // 3e: short-circuit the enemy turn when a summoner casts a summon
+          // spell — the spawn is applied via spawnEnemySummonRef, the turn
+          // is handed off to the next combatant, and we return before the
+          // normal move/cast executor runs (which has no summon branch).
+          if (
+            action.kind === "cast" &&
+            action.spell?.isSummon &&
+            action.destination
+          ) {
+            spawnEnemySummonRef.current?.(action.destination, action.spell);
+            // Record the battle turn of this successful summon so the
+            // ENEMY_SUMMON_COOLDOWN_TURNS cadence is enforced on the
+            // summoner's next turn.
+            enemySummonCooldownRef.current.set(enemyId, battleTurn);
+            enemyTurnInProgressRef.current = false;
+            setTimeout(advanceTurnRef.current, 600);
+            return prevEnemies;
+          }
           let newX = action.destination.x;
           let newY = action.destination.y;
           // Clamp to grid (defensive — decideEnemyAction should already do this).
           newX = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newX));
           newY = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newY));
           const chosenSpell = action.spell;
+
+          // ── Resolve attack target (player or player-side summon) ──────────
+          // action.targetId is set by enemyAI archetype decision functions to
+          // the scored combatant's id. When it points to a player-side summon
+          // (lives in prevEnemies with side==='player'), route damage through
+          // enemyTakesDamage instead of playerTakesDamage. When null/missing
+          // (skip/retreat/advance) or 'player', fall back to the player.
+          const resolvedTarget =
+            action.targetId && action.targetId !== "player"
+              ? prevEnemies.find((e) => e.id === action.targetId)
+              : null;
+          const targetCell = resolvedTarget
+            ? { x: resolvedTarget.x, y: resolvedTarget.y }
+            : playerPosition;
+          const isSummonTarget = !!resolvedTarget;
+          const resolvedTargetId = action.targetId ?? "player";
 
           // Intent log line (emitted by decideEnemyAction via ctx.log already,
           // but we surface action.intent here for any caller-side telemetry).
@@ -11904,8 +12089,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (action.kind === "cast" && chosenSpell) {
             const spellRange = Number(chosenSpell.range);
             const distAM = Math.max(
-              Math.abs(newX - playerPosition.x),
-              Math.abs(newY - playerPosition.y),
+              Math.abs(newX - targetCell.x),
+              Math.abs(newY - targetCell.y),
             );
             const inRange = distAM <= spellRange;
             const spellType = chosenSpell.spellType ?? "damage";
@@ -11925,20 +12110,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 Math.random() * 100 <
                 (enemy.chc ?? 2) + (enragedEnemies.has(enemyId) ? 10 : 0);
               const dmgAC = isCrit ? rawDmg * 2 : rawDmg;
-              const plSpEff =
-                Math.max(0, characterStats.sp) *
-                (getStatModifier(
-                  "player",
-                  "sp",
-                  activeEffectsRef.current,
-                ) as number);
-              const plResEff =
-                Math.max(0, Number(characterStats.res)) *
-                (getStatModifier(
-                  "player",
-                  "res",
-                  activeEffectsRef.current,
-                ) as number);
+              // Player-side summons have no SP; RES comes from resolvedTarget.res.
+              const plSpEff = isSummonTarget
+                ? 0
+                : Math.max(0, characterStats.sp) *
+                  (getStatModifier(
+                    "player",
+                    "sp",
+                    activeEffectsRef.current,
+                  ) as number);
+              const plResEff = isSummonTarget
+                ? Math.max(0, Number(resolvedTarget?.res ?? 0))
+                : Math.max(0, Number(characterStats.res)) *
+                  (getStatModifier(
+                    "player",
+                    "res",
+                    activeEffectsRef.current,
+                  ) as number);
               if (isPaperWindstorm && spellRange > 1 && Math.random() < 0.5) {
                 logBattleEntry(
                   `Paper Windstorm! ${enemy.pieceType}'s ${chosenSpell.name} missed!`,
@@ -11994,32 +12182,50 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   .filter(Boolean)
                   .join(", ");
                 const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
-                const actualDmg = playerTakesDamage(
-                  dmg,
-                  `${enemy.pieceType} spell ${chosenSpell.name}`,
-                );
-                logBattleEntry(
-                  isCrit
-                    ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}`
-                    : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
-                  isCrit ? "#FFD700" : "#ef4444",
-                );
-                if (actualDmg > 0)
-                  logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
+                let actualDmg: number;
+                if (isSummonTarget && resolvedTarget) {
+                  enemyTakesDamage(
+                    resolvedTarget.id,
+                    dmg,
+                    enemy.id,
+                    `${enemy.pieceType} spell ${chosenSpell.name}`,
+                    isCrit,
+                  );
+                  actualDmg = dmg;
+                  logBattleEntry(
+                    isCrit
+                      ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType}: ${rawDmg}x2=${dmgAC} dmg`
+                      : `${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType} for ${actualDmg} dmg`,
+                    isCrit ? "#FFD700" : "#ef4444",
+                  );
+                } else {
+                  actualDmg = playerTakesDamage(
+                    dmg,
+                    `${enemy.pieceType} spell ${chosenSpell.name}`,
+                  );
+                  logBattleEntry(
+                    isCrit
+                      ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}`
+                      : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
+                    isCrit ? "#FFD700" : "#ef4444",
+                  );
+                  if (actualDmg > 0)
+                    logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
+                }
                 playSound("player_damage", enemy.pieceType);
                 if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
                   applyActiveEffect({
                     id: `ed-${Date.now()}`,
                     effectName: chosenSpell.name,
                     type: "debuff",
-                    targetId: "player",
+                    targetId: resolvedTargetId,
                     stat: chosenSpell.debuffStat,
                     modifier: chosenSpell.debuffModifier ?? 1,
                     duration: chosenSpell.debuffDuration,
                     iconEmoji: chosenSpell.iconEmoji,
                     description: `${chosenSpell.debuffStat} debuffed`,
                   });
-                  if (chosenSpell.debuffStat === "ap")
+                  if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
                     playerApWasDebuffedRef.current = true;
                 }
                 if (
@@ -12032,7 +12238,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     id: `edot-${Date.now()}`,
                     effectName: `${chosenSpell.name} DoT`,
                     type: "dot",
-                    targetId: "player",
+                    targetId: resolvedTargetId,
                     dotDamagePerTurn: dotPptE,
                     duration: chosenSpell.dotDuration,
                     iconEmoji: "\u2620\uFE0F",
@@ -12087,14 +12293,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 id: `ed2-${Date.now()}`,
                 effectName: chosenSpell.name,
                 type: "debuff",
-                targetId: "player",
+                targetId: resolvedTargetId,
                 stat: chosenSpell.debuffStat,
                 modifier: chosenSpell.debuffModifier ?? 1,
                 duration: chosenSpell.debuffDuration,
                 iconEmoji: chosenSpell.iconEmoji,
                 description: `${chosenSpell.debuffStat} debuffed`,
               });
-              if (chosenSpell.debuffStat === "ap")
+              if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
                 playerApWasDebuffedRef.current = true;
               logBattleEntry(
                 `${enemy.pieceType} uses ${chosenSpell.name}!`,
@@ -12113,8 +12319,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // ── Fallback melee or skip ────────────────────────────────────────
           if (action.kind === "melee" || !didAct) {
             const nd = Math.max(
-              Math.abs(newX - playerPosition.x),
-              Math.abs(newY - playerPosition.y),
+              Math.abs(newX - targetCell.x),
+              Math.abs(newY - targetCell.y),
             );
             if (nd <= 1) {
               const fallbackPool = [
@@ -12129,16 +12335,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   fb.damage * Math.max(1, enemy.level / 5) * enrageMultiplier,
                 ),
               );
+              const meleeRes = isSummonTarget
+                ? Math.max(0, Number(resolvedTarget?.res ?? 0))
+                : Math.max(0, Number(characterStats.res));
               const dmgFB = Math.max(
                 1,
-                Math.round(rawFB * (1 - characterStats.res / 100)),
+                Math.round(rawFB * (1 - meleeRes / 100)),
               );
               if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5)
                 logBattleEntry(
                   `Paper Windstorm! ${enemy.pieceType}'s ${fb.name} missed!`,
                   "#AAAAAA",
                 );
-              else {
+              else if (isSummonTarget && resolvedTarget) {
+                // Summon target: route through enemyTakesDamage; no shield/DoTs.
+                enemyTakesDamage(
+                  resolvedTarget.id,
+                  dmgFB,
+                  enemy.id,
+                  "melee",
+                  false,
+                );
+                logBattleEntry(
+                  `${enemy.pieceType} strikes ${resolvedTarget.pieceType} for ${dmgFB} dmg`,
+                  "#ef4444",
+                );
+                didAct = true;
+              } else {
                 let meleeDmg = dmgFB;
                 if (shieldHpRef.current > 0) {
                   const absorbedFB = Math.min(shieldHpRef.current, meleeDmg);

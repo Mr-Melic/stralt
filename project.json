@@ -1,21 +1,18 @@
 {
-  "overview": "Tactics RPG with turn-based combat, summons, spells, and challenges, receiving a batch of gameplay fixes.",
+  "overview": "Tactical turn-based RPG with summon execution, enemy target intelligence, enemy summoners, and achievement claim persistence.",
   "features": [
-    "Three-way turn router for player, summon, and enemy turns",
-    "Summon spells that cost AP and act via AI profiles",
-    "Direct Hit challenge replacing the old physical-only challenge",
-    "Barrier spell that appears, blocks movement and sight, and expires",
-    "Line of sight for all spells with void exemption",
-    "Doka spawns that avoid void and wall tiles",
-    "Single-tile occupancy enforcement across all movement"
+    "Summon execution layer that applies decided move and cast actions with MP/AP spend",
+    "Enemy target intelligence treating player-side summons as valid targets",
+    "Enemy summoner packs that spawn red-tinted enemy-side summons",
+    "Achievement claim persistence with real doka crediting and rollback on failure"
   ],
   "category": "game",
   "tags": [
-    "tactics",
-    "rpg",
+    "tactical-rpg",
     "turn-based",
     "combat",
-    "bugfix"
+    "summons",
+    "achievements"
   ],
-  "last_updated": "2026-07-16T23:53:19.364Z"
+  "last_updated": "2026-07-17T00:20:23.799Z"
 }

@@ -45,7 +45,7 @@ export interface Combatant {
  */
 export function isActiveHostile(e: Combatant): boolean {
   if (e.hp <= 0) return false;
-  if (e.isSummon) return false;
+  if (e.isSummon && e.side !== "enemy") return false;
   // Absent side on a non-summon defaults to enemy-side (legacy combatants).
   const side = e.side ?? "enemy";
   return side === "enemy";

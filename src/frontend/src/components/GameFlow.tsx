@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Crown, LogOut, ShoppingCart, Trophy } from "lucide-react";
 import React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useGetCallerDokaBalance } from "../hooks/useAdminQueries";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useGetLeaderboard } from "../hooks/useLeaderboardQueries";
 import type {
@@ -66,7 +67,14 @@ const GameFlow: React.FC<GameFlowProps> = ({
   const [showAchievements, setShowAchievements] = useState(false);
   const [showBossGuide, setShowBossGuide] = useState(false);
   const [showShop, setShowShop] = useState(false);
+  // Doka balance: backend-authoritative via useGetCallerDokaBalance (query key
+  // ['callerDokaBalance']). Local state is a session cache that WorldExploration
+  // mutates synchronously (pickups, rewards, shop, healing) for immediate UI
+  // feedback; the effect below hydrates it from the backend on mount and re-syncs
+  // it whenever the query refetches (e.g., after a claim invalidates the key),
+  // so the displayed value always converges to the real persisted balance.
   const [dokaBalance, setDokaBalance] = useState(0);
+  const { data: backendDokaBalance } = useGetCallerDokaBalance();
   // actor removed — not used in this component
 
   const addBattleLogEntry = useCallback((entry: BattleLogEntry) => {
@@ -100,6 +108,18 @@ const GameFlow: React.FC<GameFlowProps> = ({
     await clear();
     queryClient.clear();
   };
+
+  // Hydrate / re-sync local dokaBalance from the backend query. On mount this
+  // fixes the previous "always 0" bug (useState(0) was never hydrated). After a
+  // claim, useClaimAchievementReward invalidates ['callerDokaBalance']; the
+  // refetch updates backendDokaBalance, this effect updates local state to the
+  // real persisted value (which includes the granted reward), correcting any
+  // optimistic drift from session mutations.
+  useEffect(() => {
+    if (backendDokaBalance !== undefined) {
+      setDokaBalance(backendDokaBalance);
+    }
+  }, [backendDokaBalance]);
 
   const handleCreateCharacter = (slot: number) => {
     setEditingSlot(slot);

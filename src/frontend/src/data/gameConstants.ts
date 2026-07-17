@@ -257,3 +257,12 @@ export const AI_KAMIKAZE_BLAST_RADIUS = 2;
  * for readability. Readability only — does not influence behavior.
  */
 export const AI_INTENT_LOG_ENABLED = true;
+
+// ── Enemy summoners (Section: enemy-side summon pipeline) ───────────────────
+// ~12% of packs get one summoner enemy; chance scales with levelZone.
+// Enemy summons are capped at ENEMY_SUMMON_CAP alive and fire every other
+// turn (ENEMY_SUMMON_COOLDOWN_TURNS) to avoid runaway board complexity.
+export const ENEMY_SUMMONER_CHANCE_BASE = 0.12;
+export const ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE = 0.02;
+export const ENEMY_SUMMON_CAP = 2;
+export const ENEMY_SUMMON_COOLDOWN_TURNS = 2;

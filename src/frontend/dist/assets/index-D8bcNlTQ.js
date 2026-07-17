@@ -32073,64 +32073,6 @@ function useActor() {
     isFetching: real.isFetching
   };
 }
-function useGetLeaderboard() {
-  const { actor, isFetching: actorFetching } = useActor();
-  return useQuery({
-    queryKey: ["leaderboard"],
-    queryFn: async () => {
-      if (!actor) return [];
-      const result = await actor.getLeaderboard();
-      return result.map((entry) => ({
-        principalId: entry.principalId,
-        playerName: entry.playerName,
-        level: Number(entry.level),
-        killCount: Number(entry.killCount),
-        achievementsCompleted: Number(entry.achievementsCompleted)
-      }));
-    },
-    enabled: !!actor && !actorFetching,
-    staleTime: 3e4
-  });
-}
-let _buffer = [];
-const _subscribers = [];
-function logDebug(category, level, message, data) {
-  const entry = {
-    ts: performance.now(),
-    category,
-    level,
-    message,
-    data
-  };
-  _buffer.push(entry);
-  if (_buffer.length > 200) _buffer = _buffer.slice(-200);
-  for (const sub of _subscribers) {
-    try {
-      sub(entry);
-    } catch {
-    }
-  }
-  return;
-}
-function logDebugInfo(category, message, data) {
-  logDebug(category, "info", message, data);
-}
-function logDebugWarn(category, message, data) {
-  logDebug(category, "warn", message, data);
-}
-function logDebugError(category, message, data) {
-  logDebug(category, "error", message, data);
-}
-function subscribeDebugLogs(callback) {
-  _subscribers.push(callback);
-  return () => {
-    const idx = _subscribers.indexOf(callback);
-    if (idx !== -1) _subscribers.splice(idx, 1);
-  };
-}
-function getDebugLogBuffer() {
-  return _buffer;
-}
 function deepNormalizeBigInts(value) {
   if (value === null || value === void 0) return value;
   if (typeof value === "bigint") return Number(value);
@@ -32144,331 +32086,6 @@ function deepNormalizeBigInts(value) {
     result[key2] = deepNormalizeBigInts(obj[key2]);
   }
   return result;
-}
-function withTimeout$2(promise, ms = 1e4) {
-  return Promise.race([
-    promise,
-    new Promise(
-      (_2, reject) => setTimeout(() => reject(new Error(`Query timed out after ${ms}ms`)), ms)
-    )
-  ]);
-}
-function useGetCallerUserProfile() {
-  const { actor, isFetching: actorFetching } = useActor();
-  const query = useQuery({
-    queryKey: ["currentUserProfile"],
-    queryFn: async () => {
-      if (!actor) return null;
-      try {
-        const result = await withTimeout$2(
-          actor.getCallerUserProfile()
-        );
-        return result ?? null;
-      } catch {
-        return null;
-      }
-    },
-    enabled: !!actor && !actorFetching,
-    retry: 1,
-    staleTime: 3e4
-  });
-  return {
-    ...query,
-    isLoading: actorFetching || !!actor && query.isLoading,
-    isFetched: !!actor && !actorFetching && (query.isFetched || query.isError)
-  };
-}
-function useSaveCallerUserProfile() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (profile) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.saveCallerUserProfile(profile);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["currentUserProfile"] });
-    }
-  });
-}
-function useGetCharacterSlots() {
-  const { actor, isFetching: actorFetching } = useActor();
-  return useQuery({
-    queryKey: ["characterSlots"],
-    queryFn: async () => {
-      if (!actor) throw new Error("Actor not available");
-      const result = await actor.getCharacterSlots();
-      const normalized = deepNormalizeBigInts(result);
-      return {
-        slot1: normalized.slot1 ?? null,
-        slot2: normalized.slot2 ?? null,
-        slot3: normalized.slot3 ?? null
-      };
-    },
-    enabled: !!actor && !actorFetching,
-    refetchOnMount: "always",
-    refetchOnWindowFocus: false,
-    staleTime: 0,
-    retry: 3,
-    retryDelay: (attempt) => Math.min(1e3 * 2 ** attempt, 8e3)
-  });
-}
-function useCreateCharacter() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      slot,
-      character
-    }) => {
-      if (!actor) throw new Error("Actor not available");
-      const result = await actor.createCharacter(
-        slot,
-        character
-      );
-      if (result.__kind__ === "err")
-        throw new Error(result.err || "Failed to create character");
-      return result;
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["characterSlots"] });
-      queryClient2.invalidateQueries({ queryKey: ["character"] });
-    }
-  });
-}
-function useUpdateCharacter() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      slot,
-      character
-    }) => {
-      if (!actor) throw new Error("Actor not available");
-      const result = await actor.updateCharacter(
-        slot,
-        character
-      );
-      if (result.__kind__ === "err")
-        throw new Error(result.err || "Failed to update character");
-      return result;
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["characterSlots"] });
-      queryClient2.invalidateQueries({ queryKey: ["character"] });
-    }
-  });
-}
-function useDeleteCharacter() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (slot) => {
-      if (!actor) throw new Error("Actor not available");
-      const result = await actor.deleteCharacter(
-        slot
-      );
-      if (result.__kind__ === "err")
-        throw new Error(result.err || "Failed to delete character");
-      return result;
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["characterSlots"] });
-      queryClient2.invalidateQueries({ queryKey: ["character"] });
-    }
-  });
-}
-function withTimeout$1(promise, ms = 1e4) {
-  return Promise.race([
-    promise,
-    new Promise(
-      (_2, reject) => setTimeout(() => reject(new Error(`Query timed out after ${ms}ms`)), ms)
-    )
-  ]);
-}
-function useGetSpellConfigs() {
-  const { actor, isFetching: actorFetching } = useActor();
-  return useQuery({
-    queryKey: ["spellConfigs"],
-    queryFn: async () => {
-      if (!actor) return [];
-      try {
-        const raw = await withTimeout$1(
-          actor.getSpellConfigs()
-        );
-        return deepNormalizeBigInts(raw);
-      } catch {
-        return [];
-      }
-    },
-    enabled: !!actor && !actorFetching,
-    staleTime: 3e4,
-    gcTime: 12e4
-  });
-}
-function useAdminSetSpellConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (config) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminSetSpellConfig(config);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["spellConfigs"] });
-    }
-  });
-}
-function useAdminDeleteSpellConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (id) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminDeleteSpellConfig(id);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["spellConfigs"] });
-    }
-  });
-}
-function useGetEnemyConfigs() {
-  const { actor, isFetching: actorFetching } = useActor();
-  return useQuery({
-    queryKey: ["enemyConfigs"],
-    queryFn: async () => {
-      if (!actor) return [];
-      try {
-        const raw = await withTimeout$1(
-          actor.getEnemyConfigs()
-        );
-        return deepNormalizeBigInts(raw);
-      } catch {
-        return [];
-      }
-    },
-    enabled: !!actor && !actorFetching,
-    staleTime: 3e4,
-    gcTime: 12e4
-  });
-}
-function useAdminSetEnemyConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (config) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminSetEnemyConfig(config);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["enemyConfigs"] });
-    }
-  });
-}
-function useAdminDeleteEnemyConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (id) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminDeleteEnemyConfig(id);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["enemyConfigs"] });
-    }
-  });
-}
-function useGetRegionConfigs() {
-  const { actor, isFetching: actorFetching } = useActor();
-  return useQuery({
-    queryKey: ["regionConfigs"],
-    queryFn: async () => {
-      if (!actor) return [];
-      try {
-        const raw = await withTimeout$1(
-          actor.getRegionConfigs()
-        );
-        return deepNormalizeBigInts(raw);
-      } catch {
-        return [];
-      }
-    },
-    enabled: !!actor && !actorFetching,
-    staleTime: 3e4,
-    gcTime: 12e4
-  });
-}
-function useAdminSetRegionConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (config) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminSetRegionConfig(config);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["regionConfigs"] });
-    }
-  });
-}
-function useAdminDeleteRegionConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (id) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminDeleteRegionConfig(id);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["regionConfigs"] });
-    }
-  });
-}
-function useGetPlayerSpriteConfigs() {
-  const { actor, isFetching: actorFetching } = useActor();
-  return useQuery({
-    queryKey: ["playerSpriteConfigs"],
-    queryFn: async () => {
-      if (!actor) return [];
-      try {
-        const raw = await withTimeout$1(
-          actor.getPlayerSpriteConfigs()
-        );
-        return deepNormalizeBigInts(raw);
-      } catch {
-        return [];
-      }
-    },
-    enabled: !!actor && !actorFetching,
-    staleTime: 3e4,
-    gcTime: 12e4
-  });
-}
-function useAdminSetPlayerSpriteConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (config) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminSetPlayerSpriteConfig(config);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["playerSpriteConfigs"] });
-    }
-  });
-}
-function useAdminDeletePlayerSpriteConfig() {
-  const { actor } = useActor();
-  const queryClient2 = useQueryClient();
-  return useMutation({
-    mutationFn: async (id) => {
-      if (!actor) throw new Error("Actor not available");
-      return actor.adminDeletePlayerSpriteConfig(id);
-    },
-    onSuccess: () => {
-      queryClient2.invalidateQueries({ queryKey: ["playerSpriteConfigs"] });
-    }
-  });
 }
 var BossAbility = /* @__PURE__ */ ((BossAbility2) => {
   BossAbility2["REFLECT_SHIELD"] = "REFLECT_SHIELD";
@@ -33329,7 +32946,7 @@ const DEFAULT_BOSS_CONFIGS = [
     }
   }
 ];
-function withTimeout(promise, ms = 1e4) {
+function withTimeout$2(promise, ms = 1e4) {
   return Promise.race([
     promise,
     new Promise(
@@ -33344,7 +32961,7 @@ function useGetUserRole() {
     queryFn: async () => {
       if (!actor) return "user";
       try {
-        const raw = await withTimeout(
+        const raw = await withTimeout$2(
           actor.getUserRole()
         );
         if (typeof raw === "string") return raw;
@@ -33386,6 +33003,28 @@ function useAssignUserRole() {
     }
   });
 }
+function useGetCallerDokaBalance() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery({
+    queryKey: ["callerDokaBalance"],
+    queryFn: async () => {
+      if (!actor) return 0;
+      try {
+        const raw = await withTimeout$2(
+          actor.getCallerDokaBalance()
+        );
+        if (raw === null || raw === void 0) return 0;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : 0;
+      } catch {
+        return 0;
+      }
+    },
+    enabled: !!actor && !actorFetching,
+    staleTime: 1e4,
+    gcTime: 6e4
+  });
+}
 function useGetMapModifiers() {
   const { actor, isFetching: actorFetching } = useActor();
   return useQuery({
@@ -33393,7 +33032,7 @@ function useGetMapModifiers() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        const raw = await withTimeout(
+        const raw = await withTimeout$2(
           actor.getMapModifiers()
         );
         return deepNormalizeBigInts(raw);
@@ -33444,7 +33083,7 @@ function useGetGameConfig() {
           dokaSpawnBaseValue: 5
         };
       try {
-        const raw = await withTimeout(
+        const raw = await withTimeout$2(
           actor.getGameConfig()
         );
         return {
@@ -33489,7 +33128,7 @@ function useGetAchievementConfigs() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        const raw = await withTimeout(
+        const raw = await withTimeout$2(
           actor.getAchievementConfigs()
         );
         return deepNormalizeBigInts(
@@ -33514,7 +33153,7 @@ function useGetPlayerAchievements() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        const raw = await withTimeout(
+        const raw = await withTimeout$2(
           actor.getPlayerAchievements()
         );
         return raw.map((p2) => ({
@@ -33593,7 +33232,7 @@ function useGetEnemyNames() {
     queryKey: ["enemyNames"],
     queryFn: async () => {
       if (!actor) return [];
-      const result = await withTimeout(actor.getEnemyNames());
+      const result = await withTimeout$2(actor.getEnemyNames());
       return Array.isArray(result) ? result : [];
     },
     enabled: !!actor && !actorFetching,
@@ -33684,6 +33323,389 @@ function useDeleteBossConfig() {
     }
   });
 }
+function useGetLeaderboard() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery({
+    queryKey: ["leaderboard"],
+    queryFn: async () => {
+      if (!actor) return [];
+      const result = await actor.getLeaderboard();
+      return result.map((entry) => ({
+        principalId: entry.principalId,
+        playerName: entry.playerName,
+        level: Number(entry.level),
+        killCount: Number(entry.killCount),
+        achievementsCompleted: Number(entry.achievementsCompleted)
+      }));
+    },
+    enabled: !!actor && !actorFetching,
+    staleTime: 3e4
+  });
+}
+let _buffer = [];
+const _subscribers = [];
+function logDebug(category, level, message, data) {
+  const entry = {
+    ts: performance.now(),
+    category,
+    level,
+    message,
+    data
+  };
+  _buffer.push(entry);
+  if (_buffer.length > 200) _buffer = _buffer.slice(-200);
+  for (const sub of _subscribers) {
+    try {
+      sub(entry);
+    } catch {
+    }
+  }
+  return;
+}
+function logDebugInfo(category, message, data) {
+  logDebug(category, "info", message, data);
+}
+function logDebugWarn(category, message, data) {
+  logDebug(category, "warn", message, data);
+}
+function logDebugError(category, message, data) {
+  logDebug(category, "error", message, data);
+}
+function subscribeDebugLogs(callback) {
+  _subscribers.push(callback);
+  return () => {
+    const idx = _subscribers.indexOf(callback);
+    if (idx !== -1) _subscribers.splice(idx, 1);
+  };
+}
+function getDebugLogBuffer() {
+  return _buffer;
+}
+function withTimeout$1(promise, ms = 1e4) {
+  return Promise.race([
+    promise,
+    new Promise(
+      (_2, reject) => setTimeout(() => reject(new Error(`Query timed out after ${ms}ms`)), ms)
+    )
+  ]);
+}
+function useGetCallerUserProfile() {
+  const { actor, isFetching: actorFetching } = useActor();
+  const query = useQuery({
+    queryKey: ["currentUserProfile"],
+    queryFn: async () => {
+      if (!actor) return null;
+      try {
+        const result = await withTimeout$1(
+          actor.getCallerUserProfile()
+        );
+        return result ?? null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!actor && !actorFetching,
+    retry: 1,
+    staleTime: 3e4
+  });
+  return {
+    ...query,
+    isLoading: actorFetching || !!actor && query.isLoading,
+    isFetched: !!actor && !actorFetching && (query.isFetched || query.isError)
+  };
+}
+function useSaveCallerUserProfile() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (profile) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.saveCallerUserProfile(profile);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["currentUserProfile"] });
+    }
+  });
+}
+function useGetCharacterSlots() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery({
+    queryKey: ["characterSlots"],
+    queryFn: async () => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.getCharacterSlots();
+      const normalized = deepNormalizeBigInts(result);
+      return {
+        slot1: normalized.slot1 ?? null,
+        slot2: normalized.slot2 ?? null,
+        slot3: normalized.slot3 ?? null
+      };
+    },
+    enabled: !!actor && !actorFetching,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+    staleTime: 0,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1e3 * 2 ** attempt, 8e3)
+  });
+}
+function useCreateCharacter() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      slot,
+      character
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.createCharacter(
+        slot,
+        character
+      );
+      if (result.__kind__ === "err")
+        throw new Error(result.err || "Failed to create character");
+      return result;
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["characterSlots"] });
+      queryClient2.invalidateQueries({ queryKey: ["character"] });
+    }
+  });
+}
+function useUpdateCharacter() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      slot,
+      character
+    }) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.updateCharacter(
+        slot,
+        character
+      );
+      if (result.__kind__ === "err")
+        throw new Error(result.err || "Failed to update character");
+      return result;
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["characterSlots"] });
+      queryClient2.invalidateQueries({ queryKey: ["character"] });
+    }
+  });
+}
+function useDeleteCharacter() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (slot) => {
+      if (!actor) throw new Error("Actor not available");
+      const result = await actor.deleteCharacter(
+        slot
+      );
+      if (result.__kind__ === "err")
+        throw new Error(result.err || "Failed to delete character");
+      return result;
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["characterSlots"] });
+      queryClient2.invalidateQueries({ queryKey: ["character"] });
+    }
+  });
+}
+function withTimeout(promise, ms = 1e4) {
+  return Promise.race([
+    promise,
+    new Promise(
+      (_2, reject) => setTimeout(() => reject(new Error(`Query timed out after ${ms}ms`)), ms)
+    )
+  ]);
+}
+function useGetSpellConfigs() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery({
+    queryKey: ["spellConfigs"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        const raw = await withTimeout(
+          actor.getSpellConfigs()
+        );
+        return deepNormalizeBigInts(raw);
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !actorFetching,
+    staleTime: 3e4,
+    gcTime: 12e4
+  });
+}
+function useAdminSetSpellConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (config) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminSetSpellConfig(config);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["spellConfigs"] });
+    }
+  });
+}
+function useAdminDeleteSpellConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminDeleteSpellConfig(id);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["spellConfigs"] });
+    }
+  });
+}
+function useGetEnemyConfigs() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery({
+    queryKey: ["enemyConfigs"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        const raw = await withTimeout(
+          actor.getEnemyConfigs()
+        );
+        return deepNormalizeBigInts(raw);
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !actorFetching,
+    staleTime: 3e4,
+    gcTime: 12e4
+  });
+}
+function useAdminSetEnemyConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (config) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminSetEnemyConfig(config);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["enemyConfigs"] });
+    }
+  });
+}
+function useAdminDeleteEnemyConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminDeleteEnemyConfig(id);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["enemyConfigs"] });
+    }
+  });
+}
+function useGetRegionConfigs() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery({
+    queryKey: ["regionConfigs"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        const raw = await withTimeout(
+          actor.getRegionConfigs()
+        );
+        return deepNormalizeBigInts(raw);
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !actorFetching,
+    staleTime: 3e4,
+    gcTime: 12e4
+  });
+}
+function useAdminSetRegionConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (config) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminSetRegionConfig(config);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["regionConfigs"] });
+    }
+  });
+}
+function useAdminDeleteRegionConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminDeleteRegionConfig(id);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["regionConfigs"] });
+    }
+  });
+}
+function useGetPlayerSpriteConfigs() {
+  const { actor, isFetching: actorFetching } = useActor();
+  return useQuery({
+    queryKey: ["playerSpriteConfigs"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        const raw = await withTimeout(
+          actor.getPlayerSpriteConfigs()
+        );
+        return deepNormalizeBigInts(raw);
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !actorFetching,
+    staleTime: 3e4,
+    gcTime: 12e4
+  });
+}
+function useAdminSetPlayerSpriteConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (config) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminSetPlayerSpriteConfig(config);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["playerSpriteConfigs"] });
+    }
+  });
+}
+function useAdminDeletePlayerSpriteConfig() {
+  const { actor } = useActor();
+  const queryClient2 = useQueryClient();
+  return useMutation({
+    mutationFn: async (id) => {
+      if (!actor) throw new Error("Actor not available");
+      return actor.adminDeletePlayerSpriteConfig(id);
+    },
+    onSuccess: () => {
+      queryClient2.invalidateQueries({ queryKey: ["playerSpriteConfigs"] });
+    }
+  });
+}
 const AchievementsPanel = ({
   userId: _userId,
   dokaBalance,
@@ -33706,6 +33728,19 @@ const AchievementsPanel = ({
     (id) => progressMap.get(id),
     [progressMap]
   );
+  const rollbackClaimed = reactExports.useCallback(
+    (achievementId) => {
+      queryClient2.setQueryData(
+        ["playerAchievements"],
+        (old) => old == null ? void 0 : old.map(
+          (p2) => p2.achievementId === achievementId ? { ...p2, claimed: false } : p2
+        )
+      );
+      queryClient2.invalidateQueries({ queryKey: ["playerAchievements"] });
+      queryClient2.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+    },
+    [queryClient2]
+  );
   const handleClaim = reactExports.useCallback(
     (achievement) => {
       claimMut.mutate(achievement.id, {
@@ -33723,12 +33758,18 @@ const AchievementsPanel = ({
             onDokaBalanceChange(dokaBalance + granted);
             ue.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
           } else if ("err" in result) {
+            rollbackClaimed(achievement.id);
             ue.error(`Failed to claim reward: ${result.err}`);
           }
+        },
+        onError: (error) => {
+          rollbackClaimed(achievement.id);
+          const msg = error instanceof Error ? error.message : "Network error";
+          ue.error(`Failed to claim reward: ${msg}`);
         }
       });
     },
-    [claimMut, onDokaBalanceChange, queryClient2, dokaBalance]
+    [claimMut, onDokaBalanceChange, queryClient2, dokaBalance, rollbackClaimed]
   );
   const activeConfigs = reactExports.useMemo(
     () => configs.filter((cfg) => cfg.active),
@@ -46112,6 +46153,10 @@ const AI_BACKLINE_GUARD_DISTANCE = 1;
 const AI_KAMIKAZE_MIN_TARGETS = 2;
 const AI_KAMIKAZE_LOW_HP_PCT = 0.3;
 const AI_KAMIKAZE_BLAST_RADIUS = 2;
+const ENEMY_SUMMONER_CHANCE_BASE = 0.12;
+const ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE = 0.02;
+const ENEMY_SUMMON_CAP = 2;
+const ENEMY_SUMMON_COOLDOWN_TURNS = 2;
 const physicalAttackSpell = {
   id: "physical_attack",
   name: "Strike",
@@ -46663,7 +46708,7 @@ const starterSpells = [
     },
     summonLifespan: 4,
     usableByPlayer: true,
-    usableByEnemy: false,
+    usableByEnemy: true,
     targetType: "ground",
     areaShape: "single",
     areaRadius: 0
@@ -46721,7 +46766,7 @@ const starterSpells = [
     },
     summonLifespan: 4,
     usableByPlayer: true,
-    usableByEnemy: false,
+    usableByEnemy: true,
     targetType: "ground",
     areaShape: "single",
     areaRadius: 0
@@ -46787,7 +46832,7 @@ const starterSpells = [
 ];
 function isActiveHostile(e) {
   if (e.hp <= 0) return false;
-  if (e.isSummon) return false;
+  if (e.isSummon && e.side !== "enemy") return false;
   const side = e.side ?? "enemy";
   return side === "enemy";
 }
@@ -48495,6 +48540,66 @@ function decideSummonAction(summon, ctx) {
       return decideSummonHunter(summon, ctx, opponents, reachable, origin);
   }
 }
+function decideSummonerAction(enemy, ctx) {
+  const summonSpell = (ctx.assignedSpells ?? []).find(
+    (s2) => s2.isSummon === true && s2.usableByEnemy !== false
+  ) ?? null;
+  if (!summonSpell) {
+    return {
+      archetype: "summoner",
+      kind: "skip",
+      spell: null,
+      targetId: null,
+      destination: { x: enemy.x, y: enemy.y },
+      intent: "no summon spell",
+      intentColor: "#ef4444",
+      retreating: false
+    };
+  }
+  const existingEnemySummons = ctx.combatants.filter(
+    (c2) => c2.isSummon === true && c2.side === "enemy"
+  );
+  if (existingEnemySummons.length >= ENEMY_SUMMON_CAP) {
+    return {
+      archetype: "summoner",
+      kind: "skip",
+      spell: null,
+      targetId: null,
+      destination: { x: enemy.x, y: enemy.y },
+      intent: "summon cap reached",
+      intentColor: "#ef4444",
+      retreating: false
+    };
+  }
+  if (ctx.currentTurn != null && ctx.lastSummonTurn != null && ctx.currentTurn - ctx.lastSummonTurn < ENEMY_SUMMON_COOLDOWN_TURNS) {
+    return {
+      archetype: "summoner",
+      kind: "skip",
+      spell: null,
+      targetId: null,
+      destination: { x: enemy.x, y: enemy.y },
+      intent: "summon cooldown",
+      intentColor: "#ef4444",
+      retreating: false
+    };
+  }
+  const player = ctx.combatants.find((c2) => c2.side === "player" && !c2.isSummon);
+  const ally = ctx.combatants.find(
+    (c2) => c2.side === "enemy" && c2.id !== enemy.id && !c2.isSummon
+  );
+  const midX = player && ally ? Math.round((player.x + ally.x) / 2) : enemy.x;
+  const midY = player && ally ? Math.round((player.y + ally.y) / 2) : enemy.y;
+  return {
+    archetype: "summoner",
+    kind: "cast",
+    spell: summonSpell,
+    targetId: null,
+    destination: { x: midX, y: midY },
+    intent: "summon",
+    intentColor: "#ef4444",
+    retreating: false
+  };
+}
 function decideSummonHunter(summon, ctx, opponents, reachable, origin) {
   const kit = SUMMON_KIT.hunter;
   if (opponents.length === 0) {
@@ -49093,6 +49198,7 @@ function createSpellContext(deps) {
     applyEffect: deps.applyEffect,
     placeBarrier: deps.placeBarrier,
     spawnUnit: deps.spawnUnit,
+    spawnEnemySummon: deps.spawnEnemySummon,
     log: deps.log,
     isCellFree: deps.isCellFree,
     getCombatantAt: deps.getCombatantAt
@@ -49108,6 +49214,7 @@ function createPlayerSpellContext(deps) {
     applyEffect: deps.applyEffect,
     placeBarrier: deps.placeBarrier,
     spawnUnit: deps.spawnUnit,
+    spawnEnemySummon: deps.spawnEnemySummon,
     log: deps.log,
     isCellFree: deps.isCellFree,
     getCombatantAt: deps.getCombatantAt,
@@ -49378,6 +49485,119 @@ function resolvePlayerCast(spell, gridPos, ctx) {
 function calcScaledDamageInline(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
   return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
 }
+function executeSummonAction(action, summon, summonCtx, helpers) {
+  const maxAp = summon.maxAp ?? 2;
+  const maxMp = summon.maxMp ?? 2;
+  let x3 = summon.x;
+  let y2 = summon.y;
+  let currentAp = summon.currentAp ?? maxAp;
+  let currentMp = summon.currentMp ?? maxMp;
+  let hp = summon.hp;
+  const logLines = [];
+  const summonLabel = summon.summonAI ?? summon.pieceType ?? summon.id;
+  if (action.destination && (action.destination.x !== x3 || action.destination.y !== y2)) {
+    const dest = {
+      x: Math.max(0, Math.min(helpers.worldGridSize - 1, action.destination.x)),
+      y: Math.max(0, Math.min(helpers.worldGridSize - 1, action.destination.y))
+    };
+    if (isCellFree(dest, helpers.occupancyCtx)) {
+      const dist2 = Math.max(Math.abs(dest.x - x3), Math.abs(dest.y - y2));
+      const mpCost = dist2 * helpers.mpCostPerTile;
+      if (currentMp >= mpCost) {
+        x3 = dest.x;
+        y2 = dest.y;
+        currentMp -= mpCost;
+        logLines.push(
+          `[SUMMON-MOVE] ${summonLabel} (${summon.id}) moved to (${x3},${y2}) -${mpCost}MP`
+        );
+      } else {
+        logLines.push(
+          `[SUMMON-MOVE] ${summonLabel} (${summon.id}) could not move (need ${mpCost}MP, have ${currentMp}MP)`
+        );
+      }
+    } else {
+      logLines.push(
+        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) destination (${dest.x},${dest.y}) occupied`
+      );
+    }
+  }
+  if (action.kind === "cast" && action.spell && action.targetId) {
+    const spell = action.spell;
+    const apCost = Number(spell.apCost ?? 0);
+    if (currentAp >= apCost) {
+      const target = helpers.getEnemyById(action.targetId);
+      const damage = Number(spell.damage ?? 0);
+      const healAmount = Number(spell.healAmount ?? 0);
+      if (damage > 0 && target) {
+        const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
+        summonCtx.dealDamage(action.targetId, baseDmg);
+        const blastR = Number(spell.areaRadius ?? 0);
+        if (blastR > 0) {
+          for (const victim of helpers.getAoEVictims(action.targetId, blastR)) {
+            summonCtx.dealDamage(victim.id, baseDmg);
+          }
+        }
+        currentAp -= apCost;
+        logLines.push(
+          `[SUMMON-CAST] ${summonLabel} (${summon.id}) cast ${spell.name} on ${action.targetId} -${apCost}AP`
+        );
+        if (summon.summonAI === "bomber") {
+          hp = 0;
+          logLines.push(`[SUMMON-BOMBER] ${summon.id} detonated (hp=0)`);
+        }
+      } else if (healAmount > 0) {
+        summonCtx.heal(action.targetId, healAmount);
+        currentAp -= apCost;
+        logLines.push(
+          `[SUMMON-CAST] ${summonLabel} (${summon.id}) healed ${action.targetId} for ${healAmount} -${apCost}AP`
+        );
+      } else {
+        summonCtx.applyEffect({
+          effectName: spell.name ?? spell.effectType,
+          type: spell.effectType === "buff" ? "buff" : spell.effectType === "debuff" ? "debuff" : "dot",
+          targetId: action.targetId,
+          duration: spell.buffDuration ?? spell.debuffDuration ?? spell.dotDuration ?? 1,
+          iconEmoji: spell.iconEmoji ?? "✨",
+          description: spell.description ?? ""
+        });
+        currentAp -= apCost;
+        logLines.push(
+          `[SUMMON-CAST] ${summonLabel} (${summon.id}) applied ${spell.name} to ${action.targetId} -${apCost}AP`
+        );
+      }
+    } else {
+      logLines.push(
+        `[SUMMON-CAST] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`
+      );
+    }
+  } else if (action.kind === "melee" && action.targetId) {
+    const apCost = helpers.meleeApCost;
+    if (currentAp >= apCost) {
+      const dmg = helpers.calcScaledDamage(
+        summon.atk ?? summon.level,
+        summon.level,
+        0
+      );
+      summonCtx.dealDamage(action.targetId, dmg);
+      currentAp -= apCost;
+      logLines.push(
+        `[SUMMON-MELEE] ${summonLabel} (${summon.id}) hit ${action.targetId} for ${dmg} -${apCost}AP`
+      );
+    } else {
+      logLines.push(
+        `[SUMMON-MELEE] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`
+      );
+    }
+  } else {
+    logLines.push(
+      `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`
+    );
+  }
+  for (const line of logLines) {
+    summonCtx.log(line, action.intentColor ?? "#a78bfa", true);
+  }
+  return { newPosition: { x: x3, y: y2 }, currentAp, currentMp, hp, logLines };
+}
 function decrementSummonLifespan(enemies, log2) {
   const expiredIds = [];
   for (const e of enemies) {
@@ -49419,7 +49639,7 @@ const SUMMON_PIECE_ICONS = {
   knight: "♞",
   pawn: "♟"
 };
-function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, spellLevel = 0, occupancyCtx) {
+function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, spellLevel = 0, occupancyCtx, side = "player") {
   const unitDef = spell.summonUnitDef;
   if (!unitDef) {
     throw new Error("spawnSummonUnit: spell.summonUnitDef is required");
@@ -49445,7 +49665,7 @@ function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, 
     y: spawnCell.y,
     hp: maxHp,
     maxHp,
-    side: "player",
+    side,
     isSummon: true,
     summonAI,
     ownerId,
@@ -49480,7 +49700,7 @@ function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, 
     summonAI: summon.summonAI,
     ownerId,
     turnsRemaining: summon.turnsRemaining,
-    side: "player",
+    side,
     pieceType: summon.pieceType
   };
   log2(`${summon.name} appears!`, "#5cf08a", true);
@@ -54543,6 +54763,7 @@ const WorldExplorationInner = ({
   const turnOrderRef = reactExports.useRef([]);
   reactExports.useRef(0);
   const enemyTurnInProgressRef = reactExports.useRef(false);
+  const spawnEnemySummonRef = reactExports.useRef(null);
   const [enemyHpMap, setEnemyHpMap] = reactExports.useState({});
   const [enragedEnemies, setEnragedEnemies] = reactExports.useState(/* @__PURE__ */ new Set());
   const spellCooldownsRef = reactExports.useRef(/* @__PURE__ */ new Map());
@@ -54561,6 +54782,7 @@ const WorldExplorationInner = ({
     coinParticlesRef.current = coinParticles;
   }, [coinParticles]);
   const enemyCooldownsRef = reactExports.useRef(/* @__PURE__ */ new Map());
+  const enemySummonCooldownRef = reactExports.useRef(/* @__PURE__ */ new Map());
   const battleSpellsRef = reactExports.useRef([]);
   const modifiableRangeBonusRef = reactExports.useRef(/* @__PURE__ */ new Map());
   reactExports.useCallback(
@@ -60759,6 +60981,7 @@ const WorldExplorationInner = ({
     spellRangeCacheRef.current.clear();
     enemyPathCacheRef.current.clear();
     enemyCooldownsRef.current = /* @__PURE__ */ new Map();
+    enemySummonCooldownRef.current = /* @__PURE__ */ new Map();
     spellCooldownsRef.current.clear();
     setSpellCooldownVersion((v2) => v2 + 1);
     setEnemyCooldowns({});
@@ -60902,6 +61125,16 @@ const WorldExplorationInner = ({
         ...e,
         spells: assignEnemySpells(updatedEnemies.length)
       }));
+      const summonerChance = ENEMY_SUMMONER_CHANCE_BASE + characterStats.level * ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE;
+      const wolfSpell = starterSpells.find((s2) => s2.id === "summon-dire-wolf");
+      const archerSpell = starterSpells.find((s2) => s2.id === "summon-archer");
+      for (const e of enemiesWithSpells) {
+        if (!e.isSummon && !e.isSummoner && Math.random() < summonerChance) {
+          e.isSummoner = true;
+          const summonSpell = Math.random() < 0.5 ? wolfSpell : archerSpell;
+          if (summonSpell) e.spells = [...e.spells ?? [], summonSpell];
+        }
+      }
       const playerEntry = {
         id: "player",
         type: "player",
@@ -62223,6 +62456,98 @@ const WorldExplorationInner = ({
             if (playerPosition.x === cell.x && playerPosition.y === cell.y)
               return { id: "__player__", side: "player" };
             return null;
+          },
+          spawnEnemySummon: (cell, spell) => {
+            var _a4;
+            spawnEnemySummonRef.current = (c2, s2) => {
+              var _a5;
+              const unitDef2 = (s2 == null ? void 0 : s2.summonUnitDef) ?? ((_a5 = starterSpells.find((sp) => sp.id === (s2 == null ? void 0 : s2.id))) == null ? void 0 : _a5.summonUnitDef);
+              if (!unitDef2) return;
+              const { summon: summon2, turnOrderEntry: turnOrderEntry2 } = spawnSummonUnit(
+                c2,
+                {
+                  id: `enemy-summon-${unitDef2.pieceType}`,
+                  name: `Enemy Summon ${unitDef2.pieceType}`,
+                  summonUnitDef: unitDef2,
+                  summonLifespan: 0,
+                  summonAI: unitDef2.pieceType
+                },
+                "enemy",
+                characterStats.level,
+                logBattleEntry,
+                computeEnemyStats,
+                0,
+                {
+                  tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
+                    (row) => (row ?? []).map((t) => t !== "wall")
+                  ),
+                  barriers: new Set(barrierTilesRef.current.keys()),
+                  voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
+                  portals: new Set(
+                    ((currentMap == null ? void 0 : currentMap.portals) ?? []).map(
+                      (p2) => `${p2.x},${p2.y}`
+                    )
+                  ),
+                  isOccupied: (oc) => enemiesRef.current.some(
+                    (e) => e.x === oc.x && e.y === oc.y
+                  ) || playerPosition.x === oc.x && playerPosition.y === oc.y
+                }
+              );
+              const { enemies: newEnemies2, turnOrder: newTurnOrder2 } = applySummonResult(
+                summon2,
+                turnOrderEntry2,
+                "enemy",
+                enemiesRef.current,
+                turnOrderRef.current
+              );
+              setEnemies(newEnemies2);
+              setBattleEnemies(newEnemies2);
+              setTurnOrder(newTurnOrder2);
+              turnOrderRef.current = newTurnOrder2;
+              enemiesRef.current = newEnemies2;
+            };
+            const unitDef = (spell == null ? void 0 : spell.summonUnitDef) ?? ((_a4 = starterSpells.find((s2) => s2.id === (spell == null ? void 0 : spell.id))) == null ? void 0 : _a4.summonUnitDef);
+            if (!unitDef) return;
+            const { summon, turnOrderEntry } = spawnSummonUnit(
+              cell,
+              {
+                id: `enemy-summon-${unitDef.pieceType}`,
+                name: `Enemy Summon ${unitDef.pieceType}`,
+                summonUnitDef: unitDef,
+                summonLifespan: 0,
+                summonAI: unitDef.pieceType
+              },
+              "enemy",
+              characterStats.level,
+              logBattleEntry,
+              computeEnemyStats,
+              0,
+              {
+                tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
+                  (row) => (row ?? []).map((t) => t !== "wall")
+                ),
+                barriers: new Set(barrierTilesRef.current.keys()),
+                voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
+                portals: new Set(
+                  ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
+                ),
+                isOccupied: (c2) => enemiesRef.current.some(
+                  (e) => e.x === c2.x && e.y === c2.y
+                ) || playerPosition.x === c2.x && playerPosition.y === c2.y
+              }
+            );
+            const { enemies: newEnemies, turnOrder: newTurnOrder } = applySummonResult(
+              summon,
+              turnOrderEntry,
+              "enemy",
+              enemiesRef.current,
+              turnOrderRef.current
+            );
+            setEnemies(newEnemies);
+            setBattleEnemies(newEnemies);
+            setTurnOrder(newTurnOrder);
+            turnOrderRef.current = newTurnOrder;
+            enemiesRef.current = newEnemies;
           }
         });
         const summonCombatants = enemiesRef.current.filter((e) => e.id !== enemyId).map((e) => ({
@@ -62312,71 +62637,63 @@ const WorldExplorationInner = ({
           }
         };
         const action = decideSummonAction(summonEnemy, aiCtx);
-        if (action.kind === "cast" && action.spell && action.targetId) {
-          const target = enemiesRef.current.find(
-            (e) => e.id === action.targetId
-          );
-          if (action.spell.damage > 0 && target) {
-            summonCtx.dealDamage(
-              action.targetId,
-              calcScaledDamage(
-                Number(action.spell.damage),
-                summonEnemy.level,
-                0
-              )
+        const summonOccupancyCtx = {
+          tiles: aiGrid,
+          barriers: aiBarriers,
+          voidTiles: aiVoid,
+          portals: aiPortals,
+          isOccupied: (c2) => enemiesRef.current.some((e) => e.x === c2.x && e.y === c2.y) || playerPosition.x === c2.x && playerPosition.y === c2.y
+        };
+        const executorHelpers = {
+          calcScaledDamage,
+          occupancyCtx: summonOccupancyCtx,
+          worldGridSize: WORLD_GRID_SIZE,
+          mpCostPerTile: 1,
+          meleeApCost: 1,
+          getEnemyById: (id) => enemiesRef.current.find((e) => e.id === id),
+          getAoEVictims: (primaryId, blastR) => {
+            const primary = enemiesRef.current.find(
+              (e) => e.id === primaryId
             );
-            if ((action.spell.areaRadius ?? 0) > 0 && target) {
-              const blastR = Number(action.spell.areaRadius);
-              const baseDmg = calcScaledDamage(
-                Number(action.spell.damage),
-                summonEnemy.level,
-                0
-              );
-              for (const e of enemiesRef.current) {
-                if (e.id === action.targetId) continue;
-                if (e.side === summonEnemy.side) continue;
-                const dx = Math.abs((e.x ?? 0) - (target.x ?? 0));
-                const dy = Math.abs((e.y ?? 0) - (target.y ?? 0));
-                if (Math.max(dx, dy) <= blastR) {
-                  summonCtx.dealDamage(e.id, baseDmg);
-                }
-              }
-            }
-            if (summonEnemy.summonAI === "bomber") {
-              summonEnemy.hp = 0;
-            }
-          } else if ((action.spell.healAmount ?? 0) > 0) {
-            summonCtx.heal(action.targetId, action.spell.healAmount ?? 0);
-          } else {
-            summonCtx.applyEffect({
-              effectName: action.spell.name ?? action.spell.effectType,
-              type: action.spell.effectType === "buff" ? "buff" : action.spell.effectType === "debuff" ? "debuff" : "dot",
-              targetId: action.targetId,
-              duration: action.spell.buffDuration ?? action.spell.debuffDuration ?? action.spell.dotDuration ?? 1,
-              iconEmoji: action.spell.iconEmoji ?? "✨",
-              description: action.spell.description ?? ""
+            if (!primary) return [];
+            return enemiesRef.current.filter((e) => {
+              if (e.id === primaryId) return false;
+              if (e.side === summonEnemy.side) return false;
+              const dx = Math.abs((e.x ?? 0) - (primary.x ?? 0));
+              const dy = Math.abs((e.y ?? 0) - (primary.y ?? 0));
+              return Math.max(dx, dy) <= blastR;
             });
           }
-        } else if (action.kind === "melee" && action.targetId) {
-          const target = enemiesRef.current.find(
-            (e) => e.id === action.targetId
-          );
-          if (target)
-            summonCtx.dealDamage(
-              action.targetId,
-              calcScaledDamage(
-                summonEnemy.atk ?? summonEnemy.level,
-                summonEnemy.level,
-                0
-              )
-            );
-        } else {
-          summonCtx.log(
-            action.intent ?? `${summonEnemy.pieceType} holds.`,
-            "#a78bfa",
-            true
-          );
-        }
+        };
+        const execResult = executeSummonAction(
+          action,
+          summonEnemy,
+          summonCtx,
+          executorHelpers
+        );
+        setEnemies(
+          (prev) => prev.map(
+            (e) => e.id === enemyId ? {
+              ...e,
+              x: execResult.newPosition.x,
+              y: execResult.newPosition.y,
+              currentAp: execResult.currentAp,
+              currentMp: execResult.currentMp,
+              hp: execResult.hp
+            } : e
+          )
+        );
+        enemiesRef.current = enemiesRef.current.map(
+          (e) => e.id === enemyId ? {
+            ...e,
+            x: execResult.newPosition.x,
+            y: execResult.newPosition.y,
+            currentAp: execResult.currentAp,
+            currentMp: execResult.currentMp,
+            hp: execResult.hp
+          } : e
+        );
+        setBattleEnemies(enemiesRef.current);
         enemyTurnInProgressRef.current = false;
         setTimeout(() => advanceTurnRef.current(), 600);
         return;
@@ -62497,7 +62814,7 @@ const WorldExplorationInner = ({
       }
       reactDomExports.flushSync(() => {
         setEnemies((prevEnemies) => {
-          var _a4, _b4, _c3, _d3;
+          var _a4, _b4, _c3, _d3, _e3, _f3;
           const enemy = prevEnemies.find((e) => e.id === enemyId);
           if (!enemy) {
             clearTimeout(watchdog);
@@ -63070,21 +63387,42 @@ const WorldExplorationInner = ({
             focusAlreadySet: focusTurnRef.current === battleTurn,
             markFocusSet: () => {
               focusTurnRef.current = battleTurn;
-            }
+            },
+            // Enemy summoner cooldown: only read by decideSummonerAction.
+            // lastSummonTurn is null when the summoner has not yet cast.
+            currentTurn: battleTurn,
+            lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null
           };
-          const action = decideEnemyAction(enemy, aiCtx);
+          const action = enemy.isSummoner ? decideSummonerAction(
+            {
+              ...enemy,
+              name: enemy.assignedName ?? String(enemy.pieceType)
+            },
+            aiCtx
+          ) : decideEnemyAction(enemy, aiCtx);
+          if (action.kind === "cast" && ((_d3 = action.spell) == null ? void 0 : _d3.isSummon) && action.destination) {
+            (_e3 = spawnEnemySummonRef.current) == null ? void 0 : _e3.call(spawnEnemySummonRef, action.destination, action.spell);
+            enemySummonCooldownRef.current.set(enemyId, battleTurn);
+            enemyTurnInProgressRef.current = false;
+            setTimeout(advanceTurnRef.current, 600);
+            return prevEnemies;
+          }
           let newX = action.destination.x;
           let newY = action.destination.y;
           newX = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newX));
           newY = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newY));
           const chosenSpell = action.spell;
+          const resolvedTarget = action.targetId && action.targetId !== "player" ? prevEnemies.find((e) => e.id === action.targetId) : null;
+          const targetCell = resolvedTarget ? { x: resolvedTarget.x, y: resolvedTarget.y } : playerPosition;
+          const isSummonTarget = !!resolvedTarget;
+          const resolvedTargetId = action.targetId ?? "player";
           if (action.intent) ;
           let didAct = false;
           if (action.kind === "cast" && chosenSpell) {
             const spellRange = Number(chosenSpell.range);
             const distAM = Math.max(
-              Math.abs(newX - playerPosition.x),
-              Math.abs(newY - playerPosition.y)
+              Math.abs(newX - targetCell.x),
+              Math.abs(newY - targetCell.y)
             );
             const inRange2 = distAM <= spellRange;
             const spellType = chosenSpell.spellType ?? "damage";
@@ -63098,12 +63436,12 @@ const WorldExplorationInner = ({
               );
               const isCrit = Math.random() * 100 < (enemy.chc ?? 2) + (enragedEnemies.has(enemyId) ? 10 : 0);
               const dmgAC = isCrit ? rawDmg * 2 : rawDmg;
-              const plSpEff = Math.max(0, characterStats.sp) * getStatModifier(
+              const plSpEff = isSummonTarget ? 0 : Math.max(0, characterStats.sp) * getStatModifier(
                 "player",
                 "sp",
                 activeEffectsRef.current
               );
-              const plResEff = Math.max(0, Number(characterStats.res)) * getStatModifier(
+              const plResEff = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res)) * getStatModifier(
                 "player",
                 "res",
                 activeEffectsRef.current
@@ -63153,30 +63491,46 @@ const WorldExplorationInner = ({
                   resR > 0 ? `-${resR} RES` : ""
                 ].filter(Boolean).join(", ");
                 const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
-                const actualDmg = playerTakesDamage(
-                  dmg,
-                  `${enemy.pieceType} spell ${chosenSpell.name}`
-                );
-                logBattleEntry(
-                  isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
-                  isCrit ? "#FFD700" : "#ef4444"
-                );
-                if (actualDmg > 0)
-                  logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
+                let actualDmg;
+                if (isSummonTarget && resolvedTarget) {
+                  enemyTakesDamage(
+                    resolvedTarget.id,
+                    dmg,
+                    enemy.id,
+                    `${enemy.pieceType} spell ${chosenSpell.name}`,
+                    isCrit
+                  );
+                  actualDmg = dmg;
+                  logBattleEntry(
+                    isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType}: ${rawDmg}x2=${dmgAC} dmg` : `${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType} for ${actualDmg} dmg`,
+                    isCrit ? "#FFD700" : "#ef4444"
+                  );
+                } else {
+                  actualDmg = playerTakesDamage(
+                    dmg,
+                    `${enemy.pieceType} spell ${chosenSpell.name}`
+                  );
+                  logBattleEntry(
+                    isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
+                    isCrit ? "#FFD700" : "#ef4444"
+                  );
+                  if (actualDmg > 0)
+                    logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
+                }
                 playSound("player_damage", enemy.pieceType);
                 if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
                   applyActiveEffect({
                     id: `ed-${Date.now()}`,
                     effectName: chosenSpell.name,
                     type: "debuff",
-                    targetId: "player",
+                    targetId: resolvedTargetId,
                     stat: chosenSpell.debuffStat,
                     modifier: chosenSpell.debuffModifier ?? 1,
                     duration: chosenSpell.debuffDuration,
                     iconEmoji: chosenSpell.iconEmoji,
                     description: `${chosenSpell.debuffStat} debuffed`
                   });
-                  if (chosenSpell.debuffStat === "ap")
+                  if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
                     playerApWasDebuffedRef.current = true;
                 }
                 if ((chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage) && chosenSpell.dotDuration) {
@@ -63185,7 +63539,7 @@ const WorldExplorationInner = ({
                     id: `edot-${Date.now()}`,
                     effectName: `${chosenSpell.name} DoT`,
                     type: "dot",
-                    targetId: "player",
+                    targetId: resolvedTargetId,
                     dotDamagePerTurn: dotPptE,
                     duration: chosenSpell.dotDuration,
                     iconEmoji: "☠️",
@@ -63228,14 +63582,14 @@ const WorldExplorationInner = ({
                 id: `ed2-${Date.now()}`,
                 effectName: chosenSpell.name,
                 type: "debuff",
-                targetId: "player",
+                targetId: resolvedTargetId,
                 stat: chosenSpell.debuffStat,
                 modifier: chosenSpell.debuffModifier ?? 1,
                 duration: chosenSpell.debuffDuration,
                 iconEmoji: chosenSpell.iconEmoji,
                 description: `${chosenSpell.debuffStat} debuffed`
               });
-              if (chosenSpell.debuffStat === "ap")
+              if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
                 playerApWasDebuffedRef.current = true;
               logBattleEntry(
                 `${enemy.pieceType} uses ${chosenSpell.name}!`,
@@ -63251,8 +63605,8 @@ const WorldExplorationInner = ({
           }
           if (action.kind === "melee" || !didAct) {
             const nd = Math.max(
-              Math.abs(newX - playerPosition.x),
-              Math.abs(newY - playerPosition.y)
+              Math.abs(newX - targetCell.x),
+              Math.abs(newY - targetCell.y)
             );
             if (nd <= 1) {
               const fallbackPool = [
@@ -63266,16 +63620,30 @@ const WorldExplorationInner = ({
                   fb.damage * Math.max(1, enemy.level / 5) * enrageMultiplier
                 )
               );
+              const meleeRes = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res));
               const dmgFB = Math.max(
                 1,
-                Math.round(rawFB * (1 - characterStats.res / 100))
+                Math.round(rawFB * (1 - meleeRes / 100))
               );
               if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5)
                 logBattleEntry(
                   `Paper Windstorm! ${enemy.pieceType}'s ${fb.name} missed!`,
                   "#AAAAAA"
                 );
-              else {
+              else if (isSummonTarget && resolvedTarget) {
+                enemyTakesDamage(
+                  resolvedTarget.id,
+                  dmgFB,
+                  enemy.id,
+                  "melee",
+                  false
+                );
+                logBattleEntry(
+                  `${enemy.pieceType} strikes ${resolvedTarget.pieceType} for ${dmgFB} dmg`,
+                  "#ef4444"
+                );
+                didAct = true;
+              } else {
                 let meleeDmg = dmgFB;
                 if (shieldHpRef.current > 0) {
                   const absorbedFB = Math.min(shieldHpRef.current, meleeDmg);
@@ -63351,7 +63719,7 @@ const WorldExplorationInner = ({
           }
           logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
           if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
-            const enemyHazard = (_d3 = currentMap.hazardTiles) == null ? void 0 : _d3.get(`${newX},${newY}`);
+            const enemyHazard = (_f3 = currentMap.hazardTiles) == null ? void 0 : _f3.get(`${newX},${newY}`);
             if (enemyHazard) {
               if (enemyHazard === "lava") {
                 const hDmg = 8 + Math.floor(Math.random() * 8);
@@ -65989,6 +66357,7 @@ const GameFlow = ({
   const [showBossGuide, setShowBossGuide] = reactExports.useState(false);
   const [showShop, setShowShop] = reactExports.useState(false);
   const [dokaBalance, setDokaBalance] = reactExports.useState(0);
+  const { data: backendDokaBalance } = useGetCallerDokaBalance();
   const addBattleLogEntry = reactExports.useCallback((entry) => {
     setBattleLogEntries((prev) => {
       const next = [...prev, entry];
@@ -66011,6 +66380,11 @@ const GameFlow = ({
     await clear();
     queryClient2.clear();
   };
+  reactExports.useEffect(() => {
+    if (backendDokaBalance !== void 0) {
+      setDokaBalance(backendDokaBalance);
+    }
+  }, [backendDokaBalance]);
   const handleCreateCharacter = (slot) => {
     setEditingSlot(slot);
     setSelectedCharacter(null);
@@ -68504,7 +68878,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DXiu1lIX.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CbKMboRZ.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

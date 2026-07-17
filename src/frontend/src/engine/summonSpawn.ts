@@ -104,6 +104,7 @@ export function spawnSummonUnit(
   computeEnemyStats: (level: number, pieceType: string, seedKey: string) => any,
   spellLevel = 0,
   occupancyCtx?: OccupancyContext,
+  side: "player" | "enemy" = "player",
 ): SpawnSummonResult {
   const unitDef: SummonUnitDef | undefined = spell.summonUnitDef;
   if (!unitDef) {
@@ -151,7 +152,7 @@ export function spawnSummonUnit(
     y: spawnCell.y,
     hp: maxHp,
     maxHp,
-    side: "player",
+    side,
     isSummon: true,
     summonAI,
     ownerId,
@@ -187,7 +188,7 @@ export function spawnSummonUnit(
     summonAI: summon.summonAI,
     ownerId,
     turnsRemaining: summon.turnsRemaining,
-    side: "player",
+    side,
     pieceType: summon.pieceType,
   };
 

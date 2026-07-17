@@ -291,6 +291,7 @@ export interface Enemy {
   maxMp?: number;
   // Summon fields
   isSummon?: boolean;
+  isSummoner?: boolean;
   summonAI?: string;
   summonLifespan?: number;
   ownerId?: string;

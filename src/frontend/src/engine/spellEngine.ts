@@ -13,6 +13,7 @@
  *   minLevel, usableByPlayer, usableByEnemy, healAmount, iconEmoji
  */
 
+import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 
 export type Side = "player" | "enemy";
@@ -61,6 +62,12 @@ export interface SpellContext {
     lifespan: number,
     spell: any,
   ): void;
+  /**
+   * Enemy-side summon spawn callback. Used by enemy summoner archetypes to
+   * spawn an enemy-side summon (red OWNER_TINT) through the same pipeline as
+   * player summons. Optional — when absent, callers fall back to spawnUnit.
+   */
+  spawnEnemySummon?(cell: { x: number; y: number }, spell: SpellConfig): void;
   log(msg: string, color?: string, isSummon?: boolean): void;
   isCellFree(cell: { x: number; y: number }): boolean;
   getCombatantAt(cell: { x: number; y: number }): {
