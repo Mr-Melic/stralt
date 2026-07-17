@@ -165,13 +165,27 @@ export function initCombatantStore(
   setEnemies: SetCombatants,
   setBattleEnemies: SetCombatants,
   setTurnOrder: SetTurnOrder,
+  // biome-ignore lint/correctness/noUnusedVariables: retained for backward compatibility with positional call sites
   initial: Combatant[] = [],
 ): CombatantStoreCtx {
-  combatantsRef.current = initial;
-  enemiesRef.current = initial;
-  const battleStartIds = new Set<string>(withIdAll(initial).map((c) => c.id));
-  const battleEnemies = initial.filter((c) => battleStartIds.has(withId(c).id));
-  battleEnemiesRef.current = battleEnemies;
+  // SIDE-EFFECT-SAFE INIT: build the ctx around the refs AS THEY ARE.
+  // Never wipe live ref contents on (re)render — syncCombatants is the only
+  // place that reassigns the arrays / rebuilds battleStartIds.
+  if (combatantsRef.current === undefined) {
+    combatantsRef.current = [];
+  }
+  if (enemiesRef.current === undefined) {
+    enemiesRef.current = [];
+  }
+  const battleStartIds = new Set<string>(
+    withIdAll(combatantsRef.current).map((c) => c.id),
+  );
+  const battleEnemies = combatantsRef.current.filter((c) =>
+    battleStartIds.has(withId(c).id),
+  );
+  if (battleEnemiesRef.current === undefined) {
+    battleEnemiesRef.current = battleEnemies;
+  }
   const ctx: CombatantStoreCtx = {
     combatantsRef,
     battleStartIds,

@@ -47448,11 +47448,21 @@ function withIdAll(arr) {
   return arr;
 }
 function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrderRef, currentTurnIndexRef, setEnemies, setBattleEnemies, setTurnOrder, initial = []) {
-  combatantsRef.current = initial;
-  enemiesRef.current = initial;
-  const battleStartIds = new Set(withIdAll(initial).map((c2) => c2.id));
-  const battleEnemies = initial.filter((c2) => battleStartIds.has(withId(c2).id));
-  battleEnemiesRef.current = battleEnemies;
+  if (combatantsRef.current === void 0) {
+    combatantsRef.current = [];
+  }
+  if (enemiesRef.current === void 0) {
+    enemiesRef.current = [];
+  }
+  const battleStartIds = new Set(
+    withIdAll(combatantsRef.current).map((c2) => c2.id)
+  );
+  const battleEnemies = combatantsRef.current.filter(
+    (c2) => battleStartIds.has(withId(c2).id)
+  );
+  if (battleEnemiesRef.current === void 0) {
+    battleEnemiesRef.current = battleEnemies;
+  }
   const ctx = {
     combatantsRef,
     battleStartIds,
@@ -55879,16 +55889,20 @@ const WorldExplorationInner = ({
   const [turnOrder, setTurnOrder] = reactExports.useState([]);
   const turnOrderRef = reactExports.useRef([]);
   const combatantsRef = reactExports.useRef([]);
-  const combatantStoreCtx = initCombatantStore(
-    combatantsRef,
-    enemiesRef,
-    battleEnemiesRef,
-    turnOrderRef,
-    currentTurnIndexRef,
-    setEnemies,
-    setBattleEnemies,
-    setTurnOrder
-  );
+  const storeCtxRef = reactExports.useRef(null);
+  if (storeCtxRef.current === null) {
+    storeCtxRef.current = initCombatantStore(
+      combatantsRef,
+      enemiesRef,
+      battleEnemiesRef,
+      turnOrderRef,
+      currentTurnIndexRef,
+      setEnemies,
+      setBattleEnemies,
+      setTurnOrder
+    );
+  }
+  const combatantStoreCtx = storeCtxRef.current;
   reactExports.useRef(0);
   const enemyTurnInProgressRef = reactExports.useRef(false);
   const spawnEnemySummonRef = reactExports.useRef(null);
@@ -63419,7 +63433,12 @@ const WorldExplorationInner = ({
     if (!inBattle) checkBattleTrigger();
   }, [checkBattleTrigger, inBattle]);
   reactExports.useEffect(() => {
-    if (inBattle && activeHostilesRemaining(combatantsRef.current) === 0) {
+    if (inBattle && combatantStoreCtx.battleStartIds.size > 0 && activeHostilesRemaining(combatantsRef.current) === 0) {
+      console.log("[VICTORY-GATE]", {
+        hostiles: activeHostilesRemaining(combatantsRef.current),
+        battleStartIds: combatantStoreCtx.battleStartIds.size,
+        inBattle
+      });
       const _s2RunMode = bossRushActiveRef.current ? "bossRush" : dungeonChainActiveRef.current ? "dungeon" : "none";
       if (_s2RunMode !== "none") {
         logBattleEntry(
@@ -70229,7 +70248,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BCjssJkk.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BCqb_6WA.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

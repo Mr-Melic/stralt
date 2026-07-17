@@ -1018,18 +1018,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // combatantsRef is the single source of truth; enemiesRef/battleEnemiesRef/turnOrderRef
   // remain as mirrors the store helpers keep in sync. See engine/combatantStore.ts.
   const combatantsRef = useRef<Combatant[]>([]);
-  const combatantStoreCtx: CombatantStoreCtx = initCombatantStore(
-    combatantsRef,
-    enemiesRef as React.MutableRefObject<Combatant[]>,
-    battleEnemiesRef as React.MutableRefObject<Combatant[]>,
-    turnOrderRef,
-    currentTurnIndexRef,
-    setEnemies as unknown as (u: (prev: Combatant[]) => Combatant[]) => void,
-    setBattleEnemies as unknown as (
-      u: (prev: Combatant[]) => Combatant[],
-    ) => void,
-    setTurnOrder,
-  );
+  const storeCtxRef = useRef<CombatantStoreCtx | null>(null);
+  if (storeCtxRef.current === null) {
+    storeCtxRef.current = initCombatantStore(
+      combatantsRef,
+      enemiesRef as React.MutableRefObject<Combatant[]>,
+      battleEnemiesRef as React.MutableRefObject<Combatant[]>,
+      turnOrderRef,
+      currentTurnIndexRef,
+      setEnemies as unknown as (u: (prev: Combatant[]) => Combatant[]) => void,
+      setBattleEnemies as unknown as (
+        u: (prev: Combatant[]) => Combatant[],
+      ) => void,
+      setTurnOrder,
+    );
+  }
+  const combatantStoreCtx = storeCtxRef.current;
 
   const _phaseChangeCounterRef = useRef(0);
 
@@ -10725,8 +10729,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable callback
   useEffect(() => {
-    if (inBattle && activeHostilesRemaining(combatantsRef.current) === 0) {
+    if (
+      inBattle &&
+      combatantStoreCtx.battleStartIds.size > 0 &&
+      activeHostilesRemaining(combatantsRef.current) === 0
+    ) {
       dumpStateSync("victory-gate", combatantStoreCtx);
+      console.log("[VICTORY-GATE]", {
+        hostiles: activeHostilesRemaining(combatantsRef.current),
+        battleStartIds: combatantStoreCtx.battleStartIds.size,
+        inBattle,
+      });
       // S2: When the last enemy on a run map dies, announce that the way
       // forward is now open. Only fires inside an active dungeon or boss-rush
       // run — free exploration has no progression lock to lift.
