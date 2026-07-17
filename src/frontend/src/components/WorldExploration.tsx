@@ -196,6 +196,22 @@ let _fbNameIdx = 0;
 // start. Reset only on full reload (intentional: a single warn is enough).
 let _progressionDivergenceWarned = false;
 
+// ─── [CLICK] guard instrumentation (Part 4) ───────────────────────────────
+// Map-keyed, time-based throttle: logs on first occurrence per key, then at
+// most once per 1000ms per key. Modeled on pieceArt.ts's logPatternLookupFailed
+// style but with a 1s time window instead of every-Nth. Routes through
+// logDebugInfo so entries surface in the Shift+D debug overlay. PERMANENT
+// (not dev-only) per spec — always visible in the overlay buffer.
+const _clickGuardLastLog: Map<string, number> = new Map();
+const _CLICK_THROTTLE_MS = 1000;
+function logClickGuard(key: string, detail: Record<string, unknown>): void {
+  const now = Date.now();
+  const last = _clickGuardLastLog.get(key);
+  if (last !== undefined && now - last < _CLICK_THROTTLE_MS) return;
+  _clickGuardLastLog.set(key, now);
+  logDebugInfo("BATTLE", `[CLICK] ${key}`, detail);
+}
+
 interface WorldExplorationProps {
   dokaBalance: number;
   onDokaBalanceChange: (val: number) => void;
@@ -8591,8 +8607,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       // --- BATTLE MODE ---
       if (inBattle) {
-        // Block all player input during enemy's turn
-        if (battlePhase === "enemy") return;
+        // Part 4(a): [CLICK] entry instrumentation (throttled once/sec).
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          const _allowed = _entry?.type === "player";
+          logClickGuard("battle.entry", {
+            phase: battlePhase,
+            currentEntry: _entry?.type,
+            currentId: _entry?.id,
+            allowed: _allowed,
+          });
+        }
+        // Part 3: Desync-proof click guard. PRIMARY gate is the turn-truth
+        // (turnOrderRef/currentTurnIndexRef), so a stale battlePhase flag can
+        // never lock the player out of their own turn. battlePhase remains a
+        // secondary condition. Refs are stable — NOT added to dep arrays.
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          if (_entry?.type !== "player") {
+            logClickGuard("blocked.notPlayerTurn", {
+              phase: battlePhase,
+              currentEntry: _entry?.type,
+              currentId: _entry?.id,
+            });
+            return;
+          }
+        }
         if (battleActionMode === "walk") {
           // Walk mode: move using MP if tile is reachable
           if (currentBattleMp <= 0) return;
@@ -8683,8 +8723,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
           // No spell selected → silent return (inspect opens only via the
           // BattleUIPanel initiative chip button, NOT via canvas click).
-          if (!selectedSpellIdRef.current) return;
+          if (!selectedSpellIdRef.current) {
+            logClickGuard("blocked.noSpellSelected", {
+              phase: battlePhase,
+              mode: battleActionMode,
+            });
+            return;
+          }
           if (currentBattleAp <= 0) {
+            logClickGuard("blocked.noAp", {
+              phase: battlePhase,
+              ap: currentBattleAp,
+            });
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v) => v + 1);
             spellRangeCacheRef.current.clear();
@@ -8692,11 +8742,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
           const spellTiles = getSpellRangeTiles();
-          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) return;
+          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            logClickGuard("blocked.tileOutOfRange", {
+              phase: battlePhase,
+              tile: gridPos,
+            });
+            return;
+          }
           const spell = activeSpells.find(
             (s) => s.id === selectedSpellIdRef.current,
           );
-          if (!spell) return;
+          if (!spell) {
+            logClickGuard("blocked.spellNotFound", {
+              phase: battlePhase,
+              spellId: selectedSpellIdRef.current,
+            });
+            return;
+          }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
           if (import.meta.env.DEV) {
             // eslint-disable-next-line no-console
@@ -8893,8 +8955,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       // Reuse same logic as mouse click
       if (inBattle) {
-        // Block all player input during enemy's turn
-        if (battlePhase === "enemy") return;
+        // Part 4(a): [CLICK] entry instrumentation (throttled once/sec).
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          const _allowed = _entry?.type === "player";
+          logClickGuard("battle.entry.touch", {
+            phase: battlePhase,
+            currentEntry: _entry?.type,
+            currentId: _entry?.id,
+            allowed: _allowed,
+          });
+        }
+        // Part 3: Desync-proof touch guard (mirrors the click handler).
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          if (_entry?.type !== "player") {
+            logClickGuard("blocked.notPlayerTurn.touch", {
+              phase: battlePhase,
+              currentEntry: _entry?.type,
+              currentId: _entry?.id,
+            });
+            return;
+          }
+        }
         if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
           if (
@@ -8918,8 +9001,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
         } else {
           // Attack mode: cast selected spell on touched tile if in range
-          if (!selectedSpellIdRef.current) return;
+          if (!selectedSpellIdRef.current) {
+            logClickGuard("blocked.noSpellSelected.touch", {
+              phase: battlePhase,
+              mode: battleActionMode,
+            });
+            return;
+          }
           if (currentBattleAp <= 0) {
+            logClickGuard("blocked.noAp.touch", {
+              phase: battlePhase,
+              ap: currentBattleAp,
+            });
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v) => v + 1);
             spellRangeCacheRef.current.clear();
@@ -8927,11 +9020,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
           const spellTiles = getSpellRangeTiles();
-          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) return;
+          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            logClickGuard("blocked.tileOutOfRange.touch", {
+              phase: battlePhase,
+              tile: gridPos,
+            });
+            return;
+          }
           const spell = activeSpells.find(
             (s) => s.id === selectedSpellIdRef.current,
           );
-          if (!spell) return;
+          if (!spell) {
+            logClickGuard("blocked.spellNotFound.touch", {
+              phase: battlePhase,
+              spellId: selectedSpellIdRef.current,
+            });
+            return;
+          }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
           // Mirrors the mouse handler so touch devices get the same trace.
           if (import.meta.env.DEV) {
@@ -9404,6 +9509,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // (Was missing despite a comment in cleanupMap claiming it was here.)
     setTurnOrder([]);
     turnOrderRef.current = [];
+    // Part 1: Reset battlePhase to "player" so the next battle's
+    // setBattlePhase("enemy") (when entry 0 is an AI combatant) is a REAL
+    // state change — guaranteeing the AI-trigger effect fires for turn 0.
+    // Without this, a battle that ended during the enemy phase leaves
+    // battlePhase === "enemy", so the next setBattlePhase("enemy") is a
+    // no-op and the AI-trigger effect never runs turn 0 → click deadlock.
+    setBattlePhase("player");
 
     // EXP6: Reset buff item effects on battle cleanup
     shieldHpRef.current = 0;
@@ -9740,6 +9852,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         turnOrderRef.current = orderWithLeader;
         setCurrentTurnIndex(0);
         currentTurnIndexRef.current = 0;
+        // Part 2: Explicit turn-0 dispatch. advanceTurn's AI branches drive
+        // AI turns via setBattlePhase("enemy") (see @11197/@11207), which
+        // triggers the AI-trigger effect (@11310, deps [inBattle,
+        // currentTurnIndex, battlePhase]). Part 1's cleanupBattle reset
+        // guarantees this setBattlePhase("enemy") is a REAL state change
+        // (player→enemy) when entry 0 is an AI combatant, so the effect
+        // fires turn 0 even after a prior battle ended mid-enemy-phase.
+        // No parallel AI runner is introduced — this IS the same mechanism.
         setBattlePhase(
           orderWithLeader[0].type === "player" ? "player" : "enemy",
         );

@@ -55409,6 +55409,15 @@ function StatusEffectBadge({ effect }) {
 }
 let _fbNameIdx = 0;
 let _progressionDivergenceWarned = false;
+const _clickGuardLastLog = /* @__PURE__ */ new Map();
+const _CLICK_THROTTLE_MS = 1e3;
+function logClickGuard(key2, detail) {
+  const now2 = Date.now();
+  const last = _clickGuardLastLog.get(key2);
+  if (last !== void 0 && now2 - last < _CLICK_THROTTLE_MS) return;
+  _clickGuardLastLog.set(key2, now2);
+  logDebugInfo("BATTLE", `[CLICK] ${key2}`, detail);
+}
 const CAMERA_SMOOTHING_FACTOR = 0.85;
 class CanvasErrorBoundary extends reactExports.Component {
   constructor(props) {
@@ -61791,7 +61800,27 @@ const WorldExplorationInner = ({
       if (gridPos.x < 0 || gridPos.x >= WORLD_GRID_SIZE || gridPos.y < 0 || gridPos.y >= WORLD_GRID_SIZE)
         return;
       if (inBattle) {
-        if (battlePhase === "enemy") return;
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          const _allowed = (_entry == null ? void 0 : _entry.type) === "player";
+          logClickGuard("battle.entry", {
+            phase: battlePhase,
+            currentEntry: _entry == null ? void 0 : _entry.type,
+            currentId: _entry == null ? void 0 : _entry.id,
+            allowed: _allowed
+          });
+        }
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          if ((_entry == null ? void 0 : _entry.type) !== "player") {
+            logClickGuard("blocked.notPlayerTurn", {
+              phase: battlePhase,
+              currentEntry: _entry == null ? void 0 : _entry.type,
+              currentId: _entry == null ? void 0 : _entry.id
+            });
+            return;
+          }
+        }
         if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
           if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_a4 = currentMap.voidTiles) == null ? void 0 : _a4.has(`${gridPos.x},${gridPos.y}`)))
@@ -61857,8 +61886,18 @@ const WorldExplorationInner = ({
             setBattleActionMode("attack");
           }
         } else {
-          if (!selectedSpellIdRef.current) return;
+          if (!selectedSpellIdRef.current) {
+            logClickGuard("blocked.noSpellSelected", {
+              phase: battlePhase,
+              mode: battleActionMode
+            });
+            return;
+          }
           if (currentBattleAp <= 0) {
+            logClickGuard("blocked.noAp", {
+              phase: battlePhase,
+              ap: currentBattleAp
+            });
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v2) => v2 + 1);
             spellRangeCacheRef.current.clear();
@@ -61866,11 +61905,23 @@ const WorldExplorationInner = ({
             return;
           }
           const spellTiles = getSpellRangeTiles();
-          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) return;
+          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            logClickGuard("blocked.tileOutOfRange", {
+              phase: battlePhase,
+              tile: gridPos
+            });
+            return;
+          }
           const spell = activeSpells.find(
             (s2) => s2.id === selectedSpellIdRef.current
           );
-          if (!spell) return;
+          if (!spell) {
+            logClickGuard("blocked.spellNotFound", {
+              phase: battlePhase,
+              spellId: selectedSpellIdRef.current
+            });
+            return;
+          }
           const apCost = mapModifierRegistry.applyApCost(
             Number(spell.apCost),
             activeMapModifierTypes,
@@ -62025,7 +62076,27 @@ const WorldExplorationInner = ({
       if (gridPos.x < 0 || gridPos.x >= WORLD_GRID_SIZE || gridPos.y < 0 || gridPos.y >= WORLD_GRID_SIZE)
         return;
       if (inBattle) {
-        if (battlePhase === "enemy") return;
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          const _allowed = (_entry == null ? void 0 : _entry.type) === "player";
+          logClickGuard("battle.entry.touch", {
+            phase: battlePhase,
+            currentEntry: _entry == null ? void 0 : _entry.type,
+            currentId: _entry == null ? void 0 : _entry.id,
+            allowed: _allowed
+          });
+        }
+        {
+          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+          if ((_entry == null ? void 0 : _entry.type) !== "player") {
+            logClickGuard("blocked.notPlayerTurn.touch", {
+              phase: battlePhase,
+              currentEntry: _entry == null ? void 0 : _entry.type,
+              currentId: _entry == null ? void 0 : _entry.id
+            });
+            return;
+          }
+        }
         if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
           if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_a4 = currentMap.voidTiles) == null ? void 0 : _a4.has(`${gridPos.x},${gridPos.y}`)))
@@ -62045,8 +62116,18 @@ const WorldExplorationInner = ({
           movementStartTimeRef.current = Date.now();
           if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
         } else {
-          if (!selectedSpellIdRef.current) return;
+          if (!selectedSpellIdRef.current) {
+            logClickGuard("blocked.noSpellSelected.touch", {
+              phase: battlePhase,
+              mode: battleActionMode
+            });
+            return;
+          }
           if (currentBattleAp <= 0) {
+            logClickGuard("blocked.noAp.touch", {
+              phase: battlePhase,
+              ap: currentBattleAp
+            });
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v2) => v2 + 1);
             spellRangeCacheRef.current.clear();
@@ -62054,11 +62135,23 @@ const WorldExplorationInner = ({
             return;
           }
           const spellTiles = getSpellRangeTiles();
-          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) return;
+          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            logClickGuard("blocked.tileOutOfRange.touch", {
+              phase: battlePhase,
+              tile: gridPos
+            });
+            return;
+          }
           const spell = activeSpells.find(
             (s2) => s2.id === selectedSpellIdRef.current
           );
-          if (!spell) return;
+          if (!spell) {
+            logClickGuard("blocked.spellNotFound.touch", {
+              phase: battlePhase,
+              spellId: selectedSpellIdRef.current
+            });
+            return;
+          }
           const apCost = mapModifierRegistry.applyApCost(
             Number(spell.apCost),
             activeMapModifierTypes,
@@ -62432,6 +62525,7 @@ const WorldExplorationInner = ({
     setEnemyCooldowns({});
     setTurnOrder([]);
     turnOrderRef.current = [];
+    setBattlePhase("player");
     shieldHpRef.current = 0;
     furyRef.current = { turnsLeft: 0 };
     if (bossEncounterBannerTimerRef.current !== null) {
@@ -70342,7 +70436,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CNDMuWS_.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CqfVvhbr.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
