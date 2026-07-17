@@ -674,8 +674,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const mirrorUnitsRef = useRef<Set<string>>(new Set());
   // ── H3 Barrier: active barrier tiles → turns remaining ──────────────────────
   const barrierTilesRef = useRef<Map<string, number>>(new Map());
-  // ── M5 Spell range cache: key = "spellId_cx_cy", value = tile Set ──────────
+  // ── M5 Spell range cache: key = "spellId_cx_cy_version", value = tile Set ──
   const spellRangeCacheRef = useRef<Map<string, Set<string>>>(new Map());
+  // ── FIX 1.1: Battle-world version counter. Bumped on every turn advance and
+  // whenever the `enemies` array identity changes (catches AI moves, summons,
+  // deaths in one place). Folded into the spell-range cache key so a tile set
+  // computed before an enemy moved can never gate a click after.
+  const battleWorldVersionRef = useRef(0);
   // H3: Battle-phase watchdog — counts consecutive turns where no action fired.
   // If 5 idle turns accumulate in a row, force-advance to unblock frozen battles.
   const idleTurnCountRef = useRef(0);
@@ -768,6 +773,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   // Ref mirror of `enemies` so the enemy-turn setTimeout (dep array omits `enemies`) reads fresh summons.
   const enemiesRef = useRef<Enemy[]>([]);
+  // ── FIX 1.1: Bump the battle-world version whenever the `enemies` array
+  // identity changes. This catches ALL enemy movement (AI moves, summons,
+  // deaths) in one place without modifying combatantStore.ts, and invalidates
+  // the spell-range cache so a stale tile set can never gate a click.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: enemies identity change is the intentional cache-bust trigger (not read inside callback)
+  useEffect(() => {
+    battleWorldVersionRef.current += 1;
+  }, [enemies]);
 
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
@@ -1787,6 +1800,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return Array.from(map.values());
   }, [baseSpells, filteredBackendSpells]);
 
+  // FIX 2 (TS): Type guard for the setSpellBarOrder Motoko variant result.
+  // The backend returns variant{#ok,#err:Text}, which the JS binding serializes
+  // as EITHER { _ok?: null } | { _err?: string } (underscored) OR { ok?, err? }
+  // (plain) depending on the candid/codegen path. A bare union of the two
+  // object shapes does NOT allow accessing `_err` on the `{ ok?, err? }` member
+  // (and vice versa), which produced ~12 TS2339 errors. This guard narrows to
+  // a single discriminated shape so the err message is type-safe to read.
+  const isSpellBarErr = (r: unknown): r is { _err: string } | { err: string } =>
+    r != null &&
+    (typeof (r as { _err?: unknown })._err === "string" ||
+      typeof (r as { err?: unknown }).err === "string");
+  const spellBarErrMsg = (r: { _err: string } | { err: string }): string =>
+    typeof (r as { _err?: string })._err === "string"
+      ? (r as { _err: string })._err
+      : (r as { err: string }).err;
+
   // Load active spell IDs from backend on character load so loadout survives
   // browser storage clears and device switches.
   // SECTION 4: spellBarOrder is the backend-authoritative source for the
@@ -1795,6 +1824,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // after character creation may be automatic — and even then it uses the
   // ownedSpells in their natural/learned order (NOT a random shuffle) and is
   // immediately persisted via setSpellBarOrder so the next load reads it back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isSpellBarErr/spellBarErrMsg are stable local helpers (defined once, never reassigned)
   useEffect(() => {
     if (
       !userId ||
@@ -1854,11 +1884,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             JSON.stringify(first8),
           );
           try {
-            await (actor as ActorAny).setSpellBarOrder(
+            // FIX 2b: Log the initial-save round-trip result too (the
+            // non-debounced fallback path). Same variant inspection as the
+            // debounced save above.
+            const result = await (actor as ActorAny).setSpellBarOrder(
               BigInt(characterSlot),
               first8,
             );
+            if (isSpellBarErr(result)) {
+              logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
+                msg: spellBarErrMsg(result),
+                slot: characterSlot,
+                orderIds: first8,
+              });
+              console.error(
+                "[SpellInit] setSpellBarOrder #err:",
+                spellBarErrMsg(result),
+              );
+            } else {
+              logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
+                slot: characterSlot,
+                orderIds: first8,
+              });
+            }
           } catch (e) {
+            logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
+              error: String(e),
+              slot: characterSlot,
+              orderIds: first8,
+            });
             console.warn(
               "[SpellInit] Failed to save initial spellBarOrder:",
               e,
@@ -1964,6 +2018,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     typeof setTimeout
   > | null>(null);
 
+  // FIX 2a: Pending spell-bar queue. When the player swaps spells DURING battle,
+  // handleSetActiveSpells cannot apply immediately (the bar is locked mid-fight).
+  // Instead of a silent no-op, we stash the requested list here and flush it in
+  // cleanupBattle once inBattleRef flips false — so the change is never lost.
+  // Null = no pending change. Non-null = apply this list after the current battle.
+  const pendingSpellBarRef = useRef<SpellConfig[] | null>(null);
+
+  // FIX 2c: Ref mirror of handleSetActiveSpells so cleanupBattle (a useCallback
+  // with a stable identity) can call the LATEST handler without re-creating
+  // itself on every render. This is the standard ref-mirror pattern and keeps
+  // exhaustive-deps satisfied for both the handler and cleanupBattle.
+  const handleSetActiveSpellsRef = useRef<(spells: SpellConfig[]) => void>(
+    () => {},
+  );
+
   // SINGLE-AUTHORITY spell-bar update path.
   //
   // spellBarOrder (the [Text] id list on the Character record) is the ONE
@@ -1986,7 +2055,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // It must NEVER add to or remove from ownedSpells. The underlying
   // spell library (ownedSpells) is immutable with respect to equipping.
   const handleSetActiveSpells = (spells: SpellConfig[]) => {
-    if (inBattleRef.current) return;
+    // FIX 2a: Do NOT silently drop spell-bar changes made during battle.
+    // The bar is locked mid-fight (applying immediately would desync the
+    // active battle), so we queue the requested list and flush it in
+    // cleanupBattle once inBattleRef flips false. The user gets an immediate
+    // toast so the swap is never a silent no-op.
+    if (inBattleRef.current) {
+      pendingSpellBarRef.current = spells;
+      toast("⚔️ Changes will apply after battle", {
+        duration: 4000,
+        style: {
+          background: "#1a0a0a",
+          border: "1px solid #8b0000",
+          color: "#ffaaaa",
+        },
+      });
+      logDebugInfo("SPELLS", "[SPELLBAR] queued for after battle", {
+        count: spells.length,
+      });
+      return;
+    }
     // Extract IDs from the 8 slots (null for empty slots)
     const ids = [...spells, ...Array(8).fill(null)]
       .slice(0, 8)
@@ -2017,14 +2105,49 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       setSpellBarOrderDebounceRef.current = setTimeout(() => {
         setSpellBarOrderDebounceRef.current = null;
+        // FIX 2b: Verify the backend round-trip. The actor returns a Motoko
+        // variant {#ok,#err:Text}. We inspect the resolved value and log the
+        // actual result (non-throttled — this fires at most once per debounce).
+        // Network/actor-throw failures still hit .catch and are logged as a
+        // save failure (distinct from a backend #err).
         (actor as ActorAny)
           .setSpellBarOrder(BigInt(characterSlot), orderIds)
+          .then((result: unknown) => {
+            // Motoko {#ok} / {#err:Text} variants arrive as { _ok: null } or
+            // { _err: string } in the JS binding. isSpellBarErr narrows to a
+            // single discriminated shape so the err message is type-safe.
+            if (isSpellBarErr(result)) {
+              logDebugError("SPELLS", "[SPELLBAR] saved #err", {
+                msg: spellBarErrMsg(result),
+                slot: characterSlot,
+                orderIds,
+              });
+              console.error(
+                "[SpellOrderSave] setSpellBarOrder #err:",
+                spellBarErrMsg(result),
+              );
+            } else {
+              logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
+                slot: characterSlot,
+                orderIds,
+              });
+            }
+          })
           .catch((e: unknown) => {
-            console.warn("[SpellOrderSave] setSpellBarOrder failed:", e);
+            logDebugError("SPELLS", "[SPELLBAR] save failed", {
+              error: String(e),
+              slot: characterSlot,
+              orderIds,
+            });
+            console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
           });
       }, 1000);
     }
   };
+  // FIX 2c: Keep the ref mirror in sync with the latest handler closure on
+  // every render. This is a top-level statement (not inside an effect) so it
+  // runs unconditionally and cleanupBattle always sees the current handler.
+  handleSetActiveSpellsRef.current = handleSetActiveSpells;
 
   // Flush spell IDs to localStorage on page unload so a crash/reload always has the latest loadout.
   const activeSpellIdsForSaveRef = useRef<string[]>(activeSpellIds);
@@ -6416,8 +6539,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       return new Set();
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return new Set();
-    // M5: Check cache before computing
-    const cacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}`;
+    // M5: Check cache before computing. FIX 1.1: include battleWorldVersion so
+    // a set computed before an enemy moved can never gate a click after.
+    const cacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     // ── #19 Pacifist Run: flip flag for ANY offensive spell usage ──────────────
@@ -8741,11 +8865,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setBattleActionMode("walk");
             return;
           }
+          // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
+          // populate the cache, so the rejection log reports whether the cache
+          // already held an entry for this key.
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheHit =
+            spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             logClickGuard("blocked.tileOutOfRange", {
               phase: battlePhase,
               tile: gridPos,
+              clickedTile: `${gridPos.x},${gridPos.y}`,
+              setSize: spellTiles.size,
+              cacheHit: _preClickCacheHit,
+              spellId: selectedSpellIdRef.current,
             });
             return;
           }
@@ -9019,11 +9153,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setBattleActionMode("walk");
             return;
           }
+          // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
+          // populate the cache, so the touch rejection log reports whether the
+          // cache already held an entry for this key.
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheHit =
+            spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             logClickGuard("blocked.tileOutOfRange.touch", {
               phase: battlePhase,
               tile: gridPos,
+              clickedTile: `${gridPos.x},${gridPos.y}`,
+              setSize: spellTiles.size,
+              cacheHit: _preClickCacheHit,
+              spellId: selectedSpellIdRef.current,
             });
             return;
           }
@@ -9485,6 +9629,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // 6. Reset all battle-phase boolean flags
     inBattleRef.current = false;
+    // FIX 2d: Flush any spell-bar change the player queued DURING battle.
+    // handleSetActiveSpells stashed the requested list into pendingSpellBarRef
+    // (instead of silently dropping it) because the bar is locked mid-fight.
+    // Now that inBattleRef is false we apply the queued list via the ref mirror
+    // so the change is never lost, and toast the player that it landed.
+    const pendingSpellBar = pendingSpellBarRef.current;
+    pendingSpellBarRef.current = null;
+    if (pendingSpellBar) {
+      handleSetActiveSpellsRef.current(pendingSpellBar);
+      logDebugInfo("SPELLS", "[SPELLBAR] applied after battle", {
+        count: pendingSpellBar.length,
+      });
+      toast("Spell bar changes applied after battle", {
+        duration: 4000,
+        style: {
+          background: "#1a0a0a",
+          border: "1px solid #8b0000",
+          color: "#ffaaaa",
+        },
+      });
+    }
     battleReadyRef.current = false;
     enemyTurnInProgressRef.current = false;
     battleTriggerCooldownRef.current = false;
@@ -11130,6 +11295,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: flushSync-wrapped advanceTurn intentionally captures stable refs
   const advanceTurn = useCallback(() => {
     flushSync(() => {
+      // FIX 1.1: Bump the battle-world version at the top of advanceTurn (after
+      // flushSync open, before turn-order advancement) so the spell-range cache
+      // key changes every turn and a stale tile set can never gate a click.
+      battleWorldVersionRef.current += 1;
       // H3: A real advanceTurn resets the idle counter (the turn moved forward normally).
       idleTurnCountRef.current = 0;
       // Time Warp: 15s timer instead of 30

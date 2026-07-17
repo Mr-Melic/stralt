@@ -55722,6 +55722,7 @@ const WorldExplorationInner = ({
   const mirrorUnitsRef = reactExports.useRef(/* @__PURE__ */ new Set());
   const barrierTilesRef = reactExports.useRef(/* @__PURE__ */ new Map());
   const spellRangeCacheRef = reactExports.useRef(/* @__PURE__ */ new Map());
+  const battleWorldVersionRef = reactExports.useRef(0);
   const idleTurnCountRef = reactExports.useRef(0);
   const [jackpotHealVisible, setJackpotHealVisible] = reactExports.useState(false);
   const jackpotHealTimerRef = reactExports.useRef(
@@ -55774,6 +55775,9 @@ const WorldExplorationInner = ({
   const [_pendingDestination, setPendingDestination] = reactExports.useState(null);
   const [enemies, setEnemies] = reactExports.useState([]);
   const enemiesRef = reactExports.useRef([]);
+  reactExports.useEffect(() => {
+    battleWorldVersionRef.current += 1;
+  }, [enemies]);
   const [inBattle, setInBattle] = reactExports.useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = reactExports.useState(false);
   const tierConfigRef = reactExports.useRef(null);
@@ -56423,6 +56427,8 @@ const WorldExplorationInner = ({
     }
     return Array.from(map.values());
   }, [baseSpells, filteredBackendSpells]);
+  const isSpellBarErr = (r2) => r2 != null && (typeof r2._err === "string" || typeof r2.err === "string");
+  const spellBarErrMsg = (r2) => typeof r2._err === "string" ? r2._err : r2.err;
   reactExports.useEffect(() => {
     if (!userId || characterSlot === null || characterSlot === void 0 || !actor)
       return;
@@ -56465,11 +56471,32 @@ const WorldExplorationInner = ({
             JSON.stringify(first8)
           );
           try {
-            await actor.setSpellBarOrder(
+            const result = await actor.setSpellBarOrder(
               BigInt(characterSlot),
               first8
             );
+            if (isSpellBarErr(result)) {
+              logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
+                msg: spellBarErrMsg(result),
+                slot: characterSlot,
+                orderIds: first8
+              });
+              console.error(
+                "[SpellInit] setSpellBarOrder #err:",
+                spellBarErrMsg(result)
+              );
+            } else {
+              logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
+                slot: characterSlot,
+                orderIds: first8
+              });
+            }
           } catch (e) {
+            logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
+              error: String(e),
+              slot: characterSlot,
+              orderIds: first8
+            });
             console.warn(
               "[SpellInit] Failed to save initial spellBarOrder:",
               e
@@ -56538,8 +56565,27 @@ const WorldExplorationInner = ({
     activeSpellsRef.current = activeSpells;
   }, [activeSpells]);
   const setSpellBarOrderDebounceRef = reactExports.useRef(null);
+  const pendingSpellBarRef = reactExports.useRef(null);
+  const handleSetActiveSpellsRef = reactExports.useRef(
+    () => {
+    }
+  );
   const handleSetActiveSpells = (spells) => {
-    if (inBattleRef.current) return;
+    if (inBattleRef.current) {
+      pendingSpellBarRef.current = spells;
+      ue("⚔️ Changes will apply after battle", {
+        duration: 4e3,
+        style: {
+          background: "#1a0a0a",
+          border: "1px solid #8b0000",
+          color: "#ffaaaa"
+        }
+      });
+      logDebugInfo("SPELLS", "[SPELLBAR] queued for after battle", {
+        count: spells.length
+      });
+      return;
+    }
     const ids = [...spells, ...Array(8).fill(null)].slice(0, 8).map((s2) => (s2 == null ? void 0 : s2.id) ?? null);
     setActiveSpellIds(ids.filter((id) => id !== null));
     try {
@@ -56556,12 +56602,35 @@ const WorldExplorationInner = ({
       }
       setSpellBarOrderDebounceRef.current = setTimeout(() => {
         setSpellBarOrderDebounceRef.current = null;
-        actor.setSpellBarOrder(BigInt(characterSlot), orderIds).catch((e) => {
-          console.warn("[SpellOrderSave] setSpellBarOrder failed:", e);
+        actor.setSpellBarOrder(BigInt(characterSlot), orderIds).then((result) => {
+          if (isSpellBarErr(result)) {
+            logDebugError("SPELLS", "[SPELLBAR] saved #err", {
+              msg: spellBarErrMsg(result),
+              slot: characterSlot,
+              orderIds
+            });
+            console.error(
+              "[SpellOrderSave] setSpellBarOrder #err:",
+              spellBarErrMsg(result)
+            );
+          } else {
+            logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
+              slot: characterSlot,
+              orderIds
+            });
+          }
+        }).catch((e) => {
+          logDebugError("SPELLS", "[SPELLBAR] save failed", {
+            error: String(e),
+            slot: characterSlot,
+            orderIds
+          });
+          console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
         });
       }, 1e3);
     }
   };
+  handleSetActiveSpellsRef.current = handleSetActiveSpells;
   const activeSpellIdsForSaveRef = reactExports.useRef(activeSpellIds);
   reactExports.useEffect(() => {
     activeSpellIdsForSaveRef.current = activeSpellIds;
@@ -60073,7 +60142,7 @@ const WorldExplorationInner = ({
       return /* @__PURE__ */ new Set();
     const spell = activeSpells.find((s2) => s2.id === selectedSpellIdRef.current);
     if (!spell) return /* @__PURE__ */ new Set();
-    const cacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}`;
+    const cacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     applyHealBuffSideEffect(spell, battleOnlyHealBuffSpellsRef);
@@ -61904,11 +61973,17 @@ const WorldExplorationInner = ({
             setBattleActionMode("walk");
             return;
           }
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheHit = spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             logClickGuard("blocked.tileOutOfRange", {
               phase: battlePhase,
-              tile: gridPos
+              tile: gridPos,
+              clickedTile: `${gridPos.x},${gridPos.y}`,
+              setSize: spellTiles.size,
+              cacheHit: _preClickCacheHit,
+              spellId: selectedSpellIdRef.current
             });
             return;
           }
@@ -62134,11 +62209,17 @@ const WorldExplorationInner = ({
             setBattleActionMode("walk");
             return;
           }
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheHit = spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             logClickGuard("blocked.tileOutOfRange.touch", {
               phase: battlePhase,
-              tile: gridPos
+              tile: gridPos,
+              clickedTile: `${gridPos.x},${gridPos.y}`,
+              setSize: spellTiles.size,
+              cacheHit: _preClickCacheHit,
+              spellId: selectedSpellIdRef.current
             });
             return;
           }
@@ -62509,6 +62590,22 @@ const WorldExplorationInner = ({
       jackpotHealTimerRef.current = null;
     }
     inBattleRef.current = false;
+    const pendingSpellBar = pendingSpellBarRef.current;
+    pendingSpellBarRef.current = null;
+    if (pendingSpellBar) {
+      handleSetActiveSpellsRef.current(pendingSpellBar);
+      logDebugInfo("SPELLS", "[SPELLBAR] applied after battle", {
+        count: pendingSpellBar.length
+      });
+      ue("Spell bar changes applied after battle", {
+        duration: 4e3,
+        style: {
+          background: "#1a0a0a",
+          border: "1px solid #8b0000",
+          color: "#ffaaaa"
+        }
+      });
+    }
     battleReadyRef.current = false;
     enemyTurnInProgressRef.current = false;
     battleTriggerCooldownRef.current = false;
@@ -63716,6 +63813,7 @@ const WorldExplorationInner = ({
   }, [updateCameraToFollowPlayer]);
   const advanceTurn = reactExports.useCallback(() => {
     reactDomExports.flushSync(() => {
+      battleWorldVersionRef.current += 1;
       idleTurnCountRef.current = 0;
       const timerDuration = isTimeWarp ? 15 : 30;
       setTurnTimeLeft(timerDuration);
@@ -70436,7 +70534,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CqfVvhbr.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-17zI2EZY.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

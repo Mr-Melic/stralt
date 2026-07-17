@@ -1,4 +1,4 @@
-// Version: 3.0.0
+// Version: 1.0.0
 type AchievementConfig__943077584 =
   {
     active : Bool;
@@ -76,21 +76,6 @@ type CharacterStats__1012153666 =
     sp : Nat;
     sr : Nat
   };
-type CharacterStats__796715770 =
-  {
-    ap : Nat;
-    atk : Nat;
-    chc : Nat;
-    evasion : Nat;
-    hp : Nat;
-    init : Nat;
-    killCount : Nat;
-    mp : Nat;
-    res : Nat;
-    resilience : Nat;
-    sp : Nat;
-    sr : Nat
-  };
 type Character__117766171 =
   {
     activeSpells : ?[Nat];
@@ -154,32 +139,6 @@ type Nat__920180692 = Nat;
 type Nat__93962160 = Nat__920180692;
 type Node__279997185<K, V> =
   {#internal : Internal__455405067<K, V>; #leaf : Leaf__114713147<K, V>};
-type OldCharacterSlot__649970589 = ?OldCharacter__687079152;
-type OldCharacterSlots__144725514 =
-  {
-    slot1 : OldCharacterSlot__649970589;
-    slot2 : OldCharacterSlot__649970589;
-    slot3 : OldCharacterSlot__649970589
-  };
-type OldCharacter__687079152 =
-  {
-    activeSpells : ?[Nat];
-    bloodBalance : ?Nat;
-    bossRushMasterComplete : ?Bool;
-    colors : [Text];
-    covenantBuff : ?Text;
-    experience : Nat;
-    level : Nat;
-    name : Text;
-    pieceType : Text;
-    pixelPattern : Text;
-    rotation : Nat;
-    shrineCount : ?Nat;
-    spellBarOrder : ?[Text];
-    spellLevelKeys : [Text];
-    spellLevelValues : [Nat];
-    stats : CharacterStats__796715770
-  };
 type PlayerSpriteConfig__297021837 =
   {
     backUrl : ?Text;
@@ -262,144 +221,7 @@ type SpellConfig__773412400 =
   };
 type UserProfile__491224006 = {name : Text};
 type UserRole__1073662873 = {#admin; #guest; #user};
-actor ({
-  stable BUFF_CATALOG : [(Text, Text, Nat)];
-  stable DEFAULT_ENEMY_NAMES : [Text];
-  stable ROLE_CHANGE_MIN_NS : Int;
-  stable accessControlState :
-    {
-      var adminAssigned : Bool;
-      userRoles : Map__246123559<Principal, UserRole__1073662873>
-    };
-  stable achievementConfigs :
-    {
-      var root : Node__279997185<Text, AchievementConfig__943077584>;
-      var size : Nat__93962160
-    };
-  stable achievementProgress :
-    {
-      var root : Node__279997185<Text, AchievementProgress__1034666012>;
-      var size : Nat__93962160
-    };
-  stable var adBoxes : [(Text, Text, Bool)];
-  stable var appVersion : Text;
-  stable bannedPrincipals :
-    {var root : Node__279997185<Text, Bool>; var size : Nat__93962160};
-  stable bossConfigs :
-    {
-      var root : Node__279997185<Text, BossConfig__765161734>;
-      var size : Nat__93962160
-    };
-  stable bossPortalAssignments :
-    {var root : Node__279997185<Text, Text>; var size : Nat__93962160};
-  stable var bossRushConfigStore : Text;
-  stable bossRushStates :
-    {
-      var root : Node__279997185<Text, BossRushState__234571706>;
-      var size : Nat__93962160
-    };
-  stable buffInventories :
-    {
-      var root : Node__279997185<Text, BuffInventory__20865319>;
-      var size : Nat__93962160
-    };
-  stable changelogShownVersions :
-    {var root : Node__279997185<Principal, Text>; var size : Nat__93962160};
-  stable changelogs :
-    {var root : Node__279997185<Text, Text>; var size : Nat__93962160};
-  in characterSlots : Map__246123559<Principal, OldCharacterSlots__144725514>;
-  stable var chatMessages :
-    {
-      var blockIndex : Nat__93962160;
-      var blocks : [var [var ?ChatMessage__1037536196]];
-      var elementIndex : Nat__93962160
-    };
-  stable var colorPaletteStore : Text;
-  stable dokaBalances :
-    {var root : Node__279997185<Principal, Nat>; var size : Nat__93962160};
-  stable dungeonRecords :
-    {
-      var root : Node__279997185<Principal, DungeonRecord__678903002>;
-      var size : Nat__93962160
-    };
-  stable enemyConfigs :
-    {
-      var root : Node__279997185<Text, EnemyConfig__527275230>;
-      var size : Nat__93962160
-    };
-  stable var enemyNames :
-    {
-      var blockIndex : Nat__93962160;
-      var blocks : [var [var ?Text]];
-      var elementIndex : Nat__93962160
-    };
-  stable var enemyNamesInitialised : Bool;
-  stable var gameConfig :
-    {
-      dokaSpawnBaseValue : Nat;
-      dokaSpawnChance : Nat;
-      leaderBoostPercent : Nat
-    };
-  stable var levelUpConfig :
-    {
-      apMpLevelThreshold : Nat;
-      maxSpellRange : Nat;
-      spellDmgGrowthPercent : Nat;
-      spellFailBaseChance : Float;
-      spellFailReductionPerLevel : Float;
-      spellLevelingBaseCost : Nat;
-      spellLevelingCostMultiplier : Float;
-      spellRangeGrowthLevels : Nat;
-      statGrowthPercent : Nat
-    };
-  stable mapModifierConfigs :
-    {
-      var root : Node__279997185<Text, MapModifierConfig__998818509>;
-      var size : Nat__93962160
-    };
-  stable var nextChatId : Nat;
-  stable var nextPurchaseId : Nat;
-  stable playerSpriteConfigs :
-    {
-      var root : Node__279997185<Text, PlayerSpriteConfig__297021837>;
-      var size : Nat__93962160
-    };
-  stable purchaseRecords :
-    {
-      var root : Node__279997185<Text, PurchaseRecord__154387943>;
-      var size : Nat__93962160
-    };
-  stable regionConfigs :
-    {
-      var root : Node__279997185<Text, RegionConfig__839504699>;
-      var size : Nat__93962160
-    };
-  stable roleChangeTimestamps :
-    {var root : Node__279997185<Text, Int>; var size : Nat__93962160};
-  stable shopPackages :
-    {
-      var root : Node__279997185<Text, ShopPackage__522983212>;
-      var size : Nat__93962160
-    };
-  stable spellConfigs :
-    {
-      var root : Node__279997185<Text, SpellConfig__773412400>;
-      var size : Nat__93962160
-    };
-  stable var tierSpawnConfig :
-    {
-      adjacentTierPercent : Float;
-      sameTierPercent : Float;
-      threeOrMorePercent : Float;
-      tierSize : Nat;
-      twoAwayPercent : Float
-    };
-  stable userProfiles :
-    {
-      var root : Node__279997185<Principal, UserProfile__491224006>;
-      var size : Nat__93962160
-    }
-}, {
+actor {
   stable BUFF_CATALOG : [(Text, Text, Nat)];
   stable DEFAULT_ENEMY_NAMES : [Text];
   stable ROLE_CHANGE_MIN_NS : Int;
@@ -540,4 +362,4 @@ actor ({
       var root : Node__279997185<Principal, UserProfile__491224006>;
       var size : Nat__93962160
     }
-});
+};
