@@ -111,6 +111,7 @@ import {
   shouldSpawnWhitePortal,
   shouldSuppressPortal,
 } from "../engine/portalRules";
+import { getPlayerBaseStats } from "../engine/progression";
 import {
   type PlayerSpellContextDeps,
   createPlayerSpellContext,
@@ -174,6 +175,10 @@ import type { ChallengePanelProgress } from "./ChallengePanel";
 import SpellbookModal from "./SpellbookModal";
 import StatusEffectBadge from "./StatusEffectBadge";
 let _fbNameIdx = 0;
+// Module-level divergence flag — warns ONCE per page load when persisted
+// character ap/mp diverge from the canonical progression formula at battle
+// start. Reset only on full reload (intentional: a single warn is enough).
+let _progressionDivergenceWarned = false;
 
 interface WorldExplorationProps {
   dokaBalance: number;
@@ -7935,6 +7940,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setEnemies((prev) => [...prev, summon as unknown as Enemy]);
         setBattleEnemies((prev) => [...prev, summon as unknown as Enemy]);
         setTurnOrder(turnOrder);
+        logDebugInfo(
+          "SUMMON",
+          "[SUMMON-LIFE] spawn commit (prev-spread path)",
+          {
+            site: "WX~7935",
+            summonId: (summon as any)?.id,
+            turnsRemaining: (summon as any)?.turnsRemaining,
+            hp: (summon as any)?.hp,
+            isSummon: (summon as any)?.isSummon,
+            note: "setEnemies((prev) => [...prev, summon]) — committed entity is the spawn object itself",
+          },
+        );
         // Spawn pixel-puff + cast sound. Drawn through the SAME canvas
         // context the renderer uses for every other combatant — no
         // separate rendering system. gridToScreen gives the tile's top
@@ -7982,16 +7999,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return false;
       },
       restoreApMp: () => {
-        const maxApRestore = getStatModifier(
-          "player",
-          "maxAp",
-          activeEffectsRef.current,
+        // Per-turn restore now reads from the canonical progression formula
+        // (getPlayerBaseStats) + active-effect modifiers. The stat key is
+        // 'ap'/'mp' (NOT 'maxAp'/'maxMp') because getStatModifier only treats
+        // 'ap'/'mp' as additive — the legacy 'maxAp'/'maxMp' keys hit the
+        // multiplier branch and returned 1 (no-op), capping restore at 1.
+        const _baseStats = getPlayerBaseStats(
+          characterStats.level,
+          levelUpConfig,
         );
-        const maxMpRestore = getStatModifier(
-          "player",
-          "maxMp",
-          activeEffectsRef.current,
-        );
+        const maxApRestore =
+          _baseStats.ap +
+          getStatModifier("player", "ap", activeEffectsRef.current);
+        const maxMpRestore =
+          _baseStats.mp +
+          getStatModifier("player", "mp", activeEffectsRef.current);
         setCurrentBattleAp(maxApRestore - castRuntimeRef.current.apCost);
         setCurrentBattleMp(maxMpRestore);
       },
@@ -8210,6 +8232,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         battleEnemiesRef.current = newEnemies;
         setTurnOrder(newTurnOrder);
         turnOrderRef.current = newTurnOrder;
+        {
+          const committed = newEnemies.find(
+            (en: any) => en.id === (summon as any)?.id,
+          );
+          logDebugInfo(
+            "SUMMON",
+            "[SUMMON-LIFE] spawn commit (newEnemies path)",
+            {
+              site: "WX~8206",
+              summonId: (summon as any)?.id,
+              turnsRemaining: (summon as any)?.turnsRemaining,
+              hp: (summon as any)?.hp,
+              isSummon: (summon as any)?.isSummon,
+              committedInNewEnemies: committed
+                ? {
+                    id: committed.id,
+                    turnsRemaining: committed.turnsRemaining,
+                    hp: committed.hp,
+                    isSummon: !!committed.isSummon,
+                  }
+                : null,
+              newEnemiesSummonCount: newEnemies.filter((e: any) => e.isSummon)
+                .length,
+            },
+          );
+        }
       },
       getEffectiveSpellRange: (baseRange: number, spellId?: string) =>
         getEffectiveSpellRange(baseRange, spellId),
@@ -9360,8 +9408,40 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         inBattleRef.current = true;
         onDebugLog?.("BATTLE_START", "Battle started");
         setBattleEnemies([...enemiesWithSpells]);
-        setCurrentBattleAp(Number(characterStats.ap));
-        setCurrentBattleMp(Number(characterStats.mp));
+        // Battle-start AP/MP init now reads from the canonical progression
+        // formula (getPlayerBaseStats) + active-effect modifiers, NOT the raw
+        // persisted characterStats.ap/mp. The formula is the floor
+        // (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence.
+        const _baseStats = getPlayerBaseStats(
+          characterStats.level,
+          levelUpConfig,
+        );
+        const _baseAp =
+          _baseStats.ap +
+          getStatModifier("player", "ap", activeEffectsRef.current);
+        const _baseMp =
+          _baseStats.mp +
+          getStatModifier("player", "mp", activeEffectsRef.current);
+        setCurrentBattleAp(_baseAp);
+        setCurrentBattleMp(_baseMp);
+        if (
+          !_progressionDivergenceWarned &&
+          (Number(characterStats.ap) !== _baseStats.ap ||
+            Number(characterStats.mp) !== _baseStats.mp)
+        ) {
+          _progressionDivergenceWarned = true;
+          logDebugWarn(
+            "BATTLE",
+            "[PROGRESSION] persisted ap/mp diverges from formula",
+            {
+              persistedAp: Number(characterStats.ap),
+              formulaAp: _baseStats.ap,
+              persistedMp: Number(characterStats.mp),
+              formulaMp: _baseStats.mp,
+              level: characterStats.level,
+            },
+          );
+        }
         setBattleActionMode("walk");
         setBattleTurn(1);
         activeEffectsRef.current = [];
@@ -10730,17 +10810,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
             // Reset the AP-debuff flag at start of player's turn
             playerApWasDebuffedRef.current = false;
+            // Per-turn restore now reads from the canonical progression formula
+            // (getPlayerBaseStats) + active-effect modifiers, mirroring the
+            // restoreApMp callback and battle-start init. The formula is the
+            // floor (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence
+            // with persisted characterStats.ap/mp — eliminating the 10/4 flapping.
+            const _baseStats = getPlayerBaseStats(
+              characterStats.level,
+              levelUpConfig,
+            );
             setCurrentBattleAp((prev) => {
               void prev;
               // Arcane Surge: spells cost 1 less AP, which is applied at cast time not here
               // Apply AP buffs/debuffs from active effects
-              const apMod = getStatModifier("player", "ap", activeEffects);
-              return Math.max(0, characterStats.ap + apMod);
+              const apMod = getStatModifier(
+                "player",
+                "ap",
+                activeEffectsRef.current,
+              );
+              return Math.max(0, _baseStats.ap + apMod);
             });
             setCurrentBattleMp((prev) => {
               void prev;
-              const mpMod = getStatModifier("player", "mp", activeEffects);
-              return Math.max(0, characterStats.mp + mpMod);
+              const mpMod = getStatModifier(
+                "player",
+                "mp",
+                activeEffectsRef.current,
+              );
+              return Math.max(0, _baseStats.mp + mpMod);
             });
             setBattleActionMode("walk");
             selectedSpellIdRef.current = null;
@@ -10816,12 +10913,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       });
     }); // end flushSync
   }, [
-    characterStats.ap,
-    characterStats.mp,
+    characterStats.level,
     logBattleEntry,
     processActiveEffects,
     getStatModifier,
-    activeEffects,
     isTimeWarp,
     isPlagueZone,
     isVoidRift,

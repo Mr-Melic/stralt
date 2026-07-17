@@ -7,16 +7,7 @@
  */
 
 import type { CombatantEntry } from "../components/InitiativeStrip";
-import {
-  SUMMON_AP,
-  SUMMON_AP_PER_LEVELS,
-  SUMMON_BASE_HP,
-  SUMMON_BASE_HP_DEFAULT,
-  SUMMON_HP_PER_LEVEL_PCT,
-  SUMMON_LIFESPAN_PER_HALF_LEVEL,
-  SUMMON_MP,
-  SUMMON_MP_PER_LEVELS,
-} from "../data/gameConstants";
+import { SUMMON_LIFESPAN_PER_HALF_LEVEL } from "../data/gameConstants";
 import type { Enemy } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import {
@@ -24,6 +15,7 @@ import {
   findNearestFreeCell,
   isCellFree as sharedIsCellFree,
 } from "./occupancy";
+import { getSummonBaseStats } from "./progression";
 
 export interface SummonUnitDef {
   pieceType: string;
@@ -126,25 +118,28 @@ export function spawnSummonUnit(
 
   const stats = computeEnemyStats(level, unitDef.pieceType, spell.id);
   const summonAI = spell.summonAI || "hunter";
-  // Base HP comes from the SUMMON_BASE_HP map keyed by summonAI archetype.
-  // `computeEnemyStats` does NOT return an `hp` field, so deriving maxHp from
-  // `stats.hp` produced NaN. Use the archetype base HP, scaled by the spell's
-  // hpScale, then by the spell-level HP bonus (+10% per level).
-  const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
-  const hpScale = unitDef.hpScale || 1;
-  const hpLevelMul = 1 + (spellLevel * SUMMON_HP_PER_LEVEL_PCT) / 100;
-  const maxHp = Math.round(baseHp * hpScale * hpLevelMul);
+  // HP/AP/MP/lifespan now delegate to progression.ts::getSummonBaseStats — the
+  // single source of truth for summon stat budgets. Values are moved VERBATIM
+  // (same archetype bases, same scaling factors, same fallback chains). The
+  // per-spell summonLifespan override is applied here on top of the canonical
+  // base, preserving the legacy `spell.summonLifespan || SUMMON_BASE_LIFESPAN`
+  // semantics: when the spell defines a lifespan, it REPLACES the base and
+  // still receives the per-half-level scaling bonus.
+  const {
+    maxHp,
+    maxAp,
+    maxMp,
+    turnsRemaining: baseLifespan,
+  } = getSummonBaseStats(spellLevel, unitDef, summonAI);
   const summonId = `summon-${Math.random().toString(36).slice(2)}`;
-  // Per-archetype AP/MP budget. The spell's summonUnitDef may override; otherwise
-  // fall back to the SUMMON_AP / SUMMON_MP constant maps keyed by summonAI.
-  // Spell leveling: +1 AP every SUMMON_AP_PER_LEVELS levels, +1 MP every
-  // SUMMON_MP_PER_LEVELS levels.
-  const maxAp =
-    (unitDef.ap ?? SUMMON_AP[summonAI] ?? 2) +
-    Math.floor(spellLevel / SUMMON_AP_PER_LEVELS);
-  const maxMp =
-    (unitDef.mp ?? SUMMON_MP[summonAI] ?? 2) +
-    Math.floor(spellLevel / SUMMON_MP_PER_LEVELS);
+  // Match the legacy `(spell.summonLifespan || SUMMON_BASE_LIFESPAN) + floor(...)`
+  // exactly: a falsy summonLifespan (0/undefined/null) falls back to the
+  // canonical base (which already includes the per-half-level scaling), while
+  // a truthy summonLifespan replaces the base and re-applies the scaling.
+  const turnsRemaining = spell.summonLifespan
+    ? (spell.summonLifespan as number) +
+      Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL)
+    : baseLifespan;
 
   const summon: SpawnedSummon = {
     id: summonId,
@@ -157,9 +152,7 @@ export function spawnSummonUnit(
     isSummon: true,
     summonAI,
     ownerId,
-    turnsRemaining:
-      (spell.summonLifespan || 3) +
-      Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL),
+    turnsRemaining,
     level,
     pieceType: unitDef.pieceType,
     // Enemy type requires currentView; summons always face front on spawn.

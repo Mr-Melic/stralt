@@ -1,18 +1,17 @@
 {
-  "overview": "ÆSTRALTØ is a modular isometric tile-based tactics RPG on the Internet Computer with turn-based combat, summons, spells, and procedurally generated maps.",
+  "overview": "Modular isometric tile-based tactics RPG with summon subsystem and unified combat progression",
   "features": [
-    "Turn-based isometric combat with enemies and summons",
-    "Summon system with lifespan and archetype AI profiles",
-    "Spell system with barriers, DoTs, and buffs",
-    "Procedurally generated maps with reachability guarantees",
-    "Internet Identity authentication and backend-authoritative state"
+    "Summon lifespan system with 4-turn base default and level scaling",
+    "Unified progression module for player, enemy, and summon stat derivation",
+    "Atomic turn-queue and board removal for expired summons",
+    "Canonical AP/MP defaults with level growth"
   ],
   "category": "game",
   "tags": [
     "tactics-rpg",
-    "isometric",
-    "combat",
-    "internet-computer"
+    "combat-engine",
+    "summon-system",
+    "progression"
   ],
-  "last_updated": "2026-07-17T01:33:19.578Z"
+  "last_updated": "2026-07-17T02:09:36.764Z"
 }

@@ -1,4 +1,5 @@
 import type { ChessPieceType } from "../types/gameTypes";
+import { getEnemyBaseStats } from "./progression";
 
 export interface TierSpawnConfig {
   tierSize: number;
@@ -106,82 +107,16 @@ export function pickEnemyLevelFromTiers(playerLevel: number): number {
 }
 
 // Seeded pseudo-random number generator (pure, deterministic per grid position)
+// computeEnemyStats is now a thin delegate to progression.ts::getEnemyBaseStats,
+// which is the single source of truth for the level-derived enemy stat rolls.
+// The seedKey is forwarded verbatim so the RNG sequence is identical to the
+// legacy inline implementation — zero behavior change for any caller.
 export function computeEnemyStats(
   level: number,
   pieceType: ChessPieceType,
   seedKey: string | number,
 ) {
-  const rng = seededRng(
-    typeof seedKey === "string"
-      ? seedKey.split("").reduce((a, c) => a + c.charCodeAt(0), 0)
-      : seedKey,
-  );
-  const base = Math.max(1, level);
-  const pieceMultipliers: Record<
-    ChessPieceType,
-    {
-      sp: number;
-      sr: number;
-      init: number;
-      res: number;
-      chc: number;
-    }
-  > = {
-    pawn: {
-      sp: 0.85,
-      sr: 0.85,
-      init: 0.85,
-      res: 0.85,
-      chc: 0.85,
-    },
-    rook: {
-      sp: 0.8,
-      sr: 1.2,
-      init: 1.1,
-      res: 1.35,
-      chc: 0.7,
-    },
-    knight: {
-      sp: 0.85,
-      sr: 1.15,
-      init: 1.2,
-      res: 1.25,
-      chc: 0.8,
-    },
-    bishop: {
-      sp: 1.3,
-      sr: 0.85,
-      init: 1.0,
-      res: 0.7,
-      chc: 1.2,
-    },
-    queen: {
-      sp: 1.25,
-      sr: 0.9,
-      init: 1.1,
-      res: 0.75,
-      chc: 1.15,
-    },
-    king: {
-      sp: 1.0,
-      sr: 1.0,
-      init: 1.0,
-      res: 1.0,
-      chc: 1.0,
-    },
-  };
-  const mult = pieceMultipliers[pieceType] ?? pieceMultipliers.king;
-  const roll = (min: number, max: number, m: number) => {
-    const raw = min + rng() * (max - min);
-    return Math.max(1, Math.round(raw * m));
-  };
-  return {
-    sp: roll(3, 6 + base * 1.2, mult.sp),
-    sr: roll(2, 4 + base * 1.0, mult.sr),
-    init: roll(3, 6 + base * 1.2, mult.init),
-    res: roll(2, 4 + base * 0.9, mult.res),
-    chc: roll(1, 3 + base * 0.7, mult.chc),
-  };
+  return getEnemyBaseStats(level, pieceType, seedKey);
 }
 
 export function seededRng(seed: number): () => number {

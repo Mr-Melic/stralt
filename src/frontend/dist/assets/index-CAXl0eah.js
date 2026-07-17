@@ -46126,6 +46126,9 @@ const SUMMON_MP_PER_LEVELS = 2;
 const SUMMON_AP_PER_LEVELS = 3;
 const SUMMON_LIFESPAN_PER_HALF_LEVEL = 2;
 const SUMMON_UPGRADE_COST_MULTIPLIER = 10;
+const SUMMON_BASE_LIFESPAN = 4;
+const PLAYER_BASE_AP = 8;
+const PLAYER_BASE_MP = 4;
 const JUICE = {
   shake: { multiplier: 1 },
   hitFlash: { durationMs: 120 },
@@ -47231,6 +47234,88 @@ function applyDamageToEnemy(args) {
     }
   }
 }
+function getPlayerBaseStats(level, levelUpConfig) {
+  const lvl = Math.max(1, Math.floor(level));
+  const apGrowthEvery = levelUpConfig == null ? void 0 : levelUpConfig.apMpGrowthEveryNLevels;
+  const apGrowth = apGrowthEvery && apGrowthEvery > 0 ? Math.floor(lvl / apGrowthEvery) : 0;
+  const mpGrowth = apGrowth;
+  const ap = Math.max(PLAYER_BASE_AP, PLAYER_BASE_AP + apGrowth);
+  const mp = Math.max(PLAYER_BASE_MP, PLAYER_BASE_MP + mpGrowth);
+  const growthPct = levelUpConfig == null ? void 0 : levelUpConfig.statGrowthPercent;
+  const hp = growthPct && growthPct > 0 ? Math.round(100 * (1 + growthPct / 100) ** (lvl - 1)) : 100;
+  return { ap, mp, hp };
+}
+const ENEMY_PIECE_MULTIPLIERS = {
+  pawn: {
+    sp: 0.85,
+    sr: 0.85,
+    init: 0.85,
+    res: 0.85,
+    chc: 0.85
+  },
+  rook: {
+    sp: 0.8,
+    sr: 1.2,
+    init: 1.1,
+    res: 1.35,
+    chc: 0.7
+  },
+  knight: {
+    sp: 0.85,
+    sr: 1.15,
+    init: 1.2,
+    res: 1.25,
+    chc: 0.8
+  },
+  bishop: {
+    sp: 1.3,
+    sr: 0.85,
+    init: 1,
+    res: 0.7,
+    chc: 1.2
+  },
+  queen: {
+    sp: 1.25,
+    sr: 0.9,
+    init: 1.1,
+    res: 0.75,
+    chc: 1.15
+  },
+  king: {
+    sp: 1,
+    sr: 1,
+    init: 1,
+    res: 1,
+    chc: 1
+  }
+};
+function getEnemyBaseStats(level, pieceType, seedKey) {
+  const seed = seedKey !== void 0 ? typeof seedKey === "string" ? seedKey.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0) : seedKey : level * 31 + pieceType.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0);
+  const rng = seededRng(seed);
+  const base = Math.max(1, level);
+  const mult = ENEMY_PIECE_MULTIPLIERS[pieceType] ?? ENEMY_PIECE_MULTIPLIERS.king;
+  const roll = (min, max, m2) => {
+    const raw = min + rng() * (max - min);
+    return Math.max(1, Math.round(raw * m2));
+  };
+  return {
+    sp: roll(3, 6 + base * 1.2, mult.sp),
+    sr: roll(2, 4 + base * 1, mult.sr),
+    init: roll(3, 6 + base * 1.2, mult.init),
+    res: roll(2, 4 + base * 0.9, mult.res),
+    chc: roll(1, 3 + base * 0.7, mult.chc)
+  };
+}
+function getSummonBaseStats(spellLevel, unitDef, summonAI) {
+  const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
+  const hpScale = unitDef.hpScale || 1;
+  const hpLevelMul = 1 + spellLevel * SUMMON_HP_PER_LEVEL_PCT / 100;
+  const maxHp = Math.round(baseHp * hpScale * hpLevelMul);
+  const maxAp = (unitDef.ap ?? SUMMON_AP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_AP_PER_LEVELS);
+  const maxMp = (unitDef.mp ?? SUMMON_MP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_MP_PER_LEVELS);
+  const turnsRemaining = SUMMON_BASE_LIFESPAN + Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL);
+  return { maxHp, maxAp, maxMp, turnsRemaining };
+}
 const DEFAULT_TIER_CONFIG = {
   tierSize: 10,
   sameTierPercent: 60,
@@ -47308,66 +47393,7 @@ function pickEnemyLevelFromTiers(playerLevel) {
   );
 }
 function computeEnemyStats(level, pieceType, seedKey) {
-  const rng = seededRng(
-    typeof seedKey === "string" ? seedKey.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0) : seedKey
-  );
-  const base = Math.max(1, level);
-  const pieceMultipliers = {
-    pawn: {
-      sp: 0.85,
-      sr: 0.85,
-      init: 0.85,
-      res: 0.85,
-      chc: 0.85
-    },
-    rook: {
-      sp: 0.8,
-      sr: 1.2,
-      init: 1.1,
-      res: 1.35,
-      chc: 0.7
-    },
-    knight: {
-      sp: 0.85,
-      sr: 1.15,
-      init: 1.2,
-      res: 1.25,
-      chc: 0.8
-    },
-    bishop: {
-      sp: 1.3,
-      sr: 0.85,
-      init: 1,
-      res: 0.7,
-      chc: 1.2
-    },
-    queen: {
-      sp: 1.25,
-      sr: 0.9,
-      init: 1.1,
-      res: 0.75,
-      chc: 1.15
-    },
-    king: {
-      sp: 1,
-      sr: 1,
-      init: 1,
-      res: 1,
-      chc: 1
-    }
-  };
-  const mult = pieceMultipliers[pieceType] ?? pieceMultipliers.king;
-  const roll = (min, max, m2) => {
-    const raw = min + rng() * (max - min);
-    return Math.max(1, Math.round(raw * m2));
-  };
-  return {
-    sp: roll(3, 6 + base * 1.2, mult.sp),
-    sr: roll(2, 4 + base * 1, mult.sr),
-    init: roll(3, 6 + base * 1.2, mult.init),
-    res: roll(2, 4 + base * 0.9, mult.res),
-    chc: roll(1, 3 + base * 0.7, mult.chc)
-  };
+  return getEnemyBaseStats(level, pieceType, seedKey);
 }
 function seededRng(seed) {
   let val = Math.abs(seed) + 1;
@@ -50004,19 +50030,73 @@ function executeSummonAction(action, summon, summonCtx, helpers) {
 }
 function decrementSummonLifespan(enemies, log2, activeSummonId) {
   const expiredIds = [];
+  logDebugInfo("SUMMON", "[SUMMON-LIFE] decrementSummonLifespan ENTER", {
+    activeSummonId: activeSummonId ?? null,
+    summonCount: enemies.filter((e) => e.isSummon).length,
+    enemies: enemies.map((e) => ({
+      id: e.id,
+      isSummon: !!e.isSummon,
+      turnsRemaining: e.turnsRemaining,
+      hp: e.hp
+    }))
+  });
   for (const e of enemies) {
     if (!e.isSummon) continue;
     if (activeSummonId != null && e.id !== activeSummonId) continue;
+    const beforeTurns = e.turnsRemaining;
+    const beforeHp = e.hp;
     if (activeSummonId != null) {
-      e.turnsRemaining = (e.turnsRemaining || 1) - 1;
+      if (e.turnsRemaining == null) {
+        logDebugError("SUMMON", "turnsRemaining missing", { id: e.id });
+        e.turnsRemaining = SUMMON_BASE_LIFESPAN;
+      }
+      e.turnsRemaining = e.turnsRemaining - 1;
     }
+    logDebugInfo("SUMMON", "[SUMMON-LIFE] decrement AFTER", {
+      activeSummonId: activeSummonId ?? null,
+      id: e.id,
+      turnsBefore: beforeTurns,
+      turnsAfter: e.turnsRemaining,
+      hpBefore: beforeHp,
+      hpAfter: e.hp
+    });
     if (e.turnsRemaining <= 0) {
       e.hp = 0;
       log2(`${e.name} fades away...`, "#a78bfa", true);
       expiredIds.push(e.id);
+      logDebugInfo("SUMMON", "[SUMMON-LIFE] EXPIRY path triggered", {
+        id: e.id,
+        turnsRemaining: e.turnsRemaining,
+        hp: e.hp,
+        reason: "turnsRemaining<=0"
+      });
     }
   }
-  return { enemies: enemies.filter((e) => e.hp > 0), expiredIds };
+  const removed = [];
+  const survivors = enemies.filter((e) => {
+    if (e.hp > 0) return true;
+    const isExpiry = expiredIds.includes(e.id);
+    removed.push({
+      id: e.id,
+      isSummon: !!e.isSummon,
+      turnsRemaining: e.turnsRemaining,
+      hp: e.hp,
+      path: isExpiry ? "expiry_filter" : "hp_filter"
+    });
+    return false;
+  });
+  if (removed.length > 0) {
+    logDebugInfo("SUMMON", "[SUMMON-LIFE] REMOVAL filter result", {
+      removed,
+      survivors: survivors.map((e) => ({
+        id: e.id,
+        isSummon: !!e.isSummon,
+        turnsRemaining: e.turnsRemaining,
+        hp: e.hp
+      }))
+    });
+  }
+  return { enemies: survivors, expiredIds };
 }
 function syncExpiredSummonsFromTurnQueue(enemies, _turnOrder, turnOrderRef, currentTurnIndexRef, setTurnOrder, setEnemies, log2, activeSummonId) {
   const { enemies: survivingEnemies, expiredIds } = decrementSummonLifespan(
@@ -50074,13 +50154,14 @@ function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, 
   }
   const stats = computeEnemyStats2(level, unitDef.pieceType, spell.id);
   const summonAI = spell.summonAI || "hunter";
-  const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
-  const hpScale = unitDef.hpScale || 1;
-  const hpLevelMul = 1 + spellLevel * SUMMON_HP_PER_LEVEL_PCT / 100;
-  const maxHp = Math.round(baseHp * hpScale * hpLevelMul);
+  const {
+    maxHp,
+    maxAp,
+    maxMp,
+    turnsRemaining: baseLifespan
+  } = getSummonBaseStats(spellLevel, unitDef, summonAI);
   const summonId = `summon-${Math.random().toString(36).slice(2)}`;
-  const maxAp = (unitDef.ap ?? SUMMON_AP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_AP_PER_LEVELS);
-  const maxMp = (unitDef.mp ?? SUMMON_MP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_MP_PER_LEVELS);
+  const turnsRemaining = spell.summonLifespan ? spell.summonLifespan + Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL) : baseLifespan;
   const summon = {
     id: summonId,
     name: spell.name.replace("Summon ", ""),
@@ -50092,7 +50173,7 @@ function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, 
     isSummon: true,
     summonAI,
     ownerId,
-    turnsRemaining: (spell.summonLifespan || 3) + Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL),
+    turnsRemaining,
     level,
     pieceType: unitDef.pieceType,
     // Enemy type requires currentView; summons always face front on spawn.
@@ -54651,6 +54732,7 @@ function StatusEffectBadge({ effect }) {
   );
 }
 let _fbNameIdx = 0;
+let _progressionDivergenceWarned = false;
 const CAMERA_SMOOTHING_FACTOR = 0.85;
 class CanvasErrorBoundary extends reactExports.Component {
   constructor(props) {
@@ -60568,6 +60650,18 @@ const WorldExplorationInner = ({
         setEnemies((prev) => [...prev, summon]);
         setBattleEnemies((prev) => [...prev, summon]);
         setTurnOrder(turnOrder2);
+        logDebugInfo(
+          "SUMMON",
+          "[SUMMON-LIFE] spawn commit (prev-spread path)",
+          {
+            site: "WX~7935",
+            summonId: summon == null ? void 0 : summon.id,
+            turnsRemaining: summon == null ? void 0 : summon.turnsRemaining,
+            hp: summon == null ? void 0 : summon.hp,
+            isSummon: summon == null ? void 0 : summon.isSummon,
+            note: "setEnemies((prev) => [...prev, summon]) — committed entity is the spawn object itself"
+          }
+        );
         const screenPos = gridToScreen(cell.x, cell.y);
         const puffCtx = (_a4 = canvasRef.current) == null ? void 0 : _a4.getContext("2d");
         if (puffCtx) {
@@ -60604,16 +60698,12 @@ const WorldExplorationInner = ({
         return false;
       },
       restoreApMp: () => {
-        const maxApRestore = getStatModifier(
-          "player",
-          "maxAp",
-          activeEffectsRef.current
+        const _baseStats = getPlayerBaseStats(
+          characterStats.level,
+          levelUpConfig
         );
-        const maxMpRestore = getStatModifier(
-          "player",
-          "maxMp",
-          activeEffectsRef.current
-        );
+        const maxApRestore = _baseStats.ap + getStatModifier("player", "ap", activeEffectsRef.current);
+        const maxMpRestore = _baseStats.mp + getStatModifier("player", "mp", activeEffectsRef.current);
         setCurrentBattleAp(maxApRestore - castRuntimeRef.current.apCost);
         setCurrentBattleMp(maxMpRestore);
       },
@@ -60787,6 +60877,29 @@ const WorldExplorationInner = ({
         battleEnemiesRef.current = newEnemies;
         setTurnOrder(newTurnOrder);
         turnOrderRef.current = newTurnOrder;
+        {
+          const committed = newEnemies.find(
+            (en) => en.id === (summon == null ? void 0 : summon.id)
+          );
+          logDebugInfo(
+            "SUMMON",
+            "[SUMMON-LIFE] spawn commit (newEnemies path)",
+            {
+              site: "WX~8206",
+              summonId: summon == null ? void 0 : summon.id,
+              turnsRemaining: summon == null ? void 0 : summon.turnsRemaining,
+              hp: summon == null ? void 0 : summon.hp,
+              isSummon: summon == null ? void 0 : summon.isSummon,
+              committedInNewEnemies: committed ? {
+                id: committed.id,
+                turnsRemaining: committed.turnsRemaining,
+                hp: committed.hp,
+                isSummon: !!committed.isSummon
+              } : null,
+              newEnemiesSummonCount: newEnemies.filter((e) => e.isSummon).length
+            }
+          );
+        }
       },
       getEffectiveSpellRange: (baseRange, spellId) => getEffectiveSpellRange(baseRange, spellId),
       recordSpellType: recordPlayerSpellType
@@ -61689,8 +61802,28 @@ const WorldExplorationInner = ({
         inBattleRef.current = true;
         onDebugLog == null ? void 0 : onDebugLog("BATTLE_START", "Battle started");
         setBattleEnemies([...enemiesWithSpells]);
-        setCurrentBattleAp(Number(characterStats.ap));
-        setCurrentBattleMp(Number(characterStats.mp));
+        const _baseStats = getPlayerBaseStats(
+          characterStats.level,
+          levelUpConfig
+        );
+        const _baseAp = _baseStats.ap + getStatModifier("player", "ap", activeEffectsRef.current);
+        const _baseMp = _baseStats.mp + getStatModifier("player", "mp", activeEffectsRef.current);
+        setCurrentBattleAp(_baseAp);
+        setCurrentBattleMp(_baseMp);
+        if (!_progressionDivergenceWarned && (Number(characterStats.ap) !== _baseStats.ap || Number(characterStats.mp) !== _baseStats.mp)) {
+          _progressionDivergenceWarned = true;
+          logDebugWarn(
+            "BATTLE",
+            "[PROGRESSION] persisted ap/mp diverges from formula",
+            {
+              persistedAp: Number(characterStats.ap),
+              formulaAp: _baseStats.ap,
+              persistedMp: Number(characterStats.mp),
+              formulaMp: _baseStats.mp,
+              level: characterStats.level
+            }
+          );
+        }
         setBattleActionMode("walk");
         setBattleTurn(1);
         activeEffectsRef.current = [];
@@ -62733,13 +62866,25 @@ const WorldExplorationInner = ({
               logBattleEntry("Plague Zone deals 2 damage to you!", "#a855f7");
             }
             playerApWasDebuffedRef.current = false;
+            const _baseStats = getPlayerBaseStats(
+              characterStats.level,
+              levelUpConfig
+            );
             setCurrentBattleAp((prev) => {
-              const apMod = getStatModifier("player", "ap", activeEffects);
-              return Math.max(0, characterStats.ap + apMod);
+              const apMod = getStatModifier(
+                "player",
+                "ap",
+                activeEffectsRef.current
+              );
+              return Math.max(0, _baseStats.ap + apMod);
             });
             setCurrentBattleMp((prev) => {
-              const mpMod = getStatModifier("player", "mp", activeEffects);
-              return Math.max(0, characterStats.mp + mpMod);
+              const mpMod = getStatModifier(
+                "player",
+                "mp",
+                activeEffectsRef.current
+              );
+              return Math.max(0, _baseStats.mp + mpMod);
             });
             setBattleActionMode("walk");
             selectedSpellIdRef.current = null;
@@ -62811,12 +62956,10 @@ const WorldExplorationInner = ({
       });
     });
   }, [
-    characterStats.ap,
-    characterStats.mp,
+    characterStats.level,
     logBattleEntry,
     processActiveEffects,
     getStatModifier,
-    activeEffects,
     isTimeWarp,
     isPlagueZone,
     isVoidRift
@@ -69381,7 +69524,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-js5e8t63.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BHREj10r.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

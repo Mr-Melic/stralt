@@ -102,6 +102,36 @@ export const SUMMON_LIFESPAN_PER_HALF_LEVEL = 2;
 export const SUMMON_UPGRADE_COST_MULTIPLIER = 10;
 
 /**
+ * Base lifespan (in turns) for a summoned unit. Replaces the inline literal
+ * `3` that previously lived at summonSpawn.ts line 161. The canonical summon
+ * lifespan formula is now:
+ *
+ *   turnsRemaining = SUMMON_BASE_LIFESPAN
+ *                  + floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL)
+ *
+ * (computed in engine/progression.ts::getSummonBaseStats). Per-archetype
+ * lifespan overrides are intentionally NOT supported — see doNotBuild.
+ */
+export const SUMMON_BASE_LIFESPAN = 4;
+
+/**
+ * Player base Action Point and Mana Point budgets. These are FLOORS — a
+ * player's battle-initialized AP/MP is never below 8 / 4 respectively. The
+ * canonical player base-stat computation lives in
+ * engine/progression.ts::getPlayerBaseStats, which starts from these
+ * constants and adds per-level growth from a LevelUpConfig when one is
+ * provided. Per the user instruction "Formula wins over persisted character
+ * values for battle initialization when they diverge", these constants (and
+ * the formula) take precedence over persisted characterStats.ap/mp at battle
+ * init time.
+ *
+ * Runtime editing of these constants is intentionally NOT supported — see
+ * doNotBuild.
+ */
+export const PLAYER_BASE_AP = 8;
+export const PLAYER_BASE_MP = 4;
+
+/**
  * JUICE — presentation-only feedback config consumed by engine/effects.ts.
  * Toggles and multipliers for screen shake, hit-stop, hit-flash, damage
  * numbers, and death shatter. Section 4 effects only; does not influence
