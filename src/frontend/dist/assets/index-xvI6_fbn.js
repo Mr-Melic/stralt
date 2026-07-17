@@ -28522,6 +28522,7 @@ const Character = Record({
   "bloodBalance": Opt(Nat),
   "bossRushMasterComplete": Opt(Bool),
   "colors": Vec(Text),
+  "spellBarOrder": Opt(Vec(Text)),
   "pixelPattern": Text
 });
 const Value = Variant({
@@ -29053,6 +29054,11 @@ Service({
     [Variant({ "ok": Null, "err": Text })],
     []
   ),
+  "setSpellBarOrder": Func(
+    [Nat, Vec(Text)],
+    [Variant({ "ok": Null, "err": Text })],
+    []
+  ),
   "unbanPlayer": Func(
     [Principal2],
     [Variant({ "ok": Null, "err": Text })],
@@ -29257,6 +29263,7 @@ const idlFactory = ({ IDL: IDL2 }) => {
     "bloodBalance": IDL2.Opt(IDL2.Nat),
     "bossRushMasterComplete": IDL2.Opt(IDL2.Bool),
     "colors": IDL2.Vec(IDL2.Text),
+    "spellBarOrder": IDL2.Opt(IDL2.Vec(IDL2.Text)),
     "pixelPattern": IDL2.Text
   });
   const Value2 = IDL2.Variant({
@@ -29789,6 +29796,11 @@ const idlFactory = ({ IDL: IDL2 }) => {
     ),
     "setShopPaymentLink": IDL2.Func(
       [IDL2.Nat, IDL2.Text],
+      [IDL2.Variant({ "ok": IDL2.Null, "err": IDL2.Text })],
+      []
+    ),
+    "setSpellBarOrder": IDL2.Func(
+      [IDL2.Nat, IDL2.Vec(IDL2.Text)],
       [IDL2.Variant({ "ok": IDL2.Null, "err": IDL2.Text })],
       []
     ),
@@ -30584,28 +30596,28 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getBannedPrincipals();
-        return from_candid_variant_n43(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n44(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getBannedPrincipals();
-      return from_candid_variant_n43(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n44(this._uploadFile, this._downloadFile, result);
     }
   }
   async getBossConfig(arg0) {
     if (this.processError) {
       try {
         const result = await this.actor.getBossConfig(arg0);
-        return from_candid_opt_n44(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n45(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getBossConfig(arg0);
-      return from_candid_opt_n44(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n45(this._uploadFile, this._downloadFile, result);
     }
   }
   async getBossPortalAssignments() {
@@ -30676,14 +30688,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getBuffInventory(arg0);
-        return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getBuffInventory(arg0);
-      return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
     }
   }
   async getCallerDokaBalance() {
@@ -30704,28 +30716,28 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getCallerUserProfile();
-        return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCallerUserProfile();
-      return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
     }
   }
   async getCallerUserRole() {
     if (this.processError) {
       try {
         const result = await this.actor.getCallerUserRole();
-        return from_candid_UserRole_n47(this._uploadFile, this._downloadFile, result);
+        return from_candid_UserRole_n48(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCallerUserRole();
-      return from_candid_UserRole_n47(this._uploadFile, this._downloadFile, result);
+      return from_candid_UserRole_n48(this._uploadFile, this._downloadFile, result);
     }
   }
   async getChangelog(arg0) {
@@ -30788,14 +30800,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getCharacterStats(arg0);
-        return from_candid_variant_n49(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n50(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getCharacterStats(arg0);
-      return from_candid_variant_n49(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n50(this._uploadFile, this._downloadFile, result);
     }
   }
   async getColorPalette() {
@@ -30830,28 +30842,28 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getDungeonRecord(arg0);
-        return from_candid_opt_n50(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n51(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getDungeonRecord(arg0);
-      return from_candid_opt_n50(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n51(this._uploadFile, this._downloadFile, result);
     }
   }
   async getEnemyConfigs() {
     if (this.processError) {
       try {
         const result = await this.actor.getEnemyConfigs();
-        return from_candid_vec_n51(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n52(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getEnemyConfigs();
-      return from_candid_vec_n51(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n52(this._uploadFile, this._downloadFile, result);
     }
   }
   async getEnemyHPForLevel(arg0, arg1) {
@@ -30984,14 +30996,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getPlayerSpriteConfigs();
-        return from_candid_vec_n54(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getPlayerSpriteConfigs();
-      return from_candid_vec_n54(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
     }
   }
   async getPurchases() {
@@ -31012,28 +31024,28 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getRegionConfigs();
-        return from_candid_vec_n57(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n58(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getRegionConfigs();
-      return from_candid_vec_n57(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n58(this._uploadFile, this._downloadFile, result);
     }
   }
   async getSessionState(arg0) {
     if (this.processError) {
       try {
         const result = await this.actor.getSessionState(arg0);
-        return from_candid_variant_n64(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n65(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getSessionState(arg0);
-      return from_candid_variant_n64(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n65(this._uploadFile, this._downloadFile, result);
     }
   }
   async getShopPackages() {
@@ -31068,14 +31080,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getSpellConfigs();
-        return from_candid_vec_n65(this._uploadFile, this._downloadFile, result);
+        return from_candid_vec_n66(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getSpellConfigs();
-      return from_candid_vec_n65(this._uploadFile, this._downloadFile, result);
+      return from_candid_vec_n66(this._uploadFile, this._downloadFile, result);
     }
   }
   async getTierSpawnConfig() {
@@ -31096,14 +31108,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.getUserProfile(arg0);
-        return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+        return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.getUserProfile(arg0);
-      return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+      return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
     }
   }
   async getUserRole() {
@@ -31138,14 +31150,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.initiatePurchase(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-        return from_candid_variant_n68(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n69(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.initiatePurchase(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-      return from_candid_variant_n68(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n69(this._uploadFile, this._downloadFile, result);
     }
   }
   async isCallerAdmin() {
@@ -31222,14 +31234,14 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.purchaseBuff(arg0, arg1);
-        return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.purchaseBuff(arg0, arg1);
-      return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
     }
   }
   async renameCharacter(arg0, arg1) {
@@ -31442,6 +31454,20 @@ class Backend {
       return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
     }
   }
+  async setSpellBarOrder(arg0, arg1) {
+    if (this.processError) {
+      try {
+        const result = await this.actor.setSpellBarOrder(arg0, arg1);
+        return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+      } catch (e) {
+        this.processError(e);
+        throw new Error("unreachable");
+      }
+    } else {
+      const result = await this.actor.setSpellBarOrder(arg0, arg1);
+      return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+    }
+  }
   async unbanPlayer(arg0) {
     if (this.processError) {
       try {
@@ -31530,19 +31556,19 @@ class Backend {
     if (this.processError) {
       try {
         const result = await this.actor.useBuffItem(arg0, arg1);
-        return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+        return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
       } catch (e) {
         this.processError(e);
         throw new Error("unreachable");
       }
     } else {
       const result = await this.actor.useBuffItem(arg0, arg1);
-      return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+      return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
     }
   }
 }
-function from_candid_BattleEffect_n61(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n62(_uploadFile, _downloadFile, value);
+function from_candid_BattleEffect_n62(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n63(_uploadFile, _downloadFile, value);
 }
 function from_candid_Cell_n26(_uploadFile, _downloadFile, value) {
   return from_candid_record_n27(_uploadFile, _downloadFile, value);
@@ -31556,23 +31582,23 @@ function from_candid_CharacterSlots_n33(_uploadFile, _downloadFile, value) {
 function from_candid_Character_n37(_uploadFile, _downloadFile, value) {
   return from_candid_record_n38(_uploadFile, _downloadFile, value);
 }
-function from_candid_EnemyConfig_n52(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n53(_uploadFile, _downloadFile, value);
+function from_candid_EnemyConfig_n53(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n54(_uploadFile, _downloadFile, value);
 }
-function from_candid_PlayerSpriteConfig_n55(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n56(_uploadFile, _downloadFile, value);
+function from_candid_PlayerSpriteConfig_n56(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n57(_uploadFile, _downloadFile, value);
 }
-function from_candid_RegionConfig_n58(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n59(_uploadFile, _downloadFile, value);
+function from_candid_RegionConfig_n59(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n60(_uploadFile, _downloadFile, value);
 }
 function from_candid_Result_n22(_uploadFile, _downloadFile, value) {
   return from_candid_record_n23(_uploadFile, _downloadFile, value);
 }
-function from_candid_SpellConfig_n66(_uploadFile, _downloadFile, value) {
-  return from_candid_record_n67(_uploadFile, _downloadFile, value);
+function from_candid_SpellConfig_n67(_uploadFile, _downloadFile, value) {
+  return from_candid_record_n68(_uploadFile, _downloadFile, value);
 }
-function from_candid_UserRole_n47(_uploadFile, _downloadFile, value) {
-  return from_candid_variant_n48(_uploadFile, _downloadFile, value);
+function from_candid_UserRole_n48(_uploadFile, _downloadFile, value) {
+  return from_candid_variant_n49(_uploadFile, _downloadFile, value);
 }
 function from_candid_Value_n28(_uploadFile, _downloadFile, value) {
   return from_candid_variant_n29(_uploadFile, _downloadFile, value);
@@ -31592,13 +31618,16 @@ function from_candid_opt_n41(_uploadFile, _downloadFile, value) {
 function from_candid_opt_n42(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n44(_uploadFile, _downloadFile, value) {
+function from_candid_opt_n43(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n46(_uploadFile, _downloadFile, value) {
+function from_candid_opt_n45(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n50(_uploadFile, _downloadFile, value) {
+function from_candid_opt_n47(_uploadFile, _downloadFile, value) {
+  return value.length === 0 ? null : value[0];
+}
+function from_candid_opt_n51(_uploadFile, _downloadFile, value) {
   return value.length === 0 ? null : value[0];
 }
 function from_candid_record_n23(_uploadFile, _downloadFile, value) {
@@ -31636,10 +31665,11 @@ function from_candid_record_n38(_uploadFile, _downloadFile, value) {
     bloodBalance: record_opt_to_undefined(from_candid_opt_n41(_uploadFile, _downloadFile, value.bloodBalance)),
     bossRushMasterComplete: record_opt_to_undefined(from_candid_opt_n42(_uploadFile, _downloadFile, value.bossRushMasterComplete)),
     colors: value.colors,
+    spellBarOrder: record_opt_to_undefined(from_candid_opt_n43(_uploadFile, _downloadFile, value.spellBarOrder)),
     pixelPattern: value.pixelPattern
   };
 }
-function from_candid_record_n53(_uploadFile, _downloadFile, value) {
+function from_candid_record_n54(_uploadFile, _downloadFile, value) {
   return {
     ap: value.ap,
     hp: value.hp,
@@ -31653,7 +31683,7 @@ function from_candid_record_n53(_uploadFile, _downloadFile, value) {
     regions: value.regions
   };
 }
-function from_candid_record_n56(_uploadFile, _downloadFile, value) {
+function from_candid_record_n57(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     rightWalkFrames: value.rightWalkFrames,
@@ -31668,26 +31698,26 @@ function from_candid_record_n56(_uploadFile, _downloadFile, value) {
     backUrl: record_opt_to_undefined(from_candid_opt_n40(_uploadFile, _downloadFile, value.backUrl))
   };
 }
-function from_candid_record_n59(_uploadFile, _downloadFile, value) {
+function from_candid_record_n60(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     backgroundColor: value.backgroundColor,
     levelMax: value.levelMax,
     levelMin: value.levelMin,
     name: value.name,
-    battleEffects: from_candid_vec_n60(_uploadFile, _downloadFile, value.battleEffects)
+    battleEffects: from_candid_vec_n61(_uploadFile, _downloadFile, value.battleEffects)
   };
 }
-function from_candid_record_n62(_uploadFile, _downloadFile, value) {
+function from_candid_record_n63(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     value: value.value,
     name: value.name,
     description: value.description,
-    effectType: from_candid_variant_n63(_uploadFile, _downloadFile, value.effectType)
+    effectType: from_candid_variant_n64(_uploadFile, _downloadFile, value.effectType)
   };
 }
-function from_candid_record_n67(_uploadFile, _downloadFile, value) {
+function from_candid_record_n68(_uploadFile, _downloadFile, value) {
   return {
     id: value.id,
     aoe: value.aoe,
@@ -31792,7 +31822,7 @@ function from_candid_variant_n4(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n43(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n44(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31801,7 +31831,7 @@ function from_candid_variant_n43(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n45(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n46(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31809,11 +31839,11 @@ function from_candid_variant_n45(_uploadFile, _downloadFile, value) {
     __kind__: "err",
     err: value.err
   } : value;
-}
-function from_candid_variant_n48(_uploadFile, _downloadFile, value) {
-  return "admin" in value ? "admin" : "user" in value ? "user" : "guest" in value ? "guest" : value;
 }
 function from_candid_variant_n49(_uploadFile, _downloadFile, value) {
+  return "admin" in value ? "admin" : "user" in value ? "user" : "guest" in value ? "guest" : value;
+}
+function from_candid_variant_n50(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: from_candid_Character_n37(_uploadFile, _downloadFile, value.ok)
@@ -31822,10 +31852,10 @@ function from_candid_variant_n49(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n63(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n64(_uploadFile, _downloadFile, value) {
   return "damage" in value ? "damage" : "buff" in value ? "buff" : "debuff" in value ? "debuff" : value;
 }
-function from_candid_variant_n64(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n65(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31834,7 +31864,7 @@ function from_candid_variant_n64(_uploadFile, _downloadFile, value) {
     err: value.err
   } : value;
 }
-function from_candid_variant_n68(_uploadFile, _downloadFile, value) {
+function from_candid_variant_n69(_uploadFile, _downloadFile, value) {
   return "ok" in value ? {
     __kind__: "ok",
     ok: value.ok
@@ -31852,20 +31882,20 @@ function from_candid_vec_n25(_uploadFile, _downloadFile, value) {
 function from_candid_vec_n31(_uploadFile, _downloadFile, value) {
   return value.map((x3) => from_candid_tuple_n32(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n51(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_EnemyConfig_n52(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n52(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_EnemyConfig_n53(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n54(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_PlayerSpriteConfig_n55(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n55(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_PlayerSpriteConfig_n56(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n57(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_RegionConfig_n58(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n58(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_RegionConfig_n59(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n60(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_BattleEffect_n61(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n61(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_BattleEffect_n62(_uploadFile, _downloadFile, x3));
 }
-function from_candid_vec_n65(_uploadFile, _downloadFile, value) {
-  return value.map((x3) => from_candid_SpellConfig_n66(_uploadFile, _downloadFile, x3));
+function from_candid_vec_n66(_uploadFile, _downloadFile, value) {
+  return value.map((x3) => from_candid_SpellConfig_n67(_uploadFile, _downloadFile, x3));
 }
 function to_candid_BattleEffect_n12(_uploadFile, _downloadFile, value) {
   return to_candid_record_n13(_uploadFile, _downloadFile, value);
@@ -31959,6 +31989,7 @@ function to_candid_record_n21(_uploadFile, _downloadFile, value) {
     bloodBalance: value.bloodBalance ? candid_some(value.bloodBalance) : candid_none(),
     bossRushMasterComplete: value.bossRushMasterComplete ? candid_some(value.bossRushMasterComplete) : candid_none(),
     colors: value.colors,
+    spellBarOrder: value.spellBarOrder ? candid_some(value.spellBarOrder) : candid_none(),
     pixelPattern: value.pixelPattern
   };
 }
@@ -35001,6 +35032,24 @@ const BuffShop = ({
     }
   );
 };
+const PATTERN_LOOKUP_FAIL_PERIODIC = 500;
+const _patternLookupFailCounts = /* @__PURE__ */ new Map();
+function logPatternLookupFailed(pieceType, view) {
+  const key2 = `${String(pieceType)}|${String(view)}`;
+  const next = (_patternLookupFailCounts.get(key2) ?? 0) + 1;
+  _patternLookupFailCounts.set(key2, next);
+  if (next === 1) {
+    logDebugError("SUMMON", "pattern lookup failed", {
+      pieceType,
+      view
+    });
+  } else if (next % PATTERN_LOOKUP_FAIL_PERIODIC === 0) {
+    logDebugError("SUMMON", `pattern lookup failed (x${next})`, {
+      pieceType,
+      view
+    });
+  }
+}
 const chessPiecePatterns = {
   king: {
     front: [
@@ -35571,10 +35620,7 @@ function drawCombatant(ctx, entity, screenPos, view, options) {
       );
       const fallbackPalette = creaturePalettes[entity.pieceType];
       if (!fallbackPalette) {
-        logDebugError("SUMMON", "pattern lookup failed", {
-          pieceType: entity.pieceType,
-          view: resolvedView
-        });
+        logPatternLookupFailed(entity.pieceType, resolvedView);
         draw(
           ctx,
           chessPiecePatterns.king.front,
@@ -35601,10 +35647,7 @@ function drawCombatant(ctx, entity, screenPos, view, options) {
     );
     const summonPalette = creaturePalettes[entity.pieceType];
     if (!summonPattern || !summonPalette) {
-      logDebugError("SUMMON", "pattern lookup failed", {
-        pieceType: entity.pieceType,
-        view: resolvedView
-      });
+      logPatternLookupFailed(entity.pieceType, resolvedView);
       draw(
         ctx,
         chessPiecePatterns.king.front,
@@ -35629,10 +35672,7 @@ function drawCombatant(ctx, entity, screenPos, view, options) {
       const familyPattern = opts.getFamilyPattern(entity.family ?? "default");
       const familyColorMap = opts.getFamilyColors(entity.family ?? "default");
       if (!familyPattern) {
-        logDebugError("SUMMON", "pattern lookup failed", {
-          pieceType: entity.pieceType,
-          view: resolvedView
-        });
+        logPatternLookupFailed(entity.pieceType, resolvedView);
         draw(
           ctx,
           chessPiecePatterns.king.front,
@@ -47441,12 +47481,6 @@ function toCombatantEntry(c2) {
     turnsRemaining: rich.turnsRemaining
   };
 }
-function withId(c2) {
-  return c2;
-}
-function withIdAll(arr) {
-  return arr;
-}
 function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrderRef, currentTurnIndexRef, setEnemies, setBattleEnemies, setTurnOrder, initial = []) {
   if (combatantsRef.current === void 0) {
     combatantsRef.current = [];
@@ -47455,10 +47489,10 @@ function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrd
     enemiesRef.current = [];
   }
   const battleStartIds = new Set(
-    withIdAll(combatantsRef.current).map((c2) => c2.id)
+    combatantsRef.current.map((c2) => c2.id)
   );
   const battleEnemies = combatantsRef.current.filter(
-    (c2) => battleStartIds.has(withId(c2).id)
+    (c2) => battleStartIds.has(c2.id)
   );
   if (battleEnemiesRef.current === void 0) {
     battleEnemiesRef.current = battleEnemies;
@@ -47477,13 +47511,11 @@ function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrd
   return ctx;
 }
 function removeCombatant(ctx, id) {
-  const nextCombatants = ctx.combatantsRef.current.filter(
-    (c2) => withId(c2).id !== id
-  );
+  const nextCombatants = ctx.combatantsRef.current.filter((c2) => c2.id !== id);
   const nextEnemies = nextCombatants;
   ctx.battleStartIds.delete(id);
   const nextBattleEnemies = nextCombatants.filter(
-    (c2) => ctx.battleStartIds.has(withId(c2).id)
+    (c2) => ctx.battleStartIds.has(c2.id)
   );
   ctx.combatantsRef.current = nextCombatants;
   ctx.enemiesRef.current = nextEnemies;
@@ -47500,11 +47532,11 @@ function removeCombatant(ctx, id) {
 }
 function updateCombatant(ctx, id, patch) {
   const nextCombatants = ctx.combatantsRef.current.map(
-    (c2) => withId(c2).id === id ? { ...c2, ...patch } : c2
+    (c2) => c2.id === id ? { ...c2, ...patch } : c2
   );
   const nextEnemies = nextCombatants;
   const inBattle = ctx.battleStartIds.has(id);
-  const nextBattleEnemies = inBattle ? nextCombatants.filter((c2) => ctx.battleStartIds.has(withId(c2).id)) : ctx.battleEnemiesRef.current;
+  const nextBattleEnemies = inBattle ? nextCombatants.filter((c2) => ctx.battleStartIds.has(c2.id)) : ctx.battleEnemiesRef.current;
   const nextTurnOrder = ctx.turnOrderRef.current.map(
     (e) => e.id === id ? { ...e, ...patch } : e
   );
@@ -47519,15 +47551,11 @@ function updateCombatant(ctx, id, patch) {
 function syncCombatants(ctx, next, opts) {
   const resetBattle = (opts == null ? void 0 : opts.resetBattle) ?? false;
   if (resetBattle) {
-    ctx.battleStartIds = new Set(withIdAll(next).map((c2) => c2.id));
+    ctx.battleStartIds = new Set(next.map((c2) => c2.id));
   }
   const nextEnemies = next;
-  const nextBattleEnemies = next.filter(
-    (c2) => ctx.battleStartIds.has(withId(c2).id)
-  );
-  const nextTurnOrder = nextBattleEnemies.map(
-    (c2) => toCombatantEntry(withId(c2))
-  );
+  const nextBattleEnemies = next.filter((c2) => ctx.battleStartIds.has(c2.id));
+  const nextTurnOrder = nextBattleEnemies.map((c2) => toCombatantEntry(c2));
   ctx.combatantsRef.current = nextEnemies;
   ctx.enemiesRef.current = nextEnemies;
   ctx.battleEnemiesRef.current = nextBattleEnemies;
@@ -47537,9 +47565,24 @@ function syncCombatants(ctx, next, opts) {
   ctx.setTurnOrder(() => nextTurnOrder);
 }
 function deriveBattleEnemies(ctx) {
-  return ctx.combatantsRef.current.filter(
-    (c2) => ctx.battleStartIds.has(withId(c2).id)
-  );
+  return ctx.combatantsRef.current.filter((c2) => ctx.battleStartIds.has(c2.id));
+}
+function resetCombatantStore(ctx) {
+  const nextCombatants = [];
+  const nextEnemies = nextCombatants;
+  const nextBattleEnemies = nextCombatants;
+  const nextTurnOrder = [];
+  ctx.battleStartIds.clear();
+  ctx.combatantsRef.current = nextCombatants;
+  ctx.enemiesRef.current = nextEnemies;
+  ctx.battleEnemiesRef.current = nextBattleEnemies;
+  ctx.turnOrderRef.current = nextTurnOrder;
+  ctx.setEnemies(() => nextEnemies);
+  ctx.setBattleEnemies(() => nextBattleEnemies);
+  ctx.setTurnOrder(() => nextTurnOrder);
+}
+function getLiveCombatants(ctx) {
+  return ctx.combatantsRef.current;
 }
 function makeStackId(effect) {
   return `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -55790,7 +55833,7 @@ const WorldExplorationInner = ({
         whiteMap.portals = [...whiteMap.portals || [], whitePortal];
         setCurrentMap(whiteMap);
         if (whiteSpawn) setPlayerPosition({ ...whiteSpawn });
-        setEnemies([]);
+        resetCombatantStore(combatantStoreCtx);
       }
       logBattleEntry("A white gateway to sanctuary opens…", "white");
     });
@@ -56197,56 +56240,6 @@ const WorldExplorationInner = ({
     } catch {
     }
   }, [userId, characterSlot]);
-  reactExports.useEffect(() => {
-    if (!userId || characterSlot === null || characterSlot === void 0 || !actor)
-      return;
-    (async () => {
-      var _a4;
-      try {
-        const result = await actor.getSessionState(
-          BigInt(characterSlot)
-        );
-        const spellBigInts = (result == null ? void 0 : result.__kind__) === "ok" ? (_a4 = result.ok) == null ? void 0 : _a4.activeSpells : void 0;
-        if (spellBigInts && spellBigInts.length > 0) {
-          const converted = spellBigInts.map((n) => String(n));
-          const padded = [
-            ...converted,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null,
-            null
-          ].slice(0, 8);
-          setActiveSpellIds(padded.filter((id) => id !== null));
-          localStorage.setItem(
-            nsKey("pbv_active_spells"),
-            JSON.stringify(padded)
-          );
-        } else if (ownedSpells.length > 0) {
-          const shuffled = [...ownedSpells].sort(() => Math.random() - 0.5);
-          const first8 = shuffled.slice(0, 8).map((s2) => s2.id);
-          setActiveSpellIds(first8);
-          localStorage.setItem(
-            nsKey("pbv_active_spells"),
-            JSON.stringify(first8)
-          );
-          try {
-            await actor.saveActiveSpells(
-              BigInt(characterSlot),
-              first8.map((id) => BigInt(id))
-            );
-          } catch (e) {
-            console.warn("[SpellInit] Failed to save initial spells:", e);
-          }
-        }
-      } catch (e) {
-        console.warn("[SpellLoad] Failed to load spells from backend:", e);
-      }
-    })();
-  }, [userId, characterSlot, actor, nsKey]);
   const battleCritHitsRef = reactExports.useRef(0);
   const battleBetrayalOccurredRef = reactExports.useRef(false);
   const battleDoubleBetrayelOccurredRef = reactExports.useRef(false);
@@ -56406,6 +56399,67 @@ const WorldExplorationInner = ({
     }
     return Array.from(map.values());
   }, [baseSpells, filteredBackendSpells]);
+  reactExports.useEffect(() => {
+    if (!userId || characterSlot === null || characterSlot === void 0 || !actor)
+      return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const character2 = await actor.getCharacter(
+          BigInt(characterSlot)
+        );
+        if (cancelled) return;
+        const savedOrder = (character2 == null ? void 0 : character2.spellBarOrder) ?? void 0;
+        const ownedIds = new Set(ownedSpells.map((s2) => s2.id));
+        if (savedOrder && savedOrder.length > 0) {
+          const kept = savedOrder.filter((id) => ownedIds.has(id));
+          const keptSet = new Set(kept);
+          const appended = ownedSpells.map((s2) => s2.id).filter((id) => !keptSet.has(id));
+          const resolved = [...kept, ...appended].slice(0, 8);
+          const padded = [
+            ...resolved,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ].slice(0, 8);
+          setActiveSpellIds(resolved);
+          localStorage.setItem(
+            nsKey("pbv_active_spells"),
+            JSON.stringify(padded)
+          );
+        } else if (ownedSpells.length > 0) {
+          const first8 = ownedSpells.slice(0, 8).map((s2) => s2.id);
+          if (cancelled) return;
+          setActiveSpellIds(first8);
+          localStorage.setItem(
+            nsKey("pbv_active_spells"),
+            JSON.stringify(first8)
+          );
+          try {
+            await actor.setSpellBarOrder(
+              BigInt(characterSlot),
+              first8
+            );
+          } catch (e) {
+            console.warn(
+              "[SpellInit] Failed to save initial spellBarOrder:",
+              e
+            );
+          }
+        }
+      } catch (e) {
+        console.warn("[SpellLoad] Failed to load spells from backend:", e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, characterSlot, actor, nsKey, ownedSpells]);
   const spellPool = filteredBackendSpells.length > 0 ? filteredBackendSpells : starterSpells.filter(
     (s2) => !OLD_SPELL_NAMES_SET.has(s2.id) && !OLD_SPELL_NAMES_SET.has(s2.name)
   );
@@ -56459,6 +56513,7 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     activeSpellsRef.current = activeSpells;
   }, [activeSpells]);
+  const setSpellBarOrderDebounceRef = reactExports.useRef(null);
   const handleSetActiveSpells = (spells) => {
     if (inBattleRef.current) return;
     const ids = [...spells, ...Array(8).fill(null)].slice(0, 8).map((s2) => (s2 == null ? void 0 : s2.id) ?? null);
@@ -56481,6 +56536,19 @@ const WorldExplorationInner = ({
           console.warn("[SpellSave] Backend save failed:", e);
         }
       })();
+      const ownedIdSet = new Set(ownedSpells.map((s2) => s2.id));
+      const orderIds = ids.filter(
+        (id) => id !== null && id !== void 0 && id !== "" && ownedIdSet.has(id)
+      ).slice(0, 8);
+      if (setSpellBarOrderDebounceRef.current) {
+        clearTimeout(setSpellBarOrderDebounceRef.current);
+      }
+      setSpellBarOrderDebounceRef.current = setTimeout(() => {
+        setSpellBarOrderDebounceRef.current = null;
+        actor.setSpellBarOrder(BigInt(characterSlot), orderIds).catch((e) => {
+          console.warn("[SpellOrderSave] setSpellBarOrder failed:", e);
+        });
+      }, 1e3);
     }
   };
   const activeSpellIdsForSaveRef = reactExports.useRef(activeSpellIds);
@@ -56499,6 +56567,15 @@ const WorldExplorationInner = ({
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [userId, characterSlot, nsKey]);
+  reactExports.useEffect(
+    () => () => {
+      if (setSpellBarOrderDebounceRef.current) {
+        clearTimeout(setSpellBarOrderDebounceRef.current);
+        setSpellBarOrderDebounceRef.current = null;
+      }
+    },
+    []
+  );
   const [spellSelectionVersion, setSpellSelectionVersion] = reactExports.useState(0);
   const selectedSpellIdRef = reactExports.useRef(null);
   reactExports.useEffect(() => {
@@ -56739,7 +56816,9 @@ const WorldExplorationInner = ({
   );
   const enemyTakesDamage = reactExports.useCallback(
     (enemyId, incomingDamage, casterId, source, isCrit = false) => {
-      const enemy = enemies.find((e) => e.id === enemyId);
+      const enemy = getLiveCombatants(combatantStoreCtx).find(
+        (e) => e.id === enemyId
+      );
       if (!enemy) return 0;
       const effRes = Number(enemy.res) * getStatModifier(enemyId, "res", activeEffectsRef.current);
       const effDmg = incomingDamage * getStatModifier(casterId, "dmg", activeEffectsRef.current);
@@ -56778,7 +56857,6 @@ const WorldExplorationInner = ({
       return dmg;
     },
     [
-      enemies,
       getStatModifier,
       logBattleEntry,
       combatantStoreCtx,
@@ -59280,7 +59358,7 @@ const WorldExplorationInner = ({
           currentMapRef.current = restMap;
           setCurrentMap(restMap);
           setPlayerPosition(restSpawn);
-          setEnemies([]);
+          resetCombatantStore(combatantStoreCtx);
           setPlayerView("front");
           const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
           const centerX = canvasSize.width / 2;
@@ -59322,7 +59400,7 @@ const WorldExplorationInner = ({
           currentMapRef.current = restMap;
           setCurrentMap(restMap);
           setPlayerPosition(restSpawn);
-          setEnemies([]);
+          resetCombatantStore(combatantStoreCtx);
           setPlayerView("front");
           const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
           const centerX = canvasSize.width / 2;
@@ -59390,7 +59468,7 @@ const WorldExplorationInner = ({
           currentMapRef.current = newMap2;
           setCurrentMap(newMap2);
           setPlayerPosition(spawnPosition2);
-          setEnemies([]);
+          resetCombatantStore(combatantStoreCtx);
           setTransitionInProgress(false);
           transitionInProgressRef.current = false;
         }, 400);
@@ -61385,7 +61463,9 @@ const WorldExplorationInner = ({
             portals: new Set(
               ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
             ),
-            isOccupied: (c2) => enemies.some((e) => e.x === c2.x && e.y === c2.y) || playerPosition.x === c2.x && playerPosition.y === c2.y
+            isOccupied: (c2) => getLiveCombatants(combatantStoreCtx).some(
+              (e) => e.x === c2.x && e.y === c2.y
+            ) || playerPosition.x === c2.x && playerPosition.y === c2.y
           }
         );
         const { turnOrder: turnOrder2 } = applySummonResult(
@@ -61425,9 +61505,13 @@ const WorldExplorationInner = ({
           );
         }
       },
-      isCellFree: (cell) => !enemies.some((e) => e.x === cell.x && e.y === cell.y) && !(playerPosition.x === cell.x && playerPosition.y === cell.y),
+      isCellFree: (cell) => !getLiveCombatants(combatantStoreCtx).some(
+        (e) => e.x === cell.x && e.y === cell.y
+      ) && !(playerPosition.x === cell.x && playerPosition.y === cell.y),
       getCombatantAt: (cell) => {
-        const e = enemies.find((en) => en.x === cell.x && en.y === cell.y);
+        const e = getLiveCombatants(combatantStoreCtx).find(
+          (en) => en.x === cell.x && en.y === cell.y
+        );
         if (e) return { id: e.id, side: "enemy" };
         if (playerPosition.x === cell.x && playerPosition.y === cell.y)
           return { id: "__player__", side: "player" };
@@ -61467,7 +61551,9 @@ const WorldExplorationInner = ({
         return amount;
       },
       swapPositions: (targetEnemyId) => {
-        const target = enemies.find((e) => e.id === targetEnemyId);
+        const target = getLiveCombatants(combatantStoreCtx).find(
+          (e) => e.id === targetEnemyId
+        );
         if (!target) return;
         const oldPlayerPos = { ...playerPosition };
         setPlayerPosition({ x: target.x, y: target.y });
@@ -61613,7 +61699,9 @@ const WorldExplorationInner = ({
             portals: new Set(
               ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
             ),
-            isOccupied: (c2) => enemies.some((e) => e.x === c2.x && e.y === c2.y) || playerPosition.x === c2.x && playerPosition.y === c2.y
+            isOccupied: (c2) => getLiveCombatants(combatantStoreCtx).some(
+              (e) => e.x === c2.x && e.y === c2.y
+            ) || playerPosition.x === c2.x && playerPosition.y === c2.y
           }
         );
         const { enemies: newEnemies, turnOrder: newTurnOrder } = applySummonResult(
@@ -61902,7 +61990,7 @@ const WorldExplorationInner = ({
       if (gridPos.x >= 0 && gridPos.x < WORLD_GRID_SIZE && gridPos.y >= 0 && gridPos.y < WORLD_GRID_SIZE) {
         setHoveredTile(gridPos);
         if (inBattle && battleActionMode === "attack" && selectedSpellIdRef.current) {
-          const hovEnemy = enemies.find(
+          const hovEnemy = getLiveCombatants(combatantStoreCtx).find(
             (e) => e.x === gridPos.x && e.y === gridPos.y
           );
           setHoveredEnemyId((hovEnemy == null ? void 0 : hovEnemy.id) ?? null);
@@ -61914,7 +62002,7 @@ const WorldExplorationInner = ({
         setHoveredEnemyId(null);
       }
     },
-    [clientToGrid, inBattle, battleActionMode, enemies]
+    [clientToGrid, inBattle, battleActionMode, combatantStoreCtx]
   );
   const handleCanvasTouch = reactExports.useCallback(
     (event) => {
@@ -62411,16 +62499,21 @@ const WorldExplorationInner = ({
       return;
     if (battleTriggerCooldownRef.current) return;
     if (battleInitInProgressRef.current) return;
-    const collidingEnemy = enemies.find((enemy) => {
-      return enemy.x === playerPosition.x && enemy.y === playerPosition.y;
-    });
+    const collidingEnemy = getLiveCombatants(combatantStoreCtx).find(
+      (enemy) => {
+        return enemy.x === playerPosition.x && enemy.y === playerPosition.y;
+      }
+    );
     if (collidingEnemy && currentMap) {
       battleInitInProgressRef.current = true;
       battleTriggerCooldownRef.current = true;
       enemyTurnInProgressRef.current = false;
       battleReadyRef.current = false;
       const tiles = currentMap.tiles;
-      const enemyPositions = enemies.map((e) => ({ x: e.x, y: e.y }));
+      const enemyPositions = getLiveCombatants(combatantStoreCtx).map((e) => ({
+        x: e.x,
+        y: e.y
+      }));
       const newPlayerPos = findFreeCellFarFrom(enemyPositions, 3, tiles);
       const occupiedPositions = [playerPosition];
       const updatedEnemies = enemies.map((e) => {
@@ -62931,7 +63024,7 @@ const WorldExplorationInner = ({
         whiteMap.portals = [...whiteMap.portals || [], whitePortal];
         setCurrentMap(whiteMap);
         if (whiteSpawn) setPlayerPosition({ ...whiteSpawn });
-        setEnemies([]);
+        resetCombatantStore(combatantStoreCtx);
       }
       logBattleEntry("A white gateway to sanctuary opens…", "white");
     }
@@ -63037,7 +63130,7 @@ const WorldExplorationInner = ({
           currentMapRef.current = deathMap;
           setCurrentMap(deathMap);
           setPlayerPosition(drSpawn || { x: 2, y: 2 });
-          setEnemies([]);
+          resetCombatantStore(combatantStoreCtx);
           setInBattle(false);
           cleanupBattle();
           deathTriggeredRef.current = false;
@@ -63133,7 +63226,7 @@ const WorldExplorationInner = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5)
           )
         }));
-        setEnemies([]);
+        resetCombatantStore(combatantStoreCtx);
         ue(
           "💀 You have fallen... find a portal to escape the Death Realm.",
           {
@@ -63201,7 +63294,7 @@ const WorldExplorationInner = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5)
           )
         }));
-        setEnemies([]);
+        resetCombatantStore(combatantStoreCtx);
         ue(
           "💀 You have fallen... find a portal to escape the Death Realm.",
           {
@@ -63297,7 +63390,7 @@ const WorldExplorationInner = ({
       setTransitionInProgress(false);
       lastPortalRef.current = null;
       setMapCount((prev) => prev + 1);
-      setEnemies([]);
+      resetCombatantStore(combatantStoreCtx);
       if (cameraFollowTimerRef.current !== null)
         clearTimeout(cameraFollowTimerRef.current);
       cameraFollowTimerRef.current = window.setTimeout(() => {
@@ -63308,6 +63401,7 @@ const WorldExplorationInner = ({
   }, [
     cleanupMap,
     generateDeathRealmMap,
+    combatantStoreCtx,
     updateCameraToFollowPlayer,
     setTransitionInProgress
   ]);
@@ -63346,7 +63440,7 @@ const WorldExplorationInner = ({
         }
       });
     }
-    setEnemies(newEnemies);
+    syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
     const initCamTimer = setTimeout(() => {
       updateCameraToFollowPlayer();
     }, 200);
@@ -63824,7 +63918,7 @@ const WorldExplorationInner = ({
             setTurnOrder(newTurnOrder);
             turnOrderRef.current = newTurnOrder;
           },
-          isCellFree: (cell) => !enemiesRef.current.some(
+          isCellFree: (cell) => !getLiveCombatants(combatantStoreCtx).some(
             (e) => e.x === cell.x && e.y === cell.y
           ) && !(playerPosition.x === cell.x && playerPosition.y === cell.y),
           getCombatantAt: (cell) => {
@@ -64086,7 +64180,9 @@ const WorldExplorationInner = ({
       let newBossStateAfterPhase = null;
       if ((currentBossEntry == null ? void 0 : currentBossEntry.isBoss) && currentBossEntry.bossId && currentBossConfig && bossStateRef.current) {
         const bossEnemy = turnOrderRef.current.find((c2) => c2.id === enemyId);
-        const bossEnemyWPos = enemies.find((e) => e.id === enemyId) ?? {
+        const bossEnemyWPos = getLiveCombatants(combatantStoreCtx).find(
+          (e) => e.id === enemyId
+        ) ?? {
           x: 8,
           y: 8
         };
@@ -64139,7 +64235,9 @@ const WorldExplorationInner = ({
           const enemiesForBossAI = getPlayerSideTargets(
             turnOrderRef.current
           ).filter((c2) => c2.id !== enemyId).filter((c2) => c2.type === "enemy" && c2.id !== enemyId).map((c2) => {
-            const wE = enemies.find((e) => e.id === c2.id) ?? { x: 0, y: 0 };
+            const wE = getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === c2.id
+            ) ?? { x: 0, y: 0 };
             return {
               id: c2.id,
               name: c2.name,
@@ -64174,992 +64272,975 @@ const WorldExplorationInner = ({
         }
       }
       reactDomExports.flushSync(() => {
-        setEnemies((prevEnemies) => {
-          var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2;
-          const enemy = prevEnemies.find((e) => e.id === enemyId);
-          if (!enemy) {
-            clearTimeout(watchdog);
-            pendingTimeoutsRef.current.delete(watchdog);
-            enemyTurnInProgressRef.current = false;
-            const _t2 = setTimeout(() => {
-              pendingTimeoutsRef.current.delete(_t2);
-              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
-                advanceTurnRef.current();
-            }, 0);
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(_t2);
-            }
-            return prevEnemies;
+        var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2;
+        const prevEnemies = getLiveCombatants(combatantStoreCtx);
+        const enemy = prevEnemies.find((e) => e.id === enemyId);
+        if (!enemy) {
+          clearTimeout(watchdog);
+          pendingTimeoutsRef.current.delete(watchdog);
+          enemyTurnInProgressRef.current = false;
+          const _t2 = setTimeout(() => {
+            pendingTimeoutsRef.current.delete(_t2);
+            if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              advanceTurnRef.current();
+          }, 0);
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(_t2);
           }
-          const myMap = enemyCooldownsRef.current.get(enemyId);
-          if (myMap) {
-            for (const [sid, turns] of myMap.entries()) {
-              if (turns > 0) myMap.set(sid, turns - 1);
-            }
+          return;
+        }
+        const myMap = enemyCooldownsRef.current.get(enemyId);
+        if (myMap) {
+          for (const [sid, turns] of myMap.entries()) {
+            if (turns > 0) myMap.set(sid, turns - 1);
           }
-          if ((enemy.aiTier ?? 1) >= 5 && leaderDiedRef.current && !allEnemiesErraticRef.current && erraticTurnsLeftRef.current <= 0) {
-            allEnemiesErraticRef.current = true;
-            erraticTurnsLeftRef.current = prevEnemies.length;
+        }
+        if ((enemy.aiTier ?? 1) >= 5 && leaderDiedRef.current && !allEnemiesErraticRef.current && erraticTurnsLeftRef.current <= 0) {
+          allEnemiesErraticRef.current = true;
+          erraticTurnsLeftRef.current = prevEnemies.length;
+          logBattleEntry(
+            "[Leader died] Enemies acting erratically!",
+            "#ef4444"
+          );
+        }
+        if (allEnemiesErraticRef.current) {
+          logBattleEntry(
+            `[Leader died] ${enemy.pieceType} acts erratically!`,
+            "#ef4444"
+          );
+          erraticTurnsLeftRef.current = Math.max(
+            0,
+            erraticTurnsLeftRef.current - 1
+          );
+          if (erraticTurnsLeftRef.current <= 0)
+            allEnemiesErraticRef.current = false;
+          const adjCells = [
+            { x: enemy.x - 1, y: enemy.y },
+            { x: enemy.x + 1, y: enemy.y },
+            { x: enemy.x, y: enemy.y - 1 },
+            { x: enemy.x, y: enemy.y + 1 }
+          ].filter(
+            (c2) => {
+              var _a5;
+              return c2.x >= 0 && c2.x < WORLD_GRID_SIZE && c2.y >= 0 && c2.y < WORLD_GRID_SIZE && ((_a5 = currentMap == null ? void 0 : currentMap.tiles[c2.y]) == null ? void 0 : _a5[c2.x]) !== "wall" && !prevEnemies.some(
+                (e) => e.id !== enemyId && e.x === c2.x && e.y === c2.y
+              ) && !(c2.x === playerPosition.x && c2.y === playerPosition.y);
+            }
+          );
+          let erX = enemy.x;
+          let erY = enemy.y;
+          if (adjCells.length > 0) {
+            const p2 = adjCells[Math.floor(Math.random() * adjCells.length)];
+            erX = p2.x;
+            erY = p2.y;
+          }
+          const erSpells = currentCombatant.spells ?? [];
+          if (Math.random() < 0.5 && erSpells.length > 0) {
+            const rs = erSpells[Math.floor(Math.random() * erSpells.length)];
             logBattleEntry(
-              "[Leader died] Enemies acting erratically!",
+              `${enemy.pieceType} wildly casts ${rs.name}!`,
               "#ef4444"
             );
           }
-          if (allEnemiesErraticRef.current) {
-            logBattleEntry(
-              `[Leader died] ${enemy.pieceType} acts erratically!`,
-              "#ef4444"
-            );
-            erraticTurnsLeftRef.current = Math.max(
-              0,
-              erraticTurnsLeftRef.current - 1
-            );
-            if (erraticTurnsLeftRef.current <= 0)
-              allEnemiesErraticRef.current = false;
-            const adjCells = [
-              { x: enemy.x - 1, y: enemy.y },
-              { x: enemy.x + 1, y: enemy.y },
-              { x: enemy.x, y: enemy.y - 1 },
-              { x: enemy.x, y: enemy.y + 1 }
-            ].filter(
-              (c2) => {
-                var _a5;
-                return c2.x >= 0 && c2.x < WORLD_GRID_SIZE && c2.y >= 0 && c2.y < WORLD_GRID_SIZE && ((_a5 = currentMap == null ? void 0 : currentMap.tiles[c2.y]) == null ? void 0 : _a5[c2.x]) !== "wall" && !prevEnemies.some(
-                  (e) => e.id !== enemyId && e.x === c2.x && e.y === c2.y
-                ) && !(c2.x === playerPosition.x && c2.y === playerPosition.y);
-              }
-            );
-            let erX = enemy.x;
-            let erY = enemy.y;
-            if (adjCells.length > 0) {
-              const p2 = adjCells[Math.floor(Math.random() * adjCells.length)];
-              erX = p2.x;
-              erY = p2.y;
-            }
-            const erSpells = currentCombatant.spells ?? [];
-            if (Math.random() < 0.5 && erSpells.length > 0) {
-              const rs = erSpells[Math.floor(Math.random() * erSpells.length)];
+          clearTimeout(watchdog);
+          enemyTurnInProgressRef.current = false;
+          const myErraticGen = aiGenerationRef.current;
+          let erraticTimer;
+          erraticTimer = setTimeout(() => {
+            if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myErraticGen)
+              return;
+            pendingTimeoutsRef.current.delete(erraticTimer);
+            if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              advanceTurnRef.current();
+          }, 0);
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(erraticTimer);
+          }
+          updateCombatant(combatantStoreCtx, enemyId, { x: erX, y: erY });
+          return;
+        }
+        const aliveAllies = prevEnemies.filter((e) => e.id !== enemyId);
+        if ((enemy.aiTier ?? 1) >= 10 && aliveAllies.length > 0 && Math.random() < 0.05) {
+          const allyT = aliveAllies[Math.floor(Math.random() * aliveAllies.length)];
+          const btDmg = Math.max(
+            1,
+            enemy.level * 2 + Math.floor(Math.random() * 5)
+          );
+          const allyPrevHp = enemyHpMap[allyT.id] ?? calcEnemyMaxHp(allyT.level);
+          const allyNewHp = Math.max(0, allyPrevHp - btDmg);
+          logBattleEntry(
+            `${enemy.pieceType} turns on ${allyT.pieceType}! Betrayal!`,
+            "#ef4444"
+          );
+          battleBetrayalOccurredRef.current = true;
+          if (allyNewHp <= 0) {
+            if (allyT.id === leaderEnemyIdRef.current && !leaderDiedRef.current) {
+              leaderDiedRef.current = true;
+              triggerLeaderDeathAnimation(allyT.x, allyT.y);
               logBattleEntry(
-                `${enemy.pieceType} wildly casts ${rs.name}!`,
-                "#ef4444"
+                `👑 The leader ${allyT.pieceType} fell via betrayal!`,
+                "#f97316"
               );
             }
-            clearTimeout(watchdog);
-            enemyTurnInProgressRef.current = false;
-            const myErraticGen = aiGenerationRef.current;
-            let erraticTimer;
-            erraticTimer = setTimeout(() => {
-              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myErraticGen)
-                return;
-              pendingTimeoutsRef.current.delete(erraticTimer);
-              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
-                advanceTurnRef.current();
-            }, 0);
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(erraticTimer);
-            }
-            return prevEnemies.map(
-              (e) => e.id === enemyId ? { ...e, x: erX, y: erY } : e
-            );
-          }
-          const aliveAllies = prevEnemies.filter((e) => e.id !== enemyId);
-          if ((enemy.aiTier ?? 1) >= 10 && aliveAllies.length > 0 && Math.random() < 0.05) {
-            const allyT = aliveAllies[Math.floor(Math.random() * aliveAllies.length)];
-            const btDmg = Math.max(
-              1,
-              enemy.level * 2 + Math.floor(Math.random() * 5)
-            );
-            const allyPrevHp = enemyHpMap[allyT.id] ?? calcEnemyMaxHp(allyT.level);
-            const allyNewHp = Math.max(0, allyPrevHp - btDmg);
-            logBattleEntry(
-              `${enemy.pieceType} turns on ${allyT.pieceType}! Betrayal!`,
-              "#ef4444"
-            );
-            battleBetrayalOccurredRef.current = true;
-            if (allyNewHp <= 0) {
-              if (allyT.id === leaderEnemyIdRef.current && !leaderDiedRef.current) {
-                leaderDiedRef.current = true;
-                triggerLeaderDeathAnimation(allyT.x, allyT.y);
+            setEnragedEnemies((prev) => {
+              const n = new Set(prev);
+              n.add(enemyId);
+              return n;
+            });
+            removeCombatant(combatantStoreCtx, allyT.id);
+            updateCombatant(combatantStoreCtx, enemyId, {
+              maxHp: Math.round(
+                (((_a4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _a4.maxHp) ?? calcEnemyMaxHp(enemy.level)) * 6
+              ),
+              hp: Math.round(
+                (((_b4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _b4.hp) ?? calcEnemyMaxHp(enemy.level)) * 6
+              )
+            });
+            setEnemyHpMap((prev) => {
+              const n = { ...prev };
+              delete n[allyT.id];
+              n[enemyId] = Math.round(
+                (prev[enemyId] ?? calcEnemyMaxHp(enemy.level)) * 6
+              );
+              return n;
+            });
+            const afterFirst = prevEnemies.filter((e) => e.id !== allyT.id);
+            const secondPool = afterFirst.filter((e) => e.id !== enemyId);
+            if (secondPool.length > 0 && Math.random() < 0.15) {
+              battleDoubleBetrayelOccurredRef.current = true;
+              let dbTimer;
+              dbTimer = setTimeout(() => {
+                if (!pendingTimeoutsRef.current.has(dbTimer)) return;
+                pendingTimeoutsRef.current.delete(dbTimer);
+                if (enemyTurnAbortRef.current) return;
+                if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myAIGeneration)
+                  return;
+                if (sessionVersionRef.current !== mySessionVersion) return;
+                const sb = secondPool[Math.floor(Math.random() * secondPool.length)];
                 logBattleEntry(
-                  `👑 The leader ${allyT.pieceType} fell via betrayal!`,
+                  `⚡ DOUBLE BETRAYAL! ${sb.pieceType} also turns!`,
                   "#f97316"
                 );
-              }
-              setEnragedEnemies((prev) => {
-                const n = new Set(prev);
-                n.add(enemyId);
-                return n;
-              });
-              removeCombatant(combatantStoreCtx, allyT.id);
-              updateCombatant(combatantStoreCtx, enemyId, {
-                maxHp: Math.round(
-                  (((_a4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _a4.maxHp) ?? calcEnemyMaxHp(enemy.level)) * 6
-                ),
-                hp: Math.round(
-                  (((_b4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _b4.hp) ?? calcEnemyMaxHp(enemy.level)) * 6
-                )
-              });
-              setEnemyHpMap((prev) => {
-                const n = { ...prev };
-                delete n[allyT.id];
-                n[enemyId] = Math.round(
-                  (prev[enemyId] ?? calcEnemyMaxHp(enemy.level)) * 6
-                );
-                return n;
-              });
-              const afterFirst = prevEnemies.filter((e) => e.id !== allyT.id);
-              const secondPool = afterFirst.filter((e) => e.id !== enemyId);
-              if (secondPool.length > 0 && Math.random() < 0.15) {
-                battleDoubleBetrayelOccurredRef.current = true;
-                let dbTimer;
-                dbTimer = setTimeout(() => {
-                  if (!pendingTimeoutsRef.current.has(dbTimer)) return;
-                  pendingTimeoutsRef.current.delete(dbTimer);
-                  if (enemyTurnAbortRef.current) return;
-                  if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myAIGeneration)
-                    return;
-                  if (sessionVersionRef.current !== mySessionVersion) return;
-                  const sb = secondPool[Math.floor(Math.random() * secondPool.length)];
+                const sbTgts = afterFirst.filter((e) => e.id !== sb.id);
+                if (sbTgts.length > 0) {
+                  const sbT = sbTgts[Math.floor(Math.random() * sbTgts.length)];
+                  const sbDmg = Math.max(
+                    1,
+                    sb.level * 2 + Math.floor(Math.random() * 5)
+                  );
                   logBattleEntry(
-                    `⚡ DOUBLE BETRAYAL! ${sb.pieceType} also turns!`,
+                    `${sb.pieceType} attacks ${sbT.pieceType} for ${sbDmg}!`,
                     "#f97316"
                   );
-                  const sbTgts = afterFirst.filter((e) => e.id !== sb.id);
-                  if (sbTgts.length > 0) {
-                    const sbT = sbTgts[Math.floor(Math.random() * sbTgts.length)];
-                    const sbDmg = Math.max(
-                      1,
-                      sb.level * 2 + Math.floor(Math.random() * 5)
-                    );
-                    logBattleEntry(
-                      `${sb.pieceType} attacks ${sbT.pieceType} for ${sbDmg}!`,
-                      "#f97316"
-                    );
-                    setEnemyHpMap((h2) => {
-                      const curHp = h2[sbT.id] ?? calcEnemyMaxHp(sbT.level);
-                      const nHp = Math.max(0, curHp - sbDmg);
-                      if (nHp <= 0) {
-                        removeCombatant(combatantStoreCtx, sbT.id);
-                      }
-                      return { ...h2, [sbT.id]: nHp };
-                    });
-                  }
-                }, 200);
-                if (!cleanupRanRef.current) {
-                  pendingTimeoutsRef.current.add(dbTimer);
+                  setEnemyHpMap((h2) => {
+                    const curHp = h2[sbT.id] ?? calcEnemyMaxHp(sbT.level);
+                    const nHp = Math.max(0, curHp - sbDmg);
+                    if (nHp <= 0) {
+                      removeCombatant(combatantStoreCtx, sbT.id);
+                    }
+                    return { ...h2, [sbT.id]: nHp };
+                  });
                 }
-              }
-              clearTimeout(watchdog);
-              pendingTimeoutsRef.current.delete(watchdog);
-              enemyTurnInProgressRef.current = false;
-              const _at1 = setTimeout(() => {
-                if (!pendingTimeoutsRef.current.has(_at1)) return;
-                pendingTimeoutsRef.current.delete(_at1);
-                if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
-                  advanceTurnRef.current();
-              }, 0);
+              }, 200);
               if (!cleanupRanRef.current) {
-                pendingTimeoutsRef.current.add(_at1);
+                pendingTimeoutsRef.current.add(dbTimer);
               }
-              return afterFirst;
             }
-            setEnemyHpMap((prev) => ({ ...prev, [allyT.id]: allyNewHp }));
-            setTurnOrder(
-              (prev) => prev.map(
-                (c2) => c2.id === allyT.id ? { ...c2, hp: allyNewHp } : c2
-              )
-            );
             clearTimeout(watchdog);
             pendingTimeoutsRef.current.delete(watchdog);
             enemyTurnInProgressRef.current = false;
-            const _at2 = setTimeout(() => {
-              if (!pendingTimeoutsRef.current.has(_at2)) return;
-              pendingTimeoutsRef.current.delete(_at2);
+            const _at1 = setTimeout(() => {
+              if (!pendingTimeoutsRef.current.has(_at1)) return;
+              pendingTimeoutsRef.current.delete(_at1);
               if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
                 advanceTurnRef.current();
             }, 0);
             if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(_at2);
+              pendingTimeoutsRef.current.add(_at1);
             }
-            return prevEnemies;
+            return;
           }
-          if ((currentBossEntry == null ? void 0 : currentBossEntry.isBoss) && currentBossConfig) {
-            if (bossPhaseTransitioned && newBossStateAfterPhase) {
-              const mult = currentBossConfig.phase2.statMultiplier;
-              const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
-              setTurnOrder(
-                (prev) => prev.map((c2) => {
-                  if (c2.id !== enemyId) return c2;
-                  const newMaxHp = Math.round(c2.maxHp * mult);
-                  const newHp = isWeepingPawn ? newMaxHp : Math.min(Math.round(c2.hp * mult), newMaxHp);
-                  return {
-                    ...c2,
-                    maxHp: newMaxHp,
-                    hp: newHp,
-                    currentBossPhase: 2
-                  };
+          setEnemyHpMap((prev) => ({ ...prev, [allyT.id]: allyNewHp }));
+          setTurnOrder(
+            (prev) => prev.map((c2) => c2.id === allyT.id ? { ...c2, hp: allyNewHp } : c2)
+          );
+          clearTimeout(watchdog);
+          pendingTimeoutsRef.current.delete(watchdog);
+          enemyTurnInProgressRef.current = false;
+          const _at2 = setTimeout(() => {
+            if (!pendingTimeoutsRef.current.has(_at2)) return;
+            pendingTimeoutsRef.current.delete(_at2);
+            if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              advanceTurnRef.current();
+          }, 0);
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(_at2);
+          }
+          return;
+        }
+        if ((currentBossEntry == null ? void 0 : currentBossEntry.isBoss) && currentBossConfig) {
+          if (bossPhaseTransitioned && newBossStateAfterPhase) {
+            const mult = currentBossConfig.phase2.statMultiplier;
+            const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
+            setTurnOrder(
+              (prev) => prev.map((c2) => {
+                if (c2.id !== enemyId) return c2;
+                const newMaxHp = Math.round(c2.maxHp * mult);
+                const newHp = isWeepingPawn ? newMaxHp : Math.min(Math.round(c2.hp * mult), newMaxHp);
+                return {
+                  ...c2,
+                  maxHp: newMaxHp,
+                  hp: newHp,
+                  currentBossPhase: 2
+                };
+              })
+            );
+            setEnemyHpMap((h2) => {
+              const newMaxHp = Math.round((h2[enemyId] ?? 0) * mult);
+              const newHp = isWeepingPawn ? newMaxHp : Math.round((h2[enemyId] ?? 0) * mult);
+              return { ...h2, [enemyId]: newHp };
+            });
+            bossStateRef.current = newBossStateAfterPhase;
+            reactDomExports.flushSync(() => {
+              setActiveBossState(newBossStateAfterPhase);
+            });
+            if (isWeepingPawn) {
+              logBattleEntry(
+                "👑 The Weeping Pawn PROMOTES to the Weeping Queen — FULL HP RESTORED!",
+                "#ffd700"
+              );
+            } else {
+              logBattleEntry(
+                `⚡ ${currentBossConfig.name} PHASE 2! Stats boosted ×${mult}!`,
+                "#ffd700"
+              );
+            }
+          }
+          if (bossAIAction) {
+            const res = bossAIAction.abilityResult;
+            if (bossAIAction.logMessage) {
+              logBattleEntry(bossAIAction.logMessage, "#a855f7");
+            }
+            if (res == null ? void 0 : res.logMessages) {
+              for (const msg of res.logMessages) logBattleEntry(msg, "#a855f7");
+            }
+            const newBossX = ((_c3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _c3.x) ?? enemy.x;
+            const newBossY = ((_d3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _d3.y) ?? enemy.y;
+            if ((res == null ? void 0 : res.damageToPlayer) && res.damageToPlayer > 0) {
+              const rawDmg = res.damageToPlayer;
+              const absorbed = Math.min(shieldHpRef.current, rawDmg);
+              shieldHpRef.current = Math.max(0, shieldHpRef.current - absorbed);
+              const finalDmg = rawDmg - absorbed;
+              if (finalDmg > 0) {
+                setCharacterStats((s2) => ({
+                  ...s2,
+                  hp: Math.max(0, s2.hp - finalDmg)
+                }));
+                challengeTotalDamageRef.current += finalDmg;
+              }
+            }
+            if ((res == null ? void 0 : res.playerApModifier) && res.playerApModifier !== 0) {
+              setCurrentBattleAp(
+                (prev) => Math.max(0, prev + res.playerApModifier)
+              );
+            }
+            if (res == null ? void 0 : res.debuffsApplied) {
+              for (const d2 of res.debuffsApplied) {
+                applyActiveEffect({
+                  id: `debuff_${Date.now()}`,
+                  targetId: "player",
+                  type: "debuff",
+                  stat: d2.stat,
+                  modifier: d2.modifier,
+                  duration: d2.duration,
+                  effectName: d2.effectName,
+                  iconEmoji: d2.iconEmoji,
+                  description: d2.effectName
+                });
+              }
+            }
+            if (res == null ? void 0 : res.dotApplied) {
+              for (const dot of res.dotApplied) {
+                applyActiveEffect({
+                  id: `dot_${Date.now()}`,
+                  targetId: "player",
+                  type: "dot",
+                  dotDamagePerTurn: dot.damage,
+                  duration: dot.duration,
+                  effectName: dot.effectName,
+                  iconEmoji: dot.iconEmoji,
+                  description: `${dot.damage} dmg/turn`
+                });
+              }
+            }
+            if (res == null ? void 0 : res.newBossState) {
+              const merged = {
+                ...bossStateRef.current,
+                ...res.newBossState
+              };
+              bossStateRef.current = merged;
+              setActiveBossState(merged);
+            }
+            if ((res == null ? void 0 : res.newHazardTiles) && currentMap) {
+              for (const ht of res.newHazardTiles) {
+                if (currentMap.hazardTiles.size >= MAX_HAZARD_TILES) {
+                  const firstHazardKey = currentMap.hazardTiles.keys().next().value;
+                  if (firstHazardKey !== void 0)
+                    currentMap.hazardTiles.delete(firstHazardKey);
+                }
+                currentMap.hazardTiles.set(
+                  `${ht.x},${ht.y}`,
+                  ht.type
+                );
+              }
+            }
+            if ((res == null ? void 0 : res.spawns) && res.spawns.length > 0) {
+              const minionEnemies = res.spawns.map((s2) => ({
+                id: s2.id,
+                x: s2.x,
+                y: s2.y,
+                pieceType: s2.pieceType,
+                currentView: "front",
+                isMoving: false,
+                movementPath: [],
+                currentStepIndex: 0,
+                movementStartTime: 0,
+                initialDelay: 0,
+                hasStartedMoving: true,
+                spawnTime: Date.now(),
+                scaleX: 1,
+                scaleY: 1,
+                level: Math.max(1, currentBossConfig.baseStats.init - 2),
+                nextMoveTime: Date.now() + 1e3,
+                movementSpeed: 800,
+                movementRange: 1,
+                isWandering: false,
+                wanderTarget: null,
+                lastMoveTime: Date.now(),
+                hp: Math.max(
+                  1,
+                  Math.round(
+                    Math.max(1, currentBossConfig.baseStats.init - 2) * 8 + 20
+                  )
+                ),
+                maxHp: Math.max(
+                  1,
+                  Math.round(
+                    Math.max(1, currentBossConfig.baseStats.init - 2) * 8 + 20
+                  )
+                ),
+                damage: Math.max(
+                  1,
+                  Math.round(
+                    Math.max(1, currentBossConfig.baseStats.init - 2) * 2 + 3
+                  )
+                ),
+                res: 0,
+                sp: 0,
+                chc: 0,
+                init: Math.max(
+                  1,
+                  8 + Math.max(1, currentBossConfig.baseStats.init - 2) - 1
+                ),
+                sr: 5,
+                assignedName: s2.parentBossId ? "Minion" : "Ghost",
+                ap: 0,
+                mp: 0,
+                atk: 0,
+                family: "",
+                tier: "",
+                intelligence: 0,
+                aiStrategy: "",
+                spellCooldowns: {},
+                activeEffects: []
+              }));
+              const _spawnSlots = Math.max(
+                0,
+                MAX_ENEMIES - combatantsRef.current.length
+              );
+              const _newMinionEnemies = [
+                ...combatantsRef.current,
+                ...minionEnemies.slice(0, _spawnSlots)
+              ];
+              syncCombatants(combatantStoreCtx, _newMinionEnemies);
+              const minionEntries = minionEnemies.map(
+                (m2) => ({
+                  id: m2.id,
+                  type: "enemy",
+                  initiative: 6,
+                  name: m2.assignedName ?? "Minion",
+                  pieceIcon: "☠",
+                  hp: 20,
+                  maxHp: 20,
+                  level: m2.level,
+                  pieceType: m2.pieceType
                 })
               );
+              setTurnOrder((prev) => [...prev, ...minionEntries]);
               setEnemyHpMap((h2) => {
-                const newMaxHp = Math.round((h2[enemyId] ?? 0) * mult);
-                const newHp = isWeepingPawn ? newMaxHp : Math.round((h2[enemyId] ?? 0) * mult);
-                return { ...h2, [enemyId]: newHp };
+                const n = { ...h2 };
+                for (const m2 of minionEnemies) n[m2.id] = 20;
+                return n;
               });
-              bossStateRef.current = newBossStateAfterPhase;
-              reactDomExports.flushSync(() => {
-                setActiveBossState(newBossStateAfterPhase);
-              });
-              if (isWeepingPawn) {
-                logBattleEntry(
-                  "👑 The Weeping Pawn PROMOTES to the Weeping Queen — FULL HP RESTORED!",
-                  "#ffd700"
-                );
-              } else {
-                logBattleEntry(
-                  `⚡ ${currentBossConfig.name} PHASE 2! Stats boosted ×${mult}!`,
-                  "#ffd700"
-                );
-              }
             }
-            if (bossAIAction) {
-              const res = bossAIAction.abilityResult;
-              if (bossAIAction.logMessage) {
-                logBattleEntry(bossAIAction.logMessage, "#a855f7");
-              }
-              if (res == null ? void 0 : res.logMessages) {
-                for (const msg of res.logMessages)
-                  logBattleEntry(msg, "#a855f7");
-              }
-              const newBossX = ((_c3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _c3.x) ?? enemy.x;
-              const newBossY = ((_d3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _d3.y) ?? enemy.y;
-              if ((res == null ? void 0 : res.damageToPlayer) && res.damageToPlayer > 0) {
-                const rawDmg = res.damageToPlayer;
-                const absorbed = Math.min(shieldHpRef.current, rawDmg);
-                shieldHpRef.current = Math.max(
-                  0,
-                  shieldHpRef.current - absorbed
-                );
-                const finalDmg = rawDmg - absorbed;
-                if (finalDmg > 0) {
-                  setCharacterStats((s2) => ({
-                    ...s2,
-                    hp: Math.max(0, s2.hp - finalDmg)
-                  }));
-                  challengeTotalDamageRef.current += finalDmg;
-                }
-              }
-              if ((res == null ? void 0 : res.playerApModifier) && res.playerApModifier !== 0) {
-                setCurrentBattleAp(
-                  (prev) => Math.max(0, prev + res.playerApModifier)
-                );
-              }
-              if (res == null ? void 0 : res.debuffsApplied) {
-                for (const d2 of res.debuffsApplied) {
-                  applyActiveEffect({
-                    id: `debuff_${Date.now()}`,
-                    targetId: "player",
-                    type: "debuff",
-                    stat: d2.stat,
-                    modifier: d2.modifier,
-                    duration: d2.duration,
-                    effectName: d2.effectName,
-                    iconEmoji: d2.iconEmoji,
-                    description: d2.effectName
-                  });
-                }
-              }
-              if (res == null ? void 0 : res.dotApplied) {
-                for (const dot of res.dotApplied) {
-                  applyActiveEffect({
-                    id: `dot_${Date.now()}`,
-                    targetId: "player",
-                    type: "dot",
-                    dotDamagePerTurn: dot.damage,
-                    duration: dot.duration,
-                    effectName: dot.effectName,
-                    iconEmoji: dot.iconEmoji,
-                    description: `${dot.damage} dmg/turn`
-                  });
-                }
-              }
-              if (res == null ? void 0 : res.newBossState) {
-                const merged = {
-                  ...bossStateRef.current,
-                  ...res.newBossState
-                };
-                bossStateRef.current = merged;
-                setActiveBossState(merged);
-              }
-              if ((res == null ? void 0 : res.newHazardTiles) && currentMap) {
-                for (const ht of res.newHazardTiles) {
-                  if (currentMap.hazardTiles.size >= MAX_HAZARD_TILES) {
-                    const firstHazardKey = currentMap.hazardTiles.keys().next().value;
-                    if (firstHazardKey !== void 0)
-                      currentMap.hazardTiles.delete(firstHazardKey);
-                  }
-                  currentMap.hazardTiles.set(
-                    `${ht.x},${ht.y}`,
-                    ht.type
-                  );
-                }
-              }
-              if ((res == null ? void 0 : res.spawns) && res.spawns.length > 0) {
-                const minionEnemies = res.spawns.map((s2) => ({
-                  id: s2.id,
-                  x: s2.x,
-                  y: s2.y,
-                  pieceType: s2.pieceType,
-                  currentView: "front",
-                  isMoving: false,
-                  movementPath: [],
-                  currentStepIndex: 0,
-                  movementStartTime: 0,
-                  initialDelay: 0,
-                  hasStartedMoving: true,
-                  spawnTime: Date.now(),
-                  scaleX: 1,
-                  scaleY: 1,
-                  level: Math.max(1, currentBossConfig.baseStats.init - 2),
-                  nextMoveTime: Date.now() + 1e3,
-                  movementSpeed: 800,
-                  movementRange: 1,
-                  isWandering: false,
-                  wanderTarget: null,
-                  lastMoveTime: Date.now(),
-                  hp: Math.max(
-                    1,
-                    Math.round(
-                      Math.max(1, currentBossConfig.baseStats.init - 2) * 8 + 20
-                    )
-                  ),
-                  maxHp: Math.max(
-                    1,
-                    Math.round(
-                      Math.max(1, currentBossConfig.baseStats.init - 2) * 8 + 20
-                    )
-                  ),
-                  damage: Math.max(
-                    1,
-                    Math.round(
-                      Math.max(1, currentBossConfig.baseStats.init - 2) * 2 + 3
-                    )
-                  ),
-                  res: 0,
-                  sp: 0,
-                  chc: 0,
-                  init: Math.max(
-                    1,
-                    8 + Math.max(1, currentBossConfig.baseStats.init - 2) - 1
-                  ),
-                  sr: 5,
-                  assignedName: s2.parentBossId ? "Minion" : "Ghost",
-                  ap: 0,
-                  mp: 0,
-                  atk: 0,
-                  family: "",
-                  tier: "",
-                  intelligence: 0,
-                  aiStrategy: "",
-                  spellCooldowns: {},
-                  activeEffects: []
-                }));
-                const _spawnSlots = Math.max(
-                  0,
-                  MAX_ENEMIES - combatantsRef.current.length
-                );
-                const _newMinionEnemies = [
-                  ...combatantsRef.current,
-                  ...minionEnemies.slice(0, _spawnSlots)
-                ];
-                syncCombatants(combatantStoreCtx, _newMinionEnemies);
-                const minionEntries = minionEnemies.map(
-                  (m2) => ({
-                    id: m2.id,
-                    type: "enemy",
-                    initiative: 6,
-                    name: m2.assignedName ?? "Minion",
-                    pieceIcon: "☠",
-                    hp: 20,
-                    maxHp: 20,
-                    level: m2.level,
-                    pieceType: m2.pieceType
-                  })
-                );
-                setTurnOrder((prev) => [...prev, ...minionEntries]);
-                setEnemyHpMap((h2) => {
-                  const n = { ...h2 };
-                  for (const m2 of minionEnemies) n[m2.id] = 20;
-                  return n;
-                });
-              }
-              if ((res == null ? void 0 : res.endsTurn) === true) {
-                clearTimeout(watchdog);
-                pendingTimeoutsRef.current.delete(watchdog);
-                enemyTurnInProgressRef.current = false;
-                advanceTurnRef.current();
-                updateCombatant(combatantStoreCtx, enemyId, {
-                  x: newBossX,
-                  y: newBossY
-                });
-                return prevEnemies;
-              }
+            if ((res == null ? void 0 : res.endsTurn) === true) {
               clearTimeout(watchdog);
               pendingTimeoutsRef.current.delete(watchdog);
               enemyTurnInProgressRef.current = false;
-              const myBossAdvGen = aiGenerationRef.current;
-              const bossAdvTimer = setTimeout(() => {
-                if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myBossAdvGen)
-                  return;
-                pendingTimeoutsRef.current.delete(bossAdvTimer);
-                if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
-                  advanceTurnRef.current();
-              }, 0);
-              if (!cleanupRanRef.current)
-                pendingTimeoutsRef.current.add(bossAdvTimer);
+              advanceTurnRef.current();
               updateCombatant(combatantStoreCtx, enemyId, {
                 x: newBossX,
                 y: newBossY
               });
-              return prevEnemies;
+              return;
             }
             clearTimeout(watchdog);
             pendingTimeoutsRef.current.delete(watchdog);
             enemyTurnInProgressRef.current = false;
-            const myBossSkipGen = aiGenerationRef.current;
-            const bossSkipTimer = setTimeout(() => {
-              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myBossSkipGen)
+            const myBossAdvGen = aiGenerationRef.current;
+            const bossAdvTimer = setTimeout(() => {
+              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myBossAdvGen)
                 return;
-              pendingTimeoutsRef.current.delete(bossSkipTimer);
+              pendingTimeoutsRef.current.delete(bossAdvTimer);
               if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
                 advanceTurnRef.current();
             }, 0);
             if (!cleanupRanRef.current)
-              pendingTimeoutsRef.current.add(bossSkipTimer);
-            return prevEnemies;
-          }
-          const enrageMultiplier = enragedEnemies.has(enemyId) ? 6 : 1;
-          const battleEnemyData = battleEnemiesRef.current.find(
-            (be2) => be2.id === enemyId
-          );
-          const assignedSpells = ((((_e3 = currentCombatant.spells) == null ? void 0 : _e3.length) ?? 0) > 0 ? currentCombatant.spells : (battleEnemyData == null ? void 0 : battleEnemyData.spells) ?? currentCombatant.spells) ?? [];
-          const enemyCooldownMap = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
-          const availableSpells = assignedSpells.filter(
-            (s2) => (enemyCooldownMap.get(s2.id) ?? 0) <= 0 && s2.usableByEnemy !== false
-          );
-          const aiCombatants = [];
-          for (const e of prevEnemies) {
-            if (e.id === enemyId) continue;
-            const eHp = enemyHpMap[e.id] ?? e.hp;
-            if (eHp <= 0) continue;
-            aiCombatants.push({
-              id: e.id,
-              side: e.isSummon && e.side === "player" ? "player" : "enemy",
-              isSummon: e.isSummon,
-              summonAI: e.summonAI,
-              name: e.pieceType,
-              x: e.x,
-              y: e.y,
-              hp: eHp,
-              maxHp: e.maxHp,
-              level: e.level
+              pendingTimeoutsRef.current.add(bossAdvTimer);
+            updateCombatant(combatantStoreCtx, enemyId, {
+              x: newBossX,
+              y: newBossY
             });
-          }
-          aiCombatants.push({
-            id: "player",
-            side: "player",
-            name: "player",
-            x: playerPosition.x,
-            y: playerPosition.y,
-            hp: characterStats.hp,
-            maxHp: characterStats.maxHp ?? characterStats.hp,
-            level: characterStats.level ?? 1
-          });
-          const aiGrid = ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
-            (row) => (row ?? []).map((t) => t !== "wall")
-          );
-          const aiOccupied = /* @__PURE__ */ new Set();
-          for (const e of prevEnemies) {
-            if (e.id === enemyId) continue;
-            aiOccupied.add(`${e.x},${e.y}`);
-          }
-          aiOccupied.add(`${playerPosition.x},${playerPosition.y}`);
-          const aiBarriers = new Set(barrierTilesRef.current.keys());
-          const aiPortals = new Set(
-            ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
-          );
-          const aiVoid = (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set();
-          const aiHazards = (currentMap == null ? void 0 : currentMap.hazardTiles) ?? /* @__PURE__ */ new Map();
-          const aiHasLineOfSight = (from, to) => {
-            var _a5, _b5;
-            let x0 = from.x;
-            let y0 = from.y;
-            const x1 = to.x;
-            const y1 = to.y;
-            const dx = Math.abs(x1 - x0);
-            const dy = Math.abs(y1 - y0);
-            const sx = x0 < x1 ? 1 : -1;
-            const sy = y0 < y1 ? 1 : -1;
-            let err = dx - dy;
-            let guard = 0;
-            while (guard++ < 256) {
-              if (x0 === x1 && y0 === y1) return true;
-              const k2 = `${x0},${y0}`;
-              if (!(x0 === from.x && y0 === from.y)) {
-                if (aiBarriers.has(k2)) return false;
-                const t = (_b5 = (_a5 = currentMap == null ? void 0 : currentMap.tiles) == null ? void 0 : _a5[y0]) == null ? void 0 : _b5[x0];
-                if (t === "wall") return false;
-              }
-              const e2 = 2 * err;
-              if (e2 > -dy) {
-                err -= dy;
-                x0 += sx;
-              }
-              if (e2 < dx) {
-                err += dx;
-                y0 += sy;
-              }
-            }
-            return false;
-          };
-          const aiCtx = {
-            enemy,
-            combatants: aiCombatants,
-            grid: aiGrid,
-            occupied: aiOccupied,
-            barriers: aiBarriers,
-            portals: aiPortals,
-            voidTiles: aiVoid,
-            hazardTiles: aiHazards,
-            availableSpells,
-            assignedSpells,
-            battleTurn,
-            allyCount: prevEnemies.filter(
-              (e) => e.id !== enemyId && (enemyHpMap[e.id] ?? e.hp) > 0
-            ).length,
-            enemyCount: prevEnemies.filter(
-              (e) => (enemyHpMap[e.id] ?? e.hp) > 0
-            ).length,
-            enrageMultiplier,
-            isSlimeFlood: isSlimeFloodRef.current,
-            rng: Math.random,
-            getEffectiveStat: (cid, stat) => getStatModifier(cid, stat, activeEffectsRef.current),
-            calcScaledDamage,
-            hasLineOfSight: aiHasLineOfSight,
-            log: logBattleEntry,
-            focusTargetId: focusTargetRef.current,
-            setFocusTargetId: (id) => {
-              focusTargetRef.current = id;
-            },
-            focusAlreadySet: focusTurnRef.current === battleTurn,
-            markFocusSet: () => {
-              focusTurnRef.current = battleTurn;
-            },
-            // Enemy summoner cooldown: only read by decideSummonerAction.
-            // lastSummonTurn is null when the summoner has not yet cast.
-            currentTurn: battleTurn,
-            lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null
-          };
-          const action = enemy.isSummoner ? decideSummonerAction(
-            {
-              ...enemy,
-              name: enemy.assignedName ?? String(enemy.pieceType)
-            },
-            aiCtx
-          ) : decideEnemyAction(enemy, aiCtx);
-          if (action.kind === "cast" && ((_f3 = action.spell) == null ? void 0 : _f3.isSummon) && action.destination) {
-            (_g2 = spawnEnemySummonRef.current) == null ? void 0 : _g2.call(spawnEnemySummonRef, action.destination, action.spell);
-            enemySummonCooldownRef.current.set(enemyId, battleTurn);
-            enemyTurnInProgressRef.current = false;
-            setTimeout(advanceTurnRef.current, 600);
-            return prevEnemies;
-          }
-          let newX = action.destination.x;
-          let newY = action.destination.y;
-          newX = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newX));
-          newY = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newY));
-          const chosenSpell = action.spell;
-          const resolvedTarget = action.targetId && action.targetId !== "player" ? prevEnemies.find((e) => e.id === action.targetId) : null;
-          const targetCell = resolvedTarget ? { x: resolvedTarget.x, y: resolvedTarget.y } : playerPosition;
-          const isSummonTarget = !!resolvedTarget;
-          const resolvedTargetId = action.targetId ?? "player";
-          if (action.intent) ;
-          let didAct = false;
-          if (action.kind === "cast" && chosenSpell) {
-            const spellRange = Number(chosenSpell.range);
-            const distAM = Math.max(
-              Math.abs(newX - targetCell.x),
-              Math.abs(newY - targetCell.y)
-            );
-            const inRange2 = distAM <= spellRange;
-            const spellType = chosenSpell.spellType ?? "damage";
-            const spellDmg = Number(chosenSpell.damage);
-            if (inRange2 && (spellType === "damage" || spellType === "drain") && spellDmg > 0) {
-              const rawDmg = Math.max(
-                1,
-                Math.round(
-                  calcScaledDamage(spellDmg, enemy.level, 0) * enrageMultiplier
-                )
-              );
-              const isCrit = Math.random() * 100 < (enemy.chc ?? 2) + (enragedEnemies.has(enemyId) ? 10 : 0);
-              const dmgAC = isCrit ? rawDmg * 2 : rawDmg;
-              const plSpEff = isSummonTarget ? 0 : Math.max(0, characterStats.sp) * getStatModifier(
-                "player",
-                "sp",
-                activeEffectsRef.current
-              );
-              const plResEff = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res)) * getStatModifier(
-                "player",
-                "res",
-                activeEffectsRef.current
-              );
-              if (isPaperWindstorm && spellRange > 1 && Math.random() < 0.5) {
-                logBattleEntry(
-                  `Paper Windstorm! ${enemy.pieceType}'s ${chosenSpell.name} missed!`,
-                  "#AAAAAA"
-                );
-              } else if (!chosenSpell.hitsMultiple && !chosenSpell.aoe && mirrorUnitsRef.current.has("player")) {
-                mirrorUnitsRef.current.delete("player");
-                const mirrorDmg = Math.max(
-                  1,
-                  Math.round(
-                    dmgAC * (1 - Number(enemy.res) * getStatModifier(enemy.id, "res", activeEffects) / 100)
-                  )
-                );
-                const curEnemyHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
-                const newEnemyHpMirror = Math.max(0, curEnemyHp - mirrorDmg);
-                setEnemyHpMap((prev) => ({
-                  ...prev,
-                  [enemyId]: newEnemyHpMirror
-                }));
-                setTurnOrder(
-                  (prev) => prev.map(
-                    (c2) => c2.id === enemyId ? { ...c2, hp: newEnemyHpMirror } : c2
-                  )
-                );
-                logBattleEntry(
-                  `Mirror! ${enemy.pieceType}'s ${chosenSpell.name} was reflected back for ${mirrorDmg} dmg!`,
-                  "#c084fc"
-                );
-                didAct = true;
-              } else {
-                const dmg = Math.max(
-                  1,
-                  Math.round(
-                    dmgAC * (1 - plSpEff / 100) * (1 - plResEff / 100)
-                  )
-                );
-                const spR = Math.round(dmgAC * (plSpEff / 100));
-                const resR = Math.round(
-                  dmgAC * (1 - plSpEff / 100) * (plResEff / 100)
-                );
-                const rn = [
-                  spR > 0 ? `-${spR} SP` : "",
-                  resR > 0 ? `-${resR} RES` : ""
-                ].filter(Boolean).join(", ");
-                const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
-                let actualDmg;
-                if (isSummonTarget && resolvedTarget) {
-                  enemyTakesDamage(
-                    resolvedTarget.id,
-                    dmg,
-                    enemy.id,
-                    `${enemy.pieceType} spell ${chosenSpell.name}`,
-                    isCrit
-                  );
-                  actualDmg = dmg;
-                  logBattleEntry(
-                    isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType}: ${rawDmg}x2=${dmgAC} dmg` : `${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType} for ${actualDmg} dmg`,
-                    isCrit ? "#FFD700" : "#ef4444"
-                  );
-                } else {
-                  actualDmg = playerTakesDamage(
-                    dmg,
-                    `${enemy.pieceType} spell ${chosenSpell.name}`
-                  );
-                  logBattleEntry(
-                    isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
-                    isCrit ? "#FFD700" : "#ef4444"
-                  );
-                  if (actualDmg > 0)
-                    logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
-                }
-                playSound("player_damage", enemy.pieceType);
-                if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
-                  applyActiveEffect({
-                    id: `ed-${Date.now()}`,
-                    effectName: chosenSpell.name,
-                    type: "debuff",
-                    targetId: resolvedTargetId,
-                    stat: chosenSpell.debuffStat,
-                    modifier: chosenSpell.debuffModifier ?? 1,
-                    duration: chosenSpell.debuffDuration,
-                    iconEmoji: chosenSpell.iconEmoji,
-                    description: `${chosenSpell.debuffStat} debuffed`
-                  });
-                  if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
-                    playerApWasDebuffedRef.current = true;
-                }
-                if ((chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage) && chosenSpell.dotDuration) {
-                  const dotPptE = chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage ?? 0;
-                  applyActiveEffect({
-                    id: `edot-${Date.now()}`,
-                    effectName: `${chosenSpell.name} DoT`,
-                    type: "dot",
-                    targetId: resolvedTargetId,
-                    dotDamagePerTurn: dotPptE,
-                    duration: chosenSpell.dotDuration,
-                    iconEmoji: "☠️",
-                    description: `${dotPptE} dmg/turn`
-                  });
-                }
-                if (spellType === "drain" && chosenSpell.healAmount) {
-                  const ha = chosenSpell.healAmount;
-                  setTurnOrder(
-                    (prev) => prev.map(
-                      (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
-                    )
-                  );
-                }
-              }
-              if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
-                const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
-                cdm.set(chosenSpell.id, chosenSpell.cooldown);
-                enemyCooldownsRef.current.set(enemyId, cdm);
-              }
-              didAct = true;
-            } else if (inRange2 && spellType === "heal" && spellRange === 0) {
-              const ha = Math.round(
-                (chosenSpell.healAmount ?? enemy.level * 2) * enrageMultiplier
-              );
-              setTurnOrder(
-                (prev) => prev.map(
-                  (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
-                )
-              );
-              logBattleEntry(`${enemy.pieceType} heals ${ha} HP`, "#ef4444");
-              if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
-                const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
-                cdm.set(chosenSpell.id, chosenSpell.cooldown);
-                enemyCooldownsRef.current.set(enemyId, cdm);
-              }
-              didAct = true;
-            } else if (inRange2 && chosenSpell.debuffStat && chosenSpell.debuffDuration) {
-              applyActiveEffect({
-                id: `ed2-${Date.now()}`,
-                effectName: chosenSpell.name,
-                type: "debuff",
-                targetId: resolvedTargetId,
-                stat: chosenSpell.debuffStat,
-                modifier: chosenSpell.debuffModifier ?? 1,
-                duration: chosenSpell.debuffDuration,
-                iconEmoji: chosenSpell.iconEmoji,
-                description: `${chosenSpell.debuffStat} debuffed`
-              });
-              if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
-                playerApWasDebuffedRef.current = true;
-              logBattleEntry(
-                `${enemy.pieceType} uses ${chosenSpell.name}!`,
-                "#ef4444"
-              );
-              if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
-                const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
-                cdm.set(chosenSpell.id, chosenSpell.cooldown);
-                enemyCooldownsRef.current.set(enemyId, cdm);
-              }
-              didAct = true;
-            }
-          }
-          if (action.kind === "melee" || !didAct) {
-            const nd = Math.max(
-              Math.abs(newX - targetCell.x),
-              Math.abs(newY - targetCell.y)
-            );
-            if (nd <= 1) {
-              const fallbackPool = [
-                { id: "e-crush", name: "Crush", range: 1, damage: 12 },
-                { id: "e-firebolt", name: "Fire Bolt", range: 3, damage: 8 }
-              ];
-              const fb = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
-              const rawFB = Math.max(
-                1,
-                Math.round(
-                  fb.damage * Math.max(1, enemy.level / 5) * enrageMultiplier
-                )
-              );
-              const meleeRes = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res));
-              const dmgFB = Math.max(
-                1,
-                Math.round(rawFB * (1 - meleeRes / 100))
-              );
-              if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5)
-                logBattleEntry(
-                  `Paper Windstorm! ${enemy.pieceType}'s ${fb.name} missed!`,
-                  "#AAAAAA"
-                );
-              else if (isSummonTarget && resolvedTarget) {
-                enemyTakesDamage(
-                  resolvedTarget.id,
-                  dmgFB,
-                  enemy.id,
-                  "melee",
-                  false
-                );
-                logBattleEntry(
-                  `${enemy.pieceType} strikes ${resolvedTarget.pieceType} for ${dmgFB} dmg`,
-                  "#ef4444"
-                );
-                didAct = true;
-              } else {
-                let meleeDmg = dmgFB;
-                if (shieldHpRef.current > 0) {
-                  const absorbedFB = Math.min(shieldHpRef.current, meleeDmg);
-                  shieldHpRef.current = Math.max(
-                    0,
-                    shieldHpRef.current - absorbedFB
-                  );
-                  meleeDmg = Math.max(0, meleeDmg - absorbedFB);
-                  if (absorbedFB > 0)
-                    logBattleEntry(
-                      `🛡️ Shield absorbed ${absorbedFB} dmg! (${shieldHpRef.current} remaining)`,
-                      "#818cf8"
-                    );
-                }
-                setCharacterStats((prev) => ({
-                  ...prev,
-                  hp: Math.max(0, prev.hp - meleeDmg)
-                }));
-                logBattleEntry(
-                  `${enemy.pieceType} strikes you for ${meleeDmg} dmg`,
-                  "#ef4444"
-                );
-                if ((enemy == null ? void 0 : enemy.family) === "ember_knight") {
-                  applyActiveEffect({
-                    id: `ember_burn_${Date.now()}`,
-                    targetId: "player",
-                    type: "dot",
-                    dotDamagePerTurn: 3,
-                    duration: 3,
-                    effectName: "burn",
-                    iconEmoji: "🔥",
-                    description: "3 dmg/turn (Ember Knight)"
-                  });
-                  logBattleEntry(
-                    `${enemy.pieceType ?? "Enemy"} ignites you!`,
-                    "#F97316"
-                  );
-                }
-                if ((enemy == null ? void 0 : enemy.family) === "tide_shade") {
-                  applyActiveEffect({
-                    id: `tide_slow_${Date.now()}`,
-                    targetId: "player",
-                    type: "debuff",
-                    stat: "mp",
-                    modifier: -1,
-                    duration: 2,
-                    effectName: "slow",
-                    iconEmoji: "🌊",
-                    description: "-1 MP (Tide Shade)"
-                  });
-                  logBattleEntry(
-                    `${enemy.pieceType ?? "Enemy"} slows you!`,
-                    "#0F766E"
-                  );
-                }
-                didAct = true;
-              }
-            } else if (action.kind === "skip") {
-              logBattleEntry(
-                `${enemy.pieceType} skipped (out of range)`,
-                "#ef4444"
-              );
-            }
-          }
-          const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
-          if (thisHp <= 0 && enemyId === leaderEnemyIdRef.current && !leaderDiedRef.current) {
-            leaderDiedRef.current = true;
-            triggerLeaderDeathAnimation(enemy.x, enemy.y);
-            logBattleEntry(
-              `👑 The leader ${enemy.pieceType} fell! Allies in disarray!`,
-              "#f97316"
-            );
-          }
-          logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
-          if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
-            const enemyHazard = (_h2 = currentMap.hazardTiles) == null ? void 0 : _h2.get(`${newX},${newY}`);
-            if (enemyHazard) {
-              if (enemyHazard === "lava") {
-                const hDmg = 8 + Math.floor(Math.random() * 8);
-                const curEH = enemyHpMap[enemyId] ?? currentCombatant.hp;
-                const newEH = Math.max(0, curEH - hDmg);
-                setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEH }));
-                setTurnOrder(
-                  (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEH } : c2)
-                );
-                logBattleEntry(
-                  `🌰 ${enemy.pieceType} walked on lava! -${hDmg} HP`,
-                  "#ff4400"
-                );
-                applyActiveEffect({
-                  id: `enemy-burn-${Date.now()}`,
-                  effectName: "Burning",
-                  type: "dot",
-                  targetId: enemyId,
-                  duration: 3,
-                  iconEmoji: "🔥",
-                  description: "Burning",
-                  dotDamagePerTurn: 3
-                });
-              } else if (enemyHazard === "ice") {
-                logBattleEntry(
-                  `❄️ ${enemy.pieceType} stepped on ice! Slowed!`,
-                  "#66ccff"
-                );
-                applyActiveEffect({
-                  id: `enemy-frozen-${Date.now()}`,
-                  effectName: "Frozen",
-                  type: "debuff",
-                  targetId: enemyId,
-                  stat: "mp",
-                  modifier: -2,
-                  duration: 2,
-                  iconEmoji: "❄️",
-                  description: "Slowed by ice"
-                });
-              } else if (enemyHazard === "spikes") {
-                const hsDmg = 5 + Math.floor(Math.random() * 6);
-                const curEHS = enemyHpMap[enemyId] ?? currentCombatant.hp;
-                const newEHS = Math.max(0, curEHS - hsDmg);
-                setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEHS }));
-                setTurnOrder(
-                  (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEHS } : c2)
-                );
-                logBattleEntry(
-                  `⚔️ ${enemy.pieceType} hit spikes! -${hsDmg} HP`,
-                  "#cc8800"
-                );
-              }
-            }
+            return;
           }
           clearTimeout(watchdog);
           pendingTimeoutsRef.current.delete(watchdog);
-          try {
-            const updatedEnemyList = prevEnemies.map(
-              (e) => e.id === enemyId ? { ...e, x: newX, y: newY } : e
-            );
-            const _at3 = setTimeout(() => {
-              if (!pendingTimeoutsRef.current.has(_at3)) return;
-              pendingTimeoutsRef.current.delete(_at3);
-              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
-                advanceTurnRef.current();
-            }, 0);
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(_at3);
-            }
-            return updatedEnemyList;
-          } finally {
-            enemyTurnInProgressRef.current = false;
-          }
+          enemyTurnInProgressRef.current = false;
+          const myBossSkipGen = aiGenerationRef.current;
+          const bossSkipTimer = setTimeout(() => {
+            if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myBossSkipGen)
+              return;
+            pendingTimeoutsRef.current.delete(bossSkipTimer);
+            if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              advanceTurnRef.current();
+          }, 0);
+          if (!cleanupRanRef.current)
+            pendingTimeoutsRef.current.add(bossSkipTimer);
+          return;
+        }
+        const enrageMultiplier = enragedEnemies.has(enemyId) ? 6 : 1;
+        const battleEnemyData = battleEnemiesRef.current.find(
+          (be2) => be2.id === enemyId
+        );
+        const assignedSpells = ((((_e3 = currentCombatant.spells) == null ? void 0 : _e3.length) ?? 0) > 0 ? currentCombatant.spells : (battleEnemyData == null ? void 0 : battleEnemyData.spells) ?? currentCombatant.spells) ?? [];
+        const enemyCooldownMap = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+        const availableSpells = assignedSpells.filter(
+          (s2) => (enemyCooldownMap.get(s2.id) ?? 0) <= 0 && s2.usableByEnemy !== false
+        );
+        const aiCombatants = [];
+        for (const e of prevEnemies) {
+          if (e.id === enemyId) continue;
+          const eHp = enemyHpMap[e.id] ?? e.hp;
+          if (eHp <= 0) continue;
+          aiCombatants.push({
+            id: e.id,
+            side: e.isSummon && e.side === "player" ? "player" : "enemy",
+            isSummon: e.isSummon,
+            summonAI: e.summonAI,
+            name: e.pieceType,
+            x: e.x,
+            y: e.y,
+            hp: eHp,
+            maxHp: e.maxHp,
+            level: e.level
+          });
+        }
+        aiCombatants.push({
+          id: "player",
+          side: "player",
+          name: "player",
+          x: playerPosition.x,
+          y: playerPosition.y,
+          hp: characterStats.hp,
+          maxHp: characterStats.maxHp ?? characterStats.hp,
+          level: characterStats.level ?? 1
         });
+        const aiGrid = ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
+          (row) => (row ?? []).map((t) => t !== "wall")
+        );
+        const aiOccupied = /* @__PURE__ */ new Set();
+        for (const e of prevEnemies) {
+          if (e.id === enemyId) continue;
+          aiOccupied.add(`${e.x},${e.y}`);
+        }
+        aiOccupied.add(`${playerPosition.x},${playerPosition.y}`);
+        const aiBarriers = new Set(barrierTilesRef.current.keys());
+        const aiPortals = new Set(
+          ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
+        );
+        const aiVoid = (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set();
+        const aiHazards = (currentMap == null ? void 0 : currentMap.hazardTiles) ?? /* @__PURE__ */ new Map();
+        const aiHasLineOfSight = (from, to) => {
+          var _a5, _b5;
+          let x0 = from.x;
+          let y0 = from.y;
+          const x1 = to.x;
+          const y1 = to.y;
+          const dx = Math.abs(x1 - x0);
+          const dy = Math.abs(y1 - y0);
+          const sx = x0 < x1 ? 1 : -1;
+          const sy = y0 < y1 ? 1 : -1;
+          let err = dx - dy;
+          let guard = 0;
+          while (guard++ < 256) {
+            if (x0 === x1 && y0 === y1) return true;
+            const k2 = `${x0},${y0}`;
+            if (!(x0 === from.x && y0 === from.y)) {
+              if (aiBarriers.has(k2)) return false;
+              const t = (_b5 = (_a5 = currentMap == null ? void 0 : currentMap.tiles) == null ? void 0 : _a5[y0]) == null ? void 0 : _b5[x0];
+              if (t === "wall") return false;
+            }
+            const e2 = 2 * err;
+            if (e2 > -dy) {
+              err -= dy;
+              x0 += sx;
+            }
+            if (e2 < dx) {
+              err += dx;
+              y0 += sy;
+            }
+          }
+          return false;
+        };
+        const aiCtx = {
+          enemy,
+          combatants: aiCombatants,
+          grid: aiGrid,
+          occupied: aiOccupied,
+          barriers: aiBarriers,
+          portals: aiPortals,
+          voidTiles: aiVoid,
+          hazardTiles: aiHazards,
+          availableSpells,
+          assignedSpells,
+          battleTurn,
+          allyCount: prevEnemies.filter(
+            (e) => e.id !== enemyId && (enemyHpMap[e.id] ?? e.hp) > 0
+          ).length,
+          enemyCount: prevEnemies.filter((e) => (enemyHpMap[e.id] ?? e.hp) > 0).length,
+          enrageMultiplier,
+          isSlimeFlood: isSlimeFloodRef.current,
+          rng: Math.random,
+          getEffectiveStat: (cid, stat) => getStatModifier(cid, stat, activeEffectsRef.current),
+          calcScaledDamage,
+          hasLineOfSight: aiHasLineOfSight,
+          log: logBattleEntry,
+          focusTargetId: focusTargetRef.current,
+          setFocusTargetId: (id) => {
+            focusTargetRef.current = id;
+          },
+          focusAlreadySet: focusTurnRef.current === battleTurn,
+          markFocusSet: () => {
+            focusTurnRef.current = battleTurn;
+          },
+          // Enemy summoner cooldown: only read by decideSummonerAction.
+          // lastSummonTurn is null when the summoner has not yet cast.
+          currentTurn: battleTurn,
+          lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null
+        };
+        const action = enemy.isSummoner ? decideSummonerAction(
+          {
+            ...enemy,
+            name: enemy.assignedName ?? String(enemy.pieceType)
+          },
+          aiCtx
+        ) : decideEnemyAction(enemy, aiCtx);
+        if (action.kind === "cast" && ((_f3 = action.spell) == null ? void 0 : _f3.isSummon) && action.destination) {
+          (_g2 = spawnEnemySummonRef.current) == null ? void 0 : _g2.call(spawnEnemySummonRef, action.destination, action.spell);
+          enemySummonCooldownRef.current.set(enemyId, battleTurn);
+          enemyTurnInProgressRef.current = false;
+          setTimeout(advanceTurnRef.current, 600);
+          return;
+        }
+        let newX = action.destination.x;
+        let newY = action.destination.y;
+        newX = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newX));
+        newY = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newY));
+        const chosenSpell = action.spell;
+        const resolvedTarget = action.targetId && action.targetId !== "player" ? prevEnemies.find((e) => e.id === action.targetId) : null;
+        const targetCell = resolvedTarget ? { x: resolvedTarget.x, y: resolvedTarget.y } : playerPosition;
+        const isSummonTarget = !!resolvedTarget;
+        const resolvedTargetId = action.targetId ?? "player";
+        if (action.intent) ;
+        let didAct = false;
+        if (action.kind === "cast" && chosenSpell) {
+          const spellRange = Number(chosenSpell.range);
+          const distAM = Math.max(
+            Math.abs(newX - targetCell.x),
+            Math.abs(newY - targetCell.y)
+          );
+          const inRange2 = distAM <= spellRange;
+          const spellType = chosenSpell.spellType ?? "damage";
+          const spellDmg = Number(chosenSpell.damage);
+          if (inRange2 && (spellType === "damage" || spellType === "drain") && spellDmg > 0) {
+            const rawDmg = Math.max(
+              1,
+              Math.round(
+                calcScaledDamage(spellDmg, enemy.level, 0) * enrageMultiplier
+              )
+            );
+            const isCrit = Math.random() * 100 < (enemy.chc ?? 2) + (enragedEnemies.has(enemyId) ? 10 : 0);
+            const dmgAC = isCrit ? rawDmg * 2 : rawDmg;
+            const plSpEff = isSummonTarget ? 0 : Math.max(0, characterStats.sp) * getStatModifier(
+              "player",
+              "sp",
+              activeEffectsRef.current
+            );
+            const plResEff = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res)) * getStatModifier(
+              "player",
+              "res",
+              activeEffectsRef.current
+            );
+            if (isPaperWindstorm && spellRange > 1 && Math.random() < 0.5) {
+              logBattleEntry(
+                `Paper Windstorm! ${enemy.pieceType}'s ${chosenSpell.name} missed!`,
+                "#AAAAAA"
+              );
+            } else if (!chosenSpell.hitsMultiple && !chosenSpell.aoe && mirrorUnitsRef.current.has("player")) {
+              mirrorUnitsRef.current.delete("player");
+              const mirrorDmg = Math.max(
+                1,
+                Math.round(
+                  dmgAC * (1 - Number(enemy.res) * getStatModifier(enemy.id, "res", activeEffects) / 100)
+                )
+              );
+              const curEnemyHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
+              const newEnemyHpMirror = Math.max(0, curEnemyHp - mirrorDmg);
+              setEnemyHpMap((prev) => ({
+                ...prev,
+                [enemyId]: newEnemyHpMirror
+              }));
+              setTurnOrder(
+                (prev) => prev.map(
+                  (c2) => c2.id === enemyId ? { ...c2, hp: newEnemyHpMirror } : c2
+                )
+              );
+              logBattleEntry(
+                `Mirror! ${enemy.pieceType}'s ${chosenSpell.name} was reflected back for ${mirrorDmg} dmg!`,
+                "#c084fc"
+              );
+              didAct = true;
+            } else {
+              const dmg = Math.max(
+                1,
+                Math.round(dmgAC * (1 - plSpEff / 100) * (1 - plResEff / 100))
+              );
+              const spR = Math.round(dmgAC * (plSpEff / 100));
+              const resR = Math.round(
+                dmgAC * (1 - plSpEff / 100) * (plResEff / 100)
+              );
+              const rn = [
+                spR > 0 ? `-${spR} SP` : "",
+                resR > 0 ? `-${resR} RES` : ""
+              ].filter(Boolean).join(", ");
+              const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
+              let actualDmg;
+              if (isSummonTarget && resolvedTarget) {
+                enemyTakesDamage(
+                  resolvedTarget.id,
+                  dmg,
+                  enemy.id,
+                  `${enemy.pieceType} spell ${chosenSpell.name}`,
+                  isCrit
+                );
+                actualDmg = dmg;
+                logBattleEntry(
+                  isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType}: ${rawDmg}x2=${dmgAC} dmg` : `${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType} for ${actualDmg} dmg`,
+                  isCrit ? "#FFD700" : "#ef4444"
+                );
+              } else {
+                actualDmg = playerTakesDamage(
+                  dmg,
+                  `${enemy.pieceType} spell ${chosenSpell.name}`
+                );
+                logBattleEntry(
+                  isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
+                  isCrit ? "#FFD700" : "#ef4444"
+                );
+                if (actualDmg > 0)
+                  logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
+              }
+              playSound("player_damage", enemy.pieceType);
+              if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
+                applyActiveEffect({
+                  id: `ed-${Date.now()}`,
+                  effectName: chosenSpell.name,
+                  type: "debuff",
+                  targetId: resolvedTargetId,
+                  stat: chosenSpell.debuffStat,
+                  modifier: chosenSpell.debuffModifier ?? 1,
+                  duration: chosenSpell.debuffDuration,
+                  iconEmoji: chosenSpell.iconEmoji,
+                  description: `${chosenSpell.debuffStat} debuffed`
+                });
+                if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
+                  playerApWasDebuffedRef.current = true;
+              }
+              if ((chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage) && chosenSpell.dotDuration) {
+                const dotPptE = chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage ?? 0;
+                applyActiveEffect({
+                  id: `edot-${Date.now()}`,
+                  effectName: `${chosenSpell.name} DoT`,
+                  type: "dot",
+                  targetId: resolvedTargetId,
+                  dotDamagePerTurn: dotPptE,
+                  duration: chosenSpell.dotDuration,
+                  iconEmoji: "☠️",
+                  description: `${dotPptE} dmg/turn`
+                });
+              }
+              if (spellType === "drain" && chosenSpell.healAmount) {
+                const ha = chosenSpell.healAmount;
+                setTurnOrder(
+                  (prev) => prev.map(
+                    (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
+                  )
+                );
+              }
+            }
+            if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
+              const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+              cdm.set(chosenSpell.id, chosenSpell.cooldown);
+              enemyCooldownsRef.current.set(enemyId, cdm);
+            }
+            didAct = true;
+          } else if (inRange2 && spellType === "heal" && spellRange === 0) {
+            const ha = Math.round(
+              (chosenSpell.healAmount ?? enemy.level * 2) * enrageMultiplier
+            );
+            setTurnOrder(
+              (prev) => prev.map(
+                (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
+              )
+            );
+            logBattleEntry(`${enemy.pieceType} heals ${ha} HP`, "#ef4444");
+            if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
+              const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+              cdm.set(chosenSpell.id, chosenSpell.cooldown);
+              enemyCooldownsRef.current.set(enemyId, cdm);
+            }
+            didAct = true;
+          } else if (inRange2 && chosenSpell.debuffStat && chosenSpell.debuffDuration) {
+            applyActiveEffect({
+              id: `ed2-${Date.now()}`,
+              effectName: chosenSpell.name,
+              type: "debuff",
+              targetId: resolvedTargetId,
+              stat: chosenSpell.debuffStat,
+              modifier: chosenSpell.debuffModifier ?? 1,
+              duration: chosenSpell.debuffDuration,
+              iconEmoji: chosenSpell.iconEmoji,
+              description: `${chosenSpell.debuffStat} debuffed`
+            });
+            if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
+              playerApWasDebuffedRef.current = true;
+            logBattleEntry(
+              `${enemy.pieceType} uses ${chosenSpell.name}!`,
+              "#ef4444"
+            );
+            if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
+              const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+              cdm.set(chosenSpell.id, chosenSpell.cooldown);
+              enemyCooldownsRef.current.set(enemyId, cdm);
+            }
+            didAct = true;
+          }
+        }
+        if (action.kind === "melee" || !didAct) {
+          const nd = Math.max(
+            Math.abs(newX - targetCell.x),
+            Math.abs(newY - targetCell.y)
+          );
+          if (nd <= 1) {
+            const fallbackPool = [
+              { id: "e-crush", name: "Crush", range: 1, damage: 12 },
+              { id: "e-firebolt", name: "Fire Bolt", range: 3, damage: 8 }
+            ];
+            const fb = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
+            const rawFB = Math.max(
+              1,
+              Math.round(
+                fb.damage * Math.max(1, enemy.level / 5) * enrageMultiplier
+              )
+            );
+            const meleeRes = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res));
+            const dmgFB = Math.max(1, Math.round(rawFB * (1 - meleeRes / 100)));
+            if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5)
+              logBattleEntry(
+                `Paper Windstorm! ${enemy.pieceType}'s ${fb.name} missed!`,
+                "#AAAAAA"
+              );
+            else if (isSummonTarget && resolvedTarget) {
+              enemyTakesDamage(
+                resolvedTarget.id,
+                dmgFB,
+                enemy.id,
+                "melee",
+                false
+              );
+              logBattleEntry(
+                `${enemy.pieceType} strikes ${resolvedTarget.pieceType} for ${dmgFB} dmg`,
+                "#ef4444"
+              );
+              didAct = true;
+            } else {
+              let meleeDmg = dmgFB;
+              if (shieldHpRef.current > 0) {
+                const absorbedFB = Math.min(shieldHpRef.current, meleeDmg);
+                shieldHpRef.current = Math.max(
+                  0,
+                  shieldHpRef.current - absorbedFB
+                );
+                meleeDmg = Math.max(0, meleeDmg - absorbedFB);
+                if (absorbedFB > 0)
+                  logBattleEntry(
+                    `🛡️ Shield absorbed ${absorbedFB} dmg! (${shieldHpRef.current} remaining)`,
+                    "#818cf8"
+                  );
+              }
+              setCharacterStats((prev) => ({
+                ...prev,
+                hp: Math.max(0, prev.hp - meleeDmg)
+              }));
+              logBattleEntry(
+                `${enemy.pieceType} strikes you for ${meleeDmg} dmg`,
+                "#ef4444"
+              );
+              if ((enemy == null ? void 0 : enemy.family) === "ember_knight") {
+                applyActiveEffect({
+                  id: `ember_burn_${Date.now()}`,
+                  targetId: "player",
+                  type: "dot",
+                  dotDamagePerTurn: 3,
+                  duration: 3,
+                  effectName: "burn",
+                  iconEmoji: "🔥",
+                  description: "3 dmg/turn (Ember Knight)"
+                });
+                logBattleEntry(
+                  `${enemy.pieceType ?? "Enemy"} ignites you!`,
+                  "#F97316"
+                );
+              }
+              if ((enemy == null ? void 0 : enemy.family) === "tide_shade") {
+                applyActiveEffect({
+                  id: `tide_slow_${Date.now()}`,
+                  targetId: "player",
+                  type: "debuff",
+                  stat: "mp",
+                  modifier: -1,
+                  duration: 2,
+                  effectName: "slow",
+                  iconEmoji: "🌊",
+                  description: "-1 MP (Tide Shade)"
+                });
+                logBattleEntry(
+                  `${enemy.pieceType ?? "Enemy"} slows you!`,
+                  "#0F766E"
+                );
+              }
+              didAct = true;
+            }
+          } else if (action.kind === "skip") {
+            logBattleEntry(
+              `${enemy.pieceType} skipped (out of range)`,
+              "#ef4444"
+            );
+          }
+        }
+        const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
+        if (thisHp <= 0 && enemyId === leaderEnemyIdRef.current && !leaderDiedRef.current) {
+          leaderDiedRef.current = true;
+          triggerLeaderDeathAnimation(enemy.x, enemy.y);
+          logBattleEntry(
+            `👑 The leader ${enemy.pieceType} fell! Allies in disarray!`,
+            "#f97316"
+          );
+        }
+        logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
+        if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
+          const enemyHazard = (_h2 = currentMap.hazardTiles) == null ? void 0 : _h2.get(`${newX},${newY}`);
+          if (enemyHazard) {
+            if (enemyHazard === "lava") {
+              const hDmg = 8 + Math.floor(Math.random() * 8);
+              const curEH = enemyHpMap[enemyId] ?? currentCombatant.hp;
+              const newEH = Math.max(0, curEH - hDmg);
+              setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEH }));
+              setTurnOrder(
+                (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEH } : c2)
+              );
+              logBattleEntry(
+                `🌰 ${enemy.pieceType} walked on lava! -${hDmg} HP`,
+                "#ff4400"
+              );
+              applyActiveEffect({
+                id: `enemy-burn-${Date.now()}`,
+                effectName: "Burning",
+                type: "dot",
+                targetId: enemyId,
+                duration: 3,
+                iconEmoji: "🔥",
+                description: "Burning",
+                dotDamagePerTurn: 3
+              });
+            } else if (enemyHazard === "ice") {
+              logBattleEntry(
+                `❄️ ${enemy.pieceType} stepped on ice! Slowed!`,
+                "#66ccff"
+              );
+              applyActiveEffect({
+                id: `enemy-frozen-${Date.now()}`,
+                effectName: "Frozen",
+                type: "debuff",
+                targetId: enemyId,
+                stat: "mp",
+                modifier: -2,
+                duration: 2,
+                iconEmoji: "❄️",
+                description: "Slowed by ice"
+              });
+            } else if (enemyHazard === "spikes") {
+              const hsDmg = 5 + Math.floor(Math.random() * 6);
+              const curEHS = enemyHpMap[enemyId] ?? currentCombatant.hp;
+              const newEHS = Math.max(0, curEHS - hsDmg);
+              setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEHS }));
+              setTurnOrder(
+                (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEHS } : c2)
+              );
+              logBattleEntry(
+                `⚔️ ${enemy.pieceType} hit spikes! -${hsDmg} HP`,
+                "#cc8800"
+              );
+            }
+          }
+        }
+        clearTimeout(watchdog);
+        pendingTimeoutsRef.current.delete(watchdog);
+        try {
+          updateCombatant(combatantStoreCtx, enemyId, { x: newX, y: newY });
+          const _at3 = setTimeout(() => {
+            if (!pendingTimeoutsRef.current.has(_at3)) return;
+            pendingTimeoutsRef.current.delete(_at3);
+            if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              advanceTurnRef.current();
+          }, 0);
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(_at3);
+          }
+          return;
+        } finally {
+          enemyTurnInProgressRef.current = false;
+        }
       });
     }, 800);
     if (!cleanupRanRef.current) {
@@ -70248,7 +70329,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BCqb_6WA.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CqL2rHyP.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

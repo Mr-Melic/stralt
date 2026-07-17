@@ -93,6 +93,7 @@ export interface Character {
     bloodBalance?: bigint;
     bossRushMasterComplete?: boolean;
     colors: Array<string>;
+    spellBarOrder?: Array<string>;
     pixelPattern: string;
 }
 export interface AchievementConfig {
@@ -1041,6 +1042,18 @@ export interface backendInterface {
      * / Admin: set the payment URL for a specific shop package by dokaAmount.
      */
     setShopPaymentLink(dokaAmount: bigint, url: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Set the player-arranged spell bar order for the character in the given slot.
+     * / Validates that every id is owned by the character (present in spellLevelKeys),
+     * / that the list length is capped at 8, and persists the order into spellBarOrder.
+     */
+    setSpellBarOrder(slot: bigint, spellIds: Array<string>): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
@@ -2101,28 +2114,28 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getBannedPrincipals();
-                return from_candid_variant_n43(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n44(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getBannedPrincipals();
-            return from_candid_variant_n43(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n44(this._uploadFile, this._downloadFile, result);
         }
     }
     async getBossConfig(arg0: string): Promise<BossConfig | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getBossConfig(arg0);
-                return from_candid_opt_n44(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n45(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getBossConfig(arg0);
-            return from_candid_opt_n44(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n45(this._uploadFile, this._downloadFile, result);
         }
     }
     async getBossPortalAssignments(): Promise<Array<[string, string]>> {
@@ -2199,14 +2212,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getBuffInventory(arg0);
-                return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getBuffInventory(arg0);
-            return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
         }
     }
     async getCallerDokaBalance(): Promise<bigint> {
@@ -2227,28 +2240,28 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getCallerUserProfile();
-                return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getCallerUserProfile();
-            return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
         }
     }
     async getCallerUserRole(): Promise<UserRole> {
         if (this.processError) {
             try {
                 const result = await this.actor.getCallerUserRole();
-                return from_candid_UserRole_n47(this._uploadFile, this._downloadFile, result);
+                return from_candid_UserRole_n48(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getCallerUserRole();
-            return from_candid_UserRole_n47(this._uploadFile, this._downloadFile, result);
+            return from_candid_UserRole_n48(this._uploadFile, this._downloadFile, result);
         }
     }
     async getChangelog(arg0: string): Promise<string | null> {
@@ -2317,14 +2330,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getCharacterStats(arg0);
-                return from_candid_variant_n49(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n50(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getCharacterStats(arg0);
-            return from_candid_variant_n49(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n50(this._uploadFile, this._downloadFile, result);
         }
     }
     async getColorPalette(): Promise<string> {
@@ -2359,28 +2372,28 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getDungeonRecord(arg0);
-                return from_candid_opt_n50(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n51(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getDungeonRecord(arg0);
-            return from_candid_opt_n50(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n51(this._uploadFile, this._downloadFile, result);
         }
     }
     async getEnemyConfigs(): Promise<Array<EnemyConfig>> {
         if (this.processError) {
             try {
                 const result = await this.actor.getEnemyConfigs();
-                return from_candid_vec_n51(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n52(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getEnemyConfigs();
-            return from_candid_vec_n51(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n52(this._uploadFile, this._downloadFile, result);
         }
     }
     async getEnemyHPForLevel(arg0: bigint, arg1: bigint): Promise<bigint> {
@@ -2519,14 +2532,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getPlayerSpriteConfigs();
-                return from_candid_vec_n54(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getPlayerSpriteConfigs();
-            return from_candid_vec_n54(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n55(this._uploadFile, this._downloadFile, result);
         }
     }
     async getPurchases(): Promise<{
@@ -2553,14 +2566,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getRegionConfigs();
-                return from_candid_vec_n57(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n58(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getRegionConfigs();
-            return from_candid_vec_n57(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n58(this._uploadFile, this._downloadFile, result);
         }
     }
     async getSessionState(arg0: bigint): Promise<{
@@ -2578,14 +2591,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getSessionState(arg0);
-                return from_candid_variant_n64(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n65(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getSessionState(arg0);
-            return from_candid_variant_n64(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n65(this._uploadFile, this._downloadFile, result);
         }
     }
     async getShopPackages(): Promise<Array<ShopPackage>> {
@@ -2620,14 +2633,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getSpellConfigs();
-                return from_candid_vec_n65(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n66(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getSpellConfigs();
-            return from_candid_vec_n65(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n66(this._uploadFile, this._downloadFile, result);
         }
     }
     async getTierSpawnConfig(): Promise<TierSpawnConfig> {
@@ -2648,14 +2661,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getUserProfile(arg0);
-                return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getUserProfile(arg0);
-            return from_candid_opt_n46(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n47(this._uploadFile, this._downloadFile, result);
         }
     }
     async getUserRole(): Promise<string> {
@@ -2696,14 +2709,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.initiatePurchase(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-                return from_candid_variant_n68(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n69(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.initiatePurchase(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-            return from_candid_variant_n68(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n69(this._uploadFile, this._downloadFile, result);
         }
     }
     async isCallerAdmin(): Promise<boolean> {
@@ -2792,14 +2805,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.purchaseBuff(arg0, arg1);
-                return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.purchaseBuff(arg0, arg1);
-            return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
         }
     }
     async renameCharacter(arg0: bigint, arg1: string): Promise<{
@@ -3066,6 +3079,26 @@ export class Backend implements backendInterface {
             return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
         }
     }
+    async setSpellBarOrder(arg0: bigint, arg1: Array<string>): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setSpellBarOrder(arg0, arg1);
+                return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setSpellBarOrder(arg0, arg1);
+            return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async unbanPlayer(arg0: Principal): Promise<{
         __kind__: "ok";
         ok: null;
@@ -3190,19 +3223,19 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.useBuffItem(arg0, arg1);
-                return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+                return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.useBuffItem(arg0, arg1);
-            return from_candid_variant_n45(this._uploadFile, this._downloadFile, result);
+            return from_candid_variant_n46(this._uploadFile, this._downloadFile, result);
         }
     }
 }
-function from_candid_BattleEffect_n61(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _BattleEffect): BattleEffect {
-    return from_candid_record_n62(_uploadFile, _downloadFile, value);
+function from_candid_BattleEffect_n62(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _BattleEffect): BattleEffect {
+    return from_candid_record_n63(_uploadFile, _downloadFile, value);
 }
 function from_candid_Cell_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Cell): Cell {
     return from_candid_record_n27(_uploadFile, _downloadFile, value);
@@ -3216,23 +3249,23 @@ function from_candid_CharacterSlots_n33(_uploadFile: (file: ExternalBlob) => Pro
 function from_candid_Character_n37(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Character): Character {
     return from_candid_record_n38(_uploadFile, _downloadFile, value);
 }
-function from_candid_EnemyConfig_n52(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _EnemyConfig): EnemyConfig {
-    return from_candid_record_n53(_uploadFile, _downloadFile, value);
+function from_candid_EnemyConfig_n53(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _EnemyConfig): EnemyConfig {
+    return from_candid_record_n54(_uploadFile, _downloadFile, value);
 }
-function from_candid_PlayerSpriteConfig_n55(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PlayerSpriteConfig): PlayerSpriteConfig {
-    return from_candid_record_n56(_uploadFile, _downloadFile, value);
+function from_candid_PlayerSpriteConfig_n56(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PlayerSpriteConfig): PlayerSpriteConfig {
+    return from_candid_record_n57(_uploadFile, _downloadFile, value);
 }
-function from_candid_RegionConfig_n58(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _RegionConfig): RegionConfig {
-    return from_candid_record_n59(_uploadFile, _downloadFile, value);
+function from_candid_RegionConfig_n59(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _RegionConfig): RegionConfig {
+    return from_candid_record_n60(_uploadFile, _downloadFile, value);
 }
 function from_candid_Result_n22(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Result): Result {
     return from_candid_record_n23(_uploadFile, _downloadFile, value);
 }
-function from_candid_SpellConfig_n66(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _SpellConfig): SpellConfig {
-    return from_candid_record_n67(_uploadFile, _downloadFile, value);
+function from_candid_SpellConfig_n67(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _SpellConfig): SpellConfig {
+    return from_candid_record_n68(_uploadFile, _downloadFile, value);
 }
-function from_candid_UserRole_n47(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
-    return from_candid_variant_n48(_uploadFile, _downloadFile, value);
+function from_candid_UserRole_n48(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
+    return from_candid_variant_n49(_uploadFile, _downloadFile, value);
 }
 function from_candid_Value_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Value): Value {
     return from_candid_variant_n29(_uploadFile, _downloadFile, value);
@@ -3252,13 +3285,16 @@ function from_candid_opt_n41(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
 function from_candid_opt_n42(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [boolean]): boolean | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n44(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_BossConfig]): BossConfig | null {
+function from_candid_opt_n43(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [Array<string>]): Array<string> | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n46(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
+function from_candid_opt_n45(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_BossConfig]): BossConfig | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n50(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_DungeonRecord]): DungeonRecord | null {
+function from_candid_opt_n47(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
+    return value.length === 0 ? null : value[0];
+}
+function from_candid_opt_n51(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_DungeonRecord]): DungeonRecord | null {
     return value.length === 0 ? null : value[0];
 }
 function from_candid_record_n23(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
@@ -3315,6 +3351,7 @@ function from_candid_record_n38(_uploadFile: (file: ExternalBlob) => Promise<Uin
     bloodBalance: [] | [bigint];
     bossRushMasterComplete: [] | [boolean];
     colors: Array<string>;
+    spellBarOrder: [] | [Array<string>];
     pixelPattern: string;
 }): {
     rotation: bigint;
@@ -3331,6 +3368,7 @@ function from_candid_record_n38(_uploadFile: (file: ExternalBlob) => Promise<Uin
     bloodBalance?: bigint;
     bossRushMasterComplete?: boolean;
     colors: Array<string>;
+    spellBarOrder?: Array<string>;
     pixelPattern: string;
 } {
     return {
@@ -3348,10 +3386,11 @@ function from_candid_record_n38(_uploadFile: (file: ExternalBlob) => Promise<Uin
         bloodBalance: record_opt_to_undefined(from_candid_opt_n41(_uploadFile, _downloadFile, value.bloodBalance)),
         bossRushMasterComplete: record_opt_to_undefined(from_candid_opt_n42(_uploadFile, _downloadFile, value.bossRushMasterComplete)),
         colors: value.colors,
+        spellBarOrder: record_opt_to_undefined(from_candid_opt_n43(_uploadFile, _downloadFile, value.spellBarOrder)),
         pixelPattern: value.pixelPattern
     };
 }
-function from_candid_record_n53(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n54(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ap: bigint;
     hp: bigint;
     id: string;
@@ -3387,7 +3426,7 @@ function from_candid_record_n53(_uploadFile: (file: ExternalBlob) => Promise<Uin
         regions: value.regions
     };
 }
-function from_candid_record_n56(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n57(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: string;
     rightWalkFrames: Array<string>;
     name: string;
@@ -3426,7 +3465,7 @@ function from_candid_record_n56(_uploadFile: (file: ExternalBlob) => Promise<Uin
         backUrl: record_opt_to_undefined(from_candid_opt_n40(_uploadFile, _downloadFile, value.backUrl))
     };
 }
-function from_candid_record_n59(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n60(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: string;
     backgroundColor: string;
     levelMax: bigint;
@@ -3447,10 +3486,10 @@ function from_candid_record_n59(_uploadFile: (file: ExternalBlob) => Promise<Uin
         levelMax: value.levelMax,
         levelMin: value.levelMin,
         name: value.name,
-        battleEffects: from_candid_vec_n60(_uploadFile, _downloadFile, value.battleEffects)
+        battleEffects: from_candid_vec_n61(_uploadFile, _downloadFile, value.battleEffects)
     };
 }
-function from_candid_record_n62(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n63(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: string;
     value: bigint;
     name: string;
@@ -3474,10 +3513,10 @@ function from_candid_record_n62(_uploadFile: (file: ExternalBlob) => Promise<Uin
         value: value.value,
         name: value.name,
         description: value.description,
-        effectType: from_candid_variant_n63(_uploadFile, _downloadFile, value.effectType)
+        effectType: from_candid_variant_n64(_uploadFile, _downloadFile, value.effectType)
     };
 }
-function from_candid_record_n67(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n68(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: string;
     aoe: boolean;
     effectCategory: string;
@@ -3730,7 +3769,7 @@ function from_candid_variant_n4(_uploadFile: (file: ExternalBlob) => Promise<Uin
         err: value.err
     } : value;
 }
-function from_candid_variant_n43(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n44(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: Array<Principal>;
 } | {
     err: string;
@@ -3749,7 +3788,7 @@ function from_candid_variant_n43(_uploadFile: (file: ExternalBlob) => Promise<Ui
         err: value.err
     } : value;
 }
-function from_candid_variant_n45(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n46(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: _BuffInventory;
 } | {
     err: string;
@@ -3768,7 +3807,7 @@ function from_candid_variant_n45(_uploadFile: (file: ExternalBlob) => Promise<Ui
         err: value.err
     } : value;
 }
-function from_candid_variant_n48(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n49(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     admin: null;
 } | {
     user: null;
@@ -3777,7 +3816,7 @@ function from_candid_variant_n48(_uploadFile: (file: ExternalBlob) => Promise<Ui
 }): UserRole {
     return "admin" in value ? UserRole.admin : "user" in value ? UserRole.user : "guest" in value ? UserRole.guest : value;
 }
-function from_candid_variant_n49(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n50(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: _Character;
 } | {
     err: string;
@@ -3796,7 +3835,7 @@ function from_candid_variant_n49(_uploadFile: (file: ExternalBlob) => Promise<Ui
         err: value.err
     } : value;
 }
-function from_candid_variant_n63(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n64(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     damage: null;
 } | {
     buff: null;
@@ -3805,7 +3844,7 @@ function from_candid_variant_n63(_uploadFile: (file: ExternalBlob) => Promise<Ui
 }): Variant_damage_buff_debuff {
     return "damage" in value ? Variant_damage_buff_debuff.damage : "buff" in value ? Variant_damage_buff_debuff.buff : "debuff" in value ? Variant_damage_buff_debuff.debuff : value;
 }
-function from_candid_variant_n64(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n65(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: {
         activeSpells: Array<bigint>;
         covenantBuff: string;
@@ -3834,7 +3873,7 @@ function from_candid_variant_n64(_uploadFile: (file: ExternalBlob) => Promise<Ui
         err: value.err
     } : value;
 }
-function from_candid_variant_n68(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n69(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     ok: string;
 } | {
     err: string;
@@ -3862,20 +3901,20 @@ function from_candid_vec_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
 function from_candid_vec_n31(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<[Principal, _CharacterSlots]>): Array<[Principal, CharacterSlots]> {
     return value.map((x)=>from_candid_tuple_n32(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n51(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_EnemyConfig>): Array<EnemyConfig> {
-    return value.map((x)=>from_candid_EnemyConfig_n52(_uploadFile, _downloadFile, x));
+function from_candid_vec_n52(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_EnemyConfig>): Array<EnemyConfig> {
+    return value.map((x)=>from_candid_EnemyConfig_n53(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n54(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_PlayerSpriteConfig>): Array<PlayerSpriteConfig> {
-    return value.map((x)=>from_candid_PlayerSpriteConfig_n55(_uploadFile, _downloadFile, x));
+function from_candid_vec_n55(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_PlayerSpriteConfig>): Array<PlayerSpriteConfig> {
+    return value.map((x)=>from_candid_PlayerSpriteConfig_n56(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n57(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_RegionConfig>): Array<RegionConfig> {
-    return value.map((x)=>from_candid_RegionConfig_n58(_uploadFile, _downloadFile, x));
+function from_candid_vec_n58(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_RegionConfig>): Array<RegionConfig> {
+    return value.map((x)=>from_candid_RegionConfig_n59(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n60(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_BattleEffect>): Array<BattleEffect> {
-    return value.map((x)=>from_candid_BattleEffect_n61(_uploadFile, _downloadFile, x));
+function from_candid_vec_n61(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_BattleEffect>): Array<BattleEffect> {
+    return value.map((x)=>from_candid_BattleEffect_n62(_uploadFile, _downloadFile, x));
 }
-function from_candid_vec_n65(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_SpellConfig>): Array<SpellConfig> {
-    return value.map((x)=>from_candid_SpellConfig_n66(_uploadFile, _downloadFile, x));
+function from_candid_vec_n66(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_SpellConfig>): Array<SpellConfig> {
+    return value.map((x)=>from_candid_SpellConfig_n67(_uploadFile, _downloadFile, x));
 }
 function to_candid_BattleEffect_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: BattleEffect): _BattleEffect {
     return to_candid_record_n13(_uploadFile, _downloadFile, value);
@@ -4060,6 +4099,7 @@ function to_candid_record_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     bloodBalance?: bigint;
     bossRushMasterComplete?: boolean;
     colors: Array<string>;
+    spellBarOrder?: Array<string>;
     pixelPattern: string;
 }): {
     rotation: bigint;
@@ -4076,6 +4116,7 @@ function to_candid_record_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     bloodBalance: [] | [bigint];
     bossRushMasterComplete: [] | [boolean];
     colors: Array<string>;
+    spellBarOrder: [] | [Array<string>];
     pixelPattern: string;
 } {
     return {
@@ -4093,6 +4134,7 @@ function to_candid_record_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8
         bloodBalance: value.bloodBalance ? candid_some(value.bloodBalance) : candid_none(),
         bossRushMasterComplete: value.bossRushMasterComplete ? candid_some(value.bossRushMasterComplete) : candid_none(),
         colors: value.colors,
+        spellBarOrder: value.spellBarOrder ? candid_some(value.spellBarOrder) : candid_none(),
         pixelPattern: value.pixelPattern
     };
 }

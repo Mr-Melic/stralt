@@ -194,6 +194,7 @@ type Character =
    pixelPattern: text;
    rotation: nat;
    shrineCount: opt nat;
+   spellBarOrder: opt vec text;
    spellLevelKeys: vec text;
    spellLevelValues: vec nat;
    stats: CharacterStats;
@@ -737,6 +738,14 @@ service : {
                                                   });
   /// Admin: set the payment URL for a specific shop package by dokaAmount.
   setShopPaymentLink: (dokaAmount: nat, url: text) ->
+   (variant {
+      err: text;
+      ok;
+    });
+  /// Set the player-arranged spell bar order for the character in the given slot.
+  /// Validates that every id is owned by the character (present in spellLevelKeys),
+  /// that the list length is capped at 8, and persists the order into spellBarOrder.
+  setSpellBarOrder: (slot: nat, spellIds: vec text) ->
    (variant {
       err: text;
       ok;

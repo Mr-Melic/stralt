@@ -234,6 +234,7 @@ export const mockBackend: backendInterface = {
     ({ __kind__: "ok", ok: null }),
   updateSessionState: async (_slot: bigint, _bloodBalance: bigint, _covenantBuff: string, _shrineCount: bigint): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }> =>
     ({ __kind__: "ok", ok: null }),
+  setSpellBarOrder: async (_slot: bigint, _spellIds: Array<string>) => okResult,
 
   // Ad boxes
   getAdBoxes: async (): Promise<Array<[string, string, boolean]>> => [["",'',false],["",'',false],["",'',false]],

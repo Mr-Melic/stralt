@@ -179,6 +179,7 @@ export const Character = IDL.Record({
   'bloodBalance' : IDL.Opt(IDL.Nat),
   'bossRushMasterComplete' : IDL.Opt(IDL.Bool),
   'colors' : IDL.Vec(IDL.Text),
+  'spellBarOrder' : IDL.Opt(IDL.Vec(IDL.Text)),
   'pixelPattern' : IDL.Text,
 });
 export const Value = IDL.Variant({
@@ -711,6 +712,11 @@ export const idlService = IDL.Service({
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
+  'setSpellBarOrder' : IDL.Func(
+      [IDL.Nat, IDL.Vec(IDL.Text)],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
   'unbanPlayer' : IDL.Func(
       [IDL.Principal],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
@@ -918,6 +924,7 @@ export const idlFactory = ({ IDL }) => {
     'bloodBalance' : IDL.Opt(IDL.Nat),
     'bossRushMasterComplete' : IDL.Opt(IDL.Bool),
     'colors' : IDL.Vec(IDL.Text),
+    'spellBarOrder' : IDL.Opt(IDL.Vec(IDL.Text)),
     'pixelPattern' : IDL.Text,
   });
   const Value = IDL.Variant({
@@ -1451,6 +1458,11 @@ export const idlFactory = ({ IDL }) => {
       ),
     'setShopPaymentLink' : IDL.Func(
         [IDL.Nat, IDL.Text],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'setSpellBarOrder' : IDL.Func(
+        [IDL.Nat, IDL.Vec(IDL.Text)],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),

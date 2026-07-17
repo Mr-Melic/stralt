@@ -88,6 +88,7 @@ export interface Character {
   'bloodBalance' : [] | [bigint],
   'bossRushMasterComplete' : [] | [boolean],
   'colors' : Array<string>,
+  'spellBarOrder' : [] | [Array<string>],
   'pixelPattern' : string,
 }
 export type CharacterSlot = [] | [Character];
@@ -875,6 +876,16 @@ export interface _SERVICE {
    */
   'setShopPaymentLink' : ActorMethod<
     [bigint, string],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Set the player-arranged spell bar order for the character in the given slot.
+   * / Validates that every id is owned by the character (present in spellLevelKeys),
+   * / that the list length is capped at 8, and persists the order into spellBarOrder.
+   */
+  'setSpellBarOrder' : ActorMethod<
+    [bigint, Array<string>],
     { 'ok' : null } |
       { 'err' : string }
   >,

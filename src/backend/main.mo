@@ -3,6 +3,7 @@ import MixinAuthorization "mo:caffeineai-authorization/MixinAuthorization";
 import Map "mo:core/Map";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
+import Debug "mo:core/Debug";
 import Nat8 "mo:core/Nat8";
 import Blob "mo:core/Blob";
 import List "mo:core/List";
@@ -16,6 +17,7 @@ import Float "mo:core/Float";
 import OQL "mo:caffeineai-oql";
 import Expose "mo:caffeineai-oql/Expose";
 import Text "mo:core/Text";
+import Migration "migration";
 
 
 
@@ -28,6 +30,7 @@ import Text "mo:core/Text";
 
 
 
+(with migration = Migration.run)
 actor {
     let accessControlState = AccessControl.initState();
     include MixinAuthorization(accessControlState);
@@ -74,6 +77,8 @@ actor {
         covenantBuff  : ?Text;   // active covenant buff name, empty = none
         shrineCount   : ?Nat;    // shrines activated this session
         activeSpells  : ?[Nat];  // array of equipped spell IDs (max 8)
+        /// Player-arranged spell bar order (spell ids; max 8). Empty/null = derive default once on load.
+        spellBarOrder : ?[Text];
         /// Boss Rush master completion flag — optional for backwards compat.
         bossRushMasterComplete : ?Bool;
     };
@@ -1100,6 +1105,51 @@ actor {
         characterSlots.add(caller, updatedSlots);
         // Deduct from per-principal Doka balance.
         dokaBalances.add(caller, callerDokaRename - renameCost);
+        #ok;
+    };
+
+    /// Set the player-arranged spell bar order for the character in the given slot.
+    /// Validates that every id is owned by the character (present in spellLevelKeys),
+    /// that the list length is capped at 8, and persists the order into spellBarOrder.
+    public shared ({ caller }) func setSpellBarOrder(slot : Nat, spellIds : [Text]) : async { #ok; #err : Text } {
+        if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+            return #err("Unauthorized: must be logged in");
+        };
+        if (slot < 1 or slot > 3) {
+            return #err("Invalid slot number");
+        };
+        if (spellIds.size() > 8) {
+            return #err("spellIds exceeds maximum of 8 entries");
+        };
+
+        let existingSlots = switch (characterSlots.get(caller)) {
+            case null { return #err("No characters found") };
+            case (?s) { s };
+        };
+
+        let character = switch (slot) {
+            case 1 { switch (existingSlots.slot1) { case null { return #err("Slot 1 is empty") }; case (?c) { c } } };
+            case 2 { switch (existingSlots.slot2) { case null { return #err("Slot 2 is empty") }; case (?c) { c } } };
+            case 3 { switch (existingSlots.slot3) { case null { return #err("Slot 3 is empty") }; case (?c) { c } } };
+            case _ { return #err("Invalid slot") };
+        };
+
+        // Validate every id is owned by the character (present in spellLevelKeys).
+        for (id in spellIds.values()) {
+            if (not (character.spellLevelKeys.contains(id))) {
+                return #err("Unowned spell id: " # id);
+            };
+        };
+
+        let updatedCharacter : Character = { character with spellBarOrder = ?spellIds };
+
+        let updatedSlots = switch (slot) {
+            case 1 { { existingSlots with slot1 = ?updatedCharacter } };
+            case 2 { { existingSlots with slot2 = ?updatedCharacter } };
+            case 3 { { existingSlots with slot3 = ?updatedCharacter } };
+            case _ { existingSlots };
+        };
+        characterSlots.add(caller, updatedSlots);
         #ok;
     };
 

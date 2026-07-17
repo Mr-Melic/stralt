@@ -1,17 +1,17 @@
 {
-  "overview": "Tactical RPG with unified combatant state, boss rush dungeon flow, and a map modifiers registry.",
+  "overview": "A carved-stone dark fantasy exploration and combat game with a unified combatant store and persistent spell bar order.",
   "features": [
-    "Unified combatant store eliminating corpse ghosts and wrong victory",
-    "Boss rush dungeon-style closed portal flow",
-    "Map modifiers registry with 22 modifiers wired through engine hooks"
+    "Explore maps and battle enemies with click targeting and AI combat",
+    "Death Realm and rest maps guaranteed free of stale enemies",
+    "Throttled pattern-lookup logging to stop idle error spam",
+    "Spell bar order persists across reload and relogin"
   ],
   "category": "game",
   "tags": [
-    "tactical-rpg",
-    "engine-refactor",
+    "game",
     "combat",
-    "boss-rush",
-    "map-modifiers"
+    "exploration",
+    "persistence"
   ],
-  "last_updated": "2026-07-17T02:42:11.011Z"
+  "last_updated": "2026-07-17T03:41:27.775Z"
 }

@@ -22,7 +22,7 @@
  *   - Every helper is atomic: compute all next-arrays first, then assign
  *     refs, then call setters. No half-applied state is ever observable.
  *
- * React-free / DOM-free at runtime. Imports only the `Combatant` and
+ * React-free / DOM-free at runtime. Imports the `Enemy` and
  * `CombatantEntry` TYPES (erased at compile time) plus the pure
  * `removeCombatantFromTurnQueue` and `activeHostilesRemaining` engine
  * helpers — matching the engine's React-free runtime convention.
@@ -30,7 +30,7 @@
 
 import type { MutableRefObject } from "react";
 import type { CombatantEntry } from "../components/InitiativeStrip";
-import type { Combatant } from "./battleSetup";
+import type { Enemy } from "../types/gameTypes";
 import { activeHostilesRemaining } from "./battleSetup";
 import { removeCombatantFromTurnQueue } from "./turnQueue";
 import type {
@@ -39,18 +39,8 @@ import type {
   TurnOrderRef,
 } from "./turnQueue";
 
-/**
- * Minimal combatant shape with the `id` field the store needs. WX's real
- * `Enemy` type carries `id` (plus many richer fields used to build
- * `CombatantEntry`); the structural `Combatant` interface in
- * battleSetup.ts intentionally omits `id` to avoid a hard WX import. We
- * restore it here as a local structural extension so the store can read
- * `.id` without `any` and without widening the public `Combatant` type.
- */
-type CombatantWithId = Combatant & { id: string };
-
 /** React state setter for an array of combatants. */
-type SetCombatants = (updater: (prev: Combatant[]) => Combatant[]) => void;
+type SetCombatants = (updater: (prev: Enemy[]) => Enemy[]) => void;
 
 /** Options for {@link addCombatant}. */
 export interface AddCombatantOpts {
@@ -77,14 +67,14 @@ export interface SyncCombatantsOpts {
  */
 export interface CombatantStoreCtx {
   /** Primary combatant array (source of truth). */
-  combatantsRef: MutableRefObject<Combatant[]>;
+  combatantsRef: MutableRefObject<Enemy[]>;
   /** Ids of combatants that were present at battle start — defines the
    *  derived `battleEnemies` view. */
   battleStartIds: Set<string>;
   /** Mirror of `combatantsRef` kept for synchronous reads. */
-  enemiesRef: MutableRefObject<Combatant[]>;
+  enemiesRef: MutableRefObject<Enemy[]>;
   /** Mirror of the derived battle-enemies view. */
-  battleEnemiesRef: MutableRefObject<Combatant[]>;
+  battleEnemiesRef: MutableRefObject<Enemy[]>;
   /** Mirror of the turn-order array. */
   turnOrderRef: TurnOrderRef;
   /** Active-turn index ref (consumed by `removeCombatantFromTurnQueue`). */
@@ -109,8 +99,8 @@ export interface CombatantStoreCtx {
  * The `type` field is derived from `side` (player → player, anything
  * else → enemy) matching the InitiativeStrip convention.
  */
-function toCombatantEntry(c: CombatantWithId): CombatantEntry {
-  const rich = c as CombatantWithId & Partial<CombatantEntry>;
+function toCombatantEntry(c: Enemy): CombatantEntry {
+  const rich = c as Enemy & Partial<CombatantEntry>;
   const side: "player" | "enemy" = rich.side ?? "enemy";
   return {
     id: c.id,
@@ -136,13 +126,49 @@ function toCombatantEntry(c: CombatantWithId): CombatantEntry {
   };
 }
 
-/** Cast helper — every real combatant carries `id`. */
-function withId(c: Combatant): CombatantWithId {
-  return c as CombatantWithId;
-}
+/**
+ * DEV divergence guard. Compares the enemies-state mirror
+ * (`enemiesRef.current`, which tracks the React `enemies` state) against
+ * the source-of-truth `combatantsRef.current`. Logs `[STORE-DIVERGE]`
+ * with both id sets when they ever differ.
+ *
+ * Cheap by construction: length check first; id-set comparison only runs
+ * when lengths match (so the common case is a single number compare).
+ * No-op in production builds (`import.meta.env.DEV` is false).
+ *
+ * This guard is invoked at the tail of every store mutation so the
+ * enemies-state-vs-combatantsRef class of bug is self-announcing
+ * forever.
+ */
+function assertNoDivergence(
+  label: string,
+  ctx: CombatantStoreCtx,
+  nextCombatants: Enemy[],
+  nextEnemies: Enemy[],
+): void {
+  if (!import.meta.env.DEV) return;
 
-function withIdAll(arr: Combatant[]): CombatantWithId[] {
-  return arr as CombatantWithId[];
+  const refIds = ctx.combatantsRef.current.map((c) => c.id);
+  const stateIds = ctx.enemiesRef.current.map((c) => c.id);
+
+  // Cheap path: length mismatch is a single number compare.
+  // Id-set comparison only runs when lengths match (catches
+  // same-length-but-different-members divergence).
+  const diverged =
+    refIds.length !== stateIds.length ||
+    (refIds.length === stateIds.length &&
+      refIds.some((id, i) => id !== stateIds[i]));
+
+  if (!diverged) return;
+
+  // eslint-disable-next-line no-console
+  console.log(
+    `[STORE-DIVERGE] ${label} ` +
+      `combatantsRef(N=${refIds.length}) ids=[${refIds.join(",")}] ` +
+      `enemiesRef(N=${stateIds.length}) ids=[${stateIds.join(",")}] ` +
+      `nextCombatants(N=${nextCombatants.length}) ` +
+      `nextEnemies(N=${nextEnemies.length})`,
+  );
 }
 
 /**
@@ -157,16 +183,16 @@ function withIdAll(arr: Combatant[]): CombatantWithId[] {
  * battle-start id set.
  */
 export function initCombatantStore(
-  combatantsRef: MutableRefObject<Combatant[]>,
-  enemiesRef: MutableRefObject<Combatant[]>,
-  battleEnemiesRef: MutableRefObject<Combatant[]>,
+  combatantsRef: MutableRefObject<Enemy[]>,
+  enemiesRef: MutableRefObject<Enemy[]>,
+  battleEnemiesRef: MutableRefObject<Enemy[]>,
   turnOrderRef: TurnOrderRef,
   currentTurnIndexRef: CurrentTurnIndexRef,
   setEnemies: SetCombatants,
   setBattleEnemies: SetCombatants,
   setTurnOrder: SetTurnOrder,
   // biome-ignore lint/correctness/noUnusedVariables: retained for backward compatibility with positional call sites
-  initial: Combatant[] = [],
+  initial: Enemy[] = [],
 ): CombatantStoreCtx {
   // SIDE-EFFECT-SAFE INIT: build the ctx around the refs AS THEY ARE.
   // Never wipe live ref contents on (re)render — syncCombatants is the only
@@ -178,10 +204,10 @@ export function initCombatantStore(
     enemiesRef.current = [];
   }
   const battleStartIds = new Set<string>(
-    withIdAll(combatantsRef.current).map((c) => c.id),
+    combatantsRef.current.map((c) => c.id),
   );
   const battleEnemies = combatantsRef.current.filter((c) =>
-    battleStartIds.has(withId(c).id),
+    battleStartIds.has(c.id),
   );
   if (battleEnemiesRef.current === undefined) {
     battleEnemiesRef.current = battleEnemies;
@@ -215,10 +241,10 @@ export function initCombatantStore(
  */
 export function addCombatant(
   ctx: CombatantStoreCtx,
-  combatant: Combatant,
+  combatant: Enemy,
   opts?: AddCombatantOpts,
 ): void {
-  const c = withId(combatant);
+  const c = combatant;
   const battleParticipant = opts?.battleParticipant ?? false;
 
   const nextCombatants = [...ctx.combatantsRef.current, combatant];
@@ -228,7 +254,7 @@ export function addCombatant(
   if (battleParticipant) {
     ctx.battleStartIds.add(c.id);
     nextBattleEnemies = nextCombatants.filter((x) =>
-      ctx.battleStartIds.has(withId(x).id),
+      ctx.battleStartIds.has(x.id),
     );
   }
 
@@ -245,6 +271,10 @@ export function addCombatant(
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
   ctx.setTurnOrder(() => nextTurnOrder);
+
+  // DEV divergence guard — self-announces if the enemies-state mirror
+  // ever drifts from combatantsRef after this mutation.
+  assertNoDivergence("addCombatant", ctx, nextCombatants, nextEnemies);
 }
 
 /**
@@ -264,14 +294,12 @@ export function addCombatant(
  * its setter — preserving the assign-refs-then-set-setters ordering.
  */
 export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
-  const nextCombatants = ctx.combatantsRef.current.filter(
-    (c) => withId(c).id !== id,
-  );
+  const nextCombatants = ctx.combatantsRef.current.filter((c) => c.id !== id);
   const nextEnemies = nextCombatants;
 
   ctx.battleStartIds.delete(id);
   const nextBattleEnemies = nextCombatants.filter((c) =>
-    ctx.battleStartIds.has(withId(c).id),
+    ctx.battleStartIds.has(c.id),
   );
 
   // Assign the combatant / enemies / battleEnemies refs first.
@@ -292,6 +320,10 @@ export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
   // Fire the enemies / battleEnemies state updates.
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
+
+  // DEV divergence guard — self-announces if the enemies-state mirror
+  // ever drifts from combatantsRef after this mutation.
+  assertNoDivergence("removeCombatant", ctx, nextCombatants, nextEnemies);
 }
 
 /**
@@ -310,16 +342,16 @@ export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
 export function updateCombatant(
   ctx: CombatantStoreCtx,
   id: string,
-  patch: Partial<Combatant>,
+  patch: Partial<Enemy>,
 ): void {
   const nextCombatants = ctx.combatantsRef.current.map((c) =>
-    withId(c).id === id ? { ...c, ...patch } : c,
+    c.id === id ? { ...c, ...patch } : c,
   );
   const nextEnemies = nextCombatants;
 
   const inBattle = ctx.battleStartIds.has(id);
   const nextBattleEnemies = inBattle
-    ? nextCombatants.filter((c) => ctx.battleStartIds.has(withId(c).id))
+    ? nextCombatants.filter((c) => ctx.battleStartIds.has(c.id))
     : ctx.battleEnemiesRef.current;
 
   const nextTurnOrder = ctx.turnOrderRef.current.map((e) =>
@@ -334,6 +366,10 @@ export function updateCombatant(
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
   ctx.setTurnOrder(() => nextTurnOrder);
+
+  // DEV divergence guard — self-announces if the enemies-state mirror
+  // ever drifts from combatantsRef after this mutation.
+  assertNoDivergence("updateCombatant", ctx, nextCombatants, nextEnemies);
 }
 
 /**
@@ -357,22 +393,18 @@ export function updateCombatant(
  */
 export function syncCombatants(
   ctx: CombatantStoreCtx,
-  next: Combatant[],
+  next: Enemy[],
   opts?: SyncCombatantsOpts,
 ): void {
   const resetBattle = opts?.resetBattle ?? false;
 
   if (resetBattle) {
-    ctx.battleStartIds = new Set(withIdAll(next).map((c) => c.id));
+    ctx.battleStartIds = new Set(next.map((c) => c.id));
   }
 
   const nextEnemies = next;
-  const nextBattleEnemies = next.filter((c) =>
-    ctx.battleStartIds.has(withId(c).id),
-  );
-  const nextTurnOrder = nextBattleEnemies.map((c) =>
-    toCombatantEntry(withId(c)),
-  );
+  const nextBattleEnemies = next.filter((c) => ctx.battleStartIds.has(c.id));
+  const nextTurnOrder = nextBattleEnemies.map((c) => toCombatantEntry(c));
 
   ctx.combatantsRef.current = nextEnemies;
   ctx.enemiesRef.current = nextEnemies;
@@ -382,6 +414,10 @@ export function syncCombatants(
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
   ctx.setTurnOrder(() => nextTurnOrder);
+
+  // DEV divergence guard — self-announces if the enemies-state mirror
+  // ever drifts from combatantsRef after this mutation.
+  assertNoDivergence("syncCombatants", ctx, nextEnemies, nextEnemies);
 }
 
 /**
@@ -392,10 +428,71 @@ export function syncCombatants(
  * battleEnemiesRef lookup) keep working against the mirror that the
  * store helpers maintain.
  */
-export function deriveBattleEnemies(ctx: CombatantStoreCtx): Combatant[] {
-  return ctx.combatantsRef.current.filter((c) =>
-    ctx.battleStartIds.has(withId(c).id),
-  );
+export function deriveBattleEnemies(ctx: CombatantStoreCtx): Enemy[] {
+  return ctx.combatantsRef.current.filter((c) => ctx.battleStartIds.has(c.id));
+}
+
+/**
+ * Reset the combatant store to empty atomically. This is the canonical
+ * reset for entering safe maps (death realm, rest map, exploration
+ * transitions).
+ *
+ * - Clears `combatantsRef.current` to `[]` (the source of truth).
+ * - Clears `battleStartIds` (no combatants ⇒ no battle participants).
+ * - Syncs every mirror (`enemiesRef`, `battleEnemiesRef`,
+ *   `turnOrderRef`) to `[]`.
+ * - Routes the clear through `ctx.setEnemies(() => [])` so the React
+ *   `enemies` state and `combatantsRef` stay in lockstep. Also fires
+ *   `setBattleEnemies` and `setTurnOrder` for the mirrors.
+ *
+ * Atomic: refs are assigned first, then setters are called. The
+ * `currentTurnIndexRef` is intentionally NOT touched here — turn-index
+ * repositioning is the caller's responsibility (the turn-queue leg of
+ * `removeCombatant` is the only place that adjusts it).
+ */
+export function resetCombatantStore(ctx: CombatantStoreCtx): void {
+  const nextCombatants: Enemy[] = [];
+  const nextEnemies: Enemy[] = nextCombatants;
+  const nextBattleEnemies: Enemy[] = nextCombatants;
+  const nextTurnOrder: CombatantEntry[] = [];
+
+  ctx.battleStartIds.clear();
+
+  // Assign refs first so any synchronous reader sees the cleared state.
+  ctx.combatantsRef.current = nextCombatants;
+  ctx.enemiesRef.current = nextEnemies;
+  ctx.battleEnemiesRef.current = nextBattleEnemies;
+  ctx.turnOrderRef.current = nextTurnOrder;
+
+  // Then fire the React state updates — routing the clear through
+  // setEnemies keeps the enemies state and combatantsRef in lockstep.
+  ctx.setEnemies(() => nextEnemies);
+  ctx.setBattleEnemies(() => nextBattleEnemies);
+  ctx.setTurnOrder(() => nextTurnOrder);
+
+  // DEV divergence guard — self-announces if the enemies-state mirror
+  // ever drifts from combatantsRef after this reset.
+  assertNoDivergence("resetCombatantStore", ctx, nextCombatants, nextEnemies);
+}
+
+/**
+ * Canonical live-combatants accessor. Returns `combatantsRef.current` as
+ * the single source of truth for ALL interaction reads (click
+ * hit-test, damage lookup, hover, collision, AI context).
+ *
+ * This replaces direct reads of the `enemies` React state variable:
+ * the React state is a render-scheduled snapshot, while the ref is the
+ * synchronous, always-current array the engine reads against. Routing
+ * every interaction read through this accessor guarantees the engine
+ * never observes a stale render snapshot.
+ *
+ * Returns the live array by reference — callers MUST treat it as
+ * read-only. Mutate via the store helpers (`addCombatant`,
+ * `removeCombatant`, `updateCombatant`, `syncCombatants`,
+ * `resetCombatantStore`).
+ */
+export function getLiveCombatants(ctx: CombatantStoreCtx): Enemy[] {
+  return ctx.combatantsRef.current;
 }
 
 /**
@@ -411,7 +508,7 @@ export function deriveBattleEnemies(ctx: CombatantStoreCtx): Combatant[] {
 export function dumpStateSync(label: string, ctx: CombatantStoreCtx): void {
   if (!import.meta.env.DEV) return;
 
-  const ids = (arr: Combatant[]): string[] => withIdAll(arr).map((c) => c.id);
+  const ids = (arr: Enemy[]): string[] => arr.map((c) => c.id);
   const turnIds = ctx.turnOrderRef.current.map((e) => e.id);
   const hostiles = activeHostilesRemaining(ctx.combatantsRef.current);
 

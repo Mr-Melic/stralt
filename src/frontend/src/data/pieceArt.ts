@@ -23,6 +23,37 @@ import { logDebugError } from "../utils/debugLogger";
 // Re-export so existing call sites can import ChessPieceType from here.
 export type { ChessPieceType };
 
+/**
+ * Throttle for the pattern-lookup-failed log. The renderer can fire this log
+ * per draw call per frame, which floods the debug buffer when a pieceType/view
+ * combination has no art. Instead of logging every frame, we track an
+ * occurrence counter per unique `${pieceType}|${view}` key and only emit:
+ *   - once on the FIRST occurrence (counter === 1) with the full message
+ *   - periodically thereafter (every PERIODIC_THRESHOLD occurrences) with the
+ *     cumulative count, e.g. "pattern lookup failed (x412): {…}"
+ * The log ALWAYS includes the actual pieceType and view values. Fallback
+ * drawing behavior is unchanged — only the log is throttled.
+ */
+const PATTERN_LOOKUP_FAIL_PERIODIC = 500;
+const _patternLookupFailCounts = new Map<string, number>();
+
+function logPatternLookupFailed(pieceType: unknown, view: unknown): void {
+  const key = `${String(pieceType)}|${String(view)}`;
+  const next = (_patternLookupFailCounts.get(key) ?? 0) + 1;
+  _patternLookupFailCounts.set(key, next);
+  if (next === 1) {
+    logDebugError("SUMMON", "pattern lookup failed", {
+      pieceType,
+      view,
+    });
+  } else if (next % PATTERN_LOOKUP_FAIL_PERIODIC === 0) {
+    logDebugError("SUMMON", `pattern lookup failed (x${next})`, {
+      pieceType,
+      view,
+    });
+  }
+}
+
 /** The four facing directions a creature can be drawn in. */
 export type ViewDirection = "front" | "back" | "left" | "right";
 
@@ -806,10 +837,7 @@ export function drawCombatant(
           entity.pieceType as Exclude<CreatureKey, ChessPieceType>
         ];
       if (!fallbackPalette) {
-        logDebugError("SUMMON", "pattern lookup failed", {
-          pieceType: entity.pieceType,
-          view: resolvedView,
-        });
+        logPatternLookupFailed(entity.pieceType, resolvedView);
         draw(
           ctx,
           chessPiecePatterns.king.front,
@@ -841,10 +869,7 @@ export function drawCombatant(
         entity.pieceType as Exclude<CreatureKey, ChessPieceType>
       ];
     if (!summonPattern || !summonPalette) {
-      logDebugError("SUMMON", "pattern lookup failed", {
-        pieceType: entity.pieceType,
-        view: resolvedView,
-      });
+      logPatternLookupFailed(entity.pieceType, resolvedView);
       draw(
         ctx,
         chessPiecePatterns.king.front,
@@ -873,10 +898,7 @@ export function drawCombatant(
       const familyPattern = opts.getFamilyPattern(entity.family ?? "default");
       const familyColorMap = opts.getFamilyColors(entity.family ?? "default");
       if (!familyPattern) {
-        logDebugError("SUMMON", "pattern lookup failed", {
-          pieceType: entity.pieceType,
-          view: resolvedView,
-        });
+        logPatternLookupFailed(entity.pieceType, resolvedView);
         draw(
           ctx,
           chessPiecePatterns.king.front,

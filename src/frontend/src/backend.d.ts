@@ -47,6 +47,7 @@ export interface Character {
     bloodBalance?: bigint;
     bossRushMasterComplete?: boolean;
     colors: Array<string>;
+    spellBarOrder?: Array<string>;
     pixelPattern: string;
 }
 export interface AchievementConfig {
@@ -994,6 +995,18 @@ export interface backendInterface {
      * / Admin: set the payment URL for a specific shop package by dokaAmount.
      */
     setShopPaymentLink(dokaAmount: bigint, url: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Set the player-arranged spell bar order for the character in the given slot.
+     * / Validates that every id is owned by the character (present in spellLevelKeys),
+     * / that the list length is capped at 8, and persists the order into spellBarOrder.
+     */
+    setSpellBarOrder(slot: bigint, spellIds: Array<string>): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
