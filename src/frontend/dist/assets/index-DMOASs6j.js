@@ -47471,7 +47471,7 @@ function toCombatantEntry(c2) {
   const side = rich.side ?? "enemy";
   return {
     id: c2.id,
-    type: side === "player" ? "player" : "enemy",
+    type: rich.isSummon ? "summon" : side === "player" ? "player" : "enemy",
     initiative: rich.initiative ?? 0,
     name: rich.name ?? c2.id,
     pieceIcon: rich.pieceIcon ?? "",
@@ -47947,6 +47947,30 @@ const SUMMON_KIT = {
   bomber: ["spell-inferno"],
   healer: ["starter-heal", "spell-rallying-cry"]
 };
+const ENEMY_KITS = {
+  // Pawn: basic melee; gains venom-strike at higher zones.
+  pawn: (z2) => z2 >= 1 ? ["physical_attack", "spell-venom-strike"] : ["physical_attack"],
+  // Knight: pure melee bruiser.
+  knight: () => ["physical_attack"],
+  // Bishop: ranged frost + poison control.
+  bishop: (z2) => z2 >= 1 ? ["starter-frost", "starter-poison"] : ["starter-frost"],
+  // Rook: tanky melee with iron-skin armor.
+  rook: (z2) => z2 >= 1 ? ["physical_attack", "spell-iron-skin"] : ["physical_attack"],
+  // Queen: premier caster — frost early, inferno late, plus self-heal.
+  queen: (z2) => {
+    const nuke = z2 >= 2 ? "spell-inferno" : "starter-frost";
+    return z2 >= 1 ? [nuke, "starter-heal"] : [nuke];
+  },
+  // King / leader: control nuke + team-wide rallying cry.
+  king: (z2) => {
+    const nuke = z2 >= 2 ? "spell-inferno" : "starter-frost";
+    return z2 >= 1 ? [nuke, "spell-rallying-cry"] : [nuke];
+  }
+};
+function buildEnemyKit(pieceType, levelZone) {
+  const builder = ENEMY_KITS[pieceType] ?? ENEMY_KITS.pawn;
+  return builder(Math.max(0, Math.floor(levelZone)));
+}
 function inferSummonArchetype(summon) {
   const raw = (summon.summonAI ?? "").toLowerCase();
   if (raw === "kiter") return "archer";
@@ -48215,6 +48239,37 @@ function repositionForLOS(origin, target, ctx, reachable, spell) {
   }
   return null;
 }
+function findNearestLegalCastTile(origin, target, ctx, reachable, spell) {
+  const range = Number(spell.range);
+  const needsLos = spell.lineOfSight !== false;
+  const dirs = [
+    { x: 1, y: 0 },
+    { x: -1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: -1 }
+  ];
+  const visited = /* @__PURE__ */ new Set([key(origin.x, origin.y)]);
+  const queue = [origin];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const dist2 = chebyshev(cur, target);
+    if (dist2 <= range) {
+      if (!needsLos || ctx.hasLineOfSight(cur, target)) {
+        return cur;
+      }
+    }
+    for (const d2 of dirs) {
+      const nx = cur.x + d2.x;
+      const ny = cur.y + d2.y;
+      const k2 = key(nx, ny);
+      if (visited.has(k2)) continue;
+      if (!reachable.has(k2)) continue;
+      visited.add(k2);
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  return null;
+}
 function backlineGuardCell(ward, threat, ctx, reachable) {
   const dx = threat.x - ward.x;
   const dy = threat.y - ward.y;
@@ -48328,6 +48383,49 @@ function decideCaster(ctx, opponents, reachable) {
   }
   const target = scored[0];
   if (target) {
+    const targetCell = { x: target.combatant.x, y: target.combatant.y };
+    const repositionSpell = pickBestDamageSpell(ctx, target.combatant);
+    if (repositionSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        targetCell,
+        ctx,
+        reachable,
+        repositionSpell
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${ctx.enemy.pieceType} closes in and casts ${repositionSpell.name}!`,
+          CAST_COLOR
+        );
+        logIntent("caster", "closes-in", target.combatant.id, "move-then-cast");
+        return {
+          archetype: "caster",
+          destination: castTile,
+          spell: repositionSpell,
+          targetId: target.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false
+        };
+      }
+      const dest2 = stepToward(origin, targetCell, ctx, reachable);
+      if (dest2.x !== origin.x || dest2.y !== origin.y) {
+        ctx.log(`${ctx.enemy.pieceType} closes in for a shot`, MOVE_COLOR);
+        logIntent("caster", "closes-in", target.combatant.id, "approach-cast");
+        return {
+          archetype: "caster",
+          destination: dest2,
+          spell: null,
+          targetId: null,
+          kind: "move",
+          intent: "closes-in",
+          intentColor: MOVE_COLOR,
+          retreating: false
+        };
+      }
+    }
     const dest = stepToward(
       origin,
       { x: target.combatant.x, y: target.combatant.y },
@@ -48342,7 +48440,7 @@ function decideCaster(ctx, opponents, reachable) {
         destination: dest,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "reposition",
         intentColor: MOVE_COLOR,
         retreating: false
@@ -48397,7 +48495,7 @@ function decideHealer(ctx, allies, opponents, reachable) {
       destination: dest,
       spell: null,
       targetId: null,
-      kind: "skip",
+      kind: "move",
       intent: "approach-ally",
       intentColor: MOVE_COLOR,
       retreating: false
@@ -48420,7 +48518,7 @@ function decideHealer(ctx, allies, opponents, reachable) {
         destination: guard,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "backline-guard",
         intentColor: MOVE_COLOR,
         retreating: false
@@ -48483,6 +48581,33 @@ function decideCharger(ctx, opponents, reachable) {
       retreating: false
     };
   }
+  const chargeSpell = pickBestDamageSpell(ctx, target.combatant);
+  if (chargeSpell) {
+    const castTile = findNearestLegalCastTile(
+      origin,
+      targetCell,
+      ctx,
+      reachable,
+      chargeSpell
+    );
+    if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+      ctx.log(
+        `${ctx.enemy.pieceType} closes in and casts ${chargeSpell.name}!`,
+        CAST_COLOR
+      );
+      logIntent("charger", "closes-in", target.combatant.id, "move-then-cast");
+      return {
+        archetype: "charger",
+        destination: castTile,
+        spell: chargeSpell,
+        targetId: target.combatant.id,
+        kind: "cast",
+        intent: "closes-in",
+        intentColor: CAST_COLOR,
+        retreating: false
+      };
+    }
+  }
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     ctx.log(`${ctx.enemy.pieceType} charges forward!`, MOVE_COLOR);
@@ -48495,7 +48620,7 @@ function decideCharger(ctx, opponents, reachable) {
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "advance",
     intentColor: MOVE_COLOR,
     retreating: false
@@ -48586,7 +48711,7 @@ function decideFlanker(ctx, opponents, reachable) {
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "flank",
     intentColor: FLANK_COLOR,
     retreating: false
@@ -48663,7 +48788,7 @@ function decideBerserker(ctx, opponents, reachable) {
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "rage-advance",
     intentColor: sacrificeEligible ? RETREAT_COLOR : MOVE_COLOR,
     retreating: false
@@ -48782,6 +48907,33 @@ function decideGeneric(ctx, opponents, reachable) {
       retreating: false
     };
   }
+  const advanceSpell = pickBestDamageSpell(ctx, target.combatant);
+  if (advanceSpell) {
+    const castTile = findNearestLegalCastTile(
+      origin,
+      targetCell,
+      ctx,
+      reachable,
+      advanceSpell
+    );
+    if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+      ctx.log(
+        `${ctx.enemy.pieceType} closes in and casts ${advanceSpell.name}!`,
+        CAST_COLOR
+      );
+      logIntent("generic", "closes-in", target.combatant.id, "move-then-cast");
+      return {
+        archetype: "generic",
+        destination: castTile,
+        spell: advanceSpell,
+        targetId: target.combatant.id,
+        kind: "cast",
+        intent: "closes-in",
+        intentColor: CAST_COLOR,
+        retreating: false
+      };
+    }
+  }
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     ctx.log(`${ctx.enemy.pieceType} moves toward you`, MOVE_COLOR);
@@ -48794,7 +48946,7 @@ function decideGeneric(ctx, opponents, reachable) {
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "advance",
     intentColor: MOVE_COLOR,
     retreating: false
@@ -49038,7 +49190,7 @@ function decideSummonHunter(summon, ctx, opponents, reachable, origin) {
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "advance",
     intentColor: MOVE_COLOR,
     retreating: false
@@ -49136,7 +49288,7 @@ function decideSummonGuardian(summon, ctx, allies, opponents, reachable, origin)
         destination: guard,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "backline-guard",
         intentColor: MOVE_COLOR,
         retreating: false
@@ -49151,7 +49303,7 @@ function decideSummonGuardian(summon, ctx, allies, opponents, reachable, origin)
         destination: dest,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "stay-adjacent",
         intentColor: MOVE_COLOR,
         retreating: false
@@ -49226,7 +49378,7 @@ function decideSummonArcher(summon, ctx, opponents, reachable, origin) {
         destination: reposition,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "reposition-los",
         intentColor: MOVE_COLOR,
         retreating: false
@@ -49280,7 +49432,7 @@ function decideSummonArcher(summon, ctx, opponents, reachable, origin) {
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "kite",
     intentColor: MOVE_COLOR,
     retreating: false
@@ -49355,7 +49507,7 @@ function decideSummonBomber(summon, ctx, opponents, reachable, origin) {
       destination: dest,
       spell: null,
       targetId: null,
-      kind: "skip",
+      kind: "move",
       intent: "approach-cluster",
       intentColor: MOVE_COLOR,
       retreating: false
@@ -49410,7 +49562,7 @@ function decideSummonHealer(summon, ctx, allies, opponents, reachable, origin) {
       destination: dest,
       spell: null,
       targetId: null,
-      kind: "skip",
+      kind: "move",
       intent: "approach-ally",
       intentColor: MOVE_COLOR,
       retreating: false
@@ -49450,7 +49602,7 @@ function decideSummonHealer(summon, ctx, allies, opponents, reachable, origin) {
         destination: guard,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "backline-guard",
         intentColor: MOVE_COLOR,
         retreating: false
@@ -62650,9 +62802,6 @@ const WorldExplorationInner = ({
     dokaBalance,
     onDokaBalanceChange
   ]);
-  reactExports.useEffect(() => {
-    return;
-  }, []);
   checkPortalInteractionRef.current = checkPortalInteraction;
   reactExports.useEffect(() => {
     const wasMoving = prevIsMovingRef.current;
@@ -62923,19 +63072,17 @@ const WorldExplorationInner = ({
       dustMotesRef.current = [];
       setDokaLoot([]);
       if (newPlayerPos) setPlayerPosition(newPlayerPos);
-      const enemyUsableSpells = normalizedSpellPool.filter(
+      normalizedSpellPool.filter(
         (s2) => s2.usableByEnemy !== false
         // undefined/null = backward compat → allowed
       );
-      const assignEnemySpells = (_enemyCount) => {
-        if (enemyUsableSpells.length === 0)
-          return [];
-        const shuffled = [...enemyUsableSpells].sort(() => Math.random() - 0.5);
-        return shuffled.slice(0, Math.min(10, shuffled.length));
+      const assignEnemySpells = (enemy) => {
+        const kitIds = buildEnemyKit(enemy.pieceType, currentMap.levelZone);
+        return kitIds.map((id) => normalizedSpellPool.find((s2) => s2.id === id)).filter((s2) => Boolean(s2));
       };
       const enemiesWithSpells = updatedEnemies.map((e, _i2) => ({
         ...e,
-        spells: assignEnemySpells(updatedEnemies.length)
+        spells: assignEnemySpells(e)
       }));
       const summonerChance = ENEMY_SUMMONER_CHANCE_BASE + characterStats.level * ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE;
       const wolfSpell = starterSpells.find((s2) => s2.id === "summon-dire-wolf");
@@ -65551,11 +65698,33 @@ const WorldExplorationInner = ({
               }
               didAct = true;
             }
-          } else if (action.kind === "skip") {
+          } else if (action.kind === "move") {
+            didAct = true;
             logBattleEntry(
-              `${enemy.pieceType} skipped (out of range)`,
+              `${enemy.pieceType} ${action.intent ?? "moves"}`,
               "#ef4444"
             );
+          } else if (action.kind === "skip") {
+            const holdIntents = /* @__PURE__ */ new Set([
+              "hold",
+              "wait",
+              "no-spell",
+              "cap",
+              "cooldown"
+            ]);
+            const isTrueHold = action.intent === void 0 || holdIntents.has(action.intent);
+            if (isTrueHold) {
+              logBattleEntry(
+                `${enemy.pieceType} skipped (out of range)${action.intent ? ` (${action.intent})` : ""}`,
+                "#ef4444"
+              );
+            } else {
+              didAct = true;
+              logBattleEntry(
+                `${enemy.pieceType} ${action.intent ?? "moves"}`,
+                "#ef4444"
+              );
+            }
           }
         }
         const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
@@ -70730,7 +70899,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Bl_HYM2U.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CrE7pI_X.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

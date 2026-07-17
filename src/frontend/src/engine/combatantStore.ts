@@ -103,15 +103,21 @@ export interface CombatantStoreCtx {
  * them through and fill any missing required entry field with a safe
  * default so the function is total for any `Combatant`-shaped input.
  *
- * The `type` field is derived from `side` (player → player, anything
- * else → enemy) matching the InitiativeStrip convention.
+ * The `type` field discriminates the turn route: "summon" for any
+ * combatant with `isSummon` (regardless of side), otherwise "player"
+ * for side "player" and "enemy" for side "enemy". The router at
+ * WorldExploration.tsx keys summon dispatch off `isSummon` (line 11960),
+ * so a player-side summon now falls through the `type === "player"`
+ * check (line 11837) into the summon-ai branch instead of the player
+ * branch — matching the requirement that summons dispatch as their own
+ * turn type.
  */
 function toCombatantEntry(c: Enemy): CombatantEntry {
   const rich = c as Enemy & Partial<CombatantEntry>;
   const side: "player" | "enemy" = rich.side ?? "enemy";
   return {
     id: c.id,
-    type: side === "player" ? "player" : "enemy",
+    type: rich.isSummon ? "summon" : side === "player" ? "player" : "enemy",
     initiative: rich.initiative ?? 0,
     name: rich.name ?? c.id,
     pieceIcon: rich.pieceIcon ?? "",

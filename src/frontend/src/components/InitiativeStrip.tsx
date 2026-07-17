@@ -4,7 +4,12 @@ import DraggablePanel from "./DraggablePanel";
 
 export interface CombatantEntry {
   id: string;
-  type: "player" | "enemy";
+  /** Turn-route discriminator: "player" for the human player, "enemy"
+   * for AI-controlled enemies, "summon" for any combatant with
+   * `isSummon` (regardless of side). The router keys summon dispatch
+   * off `isSummon`, not this field, but `type` must not match "player"
+   * for a player-side summon or it would wrongly take the player route. */
+  type: "player" | "enemy" | "summon";
   initiative: number;
   name: string;
   pieceIcon: string;
@@ -25,7 +30,8 @@ export interface CombatantEntry {
   bossId?: string;
   /** Current boss phase (1 or 2) */
   currentBossPhase?: 1 | 2;
-  /** Side in combat: player, enemy, or summon */
+  /** Side in combat: player or enemy. Summons belong to a side; the
+   * `type` field (above) is what discriminates the turn route. */
   side?: "player" | "enemy";
   /** True if this unit is a summoned ally */
   isSummon?: boolean;

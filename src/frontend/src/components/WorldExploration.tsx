@@ -104,6 +104,7 @@ import {
   type AICombatant,
   type DecideEnemyContext,
   type EnemyAction,
+  buildEnemyKit,
   decideEnemyAction,
   decideSummonAction,
   decideSummonerAction,
@@ -9866,29 +9867,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     dokaBalance,
     onDokaBalanceChange,
   ]);
-  // REMOVE NEXT BUILD — DOM sanity probe. Dev-only: logs the tag + class of
-  // every pointerdown target (capture phase) with a 1s throttle to help
-  // diagnose which element is swallowing touch/click events on the canvas.
-  // The DEV gate lives INSIDE the effect so the hook is always called
-  // unconditionally (Rules of Hooks).
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    let lastLog = 0;
-    const handler = (e: PointerEvent) => {
-      const now = Date.now();
-      if (now - lastLog < 1000) return;
-      lastLog = now;
-      const target = e.target as HTMLElement | null;
-      // eslint-disable-next-line no-console
-      console.log("[DOM PROBE] pointerdown", {
-        targetTag: target?.tagName ?? null,
-        targetClass: target?.className ?? null,
-      });
-    };
-    document.addEventListener("pointerdown", handler, { capture: true });
-    return () =>
-      document.removeEventListener("pointerdown", handler, { capture: true });
-  }, []);
   // FIXED: Check portal interaction whenever player position changes
   // EDIT 3 — Edge-trigger: only fire checkPortalInteraction() on the actual
   // isMoving false-transition (moving → stopped), NOT on every
@@ -10323,20 +10301,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       // Build initiative-sorted turn order
       // 4b: Assign 10 random spells per enemy from usableByEnemy pool
-      const enemyUsableSpells = normalizedSpellPool.filter(
+      const _enemyUsableSpells = normalizedSpellPool.filter(
         (s) => s.usableByEnemy !== false, // undefined/null = backward compat → allowed
       );
-      const assignEnemySpells = (_enemyCount: number) => {
-        if (enemyUsableSpells.length === 0)
-          return [] as typeof normalizedSpellPool;
-        const shuffled = [...enemyUsableSpells].sort(() => Math.random() - 0.5);
-        return shuffled.slice(0, Math.min(10, shuffled.length));
+      const assignEnemySpells = (enemy: { pieceType: ChessPieceType }) => {
+        const kitIds = buildEnemyKit(enemy.pieceType, currentMap.levelZone);
+        return kitIds
+          .map((id) => normalizedSpellPool.find((s) => s.id === id))
+          .filter((s): s is (typeof normalizedSpellPool)[number] => Boolean(s));
       };
 
       // Update enemies with their individual spell selections
       const enemiesWithSpells = updatedEnemies.map((e, _i) => ({
         ...e,
-        spells: assignEnemySpells(updatedEnemies.length),
+        spells: assignEnemySpells(e),
       }));
 
       const summonerChance =
@@ -13734,11 +13712,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
               didAct = true;
             }
-          } else if (action.kind === "skip") {
+          } else if (action.kind === "move") {
+            didAct = true;
             logBattleEntry(
-              `${enemy.pieceType} skipped (out of range)`,
+              `${enemy.pieceType} ${action.intent ?? "moves"}`,
               "#ef4444",
             );
+          } else if (action.kind === "skip") {
+            const holdIntents = new Set([
+              "hold",
+              "wait",
+              "no-spell",
+              "cap",
+              "cooldown",
+            ]);
+            const isTrueHold =
+              action.intent === undefined || holdIntents.has(action.intent);
+            if (isTrueHold) {
+              logBattleEntry(
+                `${enemy.pieceType} skipped (out of range)${
+                  action.intent ? ` (${action.intent})` : ""
+                }`,
+                "#ef4444",
+              );
+            } else {
+              didAct = true;
+              logBattleEntry(
+                `${enemy.pieceType} ${action.intent ?? "moves"}`,
+                "#ef4444",
+              );
+            }
           }
         }
         // ── Leader DoT death check ───────────────────────────────────────

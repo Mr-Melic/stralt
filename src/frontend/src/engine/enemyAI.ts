@@ -38,7 +38,7 @@ import {
   ENEMY_WOUNDED_SACRIFICE_HP_PCT,
   WORLD_GRID_SIZE,
 } from "../data/gameConstants";
-import type { Enemy, SpellConfig } from "../types/gameTypes";
+import type { ChessPieceType, Enemy, SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import {
   type OccupancyContext,
@@ -95,8 +95,8 @@ export interface EnemyAction {
   spell: SpellConfig | null;
   /** Target combatant id for the spell/melee, or null for self/no target. */
   targetId: string | null;
-  /** "cast" | "melee" | "skip" — drives the apply branch in WX. */
-  kind: "cast" | "melee" | "skip";
+  /** "cast" | "melee" | "move" | "skip" — drives the apply branch in WX. */
+  kind: "cast" | "melee" | "move" | "skip";
   /** Short intent line written to the Battle Log via ctx.log. */
   intent: string;
   /** Color for the intent log line (hex). */
@@ -138,6 +138,59 @@ const SUMMON_KIT: Record<SummonArchetype, string[]> = {
   bomber: ["spell-inferno"],
   healer: ["starter-heal", "spell-rallying-cry"],
 };
+
+/**
+ * Section 2a — Per-piece enemy spell kits.
+ *
+ * Maps a chess-piece type to the spell ids an enemy of that piece should know,
+ * scaled by `levelZone` (a coarse difficulty band: 0 = early, 1 = mid,
+ * 2+ = late). Higher zones unlock the upgraded spell in each kit and, for
+ * multi-spell kits, guarantee the full kit is present. Mirrors the real spell
+ * ids in data/spellData.ts (physical_attack, starter-frost, starter-poison,
+ * spell-venom-strike, spell-iron-skin, spell-inferno, starter-heal,
+ * spell-rallying-cry, spell-slow).
+ *
+ * Used by the enemy-spawner to assign spells to a freshly-created enemy based
+ * on its `pieceType` and the current world level zone.
+ */
+const ENEMY_KITS: Record<ChessPieceType, (levelZone: number) => string[]> = {
+  // Pawn: basic melee; gains venom-strike at higher zones.
+  pawn: (z) =>
+    z >= 1 ? ["physical_attack", "spell-venom-strike"] : ["physical_attack"],
+  // Knight: pure melee bruiser.
+  knight: () => ["physical_attack"],
+  // Bishop: ranged frost + poison control.
+  bishop: (z) =>
+    z >= 1 ? ["starter-frost", "starter-poison"] : ["starter-frost"],
+  // Rook: tanky melee with iron-skin armor.
+  rook: (z) =>
+    z >= 1 ? ["physical_attack", "spell-iron-skin"] : ["physical_attack"],
+  // Queen: premier caster — frost early, inferno late, plus self-heal.
+  queen: (z) => {
+    const nuke = z >= 2 ? "spell-inferno" : "starter-frost";
+    return z >= 1 ? [nuke, "starter-heal"] : [nuke];
+  },
+  // King / leader: control nuke + team-wide rallying cry.
+  king: (z) => {
+    const nuke = z >= 2 ? "spell-inferno" : "starter-frost";
+    return z >= 1 ? [nuke, "spell-rallying-cry"] : [nuke];
+  },
+};
+
+/**
+ * Build the spell-id kit for an enemy of the given chess-piece type, scaled by
+ * the world level zone. Returns the ordered list of spell ids the enemy should
+ * have assigned (callers resolve the ids to `SpellConfig` via the spell
+ * registry). Kit size grows with `levelZone` so late-game enemies field their
+ * full kit.
+ */
+export function buildEnemyKit(
+  pieceType: ChessPieceType,
+  levelZone: number,
+): string[] {
+  const builder = ENEMY_KITS[pieceType] ?? ENEMY_KITS.pawn;
+  return builder(Math.max(0, Math.floor(levelZone)));
+}
 
 /** Infer the summon archetype from the AICombatant's `summonAI` field. */
 function inferSummonArchetype(summon: AICombatant): SummonArchetype {
@@ -691,6 +744,66 @@ function repositionForLOS(
 }
 
 /**
+ * Section 2a — find the nearest reachable tile from which `spell` is both in
+ * range AND has line-of-sight to `target`. Used by the move-then-cast branches
+ * of caster/charger/generic: when the chosen ranged spell is out of range or
+ * LoS-blocked from the origin, the enemy paths its full MP toward the best
+ * legal-cast tile and, if it lands there with AP to spare, casts in the same
+ * turn.
+ *
+ * Implementation: BFS over the `reachable` set (already step-budget- and
+ * tackle-aware via `computeReachable`), expanding in chebyshev order from the
+ * origin. The first tile that satisfies range + LoS is returned (nearest by
+ * movement steps). Returns `null` if no reachable tile grants a legal cast.
+ *
+ * `spell.range` is a bigint in the data model; converted via `Number()`.
+ * `spell.lineOfSight === false` spells skip the LoS check (e.g. AoE auras).
+ */
+function findNearestLegalCastTile(
+  origin: AICell,
+  target: AICell,
+  ctx: DecideEnemyContext,
+  reachable: Set<string>,
+  spell: SpellConfig,
+): AICell | null {
+  const range = Number(spell.range);
+  const needsLos = spell.lineOfSight !== false;
+  // BFS from the origin over reachable tiles, ordered by step count. The
+  // `reachable` set already encodes the per-tile step cost (slime-flood aware),
+  // so the first legal-cast tile we hit is the nearest by movement budget.
+  const dirs = [
+    { x: 1, y: 0 },
+    { x: -1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: -1 },
+  ];
+  const visited = new Set<string>([key(origin.x, origin.y)]);
+  // Seed the queue with the origin itself — casting from the current tile is
+  // legal if range + LoS already hold (handles the in-range-but-blocked case
+  // where a 0-step "move" still lets the cast resolve).
+  const queue: AICell[] = [origin];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const dist = chebyshev(cur, target);
+    if (dist <= range) {
+      if (!needsLos || ctx.hasLineOfSight(cur, target)) {
+        return cur;
+      }
+    }
+    for (const d of dirs) {
+      const nx = cur.x + d.x;
+      const ny = cur.y + d.y;
+      const k = key(nx, ny);
+      if (visited.has(k)) continue;
+      if (!reachable.has(k)) continue;
+      visited.add(k);
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  return null;
+}
+
+/**
  * Section 4(d): backline protection cell. Returns the tile the guardian/healer
  * should stand on to interpose itself between the nearest threat and the ward,
  * keeping AI_BACKLINE_GUARD_DISTANCE tiles from the ward. Returns null if
@@ -866,6 +979,55 @@ function decideCaster(
   // No in-range+LoS spell: reposition to gain LoS / optimal range.
   const target = scored[0];
   if (target) {
+    const targetCell = { x: target.combatant.x, y: target.combatant.y };
+    // Section 2a — move-then-cast: pick the best damage spell for this target
+    // and, if a legal-cast tile is reachable this turn, path toward it and cast
+    // from there in the same turn. Falls back to a plain advance if no legal
+    // cast tile is reachable.
+    const repositionSpell = pickBestDamageSpell(ctx, target.combatant);
+    if (repositionSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        targetCell,
+        ctx,
+        reachable,
+        repositionSpell,
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${ctx.enemy.pieceType} closes in and casts ${repositionSpell.name}!`,
+          CAST_COLOR,
+        );
+        logIntent("caster", "closes-in", target.combatant.id, "move-then-cast");
+        return {
+          archetype: "caster",
+          destination: castTile,
+          spell: repositionSpell,
+          targetId: target.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false,
+        };
+      }
+      // Legal-cast tile unreachable this turn: move full MP toward it with
+      // intent 'closes-in' so the enemy never idles.
+      const dest = stepToward(origin, targetCell, ctx, reachable);
+      if (dest.x !== origin.x || dest.y !== origin.y) {
+        ctx.log(`${ctx.enemy.pieceType} closes in for a shot`, MOVE_COLOR);
+        logIntent("caster", "closes-in", target.combatant.id, "approach-cast");
+        return {
+          archetype: "caster",
+          destination: dest,
+          spell: null,
+          targetId: null,
+          kind: "move",
+          intent: "closes-in",
+          intentColor: MOVE_COLOR,
+          retreating: false,
+        };
+      }
+    }
     const dest = stepToward(
       origin,
       { x: target.combatant.x, y: target.combatant.y },
@@ -880,7 +1042,7 @@ function decideCaster(
         destination: dest,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "reposition",
         intentColor: MOVE_COLOR,
         retreating: false,
@@ -945,7 +1107,7 @@ function decideHealer(
       destination: dest,
       spell: null,
       targetId: null,
-      kind: "skip",
+      kind: "move",
       intent: "approach-ally",
       intentColor: MOVE_COLOR,
       retreating: false,
@@ -975,7 +1137,7 @@ function decideHealer(
         destination: guard,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "backline-guard",
         intentColor: MOVE_COLOR,
         retreating: false,
@@ -1047,6 +1209,36 @@ function decideCharger(
       retreating: false,
     };
   }
+  // Section 2a — move-then-cast: the charger has a ranged option. If a
+  // legal-cast tile is reachable this turn, path there and cast from it in the
+  // same turn. Otherwise advance toward the target with intent 'closes-in'.
+  const chargeSpell = pickBestDamageSpell(ctx, target.combatant);
+  if (chargeSpell) {
+    const castTile = findNearestLegalCastTile(
+      origin,
+      targetCell,
+      ctx,
+      reachable,
+      chargeSpell,
+    );
+    if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+      ctx.log(
+        `${ctx.enemy.pieceType} closes in and casts ${chargeSpell.name}!`,
+        CAST_COLOR,
+      );
+      logIntent("charger", "closes-in", target.combatant.id, "move-then-cast");
+      return {
+        archetype: "charger",
+        destination: castTile,
+        spell: chargeSpell,
+        targetId: target.combatant.id,
+        kind: "cast",
+        intent: "closes-in",
+        intentColor: CAST_COLOR,
+        retreating: false,
+      };
+    }
+  }
   // Advance toward the target.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
@@ -1060,7 +1252,7 @@ function decideCharger(
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "advance",
     intentColor: MOVE_COLOR,
     retreating: false,
@@ -1168,7 +1360,7 @@ function decideFlanker(
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "flank",
     intentColor: FLANK_COLOR,
     retreating: false,
@@ -1257,7 +1449,7 @@ function decideBerserker(
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "rage-advance",
     intentColor: sacrificeEligible ? RETREAT_COLOR : MOVE_COLOR,
     retreating: false,
@@ -1391,6 +1583,36 @@ function decideGeneric(
       retreating: false,
     };
   }
+  // Section 2a — move-then-cast: the generic has a ranged option. If a
+  // legal-cast tile is reachable this turn, path there and cast from it in the
+  // same turn. Otherwise advance toward the target with intent 'closes-in'.
+  const advanceSpell = pickBestDamageSpell(ctx, target.combatant);
+  if (advanceSpell) {
+    const castTile = findNearestLegalCastTile(
+      origin,
+      targetCell,
+      ctx,
+      reachable,
+      advanceSpell,
+    );
+    if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+      ctx.log(
+        `${ctx.enemy.pieceType} closes in and casts ${advanceSpell.name}!`,
+        CAST_COLOR,
+      );
+      logIntent("generic", "closes-in", target.combatant.id, "move-then-cast");
+      return {
+        archetype: "generic",
+        destination: castTile,
+        spell: advanceSpell,
+        targetId: target.combatant.id,
+        kind: "cast",
+        intent: "closes-in",
+        intentColor: CAST_COLOR,
+        retreating: false,
+      };
+    }
+  }
   // Advance.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
@@ -1404,7 +1626,7 @@ function decideGeneric(
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "advance",
     intentColor: MOVE_COLOR,
     retreating: false,
@@ -1754,7 +1976,7 @@ function decideSummonHunter(
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "advance",
     intentColor: MOVE_COLOR,
     retreating: false,
@@ -1949,7 +2171,7 @@ function decideSummonGuardian(
         destination: guard,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "backline-guard",
         intentColor: MOVE_COLOR,
         retreating: false,
@@ -1965,7 +2187,7 @@ function decideSummonGuardian(
         destination: dest,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "stay-adjacent",
         intentColor: MOVE_COLOR,
         retreating: false,
@@ -2056,7 +2278,7 @@ function decideSummonArcher(
         destination: reposition,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "reposition-los",
         intentColor: MOVE_COLOR,
         retreating: false,
@@ -2120,7 +2342,7 @@ function decideSummonArcher(
     destination: dest,
     spell: null,
     targetId: null,
-    kind: "skip",
+    kind: "move",
     intent: "kite",
     intentColor: MOVE_COLOR,
     retreating: false,
@@ -2217,7 +2439,7 @@ function decideSummonBomber(
       destination: dest,
       spell: null,
       targetId: null,
-      kind: "skip",
+      kind: "move",
       intent: "approach-cluster",
       intentColor: MOVE_COLOR,
       retreating: false,
@@ -2292,7 +2514,7 @@ function decideSummonHealer(
       destination: dest,
       spell: null,
       targetId: null,
-      kind: "skip",
+      kind: "move",
       intent: "approach-ally",
       intentColor: MOVE_COLOR,
       retreating: false,
@@ -2339,7 +2561,7 @@ function decideSummonHealer(
         destination: guard,
         spell: null,
         targetId: null,
-        kind: "skip",
+        kind: "move",
         intent: "backline-guard",
         intentColor: MOVE_COLOR,
         retreating: false,
