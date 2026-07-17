@@ -48,6 +48,13 @@ export interface AddCombatantOpts {
    *  (its id is added to `battleStartIds` and mirrored into
    *  `battleEnemiesRef`). Defaults to `false` (world-level spawn). */
   battleParticipant?: boolean;
+  /** When set, insert the new combatant's turn-order entry immediately
+   *  AFTER the entry whose id matches (summoner-adjacent placement).
+   *  When the id is not found, the entry is appended at the end. This
+   *  reproduces the placement `applySummonResult` (summonSpawn.ts) used to
+   *  do, but inside the atomic ADD so the combatant array, mirrors, and
+   *  turn order all commit together — no wholesale REPLACE. */
+  insertAfterId?: string;
 }
 
 /** Options for {@link syncCombatants}. */
@@ -259,7 +266,21 @@ export function addCombatant(
   }
 
   const entry = toCombatantEntry(c);
-  const nextTurnOrder = [...ctx.turnOrderRef.current, entry];
+  // Summoner-adjacent turn-order placement: when insertAfterId is set,
+  // splice the new entry immediately after the matching id (or append at
+  // the end when not found). This reproduces applySummonResult's placement
+  // inside the atomic ADD so the combatant array and turn order commit
+  // together — no wholesale REPLACE that could wipe live combatants.
+  const insertAfterId = opts?.insertAfterId;
+  const nextTurnOrder = [...ctx.turnOrderRef.current];
+  if (insertAfterId !== undefined) {
+    const i = nextTurnOrder.findIndex(
+      (e) => e.id === insertAfterId || e.ownerId === insertAfterId,
+    );
+    nextTurnOrder.splice(i === -1 ? nextTurnOrder.length : i + 1, 0, entry);
+  } else {
+    nextTurnOrder.push(entry);
+  }
 
   // Assign refs first so any synchronous reader sees a fresh value.
   ctx.combatantsRef.current = nextCombatants;

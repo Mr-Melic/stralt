@@ -47521,6 +47521,37 @@ function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrd
   };
   return ctx;
 }
+function addCombatant(ctx, combatant, opts) {
+  const c2 = combatant;
+  const battleParticipant = (opts == null ? void 0 : opts.battleParticipant) ?? false;
+  const nextCombatants = [...ctx.combatantsRef.current, combatant];
+  const nextEnemies = nextCombatants;
+  let nextBattleEnemies = ctx.battleEnemiesRef.current;
+  if (battleParticipant) {
+    ctx.battleStartIds.add(c2.id);
+    nextBattleEnemies = nextCombatants.filter(
+      (x3) => ctx.battleStartIds.has(x3.id)
+    );
+  }
+  const entry = toCombatantEntry(c2);
+  const insertAfterId = opts == null ? void 0 : opts.insertAfterId;
+  const nextTurnOrder = [...ctx.turnOrderRef.current];
+  if (insertAfterId !== void 0) {
+    const i = nextTurnOrder.findIndex(
+      (e) => e.id === insertAfterId || e.ownerId === insertAfterId
+    );
+    nextTurnOrder.splice(i === -1 ? nextTurnOrder.length : i + 1, 0, entry);
+  } else {
+    nextTurnOrder.push(entry);
+  }
+  ctx.combatantsRef.current = nextCombatants;
+  ctx.enemiesRef.current = nextEnemies;
+  ctx.battleEnemiesRef.current = nextBattleEnemies;
+  ctx.turnOrderRef.current = nextTurnOrder;
+  ctx.setEnemies(() => nextEnemies);
+  ctx.setBattleEnemies(() => nextBattleEnemies);
+  ctx.setTurnOrder(() => nextTurnOrder);
+}
 function removeCombatant(ctx, id) {
   const nextCombatants = ctx.combatantsRef.current.filter((c2) => c2.id !== id);
   const nextEnemies = nextCombatants;
@@ -50898,29 +50929,6 @@ function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, 
     cell: { x: summon.x, y: summon.y }
   });
   return { summon, turnOrderEntry };
-}
-function applySummonResult(summon, turnOrderEntry, summonerId, currentEnemies, currentTurnOrder) {
-  logDebugInfo("SUMMON", "applySummonResult entered", {
-    summonId: summon.id,
-    summonerId,
-    currentEnemiesLength: currentEnemies.length,
-    currentTurnOrderLength: currentTurnOrder.length
-  });
-  const enemies = [...currentEnemies, summon];
-  const i = currentTurnOrder.findIndex(
-    (e) => e.id === summonerId || e.ownerId === summonerId
-  );
-  const turnOrder = [...currentTurnOrder];
-  turnOrder.splice(
-    i === -1 ? currentTurnOrder.length : i + 1,
-    0,
-    turnOrderEntry
-  );
-  logDebugInfo("SUMMON", "applySummonResult returning", {
-    enemiesLength: enemies.length,
-    turnOrderLength: turnOrder.length
-  });
-  return { enemies, turnOrder };
 }
 const OFFENSIVE_SPELL_CATEGORIES = [
   "damage",
@@ -61646,7 +61654,7 @@ const WorldExplorationInner = ({
           });
           return;
         }
-        const { summon, turnOrderEntry } = spawnSummonUnit(
+        const { summon } = spawnSummonUnit(
           cell,
           { ...spell, summonUnitDef: unitDef, summonLifespan: lifespan },
           "player",
@@ -61670,30 +61678,20 @@ const WorldExplorationInner = ({
             ) || playerPosition.x === c2.x && playerPosition.y === c2.y
           }
         );
-        const { turnOrder: turnOrder2 } = applySummonResult(
-          summon,
-          turnOrderEntry,
-          "player",
-          enemies,
-          turnOrderRef.current
-        );
-        turnOrderRef.current = turnOrder2;
-        const _newEnemies = [
-          ...combatantsRef.current,
-          summon
-        ];
-        syncCombatants(combatantStoreCtx, _newEnemies);
-        setTurnOrder(turnOrder2);
+        addCombatant(combatantStoreCtx, summon, {
+          battleParticipant: true,
+          insertAfterId: "player"
+        });
         logDebugInfo(
           "SUMMON",
-          "[SUMMON-LIFE] spawn commit (prev-spread path)",
+          "[SUMMON-LIFE] spawn commit (addCombatant ADD path)",
           {
-            site: "WX~7935",
+            site: "WX~8580",
             summonId: summon == null ? void 0 : summon.id,
             turnsRemaining: summon == null ? void 0 : summon.turnsRemaining,
             hp: summon == null ? void 0 : summon.hp,
             isSummon: summon == null ? void 0 : summon.isSummon,
-            note: "setEnemies((prev) => [...prev, summon]) — committed entity is the spawn object itself"
+            note: "addCombatant(ctx, summon, { battleParticipant: true, insertAfterId: 'player' }) — atomic ADD, no REPLACE"
           }
         );
         const screenPos = gridToScreen(cell.x, cell.y);
@@ -61882,7 +61880,7 @@ const WorldExplorationInner = ({
         barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
       },
       spawnPlayerSummon: (gridPos, spell) => {
-        const { summon, turnOrderEntry } = spawnSummonUnit(
+        const { summon } = spawnSummonUnit(
           gridPos,
           spell,
           "player",
@@ -61906,36 +61904,32 @@ const WorldExplorationInner = ({
             ) || playerPosition.x === c2.x && playerPosition.y === c2.y
           }
         );
-        const { enemies: newEnemies, turnOrder: newTurnOrder } = applySummonResult(
-          summon,
-          turnOrderEntry,
-          "player",
-          enemies,
-          turnOrderRef.current
-        );
-        syncCombatants(combatantStoreCtx, newEnemies);
-        setTurnOrder(newTurnOrder);
-        turnOrderRef.current = newTurnOrder;
+        addCombatant(combatantStoreCtx, summon, {
+          battleParticipant: true,
+          insertAfterId: "player"
+        });
         {
-          const committed = newEnemies.find(
+          const committed = getLiveCombatants(combatantStoreCtx).find(
             (en) => en.id === (summon == null ? void 0 : summon.id)
           );
           logDebugInfo(
             "SUMMON",
-            "[SUMMON-LIFE] spawn commit (newEnemies path)",
+            "[SUMMON-LIFE] spawn commit (addCombatant ADD path)",
             {
-              site: "WX~8206",
+              site: "WX~8869",
               summonId: summon == null ? void 0 : summon.id,
               turnsRemaining: summon == null ? void 0 : summon.turnsRemaining,
               hp: summon == null ? void 0 : summon.hp,
               isSummon: summon == null ? void 0 : summon.isSummon,
-              committedInNewEnemies: committed ? {
+              committedInLive: committed ? {
                 id: committed.id,
                 turnsRemaining: committed.turnsRemaining,
                 hp: committed.hp,
                 isSummon: !!committed.isSummon
               } : null,
-              newEnemiesSummonCount: newEnemies.filter((e) => e.isSummon).length
+              liveSummonCount: getLiveCombatants(combatantStoreCtx).filter(
+                (e) => e.isSummon
+              ).length
             }
           );
         }
@@ -62011,71 +62005,7 @@ const WorldExplorationInner = ({
             return;
           }
         }
-        if (battleActionMode === "walk") {
-          if (currentBattleMp <= 0) return;
-          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_a4 = currentMap.voidTiles) == null ? void 0 : _a4.has(`${gridPos.x},${gridPos.y}`)))
-            return;
-          const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          const path = findPath(playerPosition, gridPos);
-          if (path.length === 0) return;
-          const moveCost = path.length * mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
-            log: (msg) => logDebugInfo("MODIFIER", msg),
-            rng: Math.random
-          });
-          const cost = moveCost;
-          if (cost > currentBattleMp) return;
-          if (isThornedGround && path.length > 2) {
-            const extraTiles = path.length - 2;
-            const thornDmg = extraTiles * 5;
-            setCharacterStats((prev) => ({
-              ...prev,
-              hp: Math.max(0, prev.hp - thornDmg)
-            }));
-            logBattleEntry(
-              `Thorned Ground deals ${thornDmg} damage (${extraTiles} extra tiles)!`,
-              "#ef4444"
-            );
-          }
-          if (isVoidRift && voidRiftTile && gridPos.x === voidRiftTile.x && gridPos.y === voidRiftTile.y) {
-            const voidFreeCell = (() => {
-              if (!currentMap) return null;
-              for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-                for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-                  if (currentMap.tiles[gy][gx] !== "floor") continue;
-                  if (Math.max(
-                    Math.abs(gx - voidRiftTile.x),
-                    Math.abs(gy - voidRiftTile.y)
-                  ) >= 2) {
-                    return { x: gx, y: gy };
-                  }
-                }
-              }
-              return null;
-            })();
-            if (voidFreeCell) {
-              setPlayerPosition(voidFreeCell);
-              setCharacterStats((prev) => ({
-                ...prev,
-                hp: Math.max(0, prev.hp - 3)
-              }));
-              logBattleEntry("Void Rift teleports you! -3 HP", "#a855f7");
-              setCurrentBattleMp((prev) => Math.max(0, prev - cost));
-              markFirstAction();
-              return;
-            }
-          }
-          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
-          markFirstAction();
-          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
-          setMovementPath(path);
-          setCurrentStepIndex(0);
-          setIsMoving(true);
-          movementStartTimeRef.current = Date.now();
-          if (currentBattleMp - cost <= 0) {
-            setBattleActionMode("attack");
-          }
-        } else {
+        if (selectedSpellIdRef.current) {
           if (!selectedSpellIdRef.current) {
             logClickGuard("blocked.noSpellSelected", {
               phase: battlePhase,
@@ -62206,7 +62136,40 @@ const WorldExplorationInner = ({
               setBattleActionMode("walk");
             }
           }
-        }
+        } else if (battleActionMode === "walk") {
+          if (currentBattleMp <= 0) return;
+          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_a4 = currentMap.voidTiles) == null ? void 0 : _a4.has(`${gridPos.x},${gridPos.y}`)))
+            return;
+          const reachable = getMpReachableTiles();
+          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
+          const path = findPath(playerPosition, gridPos);
+          if (path.length === 0) return;
+          const cost = path.length;
+          if (cost > currentBattleMp) return;
+          if (isThornedGround && path.length > 1) {
+            const thornDmg = (path.length - 1) * 5;
+            setCharacterStats((prev) => ({
+              ...prev,
+              hp: Math.max(0, prev.hp - thornDmg)
+            }));
+            logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
+          }
+          if (isVoidRift && voidRiftTile && voidRiftTile.x === gridPos.x && voidRiftTile.y === gridPos.y) {
+            setCharacterStats((prev) => ({
+              ...prev,
+              hp: Math.max(0, prev.hp - 3)
+            }));
+            logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
+          }
+          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
+          markFirstAction();
+          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
+          setMovementPath(path);
+          setCurrentStepIndex(0);
+          setIsMoving(true);
+          movementStartTimeRef.current = Date.now();
+          if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
+        } else ;
         return;
       }
       if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_b4 = currentMap.voidTiles) == null ? void 0 : _b4.has(`${gridPos.x},${gridPos.y}`))) {
@@ -62315,25 +62278,7 @@ const WorldExplorationInner = ({
             return;
           }
         }
-        if (battleActionMode === "walk") {
-          if (currentBattleMp <= 0) return;
-          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_a4 = currentMap.voidTiles) == null ? void 0 : _a4.has(`${gridPos.x},${gridPos.y}`)))
-            return;
-          const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          const path = findPath(playerPosition, gridPos);
-          if (path.length === 0) return;
-          const cost = path.length;
-          if (cost > currentBattleMp) return;
-          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
-          markFirstAction();
-          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
-          setMovementPath(path);
-          setCurrentStepIndex(0);
-          setIsMoving(true);
-          movementStartTimeRef.current = Date.now();
-          if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
-        } else {
+        if (selectedSpellIdRef.current) {
           if (!selectedSpellIdRef.current) {
             logClickGuard("blocked.noSpellSelected.touch", {
               phase: battlePhase,
@@ -62464,7 +62409,25 @@ const WorldExplorationInner = ({
               setBattleActionMode("walk");
             }
           }
-        }
+        } else if (battleActionMode === "walk") {
+          if (currentBattleMp <= 0) return;
+          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_a4 = currentMap.voidTiles) == null ? void 0 : _a4.has(`${gridPos.x},${gridPos.y}`)))
+            return;
+          const reachable = getMpReachableTiles();
+          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
+          const path = findPath(playerPosition, gridPos);
+          if (path.length === 0) return;
+          const cost = path.length;
+          if (cost > currentBattleMp) return;
+          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
+          markFirstAction();
+          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
+          setMovementPath(path);
+          setCurrentStepIndex(0);
+          setIsMoving(true);
+          movementStartTimeRef.current = Date.now();
+          if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
+        } else ;
         return;
       }
       if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_b4 = currentMap.voidTiles) == null ? void 0 : _b4.has(`${gridPos.x},${gridPos.y}`))) {
@@ -62687,6 +62650,9 @@ const WorldExplorationInner = ({
     dokaBalance,
     onDokaBalanceChange
   ]);
+  reactExports.useEffect(() => {
+    return;
+  }, []);
   checkPortalInteractionRef.current = checkPortalInteraction;
   reactExports.useEffect(() => {
     const wasMoving = prevIsMovingRef.current;
@@ -62695,26 +62661,41 @@ const WorldExplorationInner = ({
       checkPortalInteractionRef.current();
     }
   }, [isMoving]);
-  const findFreeCellFarFrom = reactExports.useCallback(
-    (positions, minDist, tiles) => {
-      var _a4;
-      const candidates = [];
+  const findBattleStartCell = reactExports.useCallback(
+    (origin, avoid, minDistFallback, ctx) => {
+      const spaced = [];
       for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
         for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-          if (tiles[gy][gx] === "wall") continue;
-          if ((_a4 = currentMap == null ? void 0 : currentMap.voidTiles) == null ? void 0 : _a4.has(`${gx},${gy}`)) continue;
-          const minD = positions.reduce(
-            (m2, p2) => Math.min(m2, Math.max(Math.abs(gx - p2.x), Math.abs(gy - p2.y))),
-            Number.POSITIVE_INFINITY
-          );
-          if (minD >= minDist) candidates.push({ x: gx, y: gy, dist: minD });
+          const cell = { x: gx, y: gy };
+          if (!isCellFree(cell, ctx)) continue;
+          let ok = true;
+          let minD = Number.POSITIVE_INFINITY;
+          for (const p2 of avoid) {
+            const d2 = Math.max(Math.abs(gx - p2.x), Math.abs(gy - p2.y));
+            if (d2 < minD) minD = d2;
+            if (d2 < p2.minDist) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) {
+            const dFromOrigin = Math.max(
+              Math.abs(gx - origin.x),
+              Math.abs(gy - origin.y)
+            );
+            spaced.push({ x: gx, y: gy, minD, dFromOrigin });
+          }
         }
       }
-      if (candidates.length === 0) return null;
-      candidates.sort((a2, b2) => b2.dist - a2.dist);
-      return { x: candidates[0].x, y: candidates[0].y };
+      if (spaced.length > 0) {
+        spaced.sort(
+          (a2, b2) => a2.minD !== b2.minD ? b2.minD - a2.minD : a2.dFromOrigin - b2.dFromOrigin
+        );
+        return { x: spaced[0].x, y: spaced[0].y };
+      }
+      return findNearestFreeCell(origin, ctx, minDistFallback);
     },
-    [currentMap]
+    []
   );
   const cleanupBattle = reactExports.useCallback(() => {
     logDebugInfo("BATTLE", "[DEATH-BISECT] cleanupBattle entry", {
@@ -62875,34 +62856,61 @@ const WorldExplorationInner = ({
       battleTriggerCooldownRef.current = true;
       enemyTurnInProgressRef.current = false;
       battleReadyRef.current = false;
-      const tiles = currentMap.tiles;
+      const placed = /* @__PURE__ */ new Set();
+      const occCtx = {
+        tiles: (currentMap.tiles ?? []).map(
+          (row) => (row ?? []).map((t) => t !== "wall")
+        ),
+        barriers: new Set(barrierTilesRef.current.keys()),
+        voidTiles: currentMap.voidTiles ?? /* @__PURE__ */ new Set(),
+        portals: new Set(
+          (currentMap.portals ?? []).map((p2) => `${p2.x},${p2.y}`)
+        ),
+        isOccupied: (c2) => placed.has(`${c2.x},${c2.y}`)
+      };
       const enemyPositions = getLiveCombatants(combatantStoreCtx).map((e) => ({
         x: e.x,
         y: e.y
       }));
-      const newPlayerPos = findFreeCellFarFrom(enemyPositions, 3, tiles);
-      const occupiedPositions = [playerPosition];
+      for (const ep of enemyPositions) placed.add(`${ep.x},${ep.y}`);
+      const newPlayerPos = findBattleStartCell(
+        playerPosition,
+        enemyPositions.map((p2) => ({ ...p2, minDist: 3 })),
+        3,
+        occCtx
+      );
+      if (newPlayerPos) placed.add(`${newPlayerPos.x},${newPlayerPos.y}`);
       const updatedEnemies = enemies.map((e) => {
         const stats = computeEnemyStats(e.level, e.pieceType, e.id);
-        const newPos = findFreeCellFarFrom(occupiedPositions, 3, tiles);
-        if (newPos) {
-          occupiedPositions.push(newPos);
-          return {
-            ...e,
-            x: newPos.x,
-            y: newPos.y,
-            isMoving: false,
-            movementPath: [],
-            sp: stats.sp,
-            sr: stats.sr,
-            init: stats.init,
-            res: stats.res,
-            chc: stats.chc
-          };
+        const avoid = [];
+        if (newPlayerPos) avoid.push({ ...newPlayerPos, minDist: 3 });
+        for (const key2 of placed) {
+          const [px, py] = key2.split(",").map(Number);
+          avoid.push({ x: px, y: py, minDist: 2 });
         }
-        occupiedPositions.push({ x: e.x, y: e.y });
+        const candidate = findBattleStartCell(
+          { x: e.x, y: e.y },
+          avoid,
+          2,
+          occCtx
+        );
+        let finalPos;
+        if (candidate) {
+          finalPos = candidate;
+        } else {
+          const origin = { x: e.x, y: e.y };
+          if (isCellFree(origin, occCtx)) {
+            finalPos = origin;
+          } else {
+            const near = findNearestFreeCell(origin, occCtx, 2);
+            finalPos = near ?? origin;
+          }
+        }
+        placed.add(`${finalPos.x},${finalPos.y}`);
         return {
           ...e,
+          x: finalPos.x,
+          y: finalPos.y,
           isMoving: false,
           movementPath: [],
           sp: stats.sp,
@@ -63109,7 +63117,7 @@ const WorldExplorationInner = ({
     characterStats,
     characterName,
     logBattleEntry,
-    findFreeCellFarFrom,
+    findBattleStartCell,
     normalizedSpellPool,
     maxHp
   ]);
@@ -63921,7 +63929,12 @@ const WorldExplorationInner = ({
       console.log("[VICTORY-GATE]", {
         hostiles: activeHostilesRemaining(combatantsRef.current),
         battleStartIds: combatantStoreCtx.battleStartIds.size,
-        inBattle
+        inBattle,
+        // S1: Surface the store's full id list and the battleStartIds set
+        // contents so any future roster wipe is instantly visible in the
+        // log without needing a separate dumpStateSync decode.
+        combatantIds: combatantsRef.current.map((c2) => c2.id),
+        battleStartIdsList: [...combatantStoreCtx.battleStartIds]
       });
       const _s2RunMode = bossRushActiveRef.current ? "bossRush" : dungeonChainActiveRef.current ? "dungeon" : "none";
       if (_s2RunMode !== "none") {
@@ -64268,7 +64281,7 @@ const WorldExplorationInner = ({
             barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
           },
           spawnUnit: (cell, unitDef, _side, lifespan, _spell) => {
-            const { summon, turnOrderEntry } = spawnSummonUnit(
+            const { summon } = spawnSummonUnit(
               cell,
               {
                 id: `summon-spell-${unitDef.pieceType}`,
@@ -64298,16 +64311,10 @@ const WorldExplorationInner = ({
                 ) || playerPosition.x === c2.x && playerPosition.y === c2.y
               }
             );
-            const { enemies: newEnemies, turnOrder: newTurnOrder } = applySummonResult(
-              summon,
-              turnOrderEntry,
-              "player",
-              enemiesRef.current,
-              turnOrderRef.current
-            );
-            syncCombatants(combatantStoreCtx, newEnemies);
-            setTurnOrder(newTurnOrder);
-            turnOrderRef.current = newTurnOrder;
+            addCombatant(combatantStoreCtx, summon, {
+              battleParticipant: true,
+              insertAfterId: "player"
+            });
           },
           isCellFree: (cell) => !getLiveCombatants(combatantStoreCtx).some(
             (e) => e.x === cell.x && e.y === cell.y
@@ -64327,7 +64334,7 @@ const WorldExplorationInner = ({
               var _a5;
               const unitDef2 = (s2 == null ? void 0 : s2.summonUnitDef) ?? ((_a5 = starterSpells.find((sp) => sp.id === (s2 == null ? void 0 : s2.id))) == null ? void 0 : _a5.summonUnitDef);
               if (!unitDef2) return;
-              const { summon: summon2, turnOrderEntry: turnOrderEntry2 } = spawnSummonUnit(
+              const { summon: summon2 } = spawnSummonUnit(
                 c2,
                 {
                   id: `enemy-summon-${unitDef2.pieceType}`,
@@ -64357,22 +64364,14 @@ const WorldExplorationInner = ({
                   ) || playerPosition.x === oc.x && playerPosition.y === oc.y
                 }
               );
-              const { enemies: newEnemies2, turnOrder: newTurnOrder2 } = applySummonResult(
-                summon2,
-                turnOrderEntry2,
-                "enemy",
-                enemiesRef.current,
-                turnOrderRef.current
-              );
-              syncCombatants(combatantStoreCtx, newEnemies2, {
-                resetBattle: true
+              addCombatant(combatantStoreCtx, summon2, {
+                battleParticipant: true,
+                insertAfterId: enemyId
               });
-              setTurnOrder(newTurnOrder2);
-              turnOrderRef.current = newTurnOrder2;
             };
             const unitDef = (spell == null ? void 0 : spell.summonUnitDef) ?? ((_a4 = starterSpells.find((s2) => s2.id === (spell == null ? void 0 : spell.id))) == null ? void 0 : _a4.summonUnitDef);
             if (!unitDef) return;
-            const { summon, turnOrderEntry } = spawnSummonUnit(
+            const { summon } = spawnSummonUnit(
               cell,
               {
                 id: `enemy-summon-${unitDef.pieceType}`,
@@ -64400,16 +64399,10 @@ const WorldExplorationInner = ({
                 ) || playerPosition.x === c2.x && playerPosition.y === c2.y
               }
             );
-            const { enemies: newEnemies, turnOrder: newTurnOrder } = applySummonResult(
-              summon,
-              turnOrderEntry,
-              "enemy",
-              enemiesRef.current,
-              turnOrderRef.current
-            );
-            syncCombatants(combatantStoreCtx, newEnemies);
-            setTurnOrder(newTurnOrder);
-            turnOrderRef.current = newTurnOrder;
+            addCombatant(combatantStoreCtx, summon, {
+              battleParticipant: true,
+              insertAfterId: enemyId
+            });
           }
         });
         const summonCombatants = enemiesRef.current.filter((e) => e.id !== enemyId).map((e) => ({
@@ -70737,7 +70730,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BKnt6QYq.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Bl_HYM2U.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

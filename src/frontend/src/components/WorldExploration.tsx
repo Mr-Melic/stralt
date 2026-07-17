@@ -66,6 +66,7 @@ import { drawBarrierTower } from "../engine/barrierRender";
 import {
   activeHostilesRemaining,
   despawnSummons,
+  isActiveHostile,
   isAliveCombatant,
 } from "../engine/battleSetup";
 import {
@@ -115,7 +116,11 @@ import {
   pickMapArchetype,
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
-import type { OccupancyContext } from "../engine/occupancy";
+import {
+  type OccupancyContext,
+  findNearestFreeCell,
+  isCellFree,
+} from "../engine/occupancy";
 import {
   PROGRESSION_PORTAL_KIND,
   type RunMode,
@@ -152,7 +157,7 @@ import {
   resolveEnemyApMp,
   syncExpiredSummonsFromTurnQueue,
 } from "../engine/summonIntegration";
-import { applySummonResult, spawnSummonUnit } from "../engine/summonSpawn";
+import { spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
   computeTargetableTiles,
@@ -8536,7 +8541,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           });
           return;
         }
-        const { summon, turnOrderEntry } = spawnSummonUnit(
+        const { summon } = spawnSummonUnit(
           cell,
           { ...spell, summonUnitDef: unitDef, summonLifespan: lifespan },
           "player",
@@ -8566,33 +8571,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               (playerPosition.x === c.x && playerPosition.y === c.y),
           } satisfies OccupancyContext,
         );
-        // Apply the summon through the real state paths: enemies +
-        // battleEnemies (keeps battleEnemiesRef in sync) and turnOrder with
-        // summoner-adjacent placement (immediately after the player's entry).
-        const { turnOrder } = applySummonResult(
-          summon,
-          turnOrderEntry,
-          "player",
-          enemies,
-          turnOrderRef.current,
-        );
-        turnOrderRef.current = turnOrder;
-        const _newEnemies = [
-          ...combatantsRef.current,
-          summon as unknown as Enemy,
-        ];
-        syncCombatants(combatantStoreCtx, _newEnemies);
-        setTurnOrder(turnOrder);
+        // S1: Spawn commits via the store's atomic ADD (addCombatant), NEVER
+        // a wholesale syncCombatants REPLACE. The previous path built
+        // newEnemies from the closure `enemies` snapshot then called
+        // syncCombatants — a stale snapshot wiped the real enemies out of
+        // the store and fired the victory gate. addCombatant appends to
+        // combatantsRef.current (the live source of truth), syncs every
+        // mirror, and inserts the turn-order entry summoner-adjacent
+        // (directly after the player) — all atomically.
+        addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
+          battleParticipant: true,
+          insertAfterId: "player",
+        });
         logDebugInfo(
           "SUMMON",
-          "[SUMMON-LIFE] spawn commit (prev-spread path)",
+          "[SUMMON-LIFE] spawn commit (addCombatant ADD path)",
           {
-            site: "WX~7935",
+            site: "WX~8580",
             summonId: (summon as any)?.id,
             turnsRemaining: (summon as any)?.turnsRemaining,
             hp: (summon as any)?.hp,
             isSummon: (summon as any)?.isSummon,
-            note: "setEnemies((prev) => [...prev, summon]) — committed entity is the spawn object itself",
+            note: "addCombatant(ctx, summon, { battleParticipant: true, insertAfterId: 'player' }) — atomic ADD, no REPLACE",
           },
         );
         // Spawn pixel-puff + cast sound. Drawn through the SAME canvas
@@ -8836,7 +8836,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
       },
       spawnPlayerSummon: (gridPos: { x: number; y: number }, spell: any) => {
-        const { summon, turnOrderEntry } = spawnSummonUnit(
+        const { summon } = spawnSummonUnit(
           gridPos,
           spell,
           "player",
@@ -8866,31 +8866,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               (playerPosition.x === c.x && playerPosition.y === c.y),
           } satisfies OccupancyContext,
         );
-        const { enemies: newEnemies, turnOrder: newTurnOrder } =
-          applySummonResult(
-            summon,
-            turnOrderEntry,
-            "player",
-            enemies,
-            turnOrderRef.current,
-          );
-        syncCombatants(combatantStoreCtx, newEnemies);
-        setTurnOrder(newTurnOrder);
-        turnOrderRef.current = newTurnOrder;
+        // S1: Atomic ADD via the store — NEVER a wholesale syncCombatants
+        // REPLACE built from the closure `enemies` snapshot. A stale
+        // snapshot wiped the real enemies and fired the victory gate.
+        // addCombatant appends to combatantsRef.current (live source of
+        // truth), syncs every mirror, and inserts the turn-order entry
+        // summoner-adjacent (directly after the player) — all atomically.
+        addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
+          battleParticipant: true,
+          insertAfterId: "player",
+        });
         {
-          const committed = newEnemies.find(
+          const committed = getLiveCombatants(combatantStoreCtx).find(
             (en: any) => en.id === (summon as any)?.id,
           );
           logDebugInfo(
             "SUMMON",
-            "[SUMMON-LIFE] spawn commit (newEnemies path)",
+            "[SUMMON-LIFE] spawn commit (addCombatant ADD path)",
             {
-              site: "WX~8206",
+              site: "WX~8869",
               summonId: (summon as any)?.id,
               turnsRemaining: (summon as any)?.turnsRemaining,
               hp: (summon as any)?.hp,
               isSummon: (summon as any)?.isSummon,
-              committedInNewEnemies: committed
+              committedInLive: committed
                 ? {
                     id: committed.id,
                     turnsRemaining: committed.turnsRemaining,
@@ -8898,8 +8897,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     isSummon: !!committed.isSummon,
                   }
                 : null,
-              newEnemiesSummonCount: newEnemies.filter((e: any) => e.isSummon)
-                .length,
+              liveSummonCount: getLiveCombatants(combatantStoreCtx).filter(
+                (e: any) => e.isSummon,
+              ).length,
             },
           );
         }
@@ -8977,6 +8977,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentId: _entry?.id,
           });
         }
+        // FIX 2 — UNMISSABLE [CLICK-ENEMY] probe. Fires on EVERY enemy click
+        // regardless of which branch wins, BEFORE the notPlayerTurn guard.
+        // UNTHROTTLED — direct logDebugInfo call (NOT routed through
+        // logClickGuard's 1s throttle). Dev-only gated so it never ships to
+        // normal players. Single-entry approach: logs pre-branch fields with
+        // branchTaken: 'entry' and gateResult: 'pre-branch' — one line per
+        // click as specified.
+        if (import.meta.env.DEV) {
+          const _hostile = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
+          );
+          if (_hostile) {
+            logDebugInfo("BATTLE", "[CLICK-ENEMY]", {
+              tile: gridPos,
+              hasSelection: !!selectedSpellIdRef.current,
+              spellId: selectedSpellIdRef.current,
+              modeAtClick: battleActionMode,
+              branchTaken: "entry",
+              gateResult: "pre-branch",
+            });
+          }
+        }
         // Part 3: Desync-proof click guard. PRIMARY gate is the turn-truth
         // (turnOrderRef/currentTurnIndexRef), so a stale battlePhase flag can
         // never lock the player out of their own turn. battlePhase remains a
@@ -8992,91 +9014,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
         }
-        if (battleActionMode === "walk") {
-          // Walk mode: move using MP if tile is reachable
-          if (currentBattleMp <= 0) return;
-          if (
-            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
-            currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
-          )
-            return;
-          const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          // Calculate path cost (Manhattan steps)
-          const path = findPath(playerPosition, gridPos);
-          if (path.length === 0) return;
-          // Slime Flood / Frozen Terrain: double movement cost per tile
-          const moveCost =
-            path.length *
-            mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
-              log: (msg: string) => logDebugInfo("MODIFIER", msg),
-              rng: Math.random,
-            });
-          const cost = moveCost;
-          if (cost > currentBattleMp) return;
-          // Thorned Ground: damage for moving more than 2 tiles
-          if (isThornedGround && path.length > 2) {
-            const extraTiles = path.length - 2;
-            const thornDmg = extraTiles * 5;
-            setCharacterStats((prev) => ({
-              ...prev,
-              hp: Math.max(0, prev.hp - thornDmg),
-            }));
-            logBattleEntry(
-              `Thorned Ground deals ${thornDmg} damage (${extraTiles} extra tiles)!`,
-              "#ef4444",
-            );
-          }
-          // Void Rift: if stepping on void tile, teleport and take 3 damage
-          if (
-            isVoidRift &&
-            voidRiftTile &&
-            gridPos.x === voidRiftTile.x &&
-            gridPos.y === voidRiftTile.y
-          ) {
-            // Find a free walkable tile at least 2 away
-            const voidFreeCell = (() => {
-              if (!currentMap) return null;
-              for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-                for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-                  if (currentMap.tiles[gy][gx] !== "floor") continue;
-                  if (
-                    Math.max(
-                      Math.abs(gx - voidRiftTile.x),
-                      Math.abs(gy - voidRiftTile.y),
-                    ) >= 2
-                  ) {
-                    return { x: gx, y: gy };
-                  }
-                }
-              }
-              return null;
-            })();
-            if (voidFreeCell) {
-              setPlayerPosition(voidFreeCell);
-              setCharacterStats((prev) => ({
-                ...prev,
-                hp: Math.max(0, prev.hp - 3),
-              }));
-              logBattleEntry("Void Rift teleports you! -3 HP", "#a855f7");
-              setCurrentBattleMp((prev) => Math.max(0, prev - cost));
-              markFirstAction();
-              return;
-            }
-          }
-          // Deduct MP and move
-          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
-          markFirstAction();
-          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
-          setMovementPath(path);
-          setCurrentStepIndex(0);
-          setIsMoving(true);
-          movementStartTimeRef.current = Date.now();
-          // Auto-disable walk mode when MP exhausted
-          if (currentBattleMp - cost <= 0) {
-            setBattleActionMode("attack");
-          }
-        } else {
+        // FIX 1 — SELECTION IS THE MODE. The CAST branch runs FIRST when a
+        // spell is selected (selectedSpellIdRef.current set), regardless of
+        // battleActionMode — enemy-occupied or not, before any walk/pathing.
+        // The walk branch only runs with NO spell selected. Attack mode with
+        // no spell selected is a silent return.
+        if (selectedSpellIdRef.current) {
+          // CAST branch first — selected spell takes precedence over walk.
           // Attack mode: cast selected spell on clicked tile if in range.
           // Precedence: spell SELECTED (selectedSpellIdRef.current non-null) AND
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
@@ -9246,6 +9190,60 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           // "no_ap" | "abort" → no further action
         }
+        // WALK branch — only runs with NO spell selected. Mirrors the touch
+        // handler's walk body (see lines ~9354-9374) with two mouse-only
+        // hazard checks injected between cost computation and MP deduction:
+        //   - Thorned Ground: isThornedGround → 5 dmg per extra tile beyond
+        //     the first (damage scales with path length).
+        //   - Void Rift: isVoidRift + voidRiftTile destination match → -3 HP.
+        else if (battleActionMode === "walk") {
+          if (currentBattleMp <= 0) return;
+          if (
+            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
+            currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
+          )
+            return;
+          const reachable = getMpReachableTiles();
+          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
+          const path = findPath(playerPosition, gridPos);
+          if (path.length === 0) return;
+          const cost = path.length;
+          if (cost > currentBattleMp) return;
+          // Thorned Ground — 5 dmg per extra tile beyond the first.
+          if (isThornedGround && path.length > 1) {
+            const thornDmg = (path.length - 1) * 5;
+            setCharacterStats((prev) => ({
+              ...prev,
+              hp: Math.max(0, prev.hp - thornDmg),
+            }));
+            logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
+          }
+          // Void Rift — destination tile matches voidRiftTile → -3 HP.
+          if (
+            isVoidRift &&
+            voidRiftTile &&
+            voidRiftTile.x === gridPos.x &&
+            voidRiftTile.y === gridPos.y
+          ) {
+            setCharacterStats((prev) => ({
+              ...prev,
+              hp: Math.max(0, prev.hp - 3),
+            }));
+            logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
+          }
+          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
+          markFirstAction();
+          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
+          setMovementPath(path);
+          setCurrentStepIndex(0);
+          setIsMoving(true);
+          movementStartTimeRef.current = Date.now();
+          if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
+        } else {
+          // Attack mode with no spell selected — silent return. Inspect opens
+          // only via the BattleUIPanel initiative chip button, NOT via canvas
+          // click.
+        }
         return;
       }
       // --- WORLD MODE ---
@@ -9373,6 +9371,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentId: _entry?.id,
           });
         }
+        // FIX 2 — UNMISSABLE [CLICK-ENEMY] probe (touch). Mirrors the mouse
+        // handler. Fires on EVERY enemy touch regardless of which branch wins,
+        // BEFORE the notPlayerTurn guard. UNTHROTTLED — direct logDebugInfo
+        // call (NOT routed through logClickGuard's 1s throttle). Dev-only
+        // gated so it never ships to normal players. Single-entry approach:
+        // logs pre-branch fields with branchTaken: 'entry' and
+        // gateResult: 'pre-branch' — one line per click as specified.
+        if (import.meta.env.DEV) {
+          const _hostile = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
+          );
+          if (_hostile) {
+            logDebugInfo("BATTLE", "[CLICK-ENEMY]", {
+              tile: gridPos,
+              hasSelection: !!selectedSpellIdRef.current,
+              spellId: selectedSpellIdRef.current,
+              modeAtClick: battleActionMode,
+              branchTaken: "entry",
+              gateResult: "pre-branch",
+            });
+          }
+        }
         // Part 3: Desync-proof touch guard (mirrors the click handler).
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
@@ -9385,28 +9405,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
         }
-        if (battleActionMode === "walk") {
-          if (currentBattleMp <= 0) return;
-          if (
-            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
-            currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
-          )
-            return;
-          const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          const path = findPath(playerPosition, gridPos);
-          if (path.length === 0) return;
-          const cost = path.length;
-          if (cost > currentBattleMp) return;
-          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
-          markFirstAction();
-          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
-          setMovementPath(path);
-          setCurrentStepIndex(0);
-          setIsMoving(true);
-          movementStartTimeRef.current = Date.now();
-          if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
-        } else {
+        // FIX 1 — SELECTION IS THE MODE (touch). The CAST branch runs FIRST
+        // when a spell is selected (selectedSpellIdRef.current set),
+        // regardless of battleActionMode — mirroring the mouse handler. The
+        // walk branch only runs with NO spell selected. Attack mode with no
+        // spell selected is a silent return.
+        if (selectedSpellIdRef.current) {
           // Attack mode: cast selected spell on touched tile if in range
           if (!selectedSpellIdRef.current) {
             logClickGuard("blocked.noSpellSelected.touch", {
@@ -9572,6 +9576,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
           }
           // "no_ap" | "abort" → no further action
+        }
+        // WALK branch — only runs with NO spell selected. Mirrors the mouse
+        // handler's walk body WITHOUT the mouse-only Thorned Ground / Void Rift
+        // hazard checks (those are mouse-only per spec).
+        else if (battleActionMode === "walk") {
+          if (currentBattleMp <= 0) return;
+          if (
+            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
+            currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
+          )
+            return;
+          const reachable = getMpReachableTiles();
+          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
+          const path = findPath(playerPosition, gridPos);
+          if (path.length === 0) return;
+          const cost = path.length;
+          if (cost > currentBattleMp) return;
+          setCurrentBattleMp((prev) => Math.max(0, prev - cost));
+          markFirstAction();
+          setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
+          setMovementPath(path);
+          setCurrentStepIndex(0);
+          setIsMoving(true);
+          movementStartTimeRef.current = Date.now();
+          if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
+        } else {
+          // Attack mode with no spell selected — silent return.
         }
         return;
       }
@@ -9835,6 +9866,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     dokaBalance,
     onDokaBalanceChange,
   ]);
+  // REMOVE NEXT BUILD — DOM sanity probe. Dev-only: logs the tag + class of
+  // every pointerdown target (capture phase) with a 1s throttle to help
+  // diagnose which element is swallowing touch/click events on the canvas.
+  // The DEV gate lives INSIDE the effect so the hook is always called
+  // unconditionally (Rules of Hooks).
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    let lastLog = 0;
+    const handler = (e: PointerEvent) => {
+      const now = Date.now();
+      if (now - lastLog < 1000) return;
+      lastLog = now;
+      const target = e.target as HTMLElement | null;
+      // eslint-disable-next-line no-console
+      console.log("[DOM PROBE] pointerdown", {
+        targetTag: target?.tagName ?? null,
+        targetClass: target?.className ?? null,
+      });
+    };
+    document.addEventListener("pointerdown", handler, { capture: true });
+    return () =>
+      document.removeEventListener("pointerdown", handler, { capture: true });
+  }, []);
   // FIXED: Check portal interaction whenever player position changes
   // EDIT 3 — Edge-trigger: only fire checkPortalInteraction() on the actual
   // isMoving false-transition (moving → stopped), NOT on every
@@ -9855,31 +9909,73 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }, [isMoving]);
   // Check for battle trigger
   // Check for battle trigger — fires when player is exactly 1 Chebyshev step from any enemy
-  // Helper: find a free cell at least minDist Chebyshev away from all given positions
-  const findFreeCellFarFrom = useCallback(
+  // ── S3 FIX: battle-start placement now routes through the SHARED occupancy
+  //    engine (engine/occupancy.ts isCellFree) so every placed combatant is
+  //    guaranteed a UNIQUE, passable cell (no wall/void/barrier/portal, no
+  //    overlap with already-placed combatants). Chebyshev spacing is enforced
+  //    where the map allows and falls back to findNearestFreeCell (ring scan)
+  //    when cramped — NEVER overlaps, NEVER on an impassable tile.
+  //    This replaces the old findFreeCellFarFrom which (a) did not check
+  //    combatant occupancy at all and (b) always picked the single farthest
+  //    corner cell, causing multiple enemies to be assigned the same cell.
+  const findBattleStartCell = useCallback(
     (
-      positions: { x: number; y: number }[],
-      minDist: number,
-      tiles: TileType[][],
+      origin: { x: number; y: number },
+      avoid: { x: number; y: number; minDist: number }[],
+      minDistFallback: number,
+      ctx: OccupancyContext,
     ): { x: number; y: number } | null => {
-      const candidates: { x: number; y: number; dist: number }[] = [];
+      // Pass 1: collect every cell that is free AND meets EVERY per-position
+      // spacing target. A cell qualifies iff for each avoided position p,
+      // Chebyshev(cell, p) >= p.minDist. This lets the caller demand, e.g.,
+      // >= 3 from the player AND >= 2 from each already-placed enemy in one pass.
+      const spaced: {
+        x: number;
+        y: number;
+        minD: number;
+        dFromOrigin: number;
+      }[] = [];
       for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
         for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-          if (tiles[gy][gx] === "wall") continue;
-          if (currentMap?.voidTiles?.has(`${gx},${gy}`)) continue;
-          const minD = positions.reduce(
-            (m, p) =>
-              Math.min(m, Math.max(Math.abs(gx - p.x), Math.abs(gy - p.y))),
-            Number.POSITIVE_INFINITY,
-          );
-          if (minD >= minDist) candidates.push({ x: gx, y: gy, dist: minD });
+          const cell = { x: gx, y: gy };
+          if (!isCellFree(cell, ctx)) continue;
+          let ok = true;
+          let minD = Number.POSITIVE_INFINITY;
+          for (const p of avoid) {
+            const d = Math.max(Math.abs(gx - p.x), Math.abs(gy - p.y));
+            if (d < minD) minD = d;
+            if (d < p.minDist) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) {
+            const dFromOrigin = Math.max(
+              Math.abs(gx - origin.x),
+              Math.abs(gy - origin.y),
+            );
+            spaced.push({ x: gx, y: gy, minD, dFromOrigin });
+          }
         }
       }
-      if (candidates.length === 0) return null;
-      candidates.sort((a, b) => b.dist - a.dist);
-      return { x: candidates[0].x, y: candidates[0].y };
+      if (spaced.length > 0) {
+        // Pick the best-spaced cell; break ties by NEAREST to origin so
+        // multiple enemies spread around the player instead of piling on one
+        // far corner. Stable sort: highest minD first, then lowest dFromOrigin.
+        spaced.sort((a, b) =>
+          a.minD !== b.minD ? b.minD - a.minD : a.dFromOrigin - b.dFromOrigin,
+        );
+        return { x: spaced[0].x, y: spaced[0].y };
+      }
+      // Pass 2 (cramped map): fall back to the nearest free cell to origin.
+      // findNearestFreeCell uses isCellFree under the hood, so the result is
+      // guaranteed unique + passable (it cannot overlap any combatant that
+      // ctx.isOccupied already knows about, including the ones we just placed).
+      // minDistFallback is the ring-scan radius used here (typically the
+      // loosest spacing target so the fallback still tries to respect spacing).
+      return findNearestFreeCell(origin, ctx, minDistFallback);
     },
-    [currentMap],
+    [],
   );
   // ── Unified cleanup functions ──────────────────────────────────────────────
   // cleanupBattle: terminates every timer/interval/flag from an active battle.
@@ -10126,41 +10222,87 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       enemyTurnInProgressRef.current = false;
       battleReadyRef.current = false;
 
-      const tiles = currentMap.tiles;
+      // ── S3: battle-start placement via the SHARED occupancy engine ──
+      // Build an OccupancyContext mirroring the summon-spawn pattern at
+      // ~WX 8558-8572. The isOccupied callback is backed by a MUTABLE
+      // `placed` Set of "x,y" keys so every combatant we commit is
+      // immediately visible to isCellFree for the NEXT placement —
+      // guaranteeing unique cells with no wall/void/barrier/portal overlap.
+      const placed = new Set<string>();
+      const occCtx: OccupancyContext = {
+        tiles: (currentMap.tiles ?? []).map((row) =>
+          (row ?? []).map((t) => t !== "wall"),
+        ),
+        barriers: new Set(barrierTilesRef.current.keys()),
+        voidTiles:
+          (currentMap.voidTiles as Set<string> | undefined) ??
+          new Set<string>(),
+        portals: new Set(
+          (currentMap.portals ?? []).map((p) => `${p.x},${p.y}`),
+        ),
+        isOccupied: (c: { x: number; y: number }) =>
+          placed.has(`${c.x},${c.y}`),
+      };
 
-      // Teleport player to a free cell >= 3 Chebyshev from all enemies
+      // Seed `placed` with every current enemy position so the player's
+      // placement cannot land on top of one, and so enemy self-placement
+      // (fallback branch) treats its own origin as occupied.
       const enemyPositions = getLiveCombatants(combatantStoreCtx).map((e) => ({
         x: e.x,
         y: e.y,
       }));
-      const newPlayerPos = findFreeCellFarFrom(enemyPositions, 3, tiles);
+      for (const ep of enemyPositions) placed.add(`${ep.x},${ep.y}`);
 
-      // Teleport each enemy to a UNIQUE free cell >= 3 Chebyshev from the player
-      // We track already-occupied positions so enemies don't stack on the same tile
-      const occupiedPositions: { x: number; y: number }[] = [playerPosition];
+      // Player: >= 3 Chebyshev from every enemy. findBattleStartCell picks the
+      // best-spaced cell (ties broken NEAREST to origin) and falls back to a
+      // ring scan when the map is too cramped to honour the spacing.
+      const newPlayerPos = findBattleStartCell(
+        playerPosition,
+        enemyPositions.map((p) => ({ ...p, minDist: 3 })),
+        3,
+        occCtx,
+      );
+      if (newPlayerPos) placed.add(`${newPlayerPos.x},${newPlayerPos.y}`);
+
+      // Enemies: each gets a UNIQUE cell >= 3 from the player and >= 2 from
+      // every already-placed enemy. We add each result to `placed` so the
+      // next enemy's isCellFree check sees it — no stacking possible.
       const updatedEnemies = enemies.map((e) => {
         const stats = computeEnemyStats(e.level, e.pieceType, e.id);
-        const newPos = findFreeCellFarFrom(occupiedPositions, 3, tiles);
-        if (newPos) {
-          // Claim this position so the next enemy picks a different one
-          occupiedPositions.push(newPos);
-          return {
-            ...e,
-            x: newPos.x,
-            y: newPos.y,
-            isMoving: false,
-            movementPath: [],
-            sp: stats.sp,
-            sr: stats.sr,
-            init: stats.init,
-            res: stats.res,
-            chc: stats.chc,
-          };
+        const avoid: { x: number; y: number; minDist: number }[] = [];
+        if (newPlayerPos) avoid.push({ ...newPlayerPos, minDist: 3 });
+        // Every enemy placed so far in THIS loop demands >= 2 spacing.
+        for (const key of placed) {
+          const [px, py] = key.split(",").map(Number);
+          avoid.push({ x: px, y: py, minDist: 2 });
         }
-        // Fallback: keep original position but still freeze movement
-        occupiedPositions.push({ x: e.x, y: e.y });
+        const candidate = findBattleStartCell(
+          { x: e.x, y: e.y },
+          avoid,
+          2,
+          occCtx,
+        );
+        let finalPos: { x: number; y: number };
+        if (candidate) {
+          finalPos = candidate;
+        } else {
+          // Cramped-map fallback: keep the original cell ONLY if isCellFree
+          // confirms it is passable + unoccupied; otherwise ring-scan from
+          // the origin. Either way the result is added to `placed` so the
+          // next enemy cannot reuse it.
+          const origin = { x: e.x, y: e.y };
+          if (isCellFree(origin, occCtx)) {
+            finalPos = origin;
+          } else {
+            const near = findNearestFreeCell(origin, occCtx, 2);
+            finalPos = near ?? origin;
+          }
+        }
+        placed.add(`${finalPos.x},${finalPos.y}`);
         return {
           ...e,
+          x: finalPos.x,
+          y: finalPos.y,
           isMoving: false,
           movementPath: [],
           sp: stats.sp,
@@ -10462,7 +10604,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     characterStats,
     characterName,
     logBattleEntry,
-    findFreeCellFarFrom,
+    findBattleStartCell,
     normalizedSpellPool,
     maxHp,
   ]);
@@ -11515,6 +11657,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         hostiles: activeHostilesRemaining(combatantsRef.current),
         battleStartIds: combatantStoreCtx.battleStartIds.size,
         inBattle,
+        // S1: Surface the store's full id list and the battleStartIds set
+        // contents so any future roster wipe is instantly visible in the
+        // log without needing a separate dumpStateSync decode.
+        combatantIds: combatantsRef.current.map((c) => c.id),
+        battleStartIdsList: [...combatantStoreCtx.battleStartIds],
       });
       // S2: When the last enemy on a run map dies, announce that the way
       // forward is now open. Only fires inside an active dungeon or boss-rush
@@ -12001,7 +12148,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             lifespan: number,
             _spell: any,
           ) => {
-            const { summon, turnOrderEntry } = spawnSummonUnit(
+            const { summon } = spawnSummonUnit(
               cell,
               {
                 id: `summon-spell-${unitDef.pieceType}`,
@@ -12037,17 +12184,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   (playerPosition.x === c.x && playerPosition.y === c.y),
               } satisfies OccupancyContext,
             );
-            const { enemies: newEnemies, turnOrder: newTurnOrder } =
-              applySummonResult(
-                summon,
-                turnOrderEntry,
-                "player",
-                enemiesRef.current,
-                turnOrderRef.current,
-              );
-            syncCombatants(combatantStoreCtx, newEnemies);
-            setTurnOrder(newTurnOrder);
-            turnOrderRef.current = newTurnOrder;
+            // S1 SITE #3: Atomic ADD via the combatant store. Player-side
+            // spawnUnit, so the summoner is 'player' — insert the new turn-
+            // order entry right after the player. battleParticipant: true adds
+            // the id to battleStartIds, preserving the existing roster (no
+            // wholesale REPLACE, no resetBattle).
+            addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
+              battleParticipant: true,
+              insertAfterId: "player",
+            });
           },
           isCellFree: (cell: { x: number; y: number }) =>
             !getLiveCombatants(combatantStoreCtx).some(
@@ -12075,7 +12220,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 s?.summonUnitDef ??
                 starterSpells.find((sp: any) => sp.id === s?.id)?.summonUnitDef;
               if (!unitDef) return;
-              const { summon, turnOrderEntry } = spawnSummonUnit(
+              const { summon } = spawnSummonUnit(
                 c,
                 {
                   id: `enemy-summon-${unitDef.pieceType}`,
@@ -12111,26 +12256,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     (playerPosition.x === oc.x && playerPosition.y === oc.y),
                 } satisfies OccupancyContext,
               );
-              const { enemies: newEnemies, turnOrder: newTurnOrder } =
-                applySummonResult(
-                  summon,
-                  turnOrderEntry,
-                  "enemy",
-                  enemiesRef.current,
-                  turnOrderRef.current,
-                );
-              syncCombatants(combatantStoreCtx, newEnemies, {
-                resetBattle: true,
+              // S1 SITE #4: Atomic ADD via the combatant store. The summoner
+              // is the enemy currently casting (enemyId, captured in the
+              // outer enemy-AI-turn closure at WX ~11981). insertAfterId
+              // places the new turn-order entry right after the summoner.
+              // battleParticipant: true adds the id to battleStartIds only —
+              // the previous resetBattle: true wholesale-replaced the roster
+              // and wiped live combatants; addCombatant never resets.
+              addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
+                battleParticipant: true,
+                insertAfterId: enemyId,
               });
-              setTurnOrder(newTurnOrder);
-              turnOrderRef.current = newTurnOrder;
             };
             // Invoke the same logic inline for the SpellContext caller.
             const unitDef: SummonUnitDef | undefined =
               spell?.summonUnitDef ??
               starterSpells.find((s: any) => s.id === spell?.id)?.summonUnitDef;
             if (!unitDef) return;
-            const { summon, turnOrderEntry } = spawnSummonUnit(
+            const { summon } = spawnSummonUnit(
               cell,
               {
                 id: `enemy-summon-${unitDef.pieceType}`,
@@ -12164,17 +12307,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   (playerPosition.x === c.x && playerPosition.y === c.y),
               } satisfies OccupancyContext,
             );
-            const { enemies: newEnemies, turnOrder: newTurnOrder } =
-              applySummonResult(
-                summon,
-                turnOrderEntry,
-                "enemy",
-                enemiesRef.current,
-                turnOrderRef.current,
-              );
-            syncCombatants(combatantStoreCtx, newEnemies);
-            setTurnOrder(newTurnOrder);
-            turnOrderRef.current = newTurnOrder;
+            // S1 SITE #5: Atomic ADD via the combatant store — inline twin of
+            // site #4. Same enemyId summoner, same battleParticipant +
+            // insertAfterId placement. No resetBattle, no wholesale REPLACE.
+            addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
+              battleParticipant: true,
+              insertAfterId: enemyId,
+            });
           },
         });
         // Build AI context for the summon (first-class AI combatant via decideSummonAction).
