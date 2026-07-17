@@ -1537,11 +1537,13 @@ export function decideSummonAction(
     (c) => c.side === summonSide && c.id !== summon.id,
   );
 
+  let action: EnemyAction;
   switch (archetype) {
     case "hunter":
-      return decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      action = decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      break;
     case "guardian":
-      return decideSummonGuardian(
+      action = decideSummonGuardian(
         summon,
         ctx,
         allies,
@@ -1549,12 +1551,15 @@ export function decideSummonAction(
         reachable,
         origin,
       );
+      break;
     case "archer":
-      return decideSummonArcher(summon, ctx, opponents, reachable, origin);
+      action = decideSummonArcher(summon, ctx, opponents, reachable, origin);
+      break;
     case "bomber":
-      return decideSummonBomber(summon, ctx, opponents, reachable, origin);
+      action = decideSummonBomber(summon, ctx, opponents, reachable, origin);
+      break;
     case "healer":
-      return decideSummonHealer(
+      action = decideSummonHealer(
         summon,
         ctx,
         allies,
@@ -1562,9 +1567,19 @@ export function decideSummonAction(
         reachable,
         origin,
       );
+      break;
     default:
-      return decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      action = decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      break;
   }
+
+  logDebugInfo("SUMMON", "SUMMON-DECIDE", {
+    archetype,
+    kind: action.kind,
+    spellId: action.spell?.id ?? "none",
+    targetId: action.targetId ?? "none",
+  });
+  return action;
 }
 
 /**
@@ -1765,16 +1780,18 @@ function decideSummonGuardian(
     allies.find((a) => !a.isSummon) ??
     [...allies].sort((a, b) => hpFrac(a) - hpFrac(b))[0] ??
     null;
-  // Cast starter-shield on the ward when it is unshielded and in range.
+  // Cast starter-shield on the ward when it is in range. The ward's shield
+  // state is not observable on AICombatant (no activeEffects field), so we
+  // gate on the shield spell being ready (cooldown-filtered via
+  // availableSpells) and the ward being in range; the apply layer handles
+  // buff application / stacking. When the ward is out of range or absent,
+  // fall back to Iron Skin (spell-iron-skin) on self so the guardian never
+  // silently holds when a valid self-buff cast exists.
   const shield = findKitSpell(kit[0], ctx);
   if (shield && ward) {
     const wardCell = { x: ward.x, y: ward.y };
     const dist = chebyshev(origin, wardCell);
     const inRange = dist <= Number(shield.range);
-    // "Unshielded" heuristic: ward has no active shield effect we can observe
-    // here, so we gate on the shield spell being ready (cooldown-filtered via
-    // availableSpells) and the ward being in range. The apply layer handles
-    // the actual buff application / stacking.
     if (inRange) {
       ctx.log(`${summon.pieceType} shields ${ward.name}`, HEAL_COLOR);
       logIntent("guardian", "cast", ward.id, "starter-shield");
@@ -1789,6 +1806,25 @@ function decideSummonGuardian(
         retreating: false,
       };
     }
+  }
+  // Iron Skin self-buff fallback: harden self when the ward is out of range
+  // or no ward exists. spell-iron-skin is targetType "ally" (range 3), so the
+  // summon self-casts with targetId = summon.id — the executor gate at
+  // summonExecutor.ts line 123 fires on the resolved spell object + id.
+  const ironSkin = findKitSpell(kit[1], ctx);
+  if (ironSkin) {
+    ctx.log(`${summon.pieceType} hardens with Iron Skin`, HEAL_COLOR);
+    logIntent("guardian", "cast", summon.id, "spell-iron-skin");
+    return {
+      archetype: "generic",
+      destination: origin,
+      spell: ironSkin,
+      targetId: summon.id,
+      kind: "cast",
+      intent: "spell-iron-skin",
+      intentColor: HEAL_COLOR,
+      retreating: false,
+    };
   }
   // Interpose between the nearest threat and the ward.
   if (ward && opponents.length > 0) {
@@ -1919,6 +1955,44 @@ function decideSummonArcher(
         intentColor: MOVE_COLOR,
         retreating: false,
       };
+    }
+  }
+  // Slow-on-approaching: when the preferred poison shot was out of range or
+  // LoS-blocked with no reposition, but spell-slow is ready and the nearest
+  // target is within the slow spell's range with LoS, cast slow to control
+  // the approaching enemy before falling back to kiting. spell-slow is
+  // targetType "enemy" (range 3); the resolved spell object + target id
+  // satisfy the executor gate at summonExecutor.ts line 123.
+  if (slow) {
+    const slowRange = Number(slow.range);
+    const slowScored = scoreTargets(opponents, ctx, slow);
+    const slowTarget = slowScored[0];
+    if (slowTarget) {
+      const slowCell = { x: slowTarget.combatant.x, y: slowTarget.combatant.y };
+      const slowDist = chebyshev(origin, slowCell);
+      if (slowDist <= slowRange) {
+        const slowLos =
+          slow.lineOfSight === false
+            ? true
+            : ctx.hasLineOfSight(origin, slowCell);
+        if (slowLos) {
+          ctx.log(
+            `${summon.pieceType} slows approaching ${slowTarget.combatant.name}`,
+            CAST_COLOR,
+          );
+          logIntent("archer", "cast", slowTarget.combatant.id, "spell-slow");
+          return {
+            archetype: "generic",
+            destination: origin,
+            spell: slow,
+            targetId: slowTarget.combatant.id,
+            kind: "cast",
+            intent: "slow-approaching",
+            intentColor: CAST_COLOR,
+            retreating: false,
+          };
+        }
+      }
     }
   }
   // Maintain 3+ range: step away if too close, step toward if too far.

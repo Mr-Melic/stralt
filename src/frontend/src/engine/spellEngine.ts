@@ -810,6 +810,26 @@ export function resolvePlayerCast(
     return "summon";
   }
 
+  // ── Barrier spell — place an impassable tile for 3 turns (inline line 8540) ──
+  // HOISTED out of the damage-loop guard (build #308): barrier spells target
+  // EMPTY ground tiles by design (targetType "ground", see targeting.ts line
+  // 201 `targetType === "ground" || spell.isBarrier`), so `targetEnemy` is
+  // undefined and `isDrainSpell` is false. The guard
+  // `if (targetEnemy || (isDrainSpell && !isPlayerTile))` at the damage loop
+  // was therefore never entered — the barrier branch was unreachable and the
+  // function fell through to `return "cast"`, deducting AP without placing
+  // the barrier. This branch must run regardless of whether an enemy occupies
+  // the clicked tile. Same hoist pattern as the summon branch above (line 799).
+  if (spell.isBarrier) {
+    ctx.placeBarrierTile(gridPos, 3);
+    ctx.log(
+      `Barrier placed at (${gridPos.x},${gridPos.y}) for 3 turns!`,
+      "#818cf8",
+    );
+    ctx.recordSpellType(spell.effectType ?? "damage");
+    return "cast";
+  }
+
   // ── Damage loop (inline line 8456) ──
   if (targetEnemy || (isDrainSpell && !isPlayerTile)) {
     const baseDamage = Number(spell.damage);
@@ -852,17 +872,6 @@ export function resolvePlayerCast(
       ctx.log(
         "Mirror active! Next single-target damage spell cast at you reflects back!",
         "#c084fc",
-      );
-      ctx.recordSpellType(spell.effectType ?? "damage");
-      return "cast";
-    }
-
-    // Barrier spell — place an impassable tile for 3 turns (inline line 8540)
-    if (spell.isBarrier) {
-      ctx.placeBarrierTile(gridPos, 3);
-      ctx.log(
-        `Barrier placed at (${gridPos.x},${gridPos.y}) for 3 turns!`,
-        "#818cf8",
       );
       ctx.recordSpellType(spell.effectType ?? "damage");
       return "cast";

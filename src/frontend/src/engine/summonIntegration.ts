@@ -5,9 +5,16 @@
  * All functions are side-effect-free except where explicitly noted.
  */
 
+import type { CombatantEntry } from "../components/InitiativeStrip";
 import { logDebugInfo } from "../utils/debugLogger";
 import { type SpellContextDeps, createSpellContext } from "./spellContext";
 import type { SpellContext } from "./spellEngine";
+import {
+  type CurrentTurnIndexRef,
+  type SetTurnOrder,
+  type TurnOrderRef,
+  removeCombatantFromTurnQueue,
+} from "./turnQueue";
 
 /**
  * Decrement lifespan for all summons, kill those at 0, and return both the
@@ -48,6 +55,57 @@ export function decrementSummonLifespan(
     }
   }
   return { enemies: enemies.filter((e: any) => e.hp > 0), expiredIds };
+}
+
+/**
+ * Atomically decrement summon lifespans, remove every expired summon from the
+ * turn queue (state + both refs), and update the enemies state — in that order,
+ * synchronously, in a single call.
+ *
+ * This is the single entry point that satisfies the "no ghost slot" contract:
+ *   1. `decrementSummonLifespan` runs first, producing `{ survivingEnemies,
+ *      expiredIds }`.
+ *   2. For each `expiredId`, `removeCombatantFromTurnQueue` runs synchronously,
+ *      filtering `turnOrder`, syncing `turnOrderRef.current`, and adjusting
+ *      `currentTurnIndexRef.current` (3-case index math, including the
+ *      expiry-during-own-turn fix at turnQueue.ts line 94).
+ *   3. `setEnemies(survivingEnemies)` runs LAST, so there is never a window
+ *      where `enemies` state has dropped a summon but the turn queue still
+ *      references it (or vice versa).
+ *
+ * The caller MUST invoke this BEFORE computing the next turn index (the
+ * `(prevIdx + 1) % prevOrder.length` advance at WorldExploration.tsx ~10530),
+ * so the advance always runs against a turnOrder that no longer contains the
+ * faded summons. This closes the ghost-entry race: there is no window where
+ * `currentTurnIndexRef` points at a removed combatant.
+ *
+ * Side-effectful by design: it mutates the two refs it is handed, invokes the
+ * two setters it is handed, and mutates `turnsRemaining`/`hp` on the enemy
+ * objects in place (matching the existing `decrementSummonLifespan` behavior).
+ */
+export function syncExpiredSummonsFromTurnQueue(
+  enemies: any[],
+  _turnOrder: CombatantEntry[],
+  turnOrderRef: TurnOrderRef,
+  currentTurnIndexRef: CurrentTurnIndexRef,
+  setTurnOrder: SetTurnOrder,
+  setEnemies: (enemies: any[]) => void,
+  log: (msg: string, color?: string, isSummon?: boolean) => void,
+): void {
+  const { enemies: survivingEnemies, expiredIds } = decrementSummonLifespan(
+    enemies,
+    log,
+  );
+  for (const expiredId of expiredIds) {
+    removeCombatantFromTurnQueue(
+      turnOrderRef.current,
+      turnOrderRef,
+      currentTurnIndexRef,
+      expiredId,
+      setTurnOrder,
+    );
+  }
+  setEnemies(survivingEnemies);
 }
 
 /**

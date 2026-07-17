@@ -459,6 +459,35 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                     />
                   </div>
                 )}
+
+                {/* Lifespan pip for summons — counts down as turnsRemaining
+                    decreases (decrementSummonLifespan in summonIntegration.ts).
+                    Stone-themed amber chip to match the spellbook lifespan chip. */}
+                {combatant.isSummon && combatant.turnsRemaining != null && (
+                  <div
+                    data-ocid={`initiative.lifespan.${index + 1}`}
+                    title={`Summon persists ${combatant.turnsRemaining} more turn${combatant.turnsRemaining === 1 ? "" : "s"}`}
+                    style={{
+                      marginTop: 2,
+                      fontSize: 7,
+                      fontWeight: 800,
+                      lineHeight: 1,
+                      color: "rgba(230,210,160,0.95)",
+                      background: "rgba(80,65,40,0.7)",
+                      border: "1px solid rgba(160,140,90,0.5)",
+                      padding: "1px 4px",
+                      borderRadius: 3,
+                      textAlign: "center",
+                      width: 46,
+                      boxSizing: "border-box",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {"\u23F3"}
+                    {combatant.turnsRemaining}
+                  </div>
+                )}
               </div>
 
               {/* Click-to-toggle stats panel — slides in to the RIGHT of the card */}

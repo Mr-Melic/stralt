@@ -1,18 +1,18 @@
 {
-  "overview": "Tactical turn-based RPG with summon execution, enemy target intelligence, enemy summoners, and achievement claim persistence.",
+  "overview": "Tactical RPG combat engine on Internet Computer with summons, spells, and turn-based encounters.",
   "features": [
-    "Summon execution layer that applies decided move and cast actions with MP/AP spend",
-    "Enemy target intelligence treating player-side summons as valid targets",
-    "Enemy summoner packs that spawn red-tinted enemy-side summons",
-    "Achievement claim persistence with real doka crediting and rollback on failure"
+    "Summon five archetypes that each act in combat",
+    "Cast spells with line-of-sight and range targeting",
+    "Place barrier walls that block movement and sight",
+    "Track summon lifespan with on-grid indicators",
+    "Atomic turn-order management for dead summons"
   ],
   "category": "game",
   "tags": [
     "tactical-rpg",
-    "turn-based",
-    "combat",
+    "combat-engine",
     "summons",
-    "achievements"
+    "turn-based"
   ],
-  "last_updated": "2026-07-17T00:20:23.799Z"
+  "last_updated": "2026-07-17T01:04:22.357Z"
 }

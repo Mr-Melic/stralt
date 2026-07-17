@@ -6,6 +6,7 @@ import {
   SUMMON_BASE_HP,
   SUMMON_BASE_HP_DEFAULT,
   SUMMON_HP_PER_LEVEL_PCT,
+  SUMMON_LIFESPAN_PER_HALF_LEVEL,
   SUMMON_MP_PER_LEVELS,
   SUMMON_UPGRADE_COST_MULTIPLIER,
 } from "../data/gameConstants";
@@ -237,11 +238,13 @@ const SummonAbilitiesBlock: React.FC<{
   const kitIds: string[] = Array.isArray(unitDef?.summonKit)
     ? (unitDef?.summonKit as string[])
     : [];
-  const lifespan = Number(spell.summonLifespan ?? 0);
 
   // Leveled stats — mirror engine/summonSpawn.ts formulas exactly so the
   // spellbook preview matches the spawned unit. spellLevel defaults to 0.
   const spellLevel = spellLevels[spell.id] ?? 0;
+  const lifespan =
+    Number(spell.summonLifespan ?? 0) +
+    Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL);
   const summonAI = spell.summonAI ?? "";
   const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
   const hpScale = unitDef?.hpScale ?? 1;
@@ -349,7 +352,7 @@ const SummonAbilitiesBlock: React.FC<{
               padding: "1px 5px",
               borderRadius: 3,
             }}
-            title="Turns the summon persists on the battlefield"
+            title={`Base ${Number(spell.summonLifespan ?? 0)} + floor(level/${SUMMON_LIFESPAN_PER_HALF_LEVEL}) extra turns per spell level`}
           >
             ⏳ {lifespan} turns
           </span>

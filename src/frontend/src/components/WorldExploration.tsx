@@ -124,16 +124,15 @@ import {
 } from "../engine/summonExecutor";
 import {
   buildSpellContext,
-  decrementSummonLifespan,
   getPlayerSideTargets,
   resolveEnemyApMp,
+  syncExpiredSummonsFromTurnQueue,
 } from "../engine/summonIntegration";
 import { applySummonResult, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
   computeTargetableTiles,
 } from "../engine/targeting";
-import { removeCombatantFromTurnQueue } from "../engine/turnQueue";
 import {
   getCameraFollowSpeed,
   getSessionVersion,
@@ -7024,6 +7023,42 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ctx.restore();
           }
 
+          // Summon lifespan badge — small amber pip drawn above the sprite
+          // showing turnsRemaining. Counts down each turn as
+          // decrementSummonLifespan (summonIntegration.ts) reduces the value.
+          // Minimal inline draw block in the render loop; no state changes.
+          if (enemy.isSummon && enemy.turnsRemaining != null) {
+            const badgeText = `\u23F3${enemy.turnsRemaining}`;
+            const badgeX = screenPos.x + 18;
+            const badgeY = screenPos.y - 48;
+            ctx.save();
+            ctx.font = "bold 9px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            const padX = 4;
+            const badgeW = ctx.measureText(badgeText).width + padX * 2;
+            const badgeH = 12;
+            // Stone-themed amber pill background
+            ctx.fillStyle = "rgba(80,65,40,0.85)";
+            ctx.strokeStyle = "rgba(160,140,90,0.7)";
+            ctx.lineWidth = 1;
+            const bx = badgeX - badgeW / 2;
+            const by = badgeY - badgeH / 2;
+            const r = 4;
+            ctx.beginPath();
+            ctx.moveTo(bx + r, by);
+            ctx.arcTo(bx + badgeW, by, bx + badgeW, by + badgeH, r);
+            ctx.arcTo(bx + badgeW, by + badgeH, bx, by + badgeH, r);
+            ctx.arcTo(bx, by + badgeH, bx, by, r);
+            ctx.arcTo(bx, by, bx + badgeW, by, r);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "rgba(230,210,160,0.95)";
+            ctx.fillText(badgeText, badgeX, badgeY);
+            ctx.restore();
+          }
+
           if (
             inBattleRef.current &&
             battleActionModeRef.current === "attack" &&
@@ -10523,6 +10558,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Time Warp: 15s timer instead of 30
       const timerDuration = isTimeWarp ? 15 : 30;
       setTurnTimeLeft(timerDuration);
+      // Summon lifespan: decrement, kill expired summons, and atomically sync
+      // the turn queue (state + both refs + index math) BEFORE the turn-index
+      // advance below. Running this every turn (not just on the player's turn)
+      // and BEFORE the `(prevIdx + 1) % prevOrder.length` advance guarantees
+      // the advance always runs against a turnOrder that no longer contains
+      // faded summons — closing the ghost-slot race where currentTurnIndexRef
+      // could point at a removed combatant. See syncExpiredSummonsFromTurnQueue
+      // in engine/summonIntegration.ts for the full atomic contract.
+      syncExpiredSummonsFromTurnQueue(
+        enemies,
+        turnOrderRef.current,
+        turnOrderRef,
+        currentTurnIndexRef,
+        setTurnOrder,
+        setEnemies,
+        logBattleEntry,
+      );
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
         // H7: ref is set to the new computed order BEFORE the state update so AI reads a fresh value
@@ -10573,27 +10625,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
               }
               barrierTilesRef.current = updatedBarriers;
-              // Summon lifespan: decrement, kill expired summons, and sync the
-              // turn queue SYNCHRONOUSLY before any downstream index computation.
-              // The previous call raced the turn-advance index math because the
-              // removal happened inside setEnemies' callback (after the index was
-              // already advanced against the stale turnOrder), leaving ghost
-              // turn entries. Now we collect expiredIds here and remove them
-              // from the turn queue in the same tick, before setEnemies fires.
-              {
-                const { enemies: survivingEnemies, expiredIds } =
-                  decrementSummonLifespan(enemies, logBattleEntry);
-                for (const expiredId of expiredIds) {
-                  removeCombatantFromTurnQueue(
-                    turnOrderRef.current,
-                    turnOrderRef,
-                    currentTurnIndexRef,
-                    expiredId,
-                    setTurnOrder,
-                  );
-                }
-                setEnemies(survivingEnemies);
-              }
             }
             // Plague Zone: all units lose 2 HP at start of each turn
             if (isPlagueZone) {

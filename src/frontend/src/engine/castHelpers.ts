@@ -425,7 +425,10 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     }));
   } else if (enemyNewHp <= 0) {
     playSound("enemy_death", hitTarget.pieceType);
-    setEnemies((prev) => prev.filter((e) => e.id !== hitTarget.id));
+    // Order matters: remove from the turn queue (state + refs + index math)
+    // BEFORE setEnemies drops the enemy from state. This closes the window
+    // where `enemies` no longer references a combatant but the turn queue
+    // still does, which could let a ghost slot receive a turn dispatch.
     removeCombatantFromTurnQueue(
       turnOrderRef.current,
       turnOrderRef,
@@ -433,6 +436,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
       hitTarget.id,
       setTurnOrder,
     );
+    setEnemies((prev) => prev.filter((e) => e.id !== hitTarget.id));
     playSound("leader_boost");
     // Track leader slain achievement + trigger death animation
     if (hitTarget.id === leaderEnemyIdRef.current) {
@@ -445,7 +449,21 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
       );
       leaderDiedRef.current = true;
     }
-    if (leaderEnemyIdRef.current && hitTarget.id !== leaderEnemyIdRef.current) {
+    // Stat-steal-on-ally-death: only enemy-side deaths buff the leader.
+    // Player-side summon deaths (side === 'player' && isSummon) must NOT grant
+    // the boss/leader any maxHp/hp boost. The __player__ sentinel is already
+    // excluded by the `else if (enemyNewHp <= 0)` branch above (line 421 guard).
+    const isEnemySideDeath =
+      (hitTarget as Enemy).side !== "player" &&
+      !(
+        (hitTarget as Enemy).isSummon === true &&
+        (hitTarget as Enemy).side === "player"
+      );
+    if (
+      leaderEnemyIdRef.current &&
+      hitTarget.id !== leaderEnemyIdRef.current &&
+      isEnemySideDeath
+    ) {
       const boostFactor = 1 + leaderBoostPercent / 100;
       setLeaderBoostMultiplier((prev) => prev * boostFactor);
       setTurnOrder((prev) =>

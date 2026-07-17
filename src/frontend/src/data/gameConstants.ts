@@ -89,6 +89,8 @@ export const SUMMON_BASE_HP_DEFAULT = 80;
  *                              on baseHp * hpScale).
  *   SUMMON_MP_PER_LEVELS    — MP gains +1 every 2 spell levels.
  *   SUMMON_AP_PER_LEVELS    — AP gains +1 every 3 spell levels.
+ *   SUMMON_LIFESPAN_PER_HALF_LEVEL — lifespan gains +1 turn every 2 spell
+ *                              levels (formula: base + floor(level/2)).
  *   SUMMON_UPGRADE_COST_MULTIPLIER — summon spells cost 10× the normal base
  *                              (normalBase=10) to upgrade, then double per
  *                              level: cost = MULTIPLIER * 10 * 2^currentLevel.
@@ -96,6 +98,7 @@ export const SUMMON_BASE_HP_DEFAULT = 80;
 export const SUMMON_HP_PER_LEVEL_PCT = 10;
 export const SUMMON_MP_PER_LEVELS = 2;
 export const SUMMON_AP_PER_LEVELS = 3;
+export const SUMMON_LIFESPAN_PER_HALF_LEVEL = 2;
 export const SUMMON_UPGRADE_COST_MULTIPLIER = 10;
 
 /**

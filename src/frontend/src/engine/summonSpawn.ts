@@ -13,6 +13,7 @@ import {
   SUMMON_BASE_HP,
   SUMMON_BASE_HP_DEFAULT,
   SUMMON_HP_PER_LEVEL_PCT,
+  SUMMON_LIFESPAN_PER_HALF_LEVEL,
   SUMMON_MP,
   SUMMON_MP_PER_LEVELS,
 } from "../data/gameConstants";
@@ -156,7 +157,9 @@ export function spawnSummonUnit(
     isSummon: true,
     summonAI,
     ownerId,
-    turnsRemaining: spell.summonLifespan || 3,
+    turnsRemaining:
+      (spell.summonLifespan || 3) +
+      Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL),
     level,
     pieceType: unitDef.pieceType,
     // Enemy type requires currentView; summons always face front on spawn.

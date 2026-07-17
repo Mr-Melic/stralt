@@ -46124,6 +46124,7 @@ const SUMMON_BASE_HP_DEFAULT = 80;
 const SUMMON_HP_PER_LEVEL_PCT = 10;
 const SUMMON_MP_PER_LEVELS = 2;
 const SUMMON_AP_PER_LEVELS = 3;
+const SUMMON_LIFESPAN_PER_HALF_LEVEL = 2;
 const SUMMON_UPGRADE_COST_MULTIPLIER = 10;
 const JUICE = {
   shake: { multiplier: 1 },
@@ -47096,7 +47097,6 @@ function applyDamageToEnemy(args) {
     }));
   } else if (enemyNewHp <= 0) {
     playSound2("enemy_death", hitTarget.pieceType);
-    setEnemies((prev) => prev.filter((e) => e.id !== hitTarget.id));
     removeCombatantFromTurnQueue(
       turnOrderRef.current,
       turnOrderRef,
@@ -47104,6 +47104,7 @@ function applyDamageToEnemy(args) {
       hitTarget.id,
       setTurnOrder
     );
+    setEnemies((prev) => prev.filter((e) => e.id !== hitTarget.id));
     playSound2("leader_boost");
     if (hitTarget.id === leaderEnemyIdRef.current) {
       battleLeaderSlainRef.current = true;
@@ -47114,7 +47115,8 @@ function applyDamageToEnemy(args) {
       );
       leaderDiedRef.current = true;
     }
-    if (leaderEnemyIdRef.current && hitTarget.id !== leaderEnemyIdRef.current) {
+    const isEnemySideDeath = hitTarget.side !== "player" && !(hitTarget.isSummon === true && hitTarget.side === "player");
+    if (leaderEnemyIdRef.current && hitTarget.id !== leaderEnemyIdRef.current && isEnemySideDeath) {
       const boostFactor = 1 + leaderBoostPercent / 100;
       setLeaderBoostMultiplier((prev) => prev * boostFactor);
       setTurnOrder(
@@ -48501,6 +48503,7 @@ function findKitSpell(spellId, ctx) {
   return fromAssigned ?? null;
 }
 function decideSummonAction(summon, ctx) {
+  var _a3;
   const archetype = inferSummonArchetype(summonToCombatant(summon));
   const origin = { x: summon.x, y: summon.y };
   const reachable = computeReachable(origin, ctx);
@@ -48511,11 +48514,13 @@ function decideSummonAction(summon, ctx) {
   const allies = ctx.combatants.filter(
     (c2) => c2.side === summonSide && c2.id !== summon.id
   );
+  let action;
   switch (archetype) {
     case "hunter":
-      return decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      action = decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      break;
     case "guardian":
-      return decideSummonGuardian(
+      action = decideSummonGuardian(
         summon,
         ctx,
         allies,
@@ -48523,12 +48528,15 @@ function decideSummonAction(summon, ctx) {
         reachable,
         origin
       );
+      break;
     case "archer":
-      return decideSummonArcher(summon, ctx, opponents, reachable, origin);
+      action = decideSummonArcher(summon, ctx, opponents, reachable, origin);
+      break;
     case "bomber":
-      return decideSummonBomber(summon, ctx, opponents, reachable, origin);
+      action = decideSummonBomber(summon, ctx, opponents, reachable, origin);
+      break;
     case "healer":
-      return decideSummonHealer(
+      action = decideSummonHealer(
         summon,
         ctx,
         allies,
@@ -48536,9 +48544,18 @@ function decideSummonAction(summon, ctx) {
         reachable,
         origin
       );
+      break;
     default:
-      return decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      action = decideSummonHunter(summon, ctx, opponents, reachable, origin);
+      break;
   }
+  logDebugInfo("SUMMON", "SUMMON-DECIDE", {
+    archetype,
+    kind: action.kind,
+    spellId: ((_a3 = action.spell) == null ? void 0 : _a3.id) ?? "none",
+    targetId: action.targetId ?? "none"
+  });
+  return action;
 }
 function decideSummonerAction(enemy, ctx) {
   const summonSpell = (ctx.assignedSpells ?? []).find(
@@ -48697,6 +48714,21 @@ function decideSummonGuardian(summon, ctx, allies, opponents, reachable, origin)
       };
     }
   }
+  const ironSkin = findKitSpell(kit[1], ctx);
+  if (ironSkin) {
+    ctx.log(`${summon.pieceType} hardens with Iron Skin`, HEAL_COLOR);
+    logIntent("guardian", "cast", summon.id, "spell-iron-skin");
+    return {
+      archetype: "generic",
+      destination: origin,
+      spell: ironSkin,
+      targetId: summon.id,
+      kind: "cast",
+      intent: "spell-iron-skin",
+      intentColor: HEAL_COLOR,
+      retreating: false
+    };
+  }
   if (ward && opponents.length > 0) {
     const threat = opponents[0];
     const guard = backlineGuardCell(
@@ -48808,6 +48840,35 @@ function decideSummonArcher(summon, ctx, opponents, reachable, origin) {
         intentColor: MOVE_COLOR,
         retreating: false
       };
+    }
+  }
+  if (slow) {
+    const slowRange = Number(slow.range);
+    const slowScored = scoreTargets(opponents, ctx, slow);
+    const slowTarget = slowScored[0];
+    if (slowTarget) {
+      const slowCell = { x: slowTarget.combatant.x, y: slowTarget.combatant.y };
+      const slowDist = chebyshev(origin, slowCell);
+      if (slowDist <= slowRange) {
+        const slowLos = slow.lineOfSight === false ? true : ctx.hasLineOfSight(origin, slowCell);
+        if (slowLos) {
+          ctx.log(
+            `${summon.pieceType} slows approaching ${slowTarget.combatant.name}`,
+            CAST_COLOR
+          );
+          logIntent("archer", "cast", slowTarget.combatant.id, "spell-slow");
+          return {
+            archetype: "generic",
+            destination: origin,
+            spell: slow,
+            targetId: slowTarget.combatant.id,
+            kind: "cast",
+            intent: "slow-approaching",
+            intentColor: CAST_COLOR,
+            retreating: false
+          };
+        }
+      }
     }
   }
   const MIN_KITE_RANGE = 3;
@@ -49386,6 +49447,15 @@ function resolvePlayerCast(spell, gridPos, ctx) {
     ctx.recordSpellType(spell.effectType ?? "damage");
     return "summon";
   }
+  if (spell.isBarrier) {
+    ctx.placeBarrierTile(gridPos, 3);
+    ctx.log(
+      `Barrier placed at (${gridPos.x},${gridPos.y}) for 3 turns!`,
+      "#818cf8"
+    );
+    ctx.recordSpellType(spell.effectType ?? "damage");
+    return "cast";
+  }
   if (targetEnemy || isDrainSpell && !isPlayerTile) {
     const baseDamage = Number(spell.damage);
     const rawDmg = calcScaledDamageInline(
@@ -49417,15 +49487,6 @@ function resolvePlayerCast(spell, gridPos, ctx) {
       ctx.log(
         "Mirror active! Next single-target damage spell cast at you reflects back!",
         "#c084fc"
-      );
-      ctx.recordSpellType(spell.effectType ?? "damage");
-      return "cast";
-    }
-    if (spell.isBarrier) {
-      ctx.placeBarrierTile(gridPos, 3);
-      ctx.log(
-        `Barrier placed at (${gridPos.x},${gridPos.y}) for 3 turns!`,
-        "#818cf8"
       );
       ctx.recordSpellType(spell.effectType ?? "damage");
       return "cast";
@@ -49612,6 +49673,22 @@ function decrementSummonLifespan(enemies, log2) {
   }
   return { enemies: enemies.filter((e) => e.hp > 0), expiredIds };
 }
+function syncExpiredSummonsFromTurnQueue(enemies, _turnOrder, turnOrderRef, currentTurnIndexRef, setTurnOrder, setEnemies, log2) {
+  const { enemies: survivingEnemies, expiredIds } = decrementSummonLifespan(
+    enemies,
+    log2
+  );
+  for (const expiredId of expiredIds) {
+    removeCombatantFromTurnQueue(
+      turnOrderRef.current,
+      turnOrderRef,
+      currentTurnIndexRef,
+      expiredId,
+      setTurnOrder
+    );
+  }
+  setEnemies(survivingEnemies);
+}
 function buildSpellContext(deps) {
   return createSpellContext(deps);
 }
@@ -49669,7 +49746,7 @@ function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, 
     isSummon: true,
     summonAI,
     ownerId,
-    turnsRemaining: spell.summonLifespan || 3,
+    turnsRemaining: (spell.summonLifespan || 3) + Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL),
     level,
     pieceType: unitDef.pieceType,
     // Enemy type requires currentView; summons always face front on spawn.
@@ -53010,8 +53087,8 @@ const RangePatternGrid = ({ spell }) => {
 const SummonAbilitiesBlock = ({ spell, allSpells, spellLevels }) => {
   const unitDef = spell.summonUnitDef;
   const kitIds = Array.isArray(unitDef == null ? void 0 : unitDef.summonKit) ? unitDef == null ? void 0 : unitDef.summonKit : [];
-  const lifespan = Number(spell.summonLifespan ?? 0);
   const spellLevel = spellLevels[spell.id] ?? 0;
+  const lifespan = Number(spell.summonLifespan ?? 0) + Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL);
   const summonAI = spell.summonAI ?? "";
   const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
   const hpScale = (unitDef == null ? void 0 : unitDef.hpScale) ?? 1;
@@ -53134,7 +53211,7 @@ const SummonAbilitiesBlock = ({ spell, allSpells, spellLevels }) => {
                       padding: "1px 5px",
                       borderRadius: 3
                     },
-                    title: "Turns the summon persists on the battlefield",
+                    title: `Base ${Number(spell.summonLifespan ?? 0)} + floor(level/${SUMMON_LIFESPAN_PER_HALF_LEVEL}) extra turns per spell level`,
                     children: [
                       "⏳ ",
                       lifespan,
@@ -59451,6 +59528,36 @@ const WorldExplorationInner = ({
             ctx.fillText(levelLabel, screenPos.x, levelY);
             ctx.restore();
           }
+          if (enemy.isSummon && enemy.turnsRemaining != null) {
+            const badgeText = `⏳${enemy.turnsRemaining}`;
+            const badgeX = screenPos.x + 18;
+            const badgeY = screenPos.y - 48;
+            ctx.save();
+            ctx.font = "bold 9px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            const padX = 4;
+            const badgeW = ctx.measureText(badgeText).width + padX * 2;
+            const badgeH = 12;
+            ctx.fillStyle = "rgba(80,65,40,0.85)";
+            ctx.strokeStyle = "rgba(160,140,90,0.7)";
+            ctx.lineWidth = 1;
+            const bx = badgeX - badgeW / 2;
+            const by = badgeY - badgeH / 2;
+            const r2 = 4;
+            ctx.beginPath();
+            ctx.moveTo(bx + r2, by);
+            ctx.arcTo(bx + badgeW, by, bx + badgeW, by + badgeH, r2);
+            ctx.arcTo(bx + badgeW, by + badgeH, bx, by + badgeH, r2);
+            ctx.arcTo(bx, by + badgeH, bx, by, r2);
+            ctx.arcTo(bx, by, bx + badgeW, by, r2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = "rgba(230,210,160,0.95)";
+            ctx.fillText(badgeText, badgeX, badgeY);
+            ctx.restore();
+          }
           if (inBattleRef.current && battleActionModeRef.current === "attack" && selectedSpellIdRef.current && hoveredEnemyIdRef.current === enemy.id) {
             const spell = activeSpellsRef.current.find(
               (s2) => s2.id === selectedSpellIdRef.current
@@ -62172,6 +62279,15 @@ const WorldExplorationInner = ({
       idleTurnCountRef.current = 0;
       const timerDuration = isTimeWarp ? 15 : 30;
       setTurnTimeLeft(timerDuration);
+      syncExpiredSummonsFromTurnQueue(
+        enemies,
+        turnOrderRef.current,
+        turnOrderRef,
+        currentTurnIndexRef,
+        setTurnOrder,
+        setEnemies,
+        logBattleEntry
+      );
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
         setCurrentTurnIndex((prevIdx) => {
@@ -62216,19 +62332,6 @@ const WorldExplorationInner = ({
                 }
               }
               barrierTilesRef.current = updatedBarriers;
-              {
-                const { enemies: survivingEnemies, expiredIds } = decrementSummonLifespan(enemies, logBattleEntry);
-                for (const expiredId of expiredIds) {
-                  removeCombatantFromTurnQueue(
-                    turnOrderRef.current,
-                    turnOrderRef,
-                    currentTurnIndexRef,
-                    expiredId,
-                    setTurnOrder
-                  );
-                }
-                setEnemies(survivingEnemies);
-              }
             }
             if (isPlagueZone) {
               setCharacterStats((s2) => ({ ...s2, hp: Math.max(0, s2.hp - 2) }));
@@ -68878,7 +68981,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CbKMboRZ.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-HM2uLRDl.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
