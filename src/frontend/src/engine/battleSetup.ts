@@ -31,6 +31,18 @@ export interface Combatant {
   hp: number;
   isSummon?: boolean;
   side?: "player" | "enemy";
+  id?: string;
+  x?: number;
+  y?: number;
+  isMoving?: boolean;
+  assignedName?: string;
+  pieceType?: string;
+  level?: number;
+  turnsRemaining?: number;
+  isWandering?: boolean;
+  spawnTime?: number;
+  maxHp?: number;
+  currentView?: string;
 }
 
 /**

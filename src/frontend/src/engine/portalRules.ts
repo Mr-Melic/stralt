@@ -25,6 +25,13 @@ export type PortalKind =
 export type RunMode = "none" | "dungeon" | "bossRush";
 
 /**
+ * The portal kind that advances a dungeon or boss-rush run to the next room /
+ * depth. Exported as a constant so spawn code and tests reference one source
+ * of truth instead of repeating the string literal "progression".
+ */
+export const PROGRESSION_PORTAL_KIND: PortalKind = "progression";
+
+/**
  * Inputs the spawn code already has at the point it decides which portals to
  * generate. Kept intentionally small so the helper stays pure and testable.
  */
@@ -90,6 +97,23 @@ export function isProgressionLocked(
   mapCleared: boolean,
 ): boolean {
   return runMode !== "none" && !mapCleared;
+}
+
+/**
+ * Unlock-on-clear gate for the run progression portal. Returns true only when
+ * a run is actually active (bossRush or dungeon) AND the current map has been
+ * fully cleared. This is the positive counterpart to {@link isProgressionLocked}
+ * and the predicate the spawn code should consult before emitting an unlocked
+ * progression portal (as opposed to a locked visual or no portal at all).
+ *
+ * Returns false during free exploration (runMode === "none") — outside a run
+ * there is no progression portal to unlock.
+ */
+export function isProgressionPortalUnlocked(
+  runMode: RunMode,
+  mapCleared: boolean,
+): boolean {
+  return (runMode === "bossRush" || runMode === "dungeon") && mapCleared;
 }
 
 /**

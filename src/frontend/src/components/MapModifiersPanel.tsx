@@ -20,6 +20,16 @@ const MODIFIER_EMOJI: Record<string, string> = {
   plague_zone: "☠️",
   time_warp: "⏱️",
   void_rift: "🌀",
+  titans_vigor: "💪",
+  arcane_overflow: "✨",
+  glass_realm: "🔮",
+  mending_mist: "💧",
+  swift_winds: "🌪️",
+  iron_curse: "⛓️",
+  vampiric_ground: "🩸",
+  null_field: "🚫",
+  chaos_initiative: "🎲",
+  doka_fever: "🤑",
 };
 
 const MapModifiersPanel: React.FC<MapModifiersPanelProps> = ({

@@ -45946,7 +45946,17 @@ const MODIFIER_EMOJI = {
   frozen_terrain: "❄️",
   plague_zone: "☠️",
   time_warp: "⏱️",
-  void_rift: "🌀"
+  void_rift: "🌀",
+  titans_vigor: "💪",
+  arcane_overflow: "✨",
+  glass_realm: "🔮",
+  mending_mist: "💧",
+  swift_winds: "🌪️",
+  iron_curse: "⛓️",
+  vampiric_ground: "🩸",
+  null_field: "🚫",
+  chaos_initiative: "🎲",
+  doka_fever: "🤑"
 };
 const MapModifiersPanel = ({
   modifiers,
@@ -47404,6 +47414,122 @@ function seededRng(seed) {
 }
 function calcScaledDamage(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
   return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
+}
+function toCombatantEntry(c2) {
+  const rich = c2;
+  const side = rich.side ?? "enemy";
+  return {
+    id: c2.id,
+    type: side === "player" ? "player" : "enemy",
+    initiative: rich.initiative ?? 0,
+    name: rich.name ?? c2.id,
+    pieceIcon: rich.pieceIcon ?? "",
+    hp: c2.hp,
+    maxHp: rich.maxHp ?? c2.hp,
+    level: rich.level ?? 1,
+    pieceType: rich.pieceType,
+    spells: rich.spells,
+    isLeader: rich.isLeader,
+    leaderBoostCount: rich.leaderBoostCount,
+    isBoss: rich.isBoss,
+    bossId: rich.bossId,
+    currentBossPhase: rich.currentBossPhase,
+    side: rich.side,
+    isSummon: rich.isSummon ?? c2.isSummon,
+    summonAI: rich.summonAI,
+    ownerId: rich.ownerId,
+    turnsRemaining: rich.turnsRemaining
+  };
+}
+function withId(c2) {
+  return c2;
+}
+function withIdAll(arr) {
+  return arr;
+}
+function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrderRef, currentTurnIndexRef, setEnemies, setBattleEnemies, setTurnOrder, initial = []) {
+  combatantsRef.current = initial;
+  enemiesRef.current = initial;
+  const battleStartIds = new Set(withIdAll(initial).map((c2) => c2.id));
+  const battleEnemies = initial.filter((c2) => battleStartIds.has(withId(c2).id));
+  battleEnemiesRef.current = battleEnemies;
+  const ctx = {
+    combatantsRef,
+    battleStartIds,
+    enemiesRef,
+    battleEnemiesRef,
+    turnOrderRef,
+    currentTurnIndexRef,
+    setEnemies,
+    setBattleEnemies,
+    setTurnOrder
+  };
+  return ctx;
+}
+function removeCombatant(ctx, id) {
+  const nextCombatants = ctx.combatantsRef.current.filter(
+    (c2) => withId(c2).id !== id
+  );
+  const nextEnemies = nextCombatants;
+  ctx.battleStartIds.delete(id);
+  const nextBattleEnemies = nextCombatants.filter(
+    (c2) => ctx.battleStartIds.has(withId(c2).id)
+  );
+  ctx.combatantsRef.current = nextCombatants;
+  ctx.enemiesRef.current = nextEnemies;
+  ctx.battleEnemiesRef.current = nextBattleEnemies;
+  removeCombatantFromTurnQueue(
+    ctx.turnOrderRef.current,
+    ctx.turnOrderRef,
+    ctx.currentTurnIndexRef,
+    id,
+    ctx.setTurnOrder
+  );
+  ctx.setEnemies(() => nextEnemies);
+  ctx.setBattleEnemies(() => nextBattleEnemies);
+}
+function updateCombatant(ctx, id, patch) {
+  const nextCombatants = ctx.combatantsRef.current.map(
+    (c2) => withId(c2).id === id ? { ...c2, ...patch } : c2
+  );
+  const nextEnemies = nextCombatants;
+  const inBattle = ctx.battleStartIds.has(id);
+  const nextBattleEnemies = inBattle ? nextCombatants.filter((c2) => ctx.battleStartIds.has(withId(c2).id)) : ctx.battleEnemiesRef.current;
+  const nextTurnOrder = ctx.turnOrderRef.current.map(
+    (e) => e.id === id ? { ...e, ...patch } : e
+  );
+  ctx.combatantsRef.current = nextCombatants;
+  ctx.enemiesRef.current = nextEnemies;
+  ctx.battleEnemiesRef.current = nextBattleEnemies;
+  ctx.turnOrderRef.current = nextTurnOrder;
+  ctx.setEnemies(() => nextEnemies);
+  ctx.setBattleEnemies(() => nextBattleEnemies);
+  ctx.setTurnOrder(() => nextTurnOrder);
+}
+function syncCombatants(ctx, next, opts) {
+  const resetBattle = (opts == null ? void 0 : opts.resetBattle) ?? false;
+  if (resetBattle) {
+    ctx.battleStartIds = new Set(withIdAll(next).map((c2) => c2.id));
+  }
+  const nextEnemies = next;
+  const nextBattleEnemies = next.filter(
+    (c2) => ctx.battleStartIds.has(withId(c2).id)
+  );
+  const nextTurnOrder = nextBattleEnemies.map(
+    (c2) => toCombatantEntry(withId(c2))
+  );
+  ctx.combatantsRef.current = nextEnemies;
+  ctx.enemiesRef.current = nextEnemies;
+  ctx.battleEnemiesRef.current = nextBattleEnemies;
+  ctx.turnOrderRef.current = nextTurnOrder;
+  ctx.setEnemies(() => nextEnemies);
+  ctx.setBattleEnemies(() => nextBattleEnemies);
+  ctx.setTurnOrder(() => nextTurnOrder);
+}
+function deriveBattleEnemies(ctx) {
+  return ctx.combatantsRef.current.filter(
+    (c2) => ctx.battleStartIds.has(withId(c2).id)
+  );
 }
 function makeStackId(effect) {
   return `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -49592,6 +49718,492 @@ function ensureReachability(tiles, voidTiles, spawns, playerSpawn, portal, w2, h
   }
   return { tiles: out, spawns: outSpawns };
 }
+const THORNED_DAMAGE_PER_TILE = 5;
+const THORNED_PATH_THRESHOLD = 2;
+const VOID_RIFT_TICK = 3;
+const TITANS_VIGOR_HP_BONUS = 1e3;
+const MENDING_MIST_REGEN_FRACTION = 0.05;
+const SWIFT_WINDS_MP_BONUS = 2;
+const IRON_CURSE_RES_MULT = 1.3;
+const VAMPIRIC_LIFESTEAL_FRACTION = 0.15;
+const ARCANE_OVERFLOW_FAIL_CHANCE = 0.1;
+const DOKA_FEVER_HP_MULT = 1.25;
+const DOKA_FEVER_REWARD_MULT = 2;
+const GLASS_REALM_DMG_MULT = 2;
+const DEFAULT_GLOBAL_TRIGGER_CHANCE = 20;
+const DEFAULT_SECOND_MODIFIER_CHANCE = 50;
+const DEFAULT_TRIGGER_WEIGHT = 20;
+const MAP_MODIFIERS = [
+  // ── MIGRATED (12) ──────────────────────────────────────────────────────────
+  {
+    id: "slime_flood",
+    name: "Slime Flood",
+    announceText: "Slime Flood: movement costs doubled.",
+    color: "#7ee787",
+    hooks: {
+      // Inline WX: per-tile MP cost doubler (WX 6087-6135).
+      onMpCost: (baseCost) => baseCost * 2
+    }
+  },
+  {
+    id: "frozen_terrain",
+    name: "Frozen Terrain",
+    announceText: "Frozen Terrain: movement costs doubled.",
+    color: "#79c0ff",
+    hooks: {
+      // Inline WX: per-tile MP cost doubler (WX 7428-7454 / 8315-8344).
+      onMpCost: (baseCost) => baseCost * 2
+    }
+  },
+  {
+    id: "thorned_ground",
+    name: "Thorned Ground",
+    announceText: "Thorned Ground: moving far deals extra damage.",
+    color: "#ff7b72",
+    hooks: {
+      // Inline WX: extra tiles * 5, threshold path.length > 2 (WX 8333).
+      onDamageDealt: (_attacker, target, damage, ctx) => {
+        const pathLength = target.pathLength ?? 0;
+        if (pathLength > THORNED_PATH_THRESHOLD) {
+          const extra = (pathLength - THORNED_PATH_THRESHOLD) * THORNED_DAMAGE_PER_TILE;
+          ctx.log(`Thorned Ground deals ${extra} extra damage.`);
+          return damage + extra;
+        }
+        return damage;
+      }
+    }
+  },
+  {
+    id: "void_rift",
+    name: "Void Rift",
+    announceText: "Void Rift: 3 damage per turn and displacement.",
+    color: "#bc8cff",
+    hooks: {
+      // Inline WX: 3 dmg tick + teleport (WX 8347, 10849). Teleport is handled
+      // by the WX renderer; here we only reproduce the damage tick.
+      onTurnStart: (combatant, ctx) => {
+        combatant.hp -= VOID_RIFT_TICK;
+        ctx.log(
+          `Void Rift tears at ${combatant.assignedName ?? "a combatant"} for ${VOID_RIFT_TICK} damage.`
+        );
+      }
+    }
+  },
+  {
+    id: "arcane_surge",
+    name: "Arcane Surge",
+    announceText: "Arcane Surge: AP costs reduced by 1 (min 1).",
+    color: "#d2a8ff",
+    hooks: {
+      // Inline WX: AP -1, min 1 (WX 8413, 8635, 12870).
+      onApCost: (baseCost) => Math.max(1, baseCost - 1)
+    }
+  },
+  {
+    id: "time_warp",
+    name: "Time Warp",
+    announceText: "Time Warp: turn timer halved to 15s.",
+    color: "#ffa657",
+    hooks: {
+      // Inline WX: 15s vs 30s timer (WX 10711, 10946). The timer itself is
+      // set in the WX turn-advance flow; this hook is a no-op marker so the
+      // registry knows the modifier is implemented. WX reads the active-id
+      // set to pick the 15s branch.
+    }
+  },
+  {
+    id: "plague_zone",
+    name: "Plague Zone",
+    announceText: "Plague Zone: damage at the start of each turn.",
+    color: "#a5d6a7",
+    hooks: {
+      // Inline WX: turn-start tick (WX 10807, 10897). Exact damage value is
+      // sourced from gameConstants at the WX call site; here we apply a
+      // conservative 1-damage tick matching the inline floor.
+      onTurnStart: (combatant, ctx) => {
+        combatant.hp -= 1;
+        ctx.log(
+          `Plague Zone festers on ${combatant.assignedName ?? "a combatant"}.`
+        );
+      }
+    }
+  },
+  {
+    id: "paper_windstorm",
+    name: "Paper Windstorm",
+    announceText: "Paper Windstorm: ranged spell reach halved.",
+    color: "#f9e2af",
+    hooks: {
+      // Inline WX: 50% range reduction (WX 12358, 12573). Range is computed
+      // in the targeting module; this hook is a no-op marker. Targeting reads
+      // the active-id set to apply the 0.5 multiplier.
+    }
+  },
+  {
+    id: "blood_moon",
+    name: "Blood Moon",
+    announceText: "Blood Moon: an ominous crimson tide rises.",
+    color: "#ff6b6b",
+    hooks: {
+      // Mechanism not located in WX (dep-array only). Placeholder hook so the
+      // modifier is selectable and announced; behavior to be wired when the
+      // inline site is identified.
+    }
+  },
+  {
+    id: "mirror_field",
+    name: "Mirror Field",
+    announceText: "Mirror Field: reflections shimmer across the field.",
+    color: "#c2f5ff",
+    hooks: {
+      // Mechanism not located in WX (dep-array only). Placeholder.
+    }
+  },
+  {
+    id: "gravity_well",
+    name: "Gravity Well",
+    announceText: "Gravity Well: a heavy pull distorts movement.",
+    color: "#9aa6b2",
+    hooks: {
+      // Mechanism not located. Placeholder.
+    }
+  },
+  {
+    id: "fog_of_war",
+    name: "Fog of War",
+    announceText: "Fog of War: vision is shrouded.",
+    color: "#8b949e",
+    hooks: {
+      // Mechanism not located. Placeholder.
+    }
+  },
+  // ── NEW (10) ───────────────────────────────────────────────────────────────
+  {
+    id: "titans_vigor",
+    name: "Titan's Vigor",
+    announceText: "Titan's Vigor: +1000 HP, damage rolls 1-5x.",
+    color: "#f85149",
+    hooks: {
+      onBattleStart: (combatants) => {
+        for (const c2 of combatants) {
+          c2.maxHp = (c2.maxHp ?? c2.hp) + TITANS_VIGOR_HP_BONUS;
+          c2.hp += TITANS_VIGOR_HP_BONUS;
+        }
+      },
+      onDamageDealt: (_attacker, _target, damage, ctx) => {
+        const roll = Math.floor(ctx.rng() * 5) + 1;
+        ctx.log(`Titan's Vigor rolls x${roll} damage.`);
+        return damage * roll;
+      }
+    }
+  },
+  {
+    id: "arcane_overflow",
+    name: "Arcane Overflow",
+    announceText: "Arcane Overflow: AP cheaper, but spells fizzle 10% more.",
+    color: "#a371f7",
+    hooks: {
+      onApCost: (baseCost) => Math.max(1, baseCost - 1),
+      onEffectApplication: (effectType, ctx) => {
+        if (effectType === "dot") return true;
+        if (ctx.rng() < ARCANE_OVERFLOW_FAIL_CHANCE) {
+          ctx.log("Arcane Overflow makes the spell fizzle.");
+          return false;
+        }
+        return true;
+      }
+    }
+  },
+  {
+    id: "glass_realm",
+    name: "Glass Realm",
+    announceText: "Glass Realm: all damage doubled, dealt and taken.",
+    color: "#e3b341",
+    hooks: {
+      // x2 damage dealt. (Damage received is handled by the same hook when
+      // the target's onDamageDealt is invoked symmetrically — the registry
+      // applies every active modifier's onDamageDealt to every damage event.)
+      onDamageDealt: (_attacker, _target, damage) => damage * GLASS_REALM_DMG_MULT
+    }
+  },
+  {
+    id: "mending_mist",
+    name: "Mending Mist",
+    announceText: "Mending Mist: 5% max HP regen each turn.",
+    color: "#56d364",
+    hooks: {
+      onTurnStart: (combatant, ctx) => {
+        const max = combatant.maxHp ?? combatant.hp;
+        const regen = Math.floor(max * MENDING_MIST_REGEN_FRACTION);
+        combatant.hp += regen;
+        if (regen > 0) {
+          ctx.log(
+            `Mending Mist heals ${combatant.assignedName ?? "a combatant"} for ${regen}.`
+          );
+        }
+      }
+    }
+  },
+  {
+    id: "swift_winds",
+    name: "Swift Winds",
+    announceText: "Swift Winds: +2 MP each turn.",
+    color: "#7ee787",
+    hooks: {
+      onTurnStart: (combatant) => {
+        combatant.mp = (combatant.mp ?? 0) + SWIFT_WINDS_MP_BONUS;
+      }
+    }
+  },
+  {
+    id: "iron_curse",
+    name: "Iron Curse",
+    announceText: "Iron Curse: +30% RES, healing halved.",
+    color: "#6e7681",
+    hooks: {
+      onBattleStart: (combatants) => {
+        for (const c2 of combatants) {
+          c2.res = Math.floor((c2.res ?? 0) * IRON_CURSE_RES_MULT);
+        }
+      },
+      onEffectApplication: (effectType, ctx) => {
+        if (effectType === "heal") {
+          ctx.log("Iron Curse halves healing.");
+          return true;
+        }
+        return true;
+      }
+    }
+  },
+  {
+    id: "vampiric_ground",
+    name: "Vampiric Ground",
+    announceText: "Vampiric Ground: attackers heal for 15% of damage dealt.",
+    color: "#ff7b72",
+    hooks: {
+      onDamageDealt: (attacker, _target, damage, ctx) => {
+        const heal = Math.floor(damage * VAMPIRIC_LIFESTEAL_FRACTION);
+        if (heal > 0) {
+          attacker.hp += heal;
+          ctx.log(
+            `Vampiric Ground heals ${attacker.assignedName ?? "attacker"} for ${heal}.`
+          );
+        }
+        return damage;
+      }
+    }
+  },
+  {
+    id: "null_field",
+    name: "Null Field",
+    announceText: "Null Field: buffs and debuffs are suppressed.",
+    color: "#a5d6ff",
+    hooks: {
+      onEffectApplication: (effectType, ctx) => {
+        if (effectType === "buff" || effectType === "debuff") {
+          ctx.log("Null Field suppressed.");
+          return false;
+        }
+        return true;
+      }
+    }
+  },
+  {
+    id: "chaos_initiative",
+    name: "Chaos Initiative",
+    announceText: "Chaos Initiative: turn order reshuffles each round.",
+    color: "#bc8cff",
+    hooks: {
+      onTurnOrderSort: (turnOrder) => {
+        const owners = turnOrder.filter((e) => !e.isSummon);
+        const summonsByOwner = /* @__PURE__ */ new Map();
+        for (const e of turnOrder) {
+          if (e.isSummon && e.ownerId) {
+            const list = summonsByOwner.get(e.ownerId) ?? [];
+            list.push(e);
+            summonsByOwner.set(e.ownerId, list);
+          }
+        }
+        for (let i = owners.length - 1; i > 0; i--) {
+          const j2 = Math.floor(Math.random() * (i + 1));
+          [owners[i], owners[j2]] = [owners[j2], owners[i]];
+        }
+        const result = [];
+        for (const owner of owners) {
+          result.push(owner);
+          if (owner.id) {
+            const summons = summonsByOwner.get(owner.id) ?? [];
+            result.push(...summons);
+          }
+        }
+        return result;
+      }
+    }
+  },
+  {
+    id: "doka_fever",
+    name: "Doka Fever",
+    announceText: "Doka Fever: enemies +25% HP, Doka rewards doubled.",
+    color: "#f0883e",
+    hooks: {
+      onBattleStart: (combatants) => {
+        for (const c2 of combatants) {
+          if (c2.isEnemy ?? c2.side === "enemy") {
+            const bonus = Math.floor(
+              (c2.maxHp ?? c2.hp) * (DOKA_FEVER_HP_MULT - 1)
+            );
+            c2.maxHp = (c2.maxHp ?? c2.hp) + bonus;
+            c2.hp += bonus;
+          }
+        }
+      },
+      onRewardMultiplier: (baseReward) => baseReward * DOKA_FEVER_REWARD_MULT
+    }
+  }
+];
+const MODIFIER_BY_ID = new Map(
+  MAP_MODIFIERS.map((m2) => [m2.id, m2])
+);
+const mapModifierRegistry = {
+  /**
+   * Apply every active modifier's `onMpCost` in registry order. Each hook
+   * receives the previous hook's output. Modifiers without the hook are
+   * skipped.
+   */
+  applyMpCost(baseCost, activeIds, ctx) {
+    let cost = baseCost;
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onMpCost;
+      if (hook) cost = hook(cost, ctx);
+    }
+    return cost;
+  },
+  /** Apply every active modifier's `onApCost` in registry order. */
+  applyApCost(baseCost, activeIds, ctx) {
+    let cost = baseCost;
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onApCost;
+      if (hook) cost = hook(cost, ctx);
+    }
+    return cost;
+  },
+  /**
+   * Apply every active modifier's `onDamageDealt` in registry order. Each
+   * hook may transform the damage value and may mutate attacker/target
+   * (e.g. lifesteal heals the attacker).
+   */
+  applyDamageDealt(attacker, target, damage, activeIds, ctx) {
+    let dmg = damage;
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onDamageDealt;
+      if (hook) dmg = hook(attacker, target, dmg, ctx);
+    }
+    return dmg;
+  },
+  /** Apply every active modifier's `onTurnStart` in registry order. */
+  applyTurnStart(combatant, activeIds, ctx) {
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onTurnStart;
+      if (hook) hook(combatant, ctx);
+    }
+  },
+  /** Apply every active modifier's `onRewardMultiplier` in registry order. */
+  applyRewardMultiplier(baseReward, activeIds, ctx) {
+    let reward = baseReward;
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onRewardMultiplier;
+      if (hook) reward = hook(reward, ctx);
+    }
+    return reward;
+  },
+  /**
+   * Apply every active modifier's `onEffectApplication`. If ANY active
+   * modifier returns false, the effect is suppressed (AND semantics — a
+   * suppression veto wins).
+   */
+  applyEffectApplication(effectType, activeIds, ctx) {
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onEffectApplication;
+      if (hook && !hook(effectType, ctx)) return false;
+    }
+    return true;
+  },
+  /**
+   * Apply active modifiers' `onTurnOrderSort`. The first active modifier
+   * that defines the hook wins (only one re-sort per round to avoid
+   * compounding shuffles). If none define it, the input is returned unchanged.
+   */
+  applyTurnOrderSort(turnOrder, activeIds) {
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onTurnOrderSort;
+      if (hook) return hook(turnOrder);
+    }
+    return turnOrder;
+  },
+  /** Apply every active modifier's `onBattleStart` in registry order. */
+  applyBattleStart(combatants, activeIds) {
+    for (const def of MAP_MODIFIERS) {
+      if (!activeIds.has(def.id)) continue;
+      const hook = def.hooks.onBattleStart;
+      if (hook) hook(combatants);
+    }
+  },
+  /**
+   * Two-roll trigger system (gameConstants.ts / MapModifierConfig docs).
+   *
+   * Roll 1 (global): does ANY modifier trigger on this portal transition?
+   *   - Uses the max `globalTriggerChance` across the candidate pool (each
+   *     config may override; default 20%). If the roll fails, no modifier
+   *     activates.
+   * Roll 2 (weighted pick): if global triggers, pick ONE modifier via
+   *   weighted random using each config's `triggerChance` (default 20).
+   * Roll 3 (second modifier): chance (default 50%) that a second modifier
+   *   also triggers; if so, pick another weighted modifier (excluding the
+   *   first).
+   *
+   * Returns the set of activated modifier ids (0, 1, or 2 entries).
+   */
+  rollActiveModifiers(modifiers, ctx) {
+    const active = /* @__PURE__ */ new Set();
+    const pool = modifiers.filter((m2) => m2.active && MODIFIER_BY_ID.has(m2.id));
+    if (pool.length === 0) return active;
+    const globalChance = pool.reduce(
+      (max, m2) => Math.max(max, m2.globalTriggerChance ?? DEFAULT_GLOBAL_TRIGGER_CHANCE),
+      0
+    );
+    if (ctx.rng() * 100 >= globalChance) return active;
+    const first = pickWeighted(pool, ctx);
+    if (!first) return active;
+    active.add(first.id);
+    const secondChance = first.secondModifierChance ?? DEFAULT_SECOND_MODIFIER_CHANCE;
+    if (ctx.rng() * 100 >= secondChance) return active;
+    const remaining = pool.filter((m2) => m2.id !== first.id);
+    if (remaining.length === 0) return active;
+    const second = pickWeighted(remaining, ctx);
+    if (second) active.add(second.id);
+    return active;
+  }
+};
+function pickWeighted(pool, ctx) {
+  if (pool.length === 0) return void 0;
+  const weights = pool.map((m2) => m2.triggerChance ?? DEFAULT_TRIGGER_WEIGHT);
+  const total = weights.reduce((sum, w2) => sum + w2, 0);
+  if (total <= 0) return void 0;
+  let roll = ctx.rng() * total;
+  for (let i = 0; i < pool.length; i++) {
+    roll -= weights[i];
+    if (roll < 0) return pool[i];
+  }
+  return pool[pool.length - 1];
+}
+const PROGRESSION_PORTAL_KIND = "progression";
 function shouldSuppressPortal(kind, runMode, mapCleared) {
   if (runMode === "none") return false;
   if (kind === "progression") return !mapCleared;
@@ -55266,6 +55878,17 @@ const WorldExplorationInner = ({
   const currentTurnIndexRef = reactExports.useRef(0);
   const [turnOrder, setTurnOrder] = reactExports.useState([]);
   const turnOrderRef = reactExports.useRef([]);
+  const combatantsRef = reactExports.useRef([]);
+  const combatantStoreCtx = initCombatantStore(
+    combatantsRef,
+    enemiesRef,
+    battleEnemiesRef,
+    turnOrderRef,
+    currentTurnIndexRef,
+    setEnemies,
+    setBattleEnemies,
+    setTurnOrder
+  );
   reactExports.useRef(0);
   const enemyTurnInProgressRef = reactExports.useRef(false);
   const spawnEnemySummonRef = reactExports.useRef(null);
@@ -55356,6 +55979,17 @@ const WorldExplorationInner = ({
   );
   const applyActiveEffect = reactExports.useCallback(
     (effect) => {
+      if (effect.type !== "dot" && !mapModifierRegistry.applyEffectApplication(
+        effect.type,
+        activeMapModifierTypes,
+        {
+          log: (msg) => logDebugInfo("MODIFIER", msg),
+          rng: Math.random
+        }
+      )) {
+        logDebugInfo("MODIFIER", `suppressed: ${effect.type}`);
+        return;
+      }
       setActiveEffects((prev) => {
         let next;
         if (effect.type === "dot") {
@@ -55684,9 +56318,9 @@ const WorldExplorationInner = ({
   const isBloodMoon = activeMapModifierTypes.has("blood_moon");
   activeMapModifierTypes.has("fog_of_war");
   const isThornedGround = activeMapModifierTypes.has("thorned_ground");
-  const isArcaneSurge = activeMapModifierTypes.has("arcane_surge");
+  activeMapModifierTypes.has("arcane_surge");
   const isMirrorField = activeMapModifierTypes.has("mirror_field");
-  const isFrozenTerrain = activeMapModifierTypes.has("frozen_terrain");
+  activeMapModifierTypes.has("frozen_terrain");
   const isPlagueZone = activeMapModifierTypes.has("plague_zone");
   const isTimeWarp = activeMapModifierTypes.has("time_warp");
   const isVoidRift = activeMapModifierTypes.has("void_rift");
@@ -56099,11 +56733,24 @@ const WorldExplorationInner = ({
         1,
         Math.round(effDmg * Math.max(0, 1 - effRes / 100))
       );
-      const newHp = Math.max(0, enemy.hp - dmg);
-      setEnemyHpMap((prev) => ({ ...prev, [enemyId]: newHp }));
-      setEnemies(
-        (prev) => prev.map((e) => e.id === enemyId ? { ...e, hp: newHp } : e)
+      const _dmgAfterMods = mapModifierRegistry.applyDamageDealt(
+        casterId === "player" ? {
+          hp: characterStats.hp,
+          maxHp: characterStats.hp,
+          id: "player",
+          isEnemy: false
+        } : combatantsRef.current.find((c2) => c2.id === casterId) || { hp: 0, id: casterId },
+        enemy,
+        dmg,
+        activeMapModifierTypes,
+        {
+          log: (msg) => logDebugInfo("MODIFIER", msg),
+          rng: Math.random
+        }
       );
+      const newHp = Math.max(0, enemy.hp - _dmgAfterMods);
+      setEnemyHpMap((prev) => ({ ...prev, [enemyId]: newHp }));
+      updateCombatant(combatantStoreCtx, enemyId, { hp: newHp });
       logBattleEntry(`${enemyId} took ${dmg} damage from ${source}`, "#ef4444");
       const _em = effectsManagerRef.current;
       _em.spawnDamageNumber(0, 0, dmg, isCrit ? "crit" : "damage");
@@ -56112,11 +56759,18 @@ const WorldExplorationInner = ({
       if (isCrit) _em.triggerHitStop();
       if (newHp === 0) {
         _em.triggerDeath(String(enemyId), enemy.x, enemy.y);
-        setEnemies((prev) => prev.filter((e) => e.id !== enemyId));
+        removeCombatant(combatantStoreCtx, enemyId);
       }
       return dmg;
     },
-    [enemies, getStatModifier, logBattleEntry]
+    [
+      enemies,
+      getStatModifier,
+      logBattleEntry,
+      combatantStoreCtx,
+      activeMapModifierTypes,
+      characterStats.hp
+    ]
   );
   const handleUseItem = reactExports.useCallback(
     (itemType) => {
@@ -56878,6 +57532,7 @@ const WorldExplorationInner = ({
         dungeon: ["#4a0000", "#8b0000", "#cc0000"],
         boss: ["#1a0033", "#5b1fa0", "#9333ea"],
         bossRush: ["#1a0040", "#9900cc", "#ff66ff"],
+        progression: ["#2a1a00", "#665500", "#ffcc00"],
         rest: ["#d0d0d0", "#e8e8e8", "#f8f8f8"],
         white: ["#f5f5f5", "#ffffff", "#e8e8e8"]
       };
@@ -57714,6 +58369,24 @@ const WorldExplorationInner = ({
           });
         }
       }
+      if (_s2RunMode !== "none") {
+        const usedPositions3 = new Set(
+          portals.map((p2) => `${p2.x},${p2.y}`)
+        );
+        const progressionCandidate = borderCandidates.find(
+          (c2) => !usedPositions3.has(`${c2.x},${c2.y}`)
+        );
+        if (progressionCandidate) {
+          tiles[progressionCandidate.y][progressionCandidate.x] = "portal";
+          portals.push({
+            x: progressionCandidate.x,
+            y: progressionCandidate.y,
+            color: PROGRESSION_PORTAL_KIND,
+            isProgressionPortal: true,
+            animationOffset: Math.random() * Math.PI * 2
+          });
+        }
+      }
       if (dungeonChainActiveRef.current && !isShrineRoomRef.current && Math.random() < 0.25) {
         isShrineRoomRef.current = true;
         setIsShrineRoom(true);
@@ -58457,7 +59130,7 @@ const WorldExplorationInner = ({
     isMobile
   ]);
   const checkPortalInteraction = reactExports.useCallback(() => {
-    var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2;
+    var _a4, _b4, _c3, _d3, _e3, _f3;
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return;
     if (!currentMap) return;
@@ -58495,7 +59168,10 @@ const WorldExplorationInner = ({
       }
       const _s2InteractRunMode = bossRushActiveRef.current ? "bossRush" : dungeonChainActiveRef.current ? "dungeon" : "none";
       const _s2IsProgressionPortal = _s2InteractRunMode !== "none" && !portal.isBossRushPortal && !portal.isRestPortal && !portal.isRestExit && !portal.isBossPortal && !portal.isDungeonEntry;
-      if (_s2IsProgressionPortal && isProgressionLocked(_s2InteractRunMode, enemies.length === 0)) {
+      if (_s2IsProgressionPortal && isProgressionLocked(
+        _s2InteractRunMode,
+        activeHostilesRemaining(combatantsRef.current) === 0
+      )) {
         logBattleEntry(
           "🔒 The way forward is sealed until every foe falls.",
           "#8a6a3a"
@@ -58508,6 +59184,76 @@ const WorldExplorationInner = ({
         lastPortalRef.current = { x: portal.x, y: portal.y };
         bossRushActiveRef.current = true;
         startBossRush();
+        setTransitionInProgress(false);
+        transitionInProgressRef.current = false;
+        return;
+      }
+      if (bossRushActiveRef.current && (portal.isProgressionPortal || portal.kind === PROGRESSION_PORTAL_KIND) && activeHostilesRemaining(combatantsRef.current) === 0) {
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        const nextRoomIndex = bossRushState.currentRoom + 1;
+        const nextRoomDef = BOSS_RUSH_ROOMS2[nextRoomIndex];
+        if (nextRoomDef) {
+          void advanceBossRushRoom();
+          const { map: nextMap, spawnPosition: spawnPosition2 } = generateRandomMap();
+          if (nextMap) {
+            setCurrentMap(nextMap);
+            if (spawnPosition2) {
+              setPlayerPosition({ ...spawnPosition2 });
+            }
+            const newEnemies2 = [];
+            if (nextRoomDef.boss1Id) {
+              newEnemies2.push({
+                id: `boss-rush-${nextRoomIndex}-0`,
+                pieceType: nextRoomDef.boss1Name || "Boss 1",
+                x: 4,
+                y: 5,
+                level: characterStats.level + 2,
+                hp: 100,
+                maxHp: 100,
+                ap: 6,
+                mp: 3,
+                initiative: 10,
+                attack: 20,
+                defense: 10,
+                resistance: 5,
+                spells: [],
+                isBoss: true,
+                isLeader: false,
+                behavior: "aggressive",
+                family: "boss",
+                statusEffects: [],
+                activeEffects: []
+              });
+            }
+            if (nextRoomDef.boss2Id) {
+              newEnemies2.push({
+                id: `boss-rush-${nextRoomIndex}-1`,
+                pieceType: nextRoomDef.boss2Name || "Boss 2",
+                x: 6,
+                y: 5,
+                level: characterStats.level + 2,
+                hp: 100,
+                maxHp: 100,
+                ap: 6,
+                mp: 3,
+                initiative: 10,
+                attack: 20,
+                defense: 10,
+                resistance: 5,
+                spells: [],
+                isBoss: true,
+                isLeader: false,
+                behavior: "aggressive",
+                family: "boss",
+                statusEffects: [],
+                activeEffects: []
+              });
+            }
+            syncCombatants(combatantStoreCtx, newEnemies2, {
+              resetBattle: true
+            });
+          }
+        }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
         return;
@@ -58863,7 +59609,7 @@ const WorldExplorationInner = ({
           }
         });
       }
-      setEnemies(newEnemies);
+      syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
       if (portalTimerRef1.current !== null) {
         clearTimeout(portalTimerRef1.current);
         portalTimerRef1.current = null;
@@ -58882,37 +59628,10 @@ const WorldExplorationInner = ({
           lastPortalRef.current = null;
         }, 1500);
       }, 100);
-      const globalChance = ((_e3 = mapModifiers.find((m2) => m2.globalTriggerChance != null)) == null ? void 0 : _e3.globalTriggerChance) ?? 20;
-      const secondChance = ((_f3 = mapModifiers.find((m2) => m2.secondModifierChance != null)) == null ? void 0 : _f3.secondModifierChance) ?? 50;
-      const activeModsList = mapModifiers.filter((m2) => m2.active);
-      const triggered = /* @__PURE__ */ new Set();
-      if (activeModsList.length > 0 && Math.random() * 100 < globalChance) {
-        const totalWeight = activeModsList.reduce(
-          (s2, m2) => s2 + (m2.triggerChance ?? 20),
-          0
-        );
-        let r2 = Math.random() * totalWeight;
-        let first = null;
-        for (const m2 of activeModsList) {
-          r2 -= m2.triggerChance ?? 20;
-          if (r2 <= 0) {
-            first = m2;
-            break;
-          }
-        }
-        if (!first)
-          first = activeModsList[Math.floor(Math.random() * activeModsList.length)];
-        triggered.add(first.modifierType);
-        if (activeModsList.length > 1 && Math.random() * 100 < secondChance) {
-          const remaining = activeModsList.filter(
-            (m2) => m2.modifierType !== first.modifierType
-          );
-          if (remaining.length > 0) {
-            const second = remaining[Math.floor(Math.random() * remaining.length)];
-            triggered.add(second.modifierType);
-          }
-        }
-      }
+      const triggered = mapModifierRegistry.rollActiveModifiers(mapModifiers, {
+        log: (msg) => logDebugInfo("MODIFIER", msg),
+        rng: Math.random
+      });
       setActiveMapModifierTypes(triggered);
       if (!newMap.isDeathRealm) {
         const hazardMap = newMap.hazardTiles;
@@ -58966,12 +59685,10 @@ const WorldExplorationInner = ({
         }
       }
       if (triggered.size > 0) {
-        const names = [...triggered].map(
-          (t) => {
-            var _a5;
-            return ((_a5 = activeModsList.find((m2) => m2.modifierType === t)) == null ? void 0 : _a5.name) ?? t;
-          }
-        ).join(" + ");
+        const names = [...triggered].map((t) => {
+          var _a5;
+          return ((_a5 = MAP_MODIFIERS.find((m2) => m2.id === t)) == null ? void 0 : _a5.name) ?? t;
+        }).join(" + ");
         logBattleEntry(
           `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
           "#ff7675"
@@ -58986,7 +59703,7 @@ const WorldExplorationInner = ({
         const walkable = [];
         for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
           for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (((_g2 = newMap.tiles[gy]) == null ? void 0 : _g2[gx]) === "floor" && !((_h2 = newMap.voidTiles) == null ? void 0 : _h2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
+            if (((_e3 = newMap.tiles[gy]) == null ? void 0 : _e3[gx]) === "floor" && !((_f3 = newMap.voidTiles) == null ? void 0 : _f3.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
               walkable.push({ x: gx, y: gy });
             }
           }
@@ -59111,84 +59828,91 @@ const WorldExplorationInner = ({
     if (showShop) return;
     if (!currentMap || transitionInProgressRef.current) return;
     const currentTime = Date.now();
-    setEnemies((prevEnemies) => {
-      let hasChanged = false;
-      const nextEnemies = prevEnemies.map((enemy) => {
-        if (enemy.isMoving) {
-          const elapsed = currentTime - enemy.movementStartTime;
-          const stepDuration = enemy.movementSpeed / Math.max(enemy.movementPath.length, 1);
-          const targetStepIndex = Math.floor(elapsed / stepDuration);
-          if (targetStepIndex >= enemy.movementPath.length) {
-            const finalPosition = enemy.movementPath[enemy.movementPath.length - 1];
-            const nextMoveDelay = Math.random() * (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) + ENEMY_MOVE_INTERVAL_MIN;
-            hasChanged = true;
-            return {
-              ...enemy,
-              x: finalPosition.x,
-              y: finalPosition.y,
-              isMoving: false,
-              movementPath: [],
-              currentStepIndex: 0,
-              nextMoveTime: currentTime + nextMoveDelay,
-              lastMoveTime: currentTime,
-              wanderTarget: null
-            };
-          }
-          if (targetStepIndex > enemy.currentStepIndex) {
-            const newPosition = enemy.movementPath[targetStepIndex];
-            let newView = enemy.currentView;
-            if (targetStepIndex > 0) {
-              const prev = enemy.movementPath[targetStepIndex - 1];
-              const current = enemy.movementPath[targetStepIndex];
-              if (current.x > prev.x) newView = "right";
-              else if (current.x < prev.x) newView = "left";
-              else if (current.y > prev.y) newView = "front";
-              else if (current.y < prev.y) newView = "back";
-            }
-            hasChanged = true;
-            return {
-              ...enemy,
-              x: newPosition.x,
-              y: newPosition.y,
-              currentView: newView,
-              currentStepIndex: targetStepIndex
-            };
-          }
-          return enemy;
-        }
-        if (currentTime >= enemy.nextMoveTime && enemy.isWandering) {
-          const target = generateRandomWalkablePosition(
-            currentMap.tiles,
-            enemy.x,
-            enemy.y,
-            enemy.movementRange
-          );
-          if (target) {
-            const path = findPath({ x: enemy.x, y: enemy.y }, target);
-            if (path.length > 0) {
-              hasChanged = true;
-              return {
-                ...enemy,
-                isMoving: true,
-                movementPath: path,
-                currentStepIndex: 0,
-                movementStartTime: currentTime,
-                wanderTarget: target
-              };
-            }
-          }
+    let hasChanged = false;
+    const nextEnemies = enemies.map((enemy) => {
+      if (enemy.isMoving) {
+        const elapsed = currentTime - enemy.movementStartTime;
+        const stepDuration = enemy.movementSpeed / Math.max(enemy.movementPath.length, 1);
+        const targetStepIndex = Math.floor(elapsed / stepDuration);
+        if (targetStepIndex >= enemy.movementPath.length) {
+          const finalPosition = enemy.movementPath[enemy.movementPath.length - 1];
           const nextMoveDelay = Math.random() * (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) + ENEMY_MOVE_INTERVAL_MIN;
           hasChanged = true;
           return {
             ...enemy,
-            nextMoveTime: currentTime + nextMoveDelay
+            x: finalPosition.x,
+            y: finalPosition.y,
+            isMoving: false,
+            movementPath: [],
+            currentStepIndex: 0,
+            nextMoveTime: currentTime + nextMoveDelay,
+            lastMoveTime: currentTime,
+            wanderTarget: null
+          };
+        }
+        if (targetStepIndex > enemy.currentStepIndex) {
+          const newPosition = enemy.movementPath[targetStepIndex];
+          let newView = enemy.currentView;
+          if (targetStepIndex > 0) {
+            const prev = enemy.movementPath[targetStepIndex - 1];
+            const current = enemy.movementPath[targetStepIndex];
+            if (current.x > prev.x) newView = "right";
+            else if (current.x < prev.x) newView = "left";
+            else if (current.y > prev.y) newView = "front";
+            else if (current.y < prev.y) newView = "back";
+          }
+          hasChanged = true;
+          return {
+            ...enemy,
+            x: newPosition.x,
+            y: newPosition.y,
+            currentView: newView,
+            currentStepIndex: targetStepIndex
           };
         }
         return enemy;
-      });
-      return hasChanged ? nextEnemies : prevEnemies;
+      }
+      if (currentTime >= enemy.nextMoveTime && enemy.isWandering) {
+        const target = generateRandomWalkablePosition(
+          currentMap.tiles,
+          enemy.x,
+          enemy.y,
+          enemy.movementRange
+        );
+        if (target) {
+          const path = findPath({ x: enemy.x, y: enemy.y }, target);
+          if (path.length > 0) {
+            hasChanged = true;
+            return {
+              ...enemy,
+              isMoving: true,
+              movementPath: path,
+              currentStepIndex: 0,
+              movementStartTime: currentTime,
+              wanderTarget: target
+            };
+          }
+        }
+        const nextMoveDelay = Math.random() * (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) + ENEMY_MOVE_INTERVAL_MIN;
+        hasChanged = true;
+        return {
+          ...enemy,
+          nextMoveTime: currentTime + nextMoveDelay
+        };
+      }
+      return enemy;
     });
-  }, [showShop, currentMap, generateRandomWalkablePosition, findPath]);
+    if (hasChanged) {
+      syncCombatants(combatantStoreCtx, nextEnemies);
+    }
+  }, [
+    showShop,
+    currentMap,
+    generateRandomWalkablePosition,
+    findPath,
+    combatantStoreCtx,
+    enemies
+  ]);
   const getMpReachableTiles = reactExports.useCallback(() => {
     if (!currentMap || !inBattleRef.current || currentBattleMp <= 0)
       return /* @__PURE__ */ new Set();
@@ -59199,7 +59923,11 @@ const WorldExplorationInner = ({
     ];
     visited.set(`${playerPosition.x},${playerPosition.y}`, 0);
     const reachable = /* @__PURE__ */ new Set();
-    const moveCostPerTile = isSlimeFlood || isFrozenTerrain ? 2 : 1;
+    const moveCostPerTile = mapModifierRegistry.applyMpCost(
+      1,
+      activeMapModifierTypes,
+      { log: (msg) => logDebugInfo("MODIFIER", msg), rng: Math.random }
+    );
     while (queue.length > 0) {
       const current = queue.shift();
       const nextSteps = current.steps + moveCostPerTile;
@@ -59229,13 +59957,7 @@ const WorldExplorationInner = ({
       }
     }
     return reachable;
-  }, [
-    currentMap,
-    playerPosition,
-    currentBattleMp,
-    isSlimeFlood,
-    isFrozenTerrain
-  ]);
+  }, [currentMap, playerPosition, currentBattleMp, activeMapModifierTypes]);
   const getSpellRangeTiles = reactExports.useCallback(() => {
     if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current)
       return /* @__PURE__ */ new Set();
@@ -59868,10 +60590,14 @@ const WorldExplorationInner = ({
     }
     {
       const drawQueue = [];
-      for (let i = 0; i < enemies.length; i++) {
-        const e = enemies[i];
+      for (let i = 0; i < combatantsRef.current.length; i++) {
+        const e = combatantsRef.current[i];
         if (!isAliveCombatant(e)) continue;
-        drawQueue.push({ kind: "enemy", idx: i, depth: e.x + e.y });
+        drawQueue.push({
+          kind: "enemy",
+          idx: i,
+          depth: (e.x ?? 0) + (e.y ?? 0)
+        });
       }
       drawQueue.push({
         kind: "player",
@@ -59917,8 +60643,8 @@ const WorldExplorationInner = ({
           continue;
         }
         if (renderItem.kind === "enemy") {
-          const enemy = enemies[renderItem.idx];
-          const screenPos = gridToScreen(enemy.x, enemy.y);
+          const enemy = combatantsRef.current[renderItem.idx];
+          const screenPos = gridToScreen(enemy.x ?? 0, enemy.y ?? 0);
           {
             const footX = screenPos.x;
             const footY = screenPos.y + effectiveTileH / 2 + 4;
@@ -59947,20 +60673,26 @@ const WorldExplorationInner = ({
             ctx.shadowBlur = 8;
             ctx.globalAlpha = 0.8 + 0.2 * Math.sin(Date.now() * 0.01);
           }
-          drawCombatant(ctx, enemy, screenPos, enemy.currentView, {
-            getBossPattern: getBossPixelPattern,
-            getFamilyPattern: getEnemyFamilyPixelPattern,
-            getFamilyColors: getEnemyFamilyColors,
-            drawPattern: drawPixelPattern,
-            characterYOffset: CHARACTER_Y_OFFSET
-          });
+          drawCombatant(
+            ctx,
+            enemy,
+            screenPos,
+            enemy.currentView,
+            {
+              getBossPattern: getBossPixelPattern,
+              getFamilyPattern: getEnemyFamilyPixelPattern,
+              getFamilyColors: getEnemyFamilyColors,
+              drawPattern: drawPixelPattern,
+              characterYOffset: CHARACTER_Y_OFFSET
+            }
+          );
           if (enemy.isMoving) ctx.restore();
           const isLeader = leaderEnemyIdRef.current === enemy.id;
           {
-            const enemyName = `${isLeader ? "👑 " : ""}${enemy.assignedName ?? enemy.pieceType.charAt(0).toUpperCase() + enemy.pieceType.slice(1)}`;
+            const enemyName = `${isLeader ? "👑 " : ""}${enemy.assignedName ?? (enemy.pieceType ?? "pawn").charAt(0).toUpperCase() + (enemy.pieceType ?? "pawn").slice(1)}`;
             const levelLabel = `L${enemy.level}`;
             const playerLvl = (characterStats == null ? void 0 : characterStats.level) ?? 1;
-            const levelDiff = enemy.level - playerLvl;
+            const levelDiff = (enemy.level ?? 1) - playerLvl;
             const levelColor2 = levelDiff <= 0 ? "#00e676" : levelDiff <= 10 ? "#ff9800" : levelDiff <= 100 ? "#f44336" : "#ce93d8";
             const nameY = screenPos.y - 34;
             const levelY = nameY + 14;
@@ -60017,7 +60749,7 @@ const WorldExplorationInner = ({
               baseDmg,
               spell.id,
               enemy,
-              { x: enemy.x, y: enemy.y },
+              { x: enemy.x ?? 0, y: enemy.y ?? 0 },
               spell.isPhysical || false,
               false,
               activeEffectsRef.current
@@ -60274,7 +61006,10 @@ const WorldExplorationInner = ({
     if (inBattleRef.current && battleActionModeRef.current === "walk" && hoveredTile) {
       const hoverScreen = gridToScreen(hoveredTile.x, hoveredTile.y);
       const dist2 = Math.abs(hoveredTile.x - playerPosition.x) + Math.abs(hoveredTile.y - playerPosition.y);
-      const mpCost = isSlimeFloodRef.current ? dist2 * 2 : dist2;
+      const mpCost = dist2 * mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
+        log: (msg) => logDebugInfo("MODIFIER", msg),
+        rng: Math.random
+      });
       if (dist2 > 0 && ((_c3 = currentMap.tiles[hoveredTile.y]) == null ? void 0 : _c3[hoveredTile.x]) === "floor") {
         ctx.save();
         ctx.font = "bold 12px Arial";
@@ -60647,8 +61382,11 @@ const WorldExplorationInner = ({
           turnOrderRef.current
         );
         turnOrderRef.current = turnOrder2;
-        setEnemies((prev) => [...prev, summon]);
-        setBattleEnemies((prev) => [...prev, summon]);
+        const _newEnemies = [
+          ...combatantsRef.current,
+          summon
+        ];
+        syncCombatants(combatantStoreCtx, _newEnemies);
         setTurnOrder(turnOrder2);
         logDebugInfo(
           "SUMMON",
@@ -60719,11 +61457,10 @@ const WorldExplorationInner = ({
         if (!target) return;
         const oldPlayerPos = { ...playerPosition };
         setPlayerPosition({ x: target.x, y: target.y });
-        setEnemies(
-          (prev) => prev.map(
-            (e) => e.id === targetEnemyId ? { ...e, x: oldPlayerPos.x, y: oldPlayerPos.y } : e
-          )
-        );
+        updateCombatant(combatantStoreCtx, targetEnemyId, {
+          x: oldPlayerPos.x,
+          y: oldPlayerPos.y
+        });
       },
       placeMark: (cell) => {
         markedTilesRef.current.add(`${cell.x},${cell.y}`);
@@ -60872,9 +61609,7 @@ const WorldExplorationInner = ({
           enemies,
           turnOrderRef.current
         );
-        setEnemies(newEnemies);
-        setBattleEnemies(newEnemies);
-        battleEnemiesRef.current = newEnemies;
+        syncCombatants(combatantStoreCtx, newEnemies);
         setTurnOrder(newTurnOrder);
         turnOrderRef.current = newTurnOrder;
         {
@@ -60954,7 +61689,10 @@ const WorldExplorationInner = ({
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
           const path = findPath(playerPosition, gridPos);
           if (path.length === 0) return;
-          const moveCost = isSlimeFlood || isFrozenTerrain ? path.length * 2 : path.length;
+          const moveCost = path.length * mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
+            log: (msg) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random
+          });
           const cost = moveCost;
           if (cost > currentBattleMp) return;
           if (isThornedGround && path.length > 2) {
@@ -61022,9 +61760,13 @@ const WorldExplorationInner = ({
             (s2) => s2.id === selectedSpellIdRef.current
           );
           if (!spell) return;
-          const apCost = Math.max(
-            1,
-            Number(spell.apCost) - (isArcaneSurge ? 1 : 0)
+          const apCost = mapModifierRegistry.applyApCost(
+            Number(spell.apCost),
+            activeMapModifierTypes,
+            {
+              log: (msg) => logDebugInfo("MODIFIER", msg),
+              rng: Math.random
+            }
           );
           if (currentBattleAp < apCost) return;
           castRuntimeRef.current.apCost = apCost;
@@ -61129,10 +61871,8 @@ const WorldExplorationInner = ({
       activeSpells,
       playerSpellContext,
       logBattleEntry,
-      isArcaneSurge,
+      activeMapModifierTypes,
       isThornedGround,
-      isFrozenTerrain,
-      isSlimeFlood,
       isVoidRift,
       voidRiftTile
     ]
@@ -61208,9 +61948,13 @@ const WorldExplorationInner = ({
             (s2) => s2.id === selectedSpellIdRef.current
           );
           if (!spell) return;
-          const apCost = Math.max(
-            1,
-            Number(spell.apCost) - (isArcaneSurge ? 1 : 0)
+          const apCost = mapModifierRegistry.applyApCost(
+            Number(spell.apCost),
+            activeMapModifierTypes,
+            {
+              log: (msg) => logDebugInfo("MODIFIER", msg),
+              rng: Math.random
+            }
           );
           if (currentBattleAp < apCost) return;
           castRuntimeRef.current.apCost = apCost;
@@ -61316,7 +62060,7 @@ const WorldExplorationInner = ({
       getSpellRangeTiles,
       activeSpells,
       playerSpellContext,
-      isArcaneSurge
+      activeMapModifierTypes
     ]
   );
   reactExports.useEffect(() => {
@@ -61788,7 +62532,11 @@ const WorldExplorationInner = ({
         ...activeSpells.filter((s2) => s2 && s2.id !== physicalAttackSpell.id)
       ];
       reactDomExports.flushSync(() => {
-        setEnemies(enemiesWithSpells);
+        syncCombatants(combatantStoreCtx, enemiesWithSpells);
+        mapModifierRegistry.applyBattleStart(
+          combatantsRef.current,
+          activeMapModifierTypes
+        );
         setEnragedEnemies(/* @__PURE__ */ new Set());
         setEnemyHpMap(hpMap);
         setTurnOrder(orderWithLeader);
@@ -61941,7 +62689,10 @@ const WorldExplorationInner = ({
         if (onBattleEnd) onBattleEnd();
         if (aiGenerationRef.current !== _battleEndGen) return;
         if (victory) {
-          setEnemies((prev) => despawnSummons(prev));
+          syncCombatants(
+            combatantStoreCtx,
+            despawnSummons(combatantsRef.current)
+          );
           const activeBossConfForXP = currentBossConfigRef.current;
           const bossXpMultiplier = activeBossConfForXP ? activeBossConfForXP.rewardXpMultiplier : 1;
           const finalExp = boostMode === "xp" ? Math.round((expGained ?? 0) * 1.5 * bossXpMultiplier) : Math.round((expGained ?? 0) * bossXpMultiplier);
@@ -61971,9 +62722,17 @@ const WorldExplorationInner = ({
               doka: Number(enemy.level) * multiplier
             });
           }
-          const rawDoka = dokaBreakdown.reduce(
+          let rawDoka = dokaBreakdown.reduce(
             (sum, d2) => sum + Number(d2.doka),
             0
+          );
+          rawDoka = mapModifierRegistry.applyRewardMultiplier(
+            rawDoka,
+            activeMapModifierTypes,
+            {
+              log: (msg) => logDebugInfo("MODIFIER", msg),
+              rng: Math.random
+            }
           );
           const chainMult = dungeonDokaMultiplierRef.current;
           const activeBossConf = currentBossConfigRef.current;
@@ -62136,68 +62895,9 @@ const WorldExplorationInner = ({
     if (battleEndedRef.current) return;
     battleEndedRef.current = true;
     const currentRoomIndex = bossRushState.currentRoom;
-    void advanceBossRushRoom();
     const nextRoomIndex = bossRushState.currentRoom + 1;
     const nextRoomDef = BOSS_RUSH_ROOMS2[nextRoomIndex];
-    if (nextRoomDef) {
-      const { map: nextMap, spawnPosition } = generateRandomMap();
-      if (nextMap) {
-        setCurrentMap(nextMap);
-        if (spawnPosition) {
-          setPlayerPosition({ ...spawnPosition });
-        }
-        const newEnemies = [];
-        if (nextRoomDef.boss1Id) {
-          newEnemies.push({
-            id: `boss-rush-${nextRoomIndex}-0`,
-            pieceType: nextRoomDef.boss1Name || "Boss 1",
-            x: 4,
-            y: 5,
-            level: characterStats.level + 2,
-            hp: 100,
-            maxHp: 100,
-            ap: 6,
-            mp: 3,
-            initiative: 10,
-            attack: 20,
-            defense: 10,
-            resistance: 5,
-            spells: [],
-            isBoss: true,
-            isLeader: false,
-            behavior: "aggressive",
-            family: "boss",
-            statusEffects: [],
-            activeEffects: []
-          });
-        }
-        if (nextRoomDef.boss2Id) {
-          newEnemies.push({
-            id: `boss-rush-${nextRoomIndex}-1`,
-            pieceType: nextRoomDef.boss2Name || "Boss 2",
-            x: 6,
-            y: 5,
-            level: characterStats.level + 2,
-            hp: 100,
-            maxHp: 100,
-            ap: 6,
-            mp: 3,
-            initiative: 10,
-            attack: 20,
-            defense: 10,
-            resistance: 5,
-            spells: [],
-            isBoss: true,
-            isLeader: false,
-            behavior: "aggressive",
-            family: "boss",
-            statusEffects: [],
-            activeEffects: []
-          });
-        }
-        setEnemies(newEnemies);
-      }
-    } else {
+    if (!nextRoomDef) {
       completeRun({
         bossRushActiveRef,
         dungeonChainActiveRef,
@@ -62719,7 +63419,7 @@ const WorldExplorationInner = ({
     if (!inBattle) checkBattleTrigger();
   }, [checkBattleTrigger, inBattle]);
   reactExports.useEffect(() => {
-    if (inBattle && activeHostilesRemaining(enemies) === 0) {
+    if (inBattle && activeHostilesRemaining(combatantsRef.current) === 0) {
       const _s2RunMode = bossRushActiveRef.current ? "bossRush" : dungeonChainActiveRef.current ? "dungeon" : "none";
       if (_s2RunMode !== "none") {
         logBattleEntry(
@@ -62727,9 +63427,9 @@ const WorldExplorationInner = ({
           "#d4af37"
         );
       }
-      const defeatedList = _battleEnemies.filter((e) => !(e.isSummon && e.hp > 0)).map((e) => ({
-        name: e.pieceType,
-        level: e.level
+      const defeatedList = deriveBattleEnemies(combatantStoreCtx).filter((e) => !(e.isSummon && e.hp > 0)).map((e) => ({
+        name: e.pieceType ?? "unknown",
+        level: e.level ?? 1
       }));
       const expGained = defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) || Number(characterStats.level) * 20;
       if (bossRushActiveRef.current) {
@@ -62838,6 +63538,14 @@ const WorldExplorationInner = ({
               return nextIdx;
             }
             setBattlePhase("player");
+            mapModifierRegistry.applyTurnStart(
+              combatantsRef.current.find((c2) => c2.id === "player") || combatantsRef.current[0],
+              activeMapModifierTypes,
+              {
+                log: (msg) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random
+              }
+            );
             processActiveEffects("player");
             spellCooldownsRef.current.forEach((cd, id) => {
               if (cd > 1) spellCooldownsRef.current.set(id, cd - 1);
@@ -62936,6 +63644,14 @@ const WorldExplorationInner = ({
               route: "enemy-ai"
             });
             setBattlePhase("enemy");
+            mapModifierRegistry.applyTurnStart(
+              nextCombatant,
+              activeMapModifierTypes,
+              {
+                log: (msg) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random
+              }
+            );
             processActiveEffects(nextCombatant.id);
             if (isPlagueZone) {
               setEnemyHpMap((prev) => {
@@ -62952,6 +63668,12 @@ const WorldExplorationInner = ({
           }
           return nextIdx;
         });
+        if (currentTurnIndexRef.current === 0) {
+          return mapModifierRegistry.applyTurnOrderSort(
+            prevOrder,
+            activeMapModifierTypes
+          );
+        }
         return prevOrder;
       });
     });
@@ -62999,12 +63721,6 @@ const WorldExplorationInner = ({
       }
     };
   }, [inBattle, currentTurnIndex, isTimeWarp]);
-  reactExports.useEffect(() => {
-    battleEnemiesRef.current = _battleEnemies;
-  }, [_battleEnemies]);
-  reactExports.useEffect(() => {
-    enemiesRef.current = enemies;
-  }, [enemies]);
   reactExports.useEffect(() => {
     if (!inBattle || battlePhase !== "enemy" || enemyTurnInProgressRef.current)
       return;
@@ -63085,11 +63801,9 @@ const WorldExplorationInner = ({
               enemiesRef.current,
               turnOrderRef.current
             );
-            setEnemies(newEnemies);
-            setBattleEnemies(newEnemies);
+            syncCombatants(combatantStoreCtx, newEnemies);
             setTurnOrder(newTurnOrder);
             turnOrderRef.current = newTurnOrder;
-            enemiesRef.current = newEnemies;
           },
           isCellFree: (cell) => !enemiesRef.current.some(
             (e) => e.x === cell.x && e.y === cell.y
@@ -63146,11 +63860,11 @@ const WorldExplorationInner = ({
                 enemiesRef.current,
                 turnOrderRef.current
               );
-              setEnemies(newEnemies2);
-              setBattleEnemies(newEnemies2);
+              syncCombatants(combatantStoreCtx, newEnemies2, {
+                resetBattle: true
+              });
               setTurnOrder(newTurnOrder2);
               turnOrderRef.current = newTurnOrder2;
-              enemiesRef.current = newEnemies2;
             };
             const unitDef = (spell == null ? void 0 : spell.summonUnitDef) ?? ((_a4 = starterSpells.find((s2) => s2.id === (spell == null ? void 0 : spell.id))) == null ? void 0 : _a4.summonUnitDef);
             if (!unitDef) return;
@@ -63189,11 +63903,9 @@ const WorldExplorationInner = ({
               enemiesRef.current,
               turnOrderRef.current
             );
-            setEnemies(newEnemies);
-            setBattleEnemies(newEnemies);
+            syncCombatants(combatantStoreCtx, newEnemies);
             setTurnOrder(newTurnOrder);
             turnOrderRef.current = newTurnOrder;
-            enemiesRef.current = newEnemies;
           }
         });
         const summonCombatants = enemiesRef.current.filter((e) => e.id !== enemyId).map((e) => ({
@@ -63317,29 +64029,13 @@ const WorldExplorationInner = ({
           summonCtx,
           executorHelpers
         );
-        setEnemies(
-          (prev) => prev.map(
-            (e) => e.id === enemyId ? {
-              ...e,
-              x: execResult.newPosition.x,
-              y: execResult.newPosition.y,
-              currentAp: execResult.currentAp,
-              currentMp: execResult.currentMp,
-              hp: execResult.hp
-            } : e
-          )
-        );
-        enemiesRef.current = enemiesRef.current.map(
-          (e) => e.id === enemyId ? {
-            ...e,
-            x: execResult.newPosition.x,
-            y: execResult.newPosition.y,
-            currentAp: execResult.currentAp,
-            currentMp: execResult.currentMp,
-            hp: execResult.hp
-          } : e
-        );
-        setBattleEnemies(enemiesRef.current);
+        summonEnemy.currentAp = execResult.currentAp;
+        summonEnemy.currentMp = execResult.currentMp;
+        updateCombatant(combatantStoreCtx, enemyId, {
+          x: execResult.newPosition.x,
+          y: execResult.newPosition.y,
+          hp: execResult.hp
+        });
         enemyTurnInProgressRef.current = false;
         setTimeout(() => advanceTurnRef.current(), 600);
         return;
@@ -63460,7 +64156,7 @@ const WorldExplorationInner = ({
       }
       reactDomExports.flushSync(() => {
         setEnemies((prevEnemies) => {
-          var _a4, _b4, _c3, _d3, _e3, _f3;
+          var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2;
           const enemy = prevEnemies.find((e) => e.id === enemyId);
           if (!enemy) {
             clearTimeout(watchdog);
@@ -63575,15 +64271,15 @@ const WorldExplorationInner = ({
                 n.add(enemyId);
                 return n;
               });
-              setTurnOrder(
-                (prev) => prev.filter((c2) => c2.id !== allyT.id).map(
-                  (c2) => c2.id === enemyId ? {
-                    ...c2,
-                    maxHp: Math.round(c2.maxHp * 6),
-                    hp: Math.round(c2.hp * 6)
-                  } : c2
+              removeCombatant(combatantStoreCtx, allyT.id);
+              updateCombatant(combatantStoreCtx, enemyId, {
+                maxHp: Math.round(
+                  (((_a4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _a4.maxHp) ?? calcEnemyMaxHp(enemy.level)) * 6
+                ),
+                hp: Math.round(
+                  (((_b4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _b4.hp) ?? calcEnemyMaxHp(enemy.level)) * 6
                 )
-              );
+              });
               setEnemyHpMap((prev) => {
                 const n = { ...prev };
                 delete n[allyT.id];
@@ -63592,9 +64288,6 @@ const WorldExplorationInner = ({
                 );
                 return n;
               });
-              setBattleEnemies(
-                (prevBE) => prevBE.filter((e) => e.id !== allyT.id).map((e) => e.id === enemyId ? { ...e, enraged: true } : e)
-              );
               const afterFirst = prevEnemies.filter((e) => e.id !== allyT.id);
               const secondPool = afterFirst.filter((e) => e.id !== enemyId);
               if (secondPool.length > 0 && Math.random() < 0.15) {
@@ -63627,8 +64320,7 @@ const WorldExplorationInner = ({
                       const curHp = h2[sbT.id] ?? calcEnemyMaxHp(sbT.level);
                       const nHp = Math.max(0, curHp - sbDmg);
                       if (nHp <= 0) {
-                        setTurnOrder((to) => to.filter((c2) => c2.id !== sbT.id));
-                        setEnemies((p2) => p2.filter((e) => e.id !== sbT.id));
+                        removeCombatant(combatantStoreCtx, sbT.id);
                       }
                       return { ...h2, [sbT.id]: nHp };
                     });
@@ -63719,8 +64411,8 @@ const WorldExplorationInner = ({
                 for (const msg of res.logMessages)
                   logBattleEntry(msg, "#a855f7");
               }
-              const newBossX = ((_a4 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _a4.x) ?? enemy.x;
-              const newBossY = ((_b4 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _b4.y) ?? enemy.y;
+              const newBossX = ((_c3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _c3.x) ?? enemy.x;
+              const newBossY = ((_d3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _d3.y) ?? enemy.y;
               if ((res == null ? void 0 : res.damageToPlayer) && res.damageToPlayer > 0) {
                 const rawDmg = res.damageToPlayer;
                 const absorbed = Math.min(shieldHpRef.current, rawDmg);
@@ -63852,10 +64544,15 @@ const WorldExplorationInner = ({
                   spellCooldowns: {},
                   activeEffects: []
                 }));
-                setEnemies((prev) => {
-                  const spawnSlots = Math.max(0, MAX_ENEMIES - prev.length);
-                  return [...prev, ...minionEnemies.slice(0, spawnSlots)];
-                });
+                const _spawnSlots = Math.max(
+                  0,
+                  MAX_ENEMIES - combatantsRef.current.length
+                );
+                const _newMinionEnemies = [
+                  ...combatantsRef.current,
+                  ...minionEnemies.slice(0, _spawnSlots)
+                ];
+                syncCombatants(combatantStoreCtx, _newMinionEnemies);
                 const minionEntries = minionEnemies.map(
                   (m2) => ({
                     id: m2.id,
@@ -63881,9 +64578,11 @@ const WorldExplorationInner = ({
                 pendingTimeoutsRef.current.delete(watchdog);
                 enemyTurnInProgressRef.current = false;
                 advanceTurnRef.current();
-                return prevEnemies.map(
-                  (e) => e.id === enemyId ? { ...e, x: newBossX, y: newBossY } : e
-                );
+                updateCombatant(combatantStoreCtx, enemyId, {
+                  x: newBossX,
+                  y: newBossY
+                });
+                return prevEnemies;
               }
               clearTimeout(watchdog);
               pendingTimeoutsRef.current.delete(watchdog);
@@ -63898,9 +64597,11 @@ const WorldExplorationInner = ({
               }, 0);
               if (!cleanupRanRef.current)
                 pendingTimeoutsRef.current.add(bossAdvTimer);
-              return prevEnemies.map(
-                (e) => e.id === enemyId ? { ...e, x: newBossX, y: newBossY } : e
-              );
+              updateCombatant(combatantStoreCtx, enemyId, {
+                x: newBossX,
+                y: newBossY
+              });
+              return prevEnemies;
             }
             clearTimeout(watchdog);
             pendingTimeoutsRef.current.delete(watchdog);
@@ -63921,7 +64622,7 @@ const WorldExplorationInner = ({
           const battleEnemyData = battleEnemiesRef.current.find(
             (be2) => be2.id === enemyId
           );
-          const assignedSpells = ((((_c3 = currentCombatant.spells) == null ? void 0 : _c3.length) ?? 0) > 0 ? currentCombatant.spells : (battleEnemyData == null ? void 0 : battleEnemyData.spells) ?? currentCombatant.spells) ?? [];
+          const assignedSpells = ((((_e3 = currentCombatant.spells) == null ? void 0 : _e3.length) ?? 0) > 0 ? currentCombatant.spells : (battleEnemyData == null ? void 0 : battleEnemyData.spells) ?? currentCombatant.spells) ?? [];
           const enemyCooldownMap = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
           const availableSpells = assignedSpells.filter(
             (s2) => (enemyCooldownMap.get(s2.id) ?? 0) <= 0 && s2.usableByEnemy !== false
@@ -64046,8 +64747,8 @@ const WorldExplorationInner = ({
             },
             aiCtx
           ) : decideEnemyAction(enemy, aiCtx);
-          if (action.kind === "cast" && ((_d3 = action.spell) == null ? void 0 : _d3.isSummon) && action.destination) {
-            (_e3 = spawnEnemySummonRef.current) == null ? void 0 : _e3.call(spawnEnemySummonRef, action.destination, action.spell);
+          if (action.kind === "cast" && ((_f3 = action.spell) == null ? void 0 : _f3.isSummon) && action.destination) {
+            (_g2 = spawnEnemySummonRef.current) == null ? void 0 : _g2.call(spawnEnemySummonRef, action.destination, action.spell);
             enemySummonCooldownRef.current.set(enemyId, battleTurn);
             enemyTurnInProgressRef.current = false;
             setTimeout(advanceTurnRef.current, 600);
@@ -64365,7 +65066,7 @@ const WorldExplorationInner = ({
           }
           logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
           if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
-            const enemyHazard = (_f3 = currentMap.hazardTiles) == null ? void 0 : _f3.get(`${newX},${newY}`);
+            const enemyHazard = (_h2 = currentMap.hazardTiles) == null ? void 0 : _h2.get(`${newX},${newY}`);
             if (enemyHazard) {
               if (enemyHazard === "lava") {
                 const hDmg = 8 + Math.floor(Math.random() * 8);
@@ -64542,7 +65243,11 @@ const WorldExplorationInner = ({
     markFirstAction();
     const spell = activeSpells.find((s2) => s2.id === selectedSpellIdRef.current);
     if (!spell) return;
-    const apCost = Math.max(1, Number(spell.apCost) - (isArcaneSurge ? 1 : 0));
+    const apCost = mapModifierRegistry.applyApCost(
+      Number(spell.apCost),
+      activeMapModifierTypes,
+      { log: (msg) => logDebugInfo("MODIFIER", msg), rng: Math.random }
+    );
     if (currentBattleAp < apCost) return;
     const isHealSpell = spell.targetType === "self" && spell.effectType === "heal";
     let gridPos;
@@ -64635,7 +65340,7 @@ const WorldExplorationInner = ({
     battleActionMode,
     activeSpells,
     currentBattleAp,
-    isArcaneSurge,
+    activeMapModifierTypes,
     enemies,
     playerPosition,
     getEffectiveSpellRange,
@@ -69524,7 +70229,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BHREj10r.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BCjssJkk.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

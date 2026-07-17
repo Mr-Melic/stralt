@@ -56,6 +56,7 @@ import {
   WORLD_GRID_SIZE,
 } from "../data/gameConstants";
 import {
+  type CombatantEntity,
   chessPiecePatterns,
   drawCombatant,
   spawnPixelPuff,
@@ -63,6 +64,7 @@ import {
 import { physicalAttackSpell, starterSpells } from "../data/spellData";
 import { drawBarrierTower } from "../engine/barrierRender";
 import {
+  type Combatant,
   activeHostilesRemaining,
   despawnSummons,
   isAliveCombatant,
@@ -79,6 +81,16 @@ import {
   pickEnemyLevelFromTiers,
   seededRng,
 } from "../engine/combatMath";
+import {
+  type CombatantStoreCtx,
+  addCombatant,
+  deriveBattleEnemies,
+  dumpStateSync,
+  initCombatantStore,
+  removeCombatant,
+  syncCombatants,
+  updateCombatant,
+} from "../engine/combatantStore";
 import {
   type DotTickResult,
   appendDotStack,
@@ -101,12 +113,15 @@ import {
   ensureReachability,
   pickMapArchetype,
 } from "../engine/mapGen";
+import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import type { OccupancyContext } from "../engine/occupancy";
 import {
+  PROGRESSION_PORTAL_KIND,
   type RunMode,
   completeRun,
   getRunMode,
   isProgressionLocked,
+  isProgressionPortalUnlocked,
   resetRunState,
   shouldSpawnWhitePortal,
   shouldSuppressPortal,
@@ -217,7 +232,8 @@ type PortalColor =
   | "boss"
   | "dungeon"
   | "bossRush"
-  | "white";
+  | "white"
+  | "progression";
 interface GameMap {
   id: string;
   tiles: TileType[][];
@@ -998,6 +1014,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // H2: Mirror of turnOrder in a ref so enemy AI always reads the current value
   // without relying on a stale React-state closure captured at effect creation time.
   const turnOrderRef = useRef<CombatantEntry[]>([]);
+  // --- Unified combatant store (Section 1) ---
+  // combatantsRef is the single source of truth; enemiesRef/battleEnemiesRef/turnOrderRef
+  // remain as mirrors the store helpers keep in sync. See engine/combatantStore.ts.
+  const combatantsRef = useRef<Combatant[]>([]);
+  const combatantStoreCtx: CombatantStoreCtx = initCombatantStore(
+    combatantsRef,
+    enemiesRef as React.MutableRefObject<Combatant[]>,
+    battleEnemiesRef as React.MutableRefObject<Combatant[]>,
+    turnOrderRef,
+    currentTurnIndexRef,
+    setEnemies as unknown as (u: (prev: Combatant[]) => Combatant[]) => void,
+    setBattleEnemies as unknown as (
+      u: (prev: Combatant[]) => Combatant[],
+    ) => void,
+    setTurnOrder,
+  );
 
   const _phaseChangeCounterRef = useRef(0);
 
@@ -1193,6 +1225,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Helper: apply or refresh an active effect
   const applyActiveEffect = useCallback(
     (effect: ActiveEffect) => {
+      if (
+        effect.type !== "dot" &&
+        !mapModifierRegistry.applyEffectApplication(
+          effect.type,
+          activeMapModifierTypes,
+          {
+            log: (msg: string) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random,
+          },
+        )
+      ) {
+        logDebugInfo("MODIFIER", `suppressed: ${effect.type}`);
+        return;
+      }
       setActiveEffects((prev) => {
         // Section 4: DoTs stack additively — each application appends a new
         // independent stack with its own duration (no replace). Non-DoT
@@ -1669,9 +1715,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const isBloodMoon = activeMapModifierTypes.has("blood_moon");
   const _isFogOfWar = activeMapModifierTypes.has("fog_of_war");
   const isThornedGround = activeMapModifierTypes.has("thorned_ground");
-  const isArcaneSurge = activeMapModifierTypes.has("arcane_surge");
+  const _isArcaneSurge = activeMapModifierTypes.has("arcane_surge");
   const isMirrorField = activeMapModifierTypes.has("mirror_field");
-  const isFrozenTerrain = activeMapModifierTypes.has("frozen_terrain");
+  const _isFrozenTerrain = activeMapModifierTypes.has("frozen_terrain");
   const isPlagueZone = activeMapModifierTypes.has("plague_zone");
   const isTimeWarp = activeMapModifierTypes.has("time_warp");
   const isVoidRift = activeMapModifierTypes.has("void_rift");
@@ -2239,11 +2285,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         1,
         Math.round(effDmg * Math.max(0, 1 - effRes / 100)),
       );
-      const newHp = Math.max(0, enemy.hp - dmg);
-      setEnemyHpMap((prev) => ({ ...prev, [enemyId]: newHp }));
-      setEnemies((prev) =>
-        prev.map((e) => (e.id === enemyId ? { ...e, hp: newHp } : e)),
+      const _dmgAfterMods = mapModifierRegistry.applyDamageDealt(
+        casterId === "player"
+          ? ({
+              hp: characterStats.hp,
+              maxHp: characterStats.hp,
+              id: "player",
+              isEnemy: false,
+            } as any)
+          : combatantsRef.current.find((c) => (c as any).id === casterId) ||
+              ({ hp: 0, id: casterId } as any),
+        enemy,
+        dmg,
+        activeMapModifierTypes,
+        {
+          log: (msg: string) => logDebugInfo("MODIFIER", msg),
+          rng: Math.random,
+        },
       );
+      const newHp = Math.max(0, enemy.hp - _dmgAfterMods);
+      setEnemyHpMap((prev) => ({ ...prev, [enemyId]: newHp }));
+      // Route the HP update through the combatant store so the ref mirrors
+      // stay in sync; the subsequent removeCombatant (on death) filters the
+      // enemy out atomically, so a separate setEnemies filter is redundant.
+      updateCombatant(combatantStoreCtx, enemyId, { hp: newHp });
       logBattleEntry(`${enemyId} took ${dmg} damage from ${source}`, "#ef4444");
       const _em = effectsManagerRef.current;
       _em.spawnDamageNumber(0, 0, dmg, isCrit ? "crit" : "damage");
@@ -2252,11 +2317,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (isCrit) _em.triggerHitStop();
       if (newHp === 0) {
         _em.triggerDeath(String(enemyId), enemy.x, enemy.y);
-        setEnemies((prev) => prev.filter((e) => e.id !== enemyId));
+        removeCombatant(combatantStoreCtx, enemyId);
+        dumpStateSync("kill", combatantStoreCtx);
       }
       return dmg;
     },
-    [enemies, getStatModifier, logBattleEntry],
+    [
+      enemies,
+      getStatModifier,
+      logBattleEntry,
+      combatantStoreCtx,
+      activeMapModifierTypes,
+      characterStats.hp,
+    ],
   );
 
   // EXP6: Handle item use from BuffShop
@@ -3143,6 +3216,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         dungeon: ["#4a0000", "#8b0000", "#cc0000"],
         boss: ["#1a0033", "#5b1fa0", "#9333ea"],
         bossRush: ["#1a0040", "#9900cc", "#ff66ff"],
+        progression: ["#2a1a00", "#665500", "#ffcc00"],
         rest: ["#d0d0d0", "#e8e8e8", "#f8f8f8"],
         white: ["#f5f5f5", "#ffffff", "#e8e8e8"],
       };
@@ -3930,6 +4004,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       isRestPortal?: boolean;
       isBossRushPortal?: boolean;
       isWhitePortal?: boolean;
+      isProgressionPortal?: boolean;
     }[];
     let attempts = 0;
     let maxAttempts = 50;
@@ -4224,6 +4299,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             y: rushCandidate.y,
             color: "bossRush" as const,
             isBossRushPortal: true,
+            animationOffset: Math.random() * Math.PI * 2,
+          });
+        }
+      }
+
+      // ── S2: RUN PROGRESSION PORTAL ──────────────────────────────────────
+      // During any active run (bossRush or dungeon) spawn exactly one locked
+      // progression portal per room. It is ALWAYS visible (locked visual while
+      // the room is uncleared, unlocked once isProgressionPortalUnlocked returns
+      // true) so the player understands the goal. It is intentionally NOT
+      // gated by shouldSuppressPortal — that helper suppresses the progression
+      // kind while the map is uncleared, but we want the locked portal shown.
+      // The step-time lock check (isProgressionPortalUnlocked) prevents the
+      // player from advancing before the room is cleared.
+      if (_s2RunMode !== "none") {
+        const usedPositions3 = new Set(
+          portals.map((p: any) => `${p.x},${p.y}`),
+        );
+        const progressionCandidate = borderCandidates.find(
+          (c: any) => !usedPositions3.has(`${c.x},${c.y}`),
+        );
+        if (progressionCandidate) {
+          tiles[progressionCandidate.y][progressionCandidate.x] = "portal";
+          portals.push({
+            x: progressionCandidate.x,
+            y: progressionCandidate.y,
+            color: PROGRESSION_PORTAL_KIND as any,
+            isProgressionPortal: true,
             animationOffset: Math.random() * Math.PI * 2,
           });
         }
@@ -5212,7 +5315,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         !portal.isDungeonEntry;
       if (
         _s2IsProgressionPortal &&
-        isProgressionLocked(_s2InteractRunMode, enemies.length === 0)
+        isProgressionLocked(
+          _s2InteractRunMode,
+          activeHostilesRemaining(combatantsRef.current) === 0,
+        )
       ) {
         logBattleEntry(
           "🔒 The way forward is sealed until every foe falls.",
@@ -5227,6 +5333,85 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         lastPortalRef.current = { x: portal.x, y: portal.y };
         bossRushActiveRef.current = true;
         startBossRush();
+        setTransitionInProgress(false);
+        transitionInProgressRef.current = false;
+        return;
+      }
+      // Boss Rush room-advance: stepping into a progression portal during a
+      // boss rush advances to the next room once the current room is cleared.
+      // The portal stays locked (handled above) until activeHostilesRemaining
+      // is zero. This replaces the old auto-advance in handleBossRushRoomClear.
+      if (
+        bossRushActiveRef.current &&
+        (portal.isProgressionPortal ||
+          portal.kind === PROGRESSION_PORTAL_KIND) &&
+        activeHostilesRemaining(combatantsRef.current) === 0
+      ) {
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        const nextRoomIndex = bossRushState.currentRoom + 1;
+        const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
+        if (nextRoomDef) {
+          void advanceBossRushRoom();
+          const { map: nextMap, spawnPosition } = generateRandomMap();
+          if (nextMap) {
+            setCurrentMap(nextMap);
+            if (spawnPosition) {
+              setPlayerPosition({ ...spawnPosition });
+            }
+            const newEnemies: any[] = [];
+            if (nextRoomDef.boss1Id) {
+              newEnemies.push({
+                id: `boss-rush-${nextRoomIndex}-0`,
+                pieceType: nextRoomDef.boss1Name || "Boss 1",
+                x: 4,
+                y: 5,
+                level: characterStats.level + 2,
+                hp: 100,
+                maxHp: 100,
+                ap: 6,
+                mp: 3,
+                initiative: 10,
+                attack: 20,
+                defense: 10,
+                resistance: 5,
+                spells: [],
+                isBoss: true,
+                isLeader: false,
+                behavior: "aggressive",
+                family: "boss",
+                statusEffects: [],
+                activeEffects: [],
+              });
+            }
+            if (nextRoomDef.boss2Id) {
+              newEnemies.push({
+                id: `boss-rush-${nextRoomIndex}-1`,
+                pieceType: nextRoomDef.boss2Name || "Boss 2",
+                x: 6,
+                y: 5,
+                level: characterStats.level + 2,
+                hp: 100,
+                maxHp: 100,
+                ap: 6,
+                mp: 3,
+                initiative: 10,
+                attack: 20,
+                defense: 10,
+                resistance: 5,
+                spells: [],
+                isBoss: true,
+                isLeader: false,
+                behavior: "aggressive",
+                family: "boss",
+                statusEffects: [],
+                activeEffects: [],
+              });
+            }
+            syncCombatants(combatantStoreCtx, newEnemies, {
+              resetBattle: true,
+            });
+          }
+        }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
         return;
@@ -5660,7 +5845,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         });
       }
-      setEnemies(newEnemies);
+      syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
       // M2 FIX: Cloud cluster generation deferred into the portal timer callback
       // so it never blocks the synchronous portal-transition path on mobile
       // (synchronous cloud gen was pushing transitions past 16ms → dropped frames).
@@ -5690,48 +5875,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           lastPortalRef.current = null;
         }, 1500); // H4: 1500ms guard prevents immediate re-entry when spawning on a portal
       }, 100);
-      // Apply map modifiers on portal transition — TRUE RANDOM:
-      // Roll 1: Does ANY modifier trigger? (use globalTriggerChance, default 20%)
-      // Roll 2: If yes, pick one modifier by weight, then 50% chance of a SECOND one
-      const globalChance =
-        mapModifiers.find((m) => m.globalTriggerChance != null)
-          ?.globalTriggerChance ?? 20;
-      const secondChance =
-        mapModifiers.find((m) => m.secondModifierChance != null)
-          ?.secondModifierChance ?? 50;
-      const activeModsList = mapModifiers.filter((m) => m.active);
-      const triggered = new Set<string>();
-      if (activeModsList.length > 0 && Math.random() * 100 < globalChance) {
-        // Pick first modifier by weight (triggerChance as weight)
-        const totalWeight = activeModsList.reduce(
-          (s, m) => s + (m.triggerChance ?? 20),
-          0,
-        );
-        let r = Math.random() * totalWeight;
-        let first: (typeof activeModsList)[0] | null = null;
-        for (const m of activeModsList) {
-          r -= m.triggerChance ?? 20;
-          if (r <= 0) {
-            first = m;
-            break;
-          }
-        }
-        if (!first)
-          first =
-            activeModsList[Math.floor(Math.random() * activeModsList.length)];
-        triggered.add(first.modifierType);
-        // Roll 2: chance of a second modifier
-        if (activeModsList.length > 1 && Math.random() * 100 < secondChance) {
-          const remaining = activeModsList.filter(
-            (m) => m.modifierType !== first!.modifierType,
-          );
-          if (remaining.length > 0) {
-            const second =
-              remaining[Math.floor(Math.random() * remaining.length)];
-            triggered.add(second.modifierType);
-          }
-        }
-      }
+      // Apply map modifiers on portal transition — delegated to the
+      // map-modifier registry (engine/mapModifiers.ts). The registry performs
+      // the same two-roll trigger logic (global chance → weighted first pick →
+      // second-modifier chance) and returns the set of activated modifier ids.
+      const triggered = mapModifierRegistry.rollActiveModifiers(mapModifiers, {
+        log: (msg: string) => logDebugInfo("MODIFIER", msg),
+        rng: Math.random,
+      });
       setActiveMapModifierTypes(triggered);
       // EXP5: Apply hazard tiles based on active modifiers (lava/ice/spikes)
       // These add to whatever random hazards were already seeded during map generation.
@@ -5812,9 +5963,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       if (triggered.size > 0) {
         const names = [...triggered]
-          .map(
-            (t) => activeModsList.find((m) => m.modifierType === t)?.name ?? t,
-          )
+          .map((t) => MAP_MODIFIERS.find((m) => m.id === t)?.name ?? t)
           .join(" + ");
         logBattleEntry(
           `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
@@ -5981,90 +6130,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // H3: Only call setEnemies if at least one enemy actually changed position/state.
     // Previously setEnemies was called unconditionally on every frame, causing
     // a cascade of React re-renders even when all enemies were stationary.
-    setEnemies((prevEnemies) => {
-      let hasChanged = false;
-      const nextEnemies = prevEnemies.map((enemy) => {
-        // Skip if enemy is already moving
-        if (enemy.isMoving) {
-          // Check if current movement is complete
-          const elapsed = currentTime - enemy.movementStartTime!;
-          const stepDuration =
-            enemy.movementSpeed! / Math.max(enemy.movementPath.length, 1);
-          const targetStepIndex = Math.floor(elapsed / stepDuration);
-          if (targetStepIndex >= enemy.movementPath.length) {
-            // Movement complete - update position and reset movement state
-            const finalPosition =
-              enemy.movementPath[enemy.movementPath.length - 1];
-            const nextMoveDelay =
-              Math.random() *
-                (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
-              ENEMY_MOVE_INTERVAL_MIN;
-            hasChanged = true;
-            return {
-              ...enemy,
-              x: finalPosition.x,
-              y: finalPosition.y,
-              isMoving: false,
-              movementPath: [],
-              currentStepIndex: 0,
-              nextMoveTime: currentTime + nextMoveDelay,
-              lastMoveTime: currentTime,
-              wanderTarget: null,
-            };
-          }
-          if (targetStepIndex > enemy.currentStepIndex!) {
-            // Update current step and position during movement
-            const newPosition = enemy.movementPath[targetStepIndex];
-            // Update view direction based on movement
-            let newView = enemy.currentView;
-            if (targetStepIndex > 0) {
-              const prev = enemy.movementPath[targetStepIndex - 1];
-              const current = enemy.movementPath[targetStepIndex];
-              if (current.x > prev.x) newView = "right";
-              else if (current.x < prev.x) newView = "left";
-              else if (current.y > prev.y) newView = "front";
-              else if (current.y < prev.y) newView = "back";
-            }
-            hasChanged = true;
-            return {
-              ...enemy,
-              x: newPosition.x,
-              y: newPosition.y,
-              currentView: newView,
-              currentStepIndex: targetStepIndex,
-            };
-          }
-          return enemy;
-        }
-        // Check if it's time to start a new movement
-        if (currentTime >= enemy.nextMoveTime && enemy.isWandering) {
-          // Generate a random target within movement range
-          const target = generateRandomWalkablePosition(
-            currentMap.tiles,
-            enemy.x,
-            enemy.y,
-            enemy.movementRange!,
-          );
-
-          if (target) {
-            // Find path to target
-            const path = findPath({ x: enemy.x, y: enemy.y }, target);
-
-            if (path.length > 0) {
-              // Start movement
-              hasChanged = true;
-              return {
-                ...enemy,
-                isMoving: true,
-                movementPath: path,
-                currentStepIndex: 0,
-                movementStartTime: currentTime,
-                wanderTarget: target,
-              };
-            }
-          }
-
-          // If no valid target found, schedule next attempt
+    let hasChanged = false;
+    const nextEnemies = enemies.map((enemy) => {
+      // Skip if enemy is already moving
+      if (enemy.isMoving) {
+        // Check if current movement is complete
+        const elapsed = currentTime - enemy.movementStartTime!;
+        const stepDuration =
+          enemy.movementSpeed! / Math.max(enemy.movementPath.length, 1);
+        const targetStepIndex = Math.floor(elapsed / stepDuration);
+        if (targetStepIndex >= enemy.movementPath.length) {
+          // Movement complete - update position and reset movement state
+          const finalPosition =
+            enemy.movementPath[enemy.movementPath.length - 1];
           const nextMoveDelay =
             Math.random() *
               (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
@@ -6072,16 +6150,93 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           hasChanged = true;
           return {
             ...enemy,
+            x: finalPosition.x,
+            y: finalPosition.y,
+            isMoving: false,
+            movementPath: [],
+            currentStepIndex: 0,
             nextMoveTime: currentTime + nextMoveDelay,
+            lastMoveTime: currentTime,
+            wanderTarget: null,
           };
         }
-
+        if (targetStepIndex > enemy.currentStepIndex!) {
+          // Update current step and position during movement
+          const newPosition = enemy.movementPath[targetStepIndex];
+          // Update view direction based on movement
+          let newView = enemy.currentView;
+          if (targetStepIndex > 0) {
+            const prev = enemy.movementPath[targetStepIndex - 1];
+            const current = enemy.movementPath[targetStepIndex];
+            if (current.x > prev.x) newView = "right";
+            else if (current.x < prev.x) newView = "left";
+            else if (current.y > prev.y) newView = "front";
+            else if (current.y < prev.y) newView = "back";
+          }
+          hasChanged = true;
+          return {
+            ...enemy,
+            x: newPosition.x,
+            y: newPosition.y,
+            currentView: newView,
+            currentStepIndex: targetStepIndex,
+          };
+        }
         return enemy;
-      });
-      // H3: skip React setState if nothing changed
-      return hasChanged ? nextEnemies : prevEnemies;
+      }
+      // Check if it's time to start a new movement
+      if (currentTime >= enemy.nextMoveTime && enemy.isWandering) {
+        // Generate a random target within movement range
+        const target = generateRandomWalkablePosition(
+          currentMap.tiles,
+          enemy.x,
+          enemy.y,
+          enemy.movementRange!,
+        );
+
+        if (target) {
+          // Find path to target
+          const path = findPath({ x: enemy.x, y: enemy.y }, target);
+
+          if (path.length > 0) {
+            // Start movement
+            hasChanged = true;
+            return {
+              ...enemy,
+              isMoving: true,
+              movementPath: path,
+              currentStepIndex: 0,
+              movementStartTime: currentTime,
+              wanderTarget: target,
+            };
+          }
+        }
+
+        // If no valid target found, schedule next attempt
+        const nextMoveDelay =
+          Math.random() * (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
+          ENEMY_MOVE_INTERVAL_MIN;
+        hasChanged = true;
+        return {
+          ...enemy,
+          nextMoveTime: currentTime + nextMoveDelay,
+        };
+      }
+
+      return enemy;
     });
-  }, [showShop, currentMap, generateRandomWalkablePosition, findPath]);
+    // H3: skip store update if nothing changed
+    if (hasChanged) {
+      syncCombatants(combatantStoreCtx, nextEnemies);
+    }
+  }, [
+    showShop,
+    currentMap,
+    generateRandomWalkablePosition,
+    findPath,
+    combatantStoreCtx,
+    enemies,
+  ]);
 
   // BFS flood-fill for MP reachable tiles
   const getMpReachableTiles = useCallback((): Set<string> => {
@@ -6095,8 +6250,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ];
     visited.set(`${playerPosition.x},${playerPosition.y}`, 0);
     const reachable = new Set<string>();
-    // Slime Flood and Frozen Terrain both double movement cost
-    const moveCostPerTile = isSlimeFlood || isFrozenTerrain ? 2 : 1;
+    // Movement cost per tile — delegated to the modifier registry (Slime
+    // Flood / Frozen Terrain double the cost via their onMpCost hooks).
+    const moveCostPerTile = mapModifierRegistry.applyMpCost(
+      1,
+      activeMapModifierTypes,
+      { log: (msg: string) => logDebugInfo("MODIFIER", msg), rng: Math.random },
+    );
     while (queue.length > 0) {
       const current = queue.shift()!;
       const nextSteps = current.steps + moveCostPerTile;
@@ -6126,13 +6286,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
     }
     return reachable;
-  }, [
-    currentMap,
-    playerPosition,
-    currentBattleMp,
-    isSlimeFlood,
-    isFrozenTerrain,
-  ]);
+  }, [currentMap, playerPosition, currentBattleMp, activeMapModifierTypes]);
 
   // Get tiles in spell range (Chebyshev) for blue highlights
   const getSpellRangeTiles = useCallback((): Set<string> => {
@@ -6939,10 +7093,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         | { kind: "player"; depth: number };
       const drawQueue: DrawEntity[] = [];
 
-      for (let i = 0; i < enemies.length; i++) {
-        const e = enemies[i];
+      for (let i = 0; i < combatantsRef.current.length; i++) {
+        const e = combatantsRef.current[i];
         if (!isAliveCombatant(e)) continue;
-        drawQueue.push({ kind: "enemy", idx: i, depth: e.x + e.y });
+        drawQueue.push({
+          kind: "enemy",
+          idx: i,
+          depth: (e.x ?? 0) + (e.y ?? 0),
+        });
       }
       drawQueue.push({
         kind: "player",
@@ -7000,8 +7158,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           continue;
         }
         if (renderItem.kind === "enemy") {
-          const enemy = enemies[renderItem.idx];
-          const screenPos = gridToScreen(enemy.x, enemy.y);
+          const enemy = combatantsRef.current[renderItem.idx];
+          const screenPos = gridToScreen(enemy.x ?? 0, enemy.y ?? 0);
 
           // Sprite drop shadow
           {
@@ -7033,26 +7191,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ctx.shadowBlur = 8;
             ctx.globalAlpha = 0.8 + 0.2 * Math.sin(Date.now() * 0.01);
           }
-          drawCombatant(ctx, enemy, screenPos, enemy.currentView, {
-            getBossPattern: getBossPixelPattern,
-            getFamilyPattern: getEnemyFamilyPixelPattern as (
-              family: string,
-            ) => number[][],
-            getFamilyColors: getEnemyFamilyColors as (
-              family: string,
-            ) => Record<number, string>,
-            drawPattern: drawPixelPattern,
-            characterYOffset: CHARACTER_Y_OFFSET,
-          });
+          drawCombatant(
+            ctx,
+            enemy as unknown as CombatantEntity,
+            screenPos,
+            enemy.currentView as ViewDirection | undefined,
+            {
+              getBossPattern: getBossPixelPattern,
+              getFamilyPattern: getEnemyFamilyPixelPattern as (
+                family: string,
+              ) => number[][],
+              getFamilyColors: getEnemyFamilyColors as (
+                family: string,
+              ) => Record<number, string>,
+              drawPattern: drawPixelPattern,
+              characterYOffset: CHARACTER_Y_OFFSET,
+            },
+          );
           if (enemy.isMoving) ctx.restore();
 
           const isLeader = leaderEnemyIdRef.current === enemy.id;
           // Enemy name label — name on first line, level on second line with color coding
           {
-            const enemyName = `${isLeader ? "\uD83D\uDC51 " : ""}${enemy.assignedName ?? enemy.pieceType.charAt(0).toUpperCase() + enemy.pieceType.slice(1)}`;
+            const enemyName = `${isLeader ? "\uD83D\uDC51 " : ""}${enemy.assignedName ?? (enemy.pieceType ?? "pawn").charAt(0).toUpperCase() + (enemy.pieceType ?? "pawn").slice(1)}`;
             const levelLabel = `L${enemy.level}`;
             const playerLvl = characterStats?.level ?? 1;
-            const levelDiff = enemy.level - playerLvl;
+            const levelDiff = (enemy.level ?? 1) - playerLvl;
             const levelColor =
               levelDiff <= 0
                 ? "#00e676"
@@ -7132,8 +7296,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ? computeDamage(
                   baseDmg,
                   spell.id,
-                  enemy,
-                  { x: enemy.x, y: enemy.y },
+                  enemy as unknown as Enemy,
+                  { x: enemy.x ?? 0, y: enemy.y ?? 0 },
                   spell.isPhysical || false,
                   false,
                   activeEffectsRef.current,
@@ -7434,7 +7598,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const dist =
         Math.abs(hoveredTile.x - playerPosition.x) +
         Math.abs(hoveredTile.y - playerPosition.y);
-      const mpCost = isSlimeFloodRef.current ? dist * 2 : dist;
+      const mpCost =
+        dist *
+        mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
+          log: (msg: string) => logDebugInfo("MODIFIER", msg),
+          rng: Math.random,
+        });
       if (
         dist > 0 &&
         currentMap.tiles[hoveredTile.y]?.[hoveredTile.x] === "floor"
@@ -7937,8 +8106,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           turnOrderRef.current,
         );
         turnOrderRef.current = turnOrder;
-        setEnemies((prev) => [...prev, summon as unknown as Enemy]);
-        setBattleEnemies((prev) => [...prev, summon as unknown as Enemy]);
+        const _newEnemies = [
+          ...combatantsRef.current,
+          summon as unknown as Enemy,
+        ];
+        syncCombatants(combatantStoreCtx, _newEnemies);
         setTurnOrder(turnOrder);
         logDebugInfo(
           "SUMMON",
@@ -8029,13 +8201,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (!target) return;
         const oldPlayerPos = { ...playerPosition };
         setPlayerPosition({ x: target.x, y: target.y });
-        setEnemies((prev: any[]) =>
-          prev.map((e: any) =>
-            e.id === targetEnemyId
-              ? { ...e, x: oldPlayerPos.x, y: oldPlayerPos.y }
-              : e,
-          ),
-        );
+        // Route the enemy position swap through the combatant store so the
+        // ref mirrors stay atomically in sync (replaces a setEnemies map).
+        updateCombatant(combatantStoreCtx, targetEnemyId, {
+          x: oldPlayerPos.x,
+          y: oldPlayerPos.y,
+        });
       },
       placeMark: (cell: { x: number; y: number }) => {
         markedTilesRef.current.add(`${cell.x},${cell.y}`);
@@ -8225,11 +8396,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             enemies,
             turnOrderRef.current,
           );
-        setEnemies(newEnemies);
-        setBattleEnemies(newEnemies);
-        // Keep battleEnemiesRef in sync synchronously so the next turn-advance
-        // gate (which reads battleEnemiesRef.current) sees the new summon.
-        battleEnemiesRef.current = newEnemies;
+        syncCombatants(combatantStoreCtx, newEnemies);
         setTurnOrder(newTurnOrder);
         turnOrderRef.current = newTurnOrder;
         {
@@ -8326,7 +8493,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (path.length === 0) return;
           // Slime Flood / Frozen Terrain: double movement cost per tile
           const moveCost =
-            isSlimeFlood || isFrozenTerrain ? path.length * 2 : path.length;
+            path.length *
+            mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
+              log: (msg: string) => logDebugInfo("MODIFIER", msg),
+              rng: Math.random,
+            });
           const cost = moveCost;
           if (cost > currentBattleMp) return;
           // Thorned Ground: damage for moving more than 2 tiles
@@ -8408,9 +8579,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           if (!spell) return;
           // Arcane Surge: spells cost 1 less AP (minimum 1)
-          const apCost = Math.max(
-            1,
-            Number(spell.apCost) - (isArcaneSurge ? 1 : 0),
+          const apCost = mapModifierRegistry.applyApCost(
+            Number(spell.apCost),
+            activeMapModifierTypes,
+            {
+              log: (msg: string) => logDebugInfo("MODIFIER", msg),
+              rng: Math.random,
+            },
           );
           if (currentBattleAp < apCost) return;
           castRuntimeRef.current.apCost = apCost;
@@ -8527,10 +8702,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       activeSpells,
       playerSpellContext,
       logBattleEntry,
-      isArcaneSurge,
+      activeMapModifierTypes,
       isThornedGround,
-      isFrozenTerrain,
-      isSlimeFlood,
       isVoidRift,
       voidRiftTile,
     ],
@@ -8630,9 +8803,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           if (!spell) return;
           // Arcane Surge: spells cost 1 less AP (minimum 1)
-          const apCost = Math.max(
-            1,
-            Number(spell.apCost) - (isArcaneSurge ? 1 : 0),
+          const apCost = mapModifierRegistry.applyApCost(
+            Number(spell.apCost),
+            activeMapModifierTypes,
+            {
+              log: (msg: string) => logDebugInfo("MODIFIER", msg),
+              rng: Math.random,
+            },
           );
           if (currentBattleAp < apCost) return;
           castRuntimeRef.current.apCost = apCost;
@@ -8753,7 +8930,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       getSpellRangeTiles,
       activeSpells,
       playerSpellContext,
-      isArcaneSurge,
+      activeMapModifierTypes,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -9394,7 +9571,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ...activeSpells.filter((s) => s && s.id !== physicalAttackSpell.id),
       ];
       flushSync(() => {
-        setEnemies(enemiesWithSpells);
+        syncCombatants(combatantStoreCtx, enemiesWithSpells);
+        mapModifierRegistry.applyBattleStart(
+          combatantsRef.current,
+          activeMapModifierTypes,
+        );
         setEnragedEnemies(new Set());
         setEnemyHpMap(hpMap);
         setTurnOrder(orderWithLeader);
@@ -9613,8 +9794,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (aiGenerationRef.current !== _battleEndGen) return; // concurrent battle end guard
         if (victory) {
           // Remove all enemies from map at the START of the victory branch
-          // (before recap/rewards/achievements — see #290 ordering below)
-          setEnemies((prev) => despawnSummons(prev));
+          // (before recap/rewards/achievements — see #290 ordering below).
+          // Routed through the combatant store so ref mirrors stay in sync.
+          syncCombatants(
+            combatantStoreCtx,
+            despawnSummons(combatantsRef.current),
+          );
 
           // Apply boost multiplier + boss XP multiplier
           const activeBossConfForXP = currentBossConfigRef.current;
@@ -9666,9 +9851,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               doka: Number(enemy.level) * multiplier,
             });
           }
-          const rawDoka = dokaBreakdown.reduce(
+          let rawDoka = dokaBreakdown.reduce(
             (sum, d) => sum + Number(d.doka),
             0,
+          );
+          rawDoka = mapModifierRegistry.applyRewardMultiplier(
+            rawDoka,
+            activeMapModifierTypes,
+            {
+              log: (msg: string) => logDebugInfo("MODIFIER", msg),
+              rng: Math.random,
+            },
           );
           // EXP8: Apply dungeon chain Doka multiplier (1.5x-4x based on depth)
           const chainMult = dungeonDokaMultiplierRef.current;
@@ -9869,76 +10062,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (battleEndedRef.current) return;
     battleEndedRef.current = true;
 
-    // ── 1. ADVANCE ROOM FIRST AND UNCONDITIONALLY ──
+    // ── 1. ROOM CLEAR — NO AUTO-ADVANCE ──
+    // The progression portal (spawned by the map generator) now drives room
+    // advancement. handleBossRushRoomClear only records the cleared room and
+    // unlocks the portal; the player steps into the portal to advance. The
+    // final room still completes the run and opens the white sanctuary portal.
     const currentRoomIndex = bossRushState.currentRoom;
     const _currentRoom = BOSS_RUSH_ROOMS[currentRoomIndex];
 
-    // Advance room progress
-    void advanceBossRushRoom();
-
-    // Generate next room map unconditionally
     const nextRoomIndex = bossRushState.currentRoom + 1;
     const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
-    if (nextRoomDef) {
-      const { map: nextMap, spawnPosition } = generateRandomMap();
-      if (nextMap) {
-        setCurrentMap(nextMap);
-        if (spawnPosition) {
-          setPlayerPosition({ ...spawnPosition });
-        }
-        // Spawn bosses for this room
-        const newEnemies: any[] = [];
-        if (nextRoomDef.boss1Id) {
-          newEnemies.push({
-            id: `boss-rush-${nextRoomIndex}-0`,
-            pieceType: nextRoomDef.boss1Name || "Boss 1",
-            x: 4,
-            y: 5,
-            level: characterStats.level + 2,
-            hp: 100,
-            maxHp: 100,
-            ap: 6,
-            mp: 3,
-            initiative: 10,
-            attack: 20,
-            defense: 10,
-            resistance: 5,
-            spells: [],
-            isBoss: true,
-            isLeader: false,
-            behavior: "aggressive",
-            family: "boss",
-            statusEffects: [],
-            activeEffects: [],
-          });
-        }
-        if (nextRoomDef.boss2Id) {
-          newEnemies.push({
-            id: `boss-rush-${nextRoomIndex}-1`,
-            pieceType: nextRoomDef.boss2Name || "Boss 2",
-            x: 6,
-            y: 5,
-            level: characterStats.level + 2,
-            hp: 100,
-            maxHp: 100,
-            ap: 6,
-            mp: 3,
-            initiative: 10,
-            attack: 20,
-            defense: 10,
-            resistance: 5,
-            spells: [],
-            isBoss: true,
-            isLeader: false,
-            behavior: "aggressive",
-            family: "boss",
-            statusEffects: [],
-            activeEffects: [],
-          });
-        }
-        setEnemies(newEnemies);
-      }
-    } else {
+    if (!nextRoomDef) {
       // Final boss-rush room cleared — complete the run and open a white
       // gateway to sanctuary. Completion (unlike fleeing/death) keeps rewards;
       // no death penalty, no Death Realm reset.
@@ -9965,6 +10099,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       logBattleEntry("A white gateway to sanctuary opens…", "white");
     }
+    // Non-final room: leave the progression portal unlocked. The portal step
+    // (advanceBossRushRoom + map regen) fires when the player steps into it.
 
     // ── 2. REWARDS + POPUP (non-blocking, wrapped in try/catch) ──
     try {
@@ -10589,7 +10725,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable callback
   useEffect(() => {
-    if (inBattle && activeHostilesRemaining(enemies) === 0) {
+    if (inBattle && activeHostilesRemaining(combatantsRef.current) === 0) {
+      dumpStateSync("victory-gate", combatantStoreCtx);
       // S2: When the last enemy on a run map dies, announce that the way
       // forward is now open. Only fires inside an active dungeon or boss-rush
       // run — free exploration has no progression lock to lift.
@@ -10608,11 +10745,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Filter out LIVING summons (isSummon && hp>0) so a surviving summon is
       // NOT counted as a defeated enemy — keeps expGained from being inflated
       // by the summon's level. A dead summon (killed during battle) still counts.
-      const defeatedList = _battleEnemies
+      const defeatedList = deriveBattleEnemies(combatantStoreCtx)
         .filter((e) => !(e.isSummon && e.hp > 0))
         .map((e) => ({
-          name: e.pieceType,
-          level: e.level,
+          name: e.pieceType ?? "unknown",
+          level: e.level ?? 1,
         }));
       const expGained =
         defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) ||
@@ -10777,6 +10914,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
             setBattlePhase("player");
             // Process player's active effects (DoT, duration decrement)
+            mapModifierRegistry.applyTurnStart(
+              combatantsRef.current.find((c) => (c as any).id === "player") ||
+                combatantsRef.current[0],
+              activeMapModifierTypes,
+              {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              },
+            );
             processActiveEffects("player");
             spellCooldownsRef.current.forEach((cd, id) => {
               if (cd > 1) spellCooldownsRef.current.set(id, cd - 1);
@@ -10892,6 +11038,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             });
             setBattlePhase("enemy");
             // Process this enemy's active effects
+            mapModifierRegistry.applyTurnStart(
+              nextCombatant,
+              activeMapModifierTypes,
+              {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              },
+            );
             processActiveEffects(nextCombatant.id);
             // Plague Zone on enemies too
             if (isPlagueZone) {
@@ -10909,6 +11063,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           return nextIdx;
         });
+        if (currentTurnIndexRef.current === 0) {
+          return mapModifierRegistry.applyTurnOrderSort(
+            prevOrder,
+            activeMapModifierTypes,
+          );
+        }
         return prevOrder;
       });
     }); // end flushSync
@@ -10973,15 +11133,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // ─── Enemy AI turn: spells + movement with HP-based strategy ────────────────
 
-  // Keep battleEnemiesRef in sync with _battleEnemies state so setTimeout
-  // callbacks inside the enemy AI turn always read fresh spell data.
-  useEffect(() => {
-    battleEnemiesRef.current = _battleEnemies;
-  }, [_battleEnemies]);
-
-  useEffect(() => {
-    enemiesRef.current = enemies;
-  }, [enemies]);
+  // NOTE: battleEnemiesRef / enemiesRef are now owned by the combatant store
+  // (combatantStoreCtx). The previous useEffect mirrors here clobbered the
+  // store's atomic assignments and re-introduced desync — they were removed
+  // as part of the store-unification pass.
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
   useEffect(() => {
@@ -11097,11 +11252,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 enemiesRef.current,
                 turnOrderRef.current,
               );
-            setEnemies(newEnemies);
-            setBattleEnemies(newEnemies);
+            syncCombatants(combatantStoreCtx, newEnemies);
             setTurnOrder(newTurnOrder);
             turnOrderRef.current = newTurnOrder;
-            enemiesRef.current = newEnemies;
           },
           isCellFree: (cell: { x: number; y: number }) =>
             !enemiesRef.current.some(
@@ -11173,11 +11326,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   enemiesRef.current,
                   turnOrderRef.current,
                 );
-              setEnemies(newEnemies);
-              setBattleEnemies(newEnemies);
+              syncCombatants(combatantStoreCtx, newEnemies, {
+                resetBattle: true,
+              });
               setTurnOrder(newTurnOrder);
               turnOrderRef.current = newTurnOrder;
-              enemiesRef.current = newEnemies;
             };
             // Invoke the same logic inline for the SpellContext caller.
             const unitDef: SummonUnitDef | undefined =
@@ -11226,11 +11379,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 enemiesRef.current,
                 turnOrderRef.current,
               );
-            setEnemies(newEnemies);
-            setBattleEnemies(newEnemies);
+            syncCombatants(combatantStoreCtx, newEnemies);
             setTurnOrder(newTurnOrder);
             turnOrderRef.current = newTurnOrder;
-            enemiesRef.current = newEnemies;
           },
         });
         // Build AI context for the summon (first-class AI combatant via decideSummonAction).
@@ -11372,35 +11523,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           summonCtx,
           executorHelpers,
         );
-        // Apply the executor's returned state to enemiesRef + setEnemies via
-        // the same direct-position-mutation pattern the enemy branch uses.
-        setEnemies((prev: any[]) =>
-          prev.map((e: any) =>
-            e.id === enemyId
-              ? {
-                  ...e,
-                  x: execResult.newPosition.x,
-                  y: execResult.newPosition.y,
-                  currentAp: execResult.currentAp,
-                  currentMp: execResult.currentMp,
-                  hp: execResult.hp,
-                }
-              : e,
-          ),
-        );
-        enemiesRef.current = enemiesRef.current.map((e: any) =>
-          e.id === enemyId
-            ? {
-                ...e,
-                x: execResult.newPosition.x,
-                y: execResult.newPosition.y,
-                currentAp: execResult.currentAp,
-                currentMp: execResult.currentMp,
-                hp: execResult.hp,
-              }
-            : e,
-        );
-        setBattleEnemies(enemiesRef.current);
+        // Apply the executor's returned state via the combatant store so the
+        // ref mirrors (enemiesRef/battleEnemiesRef) stay atomically in sync.
+        // Set AP/MP directly on the summon object (matching the pattern at
+        // lines 11166-11167) — updateCombatant's patch is Partial<Combatant>
+        // and does not accept currentAp/currentMp.
+        summonEnemy.currentAp = execResult.currentAp;
+        summonEnemy.currentMp = execResult.currentMp;
+        updateCombatant(combatantStoreCtx, enemyId, {
+          x: execResult.newPosition.x,
+          y: execResult.newPosition.y,
+          hp: execResult.hp,
+        });
         // Always advance the turn — no stalls.
         // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
         // useEffect gate (line ~10639) does not early-return on the next
@@ -11704,19 +11838,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 n.add(enemyId);
                 return n;
               });
-              setTurnOrder((prev) =>
-                prev
-                  .filter((c) => c.id !== allyT.id)
-                  .map((c) =>
-                    c.id === enemyId
-                      ? {
-                          ...c,
-                          maxHp: Math.round(c.maxHp * 6),
-                          hp: Math.round(c.hp * 6),
-                        }
-                      : c,
-                  ),
-              );
+              // Route the ally removal + enemy enrage through the unified
+              // combatant store: removeCombatant drops allyT from
+              // combatants/enemies/battleEnemies/turnOrder atomically;
+              // updateCombatant applies the 6× maxHp/hp boost to enemyId
+              // across all mirrors + setters. The store auto-syncs
+              // battleEnemies, so the explicit setBattleEnemies sync is
+              // redundant and removed.
+              removeCombatant(combatantStoreCtx, allyT.id);
+              updateCombatant(combatantStoreCtx, enemyId, {
+                maxHp: Math.round(
+                  (turnOrderRef.current.find((c) => c.id === enemyId)?.maxHp ??
+                    calcEnemyMaxHp(enemy.level)) * 6,
+                ),
+                hp: Math.round(
+                  (turnOrderRef.current.find((c) => c.id === enemyId)?.hp ??
+                    calcEnemyMaxHp(enemy.level)) * 6,
+                ),
+              });
               setEnemyHpMap((prev) => {
                 const n = { ...prev };
                 delete n[allyT.id];
@@ -11725,13 +11864,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 return n;
               });
-              // FIX #13: Also sync the 6× boost to _battleEnemies so the initiative
-              // strip portrait reflects the boosted state immediately.
-              setBattleEnemies((prevBE) =>
-                prevBE
-                  .filter((e) => e.id !== allyT.id)
-                  .map((e) => (e.id === enemyId ? { ...e, enraged: true } : e)),
-              );
               const afterFirst = prevEnemies.filter((e) => e.id !== allyT.id);
               const secondPool = afterFirst.filter((e) => e.id !== enemyId);
               if (secondPool.length > 0 && Math.random() < 0.15) {
@@ -11771,8 +11903,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       const curHp = h[sbT.id] ?? calcEnemyMaxHp(sbT.level);
                       const nHp = Math.max(0, curHp - sbDmg);
                       if (nHp <= 0) {
-                        setTurnOrder((to) => to.filter((c) => c.id !== sbT.id));
-                        setEnemies((p) => p.filter((e) => e.id !== sbT.id));
+                        // Route the double-betrayal kill through the unified
+                        // store: removeCombatant drops sbT from
+                        // combatants/enemies/battleEnemies/turnOrder
+                        // atomically (replaces the separate setTurnOrder +
+                        // setEnemies filters).
+                        removeCombatant(combatantStoreCtx, sbT.id);
                       }
                       return { ...h, [sbT.id]: nHp };
                     });
@@ -12030,10 +12166,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellCooldowns: {},
                   activeEffects: [],
                 }));
-                setEnemies((prev) => {
-                  const spawnSlots = Math.max(0, MAX_ENEMIES - prev.length);
-                  return [...prev, ...minionEnemies.slice(0, spawnSlots)];
-                });
+                const _spawnSlots = Math.max(
+                  0,
+                  MAX_ENEMIES - combatantsRef.current.length,
+                );
+                const _newMinionEnemies = [
+                  ...combatantsRef.current,
+                  ...minionEnemies.slice(0, _spawnSlots),
+                ];
+                syncCombatants(combatantStoreCtx, _newMinionEnemies);
                 const minionEntries: CombatantEntry[] = minionEnemies.map(
                   (m) => ({
                     id: m.id,
@@ -12062,9 +12203,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 pendingTimeoutsRef.current.delete(watchdog);
                 enemyTurnInProgressRef.current = false;
                 advanceTurnRef.current();
-                return prevEnemies.map((e) =>
-                  e.id === enemyId ? { ...e, x: newBossX, y: newBossY } : e,
-                );
+                updateCombatant(combatantStoreCtx, enemyId, {
+                  x: newBossX,
+                  y: newBossY,
+                });
+                return prevEnemies;
               }
               // Update boss position in enemies
               clearTimeout(watchdog);
@@ -12087,9 +12230,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }, 0);
               if (!cleanupRanRef.current)
                 pendingTimeoutsRef.current.add(bossAdvTimer);
-              return prevEnemies.map((e) =>
-                e.id === enemyId ? { ...e, x: newBossX, y: newBossY } : e,
-              );
+              updateCombatant(combatantStoreCtx, enemyId, {
+                x: newBossX,
+                y: newBossY,
+              });
+              return prevEnemies;
             }
             // No action from boss AI — skip turn
             clearTimeout(watchdog);
@@ -12867,7 +13012,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
     // Arcane Surge: spells cost 1 less AP (minimum 1) — matches handleCanvasClick
-    const apCost = Math.max(1, Number(spell.apCost) - (isArcaneSurge ? 1 : 0));
+    const apCost = mapModifierRegistry.applyApCost(
+      Number(spell.apCost),
+      activeMapModifierTypes,
+      { log: (msg: string) => logDebugInfo("MODIFIER", msg), rng: Math.random },
+    );
     if (currentBattleAp < apCost) return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
@@ -12972,7 +13121,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     battleActionMode,
     activeSpells,
     currentBattleAp,
-    isArcaneSurge,
+    activeMapModifierTypes,
     enemies,
     playerPosition,
     getEffectiveSpellRange,

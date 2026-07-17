@@ -299,3 +299,59 @@ export const ENEMY_SUMMONER_CHANCE_BASE = 0.12;
 export const ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE = 0.02;
 export const ENEMY_SUMMON_CAP = 2;
 export const ENEMY_SUMMON_COOLDOWN_TURNS = 2;
+
+// ═══ Map Modifier Constants (Section 3) ═══
+
+// Two-roll trigger defaults
+export const MAP_MODIFIER_GLOBAL_TRIGGER_CHANCE = 20;
+export const MAP_MODIFIER_TRIGGER_WEIGHT = 20;
+export const MAP_MODIFIER_SECOND_CHANCE = 50;
+
+// Slime Flood / Frozen Terrain
+export const MAP_MODIFIER_MP_COST_MULTIPLIER = 2;
+
+// Thorned Ground
+export const MAP_MODIFIER_THORN_DAMAGE_PER_TILE = 5;
+export const MAP_MODIFIER_THORN_THRESHOLD = 2;
+
+// Void Rift
+export const MAP_MODIFIER_VOID_RIFT_DAMAGE = 3;
+
+// Arcane Surge
+export const MAP_MODIFIER_ARCANE_SURGE_AP_DISCOUNT = 1;
+
+// Time Warp
+export const MAP_MODIFIER_TIME_WARP_TIMER = 15;
+export const MAP_MODIFIER_NORMAL_TIMER = 30;
+
+// Paper Windstorm
+export const MAP_MODIFIER_PAPER_WINDSTORM_RANGE_REDUCTION = 0.5;
+
+// Titan's Vigor
+export const MAP_MODIFIER_TITANS_VIGOR_HP_BONUS = 1000;
+export const MAP_MODIFIER_TITANS_VIGOR_MIN_MULTIPLIER = 1;
+export const MAP_MODIFIER_TITANS_VIGOR_MAX_MULTIPLIER = 5;
+
+// Arcane Overflow
+export const MAP_MODIFIER_ARCANE_OVERFLOW_AP_DISCOUNT = 1;
+export const MAP_MODIFIER_ARCANE_OVERFLOW_FAIL_BONUS = 10;
+
+// Glass Realm
+export const MAP_MODIFIER_GLASS_REALM_DAMAGE_MULTIPLIER = 2;
+
+// Mending Mist
+export const MAP_MODIFIER_MENDING_MIST_REGEN_PERCENT = 0.05;
+
+// Swift Winds
+export const MAP_MODIFIER_SWIFT_WINDS_MP_BONUS = 2;
+
+// Iron Curse
+export const MAP_MODIFIER_IRON_CURSE_RES_BONUS = 0.3;
+export const MAP_MODIFIER_IRON_CURSE_HEALING_MULTIPLIER = 0.5;
+
+// Vampiric Ground
+export const MAP_MODIFIER_VAMPIRIC_GROUND_LIFESTEAL_PERCENT = 0.15;
+
+// Doka Fever
+export const MAP_MODIFIER_DOKA_FEVER_ENEMY_HP_BONUS = 0.25;
+export const MAP_MODIFIER_DOKA_FEVER_REWARD_MULTIPLIER = 2;
