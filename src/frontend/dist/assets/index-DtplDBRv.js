@@ -46831,6 +46831,80 @@ const starterSpells = [
     areaRadius: 0
   }
 ];
+const BARRIER_LAYER_HEIGHT = 28;
+const BARRIER_LAYERS = 6;
+const FACE_MAIN = "rgba(42,36,51,0.96)";
+const FACE_TOP = "#4a4060";
+const FACE_LEFT = "rgba(74,64,96,0.6)";
+const OUTLINE = "rgba(120,100,160,0.9)";
+function drawBarrierLayer(ctx, x3, y2, tw, th, shade) {
+  const topH = BARRIER_LAYER_HEIGHT;
+  const halfW = tw / 2;
+  const halfH = th / 2;
+  const dim = shade * 0.28;
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.moveTo(x3 + halfW, y2 + halfH);
+  ctx.lineTo(x3 + halfW, y2 + halfH - topH);
+  ctx.lineTo(x3, y2 - topH);
+  ctx.lineTo(x3, y2);
+  ctx.closePath();
+  ctx.fillStyle = FACE_MAIN;
+  ctx.fill();
+  if (dim > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${dim})`;
+    ctx.fill();
+  }
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.moveTo(x3 - halfW, y2 + halfH);
+  ctx.lineTo(x3 - halfW, y2 + halfH - topH);
+  ctx.lineTo(x3, y2 - topH);
+  ctx.lineTo(x3, y2);
+  ctx.closePath();
+  ctx.fillStyle = FACE_LEFT;
+  ctx.fill();
+  if (dim > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${dim})`;
+    ctx.fill();
+  }
+  ctx.strokeStyle = "#111111";
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x3, y2 - topH);
+  ctx.lineTo(x3 + halfW, y2 + halfH - topH);
+  ctx.lineTo(x3, y2 + th - topH);
+  ctx.lineTo(x3 - halfW, y2 + halfH - topH);
+  ctx.closePath();
+  ctx.fillStyle = FACE_TOP;
+  ctx.fill();
+  if (dim > 0) {
+    ctx.fillStyle = `rgba(0,0,0,${dim})`;
+    ctx.fill();
+  }
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+function drawBarrierTower(ctx, isoX, isoY, tileW, tileH, _gridX, _gridY) {
+  ctx.save();
+  for (let layer = 0; layer < BARRIER_LAYERS; layer++) {
+    const layerY = isoY - layer * BARRIER_LAYER_HEIGHT;
+    const shade = layer / (BARRIER_LAYERS - 1);
+    drawBarrierLayer(ctx, isoX, layerY, tileW, tileH, shade);
+  }
+  ctx.restore();
+}
 function isActiveHostile(e) {
   if (e.hp <= 0) return false;
   if (e.isSummon && e.side !== "enemy") return false;
@@ -47304,6 +47378,38 @@ function seededRng(seed) {
 }
 function calcScaledDamage(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
   return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
+}
+function makeStackId(effect) {
+  return `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+function appendDotStack(effects, effect) {
+  const stackId = effect.stackId ?? effect.id ?? makeStackId(effect);
+  const stack = { ...effect, stackId };
+  return [...effects, stack];
+}
+function tickDotStacks(effects, targetId) {
+  let damage = 0;
+  const remaining = [];
+  const perStackDurations = [];
+  let stackCount = 0;
+  for (const eff of effects) {
+    if (eff.targetId !== targetId) {
+      remaining.push(eff);
+      continue;
+    }
+    if (eff.type !== "dot" || eff.dotDamagePerTurn === void 0 || eff.dotDamagePerTurn <= 0) {
+      remaining.push(eff);
+      continue;
+    }
+    stackCount += 1;
+    damage += eff.dotDamagePerTurn;
+    const newDur = eff.duration - 1;
+    perStackDurations.push(newDur);
+    if (newDur > 0) {
+      remaining.push({ ...eff, duration: newDur });
+    }
+  }
+  return { damage, remaining, perStackDurations, stackCount };
 }
 const DAMAGE_TTL_MS = 900;
 const DOKA_TTL_MS = 1e3;
@@ -48691,9 +48797,47 @@ function decideSummonHunter(summon, ctx, opponents, reachable, origin) {
     retreating: false
   };
 }
+function scoreAlly(ally, summon, archetype, action) {
+  const urgency = (1 - hpFrac(ally)) * ENEMY_UTILITY_WEIGHTS.wLowHp;
+  const threatKey = (ally.summonAI ?? "").toLowerCase() || "default";
+  const threatValue2 = ENEMY_THREAT_VALUES[threatKey] ?? ENEMY_THREAT_VALUES.default;
+  const threat = threatValue2 * ENEMY_UTILITY_WEIGHTS.wThreat;
+  const dist2 = chebyshev(
+    { x: summon.x, y: summon.y },
+    { x: ally.x, y: ally.y }
+  );
+  const maxDist = Math.max(1, WORLD_GRID_SIZE * 2);
+  const proximity = (1 - Math.min(1, dist2 / maxDist)) * ENEMY_UTILITY_WEIGHTS.wProximity;
+  const score = urgency + threat + proximity;
+  emitAllyTargetLog(summon, archetype, ally, action, score);
+  return score;
+}
+function emitAllyTargetLog(summon, archetype, allyTarget, action, score) {
+  logDebugInfo("SUMMON", "ally-target", {
+    summon: summon.pieceType,
+    archetype,
+    allyTarget: allyTarget.name,
+    allyId: allyTarget.id,
+    action,
+    score: Math.round(score * 100) / 100
+  });
+}
+function pickBestAlly(allies, summon, archetype, action) {
+  if (allies.length === 0) return null;
+  let best = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const ally of allies) {
+    const score = scoreAlly(ally, summon, archetype, action);
+    if (score > bestScore) {
+      bestScore = score;
+      best = ally;
+    }
+  }
+  return best;
+}
 function decideSummonGuardian(summon, ctx, allies, opponents, reachable, origin) {
   const kit = SUMMON_KIT.guardian;
-  const ward = allies.find((a2) => !a2.isSummon) ?? [...allies].sort((a2, b2) => hpFrac(a2) - hpFrac(b2))[0] ?? null;
+  const ward = pickBestAlly(allies, summon, "guardian", "shield");
   const shield = findKitSpell(kit[0], ctx);
   if (shield && ward) {
     const wardCell = { x: ward.x, y: ward.y };
@@ -48986,7 +49130,10 @@ function decideSummonHealer(summon, ctx, allies, opponents, reachable, origin) {
   const kit = SUMMON_KIT.healer;
   const healSpell = findKitSpell(kit[0], ctx);
   const rallySpell = findKitSpell(kit[1], ctx);
-  const wounded = allies.filter((a2) => hpFrac(a2) < ENEMY_HEAL_ALLY_THRESHOLD_PCT).sort((a2, b2) => hpFrac(a2) - hpFrac(b2))[0];
+  const woundedCandidates = allies.filter(
+    (a2) => hpFrac(a2) < ENEMY_HEAL_ALLY_THRESHOLD_PCT
+  );
+  const wounded = pickBestAlly(woundedCandidates, summon, "healer", "heal");
   if (wounded && healSpell) {
     const dist2 = chebyshev(origin, { x: wounded.x, y: wounded.y });
     if (dist2 <= Number(healSpell.range)) {
@@ -49022,7 +49169,7 @@ function decideSummonHealer(summon, ctx, allies, opponents, reachable, origin) {
       retreating: false
     };
   }
-  const ward = allies.find((a2) => !a2.isSummon) ?? [...allies].sort((a2, b2) => hpFrac(a2) - hpFrac(b2))[0] ?? null;
+  const ward = pickBestAlly(allies, summon, "healer", "rally");
   if (rallySpell && ward) {
     const dist2 = chebyshev(origin, { x: ward.x, y: ward.y });
     if (dist2 <= Number(rallySpell.range)) {
@@ -49222,6 +49369,202 @@ function applyVoidTiles$1(tilesArr, arch, vt, prot, mw, mh) {
   if (!checkVoidConnectivity(tilesArr, vt, mw, mh)) {
     vt.clear();
   }
+}
+const REACH_DIRS = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1]
+];
+function isWalkable(tiles, vt, x3, y2, w2, h2) {
+  var _a3;
+  if (x3 < 0 || y2 < 0 || x3 >= w2 || y2 >= h2) return false;
+  const t = (_a3 = tiles[y2]) == null ? void 0 : _a3[x3];
+  if (t === "wall") return false;
+  if (vt.has(`${x3},${y2}`)) return false;
+  return true;
+}
+function floodFillReachable(tiles, vt, start, w2, h2) {
+  const visited = /* @__PURE__ */ new Set();
+  if (!isWalkable(tiles, vt, start.x, start.y, w2, h2)) return visited;
+  const q2 = [start];
+  visited.add(`${start.x},${start.y}`);
+  while (q2.length > 0) {
+    const cur = q2.shift();
+    for (const d2 of REACH_DIRS) {
+      const nx = cur.x + d2[0];
+      const ny = cur.y + d2[1];
+      const k2 = `${nx},${ny}`;
+      if (visited.has(k2)) continue;
+      if (!isWalkable(tiles, vt, nx, ny, w2, h2)) continue;
+      visited.add(k2);
+      q2.push({ x: nx, y: ny });
+    }
+  }
+  return visited;
+}
+function bfsCarvePath(tiles, vt, start, targetSet, w2, h2) {
+  var _a3, _b3, _c2, _d2;
+  const visited = /* @__PURE__ */ new Set();
+  const parent = /* @__PURE__ */ new Map();
+  const startKey = `${start.x},${start.y}`;
+  if (start.x < 0 || start.y < 0 || start.x >= w2 || start.y >= h2 || vt.has(startKey))
+    return null;
+  const floorQ = [];
+  const wallQ = [];
+  if (((_a3 = tiles[start.y]) == null ? void 0 : _a3[start.x]) === "wall") {
+    wallQ.push(start);
+  } else {
+    floorQ.push(start);
+  }
+  visited.add(startKey);
+  parent.set(startKey, null);
+  let foundKey = null;
+  while (floorQ.length > 0 || wallQ.length > 0) {
+    const cur = floorQ.length > 0 ? floorQ.shift() : wallQ.shift();
+    const ck = `${cur.x},${cur.y}`;
+    if (targetSet.has(ck) && ck !== startKey) {
+      foundKey = ck;
+      break;
+    }
+    for (const d2 of REACH_DIRS) {
+      const nx = cur.x + d2[0];
+      const ny = cur.y + d2[1];
+      const nk = `${nx},${ny}`;
+      if (visited.has(nk)) continue;
+      if (nx < 0 || ny < 0 || nx >= w2 || ny >= h2) continue;
+      if (vt.has(nk)) continue;
+      visited.add(nk);
+      parent.set(nk, cur);
+      if (((_b3 = tiles[ny]) == null ? void 0 : _b3[nx]) === "wall") {
+        wallQ.push({ x: nx, y: ny });
+      } else {
+        floorQ.push({ x: nx, y: ny });
+      }
+    }
+  }
+  if (foundKey === null) return null;
+  const carve = [];
+  let curKey = foundKey;
+  while (curKey !== null && curKey !== startKey) {
+    const p2 = curKey.split(",");
+    const px = Number(p2[0]);
+    const py = Number(p2[1]);
+    if (((_c2 = tiles[py]) == null ? void 0 : _c2[px]) === "wall") {
+      carve.push({ x: px, y: py });
+    }
+    const par = parent.get(curKey);
+    if (!par) break;
+    curKey = `${par.x},${par.y}`;
+  }
+  if (((_d2 = tiles[start.y]) == null ? void 0 : _d2[start.x]) === "wall") {
+    carve.push({ x: start.x, y: start.y });
+  }
+  return carve;
+}
+function nearestReachableCell(target, reachable, w2, h2) {
+  let best = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (const k2 of reachable) {
+    const p2 = k2.split(",");
+    const rx = Number(p2[0]);
+    const ry = Number(p2[1]);
+    if (rx < 0 || ry < 0 || rx >= w2 || ry >= h2) continue;
+    const dist2 = Math.max(Math.abs(rx - target.x), Math.abs(ry - target.y));
+    if (dist2 < bestDist) {
+      bestDist = dist2;
+      best = { x: rx, y: ry };
+    }
+  }
+  return best;
+}
+function ensureReachability(tiles, voidTiles, spawns, playerSpawn, portal, w2, h2) {
+  var _a3, _b3, _c2;
+  const out = tiles.map((row) => row ? row.slice() : []);
+  const vt = voidTiles;
+  const outSpawns = spawns.map((s2) => ({
+    x: s2.x,
+    y: s2.y
+  }));
+  let reachable = floodFillReachable(out, vt, playerSpawn, w2, h2);
+  if (reachable.size === 0) {
+    const alt = nearestReachableCell(playerSpawn, /* @__PURE__ */ new Set(), w2, h2);
+    let fallback = alt;
+    if (!fallback) {
+      outerScan: for (let y2 = 0; y2 < h2; y2++) {
+        for (let x3 = 0; x3 < w2; x3++) {
+          if (isWalkable(out, vt, x3, y2, w2, h2)) {
+            fallback = { x: x3, y: y2 };
+            break outerScan;
+          }
+        }
+      }
+    }
+    if (fallback) {
+      reachable = floodFillReachable(out, vt, fallback, w2, h2);
+    } else {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = playerSpawn.x + dx;
+          const ny = playerSpawn.y + dy;
+          if (nx >= 0 && ny >= 0 && nx < w2 && ny < h2 && !vt.has(`${nx},${ny}`)) {
+            out[ny][nx] = "floor";
+          }
+        }
+      }
+      reachable = floodFillReachable(out, vt, playerSpawn, w2, h2);
+    }
+  }
+  for (let i = 0; i < outSpawns.length; i++) {
+    const sp = outSpawns[i];
+    const key2 = `${sp.x},${sp.y}`;
+    if (reachable.has(key2)) continue;
+    const carve = bfsCarvePath(out, vt, sp, reachable, w2, h2);
+    if (carve !== null && carve.length <= 6) {
+      for (const c2 of carve) {
+        if (((_a3 = out[c2.y]) == null ? void 0 : _a3[c2.x]) === "wall") {
+          out[c2.y][c2.x] = "floor";
+          reachable.add(`${c2.x},${c2.y}`);
+        }
+      }
+      reachable = floodFillReachable(out, vt, playerSpawn, w2, h2);
+      if (!reachable.has(`${sp.x},${sp.y}`)) {
+        const near = nearestReachableCell(sp, reachable, w2, h2);
+        if (near) outSpawns[i] = near;
+      }
+    } else {
+      const near = nearestReachableCell(sp, reachable, w2, h2);
+      if (near) outSpawns[i] = near;
+    }
+  }
+  const portalKey = `${portal.x},${portal.y}`;
+  if (!reachable.has(portalKey)) {
+    const carve = bfsCarvePath(out, vt, portal, reachable, w2, h2);
+    if (carve !== null && carve.length <= 8) {
+      for (const c2 of carve) {
+        if (((_b3 = out[c2.y]) == null ? void 0 : _b3[c2.x]) === "wall") {
+          out[c2.y][c2.x] = "floor";
+          reachable.add(`${c2.x},${c2.y}`);
+        }
+      }
+      reachable = floodFillReachable(out, vt, playerSpawn, w2, h2);
+    }
+    if (!reachable.has(portalKey)) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = portal.x + dx;
+          const ny = portal.y + dy;
+          if (nx >= 0 && ny >= 0 && nx < w2 && ny < h2 && !vt.has(`${nx},${ny}`)) {
+            if (((_c2 = out[ny]) == null ? void 0 : _c2[nx]) === "wall") {
+              out[ny][nx] = "floor";
+            }
+          }
+        }
+      }
+      reachable = floodFillReachable(out, vt, playerSpawn, w2, h2);
+    }
+  }
+  return { tiles: out, spawns: outSpawns };
 }
 function shouldSuppressPortal(kind, runMode, mapCleared) {
   if (runMode === "none") return false;
@@ -49659,24 +50002,27 @@ function executeSummonAction(action, summon, summonCtx, helpers) {
   }
   return { newPosition: { x: x3, y: y2 }, currentAp, currentMp, hp, logLines };
 }
-function decrementSummonLifespan(enemies, log2) {
+function decrementSummonLifespan(enemies, log2, activeSummonId) {
   const expiredIds = [];
   for (const e of enemies) {
-    if (e.isSummon) {
+    if (!e.isSummon) continue;
+    if (activeSummonId != null && e.id !== activeSummonId) continue;
+    if (activeSummonId != null) {
       e.turnsRemaining = (e.turnsRemaining || 1) - 1;
-      if (e.turnsRemaining <= 0) {
-        e.hp = 0;
-        log2(`${e.name} fades away...`, "#a78bfa", true);
-        expiredIds.push(e.id);
-      }
+    }
+    if (e.turnsRemaining <= 0) {
+      e.hp = 0;
+      log2(`${e.name} fades away...`, "#a78bfa", true);
+      expiredIds.push(e.id);
     }
   }
   return { enemies: enemies.filter((e) => e.hp > 0), expiredIds };
 }
-function syncExpiredSummonsFromTurnQueue(enemies, _turnOrder, turnOrderRef, currentTurnIndexRef, setTurnOrder, setEnemies, log2) {
+function syncExpiredSummonsFromTurnQueue(enemies, _turnOrder, turnOrderRef, currentTurnIndexRef, setTurnOrder, setEnemies, log2, activeSummonId) {
   const { enemies: survivingEnemies, expiredIds } = decrementSummonLifespan(
     enemies,
-    log2
+    log2,
+    activeSummonId
   );
   for (const expiredId of expiredIds) {
     removeCombatantFromTurnQueue(
@@ -54929,15 +55275,23 @@ const WorldExplorationInner = ({
   const applyActiveEffect = reactExports.useCallback(
     (effect) => {
       setActiveEffects((prev) => {
-        const existing = prev.findIndex(
-          (e) => e.targetId === effect.targetId && e.effectName === effect.effectName
-        );
         let next;
-        if (existing >= 0) {
-          next = [...prev];
-          next[existing] = effect;
+        if (effect.type === "dot") {
+          const withStackId = effect.stackId ?? effect.id ? effect : {
+            ...effect,
+            stackId: `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+          };
+          next = appendDotStack(prev, withStackId);
         } else {
-          next = [...prev, effect];
+          const existing = prev.findIndex(
+            (e) => e.targetId === effect.targetId && e.effectName === effect.effectName
+          );
+          if (existing >= 0) {
+            next = [...prev];
+            next[existing] = effect;
+          } else {
+            next = [...prev, effect];
+          }
         }
         activeEffectsRef.current = next;
         return next;
@@ -54970,43 +55324,52 @@ const WorldExplorationInner = ({
     (targetId) => {
       const prev = activeEffectsRef.current;
       setActiveEffects((_prev) => {
-        const next = [];
-        for (const eff of prev) {
+        var _a4;
+        const dotResult = tickDotStacks(prev, targetId);
+        const next = [...dotResult.remaining];
+        if (dotResult.damage > 0 && dotResult.stackCount > 0) {
+          const dotTypeLabel = ((_a4 = prev.find(
+            (e) => e.targetId === targetId && e.type === "dot" && e.dotDamagePerTurn !== void 0 && e.dotDamagePerTurn > 0
+          )) == null ? void 0 : _a4.effectName) ?? "DoT";
+          let postResDamage = dotResult.damage;
+          if (targetId === "player") {
+            postResDamage = playerTakesDamage(
+              dotResult.damage,
+              `${dotTypeLabel} DoT`
+            );
+          } else {
+            postResDamage = enemyTakesDamage(
+              targetId,
+              dotResult.damage,
+              "dot",
+              `${dotTypeLabel} DoT`,
+              false
+            );
+          }
+          const resReduc = Math.max(0, dotResult.damage - postResDamage);
+          if (logBattleEntry) {
+            const stacksStr = dotResult.perStackDurations.map((d2) => String(d2)).join(",");
+            const tickColor = targetId === "player" ? "#eab308" : "#a855f7";
+            const targetName = targetId === "player" ? "player" : targetId;
+            logBattleEntry(
+              `[DOT] target=${targetName} type=${dotTypeLabel} tick=${postResDamage} stacks=[${stacksStr}] resReduc=${resReduc}`,
+              tickColor
+            );
+          }
+        }
+        const afterNonDot = [];
+        for (const eff of next) {
           if (eff.targetId !== targetId) {
-            next.push(eff);
+            afterNonDot.push(eff);
             continue;
           }
-          if (eff.type === "dot" && eff.dotDamagePerTurn && eff.dotDamagePerTurn > 0) {
-            const dot = eff.dotDamagePerTurn;
-            const dotLabel = eff.effectName.toLowerCase().includes("burn") ? "burning" : eff.effectName.toLowerCase().includes("bleed") ? "bleeding" : "poisoned";
-            const newDur2 = eff.duration - 1;
-            if (targetId === "player") {
-              playerTakesDamage(dot, `${dotLabel} DoT`);
-              if (logBattleEntry) {
-                const dotLabel2 = eff.effectName || "DoT";
-                const tickColor = "#eab308";
-                logBattleEntry(
-                  `${dotLabel2} ticks ${dot} dmg on you (${newDur2} turns left)`,
-                  tickColor
-                );
-              }
-            } else {
-              enemyTakesDamage(targetId, dot, "dot", `${dotLabel} DoT`, false);
-              if (logBattleEntry) {
-                const dotLabel2 = eff.effectName || "DoT";
-                const tickColor = "#a855f7";
-                logBattleEntry(
-                  `${dotLabel2} ticks ${dot} dmg on ${eff.targetId} (${newDur2} turns left)`,
-                  tickColor
-                );
-              }
-            }
-            if (newDur2 > 0) next.push({ ...eff, duration: newDur2 });
+          if (eff.type === "dot") {
+            afterNonDot.push(eff);
             continue;
           }
           const newDur = eff.duration - 1;
           if (newDur > 0) {
-            next.push({ ...eff, duration: newDur });
+            afterNonDot.push({ ...eff, duration: newDur });
           }
           const stat = eff.stat;
           const modifier = eff.modifier;
@@ -55019,8 +55382,8 @@ const WorldExplorationInner = ({
             );
           }
         }
-        activeEffectsRef.current = next;
-        return next;
+        activeEffectsRef.current = afterNonDot;
+        return afterNonDot;
       });
     },
     [logBattleEntry]
@@ -58012,7 +58375,7 @@ const WorldExplorationInner = ({
     isMobile
   ]);
   const checkPortalInteraction = reactExports.useCallback(() => {
-    var _a4, _b4, _c3, _d3, _e3, _f3, _g2;
+    var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2;
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return;
     if (!currentMap) return;
@@ -58398,6 +58761,26 @@ const WorldExplorationInner = ({
           newMap.voidTiles
         );
       }
+      const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
+      const _portal = (_d3 = newMap.portals) == null ? void 0 : _d3[0];
+      if (_portal) {
+        const { tiles: _tiles, spawns: _spawns } = ensureReachability(
+          newMap.tiles,
+          newMap.voidTiles,
+          _enemySpawns,
+          spawnPosition,
+          _portal,
+          WORLD_GRID_SIZE,
+          WORLD_GRID_SIZE
+        );
+        newMap.tiles = _tiles;
+        newEnemies.forEach((e, i) => {
+          if (_spawns[i]) {
+            e.x = _spawns[i].x;
+            e.y = _spawns[i].y;
+          }
+        });
+      }
       setEnemies(newEnemies);
       if (portalTimerRef1.current !== null) {
         clearTimeout(portalTimerRef1.current);
@@ -58417,8 +58800,8 @@ const WorldExplorationInner = ({
           lastPortalRef.current = null;
         }, 1500);
       }, 100);
-      const globalChance = ((_d3 = mapModifiers.find((m2) => m2.globalTriggerChance != null)) == null ? void 0 : _d3.globalTriggerChance) ?? 20;
-      const secondChance = ((_e3 = mapModifiers.find((m2) => m2.secondModifierChance != null)) == null ? void 0 : _e3.secondModifierChance) ?? 50;
+      const globalChance = ((_e3 = mapModifiers.find((m2) => m2.globalTriggerChance != null)) == null ? void 0 : _e3.globalTriggerChance) ?? 20;
+      const secondChance = ((_f3 = mapModifiers.find((m2) => m2.secondModifierChance != null)) == null ? void 0 : _f3.secondModifierChance) ?? 50;
       const activeModsList = mapModifiers.filter((m2) => m2.active);
       const triggered = /* @__PURE__ */ new Set();
       if (activeModsList.length > 0 && Math.random() * 100 < globalChance) {
@@ -58521,7 +58904,7 @@ const WorldExplorationInner = ({
         const walkable = [];
         for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
           for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !((_g2 = newMap.voidTiles) == null ? void 0 : _g2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
+            if (((_g2 = newMap.tiles[gy]) == null ? void 0 : _g2[gx]) === "floor" && !((_h2 = newMap.voidTiles) == null ? void 0 : _h2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
               walkable.push({ x: gx, y: gy });
             }
           }
@@ -59170,46 +59553,6 @@ const WorldExplorationInner = ({
             ctx.stroke();
             ctx.restore();
           }
-          if (barrierTileSnapshot.has(`${x3},${y2}`)) {
-            ctx.save();
-            const bw = effectiveTileW;
-            const bh = effectiveTileH;
-            const topH = bh * 0.35;
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2);
-            ctx.lineTo(screenPos.x, screenPos.y + bh);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
-            ctx.closePath();
-            ctx.fillStyle = "rgba(42,36,51,0.96)";
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y - topH);
-            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.closePath();
-            ctx.fillStyle = "#4a4060";
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
-            ctx.closePath();
-            ctx.fillStyle = "rgba(74,64,96,0.6)";
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y - topH);
-            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.closePath();
-            ctx.strokeStyle = "rgba(120,100,160,0.9)";
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.restore();
-          }
           if (spellTiles.has(`${x3},${y2}`)) {
             ctx.save();
             ctx.beginPath();
@@ -59246,6 +59589,18 @@ const WorldExplorationInner = ({
             depth: x3 + y2
           });
         }
+      }
+      for (let x3 = 0; x3 < WORLD_GRID_SIZE; x3++) {
+        if (!barrierTileSnapshot.has(`${x3},${y2}`)) continue;
+        const screenPos = gridToScreen(x3, y2);
+        wallDepthItems.push({
+          screenX: screenPos.x,
+          screenY: screenPos.y,
+          wx: x3,
+          wy: y2,
+          depth: x3 + y2,
+          isBarrier: true
+        });
       }
       for (let x3 = 0; x3 < WORLD_GRID_SIZE; x3++) {
         const portal = portalMap.get(`${x3},${y2}`);
@@ -59451,6 +59806,18 @@ const WorldExplorationInner = ({
           continue;
         }
         if (renderItem.kind === "wall") {
+          if (renderItem.isBarrier) {
+            drawBarrierTower(
+              ctx,
+              renderItem.screenX,
+              renderItem.screenY,
+              effectiveTileW,
+              effectiveTileH,
+              renderItem.wx,
+              renderItem.wy
+            );
+            continue;
+          }
           drawIsometricTile(
             ctx,
             renderItem.screenX,
@@ -62098,11 +62465,12 @@ const WorldExplorationInner = ({
     setTransitionInProgress
   ]);
   reactExports.useEffect(() => {
+    var _a4;
     if (isInitializedRef.current) return;
     if (!tierConfigLoaded) return;
     if (!character) return;
     isInitializedRef.current = true;
-    const { map } = generateRandomMap();
+    const { map, spawnPosition } = generateRandomMap();
     currentMapRef.current = map;
     setCurrentMap(map);
     const newEnemies = generateEnemies(
@@ -62111,6 +62479,26 @@ const WorldExplorationInner = ({
       0,
       map.voidTiles
     );
+    const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
+    const _portal = (_a4 = map.portals) == null ? void 0 : _a4[0];
+    if (_portal) {
+      const { tiles: _tiles, spawns: _spawns } = ensureReachability(
+        map.tiles,
+        map.voidTiles,
+        _enemySpawns,
+        spawnPosition,
+        _portal,
+        WORLD_GRID_SIZE,
+        WORLD_GRID_SIZE
+      );
+      map.tiles = _tiles;
+      newEnemies.forEach((e, i) => {
+        if (_spawns[i]) {
+          e.x = _spawns[i].x;
+          e.y = _spawns[i].y;
+        }
+      });
+    }
     setEnemies(newEnemies);
     const initCamTimer = setTimeout(() => {
       updateCameraToFollowPlayer();
@@ -62279,6 +62667,10 @@ const WorldExplorationInner = ({
       idleTurnCountRef.current = 0;
       const timerDuration = isTimeWarp ? 15 : 30;
       setTurnTimeLeft(timerDuration);
+      const _order = turnOrderRef.current;
+      const _nextIdx = _order.length > 0 ? (currentTurnIndexRef.current + 1) % _order.length : 0;
+      const _nextCombatant = _order[_nextIdx];
+      const _activeSummonId = (_nextCombatant == null ? void 0 : _nextCombatant.isSummon) ? _nextCombatant.id : null;
       syncExpiredSummonsFromTurnQueue(
         enemies,
         turnOrderRef.current,
@@ -62286,7 +62678,8 @@ const WorldExplorationInner = ({
         currentTurnIndexRef,
         setTurnOrder,
         setEnemies,
-        logBattleEntry
+        logBattleEntry,
+        _activeSummonId
       );
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
@@ -62299,6 +62692,8 @@ const WorldExplorationInner = ({
               entryId: nextCombatant.id,
               side: nextCombatant.side,
               isSummon: false,
+              round: battleTurn,
+              idx: nextIdx,
               route: "player"
             });
             if (characterStats.hp <= 0) {
@@ -62381,6 +62776,8 @@ const WorldExplorationInner = ({
               entryId: nextCombatant.id,
               side: nextCombatant.side,
               isSummon: true,
+              round: battleTurn,
+              idx: nextIdx,
               route: "summon-ai"
             });
             setBattlePhase("enemy");
@@ -62389,8 +62786,11 @@ const WorldExplorationInner = ({
               entryId: nextCombatant.id,
               side: nextCombatant.side,
               isSummon: false,
+              round: battleTurn,
+              idx: nextIdx,
               route: "enemy-ai"
             });
+            setBattlePhase("enemy");
             processActiveEffects(nextCombatant.id);
             if (isPlagueZone) {
               setEnemyHpMap((prev) => {
@@ -63920,7 +64320,7 @@ const WorldExplorationInner = ({
       }
       enemyTurnInProgressRef.current = false;
     };
-  }, [inBattle, currentTurnIndex]);
+  }, [inBattle, currentTurnIndex, battlePhase]);
   const recordPlayerSpellType = reactExports.useCallback((effectType) => {
     playerSpellTypeHistoryRef.current = [
       ...playerSpellTypeHistoryRef.current.slice(-4),
@@ -65137,13 +65537,13 @@ const WorldExplorationInner = ({
                               borderBottom: "1px solid var(--dofus-border-gold-dim)"
                             },
                             children: [
-                              activeEffects.filter((e) => e.targetId === "player").map((eff) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              activeEffects.filter((e) => e.targetId === "player").map((eff, index2) => /* @__PURE__ */ jsxRuntimeExports.jsx(
                                 StatusEffectBadge,
                                 {
                                   effect: eff,
                                   isPlayer: true
                                 },
-                                `${eff.targetId}-${eff.effectName}`
+                                eff.stackId ?? eff.id ?? `${eff.targetId}-${eff.effectName}-${index2}`
                               )),
                               activeEffects.filter((e) => e.targetId === "player").length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
                                 "span",
@@ -65574,12 +65974,12 @@ const WorldExplorationInner = ({
                                               gap: 3,
                                               marginLeft: 4
                                             },
-                                            children: activeEffects.filter((e) => e.targetId === enemy.id).map((eff) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            children: activeEffects.filter((e) => e.targetId === enemy.id).map((eff, index22) => /* @__PURE__ */ jsxRuntimeExports.jsx(
                                               StatusEffectBadge,
                                               {
                                                 effect: eff
                                               },
-                                              `${eff.targetId}-${eff.effectName}`
+                                              eff.stackId ?? eff.id ?? `${eff.targetId}-${eff.effectName}-${index22}`
                                             ))
                                           }
                                         ),
@@ -68981,7 +69381,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-HM2uLRDl.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-js5e8t63.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

@@ -61,6 +61,7 @@ import {
   spawnPixelPuff,
 } from "../data/pieceArt";
 import { physicalAttackSpell, starterSpells } from "../data/spellData";
+import { drawBarrierTower } from "../engine/barrierRender";
 import {
   activeHostilesRemaining,
   despawnSummons,
@@ -78,6 +79,11 @@ import {
   pickEnemyLevelFromTiers,
   seededRng,
 } from "../engine/combatMath";
+import {
+  type DotTickResult,
+  appendDotStack,
+  tickDotStacks,
+} from "../engine/dotStacks";
 import { EffectsManager } from "../engine/effects";
 import {
   type AICell,
@@ -92,6 +98,7 @@ import {
   applyVoidTiles,
   checkVoidConnectivity,
   countWalkableVoid,
+  ensureReachability,
   pickMapArchetype,
 } from "../engine/mapGen";
 import type { OccupancyContext } from "../engine/occupancy";
@@ -1182,18 +1189,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const applyActiveEffect = useCallback(
     (effect: ActiveEffect) => {
       setActiveEffects((prev) => {
-        // Replace existing same-name+target effect, or append
-        const existing = prev.findIndex(
-          (e) =>
-            e.targetId === effect.targetId &&
-            e.effectName === effect.effectName,
-        );
+        // Section 4: DoTs stack additively — each application appends a new
+        // independent stack with its own duration (no replace). Non-DoT
+        // buffs/debuffs retain the existing replace-or-refresh behavior.
         let next: ActiveEffect[];
-        if (existing >= 0) {
-          next = [...prev];
-          next[existing] = effect;
+        if (effect.type === "dot") {
+          // Ensure the incoming DoT has a stackId so React keys stay unique
+          // across multiple stacks of the same DoT type.
+          const withStackId: ActiveEffect =
+            (effect.stackId ?? effect.id)
+              ? effect
+              : {
+                  ...effect,
+                  stackId: `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                };
+          next = appendDotStack(prev, withStackId);
         } else {
-          next = [...prev, effect];
+          // Replace existing same-name+target effect, or append
+          const existing = prev.findIndex(
+            (e) =>
+              e.targetId === effect.targetId &&
+              e.effectName === effect.effectName,
+          );
+          if (existing >= 0) {
+            next = [...prev];
+            next[existing] = effect;
+          } else {
+            next = [...prev, effect];
+          }
         }
         activeEffectsRef.current = next;
         return next;
@@ -1243,57 +1266,76 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // M-5: operate on the ref so we always see the live array, not a stale snapshot
       const prev = activeEffectsRef.current;
       setActiveEffects((_prev) => {
-        const next: ActiveEffect[] = [];
-        for (const eff of prev) {
+        // Section 4: tick all DoT stacks on this target as a single summed tick.
+        // tickDotStacks returns the summed pre-RES damage, the surviving DoT
+        // stacks (durations decremented independently), and per-stack remaining
+        // durations for the log. RES is applied INSIDE playerTakesDamage /
+        // enemyTakesDamage — do NOT apply it again here. SR does NOT reduce DoT.
+        const dotResult: DotTickResult = tickDotStacks(prev, targetId);
+        const next: ActiveEffect[] = [...dotResult.remaining];
+
+        if (dotResult.damage > 0 && dotResult.stackCount > 0) {
+          // Apply the SUMMED DoT damage as a single tick. RES is applied inside
+          // the damage helpers; we capture the post-RES value for the log.
+          const dotTypeLabel =
+            prev.find(
+              (e) =>
+                e.targetId === targetId &&
+                e.type === "dot" &&
+                e.dotDamagePerTurn !== undefined &&
+                e.dotDamagePerTurn > 0,
+            )?.effectName ?? "DoT";
+          let postResDamage = dotResult.damage;
+          if (targetId === "player") {
+            postResDamage = playerTakesDamage(
+              dotResult.damage,
+              `${dotTypeLabel} DoT`,
+            );
+          } else {
+            postResDamage = enemyTakesDamage(
+              targetId,
+              dotResult.damage,
+              "dot",
+              `${dotTypeLabel} DoT`,
+              false,
+            );
+          }
+          // Compute the RES reduction that was applied (for the log).
+          // RES is the only reduction on DoT ticks (SR does NOT apply).
+          const resReduc = Math.max(0, dotResult.damage - postResDamage);
+          if (logBattleEntry) {
+            const stacksStr = dotResult.perStackDurations
+              .map((d) => String(d))
+              .join(",");
+            const tickColor = targetId === "player" ? "#eab308" : "#a855f7";
+            const targetName = targetId === "player" ? "player" : targetId;
+            logBattleEntry(
+              `[DOT] target=${targetName} type=${dotTypeLabel} tick=${postResDamage} stacks=[${stacksStr}] resReduc=${resReduc}`,
+              tickColor,
+            );
+          }
+        }
+
+        // Decrement duration for non-DoT effects on this target (buffs/debuffs).
+        // DoT stacks were already handled by tickDotStacks above and are present
+        // in `next` with decremented durations (or dropped if expired).
+        // We must process only the non-DoT effects that tickDotStacks passed
+        // through untouched — re-scan `next` for non-DoT effects on this target.
+        const afterNonDot: ActiveEffect[] = [];
+        for (const eff of next) {
           if (eff.targetId !== targetId) {
-            next.push(eff);
+            afterNonDot.push(eff);
             continue;
           }
-          // Apply DoT damage at start of this unit's turn.
-          // Note: enemy-death paths already remove effects via setActiveEffects filter,
-          // so by the time this runs the target is guaranteed to be alive.
-          if (
-            eff.type === "dot" &&
-            eff.dotDamagePerTurn &&
-            eff.dotDamagePerTurn > 0
-          ) {
-            const dot = eff.dotDamagePerTurn;
-            // Determine DoT label from effectName
-            const dotLabel = eff.effectName.toLowerCase().includes("burn")
-              ? "burning"
-              : eff.effectName.toLowerCase().includes("bleed")
-                ? "bleeding"
-                : "poisoned";
-            const newDur = eff.duration - 1;
-            if (targetId === "player") {
-              playerTakesDamage(dot, `${dotLabel} DoT`);
-              if (logBattleEntry) {
-                const dotLabel2 = eff.effectName || "DoT";
-                const tickColor = "#eab308";
-                logBattleEntry(
-                  `${dotLabel2} ticks ${dot} dmg on you (${newDur} turns left)`,
-                  tickColor,
-                );
-              }
-            } else {
-              enemyTakesDamage(targetId, dot, "dot", `${dotLabel} DoT`, false);
-              if (logBattleEntry) {
-                const dotLabel2 = eff.effectName || "DoT";
-                const tickColor = "#a855f7";
-                logBattleEntry(
-                  `${dotLabel2} ticks ${dot} dmg on ${eff.targetId} (${newDur} turns left)`,
-                  tickColor,
-                );
-              }
-            }
-            // Keep or drop based on remaining duration
-            if (newDur > 0) next.push({ ...eff, duration: newDur });
+          if (eff.type === "dot") {
+            // Already ticked by tickDotStacks — keep as-is.
+            afterNonDot.push(eff);
             continue;
           }
-          // Decrement duration for non-DoT effects
+          // Non-DoT effect: decrement duration, drop if expired.
           const newDur = eff.duration - 1;
           if (newDur > 0) {
-            next.push({ ...eff, duration: newDur });
+            afterNonDot.push({ ...eff, duration: newDur });
           }
           const stat = eff.stat;
           const modifier = eff.modifier;
@@ -1313,8 +1355,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
         // M-5: also update ref immediately so subsequent reads in the same turn are fresh
-        activeEffectsRef.current = next;
-        return next;
+        activeEffectsRef.current = afterNonDot;
+        return afterNonDot;
       });
       // enemy effects are stored in activeEffects with targetId === enemy.id, so they are already ticked above
     },
@@ -5592,6 +5634,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               newMap.voidTiles,
             );
       }
+      // Section 6: ensure all spawns + player + portal are mutually reachable
+      const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
+      const _portal = newMap.portals?.[0];
+      if (_portal) {
+        const { tiles: _tiles, spawns: _spawns } = ensureReachability(
+          newMap.tiles as string[][],
+          newMap.voidTiles,
+          _enemySpawns,
+          spawnPosition,
+          _portal,
+          WORLD_GRID_SIZE,
+          WORLD_GRID_SIZE,
+        );
+        newMap.tiles = _tiles as typeof newMap.tiles;
+        newEnemies.forEach((e, i) => {
+          if (_spawns[i]) {
+            e.x = _spawns[i].x;
+            e.y = _spawns[i].y;
+          }
+        });
+      }
       setEnemies(newEnemies);
       // M2 FIX: Cloud cluster generation deferred into the portal timer callback
       // so it never blocks the synchronous portal-transition path on mobile
@@ -6289,6 +6352,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       wx: number;
       wy: number;
       depth: number;
+      isBarrier?: boolean;
     }> = [];
 
     const portalDepthItems: Array<{
@@ -6592,52 +6656,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ctx.restore();
           }
 
-          // H3 Barrier tile — solid dark block
-          if (barrierTileSnapshot.has(`${x},${y}`)) {
-            ctx.save();
-            // Draw a solid raised-cube block on top of the floor tile
-            const bw = effectiveTileW;
-            const bh = effectiveTileH;
-            const topH = bh * 0.35;
-            // Main face (darker)
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y);
-            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2);
-            ctx.lineTo(screenPos.x, screenPos.y + bh);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
-            ctx.closePath();
-            ctx.fillStyle = "rgba(42,36,51,0.96)";
-            ctx.fill();
-            // Top face (lighter purple-gray)
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y - topH);
-            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.closePath();
-            ctx.fillStyle = "#4a4060";
-            ctx.fill();
-            // Left edge highlight
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2);
-            ctx.closePath();
-            ctx.fillStyle = "rgba(74,64,96,0.6)";
-            ctx.fill();
-            // Outline
-            ctx.beginPath();
-            ctx.moveTo(screenPos.x, screenPos.y - topH);
-            ctx.lineTo(screenPos.x + bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.lineTo(screenPos.x, screenPos.y + bh - topH);
-            ctx.lineTo(screenPos.x - bw / 2, screenPos.y + bh / 2 - topH);
-            ctx.closePath();
-            ctx.strokeStyle = "rgba(120,100,160,0.9)";
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.restore();
-          }
+          // H3 Barrier tile — now rendered as a 6-high tower in the unified
+          // depth-sorted pass (see wallDepthItems + drawBarrierTower). The
+          // floor-pass single-block draw was removed in Section 3.
 
           // Blue spell range highlight
           if (spellTiles.has(`${x},${y}`)) {
@@ -6678,6 +6699,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             depth: x + y,
           });
         }
+      }
+
+      // Pass 2c: barrier tiles for this row — pushed into wallDepthItems with
+      // isBarrier flag so they participate in the same depth-sorted painter's
+      // pass as walls and combatants. Rendered as a 6-high tower (Section 3).
+      for (let x = 0; x < WORLD_GRID_SIZE; x++) {
+        if (!barrierTileSnapshot.has(`${x},${y}`)) continue;
+        const screenPos = gridToScreen(x, y);
+        wallDepthItems.push({
+          screenX: screenPos.x,
+          screenY: screenPos.y,
+          wx: x,
+          wy: y,
+          depth: x + y,
+          isBarrier: true,
+        });
       }
 
       // Pass 3: portals at this row — push into portalDepthItems for unified depth-sorted draw
@@ -6925,6 +6962,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           continue;
         }
         if (renderItem.kind === "wall") {
+          if (renderItem.isBarrier) {
+            // Barrier tower — 6 stacked block layers, depth-sorted with walls
+            // and combatants (Section 3).
+            drawBarrierTower(
+              ctx,
+              renderItem.screenX,
+              renderItem.screenY,
+              effectiveTileW,
+              effectiveTileH,
+              renderItem.wx,
+              renderItem.wy,
+            );
+            continue;
+          }
           drawIsometricTile(
             ctx,
             renderItem.screenX,
@@ -10311,7 +10362,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       console.log("Initializing world exploration...");
     }
 
-    const { map } = generateRandomMap();
+    const { map, spawnPosition } = generateRandomMap();
     currentMapRef.current = map;
     setCurrentMap(map);
     const newEnemies = generateEnemies(
@@ -10320,6 +10371,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       0,
       map.voidTiles,
     );
+    // Section 6: ensure all spawns + player + portal are mutually reachable
+    const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
+    const _portal = map.portals?.[0];
+    if (_portal) {
+      const { tiles: _tiles, spawns: _spawns } = ensureReachability(
+        map.tiles as string[][],
+        map.voidTiles,
+        _enemySpawns,
+        spawnPosition,
+        _portal,
+        WORLD_GRID_SIZE,
+        WORLD_GRID_SIZE,
+      );
+      map.tiles = _tiles as typeof map.tiles;
+      newEnemies.forEach((e, i) => {
+        if (_spawns[i]) {
+          e.x = _spawns[i].x;
+          e.y = _spawns[i].y;
+        }
+      });
+    }
     setEnemies(newEnemies);
     // Weather effects removed
 
@@ -10560,12 +10632,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setTurnTimeLeft(timerDuration);
       // Summon lifespan: decrement, kill expired summons, and atomically sync
       // the turn queue (state + both refs + index math) BEFORE the turn-index
-      // advance below. Running this every turn (not just on the player's turn)
-      // and BEFORE the `(prevIdx + 1) % prevOrder.length` advance guarantees
+      // advance below.
+      //
+      // SECTION 2 FIX — "once when the summon's own turn begins":
+      // The decrement only fires for the summon whose turn is ABOUT to start
+      // (the next combatant in the turn order). When the next combatant is not
+      // a summon, we pass null and this becomes a cleanup-only pass (no
+      // decrement, but any summon already at 0 is still removed). This makes a
+      // summon's lifespan decrement exactly once per ROUND (on its own turn),
+      // not once per combatant turn — so a lifespan-4 summon acts on ~4 of its
+      // own turns before fading.
+      //
+      // The next combatant is computed from the LIVE refs here (BEFORE the
+      // setTurnOrder/setCurrentTurnIndex advance below) so the decrement
+      // targets the same summon the advance will dispatch to. Running this
+      // BEFORE the `(prevIdx + 1) % prevOrder.length` advance also guarantees
       // the advance always runs against a turnOrder that no longer contains
       // faded summons — closing the ghost-slot race where currentTurnIndexRef
       // could point at a removed combatant. See syncExpiredSummonsFromTurnQueue
       // in engine/summonIntegration.ts for the full atomic contract.
+      const _order = turnOrderRef.current;
+      const _nextIdx =
+        _order.length > 0
+          ? (currentTurnIndexRef.current + 1) % _order.length
+          : 0;
+      const _nextCombatant = _order[_nextIdx];
+      const _activeSummonId = _nextCombatant?.isSummon
+        ? _nextCombatant.id
+        : null;
       syncExpiredSummonsFromTurnQueue(
         enemies,
         turnOrderRef.current,
@@ -10574,6 +10668,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setTurnOrder,
         setEnemies,
         logBattleEntry,
+        _activeSummonId,
       );
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
@@ -10587,6 +10682,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               entryId: nextCombatant.id,
               side: nextCombatant.side,
               isSummon: false,
+              round: battleTurn,
+              idx: nextIdx,
               route: "player",
             });
             // M6: HP guard — if player is already dead, skip turn setup and call death handler
@@ -10682,6 +10779,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               entryId: nextCombatant.id,
               side: nextCombatant.side,
               isSummon: true,
+              round: battleTurn,
+              idx: nextIdx,
               route: "summon-ai",
             });
             setBattlePhase("enemy");
@@ -10690,8 +10789,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               entryId: nextCombatant.id,
               side: nextCombatant.side,
               isSummon: false,
+              round: battleTurn,
+              idx: nextIdx,
               route: "enemy-ai",
             });
+            setBattlePhase("enemy");
             // Process this enemy's active effects
             processActiveEffects(nextCombatant.id);
             // Plague Zone on enemies too
@@ -12581,7 +12683,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       enemyTurnInProgressRef.current = false;
     };
-  }, [inBattle, currentTurnIndex]);
+  }, [inBattle, currentTurnIndex, battlePhase]);
   // Track player spell type for Adaptive Resistance AI
   const recordPlayerSpellType = useCallback((effectType: string) => {
     playerSpellTypeHistoryRef.current = [
@@ -13688,9 +13790,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               >
                 {activeEffects
                   .filter((e) => e.targetId === "player")
-                  .map((eff) => (
+                  .map((eff, index) => (
                     <StatusEffectBadge
-                      key={`${eff.targetId}-${eff.effectName}`}
+                      key={
+                        eff.stackId ??
+                        eff.id ??
+                        `${eff.targetId}-${eff.effectName}-${index}`
+                      }
                       effect={eff}
                       isPlayer
                     />
@@ -14105,9 +14211,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         >
                           {activeEffects
                             .filter((e) => e.targetId === enemy.id)
-                            .map((eff) => (
+                            .map((eff, index) => (
                               <StatusEffectBadge
-                                key={`${eff.targetId}-${eff.effectName}`}
+                                key={
+                                  eff.stackId ??
+                                  eff.id ??
+                                  `${eff.targetId}-${eff.effectName}-${index}`
+                                }
                                 effect={eff}
                               />
                             ))}

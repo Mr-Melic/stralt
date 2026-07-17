@@ -236,6 +236,14 @@ export interface ActiveEffect {
   iconEmoji: string;
   description: string;
   dotDamagePerTurn?: number; // for DoT effects
+  /**
+   * Unique identifier for a single DoT stack. Same-type DoTs stack
+   * additively (each application appends a new stack with its own
+   * independent duration) rather than replacing. Assigned by
+   * engine/dotStacks.ts::appendDotStack. Absent on non-DoT effects,
+   * which retain replace-or-refresh behavior.
+   */
+  stackId?: string;
 }
 
 // ── Doka Loot (ground pickups) ───────────────────────────────────────────────

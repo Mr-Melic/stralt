@@ -1761,6 +1761,109 @@ function decideSummonHunter(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Section 5 — Summon→Summon Ally Buffs
+//
+// Shared ally-scoring helpers used by the guardian (golem) and healer (wisp)
+// archetypes so their buff/heal/rally target selection considers the WHOLE
+// allied group — the player AND every player-side summon — instead of being
+// hard-pinned to the player via a `!a.isSummon` filter.
+//
+// Scoring reuses the existing ENEMY_UTILITY_WEIGHTS / ENEMY_THREAT_VALUES so
+// ally prioritization stays consistent with enemy target scoring:
+//   score = wLowHp   * (1 - hpFrac)        // urgency: dying allies first
+//         + wThreat  * threatValue         // value: wisp > healer > summon
+//         + wProximity * proximity          // closer allies preferred
+// Higher score = preferred ally. `wKillable` is intentionally omitted — we
+// never want to "finish off" an ally; the urgency term already captures
+// "this ally is about to die, save it".
+// ---------------------------------------------------------------------------
+
+/**
+ * Score an allied combatant for buff/heal/rally target selection. Higher is
+ * better. Returns 0 for an absent ally (caller treats null/undefined ward).
+ *
+ * @param ally       Candidate ally (player or allied summon).
+ * @param summon     The acting summon (used for proximity + to skip self).
+ * @param archetype  Acting archetype key, surfaced in the ally-target log.
+ * @param action     Action label for the log (e.g. "shield", "rally").
+ */
+function scoreAlly(
+  ally: AICombatant,
+  summon: Enemy,
+  archetype: string,
+  action: string,
+): number {
+  // Urgency: lower hpFrac → higher urgency. (1 - hpFrac) ∈ [0,1].
+  const urgency = (1 - hpFrac(ally)) * ENEMY_UTILITY_WEIGHTS.wLowHp;
+  // Threat/value: wisp > healer > summon > default. Uses summonAI metadata,
+  // never name-based heuristics (per user instruction).
+  const threatKey = (ally.summonAI ?? "").toLowerCase() || "default";
+  const threatValue =
+    ENEMY_THREAT_VALUES[threatKey] ?? ENEMY_THREAT_VALUES.default;
+  const threat = threatValue * ENEMY_UTILITY_WEIGHTS.wThreat;
+  // Proximity: closer allies are easier to reach this turn. Inverted Chebyshev
+  // distance normalized against the grid diagonal so the term stays in [0,1].
+  const dist = chebyshev(
+    { x: summon.x, y: summon.y },
+    { x: ally.x, y: ally.y },
+  );
+  const maxDist = Math.max(1, WORLD_GRID_SIZE * 2);
+  const proximity =
+    (1 - Math.min(1, dist / maxDist)) * ENEMY_UTILITY_WEIGHTS.wProximity;
+  const score = urgency + threat + proximity;
+  emitAllyTargetLog(summon, archetype, ally, action, score);
+  return score;
+}
+
+/**
+ * Emit the ally-target evaluation log line, gated on AI_INTENT_LOG_ENABLED.
+ * Produces a single `[SUMMON-AI] summon=X archetype=A → ally-target=Y
+ * action=Z score=S` entry via logDebugInfo under the "SUMMON" category (matches
+ * the existing SUMMON-DECIDE log at the top of decideSummonAction).
+ */
+function emitAllyTargetLog(
+  summon: Enemy,
+  archetype: string,
+  allyTarget: AICombatant,
+  action: string,
+  score: number,
+): void {
+  if (!AI_INTENT_LOG_ENABLED) return;
+  logDebugInfo("SUMMON", "ally-target", {
+    summon: summon.pieceType,
+    archetype,
+    allyTarget: allyTarget.name,
+    allyId: allyTarget.id,
+    action,
+    score: Math.round(score * 100) / 100,
+  });
+}
+
+/**
+ * Pick the best allied buff/heal/rally target from the full allies array using
+ * scoreAlly. Returns null when there are no allies. The player is NOT
+ * hard-pinned — a low-HP allied summon can outrank a healthy player.
+ */
+function pickBestAlly(
+  allies: AICombatant[],
+  summon: Enemy,
+  archetype: string,
+  action: string,
+): AICombatant | null {
+  if (allies.length === 0) return null;
+  let best: AICombatant | null = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  for (const ally of allies) {
+    const score = scoreAlly(ally, summon, archetype, action);
+    if (score > bestScore) {
+      bestScore = score;
+      best = ally;
+    }
+  }
+  return best;
+}
+
 /**
  * Guardian (golem): stay adjacent to the player, cast starter-shield when the
  * player is unshielded, and use backlineGuardCell to interpose between the
@@ -1775,11 +1878,14 @@ function decideSummonGuardian(
   origin: AICell,
 ): EnemyAction {
   const kit = SUMMON_KIT.guardian;
-  // Ward = the player (non-summon ally) if present, else the lowest-HP ally.
-  const ward =
-    allies.find((a) => !a.isSummon) ??
-    [...allies].sort((a, b) => hpFrac(a) - hpFrac(b))[0] ??
-    null;
+  // Ward = best-scored ally across the WHOLE allied group (player + allied
+  // summons). Section 5: previously `allies.find(a => !a.isSummon)` hard-pinned
+  // the ward to the player, so a golem could never Shield a low-HP allied
+  // summon even when the player was already shielded. Now a dying high-value
+  // summon (wisp/healer) can outrank a healthy player via scoreAlly's urgency
+  // + threat terms. The shield cast below already uses ward.id as targetId, so
+  // once ward can be a summon the existing ally-target cast path (#306) fires.
+  const ward = pickBestAlly(allies, summon, "guardian", "shield");
   // Cast starter-shield on the ward when it is in range. The ward's shield
   // state is not observable on AICombatant (no activeEffects field), so we
   // gate on the shield spell being ready (cooldown-filtered via
@@ -2147,10 +2253,15 @@ function decideSummonHealer(
   const kit = SUMMON_KIT.healer;
   const healSpell = findKitSpell(kit[0], ctx);
   const rallySpell = findKitSpell(kit[1], ctx);
-  // Heal the most-wounded ally below the heal threshold.
-  const wounded = allies
-    .filter((a) => hpFrac(a) < ENEMY_HEAL_ALLY_THRESHOLD_PCT)
-    .sort((a, b) => hpFrac(a) - hpFrac(b))[0];
+  // Heal the most-wounded ally below the heal threshold. Section 5: previously
+  // a plain hpFrac sort picked the lowest-HP ally, but a dying high-value ally
+  // (wisp/healer) should outrank a slightly-more-wounded generic summon. We
+  // still gate on the heal threshold, then score the survivors with scoreAlly
+  // so urgency + threat + proximity decide the final heal target.
+  const woundedCandidates = allies.filter(
+    (a) => hpFrac(a) < ENEMY_HEAL_ALLY_THRESHOLD_PCT,
+  );
+  const wounded = pickBestAlly(woundedCandidates, summon, "healer", "heal");
   if (wounded && healSpell) {
     const dist = chebyshev(origin, { x: wounded.x, y: wounded.y });
     if (dist <= Number(healSpell.range)) {
@@ -2187,11 +2298,13 @@ function decideSummonHealer(
       retreating: false,
     };
   }
-  // No wounded ally: cast rallying-cry on the ward if in range (buff support).
-  const ward =
-    allies.find((a) => !a.isSummon) ??
-    [...allies].sort((a, b) => hpFrac(a) - hpFrac(b))[0] ??
-    null;
+  // No wounded ally: cast rallying-cry on the best-scored ally if in range
+  // (buff support). Section 5: previously `allies.find(a => !a.isSummon)`
+  // hard-pinned the rally ward to the player, so rallying-cry could never
+  // target an allied summon. Now the whole allied group is considered — a
+  // clustered group of summons can receive the rally buff when the player is
+  // out of range or lower-priority.
+  const ward = pickBestAlly(allies, summon, "healer", "rally");
   if (rallySpell && ward) {
     const dist = chebyshev(origin, { x: ward.x, y: ward.y });
     if (dist <= Number(rallySpell.range)) {

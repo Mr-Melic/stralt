@@ -17,8 +17,24 @@ import {
 } from "./turnQueue";
 
 /**
- * Decrement lifespan for all summons, kill those at 0, and return both the
+ * Decrement lifespan for summons, kill those at 0, and return both the
  * filtered enemy list and the IDs of summons that expired this tick.
+ *
+ * DECREMENT MODEL (Section 2 fix): "once when the summon's own turn begins".
+ * A summon's lifespan decrements by exactly 1 when ITS OWN turn starts — i.e.
+ * when advanceTurn dispatches to that summon's turn-order entry. A lifespan-4
+ * summon therefore acts on ~4 of its own turns before fading.
+ *
+ * The `activeSummonId` parameter selects the decrement target:
+ *   - When it is a non-null string: ONLY the summon with that id is decremented
+ *     (the one whose turn is about to begin). All other summons are left
+ *     untouched this tick. This is the Section 2 call path.
+ *   - When it is null/undefined: NO summon is decremented this tick — the call
+ *     is purely a cleanup pass to remove any summon that already hit 0 from a
+ *     prior decrement. (Legacy callers that omitted the arg used to decrement
+ *     ALL summons every tick; that path is intentionally NOT preserved because
+ *     it was the bug Section 2 fixes. No current caller relies on the legacy
+ *     "decrement all" behavior.)
  *
  * This function NO LONGER mutates the turn queue itself. The previous
  * implementation called removeCombatantFromTurnQueue inside the loop, which
@@ -26,10 +42,12 @@ import {
  * setEnemies callback ran AFTER currentTurnIndexRef was already advanced
  * against the stale turnOrder, leaving ghost turn entries).
  *
- * The new contract is synchronous and ordered:
- *   1. Decrement turnsRemaining for every summon.
- *   2. For any summon that hits 0: set hp=0 and log "fades away" (isSummon=true
- *      routes the line to the Summons chat channel — preserved verbatim).
+ * The contract is synchronous and ordered:
+ *   1. Decrement turnsRemaining for the active summon only (when activeSummonId
+ *      is provided and matches a living summon).
+ *   2. For any summon that hits 0 (or was already at 0 from a prior tick): set
+ *      hp=0 and log "fades away" (isSummon=true routes the line to the Summons
+ *      chat channel — preserved verbatim).
  *   3. Collect the expired summon IDs into expiredIds.
  *   4. Return { enemies, expiredIds }.
  *
@@ -42,16 +60,22 @@ import {
 export function decrementSummonLifespan(
   enemies: any[],
   log: (msg: string, color?: string, isSummon?: boolean) => void,
+  activeSummonId?: string | null,
 ): { enemies: any[]; expiredIds: string[] } {
   const expiredIds: string[] = [];
   for (const e of enemies) {
-    if (e.isSummon) {
+    if (!e.isSummon) continue;
+    // Section 2: only decrement the summon whose own turn is about to begin.
+    // When activeSummonId is null/undefined, skip the decrement entirely —
+    // this tick is a cleanup-only pass (no summon's turn is starting).
+    if (activeSummonId != null && e.id !== activeSummonId) continue;
+    if (activeSummonId != null) {
       e.turnsRemaining = (e.turnsRemaining || 1) - 1;
-      if (e.turnsRemaining <= 0) {
-        e.hp = 0;
-        log(`${e.name} fades away...`, "#a78bfa", true);
-        expiredIds.push(e.id);
-      }
+    }
+    if (e.turnsRemaining <= 0) {
+      e.hp = 0;
+      log(`${e.name} fades away...`, "#a78bfa", true);
+      expiredIds.push(e.id);
     }
   }
   return { enemies: enemies.filter((e: any) => e.hp > 0), expiredIds };
@@ -62,9 +86,17 @@ export function decrementSummonLifespan(
  * turn queue (state + both refs), and update the enemies state — in that order,
  * synchronously, in a single call.
  *
+ * DECREMENT MODEL (Section 2): the decrement only fires for the summon whose
+ * own turn is about to begin — identified by `activeSummonId`. When the next
+ * combatant is NOT a summon, the caller passes `null` and this call becomes a
+ * cleanup-only pass (no decrement, but any summon already at 0 is still removed
+ * from the queue and enemies state). This makes a summon's lifespan decrement
+ * exactly once per ROUND (on its own turn), not once per combatant turn.
+ *
  * This is the single entry point that satisfies the "no ghost slot" contract:
- *   1. `decrementSummonLifespan` runs first, producing `{ survivingEnemies,
- *      expiredIds }`.
+ *   1. `decrementSummonLifespan` runs first with `activeSummonId`, producing
+ *      `{ survivingEnemies, expiredIds }`. Only the active summon (if any) is
+ *      decremented; expired summons are collected regardless.
  *   2. For each `expiredId`, `removeCombatantFromTurnQueue` runs synchronously,
  *      filtering `turnOrder`, syncing `turnOrderRef.current`, and adjusting
  *      `currentTurnIndexRef.current` (3-case index math, including the
@@ -82,6 +114,11 @@ export function decrementSummonLifespan(
  * Side-effectful by design: it mutates the two refs it is handed, invokes the
  * two setters it is handed, and mutates `turnsRemaining`/`hp` on the enemy
  * objects in place (matching the existing `decrementSummonLifespan` behavior).
+ *
+ * `activeSummonId`: when non-null, only that summon is decremented this tick
+ *   (the one whose turn is about to begin). When null, no summon is decremented
+ *   — the call is cleanup-only. Expired-removal always runs for any summon at
+ *   0, regardless of this argument.
  */
 export function syncExpiredSummonsFromTurnQueue(
   enemies: any[],
@@ -91,10 +128,12 @@ export function syncExpiredSummonsFromTurnQueue(
   setTurnOrder: SetTurnOrder,
   setEnemies: (enemies: any[]) => void,
   log: (msg: string, color?: string, isSummon?: boolean) => void,
+  activeSummonId?: string | null,
 ): void {
   const { enemies: survivingEnemies, expiredIds } = decrementSummonLifespan(
     enemies,
     log,
+    activeSummonId,
   );
   for (const expiredId of expiredIds) {
     removeCombatantFromTurnQueue(
