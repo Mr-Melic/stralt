@@ -850,11 +850,11 @@ export function resolvePlayerCast(
       return "cast";
     }
 
-    // Barrier spell — place an impassable tile for 2 turns (inline line 8540)
+    // Barrier spell — place an impassable tile for 3 turns (inline line 8540)
     if (spell.isBarrier) {
-      ctx.placeBarrierTile(gridPos, 2);
+      ctx.placeBarrierTile(gridPos, 3);
       ctx.log(
-        `Barrier placed at (${gridPos.x},${gridPos.y}) for 2 turns!`,
+        `Barrier placed at (${gridPos.x},${gridPos.y}) for 3 turns!`,
         "#818cf8",
       );
       ctx.recordSpellType(spell.effectType ?? "damage");

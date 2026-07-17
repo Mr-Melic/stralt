@@ -18,6 +18,11 @@ import {
 } from "../data/gameConstants";
 import type { Enemy } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
+import {
+  type OccupancyContext,
+  findNearestFreeCell,
+  isCellFree as sharedIsCellFree,
+} from "./occupancy";
 
 export interface SummonUnitDef {
   pieceType: string;
@@ -98,12 +103,23 @@ export function spawnSummonUnit(
   log: (msg: string, color?: string, isSummon?: boolean) => void,
   computeEnemyStats: (level: number, pieceType: string, seedKey: string) => any,
   spellLevel = 0,
+  occupancyCtx?: OccupancyContext,
 ): SpawnSummonResult {
   const unitDef: SummonUnitDef | undefined = spell.summonUnitDef;
   if (!unitDef) {
     // Caller guards against missing unitDef before invoking; return an empty
     // result shape so the call site's destructure does not throw.
     throw new Error("spawnSummonUnit: spell.summonUnitDef is required");
+  }
+
+  // Spawn placement: if an occupancy context is provided and the requested
+  // cell is not free (occupied / impassable / barrier / void / portal), fall
+  // back to the nearest free cell within a 3-tile radius. Backward-compatible —
+  // callers that omit occupancyCtx keep the original behavior.
+  let spawnCell = cell;
+  if (occupancyCtx && !sharedIsCellFree(cell, occupancyCtx)) {
+    const fallback = findNearestFreeCell(cell, occupancyCtx, 3);
+    if (fallback) spawnCell = fallback;
   }
 
   const stats = computeEnemyStats(level, unitDef.pieceType, spell.id);
@@ -131,8 +147,8 @@ export function spawnSummonUnit(
   const summon: SpawnedSummon = {
     id: summonId,
     name: spell.name.replace("Summon ", ""),
-    x: cell.x,
-    y: cell.y,
+    x: spawnCell.x,
+    y: spawnCell.y,
     hp: maxHp,
     maxHp,
     side: "player",

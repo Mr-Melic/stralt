@@ -6,6 +6,8 @@
 
 import { starterSpells } from "../data/spellData";
 import type { SpellConfig } from "../types/gameTypes";
+import type { OccupancyContext } from "./occupancy";
+import { isCellFree as sharedIsCellFree } from "./occupancy";
 import type { Side, SpellContext } from "./spellEngine";
 import {
   type CombatantSnapshot,
@@ -142,6 +144,7 @@ function moveToward(
   summon: SummonUnit,
   target: Cell,
   ctx: SpellContext,
+  occupancy?: OccupancyContext,
 ): boolean {
   const dx = target.x - summon.x;
   const dy = target.y - summon.y;
@@ -157,7 +160,12 @@ function moveToward(
   }
 
   for (const cell of candidates) {
-    if (ctx.isCellFree(cell)) {
+    // Layer the shared full-passability check when an OccupancyContext is
+    // available; otherwise fall back to the occupancy-only ctx callback.
+    const free = occupancy
+      ? sharedIsCellFree(cell, occupancy)
+      : ctx.isCellFree(cell);
+    if (free) {
       summon.x = cell.x;
       summon.y = cell.y;
       return true;
@@ -170,6 +178,7 @@ function moveAway(
   summon: SummonUnit,
   threat: Cell,
   ctx: SpellContext,
+  occupancy?: OccupancyContext,
 ): boolean {
   const dx = summon.x - threat.x;
   const dy = summon.y - threat.y;
@@ -184,7 +193,12 @@ function moveAway(
   }
 
   for (const cell of candidates) {
-    if (ctx.isCellFree(cell)) {
+    // Layer the shared full-passability check when an OccupancyContext is
+    // available; otherwise fall back to the occupancy-only ctx callback.
+    const free = occupancy
+      ? sharedIsCellFree(cell, occupancy)
+      : ctx.isCellFree(cell);
+    if (free) {
       summon.x = cell.x;
       summon.y = cell.y;
       return true;
@@ -214,7 +228,11 @@ function attackAdjacent(
 // Behavior implementations
 // ---------------------------------------------------------------------------
 
-function runHunter(summon: SummonUnit, ctx: SpellContext): void {
+function runHunter(
+  summon: SummonUnit,
+  ctx: SpellContext,
+  occupancy?: OccupancyContext,
+): void {
   const enemy = findNearestEnemy(summon, ctx);
   if (!enemy) {
     ctx.log(`${summon.name} (Hunter) sees no enemies.`, "#9ca3af");
@@ -226,7 +244,7 @@ function runHunter(summon: SummonUnit, ctx: SpellContext): void {
     const dmg = Math.round(summon.level * 2.5 + 4);
     attackAdjacent(summon, ctx, dmg);
   } else {
-    const moved = moveToward(summon, enemy.cell, ctx);
+    const moved = moveToward(summon, enemy.cell, ctx, occupancy);
     if (moved) {
       ctx.log(`${summon.name} (Hunter) moves toward the enemy.`, "#60a5fa");
     } else {
@@ -235,7 +253,11 @@ function runHunter(summon: SummonUnit, ctx: SpellContext): void {
   }
 }
 
-function runGuardian(summon: SummonUnit, ctx: SpellContext): void {
+function runGuardian(
+  summon: SummonUnit,
+  ctx: SpellContext,
+  occupancy?: OccupancyContext,
+): void {
   // Guardian leashes to owner: we approximate by not moving far from spawn area
   // Guardian leashes to owner: we approximate by not moving far from spawn area
   // Since ctx doesn't expose owner position by id, we use a simple heuristic:
@@ -265,7 +287,7 @@ function runGuardian(summon: SummonUnit, ctx: SpellContext): void {
       if (combatant && combatant.side !== summon.side) {
         // Move toward this enemy if within leash range
         if (distance(summon, cell) <= 3) {
-          const moved = moveToward(summon, cell, ctx);
+          const moved = moveToward(summon, cell, ctx, occupancy);
           if (moved) {
             ctx.log(
               `${summon.name} (Guardian) moves to protect an ally.`,
@@ -281,7 +303,11 @@ function runGuardian(summon: SummonUnit, ctx: SpellContext): void {
   ctx.log(`${summon.name} (Guardian) holds position.`, "#9ca3af");
 }
 
-function runArcher(summon: SummonUnit, ctx: SpellContext): void {
+function runArcher(
+  summon: SummonUnit,
+  ctx: SpellContext,
+  occupancy?: OccupancyContext,
+): void {
   const enemy = findNearestEnemy(summon, ctx);
   if (!enemy) {
     ctx.log(`${summon.name} (Archer) sees no enemies.`, "#9ca3af");
@@ -293,7 +319,7 @@ function runArcher(summon: SummonUnit, ctx: SpellContext): void {
 
   // If enemy is adjacent, flee
   if (adjacentEnemies.length > 0) {
-    const moved = moveAway(summon, adjacentEnemies[0].cell, ctx);
+    const moved = moveAway(summon, adjacentEnemies[0].cell, ctx, occupancy);
     if (moved) {
       ctx.log(`${summon.name} (Archer) retreats to keep distance.`, "#60a5fa");
     } else {
@@ -314,7 +340,7 @@ function runArcher(summon: SummonUnit, ctx: SpellContext): void {
   }
 
   // Otherwise move toward enemy
-  const moved = moveToward(summon, enemy.cell, ctx);
+  const moved = moveToward(summon, enemy.cell, ctx, occupancy);
   if (moved) {
     ctx.log(`${summon.name} (Archer) moves into range.`, "#60a5fa");
   } else {
@@ -322,7 +348,11 @@ function runArcher(summon: SummonUnit, ctx: SpellContext): void {
   }
 }
 
-function runBomber(summon: SummonUnit, ctx: SpellContext): void {
+function runBomber(
+  summon: SummonUnit,
+  ctx: SpellContext,
+  occupancy?: OccupancyContext,
+): void {
   const enemy = findNearestEnemy(summon, ctx);
   if (!enemy) {
     ctx.log(`${summon.name} (Bomber) sees no enemies.`, "#9ca3af");
@@ -357,7 +387,7 @@ function runBomber(summon: SummonUnit, ctx: SpellContext): void {
   }
 
   // Otherwise rush toward enemy
-  const moved = moveToward(summon, enemy.cell, ctx);
+  const moved = moveToward(summon, enemy.cell, ctx, occupancy);
   if (moved) {
     ctx.log(`${summon.name} (Bomber) rushes toward the enemy.`, "#60a5fa");
   } else {
@@ -365,7 +395,11 @@ function runBomber(summon: SummonUnit, ctx: SpellContext): void {
   }
 }
 
-function runHealer(summon: SummonUnit, ctx: SpellContext): void {
+function runHealer(
+  summon: SummonUnit,
+  ctx: SpellContext,
+  occupancy?: OccupancyContext,
+): void {
   // Find owner by scanning for the allied unit that isn't a summon and isn't self
   const allies = findAllies(summon, ctx);
   let owner = allies.find((a) => !a.id.startsWith("summon-"));
@@ -388,7 +422,7 @@ function runHealer(summon: SummonUnit, ctx: SpellContext): void {
   // Stay near owner
   const distToOwner = distance(summon, owner.cell);
   if (distToOwner > 1) {
-    const moved = moveToward(summon, owner.cell, ctx);
+    const moved = moveToward(summon, owner.cell, ctx, occupancy);
     if (moved) {
       ctx.log(`${summon.name} (Healer) moves closer to its owner.`, "#60a5fa");
     }
@@ -471,7 +505,11 @@ function tryKitCast(
 // Public entry point
 // ---------------------------------------------------------------------------
 
-export function runSummonAI(summon: SummonUnit, ctx: SpellContext): void {
+export function runSummonAI(
+  summon: SummonUnit,
+  ctx: SpellContext,
+  occupancy?: OccupancyContext,
+): void {
   switch (summon.summonAI) {
     case "hunter": {
       const enemy = findNearestEnemy(summon, ctx);
@@ -488,7 +526,7 @@ export function runSummonAI(summon: SummonUnit, ctx: SpellContext): void {
       }
       if (kitCast) return;
       ctx.log(`${summon.name} (Hunter) falls back to instinct.`, SUMMON_ACCENT);
-      runHunter(summon, ctx);
+      runHunter(summon, ctx, occupancy);
       break;
     }
     case "guardian": {
@@ -513,7 +551,7 @@ export function runSummonAI(summon: SummonUnit, ctx: SpellContext): void {
         `${summon.name} (Guardian) falls back to instinct.`,
         SUMMON_ACCENT,
       );
-      runGuardian(summon, ctx);
+      runGuardian(summon, ctx, occupancy);
       break;
     }
     case "archer": {
@@ -531,7 +569,7 @@ export function runSummonAI(summon: SummonUnit, ctx: SpellContext): void {
       }
       if (kitCast) return;
       ctx.log(`${summon.name} (Archer) falls back to instinct.`, SUMMON_ACCENT);
-      runArcher(summon, ctx);
+      runArcher(summon, ctx, occupancy);
       break;
     }
     case "bomber": {
@@ -539,7 +577,7 @@ export function runSummonAI(summon: SummonUnit, ctx: SpellContext): void {
       const kitCast = tryKitCast(summon, ctx, "spell-inferno");
       if (kitCast) return;
       ctx.log(`${summon.name} (Bomber) falls back to instinct.`, SUMMON_ACCENT);
-      runBomber(summon, ctx);
+      runBomber(summon, ctx, occupancy);
       break;
     }
     case "healer": {
@@ -561,7 +599,7 @@ export function runSummonAI(summon: SummonUnit, ctx: SpellContext): void {
       }
       if (kitCast) return;
       ctx.log(`${summon.name} (Healer) falls back to instinct.`, SUMMON_ACCENT);
-      runHealer(summon, ctx);
+      runHealer(summon, ctx, occupancy);
       break;
     }
     default:

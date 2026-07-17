@@ -91,6 +91,7 @@ import {
   countWalkableVoid,
   pickMapArchetype,
 } from "../engine/mapGen";
+import type { OccupancyContext } from "../engine/occupancy";
 import {
   type RunMode,
   completeRun,
@@ -751,7 +752,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const challengeTotalDamageRef = useRef(0);
   const challengeTurnCountRef = useRef(0);
   const challengeMaxApThisTurnRef = useRef(0);
-  const challengePhysicalOnlyRef = useRef(true);
+  const challengeDirectHitRef = useRef(true);
   // Mirror of challengeAccepted state for stable access inside callbacks
   // (cast/move handlers are useCallback-memoized and would otherwise see a
   // stale closure of the accepted flag).
@@ -5757,6 +5758,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
             if (
               newMap.tiles[gy]?.[gx] === "floor" &&
+              !newMap.voidTiles?.has(`${gx},${gy}`) &&
               !(gx === spawnPosition.x && gy === spawnPosition.y) &&
               !newEnemies.some((e) => e.x === gx && e.y === gy)
             ) {
@@ -7799,6 +7801,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             seedKey: string,
           ) => any,
           spellLevelsRef.current[spell.id] ?? 0,
+          // OccupancyContext so spawnSummonUnit can fall back to the nearest
+          // free cell when the requested cell is occupied/impassable.
+          {
+            tiles: (currentMap?.tiles ?? []).map((row: any) =>
+              (row ?? []).map((t: any) => t !== "wall"),
+            ),
+            barriers: new Set(barrierTilesRef.current.keys()),
+            voidTiles: currentMap?.voidTiles ?? new Set<string>(),
+            portals: new Set(
+              (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+            ),
+            isOccupied: (c: { x: number; y: number }) =>
+              enemies.some((e: any) => e.x === c.x && e.y === c.y) ||
+              (playerPosition.x === c.x && playerPosition.y === c.y),
+          } satisfies OccupancyContext,
         );
         // Apply the summon through the real state paths: enemies +
         // battleEnemies (keeps battleEnemiesRef in sync) and turnOrder with
@@ -8058,6 +8075,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             seedKey: string,
           ) => any,
           spellLevels[spell.id] ?? 0,
+          // OccupancyContext so spawnSummonUnit can fall back to the nearest
+          // free cell when the requested cell is occupied/impassable.
+          {
+            tiles: (currentMap?.tiles ?? []).map((row: any) =>
+              (row ?? []).map((t: any) => t !== "wall"),
+            ),
+            barriers: new Set(barrierTilesRef.current.keys()),
+            voidTiles: currentMap?.voidTiles ?? new Set<string>(),
+            portals: new Set(
+              (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+            ),
+            isOccupied: (c: { x: number; y: number }) =>
+              enemies.some((e: any) => e.x === c.x && e.y === c.y) ||
+              (playerPosition.x === c.x && playerPosition.y === c.y),
+          } satisfies OccupancyContext,
         );
         const { enemies: newEnemies, turnOrder: newTurnOrder } =
           applySummonResult(
@@ -8246,7 +8278,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
-            challengePhysicalOnlyRef.current = false;
+            if (
+              Math.max(
+                Math.abs(gridPos.x - playerPosition.x),
+                Math.abs(gridPos.y - playerPosition.y),
+              ) > 2
+            )
+              challengeDirectHitRef.current = false;
             if (spell.targetType === "self" && spell.effectType === "heal") {
               challengeHealUsedRef.current = true;
             }
@@ -8263,7 +8301,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           } else if (castResult === "fizzled") {
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
-            challengePhysicalOnlyRef.current = false;
+            if (
+              Math.max(
+                Math.abs(gridPos.x - playerPosition.x),
+                Math.abs(gridPos.y - playerPosition.y),
+              ) > 2
+            )
+              challengeDirectHitRef.current = false;
+            if (currentBattleAp - apCost <= 0) {
+              selectedSpellIdRef.current = null;
+              setSpellSelectionVersion((v) => v + 1);
+              spellRangeCacheRef.current.clear();
+              setBattleActionMode("walk");
+            }
+          } else if (castResult === "summon") {
+            // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
+            // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
+            // owned by another task — do NOT touch it here.
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            markFirstAction();
+            challengeMaxApThisTurnRef.current += apCost;
+            if (spell.cooldown && spell.cooldown > 0) {
+              spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
+              setSpellCooldownVersion((v) => v + 1);
+            }
             if (currentBattleAp - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
@@ -8271,7 +8332,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               setBattleActionMode("walk");
             }
           }
-          // "no_ap" | "summon" | "abort" → no further action
+          // "no_ap" | "abort" → no further action
         }
         return;
       }
@@ -8439,7 +8500,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
-            challengePhysicalOnlyRef.current = false;
+            if (
+              Math.max(
+                Math.abs(gridPos.x - playerPosition.x),
+                Math.abs(gridPos.y - playerPosition.y),
+              ) > 2
+            )
+              challengeDirectHitRef.current = false;
             if (spell.targetType === "self" && spell.effectType === "heal") {
               challengeHealUsedRef.current = true;
             }
@@ -8456,7 +8523,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           } else if (castResult === "fizzled") {
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
-            challengePhysicalOnlyRef.current = false;
+            if (
+              Math.max(
+                Math.abs(gridPos.x - playerPosition.x),
+                Math.abs(gridPos.y - playerPosition.y),
+              ) > 2
+            )
+              challengeDirectHitRef.current = false;
+            if (currentBattleAp - apCost <= 0) {
+              selectedSpellIdRef.current = null;
+              setSpellSelectionVersion((v) => v + 1);
+              spellRangeCacheRef.current.clear();
+              setBattleActionMode("walk");
+            }
+          } else if (castResult === "summon") {
+            // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
+            // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
+            // owned by another task — do NOT touch it here.
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            markFirstAction();
+            challengeMaxApThisTurnRef.current += apCost;
+            if (spell.cooldown && spell.cooldown > 0) {
+              spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
+              setSpellCooldownVersion((v) => v + 1);
+            }
             if (currentBattleAp - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
@@ -8464,7 +8554,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               setBattleActionMode("walk");
             }
           }
-          // "no_ap" | "summon" | "abort" → no further action
+          // "no_ap" | "abort" → no further action
         }
         return;
       }
@@ -8775,7 +8865,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     challengeTotalDamageRef.current = 0;
     challengeTurnCountRef.current = 0;
     challengeMaxApThisTurnRef.current = 0;
-    challengePhysicalOnlyRef.current = true;
+    challengeDirectHitRef.current = true;
     // M-4: Mark cleanup as having run so no new timeouts can register after this
     cleanupRanRef.current = true;
     // FIX 4: Cancel recap timer so it never fires after battle ends
@@ -9272,7 +9362,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           {
             challengeTotalDamageRef,
             challengeHealUsedRef,
-            challengePhysicalOnlyRef,
+            challengeDirectHitRef,
             challengeTurnCountRef,
             challengeMaxApThisTurnRef,
           },
@@ -9291,7 +9381,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 turnCount: challengeTurnCountRef.current,
                 totalDamage: challengeTotalDamageRef.current,
                 healUsed: challengeHealUsedRef.current,
-                physicalOnly: challengePhysicalOnlyRef.current,
+                directHit: challengeDirectHitRef.current,
                 maxApUsedInTurn: challengeMaxApThisTurnRef.current,
               })
             : false;
@@ -10444,7 +10534,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             {
               const updatedBarriers = new Map<string, number>();
               for (const [bKey, bTurns] of barrierTilesRef.current.entries()) {
-                if (bTurns > 1) {
+                if (bTurns - 1 > 0) {
                   updatedBarriers.set(bKey, bTurns - 1);
                 } else {
                   logBattleEntry(`Barrier at ${bKey} has faded.`, "#818cf8");
@@ -10721,6 +10811,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 seedKey: string,
               ) => any,
               0,
+              // OccupancyContext so spawnSummonUnit can fall back to the
+              // nearest free cell when the requested cell is occupied.
+              {
+                tiles: (currentMap?.tiles ?? []).map((row: any) =>
+                  (row ?? []).map((t: any) => t !== "wall"),
+                ),
+                barriers: new Set(barrierTilesRef.current.keys()),
+                voidTiles: currentMap?.voidTiles ?? new Set<string>(),
+                portals: new Set(
+                  (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+                ),
+                isOccupied: (c: { x: number; y: number }) =>
+                  enemiesRef.current.some(
+                    (e: any) => e.x === c.x && e.y === c.y,
+                  ) ||
+                  (playerPosition.x === c.x && playerPosition.y === c.y),
+              } satisfies OccupancyContext,
             );
             const { enemies: newEnemies, turnOrder: newTurnOrder } =
               applySummonResult(
@@ -10929,6 +11036,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
         }
         // Always advance the turn — no stalls.
+        // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
+        // useEffect gate (line ~10639) does not early-return on the next
+        // enemy/summon turn. Every other branch in this pipeline resets this ref;
+        // the summon branch was the only one that forgot, stalling all turns
+        // after the first summon turn.
+        enemyTurnInProgressRef.current = false;
         setTimeout(() => advanceTurnRef.current(), 600);
         return;
       }
@@ -12348,7 +12461,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
       markFirstAction();
       challengeMaxApThisTurnRef.current += apCost;
-      challengePhysicalOnlyRef.current = false;
+      if (
+        Math.max(
+          Math.abs(gridPos.x - playerPosition.x),
+          Math.abs(gridPos.y - playerPosition.y),
+        ) > 2
+      )
+        challengeDirectHitRef.current = false;
       if (spell.targetType === "self" && spell.effectType === "heal") {
         challengeHealUsedRef.current = true;
       }
@@ -12365,7 +12484,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     } else if (castResult === "fizzled") {
       setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
       markFirstAction();
-      challengePhysicalOnlyRef.current = false;
+      if (
+        Math.max(
+          Math.abs(gridPos.x - playerPosition.x),
+          Math.abs(gridPos.y - playerPosition.y),
+        ) > 2
+      )
+        challengeDirectHitRef.current = false;
+      if (currentBattleAp - apCost <= 0) {
+        selectedSpellIdRef.current = null;
+        setSpellSelectionVersion((v) => v + 1);
+        spellRangeCacheRef.current.clear();
+        setBattleActionMode("walk");
+      }
+    } else if (castResult === "summon") {
+      // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
+      // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
+      // owned by another task — do NOT touch it here.
+      setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+      markFirstAction();
+      challengeMaxApThisTurnRef.current += apCost;
+      if (spell.cooldown && spell.cooldown > 0) {
+        spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
+        setSpellCooldownVersion((v) => v + 1);
+      }
       if (currentBattleAp - apCost <= 0) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
@@ -12373,7 +12515,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setBattleActionMode("walk");
       }
     }
-    // "no_ap" | "summon" | "abort" → no further action
+    // "no_ap" | "abort" → no further action
   }, [
     inBattle,
     battleActionMode,
@@ -14532,7 +14674,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           turnCount: challengeTurnCountRef.current,
           totalDamage: challengeTotalDamageRef.current,
           healUsed: challengeHealUsedRef.current,
-          physicalOnly: challengePhysicalOnlyRef.current,
+          directHit: challengeDirectHitRef.current,
           maxApUsedInTurn: challengeMaxApThisTurnRef.current,
         }}
       />

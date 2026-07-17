@@ -17,7 +17,7 @@ export interface Challenge {
     | "under_8_ap_per_turn"
     | "no_damage_taken"
     | "under_5_turns"
-    | "physical_only";
+    | "direct_hit";
   rewards: { doka?: number; xp?: number; badge?: string };
 }
 
@@ -25,7 +25,7 @@ export interface ChallengePanelProgress {
   turnCount: number;
   totalDamage: number;
   healUsed: boolean;
-  physicalOnly: boolean;
+  directHit: boolean;
   maxApUsedInTurn: number;
 }
 
@@ -89,9 +89,10 @@ export const DEFAULT_CHALLENGES: Challenge[] = [
   {
     id: "legendary_3",
     tier: "legendary",
-    description: "Win using only physical attacks (no spells)",
-    condition: "physical_only",
-    rewards: { doka: 400, xp: 800, badge: "Purist" },
+    description:
+      "Win using only spells cast on targets within 2 tiles (Chebyshev distance ≤ 2)",
+    condition: "direct_hit",
+    rewards: { doka: 400, xp: 800, badge: "Striker" },
   },
 ];
 
@@ -116,8 +117,8 @@ export function isChallengeCompleted(
       return progress.totalDamage === 0;
     case "under_5_turns":
       return progress.turnCount <= 5;
-    case "physical_only":
-      return progress.physicalOnly;
+    case "direct_hit":
+      return progress.directHit;
     default:
       return false;
   }
@@ -148,8 +149,8 @@ export function isChallengeFailed(
       return progress.totalDamage > 0;
     case "under_5_turns":
       return false;
-    case "physical_only":
-      return !progress.physicalOnly;
+    case "direct_hit":
+      return !progress.directHit;
     default:
       return false;
   }
@@ -403,8 +404,8 @@ export default function ChallengePanel({
                 Turns: {progress.turnCount} · Damage taken:{" "}
                 {progress.totalDamage}
               </div>
-              {currentChallenge.condition === "physical_only" && (
-                <div>Physical only: {progress.physicalOnly ? "Yes" : "No"}</div>
+              {currentChallenge.condition === "direct_hit" && (
+                <div>Direct hit: {progress.directHit ? "Yes" : "No"}</div>
               )}
               <div
                 style={{

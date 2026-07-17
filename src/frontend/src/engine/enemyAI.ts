@@ -38,6 +38,10 @@ import {
 } from "../data/gameConstants";
 import type { Enemy, SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
+import {
+  type OccupancyContext,
+  isCellFree as sharedIsCellFree,
+} from "./occupancy";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -249,11 +253,16 @@ function effectiveHp(c: AICombatant): number {
  * BFS reachable tiles from the enemy's position, respecting the step budget
  * and per-tile cost (slime flood doubles cost). Mirrors the inline
  * `reachableTilesAI` computation in the original WX region.
+ *
+ * Uses the shared `isCellFree` from engine/occupancy.ts for the passability
+ * check on each neighbor, so grid walls, barriers, portals, void tiles, and
+ * occupied cells are all handled by ONE shared implementation.
  */
 function computeReachable(
   origin: AICell,
   ctx: DecideEnemyContext,
 ): Set<string> {
+  const occCtx = toOccupancyContext(ctx);
   const reachable = new Set<string>();
   const visited = new Map<string, number>();
   const queue: { x: number; y: number; steps: number }[] = [
@@ -277,10 +286,8 @@ function computeReachable(
       const k = key(nx, ny);
       if (nx < 0 || nx >= WORLD_GRID_SIZE || ny < 0 || ny >= WORLD_GRID_SIZE)
         continue;
-      if (!ctx.grid[ny]?.[nx]) continue;
-      if (ctx.portals.has(k)) continue;
-      if (ctx.barriers.has(k)) continue;
-      if (ctx.occupied.has(k)) continue;
+      // Shared passability check: grid + barriers + portals + void + occupied.
+      if (!sharedIsCellFree({ x: nx, y: ny }, occCtx)) continue;
       if ((visited.get(k) ?? Number.POSITIVE_INFINITY) <= nextSteps) continue;
       visited.set(k, nextSteps);
       reachable.add(k);
@@ -290,16 +297,32 @@ function computeReachable(
   return reachable;
 }
 
-/** True if a tile is passable and unoccupied (single-step move check). */
+/**
+ * Adapter: build an `OccupancyContext` from the `DecideEnemyContext` the
+ * enemy-AI already carries. The `isOccupied` callback delegates to the
+ * ctx.occupied Set (which the WX call site populates with every combatant's
+ * "x,y" key). This is the single wiring point that lets the shared
+ * `isCellFree` see the same grid/barrier/portal/void/occupied state the
+ * enemy AI does.
+ */
+function toOccupancyContext(ctx: DecideEnemyContext): OccupancyContext {
+  return {
+    tiles: ctx.grid,
+    barriers: ctx.barriers,
+    voidTiles: ctx.voidTiles,
+    portals: ctx.portals,
+    isOccupied: (cell) => ctx.occupied.has(key(cell.x, cell.y)),
+  };
+}
+
+/**
+ * True if a tile is passable and unoccupied (single-step move check).
+ * Delegates to the shared `isCellFree` from engine/occupancy.ts so the
+ * enemy AI, summon AI, spawn placement, and swap/pushback/attract resolvers
+ * all use ONE occupancy + passability implementation.
+ */
 function isStepFree(x: number, y: number, ctx: DecideEnemyContext): boolean {
-  if (x < 0 || x >= WORLD_GRID_SIZE || y < 0 || y >= WORLD_GRID_SIZE)
-    return false;
-  if (!ctx.grid[y]?.[x]) return false;
-  const k = key(x, y);
-  if (ctx.barriers.has(k) || ctx.portals.has(k) || ctx.voidTiles.has(k))
-    return false;
-  if (ctx.occupied.has(k)) return false;
-  return true;
+  return sharedIsCellFree({ x, y }, toOccupancyContext(ctx));
 }
 
 /** Filter candidate move tiles to avoid hazards when the enemy is low HP. */

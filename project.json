@@ -1,18 +1,21 @@
 {
-  "overview": "Tactical RPG on Internet Computer with a unified summon subsystem, sophisticated AI, and an auto-expanding chat panel.",
+  "overview": "Tactics RPG with turn-based combat, summons, spells, and challenges, receiving a batch of gameplay fixes.",
   "features": [
-    "Unified combatant render dispatch so all summons render as distinct colorful creatures",
-    "Summon turns routed through the unified AI pipeline with five archetype profiles",
-    "Lifespan expiry routed through the shared death-removal path with no ghost turn entries",
-    "AI sophistication pass with lethal lookahead, overkill spill, and backline protection",
-    "Chat panel that auto-expands horizontally to fit all enabled channel tabs"
+    "Three-way turn router for player, summon, and enemy turns",
+    "Summon spells that cost AP and act via AI profiles",
+    "Direct Hit challenge replacing the old physical-only challenge",
+    "Barrier spell that appears, blocks movement and sight, and expires",
+    "Line of sight for all spells with void exemption",
+    "Doka spawns that avoid void and wall tiles",
+    "Single-tile occupancy enforcement across all movement"
   ],
   "category": "game",
   "tags": [
-    "tactical-rpg",
-    "combat-ai",
-    "summon-system",
-    "internet-computer"
+    "tactics",
+    "rpg",
+    "turn-based",
+    "combat",
+    "bugfix"
   ],
-  "last_updated": "2026-07-16T23:00:56.697Z"
+  "last_updated": "2026-07-16T23:53:19.364Z"
 }

@@ -157,6 +157,46 @@ export function computeTargetableTiles(
 
   const out = new Set<string>();
 
+  // Helper: Bresenham line-of-sight — tests every grid cell the ray passes
+  // through. Blocks on walls AND active barrier tiles. Void tiles are NOT in
+  // the TileType union and must NOT block LoS (casting over void is allowed).
+  // Defined here (before all branches) so the ground/barrier and line branches
+  // can also apply LoS when spell.lineOfSight is truthy.
+  const hasLoS = (tx: number, ty: number): boolean => {
+    let x0 = casterPos.x;
+    let y0 = casterPos.y;
+    const x1 = tx;
+    const y1 = ty;
+    const ddx = Math.abs(x1 - x0);
+    const ddy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = ddx - ddy;
+    while (true) {
+      // If this intermediate cell (not origin, not destination) is a wall OR
+      // an active barrier tile, LoS is blocked. Void tiles are NOT in the
+      // TileType union and must NOT block LoS (casting over void is allowed).
+      if (
+        (x0 !== casterPos.x || y0 !== casterPos.y) &&
+        (x0 !== x1 || y0 !== y1)
+      ) {
+        if (tiles[y0]?.[x0] === "wall") return false;
+        if (barrierTiles.has(`${x0},${y0}`)) return false;
+      }
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -ddy) {
+        err -= ddy;
+        x0 += sx;
+      }
+      if (e2 < ddx) {
+        err += ddx;
+        y0 += sy;
+      }
+    }
+    return true;
+  };
+
   // ── Ground / barrier branch: MANHATTAN distance ─────────────────────────────
   if (targetType === "ground" || spell.isBarrier) {
     const occupied = new Set<string>();
@@ -172,45 +212,17 @@ export function computeTargetableTiles(
         if (barrierTiles.has(`${nx},${ny}`)) continue;
         const key = `${nx},${ny}`;
         if (!occupied.has(key) && tiles[ny]?.[nx] !== "wall") {
+          // LoS: ground/barrier spells with truthy spell.lineOfSight require
+          // an unobstructed ray from caster to target. Spells with falsy
+          // spell.lineOfSight (e.g. Barrier, which has no lineOfSight field)
+          // bypass this and keep placing on any in-range free tile.
+          if (spell.lineOfSight && !hasLoS(nx, ny)) continue;
           out.add(key);
         }
       }
     }
     return out;
   }
-
-  // Helper: Bresenham line-of-sight — tests every grid cell the ray passes through
-  const hasLoS = (tx: number, ty: number): boolean => {
-    let x0 = casterPos.x;
-    let y0 = casterPos.y;
-    const x1 = tx;
-    const y1 = ty;
-    const ddx = Math.abs(x1 - x0);
-    const ddy = Math.abs(y1 - y0);
-    const sx = x0 < x1 ? 1 : -1;
-    const sy = y0 < y1 ? 1 : -1;
-    let err = ddx - ddy;
-    while (true) {
-      // If this intermediate cell (not origin, not destination) is a wall, LoS blocked
-      if (
-        (x0 !== casterPos.x || y0 !== casterPos.y) &&
-        (x0 !== x1 || y0 !== y1)
-      ) {
-        if (tiles[y0]?.[x0] === "wall") return false;
-      }
-      if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err;
-      if (e2 > -ddy) {
-        err -= ddy;
-        x0 += sx;
-      }
-      if (e2 < ddx) {
-        err += ddx;
-        y0 += sy;
-      }
-    }
-    return true;
-  };
 
   // ── Line branch: tiles in a straight line from caster up to range using
   // Bresenham LoS. Walks every cell the ray passes through; stops at walls,
@@ -236,6 +248,13 @@ export function computeTargetableTiles(
           break;
         if (tiles[ny]?.[nx] === "wall") break;
         if (barrierTiles.has(`${nx},${ny}`)) break;
+        // LoS: line spells with truthy spell.lineOfSight require an
+        // unobstructed ray. The ray-walk break above already stops at walls
+        // and barriers, so hasLoS is satisfied for any tile reached; this
+        // explicit guard keeps the line branch consistent with the
+        // enemy/area/ground branches. Spells with falsy spell.lineOfSight
+        // bypass it.
+        if (spell.lineOfSight && !hasLoS(nx, ny)) break;
         out.add(`${nx},${ny}`);
       }
     }

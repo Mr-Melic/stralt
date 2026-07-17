@@ -47508,6 +47508,38 @@ class EffectsManager {
     this.hitStopUntil = 0;
   }
 }
+function occKey(x3, y2) {
+  return `${x3},${y2}`;
+}
+function isCellFree(cell, ctx) {
+  var _a3;
+  const { x: x3, y: y2 } = cell;
+  if (x3 < 0 || x3 >= WORLD_GRID_SIZE || y2 < 0 || y2 >= WORLD_GRID_SIZE) {
+    return false;
+  }
+  if (!((_a3 = ctx.tiles[y2]) == null ? void 0 : _a3[x3])) return false;
+  const k2 = occKey(x3, y2);
+  if (ctx.barriers.has(k2)) return false;
+  if (ctx.portals.has(k2)) return false;
+  if (ctx.voidTiles.has(k2)) return false;
+  if (ctx.isOccupied(cell)) return false;
+  return true;
+}
+function findNearestFreeCell(origin, ctx, maxRadius) {
+  if (isCellFree(origin, ctx)) return { x: origin.x, y: origin.y };
+  for (let r2 = 1; r2 <= maxRadius; r2++) {
+    for (let dx = -r2; dx <= r2; dx++) {
+      const dy = r2 - Math.abs(dx);
+      const a2 = { x: origin.x + dx, y: origin.y + dy };
+      if (isCellFree(a2, ctx)) return a2;
+      if (dy !== 0) {
+        const b2 = { x: origin.x + dx, y: origin.y - dy };
+        if (isCellFree(b2, ctx)) return b2;
+      }
+    }
+  }
+  return null;
+}
 const SUMMON_KIT = {
   hunter: ["physical_attack", "spell-venom-strike"],
   guardian: ["starter-shield", "spell-iron-skin"],
@@ -47550,7 +47582,7 @@ function effectiveHp(c2) {
   return c2.effectiveHp ?? c2.hp;
 }
 function computeReachable(origin, ctx) {
-  var _a3;
+  const occCtx = toOccupancyContext(ctx);
   const reachable = /* @__PURE__ */ new Set();
   const visited = /* @__PURE__ */ new Map();
   const queue = [
@@ -47574,10 +47606,7 @@ function computeReachable(origin, ctx) {
       const k2 = key(nx, ny);
       if (nx < 0 || nx >= WORLD_GRID_SIZE || ny < 0 || ny >= WORLD_GRID_SIZE)
         continue;
-      if (!((_a3 = ctx.grid[ny]) == null ? void 0 : _a3[nx])) continue;
-      if (ctx.portals.has(k2)) continue;
-      if (ctx.barriers.has(k2)) continue;
-      if (ctx.occupied.has(k2)) continue;
+      if (!isCellFree({ x: nx, y: ny }, occCtx)) continue;
       if ((visited.get(k2) ?? Number.POSITIVE_INFINITY) <= nextSteps) continue;
       visited.set(k2, nextSteps);
       reachable.add(k2);
@@ -47586,16 +47615,17 @@ function computeReachable(origin, ctx) {
   }
   return reachable;
 }
+function toOccupancyContext(ctx) {
+  return {
+    tiles: ctx.grid,
+    barriers: ctx.barriers,
+    voidTiles: ctx.voidTiles,
+    portals: ctx.portals,
+    isOccupied: (cell) => ctx.occupied.has(key(cell.x, cell.y))
+  };
+}
 function isStepFree(x3, y2, ctx) {
-  var _a3;
-  if (x3 < 0 || x3 >= WORLD_GRID_SIZE || y2 < 0 || y2 >= WORLD_GRID_SIZE)
-    return false;
-  if (!((_a3 = ctx.grid[y2]) == null ? void 0 : _a3[x3])) return false;
-  const k2 = key(x3, y2);
-  if (ctx.barriers.has(k2) || ctx.portals.has(k2) || ctx.voidTiles.has(k2))
-    return false;
-  if (ctx.occupied.has(k2)) return false;
-  return true;
+  return isCellFree({ x: x3, y: y2 }, toOccupancyContext(ctx));
 }
 function filterHazardCandidates(candidates, ctx, enemyHpFrac) {
   if (ctx.hazardTiles.size === 0) return candidates;
@@ -49285,9 +49315,9 @@ function resolvePlayerCast(spell, gridPos, ctx) {
       return "cast";
     }
     if (spell.isBarrier) {
-      ctx.placeBarrierTile(gridPos, 2);
+      ctx.placeBarrierTile(gridPos, 3);
       ctx.log(
-        `Barrier placed at (${gridPos.x},${gridPos.y}) for 2 turns!`,
+        `Barrier placed at (${gridPos.x},${gridPos.y}) for 3 turns!`,
         "#818cf8"
       );
       ctx.recordSpellType(spell.effectType ?? "damage");
@@ -49389,10 +49419,15 @@ const SUMMON_PIECE_ICONS = {
   knight: "♞",
   pawn: "♟"
 };
-function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, spellLevel = 0) {
+function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, spellLevel = 0, occupancyCtx) {
   const unitDef = spell.summonUnitDef;
   if (!unitDef) {
     throw new Error("spawnSummonUnit: spell.summonUnitDef is required");
+  }
+  let spawnCell = cell;
+  if (occupancyCtx && !isCellFree(cell, occupancyCtx)) {
+    const fallback = findNearestFreeCell(cell, occupancyCtx, 3);
+    if (fallback) spawnCell = fallback;
   }
   const stats = computeEnemyStats2(level, unitDef.pieceType, spell.id);
   const summonAI = spell.summonAI || "hunter";
@@ -49406,8 +49441,8 @@ function spawnSummonUnit(cell, spell, ownerId, level, log2, computeEnemyStats2, 
   const summon = {
     id: summonId,
     name: spell.name.replace("Summon ", ""),
-    x: cell.x,
-    y: cell.y,
+    x: spawnCell.x,
+    y: spawnCell.y,
     hp: maxHp,
     maxHp,
     side: "player",
@@ -49542,26 +49577,6 @@ function computeTargetableTiles(spell, casterPos, gridState) {
     return allTiles;
   }
   const out = /* @__PURE__ */ new Set();
-  if (targetType === "ground" || spell.isBarrier) {
-    const occupied = /* @__PURE__ */ new Set();
-    for (const e of enemies) occupied.add(`${e.x},${e.y}`);
-    occupied.add(`${casterPos.x},${casterPos.y}`);
-    for (let dx = -range; dx <= range; dx++) {
-      for (let dy = -range; dy <= range; dy++) {
-        const nx = casterPos.x + dx;
-        const ny = casterPos.y + dy;
-        if (nx < 0 || ny < 0 || nx >= worldGridSize || ny >= worldGridSize)
-          continue;
-        if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) continue;
-        if (barrierTiles.has(`${nx},${ny}`)) continue;
-        const key2 = `${nx},${ny}`;
-        if (!occupied.has(key2) && ((_a3 = tiles[ny]) == null ? void 0 : _a3[nx]) !== "wall") {
-          out.add(key2);
-        }
-      }
-    }
-    return out;
-  }
   const hasLoS = (tx, ty) => {
     var _a4;
     let x0 = casterPos.x;
@@ -49576,6 +49591,7 @@ function computeTargetableTiles(spell, casterPos, gridState) {
     while (true) {
       if ((x0 !== casterPos.x || y0 !== casterPos.y) && (x0 !== x1 || y0 !== y1)) {
         if (((_a4 = tiles[y0]) == null ? void 0 : _a4[x0]) === "wall") return false;
+        if (barrierTiles.has(`${x0},${y0}`)) return false;
       }
       if (x0 === x1 && y0 === y1) break;
       const e2 = 2 * err;
@@ -49590,6 +49606,27 @@ function computeTargetableTiles(spell, casterPos, gridState) {
     }
     return true;
   };
+  if (targetType === "ground" || spell.isBarrier) {
+    const occupied = /* @__PURE__ */ new Set();
+    for (const e of enemies) occupied.add(`${e.x},${e.y}`);
+    occupied.add(`${casterPos.x},${casterPos.y}`);
+    for (let dx = -range; dx <= range; dx++) {
+      for (let dy = -range; dy <= range; dy++) {
+        const nx = casterPos.x + dx;
+        const ny = casterPos.y + dy;
+        if (nx < 0 || ny < 0 || nx >= worldGridSize || ny >= worldGridSize)
+          continue;
+        if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) continue;
+        if (barrierTiles.has(`${nx},${ny}`)) continue;
+        const key2 = `${nx},${ny}`;
+        if (!occupied.has(key2) && ((_a3 = tiles[ny]) == null ? void 0 : _a3[nx]) !== "wall") {
+          if (spell.lineOfSight && !hasLoS(nx, ny)) continue;
+          out.add(key2);
+        }
+      }
+    }
+    return out;
+  }
   if (targetType === "line") {
     const out2 = /* @__PURE__ */ new Set();
     const dirs = [
@@ -49610,6 +49647,7 @@ function computeTargetableTiles(spell, casterPos, gridState) {
           break;
         if (((_b3 = tiles[ny]) == null ? void 0 : _b3[nx]) === "wall") break;
         if (barrierTiles.has(`${nx},${ny}`)) break;
+        if (spell.lineOfSight && !hasLoS(nx, ny)) break;
         out2.add(`${nx},${ny}`);
       }
     }
@@ -52092,8 +52130,8 @@ function evaluateChallenges(refs, playerHp, playerMaxHp) {
     status: refs.challengeTurnCountRef.current > 15 ? "failed" : "on_track"
   });
   results.push({
-    id: "physical_only",
-    status: !refs.challengePhysicalOnlyRef.current ? "failed" : "on_track"
+    id: "direct_hit",
+    status: !refs.challengeDirectHitRef.current ? "failed" : "on_track"
   });
   results.push({
     id: "survive_with_50_hp",
@@ -52219,9 +52257,9 @@ const DEFAULT_CHALLENGES = [
   {
     id: "legendary_3",
     tier: "legendary",
-    description: "Win using only physical attacks (no spells)",
-    condition: "physical_only",
-    rewards: { doka: 400, xp: 800, badge: "Purist" }
+    description: "Win using only spells cast on targets within 2 tiles (Chebyshev distance ≤ 2)",
+    condition: "direct_hit",
+    rewards: { doka: 400, xp: 800, badge: "Striker" }
   }
 ];
 function isChallengeCompleted(challenge, progress) {
@@ -52242,8 +52280,8 @@ function isChallengeCompleted(challenge, progress) {
       return progress.totalDamage === 0;
     case "under_5_turns":
       return progress.turnCount <= 5;
-    case "physical_only":
-      return progress.physicalOnly;
+    case "direct_hit":
+      return progress.directHit;
     default:
       return false;
   }
@@ -52266,8 +52304,8 @@ function isChallengeFailed(challenge, progress) {
       return progress.totalDamage > 0;
     case "under_5_turns":
       return false;
-    case "physical_only":
-      return !progress.physicalOnly;
+    case "direct_hit":
+      return !progress.directHit;
     default:
       return false;
   }
@@ -52505,9 +52543,9 @@ function ChallengePanel({
                   " ",
                   progress.totalDamage
                 ] }),
-                currentChallenge.condition === "physical_only" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
-                  "Physical only: ",
-                  progress.physicalOnly ? "Yes" : "No"
+                currentChallenge.condition === "direct_hit" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+                  "Direct hit: ",
+                  progress.directHit ? "Yes" : "No"
                 ] }),
                 /* @__PURE__ */ jsxRuntimeExports.jsxs(
                   "div",
@@ -54355,7 +54393,7 @@ const WorldExplorationInner = ({
   const challengeTotalDamageRef = reactExports.useRef(0);
   const challengeTurnCountRef = reactExports.useRef(0);
   const challengeMaxApThisTurnRef = reactExports.useRef(0);
-  const challengePhysicalOnlyRef = reactExports.useRef(true);
+  const challengeDirectHitRef = reactExports.useRef(true);
   const challengeAcceptedRef = reactExports.useRef(false);
   const firstActionTakenRef = reactExports.useRef(false);
   reactExports.useEffect(() => {
@@ -57675,7 +57713,7 @@ const WorldExplorationInner = ({
     isMobile
   ]);
   const checkPortalInteraction = reactExports.useCallback(() => {
-    var _a4, _b4, _c3, _d3, _e3, _f3;
+    var _a4, _b4, _c3, _d3, _e3, _f3, _g2;
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return;
     if (!currentMap) return;
@@ -58184,7 +58222,7 @@ const WorldExplorationInner = ({
         const walkable = [];
         for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
           for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
+            if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !((_g2 = newMap.voidTiles) == null ? void 0 : _g2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
               walkable.push({ x: gx, y: gy });
             }
           }
@@ -59808,7 +59846,20 @@ const WorldExplorationInner = ({
           characterStats.level,
           logBattleEntry,
           computeEnemyStats,
-          spellLevelsRef.current[spell.id] ?? 0
+          spellLevelsRef.current[spell.id] ?? 0,
+          // OccupancyContext so spawnSummonUnit can fall back to the nearest
+          // free cell when the requested cell is occupied/impassable.
+          {
+            tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
+              (row) => (row ?? []).map((t) => t !== "wall")
+            ),
+            barriers: new Set(barrierTilesRef.current.keys()),
+            voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
+            portals: new Set(
+              ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
+            ),
+            isOccupied: (c2) => enemies.some((e) => e.x === c2.x && e.y === c2.y) || playerPosition.x === c2.x && playerPosition.y === c2.y
+          }
         );
         const { turnOrder: turnOrder2 } = applySummonResult(
           summon,
@@ -60013,7 +60064,20 @@ const WorldExplorationInner = ({
           characterStats.level,
           logBattleEntry,
           computeEnemyStats,
-          spellLevels[spell.id] ?? 0
+          spellLevels[spell.id] ?? 0,
+          // OccupancyContext so spawnSummonUnit can fall back to the nearest
+          // free cell when the requested cell is occupied/impassable.
+          {
+            tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
+              (row) => (row ?? []).map((t) => t !== "wall")
+            ),
+            barriers: new Set(barrierTilesRef.current.keys()),
+            voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
+            portals: new Set(
+              ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
+            ),
+            isOccupied: (c2) => enemies.some((e) => e.x === c2.x && e.y === c2.y) || playerPosition.x === c2.x && playerPosition.y === c2.y
+          }
         );
         const { enemies: newEnemies, turnOrder: newTurnOrder } = applySummonResult(
           summon,
@@ -60171,7 +60235,11 @@ const WorldExplorationInner = ({
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
-            challengePhysicalOnlyRef.current = false;
+            if (Math.max(
+              Math.abs(gridPos.x - playerPosition.x),
+              Math.abs(gridPos.y - playerPosition.y)
+            ) > 2)
+              challengeDirectHitRef.current = false;
             if (spell.targetType === "self" && spell.effectType === "heal") {
               challengeHealUsedRef.current = true;
             }
@@ -60188,7 +60256,25 @@ const WorldExplorationInner = ({
           } else if (castResult === "fizzled") {
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
-            challengePhysicalOnlyRef.current = false;
+            if (Math.max(
+              Math.abs(gridPos.x - playerPosition.x),
+              Math.abs(gridPos.y - playerPosition.y)
+            ) > 2)
+              challengeDirectHitRef.current = false;
+            if (currentBattleAp - apCost <= 0) {
+              selectedSpellIdRef.current = null;
+              setSpellSelectionVersion((v2) => v2 + 1);
+              spellRangeCacheRef.current.clear();
+              setBattleActionMode("walk");
+            }
+          } else if (castResult === "summon") {
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            markFirstAction();
+            challengeMaxApThisTurnRef.current += apCost;
+            if (spell.cooldown && spell.cooldown > 0) {
+              spellCooldownsRef.current.set(spell.id, spell.cooldown);
+              setSpellCooldownVersion((v2) => v2 + 1);
+            }
             if (currentBattleAp - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v2) => v2 + 1);
@@ -60335,7 +60421,11 @@ const WorldExplorationInner = ({
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
-            challengePhysicalOnlyRef.current = false;
+            if (Math.max(
+              Math.abs(gridPos.x - playerPosition.x),
+              Math.abs(gridPos.y - playerPosition.y)
+            ) > 2)
+              challengeDirectHitRef.current = false;
             if (spell.targetType === "self" && spell.effectType === "heal") {
               challengeHealUsedRef.current = true;
             }
@@ -60352,7 +60442,25 @@ const WorldExplorationInner = ({
           } else if (castResult === "fizzled") {
             setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
             markFirstAction();
-            challengePhysicalOnlyRef.current = false;
+            if (Math.max(
+              Math.abs(gridPos.x - playerPosition.x),
+              Math.abs(gridPos.y - playerPosition.y)
+            ) > 2)
+              challengeDirectHitRef.current = false;
+            if (currentBattleAp - apCost <= 0) {
+              selectedSpellIdRef.current = null;
+              setSpellSelectionVersion((v2) => v2 + 1);
+              spellRangeCacheRef.current.clear();
+              setBattleActionMode("walk");
+            }
+          } else if (castResult === "summon") {
+            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            markFirstAction();
+            challengeMaxApThisTurnRef.current += apCost;
+            if (spell.cooldown && spell.cooldown > 0) {
+              spellCooldownsRef.current.set(spell.id, spell.cooldown);
+              setSpellCooldownVersion((v2) => v2 + 1);
+            }
             if (currentBattleAp - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v2) => v2 + 1);
@@ -60617,7 +60725,7 @@ const WorldExplorationInner = ({
     challengeTotalDamageRef.current = 0;
     challengeTurnCountRef.current = 0;
     challengeMaxApThisTurnRef.current = 0;
-    challengePhysicalOnlyRef.current = true;
+    challengeDirectHitRef.current = true;
     cleanupRanRef.current = true;
     if (recapTimerRef.current !== null) {
       clearTimeout(recapTimerRef.current);
@@ -60958,7 +61066,7 @@ const WorldExplorationInner = ({
           {
             challengeTotalDamageRef,
             challengeHealUsedRef,
-            challengePhysicalOnlyRef,
+            challengeDirectHitRef,
             challengeTurnCountRef,
             challengeMaxApThisTurnRef
           },
@@ -60974,7 +61082,7 @@ const WorldExplorationInner = ({
           turnCount: challengeTurnCountRef.current,
           totalDamage: challengeTotalDamageRef.current,
           healUsed: challengeHealUsedRef.current,
-          physicalOnly: challengePhysicalOnlyRef.current,
+          directHit: challengeDirectHitRef.current,
           maxApUsedInTurn: challengeMaxApThisTurnRef.current
         }) : false;
         const challengeDokaReward = challengeCompleted ? ((_a4 = currentChallenge == null ? void 0 : currentChallenge.rewards) == null ? void 0 : _a4.doka) || 0 : 0;
@@ -61868,7 +61976,7 @@ const WorldExplorationInner = ({
             {
               const updatedBarriers = /* @__PURE__ */ new Map();
               for (const [bKey, bTurns] of barrierTilesRef.current.entries()) {
-                if (bTurns > 1) {
+                if (bTurns - 1 > 0) {
                   updatedBarriers.set(bKey, bTurns - 1);
                 } else {
                   logBattleEntry(`Barrier at ${bKey} has faded.`, "#818cf8");
@@ -62074,7 +62182,22 @@ const WorldExplorationInner = ({
               characterStats.level,
               logBattleEntry,
               computeEnemyStats,
-              0
+              0,
+              // OccupancyContext so spawnSummonUnit can fall back to the
+              // nearest free cell when the requested cell is occupied.
+              {
+                tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
+                  (row) => (row ?? []).map((t) => t !== "wall")
+                ),
+                barriers: new Set(barrierTilesRef.current.keys()),
+                voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
+                portals: new Set(
+                  ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
+                ),
+                isOccupied: (c2) => enemiesRef.current.some(
+                  (e) => e.x === c2.x && e.y === c2.y
+                ) || playerPosition.x === c2.x && playerPosition.y === c2.y
+              }
             );
             const { enemies: newEnemies, turnOrder: newTurnOrder } = applySummonResult(
               summon,
@@ -62254,6 +62377,7 @@ const WorldExplorationInner = ({
             true
           );
         }
+        enemyTurnInProgressRef.current = false;
         setTimeout(() => advanceTurnRef.current(), 600);
         return;
       }
@@ -63445,7 +63569,11 @@ const WorldExplorationInner = ({
       setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
       markFirstAction();
       challengeMaxApThisTurnRef.current += apCost;
-      challengePhysicalOnlyRef.current = false;
+      if (Math.max(
+        Math.abs(gridPos.x - playerPosition.x),
+        Math.abs(gridPos.y - playerPosition.y)
+      ) > 2)
+        challengeDirectHitRef.current = false;
       if (spell.targetType === "self" && spell.effectType === "heal") {
         challengeHealUsedRef.current = true;
       }
@@ -63462,7 +63590,25 @@ const WorldExplorationInner = ({
     } else if (castResult === "fizzled") {
       setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
       markFirstAction();
-      challengePhysicalOnlyRef.current = false;
+      if (Math.max(
+        Math.abs(gridPos.x - playerPosition.x),
+        Math.abs(gridPos.y - playerPosition.y)
+      ) > 2)
+        challengeDirectHitRef.current = false;
+      if (currentBattleAp - apCost <= 0) {
+        selectedSpellIdRef.current = null;
+        setSpellSelectionVersion((v2) => v2 + 1);
+        spellRangeCacheRef.current.clear();
+        setBattleActionMode("walk");
+      }
+    } else if (castResult === "summon") {
+      setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+      markFirstAction();
+      challengeMaxApThisTurnRef.current += apCost;
+      if (spell.cooldown && spell.cooldown > 0) {
+        spellCooldownsRef.current.set(spell.id, spell.cooldown);
+        setSpellCooldownVersion((v2) => v2 + 1);
+      }
       if (currentBattleAp - apCost <= 0) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v2) => v2 + 1);
@@ -65804,7 +65950,7 @@ const WorldExplorationInner = ({
               turnCount: challengeTurnCountRef.current,
               totalDamage: challengeTotalDamageRef.current,
               healUsed: challengeHealUsedRef.current,
-              physicalOnly: challengePhysicalOnlyRef.current,
+              directHit: challengeDirectHitRef.current,
               maxApUsedInTurn: challengeMaxApThisTurnRef.current
             }
           }
@@ -68358,7 +68504,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CGRIQgnx.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DXiu1lIX.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

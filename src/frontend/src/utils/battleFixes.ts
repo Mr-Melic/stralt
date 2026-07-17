@@ -3,7 +3,7 @@ export interface ChallengeRefs {
   challengeTotalDamageRef: React.MutableRefObject<number>;
   challengeTurnCountRef: React.MutableRefObject<number>;
   challengeMaxApThisTurnRef: React.MutableRefObject<number>;
-  challengePhysicalOnlyRef: React.MutableRefObject<boolean>;
+  challengeDirectHitRef: React.MutableRefObject<boolean>;
 }
 
 export function evaluateChallenges(
@@ -26,10 +26,10 @@ export function evaluateChallenges(
     status: refs.challengeTurnCountRef.current > 15 ? "failed" : "on_track",
   });
 
-  // physical_only
+  // direct_hit
   results.push({
-    id: "physical_only",
-    status: !refs.challengePhysicalOnlyRef.current ? "failed" : "on_track",
+    id: "direct_hit",
+    status: !refs.challengeDirectHitRef.current ? "failed" : "on_track",
   });
 
   // survive_with_50_hp
