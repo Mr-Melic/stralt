@@ -1,17 +1,17 @@
 {
-  "overview": "A carved-stone dark fantasy exploration and combat game with a unified combatant store and persistent spell bar order.",
+  "overview": "A tactics RPG with grid-based spell combat, spellbook management, and a death-and-respawn flow.",
   "features": [
-    "Explore maps and battle enemies with click targeting and AI combat",
-    "Death Realm and rest maps guaranteed free of stale enemies",
-    "Throttled pattern-lookup logging to stop idle error spam",
-    "Spell bar order persists across reload and relogin"
+    "Grid-based spell combat with targeting",
+    "Spellbook slot swapping",
+    "Death realm transition on defeat",
+    "Exploration and portal rules"
   ],
   "category": "game",
   "tags": [
-    "game",
+    "tactics-rpg",
     "combat",
-    "exploration",
-    "persistence"
+    "spellbook",
+    "death-pipeline"
   ],
-  "last_updated": "2026-07-17T03:41:27.775Z"
+  "last_updated": "2026-07-17T14:47:16.688Z"
 }

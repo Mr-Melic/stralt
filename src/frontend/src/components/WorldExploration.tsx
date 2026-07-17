@@ -1390,6 +1390,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               dotResult.damage,
               `${dotTypeLabel} DoT`,
             );
+            // [DEATH-BISECT] Immediate death check after DoT-to-player tick.
+            // Use the computed post-RES damage (postResDamage), not the
+            // un-flushed characterStats.hp state, since playerTakesDamage's
+            // setCharacterStats has not yet committed to this closure.
+            if (characterStats.hp - postResDamage <= 0) {
+              logDebugInfo("BATTLE", "[DEATH-BISECT] source: dot-tick", {
+                hpBefore: characterStats.hp,
+                dotDamage: dotResult.damage,
+                postResDamage,
+                hpAfter: characterStats.hp - postResDamage,
+                dotTypeLabel,
+              });
+              _handlePlayerDeath();
+            }
           } else {
             postResDamage = enemyTakesDamage(
               targetId,
@@ -1833,6 +1847,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       !actor
     )
       return;
+    // [SPELLBAR-BISECT] load effect fired log: dev-gated signal that the
+    // spell-bar load effect actually ran for this deps change. Paired with
+    // the dirty-guard check below so the user can see exactly when the load
+    // effect skips vs. proceeds.
+    logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load effect fired", {
+      userId,
+      characterSlot,
+      ownedCount: ownedSpells.length,
+      dirty: spellBarDirtyRef.current,
+    });
     let cancelled = false;
     (async () => {
       try {
@@ -1841,6 +1865,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           BigInt(characterSlot),
         );
         if (cancelled) return;
+        // SPELLBAR-DIRTY GUARD: if handleSetActiveSpells marked the local bar
+        // dirty (an equip/swap is in-flight with a 1000ms debounced save), the
+        // backend value we are about to read is STALE relative to the user's
+        // pending change. Skip BOTH setActiveSpellIds calls (saved-path and
+        // default-path) so we do not clobber the optimistic local bar while
+        // the save is still racing. The guard is cleared on save resolve/throw
+        // (handleSetActiveSpells #ok/#err/.catch), at which point the next
+        // load effect run re-syncs from the authoritative backend value.
+        if (spellBarDirtyRef.current) {
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] load effect skipped (dirty)",
+            {
+              userId,
+              characterSlot,
+              ownedCount: ownedSpells.length,
+            },
+          );
+          return;
+        }
         const savedOrder: string[] | undefined =
           character?.spellBarOrder ?? undefined;
         const ownedIds = new Set(ownedSpells.map((s) => s.id));
@@ -2025,6 +2069,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Null = no pending change. Non-null = apply this list after the current battle.
   const pendingSpellBarRef = useRef<SpellConfig[] | null>(null);
 
+  // SPELLBAR-DIRTY GUARD: prevents the load effect (WX ~1828-1929) from
+  // clobbering a local spell-bar change that hasn't landed on the backend yet.
+  //
+  // Race being fixed: handleSetActiveSpells sets activeSpellIds optimistically
+  // (WX ~2083) then schedules a DEBOUNCED (1000ms) setSpellBarOrder save
+  // (WX ~2106-2144). The load effect's deps include ownedSpells (WX ~1929), so
+  // if ownedSpells changes identity within that 1000ms window the effect re-runs,
+  // reads the STALE backend spellBarOrder, and overwrites activeSpellIds
+  // (WX ~1869) — reverting the bar (the "swap-revert" bug).
+  //
+  // The guard is set true on ANY local mutation (immediate path AND in-battle
+  // stash path) and cleared once the debounced save resolves (#ok OR #err OR
+  // .catch). The load effect only overwrites activeSpellIds when the guard is
+  // false. Backend remains authoritative — the guard only blocks the stale
+  // clobber during the in-flight save window.
+  const spellBarDirtyRef = useRef<boolean>(false);
+
   // FIX 2c: Ref mirror of handleSetActiveSpells so cleanupBattle (a useCallback
   // with a stable identity) can call the LATEST handler without re-creating
   // itself on every render. This is the standard ref-mirror pattern and keeps
@@ -2055,6 +2116,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // It must NEVER add to or remove from ownedSpells. The underlying
   // spell library (ownedSpells) is immutable with respect to equipping.
   const handleSetActiveSpells = (spells: SpellConfig[]) => {
+    // [SPELLBAR-BISECT] entry log: the received list (ids) the user asked us to
+    // bisect the swap-revert race with. Dev-gated via logDebugInfo.
+    const receivedIds = spells.map((s) => s?.id ?? null);
+    logDebugInfo("SPELLS", "[SPELLBAR-BISECT] handleSetActiveSpells entry", {
+      inBattle: inBattleRef.current,
+      receivedIds,
+      receivedCount: spells.length,
+    });
+    // SPELLBAR-DIRTY GUARD: mark the local bar as dirty BEFORE any state change
+    // so the load effect (WX ~1828-1929) cannot clobber it while the debounced
+    // save (1000ms) is in-flight. Set on BOTH paths (immediate + in-battle
+    // stash) so a pending post-battle swap is also protected.
+    spellBarDirtyRef.current = true;
     // FIX 2a: Do NOT silently drop spell-bar changes made during battle.
     // The bar is locked mid-fight (applying immediately would desync the
     // active battle), so we queue the requested list and flush it in
@@ -2073,6 +2147,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       logDebugInfo("SPELLS", "[SPELLBAR] queued for after battle", {
         count: spells.length,
       });
+      // Dirty guard stays true — the stash is a pending local mutation that
+      // cleanupBattle will flush (re-entering this handler with inBattle=false,
+      // which will fire the debounced save and clear the guard on resolve).
       return;
     }
     // Extract IDs from the 8 slots (null for empty slots)
@@ -2080,7 +2157,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       .slice(0, 8)
       .map((s) => (s as SpellConfig | null)?.id ?? null);
     // (a) Update the slot mapping — activeSpells re-derives via useMemo.
+    // This is the OPTIMISTIC local update: the bar re-renders immediately
+    // without waiting for the debounced backend save.
     setActiveSpellIds(ids.filter((id): id is string => id !== null));
+    // [SPELLBAR-BISECT] log activeSpellIds right after the optimistic set so
+    // the user can confirm the bar state the render will use. Note: this reads
+    // the FILTERED ids (the value we just set), not the stale state closure.
+    const optimisticIds = ids.filter((id): id is string => id !== null);
+    logDebugInfo("SPELLS", "[SPELLBAR-BISECT] optimistic activeSpellIds set", {
+      optimisticIds,
+      count: optimisticIds.length,
+    });
     try {
       // localStorage is a CACHE only — backend (spellBarOrder) is authoritative.
       localStorage.setItem(nsKey("pbv_active_spells"), JSON.stringify(ids));
@@ -2132,6 +2219,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 orderIds,
               });
             }
+            // SPELLBAR-DIRTY GUARD: clear on resolve (#ok OR #err). The save
+            // landed (or the backend rejected it — in which case the next load
+            // effect run will re-sync from the authoritative backend value),
+            // so the load effect may overwrite activeSpellIds again.
+            spellBarDirtyRef.current = false;
+            logDebugInfo(
+              "SPELLS",
+              "[SPELLBAR-BISECT] save resolved, dirty cleared",
+              {
+                ok: !isSpellBarErr(result),
+                orderIds,
+              },
+            );
           })
           .catch((e: unknown) => {
             logDebugError("SPELLS", "[SPELLBAR] save failed", {
@@ -2140,8 +2240,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               orderIds,
             });
             console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
+            // SPELLBAR-DIRTY GUARD: clear on throw too — a network/actor failure
+            // means the save never landed, so the next load effect run will
+            // re-sync from the (still-authoritative) backend value. Keeping the
+            // guard true forever would orphan the bar from the backend.
+            spellBarDirtyRef.current = false;
+            logDebugInfo(
+              "SPELLS",
+              "[SPELLBAR-BISECT] save threw, dirty cleared",
+              {
+                error: String(e),
+              },
+            );
           });
       }, 1000);
+    } else {
+      // SPELLBAR-DIRTY GUARD: no actor means the debounced save never fires, so
+      // the guard set at the top of handleSetActiveSpells would orphan (never
+      // cleared by a #ok/#err/.catch path). Clear it here so the next load
+      // effect run is not permanently skipped and the bar can re-sync from
+      // localStorage / backend once the actor is available again.
+      spellBarDirtyRef.current = false;
+      logDebugInfo("SPELLS", "[SPELLBAR-BISECT] no actor, dirty cleared", {
+        characterSlot,
+      });
     }
   };
   // FIX 2c: Keep the ref mirror in sync with the latest handler closure on
@@ -6534,11 +6656,39 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }, [currentMap, playerPosition, currentBattleMp, activeMapModifierTypes]);
 
   // Get tiles in spell range (Chebyshev) for blue highlights
+  // STRUCTURAL FIX: read LIVE combatant truth at invocation via
+  // getLiveCombatants(combatantStoreCtx) — the synchronous ref, NOT the
+  // closure-captured `enemies` React state. The click gate (WX ~8340/8394/8451)
+  // also reads getLiveCombatants, so the highlight set and the gate set can
+  // never diverge: a tile shown as targetable is always clickable.
+  // The version-keyed cache (key includes battleWorldVersionRef.current) is
+  // preserved unchanged — it still invalidates on every enemies-identity change.
   const getSpellRangeTiles = useCallback((): Set<string> => {
-    if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current)
+    if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current) {
+      // [TARGET-BISECT] one-shot: identify WHICH empty-set return fired.
+      // Dev-gated via logDebugInfo (console no-op in prod; overlay always gets it).
+      logDebugInfo("BATTLE", "[TARGET-BISECT] empty-set return", {
+        reason: !currentMap
+          ? "noCurrentMap"
+          : !inBattleRef.current
+            ? "notInBattle"
+            : "noSelectedSpellId",
+        currentMap: !!currentMap,
+        inBattle: inBattleRef.current,
+        selectedSpellId: selectedSpellIdRef.current,
+      });
       return new Set();
+    }
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
-    if (!spell) return new Set();
+    if (!spell) {
+      // [TARGET-BISECT] one-shot: spell lookup failed — log the missing id
+      // alongside the activeSpells ids so the divergence is visible.
+      logDebugInfo("BATTLE", "[TARGET-BISECT] spell lookup failed", {
+        selectedSpellId: selectedSpellIdRef.current,
+        activeSpellIds: activeSpells.map((s) => s.id),
+      });
+      return new Set();
+    }
     // M5: Check cache before computing. FIX 1.1: include battleWorldVersion so
     // a set computed before an enemy moved can never gate a click after.
     const cacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
@@ -6546,9 +6696,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (cached) return cached;
     // ── #19 Pacifist Run: flip flag for ANY offensive spell usage ──────────────
     applyHealBuffSideEffect(spell, battleOnlyHealBuffSpellsRef);
+    // LIVE truth: read combatants from the synchronous ref, matching the click
+    // gate's source. playerPosition is the battle-grid position during battle
+    // (set at battle start + on every move; no separate ref exists) and is
+    // already in the cache key, so it is NOT stale.
+    const liveEnemies = getLiveCombatants(combatantStoreCtx);
     const result = computeTargetableTiles(spell, playerPosition, {
       tiles: currentMap.tiles,
-      enemies,
+      enemies: liveEnemies,
       worldGridSize: WORLD_GRID_SIZE,
       effectiveRange: getEffectiveSpellRange(
         spell.maxRange ?? Math.max(1, Number(spell.range)),
@@ -6564,7 +6719,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     playerPosition,
     activeSpells,
     getEffectiveSpellRange,
-    enemies,
+    combatantStoreCtx,
   ]);
 
   // Main render function — DPR-aware, DOFUS-style aesthetics
@@ -8873,6 +9028,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            // [TARGET-BISECT] click-miss: when setSize > 0 the computation
+            // produced a non-empty set yet the clicked tile is absent — log
+            // the tiles the computation saw vs the live combatant positions
+            // from getLiveCombatants(combatantStoreCtx) at this instant, so
+            // the user can confirm whether the gate's enemy source diverged
+            // from the computation's. Dev-gated via logDebugInfo (console
+            // no-op in prod; overlay always gets it). Capped to avoid spam.
+            if (spellTiles.size > 0) {
+              const _liveNow = getLiveCombatants(combatantStoreCtx);
+              logDebugInfo("BATTLE", "[TARGET-BISECT] click-miss", {
+                handler: "mouse",
+                clickedTile: `${gridPos.x},${gridPos.y}`,
+                setSize: spellTiles.size,
+                cacheHit: _preClickCacheHit,
+                spellId: selectedSpellIdRef.current,
+                playerPosition: { x: playerPosition.x, y: playerPosition.y },
+                battleWorldVersion: battleWorldVersionRef.current,
+                spellTiles: Array.from(spellTiles).slice(0, 24),
+                liveCombatants: _liveNow
+                  .slice(0, 12)
+                  .map((e) => ({ id: e.id, x: e.x, y: e.y })),
+                liveCombatantCount: _liveNow.length,
+              });
+            }
             logClickGuard("blocked.tileOutOfRange", {
               phase: battlePhase,
               tile: gridPos,
@@ -9032,6 +9211,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       isThornedGround,
       isVoidRift,
       voidRiftTile,
+      combatantStoreCtx,
     ],
   );
   // Handle canvas mouse move
@@ -9161,6 +9341,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            // [TARGET-BISECT] click-miss (touch): mirrors the mouse handler.
+            // When setSize > 0 the computation produced a non-empty set yet
+            // the touched tile is absent — log the tiles the computation saw
+            // vs the live combatant positions from
+            // getLiveCombatants(combatantStoreCtx) at this instant. Dev-gated
+            // via logDebugInfo (console no-op in prod; overlay always gets it).
+            // Capped to avoid spam.
+            if (spellTiles.size > 0) {
+              const _liveNow = getLiveCombatants(combatantStoreCtx);
+              logDebugInfo("BATTLE", "[TARGET-BISECT] click-miss", {
+                handler: "touch",
+                clickedTile: `${gridPos.x},${gridPos.y}`,
+                setSize: spellTiles.size,
+                cacheHit: _preClickCacheHit,
+                spellId: selectedSpellIdRef.current,
+                playerPosition: { x: playerPosition.x, y: playerPosition.y },
+                battleWorldVersion: battleWorldVersionRef.current,
+                spellTiles: Array.from(spellTiles).slice(0, 24),
+                liveCombatants: _liveNow
+                  .slice(0, 12)
+                  .map((e) => ({ id: e.id, x: e.x, y: e.y })),
+                liveCombatantCount: _liveNow.length,
+              });
+            }
             logClickGuard("blocked.tileOutOfRange.touch", {
               phase: battlePhase,
               tile: gridPos,
@@ -9322,6 +9526,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       activeSpells,
       playerSpellContext,
       activeMapModifierTypes,
+      combatantStoreCtx,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -9587,6 +9792,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // cleanupBattle: terminates every timer/interval/flag from an active battle.
   // Must be defined BEFORE handleBattleEnd and checkPortalInteraction use it.
   const cleanupBattle = useCallback(() => {
+    logDebugInfo("BATTLE", "[DEATH-BISECT] cleanupBattle entry", {
+      inBattle: inBattleRef.current,
+      deathTriggered: deathTriggeredRef.current,
+    });
     if (inBattleRef.current) {
       onDebugLog?.("BATTLE_END", "Battle resolved");
     }
@@ -10619,7 +10828,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }
 
   // Handle player death
+  // biome-ignore lint/correctness/useExhaustiveDependencies: characterStats.hp read as stale snapshot for diagnostic log only; death decision is made by callers using computed post-damage values
   const _handlePlayerDeath = useCallback(() => {
+    // [DEATH-BISECT] Linchpin double-invocation guard. Every death entry path
+    // (player-turn dispatch, flee, enemy-spell, enemy-melee, dot-tick, and the
+    // HP-watch effect) routes through here, so a single guard at the top makes
+    // all of them idempotent. Without this, the modal-confirm and auto-death
+    // paths can both fire and double-trigger the Death Realm transition.
+    if (deathTriggeredRef.current) {
+      logDebugInfo("BATTLE", "[DEATH-BISECT] double-invocation blocked", {
+        hp: characterStats.hp,
+        inBattle: inBattleRef.current,
+      });
+      return;
+    }
+    deathTriggeredRef.current = true;
+    logDebugInfo("BATTLE", "[DEATH-BISECT] _handlePlayerDeath entered", {
+      hp: characterStats.hp,
+      inBattle: inBattleRef.current,
+    });
     onDebugLog?.("PLAYER_DEATH", "Player HP reached 0");
     // ── S2: RESET ALL RUN STATE BEFORE THE DEATH FLOW PROCEEDS ──────────
     // Dying inside a dungeon or boss-rush run must end the run immediately so
@@ -10761,6 +10988,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     activeEffectsRef.current = [];
     setActiveEffects([]);
     deathRealmTimerRef.current = window.setTimeout(() => {
+      logDebugInfo("BATTLE", "[DEATH-BISECT] Death Realm entry timer fired", {
+        deathTriggered: deathTriggeredRef.current,
+        mapCount,
+      });
       // RC FIX: No generation check needed — loop runs forever
       const ctx = canvasRef.current?.getContext("2d");
       if (!ctx) return;
@@ -10985,6 +11216,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       transitionInProgressRef.current = false;
       setTransitionInProgress(false);
       lastPortalRef.current = null;
+      logDebugInfo(
+        "BATTLE",
+        "[DEATH-BISECT] portal-rule reset (lastPortalRef cleared)",
+        {
+          deathTriggered: deathTriggeredRef.current,
+        },
+      );
       setMapCount((prev) => prev + 1);
 
       // Death Realm: no enemies, eerie silence
@@ -13030,6 +13268,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 if (actualDmg > 0)
                   logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
+                // [DEATH-BISECT] Immediate death check after enemy spell attack.
+                // Use the computed post-damage HP (characterStats.hp - actualDmg),
+                // not the un-flushed state, since setCharacterStats inside
+                // playerTakesDamage has not yet been committed to the closure.
+                if (characterStats.hp - actualDmg <= 0) {
+                  logDebugInfo("BATTLE", "[DEATH-BISECT] source: enemy-spell", {
+                    hpBefore: characterStats.hp,
+                    actualDmg,
+                    hpAfter: characterStats.hp - actualDmg,
+                  });
+                  _handlePlayerDeath();
+                }
               }
               playSound("player_damage", enemy.pieceType);
               if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
@@ -13196,6 +13446,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 ...prev,
                 hp: Math.max(0, prev.hp - meleeDmg),
               }));
+              // [DEATH-BISECT] Immediate death check after enemy melee attack.
+              // Melee does NOT use playerTakesDamage — it directly mutates HP via
+              // setCharacterStats, so read the computed post-damage value
+              // (characterStats.hp - meleeDmg), not the un-flushed state.
+              if (characterStats.hp - meleeDmg <= 0) {
+                logDebugInfo("BATTLE", "[DEATH-BISECT] source: enemy-melee", {
+                  hpBefore: characterStats.hp,
+                  meleeDmg,
+                  hpAfter: characterStats.hp - meleeDmg,
+                });
+                _handlePlayerDeath();
+              }
               logBattleEntry(
                 `${enemy.pieceType} strikes you for ${meleeDmg} dmg`,
                 "#ef4444",

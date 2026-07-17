@@ -56138,6 +56138,16 @@ const WorldExplorationInner = ({
               dotResult.damage,
               `${dotTypeLabel} DoT`
             );
+            if (characterStats.hp - postResDamage <= 0) {
+              logDebugInfo("BATTLE", "[DEATH-BISECT] source: dot-tick", {
+                hpBefore: characterStats.hp,
+                dotDamage: dotResult.damage,
+                postResDamage,
+                hpAfter: characterStats.hp - postResDamage,
+                dotTypeLabel
+              });
+              _handlePlayerDeath();
+            }
           } else {
             postResDamage = enemyTakesDamage(
               targetId,
@@ -56432,6 +56442,12 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     if (!userId || characterSlot === null || characterSlot === void 0 || !actor)
       return;
+    logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load effect fired", {
+      userId,
+      characterSlot,
+      ownedCount: ownedSpells.length,
+      dirty: spellBarDirtyRef.current
+    });
     let cancelled = false;
     (async () => {
       try {
@@ -56439,6 +56455,18 @@ const WorldExplorationInner = ({
           BigInt(characterSlot)
         );
         if (cancelled) return;
+        if (spellBarDirtyRef.current) {
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] load effect skipped (dirty)",
+            {
+              userId,
+              characterSlot,
+              ownedCount: ownedSpells.length
+            }
+          );
+          return;
+        }
         const savedOrder = (character2 == null ? void 0 : character2.spellBarOrder) ?? void 0;
         const ownedIds = new Set(ownedSpells.map((s2) => s2.id));
         if (savedOrder && savedOrder.length > 0) {
@@ -56566,11 +56594,19 @@ const WorldExplorationInner = ({
   }, [activeSpells]);
   const setSpellBarOrderDebounceRef = reactExports.useRef(null);
   const pendingSpellBarRef = reactExports.useRef(null);
+  const spellBarDirtyRef = reactExports.useRef(false);
   const handleSetActiveSpellsRef = reactExports.useRef(
     () => {
     }
   );
   const handleSetActiveSpells = (spells) => {
+    const receivedIds = spells.map((s2) => (s2 == null ? void 0 : s2.id) ?? null);
+    logDebugInfo("SPELLS", "[SPELLBAR-BISECT] handleSetActiveSpells entry", {
+      inBattle: inBattleRef.current,
+      receivedIds,
+      receivedCount: spells.length
+    });
+    spellBarDirtyRef.current = true;
     if (inBattleRef.current) {
       pendingSpellBarRef.current = spells;
       ue("⚔️ Changes will apply after battle", {
@@ -56588,6 +56624,11 @@ const WorldExplorationInner = ({
     }
     const ids = [...spells, ...Array(8).fill(null)].slice(0, 8).map((s2) => (s2 == null ? void 0 : s2.id) ?? null);
     setActiveSpellIds(ids.filter((id) => id !== null));
+    const optimisticIds = ids.filter((id) => id !== null);
+    logDebugInfo("SPELLS", "[SPELLBAR-BISECT] optimistic activeSpellIds set", {
+      optimisticIds,
+      count: optimisticIds.length
+    });
     try {
       localStorage.setItem(nsKey("pbv_active_spells"), JSON.stringify(ids));
     } catch {
@@ -56619,6 +56660,15 @@ const WorldExplorationInner = ({
               orderIds
             });
           }
+          spellBarDirtyRef.current = false;
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] save resolved, dirty cleared",
+            {
+              ok: !isSpellBarErr(result),
+              orderIds
+            }
+          );
         }).catch((e) => {
           logDebugError("SPELLS", "[SPELLBAR] save failed", {
             error: String(e),
@@ -56626,8 +56676,21 @@ const WorldExplorationInner = ({
             orderIds
           });
           console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
+          spellBarDirtyRef.current = false;
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] save threw, dirty cleared",
+            {
+              error: String(e)
+            }
+          );
         });
       }, 1e3);
+    } else {
+      spellBarDirtyRef.current = false;
+      logDebugInfo("SPELLS", "[SPELLBAR-BISECT] no actor, dirty cleared", {
+        characterSlot
+      });
     }
   };
   handleSetActiveSpellsRef.current = handleSetActiveSpells;
@@ -60138,17 +60201,31 @@ const WorldExplorationInner = ({
     return reachable;
   }, [currentMap, playerPosition, currentBattleMp, activeMapModifierTypes]);
   const getSpellRangeTiles = reactExports.useCallback(() => {
-    if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current)
+    if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current) {
+      logDebugInfo("BATTLE", "[TARGET-BISECT] empty-set return", {
+        reason: !currentMap ? "noCurrentMap" : !inBattleRef.current ? "notInBattle" : "noSelectedSpellId",
+        currentMap: !!currentMap,
+        inBattle: inBattleRef.current,
+        selectedSpellId: selectedSpellIdRef.current
+      });
       return /* @__PURE__ */ new Set();
+    }
     const spell = activeSpells.find((s2) => s2.id === selectedSpellIdRef.current);
-    if (!spell) return /* @__PURE__ */ new Set();
+    if (!spell) {
+      logDebugInfo("BATTLE", "[TARGET-BISECT] spell lookup failed", {
+        selectedSpellId: selectedSpellIdRef.current,
+        activeSpellIds: activeSpells.map((s2) => s2.id)
+      });
+      return /* @__PURE__ */ new Set();
+    }
     const cacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     applyHealBuffSideEffect(spell, battleOnlyHealBuffSpellsRef);
+    const liveEnemies = getLiveCombatants(combatantStoreCtx);
     const result = computeTargetableTiles(spell, playerPosition, {
       tiles: currentMap.tiles,
-      enemies,
+      enemies: liveEnemies,
       worldGridSize: WORLD_GRID_SIZE,
       effectiveRange: getEffectiveSpellRange(
         spell.maxRange ?? Math.max(1, Number(spell.range)),
@@ -60163,7 +60240,7 @@ const WorldExplorationInner = ({
     playerPosition,
     activeSpells,
     getEffectiveSpellRange,
-    enemies
+    combatantStoreCtx
   ]);
   const render = reactExports.useCallback(() => {
     var _a4, _b4, _c3;
@@ -61977,6 +62054,21 @@ const WorldExplorationInner = ({
           const _preClickCacheHit = spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            if (spellTiles.size > 0) {
+              const _liveNow = getLiveCombatants(combatantStoreCtx);
+              logDebugInfo("BATTLE", "[TARGET-BISECT] click-miss", {
+                handler: "mouse",
+                clickedTile: `${gridPos.x},${gridPos.y}`,
+                setSize: spellTiles.size,
+                cacheHit: _preClickCacheHit,
+                spellId: selectedSpellIdRef.current,
+                playerPosition: { x: playerPosition.x, y: playerPosition.y },
+                battleWorldVersion: battleWorldVersionRef.current,
+                spellTiles: Array.from(spellTiles).slice(0, 24),
+                liveCombatants: _liveNow.slice(0, 12).map((e) => ({ id: e.id, x: e.x, y: e.y })),
+                liveCombatantCount: _liveNow.length
+              });
+            }
             logClickGuard("blocked.tileOutOfRange", {
               phase: battlePhase,
               tile: gridPos,
@@ -62111,7 +62203,8 @@ const WorldExplorationInner = ({
       activeMapModifierTypes,
       isThornedGround,
       isVoidRift,
-      voidRiftTile
+      voidRiftTile,
+      combatantStoreCtx
     ]
   );
   const handleCanvasMouseMove = reactExports.useCallback(
@@ -62213,6 +62306,21 @@ const WorldExplorationInner = ({
           const _preClickCacheHit = spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            if (spellTiles.size > 0) {
+              const _liveNow = getLiveCombatants(combatantStoreCtx);
+              logDebugInfo("BATTLE", "[TARGET-BISECT] click-miss", {
+                handler: "touch",
+                clickedTile: `${gridPos.x},${gridPos.y}`,
+                setSize: spellTiles.size,
+                cacheHit: _preClickCacheHit,
+                spellId: selectedSpellIdRef.current,
+                playerPosition: { x: playerPosition.x, y: playerPosition.y },
+                battleWorldVersion: battleWorldVersionRef.current,
+                spellTiles: Array.from(spellTiles).slice(0, 24),
+                liveCombatants: _liveNow.slice(0, 12).map((e) => ({ id: e.id, x: e.x, y: e.y })),
+                liveCombatantCount: _liveNow.length
+              });
+            }
             logClickGuard("blocked.tileOutOfRange.touch", {
               phase: battlePhase,
               tile: gridPos,
@@ -62345,7 +62453,8 @@ const WorldExplorationInner = ({
       getSpellRangeTiles,
       activeSpells,
       playerSpellContext,
-      activeMapModifierTypes
+      activeMapModifierTypes,
+      combatantStoreCtx
     ]
   );
   reactExports.useEffect(() => {
@@ -62558,6 +62667,10 @@ const WorldExplorationInner = ({
     [currentMap]
   );
   const cleanupBattle = reactExports.useCallback(() => {
+    logDebugInfo("BATTLE", "[DEATH-BISECT] cleanupBattle entry", {
+      inBattle: inBattleRef.current,
+      deathTriggered: deathTriggeredRef.current
+    });
     if (inBattleRef.current) {
       onDebugLog == null ? void 0 : onDebugLog("BATTLE_END", "Battle resolved");
     }
@@ -63277,6 +63390,18 @@ const WorldExplorationInner = ({
     cleanupBattle();
   }
   const _handlePlayerDeath = reactExports.useCallback(() => {
+    if (deathTriggeredRef.current) {
+      logDebugInfo("BATTLE", "[DEATH-BISECT] double-invocation blocked", {
+        hp: characterStats.hp,
+        inBattle: inBattleRef.current
+      });
+      return;
+    }
+    deathTriggeredRef.current = true;
+    logDebugInfo("BATTLE", "[DEATH-BISECT] _handlePlayerDeath entered", {
+      hp: characterStats.hp,
+      inBattle: inBattleRef.current
+    });
     onDebugLog == null ? void 0 : onDebugLog("PLAYER_DEATH", "Player HP reached 0");
     resetRunState({
       bossRushActiveRef,
@@ -63397,6 +63522,10 @@ const WorldExplorationInner = ({
     setActiveEffects([]);
     deathRealmTimerRef.current = window.setTimeout(() => {
       var _a5, _b4, _c3;
+      logDebugInfo("BATTLE", "[DEATH-BISECT] Death Realm entry timer fired", {
+        deathTriggered: deathTriggeredRef.current,
+        mapCount
+      });
       const ctx = (_a5 = canvasRef.current) == null ? void 0 : _a5.getContext("2d");
       if (!ctx) return;
       deathRealmTimerRef.current = null;
@@ -63592,6 +63721,13 @@ const WorldExplorationInner = ({
       transitionInProgressRef.current = false;
       setTransitionInProgress(false);
       lastPortalRef.current = null;
+      logDebugInfo(
+        "BATTLE",
+        "[DEATH-BISECT] portal-rule reset (lastPortalRef cleared)",
+        {
+          deathTriggered: deathTriggeredRef.current
+        }
+      );
       setMapCount((prev) => prev + 1);
       resetCombatantStore(combatantStoreCtx);
       if (cameraFollowTimerRef.current !== null)
@@ -65173,6 +65309,14 @@ const WorldExplorationInner = ({
                 );
                 if (actualDmg > 0)
                   logBattleEntry(`You lost ${actualDmg} HP!`, "#eab308");
+                if (characterStats.hp - actualDmg <= 0) {
+                  logDebugInfo("BATTLE", "[DEATH-BISECT] source: enemy-spell", {
+                    hpBefore: characterStats.hp,
+                    actualDmg,
+                    hpAfter: characterStats.hp - actualDmg
+                  });
+                  _handlePlayerDeath();
+                }
               }
               playSound("player_damage", enemy.pieceType);
               if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
@@ -65316,6 +65460,14 @@ const WorldExplorationInner = ({
                 ...prev,
                 hp: Math.max(0, prev.hp - meleeDmg)
               }));
+              if (characterStats.hp - meleeDmg <= 0) {
+                logDebugInfo("BATTLE", "[DEATH-BISECT] source: enemy-melee", {
+                  hpBefore: characterStats.hp,
+                  meleeDmg,
+                  hpAfter: characterStats.hp - meleeDmg
+                });
+                _handlePlayerDeath();
+              }
               logBattleEntry(
                 `${enemy.pieceType} strikes you for ${meleeDmg} dmg`,
                 "#ef4444"
@@ -70534,7 +70686,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-17zI2EZY.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-TfTQ1jyr.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
