@@ -588,6 +588,30 @@ export const creaturePalettes: Record<
   wisp: { primary: "#5fd8e8", secondary: "#2a8fa8", accent: "#f0fbff" },
 };
 
+// ── Chess-piece palettes ───────────────────────────────────────────────────────
+// Distinct carved-stone / dark-slate + crimson-accent palette per chess piece so
+// normal chess-piece enemies render DISTINCTLY per pieceType instead of all
+// collapsing to the gray king fallback. Each entry: primary = body stone,
+// secondary = deep shadow, accent = trim/glow. Index 0 = primary (cell value 2),
+// index 1 = secondary (cell value 1), index 2 = accent (cell value 3).
+export const chessPiecePalettes: Record<
+  ChessPieceType,
+  { primary: string; secondary: string; accent: string }
+> = {
+  // KING — deep crimson stone body, gold crown/trim.
+  king: { primary: "#7a1f2b", secondary: "#3d0f16", accent: "#d4a017" },
+  // QUEEN — royal violet body, silver filigree.
+  queen: { primary: "#5a3a7a", secondary: "#2e1d44", accent: "#c8c2d6" },
+  // ROOK — cold stone-gray body, iron banding.
+  rook: { primary: "#6b6b66", secondary: "#3a3a36", accent: "#8a8a82" },
+  // BISHOP — dark teal stone, bronze mitre.
+  bishop: { primary: "#1f5a5a", secondary: "#103535", accent: "#b8732a" },
+  // KNIGHT — dark amber stone, steel blade.
+  knight: { primary: "#7a4a1f", secondary: "#3d2410", accent: "#9aa0a8" },
+  // PAWN — muted slate body, copper base.
+  pawn: { primary: "#4a4a52", secondary: "#2a2a30", accent: "#a8651f" },
+};
+
 // ── Owner tint constants ───────────────────────────────────────────────────────
 // Player-side summons get a green tint; enemy-side summons get a red tint.
 // Applied as a translucent overlay by the renderer.
@@ -931,10 +955,7 @@ export function drawCombatant(
         entity.pieceType as Exclude<CreatureKey, ChessPieceType>
       ];
     if (!ghostPattern || !ghostPalette) {
-      logDebugError("SUMMON", "pattern lookup failed", {
-        pieceType: entity.pieceType,
-        view: resolvedView,
-      });
+      logPatternLookupFailed(entity.pieceType, resolvedView);
       draw(
         ctx,
         chessPiecePatterns.king.front,
@@ -958,13 +979,20 @@ export function drawCombatant(
     entity.pieceType as CreatureKey,
     resolvedView,
   );
-  const defaultPalette =
-    creaturePalettes[entity.pieceType as Exclude<CreatureKey, ChessPieceType>];
+  // Chess-piece pieceTypes resolve their palette from chessPiecePalettes (each
+  // piece has a distinct carved-stone + crimson-accent palette). Summon-creature
+  // pieceTypes (wolf/golem/archer/bomber/wisp) keep using creaturePalettes. The
+  // guard only fires for genuinely unknown pieceTypes where BOTH pattern AND
+  // palette are missing — a valid chess-piece pattern with a valid chess-piece
+  // palette now renders the real piece instead of collapsing to king.front.
+  const isChessPiece = (entity.pieceType as string) in chessPiecePatterns;
+  const defaultPalette: PatternColors | undefined = isChessPiece
+    ? chessPiecePalettes[entity.pieceType as ChessPieceType]
+    : creaturePalettes[
+        entity.pieceType as Exclude<CreatureKey, ChessPieceType>
+      ];
   if (!defaultPattern || !defaultPalette) {
-    logDebugError("SUMMON", "pattern lookup failed", {
-      pieceType: entity.pieceType,
-      view: resolvedView,
-    });
+    logPatternLookupFailed(entity.pieceType, resolvedView);
     draw(
       ctx,
       chessPiecePatterns.king.front,

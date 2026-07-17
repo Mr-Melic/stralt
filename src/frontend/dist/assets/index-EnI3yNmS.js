@@ -35542,6 +35542,20 @@ const creaturePalettes = {
   // WISP — cyan-white glow (primary = cyan body, accent = white core).
   wisp: { primary: "#5fd8e8", secondary: "#2a8fa8", accent: "#f0fbff" }
 };
+const chessPiecePalettes = {
+  // KING — deep crimson stone body, gold crown/trim.
+  king: { primary: "#7a1f2b", secondary: "#3d0f16", accent: "#d4a017" },
+  // QUEEN — royal violet body, silver filigree.
+  queen: { primary: "#5a3a7a", secondary: "#2e1d44", accent: "#c8c2d6" },
+  // ROOK — cold stone-gray body, iron banding.
+  rook: { primary: "#6b6b66", secondary: "#3a3a36", accent: "#8a8a82" },
+  // BISHOP — dark teal stone, bronze mitre.
+  bishop: { primary: "#1f5a5a", secondary: "#103535", accent: "#b8732a" },
+  // KNIGHT — dark amber stone, steel blade.
+  knight: { primary: "#7a4a1f", secondary: "#3d2410", accent: "#9aa0a8" },
+  // PAWN — muted slate body, copper base.
+  pawn: { primary: "#4a4a52", secondary: "#2a2a30", accent: "#a8651f" }
+};
 const OWNER_TINT = {
   player: "rgba(80, 220, 120, 0.18)",
   enemy: "rgba(220, 70, 70, 0.18)"
@@ -35701,10 +35715,7 @@ function drawCombatant(ctx, entity, screenPos, view, options) {
     );
     const ghostPalette = creaturePalettes[entity.pieceType];
     if (!ghostPattern || !ghostPalette) {
-      logDebugError("SUMMON", "pattern lookup failed", {
-        pieceType: entity.pieceType,
-        view: resolvedView
-      });
+      logPatternLookupFailed(entity.pieceType, resolvedView);
       draw(
         ctx,
         chessPiecePatterns.king.front,
@@ -35726,12 +35737,10 @@ function drawCombatant(ctx, entity, screenPos, view, options) {
     entity.pieceType,
     resolvedView
   );
-  const defaultPalette = creaturePalettes[entity.pieceType];
+  const isChessPiece = entity.pieceType in chessPiecePatterns;
+  const defaultPalette = isChessPiece ? chessPiecePalettes[entity.pieceType] : creaturePalettes[entity.pieceType];
   if (!defaultPattern || !defaultPalette) {
-    logDebugError("SUMMON", "pattern lookup failed", {
-      pieceType: entity.pieceType,
-      view: resolvedView
-    });
+    logPatternLookupFailed(entity.pieceType, resolvedView);
     draw(
       ctx,
       chessPiecePatterns.king.front,
@@ -70333,7 +70342,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-B3mFytyx.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CNDMuWS_.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
