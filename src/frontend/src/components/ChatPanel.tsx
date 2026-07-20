@@ -15,6 +15,21 @@ import {
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "../backend.d";
+import {
+  type ClickTraceRecord,
+  getClickTraceBuffer,
+} from "../debug/clickTrace";
+import {
+  APP_BUILD,
+  type ExportContext,
+  buildDebugReportHtml,
+  buildDebugReportText,
+} from "../debug/debugExport";
+import {
+  getGeometryOverlayEnabled,
+  setGeometryOverlayEnabled,
+  subscribeGeometryOverlayEnabled,
+} from "../debug/geometryOverlayState";
 import { useActor } from "../hooks/useActor";
 import type { ActiveEffect, BattleLogEntry } from "../types/gameTypes";
 import {
@@ -27,14 +42,6 @@ import {
   toggleDebugPaused,
 } from "../utils/debugLogger";
 import DraggablePanel from "./DraggablePanel";
-
-/**
- * SECTION 4 (build #325): app build/version constant for the export report.
- * Approach: hardcoded constant APP_BUILD = "#325" — there is no version file in
- * the workspace, so the build number is sourced from this constant. Bump it
- * here when the build number changes.
- */
-const APP_BUILD = "#325";
 
 /**
  * SECTION 3 (build #325): the 14 category chips shown in the Debug tab. The
@@ -60,174 +67,13 @@ const DEBUG_CATEGORY_CHIPS: LogCategory[] = [
 ];
 
 /**
- * SECTION 4 (build #325): optional debug context threaded in from the parent
- * (GameFlow/WorldExploration). When absent, the export report degrades
- * gracefully and reports "N/A" for unavailable fields. This keeps the prop
- * contract additive — existing callers are unaffected.
+ * SECTION 4 (build #329): optional debug context threaded in from the parent
+ * (GameFlow/WorldExploration). Re-exported from debugExport so existing
+ * ChatPanel callers keep the same prop name. The export builders consume an
+ * ExportContext (extends DebugContext with getters); ChatPanel constructs that
+ * richer object at export time from its props/state.
  */
-export interface DebugContext {
-  characterName?: string;
-  characterLevel?: number | bigint;
-  characterSlot?: number;
-  currentMapId?: string;
-  inBattle?: boolean;
-  battlePhase?: string;
-  currentTurnEntry?: { id: string; side?: string; isSummon?: boolean } | null;
-  combatants?: Array<{
-    id: string;
-    side?: string;
-    isSummon?: boolean;
-    hp?: number | bigint;
-    pos?: { x: number; y: number };
-  }>;
-  turnOrderIds?: string[];
-}
-
-/**
- * SECTION 4 (build #325): builds the plain-text export report body. Includes
- * app build, timestamp, character summary, current map, battle state summary,
- * and ALL buffered log lines (full messages + timestamps). Completeness beats
- * beauty — every log line is included.
- */
-function buildDebugReportText(
-  ctx: DebugContext | undefined,
-  buffer: readonly DebugLogEntry[],
-): string {
-  const now = new Date().toISOString();
-  const lines: string[] = [];
-  lines.push("=== AESTRALTO DEBUG REPORT ===");
-  lines.push(`App build: ${APP_BUILD}`);
-  lines.push(`Generated: ${now}`);
-  lines.push("");
-  lines.push("--- CHARACTER ---");
-  lines.push(`Name:  ${ctx?.characterName ?? "N/A"}`);
-  lines.push(
-    `Level: ${ctx?.characterLevel != null ? String(ctx.characterLevel) : "N/A"}`,
-  );
-  lines.push(
-    `Slot:  ${ctx?.characterSlot != null ? String(ctx.characterSlot) : "N/A"}`,
-  );
-  lines.push("");
-  lines.push("--- CURRENT MAP ---");
-  lines.push(`Map ID: ${ctx?.currentMapId ?? "N/A"}`);
-  lines.push("");
-  lines.push("--- BATTLE STATE ---");
-  lines.push(
-    `In battle: ${ctx?.inBattle != null ? String(ctx.inBattle) : "N/A"}`,
-  );
-  lines.push(`Phase: ${ctx?.battlePhase ?? "N/A"}`);
-  const turn = ctx?.currentTurnEntry;
-  lines.push(
-    `Current turn: ${
-      turn
-        ? `id=${turn.id} side=${turn.side ?? "?"} isSummon=${turn.isSummon ?? false}`
-        : "N/A"
-    }`,
-  );
-  const combatants = ctx?.combatants ?? [];
-  lines.push(`Combatants (${combatants.length}):`);
-  if (combatants.length === 0) {
-    lines.push("  (none reported)");
-  } else {
-    for (const c of combatants) {
-      const pos = c.pos ? `(${c.pos.x},${c.pos.y})` : "(?,?)";
-      lines.push(
-        `  id=${c.id} side=${c.side ?? "?"} isSummon=${c.isSummon ?? false} hp=${
-          c.hp != null ? String(c.hp) : "?"
-        } pos=${pos}`,
-      );
-    }
-  }
-  const turnIds = ctx?.turnOrderIds ?? [];
-  lines.push(
-    `Turn order ids (${turnIds.length}): ${turnIds.join(", ") || "(none)"}`,
-  );
-  lines.push("");
-  lines.push("--- DEBUG LOG BUFFER (ALL CATEGORIES) ---");
-  lines.push(`Total entries: ${buffer.length}`);
-  lines.push("");
-  for (const e of buffer) {
-    const d = new Date(e.ts);
-    const ts = d.toISOString();
-    const dataStr =
-      e.data !== undefined ? ` data=${JSON.stringify(e.data)}` : "";
-    lines.push(
-      `[${ts}] [${e.category}] ${e.level.toUpperCase()}: ${e.message}${dataStr}`,
-    );
-  }
-  lines.push("");
-  lines.push("=== END REPORT ===");
-  return lines.join("\n");
-}
-
-/**
- * SECTION 4 (build #325): builds the styled HTML document for the print-optimized
- * PDF export window. Same content as the .txt report but rendered as a
- * print-friendly HTML page.
- */
-function buildDebugReportHtml(
-  ctx: DebugContext | undefined,
-  buffer: readonly DebugLogEntry[],
-): string {
-  const now = new Date().toISOString();
-  const esc = (s: string): string =>
-    s
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  const combatantRows = (ctx?.combatants ?? [])
-    .map(
-      (c) =>
-        `<tr><td>${esc(c.id)}</td><td>${esc(c.side ?? "?")}</td><td>${c.isSummon ?? false}</td><td>${c.hp != null ? esc(String(c.hp)) : "?"}</td><td>${c.pos ? `(${c.pos.x},${c.pos.y})` : "(?,?)"}</td></tr>`,
-    )
-    .join("");
-  const logRows = buffer
-    .map(
-      (e) =>
-        `<tr><td>${esc(new Date(e.ts).toISOString())}</td><td>${esc(e.category)}</td><td>${esc(e.level.toUpperCase())}</td><td>${esc(e.message)}${e.data !== undefined ? ` <pre>${esc(JSON.stringify(e.data))}</pre>` : ""}</td></tr>`,
-    )
-    .join("");
-  const turnIds = (ctx?.turnOrderIds ?? []).join(", ") || "(none)";
-  const turn = ctx?.currentTurnEntry;
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Aestralto Debug Report ${APP_BUILD}</title>
-<style>
-  body { font-family: 'Courier New', monospace; color: #1a1a1a; background: #fff; margin: 24px; font-size: 11px; }
-  h1 { font-size: 16px; border-bottom: 2px solid #d8463f; padding-bottom: 6px; color: #8b1a1a; }
-  h2 { font-size: 13px; color: #8b1a1a; margin-top: 18px; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
-  table { border-collapse: collapse; width: 100%; margin-top: 6px; }
-  th, td { border: 1px solid #999; padding: 3px 6px; text-align: left; vertical-align: top; font-size: 10px; }
-  th { background: #f0e0e0; font-weight: 700; }
-  pre { margin: 2px 0 0 0; white-space: pre-wrap; word-break: break-all; font-size: 9px; color: #555; }
-  .meta { color: #555; font-size: 10px; margin-bottom: 4px; }
-  @media print { body { margin: 12px; } }
-</style></head><body>
-<h1>Aestralto Debug Report</h1>
-<div class="meta">App build: ${APP_BUILD}</div>
-<div class="meta">Generated: ${now}</div>
-<h2>Character</h2>
-<table><tr><th>Name</th><th>Level</th><th>Slot</th></tr>
-<tr><td>${esc(ctx?.characterName ?? "N/A")}</td><td>${ctx?.characterLevel != null ? esc(String(ctx.characterLevel)) : "N/A"}</td><td>${ctx?.characterSlot != null ? esc(String(ctx.characterSlot)) : "N/A"}</td></tr></table>
-<h2>Current Map</h2>
-<div>Map ID: ${esc(ctx?.currentMapId ?? "N/A")}</div>
-<h2>Battle State</h2>
-<table>
-<tr><th>In battle</th><th>Phase</th><th>Current turn</th></tr>
-<tr><td>${ctx?.inBattle != null ? String(ctx.inBattle) : "N/A"}</td><td>${esc(ctx?.battlePhase ?? "N/A")}</td><td>${
-    turn
-      ? `id=${esc(turn.id)} side=${esc(turn.side ?? "?")} isSummon=${turn.isSummon ?? false}`
-      : "N/A"
-  }</td></tr>
-</table>
-<h3>Combatants (${(ctx?.combatants ?? []).length})</h3>
-<table><tr><th>id</th><th>side</th><th>isSummon</th><th>hp</th><th>pos</th></tr>${combatantRows || '<tr><td colspan="5">(none reported)</td></tr>'}</table>
-<h3>Turn order ids</h3>
-<div>${esc(turnIds)}</div>
-<h2>Debug Log Buffer (ALL categories, ${buffer.length} entries)</h2>
-<table><tr><th>Timestamp</th><th>Category</th><th>Level</th><th>Message</th></tr>${logRows || '<tr><td colspan="4">(empty)</td></tr>'}</table>
-</body></html>`;
-}
+export type DebugContext = ExportContext;
 
 // Palette of 12 bright colors — excludes #7ec8e3 (self/light-blue)
 const CHAT_COLORS = [
@@ -450,6 +296,188 @@ const BattleLogText: React.FC<{ text: string; color: string }> = ({
   return <>{parts}</>;
 };
 
+/**
+ * SECTION 6 (build #329): Clicks sub-view for the Debug tab. Renders the
+ * click-trace ring buffer (newest-first). For each ClickTraceRecord shows:
+ *   - timestamp (HH:MM:SS)
+ *   - branchTaken (cast | move | select | reject | noop | unknown)
+ *   - castResult (or "—" when null)
+ *   - row-0 id (the first combatant row's id — the intended target) +
+ *     deltaToClick.dist (px from sprite center to click)
+ *   - compact I1-I4 invariant pass/fail indicators: green check for pass,
+ *     red x for fail with the measured number appended.
+ *
+ * Styled to match the carved-stone dark slate + crimson accent toolbar.
+ */
+const ClicksSubView: React.FC<{
+  entries: readonly ClickTraceRecord[];
+}> = ({ entries }) => {
+  if (entries.length === 0) {
+    return (
+      <div
+        data-ocid="chat.debug.clicks.empty_state"
+        className="text-muted-foreground"
+        style={{
+          textAlign: "center",
+          marginTop: 20,
+          opacity: 0.5,
+        }}
+      >
+        No click traces recorded yet.
+      </div>
+    );
+  }
+  // Newest-first display (buffer is oldest-first).
+  const ordered = [...entries].reverse();
+  return (
+    <div
+      data-ocid="chat.debug.clicks.list"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      {ordered.map((rec, idx) => {
+        const row0 = rec.layerC[0];
+        const row0Id = row0?.id ?? "—";
+        const dist = row0?.deltaToClick?.dist;
+        const distStr = dist != null ? `${dist.toFixed(1)}px` : "—";
+        const inv = rec.invariants;
+        const renderInv = (label: string, pass: boolean, measured: string) => (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 2,
+              fontSize: 9,
+              fontFamily: "monospace",
+              padding: "1px 4px",
+              borderRadius: 2,
+              background: pass
+                ? "rgba(46,204,113,0.12)"
+                : "rgba(231,76,60,0.15)",
+              border: pass
+                ? "1px solid rgba(46,204,113,0.4)"
+                : "1px solid rgba(231,76,60,0.45)",
+              color: pass ? "#6ee7b7" : "#ef4444",
+            }}
+            title={pass ? `${label} PASS` : `${label} FAIL — ${measured}`}
+          >
+            {pass ? "✓" : "✗"}
+            {label}
+            {!pass && (
+              <span style={{ color: "#ec8a85", marginLeft: 2 }}>
+                {measured}
+              </span>
+            )}
+          </span>
+        );
+        return (
+          <div
+            key={rec.seq}
+            data-ocid={`chat.debug.clicks.item.${idx + 1}`}
+            style={{
+              padding: "6px 8px",
+              background: "#10131a",
+              border: "1px solid #3a2a2a",
+              borderRadius: 3,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flexWrap: "wrap",
+              }}
+            >
+              <span
+                style={{
+                  color: "rgba(160,160,170,0.6)",
+                  fontSize: 10,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {formatDebugTime(rec.ts)}
+              </span>
+              <span
+                style={{
+                  color: "#ff7a6e",
+                  fontWeight: 700,
+                  fontSize: 9,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                {rec.layerD.branchTaken}
+              </span>
+              <span
+                style={{
+                  color: "rgba(200,190,200,0.7)",
+                  fontSize: 9,
+                }}
+              >
+                {rec.layerD.castResult ?? "—"}
+              </span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flexWrap: "wrap",
+                fontSize: 10,
+                fontFamily: "monospace",
+                color: "#c0c0c0",
+              }}
+            >
+              <span style={{ color: "rgba(200,190,200,0.5)" }}>row0:</span>
+              <span style={{ color: "#e0e0e0", fontWeight: 600 }}>
+                {row0Id}
+              </span>
+              <span style={{ color: "rgba(200,190,200,0.5)" }}>dist:</span>
+              <span style={{ color: "#ec8a85" }}>{distStr}</span>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                flexWrap: "wrap",
+              }}
+            >
+              {renderInv(
+                "I1",
+                inv.i1_roundTrip.pass,
+                `err=${inv.i1_roundTrip.roundTripError.toFixed(2)}px`,
+              )}
+              {renderInv(
+                "I2",
+                inv.i2_rectAnchor.pass,
+                `mag=${inv.i2_rectAnchor.mag.toFixed(2)}px`,
+              )}
+              {renderInv(
+                "I3",
+                inv.i3_spaceNearMiss.pass,
+                `d=${inv.i3_spaceNearMiss.dist.toFixed(2)}px`,
+              )}
+              {renderInv(
+                "I4",
+                inv.i4_entityTile.pass,
+                `row=${inv.i4_entityTile.rowTile ? `(${inv.i4_entityTile.rowTile.x},${inv.i4_entityTile.rowTile.y})` : "null"}`,
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const ChatPanel: React.FC<ChatPanelProps> = ({
   playerName,
   battleLogEntries = [],
@@ -482,6 +510,21 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [isDebugPaused, setIsDebugPaused] = useState(false);
   const [copyConfirm, setCopyConfirm] = useState(false);
+  // SECTION 6 (build #329): Debug tab sub-view toggle — "log" (existing log
+  // view) or "clicks" (new click-trace ring buffer view).
+  const [debugSubView, setDebugSubView] = useState<"log" | "clicks">("log");
+  // SECTION 6 (build #329): click-trace ring buffer mirror for the Clicks
+  // sub-view. Refreshed on every render of the Debug tab; the buffer is a
+  // readonly snapshot from getClickTraceBuffer().
+  const [clickTraceEntries, setClickTraceEntries] = useState<
+    readonly ClickTraceRecord[]
+  >([]);
+  // SECTION 6 (build #329): geometry overlay enabled flag, mirrored from the
+  // shared geometryOverlayState module so the toolbar toggle reflects the
+  // global flag consumed by the WX render loop.
+  const [geometryOverlayOn, setGeometryOverlayOn] = useState(
+    getGeometryOverlayEnabled(),
+  );
   // Channel visibility (UI preference, persisted to localStorage).
   const [channelVisibility, setChannelVisibility] = useState<
     Record<Channel, boolean>
@@ -672,6 +715,29 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     return unsub;
   }, []);
 
+  // SECTION 6 (build #329): refresh the click-trace ring buffer mirror
+  // whenever the Debug tab is active. The buffer is a readonly snapshot from
+  // getClickTraceBuffer() (oldest-first); we reverse for newest-first display.
+  // Re-snap on every debugEntries change as a cheap "something happened" tick
+  // — click traces are recorded by the WX click handler, not by the debug
+  // logger, so there is no dedicated subscription channel. Polling on the
+  // debug-log tick is a low-cost way to keep the Clicks view fresh while the
+  // Debug tab is open. debugEntries is intentionally a refresh trigger.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: debugEntries is a deliberate tick to re-pull the click trace buffer when new debug events arrive.
+  useEffect(() => {
+    if (activeChannel !== "debug") return;
+    setClickTraceEntries(getClickTraceBuffer());
+  }, [activeChannel, debugEntries]);
+
+  // SECTION 6 (build #329): subscribe to geometry-overlay flag changes so the
+  // toolbar toggle reflects the global flag consumed by the WX render loop.
+  useEffect(() => {
+    const unsub = subscribeGeometryOverlayEnabled((enabled) => {
+      setGeometryOverlayOn(enabled);
+    });
+    return unsub;
+  }, []);
+
   // SECTION 5 (build #325): filtered + reversed debug entries for display.
   // Filter rules: (a) if activeCategories is non-empty, entry.category must be
   // a member (union of selected chips); (b) if searchQuery is non-empty,
@@ -695,6 +761,33 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       .slice()
       .reverse();
   }, [debugEntries, activeCategories, searchQuery]);
+
+  // SECTION 4 (build #329): construct an ExportContext from the debugContext
+  // prop plus live getters for the debug log buffer, click trace buffer, and
+  // geometry snapshot. The getters are invoked at export time, so the snapshot
+  // reflects state at the moment the user clicks Export.
+  //
+  // getGeometrySnapshot requires inputs (combatants, spriteRects, camera, dpr,
+  // canvas sizes) that ChatPanel does not have. WorldExploration owns those
+  // inputs, so it is responsible for providing a getGeometrySnapshot getter on
+  // the debugContext prop (DebugContext = ExportContext already declares the
+  // field as optional). We forward debugContext.getGeometrySnapshot when
+  // present and fall back to () => undefined otherwise — debugExport handles
+  // the null case gracefully (the GEOMETRY SNAPSHOT section degrades to
+  // "(snapshot unavailable)").
+  const exportContext = useMemo<ExportContext | undefined>(
+    () =>
+      debugContext
+        ? {
+            ...debugContext,
+            getDebugLogBuffer: () => getDebugLogBuffer(),
+            getClickTraceBuffer: () => getClickTraceBuffer(),
+            getGeometrySnapshot:
+              debugContext.getGeometrySnapshot ?? (() => undefined),
+          }
+        : undefined,
+    [debugContext],
+  );
 
   // Shift+D → open debug tab and unfold
   useEffect(() => {
@@ -1561,6 +1654,40 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       <Copy size={11} />
                       {copyConfirm ? "Copied!" : "Copy all"}
                     </button>
+                    {/* Geometry overlay toggle — mirrors the pause/resume toggle
+                        style. Reflects geometryOverlayOn; flips the shared
+                        geometryOverlayState flag consumed by the WX render
+                        loop. */}
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.geometry_overlay_toggle"
+                      onClick={() =>
+                        setGeometryOverlayEnabled(!geometryOverlayOn)
+                      }
+                      title={
+                        geometryOverlayOn
+                          ? "Hide geometry overlay"
+                          : "Show geometry overlay"
+                      }
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background: geometryOverlayOn ? "#2a4a2a" : "#3a2a2a",
+                        color: "#e0e0e0",
+                        border: "1px solid #5a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      <Bug size={11} />
+                      {geometryOverlayOn ? "Geom on" : "Geom off"}
+                    </button>
                     {/* PDF export approach: print-optimized window with auto window.print() — user picks Save as PDF */}
                     <button
                       type="button"
@@ -1568,12 +1695,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       onClick={() => {
                         const w = window.open("", "_blank");
                         if (w) {
-                          w.document.write(
-                            buildDebugReportHtml(
-                              debugContext,
-                              getDebugLogBuffer(),
-                            ),
-                          );
+                          w.document.write(buildDebugReportHtml(exportContext));
                           w.document.close();
                           setTimeout(() => w.print(), 250);
                         }
@@ -1604,12 +1726,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       data-ocid="chat.debug.export_txt_button"
                       onClick={() => {
                         const blob = new Blob(
-                          [
-                            buildDebugReportText(
-                              debugContext,
-                              getDebugLogBuffer(),
-                            ),
-                          ],
+                          [buildDebugReportText(exportContext)],
                           { type: "text/plain" },
                         );
                         const a = document.createElement("a");
@@ -1640,124 +1757,186 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       Export .txt
                     </button>
                   </div>
-                  {debugEntries.length === 0 ? (
-                    <div
-                      data-ocid="chat.debug.empty_state"
-                      className="text-muted-foreground"
+                  {/* Sub-view toggle: Log | Clicks. Carved-stone dark slate +
+                      crimson accent matching the toolbar controls. */}
+                  <div
+                    data-ocid="chat.debug.subview_toggle"
+                    style={{
+                      display: "flex",
+                      gap: 4,
+                      marginBottom: 8,
+                      padding: "4px 6px",
+                      background: "#10131a",
+                      border: "1px solid #3a2a2a",
+                      borderRadius: 3,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.subview.log"
+                      onClick={() => setDebugSubView("log")}
                       style={{
-                        textAlign: "center",
-                        marginTop: 20,
-                        opacity: 0.5,
+                        flex: 1,
+                        padding: "3px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background:
+                          debugSubView === "log" ? "#c0392b" : "#2a2d33",
+                        color: debugSubView === "log" ? "#fff" : "#c0c0c0",
+                        border: "1px solid #4a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
                       }}
                     >
-                      No debug events yet.
-                    </div>
-                  ) : (
-                    <div
+                      Log
+                    </button>
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.subview.clicks"
+                      onClick={() => setDebugSubView("clicks")}
                       style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 4,
+                        flex: 1,
+                        padding: "3px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background:
+                          debugSubView === "clicks" ? "#c0392b" : "#2a2d33",
+                        color: debugSubView === "clicks" ? "#fff" : "#c0c0c0",
+                        border: "1px solid #4a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
                       }}
                     >
-                      {filteredDebugEntries.map((entry, idx) => {
-                        const isExpanded = expandedDebugIds.has(idx);
-                        return (
-                          <button
-                            type="button"
-                            key={`${entry.ts}-${idx}`}
-                            data-ocid="chat.debug.entry"
-                            style={{
-                              padding: "4px 6px",
-                              borderBottom: "1px solid rgba(255,255,255,0.06)",
-                              cursor:
-                                entry.data !== undefined
-                                  ? "pointer"
-                                  : "default",
-                              background: "transparent",
-                              border: "none",
-                              textAlign: "left",
-                              width: "100%",
-                            }}
-                            onClick={() => {
-                              if (entry.data === undefined) return;
-                              setExpandedDebugIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(idx)) next.delete(idx);
-                                else next.add(idx);
-                                return next;
-                              });
-                            }}
-                            disabled={entry.data === undefined}
-                          >
-                            <div
+                      Clicks
+                    </button>
+                  </div>
+                  {debugSubView === "log" &&
+                    (debugEntries.length === 0 ? (
+                      <div
+                        data-ocid="chat.debug.empty_state"
+                        className="text-muted-foreground"
+                        style={{
+                          textAlign: "center",
+                          marginTop: 20,
+                          opacity: 0.5,
+                        }}
+                      >
+                        No debug events yet.
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 4,
+                        }}
+                      >
+                        {filteredDebugEntries.map((entry, idx) => {
+                          const isExpanded = expandedDebugIds.has(idx);
+                          return (
+                            <button
+                              type="button"
+                              key={`${entry.ts}-${idx}`}
+                              data-ocid="chat.debug.entry"
                               style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                                flexWrap: "wrap",
+                                padding: "4px 6px",
+                                borderBottom:
+                                  "1px solid rgba(255,255,255,0.06)",
+                                cursor:
+                                  entry.data !== undefined
+                                    ? "pointer"
+                                    : "default",
+                                background: "transparent",
+                                border: "none",
+                                textAlign: "left",
+                                width: "100%",
                               }}
+                              onClick={() => {
+                                if (entry.data === undefined) return;
+                                setExpandedDebugIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(idx)) next.delete(idx);
+                                  else next.add(idx);
+                                  return next;
+                                });
+                              }}
+                              disabled={entry.data === undefined}
                             >
-                              <span
+                              <div
                                 style={{
-                                  color: "rgba(160,160,170,0.6)",
-                                  fontSize: 10,
-                                  fontVariantNumeric: "tabular-nums",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  flexWrap: "wrap",
                                 }}
                               >
-                                {formatDebugTime(entry.ts)}
-                              </span>
-                              <span
-                                style={{
-                                  color: levelColor(entry.level),
-                                  fontWeight: 700,
-                                  fontSize: 9,
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.04em",
-                                }}
-                              >
-                                {entry.level}
-                              </span>
-                              <span
-                                style={{
-                                  color: "rgba(200,190,200,0.5)",
-                                  fontSize: 9,
-                                  textTransform: "uppercase",
-                                  letterSpacing: "0.04em",
-                                }}
-                              >
-                                {entry.category}
-                              </span>
-                              <span
-                                style={{
-                                  color: "rgba(235,235,245,0.85)",
-                                  fontSize: 11,
-                                }}
-                              >
-                                {entry.message}
-                              </span>
-                            </div>
-                            {isExpanded && entry.data !== undefined && (
-                              <pre
-                                style={{
-                                  marginTop: 4,
-                                  padding: "4px 6px",
-                                  background: "rgba(0,0,0,0.3)",
-                                  borderRadius: 4,
-                                  fontSize: 10,
-                                  color: "rgba(200,200,210,0.7)",
-                                  whiteSpace: "pre-wrap",
-                                  wordBreak: "break-all",
-                                  overflowX: "auto",
-                                }}
-                              >
-                                {JSON.stringify(entry.data, null, 2)}
-                              </pre>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
+                                <span
+                                  style={{
+                                    color: "rgba(160,160,170,0.6)",
+                                    fontSize: 10,
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  {formatDebugTime(entry.ts)}
+                                </span>
+                                <span
+                                  style={{
+                                    color: levelColor(entry.level),
+                                    fontWeight: 700,
+                                    fontSize: 9,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.04em",
+                                  }}
+                                >
+                                  {entry.level}
+                                </span>
+                                <span
+                                  style={{
+                                    color: "rgba(200,190,200,0.5)",
+                                    fontSize: 9,
+                                    textTransform: "uppercase",
+                                    letterSpacing: "0.04em",
+                                  }}
+                                >
+                                  {entry.category}
+                                </span>
+                                <span
+                                  style={{
+                                    color: "rgba(235,235,245,0.85)",
+                                    fontSize: 11,
+                                  }}
+                                >
+                                  {entry.message}
+                                </span>
+                              </div>
+                              {isExpanded && entry.data !== undefined && (
+                                <pre
+                                  style={{
+                                    marginTop: 4,
+                                    padding: "4px 6px",
+                                    background: "rgba(0,0,0,0.3)",
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    color: "rgba(200,200,210,0.7)",
+                                    whiteSpace: "pre-wrap",
+                                    wordBreak: "break-all",
+                                    overflowX: "auto",
+                                  }}
+                                >
+                                  {JSON.stringify(entry.data, null, 2)}
+                                </pre>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  {debugSubView === "clicks" && (
+                    <ClicksSubView entries={clickTraceEntries} />
                   )}
                 </div>
               )}

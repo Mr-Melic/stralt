@@ -65,6 +65,13 @@ import {
   spawnPixelPuff,
 } from "../data/pieceArt";
 import { physicalAttackSpell, starterSpells } from "../data/spellData";
+// [CLICK-TRACE] Debug-only click-geometry recorder (build #329). Gated by
+// import.meta.env.DEV at the call site; this import is a pure module.
+import { getGeometrySnapshot, recordClickTrace } from "../debug/clickTrace";
+import type { SpriteRect } from "../debug/clickTrace";
+// [CLICK-TRACE] Shared geometry-overlay toggle (read each frame by the render
+// post-pass and at click time to arm lastClickOverlayRef).
+import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
 import { drawBarrierTower } from "../engine/barrierRender";
 import {
   activeHostilesRemaining,
@@ -206,15 +213,6 @@ let _fbNameIdx = 0;
 // start. Reset only on full reload (intentional: a single warn is enough).
 let _progressionDivergenceWarned = false;
 
-// ─── [CLICK] guard instrumentation (Part 4) ───────────────────────────────
-// Map-keyed, time-based throttle: logs on first occurrence per key, then at
-// most once per 1000ms per key. Modeled on pieceArt.ts's logPatternLookupFailed
-// style but with a 1s time window instead of every-Nth. Routes through
-// logDebugInfo so entries surface in the Shift+D debug overlay. PERMANENT
-// (not dev-only) per spec — always visible in the overlay buffer.
-const _clickGuardLastLog: Map<string, number> = new Map();
-const _CLICK_THROTTLE_MS = 1000;
-
 // ─── [SPELLBAR-BISECT] throttle counters (Part 4) ───────────────────────────
 // The spell-bar bisect logs fire on every render/effect tick that hits the
 // "already loaded" early-return path and on every battle start. Unthrottled
@@ -223,13 +221,6 @@ const _CLICK_THROTTLE_MS = 1000;
 // instrumentation — counters are module-level so they persist across renders.
 let _spellbarBisectLoadSkipCount = 0;
 let _spellbarBisectConsoleCount = 0;
-function logClickGuard(key: string, detail: Record<string, unknown>): void {
-  const now = Date.now();
-  const last = _clickGuardLastLog.get(key);
-  if (last !== undefined && now - last < _CLICK_THROTTLE_MS) return;
-  _clickGuardLastLog.set(key, now);
-  logDebugInfo("BATTLE", `[CLICK] ${key}`, detail);
-}
 
 interface WorldExplorationProps {
   dokaBalance: number;
@@ -673,9 +664,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         logicalX: number;
         logicalY: number;
         isAlive: boolean;
+        drawAnchor: { x: number; y: number };
+        drawSize: { w: number; h: number };
       }
     >
   >(new Map());
+  // [CLICK-TRACE] Last click position in render space, for the 2-second
+  // debug overlay. Set by handleCanvasClick/handleCanvasTouch when the
+  // geometry overlay is enabled; consumed by the render post-pass.
+  const lastClickOverlayRef = useRef<{
+    x: number;
+    y: number;
+    ts: number;
+  } | null>(null);
   // Prop-driven inspect target for BattleUIPanel. Set by the sprite-hit
   // inspect branch in handleCanvasClick/handleCanvasTouch when a hostile
   // sprite is clicked with no spell selected. BattleUIPanel opens its inspect
@@ -7798,13 +7799,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               x: screenPos.x - _srW / 2,
               y: screenPos.y - CHARACTER_Y_OFFSET - _srH / 2,
               w: _srW,
-              h: _srH,
+              h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
               drawOrder: renderItem.depth,
               id: enemy.id,
               kind: "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
               isAlive: (enemy.hp ?? 0) > 0,
+              drawAnchor: {
+                x: screenPos.x,
+                y: screenPos.y - CHARACTER_Y_OFFSET,
+              },
+              drawSize: { w: effectiveTileW, h: effectiveTileH * 1.5 },
             });
           }
 
@@ -8042,13 +8048,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               x: playerScreenPos.x - _psrW / 2,
               y: playerScreenPos.y - CHARACTER_Y_OFFSET - _psrH / 2,
               w: _psrW,
-              h: _psrH,
+              h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _psrH / 2,
               drawOrder: 99999,
               id: "player",
               kind: "player",
               logicalX: playerPositionRef.current.x,
               logicalY: playerPositionRef.current.y,
               isAlive: true,
+              drawAnchor: {
+                x: playerScreenPos.x,
+                y: playerScreenPos.y - CHARACTER_Y_OFFSET,
+              },
+              drawSize: { w: _psrW, h: _psrH },
             });
           }
 
@@ -8327,6 +8338,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
     }
 
+    if (
+      import.meta.env.DEV &&
+      getGeometryOverlayEnabled() &&
+      lastClickOverlayRef.current &&
+      Date.now() - lastClickOverlayRef.current.ts < 2000
+    ) {
+      ctx.save();
+      ctx.strokeStyle = "#d8463f";
+      ctx.beginPath();
+      const _lc = lastClickOverlayRef.current;
+      ctx.moveTo(_lc.x - 10, _lc.y);
+      ctx.lineTo(_lc.x + 10, _lc.y);
+      ctx.moveTo(_lc.x, _lc.y - 10);
+      ctx.lineTo(_lc.x, _lc.y + 10);
+      ctx.stroke();
+      for (const r of spriteRectsRef.current.values()) {
+        ctx.strokeStyle =
+          _lc.x >= r.x &&
+          _lc.x <= r.x + r.w &&
+          _lc.y >= r.y &&
+          _lc.y <= r.y + r.h
+            ? "#22c55e"
+            : "#666";
+        ctx.strokeRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = "#ec8a85";
+        ctx.fillText(r.id, r.x, r.y - 2);
+      }
+      ctx.restore();
+    }
     // Fade overlay for portal transitions
     const fo = fadeOverlayRef.current;
     if (fo.opacity > 0) {
@@ -8546,7 +8586,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Sprite-first hit testing. Iterates the per-frame spriteRectsRef map
   // populated during the render pass and returns the front-most LIVING
   // combatant whose expanded rect contains (canvasX, canvasY). Padding
-  // widens the hit box (~4px mouse, ~8px touch) so the visible body —
+  // widens the hit box (~10px mouse, ~14px touch) so the visible body —
   // which sits ABOVE the logical tile due to CHARACTER_Y_OFFSET — is
   // reliably clickable. Front-most is highest drawOrder, tiebroken by
   // lowest y (topmost on screen). Returns null when no living sprite is
@@ -8694,7 +8734,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       isBloodMoon,
       isMirrorField,
       isPaperWindstorm,
-      enemies,
+      enemies: getLiveCombatants(combatantStoreCtx),
       // --- base SpellContextDeps callbacks ---
       rng: Math.random,
       log: (msg: string, color?: string, isSummon?: boolean) => {
@@ -8914,7 +8954,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           spell,
           gridPos,
           targetEnemy,
-          enemies,
+          enemies: getLiveCombatants(combatantStoreCtx),
           playerPosition,
           characterName,
           characterStats,
@@ -9160,6 +9200,99 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     computeEnemyStats,
     setCurrentBattleApSynced,
   ]);
+  // [CLICK-TRACE] Builds ClickTraceInput from refs and records the click.
+  // Debug-only; the recordClickTrace module itself is pure. Compact: ~30 lines.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: recordClickOutcome is a debug-only trace recorder that intentionally reads refs (canvasRef, dprRef, cameraRef, playerPositionRef, selectedSpellIdRef, battleActionModeRef, currentBattleApRef, currentBattleMpRef, spriteRectsRef) and canvasSize for snapshotting click context. Adding canvasSize would force a new callback on every canvas resize and re-render the click/touch handlers unnecessarily; the trace only needs the values at click time, which the refs already provide.
+  const recordClickOutcome = useCallback(
+    (
+      clientX: number,
+      clientY: number,
+      branchTaken: string,
+      castResult: string | null,
+      rejectReason: string | null,
+      spellTilesSize: number | null,
+      tileInSpellTiles: boolean | null,
+    ) => {
+      if (!import.meta.env.DEV) return;
+      const _canvas = canvasRef.current;
+      if (!_canvas) return;
+      const _rect = _canvas.getBoundingClientRect();
+      const _logical = pointerToRenderSpace(clientX, clientY);
+      const _tile = clientToGrid(clientX, clientY);
+      recordClickTrace({
+        ts: Date.now(),
+        helpers: {
+          screenToGrid: (p) =>
+            clientToGrid(_rect.left + p.x, _rect.top + p.y) ?? { x: 0, y: 0 },
+          gridToScreen: (t) => gridToScreen(t.x, t.y),
+        },
+        effectiveTileH,
+        hitPad: 8,
+        clientX,
+        clientY,
+        rect: {
+          left: _rect.left,
+          top: _rect.top,
+          width: _rect.width,
+          height: _rect.height,
+        },
+        logical: _logical,
+        dpr: dprRef.current,
+        camera: { x: cameraRef.current.x, y: cameraRef.current.y },
+        canvasSizeLogical: { w: canvasSize.width, h: canvasSize.height },
+        canvasBacking: { w: _canvas.width, h: _canvas.height },
+        combatants: getLiveCombatants(combatantStoreCtx),
+        spriteRects: spriteRectsRef.current as unknown as Map<
+          string,
+          SpriteRect
+        >,
+        playerTile: {
+          x: playerPositionRef.current.x,
+          y: playerPositionRef.current.y,
+        },
+        playerId: "player",
+        storePositions: new Map(
+          getLiveCombatants(combatantStoreCtx).map((e) => [
+            e.id,
+            { x: e.x, y: e.y },
+          ]),
+        ),
+        selectedSpell:
+          (activeSpells.find((s) => s.id === selectedSpellIdRef.current) as
+            | SpellConfig
+            | undefined) ?? null,
+        spellRange: (() => {
+          const _sel = activeSpells.find(
+            (s) => s.id === selectedSpellIdRef.current,
+          );
+          return _sel
+            ? getEffectiveSpellRange(Number(_sel.range), _sel.id)
+            : null;
+        })(),
+        battleActionMode: battleActionModeRef.current,
+        currentTurnEntry: turnOrder[currentTurnIndex]?.id ?? null,
+        currentBattleAp: currentBattleApRef.current,
+        currentBattleMp: currentBattleMpRef.current,
+        spellTilesSize,
+        tileInSpellTiles,
+        branchTaken,
+        castResult,
+        rejectReason,
+      });
+    },
+    [
+      clientToGrid,
+      gridToScreen,
+      pointerToRenderSpace,
+      effectiveTileH,
+      combatantStoreCtx,
+      turnOrder,
+      currentTurnIndex,
+      activeSpells,
+      getEffectiveSpellRange,
+    ],
+  );
+
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
@@ -9183,33 +9316,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _ptr = pointerToRenderSpace(event.clientX, event.clientY);
           const _canvasX = _ptr.x;
           const _canvasY = _ptr.y;
-          // Self-announcing space check: log nearest rect distance so a future space mismatch is instantly visible.
-          let _nearestId: string | null = null;
-          let _nearestDx = 0;
-          let _nearestDy = 0;
-          let _nearestDist = Number.POSITIVE_INFINITY;
-          for (const [_rid, _r] of spriteRectsRef.current) {
-            const _cx = _r.x + _r.w / 2;
-            const _cy = _r.y + _r.h / 2;
-            const _d = Math.hypot(_canvasX - _cx, _canvasY - _cy);
-            if (_d < _nearestDist) {
-              _nearestDist = _d;
-              _nearestId = _rid;
-              _nearestDx = _canvasX - _cx;
-              _nearestDy = _canvasY - _cy;
-            }
-          }
-          const _hit = hitTestSprite(_canvasX, _canvasY, 4);
-          logClickGuard("SPRITE-HIT", {
-            pointerLogical: { x: _canvasX, y: _canvasY },
-            dpr: dprRef.current,
-            nearestRect: {
-              id: _nearestId,
-              dx: Math.round(_nearestDx),
-              dy: Math.round(_nearestDy),
-            },
-            hit: _hit ? _hit.id : null,
-          });
+          const _hit = hitTestSprite(_canvasX, _canvasY, 10);
           if (_hit) {
             if (selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _spell = activeSpells.find(
@@ -9230,6 +9337,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     branchTaken: "cast-sprite",
                     hitId: _hit.id,
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
+                    targetsCount: 1,
+                    targetIds: [_hit.id],
                   });
                   // Reuse the existing cast body — same path the
                   // cast-live branch at 9092 takes. AP cost is computed
@@ -9252,14 +9361,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         : `Cast ${_castResult}!`,
                     );
                   }
+                  try {
+                    recordClickOutcome(
+                      event.clientX,
+                      event.clientY,
+                      "cast-sprite",
+                      _castResult,
+                      null,
+                      null,
+                      null,
+                    );
+                  } catch {}
                   return;
                 }
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  hitId: _hit.id,
-                  reason: _live.reason,
-                });
                 {
                   const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                   effectsManagerRef.current?.spawnFloatText(
@@ -9267,11 +9381,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     _screen.y,
                     _live.reason,
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
-                  );
                 }
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "cast-sprite",
+                    null,
+                    _live.reason,
+                    null,
+                    null,
+                  );
+                } catch {}
                 return;
               }
             } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
@@ -9281,10 +9402,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               const _basicAttack = activeSpells.find(
                 (s) => s.id === "physical_attack",
               );
+              let _spriteBasicCastResult: string | null = null;
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
                 const { castResult: _castResult, apCost: _apCostBasic } =
                   executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                _spriteBasicCastResult = _castResult;
                 if (_castResult !== "cast") {
                   const _screen = tileCenter(_tile.x, _tile.y);
                   effectsManagerRef.current?.spawnFloatText(
@@ -9299,6 +9422,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               } else {
                 setInspectCombatantId(_hit.id);
               }
+              try {
+                recordClickOutcome(
+                  event.clientX,
+                  event.clientY,
+                  "sprite-basic",
+                  _spriteBasicCastResult,
+                  null,
+                  null,
+                  null,
+                );
+              } catch {}
               return;
             } else if (selectedSpellIdRef.current && _hit.kind === "player") {
               // Self/ally-targetable spell + player sprite hit → self-cast.
@@ -9311,11 +9445,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "self-cast-sprite",
-                  hitId: "player",
-                });
                 const { castResult: _castResult, apCost: _apCost } =
                   executeCastAttempt(
                     _spell,
@@ -9324,6 +9453,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   );
                 void _castResult;
                 void _apCost;
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "sprite-player",
+                    _castResult,
+                    null,
+                    null,
+                    null,
+                  );
+                } catch {}
                 return;
               }
               // Not self/ally-targetable → fall through to tile logic.
@@ -9342,51 +9482,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       // --- BATTLE MODE ---
       if (inBattle) {
-        // BREAK 1: UNCONDITIONAL throttled [CLICK] entry log at the VERY TOP
-        // of the battle branch, BEFORE the notPlayerTurn guard and any
-        // sub-branch. Includes entityAtTile so silence is impossible — every
-        // battle click now logs unconditionally at entry with the exact
-        // diagnostic (inBattle, currentEntry, entityAtTile) the user needs.
-        {
-          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.x === gridPos.x && e.y === gridPos.y,
-          );
-          logClickGuard("battle.entry", {
-            tile: gridPos,
-            hasSelection: !!selectedSpellIdRef.current,
-            selectedSpellId: selectedSpellIdRef.current,
-            entityAtTile: _entityAtTile
-              ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType }
-              : null,
-            inBattle,
-            battlePhase,
-            currentEntry: _entry?.type,
-            currentId: _entry?.id,
-          });
-        }
-        // FIX 2 — UNMISSABLE [CLICK-ENEMY] probe. Fires on EVERY enemy click
-        // regardless of which branch wins, BEFORE the notPlayerTurn guard.
-        // UNTHROTTLED — direct logDebugInfo call (NOT routed through
-        // logClickGuard's 1s throttle). Dev-only gated so it never ships to
-        // normal players. Single-entry approach: logs pre-branch fields with
-        // branchTaken: 'entry' and gateResult: 'pre-branch' — one line per
-        // click as specified.
-        if (import.meta.env.DEV) {
-          const _hostile = getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
-          );
-          if (_hostile) {
-            logDebugInfo("BATTLE", "[CLICK-ENEMY]", {
-              tile: gridPos,
-              hasSelection: !!selectedSpellIdRef.current,
-              spellId: selectedSpellIdRef.current,
-              modeAtClick: battleActionMode,
-              branchTaken: "entry",
-              gateResult: "pre-branch",
-            });
-          }
-        }
         // Part 3: Desync-proof click guard. PRIMARY gate is the turn-truth
         // (turnOrderRef/currentTurnIndexRef), so a stale battlePhase flag can
         // never lock the player out of their own turn. battlePhase remains a
@@ -9394,11 +9489,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if (_entry?.type !== "player") {
-            logClickGuard("blocked.notPlayerTurn", {
-              phase: battlePhase,
-              currentEntry: _entry?.type,
-              currentId: _entry?.id,
-            });
             return;
           }
         }
@@ -9414,18 +9504,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
           // No spell selected → silent return (inspect opens only via the
           // BattleUIPanel initiative chip button, NOT via canvas click).
-          if (!selectedSpellIdRef.current) {
-            logClickGuard("blocked.noSpellSelected", {
-              phase: battlePhase,
-              mode: battleActionMode,
-            });
-            return;
-          }
           if (currentBattleApRef.current <= 0) {
-            logClickGuard("blocked.noAp", {
-              phase: battlePhase,
-              ap: currentBattleApRef.current,
-            });
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -9482,30 +9561,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   tile: gridPos,
                   spellId: _spellMouse.id,
                   targetId: _occupantMouse.id,
+                  targetsCount: 1,
+                  targetIds: [_occupantMouse.id],
                 });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
                 // the existing cast body below by skipping the gate.
               } else {
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  tile: gridPos,
-                  spellId: _spellMouse.id,
-                  reason: _liveMouse.reason,
-                });
-                {
-                  const _screen = tileCenter(gridPos.x, gridPos.y);
-                  effectsManagerRef.current?.spawnFloatText(
-                    _screen.x,
-                    _screen.y,
+                const _screen = tileCenter(gridPos.x, gridPos.y);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "invalid target",
+                );
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "tile-invalid-target",
+                    null,
+                    null,
+                    spellTiles.size,
+                    false,
+                  );
+                } catch {}
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "cast-live",
+                    null,
                     _liveMouse.reason,
+                    null,
+                    null,
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-live-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${_spellMouse.id} apCost=${Number(_spellMouse.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_liveMouse.reason}`,
-                  );
-                }
+                } catch {}
                 return;
               }
             }
@@ -9538,24 +9628,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 liveCombatantCount: _liveNow.length,
               });
             }
-            logClickGuard("blocked.tileOutOfRange", {
-              phase: battlePhase,
-              tile: gridPos,
-              clickedTile: `${gridPos.x},${gridPos.y}`,
-              setSize: spellTiles.size,
-              cacheHit: _preClickCacheHit,
-              spellId: selectedSpellIdRef.current,
-            });
             return;
           }
           const spell = activeSpells.find(
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) {
-            logClickGuard("blocked.spellNotFound", {
-              phase: battlePhase,
-              spellId: selectedSpellIdRef.current,
-            });
             return;
           }
           // FIX 2a (mouse self-tile hostile guard): if a hostile-target spell
@@ -9582,31 +9660,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               _screen.y,
               "invalid target",
             );
-            logDebugInfo(
-              "BATTLE",
-              `[CLICK-ENEMY] self-tile-hostile-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`,
-            );
             return;
           }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
-          if (import.meta.env.DEV) {
-            // eslint-disable-next-line no-console
-            console.log("[CLICK] cast branch", {
-              spellId: spell.id,
-              spellName: spell.name,
-              tile: gridPos,
-              apCost: Number(spell.apCost),
-              currentBattleAp: currentBattleApRef.current,
-            });
-          }
           const { castResult, apCost } = executeCastAttempt(
             spell,
             gridPos,
             "tile",
-          );
-          logDebugInfo(
-            "BATTLE",
-            `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`,
           );
           if (castResult === "cast") {
             // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
@@ -9639,9 +9699,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               effectsManagerRef.current?.spawnFloatText(
                 _screen.x,
                 _screen.y,
-                "Fizzled!",
+                "✦ FIZZLED! ✦",
+                "#dc2626",
               );
             }
+            playSound("spell_cast", "fizzle");
             if (
               Math.max(
                 Math.abs(gridPos.x - playerPositionRef.current.x),
@@ -9779,13 +9841,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
       }
+      if (getGeometryOverlayEnabled()) {
+        const _l = pointerToRenderSpace(event.clientX, event.clientY);
+        lastClickOverlayRef.current = { x: _l.x, y: _l.y, ts: Date.now() };
+      }
+      try {
+        recordClickOutcome(
+          event.clientX,
+          event.clientY,
+          "move",
+          null,
+          null,
+          null,
+          null,
+        );
+      } catch {}
     },
     [
       currentMap,
       clientToGrid,
       findPath,
       inBattle,
-      battlePhase,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
@@ -9800,6 +9876,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setCurrentBattleApSynced,
       tileCenter,
       pointerToRenderSpace,
+      recordClickOutcome,
     ],
   );
   // Handle canvas mouse move
@@ -9839,6 +9916,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
   // Touch handler — delegates to same grid logic as mouse click
   // Touch handler — delegates to same grid logic as mouse click
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
   const handleCanvasTouch = useCallback(
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
@@ -9859,33 +9937,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _ptr = pointerToRenderSpace(touch.clientX, touch.clientY);
           const _canvasX = _ptr.x;
           const _canvasY = _ptr.y;
-          // Self-announcing space check: log nearest rect distance so a future space mismatch is instantly visible.
-          let _nearestId: string | null = null;
-          let _nearestDx = 0;
-          let _nearestDy = 0;
-          let _nearestDist = Number.POSITIVE_INFINITY;
-          for (const [_rid, _r] of spriteRectsRef.current) {
-            const _cx = _r.x + _r.w / 2;
-            const _cy = _r.y + _r.h / 2;
-            const _d = Math.hypot(_canvasX - _cx, _canvasY - _cy);
-            if (_d < _nearestDist) {
-              _nearestDist = _d;
-              _nearestId = _rid;
-              _nearestDx = _canvasX - _cx;
-              _nearestDy = _canvasY - _cy;
-            }
-          }
-          const _hit = hitTestSprite(_canvasX, _canvasY, 8);
-          logClickGuard("SPRITE-HIT", {
-            pointerLogical: { x: _canvasX, y: _canvasY },
-            dpr: dprRef.current,
-            nearestRect: {
-              id: _nearestId,
-              dx: Math.round(_nearestDx),
-              dy: Math.round(_nearestDy),
-            },
-            hit: _hit ? _hit.id : null,
-          });
+          const _hit = hitTestSprite(_canvasX, _canvasY, 14);
           if (_hit) {
             if (selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _spell = activeSpells.find(
@@ -9901,12 +9953,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   currentMap.tiles,
                 );
                 if (_live.ok) {
-                  // eslint-disable-next-line no-console
-                  console.log("[CLICK-ENEMY]", {
-                    branchTaken: "cast-sprite",
-                    hitId: _hit.id,
-                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
-                  });
                   const { castResult: _castResult, apCost: _apCost } =
                     executeCastAttempt(
                       _spell,
@@ -9923,22 +9969,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }
                   return;
                 }
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  hitId: _hit.id,
-                  reason: _live.reason,
-                });
                 {
                   const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
                     _live.reason,
-                  );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
                   );
                 }
                 return;
@@ -9971,10 +10007,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     _screen.y,
                     _reason,
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] basic-attack-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=false reason=${_reason}`,
-                  );
                   setInspectCombatantId(_hit.id);
                 }
               } else {
@@ -9989,11 +10021,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "self-cast-sprite",
-                  hitId: "player",
-                });
                 const { castResult: _castResult, apCost: _apCost } =
                   executeCastAttempt(
                     _spell,
@@ -10020,61 +10047,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       // Reuse same logic as mouse click
       if (inBattle) {
-        // BREAK 1: UNCONDITIONAL throttled [CLICK] entry log at the VERY TOP
-        // of the battle branch, BEFORE the notPlayerTurn guard and any
-        // sub-branch. Mirrors the mouse handler. Includes entityAtTile so
-        // silence is impossible — every battle touch now logs unconditionally
-        // at entry with the exact diagnostic (inBattle, currentEntry,
-        // entityAtTile) the user needs.
-        {
-          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.x === gridPos.x && e.y === gridPos.y,
-          );
-          logClickGuard("battle.entry.touch", {
-            tile: gridPos,
-            hasSelection: !!selectedSpellIdRef.current,
-            selectedSpellId: selectedSpellIdRef.current,
-            entityAtTile: _entityAtTile
-              ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType }
-              : null,
-            inBattle,
-            battlePhase,
-            currentEntry: _entry?.type,
-            currentId: _entry?.id,
-          });
-        }
-        // FIX 2 — UNMISSABLE [CLICK-ENEMY] probe (touch). Mirrors the mouse
-        // handler. Fires on EVERY enemy touch regardless of which branch wins,
-        // BEFORE the notPlayerTurn guard. UNTHROTTLED — direct logDebugInfo
-        // call (NOT routed through logClickGuard's 1s throttle). Dev-only
-        // gated so it never ships to normal players. Single-entry approach:
-        // logs pre-branch fields with branchTaken: 'entry' and
-        // gateResult: 'pre-branch' — one line per click as specified.
-        if (import.meta.env.DEV) {
-          const _hostile = getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
-          );
-          if (_hostile) {
-            logDebugInfo("BATTLE", "[CLICK-ENEMY]", {
-              tile: gridPos,
-              hasSelection: !!selectedSpellIdRef.current,
-              spellId: selectedSpellIdRef.current,
-              modeAtClick: battleActionMode,
-              branchTaken: "entry",
-              gateResult: "pre-branch",
-            });
-          }
-        }
         // Part 3: Desync-proof touch guard (mirrors the click handler).
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if (_entry?.type !== "player") {
-            logClickGuard("blocked.notPlayerTurn.touch", {
-              phase: battlePhase,
-              currentEntry: _entry?.type,
-              currentId: _entry?.id,
-            });
             return;
           }
         }
@@ -10085,18 +10061,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // spell selected is a silent return.
         if (selectedSpellIdRef.current) {
           // Attack mode: cast selected spell on touched tile if in range
-          if (!selectedSpellIdRef.current) {
-            logClickGuard("blocked.noSpellSelected.touch", {
-              phase: battlePhase,
-              mode: battleActionMode,
-            });
-            return;
-          }
           if (currentBattleApRef.current <= 0) {
-            logClickGuard("blocked.noAp.touch", {
-              phase: battlePhase,
-              ap: currentBattleApRef.current,
-            });
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -10114,9 +10079,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the touch rejection log reports whether the
           // cache already held an entry for this key.
-          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
-          const _preClickCacheHit =
-            spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           // 1C: ENTITY-FIRST TARGETING (touch). Mirrors the mouse handler:
           // before the precomputed spellTiles.has gate, check whether a
@@ -10148,24 +10110,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 currentMap.tiles,
               );
               if (_liveTouch.ok) {
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "cast-live",
-                  tile: gridPos,
-                  spellId: _spellTouch.id,
-                  targetId: _occupantTouch.id,
-                });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
                 // the existing cast body below by skipping the gate.
               } else {
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  tile: gridPos,
-                  spellId: _spellTouch.id,
-                  reason: _liveTouch.reason,
-                });
                 {
                   const _screen = tileCenter(gridPos.x, gridPos.y);
                   effectsManagerRef.current?.spawnFloatText(
@@ -10173,61 +10121,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     _screen.y,
                     _liveTouch.reason,
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-live-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${_spellTouch.id} apCost=${Number(_spellTouch.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_liveTouch.reason}`,
-                  );
                 }
                 return;
               }
             }
           }
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
-            // [TARGET-BISECT] click-miss (touch): mirrors the mouse handler.
-            // When setSize > 0 the computation produced a non-empty set yet
-            // the touched tile is absent — log the tiles the computation saw
-            // vs the live combatant positions from
-            // getLiveCombatants(combatantStoreCtx) at this instant. Dev-gated
-            // via logDebugInfo (console no-op in prod; overlay always gets it).
-            // Capped to avoid spam.
-            if (spellTiles.size > 0) {
-              const _liveNow = getLiveCombatants(combatantStoreCtx);
-              logDebugInfo("BATTLE", "[TARGET-BISECT] click-miss", {
-                handler: "touch",
-                clickedTile: `${gridPos.x},${gridPos.y}`,
-                setSize: spellTiles.size,
-                cacheHit: _preClickCacheHit,
-                spellId: selectedSpellIdRef.current,
-                playerPosition: {
-                  x: playerPositionRef.current.x,
-                  y: playerPositionRef.current.y,
-                },
-                battleWorldVersion: battleWorldVersionRef.current,
-                spellTiles: Array.from(spellTiles).slice(0, 24),
-                liveCombatants: _liveNow
-                  .slice(0, 12)
-                  .map((e) => ({ id: e.id, x: e.x, y: e.y })),
-                liveCombatantCount: _liveNow.length,
-              });
-            }
-            logClickGuard("blocked.tileOutOfRange.touch", {
-              phase: battlePhase,
-              tile: gridPos,
-              clickedTile: `${gridPos.x},${gridPos.y}`,
-              setSize: spellTiles.size,
-              cacheHit: _preClickCacheHit,
-              spellId: selectedSpellIdRef.current,
-            });
             return;
           }
           const spell = activeSpells.find(
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) {
-            logClickGuard("blocked.spellNotFound.touch", {
-              phase: battlePhase,
-              spellId: selectedSpellIdRef.current,
-            });
             return;
           }
           // FIX 2b (touch self-tile hostile guard): mirror of the mouse
@@ -10250,32 +10155,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               _screen.y,
               "invalid target",
             );
-            logDebugInfo(
-              "BATTLE",
-              `[CLICK-ENEMY] self-tile-hostile-rejected.touch casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`,
-            );
+            try {
+              recordClickOutcome(
+                touch.clientX,
+                touch.clientY,
+                "tile-invalid-target",
+                null,
+                null,
+                spellTiles.size,
+                false,
+              );
+            } catch {}
             return;
           }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
           // Mirrors the mouse handler so touch devices get the same trace.
-          if (import.meta.env.DEV) {
-            // eslint-disable-next-line no-console
-            console.log("[CLICK] cast branch (touch)", {
-              spellId: spell.id,
-              spellName: spell.name,
-              tile: gridPos,
-              apCost: Number(spell.apCost),
-              currentBattleAp: currentBattleApRef.current,
-            });
-          }
           const { castResult, apCost } = executeCastAttempt(
             spell,
             gridPos,
             "tile",
-          );
-          logDebugInfo(
-            "BATTLE",
-            `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`,
           );
           if (castResult === "cast") {
             // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
@@ -10308,9 +10206,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               effectsManagerRef.current?.spawnFloatText(
                 _screen.x,
                 _screen.y,
-                "Fizzled!",
+                "✦ FIZZLED! ✦",
+                "#dc2626",
               );
             }
+            playSound("spell_cast", "fizzle");
             if (
               Math.max(
                 Math.abs(gridPos.x - playerPositionRef.current.x),
@@ -10424,23 +10324,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
       }
+      if (getGeometryOverlayEnabled()) {
+        const _l = pointerToRenderSpace(touch.clientX, touch.clientY);
+        lastClickOverlayRef.current = { x: _l.x, y: _l.y, ts: Date.now() };
+      }
+      try {
+        recordClickOutcome(
+          touch.clientX,
+          touch.clientY,
+          "move",
+          null,
+          null,
+          null,
+          null,
+        );
+      } catch {}
     },
     [
       currentMap,
       clientToGrid,
       findPath,
       inBattle,
-      battlePhase,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
       getSpellRangeTiles,
-      activeSpells,
-      combatantStoreCtx,
-      hitTestSprite,
-      setCurrentBattleApSynced,
-      tileCenter,
       pointerToRenderSpace,
+      setCurrentBattleApSynced,
+      recordClickOutcome,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -12866,6 +12777,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // live ref (combatantsRef.current) so the snapshot reflects the current
   // frame, not a stale state closure. No-op when the parent doesn't pass the
   // callback (additive contract — existing callers are unaffected).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the debug-context effect intentionally reads refs (activeSpells.find, canvasSize.width/height, gridToScreen, getEffectiveSpellRange) at snapshot time inside getGeometrySnapshot; stale values are acceptable for the debug snapshot and adding them to deps would cause spurious re-fires without changing the snapshot semantics.
   useEffect(() => {
     if (!onDebugContextChange) return;
     onDebugContextChange({
@@ -12884,6 +12796,40 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         pos: { x: c.x, y: c.y },
       })),
       turnOrderIds: turnOrder.map((c) => c.id),
+      getGeometrySnapshot: () => {
+        try {
+          const _cb = getLiveCombatants(combatantStoreCtx);
+          const _ss = activeSpells.find(
+            (s) => s.id === selectedSpellIdRef.current,
+          );
+          return getGeometrySnapshot({
+            ts: Date.now(),
+            helpers: {
+              gridToScreen: (t: any) => gridToScreen(t.x, t.y),
+              hasLoS: undefined,
+            },
+            combatants: _cb,
+            spriteRects: spriteRectsRef.current as unknown as Map<
+              string,
+              SpriteRect
+            >,
+            playerTile: playerPositionRef.current,
+            playerId: "player",
+            spellRange: _ss
+              ? getEffectiveSpellRange(Number(_ss.range), _ss.id)
+              : null,
+            dpr: dprRef.current,
+            camera: cameraRef.current,
+            canvasSizeLogical: { w: canvasSize.width, h: canvasSize.height },
+            canvasBacking: {
+              w: canvasRef.current?.width ?? 0,
+              h: canvasRef.current?.height ?? 0,
+            },
+          });
+        } catch {
+          return undefined;
+        }
+      },
     });
   }, [
     inBattle,
@@ -15095,7 +15041,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
         logDebugInfo(
           "BATTLE",
-          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult}`,
+          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t: any) => t.id).join(",")}`,
         );
         if (_castResult === "cast") {
           setCurrentBattleApSynced((prev: number) =>
@@ -15201,6 +15147,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     } else if (castResult === "fizzled") {
       setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
+      {
+        const _screen = tileCenter(gridPos.x, gridPos.y);
+        effectsManagerRef.current?.spawnFloatText(
+          _screen.x,
+          _screen.y,
+          "✦ FIZZLED! ✦",
+          "#dc2626",
+        );
+      }
+      playSound("spell_cast", "fizzle");
       if (
         Math.max(
           Math.abs(gridPos.x - playerPositionRef.current.x),
@@ -15243,6 +15199,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     playerSpellContext,
     markFirstAction,
     setCurrentBattleApSynced,
+    tileCenter,
   ]);
   const [noTargetFlash, setNoTargetFlash] = useState(false);
   // Show game over modal

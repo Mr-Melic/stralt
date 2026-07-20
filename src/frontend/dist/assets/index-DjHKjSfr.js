@@ -581,10 +581,10 @@ function hexToBytes(hex) {
   }
   return array;
 }
-function utf8ToBytes(str) {
-  if (typeof str !== "string")
+function utf8ToBytes(str2) {
+  if (typeof str2 !== "string")
     throw new Error("string expected");
-  return new Uint8Array(new TextEncoder().encode(str));
+  return new Uint8Array(new TextEncoder().encode(str2));
 }
 function toBytes(data) {
   if (typeof data === "string")
@@ -3589,8 +3589,8 @@ class FuncClass extends ConstructType {
     const annon = " " + this.annotations.join(" ");
     return `(${args}) -> (${rets})${annon}`;
   }
-  valueToString([principal, str]) {
-    return `func "${principal.toText()}".${str}`;
+  valueToString([principal, str2]) {
+    return `func "${principal.toText()}".${str2}`;
   }
   display() {
     const args = this.argTypes.map((arg) => arg.display()).join(", ");
@@ -3676,8 +3676,8 @@ class ServiceClass extends ConstructType {
   }
 }
 function toReadableString(x3) {
-  const str = JSON.stringify(x3, (_key, value) => typeof value === "bigint" ? `BigInt(${value})` : value);
-  return str && str.length > toReadableString_max ? str.substring(0, toReadableString_max - 3) + "..." : str;
+  const str2 = JSON.stringify(x3, (_key, value) => typeof value === "bigint" ? `BigInt(${value})` : value);
+  return str2 && str2.length > toReadableString_max ? str2.substring(0, toReadableString_max - 3) + "..." : str2;
 }
 function encode$1(argTypes, args) {
   if (args.length < argTypes.length) {
@@ -8068,8 +8068,8 @@ async function reconstruct(t) {
 }
 function domain_sep(s2) {
   const len = new Uint8Array([s2.length]);
-  const str = new TextEncoder().encode(s2);
-  return concatBytes(len, str);
+  const str2 = new TextEncoder().encode(s2);
+  return concatBytes(len, str2);
 }
 function pathToLabel(path) {
   return typeof path[0] === "string" ? utf8ToBytes(path[0]) : path[0];
@@ -22395,7 +22395,7 @@ function commitHostSingletonAcquisition(finishedWork) {
 var offscreenSubtreeIsHidden = false, offscreenSubtreeWasHidden = false, needsFormReset = false, PossiblyWeakSet = "function" === typeof WeakSet ? WeakSet : Set, nextEffect = null;
 function commitBeforeMutationEffects(root2, firstChild) {
   root2 = root2.containerInfo;
-  eventsEnabled = _enabled;
+  eventsEnabled = _enabled$1;
   root2 = getActiveElementDeep(root2);
   if (hasSelectionCapabilities(root2)) {
     if ("selectionStart" in root2)
@@ -22443,7 +22443,7 @@ function commitBeforeMutationEffects(root2, firstChild) {
     JSCompiler_temp = JSCompiler_temp || { start: 0, end: 0 };
   } else JSCompiler_temp = null;
   selectionInformation = { focusedElem: root2, selectionRange: JSCompiler_temp };
-  _enabled = false;
+  _enabled$1 = false;
   for (nextEffect = firstChild; null !== nextEffect; )
     if (firstChild = nextEffect, root2 = firstChild.child, 0 !== (firstChild.subtreeFlags & 1024) && null !== root2)
       root2.return = firstChild, nextEffect = root2;
@@ -24375,7 +24375,7 @@ function flushMutationEffects() {
             info.element.scrollTop = info.top;
           }
         }
-        _enabled = !!eventsEnabled;
+        _enabled$1 = !!eventsEnabled;
         selectionInformation = eventsEnabled = null;
       } finally {
         executionContext = prevExecutionContext, ReactDOMSharedInternals.p = previousPriority, ReactSharedInternals.T = rootMutationHasEffect;
@@ -26878,7 +26878,7 @@ function attemptContinuousHydration(fiber) {
     markRetryLaneIfNotHydrated(fiber, 67108864);
   }
 }
-var _enabled = true;
+var _enabled$1 = true;
 function dispatchDiscreteEvent(domEventName, eventSystemFlags, container, nativeEvent) {
   var prevTransition = ReactSharedInternals.T;
   ReactSharedInternals.T = null;
@@ -26900,7 +26900,7 @@ function dispatchContinuousEvent(domEventName, eventSystemFlags, container, nati
   }
 }
 function dispatchEvent(domEventName, eventSystemFlags, targetContainer, nativeEvent) {
-  if (_enabled) {
+  if (_enabled$1) {
     var blockedOn = findInstanceBlockingEvent(nativeEvent);
     if (null === blockedOn)
       dispatchEventForPluginEventSystem(
@@ -43848,6 +43848,505 @@ const CharacterSelection = ({
     )
   ] });
 };
+let _traceBuffer = [];
+function getClickTraceBuffer() {
+  return _traceBuffer;
+}
+function chebyshev$1(a2, b2) {
+  return Math.max(Math.abs(a2.x - b2.x), Math.abs(a2.y - b2.y));
+}
+function manhattan(a2, b2) {
+  return Math.abs(a2.x - b2.x) + Math.abs(a2.y - b2.y);
+}
+function buildCombatantRow(combatant, isPlayer, spriteRects, playerTile, spellRange, hasLoS, gridToScreen, clickLogical, hitPad) {
+  const id = combatant.id;
+  const side = isPlayer ? "player" : "enemy";
+  const kind = isPlayer ? "player" : "enemy";
+  const logicalTile = { x: combatant.x, y: combatant.y };
+  const tileAnchor = gridToScreen(logicalTile);
+  const spriteRect = spriteRects.get(id) ?? null;
+  let drawAnchor = null;
+  let rectVsDrawDelta = { dx: 0, dy: 0 };
+  let rectVsTileDelta = { dx: 0, dy: 0 };
+  if (spriteRect) {
+    const cx2 = spriteRect.x + spriteRect.w / 2;
+    const cy = spriteRect.y + spriteRect.h / 2;
+    drawAnchor = { x: cx2, y: cy };
+    rectVsDrawDelta = { dx: 0, dy: 0 };
+    const expectedX = tileAnchor.x;
+    const expectedY = tileAnchor.y - CHARACTER_Y_OFFSET;
+    rectVsTileDelta = { dx: cx2 - expectedX, dy: cy - expectedY };
+  }
+  let deltaToClick = null;
+  let pointerInRect = false;
+  const cheby = chebyshev$1(playerTile, logicalTile);
+  const manh = manhattan(playerTile, logicalTile);
+  const inSpellRange = spellRange != null && Number.isFinite(spellRange) && cheby <= spellRange;
+  const losClear = hasLoS ? hasLoS(playerTile, logicalTile) : null;
+  return {
+    id,
+    kind,
+    side,
+    logicalTile,
+    tileAnchor,
+    spriteRect,
+    drawAnchor,
+    deltaToClick,
+    pointerInRect,
+    chebyshevFromPlayer: cheby,
+    manhattanFromPlayer: manh,
+    inSpellRange,
+    losClear,
+    rectVsDrawDelta,
+    rectVsTileDelta
+  };
+}
+function getGeometrySnapshot(input) {
+  const {
+    ts,
+    helpers,
+    combatants,
+    spriteRects,
+    playerTile,
+    playerId,
+    spellRange,
+    dpr,
+    camera,
+    canvasSizeLogical,
+    canvasBacking
+  } = input;
+  const rows = combatants.map(
+    (c2) => buildCombatantRow(
+      c2,
+      c2.id === playerId,
+      spriteRects,
+      playerTile,
+      spellRange,
+      helpers.hasLoS,
+      helpers.gridToScreen
+    )
+  );
+  const ids = [];
+  for (const id of spriteRects.keys()) ids.push(id);
+  const count2 = spriteRects.size;
+  if (count2 === 0) {
+    logDebugWarn(
+      "RENDER",
+      "[GEOMETRY-INVARIANT] snapshot finding: rects this frame: 0 [] — spriteRectsRef empty at export time; click hit-testing would have nothing to test against"
+    );
+  } else if (ids.length === 0) {
+    logDebugWarn(
+      "RENDER",
+      `[GEOMETRY-INVARIANT] snapshot finding: rects this frame: ${count2} [] — spriteRects map has entries but no ids iterable`
+    );
+  }
+  return {
+    ts,
+    env: { dpr, camera, canvasSizeLogical, canvasBacking },
+    combatantRows: rows,
+    spriteRectsSummary: { count: count2, ids }
+  };
+}
+const APP_BUILD = "#329";
+function esc(s2) {
+  return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function str(v2) {
+  if (v2 === void 0 || v2 === null) return "?";
+  if (typeof v2 === "number" || typeof v2 === "string" || typeof v2 === "boolean") {
+    return String(v2);
+  }
+  if (typeof v2 === "bigint") return v2.toString();
+  return JSON.stringify(v2);
+}
+function fmtPoint(p2) {
+  if (!p2) return "(?,?)";
+  return `(${p2.x},${p2.y})`;
+}
+function fmtRect(r2) {
+  if (!r2) return "(?,?)";
+  return `(${r2.x},${r2.y} ${r2.w}×${r2.h})`;
+}
+function fmtDelta(d2) {
+  if (!d2) return "(?,?)";
+  return `(${d2.dx},${d2.dy})`;
+}
+function fmtDeltaToClick(d2) {
+  if (!d2) return "(?,?)";
+  return `(${d2.dx},${d2.dy}|${d2.dist.toFixed(2)})`;
+}
+function layerARows(rec) {
+  const a2 = rec.layerA;
+  const rows = [];
+  rows.push({ key: "clientX", value: str(a2.clientX) });
+  rows.push({ key: "clientY", value: str(a2.clientY) });
+  rows.push({
+    key: "rect",
+    value: `(${a2.rect.left},${a2.rect.top} ${a2.rect.width}×${a2.rect.height})`
+  });
+  rows.push({ key: "cssOffset", value: fmtPoint(a2.cssOffset) });
+  rows.push({ key: "logical", value: fmtPoint(a2.logical) });
+  rows.push({ key: "backing", value: fmtPoint(a2.backing) });
+  rows.push({ key: "dpr", value: str(a2.dpr) });
+  rows.push({ key: "camera", value: fmtPoint(a2.camera) });
+  rows.push({
+    key: "canvasSizeLogical",
+    value: `(${a2.canvasSizeLogical.w},${a2.canvasSizeLogical.h})`
+  });
+  rows.push({
+    key: "canvasBacking",
+    value: `(${a2.canvasBacking.w},${a2.canvasBacking.h})`
+  });
+  rows.push({ key: "scaleFactor", value: str(a2.scaleFactor) });
+  return rows;
+}
+function layerCRow(c2) {
+  return {
+    id: str(c2.id),
+    kind: str(c2.kind),
+    side: str(c2.side),
+    logicalTile: fmtPoint(c2.logicalTile),
+    tileAnchor: fmtPoint(c2.tileAnchor),
+    spriteRect: fmtRect(c2.spriteRect),
+    drawAnchor: fmtPoint(c2.drawAnchor),
+    deltaToClick: fmtDeltaToClick(c2.deltaToClick),
+    pointerInRect: str(c2.pointerInRect),
+    chebyshevFromPlayer: str(c2.chebyshevFromPlayer),
+    manhattanFromPlayer: str(c2.manhattanFromPlayer),
+    inSpellRange: str(c2.inSpellRange),
+    losClear: c2.losClear === null ? "unknown" : str(c2.losClear),
+    rectVsDrawDelta: fmtDelta(c2.rectVsDrawDelta),
+    rectVsTileDelta: fmtDelta(c2.rectVsTileDelta)
+  };
+}
+function invariantRows(rec) {
+  const inv = rec.invariants;
+  const rows = [];
+  const i1 = inv.i1_roundTrip;
+  rows.push({
+    id: "I1",
+    name: "round-trip",
+    pass: i1.pass,
+    measured: `err=${i1.roundTripError.toFixed(2)}px threshold=${i1.threshold.toFixed(2)}px`
+  });
+  const i2 = inv.i2_rectAnchor;
+  rows.push({
+    id: "I2",
+    name: "rect-anchor",
+    pass: i2.pass,
+    measured: `nearest=${i2.nearestId ?? "?"} dx=${i2.dx.toFixed(2)} dy=${i2.dy.toFixed(2)} mag=${i2.mag.toFixed(2)}px threshold=${i2.threshold}px`
+  });
+  const i3 = inv.i3_spaceNearMiss;
+  rows.push({
+    id: "I3",
+    name: "space-near-miss",
+    pass: i3.pass,
+    measured: `nearest=${i3.nearestId ?? "?"} dx=${i3.dx.toFixed(2)} dy=${i3.dy.toFixed(2)} dist=${i3.dist.toFixed(2)}px halfSprite=${i3.halfSprite.toFixed(2)}px`
+  });
+  const i4 = inv.i4_entityTile;
+  const rt = i4.rowTile ? `(${i4.rowTile.x},${i4.rowTile.y})` : "null";
+  const st2 = i4.storeTile ? `(${i4.storeTile.x},${i4.storeTile.y})` : "null";
+  rows.push({
+    id: "I4",
+    name: "entity-tile",
+    pass: i4.pass,
+    measured: `nearest=${i4.nearestId ?? "?"} rowTile=${rt} storeTile=${st2}`
+  });
+  return rows;
+}
+function buildDebugReportText(ctx) {
+  var _a3, _b3, _c2;
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
+  const lines = [];
+  lines.push("=== AESTRALTO DEBUG REPORT ===");
+  lines.push(`App build: ${APP_BUILD}`);
+  lines.push(`Generated: ${now2}`);
+  lines.push("");
+  lines.push("--- CHARACTER ---");
+  lines.push(`Name:  ${(ctx == null ? void 0 : ctx.characterName) ?? "N/A"}`);
+  lines.push(
+    `Level: ${(ctx == null ? void 0 : ctx.characterLevel) != null ? String(ctx.characterLevel) : "N/A"}`
+  );
+  lines.push(
+    `Slot:  ${(ctx == null ? void 0 : ctx.characterSlot) != null ? String(ctx.characterSlot) : "N/A"}`
+  );
+  lines.push("");
+  lines.push("--- CURRENT MAP ---");
+  lines.push(`Map ID: ${(ctx == null ? void 0 : ctx.currentMapId) ?? "N/A"}`);
+  lines.push("");
+  lines.push("--- BATTLE STATE ---");
+  lines.push(
+    `In battle: ${(ctx == null ? void 0 : ctx.inBattle) != null ? String(ctx.inBattle) : "N/A"}`
+  );
+  lines.push(`Phase: ${(ctx == null ? void 0 : ctx.battlePhase) ?? "N/A"}`);
+  const turn = ctx == null ? void 0 : ctx.currentTurnEntry;
+  lines.push(
+    `Current turn: ${turn ? `id=${turn.id} side=${turn.side ?? "?"} isSummon=${turn.isSummon ?? false}` : "N/A"}`
+  );
+  const combatants = (ctx == null ? void 0 : ctx.combatants) ?? [];
+  lines.push(`Combatants (${combatants.length}):`);
+  if (combatants.length === 0) {
+    lines.push("  (none reported)");
+  } else {
+    for (const c2 of combatants) {
+      const pos = c2.pos ? `(${c2.pos.x},${c2.pos.y})` : "(?,?)";
+      lines.push(
+        `  id=${c2.id} side=${c2.side ?? "?"} isSummon=${c2.isSummon ?? false} hp=${c2.hp != null ? String(c2.hp) : "?"} pos=${pos}`
+      );
+    }
+  }
+  const turnIds = (ctx == null ? void 0 : ctx.turnOrderIds) ?? [];
+  lines.push(
+    `Turn order ids (${turnIds.length}): ${turnIds.join(", ") || "(none)"}`
+  );
+  lines.push("");
+  const buffer = ((_a3 = ctx == null ? void 0 : ctx.getDebugLogBuffer) == null ? void 0 : _a3.call(ctx)) ?? [];
+  lines.push("--- DEBUG LOG BUFFER (ALL CATEGORIES) ---");
+  lines.push(`Total entries: ${buffer.length}`);
+  lines.push("");
+  for (const e of buffer) {
+    const d2 = new Date(e.ts);
+    const ts = d2.toISOString();
+    const dataStr = e.data !== void 0 ? ` data=${JSON.stringify(e.data)}` : "";
+    lines.push(
+      `[${ts}] [${e.category}] ${e.level.toUpperCase()}: ${e.message}${dataStr}`
+    );
+  }
+  lines.push("");
+  const clickBuffer = ((_b3 = ctx == null ? void 0 : ctx.getClickTraceBuffer) == null ? void 0 : _b3.call(ctx)) ?? [];
+  lines.push("--- CLICK GEOMETRY TRACES ---");
+  lines.push(`Total click traces: ${clickBuffer.length}`);
+  lines.push("");
+  if (clickBuffer.length === 0) {
+    lines.push("  (none recorded)");
+    lines.push("");
+  } else {
+    for (let i = 0; i < clickBuffer.length; i++) {
+      const rec = clickBuffer[i];
+      lines.push(`  [trace ${i}] ts=${new Date(rec.ts).toISOString()}`);
+      lines.push("  Layer A (pointer/canvas/camera):");
+      for (const row of layerARows(rec)) {
+        lines.push(`    ${row.key.padEnd(18)} = ${row.value}`);
+      }
+      const layerC = rec.layerC ?? [];
+      lines.push(`  Layer C combatants (${layerC.length}):`);
+      if (layerC.length === 0) {
+        lines.push("    (none)");
+      } else {
+        for (const c2 of layerC) {
+          const r2 = layerCRow(c2);
+          lines.push(
+            `    id=${r2.id} kind=${r2.kind} side=${r2.side} logicalTile=${r2.logicalTile}`
+          );
+          lines.push(
+            `      tileAnchor=${r2.tileAnchor} spriteRect=${r2.spriteRect} drawAnchor=${r2.drawAnchor}`
+          );
+          lines.push(
+            `      deltaToClick=${r2.deltaToClick} pointerInRect=${r2.pointerInRect}`
+          );
+          lines.push(
+            `      chebyshev=${r2.chebyshevFromPlayer} manhattan=${r2.manhattanFromPlayer} inSpellRange=${r2.inSpellRange} losClear=${r2.losClear}`
+          );
+          lines.push(
+            `      rectVsDrawDelta=${r2.rectVsDrawDelta} rectVsTileDelta=${r2.rectVsTileDelta}`
+          );
+        }
+      }
+      lines.push("  Invariants:");
+      for (const inv of invariantRows(rec)) {
+        const passStr = inv.pass === void 0 ? "UNKNOWN" : inv.pass ? "PASS" : "FAIL";
+        lines.push(
+          `    ${inv.id} ${inv.name}: ${passStr} (measured: ${inv.measured})`
+        );
+      }
+      lines.push("");
+    }
+  }
+  appendGeometrySnapshotText(lines, (_c2 = ctx == null ? void 0 : ctx.getGeometrySnapshot) == null ? void 0 : _c2.call(ctx));
+  lines.push("=== END REPORT ===");
+  return lines.join("\n");
+}
+function appendGeometrySnapshotText(lines, snap) {
+  lines.push("--- GEOMETRY SNAPSHOT ---");
+  if (!snap) {
+    lines.push("  (snapshot unavailable)");
+    lines.push("");
+    return;
+  }
+  const env = snap.env;
+  lines.push("  Canvas / DPR / Camera:");
+  lines.push(
+    `    canvasSizeLogical = (${env.canvasSizeLogical.w},${env.canvasSizeLogical.h})`
+  );
+  lines.push(
+    `    canvasBacking     = (${env.canvasBacking.w},${env.canvasBacking.h})`
+  );
+  lines.push(`    dpr              = ${str(env.dpr)}`);
+  lines.push(`    camera           = ${fmtPoint(env.camera)}`);
+  lines.push("");
+  const combatants = snap.combatantRows;
+  lines.push(`  Combatant geometry (${combatants.length}):`);
+  if (combatants.length === 0) {
+    lines.push("    (none)");
+  } else {
+    for (const c2 of combatants) {
+      lines.push(
+        `    id=${str(c2.id)} kind=${str(c2.kind)} side=${str(c2.side)} logicalTile=${fmtPoint(c2.logicalTile)}`
+      );
+      lines.push(
+        `      tileAnchor=${fmtPoint(c2.tileAnchor)} spriteRect=${fmtRect(c2.spriteRect)} drawAnchor=${fmtPoint(c2.drawAnchor)}`
+      );
+      lines.push(
+        `      chebyshev=${str(c2.chebyshevFromPlayer)} manhattan=${str(c2.manhattanFromPlayer)} inSpellRange=${str(c2.inSpellRange)} losClear=${c2.losClear === null ? "unknown" : str(c2.losClear)}`
+      );
+      lines.push(
+        `      rectVsDrawDelta=${fmtDelta(c2.rectVsDrawDelta)} rectVsTileDelta=${fmtDelta(c2.rectVsTileDelta)}`
+      );
+    }
+  }
+  lines.push("");
+  const summary = snap.spriteRectsSummary;
+  lines.push(
+    `  rects this frame: ${summary.count} [${summary.ids.join(", ") || "(none)"}]`
+  );
+  lines.push("");
+}
+const REPORT_CSS = `
+  body { font-family: 'Courier New', monospace; color: #e8e6ef; background: #0f121a; margin: 24px; font-size: 11px; }
+  h1 { font-size: 16px; border-bottom: 2px solid #d8463f; padding-bottom: 6px; color: #ec8a85; letter-spacing: 0.08em; text-transform: uppercase; }
+  h2 { font-size: 13px; color: #ec8a85; margin-top: 18px; border-bottom: 1px solid rgba(216,70,63,0.3); padding-bottom: 3px; letter-spacing: 0.06em; text-transform: uppercase; }
+  h3 { font-size: 11px; color: #ff7a6e; margin-top: 12px; letter-spacing: 0.04em; text-transform: uppercase; }
+  table { border-collapse: collapse; width: 100%; margin-top: 6px; background: #13161f; }
+  th, td { border: 1px solid #3a2a2a; padding: 3px 6px; text-align: left; vertical-align: top; font-size: 10px; color: #e8e6ef; }
+  th { background: #2c1820; font-weight: 700; color: #ec8a85; letter-spacing: 0.04em; }
+  tr:nth-child(even) td { background: #161922; }
+  pre { margin: 2px 0 0 0; white-space: pre-wrap; word-break: break-all; font-size: 9px; color: #8a8090; }
+  .meta { color: #8a8090; font-size: 10px; margin-bottom: 4px; }
+  .pass { color: #6ee7b7; font-weight: 700; }
+  .fail { color: #ef4444; font-weight: 700; }
+  .unknown { color: #f59e0b; font-weight: 700; }
+  .trace-block { border: 1px solid #3a2a2a; border-radius: 6px; padding: 8px; margin-top: 8px; background: #13161f; }
+  .trace-head { color: #ff7a6e; font-weight: 700; font-size: 11px; margin-bottom: 4px; letter-spacing: 0.04em; }
+  .kv td:first-child { color: #8a8090; width: 160px; }
+  @media print { body { margin: 12px; background: #fff; color: #1a1a1a; } table { background: #fff; } th { background: #f0e0e0; color: #8b1a1a; } td { color: #1a1a1a; } tr:nth-child(even) td { background: #f7f7f7; } .pass { color: #06764a; } .fail { color: #b91c1c; } .unknown { color: #b45309; } }
+`;
+function buildDebugReportHtml(ctx) {
+  var _a3, _b3, _c2;
+  const now2 = (/* @__PURE__ */ new Date()).toISOString();
+  const combatantRows = ((ctx == null ? void 0 : ctx.combatants) ?? []).map(
+    (c2) => `<tr><td>${esc(c2.id)}</td><td>${esc(c2.side ?? "?")}</td><td>${c2.isSummon ?? false}</td><td>${c2.hp != null ? esc(String(c2.hp)) : "?"}</td><td>${c2.pos ? `(${c2.pos.x},${c2.pos.y})` : "(?,?)"}</td></tr>`
+  ).join("");
+  const buffer = ((_a3 = ctx == null ? void 0 : ctx.getDebugLogBuffer) == null ? void 0 : _a3.call(ctx)) ?? [];
+  const logRows = buffer.map(
+    (e) => `<tr><td>${esc(new Date(e.ts).toISOString())}</td><td>${esc(e.category)}</td><td>${esc(e.level.toUpperCase())}</td><td>${esc(e.message)}${e.data !== void 0 ? ` <pre>${esc(JSON.stringify(e.data))}</pre>` : ""}</td></tr>`
+  ).join("");
+  const turnIds = ((ctx == null ? void 0 : ctx.turnOrderIds) ?? []).join(", ") || "(none)";
+  const turn = ctx == null ? void 0 : ctx.currentTurnEntry;
+  const clickBuffer = ((_b3 = ctx == null ? void 0 : ctx.getClickTraceBuffer) == null ? void 0 : _b3.call(ctx)) ?? [];
+  const clickTracesHtml = clickBuffer.length === 0 ? '<div class="meta">(none recorded)</div>' : clickBuffer.map((rec, i) => renderClickTraceHtml(rec, i)).join("");
+  const geometrySnapshotHtml = renderGeometrySnapshotHtml(
+    (_c2 = ctx == null ? void 0 : ctx.getGeometrySnapshot) == null ? void 0 : _c2.call(ctx)
+  );
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Aestralto Debug Report ${APP_BUILD}</title>
+<style>${REPORT_CSS}</style></head><body>
+<h1>Aestralto Debug Report</h1>
+<div class="meta">App build: ${APP_BUILD}</div>
+<div class="meta">Generated: ${now2}</div>
+<h2>Character</h2>
+<table><tr><th>Name</th><th>Level</th><th>Slot</th></tr>
+<tr><td>${esc((ctx == null ? void 0 : ctx.characterName) ?? "N/A")}</td><td>${(ctx == null ? void 0 : ctx.characterLevel) != null ? esc(String(ctx.characterLevel)) : "N/A"}</td><td>${(ctx == null ? void 0 : ctx.characterSlot) != null ? esc(String(ctx.characterSlot)) : "N/A"}</td></tr></table>
+<h2>Current Map</h2>
+<div>Map ID: ${esc((ctx == null ? void 0 : ctx.currentMapId) ?? "N/A")}</div>
+<h2>Battle State</h2>
+<table>
+<tr><th>In battle</th><th>Phase</th><th>Current turn</th></tr>
+<tr><td>${(ctx == null ? void 0 : ctx.inBattle) != null ? String(ctx.inBattle) : "N/A"}</td><td>${esc((ctx == null ? void 0 : ctx.battlePhase) ?? "N/A")}</td><td>${turn ? `id=${esc(turn.id)} side=${esc(turn.side ?? "?")} isSummon=${turn.isSummon ?? false}` : "N/A"}</td></tr>
+</table>
+<h3>Combatants (${((ctx == null ? void 0 : ctx.combatants) ?? []).length})</h3>
+<table><tr><th>id</th><th>side</th><th>isSummon</th><th>hp</th><th>pos</th></tr>${combatantRows || '<tr><td colspan="5">(none reported)</td></tr>'}</table>
+<h3>Turn order ids</h3>
+<div>${esc(turnIds)}</div>
+<h2>Debug Log Buffer (ALL categories, ${buffer.length} entries)</h2>
+<table><tr><th>Timestamp</th><th>Category</th><th>Level</th><th>Message</th></tr>${logRows || '<tr><td colspan="4">(empty)</td></tr>'}</table>
+<h2>Click Geometry Traces (${clickBuffer.length})</h2>
+${clickTracesHtml}
+<h2>Geometry Snapshot</h2>
+${geometrySnapshotHtml}
+</body></html>`;
+}
+function renderClickTraceHtml(rec, index2) {
+  const aRows = layerARows(rec).map(
+    (r2) => `<tr class="kv"><td>${esc(r2.key)}</td><td>${esc(r2.value)}</td></tr>`
+  ).join("");
+  const layerC = rec.layerC ?? [];
+  const cRows = layerC.length === 0 ? '<tr><td colspan="15">(none)</td></tr>' : layerC.map((c2) => {
+    const r2 = layerCRow(c2);
+    return `<tr><td>${esc(r2.id)}</td><td>${esc(r2.kind)}</td><td>${esc(r2.side)}</td><td>${esc(r2.logicalTile)}</td><td>${esc(r2.tileAnchor)}</td><td>${esc(r2.spriteRect)}</td><td>${esc(r2.drawAnchor)}</td><td>${esc(r2.deltaToClick)}</td><td>${esc(r2.pointerInRect)}</td><td>${esc(r2.chebyshevFromPlayer)}</td><td>${esc(r2.manhattanFromPlayer)}</td><td>${esc(r2.inSpellRange)}</td><td>${esc(r2.losClear)}</td><td>${esc(r2.rectVsDrawDelta)}</td><td>${esc(r2.rectVsTileDelta)}</td></tr>`;
+  }).join("");
+  const invRows = invariantRows(rec).map((inv) => {
+    const cls = inv.pass === void 0 ? "unknown" : inv.pass ? "pass" : "fail";
+    const label = inv.pass === void 0 ? "UNKNOWN" : inv.pass ? "PASS" : "FAIL";
+    return `<tr><td>${esc(inv.id)}</td><td>${esc(inv.name)}</td><td class="${cls}">${label}</td><td>${esc(inv.measured)}</td></tr>`;
+  }).join("");
+  return `<div class="trace-block">
+<div class="trace-head">[trace ${index2}] ts=${esc(new Date(rec.ts).toISOString())}</div>
+<h3>Layer A — pointer / canvas / camera</h3>
+<table><tr><th>key</th><th>value</th></tr>${aRows}</table>
+<h3>Layer C — combatants (${layerC.length})</h3>
+<table><tr><th>id</th><th>kind</th><th>side</th><th>logicalTile</th><th>tileAnchor</th><th>spriteRect</th><th>drawAnchor</th><th>deltaToClick</th><th>pointerInRect</th><th>chebyshev</th><th>manhattan</th><th>inSpellRange</th><th>losClear</th><th>rectVsDrawDelta</th><th>rectVsTileDelta</th></tr>${cRows}</table>
+<h3>Invariants</h3>
+<table><tr><th>id</th><th>name</th><th>result</th><th>measured</th></tr>${invRows}</table>
+</div>`;
+}
+function renderGeometrySnapshotHtml(snap) {
+  if (!snap) {
+    return '<div class="meta">(snapshot unavailable)</div>';
+  }
+  const env = snap.env;
+  const canvasRows = [
+    [
+      "canvasSizeLogical",
+      `(${env.canvasSizeLogical.w},${env.canvasSizeLogical.h})`
+    ],
+    ["canvasBacking", `(${env.canvasBacking.w},${env.canvasBacking.h})`],
+    ["dpr", str(env.dpr)],
+    ["camera", fmtPoint(env.camera)]
+  ].map(([k2, v2]) => `<tr class="kv"><td>${esc(k2)}</td><td>${esc(v2)}</td></tr>`).join("");
+  const combatants = snap.combatantRows;
+  const cRows = combatants.length === 0 ? '<tr><td colspan="13">(none)</td></tr>' : combatants.map((c2) => {
+    const losClear = c2.losClear === null ? "unknown" : str(c2.losClear);
+    return `<tr><td>${esc(str(c2.id))}</td><td>${esc(str(c2.kind))}</td><td>${esc(str(c2.side))}</td><td>${esc(fmtPoint(c2.logicalTile))}</td><td>${esc(fmtPoint(c2.tileAnchor))}</td><td>${esc(fmtRect(c2.spriteRect))}</td><td>${esc(fmtPoint(c2.drawAnchor))}</td><td>${esc(str(c2.chebyshevFromPlayer))}</td><td>${esc(str(c2.manhattanFromPlayer))}</td><td>${esc(str(c2.inSpellRange))}</td><td>${esc(losClear)}</td><td>${esc(fmtDelta(c2.rectVsDrawDelta))}</td><td>${esc(fmtDelta(c2.rectVsTileDelta))}</td></tr>`;
+  }).join("");
+  const summary = snap.spriteRectsSummary;
+  return `<h3>Canvas / DPR / Camera</h3>
+<table><tr><th>key</th><th>value</th></tr>${canvasRows}</table>
+<h3>Combatant geometry (${combatants.length})</h3>
+<table><tr><th>id</th><th>kind</th><th>side</th><th>logicalTile</th><th>tileAnchor</th><th>spriteRect</th><th>drawAnchor</th><th>chebyshev</th><th>manhattan</th><th>inSpellRange</th><th>losClear</th><th>rectVsDrawDelta</th><th>rectVsTileDelta</th></tr>${cRows}</table>
+<h3>Sprite rects this frame</h3>
+<div class="meta">rects this frame: ${summary.count} [${esc(summary.ids.join(", ") || "(none)")}]</div>`;
+}
+let _enabled = false;
+const _listeners = /* @__PURE__ */ new Set();
+function getGeometryOverlayEnabled() {
+  return _enabled;
+}
+function setGeometryOverlayEnabled(enabled) {
+  if (_enabled === enabled) return;
+  _enabled = enabled;
+  for (const fn of _listeners) {
+    try {
+      fn(enabled);
+    } catch {
+    }
+  }
+}
+function subscribeGeometryOverlayEnabled(fn) {
+  _listeners.add(fn);
+  return () => {
+    _listeners.delete(fn);
+  };
+}
 const BACKEND_SAVE_DEBOUNCE_MS = 1500;
 const STORAGE_PREFIX = "pbv_panel_layout_";
 const SNAP_THRESHOLD = 140;
@@ -44453,7 +44952,6 @@ const DraggablePanel = ({
     }
   );
 };
-const APP_BUILD = "#325";
 const DEBUG_CATEGORY_CHIPS = [
   "BATTLE",
   "SUMMON",
@@ -44469,111 +44967,6 @@ const DEBUG_CATEGORY_CHIPS = [
   "GENERAL",
   "MODIFIER"
 ];
-function buildDebugReportText(ctx, buffer) {
-  const now2 = (/* @__PURE__ */ new Date()).toISOString();
-  const lines = [];
-  lines.push("=== AESTRALTO DEBUG REPORT ===");
-  lines.push(`App build: ${APP_BUILD}`);
-  lines.push(`Generated: ${now2}`);
-  lines.push("");
-  lines.push("--- CHARACTER ---");
-  lines.push(`Name:  ${(ctx == null ? void 0 : ctx.characterName) ?? "N/A"}`);
-  lines.push(
-    `Level: ${(ctx == null ? void 0 : ctx.characterLevel) != null ? String(ctx.characterLevel) : "N/A"}`
-  );
-  lines.push(
-    `Slot:  ${(ctx == null ? void 0 : ctx.characterSlot) != null ? String(ctx.characterSlot) : "N/A"}`
-  );
-  lines.push("");
-  lines.push("--- CURRENT MAP ---");
-  lines.push(`Map ID: ${(ctx == null ? void 0 : ctx.currentMapId) ?? "N/A"}`);
-  lines.push("");
-  lines.push("--- BATTLE STATE ---");
-  lines.push(
-    `In battle: ${(ctx == null ? void 0 : ctx.inBattle) != null ? String(ctx.inBattle) : "N/A"}`
-  );
-  lines.push(`Phase: ${(ctx == null ? void 0 : ctx.battlePhase) ?? "N/A"}`);
-  const turn = ctx == null ? void 0 : ctx.currentTurnEntry;
-  lines.push(
-    `Current turn: ${turn ? `id=${turn.id} side=${turn.side ?? "?"} isSummon=${turn.isSummon ?? false}` : "N/A"}`
-  );
-  const combatants = (ctx == null ? void 0 : ctx.combatants) ?? [];
-  lines.push(`Combatants (${combatants.length}):`);
-  if (combatants.length === 0) {
-    lines.push("  (none reported)");
-  } else {
-    for (const c2 of combatants) {
-      const pos = c2.pos ? `(${c2.pos.x},${c2.pos.y})` : "(?,?)";
-      lines.push(
-        `  id=${c2.id} side=${c2.side ?? "?"} isSummon=${c2.isSummon ?? false} hp=${c2.hp != null ? String(c2.hp) : "?"} pos=${pos}`
-      );
-    }
-  }
-  const turnIds = (ctx == null ? void 0 : ctx.turnOrderIds) ?? [];
-  lines.push(
-    `Turn order ids (${turnIds.length}): ${turnIds.join(", ") || "(none)"}`
-  );
-  lines.push("");
-  lines.push("--- DEBUG LOG BUFFER (ALL CATEGORIES) ---");
-  lines.push(`Total entries: ${buffer.length}`);
-  lines.push("");
-  for (const e of buffer) {
-    const d2 = new Date(e.ts);
-    const ts = d2.toISOString();
-    const dataStr = e.data !== void 0 ? ` data=${JSON.stringify(e.data)}` : "";
-    lines.push(
-      `[${ts}] [${e.category}] ${e.level.toUpperCase()}: ${e.message}${dataStr}`
-    );
-  }
-  lines.push("");
-  lines.push("=== END REPORT ===");
-  return lines.join("\n");
-}
-function buildDebugReportHtml(ctx, buffer) {
-  const now2 = (/* @__PURE__ */ new Date()).toISOString();
-  const esc = (s2) => s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const combatantRows = ((ctx == null ? void 0 : ctx.combatants) ?? []).map(
-    (c2) => `<tr><td>${esc(c2.id)}</td><td>${esc(c2.side ?? "?")}</td><td>${c2.isSummon ?? false}</td><td>${c2.hp != null ? esc(String(c2.hp)) : "?"}</td><td>${c2.pos ? `(${c2.pos.x},${c2.pos.y})` : "(?,?)"}</td></tr>`
-  ).join("");
-  const logRows = buffer.map(
-    (e) => `<tr><td>${esc(new Date(e.ts).toISOString())}</td><td>${esc(e.category)}</td><td>${esc(e.level.toUpperCase())}</td><td>${esc(e.message)}${e.data !== void 0 ? ` <pre>${esc(JSON.stringify(e.data))}</pre>` : ""}</td></tr>`
-  ).join("");
-  const turnIds = ((ctx == null ? void 0 : ctx.turnOrderIds) ?? []).join(", ") || "(none)";
-  const turn = ctx == null ? void 0 : ctx.currentTurnEntry;
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Aestralto Debug Report ${APP_BUILD}</title>
-<style>
-  body { font-family: 'Courier New', monospace; color: #1a1a1a; background: #fff; margin: 24px; font-size: 11px; }
-  h1 { font-size: 16px; border-bottom: 2px solid #d8463f; padding-bottom: 6px; color: #8b1a1a; }
-  h2 { font-size: 13px; color: #8b1a1a; margin-top: 18px; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
-  table { border-collapse: collapse; width: 100%; margin-top: 6px; }
-  th, td { border: 1px solid #999; padding: 3px 6px; text-align: left; vertical-align: top; font-size: 10px; }
-  th { background: #f0e0e0; font-weight: 700; }
-  pre { margin: 2px 0 0 0; white-space: pre-wrap; word-break: break-all; font-size: 9px; color: #555; }
-  .meta { color: #555; font-size: 10px; margin-bottom: 4px; }
-  @media print { body { margin: 12px; } }
-</style></head><body>
-<h1>Aestralto Debug Report</h1>
-<div class="meta">App build: ${APP_BUILD}</div>
-<div class="meta">Generated: ${now2}</div>
-<h2>Character</h2>
-<table><tr><th>Name</th><th>Level</th><th>Slot</th></tr>
-<tr><td>${esc((ctx == null ? void 0 : ctx.characterName) ?? "N/A")}</td><td>${(ctx == null ? void 0 : ctx.characterLevel) != null ? esc(String(ctx.characterLevel)) : "N/A"}</td><td>${(ctx == null ? void 0 : ctx.characterSlot) != null ? esc(String(ctx.characterSlot)) : "N/A"}</td></tr></table>
-<h2>Current Map</h2>
-<div>Map ID: ${esc((ctx == null ? void 0 : ctx.currentMapId) ?? "N/A")}</div>
-<h2>Battle State</h2>
-<table>
-<tr><th>In battle</th><th>Phase</th><th>Current turn</th></tr>
-<tr><td>${(ctx == null ? void 0 : ctx.inBattle) != null ? String(ctx.inBattle) : "N/A"}</td><td>${esc((ctx == null ? void 0 : ctx.battlePhase) ?? "N/A")}</td><td>${turn ? `id=${esc(turn.id)} side=${esc(turn.side ?? "?")} isSummon=${turn.isSummon ?? false}` : "N/A"}</td></tr>
-</table>
-<h3>Combatants (${((ctx == null ? void 0 : ctx.combatants) ?? []).length})</h3>
-<table><tr><th>id</th><th>side</th><th>isSummon</th><th>hp</th><th>pos</th></tr>${combatantRows || '<tr><td colspan="5">(none reported)</td></tr>'}</table>
-<h3>Turn order ids</h3>
-<div>${esc(turnIds)}</div>
-<h2>Debug Log Buffer (ALL categories, ${buffer.length} entries)</h2>
-<table><tr><th>Timestamp</th><th>Category</th><th>Level</th><th>Message</th></tr>${logRows || '<tr><td colspan="4">(empty)</td></tr>'}</table>
-</body></html>`;
-}
 const CHAT_COLORS = [
   "#e74c3c",
   "#e67e22",
@@ -44717,6 +45110,184 @@ const BattleLogText = ({
   }
   return /* @__PURE__ */ jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: parts });
 };
+const ClicksSubView = ({ entries }) => {
+  if (entries.length === 0) {
+    return /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "div",
+      {
+        "data-ocid": "chat.debug.clicks.empty_state",
+        className: "text-muted-foreground",
+        style: {
+          textAlign: "center",
+          marginTop: 20,
+          opacity: 0.5
+        },
+        children: "No click traces recorded yet."
+      }
+    );
+  }
+  const ordered = [...entries].reverse();
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    "div",
+    {
+      "data-ocid": "chat.debug.clicks.list",
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 6
+      },
+      children: ordered.map((rec, idx) => {
+        var _a3;
+        const row0 = rec.layerC[0];
+        const row0Id = (row0 == null ? void 0 : row0.id) ?? "—";
+        const dist2 = (_a3 = row0 == null ? void 0 : row0.deltaToClick) == null ? void 0 : _a3.dist;
+        const distStr = dist2 != null ? `${dist2.toFixed(1)}px` : "—";
+        const inv = rec.invariants;
+        const renderInv = (label, pass, measured) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "span",
+          {
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 2,
+              fontSize: 9,
+              fontFamily: "monospace",
+              padding: "1px 4px",
+              borderRadius: 2,
+              background: pass ? "rgba(46,204,113,0.12)" : "rgba(231,76,60,0.15)",
+              border: pass ? "1px solid rgba(46,204,113,0.4)" : "1px solid rgba(231,76,60,0.45)",
+              color: pass ? "#6ee7b7" : "#ef4444"
+            },
+            title: pass ? `${label} PASS` : `${label} FAIL — ${measured}`,
+            children: [
+              pass ? "✓" : "✗",
+              label,
+              !pass && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#ec8a85", marginLeft: 2 }, children: measured })
+            ]
+          }
+        );
+        return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "div",
+          {
+            "data-ocid": `chat.debug.clicks.item.${idx + 1}`,
+            style: {
+              padding: "6px 8px",
+              background: "#10131a",
+              border: "1px solid #3a2a2a",
+              borderRadius: 3,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4
+            },
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "div",
+                {
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flexWrap: "wrap"
+                  },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "span",
+                      {
+                        style: {
+                          color: "rgba(160,160,170,0.6)",
+                          fontSize: 10,
+                          fontVariantNumeric: "tabular-nums"
+                        },
+                        children: formatDebugTime(rec.ts)
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "span",
+                      {
+                        style: {
+                          color: "#ff7a6e",
+                          fontWeight: 700,
+                          fontSize: 9,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em"
+                        },
+                        children: rec.layerD.branchTaken
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "span",
+                      {
+                        style: {
+                          color: "rgba(200,190,200,0.7)",
+                          fontSize: 9
+                        },
+                        children: rec.layerD.castResult ?? "—"
+                      }
+                    )
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "div",
+                {
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    flexWrap: "wrap",
+                    fontSize: 10,
+                    fontFamily: "monospace",
+                    color: "#c0c0c0"
+                  },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "rgba(200,190,200,0.5)" }, children: "row0:" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#e0e0e0", fontWeight: 600 }, children: row0Id }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "rgba(200,190,200,0.5)" }, children: "dist:" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#ec8a85" }, children: distStr })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "div",
+                {
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    flexWrap: "wrap"
+                  },
+                  children: [
+                    renderInv(
+                      "I1",
+                      inv.i1_roundTrip.pass,
+                      `err=${inv.i1_roundTrip.roundTripError.toFixed(2)}px`
+                    ),
+                    renderInv(
+                      "I2",
+                      inv.i2_rectAnchor.pass,
+                      `mag=${inv.i2_rectAnchor.mag.toFixed(2)}px`
+                    ),
+                    renderInv(
+                      "I3",
+                      inv.i3_spaceNearMiss.pass,
+                      `d=${inv.i3_spaceNearMiss.dist.toFixed(2)}px`
+                    ),
+                    renderInv(
+                      "I4",
+                      inv.i4_entityTile.pass,
+                      `row=${inv.i4_entityTile.rowTile ? `(${inv.i4_entityTile.rowTile.x},${inv.i4_entityTile.rowTile.y})` : "null"}`
+                    )
+                  ]
+                }
+              )
+            ]
+          },
+          rec.seq
+        );
+      })
+    }
+  );
+};
 const ChatPanel = ({
   playerName,
   battleLogEntries = [],
@@ -44746,6 +45317,11 @@ const ChatPanel = ({
   const [searchQuery, setSearchQuery] = reactExports.useState("");
   const [isDebugPaused, setIsDebugPaused] = reactExports.useState(false);
   const [copyConfirm, setCopyConfirm] = reactExports.useState(false);
+  const [debugSubView, setDebugSubView] = reactExports.useState("log");
+  const [clickTraceEntries, setClickTraceEntries] = reactExports.useState([]);
+  const [geometryOverlayOn, setGeometryOverlayOn] = reactExports.useState(
+    getGeometryOverlayEnabled()
+  );
   const [channelVisibility, setChannelVisibility] = reactExports.useState(() => loadChannelVisibility());
   const [channelMenuOpen, setChannelMenuOpen] = reactExports.useState(false);
   const channelMenuRef = reactExports.useRef(null);
@@ -44875,6 +45451,16 @@ const ChatPanel = ({
     });
     return unsub;
   }, []);
+  reactExports.useEffect(() => {
+    if (activeChannel !== "debug") return;
+    setClickTraceEntries(getClickTraceBuffer());
+  }, [activeChannel, debugEntries]);
+  reactExports.useEffect(() => {
+    const unsub = subscribeGeometryOverlayEnabled((enabled) => {
+      setGeometryOverlayOn(enabled);
+    });
+    return unsub;
+  }, []);
   const filteredDebugEntries = reactExports.useMemo(() => {
     const q2 = searchQuery.trim().toLowerCase();
     return debugEntries.filter((entry) => {
@@ -44887,6 +45473,15 @@ const ChatPanel = ({
       return true;
     }).slice().reverse();
   }, [debugEntries, activeCategories, searchQuery]);
+  const exportContext = reactExports.useMemo(
+    () => debugContext ? {
+      ...debugContext,
+      getDebugLogBuffer: () => getDebugLogBuffer(),
+      getClickTraceBuffer: () => getClickTraceBuffer(),
+      getGeometrySnapshot: debugContext.getGeometrySnapshot ?? (() => void 0)
+    } : void 0,
+    [debugContext]
+  );
   reactExports.useEffect(() => {
     const onKey = (e) => {
       if (e.shiftKey && e.key === "d" && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) {
@@ -45747,16 +46342,39 @@ const ChatPanel = ({
                                         "button",
                                         {
                                           type: "button",
+                                          "data-ocid": "chat.debug.geometry_overlay_toggle",
+                                          onClick: () => setGeometryOverlayEnabled(!geometryOverlayOn),
+                                          title: geometryOverlayOn ? "Hide geometry overlay" : "Show geometry overlay",
+                                          style: {
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: 4,
+                                            padding: "4px 8px",
+                                            fontSize: 10,
+                                            fontFamily: "monospace",
+                                            cursor: "pointer",
+                                            background: geometryOverlayOn ? "#2a4a2a" : "#3a2a2a",
+                                            color: "#e0e0e0",
+                                            border: "1px solid #5a3a3a",
+                                            borderRadius: 3,
+                                            textTransform: "uppercase",
+                                            letterSpacing: 0.5
+                                          },
+                                          children: [
+                                            /* @__PURE__ */ jsxRuntimeExports.jsx(Bug, { size: 11 }),
+                                            geometryOverlayOn ? "Geom on" : "Geom off"
+                                          ]
+                                        }
+                                      ),
+                                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                        "button",
+                                        {
+                                          type: "button",
                                           "data-ocid": "chat.debug.export_button",
                                           onClick: () => {
                                             const w2 = window.open("", "_blank");
                                             if (w2) {
-                                              w2.document.write(
-                                                buildDebugReportHtml(
-                                                  debugContext,
-                                                  getDebugLogBuffer()
-                                                )
-                                              );
+                                              w2.document.write(buildDebugReportHtml(exportContext));
                                               w2.document.close();
                                               setTimeout(() => w2.print(), 250);
                                             }
@@ -45790,12 +46408,7 @@ const ChatPanel = ({
                                           "data-ocid": "chat.debug.export_txt_button",
                                           onClick: () => {
                                             const blob = new Blob(
-                                              [
-                                                buildDebugReportText(
-                                                  debugContext,
-                                                  getDebugLogBuffer()
-                                                )
-                                              ],
+                                              [buildDebugReportText(exportContext)],
                                               { type: "text/plain" }
                                             );
                                             const a2 = document.createElement("a");
@@ -45830,7 +46443,68 @@ const ChatPanel = ({
                                     ]
                                   }
                                 ),
-                                debugEntries.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                  "div",
+                                  {
+                                    "data-ocid": "chat.debug.subview_toggle",
+                                    style: {
+                                      display: "flex",
+                                      gap: 4,
+                                      marginBottom: 8,
+                                      padding: "4px 6px",
+                                      background: "#10131a",
+                                      border: "1px solid #3a2a2a",
+                                      borderRadius: 3
+                                    },
+                                    children: [
+                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                        "button",
+                                        {
+                                          type: "button",
+                                          "data-ocid": "chat.debug.subview.log",
+                                          onClick: () => setDebugSubView("log"),
+                                          style: {
+                                            flex: 1,
+                                            padding: "3px 8px",
+                                            fontSize: 10,
+                                            fontFamily: "monospace",
+                                            cursor: "pointer",
+                                            background: debugSubView === "log" ? "#c0392b" : "#2a2d33",
+                                            color: debugSubView === "log" ? "#fff" : "#c0c0c0",
+                                            border: "1px solid #4a3a3a",
+                                            borderRadius: 3,
+                                            textTransform: "uppercase",
+                                            letterSpacing: 0.5
+                                          },
+                                          children: "Log"
+                                        }
+                                      ),
+                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                        "button",
+                                        {
+                                          type: "button",
+                                          "data-ocid": "chat.debug.subview.clicks",
+                                          onClick: () => setDebugSubView("clicks"),
+                                          style: {
+                                            flex: 1,
+                                            padding: "3px 8px",
+                                            fontSize: 10,
+                                            fontFamily: "monospace",
+                                            cursor: "pointer",
+                                            background: debugSubView === "clicks" ? "#c0392b" : "#2a2d33",
+                                            color: debugSubView === "clicks" ? "#fff" : "#c0c0c0",
+                                            border: "1px solid #4a3a3a",
+                                            borderRadius: 3,
+                                            textTransform: "uppercase",
+                                            letterSpacing: 0.5
+                                          },
+                                          children: "Clicks"
+                                        }
+                                      )
+                                    ]
+                                  }
+                                ),
+                                debugSubView === "log" && (debugEntries.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
                                   "div",
                                   {
                                     "data-ocid": "chat.debug.empty_state",
@@ -45959,7 +46633,8 @@ const ChatPanel = ({
                                       );
                                     })
                                   }
-                                )
+                                )),
+                                debugSubView === "clicks" && /* @__PURE__ */ jsxRuntimeExports.jsx(ClicksSubView, { entries: clickTraceEntries })
                               ]
                             }
                           )
@@ -53088,6 +53763,7 @@ function resolvePlayerCast(spell, gridPos, ctx) {
         preCritDmgBM,
         i === 0
       );
+      ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");
     }
   }
   ctx.recordSpellType(spell.effectType ?? "damage");
@@ -58406,16 +59082,7 @@ function StatusEffectBadge({ effect }) {
 }
 let _fbNameIdx = 0;
 let _progressionDivergenceWarned = false;
-const _clickGuardLastLog = /* @__PURE__ */ new Map();
-const _CLICK_THROTTLE_MS = 1e3;
 let _spellbarBisectLoadSkipCount = 0;
-function logClickGuard(key2, detail) {
-  const now2 = Date.now();
-  const last = _clickGuardLastLog.get(key2);
-  if (last !== void 0 && now2 - last < _CLICK_THROTTLE_MS) return;
-  _clickGuardLastLog.set(key2, now2);
-  logDebugInfo("BATTLE", `[CLICK] ${key2}`, detail);
-}
 const CAMERA_SMOOTHING_FACTOR = 0.85;
 class CanvasErrorBoundary extends reactExports.Component {
   constructor(props) {
@@ -58701,6 +59368,7 @@ const WorldExplorationInner = ({
   const effectiveMaxOffset = isMobile ? 600 : 0;
   const canvasRef = reactExports.useRef(null);
   const spriteRectsRef = reactExports.useRef(/* @__PURE__ */ new Map());
+  const lastClickOverlayRef = reactExports.useRef(null);
   const [inspectCombatantId, setInspectCombatantId] = reactExports.useState(
     null
   );
@@ -64022,13 +64690,18 @@ const WorldExplorationInner = ({
               x: screenPos.x - _srW / 2,
               y: screenPos.y - CHARACTER_Y_OFFSET - _srH / 2,
               w: _srW,
-              h: _srH,
+              h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
               drawOrder: renderItem.depth,
               id: enemy.id,
               kind: "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
-              isAlive: (enemy.hp ?? 0) > 0
+              isAlive: (enemy.hp ?? 0) > 0,
+              drawAnchor: {
+                x: screenPos.x,
+                y: screenPos.y - CHARACTER_Y_OFFSET
+              },
+              drawSize: { w: effectiveTileW, h: effectiveTileH * 1.5 }
             });
           }
           const isLeader = leaderEnemyIdRef.current === enemy.id;
@@ -64218,13 +64891,18 @@ const WorldExplorationInner = ({
               x: playerScreenPos.x - _psrW / 2,
               y: playerScreenPos.y - CHARACTER_Y_OFFSET - _psrH / 2,
               w: _psrW,
-              h: _psrH,
+              h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _psrH / 2,
               drawOrder: 99999,
               id: "player",
               kind: "player",
               logicalX: playerPositionRef.current.x,
               logicalY: playerPositionRef.current.y,
-              isAlive: true
+              isAlive: true,
+              drawAnchor: {
+                x: playerScreenPos.x,
+                y: playerScreenPos.y - CHARACTER_Y_OFFSET
+              },
+              drawSize: { w: _psrW, h: _psrH }
             });
           }
           if (inBattleRef.current) {
@@ -64697,7 +65375,7 @@ const WorldExplorationInner = ({
       isBloodMoon,
       isMirrorField,
       isPaperWindstorm,
-      enemies,
+      enemies: getLiveCombatants(combatantStoreCtx),
       // --- base SpellContextDeps callbacks ---
       rng: Math.random,
       log: (msg, color, isSummon) => {
@@ -64859,7 +65537,7 @@ const WorldExplorationInner = ({
           spell,
           gridPos,
           targetEnemy,
-          enemies,
+          enemies: getLiveCombatants(combatantStoreCtx),
           playerPosition,
           characterName,
           characterStats,
@@ -65059,6 +65737,22 @@ const WorldExplorationInner = ({
     computeEnemyStats,
     setCurrentBattleApSynced
   ]);
+  const recordClickOutcome = reactExports.useCallback(
+    (clientX, clientY, branchTaken, castResult, rejectReason, spellTilesSize, tileInSpellTiles) => {
+      return;
+    },
+    [
+      clientToGrid,
+      gridToScreen,
+      pointerToRenderSpace,
+      effectiveTileH,
+      combatantStoreCtx,
+      turnOrder,
+      currentTurnIndex,
+      activeSpells,
+      getEffectiveSpellRange
+    ]
+  );
   const handleCanvasClick = reactExports.useCallback(
     (event) => {
       var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2;
@@ -65069,32 +65763,7 @@ const WorldExplorationInner = ({
           const _ptr = pointerToRenderSpace(event.clientX, event.clientY);
           const _canvasX = _ptr.x;
           const _canvasY = _ptr.y;
-          let _nearestId = null;
-          let _nearestDx = 0;
-          let _nearestDy = 0;
-          let _nearestDist = Number.POSITIVE_INFINITY;
-          for (const [_rid, _r] of spriteRectsRef.current) {
-            const _cx = _r.x + _r.w / 2;
-            const _cy = _r.y + _r.h / 2;
-            const _d4 = Math.hypot(_canvasX - _cx, _canvasY - _cy);
-            if (_d4 < _nearestDist) {
-              _nearestDist = _d4;
-              _nearestId = _rid;
-              _nearestDx = _canvasX - _cx;
-              _nearestDy = _canvasY - _cy;
-            }
-          }
-          const _hit = hitTestSprite(_canvasX, _canvasY, 4);
-          logClickGuard("SPRITE-HIT", {
-            pointerLogical: { x: _canvasX, y: _canvasY },
-            dpr: dprRef.current,
-            nearestRect: {
-              id: _nearestId,
-              dx: Math.round(_nearestDx),
-              dy: Math.round(_nearestDy)
-            },
-            hit: _hit ? _hit.id : null
-          });
+          const _hit = hitTestSprite(_canvasX, _canvasY, 10);
           if (_hit) {
             if (selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _spell = activeSpells.find(
@@ -65113,7 +65782,9 @@ const WorldExplorationInner = ({
                   console.log("[CLICK-ENEMY]", {
                     branchTaken: "cast-sprite",
                     hitId: _hit.id,
-                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY }
+                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
+                    targetsCount: 1,
+                    targetIds: [_hit.id]
                   });
                   const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                     _spell,
@@ -65128,13 +65799,20 @@ const WorldExplorationInner = ({
                       _castResult === "no_ap" ? "Not enough AP" : `Cast ${_castResult}!`
                     );
                   }
+                  try {
+                    recordClickOutcome(
+                      event.clientX,
+                      event.clientY,
+                      "cast-sprite",
+                      _castResult,
+                      null,
+                      null,
+                      null
+                    );
+                  } catch {
+                  }
                   return;
                 }
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  hitId: _hit.id,
-                  reason: _live.reason
-                });
                 {
                   const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                   (_b4 = effectsManagerRef.current) == null ? void 0 : _b4.spawnFloatText(
@@ -65142,10 +65820,18 @@ const WorldExplorationInner = ({
                     _screen.y,
                     _live.reason
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`
+                }
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "cast-sprite",
+                    null,
+                    _live.reason,
+                    null,
+                    null
                   );
+                } catch {
                 }
                 return;
               }
@@ -65153,9 +65839,11 @@ const WorldExplorationInner = ({
               const _basicAttack = activeSpells.find(
                 (s2) => s2.id === "physical_attack"
               );
+              let _spriteBasicCastResult = null;
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
                 const { castResult: _castResult, apCost: _apCostBasic } = executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                _spriteBasicCastResult = _castResult;
                 if (_castResult !== "cast") {
                   const _screen = tileCenter(_tile.x, _tile.y);
                   (_c3 = effectsManagerRef.current) == null ? void 0 : _c3.spawnFloatText(
@@ -65168,21 +65856,41 @@ const WorldExplorationInner = ({
               } else {
                 setInspectCombatantId(_hit.id);
               }
+              try {
+                recordClickOutcome(
+                  event.clientX,
+                  event.clientY,
+                  "sprite-basic",
+                  _spriteBasicCastResult,
+                  null,
+                  null,
+                  null
+                );
+              } catch {
+              }
               return;
             } else if (selectedSpellIdRef.current && _hit.kind === "player") {
               const _spell = activeSpells.find(
                 (s2) => s2.id === selectedSpellIdRef.current
               );
               if (_spell && (_spell.targetType === "self" || _spell.targetType === "ally")) {
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "self-cast-sprite",
-                  hitId: "player"
-                });
                 const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                   _spell,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   "sprite-player"
                 );
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "sprite-player",
+                    _castResult,
+                    null,
+                    null,
+                    null
+                  );
+                } catch {
+                }
                 return;
               }
             }
@@ -65196,44 +65904,12 @@ const WorldExplorationInner = ({
       if (inBattle) {
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.x === gridPos.x && e.y === gridPos.y
-          );
-          logClickGuard("battle.entry", {
-            tile: gridPos,
-            hasSelection: !!selectedSpellIdRef.current,
-            selectedSpellId: selectedSpellIdRef.current,
-            entityAtTile: _entityAtTile ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType } : null,
-            inBattle,
-            battlePhase,
-            currentEntry: _entry == null ? void 0 : _entry.type,
-            currentId: _entry == null ? void 0 : _entry.id
-          });
-        }
-        {
-          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if ((_entry == null ? void 0 : _entry.type) !== "player") {
-            logClickGuard("blocked.notPlayerTurn", {
-              phase: battlePhase,
-              currentEntry: _entry == null ? void 0 : _entry.type,
-              currentId: _entry == null ? void 0 : _entry.id
-            });
             return;
           }
         }
         if (selectedSpellIdRef.current) {
-          if (!selectedSpellIdRef.current) {
-            logClickGuard("blocked.noSpellSelected", {
-              phase: battlePhase,
-              mode: battleActionMode
-            });
-            return;
-          }
           if (currentBattleApRef.current <= 0) {
-            logClickGuard("blocked.noAp", {
-              phase: battlePhase,
-              ap: currentBattleApRef.current
-            });
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               (_d3 = effectsManagerRef.current) == null ? void 0 : _d3.spawnFloatText(
@@ -65272,26 +65948,40 @@ const WorldExplorationInner = ({
                   branchTaken: "cast-live",
                   tile: gridPos,
                   spellId: _spellMouse.id,
-                  targetId: _occupantMouse.id
+                  targetId: _occupantMouse.id,
+                  targetsCount: 1,
+                  targetIds: [_occupantMouse.id]
                 });
               } else {
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  tile: gridPos,
-                  spellId: _spellMouse.id,
-                  reason: _liveMouse.reason
-                });
-                {
-                  const _screen = tileCenter(gridPos.x, gridPos.y);
-                  (_e3 = effectsManagerRef.current) == null ? void 0 : _e3.spawnFloatText(
-                    _screen.x,
-                    _screen.y,
-                    _liveMouse.reason
+                const _screen = tileCenter(gridPos.x, gridPos.y);
+                (_e3 = effectsManagerRef.current) == null ? void 0 : _e3.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "invalid target"
+                );
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "tile-invalid-target",
+                    null,
+                    null,
+                    spellTiles.size,
+                    false
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-live-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${_spellMouse.id} apCost=${Number(_spellMouse.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_liveMouse.reason}`
+                } catch {
+                }
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "cast-live",
+                    null,
+                    _liveMouse.reason,
+                    null,
+                    null
                   );
+                } catch {
                 }
                 return;
               }
@@ -65316,24 +66006,12 @@ const WorldExplorationInner = ({
                 liveCombatantCount: _liveNow.length
               });
             }
-            logClickGuard("blocked.tileOutOfRange", {
-              phase: battlePhase,
-              tile: gridPos,
-              clickedTile: `${gridPos.x},${gridPos.y}`,
-              setSize: spellTiles.size,
-              cacheHit: _preClickCacheHit,
-              spellId: selectedSpellIdRef.current
-            });
             return;
           }
           const spell = activeSpells.find(
             (s2) => s2.id === selectedSpellIdRef.current
           );
           if (!spell) {
-            logClickGuard("blocked.spellNotFound", {
-              phase: battlePhase,
-              spellId: selectedSpellIdRef.current
-            });
             return;
           }
           const _isSelfOrAllySpellMouse = spell.targetType === "self" || spell.targetType === "ally" || spell.effectType === "buff";
@@ -65344,20 +66022,12 @@ const WorldExplorationInner = ({
               _screen.y,
               "invalid target"
             );
-            logDebugInfo(
-              "BATTLE",
-              `[CLICK-ENEMY] self-tile-hostile-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`
-            );
             return;
           }
           const { castResult, apCost } = executeCastAttempt(
             spell,
             gridPos,
             "tile"
-          );
-          logDebugInfo(
-            "BATTLE",
-            `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`
           );
           if (castResult === "cast") {
             if (Math.max(
@@ -65386,9 +66056,11 @@ const WorldExplorationInner = ({
               (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
                 _screen.x,
                 _screen.y,
-                "Fizzled!"
+                "✦ FIZZLED! ✦",
+                "#dc2626"
               );
             }
+            playSound("spell_cast");
             if (Math.max(
               Math.abs(gridPos.x - playerPositionRef.current.x),
               Math.abs(gridPos.y - playerPositionRef.current.y)
@@ -65486,13 +66158,28 @@ const WorldExplorationInner = ({
           }
         }
       }
+      if (getGeometryOverlayEnabled()) {
+        const _l2 = pointerToRenderSpace(event.clientX, event.clientY);
+        lastClickOverlayRef.current = { x: _l2.x, y: _l2.y, ts: Date.now() };
+      }
+      try {
+        recordClickOutcome(
+          event.clientX,
+          event.clientY,
+          "move",
+          null,
+          null,
+          null,
+          null
+        );
+      } catch {
+      }
     },
     [
       currentMap,
       clientToGrid,
       findPath,
       inBattle,
-      battlePhase,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
@@ -65506,7 +66193,8 @@ const WorldExplorationInner = ({
       hitTestSprite,
       setCurrentBattleApSynced,
       tileCenter,
-      pointerToRenderSpace
+      pointerToRenderSpace,
+      recordClickOutcome
     ]
   );
   const handleCanvasMouseMove = reactExports.useCallback(
@@ -65547,32 +66235,7 @@ const WorldExplorationInner = ({
           const _ptr = pointerToRenderSpace(touch.clientX, touch.clientY);
           const _canvasX = _ptr.x;
           const _canvasY = _ptr.y;
-          let _nearestId = null;
-          let _nearestDx = 0;
-          let _nearestDy = 0;
-          let _nearestDist = Number.POSITIVE_INFINITY;
-          for (const [_rid, _r] of spriteRectsRef.current) {
-            const _cx = _r.x + _r.w / 2;
-            const _cy = _r.y + _r.h / 2;
-            const _d4 = Math.hypot(_canvasX - _cx, _canvasY - _cy);
-            if (_d4 < _nearestDist) {
-              _nearestDist = _d4;
-              _nearestId = _rid;
-              _nearestDx = _canvasX - _cx;
-              _nearestDy = _canvasY - _cy;
-            }
-          }
-          const _hit = hitTestSprite(_canvasX, _canvasY, 8);
-          logClickGuard("SPRITE-HIT", {
-            pointerLogical: { x: _canvasX, y: _canvasY },
-            dpr: dprRef.current,
-            nearestRect: {
-              id: _nearestId,
-              dx: Math.round(_nearestDx),
-              dy: Math.round(_nearestDy)
-            },
-            hit: _hit ? _hit.id : null
-          });
+          const _hit = hitTestSprite(_canvasX, _canvasY, 14);
           if (_hit) {
             if (selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _spell = activeSpells.find(
@@ -65588,11 +66251,6 @@ const WorldExplorationInner = ({
                   currentMap.tiles
                 );
                 if (_live.ok) {
-                  console.log("[CLICK-ENEMY]", {
-                    branchTaken: "cast-sprite",
-                    hitId: _hit.id,
-                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY }
-                  });
                   const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                     _spell,
                     { x: _hit.logicalX, y: _hit.logicalY },
@@ -65608,21 +66266,12 @@ const WorldExplorationInner = ({
                   }
                   return;
                 }
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  hitId: _hit.id,
-                  reason: _live.reason
-                });
                 {
                   const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                   (_b4 = effectsManagerRef.current) == null ? void 0 : _b4.spawnFloatText(
                     _screen.x,
                     _screen.y,
                     _live.reason
-                  );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`
                   );
                 }
                 return;
@@ -65650,10 +66299,6 @@ const WorldExplorationInner = ({
                     _screen.y,
                     _reason
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] basic-attack-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=false reason=${_reason}`
-                  );
                   setInspectCombatantId(_hit.id);
                 }
               } else {
@@ -65665,10 +66310,6 @@ const WorldExplorationInner = ({
                 (s2) => s2.id === selectedSpellIdRef.current
               );
               if (_spell && (_spell.targetType === "self" || _spell.targetType === "ally")) {
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "self-cast-sprite",
-                  hitId: "player"
-                });
                 const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                   _spell,
                   { x: _hit.logicalX, y: _hit.logicalY },
@@ -65687,44 +66328,12 @@ const WorldExplorationInner = ({
       if (inBattle) {
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
-          const _entityAtTile = getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.x === gridPos.x && e.y === gridPos.y
-          );
-          logClickGuard("battle.entry.touch", {
-            tile: gridPos,
-            hasSelection: !!selectedSpellIdRef.current,
-            selectedSpellId: selectedSpellIdRef.current,
-            entityAtTile: _entityAtTile ? { id: _entityAtTile.id, pieceType: _entityAtTile.pieceType } : null,
-            inBattle,
-            battlePhase,
-            currentEntry: _entry == null ? void 0 : _entry.type,
-            currentId: _entry == null ? void 0 : _entry.id
-          });
-        }
-        {
-          const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if ((_entry == null ? void 0 : _entry.type) !== "player") {
-            logClickGuard("blocked.notPlayerTurn.touch", {
-              phase: battlePhase,
-              currentEntry: _entry == null ? void 0 : _entry.type,
-              currentId: _entry == null ? void 0 : _entry.id
-            });
             return;
           }
         }
         if (selectedSpellIdRef.current) {
-          if (!selectedSpellIdRef.current) {
-            logClickGuard("blocked.noSpellSelected.touch", {
-              phase: battlePhase,
-              mode: battleActionMode
-            });
-            return;
-          }
           if (currentBattleApRef.current <= 0) {
-            logClickGuard("blocked.noAp.touch", {
-              phase: battlePhase,
-              ap: currentBattleApRef.current
-            });
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               (_d3 = effectsManagerRef.current) == null ? void 0 : _d3.spawnFloatText(
@@ -65739,8 +66348,6 @@ const WorldExplorationInner = ({
             setBattleActionMode("walk");
             return;
           }
-          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
-          const _preClickCacheHit = spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
           const _liveCombatantsTouch = getLiveCombatants(combatantStoreCtx);
           const _occupantTouch = _liveCombatantsTouch.find(
@@ -65758,20 +66365,8 @@ const WorldExplorationInner = ({
                 _liveCombatantsTouch,
                 currentMap.tiles
               );
-              if (_liveTouch.ok) {
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "cast-live",
-                  tile: gridPos,
-                  spellId: _spellTouch.id,
-                  targetId: _occupantTouch.id
-                });
-              } else {
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "rejected-live",
-                  tile: gridPos,
-                  spellId: _spellTouch.id,
-                  reason: _liveTouch.reason
-                });
+              if (_liveTouch.ok) ;
+              else {
                 {
                   const _screen = tileCenter(gridPos.x, gridPos.y);
                   (_e3 = effectsManagerRef.current) == null ? void 0 : _e3.spawnFloatText(
@@ -65779,52 +66374,18 @@ const WorldExplorationInner = ({
                     _screen.y,
                     _liveTouch.reason
                   );
-                  logDebugInfo(
-                    "BATTLE",
-                    `[CLICK-ENEMY] cast-live-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${_spellTouch.id} apCost=${Number(_spellTouch.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_liveTouch.reason}`
-                  );
                 }
                 return;
               }
             }
           }
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
-            if (spellTiles.size > 0) {
-              const _liveNow = getLiveCombatants(combatantStoreCtx);
-              logDebugInfo("BATTLE", "[TARGET-BISECT] click-miss", {
-                handler: "touch",
-                clickedTile: `${gridPos.x},${gridPos.y}`,
-                setSize: spellTiles.size,
-                cacheHit: _preClickCacheHit,
-                spellId: selectedSpellIdRef.current,
-                playerPosition: {
-                  x: playerPositionRef.current.x,
-                  y: playerPositionRef.current.y
-                },
-                battleWorldVersion: battleWorldVersionRef.current,
-                spellTiles: Array.from(spellTiles).slice(0, 24),
-                liveCombatants: _liveNow.slice(0, 12).map((e) => ({ id: e.id, x: e.x, y: e.y })),
-                liveCombatantCount: _liveNow.length
-              });
-            }
-            logClickGuard("blocked.tileOutOfRange.touch", {
-              phase: battlePhase,
-              tile: gridPos,
-              clickedTile: `${gridPos.x},${gridPos.y}`,
-              setSize: spellTiles.size,
-              cacheHit: _preClickCacheHit,
-              spellId: selectedSpellIdRef.current
-            });
             return;
           }
           const spell = activeSpells.find(
             (s2) => s2.id === selectedSpellIdRef.current
           );
           if (!spell) {
-            logClickGuard("blocked.spellNotFound.touch", {
-              phase: battlePhase,
-              spellId: selectedSpellIdRef.current
-            });
             return;
           }
           const _isSelfOrAllySpellTouch = spell.targetType === "self" || spell.targetType === "ally" || spell.effectType === "buff";
@@ -65835,20 +66396,24 @@ const WorldExplorationInner = ({
               _screen.y,
               "invalid target"
             );
-            logDebugInfo(
-              "BATTLE",
-              `[CLICK-ENEMY] self-tile-hostile-rejected.touch casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`
-            );
+            try {
+              recordClickOutcome(
+                touch.clientX,
+                touch.clientY,
+                "tile-invalid-target",
+                null,
+                null,
+                spellTiles.size,
+                false
+              );
+            } catch {
+            }
             return;
           }
           const { castResult, apCost } = executeCastAttempt(
             spell,
             gridPos,
             "tile"
-          );
-          logDebugInfo(
-            "BATTLE",
-            `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`
           );
           if (castResult === "cast") {
             if (Math.max(
@@ -65877,9 +66442,11 @@ const WorldExplorationInner = ({
               (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
                 _screen.x,
                 _screen.y,
-                "Fizzled!"
+                "✦ FIZZLED! ✦",
+                "#dc2626"
               );
             }
+            playSound("spell_cast");
             if (Math.max(
               Math.abs(gridPos.x - playerPositionRef.current.x),
               Math.abs(gridPos.y - playerPositionRef.current.y)
@@ -65964,23 +66531,35 @@ const WorldExplorationInner = ({
           }
         }
       }
+      if (getGeometryOverlayEnabled()) {
+        const _l2 = pointerToRenderSpace(touch.clientX, touch.clientY);
+        lastClickOverlayRef.current = { x: _l2.x, y: _l2.y, ts: Date.now() };
+      }
+      try {
+        recordClickOutcome(
+          touch.clientX,
+          touch.clientY,
+          "move",
+          null,
+          null,
+          null,
+          null
+        );
+      } catch {
+      }
     },
     [
       currentMap,
       clientToGrid,
       findPath,
       inBattle,
-      battlePhase,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
       getSpellRangeTiles,
-      activeSpells,
-      combatantStoreCtx,
-      hitTestSprite,
+      pointerToRenderSpace,
       setCurrentBattleApSynced,
-      tileCenter,
-      pointerToRenderSpace
+      recordClickOutcome
     ]
   );
   reactExports.useEffect(() => {
@@ -67766,7 +68345,37 @@ const WorldExplorationInner = ({
         hp: c2.hp,
         pos: { x: c2.x, y: c2.y }
       })),
-      turnOrderIds: turnOrder.map((c2) => c2.id)
+      turnOrderIds: turnOrder.map((c2) => c2.id),
+      getGeometrySnapshot: () => {
+        var _a4, _b4;
+        try {
+          const _cb = getLiveCombatants(combatantStoreCtx);
+          const _ss = activeSpells.find(
+            (s2) => s2.id === selectedSpellIdRef.current
+          );
+          return getGeometrySnapshot({
+            ts: Date.now(),
+            helpers: {
+              gridToScreen: (t) => gridToScreen(t.x, t.y),
+              hasLoS: void 0
+            },
+            combatants: _cb,
+            spriteRects: spriteRectsRef.current,
+            playerTile: playerPositionRef.current,
+            playerId: "player",
+            spellRange: _ss ? getEffectiveSpellRange(Number(_ss.range), _ss.id) : null,
+            dpr: dprRef.current,
+            camera: cameraRef.current,
+            canvasSizeLogical: { w: canvasSize.width, h: canvasSize.height },
+            canvasBacking: {
+              w: ((_a4 = canvasRef.current) == null ? void 0 : _a4.width) ?? 0,
+              h: ((_b4 = canvasRef.current) == null ? void 0 : _b4.height) ?? 0
+            }
+          });
+        } catch {
+          return void 0;
+        }
+      }
     });
   }, [
     inBattle,
@@ -69508,7 +70117,7 @@ const WorldExplorationInner = ({
         );
         logDebugInfo(
           "BATTLE",
-          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult}`
+          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t) => t.id).join(",")}`
         );
         if (_castResult === "cast") {
           setCurrentBattleApSynced(
@@ -69529,6 +70138,7 @@ const WorldExplorationInner = ({
     ]
   );
   const attackNearestEnemy = reactExports.useCallback(() => {
+    var _a4;
     if (!inBattle || battleActionMode !== "attack" || !selectedSpellIdRef.current)
       return;
     markFirstAction();
@@ -69600,6 +70210,16 @@ const WorldExplorationInner = ({
     } else if (castResult === "fizzled") {
       setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
+      {
+        const _screen = tileCenter(gridPos.x, gridPos.y);
+        (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
+          _screen.x,
+          _screen.y,
+          "✦ FIZZLED! ✦",
+          "#dc2626"
+        );
+      }
+      playSound("spell_cast");
       if (Math.max(
         Math.abs(gridPos.x - playerPositionRef.current.x),
         Math.abs(gridPos.y - playerPositionRef.current.y)
@@ -69635,7 +70255,8 @@ const WorldExplorationInner = ({
     getEffectiveSpellRange,
     playerSpellContext,
     markFirstAction,
-    setCurrentBattleApSynced
+    setCurrentBattleApSynced,
+    tileCenter
   ]);
   const [noTargetFlash, setNoTargetFlash] = reactExports.useState(false);
   if (showGameOver) {
@@ -74559,7 +75180,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-D7_hwHUl.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BKL3hNPD.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

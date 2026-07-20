@@ -973,6 +973,7 @@ export function resolvePlayerCast(
         preCritDmgBM,
         i === 0,
       );
+      ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");
     }
   }
 

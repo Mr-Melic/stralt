@@ -1,20 +1,21 @@
 {
-  "overview": "A tactical RPG with full cast-chain diagnostics, debug export, summon executor transparency, and magnetic UI panels.",
+  "overview": "A click-geometry debug layer that records, measures, and exports every spatial relationship in canvas clicks so the next debug export becomes a complete mathematical case file.",
   "features": [
-    "Structured attack diagnostics showing exactly where each cast dies",
-    "Visible on-tile rejection text for failed attacks",
-    "Debug export to PDF and text with battle state dump",
-    "Advanced debug controls with filters, search, pause, and copy-all",
-    "No-selection enemy click performs the basic physical attack",
-    "Summon executor dep audit with full Summons-tab logging",
-    "Panel-to-panel magnetic snapping on all four sides"
+    "Structured 4-layer click trace record per canvas click with pointer chain, tile round-trip, combatant geometry table, and state+outcome",
+    "Draw-anchor truth recording at every combatant draw site to compare hit-test rects against actually drawn pixels",
+    "New debug module family under src/frontend/src/debug/ that shrinks WorldExploration.tsx",
+    "Debug tab Clicks sub-view rendering the ring buffer compactly",
+    "Export gains CLICK GEOMETRY TRACES and GEOMETRY SNAPSHOT sections rendered as tables",
+    "Geometry overlay dev toggle drawing crosshair and outlined sprite rects for 2 seconds after each click",
+    "Four computed invariants per record flagging round-trip, rect-anchor, near-miss, and entity-tile discrepancies with measured numbers"
   ],
-  "category": "game",
+  "category": "debug-tool",
   "tags": [
-    "tactical-rpg",
-    "debugging",
-    "diagnostics",
-    "ui"
+    "debug",
+    "geometry",
+    "click-resolution",
+    "modules",
+    "export"
   ],
-  "last_updated": "2026-07-20T16:29:33.051Z"
+  "last_updated": "2026-07-20T18:41:55.932Z"
 }
