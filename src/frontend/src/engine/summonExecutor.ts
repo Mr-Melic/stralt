@@ -113,7 +113,7 @@ export function executeSummonAction(
     };
     if (!isCellFree(clamped, helpers.occupancyCtx)) {
       logLines.push(
-        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) destination (${clamped.x},${clamped.y}) occupied`,
+        `[move] ${summonLabel} → (${clamped.x},${clamped.y}) blocked (occupied)`,
       );
       return;
     }
@@ -121,16 +121,14 @@ export function executeSummonAction(
     const mpCost = dist * helpers.mpCostPerTile;
     if (currentMp < mpCost) {
       logLines.push(
-        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) could not move (need ${mpCost}MP, have ${currentMp}MP)`,
+        `[move] ${summonLabel} → (${clamped.x},${clamped.y}) blocked (need ${mpCost}MP, have ${currentMp}MP)`,
       );
       return;
     }
     x = clamped.x;
     y = clamped.y;
     currentMp -= mpCost;
-    logLines.push(
-      `[SUMMON-MOVE] ${summonLabel} (${summon.id}) moved to (${x},${y}) -${mpCost}MP`,
-    );
+    logLines.push(`[move] ${summonLabel} → (${x},${y}) spent ${mpCost}MP`);
   };
 
   // ── Cast primitive (shared by the `cast` branch and the move-then-cast
@@ -139,7 +137,7 @@ export function executeSummonAction(
     const apCost = Number(spell.apCost ?? 0);
     if (currentAp < apCost) {
       logLines.push(
-        `[SUMMON-CAST] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`,
+        `[cast] ${summonLabel} ${spell.name} → ${targetId} blocked (need ${apCost}AP, have ${currentAp}AP)`,
       );
       return false;
     }
@@ -157,11 +155,11 @@ export function executeSummonAction(
       }
       currentAp -= apCost;
       logLines.push(
-        `[SUMMON-CAST] ${summonLabel} (${summon.id}) cast ${spell.name} on ${targetId} -${apCost}AP`,
+        `[cast] ${summonLabel} ${spell.name} → ${targetId} for ${baseDmg}`,
       );
       if (summon.summonAI === "bomber") {
         hp = 0;
-        logLines.push(`[SUMMON-BOMBER] ${summon.id} detonated (hp=0)`);
+        logLines.push(`[cast] ${summonLabel} ${spell.name} detonated (hp=0)`);
       }
       return true;
     }
@@ -169,7 +167,7 @@ export function executeSummonAction(
       summonCtx.heal(targetId, healAmount);
       currentAp -= apCost;
       logLines.push(
-        `[SUMMON-CAST] ${summonLabel} (${summon.id}) healed ${targetId} for ${healAmount} -${apCost}AP`,
+        `[cast] ${summonLabel} ${spell.name} → ${targetId} healed ${healAmount}`,
       );
       return true;
     }
@@ -188,7 +186,7 @@ export function executeSummonAction(
     });
     currentAp -= apCost;
     logLines.push(
-      `[SUMMON-CAST] ${summonLabel} (${summon.id}) applied ${spell.name} to ${targetId} -${apCost}AP`,
+      `[cast] ${summonLabel} ${spell.name} → ${targetId} applied effect`,
     );
     return true;
   };
@@ -199,7 +197,7 @@ export function executeSummonAction(
     const apCost = helpers.meleeApCost;
     if (currentAp < apCost) {
       logLines.push(
-        `[SUMMON-MELEE] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`,
+        `[melee] ${summonLabel} → ${targetId} blocked (need ${apCost}AP, have ${currentAp}AP)`,
       );
       return false;
     }
@@ -210,11 +208,14 @@ export function executeSummonAction(
     );
     summonCtx.dealDamage(targetId, dmg);
     currentAp -= apCost;
-    logLines.push(
-      `[SUMMON-MELEE] ${summonLabel} (${summon.id}) hit ${targetId} for ${dmg} -${apCost}AP`,
-    );
+    logLines.push(`[melee] ${summonLabel} → ${targetId} for ${dmg}`);
     return true;
   };
+
+  // ── [decide] line: log the chosen action before dispatching ────────────
+  logLines.push(
+    `[decide] ${summonLabel}: ${action.archetype ?? "unknown"} → ${action.kind} ${action.intent ?? ""} ${action.spell?.name ?? action.targetId ?? ""} (${action.intent ?? "no intent"})`,
+  );
 
   // ── Dispatch on action.kind (explicit branches; no fallthrough mis-log) ─
   switch (action.kind) {
@@ -222,9 +223,7 @@ export function executeSummonAction(
       // Move intent log — mirrors the WX enemy move intent log at
       // WorldExploration.tsx:13717-13720 ("{pieceType} {intent}"). Replaces
       // the previous mis-log of move actions as [SUMMON-HOLD].
-      logLines.push(
-        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) ${action.intent ?? "closes in"}`,
-      );
+      logLines.push(`[move] ${summonLabel}: ${action.intent ?? "closes in"}`);
       applyMovement(action.destination);
       // Re-evaluate once with remaining AP — mirrors the enemy move-then-cast
       // pattern. If the archetype now sees a legal cast/melee from the new
@@ -260,7 +259,7 @@ export function executeSummonAction(
           archetype: action.archetype,
         });
         logLines.push(
-          `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`,
+          `[skip] ${summonLabel}: ${action.intent ?? "cast missing spell/target"}`,
         );
       }
       break;
@@ -274,15 +273,13 @@ export function executeSummonAction(
           archetype: action.archetype,
         });
         logLines.push(
-          `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`,
+          `[skip] ${summonLabel}: ${action.intent ?? "melee missing target"}`,
         );
       }
       break;
     }
     case "skip": {
-      logLines.push(
-        `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`,
-      );
+      logLines.push(`[skip] ${summonLabel}: ${action.intent ?? "holds"}`);
       break;
     }
     default: {
@@ -293,10 +290,13 @@ export function executeSummonAction(
         archetype: action.archetype,
       });
       logLines.push(
-        `[SUMMON-HOLD] ${summonLabel} (${summon.id}) unhandled kind (${String((action as EnemyAction).kind)})`,
+        `[skip] ${summonLabel}: unhandled kind (${String((action as EnemyAction).kind)})`,
       );
     }
   }
+
+  // ── [end] line: mark turn complete before emitting ────────────────────
+  logLines.push(`[end] ${summonLabel} turn complete`);
 
   // ── Emit logs through the real SpellContext log channel ───────────────
   for (const line of logLines) {

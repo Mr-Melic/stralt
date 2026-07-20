@@ -31,11 +31,57 @@ export interface DebugLogEntry {
   data?: unknown;
 }
 
-/** In-memory ring buffer for the debug overlay (last 200 entries). */
+/**
+ * In-memory ring buffer for the debug overlay.
+ * SECTION 1 (build #325): cap raised from 200 to 2000 lines so the export
+ * report can include a much larger history window.
+ */
+const DEBUG_BUFFER_CAP = 2000;
 let _buffer: DebugLogEntry[] = [];
 
 /** Subscribers that want to be notified when a new log arrives. */
 const _subscribers: Array<(entry: DebugLogEntry) => void> = [];
+
+/**
+ * SECTION 2 (build #325): pause/resume toggle. When paused, new log lines are
+ * NOT appended to the buffer (they are dropped). Subscribers are still notified
+ * so live UIs can show the entry transiently, but the persisted buffer stops
+ * growing — useful for capturing a stable snapshot for export.
+ */
+let _paused = false;
+const _pauseSubscribers: Array<(paused: boolean) => void> = [];
+
+export function setDebugPaused(paused: boolean): void {
+  if (_paused === paused) return;
+  _paused = paused;
+  for (const sub of _pauseSubscribers) {
+    try {
+      sub(_paused);
+    } catch {
+      /* ignore subscriber errors */
+    }
+  }
+}
+
+export function isDebugPaused(): boolean {
+  return _paused;
+}
+
+export function toggleDebugPaused(): boolean {
+  setDebugPaused(!_paused);
+  return _paused;
+}
+
+/** Subscribe to pause/resume state changes (used by the Debug tab UI). */
+export function subscribeDebugPaused(
+  callback: (paused: boolean) => void,
+): () => void {
+  _pauseSubscribers.push(callback);
+  return () => {
+    const idx = _pauseSubscribers.indexOf(callback);
+    if (idx !== -1) _pauseSubscribers.splice(idx, 1);
+  };
+}
 
 export function logDebug(
   category: LogCategory,
@@ -51,9 +97,14 @@ export function logDebug(
     data,
   };
 
-  // Always keep the buffer so the overlay can show history even in prod
-  _buffer.push(entry);
-  if (_buffer.length > 200) _buffer = _buffer.slice(-200);
+  // Always keep the buffer so the overlay can show history even in prod.
+  // SECTION 2: when paused, drop the new entry from the persisted buffer
+  // (subscribers still get the live event for transient display).
+  if (!_paused) {
+    _buffer.push(entry);
+    if (_buffer.length > DEBUG_BUFFER_CAP)
+      _buffer = _buffer.slice(-DEBUG_BUFFER_CAP);
+  }
 
   // Notify overlay subscribers
   for (const sub of _subscribers) {

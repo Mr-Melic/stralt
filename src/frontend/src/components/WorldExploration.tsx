@@ -2,6 +2,7 @@ import { Pencil, RotateCcw, ShoppingCart } from "lucide-react";
 import { Component } from "react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
 import { useIsMobile } from "../hooks/use-mobile";
@@ -759,6 +760,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     x: 8,
     y: 8,
   });
+  // Stale-closure hardening: live ref mirrors playerPosition so click handlers
+  // and isTileCastableLive read the freshest value at click time instead of
+  // the value captured when the handler closure was created.
+  const playerPositionRef = useRef<PlayerPosition>(playerPosition);
+  const setPlayerPositionSynced = useCallback((pos: PlayerPosition) => {
+    setPlayerPosition(pos);
+    playerPositionRef.current = pos;
+  }, []);
   const [playerView, setPlayerView] = useState<ViewDirection>("front");
   // M7/O8: Camera stored as refs — never triggers re-renders on every frame.
   // `cameraRef` is the live position; `targetCameraRef` is the interpolation target.
@@ -940,7 +949,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         };
         whiteMap.portals = [...(whiteMap.portals || []), whitePortal];
         setCurrentMap(whiteMap);
-        if (whiteSpawn) setPlayerPosition({ ...whiteSpawn });
+        if (whiteSpawn) setPlayerPositionSynced({ ...whiteSpawn });
         resetCombatantStore(combatantStoreCtx);
       }
       logBattleEntry("A white gateway to sanctuary opens…", "white");
@@ -948,7 +957,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return () => {
       subscribeRunComplete(null);
     };
-  }, [subscribeRunComplete, abortBossRush]);
+  }, [subscribeRunComplete, abortBossRush, setPlayerPositionSynced]);
   useEffect(() => {
     dungeonChainActiveRef.current = dungeonChainActive;
   }, [dungeonChainActive]);
@@ -1538,6 +1547,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }, [battleActionMode]);
   // Current MP and AP available this turn (reset each turn)
   const [currentBattleAp, setCurrentBattleAp] = useState(4);
+  // Stale-closure hardening: live ref mirrors currentBattleAp so AP gate
+  // checks and click handlers read the freshest value at click time.
+  const currentBattleApRef = useRef<number>(currentBattleAp);
+  const setCurrentBattleApSynced = useCallback((ap: SetStateAction<number>) => {
+    const next =
+      typeof ap === "function"
+        ? (ap as (p: number) => number)(currentBattleApRef.current)
+        : ap;
+    setCurrentBattleAp(next);
+    currentBattleApRef.current = next;
+  }, []);
   const [currentBattleMp, setCurrentBattleMp] = useState(3);
   // Turn tracking
   const [battleTurn, setBattleTurn] = useState(0);
@@ -2832,7 +2852,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           break;
         }
         case "battle_elixir":
-          setCurrentBattleAp((prev) => prev + 3);
+          setCurrentBattleApSynced((prev) => prev + 3);
           logItem("⚡ Battle Elixir! +3 AP this turn.", "#60a5fa");
           break;
         case "swift_boots":
@@ -2851,7 +2871,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           break;
       }
     },
-    [addBattleLogEntry, maxHp],
+    [addBattleLogEntry, maxHp, setCurrentBattleApSynced],
   );
 
   /** M5: Compute enemy max HP from levelUpConfig rather than hardcoded * 10 */
@@ -5640,7 +5660,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentMapRef.current?.isRestMap ||
       currentMapRef.current?.isDeathRealm
     ) {
-      const playerScreenPos = gridToScreen(playerPosition.x, playerPosition.y);
+      const playerScreenPos = gridToScreen(
+        playerPositionRef.current.x,
+        playerPositionRef.current.y,
+      );
       const centerX = canvasSize.width / 2;
       const centerY = canvasSize.height / 2;
       cameraRef.current = {
@@ -5657,7 +5680,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       return;
     }
     if (!shouldFollowPlayer) return;
-    const playerScreenPos = gridToScreen(playerPosition.x, playerPosition.y);
+    const playerScreenPos = gridToScreen(
+      playerPositionRef.current.x,
+      playerPositionRef.current.y,
+    );
     const centerX = canvasSize.width / 2;
     const centerY = canvasSize.height / 2;
     const cam = cameraRef.current;
@@ -5706,7 +5732,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
   }, [
     isDesktop,
-    playerPosition,
     gridToScreen,
     canvasSize,
     shouldFollowPlayer,
@@ -5735,7 +5760,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     onDebugLog?.("MAP_TRANSITION", "Portal entered");
     // Check if player is currently on a portal tile
     let portal = currentMap.portals.find(
-      (p) => p.x === playerPosition.x && p.y === playerPosition.y,
+      (p) =>
+        p.x === playerPositionRef.current.x &&
+        p.y === playerPositionRef.current.y,
     );
     if (!portal) {
       // Proximity fallback for rest portals (catches coordinate rounding)
@@ -5743,7 +5770,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         (p) =>
           p.isRestPortal &&
           Math.sqrt(
-            (playerPosition.x - p.x) ** 2 + (playerPosition.y - p.y) ** 2,
+            (playerPositionRef.current.x - p.x) ** 2 +
+              (playerPositionRef.current.y - p.y) ** 2,
           ) < 1.5,
       );
       if (nearbyRest) portal = nearbyRest;
@@ -5838,7 +5866,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (nextMap) {
             setCurrentMap(nextMap);
             if (spawnPosition) {
-              setPlayerPosition({ ...spawnPosition });
+              setPlayerPositionSynced({ ...spawnPosition });
             }
             const newEnemies: any[] = [];
             if (nextRoomDef.boss1Id) {
@@ -5908,7 +5936,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
           currentMapRef.current = restMap;
           setCurrentMap(restMap);
-          setPlayerPosition(restSpawn);
+          setPlayerPositionSynced(restSpawn);
           resetCombatantStore(combatantStoreCtx);
           setPlayerView("front");
           const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
@@ -5953,7 +5981,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
           currentMapRef.current = restMap;
           setCurrentMap(restMap);
-          setPlayerPosition(restSpawn);
+          setPlayerPositionSynced(restSpawn);
           resetCombatantStore(combatantStoreCtx);
           setPlayerView("front");
           // Explicitly center camera on player for rest map
@@ -6025,7 +6053,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const { map: newMap, spawnPosition } = generateRandomMap();
           currentMapRef.current = newMap;
           setCurrentMap(newMap);
-          setPlayerPosition(spawnPosition);
+          setPlayerPositionSynced(spawnPosition);
           resetCombatantStore(combatantStoreCtx);
           setTransitionInProgress(false);
           transitionInProgressRef.current = false;
@@ -6186,7 +6214,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         mapChokePointsRef.current = _miChoke;
         mapBottleneckTilesRef.current = _miBN;
       }
-      setPlayerPosition(spawnPosition);
+      setPlayerPositionSynced(spawnPosition);
       // RC FIX: No manual loop restart — the single RAF loop (empty deps) continues
       // running and reads the new map from currentMapRef on its next frame.
       setPlayerView("front");
@@ -6728,9 +6756,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const portalKeys = new Set(currentMap.portals.map((p) => `${p.x},${p.y}`));
     const visited = new Map<string, number>(); // key -> best steps used
     const queue: { x: number; y: number; steps: number }[] = [
-      { x: playerPosition.x, y: playerPosition.y, steps: 0 },
+      {
+        x: playerPositionRef.current.x,
+        y: playerPositionRef.current.y,
+        steps: 0,
+      },
     ];
-    visited.set(`${playerPosition.x},${playerPosition.y}`, 0);
+    visited.set(
+      `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
+      0,
+    );
     const reachable = new Set<string>();
     // Movement cost per tile — delegated to the modifier registry (Slime
     // Flood / Frozen Terrain double the cost via their onMpCost hooks).
@@ -6768,7 +6803,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
     }
     return reachable;
-  }, [currentMap, playerPosition, currentBattleMp, activeMapModifierTypes]);
+  }, [currentMap, currentBattleMp, activeMapModifierTypes]);
 
   // Get tiles in spell range (Chebyshev) for blue highlights
   // STRUCTURAL FIX: read LIVE combatant truth at invocation via
@@ -6806,7 +6841,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     // M5: Check cache before computing. FIX 1.1: include battleWorldVersion so
     // a set computed before an enemy moved can never gate a click after.
-    const cacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
+    const cacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     // ── #19 Pacifist Run: flip flag for ANY offensive spell usage ──────────────
@@ -7566,8 +7601,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
               // EXP8: Draw tooltip label above dungeon portals when player is nearby
               if (p.color === "dungeon" || dungeonChainActiveRef.current) {
-                const dx = Math.abs(playerPosition.x - p.x);
-                const dy = Math.abs(playerPosition.y - p.y);
+                const dx = Math.abs(playerPositionRef.current.x - p.x);
+                const dy = Math.abs(playerPositionRef.current.y - p.y);
                 if (dx <= 3 && dy <= 3) {
                   const labelText = dungeonChainActiveRef.current
                     ? `⚔️ Continue Chain (${dungeonChainDepthRef.current}/${dungeonChainMaxDepthRef.current})`
@@ -7620,7 +7655,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       drawQueue.push({
         kind: "player",
-        depth: playerPosition.x + playerPosition.y,
+        depth: playerPositionRef.current.x + playerPositionRef.current.y,
       });
 
       // Painter's algorithm: lower depth (farther back) drawn first
@@ -7934,8 +7969,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         } else {
           // kind === 'player'
           const playerScreenPos = gridToScreen(
-            playerPosition.x,
-            playerPosition.y,
+            playerPositionRef.current.x,
+            playerPositionRef.current.y,
           );
           const playerPattern = chessPiecePatterns[pieceType][playerView];
 
@@ -7993,8 +8028,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               drawOrder: 99999,
               id: "player",
               kind: "player",
-              logicalX: playerPosition.x,
-              logicalY: playerPosition.y,
+              logicalX: playerPositionRef.current.x,
+              logicalY: playerPositionRef.current.y,
               isAlive: true,
             });
           }
@@ -8164,8 +8199,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ) {
       const hoverScreen = gridToScreen(hoveredTile.x, hoveredTile.y);
       const dist =
-        Math.abs(hoveredTile.x - playerPosition.x) +
-        Math.abs(hoveredTile.y - playerPosition.y);
+        Math.abs(hoveredTile.x - playerPositionRef.current.x) +
+        Math.abs(hoveredTile.y - playerPositionRef.current.y);
       const mpCost =
         dist *
         mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
@@ -8707,7 +8742,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               getLiveCombatants(combatantStoreCtx).some(
                 (e: any) => e.x === c.x && e.y === c.y,
               ) ||
-              (playerPosition.x === c.x && playerPosition.y === c.y),
+              (playerPositionRef.current.x === c.x &&
+                playerPositionRef.current.y === c.y),
           } satisfies OccupancyContext,
         );
         // S1: Spawn commits via the store's atomic ADD (addCombatant), NEVER
@@ -8755,13 +8791,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       isCellFree: (cell: { x: number; y: number }) =>
         !getLiveCombatants(combatantStoreCtx).some(
           (e: any) => e.x === cell.x && e.y === cell.y,
-        ) && !(playerPosition.x === cell.x && playerPosition.y === cell.y),
+        ) &&
+        !(
+          playerPositionRef.current.x === cell.x &&
+          playerPositionRef.current.y === cell.y
+        ),
       getCombatantAt: (cell: { x: number; y: number }) => {
         const e = getLiveCombatants(combatantStoreCtx).find(
           (en: any) => en.x === cell.x && en.y === cell.y,
         );
         if (e) return { id: e.id, side: "enemy" as Side };
-        if (playerPosition.x === cell.x && playerPosition.y === cell.y)
+        if (
+          playerPositionRef.current.x === cell.x &&
+          playerPositionRef.current.y === cell.y
+        )
           return { id: "__player__", side: "player" as Side };
         return null;
       },
@@ -8799,7 +8842,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const maxMpRestore =
           _baseStats.mp +
           getStatModifier("player", "mp", activeEffectsRef.current);
-        setCurrentBattleAp(maxApRestore - castRuntimeRef.current.apCost);
+        setCurrentBattleApSynced(maxApRestore - castRuntimeRef.current.apCost);
         setCurrentBattleMp(maxMpRestore);
       },
       loseSelfHp: (amount: number) => {
@@ -8815,7 +8858,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
         if (!target) return;
         const oldPlayerPos = { ...playerPosition };
-        setPlayerPosition({ x: target.x, y: target.y });
+        setPlayerPositionSynced({ x: target.x, y: target.y });
         // Route the enemy position swap through the combatant store so the
         // ref mirrors stay atomically in sync (replaces a setEnemies map).
         updateCombatant(combatantStoreCtx, targetEnemyId, {
@@ -8969,7 +9012,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return false;
       },
       activateMirror: () => {
-        mirrorUnitsRef.current.add(`${playerPosition.x},${playerPosition.y}`);
+        mirrorUnitsRef.current.add(
+          `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
+        );
       },
       placeBarrierTile: (cell: { x: number; y: number }, turns: number) => {
         barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
@@ -9002,7 +9047,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               getLiveCombatants(combatantStoreCtx).some(
                 (e: any) => e.x === c.x && e.y === c.y,
               ) ||
-              (playerPosition.x === c.x && playerPosition.y === c.y),
+              (playerPositionRef.current.x === c.x &&
+                playerPositionRef.current.y === c.y),
           } satisfies OccupancyContext,
         );
         // S1: Atomic ADD via the store — NEVER a wholesale syncCombatants
@@ -9078,6 +9124,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     playSound,
     spawnSummonUnit,
     computeEnemyStats,
+    setCurrentBattleApSynced,
   ]);
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -9117,7 +9164,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                   const _live = isTileCastableLive(
                     _spell,
-                    playerPosition,
+                    playerPositionRef.current,
                     { x: _hit.logicalX, y: _hit.logicalY },
                     _liveCombatants,
                     currentMap.tiles,
@@ -9142,7 +9189,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         rng: Math.random,
                       },
                     );
-                    if (currentBattleAp >= _apCost) {
+                    const _apGatePassedSprite =
+                      currentBattleApRef.current >= _apCost;
+                    if (_apGatePassedSprite) {
                       castRuntimeRef.current.apCost = _apCost;
                       castRuntimeRef.current.spell = _spell;
                       const _castResult = resolvePlayerCast(
@@ -9150,13 +9199,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         { x: _hit.logicalX, y: _hit.logicalY },
                         playerSpellContext(),
                       );
+                      logDebugInfo(
+                        "BATTLE",
+                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
+                      );
                       if (_castResult === "cast") {
-                        setCurrentBattleAp((prev) =>
+                        setCurrentBattleApSynced((prev) =>
                           Math.max(0, prev - _apCost),
                         );
                         markFirstAction();
                         challengeMaxApThisTurnRef.current += _apCost;
+                      } else {
+                        const _screen = tileCenter(
+                          _hit.logicalX,
+                          _hit.logicalY,
+                        );
+                        effectsManagerRef.current?.spawnFloatText(
+                          _screen.x,
+                          _screen.y,
+                          `Cast ${_castResult}!`,
+                        );
                       }
+                    } else {
+                      const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                      effectsManagerRef.current?.spawnFloatText(
+                        _screen.x,
+                        _screen.y,
+                        "Not enough AP",
+                      );
+                      logDebugInfo(
+                        "BATTLE",
+                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort`,
+                      );
                     }
                     return;
                   }
@@ -9166,15 +9240,91 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     hitId: _hit.id,
                     reason: _live.reason,
                   });
+                  {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _live.reason,
+                    );
+                    logDebugInfo(
+                      "BATTLE",
+                      `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
+                    );
+                  }
                   return;
                 }
               } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
-                setInspectCombatantId(_hit.id);
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "inspect-sprite",
-                  hitId: _hit.id,
-                });
+                // No spell selected — attempt basic physical attack through
+                // the same live validation + cast ritual as a selected spell.
+                // If not legal, show floating reason AND open inspect fallback.
+                const _basicAttack = activeSpells.find(
+                  (s) => s.id === "physical_attack",
+                );
+                if (_basicAttack && _hit.id) {
+                  const _tile = { x: _hit.logicalX, y: _hit.logicalY };
+                  const _liveCombatantsBasic =
+                    getLiveCombatants(combatantStoreCtx);
+                  const _live = isTileCastableLive(
+                    _basicAttack,
+                    playerPositionRef.current,
+                    _tile,
+                    _liveCombatantsBasic,
+                    currentMap.tiles,
+                  );
+                  const _apCostBasic = mapModifierRegistry.applyApCost(
+                    Number(_basicAttack.apCost),
+                    activeMapModifierTypes,
+                    {
+                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                      rng: Math.random,
+                    },
+                  );
+                  const _apGatePassed =
+                    _live.ok && currentBattleApRef.current >= _apCostBasic;
+                  if (_apGatePassed) {
+                    castRuntimeRef.current.apCost = _apCostBasic;
+                    castRuntimeRef.current.spell = _basicAttack;
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    const _castResult = resolvePlayerCast(
+                      _basicAttack,
+                      _tile,
+                      playerSpellContext(),
+                    );
+                    logDebugInfo(
+                      "BATTLE",
+                      `[CLICK-ENEMY] basic-attack casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
+                    );
+                    if (_castResult === "cast") {
+                      setCurrentBattleApSynced((prev) =>
+                        Math.max(0, prev - _apCostBasic),
+                      );
+                      markFirstAction();
+                      challengeMaxApThisTurnRef.current += _apCostBasic;
+                    } else {
+                      effectsManagerRef.current?.spawnFloatText(
+                        _screen.x,
+                        _screen.y,
+                        `Cast ${_castResult}!`,
+                      );
+                    }
+                  } else {
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    const _reason = !_live.ok ? _live.reason : "Not enough AP";
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _reason,
+                    );
+                    logDebugInfo(
+                      "BATTLE",
+                      `[CLICK-ENEMY] basic-attack-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=false reason=${_reason}`,
+                    );
+                    setInspectCombatantId(_hit.id);
+                  }
+                } else {
+                  setInspectCombatantId(_hit.id);
+                }
                 return;
               } else if (selectedSpellIdRef.current && _hit.kind === "player") {
                 // Self/ally-targetable spell + player sprite hit → self-cast.
@@ -9200,7 +9350,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       rng: Math.random,
                     },
                   );
-                  if (currentBattleAp >= _apCost) {
+                  if (currentBattleApRef.current >= _apCost) {
                     castRuntimeRef.current.apCost = _apCost;
                     castRuntimeRef.current.spell = _spell;
                     const _castResult = resolvePlayerCast(
@@ -9209,7 +9359,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       playerSpellContext(),
                     );
                     if (_castResult === "cast") {
-                      setCurrentBattleAp((prev) => Math.max(0, prev - _apCost));
+                      setCurrentBattleApSynced((prev) =>
+                        Math.max(0, prev - _apCost),
+                      );
                       markFirstAction();
                       challengeMaxApThisTurnRef.current += _apCost;
                     }
@@ -9312,11 +9464,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             });
             return;
           }
-          if (currentBattleAp <= 0) {
+          if (currentBattleApRef.current <= 0) {
             logClickGuard("blocked.noAp", {
               phase: battlePhase,
-              ap: currentBattleAp,
+              ap: currentBattleApRef.current,
             });
+            {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                "Not enough AP",
+              );
+            }
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v) => v + 1);
             spellRangeCacheRef.current.clear();
@@ -9326,7 +9486,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the rejection log reports whether the cache
           // already held an entry for this key.
-          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
           const _preClickCacheHit =
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
@@ -9353,7 +9513,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (_spellMouse) {
               const _liveMouse = isTileCastableLive(
                 _spellMouse,
-                playerPosition,
+                playerPositionRef.current,
                 gridPos,
                 _liveCombatantsMouse,
                 currentMap.tiles,
@@ -9377,6 +9537,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellId: _spellMouse.id,
                   reason: _liveMouse.reason,
                 });
+                {
+                  const _screen = tileCenter(gridPos.x, gridPos.y);
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _liveMouse.reason,
+                  );
+                  logDebugInfo(
+                    "BATTLE",
+                    `[CLICK-ENEMY] cast-live-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${_spellMouse.id} apCost=${Number(_spellMouse.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_liveMouse.reason}`,
+                  );
+                }
                 return;
               }
             }
@@ -9397,7 +9569,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setSize: spellTiles.size,
                 cacheHit: _preClickCacheHit,
                 spellId: selectedSpellIdRef.current,
-                playerPosition: { x: playerPosition.x, y: playerPosition.y },
+                playerPosition: {
+                  x: playerPositionRef.current.x,
+                  y: playerPositionRef.current.y,
+                },
                 battleWorldVersion: battleWorldVersionRef.current,
                 spellTiles: Array.from(spellTiles).slice(0, 24),
                 liveCombatants: _liveNow
@@ -9434,7 +9609,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellName: spell.name,
               tile: gridPos,
               apCost: Number(spell.apCost),
-              currentBattleAp,
+              currentBattleAp: currentBattleApRef.current,
             });
           }
           // Arcane Surge: spells cost 1 less AP (minimum 1)
@@ -9446,7 +9621,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               rng: Math.random,
             },
           );
-          if (currentBattleAp < apCost) return;
+          if (currentBattleApRef.current < apCost) return;
           castRuntimeRef.current.apCost = apCost;
           castRuntimeRef.current.spell = spell;
           if (spell.isSummon) {
@@ -9460,14 +9635,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             gridPos,
             playerSpellContext(),
           );
+          logDebugInfo(
+            "BATTLE",
+            `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`,
+          );
           if (castResult === "cast") {
-            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
             if (
               Math.max(
-                Math.abs(gridPos.x - playerPosition.x),
-                Math.abs(gridPos.y - playerPosition.y),
+                Math.abs(gridPos.x - playerPositionRef.current.x),
+                Math.abs(gridPos.y - playerPositionRef.current.y),
               ) > 2
             )
               challengeDirectHitRef.current = false;
@@ -9478,23 +9657,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleAp - apCost <= 0) {
+            if (currentBattleApRef.current - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
               setBattleActionMode("walk");
             }
           } else if (castResult === "fizzled") {
-            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
             markFirstAction();
+            {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                "Fizzled!",
+              );
+            }
             if (
               Math.max(
-                Math.abs(gridPos.x - playerPosition.x),
-                Math.abs(gridPos.y - playerPosition.y),
+                Math.abs(gridPos.x - playerPositionRef.current.x),
+                Math.abs(gridPos.y - playerPositionRef.current.y),
               ) > 2
             )
               challengeDirectHitRef.current = false;
-            if (currentBattleAp - apCost <= 0) {
+            if (currentBattleApRef.current - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -9504,21 +9691,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
             // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
             // owned by another task — do NOT touch it here.
-            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleAp - apCost <= 0) {
+            if (currentBattleApRef.current - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
               setBattleActionMode("walk");
             }
+          } else {
+            // "no_ap" | "abort" → no further action, but show float reason.
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              castResult === "no_ap" ? "No AP!" : "Aborted",
+            );
           }
-          // "no_ap" | "abort" → no further action
         }
         // WALK branch — only runs with NO spell selected. Mirrors the touch
         // handler's walk body (see lines ~9354-9374) with two mouse-only
@@ -9535,7 +9729,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           const reachable = getMpReachableTiles();
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          const path = findPath(playerPosition, gridPos);
+          const path = findPath(playerPositionRef.current, gridPos);
           if (path.length === 0) return;
           const cost = path.length;
           if (cost > currentBattleMp) return;
@@ -9582,15 +9776,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         !currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
       ) {
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
-        const path = findPath(playerPosition, gridPos);
+        const path = findPath(playerPositionRef.current, gridPos);
         if (path.length > 0) {
           setMovementPath(path);
           setCurrentStepIndex(0);
           setIsMoving(true);
           movementStartTimeRef.current = Date.now();
         } else {
-          const dx = Math.abs(gridPos.x - playerPosition.x);
-          const dy = Math.abs(gridPos.y - playerPosition.y);
+          const dx = Math.abs(gridPos.x - playerPositionRef.current.x);
+          const dy = Math.abs(gridPos.y - playerPositionRef.current.y);
           if (dx <= 1 && dy <= 1 && dx + dy > 0) {
             setMovementPath([gridPos]);
             setCurrentStepIndex(0);
@@ -9604,12 +9798,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentMap,
       clientToGrid,
       findPath,
-      playerPosition,
       inBattle,
       battlePhase,
       battleActionMode,
       currentBattleMp,
-      currentBattleAp,
       getMpReachableTiles,
       getSpellRangeTiles,
       activeSpells,
@@ -9621,6 +9813,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       voidRiftTile,
       combatantStoreCtx,
       hitTestSprite,
+      setCurrentBattleApSynced,
+      tileCenter,
     ],
   );
   // Handle canvas mouse move
@@ -9695,7 +9889,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                   const _live = isTileCastableLive(
                     _spell,
-                    playerPosition,
+                    playerPositionRef.current,
                     { x: _hit.logicalX, y: _hit.logicalY },
                     _liveCombatants,
                     currentMap.tiles,
@@ -9715,7 +9909,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         rng: Math.random,
                       },
                     );
-                    if (currentBattleAp >= _apCost) {
+                    const _apGatePassedSprite =
+                      currentBattleApRef.current >= _apCost;
+                    if (_apGatePassedSprite) {
                       castRuntimeRef.current.apCost = _apCost;
                       castRuntimeRef.current.spell = _spell;
                       const _castResult = resolvePlayerCast(
@@ -9723,13 +9919,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         { x: _hit.logicalX, y: _hit.logicalY },
                         playerSpellContext(),
                       );
+                      logDebugInfo(
+                        "BATTLE",
+                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
+                      );
                       if (_castResult === "cast") {
-                        setCurrentBattleAp((prev) =>
+                        setCurrentBattleApSynced((prev) =>
                           Math.max(0, prev - _apCost),
                         );
                         markFirstAction();
                         challengeMaxApThisTurnRef.current += _apCost;
+                      } else {
+                        const _screen = tileCenter(
+                          _hit.logicalX,
+                          _hit.logicalY,
+                        );
+                        effectsManagerRef.current?.spawnFloatText(
+                          _screen.x,
+                          _screen.y,
+                          `Cast ${_castResult}!`,
+                        );
                       }
+                    } else {
+                      const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                      effectsManagerRef.current?.spawnFloatText(
+                        _screen.x,
+                        _screen.y,
+                        "Not enough AP",
+                      );
+                      logDebugInfo(
+                        "BATTLE",
+                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort`,
+                      );
                     }
                     return;
                   }
@@ -9739,15 +9960,91 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     hitId: _hit.id,
                     reason: _live.reason,
                   });
+                  {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _live.reason,
+                    );
+                    logDebugInfo(
+                      "BATTLE",
+                      `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
+                    );
+                  }
                   return;
                 }
               } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
-                setInspectCombatantId(_hit.id);
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "inspect-sprite",
-                  hitId: _hit.id,
-                });
+                // No spell selected — attempt basic physical attack through
+                // the same live validation + cast ritual as a selected spell.
+                // If not legal, show floating reason AND open inspect fallback.
+                const _basicAttack = activeSpells.find(
+                  (s) => s.id === "physical_attack",
+                );
+                if (_basicAttack && _hit.id) {
+                  const _tile = { x: _hit.logicalX, y: _hit.logicalY };
+                  const _liveCombatantsBasic =
+                    getLiveCombatants(combatantStoreCtx);
+                  const _live = isTileCastableLive(
+                    _basicAttack,
+                    playerPositionRef.current,
+                    _tile,
+                    _liveCombatantsBasic,
+                    currentMap.tiles,
+                  );
+                  const _apCostBasic = mapModifierRegistry.applyApCost(
+                    Number(_basicAttack.apCost),
+                    activeMapModifierTypes,
+                    {
+                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                      rng: Math.random,
+                    },
+                  );
+                  const _apGatePassed =
+                    _live.ok && currentBattleApRef.current >= _apCostBasic;
+                  if (_apGatePassed) {
+                    castRuntimeRef.current.apCost = _apCostBasic;
+                    castRuntimeRef.current.spell = _basicAttack;
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    const _castResult = resolvePlayerCast(
+                      _basicAttack,
+                      _tile,
+                      playerSpellContext(),
+                    );
+                    logDebugInfo(
+                      "BATTLE",
+                      `[CLICK-ENEMY] basic-attack casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
+                    );
+                    if (_castResult === "cast") {
+                      setCurrentBattleApSynced((prev) =>
+                        Math.max(0, prev - _apCostBasic),
+                      );
+                      markFirstAction();
+                      challengeMaxApThisTurnRef.current += _apCostBasic;
+                    } else {
+                      effectsManagerRef.current?.spawnFloatText(
+                        _screen.x,
+                        _screen.y,
+                        `Cast ${_castResult}!`,
+                      );
+                    }
+                  } else {
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    const _reason = !_live.ok ? _live.reason : "Not enough AP";
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _reason,
+                    );
+                    logDebugInfo(
+                      "BATTLE",
+                      `[CLICK-ENEMY] basic-attack-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=false reason=${_reason}`,
+                    );
+                    setInspectCombatantId(_hit.id);
+                  }
+                } else {
+                  setInspectCombatantId(_hit.id);
+                }
                 return;
               } else if (selectedSpellIdRef.current && _hit.kind === "player") {
                 const _spell = activeSpells.find(
@@ -9770,7 +10067,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       rng: Math.random,
                     },
                   );
-                  if (currentBattleAp >= _apCost) {
+                  if (currentBattleApRef.current >= _apCost) {
                     castRuntimeRef.current.apCost = _apCost;
                     castRuntimeRef.current.spell = _spell;
                     const _castResult = resolvePlayerCast(
@@ -9779,7 +10076,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       playerSpellContext(),
                     );
                     if (_castResult === "cast") {
-                      setCurrentBattleAp((prev) => Math.max(0, prev - _apCost));
+                      setCurrentBattleApSynced((prev) =>
+                        Math.max(0, prev - _apCost),
+                      );
                       markFirstAction();
                       challengeMaxApThisTurnRef.current += _apCost;
                     }
@@ -9875,11 +10174,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             });
             return;
           }
-          if (currentBattleAp <= 0) {
+          if (currentBattleApRef.current <= 0) {
             logClickGuard("blocked.noAp.touch", {
               phase: battlePhase,
-              ap: currentBattleAp,
+              ap: currentBattleApRef.current,
             });
+            {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                "Not enough AP",
+              );
+            }
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v) => v + 1);
             spellRangeCacheRef.current.clear();
@@ -9889,7 +10196,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the touch rejection log reports whether the
           // cache already held an entry for this key.
-          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
           const _preClickCacheHit =
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
@@ -9917,7 +10224,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (_spellTouch) {
               const _liveTouch = isTileCastableLive(
                 _spellTouch,
-                playerPosition,
+                playerPositionRef.current,
                 gridPos,
                 _liveCombatantsTouch,
                 currentMap.tiles,
@@ -9941,6 +10248,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellId: _spellTouch.id,
                   reason: _liveTouch.reason,
                 });
+                {
+                  const _screen = tileCenter(gridPos.x, gridPos.y);
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _liveTouch.reason,
+                  );
+                  logDebugInfo(
+                    "BATTLE",
+                    `[CLICK-ENEMY] cast-live-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${_spellTouch.id} apCost=${Number(_spellTouch.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_liveTouch.reason}`,
+                  );
+                }
                 return;
               }
             }
@@ -9961,7 +10280,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setSize: spellTiles.size,
                 cacheHit: _preClickCacheHit,
                 spellId: selectedSpellIdRef.current,
-                playerPosition: { x: playerPosition.x, y: playerPosition.y },
+                playerPosition: {
+                  x: playerPositionRef.current.x,
+                  y: playerPositionRef.current.y,
+                },
                 battleWorldVersion: battleWorldVersionRef.current,
                 spellTiles: Array.from(spellTiles).slice(0, 24),
                 liveCombatants: _liveNow
@@ -9999,7 +10321,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellName: spell.name,
               tile: gridPos,
               apCost: Number(spell.apCost),
-              currentBattleAp,
+              currentBattleAp: currentBattleApRef.current,
             });
           }
           // Arcane Surge: spells cost 1 less AP (minimum 1)
@@ -10011,7 +10333,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               rng: Math.random,
             },
           );
-          if (currentBattleAp < apCost) return;
+          if (currentBattleApRef.current < apCost) return;
           castRuntimeRef.current.apCost = apCost;
           castRuntimeRef.current.spell = spell;
           if (spell.isSummon) {
@@ -10025,14 +10347,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             gridPos,
             playerSpellContext(),
           );
+          logDebugInfo(
+            "BATTLE",
+            `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`,
+          );
           if (castResult === "cast") {
-            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
             if (
               Math.max(
-                Math.abs(gridPos.x - playerPosition.x),
-                Math.abs(gridPos.y - playerPosition.y),
+                Math.abs(gridPos.x - playerPositionRef.current.x),
+                Math.abs(gridPos.y - playerPositionRef.current.y),
               ) > 2
             )
               challengeDirectHitRef.current = false;
@@ -10043,23 +10369,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleAp - apCost <= 0) {
+            if (currentBattleApRef.current - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
               setBattleActionMode("walk");
             }
           } else if (castResult === "fizzled") {
-            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
             markFirstAction();
+            {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                "Fizzled!",
+              );
+            }
             if (
               Math.max(
-                Math.abs(gridPos.x - playerPosition.x),
-                Math.abs(gridPos.y - playerPosition.y),
+                Math.abs(gridPos.x - playerPositionRef.current.x),
+                Math.abs(gridPos.y - playerPositionRef.current.y),
               ) > 2
             )
               challengeDirectHitRef.current = false;
-            if (currentBattleAp - apCost <= 0) {
+            if (currentBattleApRef.current - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -10069,21 +10403,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
             // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
             // owned by another task — do NOT touch it here.
-            setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
             markFirstAction();
             challengeMaxApThisTurnRef.current += apCost;
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleAp - apCost <= 0) {
+            if (currentBattleApRef.current - apCost <= 0) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
               setBattleActionMode("walk");
             }
+          } else {
+            // "no_ap" | "abort" → no further action, but show float reason.
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              castResult === "no_ap" ? "No AP!" : "Aborted",
+            );
           }
-          // "no_ap" | "abort" → no further action
         }
         // WALK branch — only runs with NO spell selected. Mirrors the mouse
         // handler's walk body WITHOUT the mouse-only Thorned Ground / Void Rift
@@ -10097,7 +10438,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           const reachable = getMpReachableTiles();
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          const path = findPath(playerPosition, gridPos);
+          const path = findPath(playerPositionRef.current, gridPos);
           if (path.length === 0) return;
           const cost = path.length;
           if (cost > currentBattleMp) return;
@@ -10125,15 +10466,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         )
           return;
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
-        const path = findPath(playerPosition, gridPos);
+        const path = findPath(playerPositionRef.current, gridPos);
         if (path.length > 0) {
           setMovementPath(path);
           setCurrentStepIndex(0);
           setIsMoving(true);
           movementStartTimeRef.current = Date.now();
         } else {
-          const dx = Math.abs(gridPos.x - playerPosition.x);
-          const dy = Math.abs(gridPos.y - playerPosition.y);
+          const dx = Math.abs(gridPos.x - playerPositionRef.current.x);
+          const dy = Math.abs(gridPos.y - playerPositionRef.current.y);
           if (dx <= 1 && dy <= 1 && dx + dy > 0) {
             setMovementPath([gridPos]);
             setCurrentStepIndex(0);
@@ -10147,12 +10488,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentMap,
       clientToGrid,
       findPath,
-      playerPosition,
       inBattle,
       battlePhase,
       battleActionMode,
       currentBattleMp,
-      currentBattleAp,
       getMpReachableTiles,
       getSpellRangeTiles,
       activeSpells,
@@ -10160,6 +10499,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       activeMapModifierTypes,
       combatantStoreCtx,
       hitTestSprite,
+      setCurrentBattleApSynced,
+      tileCenter,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -10173,7 +10514,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (targetStepIndex >= movementPath.length) {
         // Movement complete - ensure player is exactly at final position
         const finalPosition = movementPath[movementPath.length - 1];
-        setPlayerPosition(finalPosition);
+        setPlayerPositionSynced(finalPosition);
         setIsMoving(false);
         setMovementPath([]);
         setCurrentStepIndex(0);
@@ -10200,7 +10541,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           x: Math.round(newPosition.x),
           y: Math.round(newPosition.y),
         };
-        setPlayerPosition(newPos);
+        setPlayerPositionSynced(newPos);
         if (isShrineRoomRef.current && shrineAltarPosRef.current) {
           const _isHazardTile =
             currentMap?.hazardTiles?.has(`${newPos.x},${newPos.y}`) ?? false;
@@ -10374,6 +10715,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     characterSlot,
     dokaBalance,
     onDokaBalanceChange,
+    setPlayerPositionSynced,
   ]);
   // FIXED: Check portal interaction whenever player position changes
   // EDIT 3 — Edge-trigger: only fire checkPortalInteraction() on the actual
@@ -10695,7 +11037,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     const collidingEnemy = getLiveCombatants(combatantStoreCtx).find(
       (enemy) => {
-        return enemy.x === playerPosition.x && enemy.y === playerPosition.y;
+        return (
+          enemy.x === playerPositionRef.current.x &&
+          enemy.y === playerPositionRef.current.y
+        );
       },
     );
 
@@ -10805,7 +11150,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setDokaLoot([]);
 
       // Apply teleports
-      if (newPlayerPos) setPlayerPosition(newPlayerPos);
+      if (newPlayerPos) setPlayerPositionSynced(newPlayerPos);
 
       // Build initiative-sorted turn order
       // 4b: Assign 10 random spells per enemy from usableByEnemy pool
@@ -10983,7 +11328,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const _baseMp =
           _baseStats.mp +
           getStatModifier("player", "mp", activeEffectsRef.current);
-        setCurrentBattleAp(_baseAp);
+        setCurrentBattleApSynced(_baseAp);
         setCurrentBattleMp(_baseMp);
         if (
           !_progressionDivergenceWarned &&
@@ -11479,7 +11824,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         };
         whiteMap.portals = [...(whiteMap.portals || []), whitePortal];
         setCurrentMap(whiteMap);
-        if (whiteSpawn) setPlayerPosition({ ...whiteSpawn });
+        if (whiteSpawn) setPlayerPositionSynced({ ...whiteSpawn });
         resetCombatantStore(combatantStoreCtx);
       }
       logBattleEntry("A white gateway to sanctuary opens…", "white");
@@ -11645,7 +11990,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             generateDeathRealmMap();
           currentMapRef.current = deathMap;
           setCurrentMap(deathMap);
-          setPlayerPosition(drSpawn || { x: 2, y: 2 });
+          setPlayerPositionSynced(drSpawn || { x: 2, y: 2 });
           resetCombatantStore(combatantStoreCtx);
           setInBattle(false);
           cleanupBattle();
@@ -11733,7 +12078,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const { map: drMap, spawnPosition: drSpawn } = generateDeathRealmMap();
         currentMapRef.current = drMap;
         setCurrentMap(drMap);
-        setPlayerPosition(drSpawn || { x: 2, y: 2 });
+        setPlayerPositionSynced(drSpawn || { x: 2, y: 2 });
         setPlayerView("front");
         // Center camera on player spawn for death realm
         const drScreenPos = gridToScreen(
@@ -11814,7 +12159,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
         currentMapRef.current = fallbackMap;
         setCurrentMap(fallbackMap);
-        setPlayerPosition(fallbackSpawn);
+        setPlayerPositionSynced(fallbackSpawn);
         setPlayerView("front");
         const fbScreenPos = gridToScreen(fallbackSpawn.x, fallbackSpawn.y);
         const fbCenterX = canvasSize.width / 2;
@@ -11941,7 +12286,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       respawnTimerRef.current = null;
       currentMapRef.current = newMap;
       setCurrentMap(newMap);
-      setPlayerPosition(spawnPosition);
+      setPlayerPositionSynced(spawnPosition);
       setPlayerView("front");
       cameraRef.current = { x: 0, y: 0 };
       targetCameraRef.current = { x: 0, y: 0 };
@@ -11978,6 +12323,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     updateCameraToFollowPlayer,
     setTransitionInProgress,
+    setPlayerPositionSynced,
   ]);
 
   // Initialize first map - FIXED: Only run once on mount
@@ -12399,7 +12745,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               characterStats.level,
               levelUpConfig,
             );
-            setCurrentBattleAp((prev) => {
+            setCurrentBattleApSynced((prev) => {
               void prev;
               // Arcane Surge: spells cost 1 less AP, which is applied at cast time not here
               // Apply AP buffs/debuffs from active effects
@@ -12678,7 +13024,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   enemiesRef.current.some(
                     (e: any) => e.x === c.x && e.y === c.y,
                   ) ||
-                  (playerPosition.x === c.x && playerPosition.y === c.y),
+                  (playerPositionRef.current.x === c.x &&
+                    playerPositionRef.current.y === c.y),
               } satisfies OccupancyContext,
             );
             // S1 SITE #3: Atomic ADD via the combatant store. Player-side
@@ -12694,13 +13041,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           isCellFree: (cell: { x: number; y: number }) =>
             !getLiveCombatants(combatantStoreCtx).some(
               (e: any) => e.x === cell.x && e.y === cell.y,
-            ) && !(playerPosition.x === cell.x && playerPosition.y === cell.y),
+            ) &&
+            !(
+              playerPositionRef.current.x === cell.x &&
+              playerPositionRef.current.y === cell.y
+            ),
           getCombatantAt: (cell: { x: number; y: number }) => {
             const e = enemiesRef.current.find(
               (en: any) => en.x === cell.x && en.y === cell.y,
             );
             if (e) return { id: e.id, side: "enemy" as Side };
-            if (playerPosition.x === cell.x && playerPosition.y === cell.y)
+            if (
+              playerPositionRef.current.x === cell.x &&
+              playerPositionRef.current.y === cell.y
+            )
               return { id: "__player__", side: "player" as Side };
             return null;
           },
@@ -12750,7 +13104,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     enemiesRef.current.some(
                       (e: any) => e.x === oc.x && e.y === oc.y,
                     ) ||
-                    (playerPosition.x === oc.x && playerPosition.y === oc.y),
+                    (playerPositionRef.current.x === oc.x &&
+                      playerPositionRef.current.y === oc.y),
                 } satisfies OccupancyContext,
               );
               // S1 SITE #4: Atomic ADD via the combatant store. The summoner
@@ -12801,7 +13156,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   enemiesRef.current.some(
                     (e: any) => e.x === c.x && e.y === c.y,
                   ) ||
-                  (playerPosition.x === c.x && playerPosition.y === c.y),
+                  (playerPositionRef.current.x === c.x &&
+                    playerPositionRef.current.y === c.y),
               } satisfies OccupancyContext,
             );
             // S1 SITE #5: Atomic ADD via the combatant store — inline twin of
@@ -12836,8 +13192,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           side: "player" as "player" | "enemy",
           isSummon: false,
           summonAI: undefined,
-          x: playerPosition.x,
-          y: playerPosition.y,
+          x: playerPositionRef.current.x,
+          y: playerPositionRef.current.y,
           hp: characterStats.hp,
           maxHp: maxHp,
           level: characterStats.level,
@@ -12922,7 +13278,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           portals: aiPortals,
           isOccupied: (c: { x: number; y: number }) =>
             enemiesRef.current.some((e: any) => e.x === c.x && e.y === c.y) ||
-            (playerPosition.x === c.x && playerPosition.y === c.y),
+            (playerPositionRef.current.x === c.x &&
+              playerPositionRef.current.y === c.y),
         };
         const executorHelpers: SummonExecutorHelpers = {
           calcScaledDamage,
@@ -13117,8 +13474,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               sp: characterStats.sp ?? 0,
               init: characterStats.init,
               chc: characterStats.chc,
-              x: playerPosition.x,
-              y: playerPosition.y,
+              x: playerPositionRef.current.x,
+              y: playerPositionRef.current.y,
               isPlayer: true,
               pieceType: (pieceType ?? "pawn") as ChessPieceType,
             }
@@ -13241,7 +13598,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               !prevEnemies.some(
                 (e) => e.id !== enemyId && e.x === c.x && e.y === c.y,
               ) &&
-              !(c.x === playerPosition.x && c.y === playerPosition.y),
+              !(
+                c.x === playerPositionRef.current.x &&
+                c.y === playerPositionRef.current.y
+              ),
           );
           let erX = enemy.x;
           let erY = enemy.y;
@@ -13727,7 +14087,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
             // Apply player AP drain
             if (res?.playerApModifier && res.playerApModifier !== 0) {
-              setCurrentBattleAp((prev) =>
+              setCurrentBattleApSynced((prev) =>
                 Math.max(0, prev + res.playerApModifier!),
               );
             }
@@ -13983,8 +14343,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           id: "player",
           side: "player",
           name: "player",
-          x: playerPosition.x,
-          y: playerPosition.y,
+          x: playerPositionRef.current.x,
+          y: playerPositionRef.current.y,
           hp: characterStats.hp,
           maxHp: characterStats.maxHp ?? characterStats.hp,
           level: characterStats.level ?? 1,
@@ -13999,7 +14359,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (e.id === enemyId) continue;
           aiOccupied.add(`${e.x},${e.y}`);
         }
-        aiOccupied.add(`${playerPosition.x},${playerPosition.y}`);
+        aiOccupied.add(
+          `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
+        );
         const aiBarriers = new Set(barrierTilesRef.current.keys());
         const aiPortals = new Set(
           (currentMap?.portals ?? []).map((p) => `${p.x},${p.y}`),
@@ -14740,14 +15102,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       activeMapModifierTypes,
       { log: (msg: string) => logDebugInfo("MODIFIER", msg), rng: Math.random },
     );
-    if (currentBattleAp < apCost) return;
+    if (currentBattleApRef.current < apCost) return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
     // Determine gridPos: player tile for heal spells (engine's heal branch
     // requires isPlayerTile), nearest-enemy tile otherwise.
     let gridPos: { x: number; y: number };
     if (isHealSpell) {
-      gridPos = { x: playerPosition.x, y: playerPosition.y };
+      gridPos = {
+        x: playerPositionRef.current.x,
+        y: playerPositionRef.current.y,
+      };
     } else {
       const effectiveRange = getEffectiveSpellRange(
         Math.max(1, Number(spell.range)),
@@ -14756,8 +15121,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       let nearest: (typeof enemies)[0] | null = null;
       let nearestDist = Number.POSITIVE_INFINITY;
       for (const e of enemies) {
-        const dx = Math.abs(e.x - playerPosition.x);
-        const dy = Math.abs(e.y - playerPosition.y);
+        const dx = Math.abs(e.x - playerPositionRef.current.x);
+        const dy = Math.abs(e.y - playerPositionRef.current.y);
         const dist = Math.max(dx, dy);
         if (dist <= effectiveRange && dist < nearestDist) {
           nearest = e;
@@ -14781,13 +15146,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     const castResult = resolvePlayerCast(spell, gridPos, playerSpellContext());
     if (castResult === "cast") {
-      setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
       challengeMaxApThisTurnRef.current += apCost;
       if (
         Math.max(
-          Math.abs(gridPos.x - playerPosition.x),
-          Math.abs(gridPos.y - playerPosition.y),
+          Math.abs(gridPos.x - playerPositionRef.current.x),
+          Math.abs(gridPos.y - playerPositionRef.current.y),
         ) > 2
       )
         challengeDirectHitRef.current = false;
@@ -14798,23 +15163,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
         setSpellCooldownVersion((v) => v + 1);
       }
-      if (currentBattleAp - apCost <= 0) {
+      if (currentBattleApRef.current - apCost <= 0) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
         spellRangeCacheRef.current.clear();
         setBattleActionMode("walk");
       }
     } else if (castResult === "fizzled") {
-      setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
       if (
         Math.max(
-          Math.abs(gridPos.x - playerPosition.x),
-          Math.abs(gridPos.y - playerPosition.y),
+          Math.abs(gridPos.x - playerPositionRef.current.x),
+          Math.abs(gridPos.y - playerPositionRef.current.y),
         ) > 2
       )
         challengeDirectHitRef.current = false;
-      if (currentBattleAp - apCost <= 0) {
+      if (currentBattleApRef.current - apCost <= 0) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
         spellRangeCacheRef.current.clear();
@@ -14824,14 +15189,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
       // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
       // owned by another task — do NOT touch it here.
-      setCurrentBattleAp((prev) => Math.max(0, prev - apCost));
+      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
       challengeMaxApThisTurnRef.current += apCost;
       if (spell.cooldown && spell.cooldown > 0) {
         spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
         setSpellCooldownVersion((v) => v + 1);
       }
-      if (currentBattleAp - apCost <= 0) {
+      if (currentBattleApRef.current - apCost <= 0) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
         spellRangeCacheRef.current.clear();
@@ -14843,13 +15208,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     inBattle,
     battleActionMode,
     activeSpells,
-    currentBattleAp,
     activeMapModifierTypes,
     enemies,
-    playerPosition,
     getEffectiveSpellRange,
     playerSpellContext,
     markFirstAction,
+    setCurrentBattleApSynced,
   ]);
   const [noTargetFlash, setNoTargetFlash] = useState(false);
   // Show game over modal
@@ -15643,7 +16007,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }}
               >
                 <span>
-                  📍 ({playerPosition.x}, {playerPosition.y})
+                  📍 ({playerPositionRef.current.x},{" "}
+                  {playerPositionRef.current.y})
                 </span>
                 <span style={{ color: "#74b9ff" }}>
                   {currentMap.levelZone?.name ?? "Unknown"}
@@ -16310,8 +16675,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             const range = spell ? Math.max(1, Number(spell.range)) : 0;
             return (
               Math.max(
-                Math.abs(e.x - playerPosition.x),
-                Math.abs(e.y - playerPosition.y),
+                Math.abs(e.x - playerPositionRef.current.x),
+                Math.abs(e.y - playerPositionRef.current.y),
               ) <= range
             );
           })

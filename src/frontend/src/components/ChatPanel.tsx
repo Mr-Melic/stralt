@@ -1,7 +1,12 @@
 import {
   Bug,
+  Copy,
+  Download,
+  FileText,
   MessageSquare,
+  Pause,
   PawPrint,
+  Play,
   Send,
   Settings,
   Sparkles,
@@ -14,11 +19,215 @@ import { useActor } from "../hooks/useActor";
 import type { ActiveEffect, BattleLogEntry } from "../types/gameTypes";
 import {
   type DebugLogEntry,
+  type LogCategory,
   type LogLevel,
   getDebugLogBuffer,
   subscribeDebugLogs,
+  subscribeDebugPaused,
+  toggleDebugPaused,
 } from "../utils/debugLogger";
 import DraggablePanel from "./DraggablePanel";
+
+/**
+ * SECTION 4 (build #325): app build/version constant for the export report.
+ * Approach: hardcoded constant APP_BUILD = "#325" — there is no version file in
+ * the workspace, so the build number is sourced from this constant. Bump it
+ * here when the build number changes.
+ */
+const APP_BUILD = "#325";
+
+/**
+ * SECTION 3 (build #325): the 14 category chips shown in the Debug tab. The
+ * list includes all 13 LogCategory values plus a synthetic "CLICK" chip
+ * (CLICK events are logged under the GENERAL category in this codebase, so the
+ * chip filters GENERAL entries whose message contains "click"/"CLICK"). Order
+ * is the canonical display order from the requirements.
+ */
+const DEBUG_CATEGORY_CHIPS: LogCategory[] = [
+  "BATTLE",
+  "SUMMON",
+  "SPELLS",
+  "TURN",
+  "MAP",
+  "RENDER",
+  "BACKEND",
+  "ERROR",
+  "CHALLENGE",
+  "BOSS",
+  "UI",
+  "GENERAL",
+  "MODIFIER",
+];
+
+/**
+ * SECTION 4 (build #325): optional debug context threaded in from the parent
+ * (GameFlow/WorldExploration). When absent, the export report degrades
+ * gracefully and reports "N/A" for unavailable fields. This keeps the prop
+ * contract additive — existing callers are unaffected.
+ */
+interface DebugContext {
+  characterName?: string;
+  characterLevel?: number | bigint;
+  characterSlot?: number;
+  currentMapId?: string;
+  inBattle?: boolean;
+  battlePhase?: string;
+  currentTurnEntry?: { id: string; side?: string; isSummon?: boolean } | null;
+  combatants?: Array<{
+    id: string;
+    side?: string;
+    isSummon?: boolean;
+    hp?: number | bigint;
+    pos?: { x: number; y: number };
+  }>;
+  turnOrderIds?: string[];
+}
+
+/**
+ * SECTION 4 (build #325): builds the plain-text export report body. Includes
+ * app build, timestamp, character summary, current map, battle state summary,
+ * and ALL buffered log lines (full messages + timestamps). Completeness beats
+ * beauty — every log line is included.
+ */
+function buildDebugReportText(
+  ctx: DebugContext | undefined,
+  buffer: readonly DebugLogEntry[],
+): string {
+  const now = new Date().toISOString();
+  const lines: string[] = [];
+  lines.push("=== AESTRALTO DEBUG REPORT ===");
+  lines.push(`App build: ${APP_BUILD}`);
+  lines.push(`Generated: ${now}`);
+  lines.push("");
+  lines.push("--- CHARACTER ---");
+  lines.push(`Name:  ${ctx?.characterName ?? "N/A"}`);
+  lines.push(
+    `Level: ${ctx?.characterLevel != null ? String(ctx.characterLevel) : "N/A"}`,
+  );
+  lines.push(
+    `Slot:  ${ctx?.characterSlot != null ? String(ctx.characterSlot) : "N/A"}`,
+  );
+  lines.push("");
+  lines.push("--- CURRENT MAP ---");
+  lines.push(`Map ID: ${ctx?.currentMapId ?? "N/A"}`);
+  lines.push("");
+  lines.push("--- BATTLE STATE ---");
+  lines.push(
+    `In battle: ${ctx?.inBattle != null ? String(ctx.inBattle) : "N/A"}`,
+  );
+  lines.push(`Phase: ${ctx?.battlePhase ?? "N/A"}`);
+  const turn = ctx?.currentTurnEntry;
+  lines.push(
+    `Current turn: ${
+      turn
+        ? `id=${turn.id} side=${turn.side ?? "?"} isSummon=${turn.isSummon ?? false}`
+        : "N/A"
+    }`,
+  );
+  const combatants = ctx?.combatants ?? [];
+  lines.push(`Combatants (${combatants.length}):`);
+  if (combatants.length === 0) {
+    lines.push("  (none reported)");
+  } else {
+    for (const c of combatants) {
+      const pos = c.pos ? `(${c.pos.x},${c.pos.y})` : "(?,?)";
+      lines.push(
+        `  id=${c.id} side=${c.side ?? "?"} isSummon=${c.isSummon ?? false} hp=${
+          c.hp != null ? String(c.hp) : "?"
+        } pos=${pos}`,
+      );
+    }
+  }
+  const turnIds = ctx?.turnOrderIds ?? [];
+  lines.push(
+    `Turn order ids (${turnIds.length}): ${turnIds.join(", ") || "(none)"}`,
+  );
+  lines.push("");
+  lines.push("--- DEBUG LOG BUFFER (ALL CATEGORIES) ---");
+  lines.push(`Total entries: ${buffer.length}`);
+  lines.push("");
+  for (const e of buffer) {
+    const d = new Date(e.ts);
+    const ts = d.toISOString();
+    const dataStr =
+      e.data !== undefined ? ` data=${JSON.stringify(e.data)}` : "";
+    lines.push(
+      `[${ts}] [${e.category}] ${e.level.toUpperCase()}: ${e.message}${dataStr}`,
+    );
+  }
+  lines.push("");
+  lines.push("=== END REPORT ===");
+  return lines.join("\n");
+}
+
+/**
+ * SECTION 4 (build #325): builds the styled HTML document for the print-optimized
+ * PDF export window. Same content as the .txt report but rendered as a
+ * print-friendly HTML page.
+ */
+function buildDebugReportHtml(
+  ctx: DebugContext | undefined,
+  buffer: readonly DebugLogEntry[],
+): string {
+  const now = new Date().toISOString();
+  const esc = (s: string): string =>
+    s
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  const combatantRows = (ctx?.combatants ?? [])
+    .map(
+      (c) =>
+        `<tr><td>${esc(c.id)}</td><td>${esc(c.side ?? "?")}</td><td>${c.isSummon ?? false}</td><td>${c.hp != null ? esc(String(c.hp)) : "?"}</td><td>${c.pos ? `(${c.pos.x},${c.pos.y})` : "(?,?)"}</td></tr>`,
+    )
+    .join("");
+  const logRows = buffer
+    .map(
+      (e) =>
+        `<tr><td>${esc(new Date(e.ts).toISOString())}</td><td>${esc(e.category)}</td><td>${esc(e.level.toUpperCase())}</td><td>${esc(e.message)}${e.data !== undefined ? ` <pre>${esc(JSON.stringify(e.data))}</pre>` : ""}</td></tr>`,
+    )
+    .join("");
+  const turnIds = (ctx?.turnOrderIds ?? []).join(", ") || "(none)";
+  const turn = ctx?.currentTurnEntry;
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Aestralto Debug Report ${APP_BUILD}</title>
+<style>
+  body { font-family: 'Courier New', monospace; color: #1a1a1a; background: #fff; margin: 24px; font-size: 11px; }
+  h1 { font-size: 16px; border-bottom: 2px solid #d8463f; padding-bottom: 6px; color: #8b1a1a; }
+  h2 { font-size: 13px; color: #8b1a1a; margin-top: 18px; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
+  table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  th, td { border: 1px solid #999; padding: 3px 6px; text-align: left; vertical-align: top; font-size: 10px; }
+  th { background: #f0e0e0; font-weight: 700; }
+  pre { margin: 2px 0 0 0; white-space: pre-wrap; word-break: break-all; font-size: 9px; color: #555; }
+  .meta { color: #555; font-size: 10px; margin-bottom: 4px; }
+  @media print { body { margin: 12px; } }
+</style></head><body>
+<h1>Aestralto Debug Report</h1>
+<div class="meta">App build: ${APP_BUILD}</div>
+<div class="meta">Generated: ${now}</div>
+<h2>Character</h2>
+<table><tr><th>Name</th><th>Level</th><th>Slot</th></tr>
+<tr><td>${esc(ctx?.characterName ?? "N/A")}</td><td>${ctx?.characterLevel != null ? esc(String(ctx.characterLevel)) : "N/A"}</td><td>${ctx?.characterSlot != null ? esc(String(ctx.characterSlot)) : "N/A"}</td></tr></table>
+<h2>Current Map</h2>
+<div>Map ID: ${esc(ctx?.currentMapId ?? "N/A")}</div>
+<h2>Battle State</h2>
+<table>
+<tr><th>In battle</th><th>Phase</th><th>Current turn</th></tr>
+<tr><td>${ctx?.inBattle != null ? String(ctx.inBattle) : "N/A"}</td><td>${esc(ctx?.battlePhase ?? "N/A")}</td><td>${
+    turn
+      ? `id=${esc(turn.id)} side=${esc(turn.side ?? "?")} isSummon=${turn.isSummon ?? false}`
+      : "N/A"
+  }</td></tr>
+</table>
+<h3>Combatants (${(ctx?.combatants ?? []).length})</h3>
+<table><tr><th>id</th><th>side</th><th>isSummon</th><th>hp</th><th>pos</th></tr>${combatantRows || '<tr><td colspan="5">(none reported)</td></tr>'}</table>
+<h3>Turn order ids</h3>
+<div>${esc(turnIds)}</div>
+<h2>Debug Log Buffer (ALL categories, ${buffer.length} entries)</h2>
+<table><tr><th>Timestamp</th><th>Category</th><th>Level</th><th>Message</th></tr>${logRows || '<tr><td colspan="4">(empty)</td></tr>'}</table>
+</body></html>`;
+}
 
 // Palette of 12 bright colors — excludes #7ec8e3 (self/light-blue)
 const CHAT_COLORS = [
@@ -172,6 +381,13 @@ interface ChatPanelProps {
   /** When true, suspends the message polling interval (e.g. during battle or map transition) */
   isPaused?: boolean;
   debugLogs?: string[];
+  /**
+   * SECTION 4 (build #325): optional context threaded from the parent
+   * (GameFlow/WorldExploration) for the debug export report. When absent the
+   * export degrades gracefully (reports "N/A"). Additive prop — does not break
+   * existing callers.
+   */
+  debugContext?: DebugContext;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -241,6 +457,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   userId,
   activeEffects = [],
   isPaused = false,
+  debugContext,
 }) => {
   const [isFolded, setIsFolded] = useState(false);
   const [activeChannel, setActiveChannel] = useState<Channel>("general");
@@ -256,6 +473,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const [expandedDebugIds, setExpandedDebugIds] = useState<Set<number>>(
     new Set(),
   );
+  // SECTION 5 (build #325): Debug tab advanced controls state.
+  // activeCategories — empty set means "no filter, show all". Non-empty means
+  // entry.category must be a member (union semantics across selected chips).
+  const [activeCategories, setActiveCategories] = useState<Set<LogCategory>>(
+    new Set(),
+  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isDebugPaused, setIsDebugPaused] = useState(false);
+  const [copyConfirm, setCopyConfirm] = useState(false);
   // Channel visibility (UI preference, persisted to localStorage).
   const [channelVisibility, setChannelVisibility] = useState<
     Record<Channel, boolean>
@@ -430,12 +656,45 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     const unsub = subscribeDebugLogs((entry) => {
       setDebugEntries((prev) => {
         const next = [...prev, entry];
-        if (next.length > 300) return next.slice(-300);
+        if (next.length > 2000) return next.slice(-2000);
         return next;
       });
     });
     return unsub;
   }, []);
+
+  // SECTION 5 (build #325): subscribe to debug-pause state so the toolbar
+  // toggle reflects the global pause flag maintained by debugLogger.
+  useEffect(() => {
+    const unsub = subscribeDebugPaused((paused) => {
+      setIsDebugPaused(paused);
+    });
+    return unsub;
+  }, []);
+
+  // SECTION 5 (build #325): filtered + reversed debug entries for display.
+  // Filter rules: (a) if activeCategories is non-empty, entry.category must be
+  // a member (union of selected chips); (b) if searchQuery is non-empty,
+  // entry.message must contain the substring (case-insensitive). Result is
+  // reversed so newest entries appear at the top.
+  const filteredDebugEntries = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return debugEntries
+      .filter((entry) => {
+        if (
+          activeCategories.size > 0 &&
+          !activeCategories.has(entry.category)
+        ) {
+          return false;
+        }
+        if (q.length > 0 && !entry.message.toLowerCase().includes(q)) {
+          return false;
+        }
+        return true;
+      })
+      .slice()
+      .reverse();
+  }, [debugEntries, activeCategories, searchQuery]);
 
   // Shift+D → open debug tab and unfold
   useEffect(() => {
@@ -1141,6 +1400,246 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     height: "100%",
                   }}
                 >
+                  {/* Debug tab controls toolbar — carved-stone dark slate with crimson accents */}
+                  <div
+                    data-ocid="chat.debug.toolbar"
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      alignItems: "center",
+                      padding: 8,
+                      marginBottom: 8,
+                      background: "#1a1d23",
+                      border: "1px solid #3a2a2a",
+                      borderRadius: 4,
+                      boxShadow:
+                        "inset 0 1px 0 rgba(255,255,255,0.04), 0 2px 4px rgba(0,0,0,0.4)",
+                    }}
+                  >
+                    {/* Filter chips: 'All' + per-category toggle */}
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.filter.all"
+                      onClick={() => setActiveCategories(new Set())}
+                      style={{
+                        padding: "3px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background:
+                          activeCategories.size === 0 ? "#c0392b" : "#2a2d33",
+                        color: activeCategories.size === 0 ? "#fff" : "#c0c0c0",
+                        border: "1px solid #4a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      All
+                    </button>
+                    {DEBUG_CATEGORY_CHIPS.map((cat) => {
+                      const active = activeCategories.has(cat);
+                      return (
+                        <button
+                          type="button"
+                          key={cat}
+                          data-ocid={`chat.debug.filter.${cat}`}
+                          onClick={() => {
+                            const next = new Set(activeCategories);
+                            if (next.has(cat)) {
+                              next.delete(cat);
+                            } else {
+                              next.add(cat);
+                            }
+                            setActiveCategories(next);
+                          }}
+                          style={{
+                            padding: "3px 8px",
+                            fontSize: 10,
+                            fontFamily: "monospace",
+                            cursor: "pointer",
+                            background: active ? "#c0392b" : "#2a2d33",
+                            color: active ? "#fff" : "#c0c0c0",
+                            border: "1px solid #4a3a3a",
+                            borderRadius: 3,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.5,
+                          }}
+                        >
+                          {cat}
+                        </button>
+                      );
+                    })}
+                    {/* Search box */}
+                    <input
+                      type="text"
+                      data-ocid="chat.debug.search_input"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search logs..."
+                      style={{
+                        flex: 1,
+                        minWidth: 120,
+                        padding: "4px 8px",
+                        fontSize: 11,
+                        fontFamily: "monospace",
+                        background: "#10131a",
+                        color: "#e0e0e0",
+                        border: "1px solid #4a3a3a",
+                        borderRadius: 3,
+                        outline: "none",
+                      }}
+                    />
+                    {/* Pause/Resume toggle */}
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.pause_button"
+                      onClick={() => {
+                        toggleDebugPaused();
+                      }}
+                      title={
+                        isDebugPaused
+                          ? "Resume log capture"
+                          : "Pause log capture"
+                      }
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background: isDebugPaused ? "#2a4a2a" : "#3a2a2a",
+                        color: "#e0e0e0",
+                        border: "1px solid #5a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {isDebugPaused ? <Play size={11} /> : <Pause size={11} />}
+                      {isDebugPaused ? "Resume" : "Pause"}
+                    </button>
+                    {/* Copy all (filtered) buffer to clipboard */}
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.copy_button"
+                      onClick={() => {
+                        const text = filteredDebugEntries
+                          .map(
+                            (e) =>
+                              (e as { message?: string; text?: string })
+                                .message ||
+                              (e as { text?: string }).text ||
+                              String(e),
+                          )
+                          .join("\n");
+                        navigator.clipboard.writeText(text).then(() => {
+                          setCopyConfirm(true);
+                          setTimeout(() => setCopyConfirm(false), 2000);
+                        });
+                      }}
+                      title="Copy filtered buffer to clipboard"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background: copyConfirm ? "#2a4a2a" : "#2a2d33",
+                        color: "#e0e0e0",
+                        border: "1px solid #4a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      <Copy size={11} />
+                      {copyConfirm ? "Copied!" : "Copy all"}
+                    </button>
+                    {/* PDF export approach: print-optimized window with auto window.print() — user picks Save as PDF */}
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.export_button"
+                      onClick={() => {
+                        const w = window.open("", "_blank");
+                        if (w) {
+                          w.document.write(
+                            buildDebugReportHtml(
+                              debugContext,
+                              getDebugLogBuffer(),
+                            ),
+                          );
+                          w.document.close();
+                          setTimeout(() => w.print(), 250);
+                        }
+                      }}
+                      title="Export debug report as PDF (print dialog)"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background: "#3a2a2a",
+                        color: "#e0e0e0",
+                        border: "1px solid #5a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      <Download size={11} />
+                      Export
+                    </button>
+                    {/* Plain .txt download fallback */}
+                    <button
+                      type="button"
+                      data-ocid="chat.debug.export_txt_button"
+                      onClick={() => {
+                        const blob = new Blob(
+                          [
+                            buildDebugReportText(
+                              debugContext,
+                              getDebugLogBuffer(),
+                            ),
+                          ],
+                          { type: "text/plain" },
+                        );
+                        const a = document.createElement("a");
+                        a.href = URL.createObjectURL(blob);
+                        a.download = `debug-export-${Date.now()}.txt`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                      }}
+                      title="Export debug report as plain text file"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: "4px 8px",
+                        fontSize: 10,
+                        fontFamily: "monospace",
+                        cursor: "pointer",
+                        background: "#2a2d33",
+                        color: "#e0e0e0",
+                        border: "1px solid #4a3a3a",
+                        borderRadius: 3,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      <FileText size={11} />
+                      Export .txt
+                    </button>
+                  </div>
                   {debugEntries.length === 0 ? (
                     <div
                       data-ocid="chat.debug.empty_state"
@@ -1161,107 +1660,103 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                         gap: 4,
                       }}
                     >
-                      {debugEntries
-                        .slice()
-                        .reverse()
-                        .map((entry, idx) => {
-                          const isExpanded = expandedDebugIds.has(idx);
-                          return (
-                            <button
-                              type="button"
-                              key={`${entry.ts}-${idx}`}
-                              data-ocid="chat.debug.entry"
+                      {filteredDebugEntries.map((entry, idx) => {
+                        const isExpanded = expandedDebugIds.has(idx);
+                        return (
+                          <button
+                            type="button"
+                            key={`${entry.ts}-${idx}`}
+                            data-ocid="chat.debug.entry"
+                            style={{
+                              padding: "4px 6px",
+                              borderBottom: "1px solid rgba(255,255,255,0.06)",
+                              cursor:
+                                entry.data !== undefined
+                                  ? "pointer"
+                                  : "default",
+                              background: "transparent",
+                              border: "none",
+                              textAlign: "left",
+                              width: "100%",
+                            }}
+                            onClick={() => {
+                              if (entry.data === undefined) return;
+                              setExpandedDebugIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(idx)) next.delete(idx);
+                                else next.add(idx);
+                                return next;
+                              });
+                            }}
+                            disabled={entry.data === undefined}
+                          >
+                            <div
                               style={{
-                                padding: "4px 6px",
-                                borderBottom:
-                                  "1px solid rgba(255,255,255,0.06)",
-                                cursor:
-                                  entry.data !== undefined
-                                    ? "pointer"
-                                    : "default",
-                                background: "transparent",
-                                border: "none",
-                                textAlign: "left",
-                                width: "100%",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                flexWrap: "wrap",
                               }}
-                              onClick={() => {
-                                if (entry.data === undefined) return;
-                                setExpandedDebugIds((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(idx)) next.delete(idx);
-                                  else next.add(idx);
-                                  return next;
-                                });
-                              }}
-                              disabled={entry.data === undefined}
                             >
-                              <div
+                              <span
                                 style={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: 6,
-                                  flexWrap: "wrap",
+                                  color: "rgba(160,160,170,0.6)",
+                                  fontSize: 10,
+                                  fontVariantNumeric: "tabular-nums",
                                 }}
                               >
-                                <span
-                                  style={{
-                                    color: "rgba(160,160,170,0.6)",
-                                    fontSize: 10,
-                                    fontVariantNumeric: "tabular-nums",
-                                  }}
-                                >
-                                  {formatDebugTime(entry.ts)}
-                                </span>
-                                <span
-                                  style={{
-                                    color: levelColor(entry.level),
-                                    fontWeight: 700,
-                                    fontSize: 9,
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.04em",
-                                  }}
-                                >
-                                  {entry.level}
-                                </span>
-                                <span
-                                  style={{
-                                    color: "rgba(200,190,200,0.5)",
-                                    fontSize: 9,
-                                    textTransform: "uppercase",
-                                    letterSpacing: "0.04em",
-                                  }}
-                                >
-                                  {entry.category}
-                                </span>
-                                <span
-                                  style={{
-                                    color: "rgba(235,235,245,0.85)",
-                                    fontSize: 11,
-                                  }}
-                                >
-                                  {entry.message}
-                                </span>
-                              </div>
-                              {isExpanded && entry.data !== undefined && (
-                                <pre
-                                  style={{
-                                    marginTop: 4,
-                                    padding: "4px 6px",
-                                    background: "rgba(0,0,0,0.3)",
-                                    borderRadius: 4,
-                                    fontSize: 10,
-                                    color: "rgba(200,200,210,0.7)",
-                                    whiteSpace: "pre-wrap",
-                                    wordBreak: "break-all",
-                                    overflowX: "auto",
-                                  }}
-                                >
-                                  {JSON.stringify(entry.data, null, 2)}
-                                </pre>
-                              )}
-                            </button>
-                          );
-                        })}
+                                {formatDebugTime(entry.ts)}
+                              </span>
+                              <span
+                                style={{
+                                  color: levelColor(entry.level),
+                                  fontWeight: 700,
+                                  fontSize: 9,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.04em",
+                                }}
+                              >
+                                {entry.level}
+                              </span>
+                              <span
+                                style={{
+                                  color: "rgba(200,190,200,0.5)",
+                                  fontSize: 9,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.04em",
+                                }}
+                              >
+                                {entry.category}
+                              </span>
+                              <span
+                                style={{
+                                  color: "rgba(235,235,245,0.85)",
+                                  fontSize: 11,
+                                }}
+                              >
+                                {entry.message}
+                              </span>
+                            </div>
+                            {isExpanded && entry.data !== undefined && (
+                              <pre
+                                style={{
+                                  marginTop: 4,
+                                  padding: "4px 6px",
+                                  background: "rgba(0,0,0,0.3)",
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                  color: "rgba(200,200,210,0.7)",
+                                  whiteSpace: "pre-wrap",
+                                  wordBreak: "break-all",
+                                  overflowX: "auto",
+                                }}
+                              >
+                                {JSON.stringify(entry.data, null, 2)}
+                              </pre>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

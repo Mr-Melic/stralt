@@ -26,6 +26,17 @@ export interface DokaEffect {
   ttl: number;
 }
 
+export interface FloatTextEffect {
+  type: "floattext";
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  born: number;
+  ttl: number;
+}
+
 export interface DamageEffect {
   type: "damage";
   x: number;
@@ -48,7 +59,7 @@ export interface DeathEffect {
   ttl: number;
 }
 
-export type Effect = DokaEffect | DamageEffect | DeathEffect;
+export type Effect = DokaEffect | DamageEffect | DeathEffect | FloatTextEffect;
 
 interface ShakeState {
   intensity: number;
@@ -57,7 +68,10 @@ interface ShakeState {
 
 const DAMAGE_TTL_MS = 900;
 const DOKA_TTL_MS = 1000;
+const FLOATTEXT_TTL_MS = 1200;
 const HITSTOP_RESTORE_MS = 75;
+// Default color for rejection / status float text — carved-stone crimson accent.
+const FLOATTEXT_DEFAULT_COLOR = "#e0664a";
 // Safety net: hard cap on combined live effects to prevent runaway growth.
 const MAX_LIVE_EFFECTS = 100;
 // DEV-only perf log cadence.
@@ -71,6 +85,7 @@ export class EffectsManager {
   dyingEntities: DeathEffect[] = [];
   damageNumbers: DamageEffect[] = [];
   dokaFloatTexts: DokaEffect[] = [];
+  floatTexts: FloatTextEffect[] = [];
 
   private hitStopUntil = 0;
   private nextId = 1;
@@ -117,6 +132,9 @@ export class EffectsManager {
         }
       } else if (eff.type === "doka") {
         eff.y -= 0.03 * dt;
+      } else if (eff.type === "floattext") {
+        // Rise slowly upward; ttl handled by the filter pass below.
+        eff.y -= 0.025 * dt;
       }
       survivors.push(eff);
     }
@@ -131,6 +149,7 @@ export class EffectsManager {
     this.dokaFloatTexts = this.dokaFloatTexts.filter(
       (e) => now - e.born < e.ttl,
     );
+    this.floatTexts = this.floatTexts.filter((e) => now - e.born < e.ttl);
 
     // Safety net: cap combined live effects at MAX_LIVE_EFFECTS.
     // Drop oldest (lowest `born`) across all arrays until under cap.
@@ -138,7 +157,8 @@ export class EffectsManager {
       this.activeEffects.length +
       this.damageNumbers.length +
       this.dyingEntities.length +
-      this.dokaFloatTexts.length;
+      this.dokaFloatTexts.length +
+      this.floatTexts.length;
     if (total > MAX_LIVE_EFFECTS) {
       const overflow = total - MAX_LIVE_EFFECTS;
       // Collect [born, array, ref] tuples, sort ascending by born, drop oldest.
@@ -156,6 +176,9 @@ export class EffectsManager {
       for (const e of this.dokaFloatTexts) {
         entries.push({ born: e.born, drop: () => this.removeDoka(e) });
       }
+      for (const e of this.floatTexts) {
+        entries.push({ born: e.born, drop: () => this.removeFloatText(e) });
+      }
       entries.sort((a, b) => a.born - b.born);
       for (let i = 0; i < overflow && i < entries.length; i++) {
         entries[i].drop();
@@ -171,7 +194,8 @@ export class EffectsManager {
           this.activeEffects.length +
           this.damageNumbers.length +
           this.dyingEntities.length +
-          this.dokaFloatTexts.length;
+          this.dokaFloatTexts.length +
+          this.floatTexts.length;
         console.debug("[PERF] live effects:", liveCount);
       }
     }
@@ -202,6 +226,13 @@ export class EffectsManager {
     const i = this.dokaFloatTexts.indexOf(e);
     if (i !== -1) {
       this.dokaFloatTexts.splice(i, 1);
+    }
+  }
+
+  private removeFloatText(e: FloatTextEffect): void {
+    const i = this.floatTexts.indexOf(e);
+    if (i !== -1) {
+      this.floatTexts.splice(i, 1);
     }
   }
 
@@ -259,6 +290,14 @@ export class EffectsManager {
           ctx.fillRect(-f.size / 2, -f.size / 2, f.size, f.size);
           ctx.restore();
         }
+        ctx.restore();
+      } else if (eff.type === "floattext") {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = eff.color;
+        ctx.font = "bold 13px ui-sans-serif, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(eff.text, eff.x, eff.y);
         ctx.restore();
       }
     }
@@ -376,11 +415,27 @@ export class EffectsManager {
     this.spawn(eff);
   }
 
+  spawnFloatText(x: number, y: number, text: string, color?: string): void {
+    const eff: FloatTextEffect = {
+      type: "floattext",
+      id: this.nextId++,
+      x,
+      y,
+      text,
+      color: color ?? FLOATTEXT_DEFAULT_COLOR,
+      born: performance.now(),
+      ttl: FLOATTEXT_TTL_MS,
+    };
+    this.floatTexts.push(eff);
+    this.spawn(eff);
+  }
+
   clear(): void {
     this.activeEffects = [];
     this.dyingEntities = [];
     this.damageNumbers = [];
     this.dokaFloatTexts = [];
+    this.floatTexts = [];
     this.hitFlashUntil.clear();
     this.shakeState.intensity = 0;
     this.timeScaleRef.current = 1.0;

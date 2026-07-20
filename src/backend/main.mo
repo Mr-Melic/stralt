@@ -17,7 +17,6 @@ import Float "mo:core/Float";
 import OQL "mo:caffeineai-oql";
 import Expose "mo:caffeineai-oql/Expose";
 import Text "mo:core/Text";
-import Migration "migration";
 
 
 
@@ -32,7 +31,8 @@ import Migration "migration";
 
 
 
-(with migration = Migration.run)
+
+
 actor {
     let accessControlState = AccessControl.initState();
     include MixinAuthorization(accessControlState);

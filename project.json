@@ -1,19 +1,20 @@
 {
-  "overview": "ÆSTRALTØ is an isometric tactical combat and world-exploration game with sprite-based enemies, draggable UI panels, procedural audio, and summon allies.",
+  "overview": "A tactical RPG with full cast-chain diagnostics, debug export, summon executor transparency, and magnetic UI panels.",
   "features": [
-    "Click a moving enemy's visible body to target it directly via per-frame sprite-rect hit-testing",
-    "Draggable UI panels with stronger magnetic snapping, live snap preview, and edge alignment",
-    "Panel layout saved to the backend and restored on relogin or a fresh device",
-    "Procedural WebAudio sound engine synthesizing twelve combat and pickup events with volume and mute controls",
-    "Summon allies that move and then cast or attack in the same turn"
+    "Structured attack diagnostics showing exactly where each cast dies",
+    "Visible on-tile rejection text for failed attacks",
+    "Debug export to PDF and text with battle state dump",
+    "Advanced debug controls with filters, search, pause, and copy-all",
+    "No-selection enemy click performs the basic physical attack",
+    "Summon executor dep audit with full Summons-tab logging",
+    "Panel-to-panel magnetic snapping on all four sides"
   ],
   "category": "game",
   "tags": [
-    "tactical-combat",
-    "isometric",
-    "procedural-audio",
-    "draggable-ui",
-    "internet-computer"
+    "tactical-rpg",
+    "debugging",
+    "diagnostics",
+    "ui"
   ],
-  "last_updated": "2026-07-20T15:48:26.197Z"
+  "last_updated": "2026-07-20T16:29:33.051Z"
 }

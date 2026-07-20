@@ -169,11 +169,14 @@ function computeSnapPosition(
 
   // ── TOP BAR SNAP ──────────────────────────────────────────────────────────
   // If the panel's top edge is within 60px of the bottom of the top UI bar
-  // (y=44), snap it flush just below the bar.
+  // (y=44), snap it flush just below the bar. Only apply when no panel-to-panel
+  // vertical snap already claimed the Y axis (bestSnapY) — otherwise the top-bar
+  // override would clobber a legitimate panel-to-panel snap near the top of the
+  // screen, which is the user-reported "only the top bar engages" symptom.
   const TOP_BAR_BOTTOM = 44;
   const TOP_BAR_SNAP_ZONE = 60;
   const TOP_BAR_SNAP_TARGET = TOP_BAR_BOTTOM + 4; // 4px gap below the bar
-  if (Math.abs(y - TOP_BAR_BOTTOM) < TOP_BAR_SNAP_ZONE) {
+  if (!bestSnapY && Math.abs(y - TOP_BAR_BOTTOM) < TOP_BAR_SNAP_ZONE) {
     y = TOP_BAR_SNAP_TARGET;
   }
 
