@@ -314,7 +314,24 @@ export function useMarkAchievementUnlocked() {
   return useMutation({
     mutationFn: async (achievementId: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).markAchievementUnlocked(achievementId);
+      console.log(
+        "[FEATS] UNLOCK: markAchievementUnlocked calling backend for",
+        achievementId,
+      );
+      const result = (actor as ActorAny).markAchievementUnlocked(achievementId);
+      result
+        .then((r: unknown) => {
+          console.log(
+            "[FEATS] UNLOCK: markAchievementUnlocked backend response =",
+            JSON.stringify(r, (_k, v) =>
+              typeof v === "bigint" ? v.toString() : v,
+            ),
+          );
+        })
+        .catch((e: unknown) => {
+          console.log("[FEATS] UNLOCK: markAchievementUnlocked error =", e);
+        });
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
@@ -329,12 +346,35 @@ export function useClaimAchievementReward() {
   return useMutation({
     mutationFn: async (achievementId: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).claimAchievementReward(achievementId);
+      console.log("[FEATS] CLAIM: claiming", achievementId);
+      const result = (actor as ActorAny).claimAchievementReward(achievementId);
+      result
+        .then((r: unknown) => {
+          console.log(
+            "[FEATS] CLAIM: backend response =",
+            JSON.stringify(r, (_k, v) =>
+              typeof v === "bigint" ? v.toString() : v,
+            ),
+          );
+        })
+        .catch((e: unknown) => {
+          console.log("[FEATS] CLAIM: backend error =", e);
+        });
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log(
+        "[FEATS] CLAIM: onSuccess fired, raw result =",
+        JSON.stringify(data, (_k, v) =>
+          typeof v === "bigint" ? v.toString() : v,
+        ),
+      );
       queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
       queryClient.invalidateQueries({ queryKey: ["characterSlots"] });
       queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+    },
+    onError: (error) => {
+      console.log("[FEATS] CLAIM: onError fired, error =", error);
     },
   });
 }

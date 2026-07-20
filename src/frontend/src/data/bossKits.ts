@@ -169,8 +169,12 @@ export const BOSS_KITS: Record<BossId, BossKit> = {
         spellId: "spell-frost-nova",
         role: "Dimensional frost erupts around him, slowing all nearby foes.",
       },
+      {
+        spellId: "starter-blast",
+        role: "Arcane void-bolt — chain lightning that arcs for 20 dmg, bouncing twice.",
+      },
     ],
-    phase1SpellIds: ["spell-swap", "spell-mirror"],
+    phase1SpellIds: ["spell-swap", "spell-mirror", "starter-blast"],
     phase2SpellIds: [
       "spell-swap",
       "spell-mirror",
@@ -227,8 +231,12 @@ export const BOSS_KITS: Record<BossId, BossKit> = {
         spellId: "spell-rallying-cry",
         role: "Promotion wail — heals 20 and buffs CHC by +15%.",
       },
+      {
+        spellId: "physical_attack",
+        role: "Pawn's desperate lunge — a basic 10-dmg strike, only RES applies.",
+      },
     ],
-    phase1SpellIds: ["spell-slow", "spell-weaken"],
+    phase1SpellIds: ["spell-slow", "spell-weaken", "physical_attack"],
     phase2SpellIds: [
       "spell-slow",
       "spell-weaken",
@@ -343,8 +351,12 @@ export const BOSS_KITS: Record<BossId, BossKit> = {
         spellId: "spell-frost-nova",
         role: "Merged form erupts in a midnight frost nova, slowing all nearby.",
       },
+      {
+        spellId: "spell-cursed-wound",
+        role: "Shadow-strike deals 22 dmg and halves the victim's healing — the bishop's dark touch.",
+      },
     ],
-    phase1SpellIds: ["spell-mirror", "spell-shadow-veil"],
+    phase1SpellIds: ["spell-mirror", "spell-shadow-veil", "spell-cursed-wound"],
     phase2SpellIds: [
       "spell-mirror",
       "spell-shadow-veil",
@@ -459,8 +471,12 @@ export const BOSS_KITS: Record<BossId, BossKit> = {
         spellId: "spell-frost-nova",
         role: "Resonance shockwave erupts, slowing all nearby foes.",
       },
+      {
+        spellId: "physical_attack",
+        role: "Fortress crush — a heavy 10-dmg melee strike, only RES applies.",
+      },
     ],
-    phase1SpellIds: ["spell-iron-skin", "starter-shield"],
+    phase1SpellIds: ["spell-iron-skin", "starter-shield", "physical_attack"],
     phase2SpellIds: [
       "spell-iron-skin",
       "starter-shield",
@@ -493,7 +509,12 @@ export const BOSS_KITS: Record<BossId, BossKit> = {
         role: "Raises a spectral wisp that mends his throne.",
       },
     ],
-    phase1SpellIds: ["spell-swap", "spell-mark", "spell-shadow-veil"],
+    phase1SpellIds: [
+      "spell-swap",
+      "spell-mark",
+      "spell-shadow-veil",
+      "spell-cursed-wound",
+    ],
     phase2SpellIds: [
       "spell-swap",
       "spell-mark",
@@ -522,8 +543,12 @@ export const BOSS_KITS: Record<BossId, BossKit> = {
         spellId: "spell-swap",
         role: "Trades places with the player, mirroring their position.",
       },
+      {
+        spellId: "starter-blast",
+        role: "Mirror-shard spray — chain lightning arcs for 20 dmg, bouncing twice.",
+      },
     ],
-    phase1SpellIds: ["spell-mirror", "spell-mark"],
+    phase1SpellIds: ["spell-mirror", "spell-mark", "starter-blast"],
     phase2SpellIds: [
       "spell-mirror",
       "spell-mark",
@@ -585,7 +610,12 @@ export const BOSS_KITS: Record<BossId, BossKit> = {
         role: "Pages of doom — 22 dmg and halves incoming healing.",
       },
     ],
-    phase1SpellIds: ["spell-mark", "spell-barrier", "summon-archer"],
+    phase1SpellIds: [
+      "spell-mark",
+      "spell-barrier",
+      "summon-archer",
+      "spell-cursed-wound",
+    ],
     phase2SpellIds: [
       "spell-mark",
       "spell-barrier",

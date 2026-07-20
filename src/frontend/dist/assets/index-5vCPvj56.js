@@ -32426,9 +32426,13 @@ const BOSS_KITS = {
       {
         spellId: "spell-frost-nova",
         role: "Dimensional frost erupts around him, slowing all nearby foes."
+      },
+      {
+        spellId: "starter-blast",
+        role: "Arcane void-bolt — chain lightning that arcs for 20 dmg, bouncing twice."
       }
     ],
-    phase1SpellIds: ["spell-swap", "spell-mirror"],
+    phase1SpellIds: ["spell-swap", "spell-mirror", "starter-blast"],
     phase2SpellIds: [
       "spell-swap",
       "spell-mirror",
@@ -32482,9 +32486,13 @@ const BOSS_KITS = {
       {
         spellId: "spell-rallying-cry",
         role: "Promotion wail — heals 20 and buffs CHC by +15%."
+      },
+      {
+        spellId: "physical_attack",
+        role: "Pawn's desperate lunge — a basic 10-dmg strike, only RES applies."
       }
     ],
-    phase1SpellIds: ["spell-slow", "spell-weaken"],
+    phase1SpellIds: ["spell-slow", "spell-weaken", "physical_attack"],
     phase2SpellIds: [
       "spell-slow",
       "spell-weaken",
@@ -32594,9 +32602,13 @@ const BOSS_KITS = {
       {
         spellId: "spell-frost-nova",
         role: "Merged form erupts in a midnight frost nova, slowing all nearby."
+      },
+      {
+        spellId: "spell-cursed-wound",
+        role: "Shadow-strike deals 22 dmg and halves the victim's healing — the bishop's dark touch."
       }
     ],
-    phase1SpellIds: ["spell-mirror", "spell-shadow-veil"],
+    phase1SpellIds: ["spell-mirror", "spell-shadow-veil", "spell-cursed-wound"],
     phase2SpellIds: [
       "spell-mirror",
       "spell-shadow-veil",
@@ -32706,9 +32718,13 @@ const BOSS_KITS = {
       {
         spellId: "spell-frost-nova",
         role: "Resonance shockwave erupts, slowing all nearby foes."
+      },
+      {
+        spellId: "physical_attack",
+        role: "Fortress crush — a heavy 10-dmg melee strike, only RES applies."
       }
     ],
-    phase1SpellIds: ["spell-iron-skin", "starter-shield"],
+    phase1SpellIds: ["spell-iron-skin", "starter-shield", "physical_attack"],
     phase2SpellIds: [
       "spell-iron-skin",
       "starter-shield",
@@ -32740,7 +32756,12 @@ const BOSS_KITS = {
         role: "Raises a spectral wisp that mends his throne."
       }
     ],
-    phase1SpellIds: ["spell-swap", "spell-mark", "spell-shadow-veil"],
+    phase1SpellIds: [
+      "spell-swap",
+      "spell-mark",
+      "spell-shadow-veil",
+      "spell-cursed-wound"
+    ],
     phase2SpellIds: [
       "spell-swap",
       "spell-mark",
@@ -32767,9 +32788,13 @@ const BOSS_KITS = {
       {
         spellId: "spell-swap",
         role: "Trades places with the player, mirroring their position."
+      },
+      {
+        spellId: "starter-blast",
+        role: "Mirror-shard spray — chain lightning arcs for 20 dmg, bouncing twice."
       }
     ],
-    phase1SpellIds: ["spell-mirror", "spell-mark"],
+    phase1SpellIds: ["spell-mirror", "spell-mark", "starter-blast"],
     phase2SpellIds: [
       "spell-mirror",
       "spell-mark",
@@ -32829,7 +32854,12 @@ const BOSS_KITS = {
         role: "Pages of doom — 22 dmg and halves incoming healing."
       }
     ],
-    phase1SpellIds: ["spell-mark", "spell-barrier", "summon-archer"],
+    phase1SpellIds: [
+      "spell-mark",
+      "spell-barrier",
+      "summon-archer",
+      "spell-cursed-wound"
+    ],
     phase2SpellIds: [
       "spell-mark",
       "spell-barrier",
@@ -33937,7 +33967,23 @@ function useMarkAchievementUnlocked() {
   return useMutation({
     mutationFn: async (achievementId) => {
       if (!actor) throw new Error("Actor not available");
-      return actor.markAchievementUnlocked(achievementId);
+      console.log(
+        "[FEATS] UNLOCK: markAchievementUnlocked calling backend for",
+        achievementId
+      );
+      const result = actor.markAchievementUnlocked(achievementId);
+      result.then((r2) => {
+        console.log(
+          "[FEATS] UNLOCK: markAchievementUnlocked backend response =",
+          JSON.stringify(
+            r2,
+            (_k2, v2) => typeof v2 === "bigint" ? v2.toString() : v2
+          )
+        );
+      }).catch((e) => {
+        console.log("[FEATS] UNLOCK: markAchievementUnlocked error =", e);
+      });
+      return result;
     },
     onSuccess: () => {
       queryClient2.invalidateQueries({ queryKey: ["playerAchievements"] });
@@ -33950,12 +33996,35 @@ function useClaimAchievementReward() {
   return useMutation({
     mutationFn: async (achievementId) => {
       if (!actor) throw new Error("Actor not available");
-      return actor.claimAchievementReward(achievementId);
+      console.log("[FEATS] CLAIM: claiming", achievementId);
+      const result = actor.claimAchievementReward(achievementId);
+      result.then((r2) => {
+        console.log(
+          "[FEATS] CLAIM: backend response =",
+          JSON.stringify(
+            r2,
+            (_k2, v2) => typeof v2 === "bigint" ? v2.toString() : v2
+          )
+        );
+      }).catch((e) => {
+        console.log("[FEATS] CLAIM: backend error =", e);
+      });
+      return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log(
+        "[FEATS] CLAIM: onSuccess fired, raw result =",
+        JSON.stringify(
+          data,
+          (_k2, v2) => typeof v2 === "bigint" ? v2.toString() : v2
+        )
+      );
       queryClient2.invalidateQueries({ queryKey: ["playerAchievements"] });
       queryClient2.invalidateQueries({ queryKey: ["characterSlots"] });
       queryClient2.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+    },
+    onError: (error) => {
+      console.log("[FEATS] CLAIM: onError fired, error =", error);
     }
   });
 }
@@ -34534,8 +34603,21 @@ const AchievementsPanel = ({
     (achievement) => {
       claimMut.mutate(achievement.id, {
         onSuccess: (result) => {
+          console.log(
+            "[FEATS] CLAIM: handleClaim onSuccess raw result =",
+            JSON.stringify(
+              result,
+              (_k2, v2) => typeof v2 === "bigint" ? v2.toString() : v2
+            )
+          );
           if ("ok" in result) {
             const granted = Number(result.ok);
+            console.log(
+              "[FEATS] CLAIM: #ok granted amount =",
+              granted,
+              "for",
+              achievement.id
+            );
             queryClient2.setQueryData(
               ["playerAchievements"],
               (old) => old == null ? void 0 : old.map(
@@ -34547,6 +34629,12 @@ const AchievementsPanel = ({
             onDokaBalanceChange(dokaBalance + granted);
             ue.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
           } else if ("err" in result) {
+            console.log(
+              "[FEATS] CLAIM: #err message =",
+              result.err,
+              "for",
+              achievement.id
+            );
             rollbackClaimed(achievement.id);
             ue.error(`Failed to claim reward: ${result.err}`);
           }
@@ -34659,6 +34747,21 @@ const AchievementsPanel = ({
                     const p2 = getProgress(cfg.id);
                     const unlocked = (p2 == null ? void 0 : p2.unlocked) ?? false;
                     const claimed = (p2 == null ? void 0 : p2.claimed) ?? false;
+                    console.log(
+                      "[FEATS] LIST: achievement",
+                      cfg.id,
+                      "claimed =",
+                      p2 == null ? void 0 : p2.claimed,
+                      "(unlocked =",
+                      p2 == null ? void 0 : p2.unlocked,
+                      ")"
+                    );
+                    if (claimed) {
+                      console.log(
+                        "[FEATS] LIST: claimed-row render conditional TRUE for",
+                        cfg.id
+                      );
+                    }
                     return /* @__PURE__ */ jsxRuntimeExports.jsxs(
                       "div",
                       {
@@ -34846,9 +34949,6 @@ const ENEMY_THREAT_VALUES = {
 const AI_OVERKILL_SPILL_FRACTION = 0.5;
 const AI_LOS_REPOSITION_STEP_BUDGET = 2;
 const AI_BACKLINE_GUARD_DISTANCE = 1;
-const AI_KAMIKAZE_MIN_TARGETS = 2;
-const AI_KAMIKAZE_LOW_HP_PCT = 0.3;
-const AI_KAMIKAZE_BLAST_RADIUS = 2;
 const ENEMY_SUMMONER_CHANCE_BASE = 0.12;
 const ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE = 0.02;
 const ENEMY_SUMMON_CAP = 2;
@@ -50086,32 +50186,6 @@ function activeHostilesRemaining(enemies) {
 function despawnSummons(enemies) {
   return enemies.filter((e) => !e.isSummon);
 }
-function removeCombatantFromTurnQueue(turnOrder, turnOrderRef, currentTurnIndexRef, deadId, setTurnOrder) {
-  const removedIdx = turnOrder.findIndex((c2) => c2.id === deadId);
-  if (removedIdx === -1) {
-    turnOrderRef.current = turnOrder;
-    return;
-  }
-  const newOrder = turnOrder.filter((c2) => c2.id !== deadId);
-  let newIdx;
-  if (newOrder.length === 0) {
-    newIdx = 0;
-  } else if (removedIdx < currentTurnIndexRef.current) {
-    newIdx = currentTurnIndexRef.current - 1;
-  } else if (removedIdx === currentTurnIndexRef.current) {
-    newIdx = removedIdx % newOrder.length;
-  } else {
-    newIdx = currentTurnIndexRef.current;
-  }
-  if (newIdx < 0) {
-    newIdx = 0;
-  } else if (newIdx >= newOrder.length && newOrder.length > 0) {
-    newIdx = newIdx % newOrder.length;
-  }
-  currentTurnIndexRef.current = newIdx;
-  turnOrderRef.current = newOrder;
-  setTurnOrder(() => newOrder);
-}
 function getAoETargets(args) {
   const {
     spell,
@@ -50193,15 +50267,10 @@ function applyDamageToEnemy(args) {
     targetsToHit,
     activeEffectsRef,
     turnOrderRef,
-    currentTurnIndexRef,
     bossStateRef,
     enemyHpMap,
-    leaderEnemyIdRef,
     battleHitsRef,
     battleCritHitsRef,
-    battleLeaderSlainRef,
-    leaderDiedRef,
-    leaderBoostPercent,
     calculatePlayerDamage,
     logBattleEntry,
     calcEnemyMaxHp,
@@ -50210,15 +50279,12 @@ function applyDamageToEnemy(args) {
     enemies,
     enemyTakesDamage,
     playSound: playSound2,
-    setEnemies,
-    triggerLeaderDeathAnimation,
-    setLeaderBoostMultiplier,
     setCharacterStats
   } = deps;
   const targetEnemy = hitTarget.id === "__player__" ? void 0 : hitTarget;
   let finalDmg;
   if (hitTarget.id !== "__player__" && targetEnemy) {
-    const { finalDamage, breakdown } = calculatePlayerDamage(
+    const { finalDamage } = calculatePlayerDamage(
       preCritDmgBM,
       spell.id,
       targetEnemy,
@@ -50228,7 +50294,6 @@ function applyDamageToEnemy(args) {
       activeEffectsRef.current
     );
     finalDmg = finalDamage;
-    logBattleEntry(breakdown, "#fbbf24");
   } else {
     finalDmg = preCritDmgBM;
   }
@@ -50290,10 +50355,6 @@ function applyDamageToEnemy(args) {
   }
   const enemyPrevHp = enemyHpMap[hitTarget.id] ?? calcEnemyMaxHp(hitTarget.level);
   const enemyNewHp = Math.max(0, enemyPrevHp - finalDmg);
-  logBattleEntry(
-    `${hitTarget.pieceType} lost ${finalDmg} HP (now ${enemyNewHp}/${calcEnemyMaxHp(hitTarget.level)})`,
-    "#a855f7"
-  );
   setEnemyHpMap((prev) => ({
     ...prev,
     [hitTarget.id]: enemyNewHp
@@ -50335,52 +50396,6 @@ function applyDamageToEnemy(args) {
       ...prev,
       hp: Math.max(0, prev.hp - finalDmg)
     }));
-  } else if (enemyNewHp <= 0) {
-    playSound2("enemy_death", hitTarget.pieceType);
-    removeCombatantFromTurnQueue(
-      turnOrderRef.current,
-      turnOrderRef,
-      currentTurnIndexRef,
-      hitTarget.id,
-      setTurnOrder
-    );
-    setEnemies((prev) => prev.filter((e) => e.id !== hitTarget.id));
-    playSound2("leader_boost");
-    if (hitTarget.id === leaderEnemyIdRef.current) {
-      battleLeaderSlainRef.current = true;
-      triggerLeaderDeathAnimation(hitTarget.x, hitTarget.y);
-      logBattleEntry(
-        "👑 LEADER DEFEATED! Remaining enemies act erratically!",
-        "#ffd700"
-      );
-      leaderDiedRef.current = true;
-    }
-    const isEnemySideDeath = hitTarget.side !== "player" && !(hitTarget.isSummon === true && hitTarget.side === "player");
-    if (leaderEnemyIdRef.current && hitTarget.id !== leaderEnemyIdRef.current && isEnemySideDeath) {
-      const boostFactor = 1 + leaderBoostPercent / 100;
-      setLeaderBoostMultiplier((prev) => prev * boostFactor);
-      setTurnOrder(
-        (prev) => prev.map(
-          (c2) => c2.id === leaderEnemyIdRef.current ? {
-            ...c2,
-            maxHp: Math.round(c2.maxHp * boostFactor),
-            hp: Math.round((enemyHpMap[c2.id] ?? c2.hp) * boostFactor)
-          } : c2
-        )
-      );
-      setEnemyHpMap((prev) => {
-        const lid = leaderEnemyIdRef.current;
-        if (!lid || !prev[lid]) return prev;
-        return {
-          ...prev,
-          [lid]: Math.round(prev[lid] * boostFactor)
-        };
-      });
-      logBattleEntry(
-        `👑 [LEADER] gains +${leaderBoostPercent}% stats from ally death!`,
-        "#ffd700"
-      );
-    }
   }
   if (isDrainSpell && hitTarget === targetsToHit[0]) {
     const drainPercent = spell.drainPercent || 0.5;
@@ -50396,6 +50411,32 @@ function applyDamageToEnemy(args) {
       logBattleEntry(`${spell.name} drained ${healAmt} HP!`, "#22c55e");
     }
   }
+}
+function removeCombatantFromTurnQueue(turnOrder, turnOrderRef, currentTurnIndexRef, deadId, setTurnOrder) {
+  const removedIdx = turnOrder.findIndex((c2) => c2.id === deadId);
+  if (removedIdx === -1) {
+    turnOrderRef.current = turnOrder;
+    return;
+  }
+  const newOrder = turnOrder.filter((c2) => c2.id !== deadId);
+  let newIdx;
+  if (newOrder.length === 0) {
+    newIdx = 0;
+  } else if (removedIdx < currentTurnIndexRef.current) {
+    newIdx = currentTurnIndexRef.current - 1;
+  } else if (removedIdx === currentTurnIndexRef.current) {
+    newIdx = removedIdx % newOrder.length;
+  } else {
+    newIdx = currentTurnIndexRef.current;
+  }
+  if (newIdx < 0) {
+    newIdx = 0;
+  } else if (newIdx >= newOrder.length && newOrder.length > 0) {
+    newIdx = newIdx % newOrder.length;
+  }
+  currentTurnIndexRef.current = newIdx;
+  turnOrderRef.current = newOrder;
+  setTurnOrder(() => newOrder);
 }
 function toCombatantEntry(c2) {
   const rich = c2;
@@ -50564,6 +50605,45 @@ function resetCombatantStore(ctx) {
 }
 function getLiveCombatants(ctx) {
   return ctx.combatantsRef.current;
+}
+function processCombatantDeath(id, ctx) {
+  var _a3;
+  const combatant = ctx.getCombatantById(id);
+  if (combatant === void 0) {
+    return false;
+  }
+  const c2 = combatant;
+  const displayName = c2.name ?? c2.pieceType ?? "Enemy";
+  const x3 = c2.x ?? 0;
+  const y2 = c2.y ?? 0;
+  const isLeader = id === ctx.leaderEnemyIdRef.current;
+  (_a3 = ctx.effectsManagerRef.current) == null ? void 0 : _a3.triggerDeath(id);
+  ctx.logBattleEntry(`${displayName} is defeated`, "#ef4444");
+  removeCombatant(ctx.combatantStoreCtx, id);
+  ctx.setEnemies(
+    (prev) => prev.filter((e) => e.id !== id)
+  );
+  const deadSide = c2.side;
+  const leaderId = ctx.leaderEnemyIdRef.current;
+  const isEnemySideDeath = deadSide === "enemy" && leaderId !== null && leaderId !== id;
+  if (isEnemySideDeath) {
+    const leader = leaderId !== null ? ctx.getCombatantById(leaderId) : void 0;
+    if (leader !== void 0) {
+      ctx.setLeaderBoostMultiplier((prev) => prev + ctx.leaderBoostPercent);
+      const leaderName = leader.name ?? leader.pieceType ?? "Leader";
+      ctx.logBattleEntry(
+        `${leaderName} rallies — boost +${ctx.leaderBoostPercent}%`,
+        "#f59e0b"
+      );
+    }
+  }
+  if (isLeader) {
+    ctx.leaderDiedRef.current = true;
+    ctx.battleLeaderSlainRef.current = true;
+    ctx.triggerLeaderDeathAnimation(x3, y2);
+    ctx.playSound("enemy_death");
+  }
+  return true;
 }
 function makeStackId(effect) {
   return `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -50917,13 +50997,6 @@ function findNearestFreeCell(origin, ctx, maxRadius) {
   }
   return null;
 }
-const SUMMON_KIT = {
-  hunter: ["physical_attack", "spell-venom-strike"],
-  guardian: ["starter-shield", "spell-iron-skin"],
-  archer: ["starter-poison", "spell-slow"],
-  bomber: ["spell-inferno"],
-  healer: ["starter-heal", "spell-rallying-cry"]
-};
 const ENEMY_KITS = {
   // Pawn: basic melee; gains venom-strike at higher zones.
   pawn: (z2) => z2 >= 1 ? ["physical_attack", "spell-venom-strike"] : ["physical_attack"],
@@ -50947,21 +51020,6 @@ const ENEMY_KITS = {
 function buildEnemyKit(pieceType, levelZone) {
   const builder = ENEMY_KITS[pieceType] ?? ENEMY_KITS.pawn;
   return builder(Math.max(0, Math.floor(levelZone)));
-}
-function inferSummonArchetype(summon) {
-  const raw = (summon.summonAI ?? "").toLowerCase();
-  if (raw === "kiter") return "archer";
-  if (raw === "kamikaze") return "bomber";
-  if (raw === "hunter" || raw === "guardian" || raw === "archer" || raw === "bomber" || raw === "healer") {
-    return raw;
-  }
-  const pt = (summon.name ?? "").toLowerCase();
-  if (pt.includes("wolf")) return "hunter";
-  if (pt.includes("golem")) return "guardian";
-  if (pt.includes("wisp")) return "healer";
-  if (pt.includes("archer")) return "archer";
-  if (pt.includes("bomber")) return "bomber";
-  return "hunter";
 }
 const RETREAT_COLOR = "#ef4444";
 const FLANK_COLOR = "#ef4444";
@@ -51266,13 +51324,6 @@ function backlineGuardCell(ward, threat, ctx, reachable) {
   }
   if (!reachable.has(key(gx, gy))) return null;
   return guard;
-}
-function countTargetsInBlast(center, opponents, radius) {
-  let count2 = 0;
-  for (const c2 of opponents) {
-    if (chebyshev(center, { x: c2.x, y: c2.y }) <= radius) count2++;
-  }
-  return count2;
 }
 function logIntent(archetype, action, target, reason) {
   logDebugInfo("TURN", "intent", { archetype, action, target, reason });
@@ -51964,81 +52015,6 @@ function decideEnemyAction(enemy, ctx) {
       return decideGeneric(ctx, prioritizedOpponents, reachable);
   }
 }
-function summonToCombatant(summon) {
-  return {
-    id: summon.id,
-    side: summon.side === "player" ? "player" : "enemy",
-    isSummon: true,
-    summonAI: summon.summonAI,
-    name: summon.pieceType,
-    x: summon.x,
-    y: summon.y,
-    hp: summon.hp,
-    maxHp: summon.maxHp,
-    level: summon.level
-  };
-}
-function findKitSpell(spellId, ctx) {
-  const fromAvailable = ctx.availableSpells.find((s2) => s2.id === spellId);
-  if (fromAvailable) return fromAvailable;
-  const fromAssigned = ctx.assignedSpells.find((s2) => s2.id === spellId);
-  return fromAssigned ?? null;
-}
-function decideSummonAction(summon, ctx) {
-  var _a3;
-  const archetype = inferSummonArchetype(summonToCombatant(summon));
-  const origin = { x: summon.x, y: summon.y };
-  const reachable = computeReachable(origin, ctx);
-  const summonSide = summon.side === "player" ? "player" : "enemy";
-  const opponents = ctx.combatants.filter(
-    (c2) => c2.side !== summonSide && c2.id !== summon.id
-  );
-  const allies = ctx.combatants.filter(
-    (c2) => c2.side === summonSide && c2.id !== summon.id
-  );
-  let action;
-  switch (archetype) {
-    case "hunter":
-      action = decideSummonHunter(summon, ctx, opponents, reachable, origin);
-      break;
-    case "guardian":
-      action = decideSummonGuardian(
-        summon,
-        ctx,
-        allies,
-        opponents,
-        reachable,
-        origin
-      );
-      break;
-    case "archer":
-      action = decideSummonArcher(summon, ctx, opponents, reachable, origin);
-      break;
-    case "bomber":
-      action = decideSummonBomber(summon, ctx, opponents, reachable, origin);
-      break;
-    case "healer":
-      action = decideSummonHealer(
-        summon,
-        ctx,
-        allies,
-        opponents,
-        reachable,
-        origin
-      );
-      break;
-    default:
-      action = decideSummonHunter(summon, ctx, opponents, reachable, origin);
-      break;
-  }
-  logDebugInfo("SUMMON", "SUMMON-DECIDE", {
-    archetype,
-    kind: action.kind,
-    spellId: ((_a3 = action.spell) == null ? void 0 : _a3.id) ?? "none",
-    targetId: action.targetId ?? "none"
-  });
-  return action;
-}
 function decideSummonerAction(enemy, ctx) {
   const summonSpell = (ctx.assignedSpells ?? []).find(
     (s2) => s2.isSummon === true && s2.usableByEnemy !== false
@@ -52096,505 +52072,6 @@ function decideSummonerAction(enemy, ctx) {
     destination: { x: midX, y: midY },
     intent: "summon",
     intentColor: "#ef4444",
-    retreating: false
-  };
-}
-function decideSummonHunter(summon, ctx, opponents, reachable, origin) {
-  const kit = SUMMON_KIT.hunter;
-  if (opponents.length === 0) {
-    logIntent("hunter", "hold", null, "no-target");
-    return {
-      archetype: "generic",
-      destination: origin,
-      spell: null,
-      targetId: null,
-      kind: "skip",
-      intent: "hold",
-      intentColor: SKIP_COLOR,
-      retreating: false
-    };
-  }
-  const venom = findKitSpell(kit[1], ctx);
-  const scored = scoreTargets(opponents, ctx, venom);
-  const target = scored[0];
-  const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist2 = chebyshev(origin, targetCell);
-  if (venom && dist2 <= Number(venom.range)) {
-    const los = venom.lineOfSight === false ? true : ctx.hasLineOfSight(origin, targetCell);
-    if (los) {
-      const lethal = applyLethalLookahead(scored, ctx, venom);
-      ctx.log(
-        `${summon.pieceType} venom-strikes ${lethal.combatant.name}!`,
-        CAST_COLOR
-      );
-      logIntent("hunter", "cast", lethal.combatant.id, "venom-strike");
-      return {
-        archetype: "generic",
-        destination: origin,
-        spell: venom,
-        targetId: lethal.combatant.id,
-        kind: "cast",
-        intent: "venom-strike",
-        intentColor: CAST_COLOR,
-        retreating: false
-      };
-    }
-  }
-  if (dist2 <= 1) {
-    const lethal = applyLethalLookahead(scored, ctx, null);
-    ctx.log(`${summon.pieceType} bites ${lethal.combatant.name}!`, CAST_COLOR);
-    logIntent("hunter", "melee", lethal.combatant.id, "physical-attack");
-    return {
-      archetype: "generic",
-      destination: origin,
-      spell: null,
-      targetId: lethal.combatant.id,
-      kind: "melee",
-      intent: "physical-attack",
-      intentColor: CAST_COLOR,
-      retreating: false
-    };
-  }
-  const dest = stepToward(origin, targetCell, ctx, reachable);
-  if (dest.x !== origin.x || dest.y !== origin.y) {
-    ctx.log(`${summon.pieceType} stalks ${target.combatant.name}`, MOVE_COLOR);
-    logIntent("hunter", "advance", target.combatant.id, "stalk");
-  } else {
-    logIntent("hunter", "hold", target.combatant.id, "blocked");
-  }
-  return {
-    archetype: "generic",
-    destination: dest,
-    spell: null,
-    targetId: null,
-    kind: "move",
-    intent: "advance",
-    intentColor: MOVE_COLOR,
-    retreating: false
-  };
-}
-function scoreAlly(ally, summon, archetype, action) {
-  const urgency = (1 - hpFrac(ally)) * ENEMY_UTILITY_WEIGHTS.wLowHp;
-  const threatKey = (ally.summonAI ?? "").toLowerCase() || "default";
-  const threatValue2 = ENEMY_THREAT_VALUES[threatKey] ?? ENEMY_THREAT_VALUES.default;
-  const threat = threatValue2 * ENEMY_UTILITY_WEIGHTS.wThreat;
-  const dist2 = chebyshev(
-    { x: summon.x, y: summon.y },
-    { x: ally.x, y: ally.y }
-  );
-  const maxDist = Math.max(1, WORLD_GRID_SIZE * 2);
-  const proximity = (1 - Math.min(1, dist2 / maxDist)) * ENEMY_UTILITY_WEIGHTS.wProximity;
-  const score = urgency + threat + proximity;
-  emitAllyTargetLog(summon, archetype, ally, action, score);
-  return score;
-}
-function emitAllyTargetLog(summon, archetype, allyTarget, action, score) {
-  logDebugInfo("SUMMON", "ally-target", {
-    summon: summon.pieceType,
-    archetype,
-    allyTarget: allyTarget.name,
-    allyId: allyTarget.id,
-    action,
-    score: Math.round(score * 100) / 100
-  });
-}
-function pickBestAlly(allies, summon, archetype, action) {
-  if (allies.length === 0) return null;
-  let best = null;
-  let bestScore = Number.NEGATIVE_INFINITY;
-  for (const ally of allies) {
-    const score = scoreAlly(ally, summon, archetype, action);
-    if (score > bestScore) {
-      bestScore = score;
-      best = ally;
-    }
-  }
-  return best;
-}
-function decideSummonGuardian(summon, ctx, allies, opponents, reachable, origin) {
-  const kit = SUMMON_KIT.guardian;
-  const ward = pickBestAlly(allies, summon, "guardian", "shield");
-  const shield = findKitSpell(kit[0], ctx);
-  if (shield && ward) {
-    const wardCell = { x: ward.x, y: ward.y };
-    const dist2 = chebyshev(origin, wardCell);
-    const inRange2 = dist2 <= Number(shield.range);
-    if (inRange2) {
-      ctx.log(`${summon.pieceType} shields ${ward.name}`, HEAL_COLOR);
-      logIntent("guardian", "cast", ward.id, "starter-shield");
-      return {
-        archetype: "generic",
-        destination: origin,
-        spell: shield,
-        targetId: ward.id,
-        kind: "cast",
-        intent: "starter-shield",
-        intentColor: HEAL_COLOR,
-        retreating: false
-      };
-    }
-  }
-  const ironSkin = findKitSpell(kit[1], ctx);
-  if (ironSkin) {
-    ctx.log(`${summon.pieceType} hardens with Iron Skin`, HEAL_COLOR);
-    logIntent("guardian", "cast", summon.id, "spell-iron-skin");
-    return {
-      archetype: "generic",
-      destination: origin,
-      spell: ironSkin,
-      targetId: summon.id,
-      kind: "cast",
-      intent: "spell-iron-skin",
-      intentColor: HEAL_COLOR,
-      retreating: false
-    };
-  }
-  if (ward && opponents.length > 0) {
-    const threat = opponents[0];
-    const guard = backlineGuardCell(
-      { x: ward.x, y: ward.y },
-      { x: threat.x, y: threat.y },
-      ctx,
-      reachable
-    );
-    if (guard && (guard.x !== origin.x || guard.y !== origin.y)) {
-      ctx.log(`${summon.pieceType} body-blocks for ${ward.name}`, MOVE_COLOR);
-      logIntent("guardian", "backline-guard", ward.id, "interpose");
-      return {
-        archetype: "generic",
-        destination: guard,
-        spell: null,
-        targetId: null,
-        kind: "move",
-        intent: "backline-guard",
-        intentColor: MOVE_COLOR,
-        retreating: false
-      };
-    }
-    const dest = stepToward(origin, { x: ward.x, y: ward.y }, ctx, reachable);
-    if (dest.x !== origin.x || dest.y !== origin.y) {
-      ctx.log(`${summon.pieceType} stays close to ${ward.name}`, MOVE_COLOR);
-      logIntent("guardian", "advance", ward.id, "stay-adjacent");
-      return {
-        archetype: "generic",
-        destination: dest,
-        spell: null,
-        targetId: null,
-        kind: "move",
-        intent: "stay-adjacent",
-        intentColor: MOVE_COLOR,
-        retreating: false
-      };
-    }
-  }
-  logIntent("guardian", "hold", null, "no-ward-or-threat");
-  return {
-    archetype: "generic",
-    destination: origin,
-    spell: null,
-    targetId: null,
-    kind: "skip",
-    intent: "hold",
-    intentColor: SKIP_COLOR,
-    retreating: false
-  };
-}
-function decideSummonArcher(summon, ctx, opponents, reachable, origin) {
-  const kit = SUMMON_KIT.archer;
-  if (opponents.length === 0) {
-    logIntent("archer", "hold", null, "no-target");
-    return {
-      archetype: "generic",
-      destination: origin,
-      spell: null,
-      targetId: null,
-      kind: "skip",
-      intent: "hold",
-      intentColor: SKIP_COLOR,
-      retreating: false
-    };
-  }
-  const poison = findKitSpell(kit[0], ctx);
-  const slow = findKitSpell(kit[1], ctx);
-  const preferred = poison ?? slow;
-  const scored = scoreTargets(opponents, ctx, preferred);
-  const target = scored[0];
-  const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist2 = chebyshev(origin, targetCell);
-  if (preferred && dist2 <= Number(preferred.range)) {
-    const los = preferred.lineOfSight === false ? true : ctx.hasLineOfSight(origin, targetCell);
-    if (los) {
-      ctx.log(
-        `${summon.pieceType} looses an arrow at ${target.combatant.name}!`,
-        CAST_COLOR
-      );
-      logIntent("archer", "cast", target.combatant.id, preferred.id);
-      return {
-        archetype: "generic",
-        destination: origin,
-        spell: preferred,
-        targetId: target.combatant.id,
-        kind: "cast",
-        intent: "arrow",
-        intentColor: CAST_COLOR,
-        retreating: false
-      };
-    }
-    const reposition = repositionForLOS(
-      origin,
-      targetCell,
-      ctx,
-      reachable,
-      preferred
-    );
-    if (reposition) {
-      ctx.log(`${summon.pieceType} sidesteps for a shot`, MOVE_COLOR);
-      logIntent("archer", "reposition-los", target.combatant.id, "los-blocked");
-      return {
-        archetype: "generic",
-        destination: reposition,
-        spell: null,
-        targetId: null,
-        kind: "move",
-        intent: "reposition-los",
-        intentColor: MOVE_COLOR,
-        retreating: false
-      };
-    }
-  }
-  if (slow) {
-    const slowRange = Number(slow.range);
-    const slowScored = scoreTargets(opponents, ctx, slow);
-    const slowTarget = slowScored[0];
-    if (slowTarget) {
-      const slowCell = { x: slowTarget.combatant.x, y: slowTarget.combatant.y };
-      const slowDist = chebyshev(origin, slowCell);
-      if (slowDist <= slowRange) {
-        const slowLos = slow.lineOfSight === false ? true : ctx.hasLineOfSight(origin, slowCell);
-        if (slowLos) {
-          ctx.log(
-            `${summon.pieceType} slows approaching ${slowTarget.combatant.name}`,
-            CAST_COLOR
-          );
-          logIntent("archer", "cast", slowTarget.combatant.id, "spell-slow");
-          return {
-            archetype: "generic",
-            destination: origin,
-            spell: slow,
-            targetId: slowTarget.combatant.id,
-            kind: "cast",
-            intent: "slow-approaching",
-            intentColor: CAST_COLOR,
-            retreating: false
-          };
-        }
-      }
-    }
-  }
-  const MIN_KITE_RANGE = 3;
-  let dest = origin;
-  if (dist2 < MIN_KITE_RANGE) {
-    dest = stepAway(origin, targetCell, ctx, reachable, 1);
-  } else if (dist2 > Number((preferred == null ? void 0 : preferred.range) ?? MIN_KITE_RANGE)) {
-    dest = stepToward(origin, targetCell, ctx, reachable);
-  }
-  if (dest.x !== origin.x || dest.y !== origin.y) {
-    ctx.log(`${summon.pieceType} kites ${target.combatant.name}`, MOVE_COLOR);
-    logIntent("archer", "kite", target.combatant.id, "maintain-range");
-  } else {
-    logIntent("archer", "hold", target.combatant.id, "in-range");
-  }
-  return {
-    archetype: "generic",
-    destination: dest,
-    spell: null,
-    targetId: null,
-    kind: "move",
-    intent: "kite",
-    intentColor: MOVE_COLOR,
-    retreating: false
-  };
-}
-function decideSummonBomber(summon, ctx, opponents, reachable, origin) {
-  const kit = SUMMON_KIT.bomber;
-  const inferno = findKitSpell(kit[0], ctx);
-  const hpFracSummon = hpFrac({
-    id: summon.id,
-    side: summon.side === "player" ? "player" : "enemy",
-    name: summon.pieceType,
-    x: summon.x,
-    y: summon.y,
-    hp: summon.hp,
-    maxHp: summon.maxHp,
-    level: summon.level
-  });
-  if (opponents.length === 0 || !inferno) {
-    logIntent("bomber", "hold", null, "no-target-or-spell");
-    return {
-      archetype: "generic",
-      destination: origin,
-      spell: null,
-      targetId: null,
-      kind: "skip",
-      intent: "hold",
-      intentColor: SKIP_COLOR,
-      retreating: false
-    };
-  }
-  const radius = AI_KAMIKAZE_BLAST_RADIUS;
-  let bestCenter = null;
-  let bestCount = 0;
-  for (const c2 of opponents) {
-    const count2 = countTargetsInBlast({ x: c2.x, y: c2.y }, opponents, radius);
-    if (count2 > bestCount) {
-      bestCount = count2;
-      bestCenter = c2;
-    }
-  }
-  const detonateEligible = bestCount >= AI_KAMIKAZE_MIN_TARGETS || hpFracSummon < AI_KAMIKAZE_LOW_HP_PCT;
-  if (bestCenter && detonateEligible) {
-    const centerCell = { x: bestCenter.x, y: bestCenter.y };
-    const dist2 = chebyshev(origin, centerCell);
-    if (dist2 <= Number(inferno.range)) {
-      ctx.log(
-        `${summon.pieceType} detonates Inferno on ${bestCount} foes!`,
-        CAST_COLOR
-      );
-      logIntent("bomber", "cast", bestCenter.id, `detonate-${bestCount}`);
-      return {
-        archetype: "generic",
-        destination: origin,
-        spell: inferno,
-        targetId: bestCenter.id,
-        kind: "cast",
-        intent: "detonate",
-        intentColor: CAST_COLOR,
-        retreating: false
-      };
-    }
-    const dest = stepToward(origin, centerCell, ctx, reachable);
-    if (dest.x !== origin.x || dest.y !== origin.y) {
-      ctx.log(`${summon.pieceType} charges the cluster!`, MOVE_COLOR);
-      logIntent("bomber", "advance", bestCenter.id, "approach-cluster");
-    } else {
-      logIntent("bomber", "hold", bestCenter.id, "blocked");
-    }
-    return {
-      archetype: "generic",
-      destination: dest,
-      spell: null,
-      targetId: null,
-      kind: "move",
-      intent: "approach-cluster",
-      intentColor: MOVE_COLOR,
-      retreating: false
-    };
-  }
-  logIntent("bomber", "hold", null, "await-cluster");
-  return {
-    archetype: "generic",
-    destination: origin,
-    spell: null,
-    targetId: null,
-    kind: "skip",
-    intent: "hold",
-    intentColor: SKIP_COLOR,
-    retreating: false
-  };
-}
-function decideSummonHealer(summon, ctx, allies, opponents, reachable, origin) {
-  const kit = SUMMON_KIT.healer;
-  const healSpell = findKitSpell(kit[0], ctx);
-  const rallySpell = findKitSpell(kit[1], ctx);
-  const woundedCandidates = allies.filter(
-    (a2) => hpFrac(a2) < ENEMY_HEAL_ALLY_THRESHOLD_PCT
-  );
-  const wounded = pickBestAlly(woundedCandidates, summon, "healer", "heal");
-  if (wounded && healSpell) {
-    const dist2 = chebyshev(origin, { x: wounded.x, y: wounded.y });
-    if (dist2 <= Number(healSpell.range)) {
-      ctx.log(`${summon.pieceType} heals ${wounded.name}`, HEAL_COLOR);
-      logIntent("healer", "heal", wounded.id, "wounded-ally-in-range");
-      return {
-        archetype: "generic",
-        destination: origin,
-        spell: healSpell,
-        targetId: wounded.id,
-        kind: "cast",
-        intent: "heal",
-        intentColor: HEAL_COLOR,
-        retreating: false
-      };
-    }
-    const dest = stepToward(
-      origin,
-      { x: wounded.x, y: wounded.y },
-      ctx,
-      reachable
-    );
-    ctx.log(`${summon.pieceType} moves to heal ${wounded.name}`, MOVE_COLOR);
-    logIntent("healer", "approach-ally", wounded.id, "wounded-out-of-range");
-    return {
-      archetype: "generic",
-      destination: dest,
-      spell: null,
-      targetId: null,
-      kind: "move",
-      intent: "approach-ally",
-      intentColor: MOVE_COLOR,
-      retreating: false
-    };
-  }
-  const ward = pickBestAlly(allies, summon, "healer", "rally");
-  if (rallySpell && ward) {
-    const dist2 = chebyshev(origin, { x: ward.x, y: ward.y });
-    if (dist2 <= Number(rallySpell.range)) {
-      ctx.log(`${summon.pieceType} rallies ${ward.name}`, HEAL_COLOR);
-      logIntent("healer", "cast", ward.id, "rallying-cry");
-      return {
-        archetype: "generic",
-        destination: origin,
-        spell: rallySpell,
-        targetId: ward.id,
-        kind: "cast",
-        intent: "rallying-cry",
-        intentColor: HEAL_COLOR,
-        retreating: false
-      };
-    }
-  }
-  if (ward && opponents.length > 0) {
-    const threat = opponents[0];
-    const guard = backlineGuardCell(
-      { x: ward.x, y: ward.y },
-      { x: threat.x, y: threat.y },
-      ctx,
-      reachable
-    );
-    if (guard && (guard.x !== origin.x || guard.y !== origin.y)) {
-      ctx.log(`${summon.pieceType} guards ${ward.name}`, MOVE_COLOR);
-      logIntent("healer", "backline-guard", ward.id, "interpose");
-      return {
-        archetype: "generic",
-        destination: guard,
-        spell: null,
-        targetId: null,
-        kind: "move",
-        intent: "backline-guard",
-        intentColor: MOVE_COLOR,
-        retreating: false
-      };
-    }
-  }
-  logIntent("healer", "hold", null, "nothing-to-do");
-  return {
-    archetype: "generic",
-    destination: origin,
-    spell: null,
-    targetId: null,
-    kind: "skip",
-    intent: "hold",
-    intentColor: SKIP_COLOR,
     retreating: false
   };
 }
@@ -53455,21 +52932,6 @@ function resetRunState(refs) {
 function completeRun(refs) {
   resetRunState(refs);
 }
-function createSpellContext(deps) {
-  return {
-    rng: deps.rng,
-    getEffectiveStat: deps.getEffectiveStat,
-    dealDamage: deps.dealDamage,
-    heal: deps.heal,
-    applyEffect: deps.applyEffect,
-    placeBarrier: deps.placeBarrier,
-    spawnUnit: deps.spawnUnit,
-    spawnEnemySummon: deps.spawnEnemySummon,
-    log: deps.log,
-    isCellFree: deps.isCellFree,
-    getCombatantAt: deps.getCombatantAt
-  };
-}
 function createPlayerSpellContext(deps) {
   return {
     // Base SpellContext callbacks (shared with the enemy/summon-AI resolver)
@@ -53772,184 +53234,6 @@ function resolvePlayerCast(spell, gridPos, ctx) {
 function calcScaledDamageInline(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
   return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
 }
-function executeSummonAction(action, summon, summonCtx, helpers) {
-  var _a3;
-  const maxAp = summon.maxAp ?? 2;
-  const maxMp = summon.maxMp ?? 2;
-  let x3 = summon.x;
-  let y2 = summon.y;
-  let currentAp = summon.currentAp ?? maxAp;
-  let currentMp = summon.currentMp ?? maxMp;
-  let hp = summon.hp;
-  const logLines = [];
-  const summonLabel = summon.summonAI ?? summon.pieceType ?? summon.id;
-  const applyMovement = (dest) => {
-    if (!dest || dest.x === x3 && dest.y === y2) return;
-    const clamped = {
-      x: Math.max(0, Math.min(helpers.worldGridSize - 1, dest.x)),
-      y: Math.max(0, Math.min(helpers.worldGridSize - 1, dest.y))
-    };
-    if (!isCellFree(clamped, helpers.occupancyCtx)) {
-      logLines.push(
-        `[move] ${summonLabel} → (${clamped.x},${clamped.y}) blocked (occupied)`
-      );
-      return;
-    }
-    const dist2 = Math.max(Math.abs(clamped.x - x3), Math.abs(clamped.y - y2));
-    const mpCost = dist2 * helpers.mpCostPerTile;
-    if (currentMp < mpCost) {
-      logLines.push(
-        `[move] ${summonLabel} → (${clamped.x},${clamped.y}) blocked (need ${mpCost}MP, have ${currentMp}MP)`
-      );
-      return;
-    }
-    x3 = clamped.x;
-    y2 = clamped.y;
-    currentMp -= mpCost;
-    logLines.push(`[move] ${summonLabel} → (${x3},${y2}) spent ${mpCost}MP`);
-  };
-  const applyCast = (spell, targetId) => {
-    const apCost = Number(spell.apCost ?? 0);
-    if (currentAp < apCost) {
-      logLines.push(
-        `[cast] ${summonLabel} ${spell.name} → ${targetId} blocked (need ${apCost}AP, have ${currentAp}AP)`
-      );
-      return false;
-    }
-    const target = helpers.getEnemyById(targetId);
-    const damage = Number(spell.damage ?? 0);
-    const healAmount = Number(spell.healAmount ?? 0);
-    if (damage > 0 && target) {
-      const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
-      summonCtx.dealDamage(targetId, baseDmg);
-      const blastR = Number(spell.areaRadius ?? 0);
-      if (blastR > 0) {
-        for (const victim of helpers.getAoEVictims(targetId, blastR)) {
-          summonCtx.dealDamage(victim.id, baseDmg);
-        }
-      }
-      currentAp -= apCost;
-      logLines.push(
-        `[cast] ${summonLabel} ${spell.name} → ${targetId} for ${baseDmg}`
-      );
-      if (summon.summonAI === "bomber") {
-        hp = 0;
-        logLines.push(`[cast] ${summonLabel} ${spell.name} detonated (hp=0)`);
-      }
-      return true;
-    }
-    if (healAmount > 0) {
-      summonCtx.heal(targetId, healAmount);
-      currentAp -= apCost;
-      logLines.push(
-        `[cast] ${summonLabel} ${spell.name} → ${targetId} healed ${healAmount}`
-      );
-      return true;
-    }
-    summonCtx.applyEffect({
-      effectName: spell.name ?? spell.effectType,
-      type: spell.effectType === "buff" ? "buff" : spell.effectType === "debuff" ? "debuff" : "dot",
-      targetId,
-      duration: spell.buffDuration ?? spell.debuffDuration ?? spell.dotDuration ?? 1,
-      iconEmoji: spell.iconEmoji ?? "✨",
-      description: spell.description ?? ""
-    });
-    currentAp -= apCost;
-    logLines.push(
-      `[cast] ${summonLabel} ${spell.name} → ${targetId} applied effect`
-    );
-    return true;
-  };
-  const applyMelee = (targetId) => {
-    const apCost = helpers.meleeApCost;
-    if (currentAp < apCost) {
-      logLines.push(
-        `[melee] ${summonLabel} → ${targetId} blocked (need ${apCost}AP, have ${currentAp}AP)`
-      );
-      return false;
-    }
-    const dmg = helpers.calcScaledDamage(
-      summon.atk ?? summon.level,
-      summon.level,
-      0
-    );
-    summonCtx.dealDamage(targetId, dmg);
-    currentAp -= apCost;
-    logLines.push(`[melee] ${summonLabel} → ${targetId} for ${dmg}`);
-    return true;
-  };
-  logLines.push(
-    `[decide] ${summonLabel}: ${action.archetype ?? "unknown"} → ${action.kind} ${action.intent ?? ""} ${((_a3 = action.spell) == null ? void 0 : _a3.name) ?? action.targetId ?? ""} (${action.intent ?? "no intent"})`
-  );
-  switch (action.kind) {
-    case "move": {
-      logLines.push(`[move] ${summonLabel}: ${action.intent ?? "closes in"}`);
-      applyMovement(action.destination);
-      if (helpers.reevaluate && currentAp > 0 && hp > 0) {
-        const postMoveSummon = { ...summon, x: x3, y: y2, currentAp, currentMp };
-        const followUp = helpers.reevaluate(
-          postMoveSummon,
-          currentAp,
-          currentMp
-        );
-        if (followUp && (followUp.kind === "cast" || followUp.kind === "melee")) {
-          if (followUp.kind === "cast" && followUp.spell && followUp.targetId) {
-            applyCast(followUp.spell, followUp.targetId);
-          } else if (followUp.kind === "melee" && followUp.targetId) {
-            applyMelee(followUp.targetId);
-          }
-        }
-      }
-      break;
-    }
-    case "cast": {
-      if (action.spell && action.targetId) {
-        applyCast(action.spell, action.targetId);
-      } else {
-        logDebugError("SUMMON", "cast action missing spell/target", {
-          id: summon.id,
-          archetype: action.archetype
-        });
-        logLines.push(
-          `[skip] ${summonLabel}: ${action.intent ?? "cast missing spell/target"}`
-        );
-      }
-      break;
-    }
-    case "melee": {
-      if (action.targetId) {
-        applyMelee(action.targetId);
-      } else {
-        logDebugError("SUMMON", "melee action missing target", {
-          id: summon.id,
-          archetype: action.archetype
-        });
-        logLines.push(
-          `[skip] ${summonLabel}: ${action.intent ?? "melee missing target"}`
-        );
-      }
-      break;
-    }
-    case "skip": {
-      logLines.push(`[skip] ${summonLabel}: ${action.intent ?? "holds"}`);
-      break;
-    }
-    default: {
-      logDebugError("SUMMON", "unhandled action kind", {
-        kind: action.kind,
-        archetype: action.archetype
-      });
-      logLines.push(
-        `[skip] ${summonLabel}: unhandled kind (${String(action.kind)})`
-      );
-    }
-  }
-  logLines.push(`[end] ${summonLabel} turn complete`);
-  for (const line of logLines) {
-    summonCtx.log(line, action.intentColor ?? "#a78bfa", true);
-  }
-  return { newPosition: { x: x3, y: y2 }, currentAp, currentMp, hp, logLines };
-}
 function decrementSummonLifespan(enemies, log2, activeSummonId) {
   const expiredIds = [];
   logDebugInfo("SUMMON", "[SUMMON-LIFE] decrementSummonLifespan ENTER", {
@@ -54036,9 +53320,6 @@ function syncExpiredSummonsFromTurnQueue(enemies, _turnOrder, turnOrderRef, curr
     );
   }
   setEnemies(survivingEnemies);
-}
-function buildSpellContext(deps) {
-  return createSpellContext(deps);
 }
 function getPlayerSideTargets(enemies) {
   return enemies.filter((e) => e.side === "player" || e.isPlayer);
@@ -59451,6 +58732,11 @@ const WorldExplorationInner = ({
   const [_pendingDestination, setPendingDestination] = reactExports.useState(null);
   const [enemies, setEnemies] = reactExports.useState([]);
   const enemiesRef = reactExports.useRef([]);
+  const [activeControlledSummonId, setActiveControlledSummonId] = reactExports.useState(null);
+  const activeControlledSummonIdRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    activeControlledSummonIdRef.current = activeControlledSummonId;
+  }, [activeControlledSummonId]);
   const [inBattle, setInBattle] = reactExports.useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = reactExports.useState(false);
   const tierConfigRef = reactExports.useRef(null);
@@ -59971,17 +59257,53 @@ const WorldExplorationInner = ({
   const checkAndFireAchievement = reactExports.useCallback(
     (condition, inBattle2) => {
       try {
+        console.log("[FEATS] UNLOCK: checkAndFireAchievement called", {
+          condition,
+          inBattle: inBattle2
+        });
         const cfg = achievementConfigs.find(
           (a2) => a2.active && a2.condition === condition
         );
-        if (!cfg) return;
+        if (!cfg) {
+          console.log(
+            "[FEATS] UNLOCK: no active config found for condition",
+            condition
+          );
+          return;
+        }
         const alreadyUnlocked = playerAchievements.some(
           (p2) => p2.achievementId === cfg.id && p2.unlocked
         );
-        if (alreadyUnlocked) return;
-        if (achievementsShownRef.current.has(cfg.id)) return;
+        if (alreadyUnlocked) {
+          console.log("[FEATS] UNLOCK: already unlocked, skipping", cfg.id);
+          return;
+        }
+        if (achievementsShownRef.current.has(cfg.id)) {
+          console.log(
+            "[FEATS] UNLOCK: already toasted this session, skipping",
+            cfg.id
+          );
+          return;
+        }
         achievementsShownRef.current.add(cfg.id);
-        markAchievementUnlocked.mutate(cfg.id);
+        console.log(
+          "[FEATS] UNLOCK: firing markAchievementUnlocked for",
+          cfg.id
+        );
+        markAchievementUnlocked.mutate(cfg.id, {
+          onSuccess: (result) => {
+            console.log(
+              "[FEATS] UNLOCK: backend response =",
+              JSON.stringify(
+                result,
+                (_k2, v2) => typeof v2 === "bigint" ? v2.toString() : v2
+              )
+            );
+          },
+          onError: (err) => {
+            console.log("[FEATS] UNLOCK: backend error =", err);
+          }
+        });
         if (inBattle2) {
           setNewlyUnlockedInBattle((prev) => {
             if (prev.find((a2) => a2.id === cfg.id)) return prev;
@@ -60683,6 +60005,29 @@ const WorldExplorationInner = ({
     },
     [characterStats.res, characterStats.hp, getStatModifier, logBattleEntry]
   );
+  const triggerLeaderDeathAnimationRef = reactExports.useRef(
+    () => {
+    }
+  );
+  const deathPipelineCtx = reactExports.useMemo(
+    () => ({
+      combatantStoreCtx,
+      effectsManagerRef,
+      logBattleEntry,
+      leaderEnemyIdRef,
+      leaderDiedRef,
+      battleLeaderSlainRef,
+      leaderBoostPercent,
+      setLeaderBoostMultiplier: (fn) => setLeaderBoostMultiplier(fn),
+      setEnemyHpMap,
+      triggerLeaderDeathAnimation: (x3, y2) => triggerLeaderDeathAnimationRef.current(x3, y2),
+      playSound: (sound) => playSound(sound),
+      enemies,
+      setEnemies: (fn) => setEnemies(fn),
+      getCombatantById: (id) => combatantsRef.current.find((c2) => c2.id === id)
+    }),
+    [combatantStoreCtx, logBattleEntry, leaderBoostPercent, enemies]
+  );
   const enemyTakesDamage = reactExports.useCallback(
     (enemyId, incomingDamage, casterId, source, isCrit = false) => {
       const enemy = getLiveCombatants(combatantStoreCtx).find(
@@ -60720,8 +60065,7 @@ const WorldExplorationInner = ({
       _em.triggerShake(isCrit ? 8 : 4);
       if (isCrit) _em.triggerHitStop();
       if (newHp === 0) {
-        _em.triggerDeath(String(enemyId), enemy.x, enemy.y);
-        removeCombatant(combatantStoreCtx, enemyId);
+        processCombatantDeath(enemyId, deathPipelineCtx);
       }
       return dmg;
     },
@@ -60730,7 +60074,8 @@ const WorldExplorationInner = ({
       logBattleEntry,
       combatantStoreCtx,
       activeMapModifierTypes,
-      characterStats.hp
+      characterStats.hp,
+      deathPipelineCtx
     ]
   );
   const handleUseItem = reactExports.useCallback(
@@ -68117,10 +67462,26 @@ const WorldExplorationInner = ({
         logBattleEntry,
         _activeSummonId
       );
+      if (activeControlledSummonIdRef.current) {
+        const stillAlive = enemiesRef.current.find(
+          (e) => e.id === activeControlledSummonIdRef.current
+        );
+        if (!stillAlive) {
+          endControlledSummonTurn();
+        }
+      }
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
         setCurrentTurnIndex((prevIdx) => {
-          const nextIdx = (prevIdx + 1) % prevOrder.length;
+          let nextIdx = (prevIdx + 1) % prevOrder.length;
+          let guard = 0;
+          while (guard < prevOrder.length) {
+            const nextCombatant2 = prevOrder[nextIdx];
+            if (nextCombatant2 && combatantsRef.current.find((c2) => c2.id === nextCombatant2.id))
+              break;
+            nextIdx = (nextIdx + 1) % prevOrder.length;
+            guard++;
+          }
           currentTurnIndexRef.current = nextIdx;
           const nextCombatant = prevOrder[nextIdx];
           if (nextCombatant.type === "player") {
@@ -68296,6 +67657,13 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     advanceTurnRef.current = advanceTurn;
   }, [advanceTurn]);
+  const endControlledSummonTurn = reactExports.useCallback(() => {
+    setActiveControlledSummonId(null);
+    activeControlledSummonIdRef.current = null;
+    enemyTurnInProgressRef.current = false;
+    turnEndReasonRef.current = "action-complete";
+    setTimeout(() => advanceTurnRef.current(), 600);
+  }, []);
   reactExports.useEffect(() => {
     if (!inBattle) return;
     if (timerIntervalRef.current) {
@@ -68404,323 +67772,18 @@ const WorldExplorationInner = ({
     const timeout2 = setTimeout(() => {
       const summonEnemy = enemiesRef.current.find((e) => e.id === enemyId);
       if ((summonEnemy == null ? void 0 : summonEnemy.isSummon) && summonEnemy.side === "player") {
-        summonEnemy.currentAp = summonEnemy.maxAp ?? 2;
-        summonEnemy.currentMp = summonEnemy.maxMp ?? 2;
-        const summonCtx = buildSpellContext({
-          rng: Math.random,
-          log: (msg, color, isSummon) => {
-            if (msg !== "") logBattleEntry(msg, color, isSummon);
-          },
-          getEffectiveStat: (combatantId, stat) => getStatModifier(combatantId, stat, activeEffectsRef.current),
-          dealDamage: (targetId, amount, _opts) => {
-            enemyTakesDamage(targetId, amount, "player", "", false);
-            return amount;
-          },
-          heal: (combatantId, amount) => {
-            if (combatantId === "player" || combatantId === "__player__") {
-              setCharacterStats((prev) => ({
-                ...prev,
-                hp: Math.min(maxHp, prev.hp + amount)
-              }));
-              effectsManagerRef.current.spawnDamageNumber(0, 0, amount, "heal");
-            }
-          },
-          applyEffect: (effect) => {
-            applyActiveEffect(effect);
-          },
-          placeBarrier: (cell, turns) => {
-            barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
-          },
-          spawnUnit: (cell, unitDef, _side, lifespan, _spell) => {
-            const { summon } = spawnSummonUnit(
-              cell,
-              {
-                id: `summon-spell-${unitDef.pieceType}`,
-                name: `Summon ${unitDef.pieceType}`,
-                summonUnitDef: unitDef,
-                summonLifespan: lifespan,
-                summonAI: unitDef.pieceType
-              },
-              "player",
-              characterStats.level,
-              logBattleEntry,
-              computeEnemyStats,
-              0,
-              // OccupancyContext so spawnSummonUnit can fall back to the
-              // nearest free cell when the requested cell is occupied.
-              {
-                tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
-                  (row) => (row ?? []).map((t) => t !== "wall")
-                ),
-                barriers: new Set(barrierTilesRef.current.keys()),
-                voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
-                portals: new Set(
-                  ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
-                ),
-                isOccupied: (c2) => enemiesRef.current.some(
-                  (e) => e.x === c2.x && e.y === c2.y
-                ) || playerPositionRef.current.x === c2.x && playerPositionRef.current.y === c2.y
-              }
-            );
-            addCombatant(combatantStoreCtx, summon, {
-              battleParticipant: true,
-              insertAfterId: "player"
-            });
-          },
-          isCellFree: (cell) => !getLiveCombatants(combatantStoreCtx).some(
-            (e) => e.x === cell.x && e.y === cell.y
-          ) && !(playerPositionRef.current.x === cell.x && playerPositionRef.current.y === cell.y),
-          getCombatantAt: (cell) => {
-            const e = enemiesRef.current.find(
-              (en) => en.x === cell.x && en.y === cell.y
-            );
-            if (e) return { id: e.id, side: "enemy" };
-            if (playerPositionRef.current.x === cell.x && playerPositionRef.current.y === cell.y)
-              return { id: "__player__", side: "player" };
-            return null;
-          },
-          spawnEnemySummon: (cell, spell) => {
-            var _a4;
-            spawnEnemySummonRef.current = (c2, s2) => {
-              var _a5;
-              const unitDef2 = (s2 == null ? void 0 : s2.summonUnitDef) ?? ((_a5 = starterSpells.find((sp) => sp.id === (s2 == null ? void 0 : s2.id))) == null ? void 0 : _a5.summonUnitDef);
-              if (!unitDef2) return;
-              const { summon: summon2 } = spawnSummonUnit(
-                c2,
-                {
-                  id: `enemy-summon-${unitDef2.pieceType}`,
-                  name: `Enemy Summon ${unitDef2.pieceType}`,
-                  summonUnitDef: unitDef2,
-                  summonLifespan: 0,
-                  summonAI: unitDef2.pieceType
-                },
-                "enemy",
-                characterStats.level,
-                logBattleEntry,
-                computeEnemyStats,
-                0,
-                {
-                  tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
-                    (row) => (row ?? []).map((t) => t !== "wall")
-                  ),
-                  barriers: new Set(barrierTilesRef.current.keys()),
-                  voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
-                  portals: new Set(
-                    ((currentMap == null ? void 0 : currentMap.portals) ?? []).map(
-                      (p2) => `${p2.x},${p2.y}`
-                    )
-                  ),
-                  isOccupied: (oc) => enemiesRef.current.some(
-                    (e) => e.x === oc.x && e.y === oc.y
-                  ) || playerPositionRef.current.x === oc.x && playerPositionRef.current.y === oc.y
-                }
-              );
-              addCombatant(combatantStoreCtx, summon2, {
-                battleParticipant: true,
-                insertAfterId: enemyId
-              });
-            };
-            const unitDef = (spell == null ? void 0 : spell.summonUnitDef) ?? ((_a4 = starterSpells.find((s2) => s2.id === (spell == null ? void 0 : spell.id))) == null ? void 0 : _a4.summonUnitDef);
-            if (!unitDef) return;
-            const { summon } = spawnSummonUnit(
-              cell,
-              {
-                id: `enemy-summon-${unitDef.pieceType}`,
-                name: `Enemy Summon ${unitDef.pieceType}`,
-                summonUnitDef: unitDef,
-                summonLifespan: 0,
-                summonAI: unitDef.pieceType
-              },
-              "enemy",
-              characterStats.level,
-              logBattleEntry,
-              computeEnemyStats,
-              0,
-              {
-                tiles: ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
-                  (row) => (row ?? []).map((t) => t !== "wall")
-                ),
-                barriers: new Set(barrierTilesRef.current.keys()),
-                voidTiles: (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set(),
-                portals: new Set(
-                  ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
-                ),
-                isOccupied: (c2) => enemiesRef.current.some(
-                  (e) => e.x === c2.x && e.y === c2.y
-                ) || playerPositionRef.current.x === c2.x && playerPositionRef.current.y === c2.y
-              }
-            );
-            addCombatant(combatantStoreCtx, summon, {
-              battleParticipant: true,
-              insertAfterId: enemyId
-            });
-          }
-        });
-        const summonCombatants = enemiesRef.current.filter((e) => e.id !== enemyId).map((e) => ({
-          id: e.id,
-          name: e.pieceType,
-          side: e.isSummon && e.side === "player" ? "player" : "enemy",
-          isSummon: e.isSummon,
-          summonAI: e.summonAI,
-          x: e.x,
-          y: e.y,
-          hp: e.hp,
-          maxHp: e.maxHp,
-          level: e.level
-        }));
-        summonCombatants.push({
-          id: "player",
-          name: "player",
-          side: "player",
-          isSummon: false,
-          summonAI: void 0,
-          x: playerPositionRef.current.x,
-          y: playerPositionRef.current.y,
-          hp: characterStats.hp,
-          maxHp,
-          level: characterStats.level
-        });
-        const aiGrid = ((currentMap == null ? void 0 : currentMap.tiles) ?? []).map(
-          (row) => (row ?? []).map((t) => t !== "wall")
-        );
-        const aiOccupied = /* @__PURE__ */ new Set();
-        const aiBarriers = new Set(barrierTilesRef.current.keys());
-        const aiPortals = new Set(
-          ((currentMap == null ? void 0 : currentMap.portals) ?? []).map((p2) => `${p2.x},${p2.y}`)
-        );
-        const aiVoid = (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set();
-        const aiHazards = (currentMap == null ? void 0 : currentMap.hazardTiles) ?? /* @__PURE__ */ new Map();
-        const aiCtx = {
-          enemy: summonEnemy,
-          combatants: summonCombatants,
-          grid: aiGrid,
-          occupied: aiOccupied,
-          barriers: aiBarriers,
-          portals: aiPortals,
-          voidTiles: aiVoid,
-          hazardTiles: aiHazards,
-          availableSpells: summonEnemy.spells ?? [],
-          assignedSpells: summonEnemy.spells ?? [],
-          battleTurn,
-          allyCount: summonCombatants.filter((c2) => c2.side === "player").length,
-          enemyCount: summonCombatants.filter((c2) => c2.side === "enemy").length,
-          enrageMultiplier: 1,
-          isSlimeFlood: isSlimeFloodRef.current,
-          rng: Math.random,
-          getEffectiveStat: (cid, stat) => getStatModifier(cid, stat, activeEffectsRef.current),
-          calcScaledDamage,
-          hasLineOfSight: (from, to) => {
-            const dx = Math.abs(to.x - from.x);
-            const dy = Math.abs(to.y - from.y);
-            const sx = from.x < to.x ? 1 : -1;
-            const sy = from.y < to.y ? 1 : -1;
-            let err = dx - dy;
-            let cx2 = from.x;
-            let cy = from.y;
-            while (!(cx2 === to.x && cy === to.y)) {
-              if (!(cx2 === from.x && cy === from.y) && aiBarriers.has(`${cx2},${cy}`))
-                return false;
-              const e2 = 2 * err;
-              if (e2 > -dy) {
-                err -= dy;
-                cx2 += sx;
-              }
-              if (e2 < dx) {
-                err += dx;
-                cy += sy;
-              }
-            }
-            return true;
-          },
-          log: (msg, color) => summonCtx.log(msg, color ?? "#a78bfa", true),
-          focusTargetId: focusTargetRef.current,
-          setFocusTargetId: (id) => {
-            focusTargetRef.current = id;
-          },
-          focusAlreadySet: focusTurnRef.current === battleTurn,
-          markFocusSet: () => {
-            focusTurnRef.current = battleTurn;
-          }
-        };
-        const action = decideSummonAction(summonEnemy, aiCtx);
-        const summonOccupancyCtx = {
-          tiles: aiGrid,
-          barriers: aiBarriers,
-          voidTiles: aiVoid,
-          portals: aiPortals,
-          isOccupied: (c2) => enemiesRef.current.some((e) => e.x === c2.x && e.y === c2.y) || playerPositionRef.current.x === c2.x && playerPositionRef.current.y === c2.y
-        };
-        const executorHelpers = {
-          calcScaledDamage,
-          occupancyCtx: summonOccupancyCtx,
-          worldGridSize: WORLD_GRID_SIZE,
-          mpCostPerTile: 1,
-          meleeApCost: 1,
-          getEnemyById: (id) => enemiesRef.current.find((e) => e.id === id),
-          getAoEVictims: (primaryId, blastR) => {
-            const primary = enemiesRef.current.find(
-              (e) => e.id === primaryId
-            );
-            if (!primary) return [];
-            return enemiesRef.current.filter((e) => {
-              if (e.id === primaryId) return false;
-              if (e.side === summonEnemy.side) return false;
-              const dx = Math.abs((e.x ?? 0) - (primary.x ?? 0));
-              const dy = Math.abs((e.y ?? 0) - (primary.y ?? 0));
-              return Math.max(dx, dy) <= blastR;
-            });
-          },
-          // EDIT 2: reevaluate is an optional field on SummonExecutorHelpers.
-          // Real implementation: after the summon moves, re-decide with the
-          // UPDATED position (postMoveSummon.x/y — already moved by the
-          // executor) and REMAINING AP/MP (currentAp/currentMp — already
-          // deducted by applyMovement). Reuses the same aiCtx built above
-          // (line ~12913) for the initial decide — decideSummonAction reads
-          // position/AP/MP from the summon arg, not ctx, so passing the
-          // post-move summon is sufficient. Returns the EnemyAction (cast or
-          // melee) for the executor's follow-up at summonExecutor.ts:233-250,
-          // or null when the re-decide yields a move/skip (no second move —
-          // one re-decide max). The turn-advance guarantee in the try/finally
-          // below fires exactly once regardless of whether the follow-up ran.
-          reevaluate: (postMoveSummon, currentAp, currentMp) => {
-            const redecide = decideSummonAction(
-              {
-                ...postMoveSummon,
-                x: postMoveSummon.x,
-                y: postMoveSummon.y
-              },
-              aiCtx
-            );
-            return redecide.kind === "cast" || redecide.kind === "melee" ? redecide : null;
-          }
-        };
-        let advanced = false;
-        try {
-          const execResult = executeSummonAction(
-            action,
-            summonEnemy,
-            summonCtx,
-            executorHelpers
+        if (typeof summonEnemy.summonLifespan === "number") {
+          summonEnemy.summonLifespan = Math.max(
+            0,
+            summonEnemy.summonLifespan - 1
           );
-          summonEnemy.currentAp = execResult.currentAp;
-          summonEnemy.currentMp = execResult.currentMp;
-          updateCombatant(combatantStoreCtx, enemyId, {
-            x: execResult.newPosition.x,
-            y: execResult.newPosition.y,
-            hp: execResult.hp
-          });
-          enemyTurnInProgressRef.current = false;
-          turnEndReasonRef.current = "action-complete";
-          setTimeout(() => advanceTurnRef.current(), 600);
-          advanced = true;
-        } finally {
-          enemyTurnInProgressRef.current = false;
-          if (!advanced) {
-            turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
-            advanced = true;
-          }
         }
+        logBattleEntry(
+          `${summonEnemy.pieceType ?? "Summon"}'s turn — player control`,
+          "#a78bfa"
+        );
+        setActiveControlledSummonId(summonEnemy.id);
+        activeControlledSummonIdRef.current = summonEnemy.id;
         return;
       }
       if (enemyTurnAbortRef.current) {
@@ -68957,7 +68020,7 @@ const WorldExplorationInner = ({
               n.add(enemyId);
               return n;
             });
-            removeCombatant(combatantStoreCtx, allyT.id);
+            processCombatantDeath(allyT.id, deathPipelineCtx);
             updateCombatant(combatantStoreCtx, enemyId, {
               maxHp: Math.round(
                 (((_a4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _a4.maxHp) ?? calcEnemyMaxHp(enemy.level)) * 6
@@ -69006,7 +68069,7 @@ const WorldExplorationInner = ({
                     const curHp = h2[sbT.id] ?? calcEnemyMaxHp(sbT.level);
                     const nHp = Math.max(0, curHp - sbDmg);
                     if (nHp <= 0) {
-                      removeCombatant(combatantStoreCtx, sbT.id);
+                      processCombatantDeath(sbT.id, deathPipelineCtx);
                     }
                     return { ...h2, [sbT.id]: nHp };
                   });
@@ -70091,6 +69154,7 @@ const WorldExplorationInner = ({
     },
     [tileCenter]
   );
+  triggerLeaderDeathAnimationRef.current = triggerLeaderDeathAnimation;
   const markFirstAction = reactExports.useCallback(() => {
     firstActionTakenRef.current = true;
     if (!challengeAcceptedRef.current && currentChallenge) {
@@ -72653,6 +71717,12 @@ const GameFlow = ({
   };
   reactExports.useEffect(() => {
     if (backendDokaBalance !== void 0) {
+      console.log(
+        "[FEATS] CREDIT: Doka old=",
+        dokaBalance,
+        "new=",
+        backendDokaBalance
+      );
       setDokaBalance(backendDokaBalance);
     }
   }, [backendDokaBalance]);
@@ -75180,7 +74250,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BKL3hNPD.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BF8PwXFl.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

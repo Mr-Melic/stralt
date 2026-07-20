@@ -104,6 +104,10 @@ import {
   updateCombatant,
 } from "../engine/combatantStore";
 import {
+  type DeathPipelineContext,
+  processCombatantDeath,
+} from "../engine/deathPipeline";
+import {
   type DotTickResult,
   appendDotStack,
   tickDotStacks,
@@ -116,7 +120,6 @@ import {
   type EnemyAction,
   buildEnemyKit,
   decideEnemyAction,
-  decideSummonAction,
   decideSummonerAction,
 } from "../engine/enemyAI";
 import {
@@ -159,11 +162,6 @@ import {
   resolvePlayerCast,
 } from "../engine/spellEngine";
 import {
-  type SummonExecutorHelpers,
-  executeSummonAction,
-} from "../engine/summonExecutor";
-import {
-  buildSpellContext,
   getPlayerSideTargets,
   resolveEnemyApMp,
   syncExpiredSummonsFromTurnQueue,
@@ -839,6 +837,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   // Ref mirror of `enemies` so the enemy-turn setTimeout (dep array omits `enemies`) reads fresh summons.
   const enemiesRef = useRef<Enemy[]>([]);
+  // S2: Active player-controlled summon (control mode via SummonControlPanel).
+  // Set by the turn router for player-side summons instead of invoking the AI
+  // executor. Enemy-side summons keep the existing AI path unchanged.
+  const [activeControlledSummonId, setActiveControlledSummonId] = useState<
+    string | null
+  >(null);
+  const activeControlledSummonIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeControlledSummonIdRef.current = activeControlledSummonId;
+  }, [activeControlledSummonId]);
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = useState(false);
@@ -1696,19 +1704,54 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const checkAndFireAchievement = useCallback(
     (condition: string, inBattle: boolean) => {
       try {
+        console.log("[FEATS] UNLOCK: checkAndFireAchievement called", {
+          condition,
+          inBattle,
+        });
         const cfg = achievementConfigs.find(
           (a) => a.active && a.condition === condition,
         );
-        if (!cfg) return;
+        if (!cfg) {
+          console.log(
+            "[FEATS] UNLOCK: no active config found for condition",
+            condition,
+          );
+          return;
+        }
         const alreadyUnlocked = playerAchievements.some(
           (p) => p.achievementId === cfg.id && p.unlocked,
         );
-        if (alreadyUnlocked) return;
+        if (alreadyUnlocked) {
+          console.log("[FEATS] UNLOCK: already unlocked, skipping", cfg.id);
+          return;
+        }
         // Guard: skip if already toasted this session
-        if (achievementsShownRef.current.has(cfg.id)) return;
+        if (achievementsShownRef.current.has(cfg.id)) {
+          console.log(
+            "[FEATS] UNLOCK: already toasted this session, skipping",
+            cfg.id,
+          );
+          return;
+        }
         achievementsShownRef.current.add(cfg.id);
         // Mark in backend
-        markAchievementUnlocked.mutate(cfg.id);
+        console.log(
+          "[FEATS] UNLOCK: firing markAchievementUnlocked for",
+          cfg.id,
+        );
+        markAchievementUnlocked.mutate(cfg.id, {
+          onSuccess: (result) => {
+            console.log(
+              "[FEATS] UNLOCK: backend response =",
+              JSON.stringify(result, (_k, v) =>
+                typeof v === "bigint" ? v.toString() : v,
+              ),
+            );
+          },
+          onError: (err) => {
+            console.log("[FEATS] UNLOCK: backend error =", err);
+          },
+        });
         if (inBattle) {
           // Collect for post-battle recap
           setNewlyUnlockedInBattle((prev) => {
@@ -2766,6 +2809,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [characterStats.res, characterStats.hp, getStatModifier, logBattleEntry],
   );
 
+  const triggerLeaderDeathAnimationRef = useRef<(x: number, y: number) => void>(
+    () => {},
+  );
+  const deathPipelineCtx: DeathPipelineContext = useMemo(
+    () => ({
+      combatantStoreCtx,
+      effectsManagerRef:
+        effectsManagerRef as unknown as DeathPipelineContext["effectsManagerRef"],
+      logBattleEntry,
+      leaderEnemyIdRef,
+      leaderDiedRef,
+      battleLeaderSlainRef,
+      leaderBoostPercent,
+      setLeaderBoostMultiplier: (fn: (prev: number) => number) =>
+        setLeaderBoostMultiplier(fn),
+      setEnemyHpMap,
+      triggerLeaderDeathAnimation: (x: number, y: number) =>
+        triggerLeaderDeathAnimationRef.current(x, y),
+      playSound: (sound: string) => playSound(sound as any),
+      enemies,
+      setEnemies: (fn: (prev: unknown[]) => unknown[]) =>
+        setEnemies(fn as (prev: any[]) => any[]),
+      getCombatantById: (id: string) =>
+        combatantsRef.current.find((c: any) => c.id === id),
+    }),
+    [combatantStoreCtx, logBattleEntry, leaderBoostPercent, enemies],
+  );
+
   const enemyTakesDamage = useCallback(
     (
       enemyId: string,
@@ -2824,9 +2895,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       _em.triggerShake(isCrit ? 8 : 4);
       if (isCrit) _em.triggerHitStop();
       if (newHp === 0) {
-        _em.triggerDeath(String(enemyId), enemy.x, enemy.y);
-        removeCombatant(combatantStoreCtx, enemyId);
-        dumpStateSync("kill", combatantStoreCtx);
+        processCombatantDeath(enemyId, deathPipelineCtx);
       }
       return dmg;
     },
@@ -2836,6 +2905,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       combatantStoreCtx,
       activeMapModifierTypes,
       characterStats.hp,
+      deathPipelineCtx,
     ],
   );
 
@@ -12523,11 +12593,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         logBattleEntry,
         _activeSummonId,
       );
+      // S2 Step 4: Lifespan expiry check. syncExpiredSummonsFromTurnQueue above
+      // removes faded summons from the turn queue and the enemies store. If the
+      // summon we were actively controlling just expired (no longer in enemies),
+      // close the control panel and clear activeControlledSummonId BEFORE the
+      // index advance so the wheel advances past the now-removed combatant
+      // instead of dispatching a turn to a faded summon. Enemy-side summons are
+      // unaffected — they never set activeControlledSummonId.
+      if (activeControlledSummonIdRef.current) {
+        const stillAlive = enemiesRef.current.find(
+          (e: any) => e.id === activeControlledSummonIdRef.current,
+        );
+        if (!stillAlive) {
+          endControlledSummonTurn();
+        }
+      }
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
         // H7: ref is set to the new computed order BEFORE the state update so AI reads a fresh value
         setCurrentTurnIndex((prevIdx) => {
-          const nextIdx = (prevIdx + 1) % prevOrder.length;
+          let nextIdx = (prevIdx + 1) % prevOrder.length;
+          // Dead-entity skip guard: advance past any combatant not in the store (0-HP corpses jamming AI turns)
+          let guard = 0;
+          while (guard < prevOrder.length) {
+            const nextCombatant = prevOrder[nextIdx];
+            if (
+              nextCombatant &&
+              combatantsRef.current.find((c: any) => c.id === nextCombatant.id)
+            )
+              break;
+            nextIdx = (nextIdx + 1) % prevOrder.length;
+            guard++;
+          }
           currentTurnIndexRef.current = nextIdx;
           const nextCombatant = prevOrder[nextIdx];
           if (nextCombatant.type === "player") {
@@ -12728,6 +12825,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     advanceTurnRef.current = advanceTurn;
   }, [advanceTurn]);
 
+  // S2: End the active player-controlled summon's turn — close the control
+  // panel, clear activeControlledSummonId, reset the enemy-phase gate, and
+  // advance the wheel with the existing advance guarantee. Invoked by the
+  // SummonControlPanel End Turn button, the AP/MP-exhausted auto-end, the
+  // turn timer, and lifespan-expiry mid-control.
+  const endControlledSummonTurn = useCallback(() => {
+    setActiveControlledSummonId(null);
+    activeControlledSummonIdRef.current = null;
+    enemyTurnInProgressRef.current = false;
+    turnEndReasonRef.current = "action-complete";
+    setTimeout(() => advanceTurnRef.current(), 600);
+  }, []);
+
   // ─── 30-second turn timer (runs for both player and enemy turns) ───────────
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   useEffect(() => {
@@ -12880,437 +12990,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Read from enemiesRef.current (fresh mirror) — the dep array omits `enemies` to avoid double-firing.
       const summonEnemy = enemiesRef.current.find((e: any) => e.id === enemyId);
       if (summonEnemy?.isSummon && summonEnemy.side === "player") {
-        // Reset AP/MP for the summon's turn.
-        summonEnemy.currentAp = summonEnemy.maxAp ?? 2;
-        summonEnemy.currentMp = summonEnemy.maxMp ?? 2;
-        // Build a real SpellContext reusing the player's damage/heal/effect/spawn paths.
-        const summonCtx = buildSpellContext({
-          rng: Math.random,
-          log: (msg: string, color?: string, isSummon?: boolean) => {
-            if (msg !== "") logBattleEntry(msg, color, isSummon);
-          },
-          getEffectiveStat: (combatantId: string, stat: string) =>
-            getStatModifier(combatantId, stat, activeEffectsRef.current),
-          dealDamage: (
-            targetId: string,
-            amount: number,
-            _opts?: { isPhysical?: boolean },
-          ) => {
-            enemyTakesDamage(targetId, amount, "player", "", false);
-            return amount;
-          },
-          heal: (combatantId: string, amount: number) => {
-            if (combatantId === "player" || combatantId === "__player__") {
-              setCharacterStats((prev: any) => ({
-                ...prev,
-                hp: Math.min(maxHp, prev.hp + amount),
-              }));
-              effectsManagerRef.current.spawnDamageNumber(0, 0, amount, "heal");
-            }
-          },
-          applyEffect: (effect: ActiveEffectLike) => {
-            applyActiveEffect(effect as unknown as ActiveEffect);
-          },
-          placeBarrier: (cell: { x: number; y: number }, turns: number) => {
-            barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
-          },
-          spawnUnit: (
-            cell: { x: number; y: number },
-            unitDef: SummonUnitDef,
-            _side: Side,
-            lifespan: number,
-            _spell: any,
-          ) => {
-            const { summon } = spawnSummonUnit(
-              cell,
-              {
-                id: `summon-spell-${unitDef.pieceType}`,
-                name: `Summon ${unitDef.pieceType}`,
-                summonUnitDef: unitDef,
-                summonLifespan: lifespan,
-                summonAI: unitDef.pieceType,
-              },
-              "player",
-              characterStats.level,
-              logBattleEntry,
-              computeEnemyStats as (
-                level: number,
-                pieceType: string,
-                seedKey: string,
-              ) => any,
-              0,
-              // OccupancyContext so spawnSummonUnit can fall back to the
-              // nearest free cell when the requested cell is occupied.
-              {
-                tiles: (currentMap?.tiles ?? []).map((row: any) =>
-                  (row ?? []).map((t: any) => t !== "wall"),
-                ),
-                barriers: new Set(barrierTilesRef.current.keys()),
-                voidTiles: currentMap?.voidTiles ?? new Set<string>(),
-                portals: new Set(
-                  (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
-                ),
-                isOccupied: (c: { x: number; y: number }) =>
-                  enemiesRef.current.some(
-                    (e: any) => e.x === c.x && e.y === c.y,
-                  ) ||
-                  (playerPositionRef.current.x === c.x &&
-                    playerPositionRef.current.y === c.y),
-              } satisfies OccupancyContext,
-            );
-            // S1 SITE #3: Atomic ADD via the combatant store. Player-side
-            // spawnUnit, so the summoner is 'player' — insert the new turn-
-            // order entry right after the player. battleParticipant: true adds
-            // the id to battleStartIds, preserving the existing roster (no
-            // wholesale REPLACE, no resetBattle).
-            addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
-              battleParticipant: true,
-              insertAfterId: "player",
-            });
-          },
-          isCellFree: (cell: { x: number; y: number }) =>
-            !getLiveCombatants(combatantStoreCtx).some(
-              (e: any) => e.x === cell.x && e.y === cell.y,
-            ) &&
-            !(
-              playerPositionRef.current.x === cell.x &&
-              playerPositionRef.current.y === cell.y
-            ),
-          getCombatantAt: (cell: { x: number; y: number }) => {
-            const e = enemiesRef.current.find(
-              (en: any) => en.x === cell.x && en.y === cell.y,
-            );
-            if (e) return { id: e.id, side: "enemy" as Side };
-            if (
-              playerPositionRef.current.x === cell.x &&
-              playerPositionRef.current.y === cell.y
-            )
-              return { id: "__player__", side: "player" as Side };
-            return null;
-          },
-          spawnEnemySummon: (cell: { x: number; y: number }, spell: any) => {
-            // Self-assign to the ref so the enemy turn executor closure
-            // (a different scope from this SpellContext builder) can invoke
-            // the latest version of this callback when a summoner enemy
-            // decides to cast a summon spell.
-            spawnEnemySummonRef.current = (
-              c: { x: number; y: number },
-              s: any,
-            ) => {
-              const unitDef: SummonUnitDef | undefined =
-                s?.summonUnitDef ??
-                starterSpells.find((sp: any) => sp.id === s?.id)?.summonUnitDef;
-              if (!unitDef) return;
-              const { summon } = spawnSummonUnit(
-                c,
-                {
-                  id: `enemy-summon-${unitDef.pieceType}`,
-                  name: `Enemy Summon ${unitDef.pieceType}`,
-                  summonUnitDef: unitDef,
-                  summonLifespan: 0,
-                  summonAI: unitDef.pieceType,
-                },
-                "enemy",
-                characterStats.level,
-                logBattleEntry,
-                computeEnemyStats as (
-                  level: number,
-                  pieceType: string,
-                  seedKey: string,
-                ) => any,
-                0,
-                {
-                  tiles: (currentMap?.tiles ?? []).map((row: any) =>
-                    (row ?? []).map((t: any) => t !== "wall"),
-                  ),
-                  barriers: new Set(barrierTilesRef.current.keys()),
-                  voidTiles: currentMap?.voidTiles ?? new Set<string>(),
-                  portals: new Set(
-                    (currentMap?.portals ?? []).map(
-                      (p: any) => `${p.x},${p.y}`,
-                    ),
-                  ),
-                  isOccupied: (oc: { x: number; y: number }) =>
-                    enemiesRef.current.some(
-                      (e: any) => e.x === oc.x && e.y === oc.y,
-                    ) ||
-                    (playerPositionRef.current.x === oc.x &&
-                      playerPositionRef.current.y === oc.y),
-                } satisfies OccupancyContext,
-              );
-              // S1 SITE #4: Atomic ADD via the combatant store. The summoner
-              // is the enemy currently casting (enemyId, captured in the
-              // outer enemy-AI-turn closure at WX ~11981). insertAfterId
-              // places the new turn-order entry right after the summoner.
-              // battleParticipant: true adds the id to battleStartIds only —
-              // the previous resetBattle: true wholesale-replaced the roster
-              // and wiped live combatants; addCombatant never resets.
-              addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
-                battleParticipant: true,
-                insertAfterId: enemyId,
-              });
-            };
-            // Invoke the same logic inline for the SpellContext caller.
-            const unitDef: SummonUnitDef | undefined =
-              spell?.summonUnitDef ??
-              starterSpells.find((s: any) => s.id === spell?.id)?.summonUnitDef;
-            if (!unitDef) return;
-            const { summon } = spawnSummonUnit(
-              cell,
-              {
-                id: `enemy-summon-${unitDef.pieceType}`,
-                name: `Enemy Summon ${unitDef.pieceType}`,
-                summonUnitDef: unitDef,
-                summonLifespan: 0,
-                summonAI: unitDef.pieceType,
-              },
-              "enemy",
-              characterStats.level,
-              logBattleEntry,
-              computeEnemyStats as (
-                level: number,
-                pieceType: string,
-                seedKey: string,
-              ) => any,
-              0,
-              {
-                tiles: (currentMap?.tiles ?? []).map((row: any) =>
-                  (row ?? []).map((t: any) => t !== "wall"),
-                ),
-                barriers: new Set(barrierTilesRef.current.keys()),
-                voidTiles: currentMap?.voidTiles ?? new Set<string>(),
-                portals: new Set(
-                  (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
-                ),
-                isOccupied: (c: { x: number; y: number }) =>
-                  enemiesRef.current.some(
-                    (e: any) => e.x === c.x && e.y === c.y,
-                  ) ||
-                  (playerPositionRef.current.x === c.x &&
-                    playerPositionRef.current.y === c.y),
-              } satisfies OccupancyContext,
-            );
-            // S1 SITE #5: Atomic ADD via the combatant store — inline twin of
-            // site #4. Same enemyId summoner, same battleParticipant +
-            // insertAfterId placement. No resetBattle, no wholesale REPLACE.
-            addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
-              battleParticipant: true,
-              insertAfterId: enemyId,
-            });
-          },
-        });
-        // Build AI context for the summon (first-class AI combatant via decideSummonAction).
-        const summonCombatants = enemiesRef.current
-          .filter((e: any) => e.id !== enemyId)
-          .map((e: any) => ({
-            id: e.id,
-            name: e.pieceType,
-            side: (e.isSummon && e.side === "player" ? "player" : "enemy") as
-              | "player"
-              | "enemy",
-            isSummon: e.isSummon,
-            summonAI: e.summonAI,
-            x: e.x,
-            y: e.y,
-            hp: e.hp,
-            maxHp: e.maxHp,
-            level: e.level,
-          }));
-        summonCombatants.push({
-          id: "player",
-          name: "player",
-          side: "player" as "player" | "enemy",
-          isSummon: false,
-          summonAI: undefined,
-          x: playerPositionRef.current.x,
-          y: playerPositionRef.current.y,
-          hp: characterStats.hp,
-          maxHp: maxHp,
-          level: characterStats.level,
-        });
-        const aiGrid: boolean[][] = (currentMap?.tiles ?? []).map((row: any) =>
-          (row ?? []).map((t: any) => t !== "wall"),
-        );
-        const aiOccupied = new Set<string>();
-        const aiBarriers = new Set<string>(barrierTilesRef.current.keys());
-        const aiPortals = new Set<string>(
-          (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
-        );
-        const aiVoid = currentMap?.voidTiles ?? new Set<string>();
-        const aiHazards = currentMap?.hazardTiles ?? new Map<string, string>();
-        const aiCtx: DecideEnemyContext = {
-          enemy: summonEnemy,
-          combatants: summonCombatants,
-          grid: aiGrid,
-          occupied: aiOccupied,
-          barriers: aiBarriers,
-          portals: aiPortals,
-          voidTiles: aiVoid,
-          hazardTiles: aiHazards,
-          availableSpells: summonEnemy.spells ?? [],
-          assignedSpells: summonEnemy.spells ?? [],
-          battleTurn,
-          allyCount: summonCombatants.filter((c: any) => c.side === "player")
-            .length,
-          enemyCount: summonCombatants.filter((c: any) => c.side === "enemy")
-            .length,
-          enrageMultiplier: 1,
-          isSlimeFlood: isSlimeFloodRef.current,
-          rng: Math.random,
-          getEffectiveStat: (cid: string, stat: string) =>
-            getStatModifier(cid, stat, activeEffectsRef.current) as number,
-          calcScaledDamage,
-          hasLineOfSight: (from: AICell, to: AICell) => {
-            const dx = Math.abs(to.x - from.x);
-            const dy = Math.abs(to.y - from.y);
-            const sx = from.x < to.x ? 1 : -1;
-            const sy = from.y < to.y ? 1 : -1;
-            let err = dx - dy;
-            let cx = from.x;
-            let cy = from.y;
-            while (!(cx === to.x && cy === to.y)) {
-              if (
-                !(cx === from.x && cy === from.y) &&
-                aiBarriers.has(`${cx},${cy}`)
-              )
-                return false;
-              const e2 = 2 * err;
-              if (e2 > -dy) {
-                err -= dy;
-                cx += sx;
-              }
-              if (e2 < dx) {
-                err += dx;
-                cy += sy;
-              }
-            }
-            return true;
-          },
-          log: (msg: string, color?: string) =>
-            summonCtx.log(msg, color ?? "#a78bfa", true),
-          focusTargetId: focusTargetRef.current,
-          setFocusTargetId: (id: string | null) => {
-            focusTargetRef.current = id;
-          },
-          focusAlreadySet: focusTurnRef.current === battleTurn,
-          markFocusSet: () => {
-            focusTurnRef.current = battleTurn;
-          },
-        };
-        const action = decideSummonAction(summonEnemy, aiCtx);
-        // Apply the action via the shared summon executor (engine/summonExecutor).
-        // Reuse the OccupancyContext built above for spawnSummonUnit so movement
-        // validation shares the same occupancy source as spawn fallback.
-        const summonOccupancyCtx: OccupancyContext = {
-          tiles: aiGrid,
-          barriers: aiBarriers,
-          voidTiles: aiVoid,
-          portals: aiPortals,
-          isOccupied: (c: { x: number; y: number }) =>
-            enemiesRef.current.some((e: any) => e.x === c.x && e.y === c.y) ||
-            (playerPositionRef.current.x === c.x &&
-              playerPositionRef.current.y === c.y),
-        };
-        const executorHelpers: SummonExecutorHelpers = {
-          calcScaledDamage,
-          occupancyCtx: summonOccupancyCtx,
-          worldGridSize: WORLD_GRID_SIZE,
-          mpCostPerTile: 1,
-          meleeApCost: 1,
-          getEnemyById: (id: string) =>
-            enemiesRef.current.find((e: any) => e.id === id),
-          getAoEVictims: (primaryId: string, blastR: number) => {
-            const primary = enemiesRef.current.find(
-              (e: any) => e.id === primaryId,
-            );
-            if (!primary) return [];
-            return enemiesRef.current.filter((e: any) => {
-              if (e.id === primaryId) return false;
-              if (e.side === summonEnemy.side) return false;
-              const dx = Math.abs((e.x ?? 0) - (primary.x ?? 0));
-              const dy = Math.abs((e.y ?? 0) - (primary.y ?? 0));
-              return Math.max(dx, dy) <= blastR;
-            });
-          },
-          // EDIT 2: reevaluate is an optional field on SummonExecutorHelpers.
-          // Real implementation: after the summon moves, re-decide with the
-          // UPDATED position (postMoveSummon.x/y — already moved by the
-          // executor) and REMAINING AP/MP (currentAp/currentMp — already
-          // deducted by applyMovement). Reuses the same aiCtx built above
-          // (line ~12913) for the initial decide — decideSummonAction reads
-          // position/AP/MP from the summon arg, not ctx, so passing the
-          // post-move summon is sufficient. Returns the EnemyAction (cast or
-          // melee) for the executor's follow-up at summonExecutor.ts:233-250,
-          // or null when the re-decide yields a move/skip (no second move —
-          // one re-decide max). The turn-advance guarantee in the try/finally
-          // below fires exactly once regardless of whether the follow-up ran.
-          reevaluate: (
-            postMoveSummon: Enemy,
-            currentAp: number,
-            currentMp: number,
-          ) => {
-            const redecide = decideSummonAction(
-              {
-                ...postMoveSummon,
-                x: postMoveSummon.x,
-                y: postMoveSummon.y,
-                currentAp,
-                currentMp,
-              },
-              aiCtx,
-            );
-            // Only cast/melee follow-ups are executable in the same turn —
-            // a re-decided move/skip yields null (no second move, no loop).
-            return redecide.kind === "cast" || redecide.kind === "melee"
-              ? redecide
-              : null;
-          },
-        };
-        // EDIT 1 (hang fix): wrap the executor call + apply in try/finally so a
-        // thrown exception still resets enemyTurnInProgressRef and advances the
-        // turn exactly once. Mirrors the enemy apply-layer try/finally pattern.
-        // One-shot advance guard: the normal-completion path sets `advanced`
-        // after its advance; the finally advances only if the try did not.
-        let advanced = false;
-        try {
-          const execResult = executeSummonAction(
-            action,
-            summonEnemy,
-            summonCtx,
-            executorHelpers,
+        // S2: Player-side summon — route to control mode (SummonControlPanel)
+        // instead of invoking the AI executor. Enemy-side summons fail this
+        // guard and keep their existing AI path at ~14417 unchanged.
+        // Tick the summon's lifespan at its own turn start.
+        if (typeof summonEnemy.summonLifespan === "number") {
+          summonEnemy.summonLifespan = Math.max(
+            0,
+            summonEnemy.summonLifespan - 1,
           );
-          // Apply the executor's returned state via the combatant store so the
-          // ref mirrors (enemiesRef/battleEnemiesRef) stay atomically in sync.
-          // Set AP/MP directly on the summon object (matching the pattern at
-          // lines 11166-11167) — updateCombatant's patch is Partial<Combatant>
-          // and does not accept currentAp/currentMp.
-          summonEnemy.currentAp = execResult.currentAp;
-          summonEnemy.currentMp = execResult.currentMp;
-          updateCombatant(combatantStoreCtx, enemyId, {
-            x: execResult.newPosition.x,
-            y: execResult.newPosition.y,
-            hp: execResult.hp,
-          });
-          // Always advance the turn — no stalls.
-          // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
-          // useEffect gate (line ~10639) does not early-return on the next
-          // enemy/summon turn. Every other branch in this pipeline resets this ref;
-          // the summon branch was the only one that forgot, stalling all turns
-          // after the first summon turn.
-          enemyTurnInProgressRef.current = false;
-          turnEndReasonRef.current = "action-complete";
-          setTimeout(() => advanceTurnRef.current(), 600);
-          advanced = true;
-        } finally {
-          // Unconditionally reset the ref so the next enemy-phase gate is open.
-          enemyTurnInProgressRef.current = false;
-          // If the try threw before its own advance, advance exactly once here.
-          if (!advanced) {
-            turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
-            advanced = true;
-          }
         }
+        logBattleEntry(
+          `${summonEnemy.pieceType ?? "Summon"}'s turn — player control`,
+          "#a78bfa",
+        );
+        setActiveControlledSummonId(summonEnemy.id);
+        activeControlledSummonIdRef.current = summonEnemy.id;
         return;
       }
       if (enemyTurnAbortRef.current) {
@@ -13619,7 +13314,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // across all mirrors + setters. The store auto-syncs
             // battleEnemies, so the explicit setBattleEnemies sync is
             // redundant and removed.
-            removeCombatant(combatantStoreCtx, allyT.id);
+            processCombatantDeath(allyT.id, deathPipelineCtx);
             updateCombatant(combatantStoreCtx, enemyId, {
               maxHp: Math.round(
                 (turnOrderRef.current.find((c) => c.id === enemyId)?.maxHp ??
@@ -13681,7 +13376,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       // combatants/enemies/battleEnemies/turnOrder
                       // atomically (replaces the separate setTurnOrder +
                       // setEnemies filters).
-                      removeCombatant(combatantStoreCtx, sbT.id);
+                      processCombatantDeath(sbT.id, deathPipelineCtx);
                     }
                     return { ...h, [sbT.id]: nHp };
                   });
@@ -15008,6 +14703,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     },
     [tileCenter],
   );
+  triggerLeaderDeathAnimationRef.current = triggerLeaderDeathAnimation;
   // Marks the player's first MP/AP-spending action. If a challenge was offered
   // but not yet accepted, dismiss the offer (accept window has elapsed).
   const markFirstAction = useCallback(() => {

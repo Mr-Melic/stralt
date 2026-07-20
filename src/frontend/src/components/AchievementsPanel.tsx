@@ -73,8 +73,20 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
     (achievement: AchievementConfig) => {
       claimMut.mutate(achievement.id, {
         onSuccess: (result) => {
+          console.log(
+            "[FEATS] CLAIM: handleClaim onSuccess raw result =",
+            JSON.stringify(result, (_k, v) =>
+              typeof v === "bigint" ? v.toString() : v,
+            ),
+          );
           if ("ok" in result) {
             const granted = Number(result.ok);
+            console.log(
+              "[FEATS] CLAIM: #ok granted amount =",
+              granted,
+              "for",
+              achievement.id,
+            );
             // Optimistic update: flip claimed=true immediately so the UI
             // reflects the claim without waiting for the refetch to propagate.
             queryClient.setQueryData(
@@ -93,6 +105,12 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
             onDokaBalanceChange(dokaBalance + granted);
             toast.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
           } else if ("err" in result) {
+            console.log(
+              "[FEATS] CLAIM: #err message =",
+              result.err,
+              "for",
+              achievement.id,
+            );
             // Backend rejected the claim (e.g. "Achievement not yet unlocked"
             // or "already claimed"). Undo any optimistic claimed=true flip so
             // the row reflects the real backend state, then refetch.
@@ -219,6 +237,21 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
               const p = getProgress(cfg.id);
               const unlocked = p?.unlocked ?? false;
               const claimed = p?.claimed ?? false;
+              console.log(
+                "[FEATS] LIST: achievement",
+                cfg.id,
+                "claimed =",
+                p?.claimed,
+                "(unlocked =",
+                p?.unlocked,
+                ")",
+              );
+              if (claimed) {
+                console.log(
+                  "[FEATS] LIST: claimed-row render conditional TRUE for",
+                  cfg.id,
+                );
+              }
 
               return (
                 <div

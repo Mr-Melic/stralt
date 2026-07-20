@@ -250,15 +250,10 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     targetsToHit,
     activeEffectsRef,
     turnOrderRef,
-    currentTurnIndexRef,
     bossStateRef,
     enemyHpMap,
-    leaderEnemyIdRef,
     battleHitsRef,
     battleCritHitsRef,
-    battleLeaderSlainRef,
-    leaderDiedRef,
-    leaderBoostPercent,
     calculatePlayerDamage,
     logBattleEntry,
     calcEnemyMaxHp,
@@ -267,9 +262,6 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     enemies,
     enemyTakesDamage,
     playSound,
-    setEnemies,
-    triggerLeaderDeathAnimation,
-    setLeaderBoostMultiplier,
     setCharacterStats,
   } = deps;
 
@@ -277,7 +269,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     hitTarget.id === "__player__" ? undefined : (hitTarget as Enemy);
   let finalDmg: number;
   if (hitTarget.id !== "__player__" && targetEnemy) {
-    const { finalDamage, breakdown } = calculatePlayerDamage(
+    const { finalDamage } = calculatePlayerDamage(
       preCritDmgBM,
       spell.id,
       targetEnemy,
@@ -287,7 +279,6 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
       activeEffectsRef.current,
     );
     finalDmg = finalDamage;
-    logBattleEntry(breakdown, "#fbbf24");
   } else {
     finalDmg = preCritDmgBM;
   }
@@ -367,10 +358,6 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
   const enemyPrevHp =
     enemyHpMap[hitTarget.id] ?? calcEnemyMaxHp(hitTarget.level);
   const enemyNewHp = Math.max(0, enemyPrevHp - finalDmg);
-  logBattleEntry(
-    `${hitTarget.pieceType} lost ${finalDmg} HP (now ${enemyNewHp}/${calcEnemyMaxHp(hitTarget.level)})`,
-    "#a855f7",
-  );
 
   setEnemyHpMap((prev) => ({
     ...prev,
@@ -423,74 +410,12 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
       ...prev,
       hp: Math.max(0, prev.hp - finalDmg),
     }));
-  } else if (enemyNewHp <= 0) {
-    playSound("enemy_death", hitTarget.pieceType);
-    // Order matters: remove from the turn queue (state + refs + index math)
-    // BEFORE setEnemies drops the enemy from state. This closes the window
-    // where `enemies` no longer references a combatant but the turn queue
-    // still does, which could let a ghost slot receive a turn dispatch.
-    removeCombatantFromTurnQueue(
-      turnOrderRef.current,
-      turnOrderRef,
-      currentTurnIndexRef,
-      hitTarget.id,
-      setTurnOrder,
-    );
-    setEnemies((prev) => prev.filter((e) => e.id !== hitTarget.id));
-    playSound("leader_boost");
-    // Track leader slain achievement + trigger death animation
-    if (hitTarget.id === leaderEnemyIdRef.current) {
-      battleLeaderSlainRef.current = true;
-      // Trigger leader death particle burst
-      triggerLeaderDeathAnimation(hitTarget.x, hitTarget.y);
-      logBattleEntry(
-        "👑 LEADER DEFEATED! Remaining enemies act erratically!",
-        "#ffd700",
-      );
-      leaderDiedRef.current = true;
-    }
-    // Stat-steal-on-ally-death: only enemy-side deaths buff the leader.
-    // Player-side summon deaths (side === 'player' && isSummon) must NOT grant
-    // the boss/leader any maxHp/hp boost. The __player__ sentinel is already
-    // excluded by the `else if (enemyNewHp <= 0)` branch above (line 421 guard).
-    const isEnemySideDeath =
-      (hitTarget as Enemy).side !== "player" &&
-      !(
-        (hitTarget as Enemy).isSummon === true &&
-        (hitTarget as Enemy).side === "player"
-      );
-    if (
-      leaderEnemyIdRef.current &&
-      hitTarget.id !== leaderEnemyIdRef.current &&
-      isEnemySideDeath
-    ) {
-      const boostFactor = 1 + leaderBoostPercent / 100;
-      setLeaderBoostMultiplier((prev) => prev * boostFactor);
-      setTurnOrder((prev) =>
-        prev.map((c) =>
-          c.id === leaderEnemyIdRef.current
-            ? {
-                ...c,
-                maxHp: Math.round(c.maxHp * boostFactor),
-                hp: Math.round((enemyHpMap[c.id] ?? c.hp) * boostFactor),
-              }
-            : c,
-        ),
-      );
-      setEnemyHpMap((prev) => {
-        const lid = leaderEnemyIdRef.current;
-        if (!lid || !prev[lid]) return prev;
-        return {
-          ...prev,
-          [lid]: Math.round(prev[lid] * boostFactor),
-        };
-      });
-      logBattleEntry(
-        `\uD83D\uDC51 [LEADER] gains +${leaderBoostPercent}% stats from ally death!`,
-        "#ffd700",
-      );
-    }
   }
+  // NOTE: Enemy death handling (hp <= 0) is NO LONGER done inline here.
+  // The caller (enemyTakesDamage in WorldExploration.tsx) detects hp<=0 and
+  // routes the death through processCombatantDeath (engine/deathPipeline.ts),
+  // which owns the leader death-boost, sound, queue removal, and setEnemies
+  // filter as a single unified pipeline.
 
   // Drain: heal player too (once per cast, not per target)
   if (isDrainSpell && hitTarget === targetsToHit[0]) {
