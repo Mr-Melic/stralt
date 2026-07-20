@@ -8658,6 +8658,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [canvasSize, effectiveTileW, effectiveTileH, isDesktop],
   );
 
+  // Pointer-to-render-space helper: converts a pointer event into the renderer's LOGICAL (CSS) pixel space.
+  // Uses canvasSize (CSS state) NOT canvas.width (physical backing-store). This is the space
+  // gridToScreen, _screenToGrid, clientToGrid, and hitTestSprite all operate in.
+  const pointerToRenderSpace = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } => {
+      const _canvas = canvasRef.current;
+      if (!_canvas) return { x: 0, y: 0 };
+      const _rect = _canvas.getBoundingClientRect();
+      if (_rect.width === 0 || _rect.height === 0) return { x: 0, y: 0 };
+      const x = (clientX - _rect.left) * (canvasSize.width / _rect.width);
+      const y = (clientY - _rect.top) * (canvasSize.height / _rect.height);
+      return { x, y };
+    },
+    [canvasSize],
+  );
+
   // Handle canvas click — DPR-aware coordinates
   const castRuntimeRef = useRef<{
     apCost: number;
@@ -9164,230 +9180,153 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       {
         const _canvas = canvasRef.current;
         if (_canvas) {
-          const _rect = _canvas.getBoundingClientRect();
-          if (_rect) {
-            const _cssW = _canvas.width;
-            const _cssH = _canvas.height;
-            const _canvasX =
-              (event.clientX - _rect.left) * (_cssW / _rect.width);
-            const _canvasY =
-              (event.clientY - _rect.top) * (_cssH / _rect.height);
-            const _hit = hitTestSprite(_canvasX, _canvasY, 4);
-            if (_hit) {
-              if (selectedSpellIdRef.current && _hit.kind === "enemy") {
-                const _spell = activeSpells.find(
-                  (s) => s.id === selectedSpellIdRef.current,
+          const _ptr = pointerToRenderSpace(event.clientX, event.clientY);
+          const _canvasX = _ptr.x;
+          const _canvasY = _ptr.y;
+          // Self-announcing space check: log nearest rect distance so a future space mismatch is instantly visible.
+          let _nearestId: string | null = null;
+          let _nearestDx = 0;
+          let _nearestDy = 0;
+          let _nearestDist = Number.POSITIVE_INFINITY;
+          for (const [_rid, _r] of spriteRectsRef.current) {
+            const _cx = _r.x + _r.w / 2;
+            const _cy = _r.y + _r.h / 2;
+            const _d = Math.hypot(_canvasX - _cx, _canvasY - _cy);
+            if (_d < _nearestDist) {
+              _nearestDist = _d;
+              _nearestId = _rid;
+              _nearestDx = _canvasX - _cx;
+              _nearestDy = _canvasY - _cy;
+            }
+          }
+          const _hit = hitTestSprite(_canvasX, _canvasY, 4);
+          logClickGuard("SPRITE-HIT", {
+            pointerLogical: { x: _canvasX, y: _canvasY },
+            dpr: dprRef.current,
+            nearestRect: {
+              id: _nearestId,
+              dx: Math.round(_nearestDx),
+              dy: Math.round(_nearestDy),
+            },
+            hit: _hit ? _hit.id : null,
+          });
+          if (_hit) {
+            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+              const _spell = activeSpells.find(
+                (s) => s.id === selectedSpellIdRef.current,
+              );
+              if (_spell) {
+                const _liveCombatants = getLiveCombatants(combatantStoreCtx);
+                const _live = isTileCastableLive(
+                  _spell,
+                  playerPositionRef.current,
+                  { x: _hit.logicalX, y: _hit.logicalY },
+                  _liveCombatants,
+                  currentMap.tiles,
                 );
-                if (_spell) {
-                  const _liveCombatants = getLiveCombatants(combatantStoreCtx);
-                  const _live = isTileCastableLive(
-                    _spell,
-                    playerPositionRef.current,
-                    { x: _hit.logicalX, y: _hit.logicalY },
-                    _liveCombatants,
-                    currentMap.tiles,
-                  );
-                  if (_live.ok) {
-                    // eslint-disable-next-line no-console
-                    console.log("[CLICK-ENEMY]", {
-                      branchTaken: "cast-sprite",
-                      hitId: _hit.id,
-                      logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
-                    });
-                    // Reuse the existing cast body — same path the
-                    // cast-live branch at 9092 takes. AP cost is computed
-                    // via mapModifierRegistry.applyApCost (Arcane Surge etc.)
-                    // and the cast is resolved via resolvePlayerCast at the
-                    // entity's logical tile.
-                    const _apCost = mapModifierRegistry.applyApCost(
-                      Number(_spell.apCost),
-                      activeMapModifierTypes,
-                      {
-                        log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                        rng: Math.random,
-                      },
-                    );
-                    const _apGatePassedSprite =
-                      currentBattleApRef.current >= _apCost;
-                    if (_apGatePassedSprite) {
-                      castRuntimeRef.current.apCost = _apCost;
-                      castRuntimeRef.current.spell = _spell;
-                      const _castResult = resolvePlayerCast(
-                        _spell,
-                        { x: _hit.logicalX, y: _hit.logicalY },
-                        playerSpellContext(),
-                      );
-                      logDebugInfo(
-                        "BATTLE",
-                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
-                      );
-                      if (_castResult === "cast") {
-                        setCurrentBattleApSynced((prev) =>
-                          Math.max(0, prev - _apCost),
-                        );
-                        markFirstAction();
-                        challengeMaxApThisTurnRef.current += _apCost;
-                      } else {
-                        const _screen = tileCenter(
-                          _hit.logicalX,
-                          _hit.logicalY,
-                        );
-                        effectsManagerRef.current?.spawnFloatText(
-                          _screen.x,
-                          _screen.y,
-                          `Cast ${_castResult}!`,
-                        );
-                      }
-                    } else {
-                      const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                      effectsManagerRef.current?.spawnFloatText(
-                        _screen.x,
-                        _screen.y,
-                        "Not enough AP",
-                      );
-                      logDebugInfo(
-                        "BATTLE",
-                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort`,
-                      );
-                    }
-                    return;
-                  }
+                if (_live.ok) {
                   // eslint-disable-next-line no-console
                   console.log("[CLICK-ENEMY]", {
-                    branchTaken: "rejected-live",
+                    branchTaken: "cast-sprite",
                     hitId: _hit.id,
-                    reason: _live.reason,
+                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                   });
-                  {
+                  // Reuse the existing cast body — same path the
+                  // cast-live branch at 9092 takes. AP cost is computed
+                  // via mapModifierRegistry.applyApCost (Arcane Surge etc.)
+                  // and the cast is resolved via resolvePlayerCast at the
+                  // entity's logical tile.
+                  const { castResult: _castResult, apCost: _apCost } =
+                    executeCastAttempt(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      "sprite-enemy",
+                    );
+                  if (_castResult !== "cast") {
                     const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                     effectsManagerRef.current?.spawnFloatText(
                       _screen.x,
                       _screen.y,
-                      _live.reason,
-                    );
-                    logDebugInfo(
-                      "BATTLE",
-                      `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
+                      _castResult === "no_ap"
+                        ? "Not enough AP"
+                        : `Cast ${_castResult}!`,
                     );
                   }
                   return;
                 }
-              } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
-                // No spell selected — attempt basic physical attack through
-                // the same live validation + cast ritual as a selected spell.
-                // If not legal, show floating reason AND open inspect fallback.
-                const _basicAttack = activeSpells.find(
-                  (s) => s.id === "physical_attack",
-                );
-                if (_basicAttack && _hit.id) {
-                  const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                  const _liveCombatantsBasic =
-                    getLiveCombatants(combatantStoreCtx);
-                  const _live = isTileCastableLive(
-                    _basicAttack,
-                    playerPositionRef.current,
-                    _tile,
-                    _liveCombatantsBasic,
-                    currentMap.tiles,
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "rejected-live",
+                  hitId: _hit.id,
+                  reason: _live.reason,
+                });
+                {
+                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _live.reason,
                   );
-                  const _apCostBasic = mapModifierRegistry.applyApCost(
-                    Number(_basicAttack.apCost),
-                    activeMapModifierTypes,
-                    {
-                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                      rng: Math.random,
-                    },
+                  logDebugInfo(
+                    "BATTLE",
+                    `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
                   );
-                  const _apGatePassed =
-                    _live.ok && currentBattleApRef.current >= _apCostBasic;
-                  if (_apGatePassed) {
-                    castRuntimeRef.current.apCost = _apCostBasic;
-                    castRuntimeRef.current.spell = _basicAttack;
-                    const _screen = tileCenter(_tile.x, _tile.y);
-                    const _castResult = resolvePlayerCast(
-                      _basicAttack,
-                      _tile,
-                      playerSpellContext(),
-                    );
-                    logDebugInfo(
-                      "BATTLE",
-                      `[CLICK-ENEMY] basic-attack casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
-                    );
-                    if (_castResult === "cast") {
-                      setCurrentBattleApSynced((prev) =>
-                        Math.max(0, prev - _apCostBasic),
-                      );
-                      markFirstAction();
-                      challengeMaxApThisTurnRef.current += _apCostBasic;
-                    } else {
-                      effectsManagerRef.current?.spawnFloatText(
-                        _screen.x,
-                        _screen.y,
-                        `Cast ${_castResult}!`,
-                      );
-                    }
-                  } else {
-                    const _screen = tileCenter(_tile.x, _tile.y);
-                    const _reason = !_live.ok ? _live.reason : "Not enough AP";
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      _reason,
-                    );
-                    logDebugInfo(
-                      "BATTLE",
-                      `[CLICK-ENEMY] basic-attack-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=false reason=${_reason}`,
-                    );
-                    setInspectCombatantId(_hit.id);
-                  }
-                } else {
-                  setInspectCombatantId(_hit.id);
                 }
                 return;
-              } else if (selectedSpellIdRef.current && _hit.kind === "player") {
-                // Self/ally-targetable spell + player sprite hit → self-cast.
-                // Uses the spell's explicit targetType metadata (NOT name
-                // heuristics) per the targeting-rule spec.
-                const _spell = activeSpells.find(
-                  (s) => s.id === selectedSpellIdRef.current,
-                );
-                if (
-                  _spell &&
-                  (_spell.targetType === "self" || _spell.targetType === "ally")
-                ) {
-                  // eslint-disable-next-line no-console
-                  console.log("[CLICK-ENEMY]", {
-                    branchTaken: "self-cast-sprite",
-                    hitId: "player",
-                  });
-                  const _apCost = mapModifierRegistry.applyApCost(
-                    Number(_spell.apCost),
-                    activeMapModifierTypes,
-                    {
-                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                      rng: Math.random,
-                    },
-                  );
-                  if (currentBattleApRef.current >= _apCost) {
-                    castRuntimeRef.current.apCost = _apCost;
-                    castRuntimeRef.current.spell = _spell;
-                    const _castResult = resolvePlayerCast(
-                      _spell,
-                      { x: _hit.logicalX, y: _hit.logicalY },
-                      playerSpellContext(),
-                    );
-                    if (_castResult === "cast") {
-                      setCurrentBattleApSynced((prev) =>
-                        Math.max(0, prev - _apCost),
-                      );
-                      markFirstAction();
-                      challengeMaxApThisTurnRef.current += _apCost;
-                    }
-                  }
-                  return;
-                }
-                // Not self/ally-targetable → fall through to tile logic.
               }
+            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+              // No spell selected — attempt basic physical attack through
+              // the same live validation + cast ritual as a selected spell.
+              // If not legal, show floating reason AND open inspect fallback.
+              const _basicAttack = activeSpells.find(
+                (s) => s.id === "physical_attack",
+              );
+              if (_basicAttack && _hit.id) {
+                const _tile = { x: _hit.logicalX, y: _hit.logicalY };
+                const { castResult: _castResult, apCost: _apCostBasic } =
+                  executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                if (_castResult !== "cast") {
+                  const _screen = tileCenter(_tile.x, _tile.y);
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _castResult === "no_ap"
+                      ? "Not enough AP"
+                      : `Cast ${_castResult}!`,
+                  );
+                  setInspectCombatantId(_hit.id);
+                }
+              } else {
+                setInspectCombatantId(_hit.id);
+              }
+              return;
+            } else if (selectedSpellIdRef.current && _hit.kind === "player") {
+              // Self/ally-targetable spell + player sprite hit → self-cast.
+              // Uses the spell's explicit targetType metadata (NOT name
+              // heuristics) per the targeting-rule spec.
+              const _spell = activeSpells.find(
+                (s) => s.id === selectedSpellIdRef.current,
+              );
+              if (
+                _spell &&
+                (_spell.targetType === "self" || _spell.targetType === "ally")
+              ) {
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "self-cast-sprite",
+                  hitId: "player",
+                });
+                const { castResult: _castResult, apCost: _apCost } =
+                  executeCastAttempt(
+                    _spell,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    "sprite-player",
+                  );
+                void _castResult;
+                void _apCost;
+                return;
+              }
+              // Not self/ally-targetable → fall through to tile logic.
             }
           }
         }
@@ -9660,37 +9599,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               currentBattleAp: currentBattleApRef.current,
             });
           }
-          // Arcane Surge: spells cost 1 less AP (minimum 1)
-          const apCost = mapModifierRegistry.applyApCost(
-            Number(spell.apCost),
-            activeMapModifierTypes,
-            {
-              log: (msg: string) => logDebugInfo("MODIFIER", msg),
-              rng: Math.random,
-            },
-          );
-          if (!(currentBattleApRef.current >= apCost)) return;
-          castRuntimeRef.current.apCost = apCost;
-          castRuntimeRef.current.spell = spell;
-          if (spell.isSummon) {
-            logDebugInfo("SUMMON", "cast handler received summon spell", {
-              spellId: spell.id,
-              gridPos,
-            });
-          }
-          const castResult = resolvePlayerCast(
+          const { castResult, apCost } = executeCastAttempt(
             spell,
             gridPos,
-            playerSpellContext(),
+            "tile",
           );
           logDebugInfo(
             "BATTLE",
             `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`,
           );
           if (castResult === "cast") {
-            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-            markFirstAction();
-            challengeMaxApThisTurnRef.current += apCost;
+            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
+            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
             if (
               Math.max(
                 Math.abs(gridPos.x - playerPositionRef.current.x),
@@ -9739,9 +9659,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
             // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
             // owned by another task — do NOT touch it here.
-            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-            markFirstAction();
-            challengeMaxApThisTurnRef.current += apCost;
+            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
+            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
@@ -9872,9 +9791,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       getMpReachableTiles,
       getSpellRangeTiles,
       activeSpells,
-      playerSpellContext,
       logBattleEntry,
-      activeMapModifierTypes,
       isThornedGround,
       isVoidRift,
       voidRiftTile,
@@ -9882,6 +9799,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       hitTestSprite,
       setCurrentBattleApSynced,
       tileCenter,
+      pointerToRenderSpace,
     ],
   );
   // Handle canvas mouse move
@@ -9938,222 +9856,155 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       {
         const _canvas = canvasRef.current;
         if (_canvas) {
-          const _rect = _canvas.getBoundingClientRect();
-          if (_rect) {
-            const _cssW = _canvas.width;
-            const _cssH = _canvas.height;
-            const _canvasX =
-              (touch.clientX - _rect.left) * (_cssW / _rect.width);
-            const _canvasY =
-              (touch.clientY - _rect.top) * (_cssH / _rect.height);
-            const _hit = hitTestSprite(_canvasX, _canvasY, 8);
-            if (_hit) {
-              if (selectedSpellIdRef.current && _hit.kind === "enemy") {
-                const _spell = activeSpells.find(
-                  (s) => s.id === selectedSpellIdRef.current,
+          const _ptr = pointerToRenderSpace(touch.clientX, touch.clientY);
+          const _canvasX = _ptr.x;
+          const _canvasY = _ptr.y;
+          // Self-announcing space check: log nearest rect distance so a future space mismatch is instantly visible.
+          let _nearestId: string | null = null;
+          let _nearestDx = 0;
+          let _nearestDy = 0;
+          let _nearestDist = Number.POSITIVE_INFINITY;
+          for (const [_rid, _r] of spriteRectsRef.current) {
+            const _cx = _r.x + _r.w / 2;
+            const _cy = _r.y + _r.h / 2;
+            const _d = Math.hypot(_canvasX - _cx, _canvasY - _cy);
+            if (_d < _nearestDist) {
+              _nearestDist = _d;
+              _nearestId = _rid;
+              _nearestDx = _canvasX - _cx;
+              _nearestDy = _canvasY - _cy;
+            }
+          }
+          const _hit = hitTestSprite(_canvasX, _canvasY, 8);
+          logClickGuard("SPRITE-HIT", {
+            pointerLogical: { x: _canvasX, y: _canvasY },
+            dpr: dprRef.current,
+            nearestRect: {
+              id: _nearestId,
+              dx: Math.round(_nearestDx),
+              dy: Math.round(_nearestDy),
+            },
+            hit: _hit ? _hit.id : null,
+          });
+          if (_hit) {
+            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+              const _spell = activeSpells.find(
+                (s) => s.id === selectedSpellIdRef.current,
+              );
+              if (_spell) {
+                const _liveCombatants = getLiveCombatants(combatantStoreCtx);
+                const _live = isTileCastableLive(
+                  _spell,
+                  playerPositionRef.current,
+                  { x: _hit.logicalX, y: _hit.logicalY },
+                  _liveCombatants,
+                  currentMap.tiles,
                 );
-                if (_spell) {
-                  const _liveCombatants = getLiveCombatants(combatantStoreCtx);
-                  const _live = isTileCastableLive(
-                    _spell,
-                    playerPositionRef.current,
-                    { x: _hit.logicalX, y: _hit.logicalY },
-                    _liveCombatants,
-                    currentMap.tiles,
-                  );
-                  if (_live.ok) {
-                    // eslint-disable-next-line no-console
-                    console.log("[CLICK-ENEMY]", {
-                      branchTaken: "cast-sprite",
-                      hitId: _hit.id,
-                      logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
-                    });
-                    const _apCost = mapModifierRegistry.applyApCost(
-                      Number(_spell.apCost),
-                      activeMapModifierTypes,
-                      {
-                        log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                        rng: Math.random,
-                      },
-                    );
-                    const _apGatePassedSprite =
-                      currentBattleApRef.current >= _apCost;
-                    if (_apGatePassedSprite) {
-                      castRuntimeRef.current.apCost = _apCost;
-                      castRuntimeRef.current.spell = _spell;
-                      const _castResult = resolvePlayerCast(
-                        _spell,
-                        { x: _hit.logicalX, y: _hit.logicalY },
-                        playerSpellContext(),
-                      );
-                      logDebugInfo(
-                        "BATTLE",
-                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
-                      );
-                      if (_castResult === "cast") {
-                        setCurrentBattleApSynced((prev) =>
-                          Math.max(0, prev - _apCost),
-                        );
-                        markFirstAction();
-                        challengeMaxApThisTurnRef.current += _apCost;
-                      } else {
-                        const _screen = tileCenter(
-                          _hit.logicalX,
-                          _hit.logicalY,
-                        );
-                        effectsManagerRef.current?.spawnFloatText(
-                          _screen.x,
-                          _screen.y,
-                          `Cast ${_castResult}!`,
-                        );
-                      }
-                    } else {
-                      const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                      effectsManagerRef.current?.spawnFloatText(
-                        _screen.x,
-                        _screen.y,
-                        "Not enough AP",
-                      );
-                      logDebugInfo(
-                        "BATTLE",
-                        `[CLICK-ENEMY] cast-sprite casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${_apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort`,
-                      );
-                    }
-                    return;
-                  }
+                if (_live.ok) {
                   // eslint-disable-next-line no-console
                   console.log("[CLICK-ENEMY]", {
-                    branchTaken: "rejected-live",
+                    branchTaken: "cast-sprite",
                     hitId: _hit.id,
-                    reason: _live.reason,
+                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                   });
-                  {
+                  const { castResult: _castResult, apCost: _apCost } =
+                    executeCastAttempt(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      "sprite-enemy",
+                    );
+                  if (_castResult !== "cast") {
                     const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                     effectsManagerRef.current?.spawnFloatText(
                       _screen.x,
                       _screen.y,
-                      _live.reason,
-                    );
-                    logDebugInfo(
-                      "BATTLE",
-                      `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
+                      `Cast ${_castResult}!`,
                     );
                   }
                   return;
                 }
-              } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
-                // No spell selected — attempt basic physical attack through
-                // the same live validation + cast ritual as a selected spell.
-                // If not legal, show floating reason AND open inspect fallback.
-                const _basicAttack = activeSpells.find(
-                  (s) => s.id === "physical_attack",
-                );
-                if (_basicAttack && _hit.id) {
-                  const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                  const _liveCombatantsBasic =
-                    getLiveCombatants(combatantStoreCtx);
-                  const _live = isTileCastableLive(
-                    _basicAttack,
-                    playerPositionRef.current,
-                    _tile,
-                    _liveCombatantsBasic,
-                    currentMap.tiles,
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "rejected-live",
+                  hitId: _hit.id,
+                  reason: _live.reason,
+                });
+                {
+                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _live.reason,
                   );
-                  const _apCostBasic = mapModifierRegistry.applyApCost(
-                    Number(_basicAttack.apCost),
-                    activeMapModifierTypes,
-                    {
-                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                      rng: Math.random,
-                    },
+                  logDebugInfo(
+                    "BATTLE",
+                    `[CLICK-ENEMY] cast-sprite-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify({ x: _hit.logicalX, y: _hit.logicalY })} spellId=${_spell.id} apCost=${Number(_spell.apCost)} currentBattleAp=${currentBattleApRef.current} apGatePassed=false castResult=abort reason=${_live.reason}`,
                   );
-                  const _apGatePassed =
-                    _live.ok && currentBattleApRef.current >= _apCostBasic;
-                  if (_apGatePassed) {
-                    castRuntimeRef.current.apCost = _apCostBasic;
-                    castRuntimeRef.current.spell = _basicAttack;
-                    const _screen = tileCenter(_tile.x, _tile.y);
-                    const _castResult = resolvePlayerCast(
-                      _basicAttack,
-                      _tile,
-                      playerSpellContext(),
-                    );
-                    logDebugInfo(
-                      "BATTLE",
-                      `[CLICK-ENEMY] basic-attack casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${_castResult}`,
-                    );
-                    if (_castResult === "cast") {
-                      setCurrentBattleApSynced((prev) =>
-                        Math.max(0, prev - _apCostBasic),
-                      );
-                      markFirstAction();
-                      challengeMaxApThisTurnRef.current += _apCostBasic;
-                    } else {
-                      effectsManagerRef.current?.spawnFloatText(
-                        _screen.x,
-                        _screen.y,
-                        `Cast ${_castResult}!`,
-                      );
-                    }
-                  } else {
-                    const _screen = tileCenter(_tile.x, _tile.y);
-                    const _reason = !_live.ok ? _live.reason : "Not enough AP";
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      _reason,
-                    );
-                    logDebugInfo(
-                      "BATTLE",
-                      `[CLICK-ENEMY] basic-attack-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=false reason=${_reason}`,
-                    );
-                    setInspectCombatantId(_hit.id);
-                  }
-                } else {
-                  setInspectCombatantId(_hit.id);
                 }
                 return;
-              } else if (selectedSpellIdRef.current && _hit.kind === "player") {
-                const _spell = activeSpells.find(
-                  (s) => s.id === selectedSpellIdRef.current,
-                );
-                if (
-                  _spell &&
-                  (_spell.targetType === "self" || _spell.targetType === "ally")
-                ) {
-                  // eslint-disable-next-line no-console
-                  console.log("[CLICK-ENEMY]", {
-                    branchTaken: "self-cast-sprite",
-                    hitId: "player",
-                  });
-                  const _apCost = mapModifierRegistry.applyApCost(
-                    Number(_spell.apCost),
-                    activeMapModifierTypes,
-                    {
-                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                      rng: Math.random,
-                    },
-                  );
-                  if (currentBattleApRef.current >= _apCost) {
-                    castRuntimeRef.current.apCost = _apCost;
-                    castRuntimeRef.current.spell = _spell;
-                    const _castResult = resolvePlayerCast(
-                      _spell,
-                      { x: _hit.logicalX, y: _hit.logicalY },
-                      playerSpellContext(),
-                    );
-                    if (_castResult === "cast") {
-                      setCurrentBattleApSynced((prev) =>
-                        Math.max(0, prev - _apCost),
-                      );
-                      markFirstAction();
-                      challengeMaxApThisTurnRef.current += _apCost;
-                    }
-                  }
-                  return;
-                }
-                // Not self/ally-targetable → fall through to tile logic.
               }
+            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+              // No spell selected — attempt basic physical attack through
+              // the same live validation + cast ritual as a selected spell.
+              // If not legal, show floating reason AND open inspect fallback.
+              const _basicAttack = activeSpells.find(
+                (s) => s.id === "physical_attack",
+              );
+              if (_basicAttack && _hit.id) {
+                const _tile = { x: _hit.logicalX, y: _hit.logicalY };
+                const _liveCombatantsBasic =
+                  getLiveCombatants(combatantStoreCtx);
+                const _live = isTileCastableLive(
+                  _basicAttack,
+                  playerPositionRef.current,
+                  _tile,
+                  _liveCombatantsBasic,
+                  currentMap.tiles,
+                );
+                const { castResult: _castResult, apCost: _apCostBasic } =
+                  executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                if (_castResult !== "cast") {
+                  const _screen = tileCenter(_tile.x, _tile.y);
+                  const _reason = !_live.ok ? _live.reason : "Not enough AP";
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _reason,
+                  );
+                  logDebugInfo(
+                    "BATTLE",
+                    `[CLICK-ENEMY] basic-attack-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(_tile)} spellId=${_basicAttack.id} apCost=${_apCostBasic} currentBattleAp=${currentBattleApRef.current} apGatePassed=false reason=${_reason}`,
+                  );
+                  setInspectCombatantId(_hit.id);
+                }
+              } else {
+                setInspectCombatantId(_hit.id);
+              }
+              return;
+            } else if (selectedSpellIdRef.current && _hit.kind === "player") {
+              const _spell = activeSpells.find(
+                (s) => s.id === selectedSpellIdRef.current,
+              );
+              if (
+                _spell &&
+                (_spell.targetType === "self" || _spell.targetType === "ally")
+              ) {
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "self-cast-sprite",
+                  hitId: "player",
+                });
+                const { castResult: _castResult, apCost: _apCost } =
+                  executeCastAttempt(
+                    _spell,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    "sprite-player",
+                  );
+                void _castResult;
+                void _apCost;
+                return;
+              }
+              // Not self/ally-targetable → fall through to tile logic.
             }
           }
         }
@@ -10417,37 +10268,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               currentBattleAp: currentBattleApRef.current,
             });
           }
-          // Arcane Surge: spells cost 1 less AP (minimum 1)
-          const apCost = mapModifierRegistry.applyApCost(
-            Number(spell.apCost),
-            activeMapModifierTypes,
-            {
-              log: (msg: string) => logDebugInfo("MODIFIER", msg),
-              rng: Math.random,
-            },
-          );
-          if (!(currentBattleApRef.current >= apCost)) return;
-          castRuntimeRef.current.apCost = apCost;
-          castRuntimeRef.current.spell = spell;
-          if (spell.isSummon) {
-            logDebugInfo("SUMMON", "cast handler received summon spell", {
-              spellId: spell.id,
-              gridPos,
-            });
-          }
-          const castResult = resolvePlayerCast(
+          const { castResult, apCost } = executeCastAttempt(
             spell,
             gridPos,
-            playerSpellContext(),
+            "tile",
           );
           logDebugInfo(
             "BATTLE",
             `[CLICK-ENEMY] cast-live casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${selectedSpellIdRef.current} apCost=${apCost} currentBattleAp=${currentBattleApRef.current} apGatePassed=true castResult=${castResult}`,
           );
           if (castResult === "cast") {
-            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-            markFirstAction();
-            challengeMaxApThisTurnRef.current += apCost;
+            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
+            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
             if (
               Math.max(
                 Math.abs(gridPos.x - playerPositionRef.current.x),
@@ -10496,9 +10328,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
             // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
             // owned by another task — do NOT touch it here.
-            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-            markFirstAction();
-            challengeMaxApThisTurnRef.current += apCost;
+            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
+            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
@@ -10605,12 +10436,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       getMpReachableTiles,
       getSpellRangeTiles,
       activeSpells,
-      playerSpellContext,
-      activeMapModifierTypes,
       combatantStoreCtx,
       hitTestSprite,
       setCurrentBattleApSynced,
       tileCenter,
+      pointerToRenderSpace,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -15240,6 +15070,51 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setCurrentChallenge(null);
     }
   }, [currentChallenge]);
+  // Unified cast helper: ONE AP gate (inclusive >=), ONE ritual, ONE [CLICK-ENEMY] log, ONE floating-reason path.
+  const executeCastAttempt = useCallback(
+    (
+      spell: SpellConfig,
+      targetTile: { x: number; y: number },
+      source: string,
+    ): { castResult: string; apCost: number } => {
+      const _apCost = mapModifierRegistry.applyApCost(
+        Number(spell.apCost),
+        activeMapModifierTypes,
+        {
+          log: (msg: string) => logDebugInfo("MODIFIER", msg),
+          rng: Math.random,
+        },
+      );
+      if (currentBattleApRef.current >= _apCost) {
+        castRuntimeRef.current.apCost = _apCost;
+        castRuntimeRef.current.spell = spell;
+        const _castResult = resolvePlayerCast(
+          spell,
+          targetTile,
+          playerSpellContext(),
+        );
+        logDebugInfo(
+          "BATTLE",
+          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult}`,
+        );
+        if (_castResult === "cast") {
+          setCurrentBattleApSynced((prev: number) =>
+            Math.max(0, prev - _apCost),
+          );
+          markFirstAction();
+          challengeMaxApThisTurnRef.current += _apCost;
+        }
+        return { castResult: _castResult, apCost: _apCost };
+      }
+      return { castResult: "no_ap", apCost: _apCost };
+    },
+    [
+      activeMapModifierTypes,
+      markFirstAction,
+      playerSpellContext,
+      setCurrentBattleApSynced,
+    ],
+  );
   const attackNearestEnemy = useCallback(() => {
     if (
       !inBattle ||
@@ -15300,9 +15175,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     const castResult = resolvePlayerCast(spell, gridPos, playerSpellContext());
     if (castResult === "cast") {
-      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-      markFirstAction();
-      challengeMaxApThisTurnRef.current += apCost;
+      // AP deduction + markFirstAction + challengeMaxApThisTurnRef are
+      // already performed inside executeCastAttempt for the "cast"
+      // result — do NOT repeat them here (was a double-application bug).
       if (
         Math.max(
           Math.abs(gridPos.x - playerPositionRef.current.x),
