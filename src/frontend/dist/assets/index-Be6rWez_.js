@@ -50784,103 +50784,171 @@ function executeSummonAction(action, summon, summonCtx, helpers) {
   let hp = summon.hp;
   const logLines = [];
   const summonLabel = summon.summonAI ?? summon.pieceType ?? summon.id;
-  if (action.destination && (action.destination.x !== x3 || action.destination.y !== y2)) {
-    const dest = {
-      x: Math.max(0, Math.min(helpers.worldGridSize - 1, action.destination.x)),
-      y: Math.max(0, Math.min(helpers.worldGridSize - 1, action.destination.y))
+  const applyMovement = (dest) => {
+    if (!dest || dest.x === x3 && dest.y === y2) return;
+    const clamped = {
+      x: Math.max(0, Math.min(helpers.worldGridSize - 1, dest.x)),
+      y: Math.max(0, Math.min(helpers.worldGridSize - 1, dest.y))
     };
-    if (isCellFree(dest, helpers.occupancyCtx)) {
-      const dist2 = Math.max(Math.abs(dest.x - x3), Math.abs(dest.y - y2));
-      const mpCost = dist2 * helpers.mpCostPerTile;
-      if (currentMp >= mpCost) {
-        x3 = dest.x;
-        y2 = dest.y;
-        currentMp -= mpCost;
-        logLines.push(
-          `[SUMMON-MOVE] ${summonLabel} (${summon.id}) moved to (${x3},${y2}) -${mpCost}MP`
-        );
-      } else {
-        logLines.push(
-          `[SUMMON-MOVE] ${summonLabel} (${summon.id}) could not move (need ${mpCost}MP, have ${currentMp}MP)`
-        );
-      }
-    } else {
+    if (!isCellFree(clamped, helpers.occupancyCtx)) {
       logLines.push(
-        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) destination (${dest.x},${dest.y}) occupied`
+        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) destination (${clamped.x},${clamped.y}) occupied`
       );
+      return;
     }
-  }
-  if (action.kind === "cast" && action.spell && action.targetId) {
-    const spell = action.spell;
+    const dist2 = Math.max(Math.abs(clamped.x - x3), Math.abs(clamped.y - y2));
+    const mpCost = dist2 * helpers.mpCostPerTile;
+    if (currentMp < mpCost) {
+      logLines.push(
+        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) could not move (need ${mpCost}MP, have ${currentMp}MP)`
+      );
+      return;
+    }
+    x3 = clamped.x;
+    y2 = clamped.y;
+    currentMp -= mpCost;
+    logLines.push(
+      `[SUMMON-MOVE] ${summonLabel} (${summon.id}) moved to (${x3},${y2}) -${mpCost}MP`
+    );
+  };
+  const applyCast = (spell, targetId) => {
     const apCost = Number(spell.apCost ?? 0);
-    if (currentAp >= apCost) {
-      const target = helpers.getEnemyById(action.targetId);
-      const damage = Number(spell.damage ?? 0);
-      const healAmount = Number(spell.healAmount ?? 0);
-      if (damage > 0 && target) {
-        const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
-        summonCtx.dealDamage(action.targetId, baseDmg);
-        const blastR = Number(spell.areaRadius ?? 0);
-        if (blastR > 0) {
-          for (const victim of helpers.getAoEVictims(action.targetId, blastR)) {
-            summonCtx.dealDamage(victim.id, baseDmg);
-          }
-        }
-        currentAp -= apCost;
-        logLines.push(
-          `[SUMMON-CAST] ${summonLabel} (${summon.id}) cast ${spell.name} on ${action.targetId} -${apCost}AP`
-        );
-        if (summon.summonAI === "bomber") {
-          hp = 0;
-          logLines.push(`[SUMMON-BOMBER] ${summon.id} detonated (hp=0)`);
-        }
-      } else if (healAmount > 0) {
-        summonCtx.heal(action.targetId, healAmount);
-        currentAp -= apCost;
-        logLines.push(
-          `[SUMMON-CAST] ${summonLabel} (${summon.id}) healed ${action.targetId} for ${healAmount} -${apCost}AP`
-        );
-      } else {
-        summonCtx.applyEffect({
-          effectName: spell.name ?? spell.effectType,
-          type: spell.effectType === "buff" ? "buff" : spell.effectType === "debuff" ? "debuff" : "dot",
-          targetId: action.targetId,
-          duration: spell.buffDuration ?? spell.debuffDuration ?? spell.dotDuration ?? 1,
-          iconEmoji: spell.iconEmoji ?? "✨",
-          description: spell.description ?? ""
-        });
-        currentAp -= apCost;
-        logLines.push(
-          `[SUMMON-CAST] ${summonLabel} (${summon.id}) applied ${spell.name} to ${action.targetId} -${apCost}AP`
-        );
-      }
-    } else {
+    if (currentAp < apCost) {
       logLines.push(
         `[SUMMON-CAST] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`
       );
+      return false;
     }
-  } else if (action.kind === "melee" && action.targetId) {
-    const apCost = helpers.meleeApCost;
-    if (currentAp >= apCost) {
-      const dmg = helpers.calcScaledDamage(
-        summon.atk ?? summon.level,
-        summon.level,
-        0
-      );
-      summonCtx.dealDamage(action.targetId, dmg);
+    const target = helpers.getEnemyById(targetId);
+    const damage = Number(spell.damage ?? 0);
+    const healAmount = Number(spell.healAmount ?? 0);
+    if (damage > 0 && target) {
+      const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
+      summonCtx.dealDamage(targetId, baseDmg);
+      const blastR = Number(spell.areaRadius ?? 0);
+      if (blastR > 0) {
+        for (const victim of helpers.getAoEVictims(targetId, blastR)) {
+          summonCtx.dealDamage(victim.id, baseDmg);
+        }
+      }
       currentAp -= apCost;
       logLines.push(
-        `[SUMMON-MELEE] ${summonLabel} (${summon.id}) hit ${action.targetId} for ${dmg} -${apCost}AP`
+        `[SUMMON-CAST] ${summonLabel} (${summon.id}) cast ${spell.name} on ${targetId} -${apCost}AP`
       );
-    } else {
+      if (summon.summonAI === "bomber") {
+        hp = 0;
+        logLines.push(`[SUMMON-BOMBER] ${summon.id} detonated (hp=0)`);
+      }
+      return true;
+    }
+    if (healAmount > 0) {
+      summonCtx.heal(targetId, healAmount);
+      currentAp -= apCost;
+      logLines.push(
+        `[SUMMON-CAST] ${summonLabel} (${summon.id}) healed ${targetId} for ${healAmount} -${apCost}AP`
+      );
+      return true;
+    }
+    summonCtx.applyEffect({
+      effectName: spell.name ?? spell.effectType,
+      type: spell.effectType === "buff" ? "buff" : spell.effectType === "debuff" ? "debuff" : "dot",
+      targetId,
+      duration: spell.buffDuration ?? spell.debuffDuration ?? spell.dotDuration ?? 1,
+      iconEmoji: spell.iconEmoji ?? "✨",
+      description: spell.description ?? ""
+    });
+    currentAp -= apCost;
+    logLines.push(
+      `[SUMMON-CAST] ${summonLabel} (${summon.id}) applied ${spell.name} to ${targetId} -${apCost}AP`
+    );
+    return true;
+  };
+  const applyMelee = (targetId) => {
+    const apCost = helpers.meleeApCost;
+    if (currentAp < apCost) {
       logLines.push(
         `[SUMMON-MELEE] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`
       );
+      return false;
     }
-  } else {
-    logLines.push(
-      `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`
+    const dmg = helpers.calcScaledDamage(
+      summon.atk ?? summon.level,
+      summon.level,
+      0
     );
+    summonCtx.dealDamage(targetId, dmg);
+    currentAp -= apCost;
+    logLines.push(
+      `[SUMMON-MELEE] ${summonLabel} (${summon.id}) hit ${targetId} for ${dmg} -${apCost}AP`
+    );
+    return true;
+  };
+  switch (action.kind) {
+    case "move": {
+      logLines.push(
+        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) ${action.intent ?? "closes in"}`
+      );
+      applyMovement(action.destination);
+      if (helpers.reevaluate && currentAp > 0 && hp > 0) {
+        const postMoveSummon = { ...summon, x: x3, y: y2, currentAp, currentMp };
+        const followUp = helpers.reevaluate(
+          postMoveSummon,
+          currentAp,
+          currentMp
+        );
+        if (followUp && (followUp.kind === "cast" || followUp.kind === "melee")) {
+          if (followUp.kind === "cast" && followUp.spell && followUp.targetId) {
+            applyCast(followUp.spell, followUp.targetId);
+          } else if (followUp.kind === "melee" && followUp.targetId) {
+            applyMelee(followUp.targetId);
+          }
+        }
+      }
+      break;
+    }
+    case "cast": {
+      if (action.spell && action.targetId) {
+        applyCast(action.spell, action.targetId);
+      } else {
+        logDebugError("SUMMON", "cast action missing spell/target", {
+          id: summon.id,
+          archetype: action.archetype
+        });
+        logLines.push(
+          `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`
+        );
+      }
+      break;
+    }
+    case "melee": {
+      if (action.targetId) {
+        applyMelee(action.targetId);
+      } else {
+        logDebugError("SUMMON", "melee action missing target", {
+          id: summon.id,
+          archetype: action.archetype
+        });
+        logLines.push(
+          `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`
+        );
+      }
+      break;
+    }
+    case "skip": {
+      logLines.push(
+        `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`
+      );
+      break;
+    }
+    default: {
+      logDebugError("SUMMON", "unhandled action kind", {
+        kind: action.kind,
+        archetype: action.archetype
+      });
+      logLines.push(
+        `[SUMMON-HOLD] ${summonLabel} (${summon.id}) unhandled kind (${String(action.kind)})`
+      );
+    }
   }
   for (const line of logLines) {
     summonCtx.log(line, action.intentColor ?? "#a78bfa", true);
@@ -56136,6 +56204,9 @@ const WorldExplorationInner = ({
   const combatantStoreCtx = storeCtxRef.current;
   reactExports.useRef(0);
   const enemyTurnInProgressRef = reactExports.useRef(false);
+  const turnEndReasonRef = reactExports.useRef(
+    null
+  );
   const spawnEnemySummonRef = reactExports.useRef(null);
   const [enemyHpMap, setEnemyHpMap] = reactExports.useState({});
   const [enragedEnemies, setEnragedEnemies] = reactExports.useState(/* @__PURE__ */ new Set());
@@ -64191,7 +64262,8 @@ const WorldExplorationInner = ({
               isSummon: false,
               round: battleTurn,
               idx: nextIdx,
-              route: "player"
+              route: "player",
+              ended: turnEndReasonRef.current
             });
             if (characterStats.hp <= 0) {
               activeEffectsRef.current = activeEffectsRef.current.filter(
@@ -64295,7 +64367,8 @@ const WorldExplorationInner = ({
               isSummon: true,
               round: battleTurn,
               idx: nextIdx,
-              route: "summon-ai"
+              route: "summon-ai",
+              ended: turnEndReasonRef.current
             });
             setBattlePhase("enemy");
           } else {
@@ -64305,7 +64378,8 @@ const WorldExplorationInner = ({
               isSummon: false,
               round: battleTurn,
               idx: nextIdx,
-              route: "enemy-ai"
+              route: "enemy-ai",
+              ended: turnEndReasonRef.current
             });
             setBattlePhase("enemy");
             mapModifierRegistry.applyTurnStart(
@@ -64372,6 +64446,7 @@ const WorldExplorationInner = ({
             clearInterval(timerIntervalRef.current);
             timerIntervalRef.current = null;
           }
+          turnEndReasonRef.current = "timer-expiry";
           advanceTurnRef.current();
           return timerStart;
         }
@@ -64665,23 +64740,40 @@ const WorldExplorationInner = ({
               const dy = Math.abs((e.y ?? 0) - (primary.y ?? 0));
               return Math.max(dx, dy) <= blastR;
             });
-          }
+          },
+          // EDIT 2: reevaluate is an optional field on SummonExecutorHelpers.
+          // Safe fallback `() => null` — move-then-cast follow-up is deferred
+          // (the move still completes and the turn still advances via the
+          // try/finally below). Zero type risk; satisfies the helper contract.
+          reevaluate: () => null
         };
-        const execResult = executeSummonAction(
-          action,
-          summonEnemy,
-          summonCtx,
-          executorHelpers
-        );
-        summonEnemy.currentAp = execResult.currentAp;
-        summonEnemy.currentMp = execResult.currentMp;
-        updateCombatant(combatantStoreCtx, enemyId, {
-          x: execResult.newPosition.x,
-          y: execResult.newPosition.y,
-          hp: execResult.hp
-        });
-        enemyTurnInProgressRef.current = false;
-        setTimeout(() => advanceTurnRef.current(), 600);
+        let advanced = false;
+        try {
+          const execResult = executeSummonAction(
+            action,
+            summonEnemy,
+            summonCtx,
+            executorHelpers
+          );
+          summonEnemy.currentAp = execResult.currentAp;
+          summonEnemy.currentMp = execResult.currentMp;
+          updateCombatant(combatantStoreCtx, enemyId, {
+            x: execResult.newPosition.x,
+            y: execResult.newPosition.y,
+            hp: execResult.hp
+          });
+          enemyTurnInProgressRef.current = false;
+          turnEndReasonRef.current = "action-complete";
+          setTimeout(() => advanceTurnRef.current(), 600);
+          advanced = true;
+        } finally {
+          enemyTurnInProgressRef.current = false;
+          if (!advanced) {
+            turnEndReasonRef.current = "action-complete";
+            advanceTurnRef.current();
+            advanced = true;
+          }
+        }
         return;
       }
       if (enemyTurnAbortRef.current) {
@@ -64983,8 +65075,10 @@ const WorldExplorationInner = ({
             const _at1 = setTimeout(() => {
               if (!pendingTimeoutsRef.current.has(_at1)) return;
               pendingTimeoutsRef.current.delete(_at1);
-              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration) {
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current();
+              }
             }, 0);
             if (!cleanupRanRef.current) {
               pendingTimeoutsRef.current.add(_at1);
@@ -65390,6 +65484,7 @@ const WorldExplorationInner = ({
           (_g2 = spawnEnemySummonRef.current) == null ? void 0 : _g2.call(spawnEnemySummonRef, action.destination, action.spell);
           enemySummonCooldownRef.current.set(enemyId, battleTurn);
           enemyTurnInProgressRef.current = false;
+          turnEndReasonRef.current = "action-complete";
           setTimeout(advanceTurnRef.current, 600);
           return;
         }
@@ -65819,6 +65914,7 @@ const WorldExplorationInner = ({
       if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current) return;
       if (aiGenerationRef.current !== myAIGeneration) return;
       pendingTimeoutsRef.current.delete(watchdog);
+      turnEndReasonRef.current = "timer-expiry";
       advanceTurnRef.current();
     }, 5e3);
     if (!cleanupRanRef.current) {
@@ -70899,7 +70995,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CrE7pI_X.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CKCiQgMx.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

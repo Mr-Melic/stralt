@@ -1088,6 +1088,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const _phaseChangeCounterRef = useRef(0);
 
   const enemyTurnInProgressRef = useRef(false);
+  // EDIT 3: tracks WHY the current turn ended (action-complete vs timer-expiry)
+  // so the [TURN] dispatch log can distinguish clean advances from watchdog/
+  // turn-timer recoveries. Reset on every advance path; read by the three
+  // logDebugInfo("TURN","dispatch",...) call sites.
+  const turnEndReasonRef = useRef<"action-complete" | "timer-expiry" | null>(
+    null,
+  );
   // Ref holding the enemy-side summon spawn callback so the enemy turn
   // executor (a different closure from the SpellContext builder) can
   // invoke it when a summoner enemy decides to cast a summon spell.
@@ -11820,6 +11827,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               round: battleTurn,
               idx: nextIdx,
               route: "player",
+              ended: turnEndReasonRef.current,
             });
             // M6: HP guard — if player is already dead, skip turn setup and call death handler
             if (characterStats.hp <= 0) {
@@ -11943,6 +11951,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               round: battleTurn,
               idx: nextIdx,
               route: "summon-ai",
+              ended: turnEndReasonRef.current,
             });
             setBattlePhase("enemy");
           } else {
@@ -11953,6 +11962,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               round: battleTurn,
               idx: nextIdx,
               route: "enemy-ai",
+              ended: turnEndReasonRef.current,
             });
             setBattlePhase("enemy");
             // Process this enemy's active effects
@@ -12035,6 +12045,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           // FIX-1 & FIX-5: Use the ref so we always call the latest version of
           // advanceTurn (avoids stale closure over characterStats / activeEffects).
+          turnEndReasonRef.current = "timer-expiry";
           advanceTurnRef.current();
           return timerStart;
         }
@@ -12426,33 +12437,57 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               return Math.max(dx, dy) <= blastR;
             });
           },
+          // EDIT 2: reevaluate is an optional field on SummonExecutorHelpers.
+          // Safe fallback `() => null` — move-then-cast follow-up is deferred
+          // (the move still completes and the turn still advances via the
+          // try/finally below). Zero type risk; satisfies the helper contract.
+          reevaluate: () => null,
         };
-        const execResult = executeSummonAction(
-          action,
-          summonEnemy,
-          summonCtx,
-          executorHelpers,
-        );
-        // Apply the executor's returned state via the combatant store so the
-        // ref mirrors (enemiesRef/battleEnemiesRef) stay atomically in sync.
-        // Set AP/MP directly on the summon object (matching the pattern at
-        // lines 11166-11167) — updateCombatant's patch is Partial<Combatant>
-        // and does not accept currentAp/currentMp.
-        summonEnemy.currentAp = execResult.currentAp;
-        summonEnemy.currentMp = execResult.currentMp;
-        updateCombatant(combatantStoreCtx, enemyId, {
-          x: execResult.newPosition.x,
-          y: execResult.newPosition.y,
-          hp: execResult.hp,
-        });
-        // Always advance the turn — no stalls.
-        // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
-        // useEffect gate (line ~10639) does not early-return on the next
-        // enemy/summon turn. Every other branch in this pipeline resets this ref;
-        // the summon branch was the only one that forgot, stalling all turns
-        // after the first summon turn.
-        enemyTurnInProgressRef.current = false;
-        setTimeout(() => advanceTurnRef.current(), 600);
+        // EDIT 1 (hang fix): wrap the executor call + apply in try/finally so a
+        // thrown exception still resets enemyTurnInProgressRef and advances the
+        // turn exactly once. Mirrors the enemy apply-layer try/finally pattern.
+        // One-shot advance guard: the normal-completion path sets `advanced`
+        // after its advance; the finally advances only if the try did not.
+        let advanced = false;
+        try {
+          const execResult = executeSummonAction(
+            action,
+            summonEnemy,
+            summonCtx,
+            executorHelpers,
+          );
+          // Apply the executor's returned state via the combatant store so the
+          // ref mirrors (enemiesRef/battleEnemiesRef) stay atomically in sync.
+          // Set AP/MP directly on the summon object (matching the pattern at
+          // lines 11166-11167) — updateCombatant's patch is Partial<Combatant>
+          // and does not accept currentAp/currentMp.
+          summonEnemy.currentAp = execResult.currentAp;
+          summonEnemy.currentMp = execResult.currentMp;
+          updateCombatant(combatantStoreCtx, enemyId, {
+            x: execResult.newPosition.x,
+            y: execResult.newPosition.y,
+            hp: execResult.hp,
+          });
+          // Always advance the turn — no stalls.
+          // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
+          // useEffect gate (line ~10639) does not early-return on the next
+          // enemy/summon turn. Every other branch in this pipeline resets this ref;
+          // the summon branch was the only one that forgot, stalling all turns
+          // after the first summon turn.
+          enemyTurnInProgressRef.current = false;
+          turnEndReasonRef.current = "action-complete";
+          setTimeout(() => advanceTurnRef.current(), 600);
+          advanced = true;
+        } finally {
+          // Unconditionally reset the ref so the next enemy-phase gate is open.
+          enemyTurnInProgressRef.current = false;
+          // If the try threw before its own advance, advance exactly once here.
+          if (!advanced) {
+            turnEndReasonRef.current = "action-complete";
+            advanceTurnRef.current();
+            advanced = true;
+          }
+        }
         return;
       }
       if (enemyTurnAbortRef.current) {
@@ -12841,8 +12876,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (
                 !enemyTurnAbortRef.current &&
                 aiGenerationRef.current === myAIGeneration
-              )
+              ) {
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current(); // FIX #15
+              }
             }, 0);
             // M-4: Only register if cleanup hasn't run yet
             if (!cleanupRanRef.current) {
@@ -13326,6 +13363,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // summoner's next turn.
           enemySummonCooldownRef.current.set(enemyId, battleTurn);
           enemyTurnInProgressRef.current = false;
+          turnEndReasonRef.current = "action-complete";
           setTimeout(advanceTurnRef.current, 600);
           return;
         }
@@ -13851,6 +13889,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current) return;
       if (aiGenerationRef.current !== myAIGeneration) return;
       pendingTimeoutsRef.current.delete(watchdog);
+      // EDIT 3e: record why the turn ended before advancing.
+      turnEndReasonRef.current = "timer-expiry";
       advanceTurnRef.current();
     }, 5000);
     if (!cleanupRanRef.current) {

@@ -23,6 +23,7 @@
  */
 
 import type { Enemy, SpellConfig } from "../types/gameTypes";
+import { logDebugError } from "../utils/debugLogger";
 import type { EnemyAction } from "./enemyAI";
 import { type OccupancyContext, isCellFree } from "./occupancy";
 import type { SpellContext } from "./spellEngine";
@@ -64,6 +65,20 @@ export interface SummonExecutorHelpers {
    * side. Returns the list of secondary victim ids to apply blast damage to.
    */
   getAoEVictims: (primaryTargetId: string, blastRadius: number) => Enemy[];
+  /**
+   * Optional re-evaluator used by the `kind === "move"` branch to decide a
+   * follow-up cast/melee AFTER the move, mirroring the enemy move-then-cast
+   * pattern. Receives the summon's post-move state (position, remaining AP/MP)
+   * and returns the next EnemyAction to execute, or null if no legal follow-up
+   * exists. The executor applies only cast/melee follow-ups (never another
+   * move/skip) and only when AP remains. Kept optional so the executor stays
+   * decoupled from decideSummonAction (React-free, no engine cycle).
+   */
+  reevaluate?: (
+    postMoveSummon: Enemy,
+    currentAp: number,
+    currentMp: number,
+  ) => EnemyAction | null;
 }
 
 /**
@@ -86,129 +101,201 @@ export function executeSummonAction(
   const logLines: string[] = [];
   const summonLabel = summon.summonAI ?? summon.pieceType ?? summon.id;
 
-  // ── MOVE ──────────────────────────────────────────────────────────────
-  // Apply action.destination if it differs from the current cell, is free,
-  // and MP allows. Chebyshev distance × per-tile cost.
-  if (
-    action.destination &&
-    (action.destination.x !== x || action.destination.y !== y)
-  ) {
-    const dest = {
-      x: Math.max(0, Math.min(helpers.worldGridSize - 1, action.destination.x)),
-      y: Math.max(0, Math.min(helpers.worldGridSize - 1, action.destination.y)),
+  // ── Movement primitive (shared by `move` and any branch carrying a
+  // destination). Mirrors the WX enemy move resolution at
+  // WorldExploration.tsx:13332-13336 (clamp + apply) and reuses the same
+  // isCellFree occupancy check the original MOVE block used.
+  const applyMovement = (dest: { x: number; y: number } | undefined) => {
+    if (!dest || (dest.x === x && dest.y === y)) return;
+    const clamped = {
+      x: Math.max(0, Math.min(helpers.worldGridSize - 1, dest.x)),
+      y: Math.max(0, Math.min(helpers.worldGridSize - 1, dest.y)),
     };
-    if (isCellFree(dest, helpers.occupancyCtx)) {
-      const dist = Math.max(Math.abs(dest.x - x), Math.abs(dest.y - y));
-      const mpCost = dist * helpers.mpCostPerTile;
-      if (currentMp >= mpCost) {
-        x = dest.x;
-        y = dest.y;
-        currentMp -= mpCost;
-        logLines.push(
-          `[SUMMON-MOVE] ${summonLabel} (${summon.id}) moved to (${x},${y}) -${mpCost}MP`,
-        );
-      } else {
-        logLines.push(
-          `[SUMMON-MOVE] ${summonLabel} (${summon.id}) could not move (need ${mpCost}MP, have ${currentMp}MP)`,
-        );
-      }
-    } else {
+    if (!isCellFree(clamped, helpers.occupancyCtx)) {
       logLines.push(
-        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) destination (${dest.x},${dest.y}) occupied`,
+        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) destination (${clamped.x},${clamped.y}) occupied`,
       );
+      return;
     }
-  }
+    const dist = Math.max(Math.abs(clamped.x - x), Math.abs(clamped.y - y));
+    const mpCost = dist * helpers.mpCostPerTile;
+    if (currentMp < mpCost) {
+      logLines.push(
+        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) could not move (need ${mpCost}MP, have ${currentMp}MP)`,
+      );
+      return;
+    }
+    x = clamped.x;
+    y = clamped.y;
+    currentMp -= mpCost;
+    logLines.push(
+      `[SUMMON-MOVE] ${summonLabel} (${summon.id}) moved to (${x},${y}) -${mpCost}MP`,
+    );
+  };
 
-  // ── ACTION: cast / melee / skip ───────────────────────────────────────
-  if (action.kind === "cast" && action.spell && action.targetId) {
-    const spell: SpellConfig = action.spell;
+  // ── Cast primitive (shared by the `cast` branch and the move-then-cast
+  // re-evaluation follow-up). Returns true when AP was spent on a real cast.
+  const applyCast = (spell: SpellConfig, targetId: string): boolean => {
     const apCost = Number(spell.apCost ?? 0);
-    if (currentAp >= apCost) {
-      const target = helpers.getEnemyById(action.targetId);
-      const damage = Number(spell.damage ?? 0);
-      const healAmount = Number(spell.healAmount ?? 0);
-
-      if (damage > 0 && target) {
-        // Primary target damage.
-        const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
-        summonCtx.dealDamage(action.targetId, baseDmg);
-        // AoE: when the spell has an area radius, apply the same damage to
-        // every enemy within Chebyshev distance areaRadius of the primary
-        // target (excluding the primary target, already damaged above, and
-        // same-side combatants). Victim resolution is delegated to the
-        // caller-provided getAoEVictims helper so this module stays React-free.
-        const blastR = Number(spell.areaRadius ?? 0);
-        if (blastR > 0) {
-          for (const victim of helpers.getAoEVictims(action.targetId, blastR)) {
-            summonCtx.dealDamage(victim.id, baseDmg);
-          }
-        }
-        currentAp -= apCost;
-        logLines.push(
-          `[SUMMON-CAST] ${summonLabel} (${summon.id}) cast ${spell.name} on ${action.targetId} -${apCost}AP`,
-        );
-        // Bomber kamikaze: detonation kills the summon.
-        if (summon.summonAI === "bomber") {
-          hp = 0;
-          logLines.push(`[SUMMON-BOMBER] ${summon.id} detonated (hp=0)`);
-        }
-      } else if (healAmount > 0) {
-        summonCtx.heal(action.targetId, healAmount);
-        currentAp -= apCost;
-        logLines.push(
-          `[SUMMON-CAST] ${summonLabel} (${summon.id}) healed ${action.targetId} for ${healAmount} -${apCost}AP`,
-        );
-      } else {
-        // Buff / debuff / dot effect.
-        summonCtx.applyEffect({
-          effectName: spell.name ?? spell.effectType,
-          type: (spell.effectType === "buff"
-            ? "buff"
-            : spell.effectType === "debuff"
-              ? "debuff"
-              : "dot") as "buff" | "debuff" | "dot",
-          targetId: action.targetId,
-          duration:
-            spell.buffDuration ??
-            spell.debuffDuration ??
-            spell.dotDuration ??
-            1,
-          iconEmoji: spell.iconEmoji ?? "✨",
-          description: spell.description ?? "",
-        });
-        currentAp -= apCost;
-        logLines.push(
-          `[SUMMON-CAST] ${summonLabel} (${summon.id}) applied ${spell.name} to ${action.targetId} -${apCost}AP`,
-        );
-      }
-    } else {
+    if (currentAp < apCost) {
       logLines.push(
         `[SUMMON-CAST] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`,
       );
+      return false;
     }
-  } else if (action.kind === "melee" && action.targetId) {
-    const apCost = helpers.meleeApCost;
-    if (currentAp >= apCost) {
-      const dmg = helpers.calcScaledDamage(
-        summon.atk ?? summon.level,
-        summon.level,
-        0,
-      );
-      summonCtx.dealDamage(action.targetId, dmg);
+    const target = helpers.getEnemyById(targetId);
+    const damage = Number(spell.damage ?? 0);
+    const healAmount = Number(spell.healAmount ?? 0);
+    if (damage > 0 && target) {
+      const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
+      summonCtx.dealDamage(targetId, baseDmg);
+      const blastR = Number(spell.areaRadius ?? 0);
+      if (blastR > 0) {
+        for (const victim of helpers.getAoEVictims(targetId, blastR)) {
+          summonCtx.dealDamage(victim.id, baseDmg);
+        }
+      }
       currentAp -= apCost;
       logLines.push(
-        `[SUMMON-MELEE] ${summonLabel} (${summon.id}) hit ${action.targetId} for ${dmg} -${apCost}AP`,
+        `[SUMMON-CAST] ${summonLabel} (${summon.id}) cast ${spell.name} on ${targetId} -${apCost}AP`,
       );
-    } else {
+      if (summon.summonAI === "bomber") {
+        hp = 0;
+        logLines.push(`[SUMMON-BOMBER] ${summon.id} detonated (hp=0)`);
+      }
+      return true;
+    }
+    if (healAmount > 0) {
+      summonCtx.heal(targetId, healAmount);
+      currentAp -= apCost;
+      logLines.push(
+        `[SUMMON-CAST] ${summonLabel} (${summon.id}) healed ${targetId} for ${healAmount} -${apCost}AP`,
+      );
+      return true;
+    }
+    summonCtx.applyEffect({
+      effectName: spell.name ?? spell.effectType,
+      type: (spell.effectType === "buff"
+        ? "buff"
+        : spell.effectType === "debuff"
+          ? "debuff"
+          : "dot") as "buff" | "debuff" | "dot",
+      targetId,
+      duration:
+        spell.buffDuration ?? spell.debuffDuration ?? spell.dotDuration ?? 1,
+      iconEmoji: spell.iconEmoji ?? "✨",
+      description: spell.description ?? "",
+    });
+    currentAp -= apCost;
+    logLines.push(
+      `[SUMMON-CAST] ${summonLabel} (${summon.id}) applied ${spell.name} to ${targetId} -${apCost}AP`,
+    );
+    return true;
+  };
+
+  // ── Melee primitive (shared by the `melee` branch and the move-then-melee
+  // re-evaluation follow-up). Returns true when AP was spent on a real hit.
+  const applyMelee = (targetId: string): boolean => {
+    const apCost = helpers.meleeApCost;
+    if (currentAp < apCost) {
       logLines.push(
         `[SUMMON-MELEE] ${summonLabel} (${summon.id}) insufficient AP (need ${apCost}, have ${currentAp})`,
       );
+      return false;
     }
-  } else {
-    // skip / hold
-    logLines.push(
-      `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`,
+    const dmg = helpers.calcScaledDamage(
+      summon.atk ?? summon.level,
+      summon.level,
+      0,
     );
+    summonCtx.dealDamage(targetId, dmg);
+    currentAp -= apCost;
+    logLines.push(
+      `[SUMMON-MELEE] ${summonLabel} (${summon.id}) hit ${targetId} for ${dmg} -${apCost}AP`,
+    );
+    return true;
+  };
+
+  // ── Dispatch on action.kind (explicit branches; no fallthrough mis-log) ─
+  switch (action.kind) {
+    case "move": {
+      // Move intent log — mirrors the WX enemy move intent log at
+      // WorldExploration.tsx:13717-13720 ("{pieceType} {intent}"). Replaces
+      // the previous mis-log of move actions as [SUMMON-HOLD].
+      logLines.push(
+        `[SUMMON-MOVE] ${summonLabel} (${summon.id}) ${action.intent ?? "closes in"}`,
+      );
+      applyMovement(action.destination);
+      // Re-evaluate once with remaining AP — mirrors the enemy move-then-cast
+      // pattern. If the archetype now sees a legal cast/melee from the new
+      // position, execute it in the same turn. Only cast/melee follow-ups are
+      // applied (never a second move/skip), and only when AP remains.
+      if (helpers.reevaluate && currentAp > 0 && hp > 0) {
+        const postMoveSummon: Enemy = { ...summon, x, y, currentAp, currentMp };
+        const followUp = helpers.reevaluate(
+          postMoveSummon,
+          currentAp,
+          currentMp,
+        );
+        if (
+          followUp &&
+          (followUp.kind === "cast" || followUp.kind === "melee")
+        ) {
+          if (followUp.kind === "cast" && followUp.spell && followUp.targetId) {
+            applyCast(followUp.spell, followUp.targetId);
+          } else if (followUp.kind === "melee" && followUp.targetId) {
+            applyMelee(followUp.targetId);
+          }
+        }
+      }
+      break;
+    }
+    case "cast": {
+      if (action.spell && action.targetId) {
+        applyCast(action.spell, action.targetId);
+      } else {
+        // Defensive: cast kind without spell/target — log and treat as hold.
+        logDebugError("SUMMON", "cast action missing spell/target", {
+          id: summon.id,
+          archetype: action.archetype,
+        });
+        logLines.push(
+          `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`,
+        );
+      }
+      break;
+    }
+    case "melee": {
+      if (action.targetId) {
+        applyMelee(action.targetId);
+      } else {
+        logDebugError("SUMMON", "melee action missing target", {
+          id: summon.id,
+          archetype: action.archetype,
+        });
+        logLines.push(
+          `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`,
+        );
+      }
+      break;
+    }
+    case "skip": {
+      logLines.push(
+        `[SUMMON-HOLD] ${summonLabel} (${summon.id}) ${action.intent ?? "holds"}`,
+      );
+      break;
+    }
+    default: {
+      // Unknown/unhandled kind — never silent, never hang. The WX summon
+      // branch's try/finally guarantee advances the turn regardless.
+      logDebugError("SUMMON", "unhandled action kind", {
+        kind: (action as EnemyAction).kind,
+        archetype: action.archetype,
+      });
+      logLines.push(
+        `[SUMMON-HOLD] ${summonLabel} (${summon.id}) unhandled kind (${String((action as EnemyAction).kind)})`,
+      );
+    }
   }
 
   // ── Emit logs through the real SpellContext log channel ───────────────
