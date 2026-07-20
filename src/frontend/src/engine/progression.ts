@@ -29,6 +29,7 @@ import {
   SUMMON_MP,
   SUMMON_MP_PER_LEVELS,
 } from "../data/gameConstants";
+import type { BossBaseStats } from "../types/bossTypes";
 import type { ChessPieceType, LevelUpConfig } from "../types/gameTypes";
 import { seededRng } from "./combatMath";
 import type { SummonUnitDef } from "./summonSpawn";
@@ -241,4 +242,127 @@ export function getSummonBaseStats(
     Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL);
 
   return { maxHp, maxAp, maxMp, turnsRemaining };
+}
+
+// ── Boss level-difference scaling ────────────────────────────────────────────
+
+/**
+ * Level-difference scaling curve for boss effective stats.
+ *
+ * Each level of difference between the boss and the player applies a
+ * compounding ±8% multiplier to the boss's BASE stats. A positive
+ * difference (boss higher level than player) makes the boss stronger; a
+ * negative difference (player out-levels the boss) makes it weaker.
+ *
+ *   diff = bossLevel - playerLevel
+ *   multiplier = BOSS_LEVEL_DIFF_STEP ^ diff
+ *
+ * With BOSS_LEVEL_DIFF_STEP = 1.08:
+ *   diff = -2  → 0.8573x  (player 2 levels over boss — easier fight)
+ *   diff =  0  → 1.0000x  (even match — base stats unchanged)
+ *   diff = +2  → 1.1664x  (boss 2 levels over player)
+ *   diff = +5  → 1.4693x  (boss 5 levels over player — brutal fight)
+ *
+ * This is a PURE function — no RNG, no side effects, no I/O. It is the
+ * single source of truth for level-difference boss scaling and is intended
+ * to be consumed by the Boss Guide UI (BossGuideModal.tsx) to render the
+ * level-difference scaling table. It does NOT replace the existing
+ * phase2.statMultiplier site at WorldExploration.tsx line 13029 — that
+ * multiplier is applied IN ADDITION to this level-difference scaling at
+ * the phase-2 transition (the two multipliers compose multiplicatively).
+ *
+ * The seven returned stats match the BossBaseStats shape minus `atk` and
+ * `chc` (which are not level-difference-scaled — they are governed by the
+ * per-piece multiplier table in getEnemyBaseStats and the boss's own
+ * crit config). HP, AP, MP, INIT, SP, SR (spell-resist, mapped from `res`),
+ * and RES (resilience, mapped from `atk`-independent `res` field — see
+ * note below) are the seven stats the Boss Guide table displays.
+ *
+ * NOTE on the SR/RES split: BossBaseStats has a single `res` field. The
+ * Boss Guide table renders both an "SR" (spell resist) and a "RES"
+ * (physical resist) column. To produce two distinct columns from one
+ * field without inventing a new formula, we scale `res` for SR and use
+ * the unscaled `res` for RES — i.e. SR reflects the level-difference
+ * scaling and RES is shown at the base value for reference. This keeps
+ * the table honest: only one underlying `res` field exists in the data
+ * model, and the scaling formula is applied to it once.
+ */
+export const BOSS_LEVEL_DIFF_STEP = 1.08;
+
+/**
+ * Effective boss stats at a given player/boss level pair.
+ *
+ * Pure function. Returns the seven stats the Boss Guide table renders:
+ * hp, ap, mp, init, sp, sr, res. All values are rounded to integers.
+ *
+ * Signature:
+ *   getBossEffectiveStats(
+ *     bossBaseStats: BossBaseStats,
+ *     playerLevel: number,
+ *     bossLevel: number,
+ *   ): { hp, ap, mp, init, sp, sr, res }
+ *
+ * The `bossLevel` defaults to the player's level when omitted (even match,
+ * multiplier = 1.0, base stats returned unchanged).
+ */
+export function getBossEffectiveStats(
+  bossBaseStats: BossBaseStats,
+  playerLevel: number,
+  bossLevel: number = playerLevel,
+): {
+  hp: number;
+  ap: number;
+  mp: number;
+  init: number;
+  sp: number;
+  sr: number;
+  res: number;
+} {
+  const pLvl = Math.max(1, Math.floor(playerLevel));
+  const bLvl = Math.max(1, Math.floor(bossLevel));
+  const diff = bLvl - pLvl;
+  const mult = BOSS_LEVEL_DIFF_STEP ** diff;
+
+  const scale = (v: number) => Math.max(1, Math.round(v * mult));
+
+  return {
+    hp: scale(bossBaseStats.hp),
+    ap: scale(bossBaseStats.ap),
+    mp: scale(bossBaseStats.mp),
+    init: scale(bossBaseStats.init),
+    sp: scale(bossBaseStats.sp),
+    // SR (spell resist) — scaled `res`.
+    sr: scale(bossBaseStats.res),
+    // RES (physical resist) — base `res` shown unscaled for reference.
+    res: Math.max(1, Math.round(bossBaseStats.res)),
+  };
+}
+
+/**
+ * Convenience: the four level-difference offsets the Boss Guide table
+ * renders. Negative = player out-levels the boss; positive = boss
+ * out-levels the player.
+ */
+export const BOSS_LEVEL_DIFF_OFFSETS: number[] = [-2, 0, 2, 5];
+
+/**
+ * Convenience: compute the effective-stats row for each of the four
+ * level-difference offsets, given a single boss base-stats block and a
+ * player level. The boss level for each row is `playerLevel + offset`.
+ *
+ * Returns an array of { offset, stats } pairs in the same order as
+ * BOSS_LEVEL_DIFF_OFFSETS.
+ */
+export function getBossScalingRows(
+  bossBaseStats: BossBaseStats,
+  playerLevel: number,
+): Array<{ offset: number; stats: ReturnType<typeof getBossEffectiveStats> }> {
+  return BOSS_LEVEL_DIFF_OFFSETS.map((offset) => ({
+    offset,
+    stats: getBossEffectiveStats(
+      bossBaseStats,
+      playerLevel,
+      playerLevel + offset,
+    ),
+  }));
 }

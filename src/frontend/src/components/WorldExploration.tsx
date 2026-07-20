@@ -162,6 +162,7 @@ import { spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
   computeTargetableTiles,
+  isTileCastableLive,
 } from "../engine/targeting";
 import {
   getCameraFollowSpeed,
@@ -779,15 +780,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   // Ref mirror of `enemies` so the enemy-turn setTimeout (dep array omits `enemies`) reads fresh summons.
   const enemiesRef = useRef<Enemy[]>([]);
-  // ── FIX 1.1: Bump the battle-world version whenever the `enemies` array
-  // identity changes. This catches ALL enemy movement (AI moves, summons,
-  // deaths) in one place without modifying combatantStore.ts, and invalidates
-  // the spell-range cache so a stale tile set can never gate a click.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: enemies identity change is the intentional cache-bust trigger (not read inside callback)
-  useEffect(() => {
-    battleWorldVersionRef.current += 1;
-  }, [enemies]);
-
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = useState(false);
@@ -1082,6 +1074,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setBattleEnemies,
       setTurnOrder,
     );
+    // 1B: structural version bump via store onMutation hook. Every
+    // combatant mutation (add/remove/update/sync) bumps the battle-world
+    // version and clears the spell-range cache so a tile set computed
+    // before a combatant moved/death/spawned can never gate a click after.
+    // Replaces the scattered useEffect deps [enemies] bump site (deleted).
+    storeCtxRef.current.onMutation = () => {
+      battleWorldVersionRef.current += 1;
+      spellRangeCacheRef.current = new Map();
+    };
   }
   const combatantStoreCtx = storeCtxRef.current;
 
@@ -1151,7 +1152,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // decideSummonerAction via ctx.lastSummonTurn; written after a successful
   // spawnEnemySummon. Cleared on battle start alongside enemyCooldownsRef.
   const enemySummonCooldownRef = useRef<Map<string, number>>(new Map());
-  const battleSpellsRef = useRef<SpellConfig[]>([]);
 
   // ── #17 Modifiable Range: delta bonus per spell id, expires after duration turns ──
   const modifiableRangeBonusRef = useRef<
@@ -9059,6 +9059,57 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _preClickCacheHit =
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
+          // 1C: ENTITY-FIRST TARGETING (mouse). Before the precomputed
+          // spellTiles.has gate, check whether a LIVING HOSTILE combatant
+          // occupies the clicked tile. If so, validate the cast LIVE via
+          // isTileCastableLive (no cache) and either cast at the entity's
+          // current tile (bypassing spellTiles entirely) or reject without
+          // falling through to the spellTiles.has gate. The precomputed
+          // spellTiles set remains ONLY for highlighting and for
+          // ground/empty-tile casts (tiles with no living hostile).
+          const _liveCombatantsMouse = getLiveCombatants(combatantStoreCtx);
+          const _occupantMouse = _liveCombatantsMouse.find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y,
+          );
+          if (
+            _occupantMouse &&
+            isActiveHostile(_occupantMouse) &&
+            isAliveCombatant(_occupantMouse)
+          ) {
+            const _spellMouse = activeSpells.find(
+              (s) => s.id === selectedSpellIdRef.current,
+            );
+            if (_spellMouse) {
+              const _liveMouse = isTileCastableLive(
+                _spellMouse,
+                playerPosition,
+                gridPos,
+                _liveCombatantsMouse,
+                currentMap.tiles,
+              );
+              if (_liveMouse.ok) {
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "cast-live",
+                  tile: gridPos,
+                  spellId: _spellMouse.id,
+                  targetId: _occupantMouse.id,
+                });
+                // Cast at the entity's current tile BYPASSING the
+                // precomputed spellTiles set entirely — fall through to
+                // the existing cast body below by skipping the gate.
+              } else {
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "rejected-live",
+                  tile: gridPos,
+                  spellId: _spellMouse.id,
+                  reason: _liveMouse.reason,
+                });
+                return;
+              }
+            }
+          }
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             // [TARGET-BISECT] click-miss: when setSize > 0 the computation
             // produced a non-empty set yet the clicked tile is absent — log
@@ -9445,6 +9496,58 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _preClickCacheHit =
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
+          // 1C: ENTITY-FIRST TARGETING (touch). Mirrors the mouse handler:
+          // before the precomputed spellTiles.has gate, check whether a
+          // LIVING HOSTILE combatant occupies the touched tile. If so,
+          // validate the cast LIVE via isTileCastableLive (no cache) and
+          // either cast at the entity's current tile (bypassing spellTiles
+          // entirely) or reject without falling through to the
+          // spellTiles.has gate. The precomputed spellTiles set remains
+          // ONLY for highlighting and for ground/empty-tile casts (tiles
+          // with no living hostile).
+          const _liveCombatantsTouch = getLiveCombatants(combatantStoreCtx);
+          const _occupantTouch = _liveCombatantsTouch.find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y,
+          );
+          if (
+            _occupantTouch &&
+            isActiveHostile(_occupantTouch) &&
+            isAliveCombatant(_occupantTouch)
+          ) {
+            const _spellTouch = activeSpells.find(
+              (s) => s.id === selectedSpellIdRef.current,
+            );
+            if (_spellTouch) {
+              const _liveTouch = isTileCastableLive(
+                _spellTouch,
+                playerPosition,
+                gridPos,
+                _liveCombatantsTouch,
+                currentMap.tiles,
+              );
+              if (_liveTouch.ok) {
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "cast-live",
+                  tile: gridPos,
+                  spellId: _spellTouch.id,
+                  targetId: _occupantTouch.id,
+                });
+                // Cast at the entity's current tile BYPASSING the
+                // precomputed spellTiles set entirely — fall through to
+                // the existing cast body below by skipping the gate.
+              } else {
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "rejected-live",
+                  tile: gridPos,
+                  spellId: _spellTouch.id,
+                  reason: _liveTouch.reason,
+                });
+                return;
+              }
+            }
+          }
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             // [TARGET-BISECT] click-miss (touch): mirrors the mouse handler.
             // When setSize > 0 the computation produced a non-empty set yet
@@ -10430,10 +10533,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // commit window sees cleanupRanRef=true and registers itself as untracked,
       // permanently escaping the cleanup registry.
       cleanupRanRef.current = false;
-      battleSpellsRef.current = [
-        physicalAttackSpell,
-        ...activeSpells.filter((s) => s && s.id !== physicalAttackSpell.id),
-      ];
+      // SECTION 2 FIX: the battle spellbar renders from the SINGLE authority
+      // `activeSpells` (useMemo @ L2081, mirrored into activeSpellsRef @ L2101)
+      // via the `activeSpells` prop passed to <BattleUIPanel> (@ L15642). The
+      // previous battleSpellsRef snapshot here was a DEAD WRITE — never read by
+      // any consumer — that captured a stale point-in-time copy and could
+      // diverge from the live authority. It has been removed entirely (along
+      // with its declaration). The log below bisects the ids the bar will
+      // actually show at battle start.
+      console.log("[SPELLBAR-BISECT]", {
+        spellIds: activeSpells.map((s) => s?.id).filter(Boolean),
+      });
       flushSync(() => {
         syncCombatants(combatantStoreCtx, enemiesWithSpells);
         mapModifierRegistry.applyBattleStart(
@@ -12959,6 +13069,211 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           // Apply boss action result
           if (bossAIAction) {
+            // ── Boss kit spell cast branch ─────────────────────────────────
+            // SECTION 3 PART 2 STEP 2. When useBossAI picks a kit spell it
+            // returns { type: 'spell', spellId, targetId, targetX, targetY }.
+            // Resolve it through the SAME engine calls as the enemy cast path
+            // (WX ~13510-13750): summon short-circuit, damage/drain via
+            // playerTakesDamage, heal via setTurnOrder, debuff/DoT via
+            // applyActiveEffect, self-buff via applyActiveEffect on the boss
+            // enemyId, cooldown via enemyCooldownsRef. If the lookup fails,
+            // fall through to the existing abilityResult handling below.
+            if (bossAIAction.type === "spell" && bossAIAction.spellId) {
+              const bossSpell = starterSpells.find(
+                (sp) => sp.id === bossAIAction.spellId,
+              );
+              if (bossSpell) {
+                if (bossAIAction.logMessage) {
+                  logBattleEntry(bossAIAction.logMessage, "#a855f7");
+                }
+                const bossSpellType = bossSpell.spellType ?? "damage";
+                const bossTargetId = bossAIAction.targetId ?? "player";
+                const bossSpellDest = {
+                  x: bossAIAction.targetX ?? enemy.x,
+                  y: bossAIAction.targetY ?? enemy.y,
+                };
+                // Summon short-circuit (mirror WX 13465-13479).
+                if (bossSpell.isSummon) {
+                  spawnEnemySummonRef.current?.(bossSpellDest, bossSpell);
+                  if (bossSpell.cooldown && bossSpell.cooldown > 0) {
+                    const bcdm =
+                      enemyCooldownsRef.current.get(enemyId) ??
+                      new Map<string, number>();
+                    bcdm.set(bossSpell.id, bossSpell.cooldown);
+                    enemyCooldownsRef.current.set(enemyId, bcdm);
+                  }
+                  clearTimeout(watchdog);
+                  pendingTimeoutsRef.current.delete(watchdog);
+                  enemyTurnInProgressRef.current = false;
+                  const bSumGen = aiGenerationRef.current;
+                  const bSumTimer = setTimeout(() => {
+                    if (
+                      cleanupPhaseRef.current !== "idle" ||
+                      cleanupRanRef.current ||
+                      aiGenerationRef.current !== bSumGen
+                    )
+                      return;
+                    pendingTimeoutsRef.current.delete(bSumTimer);
+                    if (
+                      !enemyTurnAbortRef.current &&
+                      aiGenerationRef.current === myAIGeneration
+                    )
+                      advanceTurnRef.current();
+                  }, 600);
+                  if (!cleanupRanRef.current)
+                    pendingTimeoutsRef.current.add(bSumTimer);
+                  return;
+                }
+                // Damage / drain → playerTakesDamage (mirror WX 13520-13646).
+                if (bossSpellType === "damage" || bossSpellType === "drain") {
+                  const bSpellDmg = Number(bossSpell.damage);
+                  if (bSpellDmg > 0) {
+                    const bRawDmg = Math.max(1, Math.round(bSpellDmg));
+                    const bDmg = playerTakesDamage(
+                      bRawDmg,
+                      `${currentBossConfig.name} spell ${bossSpell.name}`,
+                    );
+                    logBattleEntry(
+                      `${currentBossConfig.name} casts ${bossSpell.name} on you for ${bDmg} dmg`,
+                      "#ef4444",
+                    );
+                    if (bDmg > 0)
+                      logBattleEntry(`You lost ${bDmg} HP!`, "#eab308");
+                    // Drain heals the boss (mirror WX 13680-13689).
+                    if (bossSpellType === "drain" && bossSpell.healAmount) {
+                      const bHa = bossSpell.healAmount;
+                      setTurnOrder((prev) =>
+                        prev.map((c) =>
+                          c.id === enemyId
+                            ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
+                            : c,
+                        ),
+                      );
+                    }
+                  }
+                }
+                // Heal → setTurnOrder on boss (mirror WX 13699-13718).
+                if (bossSpellType === "heal" && bossSpell.healAmount) {
+                  const bHa = bossSpell.healAmount;
+                  setTurnOrder((prev) =>
+                    prev.map((c) =>
+                      c.id === enemyId
+                        ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
+                        : c,
+                    ),
+                  );
+                  logBattleEntry(
+                    `${currentBossConfig.name} heals ${bHa} HP`,
+                    "#a855f7",
+                  );
+                }
+                // Debuff → applyActiveEffect (mirror WX 13648-13662).
+                if (bossSpell.debuffStat && bossSpell.debuffDuration) {
+                  applyActiveEffect({
+                    id: `boss-debuff-${Date.now()}`,
+                    effectName: bossSpell.name,
+                    type: "debuff",
+                    targetId: bossTargetId,
+                    stat: bossSpell.debuffStat,
+                    modifier: bossSpell.debuffModifier ?? 1,
+                    duration: bossSpell.debuffDuration,
+                    iconEmoji: bossSpell.iconEmoji,
+                    description: `${bossSpell.debuffStat} debuffed`,
+                  });
+                  if (
+                    bossSpell.debuffStat === "ap" &&
+                    bossTargetId === "player"
+                  )
+                    playerApWasDebuffedRef.current = true;
+                  logBattleEntry(
+                    `${currentBossConfig.name} uses ${bossSpell.name}!`,
+                    "#a855f7",
+                  );
+                }
+                // DoT → applyActiveEffect (mirror WX 13663-13679).
+                if (
+                  (bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) &&
+                  bossSpell.dotDuration
+                ) {
+                  const bDotPpt =
+                    bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage ?? 0;
+                  applyActiveEffect({
+                    id: `boss-dot-${Date.now()}`,
+                    effectName: `${bossSpell.name} DoT`,
+                    type: "dot",
+                    targetId: bossTargetId,
+                    dotDamagePerTurn: bDotPpt,
+                    duration: bossSpell.dotDuration,
+                    iconEmoji: "\u2620\uFE0F",
+                    description: `${bDotPpt} dmg/turn`,
+                  });
+                }
+                // Self/ally buff (no damage/heal/debuff) → applyActiveEffect
+                // on the boss enemyId so the buff lands on the boss.
+                if (
+                  bossSpellType !== "damage" &&
+                  bossSpellType !== "drain" &&
+                  bossSpellType !== "heal" &&
+                  !bossSpell.debuffStat &&
+                  !(bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) &&
+                  (bossSpell.targetType === "self" ||
+                    bossSpell.targetType === "ally")
+                ) {
+                  applyActiveEffect({
+                    id: `boss-buff-${Date.now()}`,
+                    effectName: bossSpell.name,
+                    type: "buff",
+                    targetId: enemyId,
+                    stat: bossSpell.debuffStat ?? "atk",
+                    modifier: bossSpell.debuffModifier ?? 1,
+                    duration: bossSpell.debuffDuration ?? 3,
+                    iconEmoji: bossSpell.iconEmoji,
+                    description: `${bossSpell.name} active`,
+                  });
+                  logBattleEntry(
+                    `${currentBossConfig.name} empowers itself with ${bossSpell.name}!`,
+                    "#a855f7",
+                  );
+                }
+                // Cooldown via enemyCooldownsRef (boss is an enemy).
+                if (bossSpell.cooldown && bossSpell.cooldown > 0) {
+                  const bcdm =
+                    enemyCooldownsRef.current.get(enemyId) ??
+                    new Map<string, number>();
+                  bcdm.set(bossSpell.id, bossSpell.cooldown);
+                  enemyCooldownsRef.current.set(enemyId, bcdm);
+                }
+                // End-of-turn flags — mirror the existing abilityResult tail
+                // (WX 13263-13288): clear watchdog, hand off to advanceTurn,
+                // persist boss position.
+                clearTimeout(watchdog);
+                pendingTimeoutsRef.current.delete(watchdog);
+                enemyTurnInProgressRef.current = false;
+                const bSpellGen = aiGenerationRef.current;
+                const bSpellTimer = setTimeout(() => {
+                  if (
+                    cleanupPhaseRef.current !== "idle" ||
+                    cleanupRanRef.current ||
+                    aiGenerationRef.current !== bSpellGen
+                  )
+                    return;
+                  pendingTimeoutsRef.current.delete(bSpellTimer);
+                  if (
+                    !enemyTurnAbortRef.current &&
+                    aiGenerationRef.current === myAIGeneration
+                  )
+                    advanceTurnRef.current();
+                }, 0);
+                if (!cleanupRanRef.current)
+                  pendingTimeoutsRef.current.add(bSpellTimer);
+                updateCombatant(combatantStoreCtx, enemyId, {
+                  x: bossSpellDest.x,
+                  y: bossSpellDest.y,
+                });
+                return;
+              }
+              // Spell lookup failed — fall through to abilityResult handling.
+            }
             const res = bossAIAction.abilityResult;
             // Log messages
             if (bossAIAction.logMessage) {

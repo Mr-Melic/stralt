@@ -92,6 +92,15 @@ export interface CombatantStoreCtx {
   setBattleEnemies: SetCombatants;
   /** React state setter for the turn-order array. */
   setTurnOrder: SetTurnOrder;
+  /** Optional mutation hook fired at the TAIL of {@link addCombatant},
+   *  {@link removeCombatant}, {@link updateCombatant}, and
+   *  {@link syncCombatants} AFTER the atomic mutation completes. Used by WX
+   *  to bump `battleWorldVersionRef` and clear `spellRangeCacheRef` so a
+   *  tile set computed before a combatant moved/death/spawned can never
+   *  gate a click after. NOT fired by {@link resetCombatantStore} or
+   *  {@link deriveBattleEnemies} (those are not combatant-mutation paths
+   *  that affect spell-range validity). */
+  onMutation?: () => void;
 }
 
 /**
@@ -302,6 +311,10 @@ export function addCombatant(
   // DEV divergence guard — self-announces if the enemies-state mirror
   // ever drifts from combatantsRef after this mutation.
   assertNoDivergence("addCombatant", ctx, nextCombatants, nextEnemies);
+
+  // 1B: structural version bump via store onMutation hook. Fired AFTER the
+  // atomic mutation completes so WX can invalidate the spell-range cache.
+  ctx.onMutation?.();
 }
 
 /**
@@ -351,6 +364,10 @@ export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
   // DEV divergence guard — self-announces if the enemies-state mirror
   // ever drifts from combatantsRef after this mutation.
   assertNoDivergence("removeCombatant", ctx, nextCombatants, nextEnemies);
+
+  // 1B: structural version bump via store onMutation hook. Fired AFTER the
+  // atomic mutation completes so WX can invalidate the spell-range cache.
+  ctx.onMutation?.();
 }
 
 /**
@@ -397,6 +414,10 @@ export function updateCombatant(
   // DEV divergence guard — self-announces if the enemies-state mirror
   // ever drifts from combatantsRef after this mutation.
   assertNoDivergence("updateCombatant", ctx, nextCombatants, nextEnemies);
+
+  // 1B: structural version bump via store onMutation hook. Fired AFTER the
+  // atomic mutation completes so WX can invalidate the spell-range cache.
+  ctx.onMutation?.();
 }
 
 /**
@@ -445,6 +466,10 @@ export function syncCombatants(
   // DEV divergence guard — self-announces if the enemies-state mirror
   // ever drifts from combatantsRef after this mutation.
   assertNoDivergence("syncCombatants", ctx, nextEnemies, nextEnemies);
+
+  // 1B: structural version bump via store onMutation hook. Fired AFTER the
+  // atomic mutation completes so WX can invalidate the spell-range cache.
+  ctx.onMutation?.();
 }
 
 /**

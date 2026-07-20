@@ -342,3 +342,297 @@ export function computeTargetableTiles(
 
   return out;
 }
+
+/**
+ * Result of a live single-tile castability probe. `ok` is true when the tile
+ * is a legal target for `spell` from `casterPos` against the CURRENT world
+ * (no cache). When `ok` is false, `reason` is a short stable string the click
+ * handlers log on rejection.
+ */
+export interface TileCastableResult {
+  ok: boolean;
+  reason: string;
+}
+
+/**
+ * #1A — Live single-tile validation helper (PURE, no cache).
+ *
+ * Validates range metric + line-of-sight + target rules for ONE tile against
+ * the CURRENT world. Reuses the SAME range metric and LoS logic as
+ * {@link computeTargetableTiles} so the highlight (precomputed set) and the
+ * live gate (this helper) can never disagree on geometry:
+ *   - ground / barrier spells → MANHATTAN distance (|dx|+|dy| <= range),
+ *   - area / enemy / chain spells → CHEBYSHEV distance (max(|dx|,|dy|) <= range),
+ *   - line spells → Bresenham LoS ray-walk (must reach the tile),
+ *   - LoS (when `spell.lineOfSight` is truthy) → Bresenham unobstructed ray.
+ *
+ * Target rules are honored using EXPLICIT metadata only (the `targetType`
+ * field plus `spell.isBarrier` / `spell.lineOfSight` / `spell.freeCells` /
+ * `spell.linear` / `spell.diagonal` / `spell.areaRadius` / `spell.minRange`)
+ * — never name-based heuristics.
+ *
+ * `self` / `all` / `ally` are handled inline (self → only the caster tile;
+ * all → any non-wall tile; ally → caster tile or a player-side summon tile
+ * within Chebyshev range). `ground` / `barrier` use Manhattan. `line` walks
+ * the Bresenham ray. `area` / `enemy` / `chain` use Chebyshev (area expands
+ * the destination by `areaRadius` so a tile inside the AoE footprint of a
+ * legal anchor is itself legal).
+ *
+ * `liveCombatants` is the live combatant array (typically
+ * `getLiveCombatants(combatantStoreCtx)`) used for occupied/free-cell checks.
+ * `mapTiles` is the world tile grid. Both are read-only here.
+ */
+export function isTileCastableLive(
+  spell: SpellConfig,
+  casterPos: CasterPosition,
+  tile: { x: number; y: number },
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+): TileCastableResult {
+  const targetType = (spell.targetType ?? "enemy") as string;
+  const worldGridSize = mapTiles.length;
+  const range = spell.maxRange ?? Math.max(1, Number(spell.range));
+  const minR = spell.minRange ?? 1;
+  const tx = tile.x;
+  const ty = tile.y;
+
+  // Bounds check — out-of-grid tiles are never castable.
+  if (
+    !Number.isFinite(tx) ||
+    !Number.isFinite(ty) ||
+    tx < 0 ||
+    ty < 0 ||
+    tx >= worldGridSize ||
+    ty >= worldGridSize ||
+    mapTiles.length <= ty ||
+    mapTiles[ty]?.length <= tx
+  ) {
+    return { ok: false, reason: "out_of_bounds" };
+  }
+
+  // Wall tiles are never castable (every branch rejects them).
+  if (mapTiles[ty][tx] === "wall") {
+    return { ok: false, reason: "wall_tile" };
+  }
+
+  // ── self: only the caster tile.
+  if (targetType === "self") {
+    if (tx === casterPos.x && ty === casterPos.y) {
+      return { ok: true, reason: "self" };
+    }
+    return { ok: false, reason: "self_other_tile" };
+  }
+
+  // ── all: any non-wall tile (wall already rejected above).
+  if (targetType === "all") {
+    return { ok: true, reason: "all" };
+  }
+
+  // ── ally: caster tile OR a player-side summon within Chebyshev range.
+  if (targetType === "ally") {
+    if (tx === casterPos.x && ty === casterPos.y) {
+      return { ok: true, reason: "ally_self" };
+    }
+    const dx = Math.abs(tx - casterPos.x);
+    const dy = Math.abs(ty - casterPos.y);
+    if (Math.max(dx, dy) > range) {
+      return { ok: false, reason: "ally_out_of_range" };
+    }
+    const ally = liveCombatants.find(
+      (e) =>
+        e.x === tx &&
+        e.y === ty &&
+        e.isSummon === true &&
+        e.side === "player" &&
+        e.hp > 0,
+    );
+    if (ally) return { ok: true, reason: "ally_summon" };
+    return { ok: false, reason: "ally_no_summon_at_tile" };
+  }
+
+  // Bresenham LoS — identical to the one inside computeTargetableTiles so the
+  // live gate and the highlight set use the SAME obstruction logic.
+  const hasLoS = (
+    lx0: number,
+    ly0: number,
+    lx1: number,
+    ly1: number,
+  ): boolean => {
+    let x0 = lx0;
+    let y0 = ly0;
+    const ddx = Math.abs(lx1 - x0);
+    const ddy = Math.abs(ly1 - y0);
+    const sx = x0 < lx1 ? 1 : -1;
+    const sy = y0 < ly1 ? 1 : -1;
+    let err = ddx - ddy;
+    while (true) {
+      if ((x0 !== lx0 || y0 !== ly0) && (x0 !== lx1 || y0 !== ly1)) {
+        if (mapTiles[y0]?.[x0] === "wall") return false;
+        if (spell.isBarrier) {
+          // barrierTiles are not passed to the live helper; barrier spells
+          // do not require LoS (lineOfSight is falsy on Barrier), so this
+          // branch is unreachable for barrier spells. Kept for parity.
+        }
+      }
+      if (x0 === lx1 && y0 === ly1) break;
+      const e2 = 2 * err;
+      if (e2 > -ddy) {
+        err -= ddy;
+        x0 += sx;
+      }
+      if (e2 < ddx) {
+        err += ddx;
+        y0 += sy;
+      }
+    }
+    return true;
+  };
+
+  // ── ground / barrier: MANHATTAN distance.
+  if (targetType === "ground" || spell.isBarrier) {
+    const dx = Math.abs(tx - casterPos.x);
+    const dy = Math.abs(ty - casterPos.y);
+    if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) {
+      return { ok: false, reason: "ground_out_of_range" };
+    }
+    // Occupied tiles (by a combatant or the caster) are not castable ground.
+    const occupied =
+      liveCombatants.some((e) => e.x === tx && e.y === ty) ||
+      (tx === casterPos.x && ty === casterPos.y);
+    if (occupied) {
+      return { ok: false, reason: "ground_occupied" };
+    }
+    if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, tx, ty)) {
+      return { ok: false, reason: "ground_los_blocked" };
+    }
+    return { ok: true, reason: "ground" };
+  }
+
+  // ── line: Bresenham ray-walk from caster toward the tile in the matching
+  // direction; the tile is castable iff the ray reaches it before hitting a
+  // wall / barrier / grid bound. This mirrors the line branch in
+  // computeTargetableTiles exactly.
+  if (targetType === "line") {
+    const ddx = tx - casterPos.x;
+    const ddy = ty - casterPos.y;
+    // Line spells only travel along the 8 cardinal/diagonal directions.
+    const isCardinal = ddx === 0 || ddy === 0;
+    const isDiagonal = Math.abs(ddx) === Math.abs(ddy);
+    if (!isCardinal && !isDiagonal) {
+      return { ok: false, reason: "line_off_axis" };
+    }
+    const stepX = ddx === 0 ? 0 : ddx > 0 ? 1 : -1;
+    const stepY = ddy === 0 ? 0 : ddy > 0 ? 1 : -1;
+    const cheb = Math.max(Math.abs(ddx), Math.abs(ddy));
+    if (cheb > range) return { ok: false, reason: "line_out_of_range" };
+    if (cheb < minR) return { ok: false, reason: "line_below_min_range" };
+    let cx = casterPos.x;
+    let cy = casterPos.y;
+    for (let step = 1; step <= cheb; step++) {
+      cx += stepX;
+      cy += stepY;
+      if (cx < 0 || cy < 0 || cx >= worldGridSize || cy >= worldGridSize) {
+        return { ok: false, reason: "line_blocked_bounds" };
+      }
+      if (mapTiles[cy]?.[cx] === "wall") {
+        return { ok: false, reason: "line_blocked_wall" };
+      }
+      if (cx === tx && cy === ty) {
+        // Reached the target tile along an unobstructed ray.
+        return { ok: true, reason: "line" };
+      }
+    }
+    return { ok: false, reason: "line_not_reached" };
+  }
+
+  // ── area / enemy / chain: CHEBYSHEV distance (with area expansion for
+  // `area`). The clicked tile is castable when it is within Chebyshev range
+  // of the caster (enemy/chain) OR within `areaRadius` of an in-range anchor
+  // tile (area). LoS, linear, diagonal, freeCells, and minRange are honored.
+  const dx = tx - casterPos.x;
+  const dy = ty - casterPos.y;
+  const chebyshev = Math.max(Math.abs(dx), Math.abs(dy));
+
+  // Linear: only cardinal directions (dx=0 or dy=0).
+  if (spell.linear && dx !== 0 && dy !== 0) {
+    // For area spells, the tile may still be inside the AoE footprint of a
+    // legal cardinal anchor — check the area expansion path below before
+    // rejecting.
+    if (targetType !== "area") {
+      return { ok: false, reason: "linear_off_axis" };
+    }
+  }
+  // Diagonal: only diagonal lines (|dx|===|dy|).
+  if (spell.diagonal && Math.abs(dx) !== Math.abs(dy)) {
+    if (targetType !== "area") {
+      return { ok: false, reason: "diagonal_off_axis" };
+    }
+  }
+
+  // freeCells: skip tiles occupied by a combatant or the caster.
+  if (spell.freeCells) {
+    const occupied =
+      liveCombatants.some((e) => e.x === tx && e.y === ty) ||
+      (tx === casterPos.x && ty === casterPos.y);
+    if (occupied) {
+      // For area spells an occupied anchor is still a valid anchor (the AoE
+      // expands around it); only reject when freeCells is set AND the spell
+      // is not area.
+      if (targetType !== "area") {
+        return { ok: false, reason: "free_cells_occupied" };
+      }
+    }
+  }
+
+  // Direct in-range check (enemy / chain / area anchor).
+  if (chebyshev <= range && chebyshev >= minR && !(dx === 0 && dy === 0)) {
+    if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, tx, ty)) {
+      // Fall through to area-expansion check for area spells.
+      if (targetType !== "area") {
+        return { ok: false, reason: "los_blocked" };
+      }
+    } else {
+      return {
+        ok: true,
+        reason: targetType === "area" ? "area_anchor" : targetType,
+      };
+    }
+  }
+
+  // Area expansion: the clicked tile is castable when it sits inside the
+  // areaRadius footprint of a legal anchor tile. Walk candidate anchors
+  // within Chebyshev range of the caster and check whether the clicked tile
+  // is within areaRadius of any of them (and that anchor has LoS, etc.).
+  if (targetType === "area") {
+    const areaRadius = spell.areaRadius ?? 0;
+    if (areaRadius <= 0) {
+      return { ok: false, reason: "area_no_radius" };
+    }
+    for (let ay = -range; ay <= range; ay++) {
+      for (let ax = -range; ax <= range; ax++) {
+        const aCheb = Math.max(Math.abs(ax), Math.abs(ay));
+        if (aCheb > range) continue;
+        if (aCheb < minR) continue;
+        if (ax === 0 && ay === 0) continue;
+        const axN = casterPos.x + ax;
+        const ayN = casterPos.y + ay;
+        if (axN < 0 || ayN < 0 || axN >= worldGridSize || ayN >= worldGridSize)
+          continue;
+        if (mapTiles[ayN]?.[axN] === "wall") continue;
+        if (spell.linear && ax !== 0 && ay !== 0) continue;
+        if (spell.diagonal && Math.abs(ax) !== Math.abs(ay)) continue;
+        if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, axN, ayN))
+          continue;
+        // Is the clicked tile within areaRadius of this anchor?
+        const tdx = Math.abs(tx - axN);
+        const tdy = Math.abs(ty - ayN);
+        if (Math.max(tdx, tdy) <= areaRadius) {
+          return { ok: true, reason: "area_expansion" };
+        }
+      }
+    }
+    return { ok: false, reason: "area_no_anchor" };
+  }
+
+  return { ok: false, reason: "no_matching_branch" };
+}

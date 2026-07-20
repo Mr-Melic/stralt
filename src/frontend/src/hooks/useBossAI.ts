@@ -23,6 +23,36 @@ import type {
 } from "../types/bossTypes";
 import { applyBossAbility } from "./useBossSystem";
 
+// ── Boss kit spell selection ────────────────────────────────────────────────────
+
+/**
+ * Pick the first off-cooldown spell from the boss kit's spell pool for the
+ * current phase. A spell is off-cooldown when it is absent from the cooldown
+ * map or its remaining cooldown is <= 0. Returns null when the pool is empty
+ * or every spell is on cooldown.
+ *
+ * Cooldown enforcement happens at cast time in WorldExploration.tsx; the
+ * decision functions pass an empty Map here so kit spells are always
+ * considered available each turn.
+ */
+function pickBossKitSpell(
+  config: BossConfig,
+  currentPhase: 1 | 2,
+  cooldownMap: Map<string, number>,
+): string | null {
+  const pool =
+    currentPhase === 1
+      ? config.phase1.spellPoolIds
+      : config.phase2.spellPoolIds;
+  for (const spellId of pool) {
+    const remaining = cooldownMap.get(spellId);
+    if (remaining === undefined || remaining <= 0) {
+      return spellId;
+    }
+  }
+  return null;
+}
+
 // ── Shared movement helpers ────────────────────────────────────────────────────
 
 function getWalkableMoves(
@@ -123,7 +153,7 @@ export const decidePaleArchbishopAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -134,6 +164,22 @@ export const decidePaleArchbishopAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: Activate reflect shield if not already active, then spawn minions
   if (bossState.currentPhase === 2 && !bossState.reflectShieldActive) {
@@ -185,7 +231,7 @@ export const decideCrimsonCountessAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -196,6 +242,22 @@ export const decideCrimsonCountessAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: Leave lava on every move
   if (bossState.currentPhase === 2) {
@@ -241,7 +303,7 @@ export const decideVoidGrandmasterAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -252,6 +314,22 @@ export const decideVoidGrandmasterAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: Teleport adjacent every other turn, then split illusions
   if (bossState.currentPhase === 2) {
@@ -299,7 +377,7 @@ export const decideBoneCavalierAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -310,6 +388,22 @@ export const decideBoneCavalierAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Always jump with knight pattern (ignoring walls)
   const jumpResult = applyBossAbility(BossAbility.KNIGHT_JUMP_IGNORE_WALLS, p);
@@ -356,7 +450,7 @@ export const decideWeepingPawnAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -367,6 +461,22 @@ export const decideWeepingPawnAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2 trigger: promote to queen
   if (!bossState.phase2Triggered && boss.hp / boss.maxHp <= 0.3) {
@@ -402,7 +512,7 @@ export const decideStarbornQueenAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -413,6 +523,22 @@ export const decideStarbornQueenAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Every 3 turns: attack all lines
   if (currentTurn % 3 === 0) {
@@ -446,7 +572,7 @@ export const decideFetidRookAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -457,6 +583,22 @@ export const decideFetidRookAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2 trigger: split into two rooks
   if (bossState.currentPhase === 2 && !bossState.splitRooksSpawned) {
@@ -490,7 +632,7 @@ export const decideEternalPawnKingAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -501,6 +643,22 @@ export const decideEternalPawnKingAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: drain AP every turn
   if (bossState.currentPhase === 2) {
@@ -536,7 +694,7 @@ export const decideMidnightBishopAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -547,6 +705,22 @@ export const decideMidnightBishopAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: merge if not yet merged
   if (bossState.currentPhase === 2 && !bossState.bishopsMerged) {
@@ -586,7 +760,7 @@ export const decideBroodmotherRookAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -597,6 +771,22 @@ export const decideBroodmotherRookAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Check shell armor status
   const shellResult = applyBossAbility(BossAbility.SHELL_ARMOR, p);
@@ -654,7 +844,7 @@ export const decideLordOfStaticAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -665,6 +855,22 @@ export const decideLordOfStaticAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: chain lightning every 3 turns
   if (
@@ -710,7 +916,7 @@ export const decideFinalPawnAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -721,6 +927,22 @@ export const decideFinalPawnAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2 trigger: become invincible and summon all ghost bosses
   if (!bossState.phase2Triggered && boss.hp / boss.maxHp <= 0.1) {
@@ -809,7 +1031,7 @@ export const decideAlabasterFortressAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -820,6 +1042,22 @@ export const decideAlabasterFortressAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: board shrinks and boss becomes more vulnerable
   if (bossState.currentPhase === 2) {
@@ -862,7 +1100,7 @@ export const decideChessboardLichAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -873,6 +1111,22 @@ export const decideChessboardLichAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Every turn: rotate the board (MAP_ROTATE in phase 1, MIRROR_INVERT in phase 2)
   if (bossState.currentPhase === 2 && currentTurn % 2 === 0) {
@@ -915,7 +1169,7 @@ export const decideMirrorSovereignAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -926,6 +1180,22 @@ export const decideMirrorSovereignAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: replay the last 3 turns as a combo burst
   if (
@@ -969,7 +1239,7 @@ export const decideStarvedVampirePawnAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -980,6 +1250,22 @@ export const decideStarvedVampirePawnAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2 (HP grew to 200% of starting value): vampiric AoE drain
   if (bossState.currentPhase === 2 && currentTurn % 2 === 0) {
@@ -1012,7 +1298,7 @@ export const decidePaleArchivistAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -1023,6 +1309,22 @@ export const decidePaleArchivistAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: stack pages of doom debuff every 2 turns
   if (bossState.currentPhase === 2 && currentTurn % 2 === 0) {
@@ -1069,7 +1371,7 @@ export const decideTwinMonarchsAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -1080,6 +1382,22 @@ export const decideTwinMonarchsAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 2: one monarch absorbed the other — use merged kit
   if (bossState.currentPhase === 2 && !bossState.monarchAbsorbed) {
@@ -1127,7 +1445,7 @@ export const decideEnthronedVoidAction: BossDecisionFn = (
   allEnemies,
   allTiles,
   bossState,
-  _config,
+  config,
   currentTurn,
 ): AIAction => {
   const p = makeAbilityParams(
@@ -1138,6 +1456,22 @@ export const decideEnthronedVoidAction: BossDecisionFn = (
     bossState,
     currentTurn,
   );
+
+  // Boss kit spell: prefer the first off-cooldown kit spell for this phase.
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    new Map<string, number>(),
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell" as const,
+      spellId: kitSpellId,
+      targetId: player?.id ?? "player",
+      targetX: player?.x ?? 0,
+      targetY: player?.y ?? 0,
+    };
+  }
 
   // Phase 1: immune to direct damage — place anchor tiles and spawn phantoms
   if (bossState.currentPhase === 1) {

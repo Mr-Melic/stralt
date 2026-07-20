@@ -1,8 +1,123 @@
 import { Crown, X } from "lucide-react";
 import type React from "react";
 import { useMemo } from "react";
+import {
+  BOSS_LEVEL_DIFF_OFFSETS,
+  getBossScalingRows,
+} from "../engine/progression";
 import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
-import { BossAbility } from "../types/bossTypes";
+import { BossAbility, type BossConfig } from "../types/bossTypes";
+import type { BossBaseStats } from "../types/bossTypes";
+
+// ── Defensive kit import ─────────────────────────────────────────────────────
+// The parallel "boss kit" task may produce either:
+//   (a) src/frontend/src/data/bossKits.ts  — a standalone kit catalogue, OR
+//   (b) a `kit` field added to BossConfig in bossDefaults.ts.
+// This defensive import works either way: we attempt to import a typed kit
+// catalogue from data/bossKits.ts; if that module does not exist yet (the
+// parallel task hasn't shipped it), we fall back to deriving the kit from
+// the boss config's phase1 + phase2 specialAbilities (which the modal
+// already renders). The kit is a UI-only aggregation — it does not change
+// any battle wiring.
+type BossKitEntry = { ability: BossAbility; icon: string; description: string };
+type BossKit = { bossId: string; entries: BossKitEntry[] };
+
+let externalKits: Record<string, BossKit> | null = null;
+let kitsLoaded = false;
+try {
+  // Dynamic require guarded so the build never hard-fails if the file is
+  // absent. The parallel task is expected to ship this module; if it does
+  // not, the fallback below produces an equivalent kit from the config.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+  const mod = require("../data/bossKits");
+  externalKits = (mod?.BOSS_KITS ?? mod?.default ?? null) as Record<
+    string,
+    BossKit
+  > | null;
+  kitsLoaded = true;
+} catch {
+  kitsLoaded = false;
+}
+
+/**
+ * Resolve the kit for a boss. Defensive: prefers an external kit catalogue
+ * (data/bossKits.ts) when present; otherwise derives the kit from the
+ * boss config's phase1 + phase2 specialAbilities, de-duplicated and
+ * paired with the existing BOSS_ABILITY_DESCRIPTIONS lookup.
+ */
+function resolveBossKit(boss: BossConfig): BossKitEntry[] {
+  if (kitsLoaded && externalKits && externalKits[boss.id]) {
+    return externalKits[boss.id].entries;
+  }
+  const seen = new Set<BossAbility>();
+  const entries: BossKitEntry[] = [];
+  for (const ab of [
+    ...boss.phase1.specialAbilities,
+    ...boss.phase2.specialAbilities,
+  ]) {
+    if (seen.has(ab)) continue;
+    seen.add(ab);
+    entries.push({
+      ability: ab,
+      icon: abilityIcon(ab),
+      description: BOSS_ABILITY_DESCRIPTIONS[ab] ?? "No description available.",
+    });
+  }
+  return entries;
+}
+
+/** Small emoji glyph per ability — keeps the kit table visually scannable. */
+function abilityIcon(ab: BossAbility): string {
+  const map: Partial<Record<BossAbility, string>> = {
+    [BossAbility.REFLECT_SHIELD]: "🛡️",
+    [BossAbility.SPAWN_MINIONS]: "👹",
+    [BossAbility.LAVA_TRAIL]: "🌋",
+    [BossAbility.TELEPORT_ADJACENT]: "✨",
+    [BossAbility.ILLUSION_SPLIT]: "👥",
+    [BossAbility.KNIGHT_JUMP_IGNORE_WALLS]: "♞",
+    [BossAbility.SPIKE_ON_LAND]: "🔺",
+    [BossAbility.CURSE_ON_HIT]: "💀",
+    [BossAbility.PROMOTE_QUEEN]: "👑",
+    [BossAbility.ATTACK_ALL_LINES]: "⚔️",
+    [BossAbility.VOID_TILES]: "🕳️",
+    [BossAbility.COMPOUNDING_ROT]: "🦠",
+    [BossAbility.SPLIT_ROOKS]: "🏰",
+    [BossAbility.ADVANCE_PER_TURN]: "➡️",
+    [BossAbility.AP_DRAIN]: "💧",
+    [BossAbility.TWIN_FLANK]: "👯",
+    [BossAbility.MERGE_BISHOPS]: "♝",
+    [BossAbility.MAGIC_REFLECT]: "🔮",
+    [BossAbility.LARVAE_SPAWN]: "🐛",
+    [BossAbility.SHELL_ARMOR]: "🐢",
+    [BossAbility.LARVAE_EXPLODE]: "💥",
+    [BossAbility.SHOCK_TILES]: "⚡",
+    [BossAbility.CHAIN_LIGHTNING]: "🌩️",
+    [BossAbility.INVINCIBLE_PHASE]: "✨",
+    [BossAbility.GHOST_SUMMON]: "👻",
+    [BossAbility.RESONANCE_SHOCKWAVE]: "🌊",
+    [BossAbility.BOARD_SHRINK]: "📐",
+    [BossAbility.MAP_ROTATE]: "🔄",
+    [BossAbility.MIRROR_INVERT]: "🪞",
+    [BossAbility.BOARD_CLAIM]: "🚧",
+    [BossAbility.SPELL_MIRROR]: "🪞",
+    [BossAbility.COMBO_REPLAY]: "🔁",
+    [BossAbility.LIFE_DRAIN]: "🩸",
+    [BossAbility.VAMPIRIC_AOE]: "吸血",
+    [BossAbility.EXSANGUINATED_DEBUFF]: "🩹",
+    [BossAbility.INK_VEIL]: "🖋️",
+    [BossAbility.SCROLL_SUMMON]: "📜",
+    [BossAbility.GLYPH_TRAP]: "🪤",
+    [BossAbility.PAGES_OF_DOOM]: "📖",
+    [BossAbility.DAWN_BUFF]: "🌅",
+    [BossAbility.DUSK_DOT]: "🌆",
+    [BossAbility.MONARCH_ABSORB]: "👑",
+    [BossAbility.ANCHOR_TILES]: "⚓",
+    [BossAbility.PHANTOM_SPAWN]: "👤",
+    [BossAbility.AP_DRAIN_PASSIVE]: "💧",
+    [BossAbility.DAMAGE_IMMUNE]: "🛡️",
+  };
+  return map[ab] ?? "✦";
+}
 
 const BOSS_ABILITY_DESCRIPTIONS: Record<BossAbility, string> = {
   [BossAbility.REFLECT_SHIELD]:
@@ -102,9 +217,21 @@ const BOSS_ABILITY_DESCRIPTIONS: Record<BossAbility, string> = {
 interface BossGuideModalProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * Player level used to compute the level-difference scaling table.
+   * Defaults to 10 when not provided so the table always renders
+   * meaningful numbers even outside a live battle context.
+   */
+  playerLevel?: number;
 }
 
-const BossGuideModal: React.FC<BossGuideModalProps> = ({ open, onClose }) => {
+const DEFAULT_PLAYER_LEVEL = 10;
+
+const BossGuideModal: React.FC<BossGuideModalProps> = ({
+  open,
+  onClose,
+  playerLevel = DEFAULT_PLAYER_LEVEL,
+}) => {
   const bosses = useMemo(() => DEFAULT_BOSS_CONFIGS, []);
 
   if (!open) return null;
@@ -292,6 +419,82 @@ const BossGuideModal: React.FC<BossGuideModalProps> = ({ open, onClose }) => {
                 ))}
               </div>
 
+              {/* Kit */}
+              <div
+                data-ocid={`boss_guide.kit.${boss.id}`}
+                style={{
+                  background: "rgba(20,10,10,0.5)",
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#e74c3c",
+                    fontWeight: 700,
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: 4,
+                  }}
+                >
+                  Kit
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  {resolveBossKit(boss).map((entry) => (
+                    <div
+                      key={entry.ability}
+                      data-ocid={`boss_guide.kit_item.${boss.id}.${entry.ability}`}
+                      style={{
+                        display: "flex",
+                        gap: 6,
+                        alignItems: "flex-start",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 12,
+                          lineHeight: "14px",
+                          flexShrink: 0,
+                          width: 16,
+                          textAlign: "center",
+                        }}
+                        aria-hidden="true"
+                      >
+                        {entry.icon}
+                      </span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <span
+                          style={{
+                            color: "#f1c40f",
+                            fontSize: 10,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {entry.ability.replace(/_/g, " ")}
+                        </span>
+                        <p
+                          style={{
+                            color: "#888",
+                            fontSize: 9,
+                            lineHeight: 1.35,
+                            margin: "2px 0 0 0",
+                          }}
+                        >
+                          {entry.description}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Phase 1 */}
               <div
                 style={{
@@ -446,6 +649,172 @@ const BossGuideModal: React.FC<BossGuideModalProps> = ({ open, onClose }) => {
                     minion(s)
                   </div>
                 )}
+              </div>
+
+              {/* Level-difference scaling table */}
+              <div
+                data-ocid={`boss_guide.scaling_table.${boss.id}`}
+                style={{
+                  background: "rgba(20,10,10,0.5)",
+                  borderRadius: 6,
+                  padding: "8px 10px",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#e74c3c",
+                    fontWeight: 700,
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    marginBottom: 4,
+                  }}
+                >
+                  Level-Difference Scaling
+                </div>
+                <div
+                  style={{
+                    color: "#aaa",
+                    fontSize: 9,
+                    marginBottom: 6,
+                    fontStyle: "italic",
+                  }}
+                >
+                  Effective stats vs. player level {playerLevel}
+                </div>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    fontSize: 9,
+                    tableLayout: "fixed",
+                  }}
+                >
+                  <thead>
+                    <tr>
+                      <th
+                        style={{
+                          color: "#f1c40f",
+                          fontWeight: 700,
+                          textAlign: "left",
+                          padding: "3px 4px",
+                          borderBottom: "1px solid rgba(192,57,43,0.35)",
+                          width: "20%",
+                        }}
+                      >
+                        ΔLvl
+                      </th>
+                      {(
+                        ["HP", "AP", "MP", "INIT", "SP", "SR", "RES"] as const
+                      ).map((col) => (
+                        <th
+                          key={col}
+                          style={{
+                            color: "#f1c40f",
+                            fontWeight: 700,
+                            textAlign: "right",
+                            padding: "3px 4px",
+                            borderBottom: "1px solid rgba(192,57,43,0.35)",
+                          }}
+                        >
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {getBossScalingRows(boss.baseStats, playerLevel).map(
+                      (row, idx) => (
+                        <tr
+                          key={row.offset}
+                          data-ocid={`boss_guide.scaling_table.${boss.id}.row.${idx + 1}`}
+                          style={{
+                            borderBottom:
+                              idx <
+                              getBossScalingRows(boss.baseStats, playerLevel)
+                                .length -
+                                1
+                                ? "1px solid rgba(192,57,43,0.15)"
+                                : "none",
+                          }}
+                        >
+                          <td
+                            style={{
+                              color: row.offset === 0 ? "#f1c40f" : "#e74c3c",
+                              fontWeight: 700,
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.offset > 0 ? `+${row.offset}` : row.offset}
+                          </td>
+                          <td
+                            style={{
+                              color: "#ddd",
+                              textAlign: "right",
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.stats.hp}
+                          </td>
+                          <td
+                            style={{
+                              color: "#ddd",
+                              textAlign: "right",
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.stats.ap}
+                          </td>
+                          <td
+                            style={{
+                              color: "#ddd",
+                              textAlign: "right",
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.stats.mp}
+                          </td>
+                          <td
+                            style={{
+                              color: "#ddd",
+                              textAlign: "right",
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.stats.init}
+                          </td>
+                          <td
+                            style={{
+                              color: "#ddd",
+                              textAlign: "right",
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.stats.sp}
+                          </td>
+                          <td
+                            style={{
+                              color: "#ddd",
+                              textAlign: "right",
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.stats.sr}
+                          </td>
+                          <td
+                            style={{
+                              color: "#ddd",
+                              textAlign: "right",
+                              padding: "3px 4px",
+                            }}
+                          >
+                            {row.stats.res}
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
               </div>
 
               {/* Rewards */}

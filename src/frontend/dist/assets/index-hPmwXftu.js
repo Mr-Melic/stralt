@@ -32226,6 +32226,646 @@ function makeFreshBossState(bossId) {
     apDrainLastTurn: 0
   };
 }
+const SPELL_ID_CATALOG = [
+  "physical_attack",
+  "starter-shield",
+  "starter-poison",
+  "starter-blast",
+  "starter-heal",
+  "starter-drain",
+  "starter-frost",
+  "spell-swap",
+  "spell-mark",
+  "spell-barrier",
+  "spell-mirror",
+  "spell-timestep",
+  "spell-sacrifice",
+  "spell-lifesteal-nova",
+  "spell-enrage",
+  "spell-iron-skin",
+  "spell-haste",
+  "spell-weaken",
+  "spell-slow",
+  "spell-expose",
+  "spell-venom-strike",
+  "spell-rallying-cry",
+  "spell-drain-courage",
+  "spell-cursed-wound",
+  "spell-shadow-veil",
+  "spell-inferno",
+  "spell-frost-nova",
+  "summon-dire-wolf",
+  "summon-sentinel",
+  "summon-archer",
+  "summon-bomber",
+  "summon-wisp"
+];
+const BOSS_KITS = {
+  pale_archbishop: {
+    bossId: "pale_archbishop",
+    spells: [
+      {
+        spellId: "spell-cursed-wound",
+        role: "Cursed mace strike that festers and halves the victim's healing."
+      },
+      {
+        spellId: "spell-shadow-veil",
+        role: "Wraps the bishop in shadow, shredding the target's RES and SP."
+      },
+      {
+        spellId: "spell-sacrifice",
+        role: "Martyr's rite — bleeds his own flock to smite the heretic for triple."
+      },
+      {
+        spellId: "summon-wisp",
+        role: "Calls a kneeling wisp that mends the archbishop's vestments."
+      }
+    ],
+    phase1SpellIds: ["spell-cursed-wound", "spell-shadow-veil"],
+    phase2SpellIds: [
+      "spell-cursed-wound",
+      "spell-shadow-veil",
+      "spell-sacrifice",
+      "summon-wisp"
+    ]
+  },
+  crimson_countess: {
+    bossId: "crimson_countess",
+    spells: [
+      {
+        spellId: "spell-inferno",
+        role: "Crown of blood roses ignites — burns the target for 8 dmg/turn."
+      },
+      {
+        spellId: "spell-enrage",
+        role: "Thorned fury surges, raising her own damage by +40%."
+      },
+      {
+        spellId: "starter-drain",
+        role: "Sips the player's lifeblood, healing herself and dulling their SP."
+      },
+      {
+        spellId: "spell-lifesteal-nova",
+        role: "Rivers of lava radiate outward, draining all who stand adjacent."
+      }
+    ],
+    phase1SpellIds: ["spell-inferno", "starter-drain"],
+    phase2SpellIds: [
+      "spell-inferno",
+      "spell-enrage",
+      "starter-drain",
+      "spell-lifesteal-nova"
+    ]
+  },
+  void_grandmaster: {
+    bossId: "void_grandmaster",
+    spells: [
+      {
+        spellId: "spell-swap",
+        role: "Flickers between dimensions, trading places with the player."
+      },
+      {
+        spellId: "spell-mirror",
+        role: "Wraps himself in a void mirror, reflecting the next spell back."
+      },
+      {
+        spellId: "spell-timestep",
+        role: "Bends time itself, resetting his AP and MP to full once per battle."
+      },
+      {
+        spellId: "spell-frost-nova",
+        role: "Dimensional frost erupts around him, slowing all nearby foes."
+      }
+    ],
+    phase1SpellIds: ["spell-swap", "spell-mirror"],
+    phase2SpellIds: [
+      "spell-swap",
+      "spell-mirror",
+      "spell-timestep",
+      "spell-frost-nova"
+    ]
+  },
+  bone_cavalier: {
+    bossId: "bone_cavalier",
+    spells: [
+      {
+        spellId: "physical_attack",
+        role: "Bone lance thrust — bypasses SP, only RES applies."
+      },
+      {
+        spellId: "spell-haste",
+        role: "Skeletal sinews surge, granting +2 MP for the charge."
+      },
+      {
+        spellId: "spell-enrage",
+        role: "Marrow fury — raises his damage by +40% as bones fuse."
+      },
+      {
+        spellId: "spell-expose",
+        role: "Shatters armor on landing, debuffing RES and SP by -20%."
+      }
+    ],
+    phase1SpellIds: ["physical_attack", "spell-haste"],
+    phase2SpellIds: [
+      "physical_attack",
+      "spell-haste",
+      "spell-enrage",
+      "spell-expose"
+    ]
+  },
+  weeping_pawn: {
+    bossId: "weeping_pawn",
+    spells: [
+      {
+        spellId: "spell-slow",
+        role: "Wails sap the player's MP by -2, drowning their actions."
+      },
+      {
+        spellId: "spell-weaken",
+        role: "Sorrowful dirge reduces the player's damage by -30%."
+      },
+      {
+        spellId: "spell-iron-skin",
+        role: "Tears harden into a carapace, raising RES by +30%."
+      },
+      {
+        spellId: "spell-rallying-cry",
+        role: "Promotion wail — heals 20 and buffs CHC by +15%."
+      }
+    ],
+    phase1SpellIds: ["spell-slow", "spell-weaken"],
+    phase2SpellIds: [
+      "spell-slow",
+      "spell-weaken",
+      "spell-iron-skin",
+      "spell-rallying-cry"
+    ]
+  },
+  starborn_queen: {
+    bossId: "starborn_queen",
+    spells: [
+      {
+        spellId: "starter-blast",
+        role: "Galactic chain lightning arcs from star to star, bouncing twice."
+      },
+      {
+        spellId: "spell-frost-nova",
+        role: "Swirling void bursts around her, slowing all nearby foes."
+      },
+      {
+        spellId: "spell-mark",
+        role: "Marks a tile with a dying star — the next spell there hits twice."
+      },
+      {
+        spellId: "spell-shadow-veil",
+        role: "Curtain of cosmic dust shreds the target's RES and SP."
+      }
+    ],
+    phase1SpellIds: ["starter-blast", "spell-mark"],
+    phase2SpellIds: [
+      "starter-blast",
+      "spell-frost-nova",
+      "spell-mark",
+      "spell-shadow-veil"
+    ]
+  },
+  fetid_rook: {
+    bossId: "fetid_rook",
+    spells: [
+      {
+        spellId: "spell-venom-strike",
+        role: "Rotting claw applies venom — 4 dmg/turn for 3 turns."
+      },
+      {
+        spellId: "starter-poison",
+        role: "Festering arrow stacks compounding rot on the victim."
+      },
+      {
+        spellId: "spell-cursed-wound",
+        role: "Necrotic bite deals 22 dmg and halves incoming healing."
+      },
+      {
+        spellId: "spell-lifesteal-nova",
+        role: "Twin rooks erupt in a rot nova, draining all adjacent tiles."
+      }
+    ],
+    phase1SpellIds: ["spell-venom-strike", "starter-poison"],
+    phase2SpellIds: [
+      "spell-venom-strike",
+      "starter-poison",
+      "spell-cursed-wound",
+      "spell-lifesteal-nova"
+    ]
+  },
+  eternal_pawn_king: {
+    bossId: "eternal_pawn_king",
+    spells: [
+      {
+        spellId: "spell-slow",
+        role: "Centuries of advance weigh on the player, draining -2 MP."
+      },
+      {
+        spellId: "spell-drain-courage",
+        role: "Drains 18 HP and 1 AP, healing himself for 9 — the slow march."
+      },
+      {
+        spellId: "spell-iron-skin",
+        role: "Hardened by ages, raises his RES by +30%."
+      },
+      {
+        spellId: "spell-cursed-wound",
+        role: "Ancient curse deals 22 dmg and halves the player's healing."
+      }
+    ],
+    phase1SpellIds: ["spell-slow", "spell-drain-courage"],
+    phase2SpellIds: [
+      "spell-slow",
+      "spell-drain-courage",
+      "spell-iron-skin",
+      "spell-cursed-wound"
+    ]
+  },
+  midnight_bishop: {
+    bossId: "midnight_bishop",
+    spells: [
+      {
+        spellId: "spell-mirror",
+        role: "Twin bishops share a mirror ward, reflecting the next spell."
+      },
+      {
+        spellId: "spell-shadow-veil",
+        role: "Diagonal shadow shreds the target's RES and SP by -15%."
+      },
+      {
+        spellId: "spell-swap",
+        role: "Flanks along the diagonal, swapping with the player to break formation."
+      },
+      {
+        spellId: "spell-frost-nova",
+        role: "Merged form erupts in a midnight frost nova, slowing all nearby."
+      }
+    ],
+    phase1SpellIds: ["spell-mirror", "spell-shadow-veil"],
+    phase2SpellIds: [
+      "spell-mirror",
+      "spell-shadow-veil",
+      "spell-swap",
+      "spell-frost-nova"
+    ]
+  },
+  broodmother_rook: {
+    bossId: "broodmother_rook",
+    spells: [
+      {
+        spellId: "summon-archer",
+        role: "Hatches a larval archer that kites the player from range."
+      },
+      {
+        spellId: "spell-venom-strike",
+        role: "Mandible strike applies venom — 4 dmg/turn for 3 turns."
+      },
+      {
+        spellId: "spell-iron-skin",
+        role: "Chitin shell hardens, raising her RES by +30% while larvae live."
+      },
+      {
+        spellId: "spell-lifesteal-nova",
+        role: "Brood erupts in a parasitic nova, draining all adjacent tiles."
+      }
+    ],
+    phase1SpellIds: ["summon-archer", "spell-venom-strike"],
+    phase2SpellIds: [
+      "summon-archer",
+      "spell-venom-strike",
+      "spell-iron-skin",
+      "spell-lifesteal-nova"
+    ]
+  },
+  lord_of_static: {
+    bossId: "lord_of_static",
+    spells: [
+      {
+        spellId: "starter-blast",
+        role: "Chain lightning leaps from shock tile to foe, bouncing twice."
+      },
+      {
+        spellId: "spell-haste",
+        role: "Crackling surge grants +2 MP, supercharging his turn."
+      },
+      {
+        spellId: "spell-frost-nova",
+        role: "Static discharge erupts around him, slowing all nearby foes."
+      },
+      {
+        spellId: "spell-expose",
+        role: "Arcing current debuffs the target's RES and SP by -20%."
+      }
+    ],
+    phase1SpellIds: ["starter-blast", "spell-haste"],
+    phase2SpellIds: [
+      "starter-blast",
+      "spell-haste",
+      "spell-frost-nova",
+      "spell-expose"
+    ]
+  },
+  final_pawn: {
+    bossId: "final_pawn",
+    spells: [
+      {
+        spellId: "physical_attack",
+        role: "A plain, unremarkable strike — only RES applies."
+      },
+      {
+        spellId: "spell-timestep",
+        role: "At 1 HP, bends time to reset AP and MP — the final gambit."
+      },
+      {
+        spellId: "spell-sacrifice",
+        role: "Bleeds 20% HP to deal triple — the pawn's last sacrifice."
+      },
+      {
+        spellId: "summon-dire-wolf",
+        role: "Summons a dire wolf from the ghost bosses' collective will."
+      }
+    ],
+    phase1SpellIds: ["physical_attack"],
+    phase2SpellIds: [
+      "physical_attack",
+      "spell-timestep",
+      "spell-sacrifice",
+      "summon-dire-wolf"
+    ]
+  },
+  alabaster_fortress: {
+    bossId: "alabaster_fortress",
+    spells: [
+      {
+        spellId: "spell-iron-skin",
+        role: "Stone slabs lock together, raising RES by +30%."
+      },
+      {
+        spellId: "starter-shield",
+        role: "Carved bulwark raises RES by another +30% for 3 turns."
+      },
+      {
+        spellId: "spell-barrier",
+        role: "Drops a temporary stone block to choke the board."
+      },
+      {
+        spellId: "spell-frost-nova",
+        role: "Resonance shockwave erupts, slowing all nearby foes."
+      }
+    ],
+    phase1SpellIds: ["spell-iron-skin", "starter-shield"],
+    phase2SpellIds: [
+      "spell-iron-skin",
+      "starter-shield",
+      "spell-barrier",
+      "spell-frost-nova"
+    ]
+  },
+  chessboard_lich: {
+    bossId: "chessboard_lich",
+    spells: [
+      {
+        spellId: "spell-swap",
+        role: "Rearranges the battlefield, swapping with the player."
+      },
+      {
+        spellId: "spell-mark",
+        role: "Glyph-marks a tile — the next spell there hits twice."
+      },
+      {
+        spellId: "spell-shadow-veil",
+        role: "Necrotic veil shreds the target's RES and SP by -15%."
+      },
+      {
+        spellId: "spell-cursed-wound",
+        role: "Lich's touch deals 22 dmg and halves incoming healing."
+      },
+      {
+        spellId: "summon-wisp",
+        role: "Raises a spectral wisp that mends his throne."
+      }
+    ],
+    phase1SpellIds: ["spell-swap", "spell-mark", "spell-shadow-veil"],
+    phase2SpellIds: [
+      "spell-swap",
+      "spell-mark",
+      "spell-shadow-veil",
+      "spell-cursed-wound",
+      "summon-wisp"
+    ]
+  },
+  mirror_sovereign: {
+    bossId: "mirror_sovereign",
+    spells: [
+      {
+        spellId: "spell-mirror",
+        role: "Black mirror glass reflects the next incoming spell."
+      },
+      {
+        spellId: "spell-mark",
+        role: "Marks a tile — your own spell there will be replayed against you."
+      },
+      {
+        spellId: "spell-shadow-veil",
+        role: "Distorted reflection shreds the target's RES and SP by -15%."
+      },
+      {
+        spellId: "spell-swap",
+        role: "Trades places with the player, mirroring their position."
+      }
+    ],
+    phase1SpellIds: ["spell-mirror", "spell-mark"],
+    phase2SpellIds: [
+      "spell-mirror",
+      "spell-mark",
+      "spell-shadow-veil",
+      "spell-swap"
+    ]
+  },
+  starved_vampire_pawn: {
+    bossId: "starved_vampire_pawn",
+    spells: [
+      {
+        spellId: "starter-drain",
+        role: "Emaciated fangs drain 10 HP, healing 5 and dulling SP."
+      },
+      {
+        spellId: "spell-drain-courage",
+        role: "Drains 18 HP and 1 AP, healing 9 — the hunger deepens."
+      },
+      {
+        spellId: "spell-lifesteal-nova",
+        role: "Vampiric AoE erupts, draining all adjacent tiles for 10 each."
+      },
+      {
+        spellId: "spell-haste",
+        role: "Starved frenzy grants +2 MP to feed faster."
+      }
+    ],
+    phase1SpellIds: ["starter-drain", "spell-drain-courage"],
+    phase2SpellIds: [
+      "starter-drain",
+      "spell-drain-courage",
+      "spell-lifesteal-nova",
+      "spell-haste"
+    ]
+  },
+  pale_archivist: {
+    bossId: "pale_archivist",
+    spells: [
+      {
+        spellId: "spell-mark",
+        role: "Inks a glyph-trap tile — the next spell there hits twice."
+      },
+      {
+        spellId: "spell-barrier",
+        role: "Stacks scrolls into a temporary solid block on a free tile."
+      },
+      {
+        spellId: "spell-shadow-veil",
+        role: "Ink veil shreds the target's RES and SP by -15%."
+      },
+      {
+        spellId: "summon-archer",
+        role: "Orbits a scroll-archer that kites the player from range."
+      },
+      {
+        spellId: "spell-cursed-wound",
+        role: "Pages of doom — 22 dmg and halves incoming healing."
+      }
+    ],
+    phase1SpellIds: ["spell-mark", "spell-barrier", "summon-archer"],
+    phase2SpellIds: [
+      "spell-mark",
+      "spell-barrier",
+      "spell-shadow-veil",
+      "summon-archer",
+      "spell-cursed-wound"
+    ]
+  },
+  twin_monarchs: {
+    bossId: "twin_monarchs",
+    spells: [
+      {
+        spellId: "spell-rallying-cry",
+        role: "Dawn king's cry — heals 20 and buffs CHC by +15%."
+      },
+      {
+        spellId: "spell-inferno",
+        role: "Dusk king's touch — burns the target for 8 dmg/turn."
+      },
+      {
+        spellId: "spell-enrage",
+        role: "Linked fury surges, raising their damage by +40%."
+      },
+      {
+        spellId: "spell-iron-skin",
+        role: "Cord of light hardens, raising RES by +30%."
+      }
+    ],
+    phase1SpellIds: ["spell-rallying-cry", "spell-inferno"],
+    phase2SpellIds: [
+      "spell-rallying-cry",
+      "spell-inferno",
+      "spell-enrage",
+      "spell-iron-skin"
+    ]
+  },
+  enthroned_void: {
+    bossId: "enthroned_void",
+    spells: [
+      {
+        spellId: "spell-swap",
+        role: "Black mist trades the throne's place with the player."
+      },
+      {
+        spellId: "spell-slow",
+        role: "Creeping mist drains the player's MP by -2."
+      },
+      {
+        spellId: "spell-shadow-veil",
+        role: "Void mist shreds the target's RES and SP by -15%."
+      },
+      {
+        spellId: "spell-frost-nova",
+        role: "Anchor-shatter erupts in a void nova, slowing all nearby."
+      },
+      {
+        spellId: "summon-dire-wolf",
+        role: "Phantom wolf claws forth from the mist to hunt."
+      }
+    ],
+    phase1SpellIds: ["spell-swap", "spell-slow", "summon-dire-wolf"],
+    phase2SpellIds: [
+      "spell-swap",
+      "spell-slow",
+      "spell-shadow-veil",
+      "spell-frost-nova",
+      "summon-dire-wolf"
+    ]
+  }
+};
+const CATALOG_SET = new Set(SPELL_ID_CATALOG);
+function validateBossKits() {
+  for (const bossId of BOSS_IDS) {
+    const kit = BOSS_KITS[bossId];
+    if (!kit) {
+      throw new Error(`bossKits: missing kit for boss "${bossId}"`);
+    }
+    if (kit.bossId !== bossId) {
+      throw new Error(
+        `bossKits: kit for "${bossId}" has mismatched bossId "${kit.bossId}"`
+      );
+    }
+    if (kit.spells.length < 3 || kit.spells.length > 5) {
+      throw new Error(
+        `bossKits: kit for "${bossId}" must have 3-5 spells, has ${kit.spells.length}`
+      );
+    }
+    for (const spell of kit.spells) {
+      if (!CATALOG_SET.has(spell.spellId)) {
+        throw new Error(
+          `bossKits: kit for "${bossId}" references unknown spell id "${spell.spellId}"`
+        );
+      }
+    }
+    const declared = new Set(kit.spells.map((s2) => s2.spellId));
+    for (const id of kit.phase1SpellIds) {
+      if (!declared.has(id)) {
+        throw new Error(
+          `bossKits: phase1SpellIds for "${bossId}" references undeclared spell "${id}"`
+        );
+      }
+    }
+    for (const id of kit.phase2SpellIds) {
+      if (!declared.has(id)) {
+        throw new Error(
+          `bossKits: phase2SpellIds for "${bossId}" references undeclared spell "${id}"`
+        );
+      }
+    }
+    const phase1Set = new Set(kit.phase1SpellIds);
+    const hasNewInPhase2 = kit.phase2SpellIds.some((id) => !phase1Set.has(id));
+    if (!hasNewInPhase2) {
+      throw new Error(
+        `bossKits: phase2 for "${bossId}" must add at least one spell over phase1`
+      );
+    }
+  }
+}
+validateBossKits();
+function getBossPhase1SpellIds(bossId) {
+  var _a3;
+  return ((_a3 = BOSS_KITS[bossId]) == null ? void 0 : _a3.phase1SpellIds) ?? [];
+}
+function getBossPhase2SpellIds(bossId) {
+  var _a3;
+  return ((_a3 = BOSS_KITS[bossId]) == null ? void 0 : _a3.phase2SpellIds) ?? [];
+}
 const DEFAULT_BOSS_CONFIGS = [
   {
     id: "pale_archbishop",
@@ -32251,7 +32891,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.5,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("pale_archbishop"),
       specialAbilities: [BossAbility.CURSE_ON_HIT],
       summonCount: 0
     },
@@ -32259,7 +32899,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.4,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("pale_archbishop"),
       specialAbilities: [BossAbility.REFLECT_SHIELD, BossAbility.SPAWN_MINIONS],
       summonCount: 2
     }
@@ -32288,7 +32928,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.4,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("crimson_countess"),
       specialAbilities: [],
       summonCount: 0
     },
@@ -32296,7 +32936,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.5,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("crimson_countess"),
       specialAbilities: [BossAbility.LAVA_TRAIL],
       summonCount: 0
     }
@@ -32325,7 +32965,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.6,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("void_grandmaster"),
       specialAbilities: [BossAbility.TELEPORT_ADJACENT],
       summonCount: 0
     },
@@ -32333,7 +32973,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.3,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("void_grandmaster"),
       specialAbilities: [
         BossAbility.ILLUSION_SPLIT,
         BossAbility.TELEPORT_ADJACENT
@@ -32365,7 +33005,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.5,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("bone_cavalier"),
       specialAbilities: [BossAbility.KNIGHT_JUMP_IGNORE_WALLS],
       summonCount: 0
     },
@@ -32373,7 +33013,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.6,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("bone_cavalier"),
       specialAbilities: [
         BossAbility.KNIGHT_JUMP_IGNORE_WALLS,
         BossAbility.SPIKE_ON_LAND
@@ -32405,7 +33045,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.3,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("weeping_pawn"),
       specialAbilities: [BossAbility.CURSE_ON_HIT],
       summonCount: 0
     },
@@ -32413,7 +33053,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 2,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("weeping_pawn"),
       specialAbilities: [
         BossAbility.PROMOTE_QUEEN,
         BossAbility.ATTACK_ALL_LINES
@@ -32445,7 +33085,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.5,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("starborn_queen"),
       specialAbilities: [BossAbility.ATTACK_ALL_LINES],
       summonCount: 0
     },
@@ -32453,7 +33093,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.5,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("starborn_queen"),
       specialAbilities: [BossAbility.ATTACK_ALL_LINES, BossAbility.VOID_TILES],
       summonCount: 0
     }
@@ -32482,7 +33122,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.4,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("fetid_rook"),
       specialAbilities: [BossAbility.COMPOUNDING_ROT],
       summonCount: 0
     },
@@ -32490,7 +33130,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("fetid_rook"),
       specialAbilities: [BossAbility.SPLIT_ROOKS, BossAbility.COMPOUNDING_ROT],
       summonCount: 2
     }
@@ -32519,7 +33159,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.5,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("eternal_pawn_king"),
       specialAbilities: [BossAbility.ADVANCE_PER_TURN],
       summonCount: 0
     },
@@ -32527,7 +33167,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.3,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("eternal_pawn_king"),
       specialAbilities: [BossAbility.AP_DRAIN, BossAbility.ADVANCE_PER_TURN],
       summonCount: 0
     }
@@ -32556,7 +33196,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.25,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("midnight_bishop"),
       specialAbilities: [BossAbility.TWIN_FLANK],
       summonCount: 0
     },
@@ -32564,7 +33204,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 2,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("midnight_bishop"),
       specialAbilities: [BossAbility.MERGE_BISHOPS, BossAbility.MAGIC_REFLECT],
       summonCount: 0
     }
@@ -32593,7 +33233,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.5,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("broodmother_rook"),
       specialAbilities: [BossAbility.LARVAE_SPAWN, BossAbility.SHELL_ARMOR],
       summonCount: 1
     },
@@ -32601,7 +33241,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.4,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("broodmother_rook"),
       specialAbilities: [
         BossAbility.LARVAE_SPAWN,
         BossAbility.SHELL_ARMOR,
@@ -32634,7 +33274,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.4,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("lord_of_static"),
       specialAbilities: [BossAbility.SHOCK_TILES],
       summonCount: 0
     },
@@ -32642,7 +33282,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.5,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("lord_of_static"),
       specialAbilities: [BossAbility.SHOCK_TILES, BossAbility.CHAIN_LIGHTNING],
       summonCount: 0
     }
@@ -32671,7 +33311,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.1,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("final_pawn"),
       specialAbilities: [],
       summonCount: 0
     },
@@ -32679,7 +33319,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 999,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("final_pawn"),
       specialAbilities: [
         BossAbility.INVINCIBLE_PHASE,
         BossAbility.GHOST_SUMMON
@@ -32712,7 +33352,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.3,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("alabaster_fortress"),
       specialAbilities: [BossAbility.RESONANCE_SHOCKWAVE],
       summonCount: 0
     },
@@ -32720,7 +33360,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.2,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("alabaster_fortress"),
       specialAbilities: [
         BossAbility.BOARD_SHRINK,
         BossAbility.RESONANCE_SHOCKWAVE
@@ -32753,7 +33393,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.5,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("chessboard_lich"),
       specialAbilities: [BossAbility.MAP_ROTATE],
       summonCount: 0
     },
@@ -32761,7 +33401,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.3,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("chessboard_lich"),
       specialAbilities: [BossAbility.MIRROR_INVERT, BossAbility.BOARD_CLAIM],
       summonCount: 0
     }
@@ -32791,7 +33431,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.5,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("mirror_sovereign"),
       specialAbilities: [BossAbility.SPELL_MIRROR],
       summonCount: 0
     },
@@ -32799,7 +33439,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.5,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("mirror_sovereign"),
       specialAbilities: [BossAbility.SPELL_MIRROR, BossAbility.COMBO_REPLAY],
       summonCount: 0
     }
@@ -32829,7 +33469,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.01,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("starved_vampire_pawn"),
       specialAbilities: [BossAbility.LIFE_DRAIN],
       summonCount: 0
     },
@@ -32837,7 +33477,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("starved_vampire_pawn"),
       specialAbilities: [
         BossAbility.VAMPIRIC_AOE,
         BossAbility.EXSANGUINATED_DEBUFF,
@@ -32871,7 +33511,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.4,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("pale_archivist"),
       specialAbilities: [
         BossAbility.INK_VEIL,
         BossAbility.SCROLL_SUMMON,
@@ -32883,7 +33523,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.2,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("pale_archivist"),
       specialAbilities: [
         BossAbility.PAGES_OF_DOOM,
         BossAbility.INK_VEIL,
@@ -32917,7 +33557,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.01,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("twin_monarchs"),
       specialAbilities: [BossAbility.DAWN_BUFF, BossAbility.DUSK_DOT],
       summonCount: 1
     },
@@ -32925,7 +33565,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.4,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("twin_monarchs"),
       specialAbilities: [
         BossAbility.MONARCH_ABSORB,
         BossAbility.DAWN_BUFF,
@@ -32959,7 +33599,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 1,
       hpThreshold: 0.01,
       statMultiplier: 1,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase1SpellIds("enthroned_void"),
       specialAbilities: [
         BossAbility.DAMAGE_IMMUNE,
         BossAbility.ANCHOR_TILES,
@@ -32971,7 +33611,7 @@ const DEFAULT_BOSS_CONFIGS = [
       phaseNumber: 2,
       hpThreshold: 0,
       statMultiplier: 1.6,
-      spellPoolIds: [],
+      spellPoolIds: getBossPhase2SpellIds("enthroned_void"),
       specialAbilities: [BossAbility.AP_DRAIN_PASSIVE],
       summonCount: 0
     }
@@ -34018,6 +34658,364 @@ const AchievementsPanel = ({
     }
   );
 };
+const TILE_WIDTH = 80;
+const TILE_HEIGHT = 40;
+const WORLD_GRID_SIZE = 16;
+const MAX_HAZARD_TILES = 50;
+const MAX_ENEMIES = 20;
+const MOVEMENT_DURATION = 600;
+const CHARACTER_Y_OFFSET = -9;
+const ENEMY_MOVE_INTERVAL_MIN = 2e3;
+const ENEMY_MOVE_INTERVAL_MAX = 5e3;
+const SUMMON_AP = {
+  hunter: 2,
+  guardian: 2,
+  archer: 2,
+  kiter: 2,
+  bomber: 1,
+  kamikaze: 1,
+  healer: 2
+};
+const SUMMON_MP = {
+  hunter: 3,
+  guardian: 2,
+  archer: 3,
+  kiter: 3,
+  bomber: 4,
+  kamikaze: 4,
+  healer: 2
+};
+const SUMMON_BASE_HP = {
+  hunter: 80,
+  guardian: 120,
+  archer: 60,
+  kiter: 60,
+  bomber: 50,
+  kamikaze: 50,
+  healer: 70
+};
+const SUMMON_BASE_HP_DEFAULT = 80;
+const SUMMON_HP_PER_LEVEL_PCT = 10;
+const SUMMON_MP_PER_LEVELS = 2;
+const SUMMON_AP_PER_LEVELS = 3;
+const SUMMON_LIFESPAN_PER_HALF_LEVEL = 2;
+const SUMMON_UPGRADE_COST_MULTIPLIER = 10;
+const SUMMON_BASE_LIFESPAN = 4;
+const PLAYER_BASE_AP = 8;
+const PLAYER_BASE_MP = 4;
+const JUICE = {
+  shake: { multiplier: 1 },
+  hitFlash: { durationMs: 120 },
+  death: { durationMs: 350, fragments: 5 }
+};
+const ENEMY_RETREAT_HP_PCT = 0.3;
+const ENEMY_WOUNDED_SACRIFICE_HP_PCT = 0.2;
+const ENEMY_HAZARD_AVOID_HP_PCT = 0.5;
+const ENEMY_HEAL_ALLY_THRESHOLD_PCT = 0.5;
+const ENEMY_REACHABLE_STEP_BUDGET = 3;
+const ENEMY_UTILITY_WEIGHTS = {
+  wKillable: 100,
+  wThreat: 50,
+  wLowHp: 30,
+  wProximity: 10
+};
+const ENEMY_THREAT_VALUES = {
+  wisp: 1,
+  healer: 0.8,
+  summon: 0.6,
+  default: 0.3
+};
+const AI_OVERKILL_SPILL_FRACTION = 0.5;
+const AI_LOS_REPOSITION_STEP_BUDGET = 2;
+const AI_BACKLINE_GUARD_DISTANCE = 1;
+const AI_KAMIKAZE_MIN_TARGETS = 2;
+const AI_KAMIKAZE_LOW_HP_PCT = 0.3;
+const AI_KAMIKAZE_BLAST_RADIUS = 2;
+const ENEMY_SUMMONER_CHANCE_BASE = 0.12;
+const ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE = 0.02;
+const ENEMY_SUMMON_CAP = 2;
+const ENEMY_SUMMON_COOLDOWN_TURNS = 2;
+const DEFAULT_TIER_CONFIG = {
+  tierSize: 10,
+  sameTierPercent: 60,
+  adjacentTierPercent: 20,
+  twoAwayPercent: 10,
+  threeOrMorePercent: 5
+};
+function loadTierConfig() {
+  try {
+    const raw = localStorage.getItem("pbv_tier_spawn_config");
+    if (raw) return { ...DEFAULT_TIER_CONFIG, ...JSON.parse(raw) };
+  } catch (e) {
+    console.warn("[AI] Tier config load failed, using safe defaults:", e);
+  }
+  return DEFAULT_TIER_CONFIG;
+}
+const AI_TIER_VARIANCE_CHANCE = 0.3;
+const computeAITier = (enemyLevel) => {
+  let baseTier;
+  if (enemyLevel <= 10) baseTier = 1;
+  else if (enemyLevel <= 30) baseTier = 2;
+  else if (enemyLevel <= 60) baseTier = 3;
+  else if (enemyLevel <= 100) baseTier = 4;
+  else if (enemyLevel <= 150) baseTier = 5;
+  else if (enemyLevel <= 250) baseTier = 6;
+  else if (enemyLevel <= 400) baseTier = 7;
+  else if (enemyLevel <= 600) baseTier = 8;
+  else if (enemyLevel <= 900) baseTier = 9;
+  else baseTier = 10;
+  if (Math.random() < AI_TIER_VARIANCE_CHANCE) {
+    return Math.floor(Math.random() * 10) + 1;
+  }
+  return baseTier;
+};
+function pickEnemyLevelFromTiers(playerLevel) {
+  const cfg = loadTierConfig();
+  const ts = Math.max(1, cfg.tierSize);
+  const playerTier = Math.floor((playerLevel - 1) / ts);
+  const maxTier = Math.floor(999 / ts);
+  const _lvlVarChance = (cfg.levelVarianceChance ?? 15) / 100;
+  const _lvlVarRoll = Math.random();
+  let _tierAdj = 0;
+  if (_lvlVarRoll < _lvlVarChance) _tierAdj = -1;
+  else if (_lvlVarRoll > 1 - _lvlVarChance) _tierAdj = 1;
+  const adjustedPlayerTier = Math.max(
+    0,
+    Math.min(maxTier, playerTier + _tierAdj)
+  );
+  const same = Math.min(100, cfg.sameTierPercent);
+  const adj = Math.min(100 - same, cfg.adjacentTierPercent);
+  const twoAway = Math.min(100 - same - adj, cfg.twoAwayPercent);
+  const rand = Math.random() * 100;
+  let chosenTier;
+  if (rand < same) {
+    chosenTier = adjustedPlayerTier;
+  } else if (rand < same + adj) {
+    const side = Math.random() < 0.5 ? 1 : -1;
+    chosenTier = Math.max(0, adjustedPlayerTier + side);
+  } else if (rand < same + adj + twoAway) {
+    const side = Math.random() < 0.5 ? 2 : -2;
+    chosenTier = Math.max(0, adjustedPlayerTier + side);
+  } else {
+    const dist2 = 3 + Math.floor(Math.random() * 4);
+    const side = Math.random() < 0.5 ? 1 : -1;
+    chosenTier = Math.max(
+      0,
+      Math.min(maxTier, adjustedPlayerTier + side * dist2)
+    );
+  }
+  const tierMin = chosenTier * ts + 1;
+  const tierMax = (chosenTier + 1) * ts;
+  return Math.max(
+    1,
+    Math.floor(Math.random() * (tierMax - tierMin + 1)) + tierMin
+  );
+}
+function computeEnemyStats(level, pieceType, seedKey) {
+  return getEnemyBaseStats(level, pieceType, seedKey);
+}
+function seededRng(seed) {
+  let val = Math.abs(seed) + 1;
+  return () => {
+    val = val * 16807 % 2147483647;
+    return (val - 1) / 2147483646;
+  };
+}
+function calcScaledDamage(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
+  return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
+}
+function getPlayerBaseStats(level, levelUpConfig) {
+  const lvl = Math.max(1, Math.floor(level));
+  const apGrowthEvery = levelUpConfig == null ? void 0 : levelUpConfig.apMpGrowthEveryNLevels;
+  const apGrowth = apGrowthEvery && apGrowthEvery > 0 ? Math.floor(lvl / apGrowthEvery) : 0;
+  const mpGrowth = apGrowth;
+  const ap = Math.max(PLAYER_BASE_AP, PLAYER_BASE_AP + apGrowth);
+  const mp = Math.max(PLAYER_BASE_MP, PLAYER_BASE_MP + mpGrowth);
+  const growthPct = levelUpConfig == null ? void 0 : levelUpConfig.statGrowthPercent;
+  const hp = growthPct && growthPct > 0 ? Math.round(100 * (1 + growthPct / 100) ** (lvl - 1)) : 100;
+  return { ap, mp, hp };
+}
+const ENEMY_PIECE_MULTIPLIERS = {
+  pawn: {
+    sp: 0.85,
+    sr: 0.85,
+    init: 0.85,
+    res: 0.85,
+    chc: 0.85
+  },
+  rook: {
+    sp: 0.8,
+    sr: 1.2,
+    init: 1.1,
+    res: 1.35,
+    chc: 0.7
+  },
+  knight: {
+    sp: 0.85,
+    sr: 1.15,
+    init: 1.2,
+    res: 1.25,
+    chc: 0.8
+  },
+  bishop: {
+    sp: 1.3,
+    sr: 0.85,
+    init: 1,
+    res: 0.7,
+    chc: 1.2
+  },
+  queen: {
+    sp: 1.25,
+    sr: 0.9,
+    init: 1.1,
+    res: 0.75,
+    chc: 1.15
+  },
+  king: {
+    sp: 1,
+    sr: 1,
+    init: 1,
+    res: 1,
+    chc: 1
+  }
+};
+function getEnemyBaseStats(level, pieceType, seedKey) {
+  const seed = seedKey !== void 0 ? typeof seedKey === "string" ? seedKey.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0) : seedKey : level * 31 + pieceType.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0);
+  const rng = seededRng(seed);
+  const base = Math.max(1, level);
+  const mult = ENEMY_PIECE_MULTIPLIERS[pieceType] ?? ENEMY_PIECE_MULTIPLIERS.king;
+  const roll = (min, max, m2) => {
+    const raw = min + rng() * (max - min);
+    return Math.max(1, Math.round(raw * m2));
+  };
+  return {
+    sp: roll(3, 6 + base * 1.2, mult.sp),
+    sr: roll(2, 4 + base * 1, mult.sr),
+    init: roll(3, 6 + base * 1.2, mult.init),
+    res: roll(2, 4 + base * 0.9, mult.res),
+    chc: roll(1, 3 + base * 0.7, mult.chc)
+  };
+}
+function getSummonBaseStats(spellLevel, unitDef, summonAI) {
+  const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
+  const hpScale = unitDef.hpScale || 1;
+  const hpLevelMul = 1 + spellLevel * SUMMON_HP_PER_LEVEL_PCT / 100;
+  const maxHp = Math.round(baseHp * hpScale * hpLevelMul);
+  const maxAp = (unitDef.ap ?? SUMMON_AP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_AP_PER_LEVELS);
+  const maxMp = (unitDef.mp ?? SUMMON_MP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_MP_PER_LEVELS);
+  const turnsRemaining = SUMMON_BASE_LIFESPAN + Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL);
+  return { maxHp, maxAp, maxMp, turnsRemaining };
+}
+const BOSS_LEVEL_DIFF_STEP = 1.08;
+function getBossEffectiveStats(bossBaseStats, playerLevel, bossLevel = playerLevel) {
+  const pLvl = Math.max(1, Math.floor(playerLevel));
+  const bLvl = Math.max(1, Math.floor(bossLevel));
+  const diff = bLvl - pLvl;
+  const mult = BOSS_LEVEL_DIFF_STEP ** diff;
+  const scale = (v2) => Math.max(1, Math.round(v2 * mult));
+  return {
+    hp: scale(bossBaseStats.hp),
+    ap: scale(bossBaseStats.ap),
+    mp: scale(bossBaseStats.mp),
+    init: scale(bossBaseStats.init),
+    sp: scale(bossBaseStats.sp),
+    // SR (spell resist) — scaled `res`.
+    sr: scale(bossBaseStats.res),
+    // RES (physical resist) — base `res` shown unscaled for reference.
+    res: Math.max(1, Math.round(bossBaseStats.res))
+  };
+}
+const BOSS_LEVEL_DIFF_OFFSETS = [-2, 0, 2, 5];
+function getBossScalingRows(bossBaseStats, playerLevel) {
+  return BOSS_LEVEL_DIFF_OFFSETS.map((offset) => ({
+    offset,
+    stats: getBossEffectiveStats(
+      bossBaseStats,
+      playerLevel,
+      playerLevel + offset
+    )
+  }));
+}
+let externalKits = null;
+let kitsLoaded = false;
+try {
+  const mod2 = require("../data/bossKits");
+  externalKits = (mod2 == null ? void 0 : mod2.BOSS_KITS) ?? (mod2 == null ? void 0 : mod2.default) ?? null;
+  kitsLoaded = true;
+} catch {
+  kitsLoaded = false;
+}
+function resolveBossKit(boss) {
+  if (kitsLoaded && externalKits && externalKits[boss.id]) {
+    return externalKits[boss.id].entries;
+  }
+  const seen2 = /* @__PURE__ */ new Set();
+  const entries = [];
+  for (const ab of [
+    ...boss.phase1.specialAbilities,
+    ...boss.phase2.specialAbilities
+  ]) {
+    if (seen2.has(ab)) continue;
+    seen2.add(ab);
+    entries.push({
+      ability: ab,
+      icon: abilityIcon(ab),
+      description: BOSS_ABILITY_DESCRIPTIONS[ab] ?? "No description available."
+    });
+  }
+  return entries;
+}
+function abilityIcon(ab) {
+  const map = {
+    [BossAbility.REFLECT_SHIELD]: "🛡️",
+    [BossAbility.SPAWN_MINIONS]: "👹",
+    [BossAbility.LAVA_TRAIL]: "🌋",
+    [BossAbility.TELEPORT_ADJACENT]: "✨",
+    [BossAbility.ILLUSION_SPLIT]: "👥",
+    [BossAbility.KNIGHT_JUMP_IGNORE_WALLS]: "♞",
+    [BossAbility.SPIKE_ON_LAND]: "🔺",
+    [BossAbility.CURSE_ON_HIT]: "💀",
+    [BossAbility.PROMOTE_QUEEN]: "👑",
+    [BossAbility.ATTACK_ALL_LINES]: "⚔️",
+    [BossAbility.VOID_TILES]: "🕳️",
+    [BossAbility.COMPOUNDING_ROT]: "🦠",
+    [BossAbility.SPLIT_ROOKS]: "🏰",
+    [BossAbility.ADVANCE_PER_TURN]: "➡️",
+    [BossAbility.AP_DRAIN]: "💧",
+    [BossAbility.TWIN_FLANK]: "👯",
+    [BossAbility.MERGE_BISHOPS]: "♝",
+    [BossAbility.MAGIC_REFLECT]: "🔮",
+    [BossAbility.LARVAE_SPAWN]: "🐛",
+    [BossAbility.SHELL_ARMOR]: "🐢",
+    [BossAbility.LARVAE_EXPLODE]: "💥",
+    [BossAbility.SHOCK_TILES]: "⚡",
+    [BossAbility.CHAIN_LIGHTNING]: "🌩️",
+    [BossAbility.INVINCIBLE_PHASE]: "✨",
+    [BossAbility.GHOST_SUMMON]: "👻",
+    [BossAbility.RESONANCE_SHOCKWAVE]: "🌊",
+    [BossAbility.BOARD_SHRINK]: "📐",
+    [BossAbility.MAP_ROTATE]: "🔄",
+    [BossAbility.MIRROR_INVERT]: "🪞",
+    [BossAbility.BOARD_CLAIM]: "🚧",
+    [BossAbility.SPELL_MIRROR]: "🪞",
+    [BossAbility.COMBO_REPLAY]: "🔁",
+    [BossAbility.LIFE_DRAIN]: "🩸",
+    [BossAbility.VAMPIRIC_AOE]: "吸血",
+    [BossAbility.EXSANGUINATED_DEBUFF]: "🩹",
+    [BossAbility.INK_VEIL]: "🖋️",
+    [BossAbility.SCROLL_SUMMON]: "📜",
+    [BossAbility.GLYPH_TRAP]: "🪤",
+    [BossAbility.PAGES_OF_DOOM]: "📖",
+    [BossAbility.DAWN_BUFF]: "🌅",
+    [BossAbility.DUSK_DOT]: "🌆",
+    [BossAbility.MONARCH_ABSORB]: "👑",
+    [BossAbility.ANCHOR_TILES]: "⚓",
+    [BossAbility.PHANTOM_SPAWN]: "👤",
+    [BossAbility.AP_DRAIN_PASSIVE]: "💧",
+    [BossAbility.DAMAGE_IMMUNE]: "🛡️"
+  };
+  return map[ab] ?? "✦";
+}
 const BOSS_ABILITY_DESCRIPTIONS = {
   [BossAbility.REFLECT_SHIELD]: "Boss reflects a portion of incoming damage back to the attacker. Use low-damage, high-frequency attacks or wait for the shield to expire.",
   [BossAbility.SPAWN_MINIONS]: "Boss summons additional enemies. Focus fire on the boss or clear minions quickly to avoid being overwhelmed.",
@@ -34066,7 +35064,12 @@ const BOSS_ABILITY_DESCRIPTIONS = {
   [BossAbility.AP_DRAIN_PASSIVE]: "Passive AP drain every turn. Plan actions with lower AP costs.",
   [BossAbility.DAMAGE_IMMUNE]: "Boss is completely immune to damage. Find and interact with the environment to remove immunity."
 };
-const BossGuideModal = ({ open, onClose }) => {
+const DEFAULT_PLAYER_LEVEL = 10;
+const BossGuideModal = ({
+  open,
+  onClose,
+  playerLevel = DEFAULT_PLAYER_LEVEL
+}) => {
   const bosses = reactExports.useMemo(() => DEFAULT_BOSS_CONFIGS, []);
   if (!open) return null;
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -34264,6 +35267,96 @@ const BossGuideModal = ({ open, onClose }) => {
                       /* @__PURE__ */ jsxRuntimeExports.jsxs(
                         "div",
                         {
+                          "data-ocid": `boss_guide.kit.${boss.id}`,
+                          style: {
+                            background: "rgba(20,10,10,0.5)",
+                            borderRadius: 6,
+                            padding: "8px 10px"
+                          },
+                          children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  color: "#e74c3c",
+                                  fontWeight: 700,
+                                  fontSize: 10,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  marginBottom: 4
+                                },
+                                children: "Kit"
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 4
+                                },
+                                children: resolveBossKit(boss).map((entry) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                  "div",
+                                  {
+                                    "data-ocid": `boss_guide.kit_item.${boss.id}.${entry.ability}`,
+                                    style: {
+                                      display: "flex",
+                                      gap: 6,
+                                      alignItems: "flex-start"
+                                    },
+                                    children: [
+                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                        "span",
+                                        {
+                                          style: {
+                                            fontSize: 12,
+                                            lineHeight: "14px",
+                                            flexShrink: 0,
+                                            width: 16,
+                                            textAlign: "center"
+                                          },
+                                          "aria-hidden": "true",
+                                          children: entry.icon
+                                        }
+                                      ),
+                                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { minWidth: 0, flex: 1 }, children: [
+                                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "span",
+                                          {
+                                            style: {
+                                              color: "#f1c40f",
+                                              fontSize: 10,
+                                              fontWeight: 700
+                                            },
+                                            children: entry.ability.replace(/_/g, " ")
+                                          }
+                                        ),
+                                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "p",
+                                          {
+                                            style: {
+                                              color: "#888",
+                                              fontSize: 9,
+                                              lineHeight: 1.35,
+                                              margin: "2px 0 0 0"
+                                            },
+                                            children: entry.description
+                                          }
+                                        )
+                                      ] })
+                                    ]
+                                  },
+                                  entry.ability
+                                ))
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        "div",
+                        {
                           style: {
                             background: "rgba(20,10,10,0.5)",
                             borderRadius: 6,
@@ -34440,6 +35533,193 @@ const BossGuideModal = ({ open, onClose }) => {
                               " ",
                               "minion(s)"
                             ] })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        "div",
+                        {
+                          "data-ocid": `boss_guide.scaling_table.${boss.id}`,
+                          style: {
+                            background: "rgba(20,10,10,0.5)",
+                            borderRadius: 6,
+                            padding: "8px 10px"
+                          },
+                          children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "div",
+                              {
+                                style: {
+                                  color: "#e74c3c",
+                                  fontWeight: 700,
+                                  fontSize: 10,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.06em",
+                                  marginBottom: 4
+                                },
+                                children: "Level-Difference Scaling"
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "div",
+                              {
+                                style: {
+                                  color: "#aaa",
+                                  fontSize: 9,
+                                  marginBottom: 6,
+                                  fontStyle: "italic"
+                                },
+                                children: [
+                                  "Effective stats vs. player level ",
+                                  playerLevel
+                                ]
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "table",
+                              {
+                                style: {
+                                  width: "100%",
+                                  borderCollapse: "collapse",
+                                  fontSize: 9,
+                                  tableLayout: "fixed"
+                                },
+                                children: [
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
+                                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                      "th",
+                                      {
+                                        style: {
+                                          color: "#f1c40f",
+                                          fontWeight: 700,
+                                          textAlign: "left",
+                                          padding: "3px 4px",
+                                          borderBottom: "1px solid rgba(192,57,43,0.35)",
+                                          width: "20%"
+                                        },
+                                        children: "ΔLvl"
+                                      }
+                                    ),
+                                    ["HP", "AP", "MP", "INIT", "SP", "SR", "RES"].map((col) => /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                      "th",
+                                      {
+                                        style: {
+                                          color: "#f1c40f",
+                                          fontWeight: 700,
+                                          textAlign: "right",
+                                          padding: "3px 4px",
+                                          borderBottom: "1px solid rgba(192,57,43,0.35)"
+                                        },
+                                        children: col
+                                      },
+                                      col
+                                    ))
+                                  ] }) }),
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: getBossScalingRows(boss.baseStats, playerLevel).map(
+                                    (row, idx) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                      "tr",
+                                      {
+                                        "data-ocid": `boss_guide.scaling_table.${boss.id}.row.${idx + 1}`,
+                                        style: {
+                                          borderBottom: idx < getBossScalingRows(boss.baseStats, playerLevel).length - 1 ? "1px solid rgba(192,57,43,0.15)" : "none"
+                                        },
+                                        children: [
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: row.offset === 0 ? "#f1c40f" : "#e74c3c",
+                                                fontWeight: 700,
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.offset > 0 ? `+${row.offset}` : row.offset
+                                            }
+                                          ),
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: "#ddd",
+                                                textAlign: "right",
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.stats.hp
+                                            }
+                                          ),
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: "#ddd",
+                                                textAlign: "right",
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.stats.ap
+                                            }
+                                          ),
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: "#ddd",
+                                                textAlign: "right",
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.stats.mp
+                                            }
+                                          ),
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: "#ddd",
+                                                textAlign: "right",
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.stats.init
+                                            }
+                                          ),
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: "#ddd",
+                                                textAlign: "right",
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.stats.sp
+                                            }
+                                          ),
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: "#ddd",
+                                                textAlign: "right",
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.stats.sr
+                                            }
+                                          ),
+                                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                            "td",
+                                            {
+                                              style: {
+                                                color: "#ddd",
+                                                textAlign: "right",
+                                                padding: "3px 4px"
+                                              },
+                                              children: row.stats.res
+                                            }
+                                          )
+                                        ]
+                                      },
+                                      row.offset
+                                    )
+                                  ) })
+                                ]
+                              }
+                            )
                           ]
                         }
                       ),
@@ -46145,83 +47425,6 @@ const MapModifiersPanel = ({
     }
   );
 };
-const TILE_WIDTH = 80;
-const TILE_HEIGHT = 40;
-const WORLD_GRID_SIZE = 16;
-const MAX_HAZARD_TILES = 50;
-const MAX_ENEMIES = 20;
-const MOVEMENT_DURATION = 600;
-const CHARACTER_Y_OFFSET = -9;
-const ENEMY_MOVE_INTERVAL_MIN = 2e3;
-const ENEMY_MOVE_INTERVAL_MAX = 5e3;
-const SUMMON_AP = {
-  hunter: 2,
-  guardian: 2,
-  archer: 2,
-  kiter: 2,
-  bomber: 1,
-  kamikaze: 1,
-  healer: 2
-};
-const SUMMON_MP = {
-  hunter: 3,
-  guardian: 2,
-  archer: 3,
-  kiter: 3,
-  bomber: 4,
-  kamikaze: 4,
-  healer: 2
-};
-const SUMMON_BASE_HP = {
-  hunter: 80,
-  guardian: 120,
-  archer: 60,
-  kiter: 60,
-  bomber: 50,
-  kamikaze: 50,
-  healer: 70
-};
-const SUMMON_BASE_HP_DEFAULT = 80;
-const SUMMON_HP_PER_LEVEL_PCT = 10;
-const SUMMON_MP_PER_LEVELS = 2;
-const SUMMON_AP_PER_LEVELS = 3;
-const SUMMON_LIFESPAN_PER_HALF_LEVEL = 2;
-const SUMMON_UPGRADE_COST_MULTIPLIER = 10;
-const SUMMON_BASE_LIFESPAN = 4;
-const PLAYER_BASE_AP = 8;
-const PLAYER_BASE_MP = 4;
-const JUICE = {
-  shake: { multiplier: 1 },
-  hitFlash: { durationMs: 120 },
-  death: { durationMs: 350, fragments: 5 }
-};
-const ENEMY_RETREAT_HP_PCT = 0.3;
-const ENEMY_WOUNDED_SACRIFICE_HP_PCT = 0.2;
-const ENEMY_HAZARD_AVOID_HP_PCT = 0.5;
-const ENEMY_HEAL_ALLY_THRESHOLD_PCT = 0.5;
-const ENEMY_REACHABLE_STEP_BUDGET = 3;
-const ENEMY_UTILITY_WEIGHTS = {
-  wKillable: 100,
-  wThreat: 50,
-  wLowHp: 30,
-  wProximity: 10
-};
-const ENEMY_THREAT_VALUES = {
-  wisp: 1,
-  healer: 0.8,
-  summon: 0.6,
-  default: 0.3
-};
-const AI_OVERKILL_SPILL_FRACTION = 0.5;
-const AI_LOS_REPOSITION_STEP_BUDGET = 2;
-const AI_BACKLINE_GUARD_DISTANCE = 1;
-const AI_KAMIKAZE_MIN_TARGETS = 2;
-const AI_KAMIKAZE_LOW_HP_PCT = 0.3;
-const AI_KAMIKAZE_BLAST_RADIUS = 2;
-const ENEMY_SUMMONER_CHANCE_BASE = 0.12;
-const ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE = 0.02;
-const ENEMY_SUMMON_CAP = 2;
-const ENEMY_SUMMON_COOLDOWN_TURNS = 2;
 const physicalAttackSpell = {
   id: "physical_attack",
   name: "Strike",
@@ -47295,177 +48498,6 @@ function applyDamageToEnemy(args) {
     }
   }
 }
-function getPlayerBaseStats(level, levelUpConfig) {
-  const lvl = Math.max(1, Math.floor(level));
-  const apGrowthEvery = levelUpConfig == null ? void 0 : levelUpConfig.apMpGrowthEveryNLevels;
-  const apGrowth = apGrowthEvery && apGrowthEvery > 0 ? Math.floor(lvl / apGrowthEvery) : 0;
-  const mpGrowth = apGrowth;
-  const ap = Math.max(PLAYER_BASE_AP, PLAYER_BASE_AP + apGrowth);
-  const mp = Math.max(PLAYER_BASE_MP, PLAYER_BASE_MP + mpGrowth);
-  const growthPct = levelUpConfig == null ? void 0 : levelUpConfig.statGrowthPercent;
-  const hp = growthPct && growthPct > 0 ? Math.round(100 * (1 + growthPct / 100) ** (lvl - 1)) : 100;
-  return { ap, mp, hp };
-}
-const ENEMY_PIECE_MULTIPLIERS = {
-  pawn: {
-    sp: 0.85,
-    sr: 0.85,
-    init: 0.85,
-    res: 0.85,
-    chc: 0.85
-  },
-  rook: {
-    sp: 0.8,
-    sr: 1.2,
-    init: 1.1,
-    res: 1.35,
-    chc: 0.7
-  },
-  knight: {
-    sp: 0.85,
-    sr: 1.15,
-    init: 1.2,
-    res: 1.25,
-    chc: 0.8
-  },
-  bishop: {
-    sp: 1.3,
-    sr: 0.85,
-    init: 1,
-    res: 0.7,
-    chc: 1.2
-  },
-  queen: {
-    sp: 1.25,
-    sr: 0.9,
-    init: 1.1,
-    res: 0.75,
-    chc: 1.15
-  },
-  king: {
-    sp: 1,
-    sr: 1,
-    init: 1,
-    res: 1,
-    chc: 1
-  }
-};
-function getEnemyBaseStats(level, pieceType, seedKey) {
-  const seed = seedKey !== void 0 ? typeof seedKey === "string" ? seedKey.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0) : seedKey : level * 31 + pieceType.split("").reduce((a2, c2) => a2 + c2.charCodeAt(0), 0);
-  const rng = seededRng(seed);
-  const base = Math.max(1, level);
-  const mult = ENEMY_PIECE_MULTIPLIERS[pieceType] ?? ENEMY_PIECE_MULTIPLIERS.king;
-  const roll = (min, max, m2) => {
-    const raw = min + rng() * (max - min);
-    return Math.max(1, Math.round(raw * m2));
-  };
-  return {
-    sp: roll(3, 6 + base * 1.2, mult.sp),
-    sr: roll(2, 4 + base * 1, mult.sr),
-    init: roll(3, 6 + base * 1.2, mult.init),
-    res: roll(2, 4 + base * 0.9, mult.res),
-    chc: roll(1, 3 + base * 0.7, mult.chc)
-  };
-}
-function getSummonBaseStats(spellLevel, unitDef, summonAI) {
-  const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
-  const hpScale = unitDef.hpScale || 1;
-  const hpLevelMul = 1 + spellLevel * SUMMON_HP_PER_LEVEL_PCT / 100;
-  const maxHp = Math.round(baseHp * hpScale * hpLevelMul);
-  const maxAp = (unitDef.ap ?? SUMMON_AP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_AP_PER_LEVELS);
-  const maxMp = (unitDef.mp ?? SUMMON_MP[summonAI] ?? 2) + Math.floor(spellLevel / SUMMON_MP_PER_LEVELS);
-  const turnsRemaining = SUMMON_BASE_LIFESPAN + Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL);
-  return { maxHp, maxAp, maxMp, turnsRemaining };
-}
-const DEFAULT_TIER_CONFIG = {
-  tierSize: 10,
-  sameTierPercent: 60,
-  adjacentTierPercent: 20,
-  twoAwayPercent: 10,
-  threeOrMorePercent: 5
-};
-function loadTierConfig() {
-  try {
-    const raw = localStorage.getItem("pbv_tier_spawn_config");
-    if (raw) return { ...DEFAULT_TIER_CONFIG, ...JSON.parse(raw) };
-  } catch (e) {
-    console.warn("[AI] Tier config load failed, using safe defaults:", e);
-  }
-  return DEFAULT_TIER_CONFIG;
-}
-const AI_TIER_VARIANCE_CHANCE = 0.3;
-const computeAITier = (enemyLevel) => {
-  let baseTier;
-  if (enemyLevel <= 10) baseTier = 1;
-  else if (enemyLevel <= 30) baseTier = 2;
-  else if (enemyLevel <= 60) baseTier = 3;
-  else if (enemyLevel <= 100) baseTier = 4;
-  else if (enemyLevel <= 150) baseTier = 5;
-  else if (enemyLevel <= 250) baseTier = 6;
-  else if (enemyLevel <= 400) baseTier = 7;
-  else if (enemyLevel <= 600) baseTier = 8;
-  else if (enemyLevel <= 900) baseTier = 9;
-  else baseTier = 10;
-  if (Math.random() < AI_TIER_VARIANCE_CHANCE) {
-    return Math.floor(Math.random() * 10) + 1;
-  }
-  return baseTier;
-};
-function pickEnemyLevelFromTiers(playerLevel) {
-  const cfg = loadTierConfig();
-  const ts = Math.max(1, cfg.tierSize);
-  const playerTier = Math.floor((playerLevel - 1) / ts);
-  const maxTier = Math.floor(999 / ts);
-  const _lvlVarChance = (cfg.levelVarianceChance ?? 15) / 100;
-  const _lvlVarRoll = Math.random();
-  let _tierAdj = 0;
-  if (_lvlVarRoll < _lvlVarChance) _tierAdj = -1;
-  else if (_lvlVarRoll > 1 - _lvlVarChance) _tierAdj = 1;
-  const adjustedPlayerTier = Math.max(
-    0,
-    Math.min(maxTier, playerTier + _tierAdj)
-  );
-  const same = Math.min(100, cfg.sameTierPercent);
-  const adj = Math.min(100 - same, cfg.adjacentTierPercent);
-  const twoAway = Math.min(100 - same - adj, cfg.twoAwayPercent);
-  const rand = Math.random() * 100;
-  let chosenTier;
-  if (rand < same) {
-    chosenTier = adjustedPlayerTier;
-  } else if (rand < same + adj) {
-    const side = Math.random() < 0.5 ? 1 : -1;
-    chosenTier = Math.max(0, adjustedPlayerTier + side);
-  } else if (rand < same + adj + twoAway) {
-    const side = Math.random() < 0.5 ? 2 : -2;
-    chosenTier = Math.max(0, adjustedPlayerTier + side);
-  } else {
-    const dist2 = 3 + Math.floor(Math.random() * 4);
-    const side = Math.random() < 0.5 ? 1 : -1;
-    chosenTier = Math.max(
-      0,
-      Math.min(maxTier, adjustedPlayerTier + side * dist2)
-    );
-  }
-  const tierMin = chosenTier * ts + 1;
-  const tierMax = (chosenTier + 1) * ts;
-  return Math.max(
-    1,
-    Math.floor(Math.random() * (tierMax - tierMin + 1)) + tierMin
-  );
-}
-function computeEnemyStats(level, pieceType, seedKey) {
-  return getEnemyBaseStats(level, pieceType, seedKey);
-}
-function seededRng(seed) {
-  let val = Math.abs(seed) + 1;
-  return () => {
-    val = val * 16807 % 2147483647;
-    return (val - 1) / 2147483646;
-  };
-}
-function calcScaledDamage(baseDamage, _casterLevel, spellUpgradeLevel = 0) {
-  return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
-}
 function toCombatantEntry(c2) {
   const rich = c2;
   const side = rich.side ?? "enemy";
@@ -47522,6 +48554,7 @@ function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrd
   return ctx;
 }
 function addCombatant(ctx, combatant, opts) {
+  var _a3;
   const c2 = combatant;
   const battleParticipant = (opts == null ? void 0 : opts.battleParticipant) ?? false;
   const nextCombatants = [...ctx.combatantsRef.current, combatant];
@@ -47551,8 +48584,10 @@ function addCombatant(ctx, combatant, opts) {
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
   ctx.setTurnOrder(() => nextTurnOrder);
+  (_a3 = ctx.onMutation) == null ? void 0 : _a3.call(ctx);
 }
 function removeCombatant(ctx, id) {
+  var _a3;
   const nextCombatants = ctx.combatantsRef.current.filter((c2) => c2.id !== id);
   const nextEnemies = nextCombatants;
   ctx.battleStartIds.delete(id);
@@ -47571,8 +48606,10 @@ function removeCombatant(ctx, id) {
   );
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
+  (_a3 = ctx.onMutation) == null ? void 0 : _a3.call(ctx);
 }
 function updateCombatant(ctx, id, patch) {
+  var _a3;
   const nextCombatants = ctx.combatantsRef.current.map(
     (c2) => c2.id === id ? { ...c2, ...patch } : c2
   );
@@ -47589,8 +48626,10 @@ function updateCombatant(ctx, id, patch) {
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
   ctx.setTurnOrder(() => nextTurnOrder);
+  (_a3 = ctx.onMutation) == null ? void 0 : _a3.call(ctx);
 }
 function syncCombatants(ctx, next, opts) {
+  var _a3;
   const resetBattle = (opts == null ? void 0 : opts.resetBattle) ?? false;
   if (resetBattle) {
     ctx.battleStartIds = new Set(next.map((c2) => c2.id));
@@ -47605,6 +48644,7 @@ function syncCombatants(ctx, next, opts) {
   ctx.setEnemies(() => nextEnemies);
   ctx.setBattleEnemies(() => nextBattleEnemies);
   ctx.setTurnOrder(() => nextTurnOrder);
+  (_a3 = ctx.onMutation) == null ? void 0 : _a3.call(ctx);
 }
 function deriveBattleEnemies(ctx) {
   return ctx.combatantsRef.current.filter((c2) => ctx.battleStartIds.has(c2.id));
@@ -51346,6 +52386,180 @@ function computeTargetableTiles(spell, casterPos, gridState) {
   }
   return out;
 }
+function isTileCastableLive(spell, casterPos, tile, liveCombatants, mapTiles) {
+  var _a3, _b3, _c2;
+  const targetType = spell.targetType ?? "enemy";
+  const worldGridSize = mapTiles.length;
+  const range = spell.maxRange ?? Math.max(1, Number(spell.range));
+  const minR = spell.minRange ?? 1;
+  const tx = tile.x;
+  const ty = tile.y;
+  if (!Number.isFinite(tx) || !Number.isFinite(ty) || tx < 0 || ty < 0 || tx >= worldGridSize || ty >= worldGridSize || mapTiles.length <= ty || ((_a3 = mapTiles[ty]) == null ? void 0 : _a3.length) <= tx) {
+    return { ok: false, reason: "out_of_bounds" };
+  }
+  if (mapTiles[ty][tx] === "wall") {
+    return { ok: false, reason: "wall_tile" };
+  }
+  if (targetType === "self") {
+    if (tx === casterPos.x && ty === casterPos.y) {
+      return { ok: true, reason: "self" };
+    }
+    return { ok: false, reason: "self_other_tile" };
+  }
+  if (targetType === "all") {
+    return { ok: true, reason: "all" };
+  }
+  if (targetType === "ally") {
+    if (tx === casterPos.x && ty === casterPos.y) {
+      return { ok: true, reason: "ally_self" };
+    }
+    const dx2 = Math.abs(tx - casterPos.x);
+    const dy2 = Math.abs(ty - casterPos.y);
+    if (Math.max(dx2, dy2) > range) {
+      return { ok: false, reason: "ally_out_of_range" };
+    }
+    const ally = liveCombatants.find(
+      (e) => e.x === tx && e.y === ty && e.isSummon === true && e.side === "player" && e.hp > 0
+    );
+    if (ally) return { ok: true, reason: "ally_summon" };
+    return { ok: false, reason: "ally_no_summon_at_tile" };
+  }
+  const hasLoS = (lx0, ly0, lx1, ly1) => {
+    var _a4;
+    let x0 = lx0;
+    let y0 = ly0;
+    const ddx = Math.abs(lx1 - x0);
+    const ddy = Math.abs(ly1 - y0);
+    const sx = x0 < lx1 ? 1 : -1;
+    const sy = y0 < ly1 ? 1 : -1;
+    let err = ddx - ddy;
+    while (true) {
+      if ((x0 !== lx0 || y0 !== ly0) && (x0 !== lx1 || y0 !== ly1)) {
+        if (((_a4 = mapTiles[y0]) == null ? void 0 : _a4[x0]) === "wall") return false;
+        if (spell.isBarrier) ;
+      }
+      if (x0 === lx1 && y0 === ly1) break;
+      const e2 = 2 * err;
+      if (e2 > -ddy) {
+        err -= ddy;
+        x0 += sx;
+      }
+      if (e2 < ddx) {
+        err += ddx;
+        y0 += sy;
+      }
+    }
+    return true;
+  };
+  if (targetType === "ground" || spell.isBarrier) {
+    const dx2 = Math.abs(tx - casterPos.x);
+    const dy2 = Math.abs(ty - casterPos.y);
+    if (Math.abs(dx2) + Math.abs(dy2) > range && !spell.diagonal) {
+      return { ok: false, reason: "ground_out_of_range" };
+    }
+    const occupied = liveCombatants.some((e) => e.x === tx && e.y === ty) || tx === casterPos.x && ty === casterPos.y;
+    if (occupied) {
+      return { ok: false, reason: "ground_occupied" };
+    }
+    if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, tx, ty)) {
+      return { ok: false, reason: "ground_los_blocked" };
+    }
+    return { ok: true, reason: "ground" };
+  }
+  if (targetType === "line") {
+    const ddx = tx - casterPos.x;
+    const ddy = ty - casterPos.y;
+    const isCardinal = ddx === 0 || ddy === 0;
+    const isDiagonal = Math.abs(ddx) === Math.abs(ddy);
+    if (!isCardinal && !isDiagonal) {
+      return { ok: false, reason: "line_off_axis" };
+    }
+    const stepX = ddx === 0 ? 0 : ddx > 0 ? 1 : -1;
+    const stepY = ddy === 0 ? 0 : ddy > 0 ? 1 : -1;
+    const cheb = Math.max(Math.abs(ddx), Math.abs(ddy));
+    if (cheb > range) return { ok: false, reason: "line_out_of_range" };
+    if (cheb < minR) return { ok: false, reason: "line_below_min_range" };
+    let cx2 = casterPos.x;
+    let cy = casterPos.y;
+    for (let step = 1; step <= cheb; step++) {
+      cx2 += stepX;
+      cy += stepY;
+      if (cx2 < 0 || cy < 0 || cx2 >= worldGridSize || cy >= worldGridSize) {
+        return { ok: false, reason: "line_blocked_bounds" };
+      }
+      if (((_b3 = mapTiles[cy]) == null ? void 0 : _b3[cx2]) === "wall") {
+        return { ok: false, reason: "line_blocked_wall" };
+      }
+      if (cx2 === tx && cy === ty) {
+        return { ok: true, reason: "line" };
+      }
+    }
+    return { ok: false, reason: "line_not_reached" };
+  }
+  const dx = tx - casterPos.x;
+  const dy = ty - casterPos.y;
+  const chebyshev2 = Math.max(Math.abs(dx), Math.abs(dy));
+  if (spell.linear && dx !== 0 && dy !== 0) {
+    if (targetType !== "area") {
+      return { ok: false, reason: "linear_off_axis" };
+    }
+  }
+  if (spell.diagonal && Math.abs(dx) !== Math.abs(dy)) {
+    if (targetType !== "area") {
+      return { ok: false, reason: "diagonal_off_axis" };
+    }
+  }
+  if (spell.freeCells) {
+    const occupied = liveCombatants.some((e) => e.x === tx && e.y === ty) || tx === casterPos.x && ty === casterPos.y;
+    if (occupied) {
+      if (targetType !== "area") {
+        return { ok: false, reason: "free_cells_occupied" };
+      }
+    }
+  }
+  if (chebyshev2 <= range && chebyshev2 >= minR && !(dx === 0 && dy === 0)) {
+    if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, tx, ty)) {
+      if (targetType !== "area") {
+        return { ok: false, reason: "los_blocked" };
+      }
+    } else {
+      return {
+        ok: true,
+        reason: targetType === "area" ? "area_anchor" : targetType
+      };
+    }
+  }
+  if (targetType === "area") {
+    const areaRadius = spell.areaRadius ?? 0;
+    if (areaRadius <= 0) {
+      return { ok: false, reason: "area_no_radius" };
+    }
+    for (let ay = -range; ay <= range; ay++) {
+      for (let ax = -range; ax <= range; ax++) {
+        const aCheb = Math.max(Math.abs(ax), Math.abs(ay));
+        if (aCheb > range) continue;
+        if (aCheb < minR) continue;
+        if (ax === 0 && ay === 0) continue;
+        const axN = casterPos.x + ax;
+        const ayN = casterPos.y + ay;
+        if (axN < 0 || ayN < 0 || axN >= worldGridSize || ayN >= worldGridSize)
+          continue;
+        if (((_c2 = mapTiles[ayN]) == null ? void 0 : _c2[axN]) === "wall") continue;
+        if (spell.linear && ax !== 0 && ay !== 0) continue;
+        if (spell.diagonal && Math.abs(ax) !== Math.abs(ay)) continue;
+        if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, axN, ayN))
+          continue;
+        const tdx = Math.abs(tx - axN);
+        const tdy = Math.abs(ty - ayN);
+        if (Math.max(tdx, tdy) <= areaRadius) {
+          return { ok: true, reason: "area_expansion" };
+        }
+      }
+    }
+    return { ok: false, reason: "area_no_anchor" };
+  }
+  return { ok: false, reason: "no_matching_branch" };
+}
 function nowTimestamp() {
   const d2 = /* @__PURE__ */ new Date();
   return `${d2.getHours().toString().padStart(2, "0")}:${d2.getMinutes().toString().padStart(2, "0")}`;
@@ -52664,6 +53878,16 @@ function cleanupBossState(bossStateRef, setBossState) {
   bossStateRef.current = null;
   setBossState(null);
 }
+function pickBossKitSpell(config, currentPhase, cooldownMap) {
+  const pool = currentPhase === 1 ? config.phase1.spellPoolIds : config.phase2.spellPoolIds;
+  for (const spellId of pool) {
+    const remaining = cooldownMap.get(spellId);
+    if (remaining === void 0 || remaining <= 0) {
+      return spellId;
+    }
+  }
+  return null;
+}
 function getWalkableMoves(x3, y2, allTiles, occupied = []) {
   const dirs = [
     [0, -1],
@@ -52713,7 +53937,7 @@ function makeAbilityParams(boss, player, allEnemies, allTiles, bossState, curren
     currentTurn
   };
 }
-const decidePaleArchbishopAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decidePaleArchbishopAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52722,6 +53946,20 @@ const decidePaleArchbishopAction = (boss, player, allEnemies, allTiles, bossStat
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && !bossState.reflectShieldActive) {
     const result = applyBossAbility(BossAbility.REFLECT_SHIELD, p2);
     return {
@@ -52753,7 +53991,7 @@ const decidePaleArchbishopAction = (boss, player, allEnemies, allTiles, bossStat
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideCrimsonCountessAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideCrimsonCountessAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52762,6 +54000,20 @@ const decideCrimsonCountessAction = (boss, player, allEnemies, allTiles, bossSta
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2) {
     const moveAction = moveToward(boss, player, allTiles, allEnemies);
     if (moveAction.type === "move" && moveAction.targetX !== void 0) {
@@ -52793,7 +54045,7 @@ const decideCrimsonCountessAction = (boss, player, allEnemies, allTiles, bossSta
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideVoidGrandmasterAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideVoidGrandmasterAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52802,6 +54054,20 @@ const decideVoidGrandmasterAction = (boss, player, allEnemies, allTiles, bossSta
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2) {
     if (currentTurn % 2 === 0 || bossState.illusions.length === 0) {
       const result = applyBossAbility(BossAbility.ILLUSION_SPLIT, p2);
@@ -52835,7 +54101,7 @@ const decideVoidGrandmasterAction = (boss, player, allEnemies, allTiles, bossSta
   if (isAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideBoneCavalierAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideBoneCavalierAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52844,6 +54110,20 @@ const decideBoneCavalierAction = (boss, player, allEnemies, allTiles, bossState,
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   const jumpResult = applyBossAbility(BossAbility.KNIGHT_JUMP_IGNORE_WALLS, p2);
   if (jumpResult.newBossPosition) {
     if (bossState.currentPhase === 2) {
@@ -52877,7 +54157,7 @@ const decideBoneCavalierAction = (boss, player, allEnemies, allTiles, bossState,
   if (isAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideWeepingPawnAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideWeepingPawnAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52886,6 +54166,20 @@ const decideWeepingPawnAction = (boss, player, allEnemies, allTiles, bossState, 
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (!bossState.phase2Triggered && boss.hp / boss.maxHp <= 0.3) {
     const promoteResult = applyBossAbility(BossAbility.PROMOTE_QUEEN, p2);
     return {
@@ -52907,7 +54201,7 @@ const decideWeepingPawnAction = (boss, player, allEnemies, allTiles, bossState, 
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideStarbornQueenAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideStarbornQueenAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52916,6 +54210,20 @@ const decideStarbornQueenAction = (boss, player, allEnemies, allTiles, bossState
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (currentTurn % 3 === 0) {
     const result = applyBossAbility(BossAbility.ATTACK_ALL_LINES, p2);
     return {
@@ -52935,7 +54243,7 @@ const decideStarbornQueenAction = (boss, player, allEnemies, allTiles, bossState
   if (isAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideFetidRookAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideFetidRookAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52944,6 +54252,20 @@ const decideFetidRookAction = (boss, player, allEnemies, allTiles, bossState, _c
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && !bossState.splitRooksSpawned) {
     const result = applyBossAbility(BossAbility.SPLIT_ROOKS, p2);
     return {
@@ -52963,7 +54285,7 @@ const decideFetidRookAction = (boss, player, allEnemies, allTiles, bossState, _c
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideEternalPawnKingAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideEternalPawnKingAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -52972,6 +54294,20 @@ const decideEternalPawnKingAction = (boss, player, allEnemies, allTiles, bossSta
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2) {
     const drainResult = applyBossAbility(BossAbility.AP_DRAIN, p2);
     return {
@@ -52993,7 +54329,7 @@ const decideEternalPawnKingAction = (boss, player, allEnemies, allTiles, bossSta
   if (isAdjacent(boss, player)) return attackPlayer(boss, player);
   return { type: "skip", logMessage: `${boss.name} stands its ground.` };
 };
-const decideMidnightBishopAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideMidnightBishopAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53002,6 +54338,20 @@ const decideMidnightBishopAction = (boss, player, allEnemies, allTiles, bossStat
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && !bossState.bishopsMerged) {
     const result = applyBossAbility(BossAbility.MERGE_BISHOPS, p2);
     return {
@@ -53025,7 +54375,7 @@ const decideMidnightBishopAction = (boss, player, allEnemies, allTiles, bossStat
   if (isAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideBroodmotherRookAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideBroodmotherRookAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53034,6 +54384,20 @@ const decideBroodmotherRookAction = (boss, player, allEnemies, allTiles, bossSta
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   const shellResult = applyBossAbility(BossAbility.SHELL_ARMOR, p2);
   const isShellActive = bossState.larvae.length > 0;
   if (bossState.currentPhase === 2 && currentTurn % 2 === 0) {
@@ -53074,7 +54438,7 @@ const decideBroodmotherRookAction = (boss, player, allEnemies, allTiles, bossSta
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideLordOfStaticAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideLordOfStaticAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53083,6 +54447,20 @@ const decideLordOfStaticAction = (boss, player, allEnemies, allTiles, bossState,
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && currentTurn % 3 === 0 && bossState.activeShockTiles.length > 0) {
     const result = applyBossAbility(BossAbility.CHAIN_LIGHTNING, p2);
     return {
@@ -53109,7 +54487,7 @@ const decideLordOfStaticAction = (boss, player, allEnemies, allTiles, bossState,
   return { type: "skip" };
 };
 const OTHER_BOSS_IDS = BOSS_IDS.filter((id) => id !== "final_pawn");
-const decideFinalPawnAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideFinalPawnAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53118,6 +54496,20 @@ const decideFinalPawnAction = (boss, player, allEnemies, allTiles, bossState, _c
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (!bossState.phase2Triggered && boss.hp / boss.maxHp <= 0.1) {
     const invincResult = applyBossAbility(BossAbility.INVINCIBLE_PHASE, p2);
     const ghostResult = applyBossAbility(
@@ -53187,7 +54579,7 @@ const decideFinalPawnAction = (boss, player, allEnemies, allTiles, bossState, _c
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideAlabasterFortressAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideAlabasterFortressAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53196,6 +54588,20 @@ const decideAlabasterFortressAction = (boss, player, allEnemies, allTiles, bossS
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2) {
     const shrinkResult = applyBossAbility(BossAbility.BOARD_SHRINK, p2);
     if (shrinkResult.damageToPlayer && shrinkResult.damageToPlayer > 0) {
@@ -53222,7 +54628,7 @@ const decideAlabasterFortressAction = (boss, player, allEnemies, allTiles, bossS
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideChessboardLichAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideChessboardLichAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53231,6 +54637,20 @@ const decideChessboardLichAction = (boss, player, allEnemies, allTiles, bossStat
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && currentTurn % 2 === 0) {
     const invertResult = applyBossAbility(BossAbility.MIRROR_INVERT, p2);
     return {
@@ -53257,7 +54677,7 @@ const decideChessboardLichAction = (boss, player, allEnemies, allTiles, bossStat
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideMirrorSovereignAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideMirrorSovereignAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   var _a3;
   const p2 = makeAbilityParams(
     boss,
@@ -53267,6 +54687,20 @@ const decideMirrorSovereignAction = (boss, player, allEnemies, allTiles, bossSta
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && (((_a3 = bossState.lastThreeTurnsMirror) == null ? void 0 : _a3.length) ?? 0) >= 3) {
     const comboResult = applyBossAbility(BossAbility.COMBO_REPLAY, p2);
     return {
@@ -53291,7 +54725,7 @@ const decideMirrorSovereignAction = (boss, player, allEnemies, allTiles, bossSta
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideStarvedVampirePawnAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideStarvedVampirePawnAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53300,6 +54734,20 @@ const decideStarvedVampirePawnAction = (boss, player, allEnemies, allTiles, boss
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && currentTurn % 2 === 0) {
     const vampResult = applyBossAbility(BossAbility.VAMPIRIC_AOE, p2);
     return {
@@ -53318,7 +54766,7 @@ const decideStarvedVampirePawnAction = (boss, player, allEnemies, allTiles, boss
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decidePaleArchivistAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decidePaleArchivistAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53327,6 +54775,20 @@ const decidePaleArchivistAction = (boss, player, allEnemies, allTiles, bossState
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && currentTurn % 2 === 0) {
     const doomResult = applyBossAbility(BossAbility.PAGES_OF_DOOM, p2);
     return {
@@ -53356,7 +54818,7 @@ const decidePaleArchivistAction = (boss, player, allEnemies, allTiles, bossState
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideTwinMonarchsAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideTwinMonarchsAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53365,6 +54827,20 @@ const decideTwinMonarchsAction = (boss, player, allEnemies, allTiles, bossState,
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 2 && !bossState.monarchAbsorbed) {
     const absorbResult = applyBossAbility(BossAbility.MONARCH_ABSORB, p2);
     return {
@@ -53396,7 +54872,7 @@ const decideTwinMonarchsAction = (boss, player, allEnemies, allTiles, bossState,
   }
   return moveToward(boss, player, allTiles, allEnemies);
 };
-const decideEnthronedVoidAction = (boss, player, allEnemies, allTiles, bossState, _config, currentTurn) => {
+const decideEnthronedVoidAction = (boss, player, allEnemies, allTiles, bossState, config, currentTurn) => {
   const p2 = makeAbilityParams(
     boss,
     player,
@@ -53405,6 +54881,20 @@ const decideEnthronedVoidAction = (boss, player, allEnemies, allTiles, bossState
     bossState,
     currentTurn
   );
+  const kitSpellId = pickBossKitSpell(
+    config,
+    bossState.currentPhase,
+    /* @__PURE__ */ new Map()
+  );
+  if (kitSpellId) {
+    return {
+      type: "spell",
+      spellId: kitSpellId,
+      targetId: (player == null ? void 0 : player.id) ?? "player",
+      targetX: (player == null ? void 0 : player.x) ?? 0,
+      targetY: (player == null ? void 0 : player.y) ?? 0
+    };
+  }
   if (bossState.currentPhase === 1) {
     if (currentTurn % 2 === 0) {
       const phantomResult = applyBossAbility(BossAbility.PHANTOM_SPAWN, p2);
@@ -56003,9 +57493,6 @@ const WorldExplorationInner = ({
   const [_pendingDestination, setPendingDestination] = reactExports.useState(null);
   const [enemies, setEnemies] = reactExports.useState([]);
   const enemiesRef = reactExports.useRef([]);
-  reactExports.useEffect(() => {
-    battleWorldVersionRef.current += 1;
-  }, [enemies]);
   const [inBattle, setInBattle] = reactExports.useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = reactExports.useState(false);
   const tierConfigRef = reactExports.useRef(null);
@@ -56200,6 +57687,10 @@ const WorldExplorationInner = ({
       setBattleEnemies,
       setTurnOrder
     );
+    storeCtxRef.current.onMutation = () => {
+      battleWorldVersionRef.current += 1;
+      spellRangeCacheRef.current = /* @__PURE__ */ new Map();
+    };
   }
   const combatantStoreCtx = storeCtxRef.current;
   reactExports.useRef(0);
@@ -56227,7 +57718,6 @@ const WorldExplorationInner = ({
   }, [coinParticles]);
   const enemyCooldownsRef = reactExports.useRef(/* @__PURE__ */ new Map());
   const enemySummonCooldownRef = reactExports.useRef(/* @__PURE__ */ new Map());
-  const battleSpellsRef = reactExports.useRef([]);
   const modifiableRangeBonusRef = reactExports.useRef(/* @__PURE__ */ new Map());
   reactExports.useCallback(
     (targetSpellId, delta, duration) => {
@@ -62250,6 +63740,40 @@ const WorldExplorationInner = ({
           const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
           const _preClickCacheHit = spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
+          const _liveCombatantsMouse = getLiveCombatants(combatantStoreCtx);
+          const _occupantMouse = _liveCombatantsMouse.find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y
+          );
+          if (_occupantMouse && isActiveHostile(_occupantMouse) && isAliveCombatant(_occupantMouse)) {
+            const _spellMouse = activeSpells.find(
+              (s2) => s2.id === selectedSpellIdRef.current
+            );
+            if (_spellMouse) {
+              const _liveMouse = isTileCastableLive(
+                _spellMouse,
+                playerPosition,
+                gridPos,
+                _liveCombatantsMouse,
+                currentMap.tiles
+              );
+              if (_liveMouse.ok) {
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "cast-live",
+                  tile: gridPos,
+                  spellId: _spellMouse.id,
+                  targetId: _occupantMouse.id
+                });
+              } else {
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "rejected-live",
+                  tile: gridPos,
+                  spellId: _spellMouse.id,
+                  reason: _liveMouse.reason
+                });
+                return;
+              }
+            }
+          }
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             if (spellTiles.size > 0) {
               const _liveNow = getLiveCombatants(combatantStoreCtx);
@@ -62523,6 +64047,40 @@ const WorldExplorationInner = ({
           const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPosition.x}_${playerPosition.y}_${battleWorldVersionRef.current}`;
           const _preClickCacheHit = spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
+          const _liveCombatantsTouch = getLiveCombatants(combatantStoreCtx);
+          const _occupantTouch = _liveCombatantsTouch.find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y
+          );
+          if (_occupantTouch && isActiveHostile(_occupantTouch) && isAliveCombatant(_occupantTouch)) {
+            const _spellTouch = activeSpells.find(
+              (s2) => s2.id === selectedSpellIdRef.current
+            );
+            if (_spellTouch) {
+              const _liveTouch = isTileCastableLive(
+                _spellTouch,
+                playerPosition,
+                gridPos,
+                _liveCombatantsTouch,
+                currentMap.tiles
+              );
+              if (_liveTouch.ok) {
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "cast-live",
+                  tile: gridPos,
+                  spellId: _spellTouch.id,
+                  targetId: _occupantTouch.id
+                });
+              } else {
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "rejected-live",
+                  tile: gridPos,
+                  spellId: _spellTouch.id,
+                  reason: _liveTouch.reason
+                });
+                return;
+              }
+            }
+          }
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
             if (spellTiles.size > 0) {
               const _liveNow = getLiveCombatants(combatantStoreCtx);
@@ -63226,10 +64784,9 @@ const WorldExplorationInner = ({
         (c2) => c2.type === "enemy" && c2.id === (leaderEnemy == null ? void 0 : leaderEnemy.id) ? { ...c2, isLeader: true } : c2
       );
       cleanupRanRef.current = false;
-      battleSpellsRef.current = [
-        physicalAttackSpell,
-        ...activeSpells.filter((s2) => s2 && s2.id !== physicalAttackSpell.id)
-      ];
+      console.log("[SPELLBAR-BISECT]", {
+        spellIds: activeSpells.map((s2) => s2 == null ? void 0 : s2.id).filter(Boolean)
+      });
       reactDomExports.flushSync(() => {
         syncCombatants(combatantStoreCtx, enemiesWithSpells);
         mapModifierRegistry.applyBattleStart(
@@ -64895,7 +66452,7 @@ const WorldExplorationInner = ({
         }
       }
       reactDomExports.flushSync(() => {
-        var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2;
+        var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2;
         const prevEnemies = getLiveCombatants(combatantStoreCtx);
         const enemy = prevEnemies.find((e) => e.id === enemyId);
         if (!enemy) {
@@ -65142,6 +66699,152 @@ const WorldExplorationInner = ({
             }
           }
           if (bossAIAction) {
+            if (bossAIAction.type === "spell" && bossAIAction.spellId) {
+              const bossSpell = starterSpells.find(
+                (sp) => sp.id === bossAIAction.spellId
+              );
+              if (bossSpell) {
+                if (bossAIAction.logMessage) {
+                  logBattleEntry(bossAIAction.logMessage, "#a855f7");
+                }
+                const bossSpellType = bossSpell.spellType ?? "damage";
+                const bossTargetId = bossAIAction.targetId ?? "player";
+                const bossSpellDest = {
+                  x: bossAIAction.targetX ?? enemy.x,
+                  y: bossAIAction.targetY ?? enemy.y
+                };
+                if (bossSpell.isSummon) {
+                  (_c3 = spawnEnemySummonRef.current) == null ? void 0 : _c3.call(spawnEnemySummonRef, bossSpellDest, bossSpell);
+                  if (bossSpell.cooldown && bossSpell.cooldown > 0) {
+                    const bcdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+                    bcdm.set(bossSpell.id, bossSpell.cooldown);
+                    enemyCooldownsRef.current.set(enemyId, bcdm);
+                  }
+                  clearTimeout(watchdog);
+                  pendingTimeoutsRef.current.delete(watchdog);
+                  enemyTurnInProgressRef.current = false;
+                  const bSumGen = aiGenerationRef.current;
+                  const bSumTimer = setTimeout(() => {
+                    if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== bSumGen)
+                      return;
+                    pendingTimeoutsRef.current.delete(bSumTimer);
+                    if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+                      advanceTurnRef.current();
+                  }, 600);
+                  if (!cleanupRanRef.current)
+                    pendingTimeoutsRef.current.add(bSumTimer);
+                  return;
+                }
+                if (bossSpellType === "damage" || bossSpellType === "drain") {
+                  const bSpellDmg = Number(bossSpell.damage);
+                  if (bSpellDmg > 0) {
+                    const bRawDmg = Math.max(1, Math.round(bSpellDmg));
+                    const bDmg = playerTakesDamage(
+                      bRawDmg,
+                      `${currentBossConfig.name} spell ${bossSpell.name}`
+                    );
+                    logBattleEntry(
+                      `${currentBossConfig.name} casts ${bossSpell.name} on you for ${bDmg} dmg`,
+                      "#ef4444"
+                    );
+                    if (bDmg > 0)
+                      logBattleEntry(`You lost ${bDmg} HP!`, "#eab308");
+                    if (bossSpellType === "drain" && bossSpell.healAmount) {
+                      const bHa = bossSpell.healAmount;
+                      setTurnOrder(
+                        (prev) => prev.map(
+                          (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + bHa) } : c2
+                        )
+                      );
+                    }
+                  }
+                }
+                if (bossSpellType === "heal" && bossSpell.healAmount) {
+                  const bHa = bossSpell.healAmount;
+                  setTurnOrder(
+                    (prev) => prev.map(
+                      (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + bHa) } : c2
+                    )
+                  );
+                  logBattleEntry(
+                    `${currentBossConfig.name} heals ${bHa} HP`,
+                    "#a855f7"
+                  );
+                }
+                if (bossSpell.debuffStat && bossSpell.debuffDuration) {
+                  applyActiveEffect({
+                    id: `boss-debuff-${Date.now()}`,
+                    effectName: bossSpell.name,
+                    type: "debuff",
+                    targetId: bossTargetId,
+                    stat: bossSpell.debuffStat,
+                    modifier: bossSpell.debuffModifier ?? 1,
+                    duration: bossSpell.debuffDuration,
+                    iconEmoji: bossSpell.iconEmoji,
+                    description: `${bossSpell.debuffStat} debuffed`
+                  });
+                  if (bossSpell.debuffStat === "ap" && bossTargetId === "player")
+                    playerApWasDebuffedRef.current = true;
+                  logBattleEntry(
+                    `${currentBossConfig.name} uses ${bossSpell.name}!`,
+                    "#a855f7"
+                  );
+                }
+                if ((bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) && bossSpell.dotDuration) {
+                  const bDotPpt = bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage ?? 0;
+                  applyActiveEffect({
+                    id: `boss-dot-${Date.now()}`,
+                    effectName: `${bossSpell.name} DoT`,
+                    type: "dot",
+                    targetId: bossTargetId,
+                    dotDamagePerTurn: bDotPpt,
+                    duration: bossSpell.dotDuration,
+                    iconEmoji: "☠️",
+                    description: `${bDotPpt} dmg/turn`
+                  });
+                }
+                if (bossSpellType !== "damage" && bossSpellType !== "drain" && bossSpellType !== "heal" && !bossSpell.debuffStat && !(bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) && (bossSpell.targetType === "self" || bossSpell.targetType === "ally")) {
+                  applyActiveEffect({
+                    id: `boss-buff-${Date.now()}`,
+                    effectName: bossSpell.name,
+                    type: "buff",
+                    targetId: enemyId,
+                    stat: bossSpell.debuffStat ?? "atk",
+                    modifier: bossSpell.debuffModifier ?? 1,
+                    duration: bossSpell.debuffDuration ?? 3,
+                    iconEmoji: bossSpell.iconEmoji,
+                    description: `${bossSpell.name} active`
+                  });
+                  logBattleEntry(
+                    `${currentBossConfig.name} empowers itself with ${bossSpell.name}!`,
+                    "#a855f7"
+                  );
+                }
+                if (bossSpell.cooldown && bossSpell.cooldown > 0) {
+                  const bcdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+                  bcdm.set(bossSpell.id, bossSpell.cooldown);
+                  enemyCooldownsRef.current.set(enemyId, bcdm);
+                }
+                clearTimeout(watchdog);
+                pendingTimeoutsRef.current.delete(watchdog);
+                enemyTurnInProgressRef.current = false;
+                const bSpellGen = aiGenerationRef.current;
+                const bSpellTimer = setTimeout(() => {
+                  if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== bSpellGen)
+                    return;
+                  pendingTimeoutsRef.current.delete(bSpellTimer);
+                  if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+                    advanceTurnRef.current();
+                }, 0);
+                if (!cleanupRanRef.current)
+                  pendingTimeoutsRef.current.add(bSpellTimer);
+                updateCombatant(combatantStoreCtx, enemyId, {
+                  x: bossSpellDest.x,
+                  y: bossSpellDest.y
+                });
+                return;
+              }
+            }
             const res = bossAIAction.abilityResult;
             if (bossAIAction.logMessage) {
               logBattleEntry(bossAIAction.logMessage, "#a855f7");
@@ -65149,8 +66852,8 @@ const WorldExplorationInner = ({
             if (res == null ? void 0 : res.logMessages) {
               for (const msg of res.logMessages) logBattleEntry(msg, "#a855f7");
             }
-            const newBossX = ((_c3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _c3.x) ?? enemy.x;
-            const newBossY = ((_d3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _d3.y) ?? enemy.y;
+            const newBossX = ((_d3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _d3.x) ?? enemy.x;
+            const newBossY = ((_e3 = res == null ? void 0 : res.newBossPosition) == null ? void 0 : _e3.y) ?? enemy.y;
             if ((res == null ? void 0 : res.damageToPlayer) && res.damageToPlayer > 0) {
               const rawDmg = res.damageToPlayer;
               const absorbed = Math.min(shieldHpRef.current, rawDmg);
@@ -65357,7 +67060,7 @@ const WorldExplorationInner = ({
         const battleEnemyData = battleEnemiesRef.current.find(
           (be2) => be2.id === enemyId
         );
-        const assignedSpells = ((((_e3 = currentCombatant.spells) == null ? void 0 : _e3.length) ?? 0) > 0 ? currentCombatant.spells : (battleEnemyData == null ? void 0 : battleEnemyData.spells) ?? currentCombatant.spells) ?? [];
+        const assignedSpells = ((((_f3 = currentCombatant.spells) == null ? void 0 : _f3.length) ?? 0) > 0 ? currentCombatant.spells : (battleEnemyData == null ? void 0 : battleEnemyData.spells) ?? currentCombatant.spells) ?? [];
         const enemyCooldownMap = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
         const availableSpells = assignedSpells.filter(
           (s2) => (enemyCooldownMap.get(s2.id) ?? 0) <= 0 && s2.usableByEnemy !== false
@@ -65480,8 +67183,8 @@ const WorldExplorationInner = ({
           },
           aiCtx
         ) : decideEnemyAction(enemy, aiCtx);
-        if (action.kind === "cast" && ((_f3 = action.spell) == null ? void 0 : _f3.isSummon) && action.destination) {
-          (_g2 = spawnEnemySummonRef.current) == null ? void 0 : _g2.call(spawnEnemySummonRef, action.destination, action.spell);
+        if (action.kind === "cast" && ((_g2 = action.spell) == null ? void 0 : _g2.isSummon) && action.destination) {
+          (_h2 = spawnEnemySummonRef.current) == null ? void 0 : _h2.call(spawnEnemySummonRef, action.destination, action.spell);
           enemySummonCooldownRef.current.set(enemyId, battleTurn);
           enemyTurnInProgressRef.current = false;
           turnEndReasonRef.current = "action-complete";
@@ -65833,7 +67536,7 @@ const WorldExplorationInner = ({
         }
         logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
         if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
-          const enemyHazard = (_h2 = currentMap.hazardTiles) == null ? void 0 : _h2.get(`${newX},${newY}`);
+          const enemyHazard = (_i2 = currentMap.hazardTiles) == null ? void 0 : _i2.get(`${newX},${newY}`);
           if (enemyHazard) {
             if (enemyHazard === "lava") {
               const hDmg = 8 + Math.floor(Math.random() * 8);
@@ -70995,7 +72698,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CKCiQgMx.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BIw_4pVY.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
