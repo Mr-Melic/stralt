@@ -13,7 +13,11 @@ type UserRole =
    guest;
    user;
  };
-type UserProfile = record {name: text;};
+type UserProfile = 
+ record {
+   name: text;
+   uiLayout: text;
+ };
 type TierSpawnConfig = 
  record {
    adjacentTierPercent: float64;
@@ -646,6 +650,9 @@ service : {
   /// Triggers first-login admin auto-assignment: the very first principal
   /// to call this becomes admin.
   getUserRole: () -> (text);
+  /// Load the caller's panel-layout blob. Returns the empty string if the
+  /// caller has no UserProfile yet or if uiLayout was never set.
+  getUserUiLayout: () -> (text) query;
   /// Seed the names list on first call if it is empty.
   initDefaultNames: () -> ();
   /// Player initiates a purchase — creates a pending record.
@@ -710,6 +717,14 @@ service : {
                                                err: text;
                                                ok;
                                              });
+  /// Save the caller's full panel-layout blob (one compact JSON Text field).
+  /// Single save endpoint for the layout — no per-panel records.
+  /// Validates the caller is not anonymous. Reads the existing UserProfile,
+  /// updates only uiLayout, and writes it back to the userProfiles Map.
+  saveUserUiLayout: (layout: text) -> (variant {
+                                         err: text;
+                                         ok;
+                                       });
   schema: () -> (text) query;
   /// Append a new message; trims list to at most 200 entries (oldest dropped).
   sendMessage: (playerName: text, "text": text, colorHex: text) -> ();

@@ -41,6 +41,7 @@ import type { CombatantEntry } from "./InitiativeStrip";
 import MapModifiersPanel from "./MapModifiersPanel";
 import PostBattleRecap from "./PostBattleRecap";
 import type { BattleRecapData } from "./PostBattleRecap";
+import SettingsPanel from "./SettingsPanel";
 
 import {
   CHARACTER_Y_OFFSET,
@@ -633,6 +634,39 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const effectiveDeadzone = isMobile ? 8 : 0;
   const effectiveMaxOffset = isMobile ? 600 : 0;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Per-frame sprite-rect map for sprite-first hit-testing. Cleared and
+  // rebuilt every render pass at the drawCombatant call site (enemy/summon/
+  // boss) and the player drawPixelPattern site. Each entry records the exact
+  // screen-space bounding box of a combatant sprite as drawn THIS frame, plus
+  // its logical tile and liveness — so click handlers can hit-test the
+  // visible sprite body BEFORE any screen→grid conversion and resolve the
+  // entity directly without tile math (which mis-resolves because sprites
+  // are drawn at screenPos.y - CHARACTER_Y_OFFSET, so the visible body maps
+  // to a tile BEHIND the enemy's logical tile).
+  const spriteRectsRef = useRef<
+    Map<
+      string,
+      {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        drawOrder: number;
+        id: string;
+        kind: string;
+        logicalX: number;
+        logicalY: number;
+        isAlive: boolean;
+      }
+    >
+  >(new Map());
+  // Prop-driven inspect target for BattleUIPanel. Set by the sprite-hit
+  // inspect branch in handleCanvasClick/handleCanvasTouch when a hostile
+  // sprite is clicked with no spell selected. BattleUIPanel opens its inspect
+  // card for this id (reusing the existing chip-button inspect flow).
+  const [inspectCombatantId, setInspectCombatantId] = useState<string | null>(
+    null,
+  );
   const portraitCanvasRef = useRef<HTMLCanvasElement>(null);
   const _containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
@@ -7601,6 +7635,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ...drawQueue,
       ].sort((a, b) => a.depth - b.depth);
 
+      // Clear the per-frame sprite-rect map before the draw loop rebuilds it.
+      // Every render pass records the exact screen-space rect of each living
+      // combatant sprite (enemies/summons/bosses + player) so click handlers
+      // can hit-test the visible body before any screen→grid conversion.
+      spriteRectsRef.current.clear();
       for (const renderItem of allRenderItems) {
         if (renderItem.kind === "portal") {
           renderItem.draw();
@@ -7691,6 +7730,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             },
           );
           if (enemy.isMoving) ctx.restore();
+
+          // Record this enemy/summon/boss sprite's screen-space rect for
+          // sprite-first hit-testing. Centered on the draw point
+          // (screenPos.x, screenPos.y - CHARACTER_Y_OFFSET) with a generous
+          // bounding box (effectiveTileW × effectiveTileH*1.5) so the visible
+          // body — which sits ABOVE the logical tile due to CHARACTER_Y_OFFSET
+          // — is fully covered. drawOrder uses the depth-sorted render index so
+          // the front-most sprite wins on overlap.
+          {
+            const _srW = effectiveTileW;
+            const _srH = effectiveTileH * 1.5;
+            spriteRectsRef.current.set(enemy.id, {
+              x: screenPos.x - _srW / 2,
+              y: screenPos.y - CHARACTER_Y_OFFSET - _srH / 2,
+              w: _srW,
+              h: _srH,
+              drawOrder: renderItem.depth,
+              id: enemy.id,
+              kind: "enemy",
+              logicalX: enemy.x ?? 0,
+              logicalY: enemy.y ?? 0,
+              isAlive: (enemy.hp ?? 0) > 0,
+            });
+          }
 
           const isLeader = leaderEnemyIdRef.current === enemy.id;
           // Enemy name label — name on first line, level on second line with color coding
@@ -7912,6 +7975,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               extra: colors.accent,
             },
           );
+
+          // Record the player sprite's screen-space rect for sprite-first
+          // hit-testing. Same bounding-box formula as the enemy rect
+          // (effectiveTileW × effectiveTileH*1.5) centered on the draw point
+          // (playerScreenPos.x, playerScreenPos.y - CHARACTER_Y_OFFSET).
+          // drawOrder 99999 guarantees the player wins any overlap tiebreak
+          // (it is always rendered last in the depth-sorted pass).
+          {
+            const _psrW = effectiveTileW;
+            const _psrH = effectiveTileH * 1.5;
+            spriteRectsRef.current.set("player", {
+              x: playerScreenPos.x - _psrW / 2,
+              y: playerScreenPos.y - CHARACTER_Y_OFFSET - _psrH / 2,
+              w: _psrW,
+              h: _psrH,
+              drawOrder: 99999,
+              id: "player",
+              kind: "player",
+              logicalX: playerPosition.x,
+              logicalY: playerPosition.y,
+              isAlive: true,
+            });
+          }
 
           // Status effect icons above player sprite
           if (inBattleRef.current) {
@@ -8403,6 +8489,51 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [rebuildTileCornerCache]);
+
+  // Sprite-first hit testing. Iterates the per-frame spriteRectsRef map
+  // populated during the render pass and returns the front-most LIVING
+  // combatant whose expanded rect contains (canvasX, canvasY). Padding
+  // widens the hit box (~4px mouse, ~8px touch) so the visible body —
+  // which sits ABOVE the logical tile due to CHARACTER_Y_OFFSET — is
+  // reliably clickable. Front-most is highest drawOrder, tiebroken by
+  // lowest y (topmost on screen). Returns null when no living sprite is
+  // hit, in which case the caller falls through to the existing
+  // clientToGrid tile-conversion path unchanged.
+  const hitTestSprite = useCallback(
+    (canvasX: number, canvasY: number, padding: number) => {
+      let best: {
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        drawOrder: number;
+        id: string;
+        kind: string;
+        logicalX: number;
+        logicalY: number;
+        isAlive: boolean;
+      } | null = null;
+      for (const entry of spriteRectsRef.current.values()) {
+        if (!entry.isAlive) continue;
+        if (
+          canvasX < entry.x - padding ||
+          canvasX > entry.x + entry.w + padding ||
+          canvasY < entry.y - padding ||
+          canvasY > entry.y + entry.h + padding
+        )
+          continue;
+        if (
+          !best ||
+          entry.drawOrder > best.drawOrder ||
+          (entry.drawOrder === best.drawOrder && entry.y < best.y)
+        ) {
+          best = entry;
+        }
+      }
+      return best;
+    },
+    [],
+  );
 
   const clientToGrid = useCallback(
     (clientX: number, clientY: number) => {
@@ -8951,6 +9082,146 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
+      // ── SPRITE-FIRST HIT TESTING (mouse) ────────────────────────────
+      // Before any screen→grid conversion, hit-test the per-frame
+      // spriteRectsRef map populated during the render pass. A sprite hit
+      // resolves the entity directly with NO tile math:
+      //   • spell selected + hostile hit → isTileCastableLive + cast at the
+      //     entity's logical tile (logs branchTaken:'cast-sprite', or
+      //     'rejected-live' on live rejection).
+      //   • no spell + hostile hit → inspect (setInspectCombatantId, logs
+      //     'inspect-sprite').
+      //   • spell selected + player hit + self/ally-targetable spell →
+      //     self-cast on the player (logs 'self-cast-sprite').
+      //   • no sprite hit → fall through to the existing clientToGrid tile
+      //     conversion path UNCHANGED (existing [CLICK-ENEMY] logs at
+      //     9000/9092/9103 remain for the tile-fallback).
+      {
+        const _canvas = canvasRef.current;
+        if (_canvas) {
+          const _rect = _canvas.getBoundingClientRect();
+          if (_rect) {
+            const _cssW = _canvas.width;
+            const _cssH = _canvas.height;
+            const _canvasX =
+              (event.clientX - _rect.left) * (_cssW / _rect.width);
+            const _canvasY =
+              (event.clientY - _rect.top) * (_cssH / _rect.height);
+            const _hit = hitTestSprite(_canvasX, _canvasY, 4);
+            if (_hit) {
+              if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+                const _spell = activeSpells.find(
+                  (s) => s.id === selectedSpellIdRef.current,
+                );
+                if (_spell) {
+                  const _liveCombatants = getLiveCombatants(combatantStoreCtx);
+                  const _live = isTileCastableLive(
+                    _spell,
+                    playerPosition,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    _liveCombatants,
+                    currentMap.tiles,
+                  );
+                  if (_live.ok) {
+                    // eslint-disable-next-line no-console
+                    console.log("[CLICK-ENEMY]", {
+                      branchTaken: "cast-sprite",
+                      hitId: _hit.id,
+                      logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
+                    });
+                    // Reuse the existing cast body — same path the
+                    // cast-live branch at 9092 takes. AP cost is computed
+                    // via mapModifierRegistry.applyApCost (Arcane Surge etc.)
+                    // and the cast is resolved via resolvePlayerCast at the
+                    // entity's logical tile.
+                    const _apCost = mapModifierRegistry.applyApCost(
+                      Number(_spell.apCost),
+                      activeMapModifierTypes,
+                      {
+                        log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                        rng: Math.random,
+                      },
+                    );
+                    if (currentBattleAp >= _apCost) {
+                      castRuntimeRef.current.apCost = _apCost;
+                      castRuntimeRef.current.spell = _spell;
+                      const _castResult = resolvePlayerCast(
+                        _spell,
+                        { x: _hit.logicalX, y: _hit.logicalY },
+                        playerSpellContext(),
+                      );
+                      if (_castResult === "cast") {
+                        setCurrentBattleAp((prev) =>
+                          Math.max(0, prev - _apCost),
+                        );
+                        markFirstAction();
+                        challengeMaxApThisTurnRef.current += _apCost;
+                      }
+                    }
+                    return;
+                  }
+                  // eslint-disable-next-line no-console
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "rejected-live",
+                    hitId: _hit.id,
+                    reason: _live.reason,
+                  });
+                  return;
+                }
+              } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+                setInspectCombatantId(_hit.id);
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "inspect-sprite",
+                  hitId: _hit.id,
+                });
+                return;
+              } else if (selectedSpellIdRef.current && _hit.kind === "player") {
+                // Self/ally-targetable spell + player sprite hit → self-cast.
+                // Uses the spell's explicit targetType metadata (NOT name
+                // heuristics) per the targeting-rule spec.
+                const _spell = activeSpells.find(
+                  (s) => s.id === selectedSpellIdRef.current,
+                );
+                if (
+                  _spell &&
+                  (_spell.targetType === "self" || _spell.targetType === "ally")
+                ) {
+                  // eslint-disable-next-line no-console
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "self-cast-sprite",
+                    hitId: "player",
+                  });
+                  const _apCost = mapModifierRegistry.applyApCost(
+                    Number(_spell.apCost),
+                    activeMapModifierTypes,
+                    {
+                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                      rng: Math.random,
+                    },
+                  );
+                  if (currentBattleAp >= _apCost) {
+                    castRuntimeRef.current.apCost = _apCost;
+                    castRuntimeRef.current.spell = _spell;
+                    const _castResult = resolvePlayerCast(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      playerSpellContext(),
+                    );
+                    if (_castResult === "cast") {
+                      setCurrentBattleAp((prev) => Math.max(0, prev - _apCost));
+                      markFirstAction();
+                      challengeMaxApThisTurnRef.current += _apCost;
+                    }
+                  }
+                  return;
+                }
+                // Not self/ally-targetable → fall through to tile logic.
+              }
+            }
+          }
+        }
+      }
       const gridPos = clientToGrid(event.clientX, event.clientY);
       if (!gridPos) return;
       if (
@@ -9349,6 +9620,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       isVoidRift,
       voidRiftTile,
       combatantStoreCtx,
+      hitTestSprite,
     ],
   );
   // Handle canvas mouse move
@@ -9395,6 +9667,131 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       event.preventDefault();
       const touch = event.changedTouches[0];
       if (!touch) return;
+      // ── SPRITE-FIRST HIT TESTING (touch) ────────────────────────────
+      // Mirrors the mouse handler exactly but uses 8px padding for finger
+      // imprecision. A sprite hit resolves the entity directly with NO
+      // tile math (see the mouse handler for the full dispatch table).
+      // No sprite hit → fall through to the existing clientToGrid tile
+      // conversion path UNCHANGED (existing [CLICK-ENEMY] logs at
+      // 9445/9530/9541 remain for the tile-fallback).
+      {
+        const _canvas = canvasRef.current;
+        if (_canvas) {
+          const _rect = _canvas.getBoundingClientRect();
+          if (_rect) {
+            const _cssW = _canvas.width;
+            const _cssH = _canvas.height;
+            const _canvasX =
+              (touch.clientX - _rect.left) * (_cssW / _rect.width);
+            const _canvasY =
+              (touch.clientY - _rect.top) * (_cssH / _rect.height);
+            const _hit = hitTestSprite(_canvasX, _canvasY, 8);
+            if (_hit) {
+              if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+                const _spell = activeSpells.find(
+                  (s) => s.id === selectedSpellIdRef.current,
+                );
+                if (_spell) {
+                  const _liveCombatants = getLiveCombatants(combatantStoreCtx);
+                  const _live = isTileCastableLive(
+                    _spell,
+                    playerPosition,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    _liveCombatants,
+                    currentMap.tiles,
+                  );
+                  if (_live.ok) {
+                    // eslint-disable-next-line no-console
+                    console.log("[CLICK-ENEMY]", {
+                      branchTaken: "cast-sprite",
+                      hitId: _hit.id,
+                      logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
+                    });
+                    const _apCost = mapModifierRegistry.applyApCost(
+                      Number(_spell.apCost),
+                      activeMapModifierTypes,
+                      {
+                        log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                        rng: Math.random,
+                      },
+                    );
+                    if (currentBattleAp >= _apCost) {
+                      castRuntimeRef.current.apCost = _apCost;
+                      castRuntimeRef.current.spell = _spell;
+                      const _castResult = resolvePlayerCast(
+                        _spell,
+                        { x: _hit.logicalX, y: _hit.logicalY },
+                        playerSpellContext(),
+                      );
+                      if (_castResult === "cast") {
+                        setCurrentBattleAp((prev) =>
+                          Math.max(0, prev - _apCost),
+                        );
+                        markFirstAction();
+                        challengeMaxApThisTurnRef.current += _apCost;
+                      }
+                    }
+                    return;
+                  }
+                  // eslint-disable-next-line no-console
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "rejected-live",
+                    hitId: _hit.id,
+                    reason: _live.reason,
+                  });
+                  return;
+                }
+              } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+                setInspectCombatantId(_hit.id);
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "inspect-sprite",
+                  hitId: _hit.id,
+                });
+                return;
+              } else if (selectedSpellIdRef.current && _hit.kind === "player") {
+                const _spell = activeSpells.find(
+                  (s) => s.id === selectedSpellIdRef.current,
+                );
+                if (
+                  _spell &&
+                  (_spell.targetType === "self" || _spell.targetType === "ally")
+                ) {
+                  // eslint-disable-next-line no-console
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "self-cast-sprite",
+                    hitId: "player",
+                  });
+                  const _apCost = mapModifierRegistry.applyApCost(
+                    Number(_spell.apCost),
+                    activeMapModifierTypes,
+                    {
+                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                      rng: Math.random,
+                    },
+                  );
+                  if (currentBattleAp >= _apCost) {
+                    castRuntimeRef.current.apCost = _apCost;
+                    castRuntimeRef.current.spell = _spell;
+                    const _castResult = resolvePlayerCast(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      playerSpellContext(),
+                    );
+                    if (_castResult === "cast") {
+                      setCurrentBattleAp((prev) => Math.max(0, prev - _apCost));
+                      markFirstAction();
+                      challengeMaxApThisTurnRef.current += _apCost;
+                    }
+                  }
+                  return;
+                }
+                // Not self/ally-targetable → fall through to tile logic.
+              }
+            }
+          }
+        }
+      }
       const gridPos = clientToGrid(touch.clientX, touch.clientY);
       if (!gridPos) return;
       if (
@@ -9762,6 +10159,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       playerSpellContext,
       activeMapModifierTypes,
       combatantStoreCtx,
+      hitTestSprite,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -12548,10 +12946,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             });
           },
           // EDIT 2: reevaluate is an optional field on SummonExecutorHelpers.
-          // Safe fallback `() => null` — move-then-cast follow-up is deferred
-          // (the move still completes and the turn still advances via the
-          // try/finally below). Zero type risk; satisfies the helper contract.
-          reevaluate: () => null,
+          // Real implementation: after the summon moves, re-decide with the
+          // UPDATED position (postMoveSummon.x/y — already moved by the
+          // executor) and REMAINING AP/MP (currentAp/currentMp — already
+          // deducted by applyMovement). Reuses the same aiCtx built above
+          // (line ~12913) for the initial decide — decideSummonAction reads
+          // position/AP/MP from the summon arg, not ctx, so passing the
+          // post-move summon is sufficient. Returns the EnemyAction (cast or
+          // melee) for the executor's follow-up at summonExecutor.ts:233-250,
+          // or null when the re-decide yields a move/skip (no second move —
+          // one re-decide max). The turn-advance guarantee in the try/finally
+          // below fires exactly once regardless of whether the follow-up ran.
+          reevaluate: (
+            postMoveSummon: Enemy,
+            currentAp: number,
+            currentMp: number,
+          ) => {
+            const redecide = decideSummonAction(
+              {
+                ...postMoveSummon,
+                x: postMoveSummon.x,
+                y: postMoveSummon.y,
+                currentAp,
+                currentMp,
+              },
+              aiCtx,
+            );
+            // Only cast/melee follow-ups are executable in the same turn —
+            // a re-decided move/skip yields null (no second move, no loop).
+            return redecide.kind === "cast" || redecide.kind === "melee"
+              ? redecide
+              : null;
+          },
         };
         // EDIT 1 (hang fix): wrap the executor call + apply in try/finally so a
         // thrown exception still resets enemyTurnInProgressRef and advances the
@@ -15850,6 +16276,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       {/* Battle UI Panel — always visible; battle-only sections gated by inBattle prop */}
       <BattleUIPanel
         inBattle={inBattle}
+        inspectCombatantId={inspectCombatantId}
+        onInspectCombatant={setInspectCombatantId}
         activeSpells={activeSpells}
         selectedSpellIdRef={selectedSpellIdRef}
         spellSelectionVersion={spellSelectionVersion}
@@ -15959,6 +16387,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
         userId={userId}
       />
+      <SettingsPanel userId={userId} />
 
       {/* "No target in range" flash */}
       {noTargetFlash && (

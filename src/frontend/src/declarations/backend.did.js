@@ -237,7 +237,10 @@ export const BuffInventoryItem = IDL.Record({
   'quantity' : IDL.Nat,
 });
 export const BuffInventory = IDL.Vec(BuffInventoryItem);
-export const UserProfile = IDL.Record({ 'name' : IDL.Text });
+export const UserProfile = IDL.Record({
+  'name' : IDL.Text,
+  'uiLayout' : IDL.Text,
+});
 export const DungeonRecord = IDL.Record({
   'chainDepth' : IDL.Nat,
   'totalMapsCompleted' : IDL.Nat,
@@ -615,6 +618,7 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getUserRole' : IDL.Func([], [IDL.Text], []),
+  'getUserUiLayout' : IDL.Func([], [IDL.Text], ['query']),
   'initDefaultNames' : IDL.Func([], [], []),
   'initiatePurchase' : IDL.Func(
       [
@@ -681,6 +685,11 @@ export const idlService = IDL.Service({
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'saveKillCount' : IDL.Func(
       [IDL.Nat, IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'saveUserUiLayout' : IDL.Func(
+      [IDL.Text],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
@@ -982,7 +991,7 @@ export const idlFactory = ({ IDL }) => {
     'quantity' : IDL.Nat,
   });
   const BuffInventory = IDL.Vec(BuffInventoryItem);
-  const UserProfile = IDL.Record({ 'name' : IDL.Text });
+  const UserProfile = IDL.Record({ 'name' : IDL.Text, 'uiLayout' : IDL.Text });
   const DungeonRecord = IDL.Record({
     'chainDepth' : IDL.Nat,
     'totalMapsCompleted' : IDL.Nat,
@@ -1364,6 +1373,7 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getUserRole' : IDL.Func([], [IDL.Text], []),
+    'getUserUiLayout' : IDL.Func([], [IDL.Text], ['query']),
     'initDefaultNames' : IDL.Func([], [], []),
     'initiatePurchase' : IDL.Func(
         [
@@ -1430,6 +1440,11 @@ export const idlFactory = ({ IDL }) => {
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'saveKillCount' : IDL.Func(
         [IDL.Nat, IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'saveUserUiLayout' : IDL.Func(
+        [IDL.Text],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),

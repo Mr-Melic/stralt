@@ -28580,7 +28580,10 @@ const BuffInventoryItem = Record({
   "quantity": Nat
 });
 const BuffInventory = Vec(BuffInventoryItem);
-const UserProfile = Record({ "name": Text });
+const UserProfile = Record({
+  "name": Text,
+  "uiLayout": Text
+});
 const DungeonRecord = Record({
   "chainDepth": Nat,
   "totalMapsCompleted": Nat,
@@ -28957,6 +28960,7 @@ Service({
     ["query"]
   ),
   "getUserRole": Func([], [Text], []),
+  "getUserUiLayout": Func([], [Text], ["query"]),
   "initDefaultNames": Func([], [], []),
   "initiatePurchase": Func(
     [
@@ -29023,6 +29027,11 @@ Service({
   "saveCallerUserProfile": Func([UserProfile], [], []),
   "saveKillCount": Func(
     [Nat, Nat],
+    [Variant({ "ok": Null, "err": Text })],
+    []
+  ),
+  "saveUserUiLayout": Func(
+    [Text],
     [Variant({ "ok": Null, "err": Text })],
     []
   ),
@@ -29321,7 +29330,7 @@ const idlFactory = ({ IDL: IDL2 }) => {
     "quantity": IDL2.Nat
   });
   const BuffInventory2 = IDL2.Vec(BuffInventoryItem2);
-  const UserProfile2 = IDL2.Record({ "name": IDL2.Text });
+  const UserProfile2 = IDL2.Record({ "name": IDL2.Text, "uiLayout": IDL2.Text });
   const DungeonRecord2 = IDL2.Record({
     "chainDepth": IDL2.Nat,
     "totalMapsCompleted": IDL2.Nat,
@@ -29702,6 +29711,7 @@ const idlFactory = ({ IDL: IDL2 }) => {
       ["query"]
     ),
     "getUserRole": IDL2.Func([], [IDL2.Text], []),
+    "getUserUiLayout": IDL2.Func([], [IDL2.Text], ["query"]),
     "initDefaultNames": IDL2.Func([], [], []),
     "initiatePurchase": IDL2.Func(
       [
@@ -29768,6 +29778,11 @@ const idlFactory = ({ IDL: IDL2 }) => {
     "saveCallerUserProfile": IDL2.Func([UserProfile2], [], []),
     "saveKillCount": IDL2.Func(
       [IDL2.Nat, IDL2.Nat],
+      [IDL2.Variant({ "ok": IDL2.Null, "err": IDL2.Text })],
+      []
+    ),
+    "saveUserUiLayout": IDL2.Func(
+      [IDL2.Text],
       [IDL2.Variant({ "ok": IDL2.Null, "err": IDL2.Text })],
       []
     ),
@@ -31132,6 +31147,20 @@ class Backend {
       return result;
     }
   }
+  async getUserUiLayout() {
+    if (this.processError) {
+      try {
+        const result = await this.actor.getUserUiLayout();
+        return result;
+      } catch (e) {
+        this.processError(e);
+        throw new Error("unreachable");
+      }
+    } else {
+      const result = await this.actor.getUserUiLayout();
+      return result;
+    }
+  }
   async initDefaultNames() {
     if (this.processError) {
       try {
@@ -31339,6 +31368,20 @@ class Backend {
       }
     } else {
       const result = await this.actor.saveKillCount(arg0, arg1);
+      return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+    }
+  }
+  async saveUserUiLayout(arg0) {
+    if (this.processError) {
+      try {
+        const result = await this.actor.saveUserUiLayout(arg0);
+        return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+      } catch (e) {
+        this.processError(e);
+        throw new Error("unreachable");
+      }
+    } else {
+      const result = await this.actor.saveUserUiLayout(arg0);
       return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
     }
   }
@@ -43730,8 +43773,9 @@ const CharacterSelection = ({
     )
   ] });
 };
+const BACKEND_SAVE_DEBOUNCE_MS = 1500;
 const STORAGE_PREFIX = "pbv_panel_layout_";
-const SNAP_THRESHOLD = 80;
+const SNAP_THRESHOLD = 140;
 const SNAP_GAP = 10;
 const panelRegistry = {};
 function loadLayout(userId) {
@@ -43750,6 +43794,21 @@ function saveLayout(userId, panelId, state) {
     localStorage.setItem(STORAGE_PREFIX + userId, JSON.stringify(existing));
   } catch {
   }
+}
+function saveLayoutToBackend(actor, userId) {
+  if (!actor) return;
+  const layout = loadLayout(userId);
+  const blob = JSON.stringify(layout);
+  void actor.saveUserUiLayout(blob).then((result) => {
+    if (result.__kind__ === "err") {
+      console.warn("DraggablePanel: saveUserUiLayout rejected:", result.err);
+    }
+  }).catch((err) => {
+    console.warn(
+      "DraggablePanel: saveUserUiLayout failed (localStorage cache still valid)",
+      err
+    );
+  });
 }
 function computeSnapPosition(movedId, pos, w2, h2) {
   let { x: x3, y: y2 } = pos;
@@ -43776,6 +43835,28 @@ function computeSnapPosition(movedId, pos, w2, h2) {
   }
   if (bestSnapX) x3 = bestSnapX.val;
   if (bestSnapY) y2 = bestSnapY.val;
+  if (!bestSnapY) {
+    let bestAlignTop = null;
+    for (const [otherId, other] of Object.entries(panelRegistry)) {
+      if (otherId === movedId) continue;
+      const topDiff = Math.abs(y2 - other.y);
+      if (topDiff < SNAP_THRESHOLD && (!bestAlignTop || topDiff < bestAlignTop.dist)) {
+        bestAlignTop = { val: other.y, dist: topDiff };
+      }
+    }
+    if (bestAlignTop) y2 = bestAlignTop.val;
+  }
+  if (!bestSnapX) {
+    let bestAlignLeft = null;
+    for (const [otherId, other] of Object.entries(panelRegistry)) {
+      if (otherId === movedId) continue;
+      const leftDiff = Math.abs(x3 - other.x);
+      if (leftDiff < SNAP_THRESHOLD && (!bestAlignLeft || leftDiff < bestAlignLeft.dist)) {
+        bestAlignLeft = { val: other.x, dist: leftDiff };
+      }
+    }
+    if (bestAlignLeft) x3 = bestAlignLeft.val;
+  }
   const TOP_BAR_BOTTOM = 44;
   const TOP_BAR_SNAP_ZONE = 60;
   const TOP_BAR_SNAP_TARGET = TOP_BAR_BOTTOM + 4;
@@ -43811,6 +43892,68 @@ function computeSnapPosition(movedId, pos, w2, h2) {
   }
   return { x: x3, y: y2 };
 }
+function computeLiveSnapPreview(movedId, pos, w2, h2) {
+  let { x: x3, y: y2 } = pos;
+  let snappedX = false;
+  let snappedY = false;
+  let bestSnapX = null;
+  let bestSnapY = null;
+  for (const [otherId, other] of Object.entries(panelRegistry)) {
+    if (otherId === movedId) continue;
+    const rToL = Math.abs(x3 + w2 - other.x);
+    const lToR = Math.abs(x3 - (other.x + other.w));
+    const bToT = Math.abs(y2 + h2 - other.y);
+    const tToB = Math.abs(y2 - (other.y + other.h));
+    if (rToL < SNAP_THRESHOLD && (!bestSnapX || rToL < bestSnapX.dist)) {
+      bestSnapX = { val: other.x - w2 - SNAP_GAP, dist: rToL };
+    }
+    if (lToR < SNAP_THRESHOLD && (!bestSnapX || lToR < bestSnapX.dist)) {
+      bestSnapX = { val: other.x + other.w + SNAP_GAP, dist: lToR };
+    }
+    if (bToT < SNAP_THRESHOLD && (!bestSnapY || bToT < bestSnapY.dist)) {
+      bestSnapY = { val: other.y - h2 - SNAP_GAP, dist: bToT };
+    }
+    if (tToB < SNAP_THRESHOLD && (!bestSnapY || tToB < bestSnapY.dist)) {
+      bestSnapY = { val: other.y + other.h + SNAP_GAP, dist: tToB };
+    }
+  }
+  if (bestSnapX) {
+    x3 = bestSnapX.val;
+    snappedX = true;
+  } else {
+    let bestAlignLeft = null;
+    for (const [otherId, other] of Object.entries(panelRegistry)) {
+      if (otherId === movedId) continue;
+      const leftDiff = Math.abs(pos.x - other.x);
+      if (leftDiff < SNAP_THRESHOLD && (!bestAlignLeft || leftDiff < bestAlignLeft.dist)) {
+        bestAlignLeft = { val: other.x, dist: leftDiff };
+      }
+    }
+    if (bestAlignLeft) {
+      x3 = bestAlignLeft.val;
+      snappedX = true;
+    }
+  }
+  if (bestSnapY) {
+    y2 = bestSnapY.val;
+    snappedY = true;
+  } else {
+    let bestAlignTop = null;
+    for (const [otherId, other] of Object.entries(panelRegistry)) {
+      if (otherId === movedId) continue;
+      const topDiff = Math.abs(pos.y - other.y);
+      if (topDiff < SNAP_THRESHOLD && (!bestAlignTop || topDiff < bestAlignTop.dist)) {
+        bestAlignTop = { val: other.y, dist: topDiff };
+      }
+    }
+    if (bestAlignTop) {
+      y2 = bestAlignTop.val;
+      snappedY = true;
+    }
+  }
+  if (!snappedX && !snappedY) return null;
+  return { x: x3, y: y2 };
+}
 const DraggablePanel = ({
   panelId,
   title,
@@ -43829,6 +43972,11 @@ const DraggablePanel = ({
   const [folded, setFolded] = reactExports.useState(defaultFolded);
   const [isDragging, setIsDragging] = reactExports.useState(false);
   const [loaded, setLoaded] = reactExports.useState(false);
+  const [snapPreview, setSnapPreview] = reactExports.useState(null);
+  const [panelSize, setPanelSize] = reactExports.useState({
+    w: 0,
+    h: 0
+  });
   const panelRef = reactExports.useRef(null);
   const dragState = reactExports.useRef({
     startMouseX: 0,
@@ -43842,8 +43990,13 @@ const DraggablePanel = ({
   const currentPosRef = reactExports.useRef(position);
   const currentFoldedRef = reactExports.useRef(folded);
   const panelInstanceIdRef = reactExports.useRef(0);
+  const { actor } = useActor();
+  const backendSaveDebounceRef = reactExports.useRef(
+    null
+  );
   reactExports.useEffect(() => {
     panelInstanceIdRef.current += 1;
+    const myInstance = panelInstanceIdRef.current;
     const layout = loadLayout(userId);
     if (layout[panelId]) {
       const saved = layout[panelId];
@@ -43853,7 +44006,59 @@ const DraggablePanel = ({
       currentFoldedRef.current = saved.folded;
     }
     setLoaded(true);
-  }, [panelId, userId]);
+    if (actor) {
+      void actor.getUserUiLayout().then((blob) => {
+        if (panelInstanceIdRef.current !== myInstance) return;
+        if (!blob) return;
+        let parsed = null;
+        try {
+          const obj = JSON.parse(blob);
+          if (typeof obj === "object" && obj !== null && !Array.isArray(obj)) {
+            const result = {};
+            for (const [id, entry] of Object.entries(
+              obj
+            )) {
+              if (typeof entry !== "object" || entry === null || Array.isArray(entry))
+                continue;
+              const e = entry;
+              if (typeof e.x !== "number" || typeof e.y !== "number" || typeof e.folded !== "boolean")
+                continue;
+              result[id] = { x: e.x, y: e.y, folded: e.folded };
+            }
+            if (Object.keys(result).length > 0) parsed = result;
+          }
+        } catch {
+          parsed = null;
+        }
+        if (!parsed) return;
+        try {
+          localStorage.setItem(
+            STORAGE_PREFIX + userId,
+            JSON.stringify(parsed)
+          );
+        } catch {
+        }
+        if (parsed[panelId]) {
+          const saved = parsed[panelId];
+          setPosition({ x: saved.x, y: saved.y });
+          setFolded(saved.folded);
+          currentPosRef.current = { x: saved.x, y: saved.y };
+          currentFoldedRef.current = saved.folded;
+        }
+      }).catch((err) => {
+        console.warn(
+          "DraggablePanel: getUserUiLayout failed, keeping localStorage layout",
+          err
+        );
+      });
+    }
+    return () => {
+      if (backendSaveDebounceRef.current) {
+        clearTimeout(backendSaveDebounceRef.current);
+        backendSaveDebounceRef.current = null;
+      }
+    };
+  }, [panelId, userId, actor]);
   const scheduleSave = reactExports.useCallback(
     (pos, fold) => {
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
@@ -43862,8 +44067,15 @@ const DraggablePanel = ({
         if (panelInstanceIdRef.current !== myInstance) return;
         saveLayout(userId, panelId, { x: pos.x, y: pos.y, folded: fold });
       }, 500);
+      if (!actor) return;
+      if (backendSaveDebounceRef.current)
+        clearTimeout(backendSaveDebounceRef.current);
+      backendSaveDebounceRef.current = setTimeout(() => {
+        if (panelInstanceIdRef.current !== myInstance) return;
+        saveLayoutToBackend(actor, userId);
+      }, BACKEND_SAVE_DEBOUNCE_MS);
     },
-    [userId, panelId]
+    [userId, panelId, actor]
   );
   const clampPosition = reactExports.useCallback(
     (x3, y2) => {
@@ -43906,13 +44118,30 @@ const DraggablePanel = ({
       const rawX = dragState.current.startPanelX + dx;
       const rawY = dragState.current.startPanelY + dy;
       const clamped = clampPosition(rawX, rawY);
-      currentPosRef.current = clamped;
-      setPosition(clamped);
+      const el = panelRef.current;
+      let nextPos = clamped;
+      let preview = null;
+      if (el) {
+        const w2 = el.offsetWidth;
+        const h2 = el.offsetHeight;
+        setPanelSize({ w: w2, h: h2 });
+        preview = computeLiveSnapPreview(panelId, clamped, w2, h2);
+        if (preview) {
+          const LERP = 0.4;
+          const easedX = clamped.x + (preview.x - clamped.x) * LERP;
+          const easedY = clamped.y + (preview.y - clamped.y) * LERP;
+          nextPos = clampPosition(easedX, easedY);
+        }
+      }
+      currentPosRef.current = nextPos;
+      setPosition(nextPos);
+      setSnapPreview(preview);
     };
     const onEnd = () => {
       if (!dragState.current.active) return;
       dragState.current.active = false;
       setIsDragging(false);
+      setSnapPreview(null);
       const el = panelRef.current;
       if (el) {
         const w2 = el.offsetWidth;
@@ -44001,6 +44230,29 @@ const DraggablePanel = ({
         ...style2
       },
       children: [
+        isDragging && snapPreview && panelSize.w > 0 && panelSize.h > 0 && /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            "data-ocid": `draggable_panel.${panelId}.snap_preview`,
+            "aria-hidden": "true",
+            style: {
+              position: "fixed",
+              left: snapPreview.x,
+              top: snapPreview.y,
+              width: panelSize.w,
+              height: panelSize.h,
+              zIndex: zIndex - 1,
+              borderRadius: 14,
+              border: "1.5px dashed oklch(0.62 0.22 25)",
+              // crimson outline
+              background: "oklch(0.28 0.04 30 / 0.18)",
+              // dark slate, low opacity
+              boxShadow: "0 0 0 1px oklch(0.62 0.22 25 / 0.35)",
+              pointerEvents: "none",
+              transition: "left 80ms ease-out, top 80ms ease-out"
+            }
+          }
+        ),
         /* @__PURE__ */ jsxRuntimeExports.jsxs(
           "div",
           {
@@ -45360,7 +45612,284 @@ function useIsMobile(breakpoint = 768) {
   }, [breakpoint]);
   return isMobile;
 }
+const VOLUME_KEY = "pbv_sound_volume";
+const MUTE_KEY = "pbv_sound_muted";
+const DEFAULT_VOLUME = 0.5;
+const VOICE_CAP = 8;
+function loadNumber(key2, fallback) {
+  try {
+    const raw = localStorage.getItem(key2);
+    if (raw == null) return fallback;
+    const v2 = Number(raw);
+    return Number.isFinite(v2) ? v2 : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function loadBool(key2, fallback) {
+  try {
+    const raw = localStorage.getItem(key2);
+    if (raw == null) return fallback;
+    return raw === "1" || raw === "true";
+  } catch {
+    return fallback;
+  }
+}
+function savePref(key2, value) {
+  try {
+    localStorage.setItem(key2, value);
+  } catch {
+  }
+}
+class SoundEngine {
+  constructor() {
+    __publicField(this, "ctx", null);
+    __publicField(this, "master", null);
+    __publicField(this, "volume");
+    __publicField(this, "muted");
+    __publicField(this, "voices", []);
+    __publicField(this, "gestureWired", false);
+    this.volume = Math.min(
+      1,
+      Math.max(0, loadNumber(VOLUME_KEY, DEFAULT_VOLUME))
+    );
+    this.muted = loadBool(MUTE_KEY, false);
+    this.wireFirstGesture();
+  }
+  // ── Lazy AudioContext: created + resumed on first user gesture ──────────────
+  wireFirstGesture() {
+    if (this.gestureWired || typeof window === "undefined") return;
+    this.gestureWired = true;
+    const handler = () => {
+      this.ensureContext();
+      window.removeEventListener("pointerdown", handler);
+      window.removeEventListener("keydown", handler);
+    };
+    window.addEventListener("pointerdown", handler, { once: false });
+    window.addEventListener("keydown", handler, { once: false });
+  }
+  ensureContext() {
+    if (this.ctx) {
+      if (this.ctx.state === "suspended") {
+        void this.ctx.resume().catch(() => {
+        });
+      }
+      return;
+    }
+    try {
+      const Ctor = window.AudioContext ?? window.webkitAudioContext;
+      if (!Ctor) return;
+      this.ctx = new Ctor();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.muted ? 0 : this.volume;
+      this.master.connect(this.ctx.destination);
+    } catch {
+      this.ctx = null;
+      this.master = null;
+    }
+  }
+  // ── Public API ──────────────────────────────────────────────────────────────
+  setVolume(v2) {
+    const clamped = Math.min(1, Math.max(0, v2));
+    this.volume = clamped;
+    savePref(VOLUME_KEY, String(clamped));
+    if (this.master && !this.muted) {
+      this.master.gain.value = clamped;
+    }
+  }
+  getVolume() {
+    return this.volume;
+  }
+  setMute(m2) {
+    this.muted = m2;
+    savePref(MUTE_KEY, m2 ? "1" : "0");
+    if (this.master) {
+      this.master.gain.value = m2 ? 0 : this.volume;
+    }
+  }
+  isMuted() {
+    return this.muted;
+  }
+  // ── Voice cap: drop oldest when exceeding VOICE_CAP ─────────────────────────
+  registerVoice(voice) {
+    this.voices.push(voice);
+    while (this.voices.length > VOICE_CAP) {
+      const oldest = this.voices.shift();
+      if (oldest && !oldest.ended) {
+        try {
+          oldest.stop();
+        } catch {
+        }
+      }
+    }
+  }
+  pruneEnded() {
+    this.voices = this.voices.filter((v2) => !v2.ended);
+  }
+  // ── Core synthesis helpers ───────────────────────────────────────────────────
+  playTone(freq, duration, type, gain, opts) {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master) return;
+    const now2 = ctx.currentTime + ((opts == null ? void 0 : opts.delay) ?? 0);
+    const osc = ctx.createOscillator();
+    const g2 = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now2);
+    if ((opts == null ? void 0 : opts.freqEnd) != null) {
+      osc.frequency.exponentialRampToValueAtTime(
+        Math.max(1e-4, opts.freqEnd),
+        now2 + duration
+      );
+    }
+    const attack = (opts == null ? void 0 : opts.attack) ?? 5e-3;
+    const release = (opts == null ? void 0 : opts.release) ?? Math.min(0.08, duration * 0.4);
+    g2.gain.setValueAtTime(1e-4, now2);
+    g2.gain.exponentialRampToValueAtTime(gain, now2 + attack);
+    g2.gain.setValueAtTime(gain, now2 + duration - release);
+    g2.gain.exponentialRampToValueAtTime(1e-4, now2 + duration);
+    osc.connect(g2);
+    g2.connect(master);
+    osc.start(now2);
+    osc.stop(now2 + duration + 0.02);
+    const voice = {
+      ended: false,
+      stop: () => {
+        try {
+          osc.stop();
+        } catch {
+        }
+        voice.ended = true;
+      }
+    };
+    osc.onended = () => {
+      voice.ended = true;
+      this.pruneEnded();
+    };
+    this.registerVoice(voice);
+  }
+  playNoise(duration, filterType, filterFreq, gain, opts) {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master) return;
+    const now2 = ctx.currentTime + ((opts == null ? void 0 : opts.delay) ?? 0);
+    const length = Math.max(1, Math.floor(ctx.sampleRate * duration));
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.setValueAtTime(filterFreq, now2);
+    filter.Q.value = (opts == null ? void 0 : opts.q) ?? 1;
+    if ((opts == null ? void 0 : opts.freqEnd) != null) {
+      filter.frequency.exponentialRampToValueAtTime(
+        Math.max(1e-4, opts.freqEnd),
+        now2 + duration
+      );
+    }
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(1e-4, now2);
+    g2.gain.exponentialRampToValueAtTime(gain, now2 + 5e-3);
+    g2.gain.exponentialRampToValueAtTime(1e-4, now2 + duration);
+    src.connect(filter);
+    filter.connect(g2);
+    g2.connect(master);
+    src.start(now2);
+    src.stop(now2 + duration + 0.02);
+    const voice = {
+      ended: false,
+      stop: () => {
+        try {
+          src.stop();
+        } catch {
+        }
+        voice.ended = true;
+      }
+    };
+    src.onended = () => {
+      voice.ended = true;
+      this.pruneEnded();
+    };
+    this.registerVoice(voice);
+  }
+  // ── Event dispatch ───────────────────────────────────────────────────────────
+  playEvent(event) {
+    if (!this.ctx || !this.master) return;
+    this.pruneEnded();
+    switch (event) {
+      case "spell_cast":
+        this.playTone(220, 0.12, "sine", 0.22, { freqEnd: 660 });
+        break;
+      case "spell_hit":
+        this.playNoise(0.15, "bandpass", 1800, 0.18, { q: 0.7 });
+        this.playTone(110, 0.15, "sine", 0.28, { freqEnd: 60 });
+        break;
+      case "enemy_death":
+        this.playTone(400, 0.35, "sawtooth", 0.22, {
+          freqEnd: 80,
+          release: 0.12
+        });
+        break;
+      case "player_damage":
+        this.playTone(80, 0.18, "sine", 0.32, { freqEnd: 50, release: 0.1 });
+        break;
+      case "doka_collected":
+        this.playTone(880, 0.08, "sine", 0.22);
+        this.playTone(1320, 0.1, "sine", 0.22, { delay: 0.08 });
+        break;
+      case "map_transition":
+        this.playNoise(0.6, "bandpass", 400, 0.16, { freqEnd: 4e3, q: 0.6 });
+        break;
+      case "battle_start":
+        this.playTone(70, 0.18, "sine", 0.32, { freqEnd: 50 });
+        this.playTone(220, 0.22, "sine", 0.2, { freqEnd: 440, delay: 0.18 });
+        break;
+      case "battle_end":
+        this.playTone(523, 0.1, "triangle", 0.2);
+        this.playTone(659, 0.1, "triangle", 0.2, { delay: 0.1 });
+        this.playTone(784, 0.15, "triangle", 0.22, { delay: 0.2 });
+        break;
+      case "level_up":
+        this.playTone(523, 0.12, "triangle", 0.22);
+        this.playTone(659, 0.12, "triangle", 0.22, { delay: 0.12 });
+        this.playTone(784, 0.12, "triangle", 0.22, { delay: 0.24 });
+        this.playTone(1047, 0.18, "triangle", 0.24, { delay: 0.36 });
+        this.playTone(1319, 0.22, "triangle", 0.24, { delay: 0.5 });
+        break;
+      case "critical_hit":
+        this.playNoise(0.06, "highpass", 2500, 0.22);
+        this.playTone(180, 0.08, "square", 0.18, { freqEnd: 90 });
+        this.playNoise(0.06, "highpass", 2500, 0.22, { delay: 0.1 });
+        this.playTone(180, 0.08, "square", 0.18, {
+          freqEnd: 90,
+          delay: 0.1
+        });
+        break;
+      case "combo":
+        this.playTone(440, 0.08, "sine", 0.2, { freqEnd: 660 });
+        this.playTone(660, 0.08, "sine", 0.2, { freqEnd: 880, delay: 0.08 });
+        this.playTone(880, 0.1, "sine", 0.22, { freqEnd: 1100, delay: 0.16 });
+        break;
+      case "leader_boost":
+        this.playTone(110, 0.5, "sawtooth", 0.24, {
+          freqEnd: 330,
+          release: 0.15
+        });
+        this.playTone(55, 0.5, "sawtooth", 0.18, {
+          freqEnd: 165,
+          release: 0.15
+        });
+        break;
+    }
+  }
+}
+const soundEngine = new SoundEngine();
 function playSound(event, context) {
+  soundEngine.playEvent(event);
 }
 const DEFAULT_LEVELUP_CONFIG = {
   statGrowthPercent: 5,
@@ -45819,7 +46348,9 @@ const BattleUIPanel = ({
   onEndTurn,
   onEndBattle,
   spellCooldowns = {},
-  userId
+  userId,
+  inspectCombatantId,
+  onInspectCombatant
 }) => {
   const forceUpdate = spellSelectionVersion;
   const [selectedCombatantId, setSelectedCombatantId] = reactExports.useState(
@@ -45851,6 +46382,19 @@ const BattleUIPanel = ({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
+  reactExports.useEffect(() => {
+    var _a3;
+    if (inspectCombatantId != null) {
+      setSelectedCombatantId(inspectCombatantId);
+      const rect = (_a3 = chipRefs.current.get(inspectCombatantId)) == null ? void 0 : _a3.getBoundingClientRect();
+      setPopupAnchor(rect || null);
+    }
+  }, [inspectCombatantId]);
+  reactExports.useEffect(() => {
+    if (selectedCombatantId == null && inspectCombatantId != null && onInspectCombatant) {
+      onInspectCombatant(null);
+    }
+  }, [selectedCombatantId, inspectCombatantId, onInspectCombatant]);
   const currentCombatant = turnOrder[currentTurnIndex];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -47419,6 +47963,164 @@ const MapModifiersPanel = ({
               },
               mod2.id
             )) }) })
+          ]
+        }
+      )
+    }
+  );
+};
+const SettingsPanel = ({ userId }) => {
+  const [volume, setVolume] = reactExports.useState(soundEngine.getVolume());
+  const [muted, setMuted] = reactExports.useState(soundEngine.isMuted());
+  const handleVolume = (v2) => {
+    const rounded = Math.round(v2 * 100) / 100;
+    setVolume(rounded);
+    soundEngine.setVolume(rounded);
+    if (muted && rounded > 0) {
+      setMuted(false);
+      soundEngine.setMute(false);
+    }
+  };
+  const handleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    soundEngine.setMute(next);
+  };
+  return /* @__PURE__ */ jsxRuntimeExports.jsx(
+    DraggablePanel,
+    {
+      panelId: "settings",
+      title: "Settings",
+      userId,
+      defaultPosition: { x: 24, y: 200 },
+      defaultFolded: true,
+      zIndex: 110,
+      style: { width: 220 },
+      children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          "data-ocid": "settings.panel",
+          style: {
+            width: 220,
+            background: "linear-gradient(180deg, #0d0610 0%, #0a0414 100%)",
+            pointerEvents: "none",
+            overflow: "hidden"
+          },
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "5px 8px",
+                  background: "rgba(192,57,43,0.18)",
+                  borderBottom: "1px solid rgba(192,57,43,0.35)",
+                  pointerEvents: "auto"
+                },
+                children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 11 }, children: "⚙️" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                    "span",
+                    {
+                      style: {
+                        color: "#ff7675",
+                        fontSize: 9,
+                        fontWeight: 800,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase"
+                      },
+                      children: "Settings"
+                    }
+                  )
+                ]
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "8px 10px 10px", pointerEvents: "auto" }, children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "div",
+                {
+                  style: {
+                    color: "rgba(192,57,43,0.8)",
+                    fontSize: 8,
+                    fontWeight: 800,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    marginBottom: 6
+                  },
+                  children: "Sound"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "label",
+                {
+                  htmlFor: "settings.volume_input",
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    color: "rgba(255,255,255,0.6)",
+                    fontSize: 9,
+                    marginBottom: 4
+                  },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Volume" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { style: { color: "#f0c44a", fontWeight: 700 }, children: [
+                      Math.round(volume * 100),
+                      "%"
+                    ] })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "input",
+                {
+                  id: "settings.volume_input",
+                  type: "range",
+                  min: 0,
+                  max: 1,
+                  step: 0.05,
+                  value: volume,
+                  onChange: (e) => handleVolume(Number(e.target.value)),
+                  "data-ocid": "settings.volume_input",
+                  disabled: muted,
+                  "aria-label": "Sound volume",
+                  style: {
+                    width: "100%",
+                    accentColor: "#c0392b",
+                    cursor: muted ? "not-allowed" : "pointer",
+                    opacity: muted ? 0.45 : 1
+                  }
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "settings.mute_toggle",
+                  onClick: handleMute,
+                  "aria-pressed": muted,
+                  "aria-label": muted ? "Unmute sound" : "Mute sound",
+                  style: {
+                    marginTop: 10,
+                    width: "100%",
+                    padding: "5px 0",
+                    borderRadius: 4,
+                    border: muted ? "1px solid rgba(192,57,43,0.7)" : "1px solid rgba(255,255,255,0.08)",
+                    background: muted ? "linear-gradient(135deg, rgba(192,57,43,0.45) 0%, rgba(120,30,20,0.3) 100%)" : "rgba(255,255,255,0.04)",
+                    color: muted ? "#ff7675" : "rgba(255,255,255,0.6)",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                    boxShadow: muted ? "0 0 8px rgba(192,57,43,0.3), inset 0 0 6px rgba(192,57,43,0.1)" : "none"
+                  },
+                  children: muted ? "🔇 Muted" : "🔊 Sound On"
+                }
+              )
+            ] })
           ]
         }
       )
@@ -57419,6 +58121,10 @@ const WorldExplorationInner = ({
   const effectiveDeadzone = isMobile ? 8 : 0;
   const effectiveMaxOffset = isMobile ? 600 : 0;
   const canvasRef = reactExports.useRef(null);
+  const spriteRectsRef = reactExports.useRef(/* @__PURE__ */ new Map());
+  const [inspectCombatantId, setInspectCombatantId] = reactExports.useState(
+    null
+  );
   const portraitCanvasRef = reactExports.useRef(null);
   reactExports.useRef(null);
   const animationFrameRef = reactExports.useRef(void 0);
@@ -61384,6 +62090,7 @@ const WorldExplorationInner = ({
         pendingTimeoutsRef.current.add(reTimerId);
         return;
       }
+      playSound("map_transition");
       cleanupMap();
       setCoinParticles([]);
       effectsManagerRef.current.clear();
@@ -62623,6 +63330,7 @@ const WorldExplorationInner = ({
         ...portalDepthItems.map((p2) => ({ ...p2, kind: "portal" })),
         ...drawQueue
       ].sort((a2, b2) => a2.depth - b2.depth);
+      spriteRectsRef.current.clear();
       for (const renderItem of allRenderItems) {
         if (renderItem.kind === "portal") {
           renderItem.draw();
@@ -62702,6 +63410,22 @@ const WorldExplorationInner = ({
             }
           );
           if (enemy.isMoving) ctx.restore();
+          {
+            const _srW = effectiveTileW;
+            const _srH = effectiveTileH * 1.5;
+            spriteRectsRef.current.set(enemy.id, {
+              x: screenPos.x - _srW / 2,
+              y: screenPos.y - CHARACTER_Y_OFFSET - _srH / 2,
+              w: _srW,
+              h: _srH,
+              drawOrder: renderItem.depth,
+              id: enemy.id,
+              kind: "enemy",
+              logicalX: enemy.x ?? 0,
+              logicalY: enemy.y ?? 0,
+              isAlive: (enemy.hp ?? 0) > 0
+            });
+          }
           const isLeader = leaderEnemyIdRef.current === enemy.id;
           {
             const enemyName = `${isLeader ? "👑 " : ""}${enemy.assignedName ?? (enemy.pieceType ?? "pawn").charAt(0).toUpperCase() + (enemy.pieceType ?? "pawn").slice(1)}`;
@@ -62882,6 +63606,22 @@ const WorldExplorationInner = ({
               extra: colors.accent
             }
           );
+          {
+            const _psrW = effectiveTileW;
+            const _psrH = effectiveTileH * 1.5;
+            spriteRectsRef.current.set("player", {
+              x: playerScreenPos.x - _psrW / 2,
+              y: playerScreenPos.y - CHARACTER_Y_OFFSET - _psrH / 2,
+              w: _psrW,
+              h: _psrH,
+              drawOrder: 99999,
+              id: "player",
+              kind: "player",
+              logicalX: playerPosition.x,
+              logicalY: playerPosition.y,
+              isAlive: true
+            });
+          }
           if (inBattleRef.current) {
             const playerEffects = activeEffectsRef.current.filter(
               (e) => e.targetId === "player"
@@ -63260,6 +64000,21 @@ const WorldExplorationInner = ({
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [rebuildTileCornerCache]);
+  const hitTestSprite = reactExports.useCallback(
+    (canvasX, canvasY, padding) => {
+      let best = null;
+      for (const entry of spriteRectsRef.current.values()) {
+        if (!entry.isAlive) continue;
+        if (canvasX < entry.x - padding || canvasX > entry.x + entry.w + padding || canvasY < entry.y - padding || canvasY > entry.y + entry.h + padding)
+          continue;
+        if (!best || entry.drawOrder > best.drawOrder || entry.drawOrder === best.drawOrder && entry.y < best.y) {
+          best = entry;
+        }
+      }
+      return best;
+    },
+    []
+  );
   const clientToGrid = reactExports.useCallback(
     (clientX, clientY) => {
       const canvas = canvasRef.current;
@@ -63417,6 +64172,7 @@ const WorldExplorationInner = ({
             effectiveTileW * 0.18
           );
         }
+        playSound("spell_cast");
       },
       isCellFree: (cell) => !getLiveCombatants(combatantStoreCtx).some(
         (e) => e.x === cell.x && e.y === cell.y
@@ -63440,6 +64196,7 @@ const WorldExplorationInner = ({
       triggerVfx: () => {
       },
       playSound: (name, ctx) => {
+        playSound(name);
       },
       consumeTimestep: () => {
         if (timestepUsedRef.current) return true;
@@ -63686,6 +64443,114 @@ const WorldExplorationInner = ({
     (event) => {
       var _a4, _b4;
       if (!currentMap || transitionInProgressRef.current) return;
+      {
+        const _canvas = canvasRef.current;
+        if (_canvas) {
+          const _rect = _canvas.getBoundingClientRect();
+          if (_rect) {
+            const _cssW = _canvas.width;
+            const _cssH = _canvas.height;
+            const _canvasX = (event.clientX - _rect.left) * (_cssW / _rect.width);
+            const _canvasY = (event.clientY - _rect.top) * (_cssH / _rect.height);
+            const _hit = hitTestSprite(_canvasX, _canvasY, 4);
+            if (_hit) {
+              if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+                const _spell = activeSpells.find(
+                  (s2) => s2.id === selectedSpellIdRef.current
+                );
+                if (_spell) {
+                  const _liveCombatants = getLiveCombatants(combatantStoreCtx);
+                  const _live = isTileCastableLive(
+                    _spell,
+                    playerPosition,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    _liveCombatants,
+                    currentMap.tiles
+                  );
+                  if (_live.ok) {
+                    console.log("[CLICK-ENEMY]", {
+                      branchTaken: "cast-sprite",
+                      hitId: _hit.id,
+                      logicalTile: { x: _hit.logicalX, y: _hit.logicalY }
+                    });
+                    const _apCost = mapModifierRegistry.applyApCost(
+                      Number(_spell.apCost),
+                      activeMapModifierTypes,
+                      {
+                        log: (msg) => logDebugInfo("MODIFIER", msg),
+                        rng: Math.random
+                      }
+                    );
+                    if (currentBattleAp >= _apCost) {
+                      castRuntimeRef.current.apCost = _apCost;
+                      castRuntimeRef.current.spell = _spell;
+                      const _castResult = resolvePlayerCast(
+                        _spell,
+                        { x: _hit.logicalX, y: _hit.logicalY },
+                        playerSpellContext()
+                      );
+                      if (_castResult === "cast") {
+                        setCurrentBattleAp(
+                          (prev) => Math.max(0, prev - _apCost)
+                        );
+                        markFirstAction();
+                        challengeMaxApThisTurnRef.current += _apCost;
+                      }
+                    }
+                    return;
+                  }
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "rejected-live",
+                    hitId: _hit.id,
+                    reason: _live.reason
+                  });
+                  return;
+                }
+              } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+                setInspectCombatantId(_hit.id);
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "inspect-sprite",
+                  hitId: _hit.id
+                });
+                return;
+              } else if (selectedSpellIdRef.current && _hit.kind === "player") {
+                const _spell = activeSpells.find(
+                  (s2) => s2.id === selectedSpellIdRef.current
+                );
+                if (_spell && (_spell.targetType === "self" || _spell.targetType === "ally")) {
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "self-cast-sprite",
+                    hitId: "player"
+                  });
+                  const _apCost = mapModifierRegistry.applyApCost(
+                    Number(_spell.apCost),
+                    activeMapModifierTypes,
+                    {
+                      log: (msg) => logDebugInfo("MODIFIER", msg),
+                      rng: Math.random
+                    }
+                  );
+                  if (currentBattleAp >= _apCost) {
+                    castRuntimeRef.current.apCost = _apCost;
+                    castRuntimeRef.current.spell = _spell;
+                    const _castResult = resolvePlayerCast(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      playerSpellContext()
+                    );
+                    if (_castResult === "cast") {
+                      setCurrentBattleAp((prev) => Math.max(0, prev - _apCost));
+                      markFirstAction();
+                      challengeMaxApThisTurnRef.current += _apCost;
+                    }
+                  }
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
       const gridPos = clientToGrid(event.clientX, event.clientY);
       if (!gridPos) return;
       if (gridPos.x < 0 || gridPos.x >= WORLD_GRID_SIZE || gridPos.y < 0 || gridPos.y >= WORLD_GRID_SIZE)
@@ -63958,7 +64823,8 @@ const WorldExplorationInner = ({
       isThornedGround,
       isVoidRift,
       voidRiftTile,
-      combatantStoreCtx
+      combatantStoreCtx,
+      hitTestSprite
     ]
   );
   const handleCanvasMouseMove = reactExports.useCallback(
@@ -63993,6 +64859,114 @@ const WorldExplorationInner = ({
       event.preventDefault();
       const touch = event.changedTouches[0];
       if (!touch) return;
+      {
+        const _canvas = canvasRef.current;
+        if (_canvas) {
+          const _rect = _canvas.getBoundingClientRect();
+          if (_rect) {
+            const _cssW = _canvas.width;
+            const _cssH = _canvas.height;
+            const _canvasX = (touch.clientX - _rect.left) * (_cssW / _rect.width);
+            const _canvasY = (touch.clientY - _rect.top) * (_cssH / _rect.height);
+            const _hit = hitTestSprite(_canvasX, _canvasY, 8);
+            if (_hit) {
+              if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+                const _spell = activeSpells.find(
+                  (s2) => s2.id === selectedSpellIdRef.current
+                );
+                if (_spell) {
+                  const _liveCombatants = getLiveCombatants(combatantStoreCtx);
+                  const _live = isTileCastableLive(
+                    _spell,
+                    playerPosition,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    _liveCombatants,
+                    currentMap.tiles
+                  );
+                  if (_live.ok) {
+                    console.log("[CLICK-ENEMY]", {
+                      branchTaken: "cast-sprite",
+                      hitId: _hit.id,
+                      logicalTile: { x: _hit.logicalX, y: _hit.logicalY }
+                    });
+                    const _apCost = mapModifierRegistry.applyApCost(
+                      Number(_spell.apCost),
+                      activeMapModifierTypes,
+                      {
+                        log: (msg) => logDebugInfo("MODIFIER", msg),
+                        rng: Math.random
+                      }
+                    );
+                    if (currentBattleAp >= _apCost) {
+                      castRuntimeRef.current.apCost = _apCost;
+                      castRuntimeRef.current.spell = _spell;
+                      const _castResult = resolvePlayerCast(
+                        _spell,
+                        { x: _hit.logicalX, y: _hit.logicalY },
+                        playerSpellContext()
+                      );
+                      if (_castResult === "cast") {
+                        setCurrentBattleAp(
+                          (prev) => Math.max(0, prev - _apCost)
+                        );
+                        markFirstAction();
+                        challengeMaxApThisTurnRef.current += _apCost;
+                      }
+                    }
+                    return;
+                  }
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "rejected-live",
+                    hitId: _hit.id,
+                    reason: _live.reason
+                  });
+                  return;
+                }
+              } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+                setInspectCombatantId(_hit.id);
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "inspect-sprite",
+                  hitId: _hit.id
+                });
+                return;
+              } else if (selectedSpellIdRef.current && _hit.kind === "player") {
+                const _spell = activeSpells.find(
+                  (s2) => s2.id === selectedSpellIdRef.current
+                );
+                if (_spell && (_spell.targetType === "self" || _spell.targetType === "ally")) {
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "self-cast-sprite",
+                    hitId: "player"
+                  });
+                  const _apCost = mapModifierRegistry.applyApCost(
+                    Number(_spell.apCost),
+                    activeMapModifierTypes,
+                    {
+                      log: (msg) => logDebugInfo("MODIFIER", msg),
+                      rng: Math.random
+                    }
+                  );
+                  if (currentBattleAp >= _apCost) {
+                    castRuntimeRef.current.apCost = _apCost;
+                    castRuntimeRef.current.spell = _spell;
+                    const _castResult = resolvePlayerCast(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      playerSpellContext()
+                    );
+                    if (_castResult === "cast") {
+                      setCurrentBattleAp((prev) => Math.max(0, prev - _apCost));
+                      markFirstAction();
+                      challengeMaxApThisTurnRef.current += _apCost;
+                    }
+                  }
+                  return;
+                }
+              }
+            }
+          }
+        }
+      }
       const gridPos = clientToGrid(touch.clientX, touch.clientY);
       if (!gridPos) return;
       if (gridPos.x < 0 || gridPos.x >= WORLD_GRID_SIZE || gridPos.y < 0 || gridPos.y >= WORLD_GRID_SIZE)
@@ -64248,7 +65222,8 @@ const WorldExplorationInner = ({
       activeSpells,
       playerSpellContext,
       activeMapModifierTypes,
-      combatantStoreCtx
+      combatantStoreCtx,
+      hitTestSprite
     ]
   );
   reactExports.useEffect(() => {
@@ -64766,6 +65741,7 @@ const WorldExplorationInner = ({
         hpMap[e.id] = isBossForHp ? currentBossConfigRef.current.baseStats.hp : calcEnemyMaxHp(e.level);
       }
       aiGenerationRef.current += 1;
+      playSound("battle_start");
       const sortedByLevel = [...enemiesWithSpells].sort(
         (a2, b2) => b2.level - a2.level
       );
@@ -66299,10 +67275,28 @@ const WorldExplorationInner = ({
             });
           },
           // EDIT 2: reevaluate is an optional field on SummonExecutorHelpers.
-          // Safe fallback `() => null` — move-then-cast follow-up is deferred
-          // (the move still completes and the turn still advances via the
-          // try/finally below). Zero type risk; satisfies the helper contract.
-          reevaluate: () => null
+          // Real implementation: after the summon moves, re-decide with the
+          // UPDATED position (postMoveSummon.x/y — already moved by the
+          // executor) and REMAINING AP/MP (currentAp/currentMp — already
+          // deducted by applyMovement). Reuses the same aiCtx built above
+          // (line ~12913) for the initial decide — decideSummonAction reads
+          // position/AP/MP from the summon arg, not ctx, so passing the
+          // post-move summon is sufficient. Returns the EnemyAction (cast or
+          // melee) for the executor's follow-up at summonExecutor.ts:233-250,
+          // or null when the re-decide yields a move/skip (no second move —
+          // one re-decide max). The turn-advance guarantee in the try/finally
+          // below fires exactly once regardless of whether the follow-up ran.
+          reevaluate: (postMoveSummon, currentAp, currentMp) => {
+            const redecide = decideSummonAction(
+              {
+                ...postMoveSummon,
+                x: postMoveSummon.x,
+                y: postMoveSummon.y
+              },
+              aiCtx
+            );
+            return redecide.kind === "cast" || redecide.kind === "melee" ? redecide : null;
+          }
         };
         let advanced = false;
         try {
@@ -69392,6 +70386,8 @@ const WorldExplorationInner = ({
           BattleUIPanel,
           {
             inBattle,
+            inspectCombatantId,
+            onInspectCombatant: setInspectCombatantId,
             activeSpells,
             selectedSpellIdRef,
             spellSelectionVersion,
@@ -69478,6 +70474,7 @@ const WorldExplorationInner = ({
             userId
           }
         ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(SettingsPanel, { userId }),
         noTargetFlash && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
           {
@@ -72698,7 +73695,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BIw_4pVY.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-hfuVl6wS.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

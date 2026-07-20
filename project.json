@@ -1,17 +1,19 @@
 {
-  "overview": "A tactics RPG with grid-based spell combat, spellbook management, and a death-and-respawn flow.",
+  "overview": "ÆSTRALTØ is an isometric tactical combat and world-exploration game with sprite-based enemies, draggable UI panels, procedural audio, and summon allies.",
   "features": [
-    "Grid-based spell combat with targeting",
-    "Spellbook slot swapping",
-    "Death realm transition on defeat",
-    "Exploration and portal rules"
+    "Click a moving enemy's visible body to target it directly via per-frame sprite-rect hit-testing",
+    "Draggable UI panels with stronger magnetic snapping, live snap preview, and edge alignment",
+    "Panel layout saved to the backend and restored on relogin or a fresh device",
+    "Procedural WebAudio sound engine synthesizing twelve combat and pickup events with volume and mute controls",
+    "Summon allies that move and then cast or attack in the same turn"
   ],
   "category": "game",
   "tags": [
-    "tactics-rpg",
-    "combat",
-    "spellbook",
-    "death-pipeline"
+    "tactical-combat",
+    "isometric",
+    "procedural-audio",
+    "draggable-ui",
+    "internet-computer"
   ],
-  "last_updated": "2026-07-17T14:47:16.688Z"
+  "last_updated": "2026-07-20T15:48:26.197Z"
 }

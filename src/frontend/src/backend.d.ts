@@ -9,6 +9,7 @@ export interface None {
 export type Option<T> = Some<T> | None;
 export interface UserProfile {
     name: string;
+    uiLayout: string;
 }
 export interface MapModifierConfig {
     id: string;
@@ -841,6 +842,11 @@ export interface backendInterface {
      */
     getUserRole(): Promise<string>;
     /**
+     * / Load the caller's panel-layout blob. Returns the empty string if the
+     * / caller has no UserProfile yet or if uiLayout was never set.
+     */
+    getUserUiLayout(): Promise<string>;
+    /**
      * / Seed the names list on first call if it is empty.
      */
     initDefaultNames(): Promise<void>;
@@ -936,6 +942,19 @@ export interface backendInterface {
     }>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     saveKillCount(slot: bigint, kills: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Save the caller's full panel-layout blob (one compact JSON Text field).
+     * / Single save endpoint for the layout — no per-panel records.
+     * / Validates the caller is not anonymous. Reads the existing UserProfile,
+     * / updates only uiLayout, and writes it back to the userProfiles Map.
+     */
+    saveUserUiLayout(layout: string): Promise<{
         __kind__: "ok";
         ok: null;
     } | {

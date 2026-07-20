@@ -237,7 +237,7 @@ export interface TierSpawnConfig {
   'twoAwayPercent' : number,
   'threeOrMorePercent' : number,
 }
-export interface UserProfile { 'name' : string }
+export interface UserProfile { 'name' : string, 'uiLayout' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
@@ -731,6 +731,11 @@ export interface _SERVICE {
    */
   'getUserRole' : ActorMethod<[], string>,
   /**
+   * / Load the caller's panel-layout blob. Returns the empty string if the
+   * / caller has no UserProfile yet or if uiLayout was never set.
+   */
+  'getUserUiLayout' : ActorMethod<[], string>,
+  /**
    * / Seed the names list on first call if it is empty.
    */
   'initDefaultNames' : ActorMethod<[], undefined>,
@@ -831,6 +836,17 @@ export interface _SERVICE {
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'saveKillCount' : ActorMethod<
     [bigint, bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Save the caller's full panel-layout blob (one compact JSON Text field).
+   * / Single save endpoint for the layout — no per-panel records.
+   * / Validates the caller is not anonymous. Reads the existing UserProfile,
+   * / updates only uiLayout, and writes it back to the userProfiles Map.
+   */
+  'saveUserUiLayout' : ActorMethod<
+    [string],
     { 'ok' : null } |
       { 'err' : string }
   >,

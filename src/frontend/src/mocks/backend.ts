@@ -23,6 +23,7 @@ import type {
   backendInterface,
  } from "../backend";
 import type { Principal } from "@icp-sdk/core/principal";
+import type { UiLayoutActor } from "../hooks/usePanelLayout";
 
 type OkResult = { __kind__: "ok"; ok: null };
 
@@ -90,7 +91,7 @@ const sampleRegionConfig: RegionConfig = {
 
 const okResult: OkResult = { __kind__: "ok", ok: null };
 
-export const mockBackend: backendInterface = {
+export const mockBackend: UiLayoutActor = {
   adminDeleteEnemyConfig: async (_id: string) => okResult,
   adminDeletePlayerSpriteConfig: async (_id: string) => okResult,
   adminDeleteRegionConfig: async (_id: string) => okResult,
@@ -103,7 +104,7 @@ export const mockBackend: backendInterface = {
   createCharacter: async (_slot: bigint, _character: Character) => okResult,
   deleteCharacter: async (_slot: bigint) => okResult,
   getAllCharacters: async () => ({ __kind__: "ok" as const, ok: [] }),
-  getCallerUserProfile: async (): Promise<UserProfile | null> => ({ name: "Player One" }),
+  getCallerUserProfile: async (): Promise<UserProfile | null> => ({ name: "Player One", uiLayout: "" }),
   getCallerUserRole: async () => "user" as unknown as UserRole,
   getCharacter: async (_slot: bigint): Promise<CharacterSlot> => sampleCharacter,
   getCharacterSlots: async (): Promise<CharacterSlots> => sampleSlots,
@@ -113,7 +114,7 @@ export const mockBackend: backendInterface = {
   getPlayerSpriteConfigs: async (): Promise<Array<PlayerSpriteConfig>> => [],
   getRegionConfigs: async (): Promise<Array<RegionConfig>> => [sampleRegionConfig],
   getSpellConfigs: async (): Promise<Array<SpellConfig>> => [],
-  getUserProfile: async (_user: Principal): Promise<UserProfile | null> => ({ name: "Player One" }),
+  getUserProfile: async (_user: Principal): Promise<UserProfile | null> => ({ name: "Player One", uiLayout: "" }),
   getUserRole: async () => "user",
   isCallerAdmin: async () => false,
   saveCallerUserProfile: async (_profile: UserProfile) => undefined,
@@ -263,5 +264,10 @@ export const mockBackend: backendInterface = {
   // OQL query endpoints (caffeineai-oql Expose mixin)
   schema: async (): Promise<string> => JSON.stringify({ entities: [] }),
   execute: async (_qJson: string): Promise<Result> => ({ hasMore: false, rows: [] }),
+
+  // UI layout blob — single compact JSON Text field, backend-authoritative.
+  // Mock returns empty string so the frontend falls back to localStorage.
+  getUserUiLayout: async (): Promise<string> => "",
+  saveUserUiLayout: async (_layout: string): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }> => ({ __kind__: "ok" as const, ok: null as null }),
 
 };

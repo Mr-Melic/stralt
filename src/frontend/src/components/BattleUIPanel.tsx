@@ -60,6 +60,15 @@ export interface BattleUIPanelProps {
   spellCooldowns?: Record<string, number>;
   // Misc
   userId?: string;
+  /**
+   * Prop-driven inspect trigger. When set to a non-null combatant id,
+   * BattleUIPanel opens the inspect card for that combatant — reusing the
+   * existing chip-button inspect flow (setSelectedCombatantId) without
+   * refactoring it. Used by WorldExploration's sprite-hit inspect branch so a
+   * direct body click on a hostile opens inspect, mirroring the chip button.
+   */
+  inspectCombatantId?: string | null;
+  onInspectCombatant?: (id: string | null) => void;
 }
 
 const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
@@ -89,6 +98,8 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   onEndBattle,
   spellCooldowns = {},
   userId,
+  inspectCombatantId,
+  onInspectCombatant,
 }) => {
   const forceUpdate = spellSelectionVersion; // keeps spellSelectionVersion used
   const [selectedCombatantId, setSelectedCombatantId] = useState<string | null>(
@@ -127,6 +138,35 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
+
+  // Prop-driven inspect trigger: when WorldExploration's sprite-hit inspect
+  // branch sets inspectCombatantId to a non-null combatant id, open the inspect
+  // card by reusing the existing setSelectedCombatantId flow. Toggling back to
+  // null closes the card. This does NOT touch the chip-button inspect path —
+  // it is purely an additional trigger.
+  useEffect(() => {
+    if (inspectCombatantId != null) {
+      setSelectedCombatantId(inspectCombatantId);
+      // Anchor the popup near the active chip if available; fall back to null
+      // (StatPopup handles a null anchor by centering).
+      const rect = chipRefs.current
+        .get(inspectCombatantId)
+        ?.getBoundingClientRect();
+      setPopupAnchor(rect || null);
+    }
+  }, [inspectCombatantId]);
+
+  // Notify parent when the user closes inspect via Escape (selectedCombatantId
+  // becomes null) so the prop and internal state stay in sync.
+  useEffect(() => {
+    if (
+      selectedCombatantId == null &&
+      inspectCombatantId != null &&
+      onInspectCombatant
+    ) {
+      onInspectCombatant(null);
+    }
+  }, [selectedCombatantId, inspectCombatantId, onInspectCombatant]);
 
   const currentCombatant = turnOrder[currentTurnIndex];
 

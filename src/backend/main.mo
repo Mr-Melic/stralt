@@ -17,6 +17,7 @@ import Float "mo:core/Float";
 import OQL "mo:caffeineai-oql";
 import Expose "mo:caffeineai-oql/Expose";
 import Text "mo:core/Text";
+import Migration "migration";
 
 
 
@@ -31,13 +32,17 @@ import Text "mo:core/Text";
 
 
 
+(with migration = Migration.run)
 actor {
     let accessControlState = AccessControl.initState();
     include MixinAuthorization(accessControlState);
 
     public type UserProfile = {
         name : Text;
-        // Other user metadata if needed
+        /// Compact JSON blob holding the caller's full panel layout (per panel id:
+        /// x, y, folded/width state). Empty string = no layout saved yet.
+        /// Single field, single endpoint (saveUserUiLayout / getUserUiLayout).
+        uiLayout : Text;
     };
 
     let userProfiles = Map.empty<Principal, UserProfile>();
@@ -55,6 +60,34 @@ actor {
 
     public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
         userProfiles.add(caller, profile);
+    };
+
+    /// Save the caller's full panel-layout blob (one compact JSON Text field).
+    /// Single save endpoint for the layout — no per-panel records.
+    /// Validates the caller is not anonymous. Reads the existing UserProfile,
+    /// updates only uiLayout, and writes it back to the userProfiles Map.
+    public shared ({ caller }) func saveUserUiLayout(layout : Text) : async { #ok; #err : Text } {
+        if (caller.isAnonymous()) {
+            return #err("Unauthorized: anonymous caller");
+        };
+        switch (userProfiles.get(caller)) {
+            case null {
+                userProfiles.add(caller, { name = ""; uiLayout = layout });
+            };
+            case (?existing) {
+                userProfiles.add(caller, { existing with uiLayout = layout });
+            };
+        };
+        #ok;
+    };
+
+    /// Load the caller's panel-layout blob. Returns the empty string if the
+    /// caller has no UserProfile yet or if uiLayout was never set.
+    public query ({ caller }) func getUserUiLayout() : async Text {
+        switch (userProfiles.get(caller)) {
+            case null { "" };
+            case (?profile) { profile.uiLayout };
+        };
     };
 
     // Character management system
