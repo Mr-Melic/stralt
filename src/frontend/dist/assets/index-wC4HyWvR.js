@@ -34132,7 +34132,7 @@ function subscribeDebugPaused(callback) {
 }
 function logDebug(category, level, message, data) {
   const entry = {
-    ts: performance.now(),
+    ts: Date.now(),
     category,
     level,
     message,
@@ -43853,6 +43853,8 @@ const STORAGE_PREFIX = "pbv_panel_layout_";
 const SNAP_THRESHOLD = 140;
 const SNAP_GAP = 10;
 const panelRegistry = {};
+const TOP_BAR_PANEL_ID = "__topbar__";
+const TOP_BAR_FALLBACK_BOTTOM = 48;
 function loadLayout(userId) {
   try {
     const raw = localStorage.getItem(STORAGE_PREFIX + userId);
@@ -43891,6 +43893,7 @@ function computeSnapPosition(movedId, pos, w2, h2) {
   let bestSnapY = null;
   for (const [otherId, other] of Object.entries(panelRegistry)) {
     if (otherId === movedId) continue;
+    if (other.w === 0 || other.h === 0) continue;
     const rToL = Math.abs(x3 + w2 - other.x);
     const lToR = Math.abs(x3 - (other.x + other.w));
     const bToT = Math.abs(y2 + h2 - other.y);
@@ -43911,38 +43914,50 @@ function computeSnapPosition(movedId, pos, w2, h2) {
   if (bestSnapX) x3 = bestSnapX.val;
   if (bestSnapY) y2 = bestSnapY.val;
   if (!bestSnapY) {
-    let bestAlignTop = null;
+    let bestAlign = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       const topDiff = Math.abs(y2 - other.y);
-      if (topDiff < SNAP_THRESHOLD && (!bestAlignTop || topDiff < bestAlignTop.dist)) {
-        bestAlignTop = { val: other.y, dist: topDiff };
+      if (topDiff < SNAP_THRESHOLD && (!bestAlign || topDiff < bestAlign.dist)) {
+        bestAlign = { val: other.y, dist: topDiff };
+      }
+      const botDiff = Math.abs(y2 + h2 - (other.y + other.h));
+      if (botDiff < SNAP_THRESHOLD && (!bestAlign || botDiff < bestAlign.dist)) {
+        bestAlign = { val: other.y + other.h - h2, dist: botDiff };
       }
     }
-    if (bestAlignTop) y2 = bestAlignTop.val;
+    if (bestAlign) y2 = bestAlign.val;
   }
   if (!bestSnapX) {
-    let bestAlignLeft = null;
+    let bestAlign = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       const leftDiff = Math.abs(x3 - other.x);
-      if (leftDiff < SNAP_THRESHOLD && (!bestAlignLeft || leftDiff < bestAlignLeft.dist)) {
-        bestAlignLeft = { val: other.x, dist: leftDiff };
+      if (leftDiff < SNAP_THRESHOLD && (!bestAlign || leftDiff < bestAlign.dist)) {
+        bestAlign = { val: other.x, dist: leftDiff };
+      }
+      const rightDiff = Math.abs(x3 + w2 - (other.x + other.w));
+      if (rightDiff < SNAP_THRESHOLD && (!bestAlign || rightDiff < bestAlign.dist)) {
+        bestAlign = { val: other.x + other.w - w2, dist: rightDiff };
+      }
+      const centerDiff = Math.abs(x3 + w2 / 2 - (other.x + other.w / 2));
+      if (centerDiff < SNAP_THRESHOLD && (!bestAlign || centerDiff < bestAlign.dist)) {
+        bestAlign = { val: other.x + other.w / 2 - w2 / 2, dist: centerDiff };
       }
     }
-    if (bestAlignLeft) x3 = bestAlignLeft.val;
+    if (bestAlign) x3 = bestAlign.val;
   }
-  const TOP_BAR_BOTTOM = 44;
-  const TOP_BAR_SNAP_ZONE = 60;
-  const TOP_BAR_SNAP_TARGET = TOP_BAR_BOTTOM + 4;
-  if (!bestSnapY && Math.abs(y2 - TOP_BAR_BOTTOM) < TOP_BAR_SNAP_ZONE) {
-    y2 = TOP_BAR_SNAP_TARGET;
-  }
+  const topBar = panelRegistry[TOP_BAR_PANEL_ID];
+  const floorY = topBar && topBar.h > 0 ? topBar.y + topBar.h + SNAP_GAP : TOP_BAR_FALLBACK_BOTTOM + SNAP_GAP;
+  if (y2 < floorY) y2 = floorY;
   const MAX_PASSES = 5;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
     let resolved = true;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       const overlapX = x3 < other.x + other.w && x3 + w2 > other.x;
       const overlapY = y2 < other.y + other.h && y2 + h2 > other.y;
       if (!overlapX || !overlapY) continue;
@@ -43960,7 +43975,7 @@ function computeSnapPosition(movedId, pos, w2, h2) {
       } else {
         y2 = other.y - h2 - SNAP_GAP;
       }
-      if (y2 < TOP_BAR_SNAP_TARGET) y2 = TOP_BAR_SNAP_TARGET;
+      if (y2 < floorY) y2 = floorY;
       resolved = false;
     }
     if (resolved) break;
@@ -43975,6 +43990,7 @@ function computeLiveSnapPreview(movedId, pos, w2, h2) {
   let bestSnapY = null;
   for (const [otherId, other] of Object.entries(panelRegistry)) {
     if (otherId === movedId) continue;
+    if (other.w === 0 || other.h === 0) continue;
     const rToL = Math.abs(x3 + w2 - other.x);
     const lToR = Math.abs(x3 - (other.x + other.w));
     const bToT = Math.abs(y2 + h2 - other.y);
@@ -43996,16 +44012,25 @@ function computeLiveSnapPreview(movedId, pos, w2, h2) {
     x3 = bestSnapX.val;
     snappedX = true;
   } else {
-    let bestAlignLeft = null;
+    let bestAlign = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       const leftDiff = Math.abs(pos.x - other.x);
-      if (leftDiff < SNAP_THRESHOLD && (!bestAlignLeft || leftDiff < bestAlignLeft.dist)) {
-        bestAlignLeft = { val: other.x, dist: leftDiff };
+      if (leftDiff < SNAP_THRESHOLD && (!bestAlign || leftDiff < bestAlign.dist)) {
+        bestAlign = { val: other.x, dist: leftDiff };
+      }
+      const rightDiff = Math.abs(pos.x + w2 - (other.x + other.w));
+      if (rightDiff < SNAP_THRESHOLD && (!bestAlign || rightDiff < bestAlign.dist)) {
+        bestAlign = { val: other.x + other.w - w2, dist: rightDiff };
+      }
+      const centerDiff = Math.abs(pos.x + w2 / 2 - (other.x + other.w / 2));
+      if (centerDiff < SNAP_THRESHOLD && (!bestAlign || centerDiff < bestAlign.dist)) {
+        bestAlign = { val: other.x + other.w / 2 - w2 / 2, dist: centerDiff };
       }
     }
-    if (bestAlignLeft) {
-      x3 = bestAlignLeft.val;
+    if (bestAlign) {
+      x3 = bestAlign.val;
       snappedX = true;
     }
   }
@@ -44013,16 +44038,21 @@ function computeLiveSnapPreview(movedId, pos, w2, h2) {
     y2 = bestSnapY.val;
     snappedY = true;
   } else {
-    let bestAlignTop = null;
+    let bestAlign = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       const topDiff = Math.abs(pos.y - other.y);
-      if (topDiff < SNAP_THRESHOLD && (!bestAlignTop || topDiff < bestAlignTop.dist)) {
-        bestAlignTop = { val: other.y, dist: topDiff };
+      if (topDiff < SNAP_THRESHOLD && (!bestAlign || topDiff < bestAlign.dist)) {
+        bestAlign = { val: other.y, dist: topDiff };
+      }
+      const botDiff = Math.abs(pos.y + h2 - (other.y + other.h));
+      if (botDiff < SNAP_THRESHOLD && (!bestAlign || botDiff < bestAlign.dist)) {
+        bestAlign = { val: other.y + other.h - h2, dist: botDiff };
       }
     }
-    if (bestAlignTop) {
-      y2 = bestAlignTop.val;
+    if (bestAlign) {
+      y2 = bestAlign.val;
       snappedY = true;
     }
   }
@@ -44175,6 +44205,12 @@ const DraggablePanel = ({
     dragState.current.startPanelY = currentPosRef.current.y;
     dragState.current.active = true;
     setIsDragging(true);
+    console.log(
+      "[UI-SNAP] targets=",
+      Object.keys(panelRegistry),
+      "rects=",
+      JSON.stringify(panelRegistry)
+    );
   }, []);
   const onTouchStart = reactExports.useCallback((e) => {
     const touch = e.touches[0];
@@ -44184,6 +44220,12 @@ const DraggablePanel = ({
     dragState.current.startPanelY = currentPosRef.current.y;
     dragState.current.active = true;
     setIsDragging(true);
+    console.log(
+      "[UI-SNAP] targets=",
+      Object.keys(panelRegistry),
+      "rects=",
+      JSON.stringify(panelRegistry)
+    );
   }, []);
   reactExports.useEffect(() => {
     const onMove = (clientX, clientY) => {
@@ -44263,12 +44305,21 @@ const DraggablePanel = ({
   reactExports.useEffect(() => {
     const el = panelRef.current;
     if (!el) return;
+    const pendingRafRef = { current: null };
     const update = () => {
+      const w2 = el.offsetWidth;
+      const h2 = el.offsetHeight;
+      if (w2 === 0 || h2 === 0) {
+        const raf = requestAnimationFrame(update);
+        pendingRafRef.current = raf;
+        return;
+      }
+      pendingRafRef.current = null;
       panelRegistry[panelId] = {
         x: currentPosRef.current.x,
         y: currentPosRef.current.y,
-        w: el.offsetWidth,
-        h: el.offsetHeight
+        w: w2,
+        h: h2
       };
     };
     update();
@@ -44276,6 +44327,8 @@ const DraggablePanel = ({
     ro.observe(el);
     return () => {
       ro.disconnect();
+      if (pendingRafRef.current !== null)
+        cancelAnimationFrame(pendingRafRef.current);
       delete panelRegistry[panelId];
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
     };
@@ -52802,6 +52855,10 @@ function resolvePlayerCast(spell, gridPos, ctx) {
   if (!isPhysical) {
     const failRoll = ctx.rng() * 100;
     if (failRoll < ctx.spellFailChance) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "FAIL roll (failRoll=${failRoll.toFixed(2)} < spellFailChance=${ctx.spellFailChance})"}`
+      );
       ctx.log(`${spell.name} fizzled!`, "#AAAAAA");
       return "fizzled";
     }
@@ -52854,6 +52911,10 @@ function resolvePlayerCast(spell, gridPos, ctx) {
   }
   if (spell.isTimestep) {
     if (ctx.consumeTimestep()) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "timestep already consumed this battle"}`
+      );
       ctx.log("Timestep can only be used once per battle!", "#fbbf24");
       return "abort";
     }
@@ -52933,7 +52994,15 @@ function resolvePlayerCast(spell, gridPos, ctx) {
     ctx.recordSpellType(spell.effectType ?? "damage");
     return "cast";
   }
-  if (targetEnemy || isDrainSpell && !isPlayerTile) {
+  if (isDrainSpell && !targetEnemy) {
+    logDebugInfo(
+      "RESOLVER",
+      `abort {spellId: "${spell.id}", reason: "drain requires enemy target on tile (targetEnemy=undefined)"}`
+    );
+    ctx.log(`No enemy on target tile for ${spell.name}!`, "#94a3b8");
+    return "abort";
+  }
+  if (targetEnemy || spell.hitsMultiple) {
     const baseDamage = Number(spell.damage);
     const rawDmg = calcScaledDamageInline(
       baseDamage,
@@ -52983,6 +53052,10 @@ function resolvePlayerCast(spell, gridPos, ctx) {
     }
     const targetsToHit = ctx.getAoETargets(spell, gridPos, targetEnemy);
     if (targetsToHit.length === 0) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "no target in range (targetsToHit empty after getAoETargets)"}`
+      );
       ctx.log(`No target in range for ${spell.name}!`, "#94a3b8");
       return "abort";
     }
@@ -58335,6 +58408,7 @@ let _fbNameIdx = 0;
 let _progressionDivergenceWarned = false;
 const _clickGuardLastLog = /* @__PURE__ */ new Map();
 const _CLICK_THROTTLE_MS = 1e3;
+let _spellbarBisectLoadSkipCount = 0;
 function logClickGuard(key2, detail) {
   const now2 = Date.now();
   const last = _clickGuardLastLog.get(key2);
@@ -58528,6 +58602,7 @@ const WorldExplorationInner = ({
   onActiveEffectsChange,
   onInBattleChange,
   onTransitionChange,
+  onDebugContextChange,
   userId,
   onDebugLog,
   onShowBattleSummary
@@ -59389,11 +59464,14 @@ const WorldExplorationInner = ({
       loadedForCharacterRef.current = null;
     }
     if (loadedForCharacterRef.current === _charKey && !spellBarDirtyRef.current) {
-      logDebugInfo(
-        "SPELLS",
-        "[SPELLBAR-BISECT] load skipped (already loaded for character)",
-        { userId, characterSlot, charKey: _charKey }
-      );
+      _spellbarBisectLoadSkipCount++;
+      if (_spellbarBisectLoadSkipCount % 50 === 0) {
+        logDebugInfo(
+          "SPELLS",
+          `[SPELLBAR-BISECT] load skipped (already loaded for character) [x${_spellbarBisectLoadSkipCount}]`,
+          { userId, characterSlot, charKey: _charKey }
+        );
+      }
       return;
     }
     logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load effect fired", {
@@ -64971,7 +65049,7 @@ const WorldExplorationInner = ({
   ]);
   const handleCanvasClick = reactExports.useCallback(
     (event) => {
-      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2;
+      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2, _l2, _m;
       if (!currentMap || transitionInProgressRef.current) return;
       {
         const _canvas = canvasRef.current;
@@ -65328,6 +65406,20 @@ const WorldExplorationInner = ({
             });
             return;
           }
+          const _isSelfOrAllySpellMouse = spell.targetType === "self" || spell.targetType === "ally" || spell.effectType === "buff";
+          if (!_isSelfOrAllySpellMouse && gridPos.x === playerPositionRef.current.x && gridPos.y === playerPositionRef.current.y) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "invalid target"
+            );
+            logDebugInfo(
+              "BATTLE",
+              `[CLICK-ENEMY] self-tile-hostile-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`
+            );
+            return;
+          }
           const apCost = mapModifierRegistry.applyApCost(
             Number(spell.apCost),
             activeMapModifierTypes,
@@ -65336,7 +65428,7 @@ const WorldExplorationInner = ({
               rng: Math.random
             }
           );
-          if (currentBattleApRef.current < apCost) return;
+          if (!(currentBattleApRef.current >= apCost)) return;
           castRuntimeRef.current.apCost = apCost;
           castRuntimeRef.current.spell = spell;
           if (spell.isSummon) {
@@ -65381,7 +65473,7 @@ const WorldExplorationInner = ({
             markFirstAction();
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
+              (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "Fizzled!"
@@ -65414,7 +65506,7 @@ const WorldExplorationInner = ({
             }
           } else {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
+            (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
               _screen.x,
               _screen.y,
               castResult === "no_ap" ? "No AP!" : "Aborted"
@@ -65422,8 +65514,20 @@ const WorldExplorationInner = ({
           }
         } else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
-          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_j2 = currentMap.voidTiles) == null ? void 0 : _j2.has(`${gridPos.x},${gridPos.y}`)))
+          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`)))
             return;
+          const _walkOccupantMouse = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
+          );
+          if (_walkOccupantMouse) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            (_l2 = effectsManagerRef.current) == null ? void 0 : _l2.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Occupied"
+            );
+            return;
+          }
           const reachable = getMpReachableTiles();
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
           const path = findPath(playerPositionRef.current, gridPos);
@@ -65456,7 +65560,7 @@ const WorldExplorationInner = ({
         } else ;
         return;
       }
-      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`))) {
+      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_m = currentMap.voidTiles) == null ? void 0 : _m.has(`${gridPos.x},${gridPos.y}`))) {
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
         const path = findPath(playerPositionRef.current, gridPos);
         if (path.length > 0) {
@@ -65526,7 +65630,7 @@ const WorldExplorationInner = ({
   );
   const handleCanvasTouch = reactExports.useCallback(
     (event) => {
-      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2;
+      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2, _l2, _m;
       if (!currentMap || transitionInProgressRef.current) return;
       event.preventDefault();
       const touch = event.changedTouches[0];
@@ -65886,6 +65990,20 @@ const WorldExplorationInner = ({
             });
             return;
           }
+          const _isSelfOrAllySpellTouch = spell.targetType === "self" || spell.targetType === "ally" || spell.effectType === "buff";
+          if (!_isSelfOrAllySpellTouch && gridPos.x === playerPositionRef.current.x && gridPos.y === playerPositionRef.current.y) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "invalid target"
+            );
+            logDebugInfo(
+              "BATTLE",
+              `[CLICK-ENEMY] self-tile-hostile-rejected.touch casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`
+            );
+            return;
+          }
           const apCost = mapModifierRegistry.applyApCost(
             Number(spell.apCost),
             activeMapModifierTypes,
@@ -65894,7 +66012,7 @@ const WorldExplorationInner = ({
               rng: Math.random
             }
           );
-          if (currentBattleApRef.current < apCost) return;
+          if (!(currentBattleApRef.current >= apCost)) return;
           castRuntimeRef.current.apCost = apCost;
           castRuntimeRef.current.spell = spell;
           if (spell.isSummon) {
@@ -65939,7 +66057,7 @@ const WorldExplorationInner = ({
             markFirstAction();
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
+              (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "Fizzled!"
@@ -65972,7 +66090,7 @@ const WorldExplorationInner = ({
             }
           } else {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
+            (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
               _screen.x,
               _screen.y,
               castResult === "no_ap" ? "No AP!" : "Aborted"
@@ -65980,8 +66098,20 @@ const WorldExplorationInner = ({
           }
         } else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
-          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_j2 = currentMap.voidTiles) == null ? void 0 : _j2.has(`${gridPos.x},${gridPos.y}`)))
+          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`)))
             return;
+          const _walkOccupantTouch = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
+          );
+          if (_walkOccupantTouch) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            (_l2 = effectsManagerRef.current) == null ? void 0 : _l2.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Occupied"
+            );
+            return;
+          }
           const reachable = getMpReachableTiles();
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
           const path = findPath(playerPositionRef.current, gridPos);
@@ -65999,7 +66129,7 @@ const WorldExplorationInner = ({
         } else ;
         return;
       }
-      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`))) {
+      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_m = currentMap.voidTiles) == null ? void 0 : _m.has(`${gridPos.x},${gridPos.y}`))) {
         if (inBattleRef.current && currentMap.portals.some((p2) => p2.x === gridPos.x && p2.y === gridPos.y))
           return;
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
@@ -66575,9 +66705,6 @@ const WorldExplorationInner = ({
         (c2) => c2.type === "enemy" && c2.id === (leaderEnemy == null ? void 0 : leaderEnemy.id) ? { ...c2, isLeader: true } : c2
       );
       cleanupRanRef.current = false;
-      console.log("[SPELLBAR-BISECT]", {
-        spellIds: activeSpells.map((s2) => s2 == null ? void 0 : s2.id).filter(Boolean)
-      });
       reactDomExports.flushSync(() => {
         syncCombatants(combatantStoreCtx, enemiesWithSpells);
         mapModifierRegistry.applyBattleStart(
@@ -67809,6 +67936,37 @@ const WorldExplorationInner = ({
       }
     };
   }, [inBattle, currentTurnIndex, isTimeWarp]);
+  reactExports.useEffect(() => {
+    if (!onDebugContextChange) return;
+    onDebugContextChange({
+      characterName: (character == null ? void 0 : character.name) || "Adventurer",
+      characterLevel: characterStats == null ? void 0 : characterStats.level,
+      characterSlot,
+      currentMapId: currentMap == null ? void 0 : currentMap.id,
+      inBattle,
+      battlePhase,
+      currentTurnEntry: turnOrder[currentTurnIndex] ?? null,
+      combatants: getLiveCombatants(combatantStoreCtx).map((c2) => ({
+        id: c2.id,
+        side: c2.side,
+        isSummon: c2.isSummon,
+        hp: c2.hp,
+        pos: { x: c2.x, y: c2.y }
+      })),
+      turnOrderIds: turnOrder.map((c2) => c2.id)
+    });
+  }, [
+    inBattle,
+    currentMap == null ? void 0 : currentMap.id,
+    characterStats == null ? void 0 : characterStats.level,
+    character == null ? void 0 : character.name,
+    characterSlot,
+    battlePhase,
+    currentTurnIndex,
+    turnOrder,
+    combatantStoreCtx,
+    onDebugContextChange
+  ]);
   reactExports.useEffect(() => {
     if (!inBattle || battlePhase !== "enemy" || enemyTurnInProgressRef.current)
       return;
@@ -69528,7 +69686,7 @@ const WorldExplorationInner = ({
       activeMapModifierTypes,
       { log: (msg) => logDebugInfo("MODIFIER", msg), rng: Math.random }
     );
-    if (currentBattleApRef.current < apCost) return;
+    if (!(currentBattleApRef.current >= apCost)) return;
     const isHealSpell = spell.targetType === "self" && spell.effectType === "heal";
     let gridPos;
     if (isHealSpell) {
@@ -71995,7 +72153,11 @@ const GameFlow = ({
   const [showBossGuide, setShowBossGuide] = reactExports.useState(false);
   const [showShop, setShowShop] = reactExports.useState(false);
   const [dokaBalance, setDokaBalance] = reactExports.useState(0);
+  const [debugContext, setDebugContext] = reactExports.useState(
+    void 0
+  );
   const { data: backendDokaBalance } = useGetCallerDokaBalance();
+  const topBarRef = reactExports.useRef(null);
   const addBattleLogEntry = reactExports.useCallback((entry) => {
     setBattleLogEntries((prev) => {
       const next = [...prev, entry];
@@ -72023,6 +72185,28 @@ const GameFlow = ({
       setDokaBalance(backendDokaBalance);
     }
   }, [backendDokaBalance]);
+  reactExports.useEffect(() => {
+    const isGameMode2 = currentStage === "world";
+    const el = topBarRef.current;
+    if (!isGameMode2 || !el) return;
+    const update = () => {
+      panelRegistry[TOP_BAR_PANEL_ID] = {
+        x: 0,
+        y: 0,
+        w: window.innerWidth,
+        h: el.offsetHeight || 48
+      };
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+      delete panelRegistry[TOP_BAR_PANEL_ID];
+    };
+  }, [currentStage]);
   const handleCreateCharacter = (slot) => {
     setEditingSlot(slot);
     setSelectedCharacter(null);
@@ -72072,7 +72256,8 @@ const GameFlow = ({
           onDebugLog: (event, detail) => logDebugInfo("GENERAL", event, detail),
           onShowBattleSummary,
           dokaBalance,
-          onDokaBalanceChange: setDokaBalance
+          onDokaBalanceChange: setDokaBalance,
+          onDebugContextChange: setDebugContext
         }
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -72083,144 +72268,152 @@ const GameFlow = ({
           onClearBattleLog: clearBattleLog,
           activeEffects,
           isPaused: isInBattle || isTransitioning,
-          userId: String(userProfile.id ?? userProfile.name ?? "guest")
+          userId: String(userProfile.id ?? userProfile.name ?? "guest"),
+          debugContext
         }
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12", children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "span",
-            {
-              className: "text-xs font-bold",
-              style: { color: "#f0c44a", fontFamily: "var(--font-display)" },
-              children: [
-                "🧛 ",
-                userProfile.name
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-blue text-[10px]", children: "Map" }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1 min-w-[140px]", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-bar-label", children: "XP" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-bar-value", children: [
-                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.xp) ?? 0,
-                " /",
-                " ",
-                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.xpToNextLevel) ?? 100
-              ] })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-bar-track", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "div",
-              {
-                className: "stone-bar-fill stone-bar-fill-xp",
-                style: {
-                  width: `${Math.min(100, ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.xp) ?? 0) / ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.xpToNextLevel) || 1) * 100)}%`
+      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+        "div",
+        {
+          ref: topBarRef,
+          className: "fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12",
+          children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "span",
+                {
+                  className: "text-xs font-bold",
+                  style: { color: "#f0c44a", fontFamily: "var(--font-display)" },
+                  children: [
+                    "🧛 ",
+                    userProfile.name
+                  ]
                 }
-              }
-            ) }),
-            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mt-0.5", children: [
-              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-bar-label", children: "BLOOD" }),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-bar-value", children: [
-                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.blood) ?? 0,
-                " /",
-                " ",
-                (selectedCharacterProp == null ? void 0 : selectedCharacterProp.maxBlood) ?? 100
-              ] })
-            ] }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-bar-track", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "div",
-              {
-                className: "stone-bar-fill stone-bar-fill-blood",
-                style: {
-                  width: `${Math.min(100, ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.blood) ?? 0) / ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.maxBlood) || 1) * 100)}%`
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-blue text-[10px]", children: "Map" }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1 min-w-[140px]", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-bar-label", children: "XP" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-bar-value", children: [
+                    (selectedCharacterProp == null ? void 0 : selectedCharacterProp.xp) ?? 0,
+                    " /",
+                    " ",
+                    (selectedCharacterProp == null ? void 0 : selectedCharacterProp.xpToNextLevel) ?? 100
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-bar-track", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    className: "stone-bar-fill stone-bar-fill-xp",
+                    style: {
+                      width: `${Math.min(100, ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.xp) ?? 0) / ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.xpToNextLevel) || 1) * 100)}%`
+                    }
+                  }
+                ) }),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center justify-between mt-0.5", children: [
+                  /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-bar-label", children: "BLOOD" }),
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "stone-bar-value", children: [
+                    (selectedCharacterProp == null ? void 0 : selectedCharacterProp.blood) ?? 0,
+                    " /",
+                    " ",
+                    (selectedCharacterProp == null ? void 0 : selectedCharacterProp.maxBlood) ?? 100
+                  ] })
+                ] }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-bar-track", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    className: "stone-bar-fill stone-bar-fill-blood",
+                    style: {
+                      width: `${Math.min(100, ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.blood) ?? 0) / ((selectedCharacterProp == null ? void 0 : selectedCharacterProp.maxBlood) || 1) * 100)}%`
+                    }
+                  }
+                ) })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-coin w-5 h-5 text-[9px]" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs font-bold", style: { color: "#f0c44a" }, children: dokaBalance })
+              ] }),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "game.shop_button",
+                  onClick: () => setShowShop((v2) => !v2),
+                  className: "stone-btn-slate stone-nav-btn flex items-center gap-1.5 px-3 py-1.5 text-xs",
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(ShoppingCart, { size: 14 }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "SHOP" })
+                  ]
                 }
-              }
-            ) })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-1", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "stone-coin w-5 h-5 text-[9px]" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs font-bold", style: { color: "#f0c44a" }, children: dokaBalance })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "button",
-            {
-              type: "button",
-              "data-ocid": "game.shop_button",
-              onClick: () => setShowShop((v2) => !v2),
-              className: "stone-btn-slate stone-nav-btn flex items-center gap-1.5 px-3 py-1.5 text-xs",
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(ShoppingCart, { size: 14 }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "SHOP" })
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(
-            "button",
-            {
-              type: "button",
-              onClick: onBoostToggle,
-              className: `stone-pill ${boostMode === "xp" ? "stone-pill-purple" : "stone-pill-gold"} text-xs px-2 py-1`,
-              children: boostMode === "xp" ? "⚡ XP" : "💰 RWD"
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-crimson text-[10px]", children: "Zone" })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "button",
-            {
-              type: "button",
-              "data-ocid": "game.leaderboard_button",
-              onClick: () => setShowLeaderboard((v2) => !v2),
-              className: `${showLeaderboard ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Trophy, { size: 13 }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Board" })
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "button",
-            {
-              type: "button",
-              "data-ocid": "game.achievements_button",
-              onClick: () => setShowAchievements((v2) => !v2),
-              className: `${showAchievements ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[13px]", children: "🏆" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Feats" })
-              ]
-            }
-          ),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "button",
-            {
-              type: "button",
-              "data-ocid": "game.boss_guide_button",
-              onClick: () => setShowBossGuide((v2) => !v2),
-              className: `${showBossGuide ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Crown, { size: 13 }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Bosses" })
-              ]
-            }
-          ),
-          isAdmin && onOpenAdmin && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-            "button",
-            {
-              type: "button",
-              "data-ocid": "game.admin_button",
-              onClick: onOpenAdmin,
-              className: "stone-btn-crimson stone-nav-btn",
-              children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[13px]", children: "🛡️" }),
-                /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Admin" })
-              ]
-            }
-          )
-        ] })
-      ] }),
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                "button",
+                {
+                  type: "button",
+                  onClick: onBoostToggle,
+                  className: `stone-pill ${boostMode === "xp" ? "stone-pill-purple" : "stone-pill-gold"} text-xs px-2 py-1`,
+                  children: boostMode === "xp" ? "⚡ XP" : "💰 RWD"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "stone-pill stone-pill-crimson text-[10px]", children: "Zone" })
+            ] }),
+            /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2", children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "game.leaderboard_button",
+                  onClick: () => setShowLeaderboard((v2) => !v2),
+                  className: `${showLeaderboard ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(Trophy, { size: 13 }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Board" })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "game.achievements_button",
+                  onClick: () => setShowAchievements((v2) => !v2),
+                  className: `${showAchievements ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[13px]", children: "🏆" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Feats" })
+                  ]
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "game.boss_guide_button",
+                  onClick: () => setShowBossGuide((v2) => !v2),
+                  className: `${showBossGuide ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`,
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(Crown, { size: 13 }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Bosses" })
+                  ]
+                }
+              ),
+              isAdmin && onOpenAdmin && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "button",
+                {
+                  type: "button",
+                  "data-ocid": "game.admin_button",
+                  onClick: onOpenAdmin,
+                  className: "stone-btn-crimson stone-nav-btn",
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[13px]", children: "🛡️" }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "Admin" })
+                  ]
+                }
+              )
+            ] })
+          ]
+        }
+      ),
       showBossGuide && /* @__PURE__ */ jsxRuntimeExports.jsx(BossGuideModal, { onClose: () => setShowBossGuide(false), open: true }),
       showLeaderboard && /* @__PURE__ */ jsxRuntimeExports.jsx(LeaderboardModal, { onClose: () => setShowLeaderboard(false) }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -74516,7 +74709,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-Cd8AzgDS.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DuQlssqB.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

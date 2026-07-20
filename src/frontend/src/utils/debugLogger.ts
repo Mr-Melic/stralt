@@ -18,7 +18,8 @@ export type LogCategory =
   | "GENERAL"
   | "SUMMON"
   | "TURN"
-  | "MODIFIER";
+  | "MODIFIER"
+  | "RESOLVER";
 
 const IS_DEV =
   typeof process !== "undefined" && process.env.NODE_ENV === "development";
@@ -90,7 +91,7 @@ export function logDebug(
   data?: unknown,
 ): void {
   const entry: DebugLogEntry = {
-    ts: performance.now(),
+    ts: Date.now(),
     category,
     level,
     message,

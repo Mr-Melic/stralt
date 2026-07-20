@@ -35,6 +35,7 @@ import AchievementToast from "./AchievementToast";
 import AchievementsPanel from "./AchievementsPanel";
 import BattleUIPanel from "./BattleUIPanel";
 import BoostToggle from "./BoostToggle";
+import type { DebugContext } from "./ChatPanel";
 import DraggablePanel from "./DraggablePanel";
 import EnemyRegister from "./EnemyRegister";
 import GameOverModal from "./GameOverModal";
@@ -213,6 +214,15 @@ let _progressionDivergenceWarned = false;
 // (not dev-only) per spec — always visible in the overlay buffer.
 const _clickGuardLastLog: Map<string, number> = new Map();
 const _CLICK_THROTTLE_MS = 1000;
+
+// ─── [SPELLBAR-BISECT] throttle counters (Part 4) ───────────────────────────
+// The spell-bar bisect logs fire on every render/effect tick that hits the
+// "already loaded" early-return path and on every battle start. Unthrottled
+// they spam the debug overlay and console. Throttle to once per 50 occurrences
+// and include the running count so frequency is still visible. PERMANENT
+// instrumentation — counters are module-level so they persist across renders.
+let _spellbarBisectLoadSkipCount = 0;
+let _spellbarBisectConsoleCount = 0;
 function logClickGuard(key: string, detail: Record<string, unknown>): void {
   const now = Date.now();
   const last = _clickGuardLastLog.get(key);
@@ -232,6 +242,10 @@ interface WorldExplorationProps {
   onActiveEffectsChange?: (effects: ActiveEffect[]) => void;
   onInBattleChange?: (inBattle: boolean) => void;
   onTransitionChange?: (isTransitioning: boolean) => void;
+  // SECTION 4 (build #325): optional callback threading the live debug context
+  // (character/map/battle state) up to the parent (GameFlow) so ChatPanel's
+  // export-report builder can include it. Additive — existing callers unaffected.
+  onDebugContextChange?: (ctx: DebugContext) => void;
   userId?: string;
   onDebugLog?: (event: string, detail: string) => void;
   onShowBattleSummary?: (data: BattleRecapData) => void;
@@ -526,6 +540,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   onActiveEffectsChange,
   onInBattleChange,
   onTransitionChange,
+  onDebugContextChange,
   userId,
   onDebugLog,
   onShowBattleSummary,
@@ -1930,11 +1945,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       loadedForCharacterRef.current === _charKey &&
       !spellBarDirtyRef.current
     ) {
-      logDebugInfo(
-        "SPELLS",
-        "[SPELLBAR-BISECT] load skipped (already loaded for character)",
-        { userId, characterSlot, charKey: _charKey },
-      );
+      _spellbarBisectLoadSkipCount++;
+      if (_spellbarBisectLoadSkipCount % 50 === 0) {
+        logDebugInfo(
+          "SPELLS",
+          `[SPELLBAR-BISECT] load skipped (already loaded for character) [x${_spellbarBisectLoadSkipCount}]`,
+          { userId, characterSlot, charKey: _charKey },
+        );
+      }
       return;
     }
     // [SPELLBAR-BISECT] load effect fired log: dev-gated signal that the
@@ -9601,6 +9619,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             });
             return;
           }
+          // FIX 2a (mouse self-tile hostile guard): if a hostile-target spell
+          // click resolves to targetTile === casterPos (the player's own tile),
+          // reject with "invalid target" BEFORE the AP gate. This catches the
+          // Pattern C case (casterPos={9,15}, targetTile={9,15}) where the
+          // player's own rect was hit and routed to a hostile branch. Self/
+          // ally-targeted spells (targetType "self"/"ally", or effectType
+          // "buff") are exempt — they legitimately target the caster's tile.
+          // Uses EXPLICIT spell metadata only (no name heuristics), per
+          // project rules. Mirrors the touch handler's guard below.
+          const _isSelfOrAllySpellMouse =
+            spell.targetType === "self" ||
+            spell.targetType === "ally" ||
+            spell.effectType === "buff";
+          if (
+            !_isSelfOrAllySpellMouse &&
+            gridPos.x === playerPositionRef.current.x &&
+            gridPos.y === playerPositionRef.current.y
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "invalid target",
+            );
+            logDebugInfo(
+              "BATTLE",
+              `[CLICK-ENEMY] self-tile-hostile-rejected casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`,
+            );
+            return;
+          }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
           if (import.meta.env.DEV) {
             // eslint-disable-next-line no-console
@@ -9621,7 +9669,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               rng: Math.random,
             },
           );
-          if (currentBattleApRef.current < apCost) return;
+          if (!(currentBattleApRef.current >= apCost)) return;
           castRuntimeRef.current.apCost = apCost;
           castRuntimeRef.current.spell = spell;
           if (spell.isSummon) {
@@ -9727,6 +9775,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
           )
             return;
+          // FIX 1a (mouse walk-mode single-occupancy): reject the move if a
+          // LIVING combatant occupies the target tile. Mirrors the entity-first
+          // cast targeting at ~9519. Dead combatants are already dropped from
+          // the live list (drawQueue skip at 7649), so corpse tiles the player
+          // just stepped onto are correctly treated as free. This prevents the
+          // player from pathing onto a tile a living enemy/summon stands on.
+          const _walkOccupantMouse = getLiveCombatants(combatantStoreCtx).find(
+            (e) =>
+              e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
+          );
+          if (_walkOccupantMouse) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Occupied",
+            );
+            return;
+          }
           const reachable = getMpReachableTiles();
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
           const path = findPath(playerPositionRef.current, gridPos);
@@ -10312,6 +10379,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             });
             return;
           }
+          // FIX 2b (touch self-tile hostile guard): mirror of the mouse
+          // handler's guard. If a hostile-target spell click resolves to
+          // targetTile === casterPos, reject with "invalid target" BEFORE the
+          // AP gate. Self/ally-targeted spells (targetType "self"/"ally", or
+          // effectType "buff") are exempt. Uses EXPLICIT spell metadata only.
+          const _isSelfOrAllySpellTouch =
+            spell.targetType === "self" ||
+            spell.targetType === "ally" ||
+            spell.effectType === "buff";
+          if (
+            !_isSelfOrAllySpellTouch &&
+            gridPos.x === playerPositionRef.current.x &&
+            gridPos.y === playerPositionRef.current.y
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "invalid target",
+            );
+            logDebugInfo(
+              "BATTLE",
+              `[CLICK-ENEMY] self-tile-hostile-rejected.touch casterPos=${JSON.stringify(playerPositionRef.current)} targetTile=${JSON.stringify(gridPos)} spellId=${spell.id} targetType=${spell.targetType ?? "enemy"} effectType=${spell.effectType ?? "damage"}`,
+            );
+            return;
+          }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
           // Mirrors the mouse handler so touch devices get the same trace.
           if (import.meta.env.DEV) {
@@ -10333,7 +10426,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               rng: Math.random,
             },
           );
-          if (currentBattleApRef.current < apCost) return;
+          if (!(currentBattleApRef.current >= apCost)) return;
           castRuntimeRef.current.apCost = apCost;
           castRuntimeRef.current.spell = spell;
           if (spell.isSummon) {
@@ -10436,6 +10529,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
           )
             return;
+          // FIX 1b (touch walk-mode single-occupancy): mirror of the mouse
+          // handler's occupancy check. Reject the move if a LIVING combatant
+          // occupies the target tile. Dead combatants are already dropped from
+          // the live list, so corpse tiles are correctly free.
+          const _walkOccupantTouch = getLiveCombatants(combatantStoreCtx).find(
+            (e) =>
+              e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
+          );
+          if (_walkOccupantTouch) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Occupied",
+            );
+            return;
+          }
           const reachable = getMpReachableTiles();
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
           const path = findPath(playerPositionRef.current, gridPos);
@@ -11284,9 +11394,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // diverge from the live authority. It has been removed entirely (along
       // with its declaration). The log below bisects the ids the bar will
       // actually show at battle start.
-      console.log("[SPELLBAR-BISECT]", {
-        spellIds: activeSpells.map((s) => s?.id).filter(Boolean),
-      });
+      if (process.env.NODE_ENV === "development") {
+        _spellbarBisectConsoleCount++;
+        if (_spellbarBisectConsoleCount % 50 === 0) {
+          console.log("[SPELLBAR-BISECT]", {
+            spellIds: activeSpells.map((s) => s?.id).filter(Boolean),
+            count: _spellbarBisectConsoleCount,
+          });
+        }
+      }
       flushSync(() => {
         syncCombatants(combatantStoreCtx, enemiesWithSpells);
         mapModifierRegistry.applyBattleStart(
@@ -12913,6 +13029,44 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
     };
   }, [inBattle, currentTurnIndex, isTimeWarp]);
+
+  // SECTION 4 (build #325): thread the live debug context up to the parent
+  // (GameFlow → ChatPanel export-report builder). Fires whenever the battle
+  // state, character, map, or turn order changes. Reads combatants from the
+  // live ref (combatantsRef.current) so the snapshot reflects the current
+  // frame, not a stale state closure. No-op when the parent doesn't pass the
+  // callback (additive contract — existing callers are unaffected).
+  useEffect(() => {
+    if (!onDebugContextChange) return;
+    onDebugContextChange({
+      characterName: character?.name || "Adventurer",
+      characterLevel: characterStats?.level,
+      characterSlot,
+      currentMapId: currentMap?.id,
+      inBattle,
+      battlePhase,
+      currentTurnEntry: turnOrder[currentTurnIndex] ?? null,
+      combatants: getLiveCombatants(combatantStoreCtx).map((c) => ({
+        id: c.id,
+        side: c.side,
+        isSummon: c.isSummon,
+        hp: c.hp,
+        pos: { x: c.x, y: c.y },
+      })),
+      turnOrderIds: turnOrder.map((c) => c.id),
+    });
+  }, [
+    inBattle,
+    currentMap?.id,
+    characterStats?.level,
+    character?.name,
+    characterSlot,
+    battlePhase,
+    currentTurnIndex,
+    turnOrder,
+    combatantStoreCtx,
+    onDebugContextChange,
+  ]);
 
   // ─── Enemy AI turn: spells + movement with HP-based strategy ────────────────
 
@@ -15102,7 +15256,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       activeMapModifierTypes,
       { log: (msg: string) => logDebugInfo("MODIFIER", msg), rng: Math.random },
     );
-    if (currentBattleApRef.current < apCost) return;
+    if (!(currentBattleApRef.current >= apCost)) return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
     // Determine gridPos: player tile for heal spells (engine's heal branch

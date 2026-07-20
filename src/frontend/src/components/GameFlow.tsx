@@ -18,6 +18,8 @@ import BuffShop from "./BuffShop";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
 import ChatPanel from "./ChatPanel";
+import type { DebugContext } from "./ChatPanel";
+import { TOP_BAR_PANEL_ID, panelRegistry } from "./DraggablePanel";
 import type { BattleRecapData } from "./PostBattleRecap";
 import WorldExploration from "./WorldExploration";
 
@@ -74,8 +76,18 @@ const GameFlow: React.FC<GameFlowProps> = ({
   // it whenever the query refetches (e.g., after a claim invalidates the key),
   // so the displayed value always converges to the real persisted balance.
   const [dokaBalance, setDokaBalance] = useState(0);
+  // SECTION 4 (build #325): debug context threaded up from WorldExploration so
+  // ChatPanel's export-report builder can include live character/map/battle state.
+  const [debugContext, setDebugContext] = useState<DebugContext | undefined>(
+    undefined,
+  );
   const { data: backendDokaBalance } = useGetCallerDokaBalance();
   // actor removed — not used in this component
+
+  // Ref to the in-game top bar element so it can register itself with the
+  // DraggablePanel panelRegistry. This lets panels snap to the bar via the
+  // SAME mutual edge computation instead of a hardcoded constant.
+  const topBarRef = useRef<HTMLDivElement>(null);
 
   const addBattleLogEntry = useCallback((entry: BattleLogEntry) => {
     // E3: Cap battle log at 500 entries to prevent unbounded growth and lag.
@@ -120,6 +132,38 @@ const GameFlow: React.FC<GameFlowProps> = ({
       setDokaBalance(backendDokaBalance);
     }
   }, [backendDokaBalance]);
+
+  // Register the in-game top bar with panelRegistry so it participates in the
+  // same mutual edge-snap computation as DraggablePanels. The bar is full
+  // width (left=0, right=window.innerWidth), height 48px (h-12), at y=0. We
+  // re-measure on resize so the width stays live. Only registers in game mode
+  // (topBarRef is null otherwise). Cleanup deletes the entry on unmount/leave
+  // so it doesn't linger and phantom-snap panels in non-game stages.
+  // NOTE: `isGameMode` is declared later in this component, so we depend on
+  // `currentStage` directly and re-derive the game-mode check inside the effect
+  // to avoid a use-before-declaration (TS2448/2454) error.
+  useEffect(() => {
+    const isGameMode = currentStage === "world";
+    const el = topBarRef.current;
+    if (!isGameMode || !el) return;
+    const update = () => {
+      panelRegistry[TOP_BAR_PANEL_ID] = {
+        x: 0,
+        y: 0,
+        w: window.innerWidth,
+        h: el.offsetHeight || 48,
+      };
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+      delete panelRegistry[TOP_BAR_PANEL_ID];
+    };
+  }, [currentStage]);
 
   const handleCreateCharacter = (slot: number) => {
     setEditingSlot(slot);
@@ -187,6 +231,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onShowBattleSummary={onShowBattleSummary}
           dokaBalance={dokaBalance}
           onDokaBalanceChange={setDokaBalance}
+          onDebugContextChange={setDebugContext}
         />
         <ChatPanel
           playerName={userProfile.name}
@@ -195,10 +240,14 @@ const GameFlow: React.FC<GameFlowProps> = ({
           activeEffects={activeEffects}
           isPaused={isInBattle || isTransitioning}
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
+          debugContext={debugContext}
           // debugLogs removed — ChatPanel now sources from structured debugLogger buffer
         />
         {/* Unified top bar in game mode */}
-        <div className="fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12">
+        <div
+          ref={topBarRef}
+          className="fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12"
+        >
           {/* Left side: player chip, map pill, XP bar, Blood bar, Doka coin, shop icon, Zone tag */}
           <div className="flex items-center gap-2">
             <span

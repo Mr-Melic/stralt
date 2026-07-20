@@ -65,7 +65,7 @@ const DEBUG_CATEGORY_CHIPS: LogCategory[] = [
  * gracefully and reports "N/A" for unavailable fields. This keeps the prop
  * contract additive — existing callers are unaffected.
  */
-interface DebugContext {
+export interface DebugContext {
   characterName?: string;
   characterLevel?: number | bigint;
   characterSlot?: number;

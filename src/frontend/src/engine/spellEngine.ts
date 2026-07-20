@@ -633,6 +633,10 @@ export function resolvePlayerCast(
   if (!isPhysical) {
     const failRoll = ctx.rng() * 100;
     if (failRoll < ctx.spellFailChance) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "FAIL roll (failRoll=${failRoll.toFixed(2)} < spellFailChance=${ctx.spellFailChance})"}`,
+      );
       ctx.log(`${spell.name} fizzled!`, "#AAAAAA");
       return "fizzled";
     }
@@ -708,6 +712,10 @@ export function resolvePlayerCast(
   // ── Timestep: restore AP and MP to full once per battle (inline line 8326) ──
   if (spell.isTimestep) {
     if (ctx.consumeTimestep()) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "timestep already consumed this battle"}`,
+      );
       ctx.log("Timestep can only be used once per battle!", "#fbbf24");
       return "abort";
     }
@@ -830,8 +838,31 @@ export function resolvePlayerCast(
     return "cast";
   }
 
+  // ── Drain target guard (Pattern B fix) ──
+  // Drain spells are single-target enemy-only (targetType: "enemy"). The
+  // damage-loop guard below previously let drain enter via
+  // `isDrainSpell && !isPlayerTile` even when targetEnemy was undefined
+  // (stale sprite rect, dead enemy, misclick on empty tile), which then
+  // aborted silently at the `targetsToHit.length === 0` check because
+  // getAoETargets cannot build a target list without targetEnemy (drain is
+  // not hitsMultiple). Surface the reason here and abort explicitly so the
+  // caller does NOT deduct AP and the log names the cause.
+  if (isDrainSpell && !targetEnemy) {
+    logDebugInfo(
+      "RESOLVER",
+      `abort {spellId: "${spell.id}", reason: "drain requires enemy target on tile (targetEnemy=undefined)"}`,
+    );
+    ctx.log(`No enemy on target tile for ${spell.name}!`, "#94a3b8");
+    return "abort";
+  }
+
   // ── Damage loop (inline line 8456) ──
-  if (targetEnemy || (isDrainSpell && !isPlayerTile)) {
+  // Guard: enter the loop when there is an explicit enemy target OR the spell
+  // is multi-target (hitsMultiple) so getAoETargets can build the list from the
+  // enemies-in-range filter. The previous `isDrainSpell && !isPlayerTile`
+  // fallback is removed — drain spells now require targetEnemy (handled by the
+  // guard above) and never enter the loop without one.
+  if (targetEnemy || spell.hitsMultiple) {
     const baseDamage = Number(spell.damage);
     const rawDmg = calcScaledDamageInline(
       baseDamage,
@@ -902,6 +933,10 @@ export function resolvePlayerCast(
     // Build target list (inline line 8629)
     const targetsToHit = ctx.getAoETargets(spell, gridPos, targetEnemy);
     if (targetsToHit.length === 0) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "no target in range (targetsToHit empty after getAoETargets)"}`,
+      );
       ctx.log(`No target in range for ${spell.name}!`, "#94a3b8");
       return "abort";
     }

@@ -25,11 +25,22 @@ const SNAP_THRESHOLD = 140; // px: distance within which panels snap
 
 const SNAP_GAP = 10; // px: gap between snapped panels
 
-// Registry of all mounted panel bounding boxes, keyed by panelId
-const panelRegistry: Record<
+// Registry of all mounted panel bounding boxes, keyed by panelId.
+// Exported so non-panel UI chrome (e.g. the GameFlow top bar) can register
+// itself and participate in the same mutual edge-snap computation, instead of
+// being special-cased by a hardcoded constant that drifts from the real CSS.
+export const panelRegistry: Record<
   string,
   { x: number; y: number; w: number; h: number }
 > = {};
+
+// Reserved id for the GameFlow top bar so it can register like any panel.
+export const TOP_BAR_PANEL_ID = "__topbar__";
+
+// Fallback top-bar geometry used only until the top bar registers itself.
+// The actual top bar is h-12 (48px) in GameFlow.tsx; we keep a conservative
+// fallback so snapping still works on the very first frame before registration.
+const TOP_BAR_FALLBACK_BOTTOM = 48;
 
 function loadLayout(
   userId: string,
@@ -89,7 +100,12 @@ function saveLayoutToBackend(
 }
 
 // Compute magnetic snap position: after a drag release, check all other registered
-// panels and snap the moved panel flush (with SNAP_GAP) if any edge is within SNAP_THRESHOLD.
+// panels (and the registered top bar) and snap the moved panel flush (with
+// SNAP_GAP) if any edge is within SNAP_THRESHOLD. All four edges of every other
+// registered rect are evaluated mutually: left↔right, right↔left, top↔bottom,
+// bottom↔top, PLUS edge alignment (left/right/top/bottom/center align). The top
+// bar registers itself with panelRegistry under TOP_BAR_PANEL_ID so it
+// participates in the SAME mutual edge computation — no hardcoded special-case.
 function computeSnapPosition(
   movedId: string,
   pos: { x: number; y: number },
@@ -102,13 +118,17 @@ function computeSnapPosition(
 
   for (const [otherId, other] of Object.entries(panelRegistry)) {
     if (otherId === movedId) continue;
-    // Right edge of moved vs left edge of other
+    // Skip zero-size rects (unmeasured panels) so they don't produce phantom
+    // snaps at (0,0). This is the root guard for panel-to-panel snapping.
+    if (other.w === 0 || other.h === 0) continue;
+
+    // Right edge of moved vs left edge of other (snap moved to LEFT of other)
     const rToL = Math.abs(x + w - other.x);
-    // Left edge of moved vs right edge of other
+    // Left edge of moved vs right edge of other (snap moved to RIGHT of other)
     const lToR = Math.abs(x - (other.x + other.w));
-    // Bottom edge of moved vs top edge of other
+    // Bottom edge of moved vs top edge of other (snap moved ABOVE other)
     const bToT = Math.abs(y + h - other.y);
-    // Top edge of moved vs bottom edge of other
+    // Top edge of moved vs bottom edge of other (snap moved BELOW other)
     const tToB = Math.abs(y - (other.y + other.h));
 
     // Horizontal: pick the closest edge pair within threshold
@@ -135,59 +155,91 @@ function computeSnapPosition(
   // In addition to edge-adjacent snapping (with SNAP_GAP), align panel edges
   // so panels compose into tidy aligned clusters: when this panel's top edge is
   // within SNAP_THRESHOLD of another panel's top edge, snap the y so the tops
-  // align; when this panel's left edge is within SNAP_THRESHOLD of another
-  // panel's left edge, snap the x so the lefts align. Only apply an alignment
-  // when no stronger edge-adjacent snap already claimed that axis.
+  // align; likewise left/right/bottom/center align. Only apply an alignment
+  // when no stronger edge-adjacent snap already claimed that axis. The top bar
+  // participates here too (its top edge = 0, bottom edge = its height), so
+  // panels align flush with the bar without a hardcoded constant.
   if (!bestSnapY) {
-    let bestAlignTop: { val: number; dist: number } | null = null;
+    let bestAlign: { val: number; dist: number } | null = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
+      // Top-align: moved.top ↔ other.top
       const topDiff = Math.abs(y - other.y);
       if (
         topDiff < SNAP_THRESHOLD &&
-        (!bestAlignTop || topDiff < bestAlignTop.dist)
+        (!bestAlign || topDiff < bestAlign.dist)
       ) {
-        bestAlignTop = { val: other.y, dist: topDiff };
+        bestAlign = { val: other.y, dist: topDiff };
+      }
+      // Bottom-align: moved.bottom ↔ other.bottom  → y = other.y + other.h - h
+      const botDiff = Math.abs(y + h - (other.y + other.h));
+      if (
+        botDiff < SNAP_THRESHOLD &&
+        (!bestAlign || botDiff < bestAlign.dist)
+      ) {
+        bestAlign = { val: other.y + other.h - h, dist: botDiff };
       }
     }
-    if (bestAlignTop) y = bestAlignTop.val;
+    if (bestAlign) y = bestAlign.val;
   }
   if (!bestSnapX) {
-    let bestAlignLeft: { val: number; dist: number } | null = null;
+    let bestAlign: { val: number; dist: number } | null = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
+      // Left-align: moved.left ↔ other.left
       const leftDiff = Math.abs(x - other.x);
       if (
         leftDiff < SNAP_THRESHOLD &&
-        (!bestAlignLeft || leftDiff < bestAlignLeft.dist)
+        (!bestAlign || leftDiff < bestAlign.dist)
       ) {
-        bestAlignLeft = { val: other.x, dist: leftDiff };
+        bestAlign = { val: other.x, dist: leftDiff };
+      }
+      // Right-align: moved.right ↔ other.right → x = other.x + other.w - w
+      const rightDiff = Math.abs(x + w - (other.x + other.w));
+      if (
+        rightDiff < SNAP_THRESHOLD &&
+        (!bestAlign || rightDiff < bestAlign.dist)
+      ) {
+        bestAlign = { val: other.x + other.w - w, dist: rightDiff };
+      }
+      // Center-align (horizontal): moved.center ↔ other.center
+      const centerDiff = Math.abs(x + w / 2 - (other.x + other.w / 2));
+      if (
+        centerDiff < SNAP_THRESHOLD &&
+        (!bestAlign || centerDiff < bestAlign.dist)
+      ) {
+        bestAlign = { val: other.x + other.w / 2 - w / 2, dist: centerDiff };
       }
     }
-    if (bestAlignLeft) x = bestAlignLeft.val;
+    if (bestAlign) x = bestAlign.val;
   }
 
-  // ── TOP BAR SNAP ──────────────────────────────────────────────────────────
-  // If the panel's top edge is within 60px of the bottom of the top UI bar
-  // (y=44), snap it flush just below the bar. Only apply when no panel-to-panel
-  // vertical snap already claimed the Y axis (bestSnapY) — otherwise the top-bar
-  // override would clobber a legitimate panel-to-panel snap near the top of the
-  // screen, which is the user-reported "only the top bar engages" symptom.
-  const TOP_BAR_BOTTOM = 44;
-  const TOP_BAR_SNAP_ZONE = 60;
-  const TOP_BAR_SNAP_TARGET = TOP_BAR_BOTTOM + 4; // 4px gap below the bar
-  if (!bestSnapY && Math.abs(y - TOP_BAR_BOTTOM) < TOP_BAR_SNAP_ZONE) {
-    y = TOP_BAR_SNAP_TARGET;
-  }
+  // ── TOP BAR FLOOR (fallback) ──────────────────────────────────────────────
+  // If the top bar has registered itself (TOP_BAR_PANEL_ID), the mutual edge
+  // snap above already handles "snap below the bar" via tToB (moved.top ↔
+  // bar.bottom). If it has NOT registered yet (first frame), fall back to a
+  // conservative floor so panels don't slide under the bar. This replaces the
+  // old hardcoded TOP_BAR_BOTTOM=44 special-case that overrode legitimate
+  // panel-to-panel snaps near the top of the screen.
+  const topBar = panelRegistry[TOP_BAR_PANEL_ID];
+  const floorY =
+    topBar && topBar.h > 0
+      ? topBar.y + topBar.h + SNAP_GAP
+      : TOP_BAR_FALLBACK_BOTTOM + SNAP_GAP;
+  if (y < floorY) y = floorY;
 
   // ── OVERLAP PREVENTION ────────────────────────────────────────────────────
   // After snapping, push the panel away from any other panel it now overlaps.
-  // We allow up to 5 resolution passes to handle chain reactions.
+  // We allow up to 5 resolution passes to handle chain reactions. The top bar
+  // is included as a normal registry entry, so panels never overlap it either.
   const MAX_PASSES = 5;
   for (let pass = 0; pass < MAX_PASSES; pass++) {
     let resolved = true;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       // Axis-aligned bounding-box intersection test
       const overlapX = x < other.x + other.w && x + w > other.x;
       const overlapY = y < other.y + other.h && y + h > other.y;
@@ -212,7 +264,7 @@ function computeSnapPosition(
       }
 
       // Re-apply top bar floor after any vertical push
-      if (y < TOP_BAR_SNAP_TARGET) y = TOP_BAR_SNAP_TARGET;
+      if (y < floorY) y = floorY;
 
       resolved = false; // another pass needed to check new position
     }
@@ -226,7 +278,8 @@ function computeSnapPosition(
 // it. Returns null when no snap target is within SNAP_THRESHOLD. Used to render
 // a live ghost preview and to ease the panel toward its snap spot while still
 // dragging. Mirrors the edge-snap + edge-alignment logic of computeSnapPosition
-// but skips top-bar snap and overlap-prevention (those are release-only).
+// (all four mutual edges + left/right/top/bottom/center alignment, top bar
+// included via the registry) but skips overlap-prevention (release-only).
 function computeLiveSnapPreview(
   movedId: string,
   pos: { x: number; y: number },
@@ -241,6 +294,8 @@ function computeLiveSnapPreview(
 
   for (const [otherId, other] of Object.entries(panelRegistry)) {
     if (otherId === movedId) continue;
+    // Skip zero-size rects so unmeasured panels don't phantom-snap at (0,0).
+    if (other.w === 0 || other.h === 0) continue;
     const rToL = Math.abs(x + w - other.x);
     const lToR = Math.abs(x - (other.x + other.w));
     const bToT = Math.abs(y + h - other.y);
@@ -264,19 +319,34 @@ function computeLiveSnapPreview(
     x = bestSnapX.val;
     snappedX = true;
   } else {
-    let bestAlignLeft: { val: number; dist: number } | null = null;
+    let bestAlign: { val: number; dist: number } | null = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       const leftDiff = Math.abs(pos.x - other.x);
       if (
         leftDiff < SNAP_THRESHOLD &&
-        (!bestAlignLeft || leftDiff < bestAlignLeft.dist)
+        (!bestAlign || leftDiff < bestAlign.dist)
       ) {
-        bestAlignLeft = { val: other.x, dist: leftDiff };
+        bestAlign = { val: other.x, dist: leftDiff };
+      }
+      const rightDiff = Math.abs(pos.x + w - (other.x + other.w));
+      if (
+        rightDiff < SNAP_THRESHOLD &&
+        (!bestAlign || rightDiff < bestAlign.dist)
+      ) {
+        bestAlign = { val: other.x + other.w - w, dist: rightDiff };
+      }
+      const centerDiff = Math.abs(pos.x + w / 2 - (other.x + other.w / 2));
+      if (
+        centerDiff < SNAP_THRESHOLD &&
+        (!bestAlign || centerDiff < bestAlign.dist)
+      ) {
+        bestAlign = { val: other.x + other.w / 2 - w / 2, dist: centerDiff };
       }
     }
-    if (bestAlignLeft) {
-      x = bestAlignLeft.val;
+    if (bestAlign) {
+      x = bestAlign.val;
       snappedX = true;
     }
   }
@@ -285,19 +355,27 @@ function computeLiveSnapPreview(
     y = bestSnapY.val;
     snappedY = true;
   } else {
-    let bestAlignTop: { val: number; dist: number } | null = null;
+    let bestAlign: { val: number; dist: number } | null = null;
     for (const [otherId, other] of Object.entries(panelRegistry)) {
       if (otherId === movedId) continue;
+      if (other.w === 0 || other.h === 0) continue;
       const topDiff = Math.abs(pos.y - other.y);
       if (
         topDiff < SNAP_THRESHOLD &&
-        (!bestAlignTop || topDiff < bestAlignTop.dist)
+        (!bestAlign || topDiff < bestAlign.dist)
       ) {
-        bestAlignTop = { val: other.y, dist: topDiff };
+        bestAlign = { val: other.y, dist: topDiff };
+      }
+      const botDiff = Math.abs(pos.y + h - (other.y + other.h));
+      if (
+        botDiff < SNAP_THRESHOLD &&
+        (!bestAlign || botDiff < bestAlign.dist)
+      ) {
+        bestAlign = { val: other.y + other.h - h, dist: botDiff };
       }
     }
-    if (bestAlignTop) {
-      y = bestAlignTop.val;
+    if (bestAlign) {
+      y = bestAlign.val;
       snappedY = true;
     }
   }
@@ -519,6 +597,15 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
     dragState.current.startPanelY = currentPosRef.current.y;
     dragState.current.active = true;
     setIsDragging(true);
+    // [UI-SNAP] diagnostic: log every registered snap target at drag start so
+    // we can verify panel-to-panel registration is live (not just the bar).
+    // eslint-disable-next-line no-console
+    console.log(
+      "[UI-SNAP] targets=",
+      Object.keys(panelRegistry),
+      "rects=",
+      JSON.stringify(panelRegistry),
+    );
   }, []);
 
   const onTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
@@ -529,6 +616,14 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
     dragState.current.startPanelY = currentPosRef.current.y;
     dragState.current.active = true;
     setIsDragging(true);
+    // [UI-SNAP] diagnostic (touch path): same registration snapshot as mouse.
+    // eslint-disable-next-line no-console
+    console.log(
+      "[UI-SNAP] targets=",
+      Object.keys(panelRegistry),
+      "rects=",
+      JSON.stringify(panelRegistry),
+    );
   }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: panelId is a stable string prop
@@ -626,12 +721,29 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
   useEffect(() => {
     const el = panelRef.current;
     if (!el) return;
+    // Ref to hold a pending requestAnimationFrame id for zero-size re-measure.
+    // Declared BEFORE `update` (which references it) to avoid a temporal-dead-zone
+    // hazard if `update` is ever invoked synchronously before the declaration ran.
+    const pendingRafRef = { current: null as number | null };
     const update = () => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      // If the element hasn't laid out yet (0x0), schedule a re-measure on the
+      // next frame instead of registering a zero-size rect — a zero-size rect
+      // would make this panel invisible to mutual edge-snap from other panels
+      // (the "panels don't snap to each other" symptom).
+      if (w === 0 || h === 0) {
+        const raf = requestAnimationFrame(update);
+        // Stash the raf id on the cleanup via a closure so it can be cancelled.
+        pendingRafRef.current = raf;
+        return;
+      }
+      pendingRafRef.current = null;
       panelRegistry[panelId] = {
         x: currentPosRef.current.x,
         y: currentPosRef.current.y,
-        w: el.offsetWidth,
-        h: el.offsetHeight,
+        w,
+        h,
       };
     };
     update();
@@ -640,6 +752,8 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
     ro.observe(el);
     return () => {
       ro.disconnect();
+      if (pendingRafRef.current !== null)
+        cancelAnimationFrame(pendingRafRef.current);
       delete panelRegistry[panelId];
       // LEAK-15: Cancel any pending save debounce on unmount
       if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
