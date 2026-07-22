@@ -69,6 +69,21 @@ export interface BattleUIPanelProps {
    */
   inspectCombatantId?: string | null;
   onInspectCombatant?: (id: string | null) => void;
+  /**
+   * SECTION 2e — when true, a player-controlled summon's turn is active.
+   * The player's own spell-slot row and END TURN button are dimmed (not the
+   * whole panel) and a "Summon's Turn" label is shown. Initiative strip,
+   * enemy inspect, and player HP/stats remain fully visible.
+   */
+  isSummonControlled?: boolean;
+  /**
+   * SECTION 3 — turn discipline. True ONLY when the current turn-order entry
+   * (turnOrderRef.current[currentTurnIndexRef.current]) is the player. The
+   * END TURN button is disabled unless this is true (in addition to the
+   * existing battlePhase !== "player" and isSummonControlled guards). This
+   * is the desync-proof ref-truth gate mirroring the canvas click guard.
+   */
+  isPlayerTurn?: boolean;
 }
 
 const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
@@ -100,6 +115,8 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   userId,
   inspectCombatantId,
   onInspectCombatant,
+  isSummonControlled = false,
+  isPlayerTurn = true,
 }) => {
   const forceUpdate = spellSelectionVersion; // keeps spellSelectionVersion used
   const [selectedCombatantId, setSelectedCombatantId] = useState<string | null>(
@@ -502,15 +519,35 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.end_turn_button"
                   onClick={onEndTurn}
-                  disabled={battlePhase !== "player"}
+                  disabled={
+                    battlePhase !== "player" ||
+                    isSummonControlled ||
+                    !isPlayerTurn
+                  }
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
-                    ${battlePhase === "player" ? "stone-btn-crimson" : "stone-btn-slate opacity-50 cursor-not-allowed"}
+                    ${
+                      isSummonControlled || !isPlayerTurn
+                        ? "stone-btn-slate opacity-40 cursor-not-allowed"
+                        : battlePhase === "player"
+                          ? "stone-btn-crimson"
+                          : "stone-btn-slate opacity-50 cursor-not-allowed"
+                    }
                   `}
                 >
                   END TURN
                 </button>
               </div>
+
+              {/* SECTION 2e — Summon's Turn label (shown when a player-controlled summon is active) */}
+              {isSummonControlled && (
+                <div
+                  data-ocid="battle_ui.summon_turn_label"
+                  className="ml-2 flex-shrink-0 rounded px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-amber-400 bg-slate-900/80 border border-amber-500/40 shadow-[0_0_6px_rgba(245,158,11,0.35)]"
+                >
+                  Summon's Turn
+                </div>
+              )}
 
               {/* Current combatant name */}
               {currentCombatant && (

@@ -1,4 +1,4 @@
-import { Footprints, Hourglass, Square, Sword } from "lucide-react";
+import { Footprints, Heart, Hourglass, Square, Sword } from "lucide-react";
 
 /**
  * Props for the SummonControlPanel.
@@ -26,6 +26,10 @@ export interface SummonControlPanelProps {
   currentMp: number;
   /** Maximum movement points for the summon. */
   maxMp: number;
+  /** Current HP of the summon (for the HP bar). */
+  currentHp: number;
+  /** Maximum HP of the summon (for the HP bar). */
+  maxHp: number;
   /** The summon's kit spells rendered as clickable slots. */
   kitSpells: Array<{
     id: string;
@@ -133,6 +137,68 @@ function ResourceOrb({
 }
 
 /**
+ * HP bar — carved-stone styled vertical bar showing current/max HP.
+ * Crimson fill on a dark slate track, matching the Ankama/Dofus aesthetic
+ * of the AP/MP orbs. Sits next to the orbs in the resource cluster.
+ */
+function HpBar({
+  current,
+  max,
+  testId,
+}: {
+  current: number;
+  max: number;
+  testId: string;
+}) {
+  const safeMax = Math.max(max, 1);
+  const pct = Math.max(0, Math.min(100, (current / safeMax) * 100));
+  const low = pct <= 25;
+  return (
+    <div
+      className="flex flex-col items-center gap-1"
+      data-ocid={testId}
+      aria-label={`HP ${current} of ${max}`}
+    >
+      <div
+        className={`relative flex h-12 w-12 items-center justify-center rounded-full border-2 ${
+          low
+            ? "border-red-500/70 shadow-[0_0_10px_rgba(239,68,68,0.5)]"
+            : "border-primary/60 shadow-[0_0_10px_rgba(220,38,38,0.4)]"
+        } bg-gradient-to-br from-red-500/25 to-red-900/40`}
+      >
+        <Heart
+          className={`absolute h-4 w-4 opacity-40 ${
+            low ? "text-red-300" : "text-red-300"
+          }`}
+          aria-hidden="true"
+        />
+        <span className="font-mono text-sm font-bold leading-none text-red-200">
+          {current}
+          <span className="text-[10px] opacity-60">/{max}</span>
+        </span>
+      </div>
+      {/* Mini bar under the orb — carved-stone track + crimson fill */}
+      <div
+        className="h-1.5 w-12 overflow-hidden rounded-full border border-border/60 bg-muted/40 shadow-inner"
+        aria-hidden="true"
+      >
+        <div
+          className={`h-full rounded-full transition-all duration-300 ${
+            low
+              ? "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.7)]"
+              : "bg-primary shadow-[0_0_4px_rgba(220,38,38,0.6)]"
+          }`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        HP
+      </span>
+    </div>
+  );
+}
+
+/**
  * A single kit spell slot. Disabled (greyed, non-clickable) when the summon's
  * current AP is less than the spell's AP cost.
  */
@@ -200,6 +266,8 @@ export default function SummonControlPanel({
   maxAp,
   currentMp,
   maxMp,
+  currentHp,
+  maxHp,
   kitSpells,
   onSpellSelect,
   onEndTurn,
@@ -207,28 +275,28 @@ export default function SummonControlPanel({
   return (
     <section
       data-ocid="summon_panel.panel"
-      className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-primary/60 bg-card/95 shadow-[0_-6px_20px_rgba(0,0,0,0.6)] backdrop-blur-sm"
+      className="flex w-full items-stretch gap-3 border-t-2 border-primary/60 bg-card/95 px-3 py-2 shadow-[0_-4px_14px_rgba(0,0,0,0.55)]"
       aria-label={`${summonName} control panel`}
     >
-      {/* Carved-stone top edge accent */}
-      <div className="h-1 w-full bg-gradient-to-r from-transparent via-primary to-transparent" />
+      {/* Carved-stone left edge accent */}
+      <div className="w-1 self-stretch flex-shrink-0 rounded-full bg-gradient-to-b from-transparent via-primary to-transparent" />
 
-      <div className="mx-auto flex max-w-5xl items-stretch gap-4 px-4 py-3">
+      <div className="flex w-full flex-wrap items-center gap-3">
         {/* Portrait + name + lifespan */}
-        <div className="flex items-center gap-3 border-r border-border/60 pr-4">
+        <div className="flex items-center gap-2 border-r border-border/60 pr-3">
           <div
             data-ocid="summon_panel.portrait"
-            className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-primary/70 bg-gradient-to-br from-slate-700 to-slate-900 shadow-[inset_0_0_8px_rgba(0,0,0,0.7),0_0_8px_rgba(220,38,38,0.3)]"
+            className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-primary/70 bg-gradient-to-br from-slate-700 to-slate-900 shadow-[inset_0_0_8px_rgba(0,0,0,0.7),0_0_8px_rgba(220,38,38,0.3)]"
             aria-hidden="true"
           >
-            <span className="font-display text-xs font-bold uppercase tracking-wider text-primary">
+            <span className="font-display text-[10px] font-bold uppercase tracking-wider text-primary">
               {summonPieceType.slice(0, 3)}
             </span>
           </div>
           <div className="flex min-w-0 flex-col gap-1">
             <span
               data-ocid="summon_panel.name"
-              className="truncate font-display text-base font-bold uppercase tracking-wide text-foreground"
+              className="truncate font-display text-sm font-bold uppercase tracking-wide text-foreground"
             >
               {summonName}
             </span>
@@ -236,8 +304,8 @@ export default function SummonControlPanel({
           </div>
         </div>
 
-        {/* AP / MP orbs */}
-        <div className="flex items-center gap-4 border-r border-border/60 pr-4">
+        {/* AP / MP / HP orbs */}
+        <div className="flex items-center gap-3 border-r border-border/60 pr-3">
           <ResourceOrb
             label="AP"
             current={currentAp}
@@ -254,6 +322,7 @@ export default function SummonControlPanel({
             icon={Footprints}
             testId="summon_panel.mp_orb"
           />
+          <HpBar current={currentHp} max={maxHp} testId="summon_panel.hp_bar" />
         </div>
 
         {/* Kit spell slots */}
@@ -285,9 +354,9 @@ export default function SummonControlPanel({
             data-ocid="summon_panel.end_turn_button"
             onClick={onEndTurn}
             aria-label="End the summon's turn"
-            className="flex items-center gap-2 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-4 py-2.5 font-display text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px"
+            className="flex items-center gap-1.5 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-3 py-2 font-display text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px"
           >
-            <Square className="h-4 w-4" aria-hidden="true" />
+            <Square className="h-3.5 w-3.5" aria-hidden="true" />
             End Turn
           </button>
         </div>

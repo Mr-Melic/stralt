@@ -27942,13 +27942,24 @@ const createLucideIcon = (iconName, iconNode) => {
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$A = [
+const __iconNode$B = [
   ["path", { d: "M8 3 4 7l4 4", key: "9rb6wj" }],
   ["path", { d: "M4 7h16", key: "6tx8e3" }],
   ["path", { d: "m16 21 4-4-4-4", key: "siv7j2" }],
   ["path", { d: "M20 17H4", key: "h6l3hr" }]
 ];
-const ArrowLeftRight = createLucideIcon("arrow-left-right", __iconNode$A);
+const ArrowLeftRight = createLucideIcon("arrow-left-right", __iconNode$B);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$A = [
+  ["path", { d: "m12 19-7-7 7-7", key: "1l729n" }],
+  ["path", { d: "M19 12H5", key: "x3x0zl" }]
+];
+const ArrowLeft = createLucideIcon("arrow-left", __iconNode$A);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -27956,17 +27967,6 @@ const ArrowLeftRight = createLucideIcon("arrow-left-right", __iconNode$A);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$z = [
-  ["path", { d: "m12 19-7-7 7-7", key: "1l729n" }],
-  ["path", { d: "M19 12H5", key: "x3x0zl" }]
-];
-const ArrowLeft = createLucideIcon("arrow-left", __iconNode$z);
-/**
- * @license lucide-react v0.511.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$y = [
   ["path", { d: "M12 7v14", key: "1akyts" }],
   [
     "path",
@@ -27976,14 +27976,14 @@ const __iconNode$y = [
     }
   ]
 ];
-const BookOpen = createLucideIcon("book-open", __iconNode$y);
+const BookOpen = createLucideIcon("book-open", __iconNode$z);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$x = [
+const __iconNode$y = [
   ["path", { d: "m8 2 1.88 1.88", key: "fmnt4t" }],
   ["path", { d: "M14.12 3.88 16 2", key: "qol33r" }],
   ["path", { d: "M9 7.13v-1a3.003 3.003 0 1 1 6 0v1", key: "d7y7pr" }],
@@ -28002,31 +28002,42 @@ const __iconNode$x = [
   ["path", { d: "M22 13h-4", key: "1jl80f" }],
   ["path", { d: "M17.2 17c2.1.1 3.8 1.9 3.8 4", key: "k3fwyw" }]
 ];
-const Bug = createLucideIcon("bug", __iconNode$x);
+const Bug = createLucideIcon("bug", __iconNode$y);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$w = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
-const Check = createLucideIcon("check", __iconNode$w);
+const __iconNode$x = [["path", { d: "M20 6 9 17l-5-5", key: "1gmf2c" }]];
+const Check = createLucideIcon("check", __iconNode$x);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$v = [["path", { d: "m15 18-6-6 6-6", key: "1wnfg3" }]];
-const ChevronLeft = createLucideIcon("chevron-left", __iconNode$v);
+const __iconNode$w = [["path", { d: "m15 18-6-6 6-6", key: "1wnfg3" }]];
+const ChevronLeft = createLucideIcon("chevron-left", __iconNode$w);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
  * This source code is licensed under the ISC license.
  * See the LICENSE file in the root directory of this source tree.
  */
-const __iconNode$u = [["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]];
-const ChevronRight = createLucideIcon("chevron-right", __iconNode$u);
+const __iconNode$v = [["path", { d: "m9 18 6-6-6-6", key: "mthhwq" }]];
+const ChevronRight = createLucideIcon("chevron-right", __iconNode$v);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$u = [
+  ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2", key: "17jyea" }],
+  ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2", key: "zix9uf" }]
+];
+const Copy = createLucideIcon("copy", __iconNode$u);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28034,17 +28045,6 @@ const ChevronRight = createLucideIcon("chevron-right", __iconNode$u);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$t = [
-  ["rect", { width: "14", height: "14", x: "8", y: "8", rx: "2", ry: "2", key: "17jyea" }],
-  ["path", { d: "M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2", key: "zix9uf" }]
-];
-const Copy = createLucideIcon("copy", __iconNode$t);
-/**
- * @license lucide-react v0.511.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$s = [
   [
     "path",
     {
@@ -28054,7 +28054,19 @@ const __iconNode$s = [
   ],
   ["path", { d: "M5 21h14", key: "11awu3" }]
 ];
-const Crown = createLucideIcon("crown", __iconNode$s);
+const Crown = createLucideIcon("crown", __iconNode$t);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$s = [
+  ["path", { d: "M12 15V3", key: "m9g1x1" }],
+  ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
+  ["path", { d: "m7 10 5 5 5-5", key: "brsn70" }]
+];
+const Download = createLucideIcon("download", __iconNode$s);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28062,11 +28074,13 @@ const Crown = createLucideIcon("crown", __iconNode$s);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$r = [
-  ["path", { d: "M12 15V3", key: "m9g1x1" }],
-  ["path", { d: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", key: "ih7n3h" }],
-  ["path", { d: "m7 10 5 5 5-5", key: "brsn70" }]
+  ["path", { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", key: "1rqfz7" }],
+  ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4", key: "tnqrlb" }],
+  ["path", { d: "M10 9H8", key: "b1mrlr" }],
+  ["path", { d: "M16 13H8", key: "t4e002" }],
+  ["path", { d: "M16 17H8", key: "z1uh3a" }]
 ];
-const Download = createLucideIcon("download", __iconNode$r);
+const FileText = createLucideIcon("file-text", __iconNode$r);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -28074,20 +28088,6 @@ const Download = createLucideIcon("download", __iconNode$r);
  * See the LICENSE file in the root directory of this source tree.
  */
 const __iconNode$q = [
-  ["path", { d: "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z", key: "1rqfz7" }],
-  ["path", { d: "M14 2v4a2 2 0 0 0 2 2h4", key: "tnqrlb" }],
-  ["path", { d: "M10 9H8", key: "b1mrlr" }],
-  ["path", { d: "M16 13H8", key: "t4e002" }],
-  ["path", { d: "M16 17H8", key: "z1uh3a" }]
-];
-const FileText = createLucideIcon("file-text", __iconNode$q);
-/**
- * @license lucide-react v0.511.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */
-const __iconNode$p = [
   [
     "path",
     {
@@ -28105,7 +28105,23 @@ const __iconNode$p = [
   ["path", { d: "M16 17h4", key: "1dejxt" }],
   ["path", { d: "M4 13h4", key: "1bwh8b" }]
 ];
-const Footprints = createLucideIcon("footprints", __iconNode$p);
+const Footprints = createLucideIcon("footprints", __iconNode$q);
+/**
+ * @license lucide-react v0.511.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */
+const __iconNode$p = [
+  [
+    "path",
+    {
+      d: "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z",
+      key: "c3ymky"
+    }
+  ]
+];
+const Heart = createLucideIcon("heart", __iconNode$p);
 /**
  * @license lucide-react v0.511.0 - ISC
  *
@@ -44076,7 +44092,7 @@ function getGeometrySnapshot(input) {
     spriteRectsSummary: { count: count2, ids }
   };
 }
-const APP_BUILD = "#334";
+const APP_BUILD = "#335";
 function esc(s2) {
   return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -47676,7 +47692,9 @@ const BattleUIPanel = ({
   spellCooldowns = {},
   userId,
   inspectCombatantId,
-  onInspectCombatant
+  onInspectCombatant,
+  isSummonControlled = false,
+  isPlayerTurn = true
 }) => {
   const forceUpdate = spellSelectionVersion;
   const [selectedCombatantId, setSelectedCombatantId] = reactExports.useState(
@@ -48054,15 +48072,23 @@ const BattleUIPanel = ({
                           type: "button",
                           "data-ocid": "battle_ui.end_turn_button",
                           onClick: onEndTurn,
-                          disabled: battlePhase !== "player",
+                          disabled: battlePhase !== "player" || isSummonControlled || !isPlayerTurn,
                           className: `
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
-                    ${battlePhase === "player" ? "stone-btn-crimson" : "stone-btn-slate opacity-50 cursor-not-allowed"}
+                    ${isSummonControlled || !isPlayerTurn ? "stone-btn-slate opacity-40 cursor-not-allowed" : battlePhase === "player" ? "stone-btn-crimson" : "stone-btn-slate opacity-50 cursor-not-allowed"}
                   `,
                           children: "END TURN"
                         }
                       )
                     ] }),
+                    isSummonControlled && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "div",
+                      {
+                        "data-ocid": "battle_ui.summon_turn_label",
+                        className: "ml-2 flex-shrink-0 rounded px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-amber-400 bg-slate-900/80 border border-amber-500/40 shadow-[0_0_6px_rgba(245,158,11,0.35)]",
+                        children: "Summon's Turn"
+                      }
+                    ),
                     currentCombatant && /* @__PURE__ */ jsxRuntimeExports.jsx(
                       "div",
                       {
@@ -49526,6 +49552,62 @@ function ResourceOrb({
     }
   );
 }
+function HpBar({
+  current,
+  max,
+  testId
+}) {
+  const safeMax = Math.max(max, 1);
+  const pct = Math.max(0, Math.min(100, current / safeMax * 100));
+  const low = pct <= 25;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      className: "flex flex-col items-center gap-1",
+      "data-ocid": testId,
+      "aria-label": `HP ${current} of ${max}`,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs(
+          "div",
+          {
+            className: `relative flex h-12 w-12 items-center justify-center rounded-full border-2 ${low ? "border-red-500/70 shadow-[0_0_10px_rgba(239,68,68,0.5)]" : "border-primary/60 shadow-[0_0_10px_rgba(220,38,38,0.4)]"} bg-gradient-to-br from-red-500/25 to-red-900/40`,
+            children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                Heart,
+                {
+                  className: `absolute h-4 w-4 opacity-40 ${low ? "text-red-300" : "text-red-300"}`,
+                  "aria-hidden": "true"
+                }
+              ),
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "font-mono text-sm font-bold leading-none text-red-200", children: [
+                current,
+                /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-[10px] opacity-60", children: [
+                  "/",
+                  max
+                ] })
+              ] })
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "div",
+          {
+            className: "h-1.5 w-12 overflow-hidden rounded-full border border-border/60 bg-muted/40 shadow-inner",
+            "aria-hidden": "true",
+            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "div",
+              {
+                className: `h-full rounded-full transition-all duration-300 ${low ? "bg-red-500 shadow-[0_0_4px_rgba(239,68,68,0.7)]" : "bg-primary shadow-[0_0_4px_rgba(220,38,38,0.6)]"}`,
+                style: { width: `${pct}%` }
+              }
+            )
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[10px] uppercase tracking-wider text-muted-foreground", children: "HP" })
+      ]
+    }
+  );
+}
 function SpellSlot({
   spell,
   disabled,
@@ -49569,6 +49651,8 @@ function SummonControlPanel({
   maxAp,
   currentMp,
   maxMp,
+  currentHp,
+  maxHp,
   kitSpells,
   onSpellSelect,
   onEndTurn
@@ -49577,19 +49661,19 @@ function SummonControlPanel({
     "section",
     {
       "data-ocid": "summon_panel.panel",
-      className: "fixed inset-x-0 bottom-0 z-40 border-t-2 border-primary/60 bg-card/95 shadow-[0_-6px_20px_rgba(0,0,0,0.6)] backdrop-blur-sm",
+      className: "flex w-full items-stretch gap-3 border-t-2 border-primary/60 bg-card/95 px-3 py-2 shadow-[0_-4px_14px_rgba(0,0,0,0.55)]",
       "aria-label": `${summonName} control panel`,
       children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "h-1 w-full bg-gradient-to-r from-transparent via-primary to-transparent" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mx-auto flex max-w-5xl items-stretch gap-4 px-4 py-3", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 border-r border-border/60 pr-4", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-1 self-stretch flex-shrink-0 rounded-full bg-gradient-to-b from-transparent via-primary to-transparent" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex w-full flex-wrap items-center gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 border-r border-border/60 pr-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               "div",
               {
                 "data-ocid": "summon_panel.portrait",
-                className: "flex h-16 w-16 items-center justify-center rounded-full border-2 border-primary/70 bg-gradient-to-br from-slate-700 to-slate-900 shadow-[inset_0_0_8px_rgba(0,0,0,0.7),0_0_8px_rgba(220,38,38,0.3)]",
+                className: "flex h-12 w-12 items-center justify-center rounded-full border-2 border-primary/70 bg-gradient-to-br from-slate-700 to-slate-900 shadow-[inset_0_0_8px_rgba(0,0,0,0.7),0_0_8px_rgba(220,38,38,0.3)]",
                 "aria-hidden": "true",
-                children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-display text-xs font-bold uppercase tracking-wider text-primary", children: summonPieceType.slice(0, 3) })
+                children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-display text-[10px] font-bold uppercase tracking-wider text-primary", children: summonPieceType.slice(0, 3) })
               }
             ),
             /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex min-w-0 flex-col gap-1", children: [
@@ -49597,14 +49681,14 @@ function SummonControlPanel({
                 "span",
                 {
                   "data-ocid": "summon_panel.name",
-                  className: "truncate font-display text-base font-bold uppercase tracking-wide text-foreground",
+                  className: "truncate font-display text-sm font-bold uppercase tracking-wide text-foreground",
                   children: summonName
                 }
               ),
               /* @__PURE__ */ jsxRuntimeExports.jsx(LifespanPips, { lifespan, maxLifespan })
             ] })
           ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-4 border-r border-border/60 pr-4", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-3 border-r border-border/60 pr-3", children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx(
               ResourceOrb,
               {
@@ -49626,7 +49710,8 @@ function SummonControlPanel({
                 icon: Footprints,
                 testId: "summon_panel.mp_orb"
               }
-            )
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(HpBar, { current: currentHp, max: maxHp, testId: "summon_panel.hp_bar" })
           ] }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "div",
@@ -49652,9 +49737,9 @@ function SummonControlPanel({
               "data-ocid": "summon_panel.end_turn_button",
               onClick: onEndTurn,
               "aria-label": "End the summon's turn",
-              className: "flex items-center gap-2 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-4 py-2.5 font-display text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px",
+              className: "flex items-center gap-1.5 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-3 py-2 font-display text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px",
               children: [
-                /* @__PURE__ */ jsxRuntimeExports.jsx(Square, { className: "h-4 w-4", "aria-hidden": "true" }),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(Square, { className: "h-3.5 w-3.5", "aria-hidden": "true" }),
                 "End Turn"
               ]
             }
@@ -50825,9 +50910,6 @@ function syncCombatants(ctx, next, opts) {
   ctx.setBattleEnemies(() => nextBattleEnemies);
   ctx.setTurnOrder(() => nextTurnOrder);
   (_a3 = ctx.onMutation) == null ? void 0 : _a3.call(ctx);
-}
-function deriveBattleEnemies(ctx) {
-  return ctx.combatantsRef.current.filter((c2) => ctx.battleStartIds.has(c2.id));
 }
 function resetCombatantStore(ctx) {
   const nextCombatants = [];
@@ -59777,7 +59859,7 @@ const WorldExplorationInner = ({
   onDebugLog,
   onShowBattleSummary
 }) => {
-  var _a3, _b3, _c2, _d2, _e2, _f2;
+  var _a3, _b3, _c2, _d2, _e2, _f2, _g2;
   const { actor: rawActor } = useActor();
   const actor = rawActor;
   const nsKey = reactExports.useCallback(
@@ -60412,6 +60494,7 @@ const WorldExplorationInner = ({
     hoveredEnemyIdRef.current = hoveredEnemyId;
   }, [hoveredEnemyId]);
   const battleHitsRef = reactExports.useRef(0);
+  const battleDefeatedRef = reactExports.useRef([]);
   const [showRenameModal, setShowRenameModal] = reactExports.useState(false);
   const [renameInput, setRenameInput] = reactExports.useState("");
   const [isRenaming, setIsRenaming] = reactExports.useState(false);
@@ -61054,7 +61137,7 @@ const WorldExplorationInner = ({
     },
     [dokaBalance, onDokaBalanceChange, actor, character, characterSlot, nsKey]
   );
-  const [characterStats, setCharacterStats] = reactExports.useState(() => {
+  const [_characterStats, _setCharacterStats] = reactExports.useState(() => {
     const savedLevel = (character == null ? void 0 : character.level) != null ? Number(character.level) : 1;
     const savedExp = (character == null ? void 0 : character.experience) != null ? Number(character.experience) : 0;
     const s2 = character == null ? void 0 : character.stats;
@@ -61077,6 +61160,18 @@ const WorldExplorationInner = ({
       expToNext
     };
   });
+  const characterStatsRef = reactExports.useRef(_characterStats);
+  const setCharacterStats = reactExports.useCallback(
+    (update) => {
+      _setCharacterStats((prev) => {
+        const next = typeof update === "function" ? update(prev) : update;
+        characterStatsRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+  const characterStats = _characterStats;
   const getStatModifier = reactExports.useCallback(
     (targetId, stat, activeEffectsSnap) => {
       let multiplier = 1;
@@ -62622,7 +62717,7 @@ const WorldExplorationInner = ({
     []
   );
   const generateRandomMap = reactExports.useCallback(() => {
-    var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2;
+    var _a4, _b4, _c3, _d3, _e3, _f3, _g3, _h2, _i2, _j2;
     let tiles;
     let portals;
     let attempts = 0;
@@ -62697,7 +62792,7 @@ const WorldExplorationInner = ({
       } else if (_arch.type === "arena") {
         for (let r2 = 0; r2 < WORLD_GRID_SIZE; r2++)
           for (let c2 = 0; c2 < Math.floor(WORLD_GRID_SIZE / 2); c2++) {
-            if (((_g2 = tiles[r2]) == null ? void 0 : _g2[WORLD_GRID_SIZE - 1 - c2]) !== void 0)
+            if (((_g3 = tiles[r2]) == null ? void 0 : _g3[WORLD_GRID_SIZE - 1 - c2]) !== void 0)
               tiles[r2][WORLD_GRID_SIZE - 1 - c2] = tiles[r2][c2];
           }
       } else if (_arch.type === "asymmetric") {
@@ -63604,7 +63699,7 @@ const WorldExplorationInner = ({
     isMobile
   ]);
   const checkPortalInteraction = reactExports.useCallback(() => {
-    var _a4, _b4, _c3, _d3, _e3, _f3, _g2;
+    var _a4, _b4, _c3, _d3, _e3, _f3, _g3;
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return;
     if (!currentMap) return;
@@ -63733,6 +63828,7 @@ const WorldExplorationInner = ({
             syncCombatants(combatantStoreCtx, newEnemies2, {
               resetBattle: true
             });
+            battleDefeatedRef.current = [];
           }
         }
         setTransitionInProgress(false);
@@ -64092,6 +64188,7 @@ const WorldExplorationInner = ({
         });
       }
       syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
+      battleDefeatedRef.current = [];
       if (portalTimerRef1.current !== null) {
         clearTimeout(portalTimerRef1.current);
         portalTimerRef1.current = null;
@@ -64185,7 +64282,7 @@ const WorldExplorationInner = ({
         const walkable = [];
         for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
           for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !((_g2 = newMap.voidTiles) == null ? void 0 : _g2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
+            if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !((_g3 = newMap.voidTiles) == null ? void 0 : _g3.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
               walkable.push({ x: gx, y: gy });
             }
           }
@@ -64395,22 +64492,31 @@ const WorldExplorationInner = ({
     combatantStoreCtx,
     enemies
   ]);
+  const getActiveCasterPos = reactExports.useCallback(() => {
+    if (activeControlledSummonIdRef.current) {
+      const summon = getLiveCombatants(combatantStoreCtx).find(
+        (e) => e.id === activeControlledSummonIdRef.current
+      );
+      if (summon) {
+        return { x: summon.x, y: summon.y };
+      }
+    }
+    return playerPositionRef.current;
+  }, [combatantStoreCtx]);
   const getMpReachableTiles = reactExports.useCallback(() => {
     if (!currentMap || !inBattleRef.current || currentBattleMp <= 0)
       return /* @__PURE__ */ new Set();
+    const origin = getActiveCasterPos();
     const portalKeys = new Set(currentMap.portals.map((p2) => `${p2.x},${p2.y}`));
     const visited = /* @__PURE__ */ new Map();
     const queue = [
       {
-        x: playerPositionRef.current.x,
-        y: playerPositionRef.current.y,
+        x: origin.x,
+        y: origin.y,
         steps: 0
       }
     ];
-    visited.set(
-      `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
-      0
-    );
+    visited.set(`${origin.x},${origin.y}`, 0);
     const reachable = /* @__PURE__ */ new Set();
     const moveCostPerTile = mapModifierRegistry.applyMpCost(
       1,
@@ -64446,7 +64552,7 @@ const WorldExplorationInner = ({
       }
     }
     return reachable;
-  }, [currentMap, currentBattleMp, activeMapModifierTypes]);
+  }, [currentMap, currentBattleMp, activeMapModifierTypes, getActiveCasterPos]);
   const getSpellRangeTiles = reactExports.useCallback(() => {
     if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current) {
       logDebugInfo("BATTLE", "[TARGET-BISECT] empty-set return", {
@@ -64465,12 +64571,13 @@ const WorldExplorationInner = ({
       });
       return /* @__PURE__ */ new Set();
     }
-    const cacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
+    const casterPos = getActiveCasterPos();
+    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     applyHealBuffSideEffect(spell, battleOnlyHealBuffSpellsRef);
     const liveEnemies = getLiveCombatants(combatantStoreCtx);
-    const result = computeTargetableTiles(spell, playerPosition, {
+    const result = computeTargetableTiles(spell, casterPos, {
       tiles: currentMap.tiles,
       enemies: liveEnemies,
       worldGridSize: WORLD_GRID_SIZE,
@@ -64484,7 +64591,7 @@ const WorldExplorationInner = ({
     return result;
   }, [
     currentMap,
-    playerPosition,
+    getActiveCasterPos,
     activeSpells,
     getEffectiveSpellRange,
     combatantStoreCtx
@@ -65902,15 +66009,13 @@ const WorldExplorationInner = ({
       },
       attributeKillReward: (deadId) => {
         var _a4;
-        if (actor && characterSlot) {
-          const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === deadId);
-          resolveBattleRewards(actor, characterSlot, {
-            victory: true,
-            enemiesDefeated: c2 ? [{ name: c2.pieceType, level: c2.level }] : [],
-            completedChallenges: [],
-            dungeonMultiplier: 1,
-            baseDoka: 0,
-            baseXp: 0
+        const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === deadId);
+        if (c2) {
+          battleDefeatedRef.current.push({
+            id: deadId,
+            name: c2.pieceType ?? "unknown",
+            pieceType: c2.pieceType ?? "unknown",
+            level: c2.level ?? 1
           });
         }
       },
@@ -66344,7 +66449,7 @@ const WorldExplorationInner = ({
   );
   const handleCanvasClick = reactExports.useCallback(
     (event) => {
-      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2;
+      var _a4, _b4, _c3, _d3, _e3, _f3, _g3, _h2, _i2, _j2, _k2;
       if (!currentMap || transitionInProgressRef.current) return;
       if (activeControlledSummonIdRef.current) {
         const summon = getLiveCombatants(combatantStoreCtx).find(
@@ -66718,7 +66823,7 @@ const WorldExplorationInner = ({
             markFirstAction();
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
+              (_g3 = effectsManagerRef.current) == null ? void 0 : _g3.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "✦ FIZZLED! ✦",
@@ -66889,7 +66994,7 @@ const WorldExplorationInner = ({
   );
   const handleCanvasTouch = reactExports.useCallback(
     (event) => {
-      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2;
+      var _a4, _b4, _c3, _d3, _e3, _f3, _g3, _h2, _i2, _j2, _k2;
       if (!currentMap || transitionInProgressRef.current) return;
       event.preventDefault();
       const touch = event.changedTouches[0];
@@ -67180,7 +67285,7 @@ const WorldExplorationInner = ({
             markFirstAction();
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
+              (_g3 = effectsManagerRef.current) == null ? void 0 : _g3.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "✦ FIZZLED! ✦",
@@ -68105,7 +68210,8 @@ const WorldExplorationInner = ({
               level: _rewardRecap.currentLevel,
               hp: 50 + prev.level * 10,
               mp: 5 + Math.floor(prev.level / 10),
-              ap: 6 + Math.floor(prev.level / 20)
+              ap: 6 + Math.floor(prev.level / 20),
+              expToNext: Math.floor(100 * 2 ** (_rewardRecap.currentLevel - 1))
             }));
             onDokaBalanceChange(_rewardRecap.newDoka ?? dokaBalance);
           } catch (persistErr) {
@@ -68314,7 +68420,7 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     var _a4;
     if (!inBattle) {
-      if (characterStats.hp <= 0 && !deathTriggeredRef.current) {
+      if (characterStatsRef.current.hp <= 0 && !deathTriggeredRef.current) {
         deathTriggeredRef.current = true;
         const xpLost = Math.floor(characterStats.exp * 0.2);
         const dokaLost2 = Math.floor(dokaBalance * 0.4);
@@ -68362,7 +68468,7 @@ const WorldExplorationInner = ({
       }
       return;
     }
-    if (characterStats.hp > 0) return;
+    if (characterStatsRef.current.hp > 0) return;
     if (deathTriggeredRef.current) return;
     deathTriggeredRef.current = true;
     setCharacterStats((prev) => {
@@ -68678,6 +68784,7 @@ const WorldExplorationInner = ({
       });
     }
     syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
+    battleDefeatedRef.current = [];
     const initCamTimer = setTimeout(() => {
       updateCameraToFollowPlayer();
     }, 200);
@@ -68767,6 +68874,7 @@ const WorldExplorationInner = ({
     if (inBattle && combatantStoreCtx.battleStartIds.size > 0 && activeHostilesRemaining(combatantsRef.current) === 0) {
       console.log("[VICTORY-GATE]", {
         hostiles: activeHostilesRemaining(combatantsRef.current),
+        battleStartIdsSize: combatantStoreCtx.battleStartIds.size,
         battleStartIds: combatantStoreCtx.battleStartIds.size,
         inBattle,
         // S1: Surface the store's full id list and the battleStartIds set
@@ -68782,7 +68890,7 @@ const WorldExplorationInner = ({
           "#d4af37"
         );
       }
-      const defeatedList = deriveBattleEnemies(combatantStoreCtx).filter((e) => !(e.isSummon && e.hp > 0)).map((e) => ({
+      const defeatedList = battleDefeatedRef.current.map((e) => ({
         name: e.pieceType ?? "unknown",
         level: e.level ?? 1
       }));
@@ -69242,8 +69350,8 @@ const WorldExplorationInner = ({
     const timeout2 = setTimeout(() => {
       const summonEnemy = enemiesRef.current.find((e) => e.id === enemyId);
       if ((summonEnemy == null ? void 0 : summonEnemy.isSummon) && summonEnemy.side === "player") {
-        summonEnemy.currentAp = summonEnemy.maxAp ?? 2;
-        summonEnemy.currentMp = summonEnemy.maxMp ?? 2;
+        summonEnemy.currentAp = summonEnemy.maxAp ?? 0;
+        summonEnemy.currentMp = summonEnemy.maxMp ?? 0;
         const summonCtx = buildSpellContext({
           rng: Math.random,
           log: (msg, color, isSummon) => {
@@ -69680,7 +69788,7 @@ const WorldExplorationInner = ({
         }
       }
       reactDomExports.flushSync(() => {
-        var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2;
+        var _a4, _b4, _c3, _d3, _e3, _f3, _g3, _h2, _i2;
         const prevEnemies = getLiveCombatants(combatantStoreCtx);
         const enemy = prevEnemies.find((e) => e.id === enemyId);
         if (!enemy) {
@@ -70404,431 +70512,440 @@ const WorldExplorationInner = ({
           currentTurn: battleTurn,
           lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null
         };
-        const action = enemy.isSummoner ? decideSummonerAction(
-          {
-            ...enemy,
-            name: enemy.assignedName ?? String(enemy.pieceType)
-          },
-          aiCtx
-        ) : decideEnemyAction(enemy, aiCtx);
-        if (action.kind === "cast" && ((_g2 = action.spell) == null ? void 0 : _g2.isSummon) && action.destination) {
-          (_h2 = spawnEnemySummonRef.current) == null ? void 0 : _h2.call(spawnEnemySummonRef, action.destination, action.spell);
-          enemySummonCooldownRef.current.set(enemyId, battleTurn);
-          enemyTurnInProgressRef.current = false;
-          turnEndReasonRef.current = "action-complete";
-          setTimeout(advanceTurnRef.current, 600);
-          return;
-        }
-        let newX = action.destination.x;
-        let newY = action.destination.y;
-        newX = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newX));
-        newY = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newY));
-        const chosenSpell = action.spell;
-        const resolvedTarget = action.targetId && action.targetId !== "player" ? prevEnemies.find((e) => e.id === action.targetId) : null;
-        const targetCell = resolvedTarget ? { x: resolvedTarget.x, y: resolvedTarget.y } : playerPosition;
-        const isSummonTarget = !!resolvedTarget;
-        const resolvedTargetId = action.targetId ?? "player";
-        if (action.intent) ;
-        let didAct = false;
-        if (action.kind === "cast" && chosenSpell) {
-          const spellRange = Number(chosenSpell.range);
-          const distAM = Math.max(
-            Math.abs(newX - targetCell.x),
-            Math.abs(newY - targetCell.y)
-          );
-          const inRange2 = distAM <= spellRange;
-          const spellType = chosenSpell.spellType ?? "damage";
-          const spellDmg = Number(chosenSpell.damage);
-          if (inRange2 && (spellType === "damage" || spellType === "drain") && spellDmg > 0) {
-            const rawDmg = Math.max(
-              1,
-              Math.round(
-                calcScaledDamage(spellDmg, enemy.level, 0) * enrageMultiplier
-              )
+        let advanced = false;
+        try {
+          const action = enemy.isSummoner ? decideSummonerAction(
+            {
+              ...enemy,
+              name: enemy.assignedName ?? String(enemy.pieceType),
+              side: "enemy"
+            },
+            aiCtx
+          ) : decideEnemyAction(enemy, aiCtx);
+          if (action.kind === "cast" && ((_g3 = action.spell) == null ? void 0 : _g3.isSummon) && action.destination) {
+            (_h2 = spawnEnemySummonRef.current) == null ? void 0 : _h2.call(spawnEnemySummonRef, action.destination, action.spell);
+            enemySummonCooldownRef.current.set(enemyId, battleTurn);
+            enemyTurnInProgressRef.current = false;
+            turnEndReasonRef.current = "action-complete";
+            setTimeout(advanceTurnRef.current, 600);
+            advanced = true;
+            return;
+          }
+          let newX = action.destination.x;
+          let newY = action.destination.y;
+          newX = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newX));
+          newY = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newY));
+          const chosenSpell = action.spell;
+          const resolvedTarget = action.targetId && action.targetId !== "player" ? prevEnemies.find((e) => e.id === action.targetId) : null;
+          const targetCell = resolvedTarget ? { x: resolvedTarget.x, y: resolvedTarget.y } : playerPosition;
+          const isSummonTarget = !!resolvedTarget;
+          const resolvedTargetId = action.targetId ?? "player";
+          if (action.intent) {
+          }
+          let didAct = false;
+          if (action.kind === "cast" && chosenSpell) {
+            const spellRange = Number(chosenSpell.range);
+            const distAM = Math.max(
+              Math.abs(newX - targetCell.x),
+              Math.abs(newY - targetCell.y)
             );
-            const isCrit = Math.random() * 100 < (enemy.chc ?? 2) + (enragedEnemies.has(enemyId) ? 10 : 0);
-            const dmgAC = isCrit ? rawDmg * 2 : rawDmg;
-            const plSpEff = isSummonTarget ? 0 : Math.max(0, characterStats.sp) * getStatModifier(
-              "player",
-              "sp",
-              activeEffectsRef.current
-            );
-            const plResEff = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res)) * getStatModifier(
-              "player",
-              "res",
-              activeEffectsRef.current
-            );
-            if (isPaperWindstorm && spellRange > 1 && Math.random() < 0.5) {
-              logBattleEntry(
-                `Paper Windstorm! ${enemy.pieceType}'s ${chosenSpell.name} missed!`,
-                "#AAAAAA"
-              );
-            } else if (!chosenSpell.hitsMultiple && !chosenSpell.aoe && mirrorUnitsRef.current.has("player")) {
-              mirrorUnitsRef.current.delete("player");
-              const mirrorDmg = Math.max(
+            const inRange2 = distAM <= spellRange;
+            const spellType = chosenSpell.spellType ?? "damage";
+            const spellDmg = Number(chosenSpell.damage);
+            if (inRange2 && (spellType === "damage" || spellType === "drain") && spellDmg > 0) {
+              const rawDmg = Math.max(
                 1,
                 Math.round(
-                  dmgAC * (1 - Number(enemy.res) * getStatModifier(enemy.id, "res", activeEffects) / 100)
+                  calcScaledDamage(spellDmg, enemy.level, 0) * enrageMultiplier
                 )
               );
-              const curEnemyHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
-              const newEnemyHpMirror = Math.max(0, curEnemyHp - mirrorDmg);
-              setEnemyHpMap((prev) => ({
-                ...prev,
-                [enemyId]: newEnemyHpMirror
-              }));
+              const isCrit = Math.random() * 100 < (enemy.chc ?? 2) + (enragedEnemies.has(enemyId) ? 10 : 0);
+              const dmgAC = isCrit ? rawDmg * 2 : rawDmg;
+              const plSpEff = isSummonTarget ? 0 : Math.max(0, characterStats.sp) * getStatModifier(
+                "player",
+                "sp",
+                activeEffectsRef.current
+              );
+              const plResEff = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res)) * getStatModifier(
+                "player",
+                "res",
+                activeEffectsRef.current
+              );
+              if (isPaperWindstorm && spellRange > 1 && Math.random() < 0.5) {
+                logBattleEntry(
+                  `Paper Windstorm! ${enemy.pieceType}'s ${chosenSpell.name} missed!`,
+                  "#AAAAAA"
+                );
+              } else if (!chosenSpell.hitsMultiple && !chosenSpell.aoe && mirrorUnitsRef.current.has("player")) {
+                mirrorUnitsRef.current.delete("player");
+                const mirrorDmg = Math.max(
+                  1,
+                  Math.round(
+                    dmgAC * (1 - Number(enemy.res) * getStatModifier(enemy.id, "res", activeEffects) / 100)
+                  )
+                );
+                const curEnemyHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
+                const newEnemyHpMirror = Math.max(0, curEnemyHp - mirrorDmg);
+                setEnemyHpMap((prev) => ({
+                  ...prev,
+                  [enemyId]: newEnemyHpMirror
+                }));
+                setTurnOrder(
+                  (prev) => prev.map(
+                    (c2) => c2.id === enemyId ? { ...c2, hp: newEnemyHpMirror } : c2
+                  )
+                );
+                logBattleEntry(
+                  `Mirror! ${enemy.pieceType}'s ${chosenSpell.name} was reflected back for ${mirrorDmg} dmg!`,
+                  "#c084fc"
+                );
+                didAct = true;
+              } else {
+                const dmg = Math.max(
+                  1,
+                  Math.round(
+                    dmgAC * (1 - plSpEff / 100) * (1 - plResEff / 100)
+                  )
+                );
+                const spR = Math.round(dmgAC * (plSpEff / 100));
+                const resR = Math.round(
+                  dmgAC * (1 - plSpEff / 100) * (plResEff / 100)
+                );
+                const rn = [
+                  spR > 0 ? `-${spR} SP` : "",
+                  resR > 0 ? `-${resR} RES` : ""
+                ].filter(Boolean).join(", ");
+                const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
+                let actualDmg;
+                if (isSummonTarget && resolvedTarget) {
+                  enemyTakesDamage(
+                    resolvedTarget.id,
+                    dmg,
+                    enemy.id,
+                    `${enemy.pieceType} spell ${chosenSpell.name}`,
+                    isCrit
+                  );
+                  actualDmg = dmg;
+                  logBattleEntry(
+                    isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType}: ${rawDmg}x2=${dmgAC} dmg` : `${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType} for ${actualDmg} dmg`,
+                    isCrit ? "#FFD700" : "#ef4444"
+                  );
+                } else {
+                  actualDmg = playerTakesDamage(
+                    dmg,
+                    `${enemy.pieceType} spell ${chosenSpell.name}`
+                  );
+                  logBattleEntry(
+                    isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
+                    isCrit ? "#FFD700" : "#ef4444"
+                  );
+                  if (characterStats.hp - actualDmg <= 0) {
+                    logDebugInfo(
+                      "BATTLE",
+                      "[DEATH-BISECT] source: enemy-spell",
+                      {
+                        hpBefore: characterStats.hp,
+                        actualDmg,
+                        hpAfter: characterStats.hp - actualDmg
+                      }
+                    );
+                    _handlePlayerDeath();
+                  }
+                }
+                playSound("player_damage", enemy.pieceType);
+                if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
+                  applyActiveEffect({
+                    id: `ed-${Date.now()}`,
+                    effectName: chosenSpell.name,
+                    type: "debuff",
+                    targetId: resolvedTargetId,
+                    stat: chosenSpell.debuffStat,
+                    modifier: chosenSpell.debuffModifier ?? 1,
+                    duration: chosenSpell.debuffDuration,
+                    iconEmoji: chosenSpell.iconEmoji,
+                    description: `${chosenSpell.debuffStat} debuffed`
+                  });
+                  if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
+                    playerApWasDebuffedRef.current = true;
+                }
+                if ((chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage) && chosenSpell.dotDuration) {
+                  const dotPptE = chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage ?? 0;
+                  applyActiveEffect({
+                    id: `edot-${Date.now()}`,
+                    effectName: `${chosenSpell.name} DoT`,
+                    type: "dot",
+                    targetId: resolvedTargetId,
+                    dotDamagePerTurn: dotPptE,
+                    duration: chosenSpell.dotDuration,
+                    iconEmoji: "☠️",
+                    description: `${dotPptE} dmg/turn`
+                  });
+                }
+                if (spellType === "drain" && chosenSpell.healAmount) {
+                  const ha = chosenSpell.healAmount;
+                  setTurnOrder(
+                    (prev) => prev.map(
+                      (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
+                    )
+                  );
+                }
+              }
+              if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
+                const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+                cdm.set(chosenSpell.id, chosenSpell.cooldown);
+                enemyCooldownsRef.current.set(enemyId, cdm);
+              }
+              didAct = true;
+            } else if (inRange2 && spellType === "heal" && spellRange === 0) {
+              const ha = Math.round(
+                (chosenSpell.healAmount ?? enemy.level * 2) * enrageMultiplier
+              );
               setTurnOrder(
                 (prev) => prev.map(
-                  (c2) => c2.id === enemyId ? { ...c2, hp: newEnemyHpMirror } : c2
+                  (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
                 )
               );
-              logBattleEntry(
-                `Mirror! ${enemy.pieceType}'s ${chosenSpell.name} was reflected back for ${mirrorDmg} dmg!`,
-                "#c084fc"
-              );
+              logBattleEntry(`${enemy.pieceType} heals ${ha} HP`, "#ef4444");
+              if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
+                const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+                cdm.set(chosenSpell.id, chosenSpell.cooldown);
+                enemyCooldownsRef.current.set(enemyId, cdm);
+              }
               didAct = true;
-            } else {
-              const dmg = Math.max(
+            } else if (inRange2 && chosenSpell.debuffStat && chosenSpell.debuffDuration) {
+              applyActiveEffect({
+                id: `ed2-${Date.now()}`,
+                effectName: chosenSpell.name,
+                type: "debuff",
+                targetId: resolvedTargetId,
+                stat: chosenSpell.debuffStat,
+                modifier: chosenSpell.debuffModifier ?? 1,
+                duration: chosenSpell.debuffDuration,
+                iconEmoji: chosenSpell.iconEmoji,
+                description: `${chosenSpell.debuffStat} debuffed`
+              });
+              if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
+                playerApWasDebuffedRef.current = true;
+              logBattleEntry(
+                `${enemy.pieceType} uses ${chosenSpell.name}!`,
+                "#ef4444"
+              );
+              if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
+                const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
+                cdm.set(chosenSpell.id, chosenSpell.cooldown);
+                enemyCooldownsRef.current.set(enemyId, cdm);
+              }
+              didAct = true;
+            }
+          }
+          if (action.kind === "melee" || !didAct) {
+            const nd = Math.max(
+              Math.abs(newX - targetCell.x),
+              Math.abs(newY - targetCell.y)
+            );
+            if (nd <= 1) {
+              const fallbackPool = [
+                { id: "e-crush", name: "Crush", range: 1, damage: 12 },
+                { id: "e-firebolt", name: "Fire Bolt", range: 3, damage: 8 }
+              ];
+              const fb = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
+              const rawFB = Math.max(
                 1,
-                Math.round(dmgAC * (1 - plSpEff / 100) * (1 - plResEff / 100))
+                Math.round(
+                  fb.damage * Math.max(1, enemy.level / 5) * enrageMultiplier
+                )
               );
-              const spR = Math.round(dmgAC * (plSpEff / 100));
-              const resR = Math.round(
-                dmgAC * (1 - plSpEff / 100) * (plResEff / 100)
+              const meleeRes = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res));
+              const dmgFB = Math.max(
+                1,
+                Math.round(rawFB * (1 - meleeRes / 100))
               );
-              const rn = [
-                spR > 0 ? `-${spR} SP` : "",
-                resR > 0 ? `-${resR} RES` : ""
-              ].filter(Boolean).join(", ");
-              const resNote = rn ? ` [${rn} = ${dmg} recv]` : "";
-              let actualDmg;
-              if (isSummonTarget && resolvedTarget) {
+              if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5)
+                logBattleEntry(
+                  `Paper Windstorm! ${enemy.pieceType}'s ${fb.name} missed!`,
+                  "#AAAAAA"
+                );
+              else if (isSummonTarget && resolvedTarget) {
                 enemyTakesDamage(
                   resolvedTarget.id,
-                  dmg,
+                  dmgFB,
                   enemy.id,
-                  `${enemy.pieceType} spell ${chosenSpell.name}`,
-                  isCrit
+                  "melee",
+                  false
                 );
-                actualDmg = dmg;
                 logBattleEntry(
-                  isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType}: ${rawDmg}x2=${dmgAC} dmg` : `${enemy.pieceType} casts ${chosenSpell.name} on ${resolvedTarget.pieceType} for ${actualDmg} dmg`,
-                  isCrit ? "#FFD700" : "#ef4444"
+                  `${enemy.pieceType} strikes ${resolvedTarget.pieceType} for ${dmgFB} dmg`,
+                  "#ef4444"
                 );
+                didAct = true;
               } else {
-                actualDmg = playerTakesDamage(
-                  dmg,
-                  `${enemy.pieceType} spell ${chosenSpell.name}`
-                );
-                logBattleEntry(
-                  isCrit ? `CRITICAL HIT! ${enemy.pieceType} casts ${chosenSpell.name}: ${rawDmg}x2=${dmgAC} dmg${resNote}` : `${enemy.pieceType} casts ${chosenSpell.name} on you for ${actualDmg} dmg${resNote}`,
-                  isCrit ? "#FFD700" : "#ef4444"
-                );
-                if (characterStats.hp - actualDmg <= 0) {
-                  logDebugInfo("BATTLE", "[DEATH-BISECT] source: enemy-spell", {
+                let meleeDmg = dmgFB;
+                if (shieldHpRef.current > 0) {
+                  const absorbedFB = Math.min(shieldHpRef.current, meleeDmg);
+                  shieldHpRef.current = Math.max(
+                    0,
+                    shieldHpRef.current - absorbedFB
+                  );
+                  meleeDmg = Math.max(0, meleeDmg - absorbedFB);
+                  if (absorbedFB > 0)
+                    logBattleEntry(
+                      `🛡️ Shield absorbed ${absorbedFB} dmg! (${shieldHpRef.current} remaining)`,
+                      "#818cf8"
+                    );
+                }
+                setCharacterStats((prev) => ({
+                  ...prev,
+                  hp: Math.max(0, prev.hp - meleeDmg)
+                }));
+                if (characterStats.hp - meleeDmg <= 0) {
+                  logDebugInfo("BATTLE", "[DEATH-BISECT] source: enemy-melee", {
                     hpBefore: characterStats.hp,
-                    actualDmg,
-                    hpAfter: characterStats.hp - actualDmg
+                    meleeDmg,
+                    hpAfter: characterStats.hp - meleeDmg
                   });
                   _handlePlayerDeath();
                 }
-              }
-              playSound("player_damage", enemy.pieceType);
-              if (chosenSpell.debuffStat && chosenSpell.debuffDuration) {
-                applyActiveEffect({
-                  id: `ed-${Date.now()}`,
-                  effectName: chosenSpell.name,
-                  type: "debuff",
-                  targetId: resolvedTargetId,
-                  stat: chosenSpell.debuffStat,
-                  modifier: chosenSpell.debuffModifier ?? 1,
-                  duration: chosenSpell.debuffDuration,
-                  iconEmoji: chosenSpell.iconEmoji,
-                  description: `${chosenSpell.debuffStat} debuffed`
-                });
-                if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
-                  playerApWasDebuffedRef.current = true;
-              }
-              if ((chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage) && chosenSpell.dotDuration) {
-                const dotPptE = chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage ?? 0;
-                applyActiveEffect({
-                  id: `edot-${Date.now()}`,
-                  effectName: `${chosenSpell.name} DoT`,
-                  type: "dot",
-                  targetId: resolvedTargetId,
-                  dotDamagePerTurn: dotPptE,
-                  duration: chosenSpell.dotDuration,
-                  iconEmoji: "☠️",
-                  description: `${dotPptE} dmg/turn`
-                });
-              }
-              if (spellType === "drain" && chosenSpell.healAmount) {
-                const ha = chosenSpell.healAmount;
-                setTurnOrder(
-                  (prev) => prev.map(
-                    (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
-                  )
+                logBattleEntry(
+                  `${enemy.pieceType} strikes you for ${meleeDmg} dmg`,
+                  "#ef4444"
                 );
-              }
-            }
-            if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
-              const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
-              cdm.set(chosenSpell.id, chosenSpell.cooldown);
-              enemyCooldownsRef.current.set(enemyId, cdm);
-            }
-            didAct = true;
-          } else if (inRange2 && spellType === "heal" && spellRange === 0) {
-            const ha = Math.round(
-              (chosenSpell.healAmount ?? enemy.level * 2) * enrageMultiplier
-            );
-            setTurnOrder(
-              (prev) => prev.map(
-                (c2) => c2.id === enemyId ? { ...c2, hp: Math.min(c2.maxHp, c2.hp + ha) } : c2
-              )
-            );
-            logBattleEntry(`${enemy.pieceType} heals ${ha} HP`, "#ef4444");
-            if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
-              const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
-              cdm.set(chosenSpell.id, chosenSpell.cooldown);
-              enemyCooldownsRef.current.set(enemyId, cdm);
-            }
-            didAct = true;
-          } else if (inRange2 && chosenSpell.debuffStat && chosenSpell.debuffDuration) {
-            applyActiveEffect({
-              id: `ed2-${Date.now()}`,
-              effectName: chosenSpell.name,
-              type: "debuff",
-              targetId: resolvedTargetId,
-              stat: chosenSpell.debuffStat,
-              modifier: chosenSpell.debuffModifier ?? 1,
-              duration: chosenSpell.debuffDuration,
-              iconEmoji: chosenSpell.iconEmoji,
-              description: `${chosenSpell.debuffStat} debuffed`
-            });
-            if (chosenSpell.debuffStat === "ap" && !isSummonTarget)
-              playerApWasDebuffedRef.current = true;
-            logBattleEntry(
-              `${enemy.pieceType} uses ${chosenSpell.name}!`,
-              "#ef4444"
-            );
-            if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
-              const cdm = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
-              cdm.set(chosenSpell.id, chosenSpell.cooldown);
-              enemyCooldownsRef.current.set(enemyId, cdm);
-            }
-            didAct = true;
-          }
-        }
-        if (action.kind === "melee" || !didAct) {
-          const nd = Math.max(
-            Math.abs(newX - targetCell.x),
-            Math.abs(newY - targetCell.y)
-          );
-          if (nd <= 1) {
-            const fallbackPool = [
-              { id: "e-crush", name: "Crush", range: 1, damage: 12 },
-              { id: "e-firebolt", name: "Fire Bolt", range: 3, damage: 8 }
-            ];
-            const fb = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
-            const rawFB = Math.max(
-              1,
-              Math.round(
-                fb.damage * Math.max(1, enemy.level / 5) * enrageMultiplier
-              )
-            );
-            const meleeRes = isSummonTarget ? Math.max(0, Number((resolvedTarget == null ? void 0 : resolvedTarget.res) ?? 0)) : Math.max(0, Number(characterStats.res));
-            const dmgFB = Math.max(1, Math.round(rawFB * (1 - meleeRes / 100)));
-            if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5)
-              logBattleEntry(
-                `Paper Windstorm! ${enemy.pieceType}'s ${fb.name} missed!`,
-                "#AAAAAA"
-              );
-            else if (isSummonTarget && resolvedTarget) {
-              enemyTakesDamage(
-                resolvedTarget.id,
-                dmgFB,
-                enemy.id,
-                "melee",
-                false
-              );
-              logBattleEntry(
-                `${enemy.pieceType} strikes ${resolvedTarget.pieceType} for ${dmgFB} dmg`,
-                "#ef4444"
-              );
-              didAct = true;
-            } else {
-              let meleeDmg = dmgFB;
-              if (shieldHpRef.current > 0) {
-                const absorbedFB = Math.min(shieldHpRef.current, meleeDmg);
-                shieldHpRef.current = Math.max(
-                  0,
-                  shieldHpRef.current - absorbedFB
-                );
-                meleeDmg = Math.max(0, meleeDmg - absorbedFB);
-                if (absorbedFB > 0)
+                if ((enemy == null ? void 0 : enemy.family) === "ember_knight") {
+                  applyActiveEffect({
+                    id: `ember_burn_${Date.now()}`,
+                    targetId: "player",
+                    type: "dot",
+                    dotDamagePerTurn: 3,
+                    duration: 3,
+                    effectName: "burn",
+                    iconEmoji: "🔥",
+                    description: "3 dmg/turn (Ember Knight)"
+                  });
                   logBattleEntry(
-                    `🛡️ Shield absorbed ${absorbedFB} dmg! (${shieldHpRef.current} remaining)`,
-                    "#818cf8"
+                    `${enemy.pieceType ?? "Enemy"} ignites you!`,
+                    "#F97316"
                   );
+                }
+                if ((enemy == null ? void 0 : enemy.family) === "tide_shade") {
+                  applyActiveEffect({
+                    id: `tide_slow_${Date.now()}`,
+                    targetId: "player",
+                    type: "debuff",
+                    stat: "mp",
+                    modifier: -1,
+                    duration: 2,
+                    effectName: "slow",
+                    iconEmoji: "🌊",
+                    description: "-1 MP (Tide Shade)"
+                  });
+                  logBattleEntry(
+                    `${enemy.pieceType ?? "Enemy"} slows you!`,
+                    "#0F766E"
+                  );
+                }
+                didAct = true;
               }
-              setCharacterStats((prev) => ({
-                ...prev,
-                hp: Math.max(0, prev.hp - meleeDmg)
-              }));
-              if (characterStats.hp - meleeDmg <= 0) {
-                logDebugInfo("BATTLE", "[DEATH-BISECT] source: enemy-melee", {
-                  hpBefore: characterStats.hp,
-                  meleeDmg,
-                  hpAfter: characterStats.hp - meleeDmg
-                });
-                _handlePlayerDeath();
-              }
-              logBattleEntry(
-                `${enemy.pieceType} strikes you for ${meleeDmg} dmg`,
-                "#ef4444"
-              );
-              if ((enemy == null ? void 0 : enemy.family) === "ember_knight") {
-                applyActiveEffect({
-                  id: `ember_burn_${Date.now()}`,
-                  targetId: "player",
-                  type: "dot",
-                  dotDamagePerTurn: 3,
-                  duration: 3,
-                  effectName: "burn",
-                  iconEmoji: "🔥",
-                  description: "3 dmg/turn (Ember Knight)"
-                });
-                logBattleEntry(
-                  `${enemy.pieceType ?? "Enemy"} ignites you!`,
-                  "#F97316"
-                );
-              }
-              if ((enemy == null ? void 0 : enemy.family) === "tide_shade") {
-                applyActiveEffect({
-                  id: `tide_slow_${Date.now()}`,
-                  targetId: "player",
-                  type: "debuff",
-                  stat: "mp",
-                  modifier: -1,
-                  duration: 2,
-                  effectName: "slow",
-                  iconEmoji: "🌊",
-                  description: "-1 MP (Tide Shade)"
-                });
-                logBattleEntry(
-                  `${enemy.pieceType ?? "Enemy"} slows you!`,
-                  "#0F766E"
-                );
-              }
-              didAct = true;
-            }
-          } else if (action.kind === "move") {
-            didAct = true;
-            logBattleEntry(
-              `${enemy.pieceType} ${action.intent ?? "moves"}`,
-              "#ef4444"
-            );
-          } else if (action.kind === "skip") {
-            const holdIntents = /* @__PURE__ */ new Set([
-              "hold",
-              "wait",
-              "no-spell",
-              "cap",
-              "cooldown"
-            ]);
-            const isTrueHold = action.intent === void 0 || holdIntents.has(action.intent);
-            if (isTrueHold) {
-              logBattleEntry(
-                `${enemy.pieceType} skipped (out of range)${action.intent ? ` (${action.intent})` : ""}`,
-                "#ef4444"
-              );
-            } else {
+            } else if (action.kind === "move") {
               didAct = true;
               logBattleEntry(
                 `${enemy.pieceType} ${action.intent ?? "moves"}`,
                 "#ef4444"
               );
+            } else if (action.kind === "skip") {
+              const holdIntents = /* @__PURE__ */ new Set([
+                "hold",
+                "wait",
+                "no-spell",
+                "cap",
+                "cooldown"
+              ]);
+              const isTrueHold = action.intent === void 0 || holdIntents.has(action.intent);
+              if (isTrueHold) {
+                logBattleEntry(
+                  `${enemy.pieceType} skipped (out of range)${action.intent ? ` (${action.intent})` : ""}`,
+                  "#ef4444"
+                );
+              } else {
+                didAct = true;
+                logBattleEntry(
+                  `${enemy.pieceType} ${action.intent ?? "moves"}`,
+                  "#ef4444"
+                );
+              }
             }
           }
-        }
-        const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
-        if (thisHp <= 0 && enemyId === leaderEnemyIdRef.current && !leaderDiedRef.current) {
-          processCombatantDeathCb(enemyId);
-        }
-        logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
-        if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
-          const enemyHazard = (_i2 = currentMap.hazardTiles) == null ? void 0 : _i2.get(`${newX},${newY}`);
-          if (enemyHazard) {
-            if (enemyHazard === "lava") {
-              const hDmg = 8 + Math.floor(Math.random() * 8);
-              const curEH = enemyHpMap[enemyId] ?? currentCombatant.hp;
-              const newEH = Math.max(0, curEH - hDmg);
-              setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEH }));
-              setTurnOrder(
-                (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEH } : c2)
-              );
-              logBattleEntry(
-                `🌰 ${enemy.pieceType} walked on lava! -${hDmg} HP`,
-                "#ff4400"
-              );
-              applyActiveEffect({
-                id: `enemy-burn-${Date.now()}`,
-                effectName: "Burning",
-                type: "dot",
-                targetId: enemyId,
-                duration: 3,
-                iconEmoji: "🔥",
-                description: "Burning",
-                dotDamagePerTurn: 3
-              });
-            } else if (enemyHazard === "ice") {
-              logBattleEntry(
-                `❄️ ${enemy.pieceType} stepped on ice! Slowed!`,
-                "#66ccff"
-              );
-              applyActiveEffect({
-                id: `enemy-frozen-${Date.now()}`,
-                effectName: "Frozen",
-                type: "debuff",
-                targetId: enemyId,
-                stat: "mp",
-                modifier: -2,
-                duration: 2,
-                iconEmoji: "❄️",
-                description: "Slowed by ice"
-              });
-            } else if (enemyHazard === "spikes") {
-              const hsDmg = 5 + Math.floor(Math.random() * 6);
-              const curEHS = enemyHpMap[enemyId] ?? currentCombatant.hp;
-              const newEHS = Math.max(0, curEHS - hsDmg);
-              setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEHS }));
-              setTurnOrder(
-                (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEHS } : c2)
-              );
-              logBattleEntry(
-                `⚔️ ${enemy.pieceType} hit spikes! -${hsDmg} HP`,
-                "#cc8800"
-              );
+          const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
+          if (thisHp <= 0 && enemyId === leaderEnemyIdRef.current && !leaderDiedRef.current) {
+            processCombatantDeathCb(enemyId);
+          }
+          logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
+          if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
+            const enemyHazard = (_i2 = currentMap.hazardTiles) == null ? void 0 : _i2.get(`${newX},${newY}`);
+            if (enemyHazard) {
+              if (enemyHazard === "lava") {
+                const hDmg = 8 + Math.floor(Math.random() * 8);
+                const curEH = enemyHpMap[enemyId] ?? currentCombatant.hp;
+                const newEH = Math.max(0, curEH - hDmg);
+                setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEH }));
+                setTurnOrder(
+                  (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEH } : c2)
+                );
+                logBattleEntry(
+                  `🌰 ${enemy.pieceType} walked on lava! -${hDmg} HP`,
+                  "#ff4400"
+                );
+                applyActiveEffect({
+                  id: `enemy-burn-${Date.now()}`,
+                  effectName: "Burning",
+                  type: "dot",
+                  targetId: enemyId,
+                  duration: 3,
+                  iconEmoji: "🔥",
+                  description: "Burning",
+                  dotDamagePerTurn: 3
+                });
+              } else if (enemyHazard === "ice") {
+                logBattleEntry(
+                  `❄️ ${enemy.pieceType} stepped on ice! Slowed!`,
+                  "#66ccff"
+                );
+                applyActiveEffect({
+                  id: `enemy-frozen-${Date.now()}`,
+                  effectName: "Frozen",
+                  type: "debuff",
+                  targetId: enemyId,
+                  stat: "mp",
+                  modifier: -2,
+                  duration: 2,
+                  iconEmoji: "❄️",
+                  description: "Slowed by ice"
+                });
+              } else if (enemyHazard === "spikes") {
+                const hsDmg = 5 + Math.floor(Math.random() * 6);
+                const curEHS = enemyHpMap[enemyId] ?? currentCombatant.hp;
+                const newEHS = Math.max(0, curEHS - hsDmg);
+                setEnemyHpMap((h2) => ({ ...h2, [enemyId]: newEHS }));
+                setTurnOrder(
+                  (to) => to.map((c2) => c2.id === enemyId ? { ...c2, hp: newEHS } : c2)
+                );
+                logBattleEntry(
+                  `⚔️ ${enemy.pieceType} hit spikes! -${hsDmg} HP`,
+                  "#cc8800"
+                );
+              }
             }
+          }
+        } catch (e) {
+          console.error("[enemyAI] decide/apply threw — ending turn", e);
+        } finally {
+          enemyTurnInProgressRef.current = false;
+          if (!advanced) {
+            turnEndReasonRef.current = "action-complete";
+            advanceTurnRef.current();
+            advanced = true;
           }
         }
         clearTimeout(watchdog);
         pendingTimeoutsRef.current.delete(watchdog);
-        try {
-          updateCombatant(combatantStoreCtx, enemyId, { x: newX, y: newY });
-          const _at3 = setTimeout(() => {
-            if (!pendingTimeoutsRef.current.has(_at3)) return;
-            pendingTimeoutsRef.current.delete(_at3);
-            if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
-              advanceTurnRef.current();
-          }, 0);
-          if (!cleanupRanRef.current) {
-            pendingTimeoutsRef.current.add(_at3);
-          }
-          return;
-        } finally {
-          enemyTurnInProgressRef.current = false;
-        }
       });
     }, 800);
     if (!cleanupRanRef.current) {
@@ -70949,7 +71066,7 @@ const WorldExplorationInner = ({
           "BATTLE",
           `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t) => t.id).join(",")}`
         );
-        if (_castResult === "cast") {
+        if (_castResult === "cast" || _castResult === "fizzled") {
           setCurrentBattleApSynced(
             (prev) => Math.max(0, prev - _apCost)
           );
@@ -72663,137 +72780,151 @@ const WorldExplorationInner = ({
           }
         ),
         activeControlledSummonId && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "absolute top-0 left-1/2 -translate-x-1/2 z-50 text-amber-400 font-bold text-sm bg-slate-900/80 px-4 py-1 rounded", children: "Summon's Turn" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "div",
-          {
-            className: activeControlledSummonId ? "opacity-50 pointer-events-none" : "",
-            children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-              BattleUIPanel,
-              {
-                inBattle,
-                inspectCombatantId,
-                onInspectCombatant: setInspectCombatantId,
-                activeSpells,
-                selectedSpellIdRef,
-                spellSelectionVersion,
-                hasSelectedSpell: !!selectedSpellIdRef.current,
-                onSelectSpell: (id) => {
-                  if (!inBattle || currentBattleAp > 0) {
-                    selectedSpellIdRef.current = id;
-                    setSpellSelectionVersion((v2) => v2 + 1);
-                    spellRangeCacheRef.current.clear();
-                    if (inBattle) setBattleActionMode("attack");
-                  }
-                },
-                onOpenSpellbook: () => setSpellbookOpen(true),
-                onAttackNearest: attackNearestEnemy,
-                canAttackNearest: inBattle && battleActionMode === "attack" && !!selectedSpellIdRef.current && currentBattleAp >= (activeSpells.find((s2) => s2.id === selectedSpellIdRef.current) ? Number(
-                  activeSpells.find(
-                    (s2) => s2.id === selectedSpellIdRef.current
-                  ).apCost
-                ) : 999) && enemies.some((e) => {
-                  const spell = activeSpells.find(
-                    (s2) => s2.id === selectedSpellIdRef.current
-                  );
-                  const range = spell ? Math.max(1, Number(spell.range)) : 0;
-                  return Math.max(
-                    Math.abs(e.x - playerPositionRef.current.x),
-                    Math.abs(e.y - playerPositionRef.current.y)
-                  ) <= range;
-                }),
-                isMobile,
-                turnOrder: turnOrder.map((c2) => {
-                  if (c2.type === "player") {
-                    return {
-                      ...c2,
-                      ap: currentBattleAp,
-                      mp: currentBattleMp,
-                      atk: 0,
-                      res: characterStats.res,
-                      sp: characterStats.sp,
-                      chc: characterStats.chc
-                    };
-                  }
-                  const e = enemies.find((en) => en.id === c2.id);
-                  return {
-                    ...c2,
-                    ...resolveEnemyApMp(e, c2.level),
-                    atk: e ? e.level * 2 : 0,
-                    res: 0,
-                    sp: 0,
-                    chc: 2,
-                    spells: e == null ? void 0 : e.spells,
-                    enraged: enragedEnemies.has(c2.id)
-                  };
-                }),
-                currentTurnIndex,
-                battlePhase,
-                battleTurn,
-                turnTimeLeft,
-                battleActionMode,
-                onSetWalk: () => {
-                  setBattleActionMode("walk");
-                  selectedSpellIdRef.current = null;
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            BattleUIPanel,
+            {
+              inBattle,
+              isPlayerTurn: ((_g2 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _g2.type) === "player",
+              isSummonControlled: !!activeControlledSummonId,
+              inspectCombatantId,
+              onInspectCombatant: setInspectCombatantId,
+              activeSpells,
+              selectedSpellIdRef,
+              spellSelectionVersion,
+              hasSelectedSpell: !!selectedSpellIdRef.current,
+              onSelectSpell: (id) => {
+                if (!inBattle || currentBattleAp > 0) {
+                  selectedSpellIdRef.current = id;
                   setSpellSelectionVersion((v2) => v2 + 1);
                   spellRangeCacheRef.current.clear();
-                },
-                onSetAttack: () => {
-                  if (currentBattleAp > 0) setBattleActionMode("attack");
-                },
-                currentBattleAp,
-                currentBattleMp,
-                onEndBattle: () => {
-                  const _s2RunActive = bossRushActiveRef.current || dungeonChainActiveRef.current;
-                  if (_s2RunActive) {
-                    const _s2RunName = bossRushActiveRef.current ? "Boss Rush" : "Dungeon Chain";
-                    const _s2Confirmed = window.confirm(
-                      `Fleeing ends your ${_s2RunName} run — you will fall. Continue?`
-                    );
-                    if (!_s2Confirmed) return;
-                  }
-                  _handlePlayerDeath();
-                },
-                onEndTurn: () => {
-                  if (battlePhase !== "player") return;
-                  advanceTurn();
-                },
-                spellCooldowns: spellCooldownVersion >= 0 ? Object.fromEntries(spellCooldownsRef.current) : {},
-                userId
-              }
-            )
-          }
-        ),
-        activeControlledSummonId && (() => {
-          const summon = getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.id === activeControlledSummonId
-          );
-          if (!summon) return null;
-          return /* @__PURE__ */ jsxRuntimeExports.jsx(
-            SummonControlPanel,
-            {
-              summonName: summon.pieceType,
-              summonPieceType: summon.pieceType,
-              lifespan: summon.turnsRemaining ?? 0,
-              maxLifespan: summon.summonLifespan ?? 0,
-              currentAp: summon.currentAp ?? 0,
-              maxAp: summon.maxAp ?? 0,
-              currentMp: summon.currentMp ?? 0,
-              maxMp: summon.maxMp ?? 0,
-              kitSpells: (summon.spells ?? []).map((s2) => ({
-                id: s2.id,
-                name: s2.name,
-                apCost: Number(s2.apCost)
-              })),
-              onSpellSelect: (spellId) => setSelectedSummonSpellId(spellId),
+                  if (inBattle) setBattleActionMode("attack");
+                }
+              },
+              onOpenSpellbook: () => setSpellbookOpen(true),
+              onAttackNearest: attackNearestEnemy,
+              canAttackNearest: inBattle && battleActionMode === "attack" && !!selectedSpellIdRef.current && currentBattleAp >= (activeSpells.find((s2) => s2.id === selectedSpellIdRef.current) ? Number(
+                activeSpells.find(
+                  (s2) => s2.id === selectedSpellIdRef.current
+                ).apCost
+              ) : 999) && enemies.some((e) => {
+                const spell = activeSpells.find(
+                  (s2) => s2.id === selectedSpellIdRef.current
+                );
+                const range = spell ? Math.max(1, Number(spell.range)) : 0;
+                return Math.max(
+                  Math.abs(e.x - playerPositionRef.current.x),
+                  Math.abs(e.y - playerPositionRef.current.y)
+                ) <= range;
+              }),
+              isMobile,
+              turnOrder: turnOrder.map((c2) => {
+                if (c2.type === "player") {
+                  return {
+                    ...c2,
+                    ap: currentBattleAp,
+                    mp: currentBattleMp,
+                    atk: 0,
+                    res: characterStats.res,
+                    sp: characterStats.sp,
+                    chc: characterStats.chc
+                  };
+                }
+                const e = enemies.find((en) => en.id === c2.id);
+                return {
+                  ...c2,
+                  ...resolveEnemyApMp(e, c2.level),
+                  atk: e ? e.level * 2 : 0,
+                  res: 0,
+                  sp: 0,
+                  chc: 2,
+                  spells: e == null ? void 0 : e.spells,
+                  enraged: enragedEnemies.has(c2.id)
+                };
+              }),
+              currentTurnIndex,
+              battlePhase,
+              battleTurn,
+              turnTimeLeft,
+              battleActionMode,
+              onSetWalk: () => {
+                setBattleActionMode("walk");
+                selectedSpellIdRef.current = null;
+                setSpellSelectionVersion((v2) => v2 + 1);
+                spellRangeCacheRef.current.clear();
+              },
+              onSetAttack: () => {
+                if (currentBattleAp > 0) setBattleActionMode("attack");
+              },
+              currentBattleAp,
+              currentBattleMp,
+              onEndBattle: () => {
+                const _s2RunActive = bossRushActiveRef.current || dungeonChainActiveRef.current;
+                if (_s2RunActive) {
+                  const _s2RunName = bossRushActiveRef.current ? "Boss Rush" : "Dungeon Chain";
+                  const _s2Confirmed = window.confirm(
+                    `Fleeing ends your ${_s2RunName} run — you will fall. Continue?`
+                  );
+                  if (!_s2Confirmed) return;
+                }
+                _handlePlayerDeath();
+              },
               onEndTurn: () => {
-                setActiveControlledSummonId(null);
-                activeControlledSummonIdRef.current = null;
-                setSelectedSummonSpellId(null);
+                const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+                if ((_entry == null ? void 0 : _entry.type) !== "player") return;
+                if (battlePhase !== "player") return;
                 advanceTurn();
-              }
+              },
+              spellCooldowns: spellCooldownVersion >= 0 ? Object.fromEntries(spellCooldownsRef.current) : {},
+              userId
             }
-          );
-        })(),
+          ),
+          activeControlledSummonId && (() => {
+            const summon = getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === activeControlledSummonId
+            );
+            if (!summon) return null;
+            return /* @__PURE__ */ jsxRuntimeExports.jsx(
+              SummonControlPanel,
+              {
+                summonName: summon.pieceType,
+                summonPieceType: summon.pieceType,
+                lifespan: summon.turnsRemaining ?? 0,
+                maxLifespan: summon.summonLifespan ?? 0,
+                currentAp: summon.currentAp ?? 0,
+                maxAp: summon.maxAp ?? 0,
+                currentMp: summon.currentMp ?? 0,
+                maxMp: summon.maxMp ?? 0,
+                currentHp: summon.hp ?? 0,
+                maxHp: summon.maxHp ?? 0,
+                kitSpells: (() => {
+                  var _a4;
+                  const unitDef = (_a4 = starterSpells.find(
+                    (sp) => {
+                      var _a5;
+                      return ((_a5 = sp.summonUnitDef) == null ? void 0 : _a5.pieceType) === summon.pieceType;
+                    }
+                  )) == null ? void 0 : _a4.summonUnitDef;
+                  const kitIds = unitDef && Array.isArray(unitDef.summonKit) ? unitDef.summonKit : [];
+                  const resolved = kitIds.map((id) => starterSpells.find((sp) => sp.id === id)).filter((sp) => !!sp);
+                  const source = resolved.length > 0 ? resolved : summon.spells ?? [];
+                  return source.map((s2) => ({
+                    id: s2.id,
+                    name: s2.name,
+                    apCost: Number(s2.apCost)
+                  }));
+                })(),
+                onSpellSelect: (spellId) => setSelectedSummonSpellId(spellId),
+                onEndTurn: () => {
+                  setActiveControlledSummonId(null);
+                  activeControlledSummonIdRef.current = null;
+                  setSelectedSummonSpellId(null);
+                  advanceTurn();
+                }
+              }
+            );
+          })()
+        ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(SettingsPanel, { userId }),
         noTargetFlash && /* @__PURE__ */ jsxRuntimeExports.jsx(
           "div",
@@ -76117,7 +76248,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CxjZBoQH.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-lFMlqpko.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

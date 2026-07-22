@@ -36,7 +36,7 @@ import type { DebugLogEntry } from "./debugLogger";
  * SECTION 4 (build #329): moved here from ChatPanel.tsx and bumped from
  * "#325" to "#329".
  */
-export const APP_BUILD = "#334";
+export const APP_BUILD = "#335";
 
 /**
  * Existing debug context fields threaded in from the parent
