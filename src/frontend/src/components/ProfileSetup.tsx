@@ -1,11 +1,26 @@
 import type React from "react";
 import { useState } from "react";
+import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { useSaveCallerUserProfile } from "../hooks/useQueries";
 
 const ProfileSetup: React.FC = () => {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const saveProfileMutation = useSaveCallerUserProfile();
+  const { clear: clearIdentity } = useInternetIdentity();
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      // Drop the Internet Identity session — same clear() path GameFlow.tsx
+      // handleLogout uses — which returns the user to the login screen.
+      await clearIdentity();
+    } catch (err) {
+      console.error("Error clearing identity session:", err);
+      setIsLoggingOut(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,6 +309,64 @@ const ProfileSetup: React.FC = () => {
                 )}
               </button>
             </form>
+
+            {/* Escape hatch — subtle, muted, bottom of the card */}
+            <div
+              style={{
+                marginTop: 20,
+                paddingTop: 18,
+                borderTop: "1px solid rgba(122,26,26,0.35)",
+                display: "flex",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                data-ocid="profile_setup.logout_button"
+                disabled={isLoggingOut || saveProfileMutation.isPending}
+                onClick={handleLogout}
+                style={{
+                  background: "transparent",
+                  border: "1px solid rgba(122,26,26,0.5)",
+                  borderRadius: 6,
+                  color: "#6a7a8a",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  padding: "8px 18px",
+                  cursor:
+                    isLoggingOut || saveProfileMutation.isPending
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    isLoggingOut || saveProfileMutation.isPending ? 0.6 : 1,
+                  transition:
+                    "color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.1s",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isLoggingOut && !saveProfileMutation.isPending) {
+                    e.currentTarget.style.color = "#c0392b";
+                    e.currentTarget.style.borderColor = "#c0392b";
+                    e.currentTarget.style.boxShadow =
+                      "0 0 12px rgba(192,57,43,0.25)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isLoggingOut && !saveProfileMutation.isPending) {
+                    e.currentTarget.style.color = "#6a7a8a";
+                    e.currentTarget.style.borderColor = "rgba(122,26,26,0.5)";
+                    e.currentTarget.style.boxShadow = "none";
+                    e.currentTarget.style.transform = "translateY(0)";
+                  }
+                }}
+              >
+                {isLoggingOut ? "Leaving…" : "↩ Log out"}
+              </button>
+            </div>
           </div>
         </div>
       </div>

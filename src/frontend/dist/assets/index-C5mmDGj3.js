@@ -44076,7 +44076,7 @@ function getGeometrySnapshot(input) {
     spriteRectsSummary: { count: count2, ids }
   };
 }
-const APP_BUILD = "#329";
+const APP_BUILD = "#334";
 function esc(s2) {
   return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -59585,6 +59585,7 @@ function StatusEffectBadge({ effect }) {
 let _fbNameIdx = 0;
 let _progressionDivergenceWarned = false;
 let _spellbarBisectLoadSkipCount = 0;
+let _turnSkipLogLastTs = 0;
 const CAMERA_SMOOTHING_FACTOR = 0.85;
 class CanvasErrorBoundary extends reactExports.Component {
   constructor(props) {
@@ -60863,64 +60864,7 @@ const WorldExplorationInner = ({
       }
       setSpellBarOrderDebounceRef.current = setTimeout(() => {
         setSpellBarOrderDebounceRef.current = null;
-        actor.setSpellBarOrder(BigInt(characterSlot), orderIds).then((result) => {
-          if (isSpellBarErr(result)) {
-            logDebugError("SPELLS", "[SPELLBAR] saved #err", {
-              msg: spellBarErrMsg(result),
-              slot: characterSlot,
-              orderIds
-            });
-            console.error(
-              "[SpellOrderSave] setSpellBarOrder #err:",
-              spellBarErrMsg(result)
-            );
-            if (!spellBarRetryScheduledRef.current) {
-              spellBarRetryScheduledRef.current = true;
-              logDebugInfo(
-                "SPELLS",
-                "[SPELLBAR-BISECT] #err, dirty kept, retry scheduled",
-                {
-                  msg: spellBarErrMsg(result),
-                  slot: characterSlot,
-                  orderIds
-                }
-              );
-              setTimeout(() => {
-                var _a4;
-                spellBarRetryScheduledRef.current = false;
-                (_a4 = handleSetActiveSpellsRef.current) == null ? void 0 : _a4.call(handleSetActiveSpellsRef, activeSpellsRef.current);
-              }, 2e3);
-            }
-          } else {
-            logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
-              slot: characterSlot,
-              orderIds
-            });
-            spellBarDirtyRef.current = false;
-            logDebugInfo(
-              "SPELLS",
-              "[SPELLBAR-BISECT] save resolved #ok, dirty cleared",
-              {
-                orderIds
-              }
-            );
-          }
-        }).catch((e) => {
-          logDebugError("SPELLS", "[SPELLBAR] save failed", {
-            error: String(e),
-            slot: characterSlot,
-            orderIds
-          });
-          console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
-          spellBarDirtyRef.current = false;
-          logDebugInfo(
-            "SPELLS",
-            "[SPELLBAR-BISECT] save threw, dirty cleared",
-            {
-              error: String(e)
-            }
-          );
-        });
+        flushSpellBarSave(orderIds);
       }, 1e3);
     } else {
       spellBarDirtyRef.current = false;
@@ -60928,6 +60872,63 @@ const WorldExplorationInner = ({
         characterSlot
       });
     }
+  };
+  const flushSpellBarSave = (orderIds) => {
+    if (!actor) return;
+    actor.setSpellBarOrder(BigInt(characterSlot), orderIds).then((result) => {
+      if (isSpellBarErr(result)) {
+        logDebugError("SPELLS", "[SPELLBAR] saved #err", {
+          msg: spellBarErrMsg(result),
+          slot: characterSlot,
+          orderIds
+        });
+        console.error(
+          "[SpellOrderSave] setSpellBarOrder #err:",
+          spellBarErrMsg(result)
+        );
+        if (!spellBarRetryScheduledRef.current) {
+          spellBarRetryScheduledRef.current = true;
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] #err, dirty kept, retry scheduled",
+            {
+              msg: spellBarErrMsg(result),
+              slot: characterSlot,
+              orderIds
+            }
+          );
+          setTimeout(() => {
+            var _a4;
+            spellBarRetryScheduledRef.current = false;
+            (_a4 = handleSetActiveSpellsRef.current) == null ? void 0 : _a4.call(handleSetActiveSpellsRef, activeSpellsRef.current);
+          }, 2e3);
+        }
+      } else {
+        logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
+          slot: characterSlot,
+          orderIds
+        });
+        spellBarDirtyRef.current = false;
+        logDebugInfo(
+          "SPELLS",
+          "[SPELLBAR-BISECT] save resolved #ok, dirty cleared",
+          {
+            orderIds
+          }
+        );
+      }
+    }).catch((e) => {
+      logDebugError("SPELLS", "[SPELLBAR] save failed", {
+        error: String(e),
+        slot: characterSlot,
+        orderIds
+      });
+      console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
+      spellBarDirtyRef.current = false;
+      logDebugInfo("SPELLS", "[SPELLBAR-BISECT] save threw, dirty cleared", {
+        error: String(e)
+      });
+    });
   };
   handleSetActiveSpellsRef.current = handleSetActiveSpells;
   const activeSpellIdsForSaveRef = reactExports.useRef(activeSpellIds);
@@ -67837,6 +67838,17 @@ const WorldExplorationInner = ({
         (c2) => c2.type === "enemy" && c2.id === (leaderEnemy == null ? void 0 : leaderEnemy.id) ? { ...c2, isLeader: true } : c2
       );
       cleanupRanRef.current = false;
+      if (setSpellBarOrderDebounceRef.current) {
+        clearTimeout(setSpellBarOrderDebounceRef.current);
+        setSpellBarOrderDebounceRef.current = null;
+        if (spellBarDirtyRef.current && activeSpellIdsForSaveRef.current) {
+          flushSpellBarSave(activeSpellIdsForSaveRef.current);
+        }
+      }
+      console.log("[SPELLBAR-BISECT]", {
+        localIds: activeSpellIdsForSaveRef.current,
+        dirty: spellBarDirtyRef.current
+      });
       reactDomExports.flushSync(() => {
         syncCombatants(combatantStoreCtx, enemiesWithSpells);
         mapModifierRegistry.applyBattleStart(
@@ -68864,19 +68876,44 @@ const WorldExplorationInner = ({
           const nextIdx = (prevIdx + 1) % prevOrder.length;
           currentTurnIndexRef.current = nextIdx;
           const nextCombatant = prevOrder[nextIdx];
-          if (getLiveCombatants(combatantStoreCtx).find(
-            (e) => e.id === nextCombatant.id
-          ) === void 0) {
+          const _isLiveEntry = (entry) => {
+            if (entry.type === "player") return true;
+            const storeEntry = getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === entry.id
+            );
+            return storeEntry !== void 0 && (storeEntry.hp ?? 0) > 0;
+          };
+          if (!_isLiveEntry(nextCombatant)) {
+            const _now = Date.now();
+            if (_now - _turnSkipLogLastTs >= 250) {
+              _turnSkipLogLastTs = _now;
+              logDebugInfo("TURN", "[TURN] skip", {
+                skippedId: nextCombatant.id,
+                reason: nextCombatant.type === "player" ? "player-should-not-skip" : getLiveCombatants(combatantStoreCtx).find(
+                  (e) => e.id === nextCombatant.id
+                ) === void 0 ? "not-in-store" : "hp<=0",
+                nextIdx
+              });
+            }
             let guardIdx = nextIdx;
             for (let i = 0; i < prevOrder.length; i++) {
-              guardIdx = (guardIdx + 1) % prevOrder.length;
               const guardCombatant = prevOrder[guardIdx];
-              if (getLiveCombatants(combatantStoreCtx).find(
-                (e) => e.id === guardCombatant.id
-              ) !== void 0) {
+              if (_isLiveEntry(guardCombatant)) {
                 currentTurnIndexRef.current = guardIdx;
                 return guardIdx;
               }
+              const _now2 = Date.now();
+              if (_now2 - _turnSkipLogLastTs >= 250) {
+                _turnSkipLogLastTs = _now2;
+                logDebugInfo("TURN", "[TURN] skip", {
+                  skippedId: guardCombatant.id,
+                  reason: guardCombatant.type === "player" ? "player-should-not-skip" : getLiveCombatants(combatantStoreCtx).find(
+                    (e) => e.id === guardCombatant.id
+                  ) === void 0 ? "not-in-store" : "hp<=0",
+                  nextIdx: guardIdx
+                });
+              }
+              guardIdx = (guardIdx + 1) % prevOrder.length;
             }
             return nextIdx;
           }
@@ -75550,7 +75587,18 @@ const StatBox = ({ label, value, color }) => /* @__PURE__ */ jsxRuntimeExports.j
 const ProfileSetup = () => {
   const [name, setName] = reactExports.useState("");
   const [error, setError] = reactExports.useState("");
+  const [isLoggingOut, setIsLoggingOut] = reactExports.useState(false);
   const saveProfileMutation = useSaveCallerUserProfile();
+  const { clear: clearIdentity } = useInternetIdentity();
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await clearIdentity();
+    } catch (err) {
+      console.error("Error clearing identity session:", err);
+      setIsLoggingOut(false);
+    }
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -75701,133 +75749,189 @@ const ProfileSetup = () => {
                       ]
                     }
                   ),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { padding: "28px 32px 32px" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                    "form",
-                    {
-                      onSubmit: handleSubmit,
-                      style: { display: "flex", flexDirection: "column", gap: 20 },
-                      children: [
-                        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "label",
+                  /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { padding: "28px 32px 32px" }, children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                      "form",
+                      {
+                        onSubmit: handleSubmit,
+                        style: { display: "flex", flexDirection: "column", gap: 20 },
+                        children: [
+                          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", flexDirection: "column", gap: 8 }, children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "label",
+                              {
+                                htmlFor: "name",
+                                style: {
+                                  color: "#c0ccd8",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  textTransform: "uppercase",
+                                  letterSpacing: "0.1em"
+                                },
+                                children: "Your Name"
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "relative" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                              "input",
+                              {
+                                id: "name",
+                                type: "text",
+                                value: name,
+                                onChange: (e) => setName(e.target.value),
+                                placeholder: "Enter your name…",
+                                disabled: saveProfileMutation.isPending,
+                                "data-ocid": "profile_setup.input",
+                                style: {
+                                  width: "100%",
+                                  padding: "13px 16px",
+                                  background: "#0a0c14",
+                                  border: "1px solid #2a3040",
+                                  borderRadius: 8,
+                                  color: "#c0ccd8",
+                                  fontSize: 15,
+                                  outline: "none",
+                                  boxSizing: "border-box",
+                                  transition: "border-color 0.2s, box-shadow 0.2s"
+                                },
+                                onFocus: (e) => {
+                                  e.currentTarget.style.borderColor = "#c0392b";
+                                  e.currentTarget.style.boxShadow = "0 0 0 3px rgba(192,57,43,0.20)";
+                                },
+                                onBlur: (e) => {
+                                  e.currentTarget.style.borderColor = "#2a3040";
+                                  e.currentTarget.style.boxShadow = "none";
+                                }
+                              }
+                            ) })
+                          ] }),
+                          error && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "div",
                             {
-                              htmlFor: "name",
+                              "data-ocid": "profile_setup.error_state",
                               style: {
-                                color: "#c0ccd8",
-                                fontSize: 12,
-                                fontWeight: 700,
-                                textTransform: "uppercase",
-                                letterSpacing: "0.1em"
+                                background: "rgba(231,76,60,0.12)",
+                                border: "1px solid rgba(231,76,60,0.4)",
+                                borderRadius: 6,
+                                padding: "8px 12px",
+                                color: "#e74c3c",
+                                fontSize: 13
                               },
-                              children: "Your Name"
+                              children: error
                             }
                           ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { position: "relative" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "input",
+                          /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "button",
                             {
-                              id: "name",
-                              type: "text",
-                              value: name,
-                              onChange: (e) => setName(e.target.value),
-                              placeholder: "Enter your name…",
+                              type: "submit",
+                              "data-ocid": "profile_setup.submit_button",
                               disabled: saveProfileMutation.isPending,
-                              "data-ocid": "profile_setup.input",
                               style: {
                                 width: "100%",
-                                padding: "13px 16px",
-                                background: "#0a0c14",
-                                border: "1px solid #2a3040",
+                                padding: "14px",
+                                background: saveProfileMutation.isPending ? "rgba(192,57,43,0.4)" : "linear-gradient(135deg,#8b1a14,#c0392b,#e04535)",
+                                border: "1px solid #c0392b",
                                 borderRadius: 8,
-                                color: "#c0ccd8",
+                                color: "#f0e0e0",
+                                fontWeight: 800,
                                 fontSize: 15,
-                                outline: "none",
-                                boxSizing: "border-box",
-                                transition: "border-color 0.2s, box-shadow 0.2s"
+                                letterSpacing: "0.06em",
+                                textTransform: "uppercase",
+                                cursor: saveProfileMutation.isPending ? "not-allowed" : "pointer",
+                                boxShadow: saveProfileMutation.isPending ? "none" : "0 0 18px rgba(192,57,43,0.45)",
+                                transition: "box-shadow 0.2s, transform 0.1s",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: 8
                               },
-                              onFocus: (e) => {
-                                e.currentTarget.style.borderColor = "#c0392b";
-                                e.currentTarget.style.boxShadow = "0 0 0 3px rgba(192,57,43,0.20)";
+                              onMouseEnter: (e) => {
+                                if (!saveProfileMutation.isPending) {
+                                  e.currentTarget.style.boxShadow = "0 0 28px rgba(192,57,43,0.65)";
+                                  e.currentTarget.style.transform = "translateY(-1px)";
+                                }
                               },
-                              onBlur: (e) => {
-                                e.currentTarget.style.borderColor = "#2a3040";
-                                e.currentTarget.style.boxShadow = "none";
-                              }
+                              onMouseLeave: (e) => {
+                                if (!saveProfileMutation.isPending) {
+                                  e.currentTarget.style.boxShadow = "0 0 18px rgba(192,57,43,0.45)";
+                                  e.currentTarget.style.transform = "translateY(0)";
+                                }
+                              },
+                              children: saveProfileMutation.isPending ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "div",
+                                  {
+                                    style: {
+                                      width: 16,
+                                      height: 16,
+                                      border: "2px solid #f0e0e0",
+                                      borderTopColor: "transparent",
+                                      borderRadius: "50%",
+                                      animation: "spin 0.8s linear infinite"
+                                    }
+                                  }
+                                ),
+                                "Saving…"
+                              ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: "♔ Enter the Realm" })
                             }
-                          ) })
-                        ] }),
-                        error && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                          "div",
-                          {
-                            "data-ocid": "profile_setup.error_state",
-                            style: {
-                              background: "rgba(231,76,60,0.12)",
-                              border: "1px solid rgba(231,76,60,0.4)",
-                              borderRadius: 6,
-                              padding: "8px 12px",
-                              color: "#e74c3c",
-                              fontSize: 13
-                            },
-                            children: error
-                          }
-                        ),
-                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                          )
+                        ]
+                      }
+                    ),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx(
+                      "div",
+                      {
+                        style: {
+                          marginTop: 20,
+                          paddingTop: 18,
+                          borderTop: "1px solid rgba(122,26,26,0.35)",
+                          display: "flex",
+                          justifyContent: "center"
+                        },
+                        children: /* @__PURE__ */ jsxRuntimeExports.jsx(
                           "button",
                           {
-                            type: "submit",
-                            "data-ocid": "profile_setup.submit_button",
-                            disabled: saveProfileMutation.isPending,
+                            type: "button",
+                            "data-ocid": "profile_setup.logout_button",
+                            disabled: isLoggingOut || saveProfileMutation.isPending,
+                            onClick: handleLogout,
                             style: {
-                              width: "100%",
-                              padding: "14px",
-                              background: saveProfileMutation.isPending ? "rgba(192,57,43,0.4)" : "linear-gradient(135deg,#8b1a14,#c0392b,#e04535)",
-                              border: "1px solid #c0392b",
-                              borderRadius: 8,
-                              color: "#f0e0e0",
-                              fontWeight: 800,
-                              fontSize: 15,
-                              letterSpacing: "0.06em",
+                              background: "transparent",
+                              border: "1px solid rgba(122,26,26,0.5)",
+                              borderRadius: 6,
+                              color: "#6a7a8a",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              letterSpacing: "0.08em",
                               textTransform: "uppercase",
-                              cursor: saveProfileMutation.isPending ? "not-allowed" : "pointer",
-                              boxShadow: saveProfileMutation.isPending ? "none" : "0 0 18px rgba(192,57,43,0.45)",
-                              transition: "box-shadow 0.2s, transform 0.1s",
+                              padding: "8px 18px",
+                              cursor: isLoggingOut || saveProfileMutation.isPending ? "not-allowed" : "pointer",
+                              opacity: isLoggingOut || saveProfileMutation.isPending ? 0.6 : 1,
+                              transition: "color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.1s",
                               display: "flex",
                               alignItems: "center",
-                              justifyContent: "center",
-                              gap: 8
+                              gap: 6
                             },
                             onMouseEnter: (e) => {
-                              if (!saveProfileMutation.isPending) {
-                                e.currentTarget.style.boxShadow = "0 0 28px rgba(192,57,43,0.65)";
-                                e.currentTarget.style.transform = "translateY(-1px)";
+                              if (!isLoggingOut && !saveProfileMutation.isPending) {
+                                e.currentTarget.style.color = "#c0392b";
+                                e.currentTarget.style.borderColor = "#c0392b";
+                                e.currentTarget.style.boxShadow = "0 0 12px rgba(192,57,43,0.25)";
                               }
                             },
                             onMouseLeave: (e) => {
-                              if (!saveProfileMutation.isPending) {
-                                e.currentTarget.style.boxShadow = "0 0 18px rgba(192,57,43,0.45)";
+                              if (!isLoggingOut && !saveProfileMutation.isPending) {
+                                e.currentTarget.style.color = "#6a7a8a";
+                                e.currentTarget.style.borderColor = "rgba(122,26,26,0.5)";
+                                e.currentTarget.style.boxShadow = "none";
                                 e.currentTarget.style.transform = "translateY(0)";
                               }
                             },
-                            children: saveProfileMutation.isPending ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-                              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "div",
-                                {
-                                  style: {
-                                    width: 16,
-                                    height: 16,
-                                    border: "2px solid #f0e0e0",
-                                    borderTopColor: "transparent",
-                                    borderRadius: "50%",
-                                    animation: "spin 0.8s linear infinite"
-                                  }
-                                }
-                              ),
-                              "Saving…"
-                            ] }) : /* @__PURE__ */ jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: "♔ Enter the Realm" })
+                            children: isLoggingOut ? "Leaving…" : "↩ Log out"
                           }
                         )
-                      ]
-                    }
-                  ) })
+                      }
+                    )
+                  ] })
                 ]
               }
             )
@@ -76013,7 +76117,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-OUc9cEak.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CxjZBoQH.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

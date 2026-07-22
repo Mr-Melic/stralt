@@ -229,6 +229,13 @@ let _progressionDivergenceWarned = false;
 let _spellbarBisectLoadSkipCount = 0;
 let _spellbarBisectConsoleCount = 0;
 
+// SECTION 1 — [TURN] skip-log throttle. The dead-entity skip guard in
+// advanceTurn logs whenever it skips a turn-order entry. A future skip must
+// name itself (skippedId + reason + nextIdx), but unthrottled it would spam
+// the overlay/console on every frame. Module-level timestamp so it persists
+// across renders; logs at most once per 250ms.
+let _turnSkipLogLastTs = 0;
+
 interface WorldExplorationProps {
   dokaBalance: number;
   onDokaBalanceChange: (val: number) => void;
@@ -2361,89 +2368,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       setSpellBarOrderDebounceRef.current = setTimeout(() => {
         setSpellBarOrderDebounceRef.current = null;
-        // FIX 2b: Verify the backend round-trip. The actor returns a Motoko
-        // variant {#ok,#err:Text}. We inspect the resolved value and log the
-        // actual result (non-throttled — this fires at most once per debounce).
-        // Network/actor-throw failures still hit .catch and are logged as a
-        // save failure (distinct from a backend #err).
-        (actor as ActorAny)
-          .setSpellBarOrder(BigInt(characterSlot), orderIds)
-          .then((result: unknown) => {
-            // Motoko {#ok} / {#err:Text} variants arrive as { _ok: null } or
-            // { _err: string } in the JS binding. isSpellBarErr narrows to a
-            // single discriminated shape so the err message is type-safe.
-            if (isSpellBarErr(result)) {
-              logDebugError("SPELLS", "[SPELLBAR] saved #err", {
-                msg: spellBarErrMsg(result),
-                slot: characterSlot,
-                orderIds,
-              });
-              console.error(
-                "[SpellOrderSave] setSpellBarOrder #err:",
-                spellBarErrMsg(result),
-              );
-              // BREAK 2b: On #err, KEEP dirty SET (do NOT clear) so the load
-              // effect does not clobber the user's intended order with the
-              // stale backend value. Schedule exactly ONE retry with backoff,
-              // guarded by spellBarRetryScheduledRef so it never recurses.
-              if (!spellBarRetryScheduledRef.current) {
-                spellBarRetryScheduledRef.current = true;
-                logDebugInfo(
-                  "SPELLS",
-                  "[SPELLBAR-BISECT] #err, dirty kept, retry scheduled",
-                  {
-                    msg: spellBarErrMsg(result),
-                    slot: characterSlot,
-                    orderIds,
-                  },
-                );
-                setTimeout(() => {
-                  // Clear the guard when the retry fires so a future #err can
-                  // schedule again. Re-fire the debounced save ONCE using the
-                  // current spell-bar snapshot (activeSpellsRef mirrors the
-                  // activeSpells useMemo, which is derived from activeSpellIds).
-                  spellBarRetryScheduledRef.current = false;
-                  handleSetActiveSpellsRef.current?.(activeSpellsRef.current);
-                }, 2000);
-              }
-            } else {
-              logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
-                slot: characterSlot,
-                orderIds,
-              });
-              // BREAK 2b: Clear dirty ONLY on #ok. The save landed and the
-              // backend now holds the authoritative order, so the load effect
-              // may overwrite activeSpellIds again.
-              spellBarDirtyRef.current = false;
-              logDebugInfo(
-                "SPELLS",
-                "[SPELLBAR-BISECT] save resolved #ok, dirty cleared",
-                {
-                  orderIds,
-                },
-              );
-            }
-          })
-          .catch((e: unknown) => {
-            logDebugError("SPELLS", "[SPELLBAR] save failed", {
-              error: String(e),
-              slot: characterSlot,
-              orderIds,
-            });
-            console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
-            // SPELLBAR-DIRTY GUARD: clear on throw too — a network/actor failure
-            // means the save never landed, so the next load effect run will
-            // re-sync from the (still-authoritative) backend value. Keeping the
-            // guard true forever would orphan the bar from the backend.
-            spellBarDirtyRef.current = false;
-            logDebugInfo(
-              "SPELLS",
-              "[SPELLBAR-BISECT] save threw, dirty cleared",
-              {
-                error: String(e),
-              },
-            );
-          });
+        flushSpellBarSave(orderIds);
       }, 1000);
     } else {
       // SPELLBAR-DIRTY GUARD: no actor means the debounced save never fires, so
@@ -2456,6 +2381,96 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         characterSlot,
       });
     }
+  };
+
+  // SECTION 2 FIX (a): flushSpellBarSave — the factored-out save body shared by
+  // the debounced save (above) and the battle-start flush (below). Performs the
+  // actor.setSpellBarOrder call and the #ok/#err/.catch handling that clears (or
+  // keeps) the spellBarDirtyRef guard. Factored so battle-start can fire the
+  // pending save SYNCHRONOUSLY before any battle-side read, eliminating the
+  // race where the load effect re-fires mid-battle and clobbers a swap whose
+  // debounced save hadn't landed yet.
+  const flushSpellBarSave = (orderIds: string[]) => {
+    if (!actor) return;
+    // FIX 2b: Verify the backend round-trip. The actor returns a Motoko
+    // variant {#ok,#err:Text}. We inspect the resolved value and log the
+    // actual result (non-throttled — this fires at most once per debounce).
+    // Network/actor-throw failures still hit .catch and are logged as a
+    // save failure (distinct from a backend #err).
+    (actor as ActorAny)
+      .setSpellBarOrder(BigInt(characterSlot), orderIds)
+      .then((result: unknown) => {
+        // Motoko {#ok} / {#err:Text} variants arrive as { _ok: null } or
+        // { _err: string } in the JS binding. isSpellBarErr narrows to a
+        // single discriminated shape so the err message is type-safe.
+        if (isSpellBarErr(result)) {
+          logDebugError("SPELLS", "[SPELLBAR] saved #err", {
+            msg: spellBarErrMsg(result),
+            slot: characterSlot,
+            orderIds,
+          });
+          console.error(
+            "[SpellOrderSave] setSpellBarOrder #err:",
+            spellBarErrMsg(result),
+          );
+          // BREAK 2b: On #err, KEEP dirty SET (do NOT clear) so the load
+          // effect does not clobber the user's intended order with the
+          // stale backend value. Schedule exactly ONE retry with backoff,
+          // guarded by spellBarRetryScheduledRef so it never recurses.
+          if (!spellBarRetryScheduledRef.current) {
+            spellBarRetryScheduledRef.current = true;
+            logDebugInfo(
+              "SPELLS",
+              "[SPELLBAR-BISECT] #err, dirty kept, retry scheduled",
+              {
+                msg: spellBarErrMsg(result),
+                slot: characterSlot,
+                orderIds,
+              },
+            );
+            setTimeout(() => {
+              // Clear the guard when the retry fires so a future #err can
+              // schedule again. Re-fire the debounced save ONCE using the
+              // current spell-bar snapshot (activeSpellsRef mirrors the
+              // activeSpells useMemo, which is derived from activeSpellIds).
+              spellBarRetryScheduledRef.current = false;
+              handleSetActiveSpellsRef.current?.(activeSpellsRef.current);
+            }, 2000);
+          }
+        } else {
+          logDebugInfo("SPELLS", "[SPELLBAR] saved #ok", {
+            slot: characterSlot,
+            orderIds,
+          });
+          // BREAK 2b: Clear dirty ONLY on #ok. The save landed and the
+          // backend now holds the authoritative order, so the load effect
+          // may overwrite activeSpellIds again.
+          spellBarDirtyRef.current = false;
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] save resolved #ok, dirty cleared",
+            {
+              orderIds,
+            },
+          );
+        }
+      })
+      .catch((e: unknown) => {
+        logDebugError("SPELLS", "[SPELLBAR] save failed", {
+          error: String(e),
+          slot: characterSlot,
+          orderIds,
+        });
+        console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
+        // SPELLBAR-DIRTY GUARD: clear on throw too — a network/actor failure
+        // means the save never landed, so the next load effect run will
+        // re-sync from the (still-authoritative) backend value. Keeping the
+        // guard true forever would orphan the bar from the backend.
+        spellBarDirtyRef.current = false;
+        logDebugInfo("SPELLS", "[SPELLBAR-BISECT] save threw, dirty cleared", {
+          error: String(e),
+        });
+      });
   };
   // FIX 2c: Keep the ref mirror in sync with the latest handler closure on
   // every render. This is a top-level statement (not inside an effect) so it
@@ -11421,6 +11436,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           });
         }
       }
+      // SECTION 2 EDIT 1: flush any pending debounced spellbar save BEFORE the
+      // battle-side read inside flushSync. The debounce timer is cleared so it
+      // cannot fire after battle state has reset, and if the bar was dirty we
+      // persist the current order synchronously so the backend stays the single
+      // authority even when the user starts a battle mid-debounce window.
+      if (setSpellBarOrderDebounceRef.current) {
+        clearTimeout(setSpellBarOrderDebounceRef.current);
+        setSpellBarOrderDebounceRef.current = null;
+        if (spellBarDirtyRef.current && activeSpellIdsForSaveRef.current) {
+          flushSpellBarSave(activeSpellIdsForSaveRef.current);
+        }
+      }
+      // SECTION 2 EDIT 2: bisect log reporting post-flush dirty state so we can
+      // confirm the synchronous flush above actually cleared the dirty flag and
+      // captured the right localIds before battle state resets.
+      console.log("[SPELLBAR-BISECT]", {
+        localIds: activeSpellIdsForSaveRef.current,
+        dirty: spellBarDirtyRef.current,
+      });
       flushSync(() => {
         syncCombatants(combatantStoreCtx, enemiesWithSpells);
         mapModifierRegistry.applyBattleStart(
@@ -12813,23 +12847,83 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // turn-end), advance to the next index instead of dispatching into
           // a stale combatant. If the queue is exhausted, return early so the
           // round-end logic can take over.
-          if (
-            getLiveCombatants(combatantStoreCtx).find(
-              (e) => e.id === nextCombatant.id,
-            ) === undefined
-          ) {
+          //
+          // SECTION 1 FIX: the player (entry.type === "player") is BY DESIGN
+          // NOT a store combatant — getLiveCombatants never contains it, so
+          // the old guard classified the player as dead and permanently
+          // skipped idx 0 after round one. Player death is handled by its
+          // own pipeline (_handlePlayerDeath, M6 HP guard below), so the
+          // player is ALWAYS live here. Only enemy/summon entries are checked
+          // against the store (present AND hp > 0).
+          //
+          // DOUBLE-ADVANCE FIX: the old loop did `guardIdx = (guardIdx + 1) %
+          // prevOrder.length` BEFORE checking the candidate, so it consumed
+          // an extra index after a skip — skipping a live enemy that happened
+          // to follow a dead one. The new loop checks the candidate FIRST,
+          // then advances, evaluating exactly ONE entry per iteration.
+          //
+          // WRAP FIX: from the last index the next candidate is idx 0,
+          // always — the modulo math already guarantees this, but the
+          // player-always-live rule above now makes idx 0 a guaranteed live
+          // terminator for the loop (the player is never skipped here), so
+          // the queue can never wrap past the player.
+          const _isLiveEntry = (entry: CombatantEntry): boolean => {
+            // Player entries are ALWAYS live here — the player never lives
+            // in the combatant store; player death is handled by its own
+            // pipeline (M6 HP guard below + _handlePlayerDeath).
+            if (entry.type === "player") return true;
+            const storeEntry = getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === entry.id,
+            );
+            return storeEntry !== undefined && (storeEntry.hp ?? 0) > 0;
+          };
+          if (!_isLiveEntry(nextCombatant)) {
+            // Throttled [TURN] skip log: a future skip must name itself.
+            // Module-level timestamp throttle (max once per 250ms) so it does
+            // not spam the overlay/console.
+            const _now = Date.now();
+            if (_now - _turnSkipLogLastTs >= 250) {
+              _turnSkipLogLastTs = _now;
+              logDebugInfo("TURN", "[TURN] skip", {
+                skippedId: nextCombatant.id,
+                reason:
+                  nextCombatant.type === "player"
+                    ? "player-should-not-skip"
+                    : getLiveCombatants(combatantStoreCtx).find(
+                          (e) => e.id === nextCombatant.id,
+                        ) === undefined
+                      ? "not-in-store"
+                      : "hp<=0",
+                nextIdx,
+              });
+            }
             let guardIdx = nextIdx;
             for (let i = 0; i < prevOrder.length; i++) {
-              guardIdx = (guardIdx + 1) % prevOrder.length;
               const guardCombatant = prevOrder[guardIdx];
-              if (
-                getLiveCombatants(combatantStoreCtx).find(
-                  (e) => e.id === guardCombatant.id,
-                ) !== undefined
-              ) {
+              if (_isLiveEntry(guardCombatant)) {
                 currentTurnIndexRef.current = guardIdx;
                 return guardIdx;
               }
+              // Log each skipped candidate (throttled) so a future skip
+              // names itself.
+              const _now2 = Date.now();
+              if (_now2 - _turnSkipLogLastTs >= 250) {
+                _turnSkipLogLastTs = _now2;
+                logDebugInfo("TURN", "[TURN] skip", {
+                  skippedId: guardCombatant.id,
+                  reason:
+                    guardCombatant.type === "player"
+                      ? "player-should-not-skip"
+                      : getLiveCombatants(combatantStoreCtx).find(
+                            (e) => e.id === guardCombatant.id,
+                          ) === undefined
+                        ? "not-in-store"
+                        : "hp<=0",
+                  nextIdx: guardIdx,
+                });
+              }
+              // Advance AFTER checking — no double-advance.
+              guardIdx = (guardIdx + 1) % prevOrder.length;
             }
             // Queue exhausted — no live combatants left, keep the index.
             return nextIdx;
