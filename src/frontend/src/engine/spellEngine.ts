@@ -947,8 +947,31 @@ export function resolvePlayerCast(
       return "abort";
     }
 
+    // Liveness tracking (#DEATH-DEREGISTER): a local set of combatant ids
+    // killed by an earlier hit in THIS cast. processCombatantDeath is
+    // idempotent (deathPipeline L73-75), so re-calling on an already-dead
+    // target is a no-op — but the damage loop must still SKIP applying damage
+    // to a target that was killed by an earlier hit in the same multi-hit/AoE
+    // cast, otherwise the dead combatant takes post-mortem damage ("king takes
+    // 45 damage" after defeat). The set is checked per-hit before any damage
+    // is applied. The "__player__" sentinel is never a death candidate.
+    const killedThisCast = new Set<string>();
+
     for (let i = 0; i < targetsToHit.length; i++) {
       const hitTarget = targetsToHit[i];
+      // Liveness re-check (#DEATH-DEREGISTER): before applying damage to each
+      // target in the multi-hit/AoE loop, verify the target was not already
+      // killed by an earlier hit in this same cast. A target whose death was
+      // processed (processCombatantDeath ran and removed it from the roster)
+      // is skipped here so it cannot take post-mortem damage. The "__player__"
+      // sentinel is never a death candidate and is always processed.
+      if (hitTarget.id !== "__player__" && killedThisCast.has(hitTarget.id)) {
+        logDebugInfo(
+          "RESOLVER",
+          `skip {targetId: "${hitTarget.id}", reason: "target already killed earlier in this multi-hit cast (post-mortem hit prevented)"}`,
+        );
+        continue;
+      }
       const hitEnemy = hitTarget.isPlayer
         ? undefined
         : (hitTarget as PlayerCastEnemy);
@@ -984,6 +1007,7 @@ export function resolvePlayerCast(
       // so the synchronous hp - finalDmg check is the reliable death signal here.
       if (hitTarget.hp - finalDmg <= 0 && hitTarget.id !== "__player__") {
         ctx.processCombatantDeath(hitTarget.id);
+        killedThisCast.add(hitTarget.id);
       }
       ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");
     }

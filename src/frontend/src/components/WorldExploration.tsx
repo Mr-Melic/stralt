@@ -2341,14 +2341,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // (a) Update the slot mapping — activeSpells re-derives via useMemo.
     // This is the OPTIMISTIC local update: the bar re-renders immediately
     // without waiting for the debounced backend save.
-    setActiveSpellIds(ids.filter((id): id is string => id !== null));
-    // [SPELLBAR-BISECT] log activeSpellIds right after the optimistic set so
-    // the user can confirm the bar state the render will use. Note: this reads
-    // the FILTERED ids (the value we just set), not the stale state closure.
     const optimisticIds = ids.filter((id): id is string => id !== null);
+    setActiveSpellIds(optimisticIds);
+    // SYNC MIRROR: update activeSpellIdsForSaveRef SYNCHRONOUSLY here (not in
+    // a post-commit effect) so the battle-start flush (L11507-11520) and the
+    // beforeunload handler always read the freshest bar — even if the user
+    // swaps and immediately starts a battle before the [activeSpellIds]
+    // effect commits. The effect at L2488-2490 remains as a backstop for any
+    // other activeSpellIds mutation site.
+    activeSpellIdsForSaveRef.current = optimisticIds;
+    // [SPELLBAR-BISECT] log activeSpellIds right after the optimistic set so
+    // the user can confirm the bar state the render will use. Reads the
+    // FILTERED ids (the value we just set + mirrored to the ref), not the
+    // stale state closure.
     logDebugInfo("SPELLS", "[SPELLBAR-BISECT] optimistic activeSpellIds set", {
       optimisticIds,
       count: optimisticIds.length,
+      mirrorLen: activeSpellIdsForSaveRef.current.length,
     });
     try {
       // localStorage is a CACHE only — backend (spellBarOrder) is authoritative.
@@ -2468,14 +2477,39 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           orderIds,
         });
         console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
-        // SPELLBAR-DIRTY GUARD: clear on throw too — a network/actor failure
-        // means the save never landed, so the next load effect run will
-        // re-sync from the (still-authoritative) backend value. Keeping the
-        // guard true forever would orphan the bar from the backend.
-        spellBarDirtyRef.current = false;
-        logDebugInfo("SPELLS", "[SPELLBAR-BISECT] save threw, dirty cleared", {
-          error: String(e),
-        });
+        // SPELLBAR-DIRTY GUARD: on a network/actor THROW the save never
+        // landed, so the backend still holds the STALE order. Clearing dirty
+        // here would let the load effect overwrite the user's intended bar
+        // with that stale backend value — orphaning the swap on reload. KEEP
+        // dirty SET and schedule exactly ONE retry (mirroring the #err path
+        // at L2422-2445) so the bar stays protected until a save actually
+        // lands. The retry guard prevents unbounded recursion.
+        if (!spellBarRetryScheduledRef.current) {
+          spellBarRetryScheduledRef.current = true;
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] save threw, dirty kept, retry scheduled",
+            {
+              error: String(e),
+              slot: characterSlot,
+              orderIds,
+            },
+          );
+          setTimeout(() => {
+            spellBarRetryScheduledRef.current = false;
+            handleSetActiveSpellsRef.current?.(activeSpellsRef.current);
+          }, 2000);
+        } else {
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR-BISECT] save threw, retry already scheduled, dirty kept",
+            {
+              error: String(e),
+              slot: characterSlot,
+              orderIds,
+            },
+          );
+        }
       });
   };
   // FIX 2c: Keep the ref mirror in sync with the latest handler closure on
@@ -13393,9 +13427,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       return;
     if (!battleReadyRef.current) return;
     // H2: Read from the ref mirror so we always get the latest turnOrder
-    // even if the React state closure captured a stale snapshot.
-    const currentCombatant =
-      turnOrderRef.current[currentTurnIndex] ?? turnOrder[currentTurnIndex];
+    // even if the React state closure captured a stale snapshot. The ref is
+    // the authoritative source of turn truth; if it were missing that would
+    // itself be a bug, so there is NO state-snapshot fallback here.
+    const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
     const enemyId = currentCombatant.id;
     enemyTurnInProgressRef.current = true;

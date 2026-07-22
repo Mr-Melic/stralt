@@ -93,14 +93,20 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
     Math.max(1, Number(spell.maxRange ?? spell.range)),
     spell.modifiableRange ? spell.id : undefined,
   );
-  // AoE hit tiles: collect enemies at each tile in the hitTiles pattern around the clicked target
+  // AoE hit tiles: collect enemies at each tile in the hitTiles pattern around the clicked target.
+  // Liveness filter (#DEATH-DEREGISTER): exclude already-dead enemies (hp <= 0) at
+  // assembly time so the target list never contains dead/removed combatants.
   const aoeEnemies: (typeof enemies)[number][] = [];
   if (spell.aoe && spell.hitTiles && spell.hitTiles.length > 0 && targetEnemy) {
     for (const [hx, hy] of spell.hitTiles as [number, number][]) {
       const ax = gridPos.x + hx;
       const ay = gridPos.y + hy;
       const hit = enemies.find(
-        (e) => e.x === ax && e.y === ay && e.id !== targetEnemy.id,
+        (e) =>
+          e.x === ax &&
+          e.y === ay &&
+          e.id !== targetEnemy.id &&
+          (e.hp ?? 0) > 0,
       );
       if (hit) aoeEnemies.push(hit);
     }
@@ -111,13 +117,17 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
   // gridPos; only this filter was still anchored to the player, which made
   // multi-target spells (e.g. Frost Nova) hit enemies relative to the caster
   // instead of relative to the clicked target tile.
+  // Liveness filter (#DEATH-DEREGISTER): exclude already-dead enemies
+  // (hp <= 0) so the target list never contains dead/removed combatants at
+  // assembly time. This prevents post-mortem hits when a multi-hit/AoE spell
+  // is cast after a prior hit in the same loop already killed a target.
   const baseEnemyTargets = spell.hitsMultiple
     ? enemies.filter((e) => {
         const dx = Math.abs(e.x - gridPos.x);
         const dy = Math.abs(e.y - gridPos.y);
-        return Math.max(dx, dy) <= effectiveRange;
+        return Math.max(dx, dy) <= effectiveRange && (e.hp ?? 0) > 0;
       })
-    : targetEnemy
+    : targetEnemy && (targetEnemy.hp ?? 0) > 0
       ? [targetEnemy, ...aoeEnemies]
       : [];
   const enemiesInRange = Array.from(

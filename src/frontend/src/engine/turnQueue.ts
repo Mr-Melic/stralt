@@ -11,10 +11,13 @@
  * so `currentTurnIndexRef.current` points at the combatant whose turn it
  * currently IS. When a combatant is removed:
  *   - removed index < current  -> shift current down by 1 (same combatant stays active)
- *   - removed index == current -> the next advance will land on the combatant that
- *     shifted into this slot; keep the numeric index, but if it now points past the
- *     end of the shorter array, wrap it with modulo so it stays in range.
- *   - removed index > current  -> no adjustment needed.
+ *   - removed index == current -> the removed combatant WAS the active turn.
+ *     Do NOT advance implicitly: point currentIdx at the entry that PRECEDED
+ *     the dead slot in the new (shorter) array, so the normal advanceTurn
+ *     `(prevIdx + 1) % length` handoff lands on the combatant that shifted
+ *     into the dead slot (the next entry in the original order). This keeps
+ *     the wheel from shifting forward on its own; only advanceTurn moves it.
+ *   - removed index >  current  -> no adjustment needed.
  *
  * This module is React-free and DOM-free at runtime. It imports only the
  * CombatantEntry TYPE (erased at compile time), matching the engine's
@@ -46,10 +49,13 @@ export type SetTurnOrder = (
  *   - removedIdx <  currentIdx -> decrement currentIdx by 1 (the same
  *     combatant stays active; everything after the gap shifts down).
  *   - removedIdx === currentIdx -> the removed combatant WAS the active
- *     turn (e.g. a summon expiring during its own turn). Set currentIdx to
- *     `removedIdx % newOrder.length` so the numeric position is preserved
- *     and now points at the combatant that shifted into the dead slot —
- *     i.e. the NEXT valid entry. This is the expiry-during-own-turn case.
+ *     turn (e.g. a summon expiring during its own turn). Do NOT advance
+ *     implicitly: set currentIdx to the entry that PRECEDED the dead slot
+ *     in the new array — `(removedIdx - 1 + newOrder.length) %
+ *     newOrder.length` — so the normal advanceTurn `(prevIdx + 1) % length`
+ *     handoff lands on the combatant that shifted into the dead slot (the
+ *     next entry in the original order). The wheel does not move forward
+ *     here; only advanceTurn advances it.
  *   - removedIdx >  currentIdx -> leave currentIdx unchanged (the active
  *     combatant is unaffected; only later entries moved).
  *
@@ -87,11 +93,16 @@ export function removeCombatantFromTurnQueue(
     // Earlier entry removed: same combatant stays active, shift index down.
     newIdx = currentTurnIndexRef.current - 1;
   } else if (removedIdx === currentTurnIndexRef.current) {
-    // The active combatant itself was removed (e.g. a summon expiring during
-    // its own turn). Preserve the numeric position so it now points at the
-    // combatant that shifted into the dead slot — the next valid entry —
-    // wrapping with modulo to stay in range.
-    newIdx = removedIdx % newOrder.length;
+    // The active combatant itself was removed (e.g. a summon expiring
+    // during its own turn, or the active enemy dying from a DoT). Do NOT
+    // advance the wheel implicitly: point currentIdx at the entry that
+    // PRECEDED the dead slot in the new (shorter) array, so the normal
+    // advanceTurn `(prevIdx + 1) % length` handoff lands on the combatant
+    // that shifted into the dead slot (the next entry in the original
+    // order). This keeps the death from shifting the wheel forward; only
+    // advanceTurn moves it. The modulo handles the wrap when the dead
+    // entry was at index 0 (predecessor becomes the new last entry).
+    newIdx = (removedIdx - 1 + newOrder.length) % newOrder.length;
   } else {
     // Later entry removed: active combatant is unaffected.
     newIdx = currentTurnIndexRef.current;

@@ -50533,7 +50533,7 @@ function getAoETargets(args) {
       const ax = gridPos.x + hx;
       const ay = gridPos.y + hy;
       const hit = enemies.find(
-        (e) => e.x === ax && e.y === ay && e.id !== targetEnemy.id
+        (e) => e.x === ax && e.y === ay && e.id !== targetEnemy.id && (e.hp ?? 0) > 0
       );
       if (hit) aoeEnemies.push(hit);
     }
@@ -50541,8 +50541,8 @@ function getAoETargets(args) {
   const baseEnemyTargets = spell.hitsMultiple ? enemies.filter((e) => {
     const dx = Math.abs(e.x - gridPos.x);
     const dy = Math.abs(e.y - gridPos.y);
-    return Math.max(dx, dy) <= effectiveRange;
-  }) : targetEnemy ? [targetEnemy, ...aoeEnemies] : [];
+    return Math.max(dx, dy) <= effectiveRange && (e.hp ?? 0) > 0;
+  }) : targetEnemy && (targetEnemy.hp ?? 0) > 0 ? [targetEnemy, ...aoeEnemies] : [];
   const enemiesInRange = Array.from(
     new Map(baseEnemyTargets.map((e) => [e.id, e])).values()
   );
@@ -50750,7 +50750,7 @@ function removeCombatantFromTurnQueue(turnOrder, turnOrderRef, currentTurnIndexR
   } else if (removedIdx < currentTurnIndexRef.current) {
     newIdx = currentTurnIndexRef.current - 1;
   } else if (removedIdx === currentTurnIndexRef.current) {
-    newIdx = removedIdx % newOrder.length;
+    newIdx = (removedIdx - 1 + newOrder.length) % newOrder.length;
   } else {
     newIdx = currentTurnIndexRef.current;
   }
@@ -54315,8 +54315,16 @@ function resolvePlayerCast(spell, gridPos, ctx) {
       ctx.log(`No target in range for ${spell.name}!`, "#94a3b8");
       return "abort";
     }
+    const killedThisCast = /* @__PURE__ */ new Set();
     for (let i = 0; i < targetsToHit.length; i++) {
       const hitTarget = targetsToHit[i];
+      if (hitTarget.id !== "__player__" && killedThisCast.has(hitTarget.id)) {
+        logDebugInfo(
+          "RESOLVER",
+          `skip {targetId: "${hitTarget.id}", reason: "target already killed earlier in this multi-hit cast (post-mortem hit prevented)"}`
+        );
+        continue;
+      }
       const hitEnemy = hitTarget.isPlayer ? void 0 : hitTarget;
       let finalDmg;
       if (!hitTarget.isPlayer && hitEnemy) {
@@ -54346,6 +54354,7 @@ function resolvePlayerCast(spell, gridPos, ctx) {
       );
       if (hitTarget.hp - finalDmg <= 0 && hitTarget.id !== "__player__") {
         ctx.processCombatantDeath(hitTarget.id);
+        killedThisCast.add(hitTarget.id);
       }
       ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");
     }
@@ -60927,11 +60936,13 @@ const WorldExplorationInner = ({
       return;
     }
     const ids = [...spells, ...Array(8).fill(null)].slice(0, 8).map((s2) => (s2 == null ? void 0 : s2.id) ?? null);
-    setActiveSpellIds(ids.filter((id) => id !== null));
     const optimisticIds = ids.filter((id) => id !== null);
+    setActiveSpellIds(optimisticIds);
+    activeSpellIdsForSaveRef.current = optimisticIds;
     logDebugInfo("SPELLS", "[SPELLBAR-BISECT] optimistic activeSpellIds set", {
       optimisticIds,
-      count: optimisticIds.length
+      count: optimisticIds.length,
+      mirrorLen: activeSpellIdsForSaveRef.current.length
     });
     try {
       localStorage.setItem(nsKey("pbv_active_spells"), JSON.stringify(ids));
@@ -61007,10 +61018,33 @@ const WorldExplorationInner = ({
         orderIds
       });
       console.error("[SpellOrderSave] setSpellBarOrder failed:", e);
-      spellBarDirtyRef.current = false;
-      logDebugInfo("SPELLS", "[SPELLBAR-BISECT] save threw, dirty cleared", {
-        error: String(e)
-      });
+      if (!spellBarRetryScheduledRef.current) {
+        spellBarRetryScheduledRef.current = true;
+        logDebugInfo(
+          "SPELLS",
+          "[SPELLBAR-BISECT] save threw, dirty kept, retry scheduled",
+          {
+            error: String(e),
+            slot: characterSlot,
+            orderIds
+          }
+        );
+        setTimeout(() => {
+          var _a4;
+          spellBarRetryScheduledRef.current = false;
+          (_a4 = handleSetActiveSpellsRef.current) == null ? void 0 : _a4.call(handleSetActiveSpellsRef, activeSpellsRef.current);
+        }, 2e3);
+      } else {
+        logDebugInfo(
+          "SPELLS",
+          "[SPELLBAR-BISECT] save threw, retry already scheduled, dirty kept",
+          {
+            error: String(e),
+            slot: characterSlot,
+            orderIds
+          }
+        );
+      }
     });
   };
   handleSetActiveSpellsRef.current = handleSetActiveSpells;
@@ -69339,7 +69373,7 @@ const WorldExplorationInner = ({
     if (!inBattle || battlePhase !== "enemy" || enemyTurnInProgressRef.current)
       return;
     if (!battleReadyRef.current) return;
-    const currentCombatant = turnOrderRef.current[currentTurnIndex] ?? turnOrder[currentTurnIndex];
+    const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
     const enemyId = currentCombatant.id;
     enemyTurnInProgressRef.current = true;
@@ -76248,7 +76282,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-lFMlqpko.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BAG2wVdN.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
