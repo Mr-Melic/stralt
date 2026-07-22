@@ -204,6 +204,14 @@ export interface PlayerSpellContextDeps extends SpellContextDeps {
   // ── Spell-type history (player only) ──
   /** Records the player's last cast spell type for history/pacifist tracking. */
   recordSpellType: (effectType: string) => void;
+
+  // ── Death pipeline ──
+  /**
+   * Idempotent combatant death processing. Called by the damage loop after
+   * applyDamageToEnemy when a target's post-damage hp drops to <= 0. Returns
+   * true if the death sequence ran this call, false if already removed.
+   */
+  processCombatantDeath: (id: string) => boolean;
 }
 
 /**
@@ -265,5 +273,6 @@ export function createPlayerSpellContext(
     spawnPlayerSummon: deps.spawnPlayerSummon,
     getEffectiveSpellRange: deps.getEffectiveSpellRange,
     recordSpellType: deps.recordSpellType,
+    processCombatantDeath: deps.processCombatantDeath,
   };
 }

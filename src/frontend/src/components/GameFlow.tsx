@@ -127,18 +127,8 @@ const GameFlow: React.FC<GameFlowProps> = ({
   // refetch updates backendDokaBalance, this effect updates local state to the
   // real persisted value (which includes the granted reward), correcting any
   // optimistic drift from session mutations.
-  // dokaBalance is intentionally read-only here for the [FEATS] log; we do
-  // not want to re-run this effect when the local optimistic value changes,
-  // only when the backend-authoritative value updates.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: dokaBalance is read-only for logging
   useEffect(() => {
     if (backendDokaBalance !== undefined) {
-      console.log(
-        "[FEATS] CREDIT: Doka old=",
-        dokaBalance,
-        "new=",
-        backendDokaBalance,
-      );
       setDokaBalance(backendDokaBalance);
     }
   }, [backendDokaBalance]);

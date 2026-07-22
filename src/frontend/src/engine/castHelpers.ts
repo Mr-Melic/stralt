@@ -25,6 +25,7 @@ import type { CharacterStats } from "../components/WorldExploration";
 import type { SoundEvent } from "../hooks/useSoundHooks";
 import type { ActiveEffect } from "../types/gameTypes";
 import type { Enemy } from "../types/gameTypes";
+import { type DeathPipelineCtx, processCombatantDeath } from "./deathPipeline";
 import type { PlayerCastEnemy, PlayerCastTarget } from "./spellEngine";
 import { removeCombatantFromTurnQueue } from "./turnQueue";
 
@@ -218,6 +219,7 @@ export interface ApplyDamageToEnemyDeps {
   setCharacterStats: (
     updater: (prev: CharacterStats) => CharacterStats,
   ) => void;
+  processCombatantDeath: (id: string) => boolean;
 }
 
 export interface ApplyDamageToEnemyArgs {
@@ -241,8 +243,8 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     gridPos: _gridPos,
     isPhysical,
     isCrit,
-    rawDmg,
-    preCritDmg,
+    rawDmg: _rawDmg,
+    preCritDmg: _preCritDmg,
     preCritDmgBM,
     isDrainSpell,
     maxHp,
@@ -250,10 +252,15 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     targetsToHit,
     activeEffectsRef,
     turnOrderRef,
+    currentTurnIndexRef: _currentTurnIndexRef,
     bossStateRef,
     enemyHpMap,
+    leaderEnemyIdRef: _leaderEnemyIdRef,
     battleHitsRef,
     battleCritHitsRef,
+    battleLeaderSlainRef: _battleLeaderSlainRef,
+    leaderDiedRef: _leaderDiedRef,
+    leaderBoostPercent: _leaderBoostPercent,
     calculatePlayerDamage,
     logBattleEntry,
     calcEnemyMaxHp,
@@ -262,14 +269,18 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     enemies,
     enemyTakesDamage,
     playSound,
+    setEnemies: _setEnemies,
+    triggerLeaderDeathAnimation: _triggerLeaderDeathAnimation,
+    setLeaderBoostMultiplier: _setLeaderBoostMultiplier,
     setCharacterStats,
+    processCombatantDeath,
   } = deps;
 
   const targetEnemy =
     hitTarget.id === "__player__" ? undefined : (hitTarget as Enemy);
   let finalDmg: number;
   if (hitTarget.id !== "__player__" && targetEnemy) {
-    const { finalDamage } = calculatePlayerDamage(
+    const { finalDamage, breakdown: _breakdown } = calculatePlayerDamage(
       preCritDmgBM,
       spell.id,
       targetEnemy,
@@ -338,26 +349,22 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
   if (spReduction > 0) resistParts.push(`-${spReduction}SP`);
   if (resReduction > 0) resistParts.push(`-${resReduction}RES`);
   // Format: raw→absorbed(reason)→final with distinct markup token ||...|| for grey coloring
-  const resistNote =
+  const _resistNote =
     resistedAmt > 0 ? ` |[${resistParts.join("+")}=>${finalDmg}]|` : "";
   if (isCrit) {
     playSound("critical_hit", spell.name);
     playSound("spell_hit", hitTarget.pieceType);
     battleCritHitsRef.current += 1;
-    logBattleEntry(
-      `CRITICAL HIT! You cast ${spell.name} on ${hitTarget.pieceType}: ${rawDmg}x2=${preCritDmg} dmg${resistNote}`,
-      "#FFD700",
-    );
   } else {
     playSound("spell_hit", hitTarget.pieceType);
-    logBattleEntry(
-      `You cast ${spell.name} on ${hitTarget.pieceType} for ${finalDmg} dmg${resistNote}`,
-      "#22c55e",
-    );
   }
   const enemyPrevHp =
     enemyHpMap[hitTarget.id] ?? calcEnemyMaxHp(hitTarget.level);
   const enemyNewHp = Math.max(0, enemyPrevHp - finalDmg);
+  logBattleEntry(
+    `${hitTarget.pieceType} takes ${finalDmg} damage (${enemyNewHp} HP left)`,
+    "#a855f7",
+  );
 
   setEnemyHpMap((prev) => ({
     ...prev,
@@ -410,12 +417,9 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
       ...prev,
       hp: Math.max(0, prev.hp - finalDmg),
     }));
+  } else if (enemyNewHp <= 0) {
+    processCombatantDeath(hitTarget.id);
   }
-  // NOTE: Enemy death handling (hp <= 0) is NO LONGER done inline here.
-  // The caller (enemyTakesDamage in WorldExploration.tsx) detects hp<=0 and
-  // routes the death through processCombatantDeath (engine/deathPipeline.ts),
-  // which owns the leader death-boost, sound, queue removal, and setEnemies
-  // filter as a single unified pipeline.
 
   // Drain: heal player too (once per cast, not per target)
   if (isDrainSpell && hitTarget === targetsToHit[0]) {

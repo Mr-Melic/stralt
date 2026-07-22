@@ -187,6 +187,12 @@ export interface PlayerSpellContext extends SpellContext {
     preCritDmgBM: number,
     isFirstTarget: boolean,
   ): void;
+  /**
+   * Idempotent combatant death processing. Called by the damage loop after
+   * applyDamageToEnemy when a target's post-damage hp drops to <= 0. Returns
+   * true if the death sequence ran this call, false if already removed.
+   */
+  processCombatantDeath: (id: string) => boolean;
   /** hitsAllies __player__ branch — apply finalDmg to the player. */
   applyDamageToPlayer(finalDmg: number): void;
   /** Inline Mirror-redirect branch (target has mirror active). Returns true if redirected. */
@@ -973,6 +979,12 @@ export function resolvePlayerCast(
         preCritDmgBM,
         i === 0,
       );
+      // Detect death from the pre-damage hp snapshot minus the applied damage.
+      // applyDamageToEnemy returns void and updates enemyHpMap asynchronously,
+      // so the synchronous hp - finalDmg check is the reliable death signal here.
+      if (hitTarget.hp - finalDmg <= 0 && hitTarget.id !== "__player__") {
+        ctx.processCombatantDeath(hitTarget.id);
+      }
       ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");
     }
   }

@@ -117,7 +117,7 @@ export function useGetCallerDokaBalance() {
       }
     },
     enabled: !!actor && !actorFetching,
-    staleTime: 10000,
+    staleTime: 0,
     gcTime: 60000,
   });
 }
@@ -293,16 +293,26 @@ export function useGetPlayerAchievements() {
         const raw = (await withTimeout(
           (actor as ActorAny).getPlayerAchievements(),
         )) as any;
-        return (raw as AchievementProgress[]).map((p) => ({
+        const mapped = (raw as AchievementProgress[]).map((p) => ({
           ...p,
           unlockedAt: Number(p.unlockedAt),
         }));
+        // [FEATS] LIST — log the refetched claimed flag per achievement so
+        // the chain shows the post-claim/unlock state from the backend.
+        console.log("[FEATS] LIST", {
+          count: mapped.length,
+          claimed: mapped.map((p) => ({
+            achievementId: p.achievementId,
+            claimed: p.claimed,
+          })),
+        });
+        return mapped;
       } catch {
         return [];
       }
     },
     enabled: !!actor && !actorFetching,
-    staleTime: 10000,
+    staleTime: 0,
     gcTime: 60000,
   });
 }
@@ -314,24 +324,16 @@ export function useMarkAchievementUnlocked() {
   return useMutation({
     mutationFn: async (achievementId: string) => {
       if (!actor) throw new Error("Actor not available");
-      console.log(
-        "[FEATS] UNLOCK: markAchievementUnlocked calling backend for",
+      // [FEATS] UNLOCK — log the persist write (achievementId) and the
+      // verbatim backend response from markAchievementUnlocked.
+      const res = await (actor as ActorAny).markAchievementUnlocked(
         achievementId,
       );
-      const result = (actor as ActorAny).markAchievementUnlocked(achievementId);
-      result
-        .then((r: unknown) => {
-          console.log(
-            "[FEATS] UNLOCK: markAchievementUnlocked backend response =",
-            JSON.stringify(r, (_k, v) =>
-              typeof v === "bigint" ? v.toString() : v,
-            ),
-          );
-        })
-        .catch((e: unknown) => {
-          console.log("[FEATS] UNLOCK: markAchievementUnlocked error =", e);
-        });
-      return result;
+      console.log("[FEATS] UNLOCK", {
+        achievementId,
+        response: res,
+      });
+      return res;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
@@ -346,35 +348,26 @@ export function useClaimAchievementReward() {
   return useMutation({
     mutationFn: async (achievementId: string) => {
       if (!actor) throw new Error("Actor not available");
-      console.log("[FEATS] CLAIM: claiming", achievementId);
-      const result = (actor as ActorAny).claimAchievementReward(achievementId);
-      result
-        .then((r: unknown) => {
-          console.log(
-            "[FEATS] CLAIM: backend response =",
-            JSON.stringify(r, (_k, v) =>
-              typeof v === "bigint" ? v.toString() : v,
-            ),
-          );
-        })
-        .catch((e: unknown) => {
-          console.log("[FEATS] CLAIM: backend error =", e);
-        });
-      return result;
+      return (actor as ActorAny).claimAchievementReward(achievementId);
     },
-    onSuccess: (data) => {
-      console.log(
-        "[FEATS] CLAIM: onSuccess fired, raw result =",
-        JSON.stringify(data, (_k, v) =>
-          typeof v === "bigint" ? v.toString() : v,
-        ),
-      );
-      queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
-      queryClient.invalidateQueries({ queryKey: ["characterSlots"] });
-      queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
-    },
-    onError: (error) => {
-      console.log("[FEATS] CLAIM: onError fired, error =", error);
+    onSuccess: (result) => {
+      if (result && typeof result === "object" && "__kind__" in result) {
+        if (result.__kind__ === "ok") {
+          console.log("[FEATS] CLAIM", { ok: result.ok });
+          const oldBalance = queryClient.getQueryData(["callerDokaBalance"]);
+          console.log("[FEATS] CREDIT", {
+            old: oldBalance,
+            new: Number(result.ok),
+          });
+          queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+          queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
+        } else if (result.__kind__ === "err") {
+          console.log("[FEATS] CLAIM", { err: result.err });
+        }
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+        queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
+      }
     },
   });
 }
