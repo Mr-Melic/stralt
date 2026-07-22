@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { deepNormalizeBigInts } from "../lib/normalizeBigInts";
-import type { Character, CharacterSlots } from "../types/gameTypes";
+import type {
+  Character,
+  CharacterSlots,
+  UserProfile,
+} from "../types/gameTypes";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,14 +23,14 @@ function withTimeout<T>(promise: Promise<T>, ms = 10000): Promise<T> {
 export function useGetCallerUserProfile() {
   const { actor, isFetching: actorFetching } = useActor();
 
-  const query = useQuery<{ name: string; id?: string } | null>({
+  const query = useQuery<UserProfile | null>({
     queryKey: ["currentUserProfile"],
     queryFn: async () => {
       if (!actor) return null;
       try {
         const result = (await withTimeout(
           (actor as ActorAny).getCallerUserProfile(),
-        )) as { name: string; id?: string } | null | undefined;
+        )) as UserProfile | null | undefined;
         return result ?? null;
       } catch {
         return null;
@@ -49,7 +53,7 @@ export function useSaveCallerUserProfile() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (profile: { name: string; [key: string]: unknown }) => {
+    mutationFn: async (profile: UserProfile) => {
       if (!actor) throw new Error("Actor not available");
       return (actor as ActorAny).saveCallerUserProfile(profile);
     },

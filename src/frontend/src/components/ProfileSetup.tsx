@@ -42,12 +42,21 @@ const ProfileSetup: React.FC = () => {
     }
 
     try {
-      await saveProfileMutation.mutateAsync({ name: name.trim() });
-    } catch (error) {
-      console.error("Error saving profile:", error);
-      setError(
-        "An error occurred while saving your profile. Please try again.",
-      );
+      // New-profile payload must include uiLayout — backend saveCallerUserProfile
+      // does userProfiles.add(caller, profile) with NO field merging, so a missing
+      // uiLayout key fails Candid validation. Empty string is the canonical default
+      // for a brand-new account (the layout blob is set later via saveUserUiLayout).
+      await saveProfileMutation.mutateAsync({
+        name: name.trim(),
+        uiLayout: "",
+      });
+    } catch (err) {
+      // Surface the real backend/Candid error instead of a generic string so the
+      // player can see what actually went wrong (e.g. missing-field rejection).
+      const raw = err instanceof Error ? err.message : String(err);
+      const message = raw.length > 160 ? `${raw.slice(0, 157)}...` : raw;
+      console.error("[PROFILE] Error saving profile:", err);
+      setError(message || "Failed to save profile.");
     }
   };
 

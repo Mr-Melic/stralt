@@ -59676,6 +59676,8 @@ function StatusEffectBadge({ effect }) {
 let _fbNameIdx = 0;
 let _progressionDivergenceWarned = false;
 let _spellbarBisectLoadSkipCount = 0;
+const _spellbarLoadedForCharKey = /* @__PURE__ */ new Set();
+const _spellbarInitialSavedCharKey = /* @__PURE__ */ new Set();
 let _turnSkipLogLastTs = 0;
 const CAMERA_SMOOTHING_FACTOR = 0.85;
 class CanvasErrorBoundary extends reactExports.Component {
@@ -60232,6 +60234,7 @@ const WorldExplorationInner = ({
   const currentTurnIndexRef = reactExports.useRef(0);
   const [turnOrder, setTurnOrder] = reactExports.useState([]);
   const turnOrderRef = reactExports.useRef([]);
+  const skippedIdsRef = reactExports.useRef(/* @__PURE__ */ new Map());
   const combatantsRef = reactExports.useRef([]);
   const storeCtxRef = reactExports.useRef(null);
   if (storeCtxRef.current === null) {
@@ -60734,7 +60737,7 @@ const WorldExplorationInner = ({
     if (loadedForCharacterRef.current !== null && loadedForCharacterRef.current !== _charKey) {
       loadedForCharacterRef.current = null;
     }
-    if (loadedForCharacterRef.current === _charKey && !spellBarDirtyRef.current) {
+    if (_spellbarLoadedForCharKey.has(_charKey) && !spellBarDirtyRef.current) {
       _spellbarBisectLoadSkipCount++;
       if (_spellbarBisectLoadSkipCount % 50 === 0) {
         logDebugInfo(
@@ -60751,7 +60754,8 @@ const WorldExplorationInner = ({
       ownedCount: ownedSpells.length,
       dirty: spellBarDirtyRef.current,
       charKey: _charKey,
-      prevCharKey: loadedForCharacterRef.current
+      prevCharKey: loadedForCharacterRef.current,
+      moduleGuardHas: _spellbarLoadedForCharKey.has(_charKey)
     });
     let cancelled = false;
     (async () => {
@@ -60796,53 +60800,73 @@ const WorldExplorationInner = ({
             JSON.stringify(padded)
           );
         } else if (ownedSpells.length > 0) {
-          const first8 = ownedSpells.slice(0, 8).map((s2) => s2.id);
-          if (cancelled) return;
-          setActiveSpellIds(first8);
-          localStorage.setItem(
-            nsKey("pbv_active_spells"),
-            JSON.stringify(first8)
-          );
-          try {
-            const result = await actor.setSpellBarOrder(
-              BigInt(characterSlot),
-              first8
-            );
-            if (isSpellBarErr(result)) {
-              logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
-                msg: spellBarErrMsg(result),
-                slot: characterSlot,
-                orderIds: first8
-              });
-              console.error(
-                "[SpellInit] setSpellBarOrder #err:",
-                spellBarErrMsg(result)
-              );
-            } else {
-              logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
-                slot: characterSlot,
-                orderIds: first8
-              });
-            }
-          } catch (e) {
-            logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
-              error: String(e),
+          if (_spellbarInitialSavedCharKey.has(_charKey)) {
+            logDebugInfo("SPELLS", "[SPELLBAR] BLOCKED-overwrite", {
               slot: characterSlot,
-              orderIds: first8
+              charKey: _charKey,
+              existingOrder: activeSpellIds,
+              fetchedOrder: savedOrder
             });
-            console.warn(
-              "[SpellInit] Failed to save initial spellBarOrder:",
-              e
+            setActiveSpellIds(activeSpellIds);
+            try {
+              localStorage.setItem(
+                nsKey("pbv_active_spells"),
+                JSON.stringify(activeSpellIds)
+              );
+            } catch {
+            }
+          } else {
+            const first8 = ownedSpells.slice(0, 8).map((s2) => s2.id);
+            if (cancelled) return;
+            setActiveSpellIds(first8);
+            localStorage.setItem(
+              nsKey("pbv_active_spells"),
+              JSON.stringify(first8)
             );
+            try {
+              const result = await actor.setSpellBarOrder(
+                BigInt(characterSlot),
+                first8
+              );
+              if (isSpellBarErr(result)) {
+                logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
+                  msg: spellBarErrMsg(result),
+                  slot: characterSlot,
+                  orderIds: first8
+                });
+                console.error(
+                  "[SpellInit] setSpellBarOrder #err:",
+                  spellBarErrMsg(result)
+                );
+              } else {
+                _spellbarInitialSavedCharKey.add(_charKey);
+                logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
+                  slot: characterSlot,
+                  orderIds: first8
+                });
+              }
+            } catch (e) {
+              logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
+                error: String(e),
+                slot: characterSlot,
+                orderIds: first8
+              });
+              console.warn(
+                "[SpellInit] Failed to save initial spellBarOrder:",
+                e
+              );
+            }
           }
         }
       } catch (e) {
         console.warn("[SpellLoad] Failed to load spells from backend:", e);
       }
       if (!cancelled) {
+        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
         loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load completed, guard set", {
-          charKey: `${userId}:${characterSlot}`
+          charKey: `${userId}:${characterSlot}`,
+          moduleGuardSize: _spellbarLoadedForCharKey.size
         });
       }
     })();
@@ -67736,6 +67760,7 @@ const WorldExplorationInner = ({
     setEnemyCooldowns({});
     setTurnOrder([]);
     turnOrderRef.current = [];
+    skippedIdsRef.current = /* @__PURE__ */ new Map();
     setBattlePhase("player");
     shieldHpRef.current = 0;
     furyRef.current = { turnsLeft: 0 };
@@ -68542,6 +68567,7 @@ const WorldExplorationInner = ({
     setBattleEnemies([]);
     setTurnOrder([]);
     turnOrderRef.current = [];
+    skippedIdsRef.current = /* @__PURE__ */ new Map();
     setCurrentTurnIndex(0);
     currentTurnIndexRef.current = 0;
     setBattlePhase("player");
@@ -68692,6 +68718,7 @@ const WorldExplorationInner = ({
     setBattleEnemies([]);
     setTurnOrder([]);
     turnOrderRef.current = [];
+    skippedIdsRef.current = /* @__PURE__ */ new Map();
     setCurrentTurnIndex(0);
     currentTurnIndexRef.current = 0;
     setBattlePhase("player");
@@ -69015,9 +69042,9 @@ const WorldExplorationInner = ({
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
         setCurrentTurnIndex((prevIdx) => {
-          const nextIdx = (prevIdx + 1) % prevOrder.length;
+          let nextIdx = (prevIdx + 1) % prevOrder.length;
           currentTurnIndexRef.current = nextIdx;
-          const nextCombatant = prevOrder[nextIdx];
+          let nextCombatant = prevOrder[nextIdx];
           const _isLiveEntry = (entry) => {
             if (entry.type === "player") return true;
             const storeEntry = getLiveCombatants(combatantStoreCtx).find(
@@ -69036,13 +69063,26 @@ const WorldExplorationInner = ({
                 ) === void 0 ? "not-in-store" : "hp<=0",
                 nextIdx
               });
+              const _skipCount = (skippedIdsRef.current.get(nextCombatant.id) ?? 0) + 1;
+              skippedIdsRef.current.set(nextCombatant.id, _skipCount);
+              if (_skipCount >= 2) {
+                logDebugInfo("TURN", "[TURN] ESCALATED", {
+                  skippedId: nextCombatant.id,
+                  count: _skipCount,
+                  reason: "removal-failed-again"
+                });
+              }
             }
             let guardIdx = nextIdx;
+            let _foundLive = false;
             for (let i = 0; i < prevOrder.length; i++) {
               const guardCombatant = prevOrder[guardIdx];
               if (_isLiveEntry(guardCombatant)) {
+                nextIdx = guardIdx;
+                nextCombatant = prevOrder[guardIdx];
                 currentTurnIndexRef.current = guardIdx;
-                return guardIdx;
+                _foundLive = true;
+                break;
               }
               const _now2 = Date.now();
               if (_now2 - _turnSkipLogLastTs >= 250) {
@@ -69054,10 +69094,21 @@ const WorldExplorationInner = ({
                   ) === void 0 ? "not-in-store" : "hp<=0",
                   nextIdx: guardIdx
                 });
+                const _skipCount = (skippedIdsRef.current.get(guardCombatant.id) ?? 0) + 1;
+                skippedIdsRef.current.set(guardCombatant.id, _skipCount);
+                if (_skipCount >= 2) {
+                  logDebugInfo("TURN", "[TURN] ESCALATED", {
+                    skippedId: guardCombatant.id,
+                    count: _skipCount,
+                    reason: "removal-failed-again"
+                  });
+                }
               }
               guardIdx = (guardIdx + 1) % prevOrder.length;
             }
-            return nextIdx;
+            if (!_foundLive) {
+              return nextIdx;
+            }
           }
           if (nextCombatant.type === "player") {
             logDebugInfo("TURN", "dispatch", {
@@ -70908,8 +70959,11 @@ const WorldExplorationInner = ({
             }
           }
           const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
-          if (thisHp <= 0 && enemyId === leaderEnemyIdRef.current && !leaderDiedRef.current) {
+          if (thisHp <= 0) {
             processCombatantDeathCb(enemyId);
+            if (enemyId === leaderEnemyIdRef.current && !leaderDiedRef.current) {
+              leaderDiedRef.current = true;
+            }
           }
           logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
           if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
@@ -75780,12 +75834,15 @@ const ProfileSetup = () => {
       return;
     }
     try {
-      await saveProfileMutation.mutateAsync({ name: name.trim() });
-    } catch (error2) {
-      console.error("Error saving profile:", error2);
-      setError(
-        "An error occurred while saving your profile. Please try again."
-      );
+      await saveProfileMutation.mutateAsync({
+        name: name.trim(),
+        uiLayout: ""
+      });
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : String(err);
+      const message = raw.length > 160 ? `${raw.slice(0, 157)}...` : raw;
+      console.error("[PROFILE] Error saving profile:", err);
+      setError(message || "Failed to save profile.");
     }
   };
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -76282,7 +76339,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BAG2wVdN.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-BtBi-BAK.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

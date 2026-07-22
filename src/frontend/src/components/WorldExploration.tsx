@@ -228,6 +228,31 @@ let _progressionDivergenceWarned = false;
 let _spellbarBisectLoadSkipCount = 0;
 let _spellbarBisectConsoleCount = 0;
 
+// ─── [SPELLBAR GUARD PERSISTENCE] (HOTFIX) ──────────────────────────────────
+// The load-once guard MUST survive re-renders, refetches, effect-cancellation
+// races, AND component remounts. A useRef resets on remount, and the previous
+// in-component guard (loadedForCharacterRef) was also defeated by the
+// cancellation race: the guard-set site lived INSIDE the async IIFE, so when
+// deps changed (ownedSpells identity churn on first cast) the cleanup set
+// `cancelled = true` BEFORE the IIFE reached the guard-set site, leaving the
+// ref null on the next fire. Moving the guard to MODULE LEVEL fixes both: a
+// module-level Set persists for the page session (survives remounts) and is
+// written SYNCHRONOUSLY the moment the load completes (not gated by the
+// async IIFE's continuation, so a later cancellation cannot un-set it).
+// Keyed as `${userId}:${characterSlot}`.
+const _spellbarLoadedForCharKey = new Set<string>();
+
+// ─── [SPELLBAR BLOCKED-OVERWRITE INVARIANT] (HOTFIX) ────────────────────────
+// Last line of defense against the initial-derivation branch (the `else if`
+// that saves a default order when the fetched spellBarOrder is empty) re-running
+// and overwriting a bar that already got an initial save #ok this session.
+// Tracks charKeys (`${userId}:${characterSlot}`) that have already received a
+// [SPELLBAR] initial save #ok. If the initial-save branch is about to run AND
+// this charKey is already in the set, we log [SPELLBAR] BLOCKED-overwrite and
+// SKIP the save (just apply the fetched/active order). Module-level so it
+// survives remounts and cancellation races (same rationale as the guard above).
+const _spellbarInitialSavedCharKey = new Set<string>();
+
 // SECTION 1 — [TURN] skip-log throttle. The dead-entity skip guard in
 // advanceTurn logs whenever it skips a turn-order entry. A future skip must
 // name itself (skippedId + reason + nextIdx), but unthrottled it would spam
@@ -1152,6 +1177,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // H2: Mirror of turnOrder in a ref so enemy AI always reads the current value
   // without relying on a stale React-state closure captured at effect creation time.
   const turnOrderRef = useRef<CombatantEntry[]>([]);
+  // FIX (d): Escalated-skip tracking. Maps a skipped combatant id to the
+  // number of times it has been skipped in a row. When the count reaches 2,
+  // the skip log escalates to [TURN] ESCALATED so a stuck removal (e.g. an
+  // enemy that should have been removed from turnOrder but wasn't) is
+  // visible in the debug overlay. Reset at every battle-cleanup site that
+  // calls setTurnOrder([]).
+  const skippedIdsRef = useRef<Map<string, number>>(new Map());
   // --- Unified combatant store (Section 1) ---
   // combatantsRef is the single source of truth; enemiesRef/battleEnemiesRef/turnOrderRef
   // remain as mirrors the store helpers keep in sync. See engine/combatantStore.ts.
@@ -1986,16 +2018,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // mid-battle or on ownedSpells identity churn (the dep array still
     // includes ownedSpells, but the guard makes those re-runs no-ops).
     const _charKey = `${userId}:${characterSlot}`;
+    // HOTFIX (a): the previous in-component ref (loadedForCharacterRef) was
+    // defeated by the cancellation race — the guard-set site lived INSIDE the
+    // async IIFE, so when deps changed (ownedSpells identity churn on first
+    // cast) the cleanup set `cancelled = true` BEFORE the IIFE reached the
+    // guard-set site, leaving the ref null on the next fire (prevCharKey:null
+    // in the bisect log). The authoritative guard is now the MODULE-LEVEL
+    // `_spellbarLoadedForCharKey` Set, which persists for the page session
+    // (survives remounts) and is written SYNCHRONOUSLY when the load completes
+    // (not gated by the async IIFE's continuation, so a later cancellation
+    // cannot un-set it). The in-component ref is kept only as a debug mirror
+    // for the bisect log's prevCharKey field.
     if (
       loadedForCharacterRef.current !== null &&
       loadedForCharacterRef.current !== _charKey
     ) {
       loadedForCharacterRef.current = null;
     }
-    if (
-      loadedForCharacterRef.current === _charKey &&
-      !spellBarDirtyRef.current
-    ) {
+    if (_spellbarLoadedForCharKey.has(_charKey) && !spellBarDirtyRef.current) {
       _spellbarBisectLoadSkipCount++;
       if (_spellbarBisectLoadSkipCount % 50 === 0) {
         logDebugInfo(
@@ -2017,6 +2057,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       dirty: spellBarDirtyRef.current,
       charKey: _charKey,
       prevCharKey: loadedForCharacterRef.current,
+      moduleGuardHas: _spellbarLoadedForCharKey.has(_charKey),
     });
     let cancelled = false;
     (async () => {
@@ -2081,47 +2122,82 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // ownedSpells in their natural/learned order (NOT a random shuffle)
           // and SAVE it immediately via setSpellBarOrder so the next load
           // reads it back.
-          const first8 = ownedSpells.slice(0, 8).map((s) => s.id);
-          if (cancelled) return;
-          setActiveSpellIds(first8);
-          localStorage.setItem(
-            nsKey("pbv_active_spells"),
-            JSON.stringify(first8),
-          );
-          try {
-            // FIX 2b: Log the initial-save round-trip result too (the
-            // non-debounced fallback path). Same variant inspection as the
-            // debounced save above.
-            const result = await (actor as ActorAny).setSpellBarOrder(
-              BigInt(characterSlot),
-              first8,
-            );
-            if (isSpellBarErr(result)) {
-              logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
-                msg: spellBarErrMsg(result),
-                slot: characterSlot,
-                orderIds: first8,
-              });
-              console.error(
-                "[SpellInit] setSpellBarOrder #err:",
-                spellBarErrMsg(result),
-              );
-            } else {
-              logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
-                slot: characterSlot,
-                orderIds: first8,
-              });
-            }
-          } catch (e) {
-            logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
-              error: String(e),
+          // HOTFIX (b): BLOCKED-overwrite invariant. This branch must run ONLY
+          // when the FETCHED character.spellBarOrder is genuinely empty (the
+          // `else if` above already verified savedOrder is empty/null). As a
+          // last line of defense against a re-run that would overwrite a bar
+          // that already got an initial save #ok this session, check the
+          // module-level `_spellbarInitialSavedCharKey` Set. If this charKey
+          // already has an initial save #ok, log BLOCKED-overwrite and SKIP the
+          // save entirely (just apply the active/fetched order). This survives
+          // remounts and cancellation races (module-level, same rationale as
+          // the load-once guard).
+          if (_spellbarInitialSavedCharKey.has(_charKey)) {
+            logDebugInfo("SPELLS", "[SPELLBAR] BLOCKED-overwrite", {
               slot: characterSlot,
-              orderIds: first8,
+              charKey: _charKey,
+              existingOrder: activeSpellIds,
+              fetchedOrder: savedOrder,
             });
-            console.warn(
-              "[SpellInit] Failed to save initial spellBarOrder:",
-              e,
+            // Apply the current active order (do NOT save, do NOT clobber).
+            // activeSpellIds already holds the user's bar; just re-affirm it
+            // and the localStorage cache so the render is consistent.
+            setActiveSpellIds(activeSpellIds);
+            try {
+              localStorage.setItem(
+                nsKey("pbv_active_spells"),
+                JSON.stringify(activeSpellIds),
+              );
+            } catch {
+              // ignore
+            }
+          } else {
+            const first8 = ownedSpells.slice(0, 8).map((s) => s.id);
+            if (cancelled) return;
+            setActiveSpellIds(first8);
+            localStorage.setItem(
+              nsKey("pbv_active_spells"),
+              JSON.stringify(first8),
             );
+            try {
+              // FIX 2b: Log the initial-save round-trip result too (the
+              // non-debounced fallback path). Same variant inspection as the
+              // debounced save above.
+              const result = await (actor as ActorAny).setSpellBarOrder(
+                BigInt(characterSlot),
+                first8,
+              );
+              if (isSpellBarErr(result)) {
+                logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
+                  msg: spellBarErrMsg(result),
+                  slot: characterSlot,
+                  orderIds: first8,
+                });
+                console.error(
+                  "[SpellInit] setSpellBarOrder #err:",
+                  spellBarErrMsg(result),
+                );
+              } else {
+                // HOTFIX (b): record this charKey as having received an initial
+                // save #ok this session so the BLOCKED-overwrite invariant
+                // above can catch any future re-run.
+                _spellbarInitialSavedCharKey.add(_charKey);
+                logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
+                  slot: characterSlot,
+                  orderIds: first8,
+                });
+              }
+            } catch (e) {
+              logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
+                error: String(e),
+                slot: characterSlot,
+                orderIds: first8,
+              });
+              console.warn(
+                "[SpellInit] Failed to save initial spellBarOrder:",
+                e,
+              );
+            }
           }
         }
       } catch (e) {
@@ -2130,10 +2206,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // BREAK 2a: Mark this character as loaded ONLY if the effect wasn't
       // cancelled mid-flight. A cancelled load (deps changed again before
       // the await resolved) leaves the guard unset so the next run re-loads.
+      // HOTFIX (a): the authoritative guard is now the MODULE-LEVEL
+      // `_spellbarLoadedForCharKey` Set (persists across remounts and is
+      // visible to the next effect run even if THIS run is cancelled right
+      // after). The in-component ref is kept only as a debug mirror for the
+      // bisect log's prevCharKey field.
       if (!cancelled) {
+        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
         loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load completed, guard set", {
           charKey: `${userId}:${characterSlot}`,
+          moduleGuardSize: _spellbarLoadedForCharKey.size,
         });
       }
     })();
@@ -11140,6 +11223,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // (Was missing despite a comment in cleanupMap claiming it was here.)
     setTurnOrder([]);
     turnOrderRef.current = [];
+    // FIX (d): reset escalated-skip tracking on battle cleanup.
+    skippedIdsRef.current = new Map();
     // Part 1: Reset battlePhase to "player" so the next battle's
     // setBattlePhase("enemy") (when entry 0 is an AI combatant) is a REAL
     // state change — guaranteeing the AI-trigger effect fires for turn 0.
@@ -12314,6 +12399,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     setBattleEnemies([]);
     setTurnOrder([]);
     turnOrderRef.current = [];
+    // FIX (d): reset escalated-skip tracking on battle cleanup.
+    skippedIdsRef.current = new Map();
     setCurrentTurnIndex(0);
     currentTurnIndexRef.current = 0;
     setBattlePhase("player");
@@ -12481,6 +12568,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     setBattleEnemies([]);
     setTurnOrder([]);
     turnOrderRef.current = [];
+    // FIX (d): reset escalated-skip tracking on battle cleanup.
+    skippedIdsRef.current = new Map();
     setCurrentTurnIndex(0);
     currentTurnIndexRef.current = 0;
     setBattlePhase("player");
@@ -12949,9 +13038,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (prevOrder.length === 0) return prevOrder;
         // H7: ref is set to the new computed order BEFORE the state update so AI reads a fresh value
         setCurrentTurnIndex((prevIdx) => {
-          const nextIdx = (prevIdx + 1) % prevOrder.length;
+          let nextIdx = (prevIdx + 1) % prevOrder.length;
           currentTurnIndexRef.current = nextIdx;
-          const nextCombatant = prevOrder[nextIdx];
+          let nextCombatant = prevOrder[nextIdx];
           // Dead-entity skip guard: if the next combatant was already removed
           // from the live set (e.g. killed by a DoT or hazard during a prior
           // turn-end), advance to the next index instead of dispatching into
@@ -13006,13 +13095,37 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       : "hp<=0",
                 nextIdx,
               });
+              // FIX (d) — ESCALATED SKIP LOG (first site): track repeated
+              // skip failures per id so a combatant that keeps failing
+              // removal surfaces an escalated log entry.
+              const _skipCount =
+                (skippedIdsRef.current.get(nextCombatant.id) ?? 0) + 1;
+              skippedIdsRef.current.set(nextCombatant.id, _skipCount);
+              if (_skipCount >= 2) {
+                logDebugInfo("TURN", "[TURN] ESCALATED", {
+                  skippedId: nextCombatant.id,
+                  count: _skipCount,
+                  reason: "removal-failed-again",
+                });
+              }
             }
             let guardIdx = nextIdx;
+            let _foundLive = false;
             for (let i = 0; i < prevOrder.length; i++) {
               const guardCombatant = prevOrder[guardIdx];
               if (_isLiveEntry(guardCombatant)) {
+                // FIX (b) — UNIFIED SKIP-DISPATCH: do NOT return guardIdx
+                // directly. Instead, reassign nextIdx/nextCombatant to the
+                // landed live entry and fall through to the dispatch
+                // branches below (player AP/MP restore, enemy AI schedule,
+                // summon logic). The old `return guardIdx` bypassed all
+                // dispatch, so a skipped-into-player turn never restored
+                // AP/MP and a skipped-into-enemy turn never scheduled AI.
+                nextIdx = guardIdx;
+                nextCombatant = prevOrder[guardIdx];
                 currentTurnIndexRef.current = guardIdx;
-                return guardIdx;
+                _foundLive = true;
+                break;
               }
               // Log each skipped candidate (throttled) so a future skip
               // names itself.
@@ -13031,12 +13144,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         : "hp<=0",
                   nextIdx: guardIdx,
                 });
+                // FIX (d) — ESCALATED SKIP LOG (loop site): track repeated
+                // skip failures per id for loop candidates too.
+                const _skipCount =
+                  (skippedIdsRef.current.get(guardCombatant.id) ?? 0) + 1;
+                skippedIdsRef.current.set(guardCombatant.id, _skipCount);
+                if (_skipCount >= 2) {
+                  logDebugInfo("TURN", "[TURN] ESCALATED", {
+                    skippedId: guardCombatant.id,
+                    count: _skipCount,
+                    reason: "removal-failed-again",
+                  });
+                }
               }
               // Advance AFTER checking — no double-advance.
               guardIdx = (guardIdx + 1) % prevOrder.length;
             }
-            // Queue exhausted — no live combatants left, keep the index.
-            return nextIdx;
+            // Queue exhausted — no live combatants left, keep the index and
+            // skip dispatch entirely so the round-end logic can take over.
+            if (!_foundLive) {
+              return nextIdx;
+            }
+            // Otherwise fall through to the dispatch branches with the
+            // landed live entry (nextIdx/nextCombatant now point at it).
           }
           if (nextCombatant.type === "player") {
             logDebugInfo("TURN", "dispatch", {
@@ -15407,14 +15537,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
             }
           }
-          // ── Leader DoT death check ───────────────────────────────────────
+          // ── DoT death check (any enemy) + leader flag ────────────────────
           const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
-          if (
-            thisHp <= 0 &&
-            enemyId === leaderEnemyIdRef.current &&
-            !leaderDiedRef.current
-          ) {
+          if (thisHp <= 0) {
             processCombatantDeathCb(enemyId);
+            if (
+              enemyId === leaderEnemyIdRef.current &&
+              !leaderDiedRef.current
+            ) {
+              leaderDiedRef.current = true;
+            }
           }
           logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
           // ── Enemy hazard tile landing ────────────────────────────────────

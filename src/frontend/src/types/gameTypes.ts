@@ -71,10 +71,17 @@ export interface CharacterSlots {
   slot3: Character | null;
 }
 
+/**
+ * Frontend UserProfile — aligned to the backend Candid type
+ * (declarations/backend.did.d.ts:240 = { name: string; uiLayout: string },
+ * both required). `id` is a frontend-only convenience (not in Candid) so it
+ * stays optional. The loose `[key: string]: unknown` index signature was
+ * removed so a { name }-only object no longer type-checks against this type.
+ */
 export interface UserProfile {
   id?: string;
   name: string;
-  [key: string]: unknown;
+  uiLayout: string;
 }
 
 // ── Battle log ──────────────────────────────────────────────────────────────────
