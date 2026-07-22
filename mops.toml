@@ -13,8 +13,8 @@ main = "src/backend/main.mo"
 path = ".old/src/backend/dist/backend.most"
 
 [toolchain]
-moc = "1.11.1"
-lintoko = "0.10.0"
+moc = "1.11.2"
+lintoko = "0.11.0"
 
 [lint]
 extends = true
