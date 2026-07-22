@@ -41,6 +41,21 @@ export interface CombatantEntry {
   ownerId?: string;
   /** Turns remaining before summon fades */
   turnsRemaining?: number;
+  /** Combat stats surfaced on the turn-order entry for the BattleUIPanel
+   * unitStats builder and the inline summon control block. Optional —
+   * player entries populate res/sp/chc from characterStats; enemy entries
+   * from computeEnemyStats; summon entries from getSummonBaseStats. */
+  sp?: number;
+  sr?: number;
+  res?: number;
+  init?: number;
+  chc?: number;
+  atk?: number;
+  ap?: number;
+  mp?: number;
+  fail?: number;
+  enraged?: boolean;
+  activeEffects?: unknown[];
 }
 
 interface InitiativeStripProps {

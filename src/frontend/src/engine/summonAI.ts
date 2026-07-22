@@ -458,6 +458,12 @@ function tryKitCast(
   const spell = KIT_SPELLS.get(spellId);
   if (!spell) return false;
 
+  // SECTION 2 — caster snapshot now carries the full stat set so resolveSpellCast
+  // can apply SP (damage/heal bonus), SR (incoming spell resist), RES (flat
+  // reduction), INIT (turn order — informational here), ATK (physical scaling),
+  // and CHC (crit chance). atk is derived from level (matches the enemy atk
+  // formula in WorldExploration's turnOrder mapping: level * 2). fail stays 0
+  // (no failure penalty on the summon's own kit cast).
   const caster: CombatantSnapshot = {
     id: summon.id,
     side: summon.side,
@@ -468,11 +474,20 @@ function tryKitCast(
     stats: {
       res: summon.stats.res,
       sp: summon.stats.sp,
+      sr: summon.stats.sr,
+      init: summon.stats.init,
+      atk: summon.level * 2,
+      chc: summon.stats.chc,
       fail: 0,
     },
   };
 
   const isSelf = spell.targetType === "self";
+  // SECTION 2 — target snapshot now includes sr. The SpellContext.getCombatantAt
+  // contract only exposes {id, side} (no stats), so the enemy's real sr is not
+  // reachable here; we fall back to 0, matching the existing res:0/sp:0 pattern
+  // for unknown enemy defensive stats. For self-casts the target inherits the
+  // caster's full stats (including sr) via the spread.
   const target: TargetSnapshot = isSelf
     ? {
         ...caster,
@@ -486,7 +501,7 @@ function tryKitCast(
         maxHp: targetEnemy?.maxHp ?? 0,
         level: summon.level,
         effects: [],
-        stats: { res: 0, sp: 0 },
+        stats: { res: 0, sp: 0, sr: 0 },
       };
 
   try {

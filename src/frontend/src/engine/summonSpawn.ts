@@ -130,6 +130,10 @@ export function spawnSummonUnit(
     maxAp,
     maxMp,
     turnsRemaining: baseLifespan,
+    sp,
+    sr,
+    res,
+    init,
   } = getSummonBaseStats(spellLevel, unitDef, summonAI);
   const summonId = `summon-${Math.random().toString(36).slice(2)}`;
   // Match the legacy `(spell.summonLifespan || SUMMON_BASE_LIFESPAN) + floor(...)`
@@ -164,6 +168,17 @@ export function spawnSummonUnit(
     currentMp: maxMp,
     maxMp,
     ...stats,
+    // Canonical summon combat stats from getSummonBaseStats — override the
+    // enemy-baseline values spread above so the summon's SP/SR/RES/INIT are
+    // authoritative and flow through to summonAI's tryKitCast caster/target
+    // snapshots and resolveSpellCast. Also exposed as a nested `stats` object
+    // (the shape summonAI.SummonUnit.stats expects) for the AI engine.
+    sp,
+    sr,
+    res,
+    init,
+    chc: stats.chc ?? 0,
+    stats: { sp, sr, res, init, chc: stats.chc ?? 0 },
     effects: [],
     statusEffects: [],
   };
@@ -171,7 +186,7 @@ export function spawnSummonUnit(
   const turnOrderEntry: CombatantEntry = {
     id: summonId,
     name: summon.name,
-    initiative: stats.init,
+    initiative: init,
     hp: summon.hp,
     maxHp: summon.maxHp,
     level,
@@ -186,6 +201,14 @@ export function spawnSummonUnit(
     turnsRemaining: summon.turnsRemaining,
     side,
     pieceType: summon.pieceType,
+    // Expose combat stats on the turn-order entry so BattleUIPanel's
+    // unitStats builder and the inline summon control block read the
+    // canonical SP/SR/RES/INIT without re-deriving.
+    sp,
+    sr,
+    res,
+    init,
+    chc: stats.chc ?? 0,
   };
 
   log(`${summon.name} appears!`, "#5cf08a", true);

@@ -11,7 +11,8 @@
  *   getPlayerBaseStats(level, levelUpConfig?)  → { ap, mp, hp }
  *   getEnemyBaseStats(level, pieceType)        → { sp, sr, init, res, chc }
  *   getSummonBaseStats(spellLevel, unitDef, summonAI)
- *                                              → { maxHp, maxAp, maxMp, turnsRemaining }
+ *                                              → { maxHp, maxAp, maxMp, turnsRemaining,
+ *                                                  sp, sr, res, init }
  *
  * No call sites are wired in this module — it is the source of truth only.
  */
@@ -219,7 +220,16 @@ export function getSummonBaseStats(
   spellLevel: number,
   unitDef: SummonUnitDef,
   summonAI: string,
-): { maxHp: number; maxAp: number; maxMp: number; turnsRemaining: number } {
+): {
+  maxHp: number;
+  maxAp: number;
+  maxMp: number;
+  turnsRemaining: number;
+  sp: number;
+  sr: number;
+  res: number;
+  init: number;
+} {
   // HP — archetype base, scaled by spell hpScale, then by spell-level bonus.
   const baseHp = SUMMON_BASE_HP[summonAI] ?? SUMMON_BASE_HP_DEFAULT;
   const hpScale = unitDef.hpScale || 1;
@@ -241,7 +251,23 @@ export function getSummonBaseStats(
     SUMMON_BASE_LIFESPAN +
     Math.floor(spellLevel / SUMMON_LIFESPAN_PER_HALF_LEVEL);
 
-  return { maxHp, maxAp, maxMp, turnsRemaining };
+  // ── Combat stats (SP/SR/RES/INIT) — level-derived budgets so summons
+  // participate fully in resolveSpellCast (which reads caster.stats.sp and
+  // target.stats.sr/res) and in the turn-order initiative roll. Formulas
+  // mirror the enemy baseline (getEnemyBaseStats) but use a flat multiplier
+  // (no per-piece table — summons are not chess pieces) and a slightly
+  // softer growth curve so a summon is a peer to a same-level enemy, not a
+  // boss. All four stats are floored at 1.
+  //   sp   (Spell Power)      = 4 + spellLevel        (flat +1/level)
+  //   sr   (Spell Resist)      = 3 + floor(spellLevel * 0.8)
+  //   res  (Resilience)        = 3 + floor(spellLevel * 0.8)
+  //   init (Initiative)        = 5 + spellLevel        (flat +1/level)
+  const sp = Math.max(1, 4 + spellLevel);
+  const sr = Math.max(1, 3 + Math.floor(spellLevel * 0.8));
+  const res = Math.max(1, 3 + Math.floor(spellLevel * 0.8));
+  const init = Math.max(1, 5 + spellLevel);
+
+  return { maxHp, maxAp, maxMp, turnsRemaining, sp, sr, res, init };
 }
 
 // ── Boss level-difference scaling ────────────────────────────────────────────

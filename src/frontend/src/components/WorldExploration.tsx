@@ -44,7 +44,6 @@ import MapModifiersPanel from "./MapModifiersPanel";
 import PostBattleRecap from "./PostBattleRecap";
 import type { BattleRecapData } from "./PostBattleRecap";
 import SettingsPanel from "./SettingsPanel";
-import SummonControlPanel from "./SummonControlPanel";
 
 import {
   CHARACTER_Y_OFFSET,
@@ -645,7 +644,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           };
           localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(merged));
         }
-        tierConfigRef.current = loadTierConfig();
       } catch (_e) {
         /* use localStorage fallback */
       }
@@ -902,7 +900,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = useState(false);
-  const tierConfigRef = useRef<ReturnType<typeof loadTierConfig> | null>(null);
   // inBattle intentionally read via inBattleRef inside the render callback to prevent
   // the animation loop from restarting (and producing a black frame) on battle start.
   // See battleActionModeRef / selectedSpellIdRef for the same pattern.
@@ -1177,6 +1174,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // H2: Mirror of turnOrder in a ref so enemy AI always reads the current value
   // without relying on a stale React-state closure captured at effect creation time.
   const turnOrderRef = useRef<CombatantEntry[]>([]);
+  // SECTION 1 (RETRY) — SINGLE source of truth for whose turn it is.
+  // `currentActor` is a useState<CombatantEntry | null> updated via an effect
+  // keyed on [currentTurnIndex, turnOrder] that reads
+  // turnOrderRef.current[currentTurnIndexRef.current]. Every turn-label and
+  // turn-guard consumer (BattleUIPanel label/chip/EndTurn, the enemy-AI effect
+  // gate, and the END TURN handler guard) derives from currentActor.type —
+  // NOT from the stale battlePhase flag. This eliminates the dual-label bug
+  // (battlePhase stays "player" during summon turns because advanceTurn does
+  // NOT setBattlePhase('enemy') for summon turns) and the skip-lockout (END
+  // TURN guard disabled on battlePhase !== 'player' even when the ref-derived
+  // isPlayerTurn was true).
+  const [currentActor, setCurrentActor] = useState<CombatantEntry | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refs are the source of truth; state deps trigger re-read
+  useEffect(() => {
+    const entry = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+    setCurrentActor(entry);
+  }, [currentTurnIndex, turnOrder]);
   // FIX (d): Escalated-skip tracking. Maps a skipped combatant id to the
   // number of times it has been skipped in a row. When the count reaches 2,
   // the skip log escalates to [TURN] ESCALATED so a stuck removal (e.g. an
@@ -5675,26 +5689,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const initialDelay = Math.random() * 9000 + 1000;
           const currentTime = Date.now();
           const scaleFactors = generateEnemyScaleFactors();
-          // FIX 3 — use tier-based level selection; dungeon depth adds tier boost
-          const baseEnemyLevel = pickEnemyLevelFromTiers(
-            characterStats?.level ?? 1,
-          );
-          const tierSize = Math.max(
-            1,
-            (tierConfigRef.current ?? loadTierConfig()).tierSize,
-          );
-          const enemyLevel =
-            dungeonTierBoost > 0
-              ? Math.max(1, baseEnemyLevel + dungeonTierBoost * tierSize)
-              : baseEnemyLevel;
-          const movementSpeed = Math.random() * 400 + 600;
-          const movementRange = Math.floor(Math.random() * 3) + 1;
-          const nextMoveDelay =
-            Math.random() *
-              (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
-            ENEMY_MOVE_INTERVAL_MIN;
           // H4: Pick the next name that hasn't been used on this map yet.
           // Advance past duplicates, then mark as used so no two enemies share a name.
+          // (Moved before level selection so named enemies can opt into the
+          // bounded +7 outlier bucket — see pickEnemyLevelFromTiers.)
           let assignedName: string | undefined;
           while (nameIndex < namePool.length) {
             const candidate = namePool[nameIndex++];
@@ -5713,6 +5711,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   ]
                 : undefined;
           }
+          // SECTION 3 — clustered enemy spawn levels.
+          // NEW formula: mob levels draw from [max(1, playerLevel-2) ..
+          // playerLevel+5] with a weighted center near the player's level
+          // (70% within ±2, 25% in +3..+5, 5% outlier max +7 for named/leader
+          // enemies only). The player's level at MAP GENERATION time anchors
+          // the distribution. `zoneShift` lets the dungeon tier nudge the
+          // center slightly (capped at +2 inside the function) without the old
+          // unbounded `dungeonTierBoost * tierSize` add-on that pushed mobs
+          // 10-30 levels above the player. Only named enemies (assignedName
+          // set) are eligible for the +7 outlier bucket; the group leader is
+          // later designated as the highest-level enemy, so named outliers tend
+          // to become leaders. Admin tier config override (localStorage
+          // `pbv_tier_spawn_config`) is honored inside the function and falls
+          // back to the legacy tier-based algorithm.
+          const enemyLevel = pickEnemyLevelFromTiers(
+            characterStats?.level ?? 1,
+            dungeonTierBoost,
+            assignedName !== undefined,
+          );
+          const movementSpeed = Math.random() * 400 + 600;
+          const movementRange = Math.floor(Math.random() * 3) + 1;
+          const nextMoveDelay =
+            Math.random() *
+              (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
+            ENEMY_MOVE_INTERVAL_MIN;
           enemies.push({
             id: `enemy-${enemies.length}-${currentTime}`,
             x: pos.x,
@@ -13553,7 +13576,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
   useEffect(() => {
-    if (!inBattle || battlePhase !== "enemy" || enemyTurnInProgressRef.current)
+    if (
+      !inBattle ||
+      currentActor?.type !== "enemy" ||
+      enemyTurnInProgressRef.current
+    )
       return;
     if (!battleReadyRef.current) return;
     // H2: Read from the ref mirror so we always get the latest turnOrder
@@ -17343,19 +17370,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         </div>
       )}
 
-      {activeControlledSummonId && (
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-amber-400 font-bold text-sm bg-slate-900/80 px-4 py-1 rounded">
-          Summon's Turn
-        </div>
-      )}
-
       <div>
         {/* Battle UI Panel — always visible; battle-only sections gated by inBattle prop */}
         <BattleUIPanel
           inBattle={inBattle}
-          isPlayerTurn={
-            turnOrderRef.current[currentTurnIndexRef.current]?.type === "player"
-          }
+          currentActor={currentActor}
           isSummonControlled={!!activeControlledSummonId}
           inspectCombatantId={inspectCombatantId}
           onInspectCombatant={setInspectCombatantId}
@@ -17424,7 +17443,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             };
           })}
           currentTurnIndex={currentTurnIndex}
-          battlePhase={battlePhase}
           battleTurn={battleTurn}
           turnTimeLeft={turnTimeLeft}
           battleActionMode={battleActionMode}
@@ -17467,7 +17485,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // the button were somehow reachable.
             const _entry = turnOrderRef.current[currentTurnIndexRef.current];
             if (_entry?.type !== "player") return;
-            if (battlePhase !== "player") return;
             advanceTurn();
           }}
           spellCooldowns={
@@ -17476,26 +17493,44 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               : {}
           }
           userId={userId}
-        />
-        {activeControlledSummonId &&
-          (() => {
-            const summon = getLiveCombatants(combatantStoreCtx).find(
-              (e: any) => e.id === activeControlledSummonId,
-            );
-            if (!summon) return null;
-            return (
-              <SummonControlPanel
-                summonName={summon.pieceType}
-                summonPieceType={summon.pieceType}
-                lifespan={summon.turnsRemaining ?? 0}
-                maxLifespan={summon.summonLifespan ?? 0}
-                currentAp={summon.currentAp ?? 0}
-                maxAp={summon.maxAp ?? 0}
-                currentMp={summon.currentMp ?? 0}
-                maxMp={summon.maxMp ?? 0}
-                currentHp={summon.hp ?? 0}
-                maxHp={summon.maxHp ?? 0}
-                kitSpells={(() => {
+          controlledSummon={
+            activeControlledSummonId
+              ? (() => {
+                  const summon = getLiveCombatants(combatantStoreCtx).find(
+                    (e: any) => e.id === activeControlledSummonId,
+                  );
+                  if (!summon) return null;
+                  return {
+                    name: summon.pieceType,
+                    pieceType: summon.pieceType,
+                    lifespan: summon.turnsRemaining ?? 0,
+                    // maxLifespan mirrors the spawn-time lifespan budget. The
+                    // summon object only carries `turnsRemaining` (set at spawn
+                    // in summonSpawn.ts and decremented each turn); there is no
+                    // separate stored max, so we use turnsRemaining as the
+                    // denominator. See QA cleanup note in episode learnings.
+                    maxLifespan: summon.turnsRemaining ?? 0,
+                    currentAp: summon.currentAp ?? 0,
+                    maxAp: summon.maxAp ?? 0,
+                    currentMp: summon.currentMp ?? 0,
+                    maxMp: summon.maxMp ?? 0,
+                    currentHp: summon.hp ?? 0,
+                    maxHp: summon.maxHp ?? 0,
+                    sp: summon.sp ?? 0,
+                    sr: summon.sr ?? 0,
+                    res: summon.res ?? 0,
+                    init: summon.init ?? 0,
+                  };
+                })()
+              : null
+          }
+          summonKitSpells={
+            activeControlledSummonId
+              ? (() => {
+                  const summon = getLiveCombatants(combatantStoreCtx).find(
+                    (e: any) => e.id === activeControlledSummonId,
+                  );
+                  if (!summon) return [];
                   // SECTION 2a — resolve kit by summon.pieceType via explicit
                   // metadata: find the summonUnitDef in starterSpells where
                   // pieceType matches, read its summonKit array, map each kit
@@ -17519,19 +17554,40 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     name: s.name,
                     apCost: Number(s.apCost),
                   }));
-                })()}
-                onSpellSelect={(spellId: string) =>
-                  setSelectedSummonSpellId(spellId)
-                }
-                onEndTurn={() => {
-                  setActiveControlledSummonId(null);
-                  activeControlledSummonIdRef.current = null;
-                  setSelectedSummonSpellId(null);
-                  advanceTurn();
-                }}
-              />
+                })()
+              : []
+          }
+          onSummonSpellSelect={(slotIndex) => {
+            // Resolve the kit spell at slotIndex (same resolution as
+            // summonKitSpells above) and forward its id to the existing
+            // setSelectedSummonSpellId flow.
+            if (!activeControlledSummonId) return;
+            const summon = getLiveCombatants(combatantStoreCtx).find(
+              (e: any) => e.id === activeControlledSummonId,
             );
-          })()}
+            if (!summon) return;
+            const unitDef = starterSpells.find(
+              (sp: any) => sp.summonUnitDef?.pieceType === summon.pieceType,
+            )?.summonUnitDef;
+            const kitIds: string[] =
+              unitDef && Array.isArray(unitDef.summonKit)
+                ? unitDef.summonKit
+                : [];
+            const resolved = kitIds
+              .map((id) => starterSpells.find((sp: any) => sp.id === id))
+              .filter((sp: any): sp is SpellConfig => !!sp);
+            const source =
+              resolved.length > 0 ? resolved : (summon.spells ?? []);
+            const spell = source[slotIndex];
+            if (spell) setSelectedSummonSpellId(spell.id);
+          }}
+          onSummonEndTurn={() => {
+            setActiveControlledSummonId(null);
+            activeControlledSummonIdRef.current = null;
+            setSelectedSummonSpellId(null);
+            advanceTurn();
+          }}
+        />
       </div>
       <SettingsPanel userId={userId} />
 
@@ -17854,6 +17910,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }}
                 >
                   <span style={{ color: "#f1c40f", fontSize: 22 }}>💰</span>
+
                   <div>
                     <div
                       style={{

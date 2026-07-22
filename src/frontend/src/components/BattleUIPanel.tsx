@@ -40,7 +40,6 @@ export interface BattleUIPanelProps {
   // Initiative strip
   turnOrder: CombatantEntry[];
   currentTurnIndex: number;
-  battlePhase: "player" | "enemy";
   battleTurn: number;
   turnTimeLeft: number;
   // Walk/Attack toggle
@@ -77,13 +76,96 @@ export interface BattleUIPanelProps {
    */
   isSummonControlled?: boolean;
   /**
-   * SECTION 3 — turn discipline. True ONLY when the current turn-order entry
-   * (turnOrderRef.current[currentTurnIndexRef.current]) is the player. The
-   * END TURN button is disabled unless this is true (in addition to the
-   * existing battlePhase !== "player" and isSummonControlled guards). This
-   * is the desync-proof ref-truth gate mirroring the canvas click guard.
+   * SECTION 2 (RETRY 3) — inline summon control block. When non-null, a
+   * carved-stone summon control block is rendered inside the battle bar
+   * (right of the player's 8 spell slots) showing the summon's portrait,
+   * name, lifespan pips, kit spell slots, AP/MP orbs, HP bar, and a compact
+   * SP/SR/RES/INIT stats row. The block renders ONLY while this prop is set
+   * (i.e. while activeControlledSummonId is set in WorldExploration). The
+   * player's own 8 spell slots are greyed (opacity + desaturate) while the
+   * block is visible.
    */
-  isPlayerTurn?: boolean;
+  controlledSummon?: SummonControlData | null;
+  /**
+   * Kit spells available to the controlled summon, resolved by
+   * WorldExploration from the summon's pieceType via explicit metadata
+   * (summonUnitDef.summonKit). Each entry carries the spell id, name, and
+   * AP cost. Rendered as clickable slots in the inline block.
+   */
+  summonKitSpells?: SummonKitSpell[];
+  /**
+   * Called when a kit spell slot in the inline summon block is clicked,
+   * with the slot index (0-based). WorldExploration maps this to
+   * setSelectedSummonSpellId(spell.id).
+   */
+  onSummonSpellSelect?: (slotIndex: number) => void;
+  /**
+   * Called when the inline summon block's END TURN button is pressed.
+   * WorldExploration clears activeControlledSummonId and advances the turn.
+   */
+  onSummonEndTurn?: () => void;
+  /**
+   * SECTION 1 (RETRY 2) — SINGLE source of truth for whose turn it is.
+   * `currentActor` is the ref-derived current turn-order entry
+   * (turnOrderRef.current[currentTurnIndexRef.current]) kept in React state
+   * by an effect in WorldExploration. The turn label, turn chip, and EndTurn
+   * guard all derive from currentActor.type — NOT from the stale battlePhase
+   * flag, isPlayerTurn, or isSummonControlled. This eliminates the dual-label
+   * bug (battlePhase stays "player" during summon turns) and the skip-lockout
+   * (END TURN guard disabled on battlePhase !== "player" even when the
+   * ref-derived isPlayerTurn was true).
+   */
+  currentActor?: CombatantEntry | null;
+}
+
+/**
+ * SECTION 2 (RETRY 3) — inline summon control block data. Passed from
+ * WorldExploration (reusing the activeControlledSummonId lookup) and
+ * rendered as a carved-stone block inside the battle bar, right of the
+ * player's 8 spell slots. Renders ONLY while controlledSummon is non-null.
+ */
+export interface SummonControlData {
+  /** Display name (typically the summon's pieceType). */
+  name: string;
+  /** pieceType, used for the portrait placeholder label. */
+  pieceType: string;
+  /** Remaining lifespan in turns. */
+  lifespan: number;
+  /** Maximum lifespan (for rendering empty pips). */
+  maxLifespan: number;
+  /** Current action points. */
+  currentAp: number;
+  /** Maximum action points. */
+  maxAp: number;
+  /** Current movement points. */
+  currentMp: number;
+  /** Maximum movement points. */
+  maxMp: number;
+  /** Current HP. */
+  currentHp: number;
+  /** Maximum HP. */
+  maxHp: number;
+  /** Spell power stat (works in resolvers via summonSpawn merge). */
+  sp: number;
+  /** Spell resistance stat. */
+  sr: number;
+  /** Physical resistance stat. */
+  res: number;
+  /** Initiative stat. */
+  init: number;
+}
+
+/**
+ * SECTION 2 (RETRY 3) — a kit spell rendered in the inline summon block.
+ * Resolved by WorldExploration from the summon's pieceType via explicit
+ * metadata (summonUnitDef.summonKit).
+ */
+export interface SummonKitSpell {
+  id: string;
+  name: string;
+  apCost: number;
+  /** Optional accent color for the spell icon placeholder. */
+  iconColor?: string;
 }
 
 const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
@@ -99,7 +181,6 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   isMobile = false,
   turnOrder,
   currentTurnIndex,
-  battlePhase,
   battleTurn,
   turnTimeLeft,
   battleActionMode,
@@ -116,7 +197,11 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   inspectCombatantId,
   onInspectCombatant,
   isSummonControlled = false,
-  isPlayerTurn = true,
+  currentActor = null,
+  controlledSummon = null,
+  summonKitSpells = [],
+  onSummonSpellSelect,
+  onSummonEndTurn,
 }) => {
   const forceUpdate = spellSelectionVersion; // keeps spellSelectionVersion used
   const [selectedCombatantId, setSelectedCombatantId] = useState<string | null>(
@@ -184,8 +269,6 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
       onInspectCombatant(null);
     }
   }, [selectedCombatantId, inspectCombatantId, onInspectCombatant]);
-
-  const currentCombatant = turnOrder[currentTurnIndex];
 
   return (
     <>
@@ -370,14 +453,28 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                 className="flex flex-col items-center gap-px flex-shrink-0 min-w-[48px]"
               >
                 <div
-                  className={`text-sm ${battlePhase === "player" ? "drop-shadow-[0_0_4px_rgba(255,80,80,0.8)]" : ""}`}
+                  className={`text-sm ${currentActor?.type === "player" ? "drop-shadow-[0_0_4px_rgba(255,80,80,0.8)]" : ""}`}
                 >
-                  {battlePhase === "player" ? "⚔️" : "💀"}
+                  {currentActor?.type === "player"
+                    ? "⚔️"
+                    : currentActor?.type === "summon"
+                      ? "🐾"
+                      : "💀"}
                 </div>
                 <div
-                  className={`text-[7px] font-black uppercase tracking-widest ${battlePhase === "player" ? "text-[rgba(255,140,140,0.95)]" : "text-[rgba(200,80,80,0.8)]"}`}
+                  className={`text-[7px] font-black uppercase tracking-widest ${
+                    currentActor?.type === "player"
+                      ? "text-[rgba(255,140,140,0.95)]"
+                      : currentActor?.type === "summon"
+                        ? "text-amber-400"
+                        : "text-[rgba(200,80,80,0.8)]"
+                  }`}
                 >
-                  {battlePhase === "player" ? "YOUR" : "ENEMY"}
+                  {currentActor?.type === "player"
+                    ? "YOUR"
+                    : currentActor?.type === "summon"
+                      ? "SUMMON"
+                      : "ENEMY"}
                 </div>
                 {/* Timer */}
                 <div
@@ -519,19 +616,13 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.end_turn_button"
                   onClick={onEndTurn}
-                  disabled={
-                    battlePhase !== "player" ||
-                    isSummonControlled ||
-                    !isPlayerTurn
-                  }
+                  disabled={currentActor?.type !== "player"}
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${
-                      isSummonControlled || !isPlayerTurn
-                        ? "stone-btn-slate opacity-40 cursor-not-allowed"
-                        : battlePhase === "player"
-                          ? "stone-btn-crimson"
-                          : "stone-btn-slate opacity-50 cursor-not-allowed"
+                      currentActor?.type === "player"
+                        ? "stone-btn-crimson"
+                        : "stone-btn-slate opacity-40 cursor-not-allowed"
                     }
                   `}
                 >
@@ -539,34 +630,42 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                 </button>
               </div>
 
-              {/* SECTION 2e — Summon's Turn label (shown when a player-controlled summon is active) */}
-              {isSummonControlled && (
-                <div
-                  data-ocid="battle_ui.summon_turn_label"
-                  className="ml-2 flex-shrink-0 rounded px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-widest text-amber-400 bg-slate-900/80 border border-amber-500/40 shadow-[0_0_6px_rgba(245,158,11,0.35)]"
-                >
-                  Summon's Turn
-                </div>
-              )}
-
-              {/* Current combatant name */}
-              {currentCombatant && (
+              {/* Current combatant name — single source of truth via currentActor.type */}
+              {currentActor && (
                 <div
                   className={`
                     ml-auto text-[9px] font-bold tracking-wider uppercase flex-shrink-0
-                    ${battlePhase === "player" ? "text-[#ff9999]" : "text-[rgba(200,80,80,0.7)]"}
+                    ${
+                      currentActor.type === "player"
+                        ? "text-[#ff9999]"
+                        : currentActor.type === "summon"
+                          ? "text-amber-400"
+                          : "text-[rgba(200,80,80,0.7)]"
+                    }
                   `}
                 >
-                  {battlePhase === "player"
+                  {currentActor.type === "player"
                     ? "YOUR TURN"
-                    : `${currentCombatant.name.slice(0, 6)}'S TURN`}
+                    : currentActor.type === "summon"
+                      ? "SUMMON'S TURN"
+                      : `${currentActor.name?.slice(0, 6) ?? "ENEMY"}'S TURN`}
                 </div>
               )}
             </div>
           )}
 
           {/* ── Spell row ── */}
-          <div className="flex items-center gap-2 px-2.5 pt-1.5 pb-2 flex-nowrap overflow-x-auto">
+          <div
+            className="flex items-center gap-2 px-2.5 pt-1.5 pb-2 flex-nowrap overflow-x-auto"
+            style={
+              isSummonControlled
+                ? {
+                    opacity: 0.45,
+                    filter: "grayscale(0.85) saturate(0.4)",
+                  }
+                : undefined
+            }
+          >
             {/* Spellbook button */}
             <button
               type="button"
@@ -778,6 +877,560 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                 );
               })}
             </div>
+
+            {/* ── SECTION 2 (RETRY 3): Inline summon control block ──
+                Renders ONLY while controlledSummon is non-null (i.e. while
+                activeControlledSummonId is set in WorldExploration). Carved-
+                stone dark slate with crimson accents, mirroring the Ankama/
+                Dofus aesthetic. Sits right of the player's 8 spell slots
+                (which are greyed above when isSummonControlled). */}
+            {controlledSummon && (
+              <div
+                data-ocid="battle_ui.summon_block"
+                aria-label={`${controlledSummon.name} summon control`}
+                style={{
+                  display: "flex",
+                  alignItems: "stretch",
+                  gap: 6,
+                  padding: "4px 6px",
+                  borderRadius: 8,
+                  flexShrink: 0,
+                  background:
+                    "linear-gradient(180deg, rgba(30,12,12,0.85) 0%, rgba(18,8,8,0.92) 100%)",
+                  border: "2px solid rgba(220,38,38,0.55)",
+                  boxShadow:
+                    "inset 0 0 10px rgba(0,0,0,0.7), 0 0 10px rgba(220,38,38,0.35)",
+                }}
+              >
+                {/* Carved-stone left edge accent */}
+                <div
+                  style={{
+                    width: 3,
+                    alignSelf: "stretch",
+                    flexShrink: 0,
+                    borderRadius: 3,
+                    background:
+                      "linear-gradient(180deg, transparent 0%, rgba(220,38,38,0.85) 50%, transparent 100%)",
+                  }}
+                />
+
+                {/* Portrait + name + lifespan pips */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    paddingRight: 6,
+                    borderRight: "1px solid rgba(180,20,20,0.3)",
+                  }}
+                >
+                  <div
+                    data-ocid="battle_ui.summon_portrait"
+                    aria-hidden="true"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: "50%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "2px solid rgba(220,38,38,0.7)",
+                      background:
+                        "linear-gradient(135deg, rgba(51,65,85,0.9) 0%, rgba(15,23,42,0.95) 100%)",
+                      boxShadow:
+                        "inset 0 0 6px rgba(0,0,0,0.7), 0 0 6px rgba(220,38,38,0.3)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontWeight: 800,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        color: "rgba(220,38,38,0.9)",
+                        lineHeight: 1,
+                      }}
+                    >
+                      {controlledSummon.pieceType.slice(0, 3)}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      minWidth: 0,
+                      gap: 3,
+                    }}
+                  >
+                    <span
+                      data-ocid="battle_ui.summon_name"
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                        color: "#e6dcdc",
+                        maxWidth: 84,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      {controlledSummon.name}
+                    </span>
+                    {/* Lifespan pips */}
+                    <div
+                      data-ocid="battle_ui.summon_lifespan_pips"
+                      aria-label={`Lifespan ${controlledSummon.lifespan} of ${controlledSummon.maxLifespan}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 9,
+                          color: "rgba(220,38,38,0.8)",
+                          lineHeight: 1,
+                        }}
+                        aria-hidden="true"
+                      >
+                        ⧗
+                      </span>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 2,
+                        }}
+                      >
+                        {Array.from(
+                          {
+                            length: Math.max(
+                              controlledSummon.maxLifespan,
+                              controlledSummon.lifespan,
+                              0,
+                            ),
+                          },
+                          (_, i) => i < Math.max(controlledSummon.lifespan, 0),
+                        ).map((isFilled, i) => (
+                          <span
+                            key={isFilled ? `pip-f-${i}` : `pip-e-${i}`}
+                            data-ocid={`battle_ui.summon_lifespan_pip.${i + 1}`}
+                            aria-hidden="true"
+                            style={{
+                              width: 5,
+                              height: 5,
+                              borderRadius: "50%",
+                              border: "1px solid rgba(180,20,20,0.5)",
+                              background: isFilled
+                                ? "rgba(220,38,38,0.95)"
+                                : "rgba(120,40,40,0.25)",
+                              boxShadow: isFilled
+                                ? "inset 0 0 1px rgba(0,0,0,0.6)"
+                                : "none",
+                            }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Kit spell slots */}
+                <div
+                  data-ocid="battle_ui.summon_spell_slots"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    paddingRight: 6,
+                    borderRight: "1px solid rgba(180,20,20,0.3)",
+                  }}
+                >
+                  {summonKitSpells.length === 0 ? (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        fontStyle: "italic",
+                        color: "rgba(200,160,160,0.5)",
+                      }}
+                    >
+                      No kit
+                    </span>
+                  ) : (
+                    summonKitSpells.map((spell, i) => {
+                      const disabled =
+                        controlledSummon.currentAp < spell.apCost;
+                      const iconBg = spell.iconColor ?? "#7c2d12";
+                      return (
+                        <button
+                          key={spell.id}
+                          type="button"
+                          data-ocid={`battle_ui.summon_spell_slot.${i + 1}`}
+                          disabled={disabled}
+                          onClick={() => onSummonSpellSelect?.(i)}
+                          aria-label={`${spell.name}, AP cost ${spell.apCost}${
+                            disabled ? ", insufficient AP" : ""
+                          }`}
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: 2,
+                            width: 44,
+                            padding: "3px 2px",
+                            borderRadius: 5,
+                            cursor: disabled ? "not-allowed" : "pointer",
+                            opacity: disabled ? 0.4 : 1,
+                            border: disabled
+                              ? "1px solid rgba(180,20,20,0.3)"
+                              : "1px solid rgba(220,38,38,0.5)",
+                            background: disabled
+                              ? "rgba(40,20,20,0.3)"
+                              : "rgba(60,20,20,0.5)",
+                            transition: "all 0.12s",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              width: 22,
+                              height: 22,
+                              borderRadius: 3,
+                              border: "1px solid rgba(180,20,20,0.5)",
+                              background: iconBg,
+                              boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
+                            }}
+                          />
+                          <span
+                            style={{
+                              fontSize: 7,
+                              fontWeight: 600,
+                              color: "#e6dcdc",
+                              maxWidth: 40,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              textAlign: "center",
+                              lineHeight: 1,
+                            }}
+                          >
+                            {spell.name}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 7,
+                              fontWeight: 800,
+                              color: "#74b9ff",
+                              background: "rgba(20,40,100,0.7)",
+                              padding: "0 2px",
+                              borderRadius: 2,
+                              lineHeight: "10px",
+                            }}
+                          >
+                            {spell.apCost}AP
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* AP / MP orbs (small) */}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 5,
+                    paddingRight: 6,
+                    borderRight: "1px solid rgba(180,20,20,0.3)",
+                  }}
+                >
+                  {/* AP orb */}
+                  <div
+                    data-ocid="battle_ui.summon_ap_orb"
+                    aria-label={`AP ${controlledSummon.currentAp} of ${controlledSummon.maxAp}`}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "relative",
+                        width: 26,
+                        height: 26,
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        border: "2px solid rgba(59,130,246,0.6)",
+                        background:
+                          "linear-gradient(135deg, rgba(59,130,246,0.3) 0%, rgba(30,58,138,0.4) 100%)",
+                        boxShadow: "0 0 6px rgba(59,130,246,0.45)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          color: "#bfdbfe",
+                          fontVariantNumeric: "tabular-nums",
+                          lineHeight: 1,
+                        }}
+                      >
+                        {controlledSummon.currentAp}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 7,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                        color: "rgba(200,160,160,0.6)",
+                        lineHeight: 1,
+                      }}
+                    >
+                      AP
+                    </span>
+                  </div>
+                  {/* MP orb */}
+                  <div
+                    data-ocid="battle_ui.summon_mp_orb"
+                    aria-label={`MP ${controlledSummon.currentMp} of ${controlledSummon.maxMp}`}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "relative",
+                        width: 26,
+                        height: 26,
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        border: "2px solid rgba(34,197,94,0.6)",
+                        background:
+                          "linear-gradient(135deg, rgba(34,197,94,0.3) 0%, rgba(20,83,45,0.4) 100%)",
+                        boxShadow: "0 0 6px rgba(34,197,94,0.45)",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontWeight: 800,
+                          color: "#bbf7d0",
+                          fontVariantNumeric: "tabular-nums",
+                          lineHeight: 1,
+                        }}
+                      >
+                        {controlledSummon.currentMp}
+                      </span>
+                    </div>
+                    <span
+                      style={{
+                        fontSize: 7,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                        color: "rgba(200,160,160,0.6)",
+                        lineHeight: 1,
+                      }}
+                    >
+                      MP
+                    </span>
+                  </div>
+                </div>
+
+                {/* HP bar */}
+                <div
+                  data-ocid="battle_ui.summon_hp_bar"
+                  aria-label={`HP ${controlledSummon.currentHp} of ${controlledSummon.maxHp}`}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 1,
+                    paddingRight: 6,
+                    borderRight: "1px solid rgba(180,20,20,0.3)",
+                  }}
+                >
+                  {(() => {
+                    const safeMax = Math.max(controlledSummon.maxHp, 1);
+                    const pct = Math.max(
+                      0,
+                      Math.min(
+                        100,
+                        (controlledSummon.currentHp / safeMax) * 100,
+                      ),
+                    );
+                    const low = pct <= 25;
+                    return (
+                      <>
+                        <div
+                          style={{
+                            position: "relative",
+                            width: 26,
+                            height: 26,
+                            borderRadius: "50%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            border: low
+                              ? "2px solid rgba(239,68,68,0.7)"
+                              : "2px solid rgba(220,38,38,0.6)",
+                            background:
+                              "linear-gradient(135deg, rgba(239,68,68,0.25) 0%, rgba(127,29,29,0.4) 100%)",
+                            boxShadow: low
+                              ? "0 0 6px rgba(239,68,68,0.5)"
+                              : "0 0 6px rgba(220,38,38,0.4)",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 8,
+                              fontWeight: 800,
+                              color: "#fecaca",
+                              fontVariantNumeric: "tabular-nums",
+                              lineHeight: 1,
+                            }}
+                          >
+                            {controlledSummon.currentHp}
+                          </span>
+                        </div>
+                        <div
+                          aria-hidden="true"
+                          style={{
+                            width: 26,
+                            height: 3,
+                            borderRadius: 3,
+                            overflow: "hidden",
+                            border: "1px solid rgba(180,20,20,0.5)",
+                            background: "rgba(40,20,20,0.4)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${pct}%`,
+                              height: "100%",
+                              background: low
+                                ? "rgba(239,68,68,0.95)"
+                                : "rgba(220,38,38,0.95)",
+                              boxShadow: low
+                                ? "0 0 3px rgba(239,68,68,0.7)"
+                                : "0 0 3px rgba(220,38,38,0.6)",
+                              transition: "width 0.3s",
+                            }}
+                          />
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 7,
+                            letterSpacing: "0.04em",
+                            textTransform: "uppercase",
+                            color: "rgba(200,160,160,0.6)",
+                            lineHeight: 1,
+                          }}
+                        >
+                          HP
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+
+                {/* Compact SP/SR/RES/INIT stats row */}
+                <div
+                  data-ocid="battle_ui.summon_stats"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                    paddingRight: 6,
+                  }}
+                >
+                  {[
+                    { label: "SP", value: controlledSummon.sp },
+                    { label: "SR", value: controlledSummon.sr },
+                    { label: "RES", value: controlledSummon.res },
+                    { label: "INIT", value: controlledSummon.init },
+                  ].map((s) => (
+                    <div
+                      key={s.label}
+                      data-ocid={`battle_ui.summon_stat.${s.label.toLowerCase()}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 3,
+                        lineHeight: 1,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 7,
+                          fontWeight: 800,
+                          letterSpacing: "0.04em",
+                          color: "rgba(220,38,38,0.85)",
+                          minWidth: 22,
+                        }}
+                      >
+                        {s.label}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 8,
+                          fontWeight: 700,
+                          color: "#e6dcdc",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {s.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* End turn */}
+                <button
+                  type="button"
+                  data-ocid="battle_ui.summon_end_turn_button"
+                  onClick={onSummonEndTurn}
+                  aria-label="End the summon's turn"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 3,
+                    borderRadius: 6,
+                    border: "2px solid rgba(220,38,38,0.9)",
+                    padding: "4px 8px",
+                    background:
+                      "linear-gradient(180deg, rgba(220,38,38,0.85) 0%, rgba(127,29,29,0.95) 100%)",
+                    color: "#fff",
+                    fontSize: 9,
+                    fontWeight: 800,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                    boxShadow: "0 0 8px rgba(220,38,38,0.5)",
+                    transition: "all 0.12s",
+                    flexShrink: 0,
+                  }}
+                >
+                  End
+                </button>
+              </div>
+            )}
 
             {/* Separator + Attack Nearest */}
             <div

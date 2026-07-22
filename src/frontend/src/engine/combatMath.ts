@@ -31,6 +31,19 @@ export function loadTierConfig(): TierSpawnConfig {
   return DEFAULT_TIER_CONFIG;
 }
 
+/**
+ * Returns true when an admin has stored a custom tier spawn config in
+ * localStorage. When this is true, callers must honor the legacy tier-based
+ * algorithm with the admin's values instead of the new clustered ±5 band.
+ */
+function hasAdminTierOverride(): boolean {
+  try {
+    return localStorage.getItem("pbv_tier_spawn_config") !== null;
+  } catch {
+    return false;
+  }
+}
+
 const AI_TIER_VARIANCE_CHANCE = 0.3;
 
 export const computeAITier = (enemyLevel: number): number => {
@@ -51,7 +64,81 @@ export const computeAITier = (enemyLevel: number): number => {
   return baseTier;
 };
 
-export function pickEnemyLevelFromTiers(playerLevel: number): number {
+/**
+ * NEW clustered enemy level distribution (default behavior).
+ *
+ * Mob levels draw from [max(1, playerLevel-2) .. playerLevel+5] with a weighted
+ * center near the player's level:
+ *   - 70% within ±2 of the player  (band: playerLevel-2 .. playerLevel+2)
+ *   - 25% in +3..+5                (band: playerLevel+3 .. playerLevel+5)
+ *   - 5%  zone-flavored outlier max +7, NAMED/LEADER enemies only
+ *
+ * `zoneShift` lets a dungeon tier nudge the center slightly upward without
+ * unanchoring it from the player's level (capped at +2 so the band stays
+ * within ±5 of the player). `allowOutlier` gates the 5% outlier bucket so
+ * only named/leader enemies can ever exceed +5.
+ *
+ * Player level at MAP GENERATION time anchors the distribution — callers pass
+ * the player's level at generation time, not the live level.
+ */
+export function pickEnemyLevelFromTiers(
+  playerLevel: number,
+  zoneShift = 0,
+  allowOutlier = false,
+): number {
+  // Admin override: if an admin has stored a custom tier config, honor the
+  // legacy tier-based algorithm with their values. This keeps the
+  // AdminDashboard tier config override path fully functional.
+  if (hasAdminTierOverride()) {
+    return pickEnemyLevelLegacyTiers(playerLevel);
+  }
+
+  const p = Math.max(1, Math.floor(playerLevel));
+  // Zone tier can shift the center slightly but never unanchor it from the
+  // player — cap the shift at +2 so the band stays within ±5 of the player.
+  const center = p + Math.max(0, Math.min(2, Math.floor(zoneShift)));
+
+  // 70 / 25 / 5 weighted bands.
+  const rand = Math.random() * 100;
+  let level: number;
+
+  if (rand < 70) {
+    // 70% — within ±2 of the (shifted) center.
+    const low = Math.max(1, center - 2);
+    const high = center + 2;
+    level = low + Math.floor(Math.random() * (high - low + 1));
+  } else if (rand < 95) {
+    // 25% — +3..+5 above the center.
+    const low = center + 3;
+    const high = center + 5;
+    level = low + Math.floor(Math.random() * (high - low + 1));
+  } else if (allowOutlier) {
+    // 5% — zone-flavored outlier, max +7. Named/leader enemies only.
+    const low = center + 6;
+    const high = center + 7;
+    level = low + Math.floor(Math.random() * (high - low + 1));
+  } else {
+    // Outlier not allowed for this enemy — fold back into the +3..+5 band so
+    // the overall distribution stays bounded without leaking high-level mobs
+    // to ordinary enemies.
+    const low = center + 3;
+    const high = center + 5;
+    level = low + Math.floor(Math.random() * (high - low + 1));
+  }
+
+  return Math.max(1, level);
+}
+
+/**
+ * Legacy tier-based enemy level selection. Retained so the admin tier config
+ * override path (AdminDashboard → localStorage `pbv_tier_spawn_config`) keeps
+ * working exactly as before. Only reached when an admin override is present.
+ *
+ * OLD formula: tierSize=10 (default), playerTier=floor((playerLevel-1)/ts),
+ * 15% variance ±1 tier, weights same=60/adj=20/twoAway=10/threeOrMore=5,
+ * level=random in [chosenTier*ts+1, (chosenTier+1)*ts]. Spread ±10-60 levels.
+ */
+function pickEnemyLevelLegacyTiers(playerLevel: number): number {
   const cfg = loadTierConfig();
   const ts = Math.max(1, cfg.tierSize);
   const playerTier = Math.floor((playerLevel - 1) / ts);
