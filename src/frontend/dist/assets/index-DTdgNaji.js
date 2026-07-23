@@ -44044,7 +44044,7 @@ function getGeometrySnapshot(input) {
     spriteRectsSummary: { count: count2, ids }
   };
 }
-const APP_BUILD = "#335";
+const APP_BUILD = "#341";
 function esc(s2) {
   return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -51963,6 +51963,7 @@ function decideCaster(ctx, opponents, reachable) {
     };
   }
   const scored = scoreTargets(opponents, ctx, null);
+  let bestCast = null;
   for (const t of scored) {
     const spell = pickBestDamageSpell(ctx, t.combatant);
     if (!spell) continue;
@@ -51971,23 +51972,36 @@ function decideCaster(ctx, opponents, reachable) {
     const inRange2 = dist2 <= Number(spell.range);
     const los = ctx.hasLineOfSight(origin, targetCell);
     if (inRange2 && los) {
-      const lethal = applyLethalLookahead(scored, ctx, spell);
-      const final = applyOverkillSpread(lethal, scored, ctx, spell);
-      ctx.setFocusTargetId(final.combatant.id);
-      ctx.markFocusSet();
-      ctx.log(`${ctx.enemy.pieceType} casts ${spell.name}!`, CAST_COLOR);
-      logIntent("caster", "cast", final.combatant.id, "in-range+los");
-      return {
-        archetype: "caster",
-        destination: origin,
-        spell,
-        targetId: final.combatant.id,
-        kind: "cast",
-        intent: "cast",
-        intentColor: CAST_COLOR,
-        retreating: false
-      };
+      bestCast = { target: t, spell };
+      break;
     }
+  }
+  if (bestCast) {
+    const { spell } = bestCast;
+    const lethal = applyLethalLookahead(scored, ctx, spell);
+    const final = applyOverkillSpread(lethal, scored, ctx, spell);
+    ctx.setFocusTargetId(final.combatant.id);
+    ctx.markFocusSet();
+    ctx.log(`${ctx.enemy.pieceType} casts ${spell.name}!`, CAST_COLOR);
+    logIntent("caster", "cast", final.combatant.id, "in-range+los");
+    return {
+      archetype: "caster",
+      destination: origin,
+      spell,
+      targetId: final.combatant.id,
+      kind: "cast",
+      intent: "cast",
+      intentColor: CAST_COLOR,
+      retreating: false
+    };
+  }
+  for (const t of scored) {
+    const spell = pickBestDamageSpell(ctx, t.combatant);
+    if (!spell) continue;
+    const targetCell = { x: t.combatant.x, y: t.combatant.y };
+    const dist2 = chebyshev(origin, targetCell);
+    const inRange2 = dist2 <= Number(spell.range);
+    const los = ctx.hasLineOfSight(origin, targetCell);
     if (inRange2 && !los) {
       const reposition = repositionForLOS(
         origin,
@@ -52178,11 +52192,17 @@ function decideCharger(ctx, opponents, reachable) {
       retreating: false
     };
   }
-  const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist2 = chebyshev(origin, targetCell);
-  const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
-  if (dist2 <= 1) {
-    const spell = pickBestDamageSpell(ctx, target.combatant);
+  let adjacentHit = null;
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    if (chebyshev(origin, tCell) <= 1) {
+      const spell = pickBestDamageSpell(ctx, t.combatant);
+      adjacentHit = { target: t, spell };
+      break;
+    }
+  }
+  if (adjacentHit) {
+    const { spell } = adjacentHit;
     const lethal = applyLethalLookahead(scored, ctx, spell);
     const finalTarget = lethal.combatant;
     ctx.log(`${ctx.enemy.pieceType} charges ${finalTarget.name}!`, CAST_COLOR);
@@ -52198,6 +52218,42 @@ function decideCharger(ctx, opponents, reachable) {
       retreating: false
     };
   }
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const dist22 = chebyshev(origin, tCell);
+    const canReach2 = dist22 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
+    if (!canReach2) continue;
+    const chargeSpell = pickBestDamageSpell(ctx, t.combatant);
+    if (chargeSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        tCell,
+        ctx,
+        reachable,
+        chargeSpell
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${ctx.enemy.pieceType} closes in and casts ${chargeSpell.name}!`,
+          CAST_COLOR
+        );
+        logIntent("charger", "closes-in", t.combatant.id, "move-then-cast");
+        return {
+          archetype: "charger",
+          destination: castTile,
+          spell: chargeSpell,
+          targetId: t.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false
+        };
+      }
+    }
+  }
+  const targetCell = { x: target.combatant.x, y: target.combatant.y };
+  const dist2 = chebyshev(origin, targetCell);
+  const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
   if (!canReach) {
     ctx.log(`${ctx.enemy.pieceType} waits to charge`, SKIP_COLOR);
     logIntent("charger", "wait", target.combatant.id, "out-of-reach");
@@ -52211,33 +52267,6 @@ function decideCharger(ctx, opponents, reachable) {
       intentColor: SKIP_COLOR,
       retreating: false
     };
-  }
-  const chargeSpell = pickBestDamageSpell(ctx, target.combatant);
-  if (chargeSpell) {
-    const castTile = findNearestLegalCastTile(
-      origin,
-      targetCell,
-      ctx,
-      reachable,
-      chargeSpell
-    );
-    if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
-      ctx.log(
-        `${ctx.enemy.pieceType} closes in and casts ${chargeSpell.name}!`,
-        CAST_COLOR
-      );
-      logIntent("charger", "closes-in", target.combatant.id, "move-then-cast");
-      return {
-        archetype: "charger",
-        destination: castTile,
-        spell: chargeSpell,
-        targetId: target.combatant.id,
-        kind: "cast",
-        intent: "closes-in",
-        intentColor: CAST_COLOR,
-        retreating: false
-      };
-    }
   }
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
@@ -52306,9 +52335,17 @@ function decideFlanker(ctx, opponents, reachable) {
     };
   }
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist2 = chebyshev(origin, targetCell);
-  if (dist2 <= 1) {
-    const spell = pickBestDamageSpell(ctx, target.combatant);
+  let adjacentHit = null;
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    if (chebyshev(origin, tCell) <= 1) {
+      const spell = pickBestDamageSpell(ctx, t.combatant);
+      adjacentHit = { target: t, spell };
+      break;
+    }
+  }
+  if (adjacentHit) {
+    const { spell } = adjacentHit;
     const lethal = applyLethalLookahead(scored, ctx, spell);
     const finalTarget = lethal.combatant;
     ctx.log(`${ctx.enemy.pieceType} strikes from the flank!`, CAST_COLOR);
@@ -52376,9 +52413,17 @@ function decideBerserker(ctx, opponents, reachable) {
   }
   const sacrificeEligible = hp < ENEMY_WOUNDED_SACRIFICE_HP_PCT;
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist2 = chebyshev(origin, targetCell);
-  if (dist2 <= 1) {
-    const spell = pickBestDamageSpell(ctx, target.combatant);
+  let adjacentHit = null;
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    if (chebyshev(origin, tCell) <= 1) {
+      const spell = pickBestDamageSpell(ctx, t.combatant);
+      adjacentHit = { target: t, spell };
+      break;
+    }
+  }
+  if (adjacentHit) {
+    const { spell } = adjacentHit;
     const lethal = applyLethalLookahead(scored, ctx, spell);
     const finalTarget = lethal.combatant;
     ctx.log(`${ctx.enemy.pieceType} rages on ${finalTarget.name}!`, CAST_COLOR);
@@ -52473,91 +52518,105 @@ function decideGeneric(ctx, opponents, reachable) {
     };
   }
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist2 = chebyshev(origin, targetCell);
-  const spell = pickBestDamageSpell(ctx, target.combatant);
-  if (spell && dist2 <= Number(spell.range)) {
-    const los = spell.lineOfSight === false ? true : ctx.hasLineOfSight(origin, targetCell);
-    if (los) {
-      const lethal = applyLethalLookahead(scored, ctx, spell);
-      const final = applyOverkillSpread(lethal, scored, ctx, spell);
-      ctx.setFocusTargetId(final.combatant.id);
-      ctx.markFocusSet();
-      ctx.log(`${ctx.enemy.pieceType} casts ${spell.name}!`, CAST_COLOR);
-      logIntent("generic", "cast", final.combatant.id, "in-range+los");
-      return {
-        archetype: "generic",
-        destination: origin,
-        spell,
-        targetId: final.combatant.id,
-        kind: "cast",
-        intent: "cast",
-        intentColor: CAST_COLOR,
-        retreating: false
-      };
+  let bestCast = null;
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const tDist = chebyshev(origin, tCell);
+    if (tDist <= 1) {
+      const meleeSpell = pickBestDamageSpell(ctx, t.combatant);
+      bestCast = { target: t, spell: meleeSpell, isMelee: true };
+      break;
     }
-    const reposition = repositionForLOS(
-      origin,
-      targetCell,
-      ctx,
-      reachable,
-      spell
-    );
-    if (reposition) {
-      ctx.log(`${ctx.enemy.pieceType} sidesteps for a shot`, MOVE_COLOR);
-      logIntent(
-        "generic",
-        "reposition-los",
-        target.combatant.id,
-        "los-blocked"
-      );
-      return {
-        archetype: "generic",
-        destination: reposition,
-        spell: null,
-        targetId: null,
-        kind: "skip",
-        intent: "reposition-los",
-        intentColor: MOVE_COLOR,
-        retreating: false
-      };
+    const rangedSpell = pickBestDamageSpell(ctx, t.combatant);
+    if (rangedSpell && tDist <= Number(rangedSpell.range)) {
+      const los = rangedSpell.lineOfSight === false ? true : ctx.hasLineOfSight(origin, tCell);
+      if (los) {
+        bestCast = { target: t, spell: rangedSpell, isMelee: false };
+        break;
+      }
     }
   }
-  if (dist2 <= 1) {
+  if (bestCast) {
+    const { spell, isMelee } = bestCast;
     const lethal = applyLethalLookahead(scored, ctx, spell);
-    const finalTarget = lethal.combatant;
-    ctx.log(`${ctx.enemy.pieceType} strikes ${finalTarget.name}`, CAST_COLOR);
-    logIntent("generic", "melee", finalTarget.id, "adjacent");
+    const final = applyOverkillSpread(lethal, scored, ctx, spell);
+    ctx.setFocusTargetId(final.combatant.id);
+    ctx.markFocusSet();
+    if (isMelee) {
+      ctx.log(
+        `${ctx.enemy.pieceType} strikes ${final.combatant.name}`,
+        CAST_COLOR
+      );
+      logIntent("generic", "melee", final.combatant.id, "adjacent");
+    } else {
+      ctx.log(`${ctx.enemy.pieceType} casts ${spell.name}!`, CAST_COLOR);
+      logIntent("generic", "cast", final.combatant.id, "in-range+los");
+    }
     return {
       archetype: "generic",
       destination: origin,
       spell,
-      targetId: finalTarget.id,
+      targetId: final.combatant.id,
       kind: spell ? "cast" : "melee",
-      intent: "melee",
+      intent: isMelee ? "melee" : "cast",
       intentColor: CAST_COLOR,
       retreating: false
     };
   }
-  const advanceSpell = pickBestDamageSpell(ctx, target.combatant);
-  if (advanceSpell) {
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const tDist = chebyshev(origin, tCell);
+    const losSpell = pickBestDamageSpell(ctx, t.combatant);
+    if (!losSpell) continue;
+    if (tDist <= Number(losSpell.range)) {
+      const los = losSpell.lineOfSight === false ? true : ctx.hasLineOfSight(origin, tCell);
+      if (!los) {
+        const reposition = repositionForLOS(
+          origin,
+          tCell,
+          ctx,
+          reachable,
+          losSpell
+        );
+        if (reposition) {
+          ctx.log(`${ctx.enemy.pieceType} sidesteps for a shot`, MOVE_COLOR);
+          logIntent("generic", "reposition-los", t.combatant.id, "los-blocked");
+          return {
+            archetype: "generic",
+            destination: reposition,
+            spell: null,
+            targetId: null,
+            kind: "skip",
+            intent: "reposition-los",
+            intentColor: MOVE_COLOR,
+            retreating: false
+          };
+        }
+      }
+    }
+  }
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const moveCastSpell = pickBestDamageSpell(ctx, t.combatant);
+    if (!moveCastSpell) continue;
     const castTile = findNearestLegalCastTile(
       origin,
-      targetCell,
+      tCell,
       ctx,
       reachable,
-      advanceSpell
+      moveCastSpell
     );
     if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
       ctx.log(
-        `${ctx.enemy.pieceType} closes in and casts ${advanceSpell.name}!`,
+        `${ctx.enemy.pieceType} closes in and casts ${moveCastSpell.name}!`,
         CAST_COLOR
       );
-      logIntent("generic", "closes-in", target.combatant.id, "move-then-cast");
+      logIntent("generic", "closes-in", t.combatant.id, "move-then-cast");
       return {
         archetype: "generic",
         destination: castTile,
-        spell: advanceSpell,
-        targetId: target.combatant.id,
+        spell: moveCastSpell,
+        targetId: t.combatant.id,
         kind: "cast",
         intent: "closes-in",
         intentColor: CAST_COLOR,
@@ -60562,6 +60621,7 @@ const WorldExplorationInner = ({
   const combatantStoreCtx = storeCtxRef.current;
   reactExports.useRef(0);
   const enemyTurnInProgressRef = reactExports.useRef(false);
+  const aiPhaseRef = reactExports.useRef("not-entered");
   const turnEndReasonRef = reactExports.useRef(
     null
   );
@@ -63791,13 +63851,25 @@ const WorldExplorationInner = ({
         "bishop",
         "knight"
       ];
+      const voidSet = voidTilesParam ?? /* @__PURE__ */ new Set();
+      const portalSet = /* @__PURE__ */ new Set();
+      for (const p2 of portals) portalSet.add(`${p2.x},${p2.y}`);
+      const walkableGrid = tiles.map(
+        (row) => row.map((t) => t === "floor")
+      );
+      const genOccCtx = {
+        tiles: walkableGrid,
+        barriers: /* @__PURE__ */ new Set(),
+        voidTiles: voidSet,
+        portals: portalSet,
+        isOccupied: () => false
+      };
       const allValid = [];
       for (let y2 = 0; y2 < WORLD_GRID_SIZE; y2++) {
         for (let x3 = 0; x3 < WORLD_GRID_SIZE; x3++) {
-          if (tiles[y2][x3] !== "floor") continue;
+          if (!isCellFree({ x: x3, y: y2 }, genOccCtx)) continue;
           if (isAdjacentToPortal(x3, y2, portals)) continue;
           if (Math.abs(x3 - 8) <= 3 && Math.abs(y2 - 8) <= 3) continue;
-          if ((voidTilesParam ?? /* @__PURE__ */ new Set()).has(`${x3},${y2}`)) continue;
           allValid.push({ x: x3, y: y2 });
         }
       }
@@ -66341,15 +66413,40 @@ const WorldExplorationInner = ({
   const castRuntimeRef = reactExports.useRef({ apCost: 0, targetsToHit: [], spell: null });
   const deathPipelineCtx = reactExports.useMemo(
     () => ({
+      // SECTION 1 FIX (a) — ATOMIC DEATH REMOVAL, ONE SOURCE OF TRUTH.
+      // The `removeCombatant` store helper (combatantStore.ts:336) ALREADY
+      // atomically removes the dead id from `turnOrderRef.current` + the
+      // `turnOrder` React state AND adjusts `currentTurnIndexRef.current` via
+      // its internal `removeCombatantFromTurnQueue` call (turnQueue.ts:69). It
+      // assigns the ref BEFORE calling `setTurnOrder`, so any synchronous
+      // reader sees the fresh value.
+      //
+      // The previous wiring fired TWO EXTRA `setTurnOrder` mutations AFTER
+      // `removeCombatant` had already synced the ref + state + index:
+      //   - `removeFromTurnQueue` re-called `removeCombatantFromTurnQueue` on
+      //     the already-filtered ref (a redundant no-op that re-assigned the
+      //     ref to itself).
+      //   - `removeFromInitiativeStrip` called `setTurnOrder((prev) =>
+      //     prev.filter(...))` — a SECOND `setTurnOrder` that did NOT touch
+      //     `currentTurnIndexRef`, racing the ref sync and leaving the React
+      //     state and the ref desynced so dead ids survived in the rendered
+      //     queue. This was the FOURTH recurrence of the dead-enemy-lingering
+      //     bug.
+      //
+      // FIX: steps 4 (removeFromTurnQueue) and 5 (removeFromInitiativeStrip)
+      // of the death pipeline are now NO-OPS. The work is done atomically by
+      // step 3 (`removeCombatant`). The `DeathPipelineCtx` interface and the
+      // 10-step sequence are preserved (the pipeline still calls these
+      // callbacks), but they no longer mutate anything — eliminating the
+      // double-mutation race. Key invariant after `processCombatantDeath`
+      // returns: `turnOrderRef.current` and the `turnOrder` React state
+      // contain NO dead id, and `currentTurnIndexRef.current` points at a
+      // valid live entry (adjusted by `removeCombatantFromTurnQueue`).
       removeCombatant: (id) => removeCombatant(combatantStoreCtx, id),
-      removeFromTurnQueue: (id) => removeCombatantFromTurnQueue(
-        turnOrderRef.current,
-        turnOrderRef,
-        currentTurnIndexRef,
-        id,
-        setTurnOrder
-      ),
-      removeFromInitiativeStrip: (id) => setTurnOrder((prev) => prev.filter((c2) => c2.id !== id)),
+      removeFromTurnQueue: (_id) => {
+      },
+      removeFromInitiativeStrip: (_id) => {
+      },
       triggerShatter: (id, x3, y2) => {
         var _a4;
         return (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.triggerDeath(String(id), x3, y2);
@@ -69654,6 +69751,7 @@ const WorldExplorationInner = ({
     timerIntervalRef.current = setInterval(() => {
       if (turnTimerGenerationRef.current !== myGeneration) return;
       setTurnTimeLeft((prev) => {
+        var _a4;
         if (prev <= 1) {
           if (timerIntervalRef.current) {
             clearInterval(timerIntervalRef.current);
@@ -69661,7 +69759,9 @@ const WorldExplorationInner = ({
           }
           turnEndReasonRef.current = "timer-expiry";
           clearSummonControl();
-          advanceTurnRef.current();
+          if (((_a4 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a4.type) === "player") {
+            advanceTurnRef.current();
+          }
           return timerStart;
         }
         return prev - 1;
@@ -70931,6 +71031,7 @@ const WorldExplorationInner = ({
             currentTurn: battleTurn,
             lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null
           };
+          aiPhaseRef.current = "decide-entered";
           const action = enemy.isSummoner ? decideSummonerAction(
             {
               ...enemy,
@@ -70939,6 +71040,7 @@ const WorldExplorationInner = ({
             },
             aiCtx
           ) : decideEnemyAction(enemy, aiCtx);
+          aiPhaseRef.current = "intent-produced";
           if (action.kind === "cast" && ((_g2 = action.spell) == null ? void 0 : _g2.isSummon) && action.destination) {
             (_h2 = spawnEnemySummonRef.current) == null ? void 0 : _h2.call(spawnEnemySummonRef, action.destination, action.spell);
             enemySummonCooldownRef.current.set(enemyId, battleTurn);
@@ -70960,6 +71062,7 @@ const WorldExplorationInner = ({
           if (action.intent) {
           }
           let didAct = false;
+          aiPhaseRef.current = "apply-started";
           if (action.kind === "cast" && chosenSpell) {
             const spellRange = Number(chosenSpell.range);
             const distAM = Math.max(
@@ -71370,12 +71473,18 @@ const WorldExplorationInner = ({
       pendingTimeoutsRef.current.add(timeout2);
     }
     watchdog = setTimeout(() => {
+      var _a4;
+      if (((_a4 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a4.type) !== "enemy")
+        return;
       if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current) return;
       if (aiGenerationRef.current !== myAIGeneration) return;
       pendingTimeoutsRef.current.delete(watchdog);
       turnEndReasonRef.current = "timer-expiry";
+      console.log(
+        `[TURN] watchdog {id:${enemyId}, phase-of-failure:${aiPhaseRef.current}}`
+      );
       advanceTurnRef.current();
-    }, 5e3);
+    }, 3e3);
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(watchdog);
     }
@@ -76693,7 +76802,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DLVXXQT6.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CKOyodie.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

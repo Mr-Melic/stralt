@@ -178,7 +178,6 @@ import {
   computeTargetableTiles,
   isTileCastableLive,
 } from "../engine/targeting";
-import { removeCombatantFromTurnQueue } from "../engine/turnQueue";
 import {
   getCameraFollowSpeed,
   getSessionVersion,
@@ -1241,6 +1240,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const _phaseChangeCounterRef = useRef(0);
 
   const enemyTurnInProgressRef = useRef(false);
+  // SECTION 2a — WATCHDOG FIX: tracks the AI executor's current phase so the
+  // watchdog fire callback can log the phase-of-failure when it recovers a
+  // stuck turn. Set at decide-entry, intent-produced, and apply-started.
+  const aiPhaseRef = useRef<string>("not-entered");
   // EDIT 3: tracks WHY the current turn ended (action-complete vs timer-expiry)
   // so the [TURN] dispatch log can distinguish clean advances from watchdog/
   // turn-timer recoveries. Reset on every advance path; read by the three
@@ -5631,6 +5634,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   ];
   // Generate enemies with level assignment and enhanced movement properties
   // Generate enemies with level assignment, minimum spread, and quadrant coverage
+  //
+  // SECTION 3 — VOID VALIDATION FOR ENEMIES (FIX SITE 1):
+  // Map-gen enemy spawn now routes tile passability through the SHARED
+  // `isCellFree` predicate from engine/occupancy.ts — the same check the
+  // player, battle-start placement, enemy/summon movement, and summon spawn
+  // all use. This guarantees no enemy spawns on a void/hole, barrier, or
+  // portal tile, matching the player's walkability check exactly.
+  //
+  // At map-gen time no combatants exist yet, so occupancy is a no-op
+  // (isOccupied always returns false) and barriers are empty (spell-placed
+  // walls cannot exist before battle). We build a minimal OccupancyContext
+  // with empty occupancy + empty barriers, the voidTiles set passed in, and a
+  // portals set derived from the portals array. The gen-specific
+  // `isAdjacentToPortal` (spawn-distribution: keep spawns away from portal
+  // NEIGHBORS, not just portal tiles) and the (8,8) player-start exclusion
+  // are KEPT on top of the shared check — they are spawn-spread concerns,
+  // not passability, and are stricter than the shared predicate alone.
   const generateEnemies = useCallback(
     (
       tiles: TileType[][],
@@ -5656,15 +5676,42 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // FIX 3 — Tier-based enemy level selection
       // Each enemy independently picks its level via the tier probability function.
       // No more flat LEVEL_ZONES lookup.
-      // Collect all valid floor positions spread across entire map
+      // SECTION 3 — shared passability context for gen-time spawn validation.
+      // Build the boolean[][] walkable grid the shared isCellFree expects
+      // (tiles[y][x] === true ⇒ passable base tile). "floor" is the only
+      // passable base tile; "wall" and "portal" are not (portals are rejected
+      // via the portals Set below, matching the shared predicate's layering).
+      // Barriers are empty at gen time (spell-placed walls do not exist
+      // outside battle). Occupancy is a no-op (no combatants exist yet).
+      const voidSet = voidTilesParam ?? new Set<string>();
+      const portalSet = new Set<string>();
+      for (const p of portals) portalSet.add(`${p.x},${p.y}`);
+      const walkableGrid: boolean[][] = tiles.map((row) =>
+        row.map((t) => t === "floor"),
+      );
+      const genOccCtx: OccupancyContext = {
+        tiles: walkableGrid,
+        barriers: new Set<string>(),
+        voidTiles: voidSet,
+        portals: portalSet,
+        isOccupied: () => false,
+      };
+      // Collect all valid floor positions spread across entire map.
+      // The shared isCellFree call rejects void/barrier/portal/non-floor
+      // tiles; the gen-specific isAdjacentToPortal + (8,8) exclusions below
+      // are spawn-distribution constraints layered ON TOP of passability.
       const allValid: PlayerPosition[] = [];
       for (let y = 0; y < WORLD_GRID_SIZE; y++) {
         for (let x = 0; x < WORLD_GRID_SIZE; x++) {
-          if (tiles[y][x] !== "floor") continue;
+          // SECTION 3 — shared passability check (void/barrier/portal/wall
+          // rejection via the SAME predicate the player uses). Replaces the
+          // inline `tiles[y][x] !== "floor"` + `voidTilesParam.has(...)`
+          // checks with one call to isCellFree.
+          if (!isCellFree({ x, y }, genOccCtx)) continue;
+          // Gen-specific spawn-distribution constraints (stricter than
+          // passability alone — kept separate from the shared predicate):
           if (isAdjacentToPortal(x, y, portals)) continue;
           if (Math.abs(x - 8) <= 3 && Math.abs(y - 8) <= 3) continue;
-          // FIX 2 — skip void tiles for enemy spawns
-          if ((voidTilesParam ?? new Set<string>()).has(`${x},${y}`)) continue;
           allValid.push({ x, y });
         }
       }
@@ -8982,17 +9029,43 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable values are intentionally omitted
   const deathPipelineCtx = useMemo<DeathPipelineCtx>(
     () => ({
+      // SECTION 1 FIX (a) — ATOMIC DEATH REMOVAL, ONE SOURCE OF TRUTH.
+      // The `removeCombatant` store helper (combatantStore.ts:336) ALREADY
+      // atomically removes the dead id from `turnOrderRef.current` + the
+      // `turnOrder` React state AND adjusts `currentTurnIndexRef.current` via
+      // its internal `removeCombatantFromTurnQueue` call (turnQueue.ts:69). It
+      // assigns the ref BEFORE calling `setTurnOrder`, so any synchronous
+      // reader sees the fresh value.
+      //
+      // The previous wiring fired TWO EXTRA `setTurnOrder` mutations AFTER
+      // `removeCombatant` had already synced the ref + state + index:
+      //   - `removeFromTurnQueue` re-called `removeCombatantFromTurnQueue` on
+      //     the already-filtered ref (a redundant no-op that re-assigned the
+      //     ref to itself).
+      //   - `removeFromInitiativeStrip` called `setTurnOrder((prev) =>
+      //     prev.filter(...))` — a SECOND `setTurnOrder` that did NOT touch
+      //     `currentTurnIndexRef`, racing the ref sync and leaving the React
+      //     state and the ref desynced so dead ids survived in the rendered
+      //     queue. This was the FOURTH recurrence of the dead-enemy-lingering
+      //     bug.
+      //
+      // FIX: steps 4 (removeFromTurnQueue) and 5 (removeFromInitiativeStrip)
+      // of the death pipeline are now NO-OPS. The work is done atomically by
+      // step 3 (`removeCombatant`). The `DeathPipelineCtx` interface and the
+      // 10-step sequence are preserved (the pipeline still calls these
+      // callbacks), but they no longer mutate anything — eliminating the
+      // double-mutation race. Key invariant after `processCombatantDeath`
+      // returns: `turnOrderRef.current` and the `turnOrder` React state
+      // contain NO dead id, and `currentTurnIndexRef.current` points at a
+      // valid live entry (adjusted by `removeCombatantFromTurnQueue`).
       removeCombatant: (id) => removeCombatant(combatantStoreCtx, id),
-      removeFromTurnQueue: (id) =>
-        removeCombatantFromTurnQueue(
-          turnOrderRef.current,
-          turnOrderRef,
-          currentTurnIndexRef,
-          id,
-          setTurnOrder,
-        ),
-      removeFromInitiativeStrip: (id) =>
-        setTurnOrder((prev) => prev.filter((c) => c.id !== id)),
+      removeFromTurnQueue: (_id) => {
+        // NO-OP: handled atomically by removeCombatant above.
+      },
+      removeFromInitiativeStrip: (_id) => {
+        // NO-OP: handled atomically by removeCombatant above (the same
+        // setTurnOrder call that syncs the ref also updates the strip).
+      },
       triggerShatter: (id, x, y) =>
         effectsManagerRef.current?.triggerDeath(String(id), x, y),
       logDefeated: (name) => logBattleEntry(`${name} is defeated`, "#ef4444"),
@@ -13515,7 +13588,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // turn's spell row. Route through the shared clearSummonControl so
           // this path matches the others.
           clearSummonControl();
-          advanceTurnRef.current();
+          // SECTION 4 — FIX 2 (30s timer scoping): the 30s timer is the ONLY
+          // auto-advance path for the PLAYER. If the current actor is an enemy
+          // or summon, do NOT advance here — the enemy's own 800ms timeout +
+          // 3000ms watchdog handle enemy turns. Advancing during an enemy turn
+          // would orphan the watchdog (it would later fire on the player and
+          // auto-advance them). Guard reads the desync-proof source of turn
+          // truth: turnOrderRef.current[currentTurnIndexRef.current]?.type.
+          if (
+            turnOrderRef.current[currentTurnIndexRef.current]?.type === "player"
+          ) {
+            advanceTurnRef.current();
+          }
           return timerStart;
         }
         return prev - 1;
@@ -15180,6 +15264,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // or any apply branch throws. Without this, a throw escapes the body
           // before reaching the L15426 try/finally, falling to the watchdog at
           // L15453 which advances with turnEndReasonRef = "timer-expiry".
+          // SECTION 2a — WATCHDOG FIX: mark decide phase entry so the watchdog
+          // can report phase-of-failure if the decide call hangs/throws.
+          aiPhaseRef.current = "decide-entered";
           const action = enemy.isSummoner
             ? decideSummonerAction(
                 {
@@ -15190,6 +15277,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 aiCtx,
               )
             : decideEnemyAction(enemy, aiCtx);
+          // SECTION 2a — WATCHDOG FIX: decide returned an intent; mark it so
+          // the watchdog knows the decide phase completed successfully.
+          aiPhaseRef.current = "intent-produced";
           // 3e: short-circuit the enemy turn when a summoner casts a summon
           // spell — the spawn is applied via spawnEnemySummonRef, the turn
           // is handed off to the next combatant, and we return before the
@@ -15241,6 +15331,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
 
           let didAct = false;
+          // SECTION 2a — WATCHDOG FIX: mark apply phase start so the watchdog
+          // can report phase-of-failure if an apply/cast/melee branch hangs.
+          aiPhaseRef.current = "apply-started";
           // ── Apply spell cast ──────────────────────────────────────────────
           if (action.kind === "cast" && chosenSpell) {
             const spellRange = Number(chosenSpell.range);
@@ -15721,13 +15814,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     // H2 fix: watchdog assigned here after timeout is scheduled
     watchdog = setTimeout(() => {
+      // SECTION 4 — FIX 1 (Watchdog scoping): the watchdog may ONLY
+      // force-advance when the current actor is an enemy. If the 30s timer
+      // already advanced the turn to the player (or any non-enemy actor),
+      // return WITHOUT advancing — otherwise the orphaned watchdog fires at
+      // 3000ms and auto-advances the player's turn. This guard runs BEFORE the
+      // cleanupPhaseRef/cleanupRanRef/aiGenerationRef guards so a stale
+      // watchdog can never bypass it.
+      if (turnOrderRef.current[currentTurnIndexRef.current]?.type !== "enemy")
+        return;
       if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current) return;
       if (aiGenerationRef.current !== myAIGeneration) return;
       pendingTimeoutsRef.current.delete(watchdog);
       // EDIT 3e: record why the turn ended before advancing.
       turnEndReasonRef.current = "timer-expiry";
+      // SECTION 2a — WATCHDOG FIX: log phase-of-failure before advancing so
+      // stuck-turn recoveries are diagnosable. Reduced from 5000ms to 3000ms
+      // to surface hangs faster.
+      console.log(
+        `[TURN] watchdog {id:${enemyId}, phase-of-failure:${aiPhaseRef.current}}`,
+      );
       advanceTurnRef.current();
-    }, 5000);
+    }, 3000);
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(watchdog);
     }
