@@ -896,6 +896,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [selectedSummonSpellId, setSelectedSummonSpellId] = useState<
     string | null
   >(null);
+  // Ref mirror of selectedSummonSpellId so the RAF loop / getSpellRangeTiles
+  // (dep array omits the state) can read the fresh value without re-subscribing.
+  // Parallel to the activeControlledSummonIdRef pattern above.
+  const selectedSummonSpellIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedSummonSpellIdRef.current = selectedSummonSpellId;
+  }, [selectedSummonSpellId]);
   // Shared cleanup for summon-control exit paths. Every route that ends a
   // player-controlled summon turn (End button, AP+MP exhausted, summon
   // death/expiry, AND timer-expiry) must run this so the spell row un-greys
@@ -907,6 +914,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     setActiveControlledSummonId(null);
     activeControlledSummonIdRef.current = null;
     setSelectedSummonSpellId(null);
+    selectedSummonSpellIdRef.current = null;
   }, []);
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
@@ -1248,9 +1256,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // so the [TURN] dispatch log can distinguish clean advances from watchdog/
   // turn-timer recoveries. Reset on every advance path; read by the three
   // logDebugInfo("TURN","dispatch",...) call sites.
-  const turnEndReasonRef = useRef<"action-complete" | "timer-expiry" | null>(
+  const turnEndReasonRef = useRef<
+    "action-complete" | "timer-expiry" | "pre-executor-stall" | null
+  >(null);
+  // SECTION 3 — PRE-EXECUTOR STALL FIX (b): holds the dispatch-time watchdog
+  // timeout id so the executor effect can clear it once the enemy AI actually
+  // begins running. If the executor never starts (dispatch chain threw or
+  // stalled), the watchdog fires at 3000ms and force-advances the turn.
+  const dispatchWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // SECTION 3 — PRE-EXECUTOR STALL FIX (c): tracks the id of the last actor
+  // the timer effect ran for. The timer generation is only incremented when
+  // the actor id actually changes, so a watchdog re-advance that re-dispatches
+  // the same enemy restarts the 30s/15s chip instead of sticking.
+  const lastTimerActorIdRef = useRef<string | null>(null);
   // Ref holding the enemy-side summon spawn callback so the enemy turn
   // executor (a different closure from the SpellContext builder) can
   // invoke it when a summoner enemy decides to cast a summon spell.
@@ -7071,6 +7091,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return playerPositionRef.current;
   }, [combatantStoreCtx]);
 
+  // SECTION 2 — getSummonKitSpells: resolves the controlled summon's kit spell
+  // definitions from starterSpells via explicit metadata (summonUnitDef by
+  // pieceType → summonKit ids → full SpellConfig from starterSpells). Falls back
+  // to summon.spells only if the kit is absent/empty. Shared by the
+  // SummonControlPanel prop wiring and the spell-range preview path so the two
+  // can never diverge.
+  const getSummonKitSpells = useCallback((): SpellConfig[] => {
+    const summonId = activeControlledSummonIdRef.current;
+    if (!summonId) return [];
+    const summon = getLiveCombatants(combatantStoreCtx).find(
+      (e: any) => e.id === summonId,
+    );
+    if (!summon) return [];
+    const unitDef = starterSpells.find(
+      (sp: any) => sp.summonUnitDef?.pieceType === summon.pieceType,
+    )?.summonUnitDef;
+    const kitIds: string[] =
+      unitDef && Array.isArray(unitDef.summonKit) ? unitDef.summonKit : [];
+    const resolved = kitIds
+      .map((id) => starterSpells.find((sp: any) => sp.id === id))
+      .filter((sp: any): sp is SpellConfig => !!sp);
+    return resolved.length > 0
+      ? resolved
+      : ((summon.spells ?? []) as SpellConfig[]);
+  }, [combatantStoreCtx]);
+
   // BFS flood-fill for MP reachable tiles
   const getMpReachableTiles = useCallback((): Set<string> => {
     if (!currentMap || !inBattleRef.current || currentBattleMp <= 0)
@@ -7137,7 +7183,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // The version-keyed cache (key includes battleWorldVersionRef.current) is
   // preserved unchanged — it still invalidates on every enemies-identity change.
   const getSpellRangeTiles = useCallback((): Set<string> => {
-    if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current) {
+    // SECTION 2 — summon-controlled path: when a summon is controlled, the
+    // selected spell lives in selectedSummonSpellIdRef (the summon's kit),
+    // NOT in selectedSpellIdRef (the player's equipped slots). The player path
+    // is unchanged when no summon is controlled.
+    const controllingSummon = !!activeControlledSummonIdRef.current;
+    const selectedSpellId = controllingSummon
+      ? selectedSummonSpellIdRef.current
+      : selectedSpellIdRef.current;
+    if (!currentMap || !inBattleRef.current || !selectedSpellId) {
       // [TARGET-BISECT] one-shot: identify WHICH empty-set return fired.
       // Dev-gated via logDebugInfo (console no-op in prod; overlay always gets it).
       logDebugInfo("BATTLE", "[TARGET-BISECT] empty-set return", {
@@ -7148,17 +7202,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             : "noSelectedSpellId",
         currentMap: !!currentMap,
         inBattle: inBattleRef.current,
-        selectedSpellId: selectedSpellIdRef.current,
+        selectedSpellId: selectedSpellId,
+        controllingSummon,
       });
       return new Set();
     }
-    const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
+    // SECTION 2 — resolve the spell definition. Summon-controlled: from the
+    // summon's kit via getSummonKitSpells. Player: from activeSpells (unchanged).
+    const spell = controllingSummon
+      ? getSummonKitSpells().find((s) => s.id === selectedSpellId)
+      : activeSpells.find((s) => s.id === selectedSpellId);
     if (!spell) {
       // [TARGET-BISECT] one-shot: spell lookup failed — log the missing id
-      // alongside the activeSpells ids so the divergence is visible.
+      // alongside the available spell ids so the divergence is visible.
       logDebugInfo("BATTLE", "[TARGET-BISECT] spell lookup failed", {
-        selectedSpellId: selectedSpellIdRef.current,
+        selectedSpellId: selectedSpellId,
+        controllingSummon,
         activeSpellIds: activeSpells.map((s) => s.id),
+        summonKitSpellIds: controllingSummon
+          ? getSummonKitSpells().map((s) => s.id)
+          : [],
       });
       return new Set();
     }
@@ -7167,7 +7230,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // SECTION 2c — cache key uses the active caster's tile (controlled summon
     // or player) so spell-range previews render from the summon's position.
     const casterPos = getActiveCasterPos();
-    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
+    const cacheKey = `${selectedSpellId}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     // ── #19 Pacifist Run: flip flag for ANY offensive spell usage ──────────────
@@ -7195,6 +7258,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     activeSpells,
     getEffectiveSpellRange,
     combatantStoreCtx,
+    getSummonKitSpells,
   ]);
 
   // Main render function — DPR-aware, DOFUS-style aesthetics
@@ -7351,14 +7415,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // Compute highlight tile sets for battle mode
     // inBattle intentionally read via inBattleRef to prevent animation loop restart
+    // SECTION 2 — Step 5: mpTiles also computes during a summon-controlled turn
+    // when no summon kit spell is selected, so green movement tiles render by
+    // default during a summon turn (before the player picks a kit spell).
     const mpTiles =
-      inBattleRef.current && battleActionModeRef.current === "walk"
+      inBattleRef.current &&
+      (battleActionModeRef.current === "walk" ||
+        (!!activeControlledSummonIdRef.current &&
+          !selectedSummonSpellIdRef.current))
         ? getMpReachableTiles()
         : new Set<string>();
+    // SECTION 2 — Step 6: spellTiles also computes during a summon-controlled
+    // turn when a summon kit spell is selected, so blue attack tiles render
+    // when a summon kit spell is selected.
     const spellTiles =
       inBattleRef.current &&
-      battleActionModeRef.current === "attack" &&
-      selectedSpellIdRef.current
+      ((battleActionModeRef.current === "attack" &&
+        !!selectedSpellIdRef.current) ||
+        (!!activeControlledSummonIdRef.current &&
+          !!selectedSummonSpellIdRef.current))
         ? getSpellRangeTiles()
         : new Set<string>();
     const barrierTileSnapshot = new Map(barrierTilesRef.current);
@@ -13424,22 +13499,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ) {
               return nextIdx;
             }
-            logDebugInfo("TURN", "dispatch", {
-              entryId: nextCombatant.id,
-              side: nextCombatant.side,
-              isSummon: true,
-              round: battleTurn,
-              idx: nextIdx,
-              route: "summon-ai",
-              ended: turnEndReasonRef.current,
-            });
             // Player-side summons enter "control mode": surface the
             // SummonControlPanel and let the player drive the summon. Do NOT
             // call setBattlePhase("enemy") — that would hand the turn to the
-            // AI executor. Enemy-side summons keep the existing AI path.
+            // AI executor. Instead explicitly set "player" so arriving from
+            // an enemy turn can never leave battlePhase as "enemy".
+            // Enemy-side summons keep the existing AI path.
             if (nextCombatant.side === "player") {
+              logDebugInfo("TURN", "dispatch", {
+                entryId: nextCombatant.id,
+                side: nextCombatant.side,
+                isSummon: true,
+                round: battleTurn,
+                idx: nextIdx,
+                route: "summon-control",
+                ended: turnEndReasonRef.current,
+              });
               setActiveControlledSummonId(nextCombatant.id);
               activeControlledSummonIdRef.current = nextCombatant.id;
+              setBattlePhase("player");
               const _summon = getLiveCombatants(combatantStoreCtx).find(
                 (e: any) => e.id === nextCombatant.id,
               );
@@ -13455,6 +13533,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setTimeout(() => advanceTurn(), 0);
               }
             } else {
+              logDebugInfo("TURN", "dispatch", {
+                entryId: nextCombatant.id,
+                side: nextCombatant.side,
+                isSummon: true,
+                round: battleTurn,
+                idx: nextIdx,
+                route: "summon-ai",
+                ended: turnEndReasonRef.current,
+              });
               setBattlePhase("enemy");
             }
           } else {
@@ -13475,30 +13562,71 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current,
             });
-            setBattlePhase("enemy");
-            // Process this enemy's active effects
-            mapModifierRegistry.applyTurnStart(
-              nextCombatant,
-              activeMapModifierTypes,
-              {
-                log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                rng: Math.random,
-              },
-            );
-            processActiveEffects(nextCombatant.id);
-            // Plague Zone on enemies too
-            if (isPlagueZone) {
-              setEnemyHpMap((prev) => {
-                const cur = prev[nextCombatant.id] ?? 0;
-                const newHp = Math.max(0, cur - 2);
-                return { ...prev, [nextCombatant.id]: newHp };
+            // SECTION 3 — FIX (b) DISPATCH-TIME WATCHDOG: arms a 3000ms
+            // watchdog at dispatch time, BEFORE the post-dispatch chain runs.
+            // If the executor effect never starts (chain threw or stalled),
+            // this fires and force-advances the turn so the 30s chip does not
+            // stick on a re-dispatched enemy. Cleared by the executor effect
+            // once enemyTurnInProgressRef flips true.
+            const myAIGeneration = aiGenerationRef.current;
+            const dispatchWatchdog = setTimeout(() => {
+              if (
+                turnOrderRef.current[currentTurnIndexRef.current]?.id !==
+                nextCombatant.id
+              )
+                return;
+              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
+                return;
+              if (aiGenerationRef.current !== myAIGeneration) return;
+              turnEndReasonRef.current = "pre-executor-stall";
+              logDebugInfo("TURN", "watchdog-advance", {
+                phase: "pre-executor",
+                entryId: nextCombatant.id,
               });
-              logBattleEntry(
-                `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
-                "#a855f7",
-              );
+              advanceTurnRef.current();
+            }, 3000);
+            dispatchWatchdogRef.current = dispatchWatchdog;
+            if (!cleanupRanRef.current) {
+              pendingTimeoutsRef.current.add(dispatchWatchdog);
             }
-            logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
+            // SECTION 3 — FIX (a) TRY/CATCH WRAP: the post-dispatch chain
+            // (setBattlePhase('enemy') → applyTurnStart → processActiveEffects →
+            // plague zone → log) is wrapped so a throw in any of these does not
+            // leave the turn stuck. On catch we log the dispatch-error and
+            // advance the turn via the ref. The executor effect (13772+) is
+            // intentionally NOT wrapped here.
+            try {
+              setBattlePhase("enemy");
+              // Process this enemy's active effects
+              mapModifierRegistry.applyTurnStart(
+                nextCombatant,
+                activeMapModifierTypes,
+                {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                },
+              );
+              processActiveEffects(nextCombatant.id);
+              // Plague Zone on enemies too
+              if (isPlagueZone) {
+                setEnemyHpMap((prev) => {
+                  const cur = prev[nextCombatant.id] ?? 0;
+                  const newHp = Math.max(0, cur - 2);
+                  return { ...prev, [nextCombatant.id]: newHp };
+                });
+                logBattleEntry(
+                  `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                  "#a855f7",
+                );
+              }
+              logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
+            } catch (error) {
+              logDebugInfo("TURN", "dispatch-error", {
+                entryId: nextCombatant.id,
+                error: String(error),
+              });
+              advanceTurnRef.current();
+            }
           }
           return nextIdx;
         });
@@ -13562,7 +13690,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     // FIX-1: Increment generation counter so any stale interval callback from
     // the previous render cycle becomes an instant no-op.
-    turnTimerGenerationRef.current += 1;
+    // SECTION 3 — FIX (c): only increment the generation (and reset the chip)
+    // when the actor id actually changes. A watchdog re-advance that
+    // re-dispatches the same enemy re-runs this effect with the same
+    // currentTurnIndex/actor id; without this guard the generation would bump
+    // and the chip would stick at its current count instead of restarting at
+    // 30s (or 15s in time warp).
+    const currentActorId =
+      turnOrderRef.current[currentTurnIndexRef.current]?.id ?? null;
+    if (currentActorId !== lastTimerActorIdRef.current) {
+      lastTimerActorIdRef.current = currentActorId;
+      turnTimerGenerationRef.current += 1;
+    }
     const myGeneration = turnTimerGenerationRef.current;
     // Reset timer whenever the active turn changes (Time Warp: 15s instead of 30s)
     const timerStart = isTimeWarp ? 15 : 30;
@@ -13710,6 +13849,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
     const enemyId = currentCombatant.id;
     enemyTurnInProgressRef.current = true;
+    // SECTION 3 — FIX (b): the executor effect has started, so the dispatch-time
+    // watchdog is no longer needed. Clear it (and drop it from the pending
+    // set) so it cannot fire after the executor is running. The executor's own
+    // watchdog (15890) takes over from here.
+    if (dispatchWatchdogRef.current) {
+      clearTimeout(dispatchWatchdogRef.current);
+      pendingTimeoutsRef.current.delete(dispatchWatchdogRef.current);
+      dispatchWatchdogRef.current = null;
+    }
     // E2: Clear per-turn path cache so this enemy's computations are fresh.
     enemyPathCacheRef.current.clear();
     // FIX #15: Capture AI generation at the start of this enemy turn.
@@ -17705,62 +17853,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   : null
               }
               summonKitSpells={
+                // SECTION 2 — Step 3: resolved via the shared getSummonKitSpells()
+                // helper so the panel and the spell-range preview path never diverge.
                 activeControlledSummonId
-                  ? (() => {
-                      const summon = getLiveCombatants(combatantStoreCtx).find(
-                        (e: any) => e.id === activeControlledSummonId,
-                      );
-                      if (!summon) return [];
-                      // SECTION 2a — resolve kit by summon.pieceType via explicit
-                      // metadata: find the summonUnitDef in starterSpells where
-                      // pieceType matches, read its summonKit array, map each kit
-                      // spell id to the full spell definition from starterSpells.
-                      // Fallback to summon.spells only if the kit is absent/empty.
-                      const unitDef = starterSpells.find(
-                        (sp: any) =>
-                          sp.summonUnitDef?.pieceType === summon.pieceType,
-                      )?.summonUnitDef;
-                      const kitIds: string[] =
-                        unitDef && Array.isArray(unitDef.summonKit)
-                          ? unitDef.summonKit
-                          : [];
-                      const resolved = kitIds
-                        .map((id) =>
-                          starterSpells.find((sp: any) => sp.id === id),
-                        )
-                        .filter((sp: any): sp is SpellConfig => !!sp);
-                      const source =
-                        resolved.length > 0 ? resolved : (summon.spells ?? []);
-                      return source.map((s: any) => ({
-                        id: s.id,
-                        name: s.name,
-                        apCost: Number(s.apCost),
-                      }));
-                    })()
+                  ? getSummonKitSpells().map((s) => ({
+                      id: s.id,
+                      name: s.name,
+                      apCost: Number(s.apCost),
+                    }))
                   : []
               }
               onSummonSpellSelect={(slotIndex) => {
-                // Resolve the kit spell at slotIndex (same resolution as
-                // summonKitSpells above) and forward its id to the existing
-                // setSelectedSummonSpellId flow.
+                // SECTION 2 — Step 3: resolve the kit spell at slotIndex via the
+                // shared getSummonKitSpells() helper and forward its id to the
+                // existing setSelectedSummonSpellId flow.
                 if (!activeControlledSummonId) return;
-                const summon = getLiveCombatants(combatantStoreCtx).find(
-                  (e: any) => e.id === activeControlledSummonId,
-                );
-                if (!summon) return;
-                const unitDef = starterSpells.find(
-                  (sp: any) => sp.summonUnitDef?.pieceType === summon.pieceType,
-                )?.summonUnitDef;
-                const kitIds: string[] =
-                  unitDef && Array.isArray(unitDef.summonKit)
-                    ? unitDef.summonKit
-                    : [];
-                const resolved = kitIds
-                  .map((id) => starterSpells.find((sp: any) => sp.id === id))
-                  .filter((sp: any): sp is SpellConfig => !!sp);
-                const source =
-                  resolved.length > 0 ? resolved : (summon.spells ?? []);
-                const spell = source[slotIndex];
+                const spell = getSummonKitSpells()[slotIndex];
                 if (spell) setSelectedSummonSpellId(spell.id);
               }}
               onSummonEndTurn={() => {

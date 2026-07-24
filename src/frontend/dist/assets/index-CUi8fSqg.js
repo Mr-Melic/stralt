@@ -47982,10 +47982,11 @@ const BattleUIPanel = ({
                           type: "button",
                           "data-ocid": "battle_ui.walk_button",
                           onClick: onSetWalk,
+                          disabled: isSummonControlled || currentBattleMp <= 0,
                           className: `
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "walk" ? "stone-btn-emerald" : "stone-btn-slate opacity-55"}
-                    ${currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                    ${isSummonControlled || currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `,
                           children: "🚶 WALK"
                         }
@@ -47996,10 +47997,11 @@ const BattleUIPanel = ({
                           type: "button",
                           "data-ocid": "battle_ui.attack_button",
                           onClick: onSetAttack,
+                          disabled: isSummonControlled || currentBattleAp <= 0,
                           className: `
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
-                    ${currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                    ${isSummonControlled || currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `,
                           children: "⚔️ ATTACK"
                         }
@@ -60409,10 +60411,15 @@ const WorldExplorationInner = ({
     activeControlledSummonIdRef.current = activeControlledSummonId;
   }, [activeControlledSummonId]);
   const [selectedSummonSpellId, setSelectedSummonSpellId] = reactExports.useState(null);
+  const selectedSummonSpellIdRef = reactExports.useRef(null);
+  reactExports.useEffect(() => {
+    selectedSummonSpellIdRef.current = selectedSummonSpellId;
+  }, [selectedSummonSpellId]);
   const clearSummonControl = reactExports.useCallback(() => {
     setActiveControlledSummonId(null);
     activeControlledSummonIdRef.current = null;
     setSelectedSummonSpellId(null);
+    selectedSummonSpellIdRef.current = null;
   }, []);
   const [inBattle, setInBattle] = reactExports.useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = reactExports.useState(false);
@@ -60622,9 +60629,11 @@ const WorldExplorationInner = ({
   reactExports.useRef(0);
   const enemyTurnInProgressRef = reactExports.useRef(false);
   const aiPhaseRef = reactExports.useRef("not-entered");
-  const turnEndReasonRef = reactExports.useRef(
+  const turnEndReasonRef = reactExports.useRef(null);
+  const dispatchWatchdogRef = reactExports.useRef(
     null
   );
+  const lastTimerActorIdRef = reactExports.useRef(null);
   const spawnEnemySummonRef = reactExports.useRef(null);
   const [enemyHpMap, setEnemyHpMap] = reactExports.useState({});
   const [enragedEnemies, setEnragedEnemies] = reactExports.useState(/* @__PURE__ */ new Set());
@@ -64937,6 +64946,24 @@ const WorldExplorationInner = ({
     }
     return playerPositionRef.current;
   }, [combatantStoreCtx]);
+  const getSummonKitSpells = reactExports.useCallback(() => {
+    var _a4;
+    const summonId = activeControlledSummonIdRef.current;
+    if (!summonId) return [];
+    const summon = getLiveCombatants(combatantStoreCtx).find(
+      (e) => e.id === summonId
+    );
+    if (!summon) return [];
+    const unitDef = (_a4 = starterSpells.find(
+      (sp) => {
+        var _a5;
+        return ((_a5 = sp.summonUnitDef) == null ? void 0 : _a5.pieceType) === summon.pieceType;
+      }
+    )) == null ? void 0 : _a4.summonUnitDef;
+    const kitIds = unitDef && Array.isArray(unitDef.summonKit) ? unitDef.summonKit : [];
+    const resolved = kitIds.map((id) => starterSpells.find((sp) => sp.id === id)).filter((sp) => !!sp);
+    return resolved.length > 0 ? resolved : summon.spells ?? [];
+  }, [combatantStoreCtx]);
   const getMpReachableTiles = reactExports.useCallback(() => {
     if (!currentMap || !inBattleRef.current || currentBattleMp <= 0)
       return /* @__PURE__ */ new Set();
@@ -64988,25 +65015,30 @@ const WorldExplorationInner = ({
     return reachable;
   }, [currentMap, currentBattleMp, activeMapModifierTypes, getActiveCasterPos]);
   const getSpellRangeTiles = reactExports.useCallback(() => {
-    if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current) {
+    const controllingSummon = !!activeControlledSummonIdRef.current;
+    const selectedSpellId = controllingSummon ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current;
+    if (!currentMap || !inBattleRef.current || !selectedSpellId) {
       logDebugInfo("BATTLE", "[TARGET-BISECT] empty-set return", {
         reason: !currentMap ? "noCurrentMap" : !inBattleRef.current ? "notInBattle" : "noSelectedSpellId",
         currentMap: !!currentMap,
         inBattle: inBattleRef.current,
-        selectedSpellId: selectedSpellIdRef.current
+        selectedSpellId,
+        controllingSummon
       });
       return /* @__PURE__ */ new Set();
     }
-    const spell = activeSpells.find((s2) => s2.id === selectedSpellIdRef.current);
+    const spell = controllingSummon ? getSummonKitSpells().find((s2) => s2.id === selectedSpellId) : activeSpells.find((s2) => s2.id === selectedSpellId);
     if (!spell) {
       logDebugInfo("BATTLE", "[TARGET-BISECT] spell lookup failed", {
-        selectedSpellId: selectedSpellIdRef.current,
-        activeSpellIds: activeSpells.map((s2) => s2.id)
+        selectedSpellId,
+        controllingSummon,
+        activeSpellIds: activeSpells.map((s2) => s2.id),
+        summonKitSpellIds: controllingSummon ? getSummonKitSpells().map((s2) => s2.id) : []
       });
       return /* @__PURE__ */ new Set();
     }
     const casterPos = getActiveCasterPos();
-    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
+    const cacheKey = `${selectedSpellId}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     applyHealBuffSideEffect(spell, battleOnlyHealBuffSpellsRef);
@@ -65028,7 +65060,8 @@ const WorldExplorationInner = ({
     getActiveCasterPos,
     activeSpells,
     getEffectiveSpellRange,
-    combatantStoreCtx
+    combatantStoreCtx,
+    getSummonKitSpells
   ]);
   const render = reactExports.useCallback(() => {
     var _a4, _b4, _c3;
@@ -65130,8 +65163,8 @@ const WorldExplorationInner = ({
         dustMotesRef.current = dustMotesRef.current.slice(0, DUST_MOTE_CAP);
       }
     }
-    const mpTiles = inBattleRef.current && battleActionModeRef.current === "walk" ? getMpReachableTiles() : /* @__PURE__ */ new Set();
-    const spellTiles = inBattleRef.current && battleActionModeRef.current === "attack" && selectedSpellIdRef.current ? getSpellRangeTiles() : /* @__PURE__ */ new Set();
+    const mpTiles = inBattleRef.current && (battleActionModeRef.current === "walk" || !!activeControlledSummonIdRef.current && !selectedSummonSpellIdRef.current) ? getMpReachableTiles() : /* @__PURE__ */ new Set();
+    const spellTiles = inBattleRef.current && (battleActionModeRef.current === "attack" && !!selectedSpellIdRef.current || !!activeControlledSummonIdRef.current && !!selectedSummonSpellIdRef.current) ? getSpellRangeTiles() : /* @__PURE__ */ new Set();
     const barrierTileSnapshot = new Map(barrierTilesRef.current);
     const now2 = Date.now();
     const portalMap = /* @__PURE__ */ new Map();
@@ -69632,18 +69665,19 @@ const WorldExplorationInner = ({
             ) === void 0) {
               return nextIdx;
             }
-            logDebugInfo("TURN", "dispatch", {
-              entryId: nextCombatant.id,
-              side: nextCombatant.side,
-              isSummon: true,
-              round: battleTurn,
-              idx: nextIdx,
-              route: "summon-ai",
-              ended: turnEndReasonRef.current
-            });
             if (nextCombatant.side === "player") {
+              logDebugInfo("TURN", "dispatch", {
+                entryId: nextCombatant.id,
+                side: nextCombatant.side,
+                isSummon: true,
+                round: battleTurn,
+                idx: nextIdx,
+                route: "summon-control",
+                ended: turnEndReasonRef.current
+              });
               setActiveControlledSummonId(nextCombatant.id);
               activeControlledSummonIdRef.current = nextCombatant.id;
+              setBattlePhase("player");
               const _summon = getLiveCombatants(combatantStoreCtx).find(
                 (e) => e.id === nextCombatant.id
               );
@@ -69659,6 +69693,15 @@ const WorldExplorationInner = ({
                 setTimeout(() => advanceTurn(), 0);
               }
             } else {
+              logDebugInfo("TURN", "dispatch", {
+                entryId: nextCombatant.id,
+                side: nextCombatant.side,
+                isSummon: true,
+                round: battleTurn,
+                idx: nextIdx,
+                route: "summon-ai",
+                ended: turnEndReasonRef.current
+              });
               setBattlePhase("enemy");
             }
           } else {
@@ -69676,28 +69719,55 @@ const WorldExplorationInner = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current
             });
-            setBattlePhase("enemy");
-            mapModifierRegistry.applyTurnStart(
-              nextCombatant,
-              activeMapModifierTypes,
-              {
-                log: (msg) => logDebugInfo("MODIFIER", msg),
-                rng: Math.random
-              }
-            );
-            processActiveEffects(nextCombatant.id);
-            if (isPlagueZone) {
-              setEnemyHpMap((prev) => {
-                const cur = prev[nextCombatant.id] ?? 0;
-                const newHp = Math.max(0, cur - 2);
-                return { ...prev, [nextCombatant.id]: newHp };
+            const myAIGeneration = aiGenerationRef.current;
+            const dispatchWatchdog = setTimeout(() => {
+              var _a4;
+              if (((_a4 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a4.id) !== nextCombatant.id)
+                return;
+              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
+                return;
+              if (aiGenerationRef.current !== myAIGeneration) return;
+              turnEndReasonRef.current = "pre-executor-stall";
+              logDebugInfo("TURN", "watchdog-advance", {
+                phase: "pre-executor",
+                entryId: nextCombatant.id
               });
-              logBattleEntry(
-                `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
-                "#a855f7"
-              );
+              advanceTurnRef.current();
+            }, 3e3);
+            dispatchWatchdogRef.current = dispatchWatchdog;
+            if (!cleanupRanRef.current) {
+              pendingTimeoutsRef.current.add(dispatchWatchdog);
             }
-            logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
+            try {
+              setBattlePhase("enemy");
+              mapModifierRegistry.applyTurnStart(
+                nextCombatant,
+                activeMapModifierTypes,
+                {
+                  log: (msg) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random
+                }
+              );
+              processActiveEffects(nextCombatant.id);
+              if (isPlagueZone) {
+                setEnemyHpMap((prev) => {
+                  const cur = prev[nextCombatant.id] ?? 0;
+                  const newHp = Math.max(0, cur - 2);
+                  return { ...prev, [nextCombatant.id]: newHp };
+                });
+                logBattleEntry(
+                  `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                  "#a855f7"
+                );
+              }
+              logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
+            } catch (error) {
+              logDebugInfo("TURN", "dispatch-error", {
+                entryId: nextCombatant.id,
+                error: String(error)
+              });
+              advanceTurnRef.current();
+            }
           }
           return nextIdx;
         });
@@ -69739,19 +69809,24 @@ const WorldExplorationInner = ({
     }
   }, [activeControlledSummonId, combatantStoreCtx, advanceTurn]);
   reactExports.useEffect(() => {
+    var _a4;
     if (!inBattle) return;
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
-    turnTimerGenerationRef.current += 1;
+    const currentActorId = ((_a4 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a4.id) ?? null;
+    if (currentActorId !== lastTimerActorIdRef.current) {
+      lastTimerActorIdRef.current = currentActorId;
+      turnTimerGenerationRef.current += 1;
+    }
     const myGeneration = turnTimerGenerationRef.current;
     const timerStart = isTimeWarp ? 15 : 30;
     setTurnTimeLeft(timerStart);
     timerIntervalRef.current = setInterval(() => {
       if (turnTimerGenerationRef.current !== myGeneration) return;
       setTurnTimeLeft((prev) => {
-        var _a4;
+        var _a5;
         if (prev <= 1) {
           if (timerIntervalRef.current) {
             clearInterval(timerIntervalRef.current);
@@ -69759,7 +69834,7 @@ const WorldExplorationInner = ({
           }
           turnEndReasonRef.current = "timer-expiry";
           clearSummonControl();
-          if (((_a4 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a4.type) === "player") {
+          if (((_a5 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a5.type) === "player") {
             advanceTurnRef.current();
           }
           return timerStart;
@@ -69843,6 +69918,11 @@ const WorldExplorationInner = ({
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
     const enemyId = currentCombatant.id;
     enemyTurnInProgressRef.current = true;
+    if (dispatchWatchdogRef.current) {
+      clearTimeout(dispatchWatchdogRef.current);
+      pendingTimeoutsRef.current.delete(dispatchWatchdogRef.current);
+      dispatchWatchdogRef.current = null;
+    }
     enemyPathCacheRef.current.clear();
     const myAIGeneration = aiGenerationRef.current;
     const mySessionVersion = sessionVersionRef.current;
@@ -73425,46 +73505,18 @@ const WorldExplorationInner = ({
                 res: _controlledSummonLookup.res ?? 0,
                 init: _controlledSummonLookup.init ?? 0
               } : null,
-              summonKitSpells: activeControlledSummonId ? (() => {
-                var _a4;
-                const summon = getLiveCombatants(combatantStoreCtx).find(
-                  (e) => e.id === activeControlledSummonId
-                );
-                if (!summon) return [];
-                const unitDef = (_a4 = starterSpells.find(
-                  (sp) => {
-                    var _a5;
-                    return ((_a5 = sp.summonUnitDef) == null ? void 0 : _a5.pieceType) === summon.pieceType;
-                  }
-                )) == null ? void 0 : _a4.summonUnitDef;
-                const kitIds = unitDef && Array.isArray(unitDef.summonKit) ? unitDef.summonKit : [];
-                const resolved = kitIds.map(
-                  (id) => starterSpells.find((sp) => sp.id === id)
-                ).filter((sp) => !!sp);
-                const source = resolved.length > 0 ? resolved : summon.spells ?? [];
-                return source.map((s2) => ({
+              summonKitSpells: (
+                // SECTION 2 — Step 3: resolved via the shared getSummonKitSpells()
+                // helper so the panel and the spell-range preview path never diverge.
+                activeControlledSummonId ? getSummonKitSpells().map((s2) => ({
                   id: s2.id,
                   name: s2.name,
                   apCost: Number(s2.apCost)
-                }));
-              })() : [],
+                })) : []
+              ),
               onSummonSpellSelect: (slotIndex) => {
-                var _a4;
                 if (!activeControlledSummonId) return;
-                const summon = getLiveCombatants(combatantStoreCtx).find(
-                  (e) => e.id === activeControlledSummonId
-                );
-                if (!summon) return;
-                const unitDef = (_a4 = starterSpells.find(
-                  (sp) => {
-                    var _a5;
-                    return ((_a5 = sp.summonUnitDef) == null ? void 0 : _a5.pieceType) === summon.pieceType;
-                  }
-                )) == null ? void 0 : _a4.summonUnitDef;
-                const kitIds = unitDef && Array.isArray(unitDef.summonKit) ? unitDef.summonKit : [];
-                const resolved = kitIds.map((id) => starterSpells.find((sp) => sp.id === id)).filter((sp) => !!sp);
-                const source = resolved.length > 0 ? resolved : summon.spells ?? [];
-                const spell = source[slotIndex];
+                const spell = getSummonKitSpells()[slotIndex];
                 if (spell) setSelectedSummonSpellId(spell.id);
               },
               onSummonEndTurn: () => {
@@ -76802,7 +76854,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CKOyodie.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-C2MbOhSc.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

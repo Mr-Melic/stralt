@@ -575,10 +575,11 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.walk_button"
                   onClick={onSetWalk}
+                  disabled={isSummonControlled || currentBattleMp <= 0}
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "walk" ? "stone-btn-emerald" : "stone-btn-slate opacity-55"}
-                    ${currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                    ${isSummonControlled || currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `}
                 >
                   🚶 WALK
@@ -587,10 +588,11 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.attack_button"
                   onClick={onSetAttack}
+                  disabled={isSummonControlled || currentBattleAp <= 0}
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
-                    ${currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                    ${isSummonControlled || currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `}
                 >
                   ⚔️ ATTACK
