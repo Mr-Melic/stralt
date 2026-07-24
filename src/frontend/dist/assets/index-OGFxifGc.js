@@ -51205,7 +51205,45 @@ function resetCombatantStore(ctx) {
 function getLiveCombatants(ctx) {
   return ctx.combatantsRef.current;
 }
+function reconcileBattleState(storeCtx, reconcileCtx) {
+  const liveIds = new Set(getLiveCombatants(storeCtx).map((c2) => c2.id));
+  const PLAYER_ID = "player";
+  const currentOrder = storeCtx.turnOrderRef.current;
+  const droppedIds = [];
+  const keptOrder = [];
+  const keptFlags = [];
+  for (const entry of currentOrder) {
+    const isPlayer = entry.id === PLAYER_ID || entry.type === "player";
+    const isLive = isPlayer || liveIds.has(entry.id);
+    keptFlags.push(isLive);
+    if (isLive) {
+      keptOrder.push(entry);
+    } else {
+      droppedIds.push(entry.id);
+    }
+  }
+  if (droppedIds.length > 0) {
+    console.log(`[RECONCILE] dropped ${droppedIds.join(",")}`);
+    const currentIdx = storeCtx.currentTurnIndexRef.current;
+    let dropsAtOrBefore = 0;
+    for (let i = 0; i < keptFlags.length && i <= currentIdx; i++) {
+      if (!keptFlags[i]) dropsAtOrBefore += 1;
+    }
+    let nextIdx = currentIdx - dropsAtOrBefore;
+    if (nextIdx < 0) nextIdx = 0;
+    if (keptOrder.length === 0) nextIdx = 0;
+    else if (nextIdx >= keptOrder.length) nextIdx = keptOrder.length - 1;
+    storeCtx.currentTurnIndexRef.current = nextIdx;
+    storeCtx.turnOrderRef.current = keptOrder;
+    storeCtx.setTurnOrder(() => keptOrder);
+  }
+  if (reconcileCtx.inBattle && storeCtx.battleStartIds.size > 0 && activeHostilesRemaining(getLiveCombatants(storeCtx)) === 0 && !reconcileCtx.victoryFiredThisBattleRef.current) {
+    reconcileCtx.victoryFiredThisBattleRef.current = true;
+    reconcileCtx.triggerVictory();
+  }
+}
 function processCombatantDeath(id, ctx) {
+  var _a3;
   if (ctx.isCombatantRemoved(id)) {
     return false;
   }
@@ -51219,6 +51257,7 @@ function processCombatantDeath(id, ctx) {
   ctx.applyLeaderDeathBoost(id);
   ctx.recheckVictory();
   ctx.attributeKillReward(id);
+  (_a3 = ctx.reconcileBattleState) == null ? void 0 : _a3.call(ctx);
   return true;
 }
 function makeStackId(effect) {
@@ -51769,6 +51808,15 @@ function pickBestDamageSpell(ctx, target) {
     (best, s2) => Number(s2.damage) > Number(best.damage) ? s2 : best
   );
 }
+function pickBestDamageSpellForReach(ctx) {
+  const damaging = ctx.availableSpells.filter(
+    (s2) => Number(s2.damage) > 0 && (s2.spellType === "damage" || s2.effectType === "damage" || s2.effectType === "drain")
+  );
+  if (damaging.length === 0) return null;
+  return damaging.reduce(
+    (best, s2) => Number(s2.damage) > Number(best.damage) ? s2 : best
+  );
+}
 function stepToward(origin, target, ctx, reachable) {
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
@@ -51997,6 +52045,42 @@ function decideCaster(ctx, opponents, reachable) {
       retreating: false
     };
   }
+  let adjacentMelee = null;
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    if (chebyshev(origin, tCell) <= 1) {
+      const spell = pickBestDamageSpellForReach(ctx);
+      adjacentMelee = { target: t, spell };
+      break;
+    }
+  }
+  if (adjacentMelee) {
+    const { spell } = adjacentMelee;
+    const lethal = applyLethalLookahead(scored, ctx, spell);
+    const final = applyOverkillSpread(lethal, scored, ctx, spell);
+    ctx.setFocusTargetId(final.combatant.id);
+    ctx.markFocusSet();
+    ctx.log(
+      `${ctx.enemy.pieceType} strikes ${final.combatant.name} in melee!`,
+      CAST_COLOR
+    );
+    logIntent(
+      "caster",
+      spell ? "cast" : "melee",
+      final.combatant.id,
+      "adjacent-melee-fallback"
+    );
+    return {
+      archetype: "caster",
+      destination: origin,
+      spell,
+      targetId: final.combatant.id,
+      kind: spell ? "cast" : "melee",
+      intent: "melee",
+      intentColor: CAST_COLOR,
+      retreating: false
+    };
+  }
   for (const t of scored) {
     const spell = pickBestDamageSpell(ctx, t.combatant);
     if (!spell) continue;
@@ -52109,6 +52193,33 @@ function decideCaster(ctx, opponents, reachable) {
 }
 function decideHealer(ctx, allies, opponents, reachable) {
   const origin = { x: ctx.enemy.x, y: ctx.enemy.y };
+  const hasLegalDamagingAction = (() => {
+    for (const o2 of opponents) {
+      const oCell = { x: o2.x, y: o2.y };
+      const dist2 = chebyshev(origin, oCell);
+      if (dist2 <= 1) return true;
+      const rangedSpell = pickBestDamageSpell(ctx, o2);
+      if (rangedSpell && dist2 <= Number(rangedSpell.range)) {
+        const los = rangedSpell.lineOfSight === false ? true : ctx.hasLineOfSight(origin, oCell);
+        if (los) return true;
+      }
+      const reachSpell = pickBestDamageSpellForReach(ctx);
+      if (reachSpell) {
+        const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
+        if (canReach) {
+          const castTile = findNearestLegalCastTile(
+            origin,
+            oCell,
+            ctx,
+            reachable,
+            reachSpell
+          );
+          if (castTile) return true;
+        }
+      }
+    }
+    return false;
+  })();
   const wounded = allies.filter((a2) => hpFrac(a2) < ENEMY_HEAL_ALLY_THRESHOLD_PCT).sort((a2, b2) => hpFrac(a2) - hpFrac(b2))[0];
   const healSpell = ctx.availableSpells.find(
     (s2) => s2.spellType === "heal" || (s2.healAmount ?? 0) > 0
@@ -52147,6 +52258,16 @@ function decideHealer(ctx, allies, opponents, reachable) {
       intentColor: MOVE_COLOR,
       retreating: false
     };
+  }
+  if (hasLegalDamagingAction) {
+    const fallback2 = decideCaster(ctx, opponents, reachable);
+    logIntent(
+      "healer",
+      fallback2.intent,
+      fallback2.targetId,
+      "fallback-caster-aggression"
+    );
+    return fallback2;
   }
   if (opponents.length > 0 && allies.length > 0) {
     const ward = allies.find((a2) => !a2.isSummon) ?? allies[0];
@@ -52225,7 +52346,7 @@ function decideCharger(ctx, opponents, reachable) {
     const dist22 = chebyshev(origin, tCell);
     const canReach2 = dist22 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
     if (!canReach2) continue;
-    const chargeSpell = pickBestDamageSpell(ctx, t.combatant);
+    const chargeSpell = pickBestDamageSpellForReach(ctx);
     if (chargeSpell) {
       const castTile = findNearestLegalCastTile(
         origin,
@@ -52368,6 +52489,39 @@ function decideFlanker(ctx, opponents, reachable) {
       retreating: false
     };
   }
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const dist2 = chebyshev(origin, tCell);
+    const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
+    if (!canReach) continue;
+    const flankSpell = pickBestDamageSpellForReach(ctx);
+    if (flankSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        tCell,
+        ctx,
+        reachable,
+        flankSpell
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${ctx.enemy.pieceType} flanks in and casts ${flankSpell.name}!`,
+          CAST_COLOR
+        );
+        logIntent("flanker", "closes-in", t.combatant.id, "move-then-cast");
+        return {
+          archetype: "flanker",
+          destination: castTile,
+          spell: flankSpell,
+          targetId: t.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false
+        };
+      }
+    }
+  }
   const dest = stepFlank(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     const dir = dest.x > origin.x ? "right" : dest.x < origin.x ? "left" : dest.y > origin.y ? "below" : "above";
@@ -52445,6 +52599,44 @@ function decideBerserker(ctx, opponents, reachable) {
       intentColor: CAST_COLOR,
       retreating: false
     };
+  }
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const dist2 = chebyshev(origin, tCell);
+    const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
+    if (!canReach) continue;
+    const rageSpell = pickBestDamageSpellForReach(ctx);
+    if (rageSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        tCell,
+        ctx,
+        reachable,
+        rageSpell
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${ctx.enemy.pieceType} rages in and casts ${rageSpell.name}!`,
+          CAST_COLOR
+        );
+        logIntent(
+          "berserker",
+          "closes-in",
+          t.combatant.id,
+          sacrificeEligible ? "wounded-sacrifice-move-cast" : "move-then-cast"
+        );
+        return {
+          archetype: "berserker",
+          destination: castTile,
+          spell: rageSpell,
+          targetId: t.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false
+        };
+      }
+    }
   }
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (sacrificeEligible) {
@@ -52599,7 +52791,7 @@ function decideGeneric(ctx, opponents, reachable) {
   }
   for (const t of scored) {
     const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const moveCastSpell = pickBestDamageSpell(ctx, t.combatant);
+    const moveCastSpell = pickBestDamageSpellForReach(ctx);
     if (!moveCastSpell) continue;
     const castTile = findNearestLegalCastTile(
       origin,
@@ -52869,6 +53061,36 @@ function decideSummonHunter(summon, ctx, opponents, reachable, origin) {
       intentColor: CAST_COLOR,
       retreating: false
     };
+  }
+  const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
+  if (canReach) {
+    const hunterSpell = pickBestDamageSpellForReach(ctx);
+    if (hunterSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        targetCell,
+        ctx,
+        reachable,
+        hunterSpell
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${summon.pieceType} stalks in and casts ${hunterSpell.name}!`,
+          CAST_COLOR
+        );
+        logIntent("hunter", "closes-in", target.combatant.id, "move-then-cast");
+        return {
+          archetype: "generic",
+          destination: castTile,
+          spell: hunterSpell,
+          targetId: target.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false
+        };
+      }
+    }
   }
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
@@ -60339,6 +60561,8 @@ const WorldExplorationInner = ({
   const prevIsMovingRef = reactExports.useRef(false);
   const checkPortalInteractionRef = reactExports.useRef(() => {
   });
+  const checkBattleTriggerRef = reactExports.useRef(() => {
+  });
   const dprRef = reactExports.useRef(window.devicePixelRatio || 1);
   const fadeOverlayRef = reactExports.useRef({ opacity: 0, direction: "none" });
   const comboTextRef = reactExports.useRef(null);
@@ -60440,6 +60664,7 @@ const WorldExplorationInner = ({
   const battleTriggerCooldownRef = reactExports.useRef(false);
   const battleReadyRef = reactExports.useRef(false);
   const battleEndedRef = reactExports.useRef(false);
+  const victoryFiredThisBattleRef = reactExports.useRef(false);
   const battleStartSkipRef = reactExports.useRef(0);
   reactExports.useRef(false);
   const [_battleEnemies, setBattleEnemies] = reactExports.useState([]);
@@ -66555,7 +66780,15 @@ const WorldExplorationInner = ({
         var _a4;
         const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === id);
         return { x: (c2 == null ? void 0 : c2.x) ?? 0, y: (c2 == null ? void 0 : c2.y) ?? 0 };
-      }
+      },
+      reconcileBattleState: () => reconcileBattleState(combatantStoreCtx, {
+        inBattle: inBattleRef.current,
+        victoryFiredThisBattleRef,
+        triggerVictory: () => {
+          var _a4;
+          return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
+        }
+      })
     }),
     [
       combatantStoreCtx,
@@ -66573,7 +66806,9 @@ const WorldExplorationInner = ({
       battleHitsRef,
       actor,
       characterSlot,
-      getLiveCombatants
+      getLiveCombatants,
+      reconcileBattleState,
+      victoryFiredThisBattleRef
     ]
   );
   const processCombatantDeathCb = reactExports.useCallback(
@@ -67438,6 +67673,14 @@ const WorldExplorationInner = ({
         } else ;
         return;
       }
+      const _walkEnemy = getLiveCombatants(combatantStoreCtx).find(
+        (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
+      );
+      if (_walkEnemy) {
+        setPlayerPositionSynced(gridPos);
+        checkBattleTriggerRef.current();
+        return;
+      }
       if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`))) {
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
         const path = findPath(playerPositionRef.current, gridPos);
@@ -67495,7 +67738,10 @@ const WorldExplorationInner = ({
       setCurrentBattleApSynced,
       tileCenter,
       pointerToRenderSpace,
-      recordClickOutcome
+      recordClickOutcome,
+      getLiveCombatants,
+      isAliveCombatant,
+      setPlayerPositionSynced
     ]
   );
   const handleCanvasMouseMove = reactExports.useCallback(
@@ -67890,6 +68136,14 @@ const WorldExplorationInner = ({
         } else ;
         return;
       }
+      const _walkEnemy = getLiveCombatants(combatantStoreCtx).find(
+        (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
+      );
+      if (_walkEnemy) {
+        setPlayerPositionSynced(gridPos);
+        checkBattleTriggerRef.current();
+        return;
+      }
       if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`))) {
         if (inBattleRef.current && currentMap.portals.some((p2) => p2.x === gridPos.x && p2.y === gridPos.y))
           return;
@@ -67941,7 +68195,11 @@ const WorldExplorationInner = ({
       setCurrentBattleApSynced,
       recordClickOutcome,
       activeMapModifierTypes,
-      logDebugInfo
+      logDebugInfo,
+      combatantStoreCtx,
+      getLiveCombatants,
+      isAliveCombatant,
+      setPlayerPositionSynced
     ]
   );
   reactExports.useEffect(() => {
@@ -68127,6 +68385,9 @@ const WorldExplorationInner = ({
   ]);
   checkPortalInteractionRef.current = checkPortalInteraction;
   reactExports.useEffect(() => {
+    checkBattleTriggerRef.current = checkBattleTrigger;
+  });
+  reactExports.useEffect(() => {
     const wasMoving = prevIsMovingRef.current;
     prevIsMovingRef.current = isMoving;
     if (!isMoving && wasMoving) {
@@ -68254,6 +68515,7 @@ const WorldExplorationInner = ({
     setCurrentBossId(null);
     idleTurnCountRef.current = 0;
     battleEndedRef.current = false;
+    victoryFiredThisBattleRef.current = false;
     activeEffectsRef.current = [];
     setActiveEffects([]);
   }, [onDebugLog]);
@@ -68542,6 +68804,14 @@ const WorldExplorationInner = ({
         battleReadyRef.current = true;
         enemyTurnAbortRef.current = false;
         battleStartSkipRef.current = 2;
+        reconcileBattleState(combatantStoreCtx, {
+          inBattle: true,
+          victoryFiredThisBattleRef,
+          triggerVictory: () => {
+            var _a4;
+            return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
+          }
+        });
       });
       inBattleRef.current = true;
       if (battleInitSafetyTimeoutRef.current)
@@ -69498,6 +69768,15 @@ const WorldExplorationInner = ({
     updateCameraToFollowPlayer();
   }, [updateCameraToFollowPlayer]);
   const advanceTurn = reactExports.useCallback(() => {
+    reconcileBattleState(combatantStoreCtx, {
+      inBattle: inBattleRef.current,
+      victoryFiredThisBattleRef,
+      triggerVictory: () => {
+        var _a4;
+        return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
+      }
+    });
+    if (victoryFiredThisBattleRef.current) return;
     reactDomExports.flushSync(() => {
       battleWorldVersionRef.current += 1;
       idleTurnCountRef.current = 0;
@@ -70241,13 +70520,12 @@ const WorldExplorationInner = ({
           worldGridSize: WORLD_GRID_SIZE,
           mpCostPerTile: 1,
           meleeApCost: 1,
-          getEnemyById: (id) => enemiesRef.current.find((e) => e.id === id),
+          getEnemyById: (id) => getLiveCombatants(combatantStoreCtx).find((e) => e.id === id),
           getAoEVictims: (primaryId, blastR) => {
-            const primary = enemiesRef.current.find(
-              (e) => e.id === primaryId
-            );
+            const liveEnemies = getLiveCombatants(combatantStoreCtx);
+            const primary = liveEnemies.find((e) => e.id === primaryId);
             if (!primary) return [];
-            return enemiesRef.current.filter((e) => {
+            return liveEnemies.filter((e) => {
               if (e.id === primaryId) return false;
               if (e.side === summonEnemy.side) return false;
               const dx = Math.abs((e.x ?? 0) - (primary.x ?? 0));
@@ -76975,14 +77253,15 @@ const StarfieldBackground = () => {
     }
   );
 };
-const APP_VERSION = "v163";
+const APP_VERSION = "v164";
 const CHANGELOG_ITEMS = [
+  "🔧 Hotfix round 11 — self-healing turn queue drops ghost enemies and fires victory reliably, walking onto an enemy in the world now starts battle, and enemies now actively attack when they can reach you",
   "🏆 Achievements system — 15 milestones with Doka rewards",
   "✨ Unique spell range patterns + 3 ultimate spells (Obliterate, Plague Wave, Void Collapse)",
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-csZZLBsP.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-1f4q9FWO.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

@@ -11,9 +11,10 @@ import { useGetCallerUserProfile, useGetUserRole } from "./hooks/useQueries";
 import type { Character } from "./types/gameTypes";
 
 /** Current app version — bump this on every deploy to force re-login and show changelog. */
-const APP_VERSION = "v163";
+const APP_VERSION = "v164";
 
 const CHANGELOG_ITEMS = [
+  "🔧 Hotfix round 11 — self-healing turn queue drops ghost enemies and fires victory reliably, walking onto an enemy in the world now starts battle, and enemies now actively attack when they can reach you",
   "🏆 Achievements system — 15 milestones with Doka rewards",
   "✨ Unique spell range patterns + 3 ultimate spells (Obliterate, Plague Wave, Void Collapse)",
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",

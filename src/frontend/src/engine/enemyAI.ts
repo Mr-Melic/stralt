@@ -545,6 +545,36 @@ function pickBestDamageSpell(
   );
 }
 
+/**
+ * Pick the best available damaging spell WITHOUT the current-range filter.
+ *
+ * `pickBestDamageSpell` filters by `Number(s.range) >= dist` using the
+ * CURRENT distance, so it returns null when the target is out of range —
+ * exactly when move-then-attack planning needs the spell. This helper drops
+ * the range filter (keeping only damage > 0 + damage-type) so the
+ * move-then-attack paths can pick a spell to cast AFTER moving into range.
+ *
+ * Used by the move-then-attack branches of charger/flanker/berserker/generic
+ * (and the caster move-then-cast path) to satisfy the aggression invariant:
+ * when a legal damaging action exists this turn (reachable via move-then-attack
+ * within MP+AP), it MUST be chosen over pure movement.
+ */
+function pickBestDamageSpellForReach(
+  ctx: DecideEnemyContext,
+): SpellConfig | null {
+  const damaging = ctx.availableSpells.filter(
+    (s) =>
+      Number(s.damage) > 0 &&
+      (s.spellType === "damage" ||
+        s.effectType === "damage" ||
+        s.effectType === "drain"),
+  );
+  if (damaging.length === 0) return null;
+  return damaging.reduce((best, s) =>
+    Number(s.damage) > Number(best.damage) ? s : best,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Movement: approach, retreat, flank, reposition
 // ---------------------------------------------------------------------------
@@ -963,6 +993,55 @@ function decideCaster(
       retreating: false,
     };
   }
+  // PASS 1.5 — no in-range+LoS ranged cast on ANY target. Before repositioning
+  // for a ranged shot, scan ALL scored targets for an adjacent hostile and
+  // strike it in melee. This satisfies the aggression invariant: when a legal
+  // damaging action exists this turn (adjacency for melee), it MUST be chosen
+  // over pure movement / reposition. Without this fallback a caster adjacent
+  // to a hostile but LoS-blocked on every ranged spell would fall through to
+  // PASS 2 reposition and silently no-op its melee option.
+  let adjacentMelee: {
+    target: ScoredTarget;
+    spell: SpellConfig | null;
+  } | null = null;
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    if (chebyshev(origin, tCell) <= 1) {
+      // Use the reach helper so a melee-range damaging spell (range <= 1) is
+      // picked even when the ranged LoS-blocked spells filtered it out above.
+      const spell = pickBestDamageSpellForReach(ctx);
+      adjacentMelee = { target: t, spell };
+      break;
+    }
+  }
+  if (adjacentMelee) {
+    const { spell } = adjacentMelee;
+    // Section 4(a): prefer a target that dies this turn.
+    const lethal = applyLethalLookahead(scored, ctx, spell);
+    const final = applyOverkillSpread(lethal, scored, ctx, spell);
+    ctx.setFocusTargetId(final.combatant.id);
+    ctx.markFocusSet();
+    ctx.log(
+      `${ctx.enemy.pieceType} strikes ${final.combatant.name} in melee!`,
+      CAST_COLOR,
+    );
+    logIntent(
+      "caster",
+      spell ? "cast" : "melee",
+      final.combatant.id,
+      "adjacent-melee-fallback",
+    );
+    return {
+      archetype: "caster",
+      destination: origin,
+      spell,
+      targetId: final.combatant.id,
+      kind: spell ? "cast" : "melee",
+      intent: "melee",
+      intentColor: CAST_COLOR,
+      retreating: false,
+    };
+  }
   // PASS 2 — no damaging cast on ANY target. Try reposition-for-LoS across all
   // targets that are in range but LoS-blocked, so a sidestep can unlock a shot.
   for (const t of scored) {
@@ -1091,7 +1170,49 @@ function decideHealer(
   reachable: Set<string>,
 ): EnemyAction {
   const origin: AICell = { x: ctx.enemy.x, y: ctx.enemy.y };
-  // Heal the most-wounded ally below 50% HP (not random).
+  // Aggression pre-check: if a legal damaging action exists this turn on ANY
+  // hostile — adjacent melee, in-range+LoS cast, OR a reachable move-then-attack
+  // within MP+AP — skip the backline-guard pure-move below and fall straight
+  // through to the decideCaster fallback so the healer damages when no heal is
+  // needed. This enforces the aggression invariant: a damaging action MUST be
+  // chosen over pure movement. Without this pre-check a healer with no wounded
+  // ally would always interpose (pure move) and never attack even when an
+  // opponent is adjacent or reachable.
+  const hasLegalDamagingAction = (() => {
+    for (const o of opponents) {
+      const oCell = { x: o.x, y: o.y };
+      const dist = chebyshev(origin, oCell);
+      // Adjacent melee is always legal.
+      if (dist <= 1) return true;
+      // In-range + LoS ranged cast.
+      const rangedSpell = pickBestDamageSpell(ctx, o);
+      if (rangedSpell && dist <= Number(rangedSpell.range)) {
+        const los =
+          rangedSpell.lineOfSight === false
+            ? true
+            : ctx.hasLineOfSight(origin, oCell);
+        if (los) return true;
+      }
+      // Reachable move-then-attack within MP+AP.
+      const reachSpell = pickBestDamageSpellForReach(ctx);
+      if (reachSpell) {
+        const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1;
+        if (canReach) {
+          const castTile = findNearestLegalCastTile(
+            origin,
+            oCell,
+            ctx,
+            reachable,
+            reachSpell,
+          );
+          if (castTile) return true;
+        }
+      }
+    }
+    return false;
+  })();
+  // Heal the most-wounded ally below 50% HP (not random). Healing always takes
+  // priority over the aggression pre-check — a healer heals before it damages.
   const wounded = allies
     .filter((a) => hpFrac(a) < ENEMY_HEAL_ALLY_THRESHOLD_PCT)
     .sort((a, b) => hpFrac(a) - hpFrac(b))[0];
@@ -1134,9 +1255,23 @@ function decideHealer(
       retreating: false,
     };
   }
-  // Section 4(d): no healing needed — interpose between the nearest threat
-  // and the most valuable ward (the player, or the lowest-HP ally) so the
-  // backline is protected while the healer waits for a wound to appear.
+  // No healing needed. If a legal damaging action exists this turn, skip the
+  // backline-guard pure-move and fall straight through to the decideCaster
+  // fallback so the healer damages (aggression invariant).
+  if (hasLegalDamagingAction) {
+    const fallback = decideCaster(ctx, opponents, reachable);
+    logIntent(
+      "healer",
+      fallback.intent,
+      fallback.targetId,
+      "fallback-caster-aggression",
+    );
+    return fallback;
+  }
+  // Section 4(d): no healing needed and no legal damaging action — interpose
+  // between the nearest threat and the most valuable ward (the player, or the
+  // lowest-HP ally) so the backline is protected while the healer waits for a
+  // wound to appear.
   if (
     AI_BACKLINE_PROTECT_ENABLED &&
     opponents.length > 0 &&
@@ -1235,8 +1370,12 @@ function decideCharger(
     if (!canReach) continue;
     // Section 2a — move-then-cast: the charger has a ranged option. If a
     // legal-cast tile is reachable this turn, path there and cast from it in the
-    // same turn.
-    const chargeSpell = pickBestDamageSpell(ctx, t.combatant);
+    // same turn. Use pickBestDamageSpellForReach (not pickBestDamageSpell) so
+    // the spell is selected WITHOUT the current-range filter — the target is
+    // out of current range by definition here, and the range filter would
+    // return null and silently no-op the move-then-cast path (the aggression
+    // invariant requires this damaging action be chosen over pure movement).
+    const chargeSpell = pickBestDamageSpellForReach(ctx);
     if (chargeSpell) {
       const castTile = findNearestLegalCastTile(
         origin,
@@ -1395,8 +1534,51 @@ function decideFlanker(
       retreating: false,
     };
   }
-  // PASS 2 — no adjacent damaging strike on any target. Flank toward the top
-  // target, avoiding tackle zones.
+  // PASS 1.5 — no adjacent damaging strike on any target. Before falling
+  // through to the pure flank-move (PASS 2), scan ALL scored targets for a
+  // reachable move-then-attack: pick a damaging spell WITHOUT the current-range
+  // filter (pickBestDamageSpellForReach) and, if a legal-cast tile is reachable
+  // this turn, path there and attack from it in the same turn. This satisfies
+  // the aggression invariant: when a legal damaging action exists this turn
+  // (reachable via move-then-attack within MP+AP), it MUST be chosen over pure
+  // movement. Without this pass the flanker would always pure-flank and never
+  // close-then-strike a target that is out of current range but reachable.
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const dist = chebyshev(origin, tCell);
+    // Commit only when the flanker can REACH the target this turn.
+    const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
+    if (!canReach) continue;
+    const flankSpell = pickBestDamageSpellForReach(ctx);
+    if (flankSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        tCell,
+        ctx,
+        reachable,
+        flankSpell,
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${ctx.enemy.pieceType} flanks in and casts ${flankSpell.name}!`,
+          CAST_COLOR,
+        );
+        logIntent("flanker", "closes-in", t.combatant.id, "move-then-cast");
+        return {
+          archetype: "flanker",
+          destination: castTile,
+          spell: flankSpell,
+          targetId: t.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false,
+        };
+      }
+    }
+  }
+  // PASS 2 — no adjacent damaging strike AND no reachable move-then-attack on
+  // any target. Flank toward the top target, avoiding tackle zones.
   // Path to a side/rear tile, avoiding tackle zones.
   const dest = stepFlank(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
@@ -1500,8 +1682,56 @@ function decideBerserker(
       retreating: false,
     };
   }
-  // PASS 2 — no adjacent damaging strike on any target. Rage-advance toward the
-  // top target.
+  // PASS 1.5 — no adjacent damaging strike on any target. Before falling
+  // through to the pure rage-advance, scan ALL scored targets for a reachable
+  // move-then-attack: pick a damaging spell WITHOUT the current-range filter
+  // (pickBestDamageSpellForReach) and, if a legal-cast tile is reachable this
+  // turn, path there and attack from it in the same turn. This satisfies the
+  // aggression invariant: when a legal damaging action exists this turn
+  // (reachable via move-then-attack within MP+AP), it MUST be chosen over pure
+  // movement. Without this pass the berserker would always rage-advance and
+  // never close-then-strike a target that is out of current range but reachable.
+  for (const t of scored) {
+    const tCell = { x: t.combatant.x, y: t.combatant.y };
+    const dist = chebyshev(origin, tCell);
+    // The berserker never retreats, so it always commits when it can reach.
+    const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
+    if (!canReach) continue;
+    const rageSpell = pickBestDamageSpellForReach(ctx);
+    if (rageSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        tCell,
+        ctx,
+        reachable,
+        rageSpell,
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${ctx.enemy.pieceType} rages in and casts ${rageSpell.name}!`,
+          CAST_COLOR,
+        );
+        logIntent(
+          "berserker",
+          "closes-in",
+          t.combatant.id,
+          sacrificeEligible ? "wounded-sacrifice-move-cast" : "move-then-cast",
+        );
+        return {
+          archetype: "berserker",
+          destination: castTile,
+          spell: rageSpell,
+          targetId: t.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false,
+        };
+      }
+    }
+  }
+  // PASS 2 — no adjacent damaging strike AND no reachable move-then-attack on
+  // any target. Rage-advance toward the top target.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (sacrificeEligible) {
     ctx.log(`${ctx.enemy.pieceType} rages forward, bleeding!`, RETREAT_COLOR);
@@ -1687,10 +1917,14 @@ function decideGeneric(
   // No in-range+LoS spell and no reposition tile on any target. Try
   // move-then-cast across ALL targets: pick the first target for which a
   // legal-cast tile is reachable this turn, path there, and cast from it in
-  // the same turn.
+  // the same turn. Use pickBestDamageSpellForReach (not pickBestDamageSpell)
+  // so the spell is selected WITHOUT the current-range filter — the target is
+  // out of current range by definition here, and the range filter would
+  // return null and silently no-op the move-then-cast path (the aggression
+  // invariant requires this damaging action be chosen over pure movement).
   for (const t of scored) {
     const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const moveCastSpell = pickBestDamageSpell(ctx, t.combatant);
+    const moveCastSpell = pickBestDamageSpellForReach(ctx);
     if (!moveCastSpell) continue;
     // Section 2a — move-then-cast: if a legal-cast tile is reachable this
     // turn, path there and cast from it in the same turn.
@@ -2068,6 +2302,44 @@ function decideSummonHunter(
       intentColor: CAST_COLOR,
       retreating: false,
     };
+  }
+  // Move-then-attack: the target is out of current range but may be reachable
+  // this turn. Pick a damaging spell WITHOUT the current-range filter
+  // (pickBestDamageSpellForReach) and, if a legal-cast tile is reachable within
+  // MP+AP, path there and attack from it in the same turn. This satisfies the
+  // aggression invariant: when a legal damaging action exists this turn
+  // (reachable via move-then-attack), it MUST be chosen over pure movement.
+  // Without this pass the hunter would always pure-advance and never
+  // close-then-strike a target that is out of current range but reachable.
+  const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
+  if (canReach) {
+    const hunterSpell = pickBestDamageSpellForReach(ctx);
+    if (hunterSpell) {
+      const castTile = findNearestLegalCastTile(
+        origin,
+        targetCell,
+        ctx,
+        reachable,
+        hunterSpell,
+      );
+      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+        ctx.log(
+          `${summon.pieceType} stalks in and casts ${hunterSpell.name}!`,
+          CAST_COLOR,
+        );
+        logIntent("hunter", "closes-in", target.combatant.id, "move-then-cast");
+        return {
+          archetype: "generic",
+          destination: castTile,
+          spell: hunterSpell,
+          targetId: target.combatant.id,
+          kind: "cast",
+          intent: "closes-in",
+          intentColor: CAST_COLOR,
+          retreating: false,
+        };
+      }
+    }
   }
   // Advance toward the nearest/lowest-HP target.
   const dest = stepToward(origin, targetCell, ctx, reachable);

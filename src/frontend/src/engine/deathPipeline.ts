@@ -55,6 +55,14 @@ export interface DeathPipelineCtx {
   getCombatantName(id: string): string;
   /** Board position of the combatant (must be valid before removal). */
   getCombatantPos(id: string): { x: number; y: number };
+  /**
+   * Optional post-death reconcile hook. When supplied, invoked at the TAIL
+   * of {@link processCombatantDeath} (after step 10 — kill reward
+   * attribution) so the caller can heal any ghost ids that leaked into the
+   * turn queue and evaluate victory exactly once. Optional so callers that
+   * do not need the reconcile (e.g. unit tests) can omit it.
+   */
+  reconcileBattleState?: () => void;
 }
 
 /**
@@ -94,6 +102,12 @@ export function processCombatantDeath(
   ctx.recheckVictory();
   // 10. Attribute kill reward.
   ctx.attributeKillReward(id);
+
+  // 11. Reconcile the turn queue against the live combatant set and
+  // evaluate victory exactly once. Runs AFTER kill-reward attribution so
+  // the defeated roster is fully populated before the victory recap reads
+  // it. Optional — no-op when the caller did not wire the hook.
+  ctx.reconcileBattleState?.();
 
   return true;
 }

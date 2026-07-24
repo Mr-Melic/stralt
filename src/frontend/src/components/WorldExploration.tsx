@@ -97,6 +97,7 @@ import {
   dumpStateSync,
   getLiveCombatants,
   initCombatantStore,
+  reconcileBattleState,
   removeCombatant,
   resetCombatantStore,
   syncCombatants,
@@ -744,6 +745,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // callback so the effect's deps array can stay [isMoving] only.
   const prevIsMovingRef = useRef(false);
   const checkPortalInteractionRef = useRef<() => void>(() => {});
+  // Stable ref indirection for checkBattleTrigger (declared later in the file).
+  // Lets the mouse/touch world-mode walk handlers call it without a TDZ
+  // "used-before-declaration" error, mirroring the checkPortalInteractionRef pattern.
+  const checkBattleTriggerRef = useRef<() => void>(() => {});
   const dprRef = useRef<number>(window.devicePixelRatio || 1);
   // ── Visual enhancement refs (avoid useState to prevent re-renders) ──────────
   // Fade overlay for portal transitions
@@ -949,6 +954,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // (e.g. the useEffect that watches inBattle===false && enemies.length===0
   // can fire the same callback multiple times in rapid succession).
   const battleEndedRef = useRef(false);
+  // M3 FIX: Idempotency guard — prevents handleBattleEnd from firing twice
+  // (e.g. the useEffect that watches inBattle===false && enemies.length===0
+  // can fire the same callback multiple times in rapid succession).
+  const victoryFiredThisBattleRef = useRef<boolean>(false);
   const battleStartSkipRef = useRef(0);
   // Weather suppress: pause new particle spawns for ~60 frames at battle start
   const _weatherSuppressRef = useRef(false); // Weather effects removed, ref kept to avoid larger refactor
@@ -9242,6 +9251,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const c = combatantsRef.current?.find((e) => e.id === id);
         return { x: c?.x ?? 0, y: c?.y ?? 0 };
       },
+      reconcileBattleState: () =>
+        reconcileBattleState(combatantStoreCtx, {
+          inBattle: inBattleRef.current,
+          victoryFiredThisBattleRef,
+          triggerVictory: () =>
+            handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
+        }),
     }),
     [
       combatantStoreCtx,
@@ -9260,6 +9276,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       actor,
       characterSlot,
       getLiveCombatants,
+      reconcileBattleState,
+      victoryFiredThisBattleRef,
     ],
   );
   const processCombatantDeathCb = useCallback(
@@ -10453,6 +10471,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       }
       // --- WORLD MODE ---
+      const _walkEnemy = getLiveCombatants(combatantStoreCtx).find(
+        (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
+      );
+      if (_walkEnemy) {
+        setPlayerPositionSynced(gridPos);
+        checkBattleTriggerRef.current();
+        return;
+      }
       if (
         currentMap.tiles[gridPos.y][gridPos.x] !== "wall" &&
         !currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
@@ -10513,6 +10539,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       tileCenter,
       pointerToRenderSpace,
       recordClickOutcome,
+      getLiveCombatants,
+      isAliveCombatant,
+      setPlayerPositionSynced,
     ],
   );
   // Handle canvas mouse move
@@ -11017,6 +11046,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
         return;
       }
+      const _walkEnemy = getLiveCombatants(combatantStoreCtx).find(
+        (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
+      );
+      if (_walkEnemy) {
+        setPlayerPositionSynced(gridPos);
+        checkBattleTriggerRef.current();
+        return;
+      }
       if (
         currentMap.tiles[gridPos.y][gridPos.x] !== "wall" &&
         !currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
@@ -11075,6 +11112,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       recordClickOutcome,
       activeMapModifierTypes,
       logDebugInfo,
+      combatantStoreCtx,
+      getLiveCombatants,
+      isAliveCombatant,
+      setPlayerPositionSynced,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -11302,6 +11343,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // sealedPortalAnnouncedRef above). We keep the latest callback in a ref so
   // the effect's deps array can be [isMoving] only.
   checkPortalInteractionRef.current = checkPortalInteraction;
+  // Keep the latest checkBattleTrigger in a ref so earlier-declared handlers
+  // (mouse/touch world-mode walk branches) can invoke it without TDZ issues.
+  // Wrapped in useEffect (not a bare assignment) because checkBattleTrigger is
+  // declared later in the component body (line ~11652); a bare top-level
+  // assignment would be evaluated in declaration order and trigger TS2448/TS2454
+  // (used-before-declaration). The effect runs after render, by which point
+  // checkBattleTrigger is fully assigned.
+  useEffect(() => {
+    checkBattleTriggerRef.current = checkBattleTrigger;
+  });
   useEffect(() => {
     const wasMoving = prevIsMovingRef.current;
     prevIsMovingRef.current = isMoving;
@@ -11504,6 +11555,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     idleTurnCountRef.current = 0;
     // M3 FIX: Reset battleEndedRef so the NEXT battle can call handleBattleEnd
     battleEndedRef.current = false;
+    victoryFiredThisBattleRef.current = false;
     // H2 FIX: Clear active effects state and ref so status icons don't linger after victory
     activeEffectsRef.current = [];
     setActiveEffects([]);
@@ -11968,6 +12020,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // C4: battleStartSkipRef MUST be set before the flushSync commit so the
         // VFX canvas is paused from the very first rendered frame of the new battle.
         battleStartSkipRef.current = 2;
+        reconcileBattleState(combatantStoreCtx, {
+          inBattle: true,
+          victoryFiredThisBattleRef,
+          triggerVictory: () =>
+            handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
+        });
       });
 
       inBattleRef.current = true;
@@ -13236,6 +13294,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Advance to next combatant in turn order and reset timer
   // biome-ignore lint/correctness/useExhaustiveDependencies: flushSync-wrapped advanceTurn intentionally captures stable refs
   const advanceTurn = useCallback(() => {
+    reconcileBattleState(combatantStoreCtx, {
+      inBattle: inBattleRef.current,
+      victoryFiredThisBattleRef,
+      triggerVictory: () =>
+        handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
+    });
+    if (victoryFiredThisBattleRef.current) return;
     flushSync(() => {
       // FIX 1.1: Bump the battle-world version at the top of advanceTurn (after
       // flushSync open, before turn-order advancement) so the spell-range cache
@@ -14326,13 +14391,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           mpCostPerTile: 1,
           meleeApCost: 1,
           getEnemyById: (id: string) =>
-            enemiesRef.current.find((e: any) => e.id === id),
+            getLiveCombatants(combatantStoreCtx).find((e: any) => e.id === id),
           getAoEVictims: (primaryId: string, blastR: number) => {
-            const primary = enemiesRef.current.find(
-              (e: any) => e.id === primaryId,
-            );
+            const liveEnemies = getLiveCombatants(combatantStoreCtx);
+            const primary = liveEnemies.find((e: any) => e.id === primaryId);
             if (!primary) return [];
-            return enemiesRef.current.filter((e: any) => {
+            return liveEnemies.filter((e: any) => {
               if (e.id === primaryId) return false;
               if (e.side === summonEnemy.side) return false;
               const dx = Math.abs((e.x ?? 0) - (primary.x ?? 0));

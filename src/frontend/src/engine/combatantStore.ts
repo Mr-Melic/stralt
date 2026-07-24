@@ -548,6 +548,139 @@ export function getLiveCombatants(ctx: CombatantStoreCtx): Enemy[] {
 }
 
 /**
+ * Context handed to {@link reconcileBattleState}. Carries the battle-status
+ * inputs the reconciler cannot derive from the store alone.
+ *
+ * - `inBattle`: whether a battle is currently active. Victory is only
+ *   evaluated when this is true (a no-op reconcile outside battle must not
+ *   fire victory).
+ * - `victoryFiredThisBattleRef`: idempotency guard owned by the caller
+ *   (WX). Set to `true` the first time victory fires in a battle and reset
+ *   to `false` on the next battle start so each battle can fire victory
+ *   exactly once.
+ * - `triggerVictory`: the caller's victory callback (e.g.
+ *   `handleBattleEnd(true, ...)`). Invoked at most once per battle.
+ */
+export interface ReconcileBattleStateCtx {
+  inBattle: boolean;
+  victoryFiredThisBattleRef: MutableRefObject<boolean>;
+  triggerVictory: () => void;
+}
+
+/**
+ * Reconcile the turn queue against the live combatant set and evaluate
+ * victory. The single post-mutation sanity pass that heals any ghost ids
+ * that leaked into `turnOrderRef` / the `setTurnOrder` state mirror / the
+ * initiative-strip UI mirror, then fires victory exactly once when the
+ * last active hostile is gone.
+ *
+ * This is the canonical home for the reconcile: `combatantStore.ts` already
+ * imports `activeHostilesRemaining`, owns `getLiveCombatants`, and owns
+ * `battleStartIds`, so all three inputs are local.
+ *
+ * Duty (a) — QUEUE HEAL:
+ *   Build the set of live ids via {@link getLiveCombatants}. Iterate
+ *   `turnOrderRef.current`; for each entry whose id is NOT the player id
+ *   (`"player"`) AND NOT in the live set, drop it from:
+ *     - `turnOrderRef.current`
+ *     - the `setTurnOrder` state mirror
+ *     - the initiative-strip UI mirror (the same `setTurnOrder` call — the
+ *       strip reads the `turnOrder` React state)
+ *   Adjust `currentTurnIndexRef.current`: for every dropped entry that sat
+ *   at an index `<=` the current index, decrement the current index by the
+ *   count of such drops that came at or before it (clamp at 0). This keeps
+ *   the active-turn pointer on the same logical combatant after earlier
+ *   entries are removed.
+ *   When any drop occurs, log `[RECONCILE] dropped {ids}` listing the
+ *   dropped ids. When zero drops occur, do not log (the queue was already
+ *   clean — the call site is a no-op sanity pass).
+ *
+ * Duty (b) — VICTORY:
+ *   After the heal, evaluate
+ *     `activeHostilesRemaining(storeCtx) === 0 && battleStartIds.size > 0
+ *      && inBattle`.
+ *   When true AND `!victoryFiredThisBattleRef.current`, set
+ *   `victoryFiredThisBattleRef.current = true` and call `triggerVictory()`.
+ *   Idempotent — a second call in the same beat is a no-op because the ref
+ *   is already `true`.
+ *
+ * Duty (c) — TARGETING SAFETY:
+ *   The heal above already excludes ghosts from `turnOrderRef`. This
+ *   function does NOT mutate target-list builders; the actual targeting fix
+ *   (reading `getLiveCombatants` instead of `enemiesRef.current`) lives at
+ *   the call site (WX `getEnemyById` / `getAoEVictims`).
+ *
+ * Pure with respect to external state: it only mutates the refs / setters
+ * handed to it via `storeCtx` plus the `victoryFiredThisBattleRef` from
+ * `reconcileCtx`. No other side effects (the `[RECONCILE]` log is a
+ * dev-visible side effect but does not touch combatant state).
+ */
+export function reconcileBattleState(
+  storeCtx: CombatantStoreCtx,
+  reconcileCtx: ReconcileBattleStateCtx,
+): void {
+  // ── Duty (a) — QUEUE HEAL ─────────────────────────────────────────────
+  const liveIds = new Set(getLiveCombatants(storeCtx).map((c) => c.id));
+  const PLAYER_ID = "player";
+
+  const currentOrder = storeCtx.turnOrderRef.current;
+  const droppedIds: string[] = [];
+  const keptOrder: CombatantEntry[] = [];
+  // Map old index -> kept (true) or dropped (false) so we can count drops
+  // at or before the current index for the index adjustment.
+  const keptFlags: boolean[] = [];
+  for (const entry of currentOrder) {
+    const isPlayer = entry.id === PLAYER_ID || entry.type === "player";
+    const isLive = isPlayer || liveIds.has(entry.id);
+    keptFlags.push(isLive);
+    if (isLive) {
+      keptOrder.push(entry);
+    } else {
+      droppedIds.push(entry.id);
+    }
+  }
+
+  if (droppedIds.length > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[RECONCILE] dropped ${droppedIds.join(",")}`);
+
+    // Adjust currentTurnIndexRef: decrement by the count of dropped entries
+    // at indices <= currentTurnIndexRef.current. Each such drop shifts the
+    // active combatant down by one. Clamp at 0.
+    const currentIdx = storeCtx.currentTurnIndexRef.current;
+    let dropsAtOrBefore = 0;
+    for (let i = 0; i < keptFlags.length && i <= currentIdx; i++) {
+      if (!keptFlags[i]) dropsAtOrBefore += 1;
+    }
+    let nextIdx = currentIdx - dropsAtOrBefore;
+    if (nextIdx < 0) nextIdx = 0;
+    if (keptOrder.length === 0) nextIdx = 0;
+    else if (nextIdx >= keptOrder.length) nextIdx = keptOrder.length - 1;
+    storeCtx.currentTurnIndexRef.current = nextIdx;
+
+    // Assign the ref BEFORE the state update so any synchronous reader
+    // (e.g. the turn-advance gate) sees a fresh value, matching the
+    // existing pattern in removeCombatantFromTurnQueue.
+    storeCtx.turnOrderRef.current = keptOrder;
+    // The setTurnOrder state mirror IS the initiative-strip UI mirror —
+    // the strip reads the `turnOrder` React state, so a single
+    // setTurnOrder call syncs both.
+    storeCtx.setTurnOrder(() => keptOrder);
+  }
+
+  // ── Duty (b) — VICTORY ────────────────────────────────────────────────
+  if (
+    reconcileCtx.inBattle &&
+    storeCtx.battleStartIds.size > 0 &&
+    activeHostilesRemaining(getLiveCombatants(storeCtx)) === 0 &&
+    !reconcileCtx.victoryFiredThisBattleRef.current
+  ) {
+    reconcileCtx.victoryFiredThisBattleRef.current = true;
+    reconcileCtx.triggerVictory();
+  }
+}
+
+/**
  * Dev-gated synchronous state dump for debugging the store's atomic
  * updates. Prints a `[STATE-SYNC]` block with the lengths and ids of
  * every mirror plus the `activeHostilesRemaining` result. No-op in
