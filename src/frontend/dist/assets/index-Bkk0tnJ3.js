@@ -44044,7 +44044,7 @@ function getGeometrySnapshot(input) {
     spriteRectsSummary: { count: count2, ids }
   };
 }
-const APP_BUILD = "#343";
+const APP_BUILD = "#344";
 function esc(s2) {
   return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -60635,6 +60635,8 @@ const WorldExplorationInner = ({
   );
   const lastTimerActorIdRef = reactExports.useRef(null);
   const lastGateLogRef = reactExports.useRef(0);
+  const scheduleEnemyExecutorRef = reactExports.useRef(() => {
+  });
   const spawnEnemySummonRef = reactExports.useRef(null);
   const [enemyHpMap, setEnemyHpMap] = reactExports.useState({});
   const [enragedEnemies, setEnragedEnemies] = reactExports.useState(/* @__PURE__ */ new Set());
@@ -66492,7 +66494,38 @@ const WorldExplorationInner = ({
         battleLeaderSlainRef.current = true;
         const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === deadId);
         (_b4 = triggerLeaderDeathAnimRef.current) == null ? void 0 : _b4.call(triggerLeaderDeathAnimRef, (c2 == null ? void 0 : c2.x) ?? 0, (c2 == null ? void 0 : c2.y) ?? 0);
-        setLeaderBoostMultiplier((prev) => Math.min(prev + 0.25, 2));
+        const multiplier = Math.min((_leaderBoostMultiplier ?? 1) + 0.25, 2);
+        setLeaderBoostMultiplier(multiplier);
+        const live = getLiveCombatants(combatantStoreCtx);
+        for (const combatant of live) {
+          if (combatant.id === deadId) continue;
+          if (combatant.side === "player") continue;
+          const maxBefore = combatant.maxHp;
+          const hpBefore = combatant.hp;
+          const newMax = Math.round(maxBefore * multiplier);
+          const newHp = Math.min(newMax, Math.round(hpBefore * multiplier));
+          const newAtk = combatant.atk !== void 0 ? Math.round(combatant.atk * multiplier) : void 0;
+          const newRes = Math.round(combatant.res * multiplier);
+          const newSp = Math.round(combatant.sp * multiplier);
+          const newChc = Math.round(combatant.chc * multiplier);
+          const newInit = Math.round(combatant.init * multiplier);
+          updateCombatant(combatantStoreCtx, combatant.id, {
+            maxHp: newMax,
+            hp: newHp,
+            atk: newAtk,
+            res: newRes,
+            sp: newSp,
+            chc: newChc,
+            init: newInit
+          });
+          logDebugInfo("LEADER-BOOST", "apply", {
+            id: combatant.id,
+            hpBefore,
+            hpAfter: newHp,
+            maxBefore,
+            maxAfter: newMax
+          });
+        }
       },
       recheckVictory: () => {
         var _a4;
@@ -69741,6 +69774,7 @@ const WorldExplorationInner = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current
             });
+            scheduleEnemyExecutorRef.current(nextCombatant.id);
             try {
               setBattlePhase("enemy");
               mapModifierRegistry.applyTurnStart(
@@ -69917,14 +69951,13 @@ const WorldExplorationInner = ({
     combatantStoreCtx,
     onDebugContextChange
   ]);
-  reactExports.useEffect(() => {
-    if (!inBattle || (currentActor == null ? void 0 : currentActor.type) !== "enemy") return;
+  const scheduleEnemyExecutor = reactExports.useCallback((enemyId) => {
     if (enemyTurnInProgressRef.current) {
       const now2 = Date.now();
       if (now2 - lastGateLogRef.current > 1e3) {
         lastGateLogRef.current = now2;
-        console.log("[TURN] executor-gate", {
-          actorId: currentActor == null ? void 0 : currentActor.id,
+        logDebugInfo("TURN", "executor-gate", {
+          actorId: enemyId,
           blockedBy: "inProgress"
         });
       }
@@ -69934,8 +69967,8 @@ const WorldExplorationInner = ({
       const now2 = Date.now();
       if (now2 - lastGateLogRef.current > 1e3) {
         lastGateLogRef.current = now2;
-        console.log("[TURN] executor-gate", {
-          actorId: currentActor == null ? void 0 : currentActor.id,
+        logDebugInfo("TURN", "executor-gate", {
+          actorId: enemyId,
           blockedBy: "battleReady"
         });
       }
@@ -69943,7 +69976,6 @@ const WorldExplorationInner = ({
     }
     const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
-    const enemyId = currentCombatant.id;
     enemyTurnInProgressRef.current = true;
     if (dispatchWatchdogRef.current) {
       clearTimeout(dispatchWatchdogRef.current);
@@ -71650,7 +71682,7 @@ const WorldExplorationInner = ({
           pendingTimeoutsRef.current.delete(watchdog);
         }
       });
-    }, 800);
+    }, 0);
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(timeout2);
     }
@@ -71670,16 +71702,10 @@ const WorldExplorationInner = ({
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(watchdog);
     }
-    return () => {
-      clearTimeout(timeout2);
-      pendingTimeoutsRef.current.delete(timeout2);
-      if (!enemyTurnInProgressRef.current) {
-        clearTimeout(watchdog);
-        pendingTimeoutsRef.current.delete(watchdog);
-      }
-      enemyTurnInProgressRef.current = false;
-    };
-  }, [inBattle, currentTurnIndex, battlePhase]);
+  }, []);
+  reactExports.useEffect(() => {
+    scheduleEnemyExecutorRef.current = scheduleEnemyExecutor;
+  }, [scheduleEnemyExecutor]);
   const recordPlayerSpellType = reactExports.useCallback((effectType) => {
     playerSpellTypeHistoryRef.current = [
       ...playerSpellTypeHistoryRef.current.slice(-4),
@@ -76956,7 +76982,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-B3JPOXTO.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-csZZLBsP.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

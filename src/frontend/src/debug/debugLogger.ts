@@ -23,7 +23,8 @@ export type LogCategory =
   | "SUMMON"
   | "TURN"
   | "MODIFIER"
-  | "RESOLVER";
+  | "RESOLVER"
+  | "LEADER-BOOST";
 
 const IS_DEV =
   typeof process !== "undefined" && process.env.NODE_ENV === "development";

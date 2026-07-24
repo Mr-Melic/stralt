@@ -1274,6 +1274,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // SECTION 1 — EXECUTOR-GATE LOG THROTTLE: timestamps the last [TURN]
   // executor-gate log so the gate logs the blockedBy reason at most 1/s.
   const lastGateLogRef = useRef(0);
+  // SECTION 1 — DIRECT EXECUTOR INVOCATION: scheduleEnemyExecutor is defined
+  // later (after clearEnemyTurnFlagAndAdvance) but the dispatch site inside
+  // advanceTurn (useCallback) is declared earlier. Mirror it through a ref so
+  // the dispatch can invoke the latest version without a stale-closure risk.
+  const scheduleEnemyExecutorRef = useRef<(enemyId: string) => void>(() => {});
   // Ref holding the enemy-side summon spawn callback so the enemy turn
   // executor (a different closure from the SpellContext builder) can
   // invoke it when a summoner enemy decides to cast a summon spell.
@@ -9152,7 +9157,53 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         battleLeaderSlainRef.current = true;
         const c = combatantsRef.current?.find((e) => e.id === deadId);
         triggerLeaderDeathAnimRef.current?.(c?.x ?? 0, c?.y ?? 0);
-        setLeaderBoostMultiplier((prev) => Math.min(prev + 0.25, 2.0));
+        // SECTION 2 — leader-boost scaling write. Compute the new multiplier
+        // synchronously (setLeaderBoostMultiplier is async state) so the stat
+        // patch uses the same value the state will settle on. Caps at 2.0,
+        // matching the original bump semantics.
+        const multiplier = Math.min((_leaderBoostMultiplier ?? 1) + 0.25, 2.0);
+        setLeaderBoostMultiplier(multiplier);
+        // Apply the boost to every surviving enemy-side combatant. Regular
+        // enemies have no `side` field; only summons carry one. Treat
+        // `side !== "player"` as enemy-side so both unset-side regulars and
+        // explicit enemy summons are covered. The dead leader is already
+        // removed from the roster before this runs, so it is excluded by the
+        // live-combatants read. hp scales by the SAME proportion as maxHp
+        // (capped at newMax) — never restored to full. Patch shape mirrors
+        // the 6× enrage boost at lines 14705-14714.
+        const live = getLiveCombatants(combatantStoreCtx);
+        for (const combatant of live) {
+          if (combatant.id === deadId) continue;
+          if (combatant.side === "player") continue;
+          const maxBefore = combatant.maxHp;
+          const hpBefore = combatant.hp;
+          const newMax = Math.round(maxBefore * multiplier);
+          const newHp = Math.min(newMax, Math.round(hpBefore * multiplier));
+          const newAtk =
+            combatant.atk !== undefined
+              ? Math.round(combatant.atk * multiplier)
+              : undefined;
+          const newRes = Math.round(combatant.res * multiplier);
+          const newSp = Math.round(combatant.sp * multiplier);
+          const newChc = Math.round(combatant.chc * multiplier);
+          const newInit = Math.round(combatant.init * multiplier);
+          updateCombatant(combatantStoreCtx, combatant.id, {
+            maxHp: newMax,
+            hp: newHp,
+            atk: newAtk,
+            res: newRes,
+            sp: newSp,
+            chc: newChc,
+            init: newInit,
+          });
+          logDebugInfo("LEADER-BOOST", "apply", {
+            id: combatant.id,
+            hpBefore,
+            hpAfter: newHp,
+            maxBefore,
+            maxAfter: newMax,
+          });
+        }
       },
       recheckVictory: () => {
         if (
@@ -13601,6 +13652,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current,
             });
+            // SECTION 1 — DIRECT EXECUTOR INVOCATION: fire the enemy executor
+            // directly from the dispatch (no useEffect re-entry). Wraps the
+            // same executor body in setTimeout(0) and fires for EVERY enemy
+            // dispatch including consecutive enemies. The dispatch-time
+            // watchdog re-arm above (13382-13407) stays as the ceiling.
+            scheduleEnemyExecutorRef.current(nextCombatant.id);
             // SECTION 3 — FIX (a) TRY/CATCH WRAP: the post-dispatch chain
             // (setBattlePhase('enemy') → applyTurnStart → processActiveEffects →
             // plague zone → log) is wrapped so a throw in any of these does not
@@ -13855,19 +13912,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // store's atomic assignments and re-introduced desync — they were removed
   // as part of the store-unification pass.
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
-  useEffect(() => {
+  // SECTION 1 — DIRECT EXECUTOR INVOCATION: the enemy executor is now invoked
+  // directly from the dispatch (scheduleEnemyExecutorRef.current(enemyId) right
+  // after the [TURN] dispatch log) instead of re-entering via a useEffect on
+  // [inBattle, currentTurnIndex, battlePhase]. This fires for EVERY enemy
+  // dispatch including consecutive enemies — no dependency arrays, no
+  // state-change requirements. The executor body guards (aiGeneration/session/
+  // inProgress) are preserved. The dispatch-time watchdog re-arm (13382-13407)
+  // stays as the ceiling. useCallback with [] deps because every dependency
+  // is a ref or a stable callback.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — direct dispatch invocation must fire unconditionally on every enemy dispatch (including consecutive enemies), no state-change gating; every referenced value is a ref or stable callback
+  const scheduleEnemyExecutor = useCallback((enemyId: string) => {
     // SECTION 1 — EXECUTOR-GATE LOG: log the blockedBy reason at most 1/s so
-    // the gate is observable without flooding the console. Only the
-    // enemy-actor branch logs; the non-enemy / not-in-battle branch returns
-    // silently as before.
-    if (!inBattle || currentActor?.type !== "enemy") return;
+    // the gate is observable without flooding the console. Wired through
+    // logDebugInfo (not console.log) so it actually lands in the debug
+    // channel. Only the inProgress / battleReady blocks log; the missing-
+    // combatant branch returns silently.
     if (enemyTurnInProgressRef.current) {
       const now = Date.now();
       if (now - lastGateLogRef.current > 1000) {
         lastGateLogRef.current = now;
-        console.log("[TURN] executor-gate", {
-          actorId: currentActor?.id,
+        logDebugInfo("TURN", "executor-gate", {
+          actorId: enemyId,
           blockedBy: "inProgress",
         });
       }
@@ -13877,8 +13943,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const now = Date.now();
       if (now - lastGateLogRef.current > 1000) {
         lastGateLogRef.current = now;
-        console.log("[TURN] executor-gate", {
-          actorId: currentActor?.id,
+        logDebugInfo("TURN", "executor-gate", {
+          actorId: enemyId,
           blockedBy: "battleReady",
         });
       }
@@ -13890,12 +13956,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // itself be a bug, so there is NO state-snapshot fallback here.
     const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
-    const enemyId = currentCombatant.id;
     enemyTurnInProgressRef.current = true;
-    // SECTION 3 — FIX (b): the executor effect has started, so the dispatch-time
+    // SECTION 3 — FIX (b): the executor has started, so the dispatch-time
     // watchdog is no longer needed. Clear it (and drop it from the pending
-    // set) so it cannot fire after the executor is running. The executor's own
-    // watchdog (15890) takes over from here.
+    // set) so it cannot fire after the executor is running. The executor's
+    // own watchdog (below) takes over from here.
     if (dispatchWatchdogRef.current) {
       clearTimeout(dispatchWatchdogRef.current);
       pendingTimeoutsRef.current.delete(dispatchWatchdogRef.current);
@@ -16097,7 +16162,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           pendingTimeoutsRef.current.delete(watchdog);
         }
       }); // end C-3 flushSync
-    }, 800);
+    }, 0);
     // M-4: Only register main timeout if cleanup hasn't run yet
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(timeout);
@@ -16129,16 +16194,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(watchdog);
     }
-    return () => {
-      clearTimeout(timeout);
-      pendingTimeoutsRef.current.delete(timeout);
-      if (!enemyTurnInProgressRef.current) {
-        clearTimeout(watchdog);
-        pendingTimeoutsRef.current.delete(watchdog);
-      }
-      enemyTurnInProgressRef.current = false;
-    };
-  }, [inBattle, currentTurnIndex, battlePhase]);
+    // SECTION 1 — hotfix: cleanup removed; executor reads refs only, deps emptied.
+    // The scheduleEnemyExecutorRef is kept in sync by the ref-assign useEffect below.
+  }, []);
+  useEffect(() => {
+    scheduleEnemyExecutorRef.current = scheduleEnemyExecutor;
+  }, [scheduleEnemyExecutor]);
   // Track player spell type for Adaptive Resistance AI
   const recordPlayerSpellType = useCallback((effectType: string) => {
     playerSpellTypeHistoryRef.current = [
