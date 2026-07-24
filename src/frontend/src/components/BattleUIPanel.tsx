@@ -166,6 +166,8 @@ export interface SummonKitSpell {
   apCost: number;
   /** Optional accent color for the spell icon placeholder. */
   iconColor?: string;
+  /** Emoji rendered in the kit slot icon, mirroring the player spell bar. */
+  iconEmoji?: string;
 }
 
 const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
@@ -657,227 +659,240 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
           )}
 
           {/* ── Spell row ── */}
-          <div
-            className="flex items-center gap-2 px-2.5 pt-1.5 pb-2 flex-nowrap overflow-x-auto"
-            style={
-              isSummonControlled
-                ? {
-                    opacity: 0.45,
-                    filter: "grayscale(0.85) saturate(0.4)",
-                  }
-                : undefined
-            }
-          >
-            {/* Spellbook button */}
-            <button
-              type="button"
-              data-ocid="battle_ui.spellbook_button"
-              onClick={onOpenSpellbook}
-              title="Open Spellbook"
-              className="stone-btn-slate w-11 h-[52px] rounded-md flex flex-col items-center justify-center gap-0.5 flex-shrink-0 transition-all duration-150"
+          {/* SECTION 3 (R12) FIX (a) — the dimming wrapper now encloses ONLY
+              the player's own spellbook button + 8 spell slots. The inline
+              summon control block (below) and the Attack-Nearest / status
+              pill sit OUTSIDE this wrapper so they stay full-color during
+              control mode. Interactivity of the kit slots + END button is
+              bound STRICTLY to controlledSummon (i.e. activeControlledSummonId)
+              being set — not battlePhase, not isPlayerTurn. */}
+          <div className="flex items-center gap-2 px-2.5 pt-1.5 pb-2 flex-nowrap overflow-x-auto">
+            {/* Player spell cluster — dimmed as a whole during summon control */}
+            <div
+              className="flex items-center gap-2 flex-nowrap"
+              style={
+                isSummonControlled
+                  ? {
+                      opacity: 0.45,
+                      filter: "grayscale(0.85) saturate(0.4)",
+                    }
+                  : undefined
+              }
             >
-              <BookOpen size={16} />
-              <span className="text-[8px] leading-none opacity-80">Book</span>
-            </button>
+              {/* Spellbook button */}
+              <button
+                type="button"
+                data-ocid="battle_ui.spellbook_button"
+                onClick={onOpenSpellbook}
+                title="Open Spellbook"
+                className="stone-btn-slate w-11 h-[52px] rounded-md flex flex-col items-center justify-center gap-0.5 flex-shrink-0 transition-all duration-150"
+              >
+                <BookOpen size={16} />
+                <span className="text-[8px] leading-none opacity-80">Book</span>
+              </button>
 
-            {/* Separator */}
-            <div className="w-px h-11 bg-[rgba(180,20,20,0.3)] flex-shrink-0" />
+              {/* Separator */}
+              <div className="w-px h-11 bg-[rgba(180,20,20,0.3)] flex-shrink-0" />
 
-            {/* 8 spell slots */}
-            <div style={{ display: "flex", gap: 5 }}>
-              {[0, 1, 2, 3, 4, 5, 6, 7].map((slotIndex) => {
-                const spell = activeSpells[slotIndex] ?? null;
-                const isSelected = spell?.id === selectedSpellIdRef.current;
-                const isEmpty = !spell;
-                const isPhysical = spell?.isPhysical ?? false;
-                const isHeal =
-                  spell?.spellType === "heal" || spell?.spellType === "drain";
-                const cdTurns = spell ? (spellCooldowns[spell.id] ?? 0) : 0;
-                const isOnCooldown = cdTurns > 0;
+              {/* 8 spell slots */}
+              <div style={{ display: "flex", gap: 5 }}>
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((slotIndex) => {
+                  const spell = activeSpells[slotIndex] ?? null;
+                  const isSelected = spell?.id === selectedSpellIdRef.current;
+                  const isEmpty = !spell;
+                  const isPhysical = spell?.isPhysical ?? false;
+                  const isHeal =
+                    spell?.spellType === "heal" || spell?.spellType === "drain";
+                  const cdTurns = spell ? (spellCooldowns[spell.id] ?? 0) : 0;
+                  const isOnCooldown = cdTurns > 0;
 
-                const spellTitle = spell
-                  ? `${spell.name} \u2014 ${spell.description} | ${
-                      isHeal
-                        ? `Heals: ${spell.healAmount ?? 0} HP`
-                        : `Damage: ${Number(spell.damage)}`
-                    } | ${Number(spell.apCost)} AP | Range: ${Number(
-                      spell.range,
-                    )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}`
-                  : `Empty slot ${slotIndex + 1}`;
+                  const spellTitle = spell
+                    ? `${spell.name} \u2014 ${spell.description} | ${
+                        isHeal
+                          ? `Heals: ${spell.healAmount ?? 0} HP`
+                          : `Damage: ${Number(spell.damage)}`
+                      } | ${Number(spell.apCost)} AP | Range: ${Number(
+                        spell.range,
+                      )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}`
+                    : `Empty slot ${slotIndex + 1}`;
 
-                return (
-                  <button
-                    key={slotIndex}
-                    type="button"
-                    data-ocid={`battle_ui.spell.${slotIndex + 1}`}
-                    onClick={() => {
-                      if (spell && !isOnCooldown) onSelectSpell(spell.id);
-                    }}
-                    disabled={isEmpty || isOnCooldown}
-                    title={spellTitle}
-                    style={{
-                      width: 44,
-                      height: 52,
-                      borderRadius: 6,
-                      background: isEmpty
-                        ? "rgba(255,255,255,0.03)"
-                        : isSelected
-                          ? isPhysical
-                            ? "rgba(139,90,30,0.4)"
-                            : isHeal
-                              ? "rgba(30,140,80,0.4)"
-                              : "rgba(220,30,30,0.35)"
-                          : isPhysical
-                            ? "rgba(100,60,10,0.45)"
-                            : isHeal
-                              ? "rgba(20,100,50,0.35)"
-                              : "rgba(80,15,15,0.45)",
-                      border: isEmpty
-                        ? "2px dashed rgba(180,20,20,0.25)"
-                        : isSelected
-                          ? isPhysical
-                            ? "2px solid rgba(200,140,40,0.9)"
-                            : isHeal
-                              ? "2px solid rgba(50,200,100,0.9)"
-                              : "2px solid rgba(255,80,80,0.9)"
-                          : isPhysical
-                            ? "2px solid rgba(180,120,30,0.6)"
-                            : isHeal
-                              ? "2px solid rgba(40,160,80,0.6)"
-                              : "2px solid rgba(180,20,20,0.55)",
-                      cursor: isEmpty || isOnCooldown ? "default" : "pointer",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 2,
-                      position: "relative",
-                      transition: "all 0.12s",
-                      boxShadow: isSelected
-                        ? isPhysical
-                          ? "0 0 14px rgba(200,140,40,0.5)"
-                          : isHeal
-                            ? "0 0 14px rgba(50,200,100,0.5)"
-                            : "0 0 14px rgba(255,60,60,0.5)"
-                        : "0 2px 5px rgba(0,0,0,0.35)",
-                      flexShrink: 0,
-                      opacity: isOnCooldown ? 0.5 : 1,
-                    }}
-                  >
-                    {/* Cooldown number overlay */}
-                    {isOnCooldown && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          background: "rgba(0,0,0,0.4)",
-                          borderRadius: 5,
-                          zIndex: 10,
-                          pointerEvents: "none",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: 16,
-                            fontWeight: 900,
-                            color: "#ff3333",
-                            textShadow: "0 0 6px rgba(255,0,0,0.8)",
-                            fontVariantNumeric: "tabular-nums",
-                            lineHeight: 1,
-                          }}
-                        >
-                          {cdTurns}
-                        </span>
-                      </div>
-                    )}
-                    <span
+                  return (
+                    <button
+                      key={slotIndex}
+                      type="button"
+                      data-ocid={`battle_ui.spell.${slotIndex + 1}`}
+                      onClick={() => {
+                        if (spell && !isOnCooldown) onSelectSpell(spell.id);
+                      }}
+                      disabled={isEmpty || isOnCooldown}
+                      title={spellTitle}
                       style={{
-                        position: "absolute",
-                        top: 1,
-                        left: 2,
-                        fontSize: 7,
-                        color: "rgba(255,255,255,0.35)",
-                        fontWeight: 700,
-                        lineHeight: 1,
+                        width: 44,
+                        height: 52,
+                        borderRadius: 6,
+                        background: isEmpty
+                          ? "rgba(255,255,255,0.03)"
+                          : isSelected
+                            ? isPhysical
+                              ? "rgba(139,90,30,0.4)"
+                              : isHeal
+                                ? "rgba(30,140,80,0.4)"
+                                : "rgba(220,30,30,0.35)"
+                            : isPhysical
+                              ? "rgba(100,60,10,0.45)"
+                              : isHeal
+                                ? "rgba(20,100,50,0.35)"
+                                : "rgba(80,15,15,0.45)",
+                        border: isEmpty
+                          ? "2px dashed rgba(180,20,20,0.25)"
+                          : isSelected
+                            ? isPhysical
+                              ? "2px solid rgba(200,140,40,0.9)"
+                              : isHeal
+                                ? "2px solid rgba(50,200,100,0.9)"
+                                : "2px solid rgba(255,80,80,0.9)"
+                            : isPhysical
+                              ? "2px solid rgba(180,120,30,0.6)"
+                              : isHeal
+                                ? "2px solid rgba(40,160,80,0.6)"
+                                : "2px solid rgba(180,20,20,0.55)",
+                        cursor: isEmpty || isOnCooldown ? "default" : "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 2,
+                        position: "relative",
+                        transition: "all 0.12s",
+                        boxShadow: isSelected
+                          ? isPhysical
+                            ? "0 0 14px rgba(200,140,40,0.5)"
+                            : isHeal
+                              ? "0 0 14px rgba(50,200,100,0.5)"
+                              : "0 0 14px rgba(255,60,60,0.5)"
+                          : "0 2px 5px rgba(0,0,0,0.35)",
+                        flexShrink: 0,
+                        opacity: isOnCooldown ? 0.5 : 1,
                       }}
                     >
-                      {slotIndex + 1}
-                    </span>
-                    {isPhysical && !isEmpty && (
+                      {/* Cooldown number overlay */}
+                      {isOnCooldown && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: "rgba(0,0,0,0.4)",
+                            borderRadius: 5,
+                            zIndex: 10,
+                            pointerEvents: "none",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 900,
+                              color: "#ff3333",
+                              textShadow: "0 0 6px rgba(255,0,0,0.8)",
+                              fontVariantNumeric: "tabular-nums",
+                              lineHeight: 1,
+                            }}
+                          >
+                            {cdTurns}
+                          </span>
+                        </div>
+                      )}
                       <span
                         style={{
                           position: "absolute",
                           top: 1,
-                          right: 2,
-                          fontSize: 6,
-                          color: "rgba(200,140,40,0.8)",
+                          left: 2,
+                          fontSize: 7,
+                          color: "rgba(255,255,255,0.35)",
                           fontWeight: 700,
                           lineHeight: 1,
                         }}
                       >
-                        PHY
+                        {slotIndex + 1}
                       </span>
-                    )}
-                    {isEmpty ? (
-                      <span style={{ fontSize: 14, opacity: 0.2 }}>✦</span>
-                    ) : (
-                      <>
-                        <span
-                          style={{
-                            fontSize: 17,
-                            lineHeight: 1,
-                            filter: isPhysical
-                              ? "drop-shadow(0 1px 3px rgba(200,140,40,0.5))"
-                              : isHeal
-                                ? "drop-shadow(0 1px 3px rgba(50,200,100,0.4))"
-                                : "drop-shadow(0 1px 3px rgba(255,60,60,0.4))",
-                          }}
-                        >
-                          {spell.iconEmoji || "🔮"}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 6,
-                            color: isSelected
-                              ? isHeal
-                                ? "#90ffcc"
-                                : "#ff9999"
-                              : "rgba(255,220,220,0.7)",
-                            fontWeight: 700,
-                            textAlign: "center",
-                            maxWidth: 42,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            lineHeight: 1,
-                          }}
-                        >
-                          {spell.name}
-                        </span>
+                      {isPhysical && !isEmpty && (
                         <span
                           style={{
                             position: "absolute",
-                            bottom: 1,
+                            top: 1,
                             right: 2,
                             fontSize: 6,
-                            fontWeight: 800,
-                            color: "#74b9ff",
-                            background: "rgba(20,40,100,0.7)",
-                            padding: "0 2px",
-                            borderRadius: 2,
-                            lineHeight: "10px",
+                            color: "rgba(200,140,40,0.8)",
+                            fontWeight: 700,
+                            lineHeight: 1,
                           }}
                         >
-                          {Number(spell.apCost)}AP
+                          PHY
                         </span>
-                      </>
-                    )}
-                  </button>
-                );
-              })}
+                      )}
+                      {isEmpty ? (
+                        <span style={{ fontSize: 14, opacity: 0.2 }}>✦</span>
+                      ) : (
+                        <>
+                          <span
+                            style={{
+                              fontSize: 17,
+                              lineHeight: 1,
+                              filter: isPhysical
+                                ? "drop-shadow(0 1px 3px rgba(200,140,40,0.5))"
+                                : isHeal
+                                  ? "drop-shadow(0 1px 3px rgba(50,200,100,0.4))"
+                                  : "drop-shadow(0 1px 3px rgba(255,60,60,0.4))",
+                            }}
+                          >
+                            {spell.iconEmoji || "🔮"}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 6,
+                              color: isSelected
+                                ? isHeal
+                                  ? "#90ffcc"
+                                  : "#ff9999"
+                                : "rgba(255,220,220,0.7)",
+                              fontWeight: 700,
+                              textAlign: "center",
+                              maxWidth: 42,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              lineHeight: 1,
+                            }}
+                          >
+                            {spell.name}
+                          </span>
+                          <span
+                            style={{
+                              position: "absolute",
+                              bottom: 1,
+                              right: 2,
+                              fontSize: 6,
+                              fontWeight: 800,
+                              color: "#74b9ff",
+                              background: "rgba(20,40,100,0.7)",
+                              padding: "0 2px",
+                              borderRadius: 2,
+                              lineHeight: "10px",
+                            }}
+                          >
+                            {Number(spell.apCost)}AP
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* End player spell cluster — dimming wrapper closes here. The
+                summon block below is OUTSIDE the wrapper so it stays
+                full-color and interactive during control mode. */}
             </div>
 
             {/* ── SECTION 2 (RETRY 3): Inline summon control block ──
@@ -1107,8 +1122,16 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                               border: "1px solid rgba(180,20,20,0.5)",
                               background: iconBg,
                               boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 13,
+                              lineHeight: 1,
+                              filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.6))",
                             }}
-                          />
+                          >
+                            {spell.iconEmoji || "🔮"}
+                          </span>
                           <span
                             style={{
                               fontSize: 7,

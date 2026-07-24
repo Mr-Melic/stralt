@@ -48051,613 +48051,493 @@ const BattleUIPanel = ({
                   ]
                 }
               ),
-              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                "div",
-                {
-                  className: "flex items-center gap-2 px-2.5 pt-1.5 pb-2 flex-nowrap overflow-x-auto",
-                  style: isSummonControlled ? {
-                    opacity: 0.45,
-                    filter: "grayscale(0.85) saturate(0.4)"
-                  } : void 0,
-                  children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "battle_ui.spellbook_button",
-                        onClick: onOpenSpellbook,
-                        title: "Open Spellbook",
-                        className: "stone-btn-slate w-11 h-[52px] rounded-md flex flex-col items-center justify-center gap-0.5 flex-shrink-0 transition-all duration-150",
-                        children: [
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[8px] leading-none opacity-80", children: "Book" })
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-px h-11 bg-[rgba(180,20,20,0.3)] flex-shrink-0" }),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 5 }, children: [0, 1, 2, 3, 4, 5, 6, 7].map((slotIndex) => {
-                      const spell = activeSpells[slotIndex] ?? null;
-                      const isSelected = (spell == null ? void 0 : spell.id) === selectedSpellIdRef.current;
-                      const isEmpty = !spell;
-                      const isPhysical = (spell == null ? void 0 : spell.isPhysical) ?? false;
-                      const isHeal = (spell == null ? void 0 : spell.spellType) === "heal" || (spell == null ? void 0 : spell.spellType) === "drain";
-                      const cdTurns = spell ? spellCooldowns[spell.id] ?? 0 : 0;
-                      const isOnCooldown = cdTurns > 0;
-                      const spellTitle = spell ? `${spell.name} — ${spell.description} | ${isHeal ? `Heals: ${spell.healAmount ?? 0} HP` : `Damage: ${Number(spell.damage)}`} | ${Number(spell.apCost)} AP | Range: ${Number(
-                        spell.range
-                      )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}` : `Empty slot ${slotIndex + 1}`;
-                      return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+              /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-center gap-2 px-2.5 pt-1.5 pb-2 flex-nowrap overflow-x-auto", children: [
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "div",
+                  {
+                    className: "flex items-center gap-2 flex-nowrap",
+                    style: isSummonControlled ? {
+                      opacity: 0.45,
+                      filter: "grayscale(0.85) saturate(0.4)"
+                    } : void 0,
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
                         "button",
                         {
                           type: "button",
-                          "data-ocid": `battle_ui.spell.${slotIndex + 1}`,
-                          onClick: () => {
-                            if (spell && !isOnCooldown) onSelectSpell(spell.id);
+                          "data-ocid": "battle_ui.spellbook_button",
+                          onClick: onOpenSpellbook,
+                          title: "Open Spellbook",
+                          className: "stone-btn-slate w-11 h-[52px] rounded-md flex flex-col items-center justify-center gap-0.5 flex-shrink-0 transition-all duration-150",
+                          children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(BookOpen, { size: 16 }),
+                            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-[8px] leading-none opacity-80", children: "Book" })
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "w-px h-11 bg-[rgba(180,20,20,0.3)] flex-shrink-0" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 5 }, children: [0, 1, 2, 3, 4, 5, 6, 7].map((slotIndex) => {
+                        const spell = activeSpells[slotIndex] ?? null;
+                        const isSelected = (spell == null ? void 0 : spell.id) === selectedSpellIdRef.current;
+                        const isEmpty = !spell;
+                        const isPhysical = (spell == null ? void 0 : spell.isPhysical) ?? false;
+                        const isHeal = (spell == null ? void 0 : spell.spellType) === "heal" || (spell == null ? void 0 : spell.spellType) === "drain";
+                        const cdTurns = spell ? spellCooldowns[spell.id] ?? 0 : 0;
+                        const isOnCooldown = cdTurns > 0;
+                        const spellTitle = spell ? `${spell.name} — ${spell.description} | ${isHeal ? `Heals: ${spell.healAmount ?? 0} HP` : `Damage: ${Number(spell.damage)}`} | ${Number(spell.apCost)} AP | Range: ${Number(
+                          spell.range
+                        )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}` : `Empty slot ${slotIndex + 1}`;
+                        return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                          "button",
+                          {
+                            type: "button",
+                            "data-ocid": `battle_ui.spell.${slotIndex + 1}`,
+                            onClick: () => {
+                              if (spell && !isOnCooldown) onSelectSpell(spell.id);
+                            },
+                            disabled: isEmpty || isOnCooldown,
+                            title: spellTitle,
+                            style: {
+                              width: 44,
+                              height: 52,
+                              borderRadius: 6,
+                              background: isEmpty ? "rgba(255,255,255,0.03)" : isSelected ? isPhysical ? "rgba(139,90,30,0.4)" : isHeal ? "rgba(30,140,80,0.4)" : "rgba(220,30,30,0.35)" : isPhysical ? "rgba(100,60,10,0.45)" : isHeal ? "rgba(20,100,50,0.35)" : "rgba(80,15,15,0.45)",
+                              border: isEmpty ? "2px dashed rgba(180,20,20,0.25)" : isSelected ? isPhysical ? "2px solid rgba(200,140,40,0.9)" : isHeal ? "2px solid rgba(50,200,100,0.9)" : "2px solid rgba(255,80,80,0.9)" : isPhysical ? "2px solid rgba(180,120,30,0.6)" : isHeal ? "2px solid rgba(40,160,80,0.6)" : "2px solid rgba(180,20,20,0.55)",
+                              cursor: isEmpty || isOnCooldown ? "default" : "pointer",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 2,
+                              position: "relative",
+                              transition: "all 0.12s",
+                              boxShadow: isSelected ? isPhysical ? "0 0 14px rgba(200,140,40,0.5)" : isHeal ? "0 0 14px rgba(50,200,100,0.5)" : "0 0 14px rgba(255,60,60,0.5)" : "0 2px 5px rgba(0,0,0,0.35)",
+                              flexShrink: 0,
+                              opacity: isOnCooldown ? 0.5 : 1
+                            },
+                            children: [
+                              isOnCooldown && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "div",
+                                {
+                                  style: {
+                                    position: "absolute",
+                                    inset: 0,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    background: "rgba(0,0,0,0.4)",
+                                    borderRadius: 5,
+                                    zIndex: 10,
+                                    pointerEvents: "none"
+                                  },
+                                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "span",
+                                    {
+                                      style: {
+                                        fontSize: 16,
+                                        fontWeight: 900,
+                                        color: "#ff3333",
+                                        textShadow: "0 0 6px rgba(255,0,0,0.8)",
+                                        fontVariantNumeric: "tabular-nums",
+                                        lineHeight: 1
+                                      },
+                                      children: cdTurns
+                                    }
+                                  )
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "span",
+                                {
+                                  style: {
+                                    position: "absolute",
+                                    top: 1,
+                                    left: 2,
+                                    fontSize: 7,
+                                    color: "rgba(255,255,255,0.35)",
+                                    fontWeight: 700,
+                                    lineHeight: 1
+                                  },
+                                  children: slotIndex + 1
+                                }
+                              ),
+                              isPhysical && !isEmpty && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "span",
+                                {
+                                  style: {
+                                    position: "absolute",
+                                    top: 1,
+                                    right: 2,
+                                    fontSize: 6,
+                                    color: "rgba(200,140,40,0.8)",
+                                    fontWeight: 700,
+                                    lineHeight: 1
+                                  },
+                                  children: "PHY"
+                                }
+                              ),
+                              isEmpty ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14, opacity: 0.2 }, children: "✦" }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "span",
+                                  {
+                                    style: {
+                                      fontSize: 17,
+                                      lineHeight: 1,
+                                      filter: isPhysical ? "drop-shadow(0 1px 3px rgba(200,140,40,0.5))" : isHeal ? "drop-shadow(0 1px 3px rgba(50,200,100,0.4))" : "drop-shadow(0 1px 3px rgba(255,60,60,0.4))"
+                                    },
+                                    children: spell.iconEmoji || "🔮"
+                                  }
+                                ),
+                                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "span",
+                                  {
+                                    style: {
+                                      fontSize: 6,
+                                      color: isSelected ? isHeal ? "#90ffcc" : "#ff9999" : "rgba(255,220,220,0.7)",
+                                      fontWeight: 700,
+                                      textAlign: "center",
+                                      maxWidth: 42,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                      lineHeight: 1
+                                    },
+                                    children: spell.name
+                                  }
+                                ),
+                                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                  "span",
+                                  {
+                                    style: {
+                                      position: "absolute",
+                                      bottom: 1,
+                                      right: 2,
+                                      fontSize: 6,
+                                      fontWeight: 800,
+                                      color: "#74b9ff",
+                                      background: "rgba(20,40,100,0.7)",
+                                      padding: "0 2px",
+                                      borderRadius: 2,
+                                      lineHeight: "10px"
+                                    },
+                                    children: [
+                                      Number(spell.apCost),
+                                      "AP"
+                                    ]
+                                  }
+                                )
+                              ] })
+                            ]
                           },
-                          disabled: isEmpty || isOnCooldown,
-                          title: spellTitle,
+                          slotIndex
+                        );
+                      }) })
+                    ]
+                  }
+                ),
+                controlledSummon && /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "div",
+                  {
+                    "data-ocid": "battle_ui.summon_block",
+                    "aria-label": `${controlledSummon.name} summon control`,
+                    style: {
+                      display: "flex",
+                      alignItems: "stretch",
+                      gap: 6,
+                      padding: "4px 6px",
+                      borderRadius: 8,
+                      flexShrink: 0,
+                      background: "linear-gradient(180deg, rgba(30,12,12,0.85) 0%, rgba(18,8,8,0.92) 100%)",
+                      border: "2px solid rgba(220,38,38,0.55)",
+                      boxShadow: "inset 0 0 10px rgba(0,0,0,0.7), 0 0 10px rgba(220,38,38,0.35)"
+                    },
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "div",
+                        {
                           style: {
-                            width: 44,
-                            height: 52,
-                            borderRadius: 6,
-                            background: isEmpty ? "rgba(255,255,255,0.03)" : isSelected ? isPhysical ? "rgba(139,90,30,0.4)" : isHeal ? "rgba(30,140,80,0.4)" : "rgba(220,30,30,0.35)" : isPhysical ? "rgba(100,60,10,0.45)" : isHeal ? "rgba(20,100,50,0.35)" : "rgba(80,15,15,0.45)",
-                            border: isEmpty ? "2px dashed rgba(180,20,20,0.25)" : isSelected ? isPhysical ? "2px solid rgba(200,140,40,0.9)" : isHeal ? "2px solid rgba(50,200,100,0.9)" : "2px solid rgba(255,80,80,0.9)" : isPhysical ? "2px solid rgba(180,120,30,0.6)" : isHeal ? "2px solid rgba(40,160,80,0.6)" : "2px solid rgba(180,20,20,0.55)",
-                            cursor: isEmpty || isOnCooldown ? "default" : "pointer",
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            gap: 2,
-                            position: "relative",
-                            transition: "all 0.12s",
-                            boxShadow: isSelected ? isPhysical ? "0 0 14px rgba(200,140,40,0.5)" : isHeal ? "0 0 14px rgba(50,200,100,0.5)" : "0 0 14px rgba(255,60,60,0.5)" : "0 2px 5px rgba(0,0,0,0.35)",
+                            width: 3,
+                            alignSelf: "stretch",
                             flexShrink: 0,
-                            opacity: isOnCooldown ? 0.5 : 1
+                            borderRadius: 3,
+                            background: "linear-gradient(180deg, transparent 0%, rgba(220,38,38,0.85) 50%, transparent 100%)"
+                          }
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        "div",
+                        {
+                          style: {
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            paddingRight: 6,
+                            borderRight: "1px solid rgba(180,20,20,0.3)"
                           },
                           children: [
-                            isOnCooldown && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            /* @__PURE__ */ jsxRuntimeExports.jsx(
                               "div",
                               {
+                                "data-ocid": "battle_ui.summon_portrait",
+                                "aria-hidden": "true",
                                 style: {
-                                  position: "absolute",
-                                  inset: 0,
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: "50%",
                                   display: "flex",
                                   alignItems: "center",
                                   justifyContent: "center",
-                                  background: "rgba(0,0,0,0.4)",
-                                  borderRadius: 5,
-                                  zIndex: 10,
-                                  pointerEvents: "none"
+                                  border: "2px solid rgba(220,38,38,0.7)",
+                                  background: "linear-gradient(135deg, rgba(51,65,85,0.9) 0%, rgba(15,23,42,0.95) 100%)",
+                                  boxShadow: "inset 0 0 6px rgba(0,0,0,0.7), 0 0 6px rgba(220,38,38,0.3)",
+                                  flexShrink: 0
                                 },
                                 children: /* @__PURE__ */ jsxRuntimeExports.jsx(
                                   "span",
                                   {
                                     style: {
-                                      fontSize: 16,
-                                      fontWeight: 900,
-                                      color: "#ff3333",
-                                      textShadow: "0 0 6px rgba(255,0,0,0.8)",
-                                      fontVariantNumeric: "tabular-nums",
+                                      fontSize: 9,
+                                      fontWeight: 800,
+                                      letterSpacing: "0.06em",
+                                      textTransform: "uppercase",
+                                      color: "rgba(220,38,38,0.9)",
                                       lineHeight: 1
                                     },
-                                    children: cdTurns
+                                    children: controlledSummon.pieceType.slice(0, 3)
                                   }
                                 )
                               }
                             ),
-                            /* @__PURE__ */ jsxRuntimeExports.jsx(
-                              "span",
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "div",
                               {
                                 style: {
-                                  position: "absolute",
-                                  top: 1,
-                                  left: 2,
-                                  fontSize: 7,
-                                  color: "rgba(255,255,255,0.35)",
-                                  fontWeight: 700,
-                                  lineHeight: 1
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  minWidth: 0,
+                                  gap: 3
                                 },
-                                children: slotIndex + 1
-                              }
-                            ),
-                            isPhysical && !isEmpty && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                              "span",
-                              {
-                                style: {
-                                  position: "absolute",
-                                  top: 1,
-                                  right: 2,
-                                  fontSize: 6,
-                                  color: "rgba(200,140,40,0.8)",
-                                  fontWeight: 700,
-                                  lineHeight: 1
-                                },
-                                children: "PHY"
-                              }
-                            ),
-                            isEmpty ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 14, opacity: 0.2 }, children: "✦" }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
-                              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "span",
-                                {
-                                  style: {
-                                    fontSize: 17,
-                                    lineHeight: 1,
-                                    filter: isPhysical ? "drop-shadow(0 1px 3px rgba(200,140,40,0.5))" : isHeal ? "drop-shadow(0 1px 3px rgba(50,200,100,0.4))" : "drop-shadow(0 1px 3px rgba(255,60,60,0.4))"
-                                  },
-                                  children: spell.iconEmoji || "🔮"
-                                }
-                              ),
-                              /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "span",
-                                {
-                                  style: {
-                                    fontSize: 6,
-                                    color: isSelected ? isHeal ? "#90ffcc" : "#ff9999" : "rgba(255,220,220,0.7)",
-                                    fontWeight: 700,
-                                    textAlign: "center",
-                                    maxWidth: 42,
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                    lineHeight: 1
-                                  },
-                                  children: spell.name
-                                }
-                              ),
-                              /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                "span",
-                                {
-                                  style: {
-                                    position: "absolute",
-                                    bottom: 1,
-                                    right: 2,
-                                    fontSize: 6,
-                                    fontWeight: 800,
-                                    color: "#74b9ff",
-                                    background: "rgba(20,40,100,0.7)",
-                                    padding: "0 2px",
-                                    borderRadius: 2,
-                                    lineHeight: "10px"
-                                  },
-                                  children: [
-                                    Number(spell.apCost),
-                                    "AP"
-                                  ]
-                                }
-                              )
-                            ] })
-                          ]
-                        },
-                        slotIndex
-                      );
-                    }) }),
-                    controlledSummon && /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "div",
-                      {
-                        "data-ocid": "battle_ui.summon_block",
-                        "aria-label": `${controlledSummon.name} summon control`,
-                        style: {
-                          display: "flex",
-                          alignItems: "stretch",
-                          gap: 6,
-                          padding: "4px 6px",
-                          borderRadius: 8,
-                          flexShrink: 0,
-                          background: "linear-gradient(180deg, rgba(30,12,12,0.85) 0%, rgba(18,8,8,0.92) 100%)",
-                          border: "2px solid rgba(220,38,38,0.55)",
-                          boxShadow: "inset 0 0 10px rgba(0,0,0,0.7), 0 0 10px rgba(220,38,38,0.35)"
-                        },
-                        children: [
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "div",
-                            {
-                              style: {
-                                width: 3,
-                                alignSelf: "stretch",
-                                flexShrink: 0,
-                                borderRadius: 3,
-                                background: "linear-gradient(180deg, transparent 0%, rgba(220,38,38,0.85) 50%, transparent 100%)"
-                              }
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                            "div",
-                            {
-                              style: {
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                                paddingRight: 6,
-                                borderRight: "1px solid rgba(180,20,20,0.3)"
-                              },
-                              children: [
-                                /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                  "div",
-                                  {
-                                    "data-ocid": "battle_ui.summon_portrait",
-                                    "aria-hidden": "true",
-                                    style: {
-                                      width: 36,
-                                      height: 36,
-                                      borderRadius: "50%",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      border: "2px solid rgba(220,38,38,0.7)",
-                                      background: "linear-gradient(135deg, rgba(51,65,85,0.9) 0%, rgba(15,23,42,0.95) 100%)",
-                                      boxShadow: "inset 0 0 6px rgba(0,0,0,0.7), 0 0 6px rgba(220,38,38,0.3)",
-                                      flexShrink: 0
-                                    },
-                                    children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "span",
-                                      {
-                                        style: {
-                                          fontSize: 9,
-                                          fontWeight: 800,
-                                          letterSpacing: "0.06em",
-                                          textTransform: "uppercase",
-                                          color: "rgba(220,38,38,0.9)",
-                                          lineHeight: 1
-                                        },
-                                        children: controlledSummon.pieceType.slice(0, 3)
-                                      }
-                                    )
-                                  }
-                                ),
-                                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                  "div",
-                                  {
-                                    style: {
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      minWidth: 0,
-                                      gap: 3
-                                    },
-                                    children: [
-                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "span",
-                                        {
-                                          "data-ocid": "battle_ui.summon_name",
-                                          style: {
-                                            fontSize: 10,
-                                            fontWeight: 800,
-                                            letterSpacing: "0.04em",
-                                            textTransform: "uppercase",
-                                            color: "#e6dcdc",
-                                            maxWidth: 84,
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                            lineHeight: 1.1
-                                          },
-                                          children: controlledSummon.name
-                                        }
-                                      ),
-                                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                        "div",
-                                        {
-                                          "data-ocid": "battle_ui.summon_lifespan_pips",
-                                          "aria-label": `Lifespan ${controlledSummon.lifespan} of ${controlledSummon.maxLifespan}`,
-                                          style: {
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 3
-                                          },
-                                          children: [
-                                            /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                children: [
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "span",
+                                    {
+                                      "data-ocid": "battle_ui.summon_name",
+                                      style: {
+                                        fontSize: 10,
+                                        fontWeight: 800,
+                                        letterSpacing: "0.04em",
+                                        textTransform: "uppercase",
+                                        color: "#e6dcdc",
+                                        maxWidth: 84,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                        lineHeight: 1.1
+                                      },
+                                      children: controlledSummon.name
+                                    }
+                                  ),
+                                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                    "div",
+                                    {
+                                      "data-ocid": "battle_ui.summon_lifespan_pips",
+                                      "aria-label": `Lifespan ${controlledSummon.lifespan} of ${controlledSummon.maxLifespan}`,
+                                      style: {
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 3
+                                      },
+                                      children: [
+                                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "span",
+                                          {
+                                            style: {
+                                              fontSize: 9,
+                                              color: "rgba(220,38,38,0.8)",
+                                              lineHeight: 1
+                                            },
+                                            "aria-hidden": "true",
+                                            children: "⧗"
+                                          }
+                                        ),
+                                        /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                          "div",
+                                          {
+                                            style: {
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 2
+                                            },
+                                            children: Array.from(
+                                              {
+                                                length: Math.max(
+                                                  controlledSummon.maxLifespan,
+                                                  controlledSummon.lifespan,
+                                                  0
+                                                )
+                                              },
+                                              (_2, i) => i < Math.max(controlledSummon.lifespan, 0)
+                                            ).map((isFilled, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
                                               "span",
                                               {
-                                                style: {
-                                                  fontSize: 9,
-                                                  color: "rgba(220,38,38,0.8)",
-                                                  lineHeight: 1
-                                                },
+                                                "data-ocid": `battle_ui.summon_lifespan_pip.${i + 1}`,
                                                 "aria-hidden": "true",
-                                                children: "⧗"
-                                              }
-                                            ),
-                                            /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                              "div",
-                                              {
                                                 style: {
-                                                  display: "flex",
-                                                  alignItems: "center",
-                                                  gap: 2
-                                                },
-                                                children: Array.from(
-                                                  {
-                                                    length: Math.max(
-                                                      controlledSummon.maxLifespan,
-                                                      controlledSummon.lifespan,
-                                                      0
-                                                    )
-                                                  },
-                                                  (_2, i) => i < Math.max(controlledSummon.lifespan, 0)
-                                                ).map((isFilled, i) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                                  "span",
-                                                  {
-                                                    "data-ocid": `battle_ui.summon_lifespan_pip.${i + 1}`,
-                                                    "aria-hidden": "true",
-                                                    style: {
-                                                      width: 5,
-                                                      height: 5,
-                                                      borderRadius: "50%",
-                                                      border: "1px solid rgba(180,20,20,0.5)",
-                                                      background: isFilled ? "rgba(220,38,38,0.95)" : "rgba(120,40,40,0.25)",
-                                                      boxShadow: isFilled ? "inset 0 0 1px rgba(0,0,0,0.6)" : "none"
-                                                    }
-                                                  },
-                                                  isFilled ? `pip-f-${i}` : `pip-e-${i}`
-                                                ))
-                                              }
-                                            )
-                                          ]
-                                        }
-                                      )
-                                    ]
-                                  }
-                                )
-                              ]
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "div",
-                            {
-                              "data-ocid": "battle_ui.summon_spell_slots",
-                              style: {
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 4,
-                                paddingRight: 6,
-                                borderRight: "1px solid rgba(180,20,20,0.3)"
-                              },
-                              children: summonKitSpells.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                "span",
-                                {
-                                  style: {
-                                    fontSize: 9,
-                                    fontStyle: "italic",
-                                    color: "rgba(200,160,160,0.5)"
-                                  },
-                                  children: "No kit"
-                                }
-                              ) : summonKitSpells.map((spell, i) => {
-                                const disabled = controlledSummon.currentAp < spell.apCost;
-                                const iconBg = spell.iconColor ?? "#7c2d12";
-                                return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                  "button",
-                                  {
-                                    type: "button",
-                                    "data-ocid": `battle_ui.summon_spell_slot.${i + 1}`,
-                                    disabled,
-                                    onClick: () => onSummonSpellSelect == null ? void 0 : onSummonSpellSelect(i),
-                                    "aria-label": `${spell.name}, AP cost ${spell.apCost}${disabled ? ", insufficient AP" : ""}`,
-                                    style: {
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      alignItems: "center",
-                                      gap: 2,
-                                      width: 44,
-                                      padding: "3px 2px",
-                                      borderRadius: 5,
-                                      cursor: disabled ? "not-allowed" : "pointer",
-                                      opacity: disabled ? 0.4 : 1,
-                                      border: disabled ? "1px solid rgba(180,20,20,0.3)" : "1px solid rgba(220,38,38,0.5)",
-                                      background: disabled ? "rgba(40,20,20,0.3)" : "rgba(60,20,20,0.5)",
-                                      transition: "all 0.12s",
-                                      flexShrink: 0
-                                    },
-                                    children: [
-                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "span",
-                                        {
-                                          "aria-hidden": "true",
-                                          style: {
-                                            width: 22,
-                                            height: 22,
-                                            borderRadius: 3,
-                                            border: "1px solid rgba(180,20,20,0.5)",
-                                            background: iconBg,
-                                            boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)"
+                                                  width: 5,
+                                                  height: 5,
+                                                  borderRadius: "50%",
+                                                  border: "1px solid rgba(180,20,20,0.5)",
+                                                  background: isFilled ? "rgba(220,38,38,0.95)" : "rgba(120,40,40,0.25)",
+                                                  boxShadow: isFilled ? "inset 0 0 1px rgba(0,0,0,0.6)" : "none"
+                                                }
+                                              },
+                                              isFilled ? `pip-f-${i}` : `pip-e-${i}`
+                                            ))
                                           }
-                                        }
-                                      ),
-                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "span",
-                                        {
-                                          style: {
-                                            fontSize: 7,
-                                            fontWeight: 600,
-                                            color: "#e6dcdc",
-                                            maxWidth: 40,
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                            textAlign: "center",
-                                            lineHeight: 1
-                                          },
-                                          children: spell.name
-                                        }
-                                      ),
-                                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                        "span",
-                                        {
-                                          style: {
-                                            fontSize: 7,
-                                            fontWeight: 800,
-                                            color: "#74b9ff",
-                                            background: "rgba(20,40,100,0.7)",
-                                            padding: "0 2px",
-                                            borderRadius: 2,
-                                            lineHeight: "10px"
-                                          },
-                                          children: [
-                                            spell.apCost,
-                                            "AP"
-                                          ]
-                                        }
-                                      )
-                                    ]
-                                  },
-                                  spell.id
-                                );
-                              })
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                            "div",
-                            {
-                              style: {
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 5,
-                                paddingRight: 6,
-                                borderRight: "1px solid rgba(180,20,20,0.3)"
-                              },
-                              children: [
-                                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                  "div",
-                                  {
-                                    "data-ocid": "battle_ui.summon_ap_orb",
-                                    "aria-label": `AP ${controlledSummon.currentAp} of ${controlledSummon.maxAp}`,
-                                    style: {
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      alignItems: "center",
-                                      gap: 1
-                                    },
-                                    children: [
-                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "div",
-                                        {
-                                          style: {
-                                            position: "relative",
-                                            width: 26,
-                                            height: 26,
-                                            borderRadius: "50%",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            border: "2px solid rgba(59,130,246,0.6)",
-                                            background: "linear-gradient(135deg, rgba(59,130,246,0.3) 0%, rgba(30,58,138,0.4) 100%)",
-                                            boxShadow: "0 0 6px rgba(59,130,246,0.45)"
-                                          },
-                                          children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                            "span",
-                                            {
-                                              style: {
-                                                fontSize: 9,
-                                                fontWeight: 800,
-                                                color: "#bfdbfe",
-                                                fontVariantNumeric: "tabular-nums",
-                                                lineHeight: 1
-                                              },
-                                              children: controlledSummon.currentAp
-                                            }
-                                          )
-                                        }
-                                      ),
-                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "span",
-                                        {
-                                          style: {
-                                            fontSize: 7,
-                                            letterSpacing: "0.04em",
-                                            textTransform: "uppercase",
-                                            color: "rgba(200,160,160,0.6)",
-                                            lineHeight: 1
-                                          },
-                                          children: "AP"
-                                        }
-                                      )
-                                    ]
-                                  }
-                                ),
-                                /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                                  "div",
-                                  {
-                                    "data-ocid": "battle_ui.summon_mp_orb",
-                                    "aria-label": `MP ${controlledSummon.currentMp} of ${controlledSummon.maxMp}`,
-                                    style: {
-                                      display: "flex",
-                                      flexDirection: "column",
-                                      alignItems: "center",
-                                      gap: 1
-                                    },
-                                    children: [
-                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "div",
-                                        {
-                                          style: {
-                                            position: "relative",
-                                            width: 26,
-                                            height: 26,
-                                            borderRadius: "50%",
-                                            display: "flex",
-                                            alignItems: "center",
-                                            justifyContent: "center",
-                                            border: "2px solid rgba(34,197,94,0.6)",
-                                            background: "linear-gradient(135deg, rgba(34,197,94,0.3) 0%, rgba(20,83,45,0.4) 100%)",
-                                            boxShadow: "0 0 6px rgba(34,197,94,0.45)"
-                                          },
-                                          children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                            "span",
-                                            {
-                                              style: {
-                                                fontSize: 9,
-                                                fontWeight: 800,
-                                                color: "#bbf7d0",
-                                                fontVariantNumeric: "tabular-nums",
-                                                lineHeight: 1
-                                              },
-                                              children: controlledSummon.currentMp
-                                            }
-                                          )
-                                        }
-                                      ),
-                                      /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "span",
-                                        {
-                                          style: {
-                                            fontSize: 7,
-                                            letterSpacing: "0.04em",
-                                            textTransform: "uppercase",
-                                            color: "rgba(200,160,160,0.6)",
-                                            lineHeight: 1
-                                          },
-                                          children: "MP"
-                                        }
-                                      )
-                                    ]
-                                  }
-                                )
-                              ]
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "div",
-                            {
-                              "data-ocid": "battle_ui.summon_hp_bar",
-                              "aria-label": `HP ${controlledSummon.currentHp} of ${controlledSummon.maxHp}`,
-                              style: {
-                                display: "flex",
-                                flexDirection: "column",
-                                alignItems: "center",
-                                gap: 1,
-                                paddingRight: 6,
-                                borderRight: "1px solid rgba(180,20,20,0.3)"
-                              },
-                              children: (() => {
-                                const safeMax = Math.max(controlledSummon.maxHp, 1);
-                                const pct = Math.max(
-                                  0,
-                                  Math.min(
-                                    100,
-                                    controlledSummon.currentHp / safeMax * 100
+                                        )
+                                      ]
+                                    }
                                   )
-                                );
-                                const low = pct <= 25;
-                                return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                                ]
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "div",
+                        {
+                          "data-ocid": "battle_ui.summon_spell_slots",
+                          style: {
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            paddingRight: 6,
+                            borderRight: "1px solid rgba(180,20,20,0.3)"
+                          },
+                          children: summonKitSpells.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+                            "span",
+                            {
+                              style: {
+                                fontSize: 9,
+                                fontStyle: "italic",
+                                color: "rgba(200,160,160,0.5)"
+                              },
+                              children: "No kit"
+                            }
+                          ) : summonKitSpells.map((spell, i) => {
+                            const disabled = controlledSummon.currentAp < spell.apCost;
+                            const iconBg = spell.iconColor ?? "#7c2d12";
+                            return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "button",
+                              {
+                                type: "button",
+                                "data-ocid": `battle_ui.summon_spell_slot.${i + 1}`,
+                                disabled,
+                                onClick: () => onSummonSpellSelect == null ? void 0 : onSummonSpellSelect(i),
+                                "aria-label": `${spell.name}, AP cost ${spell.apCost}${disabled ? ", insufficient AP" : ""}`,
+                                style: {
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "center",
+                                  gap: 2,
+                                  width: 44,
+                                  padding: "3px 2px",
+                                  borderRadius: 5,
+                                  cursor: disabled ? "not-allowed" : "pointer",
+                                  opacity: disabled ? 0.4 : 1,
+                                  border: disabled ? "1px solid rgba(180,20,20,0.3)" : "1px solid rgba(220,38,38,0.5)",
+                                  background: disabled ? "rgba(40,20,20,0.3)" : "rgba(60,20,20,0.5)",
+                                  transition: "all 0.12s",
+                                  flexShrink: 0
+                                },
+                                children: [
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "span",
+                                    {
+                                      "aria-hidden": "true",
+                                      style: {
+                                        width: 22,
+                                        height: 22,
+                                        borderRadius: 3,
+                                        border: "1px solid rgba(180,20,20,0.5)",
+                                        background: iconBg,
+                                        boxShadow: "inset 0 0 3px rgba(0,0,0,0.6)",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: 13,
+                                        lineHeight: 1,
+                                        filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.6))"
+                                      },
+                                      children: spell.iconEmoji || "🔮"
+                                    }
+                                  ),
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "span",
+                                    {
+                                      style: {
+                                        fontSize: 7,
+                                        fontWeight: 600,
+                                        color: "#e6dcdc",
+                                        maxWidth: 40,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                        textAlign: "center",
+                                        lineHeight: 1
+                                      },
+                                      children: spell.name
+                                    }
+                                  ),
+                                  /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                    "span",
+                                    {
+                                      style: {
+                                        fontSize: 7,
+                                        fontWeight: 800,
+                                        color: "#74b9ff",
+                                        background: "rgba(20,40,100,0.7)",
+                                        padding: "0 2px",
+                                        borderRadius: 2,
+                                        lineHeight: "10px"
+                                      },
+                                      children: [
+                                        spell.apCost,
+                                        "AP"
+                                      ]
+                                    }
+                                  )
+                                ]
+                              },
+                              spell.id
+                            );
+                          })
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                        "div",
+                        {
+                          style: {
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            paddingRight: 6,
+                            borderRight: "1px solid rgba(180,20,20,0.3)"
+                          },
+                          children: [
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "div",
+                              {
+                                "data-ocid": "battle_ui.summon_ap_orb",
+                                "aria-label": `AP ${controlledSummon.currentAp} of ${controlledSummon.maxAp}`,
+                                style: {
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "center",
+                                  gap: 1
+                                },
+                                children: [
                                   /* @__PURE__ */ jsxRuntimeExports.jsx(
                                     "div",
                                     {
@@ -48669,47 +48549,21 @@ const BattleUIPanel = ({
                                         display: "flex",
                                         alignItems: "center",
                                         justifyContent: "center",
-                                        border: low ? "2px solid rgba(239,68,68,0.7)" : "2px solid rgba(220,38,38,0.6)",
-                                        background: "linear-gradient(135deg, rgba(239,68,68,0.25) 0%, rgba(127,29,29,0.4) 100%)",
-                                        boxShadow: low ? "0 0 6px rgba(239,68,68,0.5)" : "0 0 6px rgba(220,38,38,0.4)"
+                                        border: "2px solid rgba(59,130,246,0.6)",
+                                        background: "linear-gradient(135deg, rgba(59,130,246,0.3) 0%, rgba(30,58,138,0.4) 100%)",
+                                        boxShadow: "0 0 6px rgba(59,130,246,0.45)"
                                       },
                                       children: /* @__PURE__ */ jsxRuntimeExports.jsx(
                                         "span",
                                         {
                                           style: {
-                                            fontSize: 8,
+                                            fontSize: 9,
                                             fontWeight: 800,
-                                            color: "#fecaca",
+                                            color: "#bfdbfe",
                                             fontVariantNumeric: "tabular-nums",
                                             lineHeight: 1
                                           },
-                                          children: controlledSummon.currentHp
-                                        }
-                                      )
-                                    }
-                                  ),
-                                  /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                    "div",
-                                    {
-                                      "aria-hidden": "true",
-                                      style: {
-                                        width: 26,
-                                        height: 3,
-                                        borderRadius: 3,
-                                        overflow: "hidden",
-                                        border: "1px solid rgba(180,20,20,0.5)",
-                                        background: "rgba(40,20,20,0.4)"
-                                      },
-                                      children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                        "div",
-                                        {
-                                          style: {
-                                            width: `${pct}%`,
-                                            height: "100%",
-                                            background: low ? "rgba(239,68,68,0.95)" : "rgba(220,38,38,0.95)",
-                                            boxShadow: low ? "0 0 3px rgba(239,68,68,0.7)" : "0 0 3px rgba(220,38,38,0.6)",
-                                            transition: "width 0.3s"
-                                          }
+                                          children: controlledSummon.currentAp
                                         }
                                       )
                                     }
@@ -48724,195 +48578,350 @@ const BattleUIPanel = ({
                                         color: "rgba(200,160,160,0.6)",
                                         lineHeight: 1
                                       },
-                                      children: "HP"
+                                      children: "AP"
                                     }
                                   )
-                                ] });
-                              })()
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "div",
-                            {
-                              "data-ocid": "battle_ui.summon_stats",
-                              style: {
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 2,
-                                paddingRight: 6
-                              },
-                              children: [
-                                { label: "SP", value: controlledSummon.sp },
-                                { label: "SR", value: controlledSummon.sr },
-                                { label: "RES", value: controlledSummon.res },
-                                { label: "INIT", value: controlledSummon.init }
-                              ].map((s2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                                ]
+                              }
+                            ),
+                            /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                              "div",
+                              {
+                                "data-ocid": "battle_ui.summon_mp_orb",
+                                "aria-label": `MP ${controlledSummon.currentMp} of ${controlledSummon.maxMp}`,
+                                style: {
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "center",
+                                  gap: 1
+                                },
+                                children: [
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "div",
+                                    {
+                                      style: {
+                                        position: "relative",
+                                        width: 26,
+                                        height: 26,
+                                        borderRadius: "50%",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        border: "2px solid rgba(34,197,94,0.6)",
+                                        background: "linear-gradient(135deg, rgba(34,197,94,0.3) 0%, rgba(20,83,45,0.4) 100%)",
+                                        boxShadow: "0 0 6px rgba(34,197,94,0.45)"
+                                      },
+                                      children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                        "span",
+                                        {
+                                          style: {
+                                            fontSize: 9,
+                                            fontWeight: 800,
+                                            color: "#bbf7d0",
+                                            fontVariantNumeric: "tabular-nums",
+                                            lineHeight: 1
+                                          },
+                                          children: controlledSummon.currentMp
+                                        }
+                                      )
+                                    }
+                                  ),
+                                  /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "span",
+                                    {
+                                      style: {
+                                        fontSize: 7,
+                                        letterSpacing: "0.04em",
+                                        textTransform: "uppercase",
+                                        color: "rgba(200,160,160,0.6)",
+                                        lineHeight: 1
+                                      },
+                                      children: "MP"
+                                    }
+                                  )
+                                ]
+                              }
+                            )
+                          ]
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "div",
+                        {
+                          "data-ocid": "battle_ui.summon_hp_bar",
+                          "aria-label": `HP ${controlledSummon.currentHp} of ${controlledSummon.maxHp}`,
+                          style: {
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
+                            gap: 1,
+                            paddingRight: 6,
+                            borderRight: "1px solid rgba(180,20,20,0.3)"
+                          },
+                          children: (() => {
+                            const safeMax = Math.max(controlledSummon.maxHp, 1);
+                            const pct = Math.max(
+                              0,
+                              Math.min(
+                                100,
+                                controlledSummon.currentHp / safeMax * 100
+                              )
+                            );
+                            const low = pct <= 25;
+                            return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
                                 "div",
                                 {
-                                  "data-ocid": `battle_ui.summon_stat.${s2.label.toLowerCase()}`,
                                   style: {
+                                    position: "relative",
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: "50%",
                                     display: "flex",
                                     alignItems: "center",
-                                    gap: 3,
+                                    justifyContent: "center",
+                                    border: low ? "2px solid rgba(239,68,68,0.7)" : "2px solid rgba(220,38,38,0.6)",
+                                    background: "linear-gradient(135deg, rgba(239,68,68,0.25) 0%, rgba(127,29,29,0.4) 100%)",
+                                    boxShadow: low ? "0 0 6px rgba(239,68,68,0.5)" : "0 0 6px rgba(220,38,38,0.4)"
+                                  },
+                                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "span",
+                                    {
+                                      style: {
+                                        fontSize: 8,
+                                        fontWeight: 800,
+                                        color: "#fecaca",
+                                        fontVariantNumeric: "tabular-nums",
+                                        lineHeight: 1
+                                      },
+                                      children: controlledSummon.currentHp
+                                    }
+                                  )
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "div",
+                                {
+                                  "aria-hidden": "true",
+                                  style: {
+                                    width: 26,
+                                    height: 3,
+                                    borderRadius: 3,
+                                    overflow: "hidden",
+                                    border: "1px solid rgba(180,20,20,0.5)",
+                                    background: "rgba(40,20,20,0.4)"
+                                  },
+                                  children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                    "div",
+                                    {
+                                      style: {
+                                        width: `${pct}%`,
+                                        height: "100%",
+                                        background: low ? "rgba(239,68,68,0.95)" : "rgba(220,38,38,0.95)",
+                                        boxShadow: low ? "0 0 3px rgba(239,68,68,0.7)" : "0 0 3px rgba(220,38,38,0.6)",
+                                        transition: "width 0.3s"
+                                      }
+                                    }
+                                  )
+                                }
+                              ),
+                              /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                "span",
+                                {
+                                  style: {
+                                    fontSize: 7,
+                                    letterSpacing: "0.04em",
+                                    textTransform: "uppercase",
+                                    color: "rgba(200,160,160,0.6)",
                                     lineHeight: 1
                                   },
-                                  children: [
-                                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "span",
-                                      {
-                                        style: {
-                                          fontSize: 7,
-                                          fontWeight: 800,
-                                          letterSpacing: "0.04em",
-                                          color: "rgba(220,38,38,0.85)",
-                                          minWidth: 22
-                                        },
-                                        children: s2.label
-                                      }
-                                    ),
-                                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                                      "span",
-                                      {
-                                        style: {
-                                          fontSize: 8,
-                                          fontWeight: 700,
-                                          color: "#e6dcdc",
-                                          fontVariantNumeric: "tabular-nums"
-                                        },
-                                        children: s2.value
-                                      }
-                                    )
-                                  ]
-                                },
-                                s2.label
-                              ))
-                            }
-                          ),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "button",
+                                  children: "HP"
+                                }
+                              )
+                            ] });
+                          })()
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "div",
+                        {
+                          "data-ocid": "battle_ui.summon_stats",
+                          style: {
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 2,
+                            paddingRight: 6
+                          },
+                          children: [
+                            { label: "SP", value: controlledSummon.sp },
+                            { label: "SR", value: controlledSummon.sr },
+                            { label: "RES", value: controlledSummon.res },
+                            { label: "INIT", value: controlledSummon.init }
+                          ].map((s2) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                            "div",
                             {
-                              type: "button",
-                              "data-ocid": "battle_ui.summon_end_turn_button",
-                              onClick: onSummonEndTurn,
-                              "aria-label": "End the summon's turn",
+                              "data-ocid": `battle_ui.summon_stat.${s2.label.toLowerCase()}`,
                               style: {
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 3,
-                                borderRadius: 6,
-                                border: "2px solid rgba(220,38,38,0.9)",
-                                padding: "4px 8px",
-                                background: "linear-gradient(180deg, rgba(220,38,38,0.85) 0%, rgba(127,29,29,0.95) 100%)",
-                                color: "#fff",
-                                fontSize: 9,
-                                fontWeight: 800,
-                                letterSpacing: "0.06em",
-                                textTransform: "uppercase",
-                                cursor: "pointer",
-                                boxShadow: "0 0 8px rgba(220,38,38,0.5)",
-                                transition: "all 0.12s",
-                                flexShrink: 0
-                              },
-                              children: "End"
-                            }
-                          )
-                        ]
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        style: {
-                          width: 1,
-                          height: 44,
-                          background: "rgba(180,20,20,0.3)",
-                          flexShrink: 0
-                        }
-                      }
-                    ),
-                    /* @__PURE__ */ jsxRuntimeExports.jsxs(
-                      "button",
-                      {
-                        type: "button",
-                        "data-ocid": "battle_ui.attack_nearest_button",
-                        onClick: onAttackNearest,
-                        disabled: !canAttackNearest,
-                        title: isMobile ? "Attack nearest" : "Attack nearest [S]",
-                        style: {
-                          minWidth: 58,
-                          height: 52,
-                          borderRadius: 7,
-                          background: canAttackNearest ? "rgba(200,30,30,0.32)" : "rgba(60,10,10,0.35)",
-                          border: canAttackNearest ? "2px solid rgba(255,70,70,0.9)" : "2px solid rgba(140,20,20,0.35)",
-                          color: canAttackNearest ? "#ff7070" : "rgba(200,80,80,0.3)",
-                          cursor: canAttackNearest ? "pointer" : "not-allowed",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          gap: 2,
-                          flexShrink: 0,
-                          transition: "all 0.12s",
-                          boxShadow: canAttackNearest ? "0 0 12px rgba(220,30,30,0.45)" : "none",
-                          position: "relative"
-                        },
-                        children: [
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(Swords, { size: 15 }),
-                          /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "span",
-                            {
-                              style: {
-                                fontSize: 7,
-                                fontWeight: 800,
-                                letterSpacing: "0.04em",
-                                lineHeight: 1,
-                                textAlign: "center"
-                              },
-                              children: "NEAREST"
-                            }
-                          ),
-                          !isMobile && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                            "span",
-                            {
-                              style: {
-                                position: "absolute",
-                                top: 2,
-                                right: 4,
-                                fontSize: 7,
-                                fontWeight: 700,
-                                color: "rgba(255,120,120,0.55)",
                                 lineHeight: 1
                               },
-                              children: "S"
-                            }
-                          )
-                        ]
-                      }
-                    ),
-                    inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx(
-                      "div",
-                      {
-                        "data-ocid": "battle_ui.status",
-                        className: "animate-pulse",
-                        style: {
-                          marginLeft: 4,
-                          padding: "4px 8px",
-                          borderRadius: 18,
-                          background: "rgba(220,20,20,0.2)",
-                          border: "1px solid rgba(220,20,20,0.5)",
-                          color: "#ff6b6b",
-                          fontSize: 10,
-                          fontWeight: 700,
-                          letterSpacing: "0.05em",
-                          whiteSpace: "nowrap",
-                          flexShrink: 0
-                        },
-                        children: "⚔️ BATTLE"
-                      }
-                    )
-                  ]
-                }
-              )
+                              children: [
+                                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "span",
+                                  {
+                                    style: {
+                                      fontSize: 7,
+                                      fontWeight: 800,
+                                      letterSpacing: "0.04em",
+                                      color: "rgba(220,38,38,0.85)",
+                                      minWidth: 22
+                                    },
+                                    children: s2.label
+                                  }
+                                ),
+                                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                                  "span",
+                                  {
+                                    style: {
+                                      fontSize: 8,
+                                      fontWeight: 700,
+                                      color: "#e6dcdc",
+                                      fontVariantNumeric: "tabular-nums"
+                                    },
+                                    children: s2.value
+                                  }
+                                )
+                              ]
+                            },
+                            s2.label
+                          ))
+                        }
+                      ),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "button",
+                        {
+                          type: "button",
+                          "data-ocid": "battle_ui.summon_end_turn_button",
+                          onClick: onSummonEndTurn,
+                          "aria-label": "End the summon's turn",
+                          style: {
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 3,
+                            borderRadius: 6,
+                            border: "2px solid rgba(220,38,38,0.9)",
+                            padding: "4px 8px",
+                            background: "linear-gradient(180deg, rgba(220,38,38,0.85) 0%, rgba(127,29,29,0.95) 100%)",
+                            color: "#fff",
+                            fontSize: 9,
+                            fontWeight: 800,
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                            cursor: "pointer",
+                            boxShadow: "0 0 8px rgba(220,38,38,0.5)",
+                            transition: "all 0.12s",
+                            flexShrink: 0
+                          },
+                          children: "End"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    style: {
+                      width: 1,
+                      height: 44,
+                      background: "rgba(180,20,20,0.3)",
+                      flexShrink: 0
+                    }
+                  }
+                ),
+                /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                  "button",
+                  {
+                    type: "button",
+                    "data-ocid": "battle_ui.attack_nearest_button",
+                    onClick: onAttackNearest,
+                    disabled: !canAttackNearest,
+                    title: isMobile ? "Attack nearest" : "Attack nearest [S]",
+                    style: {
+                      minWidth: 58,
+                      height: 52,
+                      borderRadius: 7,
+                      background: canAttackNearest ? "rgba(200,30,30,0.32)" : "rgba(60,10,10,0.35)",
+                      border: canAttackNearest ? "2px solid rgba(255,70,70,0.9)" : "2px solid rgba(140,20,20,0.35)",
+                      color: canAttackNearest ? "#ff7070" : "rgba(200,80,80,0.3)",
+                      cursor: canAttackNearest ? "pointer" : "not-allowed",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 2,
+                      flexShrink: 0,
+                      transition: "all 0.12s",
+                      boxShadow: canAttackNearest ? "0 0 12px rgba(220,30,30,0.45)" : "none",
+                      position: "relative"
+                    },
+                    children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(Swords, { size: 15 }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "span",
+                        {
+                          style: {
+                            fontSize: 7,
+                            fontWeight: 800,
+                            letterSpacing: "0.04em",
+                            lineHeight: 1,
+                            textAlign: "center"
+                          },
+                          children: "NEAREST"
+                        }
+                      ),
+                      !isMobile && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "span",
+                        {
+                          style: {
+                            position: "absolute",
+                            top: 2,
+                            right: 4,
+                            fontSize: 7,
+                            fontWeight: 700,
+                            color: "rgba(255,120,120,0.55)",
+                            lineHeight: 1
+                          },
+                          children: "S"
+                        }
+                      )
+                    ]
+                  }
+                ),
+                inBattle && /* @__PURE__ */ jsxRuntimeExports.jsx(
+                  "div",
+                  {
+                    "data-ocid": "battle_ui.status",
+                    className: "animate-pulse",
+                    style: {
+                      marginLeft: 4,
+                      padding: "4px 8px",
+                      borderRadius: 18,
+                      background: "rgba(220,20,20,0.2)",
+                      border: "1px solid rgba(220,20,20,0.5)",
+                      color: "#ff6b6b",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: "0.05em",
+                      whiteSpace: "nowrap",
+                      flexShrink: 0
+                    },
+                    children: "⚔️ BATTLE"
+                  }
+                )
+              ] })
             ]
           }
         )
@@ -65152,6 +65161,14 @@ const WorldExplorationInner = ({
       }
       return enemy;
     });
+    if (!inBattleRef.current && !transitionInProgressRef.current) {
+      for (const enemy of nextEnemies) {
+        if (Math.abs(enemy.x - playerPositionRef.current.x) <= 1 && Math.abs(enemy.y - playerPositionRef.current.y) <= 1) {
+          checkBattleTriggerRef.current();
+          break;
+        }
+      }
+    }
     if (hasChanged) {
       syncCombatants(combatantStoreCtx, nextEnemies);
     }
@@ -67432,7 +67449,7 @@ const WorldExplorationInner = ({
       if (!gridPos) return;
       if (gridPos.x < 0 || gridPos.x >= WORLD_GRID_SIZE || gridPos.y < 0 || gridPos.y >= WORLD_GRID_SIZE)
         return;
-      if (inBattle) {
+      if (inBattleRef.current) {
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if ((_entry == null ? void 0 : _entry.type) !== "player") {
@@ -67721,7 +67738,6 @@ const WorldExplorationInner = ({
       currentMap,
       clientToGrid,
       findPath,
-      inBattle,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
@@ -68237,6 +68253,9 @@ const WorldExplorationInner = ({
           y: Math.round(newPosition.y)
         };
         setPlayerPositionSynced(newPos);
+        if (!inBattleRef.current && !transitionInProgressRef.current) {
+          checkBattleTriggerRef.current();
+        }
         if (isShrineRoomRef.current && shrineAltarPosRef.current) {
           const _isHazardTile = ((_a4 = currentMap == null ? void 0 : currentMap.hazardTiles) == null ? void 0 : _a4.has(`${newPos.x},${newPos.y}`)) ?? false;
           if (!_isHazardTile && !(newPos.x === shrineAltarPosRef.current.x && newPos.y === shrineAltarPosRef.current.y)) {
@@ -68458,15 +68477,21 @@ const WorldExplorationInner = ({
       clearTimeout(tid);
     }
     pendingTimeoutsRef.current.clear();
+    if (dispatchWatchdogRef.current) {
+      clearTimeout(dispatchWatchdogRef.current);
+      dispatchWatchdogRef.current = null;
+    }
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+    turnTimerGenerationRef.current = 0;
     if (jackpotHealTimerRef.current) {
       clearTimeout(jackpotHealTimerRef.current);
       jackpotHealTimerRef.current = null;
     }
     inBattleRef.current = false;
+    setTransitionInProgress(false);
     const pendingSpellBar = pendingSpellBarRef.current;
     pendingSpellBarRef.current = null;
     if (pendingSpellBar) {
@@ -68518,7 +68543,7 @@ const WorldExplorationInner = ({
     victoryFiredThisBattleRef.current = false;
     activeEffectsRef.current = [];
     setActiveEffects([]);
-  }, [onDebugLog]);
+  }, [onDebugLog, setTransitionInProgress]);
   const cleanupMap = reactExports.useCallback(() => {
     cleanupPhaseRef.current = "timers";
     dungeonChainActiveRef.current = false;
@@ -68723,6 +68748,12 @@ const WorldExplorationInner = ({
         hpMap[e.id] = isBossForHp ? currentBossConfigRef.current.baseStats.hp : calcEnemyMaxHp(e.level);
       }
       aiGenerationRef.current += 1;
+      console.log("[TURN] lifecycle", {
+        aiGen: aiGenerationRef.current,
+        sessionVer: sessionVersionRef.current,
+        inProgressFlag: enemyTurnInProgressRef.current,
+        pendingTimeouts: pendingTimeoutsRef.current.size
+      });
       playSound("battle_start");
       const sortedByLevel = [...enemiesWithSpells].sort(
         (a2, b2) => b2.level - a2.level
@@ -70024,6 +70055,7 @@ const WorldExplorationInner = ({
                   `${nextCombatant.pieceType ?? "Summon"} expired`,
                   "#ef4444"
                 );
+                turnEndReasonRef.current = "action-complete";
                 setTimeout(() => advanceTurn(), 0);
               }
             } else {
@@ -70266,6 +70298,11 @@ const WorldExplorationInner = ({
     const mySessionVersion = sessionVersionRef.current;
     let watchdog;
     const timeout2 = setTimeout(() => {
+      console.log("[TURN] executor-start", {
+        id: enemyId,
+        myGen: myAIGeneration,
+        curGen: aiGenerationRef.current
+      });
       const summonEnemy = enemiesRef.current.find((e) => e.id === enemyId);
       if ((summonEnemy == null ? void 0 : summonEnemy.isSummon) && summonEnemy.side === "player") {
         summonEnemy.currentAp = summonEnemy.maxAp ?? 0;
@@ -70787,8 +70824,10 @@ const WorldExplorationInner = ({
               if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myErraticGen)
                 return;
               pendingTimeoutsRef.current.delete(erraticTimer);
-              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration) {
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current();
+              }
             }, 0);
             if (!cleanupRanRef.current) {
               pendingTimeoutsRef.current.add(erraticTimer);
@@ -70913,8 +70952,10 @@ const WorldExplorationInner = ({
             const _at2 = setTimeout(() => {
               if (!pendingTimeoutsRef.current.has(_at2)) return;
               pendingTimeoutsRef.current.delete(_at2);
-              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration) {
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current();
+              }
             }, 0);
             if (!cleanupRanRef.current) {
               pendingTimeoutsRef.current.add(_at2);
@@ -70990,8 +71031,10 @@ const WorldExplorationInner = ({
                       if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== bSumGen)
                         return;
                       pendingTimeoutsRef.current.delete(bSumTimer);
-                      if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+                      if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration) {
+                        turnEndReasonRef.current = "action-complete";
                         advanceTurnRef.current();
+                      }
                     }, 600);
                     if (!cleanupRanRef.current)
                       pendingTimeoutsRef.current.add(bSumTimer);
@@ -71094,8 +71137,10 @@ const WorldExplorationInner = ({
                     if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== bSpellGen)
                       return;
                     pendingTimeoutsRef.current.delete(bSpellTimer);
-                    if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+                    if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration) {
+                      turnEndReasonRef.current = "action-complete";
                       advanceTurnRef.current();
+                    }
                   }, 0);
                   if (!cleanupRanRef.current)
                     pendingTimeoutsRef.current.add(bSpellTimer);
@@ -71280,6 +71325,7 @@ const WorldExplorationInner = ({
               if ((res == null ? void 0 : res.endsTurn) === true) {
                 clearTimeout(watchdog);
                 pendingTimeoutsRef.current.delete(watchdog);
+                turnEndReasonRef.current = "action-complete";
                 clearEnemyTurnFlagAndAdvance();
                 updateCombatant(combatantStoreCtx, enemyId, {
                   x: newBossX,
@@ -71296,8 +71342,10 @@ const WorldExplorationInner = ({
                 if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myBossAdvGen)
                   return;
                 pendingTimeoutsRef.current.delete(bossAdvTimer);
-                if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+                if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration) {
+                  turnEndReasonRef.current = "action-complete";
                   advanceTurnRef.current();
+                }
               }, 0);
               if (!cleanupRanRef.current)
                 pendingTimeoutsRef.current.add(bossAdvTimer);
@@ -71316,8 +71364,10 @@ const WorldExplorationInner = ({
               if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current || aiGenerationRef.current !== myBossSkipGen)
                 return;
               pendingTimeoutsRef.current.delete(bossSkipTimer);
-              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration)
+              if (!enemyTurnAbortRef.current && aiGenerationRef.current === myAIGeneration) {
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current();
+              }
             }, 0);
             if (!cleanupRanRef.current)
               pendingTimeoutsRef.current.add(bossSkipTimer);
@@ -73886,6 +73936,7 @@ const WorldExplorationInner = ({
               onEndTurn: () => {
                 const _entry = turnOrderRef.current[currentTurnIndexRef.current];
                 if ((_entry == null ? void 0 : _entry.type) !== "player") return;
+                turnEndReasonRef.current = "player-end-turn";
                 advanceTurn();
               },
               spellCooldowns: spellCooldownVersion >= 0 ? Object.fromEntries(spellCooldownsRef.current) : {},
@@ -73917,7 +73968,8 @@ const WorldExplorationInner = ({
                 activeControlledSummonId ? getSummonKitSpells().map((s2) => ({
                   id: s2.id,
                   name: s2.name,
-                  apCost: Number(s2.apCost)
+                  apCost: Number(s2.apCost),
+                  iconEmoji: s2.iconEmoji
                 })) : []
               ),
               onSummonSpellSelect: (slotIndex) => {
@@ -73929,6 +73981,7 @@ const WorldExplorationInner = ({
                 setActiveControlledSummonId(null);
                 activeControlledSummonIdRef.current = null;
                 setSelectedSummonSpellId(null);
+                turnEndReasonRef.current = "player-end-turn";
                 advanceTurn();
               }
             }
@@ -77261,7 +77314,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-1f4q9FWO.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DMDnpqvO.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

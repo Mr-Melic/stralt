@@ -1266,7 +1266,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // turn-timer recoveries. Reset on every advance path; read by the three
   // logDebugInfo("TURN","dispatch",...) call sites.
   const turnEndReasonRef = useRef<
-    "action-complete" | "timer-expiry" | "pre-executor-stall" | null
+    | "action-complete"
+    | "timer-expiry"
+    | "pre-executor-stall"
+    | "player-end-turn"
+    | null
   >(null);
   // SECTION 3 — PRE-EXECUTOR STALL FIX (b): holds the dispatch-time watchdog
   // timeout id so the executor effect can clear it once the enemy AI actually
@@ -7079,6 +7083,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       return enemy;
     });
+    // FIX (c) R12: enemy-triggered battles. The world-mode click chain only
+    // checks for an enemy on the player's clicked tile, so an enemy wandering
+    // onto a tile adjacent to the player never triggered battle. After
+    // computing nextEnemies, run a Chebyshev-adjacency check (<=1 on both
+    // axes covers the 8 surrounding tiles) against the player's current
+    // position. Guarded by !inBattleRef.current && !transitionInProgressRef
+    // to avoid double-triggering when a battle/transition is already in
+    // flight; checkBattleTrigger itself is also internally guarded.
+    if (!inBattleRef.current && !transitionInProgressRef.current) {
+      for (const enemy of nextEnemies) {
+        if (
+          Math.abs(enemy.x - playerPositionRef.current.x) <= 1 &&
+          Math.abs(enemy.y - playerPositionRef.current.y) <= 1
+        ) {
+          checkBattleTriggerRef.current();
+          break;
+        }
+      }
+    }
     // H3: skip store update if nothing changed
     if (hasChanged) {
       syncCombatants(combatantStoreCtx, nextEnemies);
@@ -10128,7 +10151,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       )
         return;
       // --- BATTLE MODE ---
-      if (inBattle) {
+      // FIX (a) R12: use inBattleRef.current (synchronous ref) instead of the
+      // `inBattle` React state. After a battle ends, cleanupBattle flips
+      // inBattleRef.current=false synchronously (line ~11507) but the `inBattle`
+      // React state update is batched and can lag by a render. A stale
+      // inBattle=true here would route the player's next world-mode click into
+      // the battle branch (which then early-returns on the turn-truth guard),
+      // making the first post-battle click silently no-op. The ref is the
+      // authoritative source of truth — every other guard in this file reads
+      // inBattleRef.current.
+      if (inBattleRef.current) {
         // Part 3: Desync-proof click guard. PRIMARY gate is the turn-truth
         // (turnOrderRef/currentTurnIndexRef), so a stale battlePhase flag can
         // never lock the player out of their own turn. battlePhase remains a
@@ -10521,7 +10553,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentMap,
       clientToGrid,
       findPath,
-      inBattle,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
@@ -11158,6 +11189,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           y: Math.round(newPosition.y),
         };
         setPlayerPositionSynced(newPos);
+        // FIX (b) R12: world-mode pathing steps onto enemy tiles mid-path
+        // without triggering battle. The world-mode click chain (handleCanvasClick
+        // ~10487) only checks for an enemy on the FINAL clicked tile — if the
+        // player clicks a free tile whose path happens to cross an enemy tile,
+        // movePlayer walks the player straight through that enemy with no battle
+        // trigger. checkBattleTrigger itself is fully guarded (transitionInProgressRef
+        // + inBattleRef + cooldown), so calling it on every step is cheap and
+        // safe: it no-ops when no enemy is on the new tile or when a battle is
+        // already in progress. This restores pre-round-11 sensitivity where
+        // stepping onto an enemy tile triggered battle.
+        if (!inBattleRef.current && !transitionInProgressRef.current) {
+          checkBattleTriggerRef.current();
+        }
         if (isShrineRoomRef.current && shrineAltarPosRef.current) {
           const _isHazardTile =
             currentMap?.hazardTiles?.has(`${newPos.x},${newPos.y}`) ?? false;
@@ -11462,17 +11506,37 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       battleInitSafetyTimeoutRef.current = null;
     }
     // 2. Increment AI generation counter so stale AI callbacks self-terminate.
+    // SECTION 1 (R12) — this bump ONLY invalidates the CURRENT battle's
+    // callbacks. The next battle's checkBattleTrigger bumps again at
+    // battle-start (before its first dispatch arms anything), so this bump
+    // cannot pre-bump the next battle's generation and kill its first arming.
     aiGenerationRef.current += 1;
     // 3. Cancel ALL tracked pending timeouts from enemy AI
     for (const tid of pendingTimeoutsRef.current) {
       clearTimeout(tid);
     }
     pendingTimeoutsRef.current.clear();
+    // SECTION 1 (R12) FIX (b) — clear+null the dispatch-time watchdog so a
+    // stale watchdog from the just-ended battle cannot fire into the next
+    // battle's first dispatch window. The timeout itself was tracked in
+    // pendingTimeoutsRef and cleared above, but the ref handle must also be
+    // nulled so the next executor's "clear if set" guard at 14029 is a no-op
+    // and cannot accidentally clear a DIFFERENT battle's watchdog.
+    if (dispatchWatchdogRef.current) {
+      clearTimeout(dispatchWatchdogRef.current);
+      dispatchWatchdogRef.current = null;
+    }
     // 4. Clear the turn-timer interval (LEAK-2: single guarded clearInterval)
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
+    // SECTION 1 (R12) FIX (b) — reset the turn-timer generation so a stale
+    // interval callback from the just-ended battle (whose myGeneration was
+    // captured before this cleanup) cannot race the next battle's first
+    // timer-effect arming. The next battle's timer effect re-increments this
+    // only when the actor id changes, so resetting here is safe.
+    turnTimerGenerationRef.current = 0;
     // 5. Cancel jackpot heal timer (LEAK-4: was not tracked in pendingTimeoutsRef)
     if (jackpotHealTimerRef.current) {
       clearTimeout(jackpotHealTimerRef.current);
@@ -11481,6 +11545,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // 6. Reset all battle-phase boolean flags
     inBattleRef.current = false;
+    // FIX (a) R12: reset the transition flag here too. checkBattleTrigger sets
+    // transitionInProgressRef.current=true at battle-start (line ~6102) and
+    // several portal/transition paths reset it, but a battle that ends via the
+    // normal victory/defeat flow (not a portal transition) never ran any of
+    // those reset sites — leaving transitionInProgressRef stuck true. The next
+    // world-mode click then hit the top guard at line ~9869
+    // (`if (... || transitionInProgressRef.current) return;`) and was silently
+    // dropped, producing the "first click after battle does nothing" symptom.
+    // setTransitionInProgress also notifies the parent so its UI mirrors clear.
+    setTransitionInProgress(false);
     // FIX 2d: Flush any spell-bar change the player queued DURING battle.
     // handleSetActiveSpells stashed the requested list into pendingSpellBarRef
     // (instead of silently dropping it) because the bar is locked mid-fight.
@@ -11560,7 +11634,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     activeEffectsRef.current = [];
     setActiveEffects([]);
     // enemy effects are stored in activeEffects with targetId === enemy.id, already cleared above
-  }, [onDebugLog]);
+  }, [onDebugLog, setTransitionInProgress]);
 
   // cleanupMap: runs cleanupBattle then also clears map-level particle/effect state.
   // Call this as the FIRST action inside checkPortalInteraction.
@@ -11874,7 +11948,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       // FIX #15: Increment AI generation so residual callbacks from previous
       // battles see a stale generation and abort without touching state.
+      // SECTION 1 (R12) FIX (a) — ORDERING: this bump happens ONCE at
+      // battle-start, BEFORE the flushSync commit below opens. The first
+      // dispatch (setBattlePhase("enemy") inside flushSync → AI-trigger effect
+      // → scheduleEnemyExecutor) arms its setTimeout AFTER flushSync closes,
+      // so it captures THIS new generation. cleanupBattle's bump (11465) only
+      // invalidates the previous battle's callbacks; it cannot pre-bump this
+      // battle's generation because this line re-bumps unconditionally. The
+      // triple-silence signature (executor + watchdog + timer-advance all
+      // aborting) is impossible as long as this bump precedes the first
+      // dispatch arming — which it does, by construction.
       aiGenerationRef.current += 1;
+      // SECTION 1 (R12) FIX (c) — LIFECYCLE LOG: emit at every battle start
+      // (after the generation bump, before the first dispatch) so a silent
+      // battle-2 is impossible to hide. pendingTimeouts count is read here
+      // (post-cleanup, pre-flushSync) so it reflects the clean slate.
+      console.log("[TURN] lifecycle", {
+        aiGen: aiGenerationRef.current,
+        sessionVer: sessionVersionRef.current,
+        inProgressFlag: enemyTurnInProgressRef.current,
+        pendingTimeouts: pendingTimeoutsRef.current.size,
+      });
       playSound("battle_start");
 
       // Designate the highest-level enemy (or first) as the group leader
@@ -13685,6 +13779,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   `${nextCombatant.pieceType ?? "Summon"} expired`,
                   "#ef4444",
                 );
+                // SECTION 1 (R12) FIX (d) — NAME THE ended:null PATH: this
+                // summon-expired advance previously called advanceTurn() with
+                // turnEndReasonRef still null (the prior turn's reason or
+                // null), so the dispatch log showed ended:null. Set an explicit
+                // reason before the advance so the log names the path.
+                turnEndReasonRef.current = "action-complete";
                 setTimeout(() => advanceTurn(), 0);
               }
             } else {
@@ -14045,6 +14145,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // H2 fix: declare watchdog first so timeout callback can reference it (forward reference fix)
     let watchdog: ReturnType<typeof setTimeout>;
     const timeout = setTimeout(() => {
+      // SECTION 1 (R12) FIX (c) — EXECUTOR-START LOG: the very first lines of
+      // the executor body, before any guard. If a battle-2 enemy never acts,
+      // this line is absent from the console — making a silent battle
+      // impossible to hide. myGen is the generation captured at arming time;
+      // curGen is the live value. A mismatch (myGen !== curGen) means the
+      // callback is stale and every guard below will abort — which is exactly
+      // the triple-silence signature when it happens to the FIRST dispatch.
+      console.log("[TURN] executor-start", {
+        id: enemyId,
+        myGen: myAIGeneration,
+        curGen: aiGenerationRef.current,
+      });
       // Read from enemiesRef.current (fresh mirror) — the dep array omits `enemies` to avoid double-firing.
       const summonEnemy = enemiesRef.current.find((e: any) => e.id === enemyId);
       if (summonEnemy?.isSummon && summonEnemy.side === "player") {
@@ -14756,8 +14868,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (
                 !enemyTurnAbortRef.current &&
                 aiGenerationRef.current === myAIGeneration
-              )
+              ) {
+                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
+                // erratic-branch advance previously called
+                // advanceTurnRef.current() with turnEndReasonRef still null,
+                // so the dispatch log showed ended:null. Set an explicit
+                // reason before the advance.
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current(); // FIX #15
+              }
             }, 0);
             if (!cleanupRanRef.current) {
               pendingTimeoutsRef.current.add(erraticTimer);
@@ -14924,8 +15043,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (
                 !enemyTurnAbortRef.current &&
                 aiGenerationRef.current === myAIGeneration
-              )
+              ) {
+                // SECTION 1 (R12) FIX (d) — NAME THE ended:null PATH: this
+                // betrayal-ally-kill advance previously called
+                // advanceTurnRef.current() with turnEndReasonRef still null
+                // (the prior turn's reason or null), so the dispatch log
+                // showed ended:null. Set an explicit reason before the advance.
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current(); // FIX #15
+              }
             }, 0);
             // M-4: Only register if cleanup hasn't run yet
             if (!cleanupRanRef.current) {
@@ -15031,8 +15157,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       if (
                         !enemyTurnAbortRef.current &&
                         aiGenerationRef.current === myAIGeneration
-                      )
+                      ) {
+                        // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
+                        // boss-summon-branch advance previously called
+                        // advanceTurnRef.current() with turnEndReasonRef still
+                        // null, so the dispatch log showed ended:null. Set an
+                        // explicit reason before the advance.
+                        turnEndReasonRef.current = "action-complete";
                         advanceTurnRef.current();
+                      }
                     }, 600);
                     if (!cleanupRanRef.current)
                       pendingTimeoutsRef.current.add(bSumTimer);
@@ -15174,8 +15307,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     if (
                       !enemyTurnAbortRef.current &&
                       aiGenerationRef.current === myAIGeneration
-                    )
-                      advanceTurnRef.current();
+                    ) {
+                      // SECTION 1 (R12) FIX (d) — NAME THE ended:null PATH: this
+                      // !enemy early-return advance previously called
+                      // advanceTurnRef.current() with turnEndReasonRef still null,
+                      // so the dispatch log showed ended:null. Set an explicit
+                      // reason before the advance.
+                      turnEndReasonRef.current = "action-complete";
+                      advanceTurnRef.current(); // FIX #15
+                    }
                   }, 0);
                   if (!cleanupRanRef.current)
                     pendingTimeoutsRef.current.add(bSpellTimer);
@@ -15380,6 +15520,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 // SECTION 1 — route the endsTurn immediate-advance path through
                 // the atomic clear+advance helper so the flag clear and the
                 // turn advance cannot be split by a 1ms re-entrancy window.
+                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
+                // endsTurn advance previously called
+                // clearEnemyTurnFlagAndAdvance() with turnEndReasonRef still
+                // null, so the dispatch log showed ended:null. Set an explicit
+                // reason before the advance.
+                turnEndReasonRef.current = "action-complete";
                 clearEnemyTurnFlagAndAdvance();
                 updateCombatant(combatantStoreCtx, enemyId, {
                   x: newBossX,
@@ -15404,8 +15550,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 if (
                   !enemyTurnAbortRef.current &&
                   aiGenerationRef.current === myAIGeneration
-                )
+                ) {
+                  // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
+                  // boss-advance-branch advance previously called
+                  // advanceTurnRef.current() with turnEndReasonRef still null,
+                  // so the dispatch log showed ended:null. Set an explicit
+                  // reason before the advance.
+                  turnEndReasonRef.current = "action-complete";
                   advanceTurnRef.current();
+                }
               }, 0);
               if (!cleanupRanRef.current)
                 pendingTimeoutsRef.current.add(bossAdvTimer);
@@ -15432,8 +15585,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (
                 !enemyTurnAbortRef.current &&
                 aiGenerationRef.current === myAIGeneration
-              )
+              ) {
+                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
+                // boss-skip-branch advance previously called
+                // advanceTurnRef.current() with turnEndReasonRef still null,
+                // so the dispatch log showed ended:null. Set an explicit
+                // reason before the advance.
+                turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current();
+              }
             }, 0);
             if (!cleanupRanRef.current)
               pendingTimeoutsRef.current.add(bossSkipTimer);
@@ -18086,6 +18246,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 const _entry =
                   turnOrderRef.current[currentTurnIndexRef.current];
                 if (_entry?.type !== "player") return;
+                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: the
+                // player-initiated End Turn advance previously called
+                // advanceTurn() with turnEndReasonRef still null, so the
+                // dispatch log showed ended:null. Set an explicit reason
+                // before the advance.
+                turnEndReasonRef.current = "player-end-turn";
                 advanceTurn();
               }}
               spellCooldowns={
@@ -18127,6 +18293,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       id: s.id,
                       name: s.name,
                       apCost: Number(s.apCost),
+                      iconEmoji: s.iconEmoji,
                     }))
                   : []
               }
@@ -18142,6 +18309,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setActiveControlledSummonId(null);
                 activeControlledSummonIdRef.current = null;
                 setSelectedSummonSpellId(null);
+                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: the
+                // summon-initiated End Turn advance previously called
+                // advanceTurn() with turnEndReasonRef still null, so the
+                // dispatch log showed ended:null. Set an explicit reason
+                // before the advance.
+                turnEndReasonRef.current = "player-end-turn";
                 advanceTurn();
               }}
             />
