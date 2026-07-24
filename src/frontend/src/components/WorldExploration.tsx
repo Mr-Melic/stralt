@@ -1271,6 +1271,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // the actor id actually changes, so a watchdog re-advance that re-dispatches
   // the same enemy restarts the 30s/15s chip instead of sticking.
   const lastTimerActorIdRef = useRef<string | null>(null);
+  // SECTION 1 — EXECUTOR-GATE LOG THROTTLE: timestamps the last [TURN]
+  // executor-gate log so the gate logs the blockedBy reason at most 1/s.
+  const lastGateLogRef = useRef(0);
   // Ref holding the enemy-side summon spawn callback so the enemy turn
   // executor (a different closure from the SpellContext builder) can
   // invoke it when a summoner enemy decides to cast a summon spell.
@@ -13366,6 +13369,42 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // Otherwise fall through to the dispatch branches with the
             // landed live entry (nextIdx/nextCombatant now point at it).
           }
+          // SECTION 2 — UNCONDITIONAL AI-ENTRY WATCHDOG: arms a 3000ms
+          // watchdog at dispatch time for ANY AI entry (enemy-ai OR
+          // summon-ai), BEFORE the routing branches run. Player and
+          // player-controlled-summon entries are excluded. If the executor
+          // effect never starts (chain threw or stalled), this fires and
+          // force-advances the turn so the 30s chip does not stick on a
+          // re-dispatched enemy after a mid-battle kill leaves one alive.
+          // Cleared by the executor effect once enemyTurnInProgressRef
+          // flips true. (Moved out of the enemy-ai branch so summon-ai
+          // entries are also covered.)
+          if (
+            nextCombatant.type !== "player" &&
+            !(nextCombatant.isSummon && nextCombatant.side === "player")
+          ) {
+            const myAIGeneration = aiGenerationRef.current;
+            const dispatchWatchdog = setTimeout(() => {
+              if (
+                turnOrderRef.current[currentTurnIndexRef.current]?.id !==
+                nextCombatant.id
+              )
+                return;
+              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
+                return;
+              if (aiGenerationRef.current !== myAIGeneration) return;
+              turnEndReasonRef.current = "pre-executor-stall";
+              logDebugInfo("TURN", "watchdog-advance", {
+                phase: "pre-executor",
+                entryId: nextCombatant.id,
+              });
+              advanceTurnRef.current();
+            }, 3000);
+            dispatchWatchdogRef.current = dispatchWatchdog;
+            if (!cleanupRanRef.current) {
+              pendingTimeoutsRef.current.add(dispatchWatchdog);
+            }
+          }
           if (nextCombatant.type === "player") {
             logDebugInfo("TURN", "dispatch", {
               entryId: nextCombatant.id,
@@ -13562,33 +13601,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current,
             });
-            // SECTION 3 — FIX (b) DISPATCH-TIME WATCHDOG: arms a 3000ms
-            // watchdog at dispatch time, BEFORE the post-dispatch chain runs.
-            // If the executor effect never starts (chain threw or stalled),
-            // this fires and force-advances the turn so the 30s chip does not
-            // stick on a re-dispatched enemy. Cleared by the executor effect
-            // once enemyTurnInProgressRef flips true.
-            const myAIGeneration = aiGenerationRef.current;
-            const dispatchWatchdog = setTimeout(() => {
-              if (
-                turnOrderRef.current[currentTurnIndexRef.current]?.id !==
-                nextCombatant.id
-              )
-                return;
-              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
-                return;
-              if (aiGenerationRef.current !== myAIGeneration) return;
-              turnEndReasonRef.current = "pre-executor-stall";
-              logDebugInfo("TURN", "watchdog-advance", {
-                phase: "pre-executor",
-                entryId: nextCombatant.id,
-              });
-              advanceTurnRef.current();
-            }, 3000);
-            dispatchWatchdogRef.current = dispatchWatchdog;
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(dispatchWatchdog);
-            }
             // SECTION 3 — FIX (a) TRY/CATCH WRAP: the post-dispatch chain
             // (setBattlePhase('enemy') → applyTurnStart → processActiveEffects →
             // plague zone → log) is wrapped so a throw in any of these does not
@@ -13655,6 +13667,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     advanceTurnRef.current = advanceTurn;
   }, [advanceTurn]);
+
+  // SECTION 1 — ATOMIC CLEAR+ADVANCE HELPER: clears the enemy-turn-in-progress
+  // flag and advances the turn in one synchronous step. Routing the three
+  // synchronous completion paths (endsTurn immediate, summon finally, main
+  // finally) through this helper guarantees the clear and the advance are
+  // never split by a 1ms re-entrancy window. useCallback with [] deps because
+  // both refs are stable.
+  const clearEnemyTurnFlagAndAdvance = useCallback(() => {
+    enemyTurnInProgressRef.current = false;
+    advanceTurnRef.current();
+  }, []);
 
   // Auto-end control when the player-controlled summon has no AP and no MP
   // left to act. Defers the turn advance via setTimeout to avoid re-entrancy
@@ -13834,13 +13857,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
   useEffect(() => {
-    if (
-      !inBattle ||
-      currentActor?.type !== "enemy" ||
-      enemyTurnInProgressRef.current
-    )
+    // SECTION 1 — EXECUTOR-GATE LOG: log the blockedBy reason at most 1/s so
+    // the gate is observable without flooding the console. Only the
+    // enemy-actor branch logs; the non-enemy / not-in-battle branch returns
+    // silently as before.
+    if (!inBattle || currentActor?.type !== "enemy") return;
+    if (enemyTurnInProgressRef.current) {
+      const now = Date.now();
+      if (now - lastGateLogRef.current > 1000) {
+        lastGateLogRef.current = now;
+        console.log("[TURN] executor-gate", {
+          actorId: currentActor?.id,
+          blockedBy: "inProgress",
+        });
+      }
       return;
-    if (!battleReadyRef.current) return;
+    }
+    if (!battleReadyRef.current) {
+      const now = Date.now();
+      if (now - lastGateLogRef.current > 1000) {
+        lastGateLogRef.current = now;
+        console.log("[TURN] executor-gate", {
+          actorId: currentActor?.id,
+          blockedBy: "battleReady",
+        });
+      }
+      return;
+    }
     // H2: Read from the ref mirror so we always get the latest turnOrder
     // even if the React state closure captured a stale snapshot. The ref is
     // the authoritative source of turn truth; if it were missing that would
@@ -14302,13 +14345,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           setTimeout(() => advanceTurnRef.current(), 600);
           advanced = true;
         } finally {
-          // Unconditionally reset the ref so the next enemy-phase gate is open.
-          enemyTurnInProgressRef.current = false;
-          // If the try threw before its own advance, advance exactly once here.
+          // SECTION 1 — route the summon finally path through the atomic
+          // clear+advance helper. When the try threw before its own advance,
+          // clear the flag and advance together (no 1ms re-entrancy gap);
+          // when the try already advanced, defensively clear the flag so the
+          // next enemy-phase gate is open.
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
+            clearEnemyTurnFlagAndAdvance();
             advanced = true;
+          } else {
+            enemyTurnInProgressRef.current = false;
           }
         }
         return;
@@ -15201,8 +15248,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (res?.endsTurn === true) {
                 clearTimeout(watchdog);
                 pendingTimeoutsRef.current.delete(watchdog);
-                enemyTurnInProgressRef.current = false;
-                advanceTurnRef.current();
+                // SECTION 1 — route the endsTurn immediate-advance path through
+                // the atomic clear+advance helper so the flag clear and the
+                // turn advance cannot be split by a 1ms re-entrancy window.
+                clearEnemyTurnFlagAndAdvance();
                 updateCombatant(combatantStoreCtx, enemyId, {
                   x: newBossX,
                   y: newBossY,
@@ -15874,6 +15923,93 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
             }
           }
+          // SECTION 3 — MOVE-THEN-ACT: re-evaluate for a legal attack after moving
+          if (action.kind === "move" && !didAct) {
+            // commit the post-move position (normal moves don't commit elsewhere)
+            updateCombatant(combatantStoreCtx, enemyId, { x: newX, y: newY });
+            // re-decide with post-move position + remaining AP/MP
+            const postMoveEnemy = {
+              ...enemy,
+              x: newX,
+              y: newY,
+              currentAp: enemy.currentAp,
+              currentMp: enemy.currentMp,
+            };
+            const redecide = decideEnemyAction(postMoveEnemy, aiCtx);
+            if (
+              redecide &&
+              (redecide.kind === "cast" || redecide.kind === "melee")
+            ) {
+              // execute the re-decided attack inline (minimal — apply damage)
+              if (redecide.kind === "cast" && redecide.spell) {
+                const spellDmg =
+                  calcScaledDamage(
+                    Number(redecide.spell.damage),
+                    enemy.level,
+                    0,
+                  ) * enrageMultiplier;
+                if (redecide.targetId) {
+                  enemyTakesDamage(
+                    redecide.targetId,
+                    spellDmg,
+                    enemyId,
+                    "spell",
+                    false,
+                  );
+                } else {
+                  playerTakesDamage(spellDmg, enemy.id);
+                }
+                didAct = true;
+              } else if (redecide.kind === "melee") {
+                const meleeDmg =
+                  calcScaledDamage(enemy.atk ?? 0, enemy.level, 0) *
+                  enrageMultiplier;
+                if (redecide.targetId) {
+                  enemyTakesDamage(
+                    redecide.targetId,
+                    meleeDmg,
+                    enemyId,
+                    "melee",
+                    false,
+                  );
+                } else {
+                  playerTakesDamage(meleeDmg, enemy.id);
+                }
+                didAct = true;
+              }
+            }
+          }
+          // SECTION 3 — no-attack-reason tactical visibility log
+          if (!didAct) {
+            let adjacentHostile = false;
+            // check player position
+            const pd = Math.max(
+              Math.abs(newX - playerPositionRef.current.x),
+              Math.abs(newY - playerPositionRef.current.y),
+            );
+            if (pd <= 1) adjacentHostile = true;
+            // check player-side summons
+            if (!adjacentHostile) {
+              for (const e of prevEnemies) {
+                if (e.side === "player") {
+                  const ed = Math.max(
+                    Math.abs(newX - e.x),
+                    Math.abs(newY - e.y),
+                  );
+                  if (ed <= 1) {
+                    adjacentHostile = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (adjacentHostile && (enemy.currentAp ?? 0) > 0) {
+              console.log("[AI] no-attack-reason", {
+                id: enemy.id,
+                reason: "no-legal-target",
+              });
+            }
+          }
           // ── DoT death check (any enemy) + leader flag ────────────────────
           const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
           if (thisHp <= 0) {
@@ -15945,11 +16081,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           // ── END enemyAI.ts call site ──────────────────────────────────────
         } finally {
-          enemyTurnInProgressRef.current = false;
+          // SECTION 1 — route the main finally path through the atomic
+          // clear+advance helper. When the try did not already advance, clear
+          // the flag and advance together (no 1ms re-entrancy gap); when the
+          // try already advanced, defensively clear the flag so the next
+          // enemy-phase gate is open.
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
+            clearEnemyTurnFlagAndAdvance();
             advanced = true;
+          } else {
+            enemyTurnInProgressRef.current = false;
           }
           clearTimeout(watchdog);
           pendingTimeoutsRef.current.delete(watchdog);

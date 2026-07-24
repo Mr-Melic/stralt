@@ -44044,7 +44044,7 @@ function getGeometrySnapshot(input) {
     spriteRectsSummary: { count: count2, ids }
   };
 }
-const APP_BUILD = "#341";
+const APP_BUILD = "#343";
 function esc(s2) {
   return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -60634,6 +60634,7 @@ const WorldExplorationInner = ({
     null
   );
   const lastTimerActorIdRef = reactExports.useRef(null);
+  const lastGateLogRef = reactExports.useRef(0);
   const spawnEnemySummonRef = reactExports.useRef(null);
   const [enemyHpMap, setEnemyHpMap] = reactExports.useState({});
   const [enragedEnemies, setEnragedEnemies] = reactExports.useState(/* @__PURE__ */ new Set());
@@ -69554,6 +69555,27 @@ const WorldExplorationInner = ({
               return nextIdx;
             }
           }
+          if (nextCombatant.type !== "player" && !(nextCombatant.isSummon && nextCombatant.side === "player")) {
+            const myAIGeneration = aiGenerationRef.current;
+            const dispatchWatchdog = setTimeout(() => {
+              var _a4;
+              if (((_a4 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a4.id) !== nextCombatant.id)
+                return;
+              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
+                return;
+              if (aiGenerationRef.current !== myAIGeneration) return;
+              turnEndReasonRef.current = "pre-executor-stall";
+              logDebugInfo("TURN", "watchdog-advance", {
+                phase: "pre-executor",
+                entryId: nextCombatant.id
+              });
+              advanceTurnRef.current();
+            }, 3e3);
+            dispatchWatchdogRef.current = dispatchWatchdog;
+            if (!cleanupRanRef.current) {
+              pendingTimeoutsRef.current.add(dispatchWatchdog);
+            }
+          }
           if (nextCombatant.type === "player") {
             logDebugInfo("TURN", "dispatch", {
               entryId: nextCombatant.id,
@@ -69719,25 +69741,6 @@ const WorldExplorationInner = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current
             });
-            const myAIGeneration = aiGenerationRef.current;
-            const dispatchWatchdog = setTimeout(() => {
-              var _a4;
-              if (((_a4 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a4.id) !== nextCombatant.id)
-                return;
-              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
-                return;
-              if (aiGenerationRef.current !== myAIGeneration) return;
-              turnEndReasonRef.current = "pre-executor-stall";
-              logDebugInfo("TURN", "watchdog-advance", {
-                phase: "pre-executor",
-                entryId: nextCombatant.id
-              });
-              advanceTurnRef.current();
-            }, 3e3);
-            dispatchWatchdogRef.current = dispatchWatchdog;
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(dispatchWatchdog);
-            }
             try {
               setBattlePhase("enemy");
               mapModifierRegistry.applyTurnStart(
@@ -69793,6 +69796,10 @@ const WorldExplorationInner = ({
   reactExports.useEffect(() => {
     advanceTurnRef.current = advanceTurn;
   }, [advanceTurn]);
+  const clearEnemyTurnFlagAndAdvance = reactExports.useCallback(() => {
+    enemyTurnInProgressRef.current = false;
+    advanceTurnRef.current();
+  }, []);
   reactExports.useEffect(() => {
     if (!activeControlledSummonId) return;
     const summon = getLiveCombatants(combatantStoreCtx).find(
@@ -69911,9 +69918,29 @@ const WorldExplorationInner = ({
     onDebugContextChange
   ]);
   reactExports.useEffect(() => {
-    if (!inBattle || (currentActor == null ? void 0 : currentActor.type) !== "enemy" || enemyTurnInProgressRef.current)
+    if (!inBattle || (currentActor == null ? void 0 : currentActor.type) !== "enemy") return;
+    if (enemyTurnInProgressRef.current) {
+      const now2 = Date.now();
+      if (now2 - lastGateLogRef.current > 1e3) {
+        lastGateLogRef.current = now2;
+        console.log("[TURN] executor-gate", {
+          actorId: currentActor == null ? void 0 : currentActor.id,
+          blockedBy: "inProgress"
+        });
+      }
       return;
-    if (!battleReadyRef.current) return;
+    }
+    if (!battleReadyRef.current) {
+      const now2 = Date.now();
+      if (now2 - lastGateLogRef.current > 1e3) {
+        lastGateLogRef.current = now2;
+        console.log("[TURN] executor-gate", {
+          actorId: currentActor == null ? void 0 : currentActor.id,
+          blockedBy: "battleReady"
+        });
+      }
+      return;
+    }
     const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
     const enemyId = currentCombatant.id;
@@ -70240,11 +70267,12 @@ const WorldExplorationInner = ({
           setTimeout(() => advanceTurnRef.current(), 600);
           advanced = true;
         } finally {
-          enemyTurnInProgressRef.current = false;
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
+            clearEnemyTurnFlagAndAdvance();
             advanced = true;
+          } else {
+            enemyTurnInProgressRef.current = false;
           }
         }
         return;
@@ -70942,8 +70970,7 @@ const WorldExplorationInner = ({
               if ((res == null ? void 0 : res.endsTurn) === true) {
                 clearTimeout(watchdog);
                 pendingTimeoutsRef.current.delete(watchdog);
-                enemyTurnInProgressRef.current = false;
-                advanceTurnRef.current();
+                clearEnemyTurnFlagAndAdvance();
                 updateCombatant(combatantStoreCtx, enemyId, {
                   x: newBossX,
                   y: newBossY
@@ -71473,6 +71500,80 @@ const WorldExplorationInner = ({
               }
             }
           }
+          if (action.kind === "move" && !didAct) {
+            updateCombatant(combatantStoreCtx, enemyId, { x: newX, y: newY });
+            const postMoveEnemy = {
+              ...enemy,
+              x: newX,
+              y: newY,
+              currentAp: enemy.currentAp,
+              currentMp: enemy.currentMp
+            };
+            const redecide = decideEnemyAction(postMoveEnemy, aiCtx);
+            if (redecide && (redecide.kind === "cast" || redecide.kind === "melee")) {
+              if (redecide.kind === "cast" && redecide.spell) {
+                const spellDmg = calcScaledDamage(
+                  Number(redecide.spell.damage),
+                  enemy.level,
+                  0
+                ) * enrageMultiplier;
+                if (redecide.targetId) {
+                  enemyTakesDamage(
+                    redecide.targetId,
+                    spellDmg,
+                    enemyId,
+                    "spell",
+                    false
+                  );
+                } else {
+                  playerTakesDamage(spellDmg, enemy.id);
+                }
+                didAct = true;
+              } else if (redecide.kind === "melee") {
+                const meleeDmg = calcScaledDamage(enemy.atk ?? 0, enemy.level, 0) * enrageMultiplier;
+                if (redecide.targetId) {
+                  enemyTakesDamage(
+                    redecide.targetId,
+                    meleeDmg,
+                    enemyId,
+                    "melee",
+                    false
+                  );
+                } else {
+                  playerTakesDamage(meleeDmg, enemy.id);
+                }
+                didAct = true;
+              }
+            }
+          }
+          if (!didAct) {
+            let adjacentHostile = false;
+            const pd = Math.max(
+              Math.abs(newX - playerPositionRef.current.x),
+              Math.abs(newY - playerPositionRef.current.y)
+            );
+            if (pd <= 1) adjacentHostile = true;
+            if (!adjacentHostile) {
+              for (const e of prevEnemies) {
+                if (e.side === "player") {
+                  const ed = Math.max(
+                    Math.abs(newX - e.x),
+                    Math.abs(newY - e.y)
+                  );
+                  if (ed <= 1) {
+                    adjacentHostile = true;
+                    break;
+                  }
+                }
+              }
+            }
+            if (adjacentHostile && (enemy.currentAp ?? 0) > 0) {
+              console.log("[AI] no-attack-reason", {
+                id: enemy.id,
+                reason: "no-legal-target"
+              });
+            }
+          }
           const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
           if (thisHp <= 0) {
             processCombatantDeathCb(enemyId);
@@ -71538,11 +71639,12 @@ const WorldExplorationInner = ({
             }
           }
         } finally {
-          enemyTurnInProgressRef.current = false;
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
+            clearEnemyTurnFlagAndAdvance();
             advanced = true;
+          } else {
+            enemyTurnInProgressRef.current = false;
           }
           clearTimeout(watchdog);
           pendingTimeoutsRef.current.delete(watchdog);
@@ -76854,7 +76956,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-C2MbOhSc.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-B3JPOXTO.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
