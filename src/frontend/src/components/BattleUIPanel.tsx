@@ -105,6 +105,14 @@ export interface BattleUIPanelProps {
    */
   onSummonEndTurn?: () => void;
   /**
+   * SECTION 4 (STEP 6) — summon WALK/ATTACK toggle handlers. Mirrors the
+   * player's onSetWalk/onSetAttack but routes through WorldExploration's
+   * setSummonActionMode so the summon's own mp/ap tiles render.
+   */
+  onSetSummonWalk?: () => void;
+  onSetSummonAttack?: () => void;
+  summonActionMode?: "walk" | "attack";
+  /**
    * SECTION 1 (RETRY 2) — SINGLE source of truth for whose turn it is.
    * `currentActor` is the ref-derived current turn-order entry
    * (turnOrderRef.current[currentTurnIndexRef.current]) kept in React state
@@ -204,6 +212,9 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   summonKitSpells = [],
   onSummonSpellSelect,
   onSummonEndTurn,
+  onSetSummonWalk,
+  onSetSummonAttack,
+  summonActionMode = "walk",
 }) => {
   const forceUpdate = spellSelectionVersion; // keeps spellSelectionVersion used
   const [selectedCombatantId, setSelectedCombatantId] = useState<string | null>(
@@ -1055,6 +1066,53 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* SECTION 4 (STEP 6) — summon WALK/ATTACK toggle. Mirrors the
+                    player's WALK/ATTACK buttons (lines ~576-601) but is bound
+                    to the controlled summon's mp/ap and the summonActionMode
+                    state owned by WorldExploration. Disabled when the summon
+                    has no MP (WALK) or no AP (ATTACK). */}
+                <div
+                  data-ocid="battle_ui.summon_action_toggle"
+                  style={{
+                    display: "flex",
+                    gap: 4,
+                    alignItems: "center",
+                    paddingRight: 6,
+                    borderRight: "1px solid rgba(180,20,20,0.3)",
+                  }}
+                >
+                  <button
+                    type="button"
+                    data-ocid="battle_ui.summon_walk_button"
+                    onClick={onSetSummonWalk}
+                    disabled={
+                      !controlledSummon || controlledSummon.currentMp <= 0
+                    }
+                    className={`
+                      px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
+                      ${summonActionMode === "walk" ? "stone-btn-emerald" : "stone-btn-slate opacity-55"}
+                      ${!controlledSummon || controlledSummon.currentMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                    `}
+                  >
+                    🚶 WALK
+                  </button>
+                  <button
+                    type="button"
+                    data-ocid="battle_ui.summon_attack_button"
+                    onClick={onSetSummonAttack}
+                    disabled={
+                      !controlledSummon || controlledSummon.currentAp <= 0
+                    }
+                    className={`
+                      px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
+                      ${summonActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
+                      ${!controlledSummon || controlledSummon.currentAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                    `}
+                  >
+                    ⚔️ ATTACK
+                  </button>
                 </div>
 
                 {/* Kit spell slots */}

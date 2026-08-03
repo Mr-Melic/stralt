@@ -106,7 +106,9 @@ import {
 } from "../engine/combatantStore";
 import {
   type DeathPipelineCtx,
+  type DeathSource,
   processCombatantDeath,
+  processPlayerDeath,
 } from "../engine/deathPipeline";
 import {
   type DotTickResult,
@@ -905,11 +907,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // timer-expiry path skipped cleanup and left the next player turn's spell
   // row stuck grey (root_cause_2). Both setters are stable setState fns, so
   // the dep array is intentionally minimal.
+  // SECTION 4 (a) — MODE RESTORE ON CLEANUP: also reset the PLAYER's input
+  // state deterministically so the player's next turn accepts the first
+  // WALK/ATTACK press. battleActionMode → 'walk', selectedSpellId cleared
+  // (ref + version bump so the spell bar re-renders unselected), and the
+  // spell-range cache flushed so a stale preview set can never gate the
+  // next player click. selectedSummonSpellId is cleared above; the summon
+  // action mode is reset in its own setter below.
   const clearSummonControl = useCallback(() => {
     setActiveControlledSummonId(null);
     activeControlledSummonIdRef.current = null;
     setSelectedSummonSpellId(null);
     selectedSummonSpellIdRef.current = null;
+    setBattleActionMode("walk");
+    battleActionModeRef.current = "walk";
+    selectedSpellIdRef.current = null;
+    setSpellSelectionVersion((v) => v + 1);
+    spellRangeCacheRef.current.clear();
+    setSummonActionMode("walk");
+    summonActionModeRef.current = "walk";
   }, []);
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
@@ -1609,6 +1625,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 hpAfter: characterStats.hp - postResDamage,
                 dotTypeLabel,
               });
+              processPlayerDeathCb("player", "dot");
               _handlePlayerDeath();
             }
           } else {
@@ -1696,6 +1713,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     battleActionModeRef.current = battleActionMode;
   }, [battleActionMode]);
+  // SECTION 4 (b) — Summon WALK/ATTACK toggle. Mirrors battleActionMode but
+  // tracks the action mode of the player-controlled summon. Reset to 'walk'
+  // at every summon turn start (so movement-range preview shows first) and on
+  // clearSummonControl. Read inside canvas callbacks via summonActionModeRef.
+  const [summonActionMode, setSummonActionMode] = useState<"walk" | "attack">(
+    "walk",
+  );
+  const summonActionModeRef = useRef<"walk" | "attack">("walk");
+  useEffect(() => {
+    summonActionModeRef.current = summonActionMode;
+  }, [summonActionMode]);
   // Current MP and AP available this turn (reset each turn)
   const [currentBattleAp, setCurrentBattleAp] = useState(4);
   // Stale-closure hardening: live ref mirrors currentBattleAp so AP gate
@@ -2122,24 +2150,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     });
     let cancelled = false;
     (async () => {
+      // HOTFIX c (Section 3): the module guard is set ONLY after a real
+      // apply (branch a or b). Branch (c) (undefined order) leaves this false
+      // so subsequent fires can retry. The dirty-skip return above also
+      // leaves it false (it returns before reaching here). Declared OUTSIDE
+      // the try so the post-apply guard-set (after the catch) can read it.
+      let applied = false;
       try {
-        // GUARD-SET (HOTFIX b — Option A): write the module guard
-        // SYNCHRONOUSLY at the TOP of the async IIFE, BEFORE any await. The
-        // previous guard-set lived further down, gated behind
-        // `await actor.getCharacter` + `if (cancelled) return;` + the
-        // dirty-guard check. When ownedSpells identity churned on first cast,
-        // the cleanup at the effect's return set `cancelled = true` BEFORE the
-        // await resolved, so the early return at the cancelled check fired and
-        // the guard-set was never reached — leaving moduleGuardHas:false on
-        // every fire (the exact bisect symptom: prevCharKey:null +
-        // moduleGuardHas:false across 8+ fires). Writing it here, immediately
-        // after entering the IIFE and BEFORE the first await, guarantees the
-        // guard is set the moment the character resolve begins successfully,
-        // regardless of later churn/cancellation. The second fire now logs
-        // moduleGuardHas:true. The post-IIFE backstop below remains as a
-        // redundant no-op re-add for diagnostic continuity.
-        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
-        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
+        // GUARD-SET (HOTFIX c — Section 3 cross-device load): the module guard
+        // is now written AFTER the apply succeeds (post-branch, near the end of
+        // the IIFE), NOT synchronously before the await. The previous design
+        // (HOTFIX b) wrote the guard at the top of the IIFE before
+        // `await actor.getCharacter`. On a cold device the first fire's await
+        // could be cancelled (the effect cleanup sets `cancelled = true` while
+        // the await is still in-flight, e.g. ownedSpells identity churn on
+        // first cast), so the `if (cancelled) return` check at the post-await
+        // guard fired and the apply was never reached — but the guard was
+        // ALREADY set, so every subsequent fire skipped at line 2102 and the
+        // bar stayed empty forever. Moving the guard-set to AFTER the apply
+        // means a cancelled first fire does NOT set the guard, so the next
+        // fire can retry the fetch+apply. The guard is only set once the
+        // backend order has actually been applied (or explicitly determined
+        // to be empty). The in-component ref mirror is also moved here.
         // Read the character record to get spellBarOrder (backend-authoritative).
         const character = await (actor as ActorAny).getCharacter(
           BigInt(characterSlot),
@@ -2168,7 +2200,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const savedOrder: string[] | undefined =
           character?.spellBarOrder ?? undefined;
         const ownedIds = new Set(ownedSpells.map((s) => s.id));
-
         if (savedOrder && savedOrder.length > 0) {
           // (a) Render exactly the saved order — skip unknown/no-longer-owned
           // ids (filter against ownedSpells), then append any newly-learned
@@ -2191,10 +2222,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             null,
           ].slice(0, 8);
           setActiveSpellIds(resolved);
+          // SECTION 3 acceptance evidence: the loader APPLIED the fetched
+          // backend spellBarOrder exactly once on a cold device. This log line
+          // is the acceptance marker for the cross-device load fix.
+          console.log("[SPELLBAR-BISECT] applied", {
+            source: "backend",
+            ids: resolved,
+          });
           localStorage.setItem(
             nsKey("pbv_active_spells"),
             JSON.stringify(padded),
           );
+          applied = true;
         } else if (Array.isArray(savedOrder) && savedOrder.length === 0) {
           // (b) EXPLICIT EMPTY IS VALID: spellBarOrder is a genuinely empty
           // array (a new/emptied bar). Apply the empty bar VERBATIM — no
@@ -2221,6 +2260,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ownedCount: ownedSpells.length,
             },
           );
+          applied = true;
         } else {
           // (c) UNDEFINED IS NOT EMPTY (HOTFIX a): savedOrder is
           // undefined/null — the character was fetched but the spellBarOrder
@@ -2231,9 +2271,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // seconds later when a later loader fire applied an
           // absent/undefined spellBarOrder as if it were an intentional
           // empty). Return and wait for the next fire to re-read the
-          // authoritative value. The module guard is already set (top of IIFE),
-          // so subsequent fires skip until the dirty-guard clears and a real
-          // value arrives — but the bar is left untouched here, so no clobber.
+          // authoritative value. The module guard is NOT set in this branch
+          // (HOTFIX c — guard-set moved to post-apply, gated on actual apply),
+          // so subsequent fires can retry the fetch until a real value arrives
+          // — the bar is left untouched here, so no clobber.
           logDebugInfo(
             "SPELLS",
             "[SPELLBAR] spellBarOrder undefined/null — not applying (waiting for next fire)",
@@ -2248,11 +2289,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       } catch (e) {
         console.warn("[SpellLoad] Failed to load spells from backend:", e);
       }
-      // BREAK 2a: Redundant backstop — the authoritative guard-set now fires
-      // SYNCHRONOUSLY before the await (above), so this block is a no-op
-      // re-add for a Set. Kept for diagnostic continuity (the bisect log
-      // confirms the load IIFE reached its natural end without throwing).
-      if (!cancelled) {
+      // HOTFIX c (Section 3): AUTHORITATIVE guard-set. The module guard is
+      // set ONLY when a real apply happened (branch a or b set `applied`) AND
+      // the effect was not cancelled mid-flight. Branch (c) (undefined order)
+      // leaves `applied` false, so the guard is NOT set and subsequent fires
+      // can retry the fetch until an authoritative value arrives. The
+      // dirty-skip early return above also leaves `applied` false. This is
+      // the single authoritative guard-set — there is no synchronous backstop
+      // before the await anymore.
+      if (applied && !cancelled) {
         _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
         loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load completed, guard set", {
@@ -3072,7 +3117,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       _em.triggerShake(isCrit ? 8 : 4);
       if (isCrit) _em.triggerHitStop();
       if (newHp === 0) {
-        processCombatantDeathCb(enemyId);
+        processCombatantDeathCb(enemyId, _source as DeathSource);
       }
       return dmg;
     },
@@ -7316,9 +7361,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }, [combatantStoreCtx]);
 
   // BFS flood-fill for MP reachable tiles
+  // SECTION 4 (e) — SUMMON-MP-AWARE: when a summon is controlled, the BFS
+  // budget is the controlled summon's currentMp (read live via
+  // getLiveCombatants), NOT the player's currentBattleMp. The origin is
+  // already the summon's tile via getActiveCasterPos. When no summon is
+  // controlled, behavior is unchanged (player's currentBattleMp).
   const getMpReachableTiles = useCallback((): Set<string> => {
-    if (!currentMap || !inBattleRef.current || currentBattleMp <= 0)
-      return new Set();
+    // Resolve the MP budget for THIS call: summon's currentMp when controlling,
+    // else the player's currentBattleMp.
+    let mpBudget = currentBattleMp;
+    const _summonId = activeControlledSummonIdRef.current;
+    if (_summonId) {
+      const _summon = getLiveCombatants(combatantStoreCtx).find(
+        (e: any) => e.id === _summonId,
+      );
+      mpBudget = _summon ? Number(_summon.currentMp ?? 0) : 0;
+    }
+    if (!currentMap || !inBattleRef.current || mpBudget <= 0) return new Set();
     // SECTION 2c — origin is the active caster's tile (controlled summon or
     // player) so movement-range previews render from the summon's position.
     const origin = getActiveCasterPos();
@@ -7344,7 +7403,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     while (queue.length > 0) {
       const current = queue.shift()!;
       const nextSteps = current.steps + moveCostPerTile;
-      if (nextSteps > currentBattleMp) continue;
+      if (nextSteps > mpBudget) continue;
       const dirs = [
         { x: 1, y: 0 },
         { x: -1, y: 0 },
@@ -7364,13 +7423,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (prevBest !== undefined && prevBest <= nextSteps) continue;
         visited.set(key, nextSteps);
         reachable.add(key);
-        if (nextSteps < currentBattleMp) {
+        if (nextSteps < mpBudget) {
           queue.push({ x: nx, y: ny, steps: nextSteps });
         }
       }
     }
     return reachable;
-  }, [currentMap, currentBattleMp, activeMapModifierTypes, getActiveCasterPos]);
+  }, [
+    currentMap,
+    currentBattleMp,
+    activeMapModifierTypes,
+    getActiveCasterPos,
+    combatantStoreCtx,
+  ]);
 
   // Get tiles in spell range (Chebyshev) for blue highlights
   // STRUCTURAL FIX: read LIVE combatant truth at invocation via
@@ -7613,25 +7678,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // Compute highlight tile sets for battle mode
     // inBattle intentionally read via inBattleRef to prevent animation loop restart
-    // SECTION 2 — Step 5: mpTiles also computes during a summon-controlled turn
-    // when no summon kit spell is selected, so green movement tiles render by
-    // default during a summon turn (before the player picks a kit spell).
+    // SECTION 4 (f) — SUMMON WALK/ATTACK TOGGLE DRIVES PREVIEW: when a summon
+    // is controlled, the green movement tiles vs blue spell-range tiles are
+    // selected by summonActionModeRef.current ('walk' → mpTiles, 'attack' +
+    // a kit spell selected → spellTiles), mirroring the player's
+    // battleActionMode toggle. The player path is unchanged.
+    const _summonControlled = !!activeControlledSummonIdRef.current;
     const mpTiles =
       inBattleRef.current &&
-      (battleActionModeRef.current === "walk" ||
-        (!!activeControlledSummonIdRef.current &&
-          !selectedSummonSpellIdRef.current))
+      (!_summonControlled
+        ? battleActionModeRef.current === "walk"
+        : summonActionModeRef.current === "walk")
         ? getMpReachableTiles()
         : new Set<string>();
-    // SECTION 2 — Step 6: spellTiles also computes during a summon-controlled
-    // turn when a summon kit spell is selected, so blue attack tiles render
-    // when a summon kit spell is selected.
+    // SECTION 4 (f) — summon attack-mode requires a kit spell selected to
+    // render blue tiles (matches the player path which requires
+    // selectedSpellIdRef). Player path unchanged.
     const spellTiles =
       inBattleRef.current &&
-      ((battleActionModeRef.current === "attack" &&
-        !!selectedSpellIdRef.current) ||
-        (!!activeControlledSummonIdRef.current &&
-          !!selectedSummonSpellIdRef.current))
+      (!_summonControlled
+        ? battleActionModeRef.current === "attack" &&
+          !!selectedSpellIdRef.current
+        : summonActionModeRef.current === "attack" &&
+          !!selectedSummonSpellIdRef.current)
         ? getSpellRangeTiles()
         : new Set<string>();
     const barrierTileSnapshot = new Map(barrierTilesRef.current);
@@ -9506,7 +9575,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
   const processCombatantDeathCb = useCallback(
-    (id: string) => processCombatantDeath(id, deathPipelineCtx),
+    (id: string, source: DeathSource = "player-cast") =>
+      processCombatantDeath(id, deathPipelineCtx, source),
+    [deathPipelineCtx],
+  );
+  const processPlayerDeathCb = useCallback(
+    (id: string, source: DeathSource = "enemy-melee") =>
+      processPlayerDeath(id, deathPipelineCtx, source),
     [deathPipelineCtx],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs and exhaustive dep list is intentionally curated
@@ -14220,6 +14295,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               });
               setActiveControlledSummonId(nextCombatant.id);
               activeControlledSummonIdRef.current = nextCombatant.id;
+              // SECTION 4 (g) — every summon turn starts in walk-mode so the
+              // green movement-range preview shows first (mirrors the player
+              // turn-start reset of battleActionMode to 'walk'). The ref mirror
+              // is synced by the summonActionMode useEffect.
+              setSummonActionMode("walk");
               setBattlePhase("player");
               const _summon = getLiveCombatants(combatantStoreCtx).find(
                 (e: any) => e.id === nextCombatant.id,
@@ -14942,6 +15022,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           (row ?? []).map((t: any) => t !== "wall"),
         );
         const aiOccupied = new Set<string>();
+        for (const e of enemiesRef.current) {
+          if (e.id === enemyId) continue;
+          aiOccupied.add(`${e.x},${e.y}`);
+        }
+        aiOccupied.add(
+          `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
+        );
         const aiBarriers = new Set<string>(barrierTilesRef.current.keys());
         const aiPortals = new Set<string>(
           (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
@@ -15615,7 +15702,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _bossNow.hp <= 0 ||
                 deathPipelineCtx.isCombatantRemoved(enemyId)
               ) {
-                processCombatantDeathCb(enemyId);
+                processCombatantDeathCb(enemyId, "boss-phase");
                 advanced = true;
                 return;
               }
@@ -16251,7 +16338,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             (row ?? []).map((t) => t !== "wall"),
           );
           const aiOccupied = new Set<string>();
-          for (const e of prevEnemies) {
+          const liveEnemies = getLiveCombatants(combatantStoreCtx);
+          for (const e of liveEnemies) {
             if (e.id === enemyId) continue;
             aiOccupied.add(`${e.x},${e.y}`);
           }
@@ -16737,6 +16825,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     meleeDmg,
                     hpAfter: characterStats.hp - meleeDmg,
                   });
+                  processPlayerDeathCb("player", "enemy-melee");
                   _handlePlayerDeath();
                 }
                 logBattleEntry(
@@ -16905,7 +16994,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // ── DoT death check (any enemy) + leader flag ────────────────────
           const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
           if (thisHp <= 0) {
-            processCombatantDeathCb(enemyId);
+            processCombatantDeathCb(enemyId, "dot");
             if (
               enemyId === leaderEnemyIdRef.current &&
               !leaderDiedRef.current
@@ -18863,6 +18952,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (e: any) => e.id === activeControlledSummonId,
               ) ?? null)
             : null;
+          // SECTION 4 (d) — STUCK-STATE GUARD: if activeControlledSummonId is
+          // set but the live lookup returns null, the summon expired mid-turn
+          // (turnsRemaining hit 0 between turn-start and this render). Without
+          // this guard the spell row would grey (isSummonControlled=true) while
+          // the inline control block disappeared (controlledSummon=null) — the
+          // stuck-grey-lock. Reset all summon-control state atomically so the
+          // next render shows the player's bar cleanly.
+          if (activeControlledSummonId && !_controlledSummonLookup) {
+            clearSummonControl();
+          }
           return (
             <BattleUIPanel
               inBattle={inBattle}
@@ -19033,22 +19132,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 // SECTION 2 — Step 3: resolve the kit spell at slotIndex via the
                 // shared getSummonKitSpells() helper and forward its id to the
                 // existing setSelectedSummonSpellId flow.
+                // SECTION 4 (h) — selecting a kit spell flips the summon into
+                // attack-mode so blue spell-range tiles render (mirrors the
+                // player's onSelectSpell → setBattleActionMode('attack')).
                 if (!activeControlledSummonId) return;
                 const spell = getSummonKitSpells()[slotIndex];
-                if (spell) setSelectedSummonSpellId(spell.id);
+                if (spell) {
+                  setSelectedSummonSpellId(spell.id);
+                  setSummonActionMode("attack");
+                }
               }}
               onSummonEndTurn={() => {
-                setActiveControlledSummonId(null);
-                activeControlledSummonIdRef.current = null;
-                setSelectedSummonSpellId(null);
-                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: the
-                // summon-initiated End Turn advance previously called
-                // advanceTurn() with turnEndReasonRef still null, so the
-                // dispatch log showed ended:null. Set an explicit reason
-                // before the advance.
+                // SECTION 4 (c) — funnel the summon-initiated End Turn cleanup
+                // through the shared clearSummonControl() so activeControlledSummonId,
+                // selectedSummonSpellId, battleActionMode, spell-range cache, and
+                // summonActionMode all reset together. PRESERVE the explicit
+                // turnEndReasonRef + advanceTurn() calls (R12 fix for ended:null).
+                clearSummonControl();
                 turnEndReasonRef.current = "player-end-turn";
                 advanceTurn();
               }}
+              // SECTION 4 (STEP 7) — summon WALK/ATTACK toggle wiring. Routes
+              // the inline summon block's toggle buttons through the same
+              // setSummonActionMode state the canvas reads via
+              // summonActionModeRef to render mp (walk) or attack-range tiles.
+              onSetSummonWalk={() => setSummonActionMode("walk")}
+              onSetSummonAttack={() => setSummonActionMode("attack")}
+              summonActionMode={summonActionMode}
             />
           );
         })()}

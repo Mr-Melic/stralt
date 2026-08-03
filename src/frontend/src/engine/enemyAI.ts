@@ -43,6 +43,7 @@ import { logDebugInfo } from "../utils/debugLogger";
 import {
   type OccupancyContext,
   isCellFree as sharedIsCellFree,
+  isCellFreeDiagnostic as sharedIsCellFreeDiagnostic,
 } from "./occupancy";
 
 // ---------------------------------------------------------------------------
@@ -330,8 +331,23 @@ function effectiveHp(c: AICombatant): number {
 function computeReachable(
   origin: AICell,
   ctx: DecideEnemyContext,
+  destination?: AICell,
 ): Set<string> {
   const occCtx = toOccupancyContext(ctx);
+  // When a destination is supplied, exempt it from occupancy so the BFS can
+  // route a step onto the target's tile (the move-then-strike path). Wall,
+  // void, barrier, and oob checks still apply via sharedIsCellFree.
+  const passCtx: OccupancyContext =
+    destination !== undefined
+      ? {
+          ...occCtx,
+          isOccupied: (cell) => {
+            if (cell.x === destination.x && cell.y === destination.y)
+              return false;
+            return occCtx.isOccupied(cell);
+          },
+        }
+      : occCtx;
   const reachable = new Set<string>();
   const visited = new Map<string, number>();
   const queue: { x: number; y: number; steps: number }[] = [
@@ -355,8 +371,9 @@ function computeReachable(
       const k = key(nx, ny);
       if (nx < 0 || nx >= WORLD_GRID_SIZE || ny < 0 || ny >= WORLD_GRID_SIZE)
         continue;
-      // Shared passability check: grid + barriers + portals + void + occupied.
-      if (!sharedIsCellFree({ x: nx, y: ny }, occCtx)) continue;
+      // Shared passability check: grid + barriers + portals + void + occupied
+      // (with the destination exempted from occupancy when supplied).
+      if (!sharedIsCellFree({ x: nx, y: ny }, passCtx)) continue;
       if ((visited.get(k) ?? Number.POSITIVE_INFINITY) <= nextSteps) continue;
       visited.set(k, nextSteps);
       reachable.add(k);
@@ -389,9 +406,32 @@ function toOccupancyContext(ctx: DecideEnemyContext): OccupancyContext {
  * Delegates to the shared `isCellFree` from engine/occupancy.ts so the
  * enemy AI, summon AI, spawn placement, and swap/pushback/attract resolvers
  * all use ONE occupancy + passability implementation.
+ *
+ * When `destination` is provided and `(x, y)` equals it, the occupancy
+ * check is exempted: the caller is moving INTO the target's tile (e.g. a
+ * charger stepping onto a target it will melee), so the target's own body
+ * must not block the step. Wall/void/barrier/oob checks still apply.
  */
-function isStepFree(x: number, y: number, ctx: DecideEnemyContext): boolean {
-  return sharedIsCellFree({ x, y }, toOccupancyContext(ctx));
+function isStepFree(
+  x: number,
+  y: number,
+  ctx: DecideEnemyContext,
+  destination?: AICell,
+): boolean {
+  const occCtx = toOccupancyContext(ctx);
+  if (destination !== undefined && x === destination.x && y === destination.y) {
+    // Exempt occupancy: build a context whose isOccupied never reports the
+    // destination tile as blocked, so only wall/void/barrier/oob remain.
+    const exemptedCtx: OccupancyContext = {
+      ...occCtx,
+      isOccupied: (cell) => {
+        if (cell.x === destination.x && cell.y === destination.y) return false;
+        return occCtx.isOccupied(cell);
+      },
+    };
+    return sharedIsCellFree({ x, y }, exemptedCtx);
+  }
+  return sharedIsCellFree({ x, y }, occCtx);
 }
 
 /** Filter candidate move tiles to avoid hazards when the enemy is low HP. */
@@ -585,7 +625,11 @@ function stepToward(
   target: AICell,
   ctx: DecideEnemyContext,
   reachable: Set<string>,
+  destination?: AICell,
 ): AICell {
+  // Default the destination exemption to the target tile so a charger/flanker
+  // can step onto a target it will strike this turn.
+  const dest = destination ?? target;
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
   const sx = dx > 0 ? 1 : dx < 0 ? -1 : 0;
@@ -600,7 +644,7 @@ function stepToward(
   if (sx !== 0) candidates.push({ x: origin.x + sx, y: origin.y });
   if (sy !== 0) candidates.push({ x: origin.x, y: origin.y + sy });
   for (const c of candidates) {
-    if (!isStepFree(c.x, c.y, ctx)) continue;
+    if (!isStepFree(c.x, c.y, ctx, dest)) continue;
     if (!reachable.has(key(c.x, c.y))) continue;
     return c;
   }
@@ -648,7 +692,10 @@ function stepFlank(
   target: AICell,
   ctx: DecideEnemyContext,
   reachable: Set<string>,
+  destination?: AICell,
 ): AICell {
+  // Default the destination exemption to the target tile.
+  const dest = destination ?? target;
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
   // Perpendicular candidates (side approach).
@@ -674,12 +721,12 @@ function stepFlank(
   }
   for (const c of candidates) {
     if (tackleZone.has(key(c.x, c.y))) continue;
-    if (!isStepFree(c.x, c.y, ctx)) continue;
+    if (!isStepFree(c.x, c.y, ctx, dest)) continue;
     if (!reachable.has(key(c.x, c.y))) continue;
     return c;
   }
   // Fallback: plain approach.
-  return stepToward(origin, target, ctx, reachable);
+  return stepToward(origin, target, ctx, reachable, dest);
 }
 
 // ---------------------------------------------------------------------------
@@ -892,15 +939,78 @@ function countTargetsInBlast(
  * Section 4(f): structured intent log line for readability. Emits a
  * `logDebugInfo('TURN', 'intent', {archetype, action, target, reason})` entry
  * when AI_INTENT_LOG_ENABLED. Readability only — does not influence behavior.
+ *
+ * `reason` may be a plain string (e.g. "adjacent", "no-target") or a structured
+ * blocked-reason object produced by `blockedReason` for the six "blocked"
+ * sites. Structured reasons are JSON-stringified so the debug log stays a flat
+ * `{ archetype, action, target, reason }` payload.
  */
+type BlockedReason = {
+  reason: "blocked";
+  firstBlockedStep: { x: number; y: number };
+  blockedBy: "wall" | "occupied" | "void";
+};
+
 function logIntent(
   archetype: string,
   action: string,
   target: string | null,
-  reason: string,
+  reason: string | BlockedReason,
 ): void {
   if (!AI_INTENT_LOG_ENABLED) return;
-  logDebugInfo("TURN", "intent", { archetype, action, target, reason });
+  const reasonPayload =
+    typeof reason === "string" ? reason : JSON.stringify(reason);
+  logDebugInfo("TURN", "intent", {
+    archetype,
+    action,
+    target,
+    reason: reasonPayload,
+  });
+}
+
+/**
+ * Section 4(f.1): compute a structured "blocked" reason for a step from `origin`
+ * toward `target`. Returns the candidate step tile and the mapped cause
+ * ('wall' | 'occupied' | 'void') from the shared diagnostic occupancy check.
+ * Readability/debug only — does not change behavior.
+ *
+ * Cause mapping: 'wall' and 'oob' both surface as 'wall' (the AI cannot step
+ * off the grid or into a wall/barrier/portal), 'occupied' stays 'occupied',
+ * and 'void' stays 'void'. When origin === target (dx === 0 && dy === 0) the
+ * candidate step is the origin itself, and the cause is whatever the
+ * diagnostic reports for that tile (typically 'occupied' by the target).
+ */
+function blockedReason(
+  origin: AICell,
+  target: AICell,
+  ctx: DecideEnemyContext,
+): BlockedReason {
+  const dx = Math.sign(target.x - origin.x);
+  const dy = Math.sign(target.y - origin.y);
+  const candidateX = origin.x + dx;
+  const candidateY = origin.y + dy;
+  const diag = sharedIsCellFreeDiagnostic(
+    { x: candidateX, y: candidateY },
+    toOccupancyContext(ctx),
+  );
+  let blockedBy: BlockedReason["blockedBy"];
+  if (diag.ok) {
+    // Should not happen at a "blocked" site, but stay type-safe: default to
+    // 'wall' so the log line still parses.
+    blockedBy = "wall";
+  } else if (diag.cause === "occupied") {
+    blockedBy = "occupied";
+  } else if (diag.cause === "void") {
+    blockedBy = "void";
+  } else {
+    // 'wall' or 'oob' → 'wall'
+    blockedBy = "wall";
+  }
+  return {
+    reason: "blocked",
+    firstBlockedStep: { x: candidateX, y: candidateY },
+    blockedBy,
+  };
 }
 
 /** Find the player's healer summon (Wisp) for harassment, if present. */
@@ -1429,7 +1539,12 @@ function decideCharger(
     ctx.log(`${ctx.enemy.pieceType} charges forward!`, MOVE_COLOR);
     logIntent("charger", "advance", target.combatant.id, "in-reach");
   } else {
-    logIntent("charger", "hold", target.combatant.id, "blocked");
+    logIntent(
+      "charger",
+      "hold",
+      target.combatant.id,
+      blockedReason(origin, targetCell, ctx),
+    );
   }
   return {
     archetype: "charger",
@@ -1594,7 +1709,12 @@ function decideFlanker(
     ctx.log(`${ctx.enemy.pieceType} flanks your ${dir}!`, FLANK_COLOR);
     logIntent("flanker", "flank", target.combatant.id, `approach-${dir}`);
   } else {
-    logIntent("flanker", "hold", target.combatant.id, "blocked");
+    logIntent(
+      "flanker",
+      "hold",
+      target.combatant.id,
+      blockedReason(origin, targetCell, ctx),
+    );
   }
   return {
     archetype: "flanker",
@@ -1745,7 +1865,12 @@ function decideBerserker(
     ctx.log(`${ctx.enemy.pieceType} rages forward!`, MOVE_COLOR);
     logIntent("berserker", "rage-advance", target.combatant.id, "advance");
   } else {
-    logIntent("berserker", "hold", target.combatant.id, "blocked");
+    logIntent(
+      "berserker",
+      "hold",
+      target.combatant.id,
+      blockedReason(origin, targetCell, ctx),
+    );
   }
   return {
     archetype: "berserker",
@@ -1959,7 +2084,12 @@ function decideGeneric(
     ctx.log(`${ctx.enemy.pieceType} moves toward you`, MOVE_COLOR);
     logIntent("generic", "advance", target.combatant.id, "approach");
   } else {
-    logIntent("generic", "hold", target.combatant.id, "blocked");
+    logIntent(
+      "generic",
+      "hold",
+      target.combatant.id,
+      blockedReason(origin, targetCell, ctx),
+    );
   }
   return {
     archetype: "generic",
@@ -2347,7 +2477,12 @@ function decideSummonHunter(
     ctx.log(`${summon.pieceType} stalks ${target.combatant.name}`, MOVE_COLOR);
     logIntent("hunter", "advance", target.combatant.id, "stalk");
   } else {
-    logIntent("hunter", "hold", target.combatant.id, "blocked");
+    logIntent(
+      "hunter",
+      "hold",
+      target.combatant.id,
+      blockedReason(origin, targetCell, ctx),
+    );
   }
   return {
     archetype: "generic",
@@ -2810,7 +2945,12 @@ function decideSummonBomber(
       ctx.log(`${summon.pieceType} charges the cluster!`, MOVE_COLOR);
       logIntent("bomber", "advance", bestCenter.id, "approach-cluster");
     } else {
-      logIntent("bomber", "hold", bestCenter.id, "blocked");
+      logIntent(
+        "bomber",
+        "hold",
+        bestCenter.id,
+        blockedReason(origin, centerCell, ctx),
+      );
     }
     return {
       archetype: "generic",

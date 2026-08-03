@@ -24,7 +24,8 @@ export type LogCategory =
   | "TURN"
   | "MODIFIER"
   | "RESOLVER"
-  | "LEADER-BOOST";
+  | "LEADER-BOOST"
+  | "DEATH";
 
 const IS_DEV =
   typeof process !== "undefined" && process.env.NODE_ENV === "development";
