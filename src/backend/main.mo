@@ -3,8 +3,6 @@ import MixinAuthorization "mo:caffeineai-authorization/MixinAuthorization";
 import Map "mo:core/Map";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
-import Debug "mo:core/Debug";
-import Nat8 "mo:core/Nat8";
 import Blob "mo:core/Blob";
 import List "mo:core/List";
 import Time "mo:core/Time";
@@ -34,7 +32,7 @@ import Text "mo:core/Text";
 
 
 actor {
-    let accessControlState = AccessControl.initState();
+    let accessControlState : AccessControl.AccessControlState;
     include MixinAuthorization(accessControlState);
 
     public type UserProfile = {
@@ -45,7 +43,7 @@ actor {
         uiLayout : Text;
     };
 
-    let userProfiles = Map.empty<Principal, UserProfile>();
+    let userProfiles : Map.Map<Principal, UserProfile>;
 
     public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
         userProfiles.get(caller);
@@ -139,7 +137,7 @@ actor {
         slot3 : CharacterSlot;
     };
 
-    let characterSlots = Map.empty<Principal, CharacterSlots>();
+    let characterSlots : Map.Map<Principal, CharacterSlots>;
 
     public shared ({ caller }) func createCharacter(slot : Nat, character : Character) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
@@ -382,23 +380,13 @@ actor {
 
     // ─── Admin stores ────────────────────────────────────────────────────
 
-    let enemyConfigs        = Map.empty<Text, EnemyConfig>();
-    let regionConfigs       = Map.empty<Text, RegionConfig>();
-    let playerSpriteConfigs = Map.empty<Text, PlayerSpriteConfig>();
+    let enemyConfigs        : Map.Map<Text, EnemyConfig>;
+    let regionConfigs       : Map.Map<Text, RegionConfig>;
+    let playerSpriteConfigs : Map.Map<Text, PlayerSpriteConfig>;
 
     // ─── Level-up config (singleton, admin-editable) ────────────────────
 
-    var levelUpConfig : AdminTypes.LevelUpConfig = {
-        statGrowthPercent           = 5;
-        apMpLevelThreshold          = 25;
-        spellLevelingBaseCost       = 10;
-        spellLevelingCostMultiplier = 2.0;
-        spellDmgGrowthPercent       = 3;
-        maxSpellRange               = 5;
-        spellRangeGrowthLevels      = 10;
-        spellFailBaseChance         = 20.0;
-        spellFailReductionPerLevel  = 0.1;
-    };
+    var levelUpConfig : AdminTypes.LevelUpConfig;
 
     public shared ({ caller }) func adminSetLevelUpConfig(config : AdminTypes.LevelUpConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -413,7 +401,7 @@ actor {
     };
 
     // ─── Spell configs ───────────────────────────────────────────────────
-    let spellConfigs = Map.empty<Text, AdminTypes.SpellConfig>();
+    let spellConfigs : Map.Map<Text, AdminTypes.SpellConfig>;
 
     // Seed defaults on first run (store is empty on a fresh canister)
     do {
@@ -441,7 +429,7 @@ actor {
     };
 
     // ─── Map modifier configs ────────────────────────────────────────────
-    let mapModifierConfigs = Map.empty<Text, AdminTypes.MapModifierConfig>();
+    let mapModifierConfigs : Map.Map<Text, AdminTypes.MapModifierConfig>;
 
     // Seed default map modifiers on first run.
     do {
@@ -461,8 +449,8 @@ actor {
     // Internet Identity automatically becomes admin.
     //
     // M1: role-change timestamps prevent rapid cycling via assignUserRole.
-    let roleChangeTimestamps = Map.empty<Text, Int>();
-    let ROLE_CHANGE_MIN_NS : Int = 30_000_000_000; // 30 seconds in nanoseconds
+    let roleChangeTimestamps : Map.Map<Text, Int>;
+    let ROLE_CHANGE_MIN_NS : Int;
 
     /// Ensure the caller is registered in AccessControl.
     /// The first non-anonymous caller becomes admin; all others become #user.
@@ -721,7 +709,7 @@ actor {
     };
 
     // ─── Shop packages ─────────────────────────────────────────────────
-    let shopPackages = Map.empty<Text, AdminTypes.ShopPackage>();
+    let shopPackages : Map.Map<Text, AdminTypes.ShopPackage>;
 
     // Seed default packages on first run.
     do {
@@ -759,7 +747,7 @@ actor {
     };
 
     // ─── Achievement configs ────────────────────────────────────────────
-    let achievementConfigs = Map.empty<Text, AdminTypes.AchievementConfig>();
+    let achievementConfigs : Map.Map<Text, AdminTypes.AchievementConfig>;
 
     // Seed default achievements on first run.
     do {
@@ -771,17 +759,17 @@ actor {
     };
 
     /// Per-player progress keyed by "principalText#achievementId".
-    let achievementProgress = Map.empty<Text, AdminTypes.AchievementProgress>();
+    let achievementProgress : Map.Map<Text, AdminTypes.AchievementProgress>;
 
     // ─── Purchase records ──────────────────────────────────────────────
     // M7: purchaseRecords is a Map<Text, PurchaseRecord> — O(log n) lookup by id.
     // L3: nextPurchaseId is Nat (unbounded in Motoko); overflow is theoretical at
     //     2^128+ iterations; no practical cap needed but documented here.
-    let purchaseRecords = Map.empty<Text, AdminTypes.PurchaseRecord>();
-    var nextPurchaseId  : Nat = 0;
+    let purchaseRecords : Map.Map<Text, AdminTypes.PurchaseRecord>;
+    var nextPurchaseId  : Nat;
 
     /// Banned principals cannot play until unbanned.
-    let bannedPrincipals = Map.empty<Text, Bool>();
+    let bannedPrincipals : Map.Map<Text, Bool>;
 
     /// Player initiates a purchase — creates a pending record.
     /// Returns the purchase id so the frontend can track it.
@@ -1003,7 +991,7 @@ actor {
 
     // ─── Game config (singleton, admin-editable) ──────────────────────
 
-    var gameConfig : AdminTypes.AdminGameConfig = AdminLib.defaultGameConfig();
+    var gameConfig : AdminTypes.AdminGameConfig;
 
     public shared ({ caller }) func adminSetGameConfig(config : AdminTypes.AdminGameConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -1022,13 +1010,7 @@ actor {
 
     // ─── Tier spawn config (singleton, admin-editable) ──────────────────
 
-    var tierSpawnConfig : AdminTypes.TierSpawnConfig = {
-        tierSize            = 10;
-        sameTierPercent     = 60.0;
-        adjacentTierPercent = 20.0;
-        twoAwayPercent      = 10.0;
-        threeOrMorePercent  = 5.0;
-    };
+    var tierSpawnConfig : AdminTypes.TierSpawnConfig;
 
     public shared ({ caller }) func adminSetTierSpawnConfig(config : AdminTypes.TierSpawnConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -1046,7 +1028,7 @@ actor {
     // Stored as a JSON string for full flexibility — frontend serialises/
     // deserialises the palette object. Empty string = no admin override.
 
-    var colorPaletteStore : Text = "";
+    var colorPaletteStore : Text;
 
     public shared ({ caller }) func adminSetColorPalette(palettes : Text) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -1064,7 +1046,7 @@ actor {
     // Stored as a JSON string mirroring the frontend BossRushConfig shape.
     // Empty string = use frontend defaults.
 
-    var bossRushConfigStore : Text = "";
+    var bossRushConfigStore : Text;
 
     public shared ({ caller }) func adminSetBossRushConfig(config : Text) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -1348,13 +1330,13 @@ actor {
     // ─── App version tracking ──────────────────────────────────────────
 
     /// Current app version string, set by admin (e.g. "v161").
-    var appVersion : Text = "v163";
+    var appVersion : Text;
 
     /// Changelog entries keyed by version string.
-    let changelogs = Map.empty<Text, Text>();
+    let changelogs : Map.Map<Text, Text>;
 
     /// Per-user record of the last changelog version they have already seen.
-    let changelogShownVersions = Map.empty<Principal, Text>();
+    let changelogShownVersions : Map.Map<Principal, Text>;
 
     // Seed the initial changelog for v163.
     do {
@@ -1663,8 +1645,8 @@ actor {
     };
 
     /// In-memory only — intentionally clears on canister upgrade.
-    var chatMessages : List.List<ChatMessage> = List.empty();
-    var nextChatId   : Nat = 0;
+    var chatMessages : List.List<ChatMessage>;
+    var nextChatId   : Nat;
 
     /// Append a new message; trims list to at most 200 entries (oldest dropped).
     public shared func sendMessage(playerName : Text, text : Text, colorHex : Text) : async () {
@@ -1694,38 +1676,11 @@ actor {
 
     /// Admin-managed pool of ancient names used for enemy naming.
     /// Each enemy on a map gets at most one unique name drawn from this list.
-    var enemyNames : List.List<Text> = List.empty();
-    var enemyNamesInitialised : Bool = false;
+    var enemyNames : List.List<Text>;
+    var enemyNamesInitialised : Bool;
 
     /// Pre-filled list of 90 ancient names from various cultures.
-    let DEFAULT_ENEMY_NAMES : [Text] = [
-        // Roman
-        "Maximus", "Brutus", "Cassius", "Octavian", "Tiberius",
-        "Caligula", "Nero", "Vespasian", "Hadrian", "Trajan",
-        "Marcus", "Lucius", "Gaius", "Quintus", "Flavius",
-        "Decimus", "Publius", "Aulus", "Gnaeus", "Servius",
-        // Greek
-        "Achilles", "Hector", "Ajax", "Odysseus", "Perseus",
-        "Theseus", "Heracles", "Leonidas", "Pericles", "Themistocles",
-        "Xenophon", "Lysander", "Agamemnon", "Priam", "Diomedes",
-        "Patroclus", "Menelaus", "Ptolemy", "Pyrrhus", "Alcibiades",
-        // Egyptian
-        "Ramses", "Thutmose", "Amenhotep", "Akhenaten", "Seti",
-        "Khafre", "Djoser", "Narmer", "Khufu", "Sneferu",
-        "Mentuhotep", "Ahmose", "Horemheb", "Tutankhamun", "Nefertiti",
-        // Mesopotamian
-        "Gilgamesh", "Sargon", "Hammurabi", "Nebuchadnezzar", "Ashurbanipal",
-        "Tiglath", "Nimrod", "Enkidu", "Shamshi", "Naram",
-        // Norse / Germanic
-        "Odin", "Thor", "Loki", "Freyr", "Tyr",
-        "Baldur", "Fenrir", "Sigurd", "Ragnar", "Ivar",
-        // Persian / Achaemenid
-        "Cyrus", "Darius", "Xerxes", "Artaxerxes", "Cambyses",
-        // Celtic
-        "Vercingetorix", "Brennus", "Boudicca", "Caractacus", "Ambiorix",
-        // Aztec / Mayan
-        "Itzcoatl", "Tlacaelel", "Moctezuma", "Cuauhtemoc", "Chimalli"
-    ];
+    let DEFAULT_ENEMY_NAMES : [Text];
 
     /// Seed the names list on first call if it is empty.
     public shared func initDefaultNames() : async () {
@@ -1786,18 +1741,11 @@ actor {
 
     /// Per-principal buff inventories (keyed by principal, stores array of items per slot).
     /// Layout: principalText#slot → BuffInventory
-    let buffInventories = Map.empty<Text, AdminTypes.BuffInventory>();
+    let buffInventories : Map.Map<Text, AdminTypes.BuffInventory>;
 
     /// Hardcoded buff item catalog.
     /// itemId → (name, dokaCost)
-    let BUFF_CATALOG : [(Text, Text, Nat)] = [
-        ("health_potion",   "Health Potion",   50),
-        ("greater_potion",  "Greater Potion",  120),
-        ("battle_elixir",   "Battle Elixir",   200),
-        ("swift_boots",     "Swift Boots",     80),
-        ("shield_charm",    "Shield Charm",    150),
-        ("fury_potion",     "Fury Potion",     100),
-    ];
+    let BUFF_CATALOG : [(Text, Text, Nat)];
 
     /// Returns the cost of a buff item, or null if unknown.
     func _buffItemCost(itemId : Text) : ?Nat {
@@ -1909,7 +1857,7 @@ actor {
 
     // ─── Dungeon chain records ────────────────────────────────────────────────
 
-    let dungeonRecords = Map.empty<Principal, AdminTypes.DungeonRecord>();
+    let dungeonRecords : Map.Map<Principal, AdminTypes.DungeonRecord>;
 
     /// Returns a player's current dungeon chain record (null if never entered a dungeon).
     public query ({ caller }) func getDungeonRecord(principal : Principal) : async ?AdminTypes.DungeonRecord {
@@ -1970,7 +1918,7 @@ actor {
     // ─── Boss config system ─────────────────────────────────────────────────────────
 
     /// Stable store of boss configurations, keyed by boss id.
-    let bossConfigs = Map.empty<Text, AdminTypes.BossConfig>();
+    let bossConfigs : Map.Map<Text, AdminTypes.BossConfig>;
 
     // Seed all 12 default bosses on the first initialization.
     do {
@@ -1982,7 +1930,7 @@ actor {
     };
 
     /// Stable store for boss portal assignments, keyed by portalId.
-    let bossPortalAssignments = Map.empty<Text, Text>();  // portalId → bossId
+    let bossPortalAssignments : Map.Map<Text, Text>;  // portalId → bossId
 
     /// Admin: create or update a boss configuration.
     public shared ({ caller }) func setBossConfig(config : AdminTypes.BossConfig) : async { #ok; #err : Text } {
@@ -2054,7 +2002,7 @@ actor {
     // ─── Doka (currency) drop system ────────────────────────────────────────────────────
 
     /// Separate stable storage for Doka balances, keyed by Principal.
-    let dokaBalances = Map.empty<Principal, Nat>();
+    let dokaBalances : Map.Map<Principal, Nat>;
 
     /// Returns the caller's current Doka balance.
     public query ({ caller }) func getDokaBalance() : async Nat {
@@ -2313,7 +2261,7 @@ actor {
         totalBossRushRuns      : Nat;   // how many full 10-room runs completed
     };
 
-    let bossRushStates = Map.empty<Text, BossRushState>();
+    let bossRushStates : Map.Map<Text, BossRushState>;
 
     func _bossRushKey(caller : Principal, slot : Nat) : Text {
         caller.toText() # "#" # slot.toText()
@@ -2478,11 +2426,7 @@ actor {
     // ─── Ad boxes (login page, admin-managed) ───────────────────────────────
     // Three fixed slots; stored as a plain array of tuples for shared-type
     // compatibility.  Each entry is (imageUrl, linkUrl, isActive).
-    var adBoxes : [(Text, Text, Bool)] = [
-        ("", "", false),
-        ("", "", false),
-        ("", "", false),
-    ];
+    var adBoxes : [(Text, Text, Bool)];
 
     /// Returns all three ad box slots.  Empty/inactive slots have isActive=false.
     public query func getAdBoxes() : async [(Text, Text, Bool)] {

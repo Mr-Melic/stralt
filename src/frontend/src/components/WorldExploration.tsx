@@ -69,6 +69,7 @@ import { physicalAttackSpell, starterSpells } from "../data/spellData";
 // import.meta.env.DEV at the call site; this import is a pure module.
 import { getGeometrySnapshot, recordClickTrace } from "../debug/clickTrace";
 import type { SpriteRect } from "../debug/clickTrace";
+import { APP_BUILD } from "../debug/debugExport";
 // [CLICK-TRACE] Shared geometry-overlay toggle (read each frame by the render
 // post-pass and at click time to arm lastClickOverlayRef).
 import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
@@ -240,17 +241,6 @@ let _spellbarBisectConsoleCount = 0;
 // async IIFE's continuation, so a later cancellation cannot un-set it).
 // Keyed as `${userId}:${characterSlot}`.
 const _spellbarLoadedForCharKey = new Set<string>();
-
-// ─── [SPELLBAR BLOCKED-OVERWRITE INVARIANT] (HOTFIX) ────────────────────────
-// Last line of defense against the initial-derivation branch (the `else if`
-// that saves a default order when the fetched spellBarOrder is empty) re-running
-// and overwriting a bar that already got an initial save #ok this session.
-// Tracks charKeys (`${userId}:${characterSlot}`) that have already received a
-// [SPELLBAR] initial save #ok. If the initial-save branch is about to run AND
-// this charKey is already in the set, we log [SPELLBAR] BLOCKED-overwrite and
-// SKIP the save (just apply the fetched/active order). Module-level so it
-// survives remounts and cancellation races (same rationale as the guard above).
-const _spellbarInitialSavedCharKey = new Set<string>();
 
 // SECTION 1 — [TURN] skip-log throttle. The dead-entity skip guard in
 // advanceTurn logs whenever it skips a turn-order entry. A future skip must
@@ -2069,11 +2059,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // browser storage clears and device switches.
   // SECTION 4: spellBarOrder is the backend-authoritative source for the
   // arranged spell-bar order. We read it from getCharacter (the Character
-  // record now includes spellBarOrder: ?[Text]). Only the FIRST assignment
-  // after character creation may be automatic — and even then it uses the
-  // ownedSpells in their natural/learned order (NOT a random shuffle) and is
-  // immediately persisted via setSpellBarOrder so the next load reads it back.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: isSpellBarErr/spellBarErrMsg are stable local helpers (defined once, never reassigned)
+  // record now includes spellBarOrder: ?[Text]). The loader is APPLY-ONLY:
+  // it applies the fetched order verbatim (empty stays empty) and NEVER
+  // writes. There is NO default-derivation branch — empty slots stay empty
+  // and the player assigns spells manually from the spellbook. Persistence
+  // flows exclusively through handleSetActiveSpells → debounced
+  // setSpellBarOrder → flushSpellBarSave (the user-driven assign path).
   useEffect(() => {
     if (
       !userId ||
@@ -2157,6 +2148,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           return;
         }
+        // GUARD-SET (belt-and-braces): mark this character as loaded
+        // SYNCHRONOUSLY, before the await below. The previous guard-set lived
+        // at the END of the async IIFE, gated behind `await actor.getCharacter`
+        // and `if (cancelled) return;`. When ownedSpells identity churned on
+        // first cast, the cleanup set `cancelled = true` BEFORE the await
+        // resolved, so the early return fired and the guard-set was never
+        // reached — leaving moduleGuardHas:false on every fire and the load
+        // effect re-running forever. Setting it here (after the dirty-guard
+        // check passes, before the await) guarantees it's reached on EVERY
+        // non-skipped completion path: saved-order, empty-order, and even
+        // post-await cancellation (the await may still throw or cancel, but
+        // the guard is already set so the next fire skips). The post-IIFE
+        // guard-set below remains as a redundant backstop (re-adding to a Set
+        // is a no-op).
+        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
+        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         const savedOrder: string[] | undefined =
           character?.spellBarOrder ?? undefined;
         const ownedIds = new Set(ownedSpells.map((s) => s.id));
@@ -2187,100 +2194,39 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             nsKey("pbv_active_spells"),
             JSON.stringify(padded),
           );
-        } else if (ownedSpells.length > 0) {
-          // (b) spellBarOrder is empty/null — derive the default ONCE using the
-          // ownedSpells in their natural/learned order (NOT a random shuffle)
-          // and SAVE it immediately via setSpellBarOrder so the next load
-          // reads it back.
-          // HOTFIX (b): BLOCKED-overwrite invariant. This branch must run ONLY
-          // when the FETCHED character.spellBarOrder is genuinely empty (the
-          // `else if` above already verified savedOrder is empty/null). As a
-          // last line of defense against a re-run that would overwrite a bar
-          // that already got an initial save #ok this session, check the
-          // module-level `_spellbarInitialSavedCharKey` Set. If this charKey
-          // already has an initial save #ok, log BLOCKED-overwrite and SKIP the
-          // save entirely (just apply the active/fetched order). This survives
-          // remounts and cancellation races (module-level, same rationale as
-          // the load-once guard).
-          if (_spellbarInitialSavedCharKey.has(_charKey)) {
-            logDebugInfo("SPELLS", "[SPELLBAR] BLOCKED-overwrite", {
-              slot: characterSlot,
-              charKey: _charKey,
-              existingOrder: activeSpellIds,
-              fetchedOrder: savedOrder,
-            });
-            // Apply the current active order (do NOT save, do NOT clobber).
-            // activeSpellIds already holds the user's bar; just re-affirm it
-            // and the localStorage cache so the render is consistent.
-            setActiveSpellIds(activeSpellIds);
-            try {
-              localStorage.setItem(
-                nsKey("pbv_active_spells"),
-                JSON.stringify(activeSpellIds),
-              );
-            } catch {
-              // ignore
-            }
-          } else {
-            const first8 = ownedSpells.slice(0, 8).map((s) => s.id);
-            if (cancelled) return;
-            setActiveSpellIds(first8);
+        } else {
+          // (b) EMPTY IS VALID: spellBarOrder is empty/null. Apply the empty
+          // bar VERBATIM — no default derivation, no auto-save. The player
+          // assigns spells manually from the spellbook; empty slots stay empty.
+          // The loader is APPLY-ONLY: it never writes here. Persistence flows
+          // exclusively through handleSetActiveSpells → debounced
+          // setSpellBarOrder → flushSpellBarSave (the user-driven assign path).
+          setActiveSpellIds([]);
+          try {
             localStorage.setItem(
               nsKey("pbv_active_spells"),
-              JSON.stringify(first8),
+              JSON.stringify(Array(8).fill(null)),
             );
-            try {
-              // FIX 2b: Log the initial-save round-trip result too (the
-              // non-debounced fallback path). Same variant inspection as the
-              // debounced save above.
-              const result = await (actor as ActorAny).setSpellBarOrder(
-                BigInt(characterSlot),
-                first8,
-              );
-              if (isSpellBarErr(result)) {
-                logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
-                  msg: spellBarErrMsg(result),
-                  slot: characterSlot,
-                  orderIds: first8,
-                });
-                console.error(
-                  "[SpellInit] setSpellBarOrder #err:",
-                  spellBarErrMsg(result),
-                );
-              } else {
-                // HOTFIX (b): record this charKey as having received an initial
-                // save #ok this session so the BLOCKED-overwrite invariant
-                // above can catch any future re-run.
-                _spellbarInitialSavedCharKey.add(_charKey);
-                logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
-                  slot: characterSlot,
-                  orderIds: first8,
-                });
-              }
-            } catch (e) {
-              logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
-                error: String(e),
-                slot: characterSlot,
-                orderIds: first8,
-              });
-              console.warn(
-                "[SpellInit] Failed to save initial spellBarOrder:",
-                e,
-              );
-            }
+          } catch {
+            // ignore
           }
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR] applied empty order (no defaults)",
+            {
+              slot: characterSlot,
+              charKey: _charKey,
+              ownedCount: ownedSpells.length,
+            },
+          );
         }
       } catch (e) {
         console.warn("[SpellLoad] Failed to load spells from backend:", e);
       }
-      // BREAK 2a: Mark this character as loaded ONLY if the effect wasn't
-      // cancelled mid-flight. A cancelled load (deps changed again before
-      // the await resolved) leaves the guard unset so the next run re-loads.
-      // HOTFIX (a): the authoritative guard is now the MODULE-LEVEL
-      // `_spellbarLoadedForCharKey` Set (persists across remounts and is
-      // visible to the next effect run even if THIS run is cancelled right
-      // after). The in-component ref is kept only as a debug mirror for the
-      // bisect log's prevCharKey field.
+      // BREAK 2a: Redundant backstop — the authoritative guard-set now fires
+      // SYNCHRONOUSLY before the await (above), so this block is a no-op
+      // re-add for a Set. Kept for diagnostic continuity (the bisect log
+      // confirms the load IIFE reached its natural end without throwing).
       if (!cancelled) {
         _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
         loadedForCharacterRef.current = `${userId}:${characterSlot}`;
@@ -7097,7 +7043,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           Math.abs(enemy.x - playerPositionRef.current.x) <= 1 &&
           Math.abs(enemy.y - playerPositionRef.current.y) <= 1
         ) {
-          checkBattleTriggerRef.current();
+          // FIX (Approach A): defer battle-init to a clean macrotask so the
+          // flushSync block inside checkBattleTrigger runs OUTSIDE this RAF
+          // callback (updateEnemyMovement is invoked from the animate loop,
+          // which is a requestAnimationFrame callback). Calling flushSync
+          // synchronously from inside a RAF callback can fail or half-apply,
+          // leaving battle state partially committed with no dispatch. The
+          // first-dispatch chain (advanceTurn → scheduleEnemyExecutorRef at
+          // the enemy-ai branch) runs inside checkBattleTrigger's flushSync
+          // block, so it still fires after the deferred init commits.
+          setTimeout(() => {
+            checkBattleTriggerRef.current();
+          }, 0);
           break;
         }
       }
@@ -11199,8 +11156,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // safe: it no-ops when no enemy is on the new tile or when a battle is
         // already in progress. This restores pre-round-11 sensitivity where
         // stepping onto an enemy tile triggered battle.
+        // FIX (Approach A): defer battle-init to a clean macrotask so the
+        // flushSync block inside checkBattleTrigger runs OUTSIDE this RAF
+        // callback. Calling flushSync synchronously from inside a RAF callback
+        // can fail or half-apply, leaving battle state partially committed with
+        // no dispatch (matches the export with ZERO [TURN] lines). The
+        // first-dispatch chain (advanceTurn → scheduleEnemyExecutorRef at the
+        // enemy-ai branch) runs inside checkBattleTrigger's flushSync block, so
+        // it still fires after the deferred init commits.
         if (!inBattleRef.current && !transitionInProgressRef.current) {
-          checkBattleTriggerRef.current();
+          setTimeout(() => {
+            checkBattleTriggerRef.current();
+          }, 0);
         }
         if (isShrineRoomRef.current && shrineAltarPosRef.current) {
           const _isHazardTile =
@@ -11963,11 +11930,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // (after the generation bump, before the first dispatch) so a silent
       // battle-2 is impossible to hide. pendingTimeouts count is read here
       // (post-cleanup, pre-flushSync) so it reflects the clean slate.
-      console.log("[TURN] lifecycle", {
+      logDebugInfo("TURN", "[TURN] lifecycle", {
         aiGen: aiGenerationRef.current,
         sessionVer: sessionVersionRef.current,
         inProgressFlag: enemyTurnInProgressRef.current,
         pendingTimeouts: pendingTimeoutsRef.current.size,
+        appBuild: APP_BUILD,
       });
       playSound("battle_start");
 
@@ -12035,92 +12003,117 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         localIds: activeSpellIdsForSaveRef.current,
         dirty: spellBarDirtyRef.current,
       });
-      flushSync(() => {
-        syncCombatants(combatantStoreCtx, enemiesWithSpells);
-        mapModifierRegistry.applyBattleStart(
-          combatantsRef.current,
-          activeMapModifierTypes,
-        );
-        setEnragedEnemies(new Set());
-        setEnemyHpMap(hpMap);
-        setTurnOrder(orderWithLeader);
-        turnOrderRef.current = orderWithLeader;
-        setCurrentTurnIndex(0);
-        currentTurnIndexRef.current = 0;
-        // Part 2: Explicit turn-0 dispatch. advanceTurn's AI branches drive
-        // AI turns via setBattlePhase("enemy") (see @11197/@11207), which
-        // triggers the AI-trigger effect (@11310, deps [inBattle,
-        // currentTurnIndex, battlePhase]). Part 1's cleanupBattle reset
-        // guarantees this setBattlePhase("enemy") is a REAL state change
-        // (player→enemy) when entry 0 is an AI combatant, so the effect
-        // fires turn 0 even after a prior battle ended mid-enemy-phase.
-        // No parallel AI runner is introduced — this IS the same mechanism.
-        setBattlePhase(
-          orderWithLeader[0].type === "player" ? "player" : "enemy",
-        );
-        setInBattle(true);
-        inBattleRef.current = true;
-        onDebugLog?.("BATTLE_START", "Battle started");
-        setBattleEnemies([...enemiesWithSpells]);
-        // Battle-start AP/MP init now reads from the canonical progression
-        // formula (getPlayerBaseStats) + active-effect modifiers, NOT the raw
-        // persisted characterStats.ap/mp. The formula is the floor
-        // (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence.
-        const _baseStats = getPlayerBaseStats(
-          characterStats.level,
-          levelUpConfig,
-        );
-        const _baseAp =
-          _baseStats.ap +
-          getStatModifier("player", "ap", activeEffectsRef.current);
-        const _baseMp =
-          _baseStats.mp +
-          getStatModifier("player", "mp", activeEffectsRef.current);
-        setCurrentBattleApSynced(_baseAp);
-        setCurrentBattleMp(_baseMp);
-        if (
-          !_progressionDivergenceWarned &&
-          (Number(characterStats.ap) !== _baseStats.ap ||
-            Number(characterStats.mp) !== _baseStats.mp)
-        ) {
-          _progressionDivergenceWarned = true;
-          logDebugWarn(
-            "BATTLE",
-            "[PROGRESSION] persisted ap/mp diverges from formula",
-            {
-              persistedAp: Number(characterStats.ap),
-              formulaAp: _baseStats.ap,
-              persistedMp: Number(characterStats.mp),
-              formulaMp: _baseStats.mp,
-              level: characterStats.level,
-            },
-          );
-        }
-        setBattleActionMode("walk");
-        setBattleTurn(1);
-        activeEffectsRef.current = [];
-        setActiveEffects([]);
-        // Reset cooldowns at start of every battle
-        spellCooldownsRef.current.clear();
-        setSpellCooldownVersion((v) => v + 1);
-        setEnemyCooldowns({});
-        // H-2: battleReadyRef set INSIDE flushSync so it is true by the time
-        // the AI effect runs after the single commit — first enemy turn never skips.
-        battleReadyRef.current = true;
-        // C1: enemyTurnAbortRef MUST be reset inside flushSync — if it's reset
-        // after flushSync closes there is a tiny window where AI fires with abort=true
-        // and the first enemy turn silently skips.
-        enemyTurnAbortRef.current = false;
-        // C4: battleStartSkipRef MUST be set before the flushSync commit so the
-        // VFX canvas is paused from the very first rendered frame of the new battle.
-        battleStartSkipRef.current = 2;
-        reconcileBattleState(combatantStoreCtx, {
-          inBattle: true,
-          victoryFiredThisBattleRef,
-          triggerVictory: () =>
-            handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
-        });
+      // [TURN] battle-init breadcrumb #1 — fires immediately before the
+      // flushSync commit so we can confirm the dispatch reached this point.
+      logDebugInfo("TURN", "[TURN] battle-init position: start", {
+        appBuild: APP_BUILD,
+        stage: "start",
       });
+      try {
+        flushSync(() => {
+          syncCombatants(combatantStoreCtx, enemiesWithSpells);
+          mapModifierRegistry.applyBattleStart(
+            combatantsRef.current,
+            activeMapModifierTypes,
+          );
+          setEnragedEnemies(new Set());
+          setEnemyHpMap(hpMap);
+          setTurnOrder(orderWithLeader);
+          turnOrderRef.current = orderWithLeader;
+          setCurrentTurnIndex(0);
+          currentTurnIndexRef.current = 0;
+          // Part 2: Explicit turn-0 dispatch. advanceTurn's AI branches drive
+          // AI turns via setBattlePhase("enemy") (see @11197/@11207), which
+          // triggers the AI-trigger effect (@11310, deps [inBattle,
+          // currentTurnIndex, battlePhase]). Part 1's cleanupBattle reset
+          // guarantees this setBattlePhase("enemy") is a REAL state change
+          // (player→enemy) when entry 0 is an AI combatant, so the effect
+          // fires turn 0 even after a prior battle ended mid-enemy-phase.
+          // No parallel AI runner is introduced — this IS the same mechanism.
+          setBattlePhase(
+            orderWithLeader[0].type === "player" ? "player" : "enemy",
+          );
+          setInBattle(true);
+          inBattleRef.current = true;
+          onDebugLog?.("BATTLE_START", "Battle started");
+          setBattleEnemies([...enemiesWithSpells]);
+          // Battle-start AP/MP init now reads from the canonical progression
+          // formula (getPlayerBaseStats) + active-effect modifiers, NOT the raw
+          // persisted characterStats.ap/mp. The formula is the floor
+          // (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence.
+          const _baseStats = getPlayerBaseStats(
+            characterStats.level,
+            levelUpConfig,
+          );
+          const _baseAp =
+            _baseStats.ap +
+            getStatModifier("player", "ap", activeEffectsRef.current);
+          const _baseMp =
+            _baseStats.mp +
+            getStatModifier("player", "mp", activeEffectsRef.current);
+          setCurrentBattleApSynced(_baseAp);
+          setCurrentBattleMp(_baseMp);
+          if (
+            !_progressionDivergenceWarned &&
+            (Number(characterStats.ap) !== _baseStats.ap ||
+              Number(characterStats.mp) !== _baseStats.mp)
+          ) {
+            _progressionDivergenceWarned = true;
+            logDebugWarn(
+              "BATTLE",
+              "[PROGRESSION] persisted ap/mp diverges from formula",
+              {
+                persistedAp: Number(characterStats.ap),
+                formulaAp: _baseStats.ap,
+                persistedMp: Number(characterStats.mp),
+                formulaMp: _baseStats.mp,
+                level: characterStats.level,
+              },
+            );
+          }
+          setBattleActionMode("walk");
+          setBattleTurn(1);
+          activeEffectsRef.current = [];
+          setActiveEffects([]);
+          // Reset cooldowns at start of every battle
+          spellCooldownsRef.current.clear();
+          setSpellCooldownVersion((v) => v + 1);
+          setEnemyCooldowns({});
+          // H-2: battleReadyRef set INSIDE flushSync so it is true by the time
+          // the AI effect runs after the single commit — first enemy turn never skips.
+          battleReadyRef.current = true;
+          // C1: enemyTurnAbortRef MUST be reset inside flushSync — if it's reset
+          // after flushSync closes there is a tiny window where AI fires with abort=true
+          // and the first enemy turn silently skips.
+          enemyTurnAbortRef.current = false;
+          // C4: battleStartSkipRef MUST be set before the flushSync commit so the
+          // VFX canvas is paused from the very first rendered frame of the new battle.
+          battleStartSkipRef.current = 2;
+          reconcileBattleState(combatantStoreCtx, {
+            inBattle: true,
+            victoryFiredThisBattleRef,
+            triggerVictory: () =>
+              handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
+          });
+        });
+        // [TURN] battle-init breadcrumb #2 — fires only on a successful
+        // flushSync commit (inside the try, after the }); closes).
+        logDebugInfo(
+          "TURN",
+          "[TURN] battle-init position: flushSync-committed",
+          {
+            appBuild: APP_BUILD,
+            stage: "flushSync-committed",
+          },
+        );
+      } catch (error) {
+        logDebugError("TURN", "[TURN] battle-init-error", {
+          stage: "battle-init-flushSync",
+          error: String(error),
+          appBuild: APP_BUILD,
+        });
+        throw error;
+      }
 
       inBattleRef.current = true;
       if (battleInitSafetyTimeoutRef.current)
@@ -13822,7 +13815,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // same executor body in setTimeout(0) and fires for EVERY enemy
             // dispatch including consecutive enemies. The dispatch-time
             // watchdog re-arm above (13382-13407) stays as the ceiling.
-            scheduleEnemyExecutorRef.current(nextCombatant.id);
+            // [TURN] battle-init breadcrumb #3 — fires immediately before the
+            // first-dispatch of the enemy executor.
+            logDebugInfo(
+              "TURN",
+              "[TURN] battle-init position: first-dispatch",
+              {
+                appBuild: APP_BUILD,
+                stage: "first-dispatch",
+              },
+            );
+            try {
+              scheduleEnemyExecutorRef.current(nextCombatant.id);
+            } catch (error) {
+              logDebugError("TURN", "[TURN] battle-init-error", {
+                stage: "first-dispatch",
+                error: String(error),
+                appBuild: APP_BUILD,
+              });
+              throw error;
+            }
             // SECTION 3 — FIX (a) TRY/CATCH WRAP: the post-dispatch chain
             // (setBattlePhase('enemy') → applyTurnStart → processActiveEffects →
             // plague zone → log) is wrapped so a throw in any of these does not
@@ -14152,7 +14164,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // curGen is the live value. A mismatch (myGen !== curGen) means the
       // callback is stale and every guard below will abort — which is exactly
       // the triple-silence signature when it happens to the FIRST dispatch.
-      console.log("[TURN] executor-start", {
+      logDebugInfo("TURN", "[TURN] executor-start", {
         id: enemyId,
         myGen: myAIGeneration,
         curGen: aiGenerationRef.current,

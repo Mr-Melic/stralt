@@ -44044,7 +44044,7 @@ function getGeometrySnapshot(input) {
     spriteRectsSummary: { count: count2, ids }
   };
 }
-const APP_BUILD = "#344";
+const APP_BUILD = "#346";
 function esc(s2) {
   return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -60267,7 +60267,6 @@ let _fbNameIdx = 0;
 let _progressionDivergenceWarned = false;
 let _spellbarBisectLoadSkipCount = 0;
 const _spellbarLoadedForCharKey = /* @__PURE__ */ new Set();
-const _spellbarInitialSavedCharKey = /* @__PURE__ */ new Set();
 let _turnSkipLogLastTs = 0;
 const CAMERA_SMOOTHING_FACTOR = 0.85;
 class CanvasErrorBoundary extends reactExports.Component {
@@ -61388,6 +61387,8 @@ const WorldExplorationInner = ({
           );
           return;
         }
+        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
+        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         const savedOrder = (character2 == null ? void 0 : character2.spellBarOrder) ?? void 0;
         const ownedIds = new Set(ownedSpells.map((s2) => s2.id));
         if (savedOrder && savedOrder.length > 0) {
@@ -61411,64 +61412,24 @@ const WorldExplorationInner = ({
             nsKey("pbv_active_spells"),
             JSON.stringify(padded)
           );
-        } else if (ownedSpells.length > 0) {
-          if (_spellbarInitialSavedCharKey.has(_charKey)) {
-            logDebugInfo("SPELLS", "[SPELLBAR] BLOCKED-overwrite", {
-              slot: characterSlot,
-              charKey: _charKey,
-              existingOrder: activeSpellIds,
-              fetchedOrder: savedOrder
-            });
-            setActiveSpellIds(activeSpellIds);
-            try {
-              localStorage.setItem(
-                nsKey("pbv_active_spells"),
-                JSON.stringify(activeSpellIds)
-              );
-            } catch {
-            }
-          } else {
-            const first8 = ownedSpells.slice(0, 8).map((s2) => s2.id);
-            if (cancelled) return;
-            setActiveSpellIds(first8);
+        } else {
+          setActiveSpellIds([]);
+          try {
             localStorage.setItem(
               nsKey("pbv_active_spells"),
-              JSON.stringify(first8)
+              JSON.stringify(Array(8).fill(null))
             );
-            try {
-              const result = await actor.setSpellBarOrder(
-                BigInt(characterSlot),
-                first8
-              );
-              if (isSpellBarErr(result)) {
-                logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
-                  msg: spellBarErrMsg(result),
-                  slot: characterSlot,
-                  orderIds: first8
-                });
-                console.error(
-                  "[SpellInit] setSpellBarOrder #err:",
-                  spellBarErrMsg(result)
-                );
-              } else {
-                _spellbarInitialSavedCharKey.add(_charKey);
-                logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
-                  slot: characterSlot,
-                  orderIds: first8
-                });
-              }
-            } catch (e) {
-              logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
-                error: String(e),
-                slot: characterSlot,
-                orderIds: first8
-              });
-              console.warn(
-                "[SpellInit] Failed to save initial spellBarOrder:",
-                e
-              );
-            }
+          } catch {
           }
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR] applied empty order (no defaults)",
+            {
+              slot: characterSlot,
+              charKey: _charKey,
+              ownedCount: ownedSpells.length
+            }
+          );
         }
       } catch (e) {
         console.warn("[SpellLoad] Failed to load spells from backend:", e);
@@ -65164,7 +65125,9 @@ const WorldExplorationInner = ({
     if (!inBattleRef.current && !transitionInProgressRef.current) {
       for (const enemy of nextEnemies) {
         if (Math.abs(enemy.x - playerPositionRef.current.x) <= 1 && Math.abs(enemy.y - playerPositionRef.current.y) <= 1) {
-          checkBattleTriggerRef.current();
+          setTimeout(() => {
+            checkBattleTriggerRef.current();
+          }, 0);
           break;
         }
       }
@@ -68254,7 +68217,9 @@ const WorldExplorationInner = ({
         };
         setPlayerPositionSynced(newPos);
         if (!inBattleRef.current && !transitionInProgressRef.current) {
-          checkBattleTriggerRef.current();
+          setTimeout(() => {
+            checkBattleTriggerRef.current();
+          }, 0);
         }
         if (isShrineRoomRef.current && shrineAltarPosRef.current) {
           const _isHazardTile = ((_a4 = currentMap == null ? void 0 : currentMap.hazardTiles) == null ? void 0 : _a4.has(`${newPos.x},${newPos.y}`)) ?? false;
@@ -68748,11 +68713,12 @@ const WorldExplorationInner = ({
         hpMap[e.id] = isBossForHp ? currentBossConfigRef.current.baseStats.hp : calcEnemyMaxHp(e.level);
       }
       aiGenerationRef.current += 1;
-      console.log("[TURN] lifecycle", {
+      logDebugInfo("TURN", "[TURN] lifecycle", {
         aiGen: aiGenerationRef.current,
         sessionVer: sessionVersionRef.current,
         inProgressFlag: enemyTurnInProgressRef.current,
-        pendingTimeouts: pendingTimeoutsRef.current.size
+        pendingTimeouts: pendingTimeoutsRef.current.size,
+        appBuild: APP_BUILD
       });
       playSound("battle_start");
       const sortedByLevel = [...enemiesWithSpells].sort(
@@ -68784,66 +68750,87 @@ const WorldExplorationInner = ({
         localIds: activeSpellIdsForSaveRef.current,
         dirty: spellBarDirtyRef.current
       });
-      reactDomExports.flushSync(() => {
-        syncCombatants(combatantStoreCtx, enemiesWithSpells);
-        mapModifierRegistry.applyBattleStart(
-          combatantsRef.current,
-          activeMapModifierTypes
-        );
-        setEnragedEnemies(/* @__PURE__ */ new Set());
-        setEnemyHpMap(hpMap);
-        setTurnOrder(orderWithLeader);
-        turnOrderRef.current = orderWithLeader;
-        setCurrentTurnIndex(0);
-        currentTurnIndexRef.current = 0;
-        setBattlePhase(
-          orderWithLeader[0].type === "player" ? "player" : "enemy"
-        );
-        setInBattle(true);
-        inBattleRef.current = true;
-        onDebugLog == null ? void 0 : onDebugLog("BATTLE_START", "Battle started");
-        setBattleEnemies([...enemiesWithSpells]);
-        const _baseStats = getPlayerBaseStats(
-          characterStats.level,
-          levelUpConfig
-        );
-        const _baseAp = _baseStats.ap + getStatModifier("player", "ap", activeEffectsRef.current);
-        const _baseMp = _baseStats.mp + getStatModifier("player", "mp", activeEffectsRef.current);
-        setCurrentBattleApSynced(_baseAp);
-        setCurrentBattleMp(_baseMp);
-        if (!_progressionDivergenceWarned && (Number(characterStats.ap) !== _baseStats.ap || Number(characterStats.mp) !== _baseStats.mp)) {
-          _progressionDivergenceWarned = true;
-          logDebugWarn(
-            "BATTLE",
-            "[PROGRESSION] persisted ap/mp diverges from formula",
-            {
-              persistedAp: Number(characterStats.ap),
-              formulaAp: _baseStats.ap,
-              persistedMp: Number(characterStats.mp),
-              formulaMp: _baseStats.mp,
-              level: characterStats.level
-            }
-          );
-        }
-        setBattleActionMode("walk");
-        setBattleTurn(1);
-        activeEffectsRef.current = [];
-        setActiveEffects([]);
-        spellCooldownsRef.current.clear();
-        setSpellCooldownVersion((v2) => v2 + 1);
-        setEnemyCooldowns({});
-        battleReadyRef.current = true;
-        enemyTurnAbortRef.current = false;
-        battleStartSkipRef.current = 2;
-        reconcileBattleState(combatantStoreCtx, {
-          inBattle: true,
-          victoryFiredThisBattleRef,
-          triggerVictory: () => {
-            var _a4;
-            return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
-          }
-        });
+      logDebugInfo("TURN", "[TURN] battle-init position: start", {
+        appBuild: APP_BUILD,
+        stage: "start"
       });
+      try {
+        reactDomExports.flushSync(() => {
+          syncCombatants(combatantStoreCtx, enemiesWithSpells);
+          mapModifierRegistry.applyBattleStart(
+            combatantsRef.current,
+            activeMapModifierTypes
+          );
+          setEnragedEnemies(/* @__PURE__ */ new Set());
+          setEnemyHpMap(hpMap);
+          setTurnOrder(orderWithLeader);
+          turnOrderRef.current = orderWithLeader;
+          setCurrentTurnIndex(0);
+          currentTurnIndexRef.current = 0;
+          setBattlePhase(
+            orderWithLeader[0].type === "player" ? "player" : "enemy"
+          );
+          setInBattle(true);
+          inBattleRef.current = true;
+          onDebugLog == null ? void 0 : onDebugLog("BATTLE_START", "Battle started");
+          setBattleEnemies([...enemiesWithSpells]);
+          const _baseStats = getPlayerBaseStats(
+            characterStats.level,
+            levelUpConfig
+          );
+          const _baseAp = _baseStats.ap + getStatModifier("player", "ap", activeEffectsRef.current);
+          const _baseMp = _baseStats.mp + getStatModifier("player", "mp", activeEffectsRef.current);
+          setCurrentBattleApSynced(_baseAp);
+          setCurrentBattleMp(_baseMp);
+          if (!_progressionDivergenceWarned && (Number(characterStats.ap) !== _baseStats.ap || Number(characterStats.mp) !== _baseStats.mp)) {
+            _progressionDivergenceWarned = true;
+            logDebugWarn(
+              "BATTLE",
+              "[PROGRESSION] persisted ap/mp diverges from formula",
+              {
+                persistedAp: Number(characterStats.ap),
+                formulaAp: _baseStats.ap,
+                persistedMp: Number(characterStats.mp),
+                formulaMp: _baseStats.mp,
+                level: characterStats.level
+              }
+            );
+          }
+          setBattleActionMode("walk");
+          setBattleTurn(1);
+          activeEffectsRef.current = [];
+          setActiveEffects([]);
+          spellCooldownsRef.current.clear();
+          setSpellCooldownVersion((v2) => v2 + 1);
+          setEnemyCooldowns({});
+          battleReadyRef.current = true;
+          enemyTurnAbortRef.current = false;
+          battleStartSkipRef.current = 2;
+          reconcileBattleState(combatantStoreCtx, {
+            inBattle: true,
+            victoryFiredThisBattleRef,
+            triggerVictory: () => {
+              var _a4;
+              return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
+            }
+          });
+        });
+        logDebugInfo(
+          "TURN",
+          "[TURN] battle-init position: flushSync-committed",
+          {
+            appBuild: APP_BUILD,
+            stage: "flushSync-committed"
+          }
+        );
+      } catch (error) {
+        logDebugError("TURN", "[TURN] battle-init-error", {
+          stage: "battle-init-flushSync",
+          error: String(error),
+          appBuild: APP_BUILD
+        });
+        throw error;
+      }
       inBattleRef.current = true;
       if (battleInitSafetyTimeoutRef.current)
         clearTimeout(battleInitSafetyTimeoutRef.current);
@@ -70085,7 +70072,24 @@ const WorldExplorationInner = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current
             });
-            scheduleEnemyExecutorRef.current(nextCombatant.id);
+            logDebugInfo(
+              "TURN",
+              "[TURN] battle-init position: first-dispatch",
+              {
+                appBuild: APP_BUILD,
+                stage: "first-dispatch"
+              }
+            );
+            try {
+              scheduleEnemyExecutorRef.current(nextCombatant.id);
+            } catch (error) {
+              logDebugError("TURN", "[TURN] battle-init-error", {
+                stage: "first-dispatch",
+                error: String(error),
+                appBuild: APP_BUILD
+              });
+              throw error;
+            }
             try {
               setBattlePhase("enemy");
               mapModifierRegistry.applyTurnStart(
@@ -70298,7 +70302,7 @@ const WorldExplorationInner = ({
     const mySessionVersion = sessionVersionRef.current;
     let watchdog;
     const timeout2 = setTimeout(() => {
-      console.log("[TURN] executor-start", {
+      logDebugInfo("TURN", "[TURN] executor-start", {
         id: enemyId,
         myGen: myAIGeneration,
         curGen: aiGenerationRef.current
@@ -77314,7 +77318,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DMDnpqvO.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CowCbUZE.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {
