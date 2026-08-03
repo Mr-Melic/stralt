@@ -34885,7 +34885,7 @@ const JUICE = {
   hitFlash: { durationMs: 120 },
   death: { durationMs: 350, fragments: 5 }
 };
-const ENEMY_RETREAT_HP_PCT = 0.3;
+const ENEMY_RETREAT_HP_PCT = 0.25;
 const ENEMY_WOUNDED_SACRIFICE_HP_PCT = 0.2;
 const ENEMY_HAZARD_AVOID_HP_PCT = 0.5;
 const ENEMY_HEAL_ALLY_THRESHOLD_PCT = 0.5;
@@ -52553,9 +52553,9 @@ function decideCharger(ctx, opponents, reachable) {
   }
   for (const t of scored) {
     const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const dist22 = chebyshev(origin, tCell);
-    const canReach2 = dist22 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
-    if (!canReach2) continue;
+    const dist2 = chebyshev(origin, tCell);
+    const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
+    if (!canReach) continue;
     const chargeSpell = pickBestDamageSpellForReach(ctx);
     if (chargeSpell) {
       const castTile = findNearestLegalCastTile(
@@ -52585,26 +52585,10 @@ function decideCharger(ctx, opponents, reachable) {
     }
   }
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist2 = chebyshev(origin, targetCell);
-  const canReach = dist2 <= ENEMY_REACHABLE_STEP_BUDGET + 1;
-  if (!canReach) {
-    ctx.log(`${ctx.enemy.pieceType} waits to charge`, SKIP_COLOR);
-    logIntent("charger", "wait", target.combatant.id, "out-of-reach");
-    return {
-      archetype: "charger",
-      destination: origin,
-      spell: null,
-      targetId: null,
-      kind: "skip",
-      intent: "wait",
-      intentColor: SKIP_COLOR,
-      retreating: false
-    };
-  }
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     ctx.log(`${ctx.enemy.pieceType} charges forward!`, MOVE_COLOR);
-    logIntent("charger", "advance", target.combatant.id, "in-reach");
+    logIntent("charger", "advance", target.combatant.id, "approach");
   } else {
     logIntent(
       "charger",
@@ -60796,6 +60780,8 @@ const WorldExplorationInner = ({
   const isInitializedRef = reactExports.useRef(false);
   const transitionInProgressRef = reactExports.useRef(false);
   const lastPortalRef = reactExports.useRef(null);
+  const portalLatchRef = reactExports.useRef(null);
+  const transitionLockTimeoutRef = reactExports.useRef(null);
   const sealedPortalAnnouncedRef = reactExports.useRef(null);
   const prevIsMovingRef = reactExports.useRef(false);
   const checkPortalInteractionRef = reactExports.useRef(() => {
@@ -64736,695 +64722,740 @@ const WorldExplorationInner = ({
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return;
     if (!currentMap) return;
-    setTransitionInProgress(true);
-    transitionInProgressRef.current = true;
-    lastPortalRef.current = null;
-    onDebugLog == null ? void 0 : onDebugLog("MAP_TRANSITION", "Portal entered");
-    let portal = currentMap.portals.find(
+    const _tileKey = `${playerPositionRef.current.x},${playerPositionRef.current.y}`;
+    const _candidatePortal = currentMap.portals.find(
       (p2) => p2.x === playerPositionRef.current.x && p2.y === playerPositionRef.current.y
     );
-    if (!portal) {
-      const nearbyRest = currentMap.portals.find(
-        (p2) => p2.isRestPortal && Math.sqrt(
-          (playerPositionRef.current.x - p2.x) ** 2 + (playerPositionRef.current.y - p2.y) ** 2
-        ) < 1.5
-      );
-      if (nearbyRest) portal = nearbyRest;
+    if (_candidatePortal) {
+      const _candidatePortalKey = `${_candidatePortal.x},${_candidatePortal.y}`;
+      const _latch = portalLatchRef.current;
+      if ((_latch == null ? void 0 : _latch.armed) && _latch.portalKey === _candidatePortalKey && _latch.tileKey === _tileKey) {
+        return;
+      }
+    } else {
+      const _latch = portalLatchRef.current;
+      if (_latch && _latch.tileKey !== _tileKey) {
+        portalLatchRef.current = null;
+      }
     }
-    if (!portal) {
-      setTransitionInProgress(false);
+    setTransitionInProgress(true);
+    transitionInProgressRef.current = true;
+    if (transitionLockTimeoutRef.current !== null) {
+      clearTimeout(transitionLockTimeoutRef.current);
+    }
+    transitionLockTimeoutRef.current = window.setTimeout(() => {
+      transitionLockTimeoutRef.current = null;
+      if (transitionInProgressRef.current) {
+        transitionInProgressRef.current = false;
+        setTransitionInProgress(false);
+        onDebugLog == null ? void 0 : onDebugLog(
+          "MAP_TRANSITION",
+          "Transition lock cleared by timeout safety"
+        );
+      }
+    }, 5e3);
+    const _releaseTransitionLock = () => {
+      if (transitionLockTimeoutRef.current !== null) {
+        clearTimeout(transitionLockTimeoutRef.current);
+        transitionLockTimeoutRef.current = null;
+      }
       transitionInProgressRef.current = false;
-      sealedPortalAnnouncedRef.current = null;
-      return;
-    }
-    if (portal) {
-      const portalKey = `${portal.x},${portal.y}`;
-      const lastPortal = lastPortalRef.current;
-      let lastPortalKey = null;
-      if (lastPortal) {
-        lastPortalKey = `${lastPortal.x},${lastPortal.y}`;
+      setTransitionInProgress(false);
+    };
+    lastPortalRef.current = null;
+    onDebugLog == null ? void 0 : onDebugLog("MAP_TRANSITION", "Portal entered");
+    try {
+      let portal = currentMap.portals.find(
+        (p2) => p2.x === playerPositionRef.current.x && p2.y === playerPositionRef.current.y
+      );
+      if (!portal) {
+        const nearbyRest = currentMap.portals.find(
+          (p2) => p2.isRestPortal && Math.sqrt(
+            (playerPositionRef.current.x - p2.x) ** 2 + (playerPositionRef.current.y - p2.y) ** 2
+          ) < 1.5
+        );
+        if (nearbyRest) portal = nearbyRest;
       }
-      if (portalKey === lastPortalKey) {
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
+      if (!portal) {
+        sealedPortalAnnouncedRef.current = null;
         return;
       }
-      const _s2InteractRunMode = bossRushActiveRef.current ? "bossRush" : dungeonChainActiveRef.current ? "dungeon" : "none";
-      const _s2IsProgressionPortal = _s2InteractRunMode !== "none" && !portal.isBossRushPortal && !portal.isRestPortal && !portal.isRestExit && !portal.isBossPortal && !portal.isDungeonEntry;
-      if (_s2IsProgressionPortal && isProgressionLocked(
-        _s2InteractRunMode,
-        activeHostilesRemaining(combatantsRef.current) === 0
-      )) {
-        if (((_a4 = sealedPortalAnnouncedRef.current) == null ? void 0 : _a4.portalKey) !== portalKey) {
-          logBattleEntry(
-            "🔒 The way forward is sealed until every foe falls.",
-            "#8a6a3a"
-          );
-          sealedPortalAnnouncedRef.current = {
-            portalKey,
-            announcedAt: Date.now()
-          };
+      if (portal) {
+        const portalKey = `${portal.x},${portal.y}`;
+        portalLatchRef.current = {
+          portalKey,
+          tileKey: _tileKey,
+          armed: true
+        };
+        const lastPortal = lastPortalRef.current;
+        let lastPortalKey = null;
+        if (lastPortal) {
+          lastPortalKey = `${lastPortal.x},${lastPortal.y}`;
         }
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
-        return;
-      }
-      if (portal.isBossRushPortal || portal.color === "bossRush") {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        bossRushActiveRef.current = true;
-        startBossRush();
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
-        return;
-      }
-      if (bossRushActiveRef.current && (portal.isProgressionPortal || portal.kind === PROGRESSION_PORTAL_KIND) && activeHostilesRemaining(combatantsRef.current) === 0) {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        const nextRoomIndex = bossRushState.currentRoom + 1;
-        const nextRoomDef = BOSS_RUSH_ROOMS2[nextRoomIndex];
-        if (nextRoomDef) {
-          void advanceBossRushRoom();
-          const { map: nextMap, spawnPosition: spawnPosition2 } = generateRandomMap();
-          if (nextMap) {
-            setCurrentMap(nextMap);
-            if (spawnPosition2) {
-              setPlayerPositionSynced({ ...spawnPosition2 });
-            }
-            const newEnemies2 = [];
-            if (nextRoomDef.boss1Id) {
-              newEnemies2.push({
-                id: `boss-rush-${nextRoomIndex}-0`,
-                pieceType: nextRoomDef.boss1Name || "Boss 1",
-                x: 4,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: []
-              });
-            }
-            if (nextRoomDef.boss2Id) {
-              newEnemies2.push({
-                id: `boss-rush-${nextRoomIndex}-1`,
-                pieceType: nextRoomDef.boss2Name || "Boss 2",
-                x: 6,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: []
-              });
-            }
-            syncCombatants(combatantStoreCtx, newEnemies2, {
-              resetBattle: true
-            });
-            battleDefeatedRef.current = [];
+        if (portalKey === lastPortalKey) {
+          return;
+        }
+        const _s2InteractRunMode = bossRushActiveRef.current ? "bossRush" : dungeonChainActiveRef.current ? "dungeon" : "none";
+        const _s2IsProgressionPortal = _s2InteractRunMode !== "none" && !portal.isBossRushPortal && !portal.isRestPortal && !portal.isRestExit && !portal.isBossPortal && !portal.isDungeonEntry;
+        if (_s2IsProgressionPortal && isProgressionLocked(
+          _s2InteractRunMode,
+          activeHostilesRemaining(combatantsRef.current) === 0
+        )) {
+          if (((_a4 = sealedPortalAnnouncedRef.current) == null ? void 0 : _a4.portalKey) !== portalKey) {
+            logBattleEntry(
+              "🔒 The way forward is sealed until every foe falls.",
+              "#8a6a3a"
+            );
+            sealedPortalAnnouncedRef.current = {
+              portalKey,
+              announcedAt: Date.now()
+            };
           }
+          portalLatchRef.current = null;
+          return;
         }
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
-        return;
-      }
-      if (portal.isWhitePortal) {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        cleanupMap();
-        try {
-          const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
-          currentMapRef.current = restMap;
-          setCurrentMap(restMap);
-          setPlayerPositionSynced(restSpawn);
-          resetCombatantStore(combatantStoreCtx);
-          setPlayerView("front");
-          const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
-          const centerX = canvasSize.width / 2;
-          const centerY = canvasSize.height / 2;
-          const camX = centerX - playerScreenPos.x;
-          const camY = centerY - playerScreenPos.y;
-          cameraRef.current = { x: camX, y: camY };
-          targetCameraRef.current = { x: camX, y: camY };
-          cameraVelocityRef.current = { x: 0, y: 0 };
-          if (cameraFollowTimerRef.current !== null)
-            clearTimeout(cameraFollowTimerRef.current);
-          setTimeout(() => {
-            cameraFollowTimerRef.current = null;
-            updateCameraToFollowPlayer();
-          }, 100);
-          transitionInProgressRef.current = false;
-          setTransitionInProgress(false);
-          setMapCount((prev) => prev + 1);
-          ue("✨ Sanctuary — your run is complete. Rest, hero.", {
-            duration: 4e3,
-            style: {
-              background: "#1a1a2e",
-              border: "1px solid #6a6a8a",
-              color: "#e0e0ff"
+        if (portal.isBossRushPortal || portal.color === "bossRush") {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          bossRushActiveRef.current = true;
+          startBossRush();
+          return;
+        }
+        if (bossRushActiveRef.current && (portal.isProgressionPortal || portal.kind === PROGRESSION_PORTAL_KIND) && activeHostilesRemaining(combatantsRef.current) === 0) {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          const nextRoomIndex = bossRushState.currentRoom + 1;
+          const nextRoomDef = BOSS_RUSH_ROOMS2[nextRoomIndex];
+          if (nextRoomDef) {
+            void advanceBossRushRoom();
+            const { map: nextMap, spawnPosition: spawnPosition2 } = generateRandomMap();
+            if (nextMap) {
+              setCurrentMap(nextMap);
+              if (spawnPosition2) {
+                setPlayerPositionSynced({ ...spawnPosition2 });
+              }
+              const newEnemies2 = [];
+              if (nextRoomDef.boss1Id) {
+                newEnemies2.push({
+                  id: `boss-rush-${nextRoomIndex}-0`,
+                  pieceType: nextRoomDef.boss1Name || "Boss 1",
+                  x: 4,
+                  y: 5,
+                  level: characterStats.level + 2,
+                  hp: 100,
+                  maxHp: 100,
+                  ap: 6,
+                  mp: 3,
+                  initiative: 10,
+                  attack: 20,
+                  defense: 10,
+                  resistance: 5,
+                  spells: [],
+                  isBoss: true,
+                  isLeader: false,
+                  behavior: "aggressive",
+                  family: "boss",
+                  statusEffects: [],
+                  activeEffects: []
+                });
+              }
+              if (nextRoomDef.boss2Id) {
+                newEnemies2.push({
+                  id: `boss-rush-${nextRoomIndex}-1`,
+                  pieceType: nextRoomDef.boss2Name || "Boss 2",
+                  x: 6,
+                  y: 5,
+                  level: characterStats.level + 2,
+                  hp: 100,
+                  maxHp: 100,
+                  ap: 6,
+                  mp: 3,
+                  initiative: 10,
+                  attack: 20,
+                  defense: 10,
+                  resistance: 5,
+                  spells: [],
+                  isBoss: true,
+                  isLeader: false,
+                  behavior: "aggressive",
+                  family: "boss",
+                  statusEffects: [],
+                  activeEffects: []
+                });
+              }
+              syncCombatants(combatantStoreCtx, newEnemies2, {
+                resetBattle: true
+              });
+              battleDefeatedRef.current = [];
             }
-          });
-        } catch (err) {
-          console.error("[white] sanctuary map generation failed:", err);
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
+          }
+          portalLatchRef.current = null;
+          return;
         }
-        return;
-      }
-      if (portal.isRestPortal) {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        cleanupMap();
-        try {
-          const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
-          currentMapRef.current = restMap;
-          setCurrentMap(restMap);
-          setPlayerPositionSynced(restSpawn);
-          resetCombatantStore(combatantStoreCtx);
-          setPlayerView("front");
-          const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
-          const centerX = canvasSize.width / 2;
-          const centerY = canvasSize.height / 2;
-          const camX = centerX - playerScreenPos.x;
-          const camY = centerY - playerScreenPos.y;
-          cameraRef.current = { x: camX, y: camY };
-          targetCameraRef.current = { x: camX, y: camY };
-          cameraVelocityRef.current = { x: 0, y: 0 };
-          if (cameraFollowTimerRef.current !== null)
-            clearTimeout(cameraFollowTimerRef.current);
-          setTimeout(() => {
-            cameraFollowTimerRef.current = null;
-            updateCameraToFollowPlayer();
-          }, 100);
-          transitionInProgressRef.current = false;
-          setTransitionInProgress(false);
-          setMapCount((prev) => prev + 1);
-          console.log(
-            "REST_MAP_PLAYER",
-            restSpawn,
-            "MAP_DIMS",
-            ((_b4 = restMap.tiles[0]) == null ? void 0 : _b4.length) || 0,
-            restMap.tiles.length || 0
-          );
-          console.log(
-            "REST_MAP_PORTALS",
-            restMap.portals.map((p2) => ({
-              x: p2.x,
-              y: p2.y,
-              isRestExit: p2.isRestExit
-            }))
-          );
-          console.log("REST_MAP_CAMERA", cameraRef.current);
-          ue("🛡️ Safe Zone — no enemies here. Use a portal to return.", {
-            duration: 4e3,
-            style: {
-              background: "#1a1a2e",
-              border: "1px solid #4a4a6a",
-              color: "#e0e0ff"
-            }
-          });
-        } catch (err) {
-          console.error("[rest] rest map generation failed:", err);
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
+        if (portal.isWhitePortal) {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          cleanupMap();
+          try {
+            const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
+            currentMapRef.current = restMap;
+            setCurrentMap(restMap);
+            setPlayerPositionSynced(restSpawn);
+            resetCombatantStore(combatantStoreCtx);
+            setPlayerView("front");
+            const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
+            const camX = centerX - playerScreenPos.x;
+            const camY = centerY - playerScreenPos.y;
+            cameraRef.current = { x: camX, y: camY };
+            targetCameraRef.current = { x: camX, y: camY };
+            cameraVelocityRef.current = { x: 0, y: 0 };
+            if (cameraFollowTimerRef.current !== null)
+              clearTimeout(cameraFollowTimerRef.current);
+            setTimeout(() => {
+              cameraFollowTimerRef.current = null;
+              updateCameraToFollowPlayer();
+            }, 100);
+            transitionInProgressRef.current = false;
+            setTransitionInProgress(false);
+            setMapCount((prev) => prev + 1);
+            ue("✨ Sanctuary — your run is complete. Rest, hero.", {
+              duration: 4e3,
+              style: {
+                background: "#1a1a2e",
+                border: "1px solid #6a6a8a",
+                color: "#e0e0ff"
+              }
+            });
+          } catch (err) {
+            console.error("[white] sanctuary map generation failed:", err);
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          }
+          return;
         }
-        return;
-      }
-      if (portal.isRestExit && (currentMap == null ? void 0 : currentMap.isRestMap)) {
-        aiGenerationRef.current++;
-        aiGenerationRef.current;
-        lastPortalRef.current = { x: portal.x, y: portal.y };
+        if (portal.isRestPortal) {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          cleanupMap();
+          try {
+            const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
+            currentMapRef.current = restMap;
+            setCurrentMap(restMap);
+            setPlayerPositionSynced(restSpawn);
+            resetCombatantStore(combatantStoreCtx);
+            setPlayerView("front");
+            const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
+            const camX = centerX - playerScreenPos.x;
+            const camY = centerY - playerScreenPos.y;
+            cameraRef.current = { x: camX, y: camY };
+            targetCameraRef.current = { x: camX, y: camY };
+            cameraVelocityRef.current = { x: 0, y: 0 };
+            if (cameraFollowTimerRef.current !== null)
+              clearTimeout(cameraFollowTimerRef.current);
+            setTimeout(() => {
+              cameraFollowTimerRef.current = null;
+              updateCameraToFollowPlayer();
+            }, 100);
+            transitionInProgressRef.current = false;
+            setTransitionInProgress(false);
+            setMapCount((prev) => prev + 1);
+            console.log(
+              "REST_MAP_PLAYER",
+              restSpawn,
+              "MAP_DIMS",
+              ((_b4 = restMap.tiles[0]) == null ? void 0 : _b4.length) || 0,
+              restMap.tiles.length || 0
+            );
+            console.log(
+              "REST_MAP_PORTALS",
+              restMap.portals.map((p2) => ({
+                x: p2.x,
+                y: p2.y,
+                isRestExit: p2.isRestExit
+              }))
+            );
+            console.log("REST_MAP_CAMERA", cameraRef.current);
+            ue("🛡️ Safe Zone — no enemies here. Use a portal to return.", {
+              duration: 4e3,
+              style: {
+                background: "#1a1a2e",
+                border: "1px solid #4a4a6a",
+                color: "#e0e0ff"
+              }
+            });
+          } catch (err) {
+            console.error("[rest] rest map generation failed:", err);
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          }
+          return;
+        }
+        if (portal.isRestExit && (currentMap == null ? void 0 : currentMap.isRestMap)) {
+          aiGenerationRef.current++;
+          const _myGen2 = aiGenerationRef.current;
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          cleanupMap();
+          if (portal.restExitType === "dungeon") {
+            dungeonChainActiveRef.current = true;
+            setDungeonChainActive(true);
+            setDungeonChainDepth(1);
+            const newMaxDepth = 3 + Math.floor(Math.random() * 3);
+            setDungeonChainMaxDepth(newMaxDepth);
+            dungeonChainMaxDepthRef.current = newMaxDepth;
+          }
+          const reTimerId = setTimeout(() => {
+            const { map: newMap2, spawnPosition: spawnPosition2 } = generateRandomMap();
+            currentMapRef.current = newMap2;
+            setCurrentMap(newMap2);
+            setPlayerPositionSynced(spawnPosition2);
+            resetCombatantStore(combatantStoreCtx);
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          }, 400);
+          pendingTimeoutsRef.current.add(reTimerId);
+          return;
+        }
+        playSound("map_transition");
         cleanupMap();
-        if (portal.restExitType === "dungeon") {
-          dungeonChainActiveRef.current = true;
+        setCoinParticles([]);
+        effectsManagerRef.current.clear();
+        fadeOverlayRef.current = { opacity: 0, direction: "none" };
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        setIsMoving(false);
+        setMovementPath([]);
+        setCurrentStepIndex(0);
+        setClickedTile(null);
+        setPendingDestination(null);
+        const isDungeonEntryPortal = portal.isDungeonEntry === true;
+        const isInsideChain = dungeonChainActiveRef.current;
+        const currentDepth = dungeonChainDepthRef.current;
+        const maxDepth = dungeonChainMaxDepthRef.current;
+        let nextDungeonDepth = 0;
+        let chainJustCompleted = false;
+        if (isDungeonEntryPortal && !isInsideChain) {
+          const newMaxDepth = 3 + Math.floor(Math.random() * 3);
+          nextDungeonDepth = 1;
           setDungeonChainActive(true);
           setDungeonChainDepth(1);
-          const newMaxDepth = 3 + Math.floor(Math.random() * 3);
           setDungeonChainMaxDepth(newMaxDepth);
+          setDungeonChainBaseLevel(characterStats.level);
+          dungeonChainActiveRef.current = true;
+          dungeonChainDepthRef.current = 1;
           dungeonChainMaxDepthRef.current = newMaxDepth;
-        }
-        const reTimerId = setTimeout(() => {
-          const { map: newMap2, spawnPosition: spawnPosition2 } = generateRandomMap();
-          currentMapRef.current = newMap2;
-          setCurrentMap(newMap2);
-          setPlayerPositionSynced(spawnPosition2);
-          resetCombatantStore(combatantStoreCtx);
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
-        }, 400);
-        pendingTimeoutsRef.current.add(reTimerId);
-        return;
-      }
-      playSound("map_transition");
-      cleanupMap();
-      setCoinParticles([]);
-      effectsManagerRef.current.clear();
-      fadeOverlayRef.current = { opacity: 0, direction: "none" };
-      lastPortalRef.current = { x: portal.x, y: portal.y };
-      setIsMoving(false);
-      setMovementPath([]);
-      setCurrentStepIndex(0);
-      setClickedTile(null);
-      setPendingDestination(null);
-      const isDungeonEntryPortal = portal.isDungeonEntry === true;
-      const isInsideChain = dungeonChainActiveRef.current;
-      const currentDepth = dungeonChainDepthRef.current;
-      const maxDepth = dungeonChainMaxDepthRef.current;
-      let nextDungeonDepth = 0;
-      let chainJustCompleted = false;
-      if (isDungeonEntryPortal && !isInsideChain) {
-        const newMaxDepth = 3 + Math.floor(Math.random() * 3);
-        nextDungeonDepth = 1;
-        setDungeonChainActive(true);
-        setDungeonChainDepth(1);
-        setDungeonChainMaxDepth(newMaxDepth);
-        setDungeonChainBaseLevel(characterStats.level);
-        dungeonChainActiveRef.current = true;
-        dungeonChainDepthRef.current = 1;
-        dungeonChainMaxDepthRef.current = newMaxDepth;
-        logBattleEntry(
-          `⚔️ Dungeon Chain entered! Prepare for ${newMaxDepth} escalating maps.`,
-          "#cc0000"
-        );
-      } else if (isInsideChain) {
-        if (currentDepth >= maxDepth) {
-          const chainBonus = maxDepth * 50;
-          onDokaBalanceChange(dokaBalance + chainBonus);
-          chainJustCompleted = true;
-          nextDungeonDepth = 0;
-          setDungeonChainActive(false);
-          setDungeonChainDepth(0);
-          setDungeonChainMaxDepth(0);
-          dungeonChainActiveRef.current = false;
-          dungeonChainDepthRef.current = 0;
-          dungeonChainMaxDepthRef.current = 0;
           logBattleEntry(
-            `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
-            "#ffd700"
-          );
-          const whiteDungeonPortal = {
-            x: 0,
-            y: 0,
-            color: "white",
-            isWhitePortal: true,
-            animationOffset: Math.random() * Math.PI * 2
-          };
-          pendingWhitePortalRef.current = whiteDungeonPortal;
-          logBattleEntry("A white gateway to sanctuary opens…", "white");
-        } else {
-          nextDungeonDepth = currentDepth + 1;
-          setDungeonChainDepth(nextDungeonDepth);
-          dungeonChainDepthRef.current = nextDungeonDepth;
-          logBattleEntry(
-            `⚔️ Dungeon depth ${nextDungeonDepth}/${maxDepth} — enemies grow stronger!`,
+            `⚔️ Dungeon Chain entered! Prepare for ${newMaxDepth} escalating maps.`,
             "#cc0000"
           );
-        }
-      }
-      const { map: newMap, spawnPosition } = generateRandomMap();
-      if (pendingWhitePortalRef.current && newMap) {
-        newMap.portals = [
-          ...newMap.portals || [],
-          pendingWhitePortalRef.current
-        ];
-        pendingWhitePortalRef.current = null;
-      }
-      currentMapRef.current = newMap;
-      setCurrentMap(newMap);
-      if ((_c3 = newMap == null ? void 0 : newMap.tiles) == null ? void 0 : _c3.length) {
-        const _miRows = newMap.tiles.length;
-        const _miCols = ((_d3 = newMap.tiles[0]) == null ? void 0 : _d3.length) ?? 0;
-        let _miWalls = 0;
-        const _miChoke = /* @__PURE__ */ new Set();
-        const _miBN = /* @__PURE__ */ new Set();
-        for (let _ri = 0; _ri < _miRows; _ri++) {
-          for (let _ci = 0; _ci < _miCols; _ci++) {
-            const _isW = newMap.tiles[_ri][_ci] === "wall";
-            if (_isW) {
-              _miWalls++;
-              continue;
-            }
-            let _wn = 0;
-            for (let _dr = -1; _dr <= 1; _dr++)
-              for (let _dc = -1; _dc <= 1; _dc++) {
-                if (_dr === 0 && _dc === 0) continue;
-                const _nr = _ri + _dr;
-                const _nc = _ci + _dc;
-                if (_nr < 0 || _nr >= _miRows || _nc < 0 || _nc >= _miCols || newMap.tiles[_nr][_nc] === "wall")
-                  _wn++;
-              }
-            if (_wn >= 6) _miChoke.add(`${_ri},${_ci}`);
-            const _cf = [
-              [_ri - 1, _ci],
-              [_ri + 1, _ci],
-              [_ri, _ci - 1],
-              [_ri, _ci + 1]
-            ].filter(
-              ([_rr, _cc]) => _rr >= 0 && _rr < _miRows && _cc >= 0 && _cc < _miCols && newMap.tiles[_rr][_cc] !== "wall"
-            ).length;
-            if (_cf === 2) _miBN.add(`${_ri},${_ci}`);
-          }
-        }
-        const _miDensity = _miRows * _miCols > 0 ? _miWalls / (_miRows * _miCols) : 0;
-        mapWallDensityRef.current = _miDensity;
-        mapIsCorridorRef.current = _miDensity >= 0.5;
-        mapChokePointsRef.current = _miChoke;
-        mapBottleneckTilesRef.current = _miBN;
-      }
-      setPlayerPositionSynced(spawnPosition);
-      setPlayerView("front");
-      setMapCount((prev) => prev + 1);
-      mapsVisitedCountRef.current += 1;
-      try {
-        const mvKey = userId ? `${userId}_slot${characterSlot}_pbv_maps_visited_count` : "pbv_maps_visited_count";
-        localStorage.setItem(mvKey, String(mapsVisitedCountRef.current));
-      } catch {
-      }
-      const isBossPortalEntry = portal.isBossPortal === true && !!portal.bossPortalId;
-      let activeBossConfig;
-      if (isBossPortalEntry && portal.bossPortalId) {
-        const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
-        const allBossConfigs = bossConfigsRaw ? JSON.parse(bossConfigsRaw) : DEFAULT_BOSS_CONFIGS;
-        const bossConfig = allBossConfigs.find((b2) => b2.id === portal.bossPortalId) ?? DEFAULT_BOSS_CONFIGS.find((b2) => b2.id === portal.bossPortalId);
-        if (bossConfig) {
-          currentBossConfigRef.current = bossConfig;
-          setCurrentBossId(bossConfig.id);
-          activeBossConfig = bossConfig;
-          setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
-          if (bossEncounterBannerTimerRef.current !== null) {
-            clearTimeout(bossEncounterBannerTimerRef.current);
-          }
-          bossEncounterBannerTimerRef.current = window.setTimeout(() => {
-            bossEncounterBannerTimerRef.current = null;
-            setBossEncounterBanner(null);
-          }, 1500);
-        }
-      }
-      cameraVelocityRef.current = { x: 0, y: 0 };
-      setCameraOffset({ x: 0, y: 0 });
-      setTargetCameraOffset({ x: 0, y: 0 });
-      const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
-      let newEnemies;
-      if (isBossPortalEntry && portal.bossPortalId && activeBossConfig) {
-        const bossConf = activeBossConfig;
-        const bossOccCtx = {
-          tiles: newMap.tiles.map((row) => row.map((t) => t === "floor")),
-          barriers: /* @__PURE__ */ new Set(),
-          voidTiles: newMap.voidTiles ?? /* @__PURE__ */ new Set(),
-          portals: new Set(newMap.portals.map((p2) => `${p2.x},${p2.y}`)),
-          isOccupied: () => false
-        };
-        const fallback = findNearestFreeCell(
-          {
-            x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
-            y: Math.floor(WORLD_GRID_SIZE / 2) - 3
-          },
-          bossOccCtx,
-          Math.floor(WORLD_GRID_SIZE / 2)
-        );
-        const midX = (fallback == null ? void 0 : fallback.x) ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
-        const midY = (fallback == null ? void 0 : fallback.y) ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
-        newEnemies = [
-          {
-            id: `boss_${bossConf.id}_${Date.now()}`,
-            x: midX,
-            y: midY,
-            pieceType: bossConf.pieceType,
-            currentView: "front",
-            isMoving: false,
-            movementPath: [],
-            currentStepIndex: 0,
-            movementStartTime: 0,
-            initialDelay: 500,
-            spawnTime: Date.now(),
-            scaleX: 1.4,
-            scaleY: 1.4,
-            level: Math.max(1, characterStats.level + 5),
-            nextMoveTime: Date.now() + 1e3,
-            movementSpeed: 700,
-            movementRange: 2,
-            isWandering: false,
-            wanderTarget: null,
-            lastMoveTime: Date.now(),
-            hp: Math.max(
-              1,
-              bossConf.baseStats.hp ?? Math.round((characterStats.level + 5) * 50 + 200)
-            ),
-            maxHp: Math.max(
-              1,
-              bossConf.baseStats.hp ?? Math.round((characterStats.level + 5) * 50 + 200)
-            ),
-            damage: Math.max(
-              1,
-              bossConf.baseStats.atk ?? Math.round((characterStats.level + 5) * 4 + 10)
-            ),
-            res: Math.min(50, bossConf.baseStats.res),
-            sp: Math.min(50, bossConf.baseStats.sp),
-            chc: bossConf.baseStats.chc,
-            init: bossConf.baseStats.init ?? Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
-            sr: 10,
-            assignedName: bossConf.name,
-            isLeader: true,
-            family: "boss"
-          }
-        ];
-        const freshBossState = initBossState(bossConf.id);
-        bossStateRef.current = freshBossState;
-        setActiveBossState(freshBossState);
-      } else {
-        newEnemies = newMap.isDeathRealm ? [] : generateEnemies(
-          newMap.tiles,
-          newMap.portals,
-          effectiveDepth,
-          newMap.voidTiles
-        );
-      }
-      const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
-      const _portal = (_e3 = newMap.portals) == null ? void 0 : _e3[0];
-      if (_portal) {
-        const { tiles: _tiles, spawns: _spawns } = ensureReachability(
-          newMap.tiles,
-          newMap.voidTiles,
-          _enemySpawns,
-          spawnPosition,
-          _portal,
-          WORLD_GRID_SIZE,
-          WORLD_GRID_SIZE
-        );
-        newMap.tiles = _tiles;
-        newEnemies.forEach((e, i) => {
-          if (_spawns[i]) {
-            e.x = _spawns[i].x;
-            e.y = _spawns[i].y;
-          }
-        });
-      }
-      syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
-      battleDefeatedRef.current = [];
-      if (portalTimerRef1.current !== null) {
-        clearTimeout(portalTimerRef1.current);
-        portalTimerRef1.current = null;
-      }
-      if (portalTimerRef2.current !== null) {
-        clearTimeout(portalTimerRef2.current);
-        portalTimerRef2.current = null;
-      }
-      portalTimerRef1.current = window.setTimeout(() => {
-        portalTimerRef1.current = null;
-        updateCameraToFollowPlayer();
-        portalTimerRef2.current = window.setTimeout(() => {
-          portalTimerRef2.current = null;
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
-          lastPortalRef.current = null;
-        }, 1500);
-      }, 100);
-      const triggered = mapModifierRegistry.rollActiveModifiers(mapModifiers, {
-        log: (msg) => logDebugInfo("MODIFIER", msg),
-        rng: Math.random
-      });
-      setActiveMapModifierTypes(triggered);
-      if (!newMap.isDeathRealm) {
-        const hazardMap = newMap.hazardTiles;
-        const spawnCxMod = Math.floor(WORLD_GRID_SIZE / 2);
-        const spawnCyMod = Math.floor(WORLD_GRID_SIZE / 2);
-        const portalSetMod = new Set(
-          newMap.portals.map((p2) => `${p2.x},${p2.y}`)
-        );
-        const eligMod = [];
-        for (let hy = 0; hy < WORLD_GRID_SIZE; hy++) {
-          for (let hx = 0; hx < WORLD_GRID_SIZE; hx++) {
-            if (newMap.tiles[hy][hx] !== "floor") continue;
-            if (portalSetMod.has(`${hx},${hy}`)) continue;
-            if (Math.abs(hx - spawnCxMod) <= 3 && Math.abs(hy - spawnCyMod) <= 3)
-              continue;
-            if (hazardMap.has(`${hx},${hy}`)) continue;
-            eligMod.push({ x: hx, y: hy });
-          }
-        }
-        for (let i = eligMod.length - 1; i > 0; i--) {
-          const j2 = Math.floor(Math.random() * (i + 1));
-          [eligMod[i], eligMod[j2]] = [eligMod[j2], eligMod[i]];
-        }
-        let modHazardIdx = 0;
-        const addModHazards = (type) => {
-          const count2 = 3 + Math.floor(Math.random() * 6);
-          for (let hi = 0; hi < count2 && modHazardIdx < eligMod.length; hi++, modHazardIdx++) {
-            hazardMap.set(
-              `${eligMod[modHazardIdx].x},${eligMod[modHazardIdx].y}`,
-              type
+        } else if (isInsideChain) {
+          if (currentDepth >= maxDepth) {
+            const chainBonus = maxDepth * 50;
+            onDokaBalanceChange(dokaBalance + chainBonus);
+            chainJustCompleted = true;
+            nextDungeonDepth = 0;
+            setDungeonChainActive(false);
+            setDungeonChainDepth(0);
+            setDungeonChainMaxDepth(0);
+            dungeonChainActiveRef.current = false;
+            dungeonChainDepthRef.current = 0;
+            dungeonChainMaxDepthRef.current = 0;
+            logBattleEntry(
+              `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
+              "#ffd700"
+            );
+            const whiteDungeonPortal = {
+              x: 0,
+              y: 0,
+              color: "white",
+              isWhitePortal: true,
+              animationOffset: Math.random() * Math.PI * 2
+            };
+            pendingWhitePortalRef.current = whiteDungeonPortal;
+            logBattleEntry("A white gateway to sanctuary opens…", "white");
+          } else {
+            nextDungeonDepth = currentDepth + 1;
+            setDungeonChainDepth(nextDungeonDepth);
+            dungeonChainDepthRef.current = nextDungeonDepth;
+            logBattleEntry(
+              `⚔️ Dungeon depth ${nextDungeonDepth}/${maxDepth} — enemies grow stronger!`,
+              "#cc0000"
             );
           }
-        };
-        if (triggered.has("thorned_ground") || triggered.has("blood_moon") || triggered.has("spike_pit"))
-          addModHazards("spikes");
-        if (triggered.has("frozen_terrain") || triggered.has("ice_fields"))
-          addModHazards("ice");
-        if (triggered.has("plague_zone") || triggered.has("void_rift") || triggered.has("lava_fields"))
-          addModHazards("lava");
-        if (triggered.size > 0 && !triggered.has("thorned_ground") && !triggered.has("blood_moon") && !triggered.has("frozen_terrain") && !triggered.has("plague_zone") && !triggered.has("void_rift") && Math.random() < 0.4) {
-          const randHType = ["lava", "ice", "spikes"];
-          addModHazards(
-            randHType[Math.floor(Math.random() * randHType.length)]
-          );
         }
-        if (hazardMap.size > 0) {
-          logBattleEntry(
-            `⚠️ ${hazardMap.size} hazard tile${hazardMap.size !== 1 ? "s" : ""} detected on this map!`,
-            "#ff7675"
-          );
+        const { map: newMap, spawnPosition } = generateRandomMap();
+        if (pendingWhitePortalRef.current && newMap) {
+          newMap.portals = [
+            ...newMap.portals || [],
+            pendingWhitePortalRef.current
+          ];
+          pendingWhitePortalRef.current = null;
         }
-      }
-      if (triggered.size > 0) {
-        const names = [...triggered].map((t) => {
-          var _a5;
-          return ((_a5 = MAP_MODIFIERS.find((m2) => m2.id === t)) == null ? void 0 : _a5.name) ?? t;
-        }).join(" + ");
-        logBattleEntry(
-          `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
-          "#ff7675"
-        );
-      } else {
-        logBattleEntry("No map modifier this area.", "#888888");
-      }
-      const { dokaSpawnChance: spawnChance, dokaSpawnBaseValue: spawnBase } = dokaSpawnConfigRef.current;
-      if (!newMap.isDeathRealm && Math.random() * 100 < spawnChance && newEnemies.length > 0) {
-        const avgLevel = newEnemies.reduce((s2, e) => s2 + Number(e.level), 0) / newEnemies.length;
-        const lootCount = Math.max(1, Math.ceil(newEnemies.length / 3));
-        const walkable = [];
-        for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-          for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !((_g2 = newMap.voidTiles) == null ? void 0 : _g2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
-              walkable.push({ x: gx, y: gy });
+        currentMapRef.current = newMap;
+        setCurrentMap(newMap);
+        if ((_c3 = newMap == null ? void 0 : newMap.tiles) == null ? void 0 : _c3.length) {
+          const _miRows = newMap.tiles.length;
+          const _miCols = ((_d3 = newMap.tiles[0]) == null ? void 0 : _d3.length) ?? 0;
+          let _miWalls = 0;
+          const _miChoke = /* @__PURE__ */ new Set();
+          const _miBN = /* @__PURE__ */ new Set();
+          for (let _ri = 0; _ri < _miRows; _ri++) {
+            for (let _ci = 0; _ci < _miCols; _ci++) {
+              const _isW = newMap.tiles[_ri][_ci] === "wall";
+              if (_isW) {
+                _miWalls++;
+                continue;
+              }
+              let _wn = 0;
+              for (let _dr = -1; _dr <= 1; _dr++)
+                for (let _dc = -1; _dc <= 1; _dc++) {
+                  if (_dr === 0 && _dc === 0) continue;
+                  const _nr = _ri + _dr;
+                  const _nc = _ci + _dc;
+                  if (_nr < 0 || _nr >= _miRows || _nc < 0 || _nc >= _miCols || newMap.tiles[_nr][_nc] === "wall")
+                    _wn++;
+                }
+              if (_wn >= 6) _miChoke.add(`${_ri},${_ci}`);
+              const _cf = [
+                [_ri - 1, _ci],
+                [_ri + 1, _ci],
+                [_ri, _ci - 1],
+                [_ri, _ci + 1]
+              ].filter(
+                ([_rr, _cc]) => _rr >= 0 && _rr < _miRows && _cc >= 0 && _cc < _miCols && newMap.tiles[_rr][_cc] !== "wall"
+              ).length;
+              if (_cf === 2) _miBN.add(`${_ri},${_ci}`);
             }
           }
+          const _miDensity = _miRows * _miCols > 0 ? _miWalls / (_miRows * _miCols) : 0;
+          mapWallDensityRef.current = _miDensity;
+          mapIsCorridorRef.current = _miDensity >= 0.5;
+          mapChokePointsRef.current = _miChoke;
+          mapBottleneckTilesRef.current = _miBN;
         }
-        for (let i = walkable.length - 1; i > 0; i--) {
-          const j2 = Math.floor(Math.random() * (i + 1));
-          [walkable[i], walkable[j2]] = [walkable[j2], walkable[i]];
+        setPlayerPositionSynced(spawnPosition);
+        setPlayerView("front");
+        setMapCount((prev) => prev + 1);
+        mapsVisitedCountRef.current += 1;
+        try {
+          const mvKey = userId ? `${userId}_slot${characterSlot}_pbv_maps_visited_count` : "pbv_maps_visited_count";
+          localStorage.setItem(mvKey, String(mapsVisitedCountRef.current));
+        } catch {
         }
-        const lootItems = walkable.slice(0, lootCount).map((tile) => ({
-          id: `doka-${Date.now()}-${tile.x}-${tile.y}`,
-          tileX: tile.x,
-          tileY: tile.y,
-          value: Math.max(
-            1,
-            Math.round(
-              (spawnBase + avgLevel * 2) * (0.8 + Math.random() * 0.4)
-            )
-          ),
-          collected: false
-        }));
-        setDokaLoot(lootItems);
-        if (lootItems.length > 0) {
-          logBattleEntry(
-            `💰 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
-            "#f1c40f"
+        const isBossPortalEntry = portal.isBossPortal === true && !!portal.bossPortalId;
+        let activeBossConfig;
+        if (isBossPortalEntry && portal.bossPortalId) {
+          const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
+          const allBossConfigs = bossConfigsRaw ? JSON.parse(bossConfigsRaw) : DEFAULT_BOSS_CONFIGS;
+          const bossConfig = allBossConfigs.find((b2) => b2.id === portal.bossPortalId) ?? DEFAULT_BOSS_CONFIGS.find((b2) => b2.id === portal.bossPortalId);
+          if (bossConfig) {
+            currentBossConfigRef.current = bossConfig;
+            setCurrentBossId(bossConfig.id);
+            activeBossConfig = bossConfig;
+            setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
+            if (bossEncounterBannerTimerRef.current !== null) {
+              clearTimeout(bossEncounterBannerTimerRef.current);
+            }
+            bossEncounterBannerTimerRef.current = window.setTimeout(() => {
+              bossEncounterBannerTimerRef.current = null;
+              setBossEncounterBanner(null);
+            }, 1500);
+          }
+        }
+        cameraVelocityRef.current = { x: 0, y: 0 };
+        setCameraOffset({ x: 0, y: 0 });
+        setTargetCameraOffset({ x: 0, y: 0 });
+        const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
+        let newEnemies;
+        if (isBossPortalEntry && portal.bossPortalId && activeBossConfig) {
+          const bossConf = activeBossConfig;
+          const bossOccCtx = {
+            tiles: newMap.tiles.map((row) => row.map((t) => t === "floor")),
+            barriers: /* @__PURE__ */ new Set(),
+            voidTiles: newMap.voidTiles ?? /* @__PURE__ */ new Set(),
+            portals: new Set(newMap.portals.map((p2) => `${p2.x},${p2.y}`)),
+            isOccupied: () => false
+          };
+          const fallback = findNearestFreeCell(
+            {
+              x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
+              y: Math.floor(WORLD_GRID_SIZE / 2) - 3
+            },
+            bossOccCtx,
+            Math.floor(WORLD_GRID_SIZE / 2)
+          );
+          const midX = (fallback == null ? void 0 : fallback.x) ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+          const midY = (fallback == null ? void 0 : fallback.y) ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+          newEnemies = [
+            {
+              id: `boss_${bossConf.id}_${Date.now()}`,
+              x: midX,
+              y: midY,
+              pieceType: bossConf.pieceType,
+              currentView: "front",
+              isMoving: false,
+              movementPath: [],
+              currentStepIndex: 0,
+              movementStartTime: 0,
+              initialDelay: 500,
+              spawnTime: Date.now(),
+              scaleX: 1.4,
+              scaleY: 1.4,
+              level: Math.max(1, characterStats.level + 5),
+              nextMoveTime: Date.now() + 1e3,
+              movementSpeed: 700,
+              movementRange: 2,
+              isWandering: false,
+              wanderTarget: null,
+              lastMoveTime: Date.now(),
+              hp: Math.max(
+                1,
+                bossConf.baseStats.hp ?? Math.round((characterStats.level + 5) * 50 + 200)
+              ),
+              maxHp: Math.max(
+                1,
+                bossConf.baseStats.hp ?? Math.round((characterStats.level + 5) * 50 + 200)
+              ),
+              damage: Math.max(
+                1,
+                bossConf.baseStats.atk ?? Math.round((characterStats.level + 5) * 4 + 10)
+              ),
+              res: Math.min(50, bossConf.baseStats.res),
+              sp: Math.min(50, bossConf.baseStats.sp),
+              chc: bossConf.baseStats.chc,
+              init: bossConf.baseStats.init ?? Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
+              sr: 10,
+              assignedName: bossConf.name,
+              isLeader: true,
+              family: "boss"
+            }
+          ];
+          const freshBossState = initBossState(bossConf.id, bossConf);
+          bossStateRef.current = freshBossState;
+          setActiveBossState(freshBossState);
+        } else {
+          newEnemies = newMap.isDeathRealm ? [] : generateEnemies(
+            newMap.tiles,
+            newMap.portals,
+            effectiveDepth,
+            newMap.voidTiles
           );
         }
-      } else {
-        setDokaLoot([]);
-      }
-      setCharacterStats((prev) => {
-        var _a5;
-        const PORTAL_XP = 10;
-        let newExp = prev.exp + PORTAL_XP;
-        let newLevel = prev.level;
-        let newExpToNext = prev.expToNext;
-        while (newExp >= newExpToNext) {
-          newExp -= newExpToNext;
-          newLevel += 1;
-          newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
+        const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
+        const _portal = (_e3 = newMap.portals) == null ? void 0 : _e3[0];
+        if (_portal) {
+          const { tiles: _tiles, spawns: _spawns } = ensureReachability(
+            newMap.tiles,
+            newMap.voidTiles,
+            _enemySpawns,
+            spawnPosition,
+            _portal,
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE
+          );
+          newMap.tiles = _tiles;
+          newEnemies.forEach((e, i) => {
+            if (_spawns[i]) {
+              e.x = _spawns[i].x;
+              e.y = _spawns[i].y;
+            }
+          });
         }
-        if (actor) {
-          const spellKeys = Object.keys(spellLevels);
-          const spellVals = spellKeys.map((k2) => BigInt(spellLevels[k2] ?? 0));
-          const portalXpUpdate = {
-            name: characterName,
-            pieceType,
-            colors: [colors.primary, colors.secondary, colors.accent],
-            pixelPattern: "",
-            rotation: BigInt(0),
-            level: BigInt(newLevel),
-            experience: BigInt(newExp),
-            dokaBalance: BigInt(dokaBalance),
-            stats: {
-              hp: BigInt(prev.hp),
-              ap: BigInt(prev.ap),
-              mp: BigInt(prev.mp),
-              sp: BigInt(prev.sp),
-              sr: BigInt(prev.sr),
-              init: BigInt(prev.init),
-              res: BigInt(prev.res),
-              chc: BigInt(prev.chc),
-              atk: BigInt(0),
-              resilience: BigInt(0),
-              evasion: BigInt(0),
-              killCount: BigInt(((_a5 = character == null ? void 0 : character.stats) == null ? void 0 : _a5.killCount) ?? 0)
-            },
-            spellLevelKeys: spellKeys,
-            spellLevelValues: spellVals
-          };
-          const portalXpSlot = BigInt(characterSlot);
-          (async () => {
-            try {
-              await actor.updateCharacter(portalXpSlot, portalXpUpdate);
-            } catch (err) {
-              console.warn("[PBV] Character save failed:", err);
-              pendingSavesRef.current.push(
-                () => actor.updateCharacter(portalXpSlot, portalXpUpdate)
+        syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
+        battleDefeatedRef.current = [];
+        if (portalTimerRef1.current !== null) {
+          clearTimeout(portalTimerRef1.current);
+          portalTimerRef1.current = null;
+        }
+        if (portalTimerRef2.current !== null) {
+          clearTimeout(portalTimerRef2.current);
+          portalTimerRef2.current = null;
+        }
+        portalTimerRef1.current = window.setTimeout(() => {
+          portalTimerRef1.current = null;
+          updateCameraToFollowPlayer();
+          portalTimerRef2.current = window.setTimeout(() => {
+            portalTimerRef2.current = null;
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+            lastPortalRef.current = null;
+          }, 1500);
+        }, 100);
+        const triggered = mapModifierRegistry.rollActiveModifiers(
+          mapModifiers,
+          {
+            log: (msg) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random
+          }
+        );
+        setActiveMapModifierTypes(triggered);
+        if (!newMap.isDeathRealm) {
+          const hazardMap = newMap.hazardTiles;
+          const spawnCxMod = Math.floor(WORLD_GRID_SIZE / 2);
+          const spawnCyMod = Math.floor(WORLD_GRID_SIZE / 2);
+          const portalSetMod = new Set(
+            newMap.portals.map((p2) => `${p2.x},${p2.y}`)
+          );
+          const eligMod = [];
+          for (let hy = 0; hy < WORLD_GRID_SIZE; hy++) {
+            for (let hx = 0; hx < WORLD_GRID_SIZE; hx++) {
+              if (newMap.tiles[hy][hx] !== "floor") continue;
+              if (portalSetMod.has(`${hx},${hy}`)) continue;
+              if (Math.abs(hx - spawnCxMod) <= 3 && Math.abs(hy - spawnCyMod) <= 3)
+                continue;
+              if (hazardMap.has(`${hx},${hy}`)) continue;
+              eligMod.push({ x: hx, y: hy });
+            }
+          }
+          for (let i = eligMod.length - 1; i > 0; i--) {
+            const j2 = Math.floor(Math.random() * (i + 1));
+            [eligMod[i], eligMod[j2]] = [eligMod[j2], eligMod[i]];
+          }
+          let modHazardIdx = 0;
+          const addModHazards = (type) => {
+            const count2 = 3 + Math.floor(Math.random() * 6);
+            for (let hi = 0; hi < count2 && modHazardIdx < eligMod.length; hi++, modHazardIdx++) {
+              hazardMap.set(
+                `${eligMod[modHazardIdx].x},${eligMod[modHazardIdx].y}`,
+                type
               );
             }
-          })();
+          };
+          if (triggered.has("thorned_ground") || triggered.has("blood_moon") || triggered.has("spike_pit"))
+            addModHazards("spikes");
+          if (triggered.has("frozen_terrain") || triggered.has("ice_fields"))
+            addModHazards("ice");
+          if (triggered.has("plague_zone") || triggered.has("void_rift") || triggered.has("lava_fields"))
+            addModHazards("lava");
+          if (triggered.size > 0 && !triggered.has("thorned_ground") && !triggered.has("blood_moon") && !triggered.has("frozen_terrain") && !triggered.has("plague_zone") && !triggered.has("void_rift") && Math.random() < 0.4) {
+            const randHType = ["lava", "ice", "spikes"];
+            addModHazards(
+              randHType[Math.floor(Math.random() * randHType.length)]
+            );
+          }
+          if (hazardMap.size > 0) {
+            logBattleEntry(
+              `⚠️ ${hazardMap.size} hazard tile${hazardMap.size !== 1 ? "s" : ""} detected on this map!`,
+              "#ff7675"
+            );
+          }
         }
-        return {
-          ...prev,
-          exp: newExp,
-          level: newLevel,
-          expToNext: newExpToNext
-        };
-      });
-    } else {
-      transitionInProgressRef.current = false;
-      setTransitionInProgress(false);
+        if (triggered.size > 0) {
+          const names = [...triggered].map((t) => {
+            var _a5;
+            return ((_a5 = MAP_MODIFIERS.find((m2) => m2.id === t)) == null ? void 0 : _a5.name) ?? t;
+          }).join(" + ");
+          logBattleEntry(
+            `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
+            "#ff7675"
+          );
+        } else {
+          logBattleEntry("No map modifier this area.", "#888888");
+        }
+        const { dokaSpawnChance: spawnChance, dokaSpawnBaseValue: spawnBase } = dokaSpawnConfigRef.current;
+        if (!newMap.isDeathRealm && Math.random() * 100 < spawnChance && newEnemies.length > 0) {
+          const avgLevel = newEnemies.reduce((s2, e) => s2 + Number(e.level), 0) / newEnemies.length;
+          const lootCount = Math.max(1, Math.ceil(newEnemies.length / 3));
+          const walkable = [];
+          for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
+            for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
+              if (((_f3 = newMap.tiles[gy]) == null ? void 0 : _f3[gx]) === "floor" && !((_g2 = newMap.voidTiles) == null ? void 0 : _g2.has(`${gx},${gy}`)) && !(gx === spawnPosition.x && gy === spawnPosition.y) && !newEnemies.some((e) => e.x === gx && e.y === gy)) {
+                walkable.push({ x: gx, y: gy });
+              }
+            }
+          }
+          for (let i = walkable.length - 1; i > 0; i--) {
+            const j2 = Math.floor(Math.random() * (i + 1));
+            [walkable[i], walkable[j2]] = [walkable[j2], walkable[i]];
+          }
+          const lootItems = walkable.slice(0, lootCount).map((tile) => ({
+            id: `doka-${Date.now()}-${tile.x}-${tile.y}`,
+            tileX: tile.x,
+            tileY: tile.y,
+            value: Math.max(
+              1,
+              Math.round(
+                (spawnBase + avgLevel * 2) * (0.8 + Math.random() * 0.4)
+              )
+            ),
+            collected: false
+          }));
+          setDokaLoot(lootItems);
+          if (lootItems.length > 0) {
+            logBattleEntry(
+              `💰 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
+              "#f1c40f"
+            );
+          }
+        } else {
+          setDokaLoot([]);
+        }
+        setCharacterStats((prev) => {
+          var _a5;
+          const PORTAL_XP = 10;
+          let newExp = prev.exp + PORTAL_XP;
+          let newLevel = prev.level;
+          let newExpToNext = prev.expToNext;
+          while (newExp >= newExpToNext) {
+            newExp -= newExpToNext;
+            newLevel += 1;
+            newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
+          }
+          if (actor) {
+            const spellKeys = Object.keys(spellLevels);
+            const spellVals = spellKeys.map((k2) => BigInt(spellLevels[k2] ?? 0));
+            const portalXpUpdate = {
+              name: characterName,
+              pieceType,
+              colors: [colors.primary, colors.secondary, colors.accent],
+              pixelPattern: "",
+              rotation: BigInt(0),
+              level: BigInt(newLevel),
+              experience: BigInt(newExp),
+              dokaBalance: BigInt(dokaBalance),
+              stats: {
+                hp: BigInt(prev.hp),
+                ap: BigInt(prev.ap),
+                mp: BigInt(prev.mp),
+                sp: BigInt(prev.sp),
+                sr: BigInt(prev.sr),
+                init: BigInt(prev.init),
+                res: BigInt(prev.res),
+                chc: BigInt(prev.chc),
+                atk: BigInt(0),
+                resilience: BigInt(0),
+                evasion: BigInt(0),
+                killCount: BigInt(((_a5 = character == null ? void 0 : character.stats) == null ? void 0 : _a5.killCount) ?? 0)
+              },
+              spellLevelKeys: spellKeys,
+              spellLevelValues: spellVals
+            };
+            const portalXpSlot = BigInt(characterSlot);
+            (async () => {
+              try {
+                await actor.updateCharacter(portalXpSlot, portalXpUpdate);
+              } catch (err) {
+                console.warn("[PBV] Character save failed:", err);
+                pendingSavesRef.current.push(
+                  () => actor.updateCharacter(portalXpSlot, portalXpUpdate)
+                );
+              }
+            })();
+          }
+          return {
+            ...prev,
+            exp: newExp,
+            level: newLevel,
+            expToNext: newExpToNext
+          };
+        });
+      } else {
+        transitionInProgressRef.current = false;
+        setTransitionInProgress(false);
+      }
+    } catch (err) {
+      console.error("[MAP_TRANSITION] checkPortalInteraction threw:", err);
+      throw err;
+    } finally {
+      _releaseTransitionLock();
     }
   }, [
     inBattle,
@@ -65582,6 +65613,31 @@ const WorldExplorationInner = ({
     const resolved = kitIds.map((id) => starterSpells.find((sp) => sp.id === id)).filter((sp) => !!sp);
     return resolved.length > 0 ? resolved : summon.spells ?? [];
   }, [combatantStoreCtx]);
+  const resolveActiveCaster = reactExports.useCallback(() => {
+    const summonId = activeControlledSummonIdRef.current;
+    if (summonId) {
+      const apRef = {
+        get current() {
+          var _a4, _b4;
+          return ((_b4 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((c2) => c2.id === summonId)) == null ? void 0 : _b4.currentAp) ?? 0;
+        }
+      };
+      return {
+        casterId: summonId,
+        casterPos: getActiveCasterPos(),
+        spellSource: getSummonKitSpells(),
+        apRef,
+        selectedSpellId: selectedSummonSpellIdRef.current
+      };
+    }
+    return {
+      casterId: "player",
+      casterPos: getActiveCasterPos(),
+      spellSource: activeSpells,
+      apRef: currentBattleApRef,
+      selectedSpellId: selectedSpellIdRef.current
+    };
+  }, [activeSpells, getSummonKitSpells, getActiveCasterPos]);
   const getMpReachableTiles = reactExports.useCallback(() => {
     let mpBudget = currentBattleMp;
     const _summonId = activeControlledSummonIdRef.current;
@@ -66407,7 +66463,7 @@ const WorldExplorationInner = ({
               h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
               drawOrder: renderItem.depth,
               id: enemy.id,
-              kind: "enemy",
+              kind: enemy.isSummon && enemy.side === "player" ? "summon" : "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
               isAlive: (enemy.hp ?? 0) > 0,
@@ -67205,14 +67261,30 @@ const WorldExplorationInner = ({
         const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === id);
         return !!(c2 == null ? void 0 : c2.isSummon);
       },
-      reconcileBattleState: () => reconcileBattleState(combatantStoreCtx, {
-        inBattle: inBattleRef.current,
-        victoryFiredThisBattleRef,
-        triggerVictory: () => {
-          var _a4;
-          return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
-        }
-      })
+      reconcileBattleState: () => (
+        // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
+        // instead of an EMPTY array [] so the recap builder (handleBattleEnd)
+        // sees every kill appended by attributeKillReward (line 9517). The
+        // previous `[]` here was the dead empty-array path that bypassed the
+        // single canonical defeated list and produced an empty recap.
+        reconcileBattleState(combatantStoreCtx, {
+          inBattle: inBattleRef.current,
+          victoryFiredThisBattleRef,
+          triggerVictory: () => {
+            var _a4;
+            return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(
+              handleBattleEndRef,
+              true,
+              0,
+              battleHitsRef.current,
+              battleDefeatedRef.current.map((e) => ({
+                name: e.pieceType ?? "unknown",
+                level: e.level ?? 1
+              }))
+            );
+          }
+        })
+      )
     }),
     [
       combatantStoreCtx,
@@ -67641,7 +67713,7 @@ const WorldExplorationInner = ({
   );
   const handleCanvasClick = reactExports.useCallback(
     (event) => {
-      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2, _l2, _m, _n;
+      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2, _l2, _m, _n, _o, _p;
       if (!currentMap || transitionInProgressRef.current) return;
       if (activeControlledSummonIdRef.current) {
         const summon = getLiveCombatants(combatantStoreCtx).find(
@@ -67724,6 +67796,7 @@ const WorldExplorationInner = ({
           return;
         }
       }
+      const activeCaster = resolveActiveCaster();
       {
         const _canvas = canvasRef.current;
         if (_canvas) {
@@ -67733,7 +67806,7 @@ const WorldExplorationInner = ({
           const _hit = hitTestSprite(_canvasX, _canvasY, 10);
           if (_hit) {
             const _summonControlled = !!activeControlledSummonIdRef.current;
-            if ((_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current) && _hit.kind === "enemy") {
+            if (inBattleRef.current && (_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current) && _hit.kind === "enemy") {
               if (_summonControlled && !selectedSummonSpellIdRef.current) {
                 const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                 (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
@@ -67762,7 +67835,7 @@ const WorldExplorationInner = ({
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                     targetsCount: 1,
                     targetIds: [_hit.id],
-                    casterId: _summonControlled ? activeControlledSummonIdRef.current : "player"
+                    casterId: activeCaster.casterId
                   });
                   const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                     _spell,
@@ -67813,7 +67886,7 @@ const WorldExplorationInner = ({
                 }
                 return;
               }
-            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+            } else if (inBattleRef.current && !selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _basicAttack = activeSpells.find(
                 (s2) => s2.id === "physical_attack"
               );
@@ -67848,9 +67921,18 @@ const WorldExplorationInner = ({
               }
               return;
             } else if (selectedSpellIdRef.current && _hit.kind === "player") {
-              const _spell = activeSpells.find(
-                (s2) => s2.id === selectedSpellIdRef.current
+              const _spell = activeCaster.spellSource.find(
+                (s2) => s2.id === activeCaster.selectedSpellId
               );
+              if (_spell && _spell.targetType !== "self" && _spell.targetType !== "ally") {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                (_e3 = effectsManagerRef.current) == null ? void 0 : _e3.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell"
+                );
+                return;
+              }
               if (_spell && (_spell.targetType === "self" || _spell.targetType === "ally")) {
                 const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                   _spell,
@@ -67862,6 +67944,39 @@ const WorldExplorationInner = ({
                     event.clientX,
                     event.clientY,
                     "sprite-player",
+                    _castResult,
+                    null,
+                    null,
+                    null
+                  );
+                } catch {
+                }
+                return;
+              }
+            } else if (activeCaster.selectedSpellId && _hit.kind === "summon") {
+              const _summonSpell = activeCaster.spellSource.find(
+                (s2) => s2.id === activeCaster.selectedSpellId
+              );
+              if (_summonSpell && _summonSpell.targetType !== "self" && _summonSpell.targetType !== "ally") {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                (_f3 = effectsManagerRef.current) == null ? void 0 : _f3.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell"
+                );
+                return;
+              }
+              if (_summonSpell && (_summonSpell.targetType === "self" || _summonSpell.targetType === "ally")) {
+                const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
+                  _summonSpell,
+                  { x: _hit.logicalX, y: _hit.logicalY },
+                  "sprite-summon"
+                );
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "sprite-summon",
                     _castResult,
                     null,
                     null,
@@ -67887,13 +68002,13 @@ const WorldExplorationInner = ({
           }
         }
         if (selectedSpellIdRef.current) {
-          const _apSource = activeControlledSummonIdRef.current ? ((_f3 = (_e3 = combatantsRef.current) == null ? void 0 : _e3.find(
+          const _apSource = activeControlledSummonIdRef.current ? ((_h2 = (_g2 = combatantsRef.current) == null ? void 0 : _g2.find(
             (c2) => c2.id === activeControlledSummonIdRef.current
-          )) == null ? void 0 : _f3.currentAp) ?? 0 : currentBattleApRef.current;
+          )) == null ? void 0 : _h2.currentAp) ?? 0 : currentBattleApRef.current;
           if (_apSource <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
+              (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "Not enough AP"
@@ -67913,13 +68028,13 @@ const WorldExplorationInner = ({
             (e) => e.x === gridPos.x && e.y === gridPos.y
           );
           if (_occupantMouse && isActiveHostile(_occupantMouse) && isAliveCombatant(_occupantMouse)) {
-            const _spellMouse = activeSpells.find(
-              (s2) => s2.id === selectedSpellIdRef.current
+            const _spellMouse = activeCaster.spellSource.find(
+              (s2) => s2.id === activeCaster.selectedSpellId
             );
             if (_spellMouse) {
               const _liveMouse = isTileCastableLive(
                 _spellMouse,
-                activeControlledSummonIdRef.current ? getActiveCasterPos() : playerPositionRef.current,
+                activeCaster.casterPos,
                 gridPos,
                 _liveCombatantsMouse,
                 currentMap.tiles
@@ -67932,11 +68047,11 @@ const WorldExplorationInner = ({
                   targetId: _occupantMouse.id,
                   targetsCount: 1,
                   targetIds: [_occupantMouse.id],
-                  casterId: activeControlledSummonIdRef.current ? activeControlledSummonIdRef.current : "player"
+                  casterId: activeCaster.casterId
                 });
               } else {
                 const _screen = tileCenter(gridPos.x, gridPos.y);
-                (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
+                (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
                   _screen.x,
                   _screen.y,
                   "invalid target"
@@ -67999,7 +68114,7 @@ const WorldExplorationInner = ({
           const _isSelfOrAllySpellMouse = spell.targetType === "self" || spell.targetType === "ally" || spell.effectType === "buff";
           if (!_isSelfOrAllySpellMouse && gridPos.x === playerPositionRef.current.x && gridPos.y === playerPositionRef.current.y) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
+            (_k2 = effectsManagerRef.current) == null ? void 0 : _k2.spawnFloatText(
               _screen.x,
               _screen.y,
               "invalid target"
@@ -68035,7 +68150,7 @@ const WorldExplorationInner = ({
             markFirstAction();
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
+              (_l2 = effectsManagerRef.current) == null ? void 0 : _l2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "✦ FIZZLED! ✦",
@@ -68067,7 +68182,7 @@ const WorldExplorationInner = ({
             }
           } else {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_k2 = effectsManagerRef.current) == null ? void 0 : _k2.spawnFloatText(
+            (_m = effectsManagerRef.current) == null ? void 0 : _m.spawnFloatText(
               _screen.x,
               _screen.y,
               castResult === "no_ap" ? "No AP!" : "Aborted"
@@ -68075,14 +68190,14 @@ const WorldExplorationInner = ({
           }
         } else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
-          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_l2 = currentMap.voidTiles) == null ? void 0 : _l2.has(`${gridPos.x},${gridPos.y}`)))
+          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_n = currentMap.voidTiles) == null ? void 0 : _n.has(`${gridPos.x},${gridPos.y}`)))
             return;
           const _walkOccupantMouse = getLiveCombatants(combatantStoreCtx).find(
             (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
           );
           if (_walkOccupantMouse) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_m = effectsManagerRef.current) == null ? void 0 : _m.spawnFloatText(
+            (_o = effectsManagerRef.current) == null ? void 0 : _o.spawnFloatText(
               _screen.x,
               _screen.y,
               "Occupied"
@@ -68164,7 +68279,7 @@ const WorldExplorationInner = ({
         }
         return;
       }
-      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_n = currentMap.voidTiles) == null ? void 0 : _n.has(`${gridPos.x},${gridPos.y}`))) {
+      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_p = currentMap.voidTiles) == null ? void 0 : _p.has(`${gridPos.x},${gridPos.y}`))) {
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
         const path = findPath(playerPositionRef.current, gridPos);
         if (path.length > 0) {
@@ -68339,6 +68454,7 @@ const WorldExplorationInner = ({
           return;
         }
       }
+      const activeCaster = resolveActiveCaster();
       {
         const _canvas = canvasRef.current;
         if (_canvas) {
@@ -68348,7 +68464,7 @@ const WorldExplorationInner = ({
           const _hit = hitTestSprite(_canvasX, _canvasY, 14);
           if (_hit) {
             const _summonControlled = !!activeControlledSummonIdRef.current;
-            if ((_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current) && _hit.kind === "enemy") {
+            if (inBattleRef.current && (_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current) && _hit.kind === "enemy") {
               if (_summonControlled && !selectedSummonSpellIdRef.current) {
                 const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
                 (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
@@ -68377,7 +68493,7 @@ const WorldExplorationInner = ({
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                     targetsCount: 1,
                     targetIds: [_hit.id],
-                    casterId: _summonControlled ? activeControlledSummonIdRef.current : "player"
+                    casterId: activeCaster.casterId
                   });
                   const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                     _spell,
@@ -68404,7 +68520,7 @@ const WorldExplorationInner = ({
                 }
                 return;
               }
-            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+            } else if (inBattleRef.current && !selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _basicAttack = activeSpells.find(
                 (s2) => s2.id === "physical_attack"
               );
@@ -68437,11 +68553,41 @@ const WorldExplorationInner = ({
               const _spell = activeSpells.find(
                 (s2) => s2.id === selectedSpellIdRef.current
               );
+              if (_spell && _spell.targetType !== "self" && _spell.targetType !== "ally") {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                (_e3 = effectsManagerRef.current) == null ? void 0 : _e3.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell"
+                );
+                return;
+              }
               if (_spell && (_spell.targetType === "self" || _spell.targetType === "ally")) {
                 const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                   _spell,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   "sprite-player"
+                );
+                return;
+              }
+            } else if (selectedSpellIdRef.current && _hit.kind === "summon") {
+              const _summonSpell = activeSpells.find(
+                (s2) => s2.id === selectedSpellIdRef.current
+              );
+              if (_summonSpell && _summonSpell.targetType !== "self" && _summonSpell.targetType !== "ally") {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                (_f3 = effectsManagerRef.current) == null ? void 0 : _f3.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell"
+                );
+                return;
+              }
+              if (_summonSpell && (_summonSpell.targetType === "self" || _summonSpell.targetType === "ally")) {
+                const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
+                  _summonSpell,
+                  { x: _hit.logicalX, y: _hit.logicalY },
+                  "sprite-summon"
                 );
                 return;
               }
@@ -68461,9 +68607,7 @@ const WorldExplorationInner = ({
           }
         }
         if (selectedSpellIdRef.current) {
-          const _apSource = activeControlledSummonIdRef.current ? ((_f3 = (_e3 = combatantsRef.current) == null ? void 0 : _e3.find(
-            (c2) => c2.id === activeControlledSummonIdRef.current
-          )) == null ? void 0 : _f3.currentAp) ?? 0 : currentBattleApRef.current;
+          const _apSource = activeCaster.apRef.current;
           if (_apSource <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -68485,13 +68629,13 @@ const WorldExplorationInner = ({
             (e) => e.x === gridPos.x && e.y === gridPos.y
           );
           if (_occupantTouch && isActiveHostile(_occupantTouch) && isAliveCombatant(_occupantTouch)) {
-            const _spellTouch = activeSpells.find(
-              (s2) => s2.id === selectedSpellIdRef.current
+            const _spellTouch = activeCaster.spellSource.find(
+              (s2) => s2.id === activeCaster.selectedSpellId
             );
             if (_spellTouch) {
               const _liveTouch = isTileCastableLive(
                 _spellTouch,
-                activeControlledSummonIdRef.current ? getActiveCasterPos() : playerPositionRef.current,
+                activeCaster.casterPos,
                 gridPos,
                 _liveCombatantsTouch,
                 currentMap.tiles
@@ -68504,7 +68648,7 @@ const WorldExplorationInner = ({
                   targetId: _occupantTouch.id,
                   targetsCount: 1,
                   targetIds: [_occupantTouch.id],
-                  casterId: activeControlledSummonIdRef.current ? activeControlledSummonIdRef.current : "player"
+                  casterId: activeCaster.casterId
                 });
               } else {
                 {
@@ -69355,9 +69499,21 @@ const WorldExplorationInner = ({
           reconcileBattleState(combatantStoreCtx, {
             inBattle: true,
             victoryFiredThisBattleRef,
+            // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
+            // instead of an EMPTY array [] so the recap builder sees every
+            // kill appended by attributeKillReward (line 9517).
             triggerVictory: () => {
               var _a5;
-              return (_a5 = handleBattleEndRef.current) == null ? void 0 : _a5.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
+              return (_a5 = handleBattleEndRef.current) == null ? void 0 : _a5.call(
+                handleBattleEndRef,
+                true,
+                0,
+                battleHitsRef.current,
+                battleDefeatedRef.current.map((e) => ({
+                  name: e.pieceType ?? "unknown",
+                  level: e.level ?? 1
+                }))
+              );
             }
           });
         });
@@ -70375,9 +70531,23 @@ const WorldExplorationInner = ({
     reconcileBattleState(combatantStoreCtx, {
       inBattle: inBattleRef.current,
       victoryFiredThisBattleRef,
+      // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
+      // instead of an EMPTY array [] so the recap builder (handleBattleEnd)
+      // sees every kill appended by attributeKillReward (line 9517). The
+      // previous `[]` here was the third dead empty-array path that bypassed
+      // the single canonical defeated list and produced an empty recap.
       triggerVictory: () => {
         var _a4;
-        return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
+        return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(
+          handleBattleEndRef,
+          true,
+          0,
+          battleHitsRef.current,
+          battleDefeatedRef.current.map((e) => ({
+            name: e.pieceType ?? "unknown",
+            level: e.level ?? 1
+          }))
+        );
       }
     });
     if (victoryFiredThisBattleRef.current) return;
@@ -74722,6 +74892,10 @@ const WorldExplorationInner = ({
                   );
                   if (!_s2Confirmed) return;
                 }
+                syncCombatants(
+                  combatantStoreCtx,
+                  despawnSummons(combatantsRef.current)
+                );
                 _handlePlayerDeath();
               },
               onEndTurn: () => {
@@ -78109,7 +78283,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-DkoT82nC.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CecRuOUB.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

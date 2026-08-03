@@ -721,6 +721,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const isInitializedRef = useRef(false);
   const transitionInProgressRef = useRef(false);
   const lastPortalRef = useRef<{ x: number; y: number } | null>(null);
+  // SECTION 3(a) — Edge-triggered on-tile portal latch. Tracks the
+  // (portalKey, tileKey) of the last portal tile the player ARRIVED on. Fires
+  // the portal handler exactly once per arrival and re-arms only after the
+  // player LEAVES that tile (tileKey changes). This makes the same-millisecond
+  // 6× "Portal entered" spam impossible: the first arrival latches, subsequent
+  // same-tile calls are no-ops until the player steps off.
+  const portalLatchRef = useRef<{
+    portalKey: string;
+    tileKey: string;
+    armed: boolean;
+  } | null>(null);
+  // SECTION 3(a) — Timeout safety for the transition lock. If a transition's
+  // finally block never fires (e.g. a tab is backgrounded mid-await), this
+  // timer clears the lock so a failed transition cannot brick subsequent
+  // portals. Cleared in the finally block on a clean release.
+  const transitionLockTimeoutRef = useRef<number | null>(null);
   // Edge-trigger for the sealed-portal announcement. Remembers which locked
   // portal was last announced so the "way forward is sealed" log fires exactly
   // once per on-portal dwell, re-arms when the player steps off, and always
@@ -6268,880 +6284,978 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return; // ← use ref, not stale closure state
     if (!currentMap) return;
-    // FIX #14: Check-and-set is the very first synchronous operation so there
-    // is no gap between the check and the lock being claimed.
-    setTransitionInProgress(true);
-    transitionInProgressRef.current = true;
-    lastPortalRef.current = null; // ensure every portal check starts fresh
-    onDebugLog?.("MAP_TRANSITION", "Portal entered");
-    // Check if player is currently on a portal tile
-    let portal = currentMap.portals.find(
+    // SECTION 3(a) — Edge-triggered on-tile latch. Compute the current tile
+    // key and the portal key the player is standing on. If the player is on
+    // the SAME (portalKey, tileKey) that already fired, this is a duplicate
+    // same-tile call (the 6× same-ms spam) — return immediately WITHOUT
+    // claiming the lock or logging. The latch re-arms only when the player
+    // steps off (handled in the no-portal-found branch below, which clears
+    // the latch when the tile changes).
+    const _tileKey = `${playerPositionRef.current.x},${playerPositionRef.current.y}`;
+    const _candidatePortal = currentMap.portals.find(
       (p) =>
         p.x === playerPositionRef.current.x &&
         p.y === playerPositionRef.current.y,
     );
-    if (!portal) {
-      // Proximity fallback for rest portals (catches coordinate rounding)
-      const nearbyRest = currentMap.portals.find(
-        (p) =>
-          p.isRestPortal &&
-          Math.sqrt(
-            (playerPositionRef.current.x - p.x) ** 2 +
-              (playerPositionRef.current.y - p.y) ** 2,
-          ) < 1.5,
-      );
-      if (nearbyRest) portal = nearbyRest;
+    if (_candidatePortal) {
+      const _candidatePortalKey = `${_candidatePortal.x},${_candidatePortal.y}`;
+      const _latch = portalLatchRef.current;
+      if (
+        _latch?.armed &&
+        _latch.portalKey === _candidatePortalKey &&
+        _latch.tileKey === _tileKey
+      ) {
+        // Already fired for this arrival on this tile — same-ms duplicate.
+        return;
+      }
+    } else {
+      // SECTION 3(a) — Player is NOT on a portal tile. If the latch was
+      // armed for a different tile, the player has left the latched portal
+      // tile — re-arm by clearing so the next arrival fires again.
+      const _latch = portalLatchRef.current;
+      if (_latch && _latch.tileKey !== _tileKey) {
+        portalLatchRef.current = null;
+      }
     }
-    if (!portal) {
-      // C1 FIX: No portal found — release the lock to prevent permanent stuck state
-      setTransitionInProgress(false);
+    // FIX #14: Check-and-set is the very first synchronous operation so there
+    // is no gap between the check and the lock being claimed.
+    setTransitionInProgress(true);
+    transitionInProgressRef.current = true;
+    // SECTION 3(a) — Timeout safety: if the finally below never fires (e.g.
+    // the tab is backgrounded mid-await or an async path rejects without
+    // surfacing), this timer clears the lock so a failed transition cannot
+    // brick subsequent portals. Cleared in the finally on a clean release.
+    if (transitionLockTimeoutRef.current !== null) {
+      clearTimeout(transitionLockTimeoutRef.current);
+    }
+    transitionLockTimeoutRef.current = window.setTimeout(() => {
+      transitionLockTimeoutRef.current = null;
+      if (transitionInProgressRef.current) {
+        transitionInProgressRef.current = false;
+        setTransitionInProgress(false);
+        onDebugLog?.(
+          "MAP_TRANSITION",
+          "Transition lock cleared by timeout safety",
+        );
+      }
+    }, 5000);
+    // SECTION 3(a) — Helper to release the lock + clear the timeout safety.
+    // Called from the finally block below so EVERY exit path (return, throw,
+    // early-return) releases the lock. This replaces the scattered
+    // setTransitionInProgress(false) + transitionInProgressRef.current=false
+    // pairs that previously lived at each return site.
+    const _releaseTransitionLock = () => {
+      if (transitionLockTimeoutRef.current !== null) {
+        clearTimeout(transitionLockTimeoutRef.current);
+        transitionLockTimeoutRef.current = null;
+      }
       transitionInProgressRef.current = false;
-      // EDIT 2 — Player stepped off any portal: re-arm the sealed-portal
-      // announcement so the next on-portal dwell logs exactly once more.
-      sealedPortalAnnouncedRef.current = null;
-      return;
-    }
-    if (portal) {
-      // Prevent multiple triggers from the same portal
-      const portalKey = `${portal.x},${portal.y}`;
-      const lastPortal = lastPortalRef.current;
-      let lastPortalKey: string | null = null;
-      if (lastPortal) {
-        lastPortalKey = `${(lastPortal as any).x},${(lastPortal as any).y}`;
+      setTransitionInProgress(false);
+    };
+    lastPortalRef.current = null; // ensure every portal check starts fresh
+    onDebugLog?.("MAP_TRANSITION", "Portal entered");
+    // SECTION 3(a) — Wrap the entire transition body in try/finally so the
+    // lock is ALWAYS released, even on throw or an early return that forgets
+    // to call _releaseTransitionLock. The finally is the single source of
+    // truth for lock release; the timeout safety above is the backstop.
+    try {
+      // Check if player is currently on a portal tile
+      let portal = currentMap.portals.find(
+        (p) =>
+          p.x === playerPositionRef.current.x &&
+          p.y === playerPositionRef.current.y,
+      );
+      if (!portal) {
+        // Proximity fallback for rest portals (catches coordinate rounding)
+        const nearbyRest = currentMap.portals.find(
+          (p) =>
+            p.isRestPortal &&
+            Math.sqrt(
+              (playerPositionRef.current.x - p.x) ** 2 +
+                (playerPositionRef.current.y - p.y) ** 2,
+            ) < 1.5,
+        );
+        if (nearbyRest) portal = nearbyRest;
       }
-      if (portalKey === lastPortalKey) {
-        // FIX #14: Release the lock before returning so a different portal can trigger later
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
-        return; // Already processed this portal
+      if (!portal) {
+        // C1 FIX: No portal found — release the lock to prevent permanent stuck state
+        // (handled by the finally block below — no explicit release needed here).
+        // EDIT 2 — Player stepped off any portal: re-arm the sealed-portal
+        // announcement so the next on-portal dwell logs exactly once more.
+        sealedPortalAnnouncedRef.current = null;
+        return;
       }
-      // S2: progression gate — run portal locked until map cleared (engine/portalRules.ts)
-      const _s2InteractRunMode: RunMode = bossRushActiveRef.current
-        ? "bossRush"
-        : dungeonChainActiveRef.current
-          ? "dungeon"
-          : "none";
-      const _s2IsProgressionPortal =
-        _s2InteractRunMode !== "none" &&
-        !portal.isBossRushPortal &&
-        !portal.isRestPortal &&
-        !portal.isRestExit &&
-        !portal.isBossPortal &&
-        !portal.isDungeonEntry;
-      if (
-        _s2IsProgressionPortal &&
-        isProgressionLocked(
-          _s2InteractRunMode,
-          activeHostilesRemaining(combatantsRef.current) === 0,
-        )
-      ) {
-        // EDIT 2 — Edge-trigger the "sealed" announcement so it fires exactly
-        // once per on-portal dwell. sealedPortalAnnouncedRef remembers the last
-        // announced portalKey; we only log when the key differs (first dwell on
-        // this portal). The ref is cleared in the no-portal-found branch above
-        // when the player steps off, re-arming it for the next entry.
-        if (sealedPortalAnnouncedRef.current?.portalKey !== portalKey) {
-          logBattleEntry(
-            "🔒 The way forward is sealed until every foe falls.",
-            "#8a6a3a",
-          );
-          sealedPortalAnnouncedRef.current = {
-            portalKey,
-            announcedAt: Date.now(),
-          };
+      if (portal) {
+        // SECTION 3(a) — Arm the on-tile latch now that we have a real portal
+        // and are about to process it. Subsequent same-tile calls (the 6×
+        // same-ms spam) hit the latch guard at the top and return immediately.
+        const portalKey = `${portal.x},${portal.y}`;
+        portalLatchRef.current = {
+          portalKey,
+          tileKey: _tileKey,
+          armed: true,
+        };
+        // Prevent multiple triggers from the same portal
+        const lastPortal = lastPortalRef.current;
+        let lastPortalKey: string | null = null;
+        if (lastPortal) {
+          lastPortalKey = `${(lastPortal as any).x},${(lastPortal as any).y}`;
         }
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
-        return;
-      }
-      // Boss Rush portal entry
-      if (portal.isBossRushPortal || portal.color === "bossRush") {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        bossRushActiveRef.current = true;
-        startBossRush();
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
-        return;
-      }
-      // Boss Rush room-advance: stepping into a progression portal during a
-      // boss rush advances to the next room once the current room is cleared.
-      // The portal stays locked (handled above) until activeHostilesRemaining
-      // is zero. This replaces the old auto-advance in handleBossRushRoomClear.
-      if (
-        bossRushActiveRef.current &&
-        (portal.isProgressionPortal ||
-          portal.kind === PROGRESSION_PORTAL_KIND) &&
-        activeHostilesRemaining(combatantsRef.current) === 0
-      ) {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        const nextRoomIndex = bossRushState.currentRoom + 1;
-        const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
-        if (nextRoomDef) {
-          void advanceBossRushRoom();
-          const { map: nextMap, spawnPosition } = generateRandomMap();
-          if (nextMap) {
-            setCurrentMap(nextMap);
-            if (spawnPosition) {
-              setPlayerPositionSynced({ ...spawnPosition });
-            }
-            const newEnemies: any[] = [];
-            if (nextRoomDef.boss1Id) {
-              newEnemies.push({
-                id: `boss-rush-${nextRoomIndex}-0`,
-                pieceType: nextRoomDef.boss1Name || "Boss 1",
-                x: 4,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: [],
-              });
-            }
-            if (nextRoomDef.boss2Id) {
-              newEnemies.push({
-                id: `boss-rush-${nextRoomIndex}-1`,
-                pieceType: nextRoomDef.boss2Name || "Boss 2",
-                x: 6,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: [],
-              });
-            }
-            syncCombatants(combatantStoreCtx, newEnemies, {
-              resetBattle: true,
-            });
-            // SECTION 1c: clear the per-kill defeated roster for the new battle.
-            battleDefeatedRef.current = [];
+        if (portalKey === lastPortalKey) {
+          // FIX #14: Release the lock before returning so a different portal can trigger later
+          // (handled by the finally block below — no explicit release needed here).
+          return; // Already processed this portal
+        }
+        // S2: progression gate — run portal locked until map cleared (engine/portalRules.ts)
+        const _s2InteractRunMode: RunMode = bossRushActiveRef.current
+          ? "bossRush"
+          : dungeonChainActiveRef.current
+            ? "dungeon"
+            : "none";
+        const _s2IsProgressionPortal =
+          _s2InteractRunMode !== "none" &&
+          !portal.isBossRushPortal &&
+          !portal.isRestPortal &&
+          !portal.isRestExit &&
+          !portal.isBossPortal &&
+          !portal.isDungeonEntry;
+        if (
+          _s2IsProgressionPortal &&
+          isProgressionLocked(
+            _s2InteractRunMode,
+            activeHostilesRemaining(combatantsRef.current) === 0,
+          )
+        ) {
+          // EDIT 2 — Edge-trigger the "sealed" announcement so it fires exactly
+          // once per on-portal dwell. sealedPortalAnnouncedRef remembers the last
+          // announced portalKey; we only log when the key differs (first dwell on
+          // this portal). The ref is cleared in the no-portal-found branch above
+          // when the player steps off, re-arming it for the next entry.
+          if (sealedPortalAnnouncedRef.current?.portalKey !== portalKey) {
+            logBattleEntry(
+              "🔒 The way forward is sealed until every foe falls.",
+              "#8a6a3a",
+            );
+            sealedPortalAnnouncedRef.current = {
+              portalKey,
+              announcedAt: Date.now(),
+            };
           }
+          // SECTION 3(a) — Disarm the latch for a SEALED progression portal so
+          // the player can re-trigger the moment the seal lifts (room cleared).
+          // If we left it armed, the player would have to step off and back on
+          // to advance after clearing the room — which would block the boss-rush
+          // advance path in 3(b).
+          portalLatchRef.current = null;
+          return;
         }
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
-        return;
-      }
-      // White portal entry — sanctuary transition on run/dungeon completion.
-      // Mirrors the rest portal entry: cleanupMap + generateRestMap. Completion
-      // keeps rewards; this is NOT a death/flee reset.
-      if (portal.isWhitePortal) {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        cleanupMap();
-        try {
-          const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
-          currentMapRef.current = restMap;
-          setCurrentMap(restMap);
-          setPlayerPositionSynced(restSpawn);
-          resetCombatantStore(combatantStoreCtx);
-          setPlayerView("front");
-          const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
-          const centerX = canvasSize.width / 2;
-          const centerY = canvasSize.height / 2;
-          const camX = centerX - playerScreenPos.x;
-          const camY = centerY - playerScreenPos.y;
-          cameraRef.current = { x: camX, y: camY };
-          targetCameraRef.current = { x: camX, y: camY };
-          cameraVelocityRef.current = { x: 0, y: 0 };
-          if (cameraFollowTimerRef.current !== null)
-            clearTimeout(cameraFollowTimerRef.current);
-          setTimeout(() => {
-            cameraFollowTimerRef.current = null;
-            updateCameraToFollowPlayer();
-          }, 100);
-          transitionInProgressRef.current = false;
-          setTransitionInProgress(false);
-          setMapCount((prev) => prev + 1);
-          toast("✨ Sanctuary — your run is complete. Rest, hero.", {
-            duration: 4000,
-            style: {
-              background: "#1a1a2e",
-              border: "1px solid #6a6a8a",
-              color: "#e0e0ff",
-            },
-          });
-        } catch (err) {
-          console.error("[white] sanctuary map generation failed:", err);
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
+        // Boss Rush portal entry
+        if (portal.isBossRushPortal || portal.color === "bossRush") {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          bossRushActiveRef.current = true;
+          startBossRush();
+          return;
         }
-        return;
-      }
-      // Rest portal entry — safe zone (enemy-free, with return portals)
-      if (portal.isRestPortal) {
-        lastPortalRef.current = { x: portal.x, y: portal.y };
-        cleanupMap();
-        // Use the same pattern as the death-realm transition (line ~11182):
-        // synchronous map creation, immediate state application, no generation counter
-        try {
-          const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
-          currentMapRef.current = restMap;
-          setCurrentMap(restMap);
-          setPlayerPositionSynced(restSpawn);
-          resetCombatantStore(combatantStoreCtx);
-          setPlayerView("front");
-          // Explicitly center camera on player for rest map
-          const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
-          const centerX = canvasSize.width / 2;
-          const centerY = canvasSize.height / 2;
-          const camX = centerX - playerScreenPos.x;
-          const camY = centerY - playerScreenPos.y;
-          cameraRef.current = { x: camX, y: camY };
-          targetCameraRef.current = { x: camX, y: camY };
-          cameraVelocityRef.current = { x: 0, y: 0 };
-          if (cameraFollowTimerRef.current !== null)
-            clearTimeout(cameraFollowTimerRef.current);
-          setTimeout(() => {
-            cameraFollowTimerRef.current = null;
-            updateCameraToFollowPlayer();
-          }, 100);
-          transitionInProgressRef.current = false;
-          setTransitionInProgress(false);
-          setMapCount((prev) => prev + 1);
-          // DEBUG: prove player and portals are within bounds
-          console.log(
-            "REST_MAP_PLAYER",
-            restSpawn,
-            "MAP_DIMS",
-            restMap.tiles[0]?.length || 0,
-            restMap.tiles.length || 0,
-          );
-          console.log(
-            "REST_MAP_PORTALS",
-            restMap.portals.map((p: any) => ({
-              x: p.x,
-              y: p.y,
-              isRestExit: p.isRestExit,
-            })),
-          );
-          console.log("REST_MAP_CAMERA", cameraRef.current);
-          toast("🛡️ Safe Zone — no enemies here. Use a portal to return.", {
-            duration: 4000,
-            style: {
-              background: "#1a1a2e",
-              border: "1px solid #4a4a6a",
-              color: "#e0e0ff",
-            },
-          });
-        } catch (err) {
-          console.error("[rest] rest map generation failed:", err);
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
+        // Boss Rush room-advance: stepping into a progression portal during a
+        // boss rush advances to the next room once the current room is cleared.
+        // The portal stays locked (handled above) until activeHostilesRemaining
+        // is zero. This replaces the old auto-advance in handleBossRushRoomClear.
+        if (
+          bossRushActiveRef.current &&
+          (portal.isProgressionPortal ||
+            portal.kind === PROGRESSION_PORTAL_KIND) &&
+          activeHostilesRemaining(combatantsRef.current) === 0
+        ) {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          const nextRoomIndex = bossRushState.currentRoom + 1;
+          const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
+          if (nextRoomDef) {
+            void advanceBossRushRoom();
+            const { map: nextMap, spawnPosition } = generateRandomMap();
+            if (nextMap) {
+              setCurrentMap(nextMap);
+              if (spawnPosition) {
+                setPlayerPositionSynced({ ...spawnPosition });
+              }
+              const newEnemies: any[] = [];
+              if (nextRoomDef.boss1Id) {
+                newEnemies.push({
+                  id: `boss-rush-${nextRoomIndex}-0`,
+                  pieceType: nextRoomDef.boss1Name || "Boss 1",
+                  x: 4,
+                  y: 5,
+                  level: characterStats.level + 2,
+                  hp: 100,
+                  maxHp: 100,
+                  ap: 6,
+                  mp: 3,
+                  initiative: 10,
+                  attack: 20,
+                  defense: 10,
+                  resistance: 5,
+                  spells: [],
+                  isBoss: true,
+                  isLeader: false,
+                  behavior: "aggressive",
+                  family: "boss",
+                  statusEffects: [],
+                  activeEffects: [],
+                });
+              }
+              if (nextRoomDef.boss2Id) {
+                newEnemies.push({
+                  id: `boss-rush-${nextRoomIndex}-1`,
+                  pieceType: nextRoomDef.boss2Name || "Boss 2",
+                  x: 6,
+                  y: 5,
+                  level: characterStats.level + 2,
+                  hp: 100,
+                  maxHp: 100,
+                  ap: 6,
+                  mp: 3,
+                  initiative: 10,
+                  attack: 20,
+                  defense: 10,
+                  resistance: 5,
+                  spells: [],
+                  isBoss: true,
+                  isLeader: false,
+                  behavior: "aggressive",
+                  family: "boss",
+                  statusEffects: [],
+                  activeEffects: [],
+                });
+              }
+              syncCombatants(combatantStoreCtx, newEnemies, {
+                resetBattle: true,
+              });
+              // SECTION 1c: clear the per-kill defeated roster for the new battle.
+              battleDefeatedRef.current = [];
+            }
+          }
+          // SECTION 3(a) — Disarm the latch after a successful rush advance so
+          // the next room's progression portal can fire on arrival (the player
+          // teleports to a new spawn tile, so the tileKey changes anyway, but
+          // disarming here is belt-and-suspenders against same-tile spawns).
+          portalLatchRef.current = null;
+          return;
         }
-        return;
-      }
-      // Rest portal exit
-      if (portal.isRestExit && currentMap?.isRestMap) {
-        aiGenerationRef.current++;
-        const _myGen2 = aiGenerationRef.current;
-        lastPortalRef.current = { x: portal.x, y: portal.y };
+        // White portal entry — sanctuary transition on run/dungeon completion.
+        // Mirrors the rest portal entry: cleanupMap + generateRestMap. Completion
+        // keeps rewards; this is NOT a death/flee reset.
+        if (portal.isWhitePortal) {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          cleanupMap();
+          try {
+            const { map: restMap, spawnPosition: restSpawn } =
+              generateRestMap();
+            currentMapRef.current = restMap;
+            setCurrentMap(restMap);
+            setPlayerPositionSynced(restSpawn);
+            resetCombatantStore(combatantStoreCtx);
+            setPlayerView("front");
+            const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
+            const camX = centerX - playerScreenPos.x;
+            const camY = centerY - playerScreenPos.y;
+            cameraRef.current = { x: camX, y: camY };
+            targetCameraRef.current = { x: camX, y: camY };
+            cameraVelocityRef.current = { x: 0, y: 0 };
+            if (cameraFollowTimerRef.current !== null)
+              clearTimeout(cameraFollowTimerRef.current);
+            setTimeout(() => {
+              cameraFollowTimerRef.current = null;
+              updateCameraToFollowPlayer();
+            }, 100);
+            transitionInProgressRef.current = false;
+            setTransitionInProgress(false);
+            setMapCount((prev) => prev + 1);
+            toast("✨ Sanctuary — your run is complete. Rest, hero.", {
+              duration: 4000,
+              style: {
+                background: "#1a1a2e",
+                border: "1px solid #6a6a8a",
+                color: "#e0e0ff",
+              },
+            });
+          } catch (err) {
+            console.error("[white] sanctuary map generation failed:", err);
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          }
+          return;
+        }
+        // Rest portal entry — safe zone (enemy-free, with return portals)
+        if (portal.isRestPortal) {
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          cleanupMap();
+          // Use the same pattern as the death-realm transition (line ~11182):
+          // synchronous map creation, immediate state application, no generation counter
+          try {
+            const { map: restMap, spawnPosition: restSpawn } =
+              generateRestMap();
+            currentMapRef.current = restMap;
+            setCurrentMap(restMap);
+            setPlayerPositionSynced(restSpawn);
+            resetCombatantStore(combatantStoreCtx);
+            setPlayerView("front");
+            // Explicitly center camera on player for rest map
+            const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
+            const camX = centerX - playerScreenPos.x;
+            const camY = centerY - playerScreenPos.y;
+            cameraRef.current = { x: camX, y: camY };
+            targetCameraRef.current = { x: camX, y: camY };
+            cameraVelocityRef.current = { x: 0, y: 0 };
+            if (cameraFollowTimerRef.current !== null)
+              clearTimeout(cameraFollowTimerRef.current);
+            setTimeout(() => {
+              cameraFollowTimerRef.current = null;
+              updateCameraToFollowPlayer();
+            }, 100);
+            transitionInProgressRef.current = false;
+            setTransitionInProgress(false);
+            setMapCount((prev) => prev + 1);
+            // DEBUG: prove player and portals are within bounds
+            console.log(
+              "REST_MAP_PLAYER",
+              restSpawn,
+              "MAP_DIMS",
+              restMap.tiles[0]?.length || 0,
+              restMap.tiles.length || 0,
+            );
+            console.log(
+              "REST_MAP_PORTALS",
+              restMap.portals.map((p: any) => ({
+                x: p.x,
+                y: p.y,
+                isRestExit: p.isRestExit,
+              })),
+            );
+            console.log("REST_MAP_CAMERA", cameraRef.current);
+            toast("🛡️ Safe Zone — no enemies here. Use a portal to return.", {
+              duration: 4000,
+              style: {
+                background: "#1a1a2e",
+                border: "1px solid #4a4a6a",
+                color: "#e0e0ff",
+              },
+            });
+          } catch (err) {
+            console.error("[rest] rest map generation failed:", err);
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          }
+          return;
+        }
+        // Rest portal exit
+        if (portal.isRestExit && currentMap?.isRestMap) {
+          aiGenerationRef.current++;
+          const _myGen2 = aiGenerationRef.current;
+          lastPortalRef.current = { x: portal.x, y: portal.y };
+          cleanupMap();
+          if (portal.restExitType === "dungeon") {
+            dungeonChainActiveRef.current = true;
+            setDungeonChainActive(true);
+            setDungeonChainDepth(1);
+            const newMaxDepth = 3 + Math.floor(Math.random() * 3);
+            setDungeonChainMaxDepth(newMaxDepth);
+            dungeonChainMaxDepthRef.current = newMaxDepth;
+          }
+          const reTimerId = setTimeout(() => {
+            // RC FIX: No generation check needed — loop runs forever
+            const { map: newMap, spawnPosition } = generateRandomMap();
+            currentMapRef.current = newMap;
+            setCurrentMap(newMap);
+            setPlayerPositionSynced(spawnPosition);
+            resetCombatantStore(combatantStoreCtx);
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          }, 400);
+          pendingTimeoutsRef.current.add(reTimerId);
+          return;
+        }
+        // Fire portal sound
+        playSound("map_transition");
+        // ── UNIFIED MAP CLEANUP: terminates ALL battle processes, timers, AI callbacks,
+        // VFX, particle systems, DoT effects, and caches from the previous map.
+        // cleanupMap() calls cleanupBattle() internally — this is the single point
+        // that guarantees nothing from the old map carries over to the new one.
         cleanupMap();
-        if (portal.restExitType === "dungeon") {
-          dungeonChainActiveRef.current = true;
+        setCoinParticles([]);
+        effectsManagerRef.current.clear();
+        // Ensure fade overlay is cleared (no fade animation)
+        fadeOverlayRef.current = { opacity: 0, direction: "none" };
+        // RC FIX: No manual loop cancel/restart — cleanupMap already bumped generation
+        // The single RAF loop effect (empty deps) will auto-restart via its cleanup+re-run
+        // when the component re-renders, OR the existing loop will pick up the new map via
+        // currentMapRef on its next frame.
+        // H2: transitionInProgressRef already set at the very top of this function (line ~3824).
+        // Setting it again here is redundant and removed.
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        // Stop any current movement immediately
+        setIsMoving(false);
+        setMovementPath([]);
+        setCurrentStepIndex(0);
+        setClickedTile(null);
+        setPendingDestination(null);
+        // ── EXP8: DUNGEON CHAIN STATE MANAGEMENT ──────────────────────────
+        const isDungeonEntryPortal = portal.isDungeonEntry === true;
+        const isInsideChain = dungeonChainActiveRef.current;
+        const currentDepth = dungeonChainDepthRef.current;
+        const maxDepth = dungeonChainMaxDepthRef.current;
+        let nextDungeonDepth = 0;
+        let chainJustCompleted = false;
+        if (isDungeonEntryPortal && !isInsideChain) {
+          // ENTER THE CHAIN
+          const newMaxDepth = 3 + Math.floor(Math.random() * 3); // 3-5
+          nextDungeonDepth = 1;
           setDungeonChainActive(true);
           setDungeonChainDepth(1);
-          const newMaxDepth = 3 + Math.floor(Math.random() * 3);
           setDungeonChainMaxDepth(newMaxDepth);
+          setDungeonChainBaseLevel(characterStats.level);
+          dungeonChainActiveRef.current = true;
+          dungeonChainDepthRef.current = 1;
           dungeonChainMaxDepthRef.current = newMaxDepth;
-        }
-        const reTimerId = setTimeout(() => {
-          // RC FIX: No generation check needed — loop runs forever
-          const { map: newMap, spawnPosition } = generateRandomMap();
-          currentMapRef.current = newMap;
-          setCurrentMap(newMap);
-          setPlayerPositionSynced(spawnPosition);
-          resetCombatantStore(combatantStoreCtx);
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
-        }, 400);
-        pendingTimeoutsRef.current.add(reTimerId);
-        return;
-      }
-      // Fire portal sound
-      playSound("map_transition");
-      // ── UNIFIED MAP CLEANUP: terminates ALL battle processes, timers, AI callbacks,
-      // VFX, particle systems, DoT effects, and caches from the previous map.
-      // cleanupMap() calls cleanupBattle() internally — this is the single point
-      // that guarantees nothing from the old map carries over to the new one.
-      cleanupMap();
-      setCoinParticles([]);
-      effectsManagerRef.current.clear();
-      // Ensure fade overlay is cleared (no fade animation)
-      fadeOverlayRef.current = { opacity: 0, direction: "none" };
-      // RC FIX: No manual loop cancel/restart — cleanupMap already bumped generation
-      // The single RAF loop effect (empty deps) will auto-restart via its cleanup+re-run
-      // when the component re-renders, OR the existing loop will pick up the new map via
-      // currentMapRef on its next frame.
-      // H2: transitionInProgressRef already set at the very top of this function (line ~3824).
-      // Setting it again here is redundant and removed.
-      lastPortalRef.current = { x: portal.x, y: portal.y };
-      // Stop any current movement immediately
-      setIsMoving(false);
-      setMovementPath([]);
-      setCurrentStepIndex(0);
-      setClickedTile(null);
-      setPendingDestination(null);
-      // ── EXP8: DUNGEON CHAIN STATE MANAGEMENT ──────────────────────────
-      const isDungeonEntryPortal = portal.isDungeonEntry === true;
-      const isInsideChain = dungeonChainActiveRef.current;
-      const currentDepth = dungeonChainDepthRef.current;
-      const maxDepth = dungeonChainMaxDepthRef.current;
-      let nextDungeonDepth = 0;
-      let chainJustCompleted = false;
-      if (isDungeonEntryPortal && !isInsideChain) {
-        // ENTER THE CHAIN
-        const newMaxDepth = 3 + Math.floor(Math.random() * 3); // 3-5
-        nextDungeonDepth = 1;
-        setDungeonChainActive(true);
-        setDungeonChainDepth(1);
-        setDungeonChainMaxDepth(newMaxDepth);
-        setDungeonChainBaseLevel(characterStats.level);
-        dungeonChainActiveRef.current = true;
-        dungeonChainDepthRef.current = 1;
-        dungeonChainMaxDepthRef.current = newMaxDepth;
-        logBattleEntry(
-          `⚔️ Dungeon Chain entered! Prepare for ${newMaxDepth} escalating maps.`,
-          "#cc0000",
-        );
-      } else if (isInsideChain) {
-        if (currentDepth >= maxDepth) {
-          // CHAIN COMPLETED — award bonus and reset
-          const chainBonus = maxDepth * 50;
-          onDokaBalanceChange(dokaBalance + chainBonus);
-          chainJustCompleted = true;
-          nextDungeonDepth = 0;
-          setDungeonChainActive(false);
-          setDungeonChainDepth(0);
-          setDungeonChainMaxDepth(0);
-          dungeonChainActiveRef.current = false;
-          dungeonChainDepthRef.current = 0;
-          dungeonChainMaxDepthRef.current = 0;
           logBattleEntry(
-            `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
-            "#ffd700",
-          );
-          // Spawn a white portal to sanctuary on dungeon-chain completion.
-          // Completion keeps rewards (no death penalty / no Death Realm reset).
-          const whiteDungeonPortal = {
-            x: 0,
-            y: 0,
-            color: "white" as const,
-            isWhitePortal: true,
-            animationOffset: Math.random() * Math.PI * 2,
-          };
-          // Attach to the next generated map (created below) via a ref hook
-          // so the portal entry handler can find it after map swap.
-          pendingWhitePortalRef.current = whiteDungeonPortal;
-          logBattleEntry("A white gateway to sanctuary opens…", "white");
-        } else {
-          // PROGRESS DEEPER
-          nextDungeonDepth = currentDepth + 1;
-          setDungeonChainDepth(nextDungeonDepth);
-          dungeonChainDepthRef.current = nextDungeonDepth;
-          logBattleEntry(
-            `⚔️ Dungeon depth ${nextDungeonDepth}/${maxDepth} — enemies grow stronger!`,
+            `⚔️ Dungeon Chain entered! Prepare for ${newMaxDepth} escalating maps.`,
             "#cc0000",
           );
+        } else if (isInsideChain) {
+          if (currentDepth >= maxDepth) {
+            // CHAIN COMPLETED — award bonus and reset
+            const chainBonus = maxDepth * 50;
+            onDokaBalanceChange(dokaBalance + chainBonus);
+            chainJustCompleted = true;
+            nextDungeonDepth = 0;
+            setDungeonChainActive(false);
+            setDungeonChainDepth(0);
+            setDungeonChainMaxDepth(0);
+            dungeonChainActiveRef.current = false;
+            dungeonChainDepthRef.current = 0;
+            dungeonChainMaxDepthRef.current = 0;
+            logBattleEntry(
+              `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
+              "#ffd700",
+            );
+            // Spawn a white portal to sanctuary on dungeon-chain completion.
+            // Completion keeps rewards (no death penalty / no Death Realm reset).
+            const whiteDungeonPortal = {
+              x: 0,
+              y: 0,
+              color: "white" as const,
+              isWhitePortal: true,
+              animationOffset: Math.random() * Math.PI * 2,
+            };
+            // Attach to the next generated map (created below) via a ref hook
+            // so the portal entry handler can find it after map swap.
+            pendingWhitePortalRef.current = whiteDungeonPortal;
+            logBattleEntry("A white gateway to sanctuary opens…", "white");
+          } else {
+            // PROGRESS DEEPER
+            nextDungeonDepth = currentDepth + 1;
+            setDungeonChainDepth(nextDungeonDepth);
+            dungeonChainDepthRef.current = nextDungeonDepth;
+            logBattleEntry(
+              `⚔️ Dungeon depth ${nextDungeonDepth}/${maxDepth} — enemies grow stronger!`,
+              "#cc0000",
+            );
+          }
         }
-      }
-      // Generate new map — dungeon chain maps never get dungeon entry portals
-      // (dungeonChainActiveRef is already updated above before this call)
-      const { map: newMap, spawnPosition } = generateRandomMap();
-      // Attach any pending white portal (run-complete portal) to the new map
-      if (pendingWhitePortalRef.current && newMap) {
-        newMap.portals = [
-          ...(newMap.portals || []),
-          pendingWhitePortalRef.current,
-        ];
-        pendingWhitePortalRef.current = null;
-      }
-      // Update all states for the new map
-      currentMapRef.current = newMap;
-      setCurrentMap(newMap);
-      if (newMap?.tiles?.length) {
-        const _miRows = newMap.tiles.length;
-        const _miCols = newMap.tiles[0]?.length ?? 0;
-        let _miWalls = 0;
-        const _miChoke = new Set<string>();
-        const _miBN = new Set<string>();
-        for (let _ri = 0; _ri < _miRows; _ri++) {
-          for (let _ci = 0; _ci < _miCols; _ci++) {
-            const _isW = newMap.tiles[_ri][_ci] === "wall";
-            if (_isW) {
-              _miWalls++;
-              continue;
-            }
-            let _wn = 0;
-            for (let _dr = -1; _dr <= 1; _dr++)
-              for (let _dc = -1; _dc <= 1; _dc++) {
-                if (_dr === 0 && _dc === 0) continue;
-                const _nr = _ri + _dr;
-                const _nc = _ci + _dc;
-                if (
-                  _nr < 0 ||
-                  _nr >= _miRows ||
-                  _nc < 0 ||
-                  _nc >= _miCols ||
-                  newMap.tiles[_nr][_nc] === "wall"
-                )
-                  _wn++;
+        // Generate new map — dungeon chain maps never get dungeon entry portals
+        // (dungeonChainActiveRef is already updated above before this call)
+        const { map: newMap, spawnPosition } = generateRandomMap();
+        // Attach any pending white portal (run-complete portal) to the new map
+        if (pendingWhitePortalRef.current && newMap) {
+          newMap.portals = [
+            ...(newMap.portals || []),
+            pendingWhitePortalRef.current,
+          ];
+          pendingWhitePortalRef.current = null;
+        }
+        // Update all states for the new map
+        currentMapRef.current = newMap;
+        setCurrentMap(newMap);
+        if (newMap?.tiles?.length) {
+          const _miRows = newMap.tiles.length;
+          const _miCols = newMap.tiles[0]?.length ?? 0;
+          let _miWalls = 0;
+          const _miChoke = new Set<string>();
+          const _miBN = new Set<string>();
+          for (let _ri = 0; _ri < _miRows; _ri++) {
+            for (let _ci = 0; _ci < _miCols; _ci++) {
+              const _isW = newMap.tiles[_ri][_ci] === "wall";
+              if (_isW) {
+                _miWalls++;
+                continue;
               }
-            if (_wn >= 6) _miChoke.add(`${_ri},${_ci}`);
-            const _cf = [
-              [_ri - 1, _ci],
-              [_ri + 1, _ci],
-              [_ri, _ci - 1],
-              [_ri, _ci + 1],
-            ].filter(
-              ([_rr, _cc]) =>
-                _rr >= 0 &&
-                _rr < _miRows &&
-                _cc >= 0 &&
-                _cc < _miCols &&
-                newMap.tiles[_rr][_cc] !== "wall",
-            ).length;
-            if (_cf === 2) _miBN.add(`${_ri},${_ci}`);
-          }
-        }
-        const _miDensity =
-          _miRows * _miCols > 0 ? _miWalls / (_miRows * _miCols) : 0;
-        mapWallDensityRef.current = _miDensity;
-        mapIsCorridorRef.current = _miDensity >= 0.5;
-        mapChokePointsRef.current = _miChoke;
-        mapBottleneckTilesRef.current = _miBN;
-      }
-      setPlayerPositionSynced(spawnPosition);
-      // RC FIX: No manual loop restart — the single RAF loop (empty deps) continues
-      // running and reads the new map from currentMapRef on its next frame.
-      setPlayerView("front");
-      setMapCount((prev) => prev + 1);
-      // Track map visits for achievement
-      mapsVisitedCountRef.current += 1;
-      try {
-        // M6: Namespace by userId+slot so switching accounts doesn't cross-pollute
-        const mvKey = userId
-          ? `${userId}_slot${characterSlot}_pbv_maps_visited_count`
-          : "pbv_maps_visited_count";
-        localStorage.setItem(mvKey, String(mapsVisitedCountRef.current));
-      } catch {
-        /* ignore */
-      }
-      // ── BOSS PORTAL HANDLING ─────────────────────────────────────────
-      const isBossPortalEntry =
-        portal.isBossPortal === true && !!portal.bossPortalId;
-      // FIX 5(b) — local binding so the downstream enemy-spawn block reads
-      // the freshly-resolved config instead of the ref, which could be stale
-      // by the time that block runs.
-      let activeBossConfig: BossConfig | undefined;
-      if (isBossPortalEntry && portal.bossPortalId) {
-        // Load boss config from localStorage (admin-editable)
-        const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
-        const allBossConfigs: BossConfig[] = bossConfigsRaw
-          ? (JSON.parse(bossConfigsRaw) as BossConfig[])
-          : DEFAULT_BOSS_CONFIGS;
-        const bossConfig =
-          allBossConfigs.find((b) => b.id === portal.bossPortalId) ??
-          DEFAULT_BOSS_CONFIGS.find((b) => b.id === portal.bossPortalId);
-        if (bossConfig) {
-          currentBossConfigRef.current = bossConfig;
-          setCurrentBossId(bossConfig.id);
-          // FIX 5(b) — bind a local so the downstream enemy-spawn block
-          // reads the freshly-resolved config instead of the ref, which
-          // could be stale by the time that block runs.
-          activeBossConfig = bossConfig;
-          // Show BOSS ENCOUNTER banner for 1.5s
-          setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
-          if (bossEncounterBannerTimerRef.current !== null) {
-            clearTimeout(bossEncounterBannerTimerRef.current);
-          }
-          bossEncounterBannerTimerRef.current = window.setTimeout(() => {
-            bossEncounterBannerTimerRef.current = null;
-            setBossEncounterBanner(null);
-          }, 1500);
-        }
-      }
-      // Reset camera system for smooth transition
-      cameraVelocityRef.current = { x: 0, y: 0 };
-      setCameraOffset({ x: 0, y: 0 });
-      setTargetCameraOffset({ x: 0, y: 0 });
-      // Generate enemies — boss maps spawn only one boss enemy, normal maps use tier system
-      const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
-      let newEnemies: Enemy[];
-      if (isBossPortalEntry && portal.bossPortalId && activeBossConfig) {
-        const bossConf = activeBossConfig;
-        const bossOccCtx: OccupancyContext = {
-          tiles: newMap.tiles.map((row) => row.map((t) => t === "floor")),
-          barriers: new Set<string>(),
-          voidTiles: newMap.voidTiles ?? new Set<string>(),
-          portals: new Set(newMap.portals.map((p) => `${p.x},${p.y}`)),
-          isOccupied: () => false,
-        };
-        const fallback = findNearestFreeCell(
-          {
-            x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
-            y: Math.floor(WORLD_GRID_SIZE / 2) - 3,
-          },
-          bossOccCtx,
-          Math.floor(WORLD_GRID_SIZE / 2),
-        );
-        const midX = fallback?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
-        const midY = fallback?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
-        newEnemies = [
-          {
-            id: `boss_${bossConf.id}_${Date.now()}`,
-            x: midX,
-            y: midY,
-            pieceType: bossConf.pieceType as ChessPieceType,
-            currentView: "front" as ViewDirection,
-            isMoving: false,
-            movementPath: [],
-            currentStepIndex: 0,
-            movementStartTime: 0,
-            initialDelay: 500,
-            spawnTime: Date.now(),
-            scaleX: 1.4,
-            scaleY: 1.4,
-            level: Math.max(1, characterStats.level + 5),
-            nextMoveTime: Date.now() + 1000,
-            movementSpeed: 700,
-            movementRange: 2,
-            isWandering: false,
-            wanderTarget: null,
-            lastMoveTime: Date.now(),
-            hp: Math.max(
-              1,
-              bossConf.baseStats.hp ??
-                Math.round((characterStats.level + 5) * 50 + 200),
-            ),
-            maxHp: Math.max(
-              1,
-              bossConf.baseStats.hp ??
-                Math.round((characterStats.level + 5) * 50 + 200),
-            ),
-            damage: Math.max(
-              1,
-              bossConf.baseStats.atk ??
-                Math.round((characterStats.level + 5) * 4 + 10),
-            ),
-            res: Math.min(50, bossConf.baseStats.res),
-            sp: Math.min(50, bossConf.baseStats.sp),
-            chc: bossConf.baseStats.chc,
-            init:
-              bossConf.baseStats.init ??
-              Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
-            sr: 10,
-            assignedName: bossConf.name,
-            isLeader: true,
-            family: "boss",
-          },
-        ];
-        // Initialise boss state
-        const freshBossState = initBossState(bossConf.id, bossConf);
-        bossStateRef.current = freshBossState;
-        setActiveBossState(freshBossState);
-      } else {
-        newEnemies = newMap.isDeathRealm
-          ? []
-          : generateEnemies(
-              newMap.tiles,
-              newMap.portals,
-              effectiveDepth,
-              newMap.voidTiles,
-            );
-      }
-      // Section 6: ensure all spawns + player + portal are mutually reachable
-      const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
-      const _portal = newMap.portals?.[0];
-      if (_portal) {
-        const { tiles: _tiles, spawns: _spawns } = ensureReachability(
-          newMap.tiles as string[][],
-          newMap.voidTiles,
-          _enemySpawns,
-          spawnPosition,
-          _portal,
-          WORLD_GRID_SIZE,
-          WORLD_GRID_SIZE,
-        );
-        newMap.tiles = _tiles as typeof newMap.tiles;
-        newEnemies.forEach((e, i) => {
-          if (_spawns[i]) {
-            e.x = _spawns[i].x;
-            e.y = _spawns[i].y;
-          }
-        });
-      }
-      syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
-      // SECTION 1c: clear the per-kill defeated roster for the new battle.
-      battleDefeatedRef.current = [];
-      // M2 FIX: Cloud cluster generation deferred into the portal timer callback
-      // so it never blocks the synchronous portal-transition path on mobile
-      // (synchronous cloud gen was pushing transitions past 16ms → dropped frames).
-      // Skate-rail system removed
-      // Weather effects removed
-      // Update camera to follow player to new position
-      // FIX 1: Cancel any previously-queued portal timers before scheduling new ones.
-      // Without this, crossing two portals within 1.6 s lets the first timer clear the
-      // transition lock mid-render, allowing two map-generation calls to race.
-      if (portalTimerRef1.current !== null) {
-        clearTimeout(portalTimerRef1.current);
-        portalTimerRef1.current = null;
-      }
-      if (portalTimerRef2.current !== null) {
-        clearTimeout(portalTimerRef2.current);
-        portalTimerRef2.current = null;
-      }
-      portalTimerRef1.current = window.setTimeout(() => {
-        // RC FIX: No generation check needed — loop runs forever
-        portalTimerRef1.current = null;
-        updateCameraToFollowPlayer();
-        // Clear transition flag and last portal reference after camera update
-        portalTimerRef2.current = window.setTimeout(() => {
-          portalTimerRef2.current = null;
-          setTransitionInProgress(false);
-          transitionInProgressRef.current = false;
-          lastPortalRef.current = null;
-        }, 1500); // H4: 1500ms guard prevents immediate re-entry when spawning on a portal
-      }, 100);
-      // Apply map modifiers on portal transition — delegated to the
-      // map-modifier registry (engine/mapModifiers.ts). The registry performs
-      // the same two-roll trigger logic (global chance → weighted first pick →
-      // second-modifier chance) and returns the set of activated modifier ids.
-      const triggered = mapModifierRegistry.rollActiveModifiers(mapModifiers, {
-        log: (msg: string) => logDebugInfo("MODIFIER", msg),
-        rng: Math.random,
-      });
-      setActiveMapModifierTypes(triggered);
-      // EXP5: Apply hazard tiles based on active modifiers (lava/ice/spikes)
-      // These add to whatever random hazards were already seeded during map generation.
-      if (!newMap.isDeathRealm) {
-        const hazardMap = newMap.hazardTiles;
-        const spawnCxMod = Math.floor(WORLD_GRID_SIZE / 2);
-        const spawnCyMod = Math.floor(WORLD_GRID_SIZE / 2);
-        const portalSetMod = new Set(
-          newMap.portals.map((p) => `${p.x},${p.y}`),
-        );
-        const eligMod: { x: number; y: number }[] = [];
-        for (let hy = 0; hy < WORLD_GRID_SIZE; hy++) {
-          for (let hx = 0; hx < WORLD_GRID_SIZE; hx++) {
-            if (newMap.tiles[hy][hx] !== "floor") continue;
-            if (portalSetMod.has(`${hx},${hy}`)) continue;
-            if (
-              Math.abs(hx - spawnCxMod) <= 3 &&
-              Math.abs(hy - spawnCyMod) <= 3
-            )
-              continue;
-            if (hazardMap.has(`${hx},${hy}`)) continue;
-            eligMod.push({ x: hx, y: hy });
-          }
-        }
-        for (let i = eligMod.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [eligMod[i], eligMod[j]] = [eligMod[j], eligMod[i]];
-        }
-        let modHazardIdx = 0;
-        const addModHazards = (type: HazardType) => {
-          const count = 3 + Math.floor(Math.random() * 6); // 3-8
-          for (
-            let hi = 0;
-            hi < count && modHazardIdx < eligMod.length;
-            hi++, modHazardIdx++
-          ) {
-            hazardMap.set(
-              `${eligMod[modHazardIdx].x},${eligMod[modHazardIdx].y}`,
-              type,
-            );
-          }
-        };
-        if (
-          triggered.has("thorned_ground") ||
-          triggered.has("blood_moon") ||
-          triggered.has("spike_pit")
-        )
-          addModHazards("spikes");
-        if (triggered.has("frozen_terrain") || triggered.has("ice_fields"))
-          addModHazards("ice");
-        if (
-          triggered.has("plague_zone") ||
-          triggered.has("void_rift") ||
-          triggered.has("lava_fields")
-        )
-          addModHazards("lava");
-        // Any other active modifier: 40% chance to add mixed hazards
-        if (
-          triggered.size > 0 &&
-          !triggered.has("thorned_ground") &&
-          !triggered.has("blood_moon") &&
-          !triggered.has("frozen_terrain") &&
-          !triggered.has("plague_zone") &&
-          !triggered.has("void_rift") &&
-          Math.random() < 0.4
-        ) {
-          const randHType: HazardType[] = ["lava", "ice", "spikes"];
-          addModHazards(
-            randHType[Math.floor(Math.random() * randHType.length)],
-          );
-        }
-        if (hazardMap.size > 0) {
-          logBattleEntry(
-            `⚠️ ${hazardMap.size} hazard tile${hazardMap.size !== 1 ? "s" : ""} detected on this map!`,
-            "#ff7675",
-          );
-        }
-      }
-      if (triggered.size > 0) {
-        const names = [...triggered]
-          .map((t) => MAP_MODIFIERS.find((m) => m.id === t)?.name ?? t)
-          .join(" + ");
-        logBattleEntry(
-          `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
-          "#ff7675",
-        );
-      } else {
-        logBattleEntry("No map modifier this area.", "#888888");
-      }
-      // Spawn ground Doka loot on this map (balance: more enemies = more loot)
-      // Only if map is not death realm and has enemies
-      // ── #18 Always read Doka spawn config from ref (never stale closure) ──
-      const { dokaSpawnChance: spawnChance, dokaSpawnBaseValue: spawnBase } =
-        dokaSpawnConfigRef.current;
-      if (
-        !newMap.isDeathRealm &&
-        Math.random() * 100 < spawnChance &&
-        newEnemies.length > 0
-      ) {
-        const avgLevel =
-          newEnemies.reduce((s, e) => s + Number(e.level), 0) /
-          newEnemies.length;
-        const lootCount = Math.max(1, Math.ceil(newEnemies.length / 3));
-        // Collect walkable tiles not occupied by player/enemies
-        const walkable: { x: number; y: number }[] = [];
-        for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-          for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (
-              newMap.tiles[gy]?.[gx] === "floor" &&
-              !newMap.voidTiles?.has(`${gx},${gy}`) &&
-              !(gx === spawnPosition.x && gy === spawnPosition.y) &&
-              !newEnemies.some((e) => e.x === gx && e.y === gy)
-            ) {
-              walkable.push({ x: gx, y: gy });
+              let _wn = 0;
+              for (let _dr = -1; _dr <= 1; _dr++)
+                for (let _dc = -1; _dc <= 1; _dc++) {
+                  if (_dr === 0 && _dc === 0) continue;
+                  const _nr = _ri + _dr;
+                  const _nc = _ci + _dc;
+                  if (
+                    _nr < 0 ||
+                    _nr >= _miRows ||
+                    _nc < 0 ||
+                    _nc >= _miCols ||
+                    newMap.tiles[_nr][_nc] === "wall"
+                  )
+                    _wn++;
+                }
+              if (_wn >= 6) _miChoke.add(`${_ri},${_ci}`);
+              const _cf = [
+                [_ri - 1, _ci],
+                [_ri + 1, _ci],
+                [_ri, _ci - 1],
+                [_ri, _ci + 1],
+              ].filter(
+                ([_rr, _cc]) =>
+                  _rr >= 0 &&
+                  _rr < _miRows &&
+                  _cc >= 0 &&
+                  _cc < _miCols &&
+                  newMap.tiles[_rr][_cc] !== "wall",
+              ).length;
+              if (_cf === 2) _miBN.add(`${_ri},${_ci}`);
             }
           }
+          const _miDensity =
+            _miRows * _miCols > 0 ? _miWalls / (_miRows * _miCols) : 0;
+          mapWallDensityRef.current = _miDensity;
+          mapIsCorridorRef.current = _miDensity >= 0.5;
+          mapChokePointsRef.current = _miChoke;
+          mapBottleneckTilesRef.current = _miBN;
         }
-        // Shuffle and pick lootCount tiles
-        for (let i = walkable.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [walkable[i], walkable[j]] = [walkable[j], walkable[i]];
+        setPlayerPositionSynced(spawnPosition);
+        // RC FIX: No manual loop restart — the single RAF loop (empty deps) continues
+        // running and reads the new map from currentMapRef on its next frame.
+        setPlayerView("front");
+        setMapCount((prev) => prev + 1);
+        // Track map visits for achievement
+        mapsVisitedCountRef.current += 1;
+        try {
+          // M6: Namespace by userId+slot so switching accounts doesn't cross-pollute
+          const mvKey = userId
+            ? `${userId}_slot${characterSlot}_pbv_maps_visited_count`
+            : "pbv_maps_visited_count";
+          localStorage.setItem(mvKey, String(mapsVisitedCountRef.current));
+        } catch {
+          /* ignore */
         }
-        const lootItems: DokaLootItem[] = walkable
-          .slice(0, lootCount)
-          .map((tile) => ({
-            id: `doka-${Date.now()}-${tile.x}-${tile.y}`,
-            tileX: tile.x,
-            tileY: tile.y,
-            value: Math.max(
-              1,
-              Math.round(
-                (spawnBase + avgLevel * 2) * (0.8 + Math.random() * 0.4),
-              ),
-            ),
-            collected: false,
-          }));
-        setDokaLoot(lootItems);
-        if (lootItems.length > 0) {
-          logBattleEntry(
-            `\uD83D\uDCB0 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
-            "#f1c40f",
-          );
+        // ── BOSS PORTAL HANDLING ─────────────────────────────────────────
+        const isBossPortalEntry =
+          portal.isBossPortal === true && !!portal.bossPortalId;
+        // FIX 5(b) — local binding so the downstream enemy-spawn block reads
+        // the freshly-resolved config instead of the ref, which could be stale
+        // by the time that block runs.
+        let activeBossConfig: BossConfig | undefined;
+        if (isBossPortalEntry && portal.bossPortalId) {
+          // Load boss config from localStorage (admin-editable)
+          const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
+          const allBossConfigs: BossConfig[] = bossConfigsRaw
+            ? (JSON.parse(bossConfigsRaw) as BossConfig[])
+            : DEFAULT_BOSS_CONFIGS;
+          const bossConfig =
+            allBossConfigs.find((b) => b.id === portal.bossPortalId) ??
+            DEFAULT_BOSS_CONFIGS.find((b) => b.id === portal.bossPortalId);
+          if (bossConfig) {
+            currentBossConfigRef.current = bossConfig;
+            setCurrentBossId(bossConfig.id);
+            // FIX 5(b) — bind a local so the downstream enemy-spawn block
+            // reads the freshly-resolved config instead of the ref, which
+            // could be stale by the time that block runs.
+            activeBossConfig = bossConfig;
+            // Show BOSS ENCOUNTER banner for 1.5s
+            setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
+            if (bossEncounterBannerTimerRef.current !== null) {
+              clearTimeout(bossEncounterBannerTimerRef.current);
+            }
+            bossEncounterBannerTimerRef.current = window.setTimeout(() => {
+              bossEncounterBannerTimerRef.current = null;
+              setBossEncounterBanner(null);
+            }, 1500);
+          }
         }
-      } else {
-        setDokaLoot([]);
-      }
-      // FIX 2: Award 10 XP for portal transition and save progress
-      setCharacterStats((prev) => {
-        const PORTAL_XP = 10;
-        let newExp = prev.exp + PORTAL_XP;
-        let newLevel = prev.level;
-        let newExpToNext = prev.expToNext;
-        while (newExp >= newExpToNext) {
-          newExp -= newExpToNext;
-          newLevel += 1;
-          newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
-        }
-        // Save to backend asynchronously
-        if (actor) {
-          const spellKeys = Object.keys(spellLevels);
-          const spellVals = spellKeys.map((k) => BigInt(spellLevels[k] ?? 0));
-          const portalXpUpdate = {
-            name: characterName,
-            pieceType: pieceType,
-            colors: [colors.primary, colors.secondary, colors.accent],
-            pixelPattern: "",
-            rotation: BigInt(0),
-            level: BigInt(newLevel),
-            experience: BigInt(newExp),
-            dokaBalance: BigInt(dokaBalance),
-            stats: {
-              hp: BigInt(prev.hp),
-              ap: BigInt(prev.ap),
-              mp: BigInt(prev.mp),
-              sp: BigInt(prev.sp),
-              sr: BigInt(prev.sr),
-              init: BigInt(prev.init),
-              res: BigInt(prev.res),
-              chc: BigInt(prev.chc),
-              atk: BigInt(0),
-              resilience: BigInt(0),
-              evasion: BigInt(0),
-              killCount: BigInt(character?.stats?.killCount ?? 0),
-            },
-            spellLevelKeys: spellKeys,
-            spellLevelValues: spellVals,
+        // Reset camera system for smooth transition
+        cameraVelocityRef.current = { x: 0, y: 0 };
+        setCameraOffset({ x: 0, y: 0 });
+        setTargetCameraOffset({ x: 0, y: 0 });
+        // Generate enemies — boss maps spawn only one boss enemy, normal maps use tier system
+        const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
+        let newEnemies: Enemy[];
+        if (isBossPortalEntry && portal.bossPortalId && activeBossConfig) {
+          const bossConf = activeBossConfig;
+          const bossOccCtx: OccupancyContext = {
+            tiles: newMap.tiles.map((row) => row.map((t) => t === "floor")),
+            barriers: new Set<string>(),
+            voidTiles: newMap.voidTiles ?? new Set<string>(),
+            portals: new Set(newMap.portals.map((p) => `${p.x},${p.y}`)),
+            isOccupied: () => false,
           };
-          const portalXpSlot = BigInt(characterSlot);
-          (async () => {
-            try {
-              await actor.updateCharacter(portalXpSlot, portalXpUpdate);
-            } catch (err) {
-              console.warn("[PBV] Character save failed:", err);
-              pendingSavesRef.current.push(() =>
-                actor.updateCharacter(portalXpSlot, portalXpUpdate),
+          const fallback = findNearestFreeCell(
+            {
+              x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
+              y: Math.floor(WORLD_GRID_SIZE / 2) - 3,
+            },
+            bossOccCtx,
+            Math.floor(WORLD_GRID_SIZE / 2),
+          );
+          const midX = fallback?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+          const midY = fallback?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+          newEnemies = [
+            {
+              id: `boss_${bossConf.id}_${Date.now()}`,
+              x: midX,
+              y: midY,
+              pieceType: bossConf.pieceType as ChessPieceType,
+              currentView: "front" as ViewDirection,
+              isMoving: false,
+              movementPath: [],
+              currentStepIndex: 0,
+              movementStartTime: 0,
+              initialDelay: 500,
+              spawnTime: Date.now(),
+              scaleX: 1.4,
+              scaleY: 1.4,
+              level: Math.max(1, characterStats.level + 5),
+              nextMoveTime: Date.now() + 1000,
+              movementSpeed: 700,
+              movementRange: 2,
+              isWandering: false,
+              wanderTarget: null,
+              lastMoveTime: Date.now(),
+              hp: Math.max(
+                1,
+                bossConf.baseStats.hp ??
+                  Math.round((characterStats.level + 5) * 50 + 200),
+              ),
+              maxHp: Math.max(
+                1,
+                bossConf.baseStats.hp ??
+                  Math.round((characterStats.level + 5) * 50 + 200),
+              ),
+              damage: Math.max(
+                1,
+                bossConf.baseStats.atk ??
+                  Math.round((characterStats.level + 5) * 4 + 10),
+              ),
+              res: Math.min(50, bossConf.baseStats.res),
+              sp: Math.min(50, bossConf.baseStats.sp),
+              chc: bossConf.baseStats.chc,
+              init:
+                bossConf.baseStats.init ??
+                Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
+              sr: 10,
+              assignedName: bossConf.name,
+              isLeader: true,
+              family: "boss",
+            },
+          ];
+          // Initialise boss state
+          const freshBossState = initBossState(bossConf.id, bossConf);
+          bossStateRef.current = freshBossState;
+          setActiveBossState(freshBossState);
+        } else {
+          newEnemies = newMap.isDeathRealm
+            ? []
+            : generateEnemies(
+                newMap.tiles,
+                newMap.portals,
+                effectiveDepth,
+                newMap.voidTiles,
+              );
+        }
+        // Section 6: ensure all spawns + player + portal are mutually reachable
+        const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
+        const _portal = newMap.portals?.[0];
+        if (_portal) {
+          const { tiles: _tiles, spawns: _spawns } = ensureReachability(
+            newMap.tiles as string[][],
+            newMap.voidTiles,
+            _enemySpawns,
+            spawnPosition,
+            _portal,
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          );
+          newMap.tiles = _tiles as typeof newMap.tiles;
+          newEnemies.forEach((e, i) => {
+            if (_spawns[i]) {
+              e.x = _spawns[i].x;
+              e.y = _spawns[i].y;
+            }
+          });
+        }
+        syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
+        // SECTION 1c: clear the per-kill defeated roster for the new battle.
+        battleDefeatedRef.current = [];
+        // M2 FIX: Cloud cluster generation deferred into the portal timer callback
+        // so it never blocks the synchronous portal-transition path on mobile
+        // (synchronous cloud gen was pushing transitions past 16ms → dropped frames).
+        // Skate-rail system removed
+        // Weather effects removed
+        // Update camera to follow player to new position
+        // FIX 1: Cancel any previously-queued portal timers before scheduling new ones.
+        // Without this, crossing two portals within 1.6 s lets the first timer clear the
+        // transition lock mid-render, allowing two map-generation calls to race.
+        if (portalTimerRef1.current !== null) {
+          clearTimeout(portalTimerRef1.current);
+          portalTimerRef1.current = null;
+        }
+        if (portalTimerRef2.current !== null) {
+          clearTimeout(portalTimerRef2.current);
+          portalTimerRef2.current = null;
+        }
+        portalTimerRef1.current = window.setTimeout(() => {
+          // RC FIX: No generation check needed — loop runs forever
+          portalTimerRef1.current = null;
+          updateCameraToFollowPlayer();
+          // Clear transition flag and last portal reference after camera update
+          portalTimerRef2.current = window.setTimeout(() => {
+            portalTimerRef2.current = null;
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+            lastPortalRef.current = null;
+          }, 1500); // H4: 1500ms guard prevents immediate re-entry when spawning on a portal
+        }, 100);
+        // Apply map modifiers on portal transition — delegated to the
+        // map-modifier registry (engine/mapModifiers.ts). The registry performs
+        // the same two-roll trigger logic (global chance → weighted first pick →
+        // second-modifier chance) and returns the set of activated modifier ids.
+        const triggered = mapModifierRegistry.rollActiveModifiers(
+          mapModifiers,
+          {
+            log: (msg: string) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random,
+          },
+        );
+        setActiveMapModifierTypes(triggered);
+        // EXP5: Apply hazard tiles based on active modifiers (lava/ice/spikes)
+        // These add to whatever random hazards were already seeded during map generation.
+        if (!newMap.isDeathRealm) {
+          const hazardMap = newMap.hazardTiles;
+          const spawnCxMod = Math.floor(WORLD_GRID_SIZE / 2);
+          const spawnCyMod = Math.floor(WORLD_GRID_SIZE / 2);
+          const portalSetMod = new Set(
+            newMap.portals.map((p) => `${p.x},${p.y}`),
+          );
+          const eligMod: { x: number; y: number }[] = [];
+          for (let hy = 0; hy < WORLD_GRID_SIZE; hy++) {
+            for (let hx = 0; hx < WORLD_GRID_SIZE; hx++) {
+              if (newMap.tiles[hy][hx] !== "floor") continue;
+              if (portalSetMod.has(`${hx},${hy}`)) continue;
+              if (
+                Math.abs(hx - spawnCxMod) <= 3 &&
+                Math.abs(hy - spawnCyMod) <= 3
+              )
+                continue;
+              if (hazardMap.has(`${hx},${hy}`)) continue;
+              eligMod.push({ x: hx, y: hy });
+            }
+          }
+          for (let i = eligMod.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [eligMod[i], eligMod[j]] = [eligMod[j], eligMod[i]];
+          }
+          let modHazardIdx = 0;
+          const addModHazards = (type: HazardType) => {
+            const count = 3 + Math.floor(Math.random() * 6); // 3-8
+            for (
+              let hi = 0;
+              hi < count && modHazardIdx < eligMod.length;
+              hi++, modHazardIdx++
+            ) {
+              hazardMap.set(
+                `${eligMod[modHazardIdx].x},${eligMod[modHazardIdx].y}`,
+                type,
               );
             }
-          })();
+          };
+          if (
+            triggered.has("thorned_ground") ||
+            triggered.has("blood_moon") ||
+            triggered.has("spike_pit")
+          )
+            addModHazards("spikes");
+          if (triggered.has("frozen_terrain") || triggered.has("ice_fields"))
+            addModHazards("ice");
+          if (
+            triggered.has("plague_zone") ||
+            triggered.has("void_rift") ||
+            triggered.has("lava_fields")
+          )
+            addModHazards("lava");
+          // Any other active modifier: 40% chance to add mixed hazards
+          if (
+            triggered.size > 0 &&
+            !triggered.has("thorned_ground") &&
+            !triggered.has("blood_moon") &&
+            !triggered.has("frozen_terrain") &&
+            !triggered.has("plague_zone") &&
+            !triggered.has("void_rift") &&
+            Math.random() < 0.4
+          ) {
+            const randHType: HazardType[] = ["lava", "ice", "spikes"];
+            addModHazards(
+              randHType[Math.floor(Math.random() * randHType.length)],
+            );
+          }
+          if (hazardMap.size > 0) {
+            logBattleEntry(
+              `⚠️ ${hazardMap.size} hazard tile${hazardMap.size !== 1 ? "s" : ""} detected on this map!`,
+              "#ff7675",
+            );
+          }
         }
-        return {
-          ...prev,
-          exp: newExp,
-          level: newLevel,
-          expToNext: newExpToNext,
-        };
-      });
-    } else {
-      // FIX #14: Player is not on a portal — release lock immediately
-      transitionInProgressRef.current = false;
-      setTransitionInProgress(false);
+        if (triggered.size > 0) {
+          const names = [...triggered]
+            .map((t) => MAP_MODIFIERS.find((m) => m.id === t)?.name ?? t)
+            .join(" + ");
+          logBattleEntry(
+            `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
+            "#ff7675",
+          );
+        } else {
+          logBattleEntry("No map modifier this area.", "#888888");
+        }
+        // Spawn ground Doka loot on this map (balance: more enemies = more loot)
+        // Only if map is not death realm and has enemies
+        // ── #18 Always read Doka spawn config from ref (never stale closure) ──
+        const { dokaSpawnChance: spawnChance, dokaSpawnBaseValue: spawnBase } =
+          dokaSpawnConfigRef.current;
+        if (
+          !newMap.isDeathRealm &&
+          Math.random() * 100 < spawnChance &&
+          newEnemies.length > 0
+        ) {
+          const avgLevel =
+            newEnemies.reduce((s, e) => s + Number(e.level), 0) /
+            newEnemies.length;
+          const lootCount = Math.max(1, Math.ceil(newEnemies.length / 3));
+          // Collect walkable tiles not occupied by player/enemies
+          const walkable: { x: number; y: number }[] = [];
+          for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
+            for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
+              if (
+                newMap.tiles[gy]?.[gx] === "floor" &&
+                !newMap.voidTiles?.has(`${gx},${gy}`) &&
+                !(gx === spawnPosition.x && gy === spawnPosition.y) &&
+                !newEnemies.some((e) => e.x === gx && e.y === gy)
+              ) {
+                walkable.push({ x: gx, y: gy });
+              }
+            }
+          }
+          // Shuffle and pick lootCount tiles
+          for (let i = walkable.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [walkable[i], walkable[j]] = [walkable[j], walkable[i]];
+          }
+          const lootItems: DokaLootItem[] = walkable
+            .slice(0, lootCount)
+            .map((tile) => ({
+              id: `doka-${Date.now()}-${tile.x}-${tile.y}`,
+              tileX: tile.x,
+              tileY: tile.y,
+              value: Math.max(
+                1,
+                Math.round(
+                  (spawnBase + avgLevel * 2) * (0.8 + Math.random() * 0.4),
+                ),
+              ),
+              collected: false,
+            }));
+          setDokaLoot(lootItems);
+          if (lootItems.length > 0) {
+            logBattleEntry(
+              `\uD83D\uDCB0 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
+              "#f1c40f",
+            );
+          }
+        } else {
+          setDokaLoot([]);
+        }
+        // FIX 2: Award 10 XP for portal transition and save progress
+        setCharacterStats((prev) => {
+          const PORTAL_XP = 10;
+          let newExp = prev.exp + PORTAL_XP;
+          let newLevel = prev.level;
+          let newExpToNext = prev.expToNext;
+          while (newExp >= newExpToNext) {
+            newExp -= newExpToNext;
+            newLevel += 1;
+            newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
+          }
+          // Save to backend asynchronously
+          if (actor) {
+            const spellKeys = Object.keys(spellLevels);
+            const spellVals = spellKeys.map((k) => BigInt(spellLevels[k] ?? 0));
+            const portalXpUpdate = {
+              name: characterName,
+              pieceType: pieceType,
+              colors: [colors.primary, colors.secondary, colors.accent],
+              pixelPattern: "",
+              rotation: BigInt(0),
+              level: BigInt(newLevel),
+              experience: BigInt(newExp),
+              dokaBalance: BigInt(dokaBalance),
+              stats: {
+                hp: BigInt(prev.hp),
+                ap: BigInt(prev.ap),
+                mp: BigInt(prev.mp),
+                sp: BigInt(prev.sp),
+                sr: BigInt(prev.sr),
+                init: BigInt(prev.init),
+                res: BigInt(prev.res),
+                chc: BigInt(prev.chc),
+                atk: BigInt(0),
+                resilience: BigInt(0),
+                evasion: BigInt(0),
+                killCount: BigInt(character?.stats?.killCount ?? 0),
+              },
+              spellLevelKeys: spellKeys,
+              spellLevelValues: spellVals,
+            };
+            const portalXpSlot = BigInt(characterSlot);
+            (async () => {
+              try {
+                await actor.updateCharacter(portalXpSlot, portalXpUpdate);
+              } catch (err) {
+                console.warn("[PBV] Character save failed:", err);
+                pendingSavesRef.current.push(() =>
+                  actor.updateCharacter(portalXpSlot, portalXpUpdate),
+                );
+              }
+            })();
+          }
+          return {
+            ...prev,
+            exp: newExp,
+            level: newLevel,
+            expToNext: newExpToNext,
+          };
+        });
+      } else {
+        // FIX #14: Player is not on a portal — release lock immediately
+        transitionInProgressRef.current = false;
+        setTransitionInProgress(false);
+      }
+    } catch (err) {
+      // SECTION 3(a) — Surface unexpected throws so they are not silently
+      // swallowed by the finally; the lock is still released below.
+      console.error("[MAP_TRANSITION] checkPortalInteraction threw:", err);
+      throw err;
+    } finally {
+      // SECTION 3(a) — Single source of truth for lock release. EVERY exit
+      // path (early return, throw, normal completion) runs this finally, so
+      // a failed transition can never brick subsequent portals. The 5000ms
+      // timeout safety above is the backstop for the case where this finally
+      // itself never fires (e.g. tab backgrounded mid-await).
+      _releaseTransitionLock();
     }
   }, [
     inBattle,
@@ -7359,6 +7473,45 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ? resolved
       : ((summon.spells ?? []) as SpellConfig[]);
   }, [combatantStoreCtx]);
+
+  // SECTION 2 — CLICK-LAYER CASTER ROUTING. Single source of truth for the
+  // active caster at click time. When a summon is controlled, returns the
+  // summon's id, tile, KIT spell list, a live-AP ref-like object, and the
+  // summon's selected spell id. Otherwise returns the player's id, tile,
+  // activeSpells, currentBattleApRef, and selectedSpellIdRef. Both mouse and
+  // touch click handlers call this ONCE at entry and consume only its fields —
+  // no inline `activeControlledSummonIdRef.current ? ... : 'player'` ternaries
+  // remain in the cast branches. The apRef for a summon is a getter-backed
+  // object whose .current reads the summon's live currentAp via
+  // combatantsRef.current?.find(...)?.currentAp (pattern at :10510-10514 and
+  // :11251-11255), so AP stays authoritative as the summon's AP changes.
+  const resolveActiveCaster = useCallback(() => {
+    const summonId = activeControlledSummonIdRef.current;
+    if (summonId) {
+      const apRef = {
+        get current(): number {
+          return (
+            combatantsRef.current?.find((c) => c.id === summonId)?.currentAp ??
+            0
+          );
+        },
+      };
+      return {
+        casterId: summonId,
+        casterPos: getActiveCasterPos(),
+        spellSource: getSummonKitSpells(),
+        apRef,
+        selectedSpellId: selectedSummonSpellIdRef.current,
+      };
+    }
+    return {
+      casterId: "player" as const,
+      casterPos: getActiveCasterPos(),
+      spellSource: activeSpells,
+      apRef: currentBattleApRef,
+      selectedSpellId: selectedSpellIdRef.current,
+    };
+  }, [activeSpells, getSummonKitSpells, getActiveCasterPos]);
 
   // BFS flood-fill for MP reachable tiles
   // SECTION 4 (e) — SUMMON-MP-AWARE: when a summon is controlled, the BFS
@@ -8450,7 +8603,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
               drawOrder: renderItem.depth,
               id: enemy.id,
-              kind: "enemy",
+              kind:
+                enemy.isSummon && enemy.side === "player" ? "summon" : "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
               isAlive: (enemy.hp ?? 0) > 0,
@@ -9548,11 +9702,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return !!c?.isSummon;
       },
       reconcileBattleState: () =>
+        // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
+        // instead of an EMPTY array [] so the recap builder (handleBattleEnd)
+        // sees every kill appended by attributeKillReward (line 9517). The
+        // previous `[]` here was the dead empty-array path that bypassed the
+        // single canonical defeated list and produced an empty recap.
         reconcileBattleState(combatantStoreCtx, {
           inBattle: inBattleRef.current,
           victoryFiredThisBattleRef,
           triggerVictory: () =>
-            handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
+            handleBattleEndRef.current?.(
+              true,
+              0,
+              battleHitsRef.current,
+              battleDefeatedRef.current.map((e) => ({
+                name: e.pieceType ?? "unknown",
+                level: e.level ?? 1,
+              })),
+            ),
         }),
     }),
     [
@@ -10253,6 +10420,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           return;
         }
       }
+      // SECTION 2 — resolve the active caster ONCE for this click. Every cast
+      // branch below consumes activeCaster.{casterId,casterPos,spellSource,
+      // apRef,selectedSpellId} instead of inline summon/player ternaries.
+      const activeCaster = resolveActiveCaster();
       // ── SPRITE-FIRST HIT TESTING (mouse) ────────────────────────────
       // Before any screen→grid conversion, hit-test the per-frame
       // spriteRectsRef map populated during the render pass. A sprite hit
@@ -10277,6 +10448,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (_hit) {
             const _summonControlled = !!activeControlledSummonIdRef.current;
             if (
+              inBattleRef.current &&
               (_summonControlled
                 ? selectedSummonSpellIdRef.current
                 : selectedSpellIdRef.current) &&
@@ -10317,9 +10489,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                     targetsCount: 1,
                     targetIds: [_hit.id],
-                    casterId: _summonControlled
-                      ? activeControlledSummonIdRef.current
-                      : "player",
+                    casterId: activeCaster.casterId,
                   });
                   // Reuse the existing cast body — same path the
                   // cast-live branch at 9092 takes. AP cost is computed
@@ -10376,7 +10546,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 } catch {}
                 return;
               }
-            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+            } else if (
+              inBattleRef.current &&
+              !selectedSpellIdRef.current &&
+              _hit.kind === "enemy"
+            ) {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
@@ -10419,9 +10593,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // Self/ally-targetable spell + player sprite hit → self-cast.
               // Uses the spell's explicit targetType metadata (NOT name
               // heuristics) per the targeting-rule spec.
-              const _spell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
+              const _spell = activeCaster.spellSource.find(
+                (s) => s.id === activeCaster.selectedSpellId,
               );
+              // Damage-rejection guard: a non-self/ally-targeted spell (e.g. a
+              // damage spell) clicked on a friendly player sprite is rejected
+              // with a float message and does NOT fall through to tile logic,
+              // so it can never resolve to an enemy. Metadata-based, not
+              // name-based.
+              if (
+                _spell &&
+                _spell.targetType !== "self" &&
+                _spell.targetType !== "ally"
+              ) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell",
+                );
+                return;
+              }
               if (
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
@@ -10439,6 +10631,56 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     event.clientX,
                     event.clientY,
                     "sprite-player",
+                    _castResult,
+                    null,
+                    null,
+                    null,
+                  );
+                } catch {}
+                return;
+              }
+              // Not self/ally-targetable → fall through to tile logic.
+            } else if (activeCaster.selectedSpellId && _hit.kind === "summon") {
+              // Self/ally-targetable spell + friendly summon sprite hit → cast
+              // at the summon's tile. Mirrors the sprite-player branch. Uses the
+              // spell's explicit targetType metadata (NOT name heuristics).
+              const _summonSpell = activeCaster.spellSource.find(
+                (s) => s.id === activeCaster.selectedSpellId,
+              );
+              // Damage-rejection guard: a non-self/ally-targeted spell on a
+              // friendly summon is rejected with a float and does NOT fall
+              // through to tile logic.
+              if (
+                _summonSpell &&
+                _summonSpell.targetType !== "self" &&
+                _summonSpell.targetType !== "ally"
+              ) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell",
+                );
+                return;
+              }
+              if (
+                _summonSpell &&
+                (_summonSpell.targetType === "self" ||
+                  _summonSpell.targetType === "ally")
+              ) {
+                const { castResult: _castResult, apCost: _apCost } =
+                  executeCastAttempt(
+                    _summonSpell,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    "sprite-summon",
+                  );
+                void _castResult;
+                void _apCost;
+                try {
+                  recordClickOutcome(
+                    event.clientX,
+                    event.clientY,
+                    "sprite-summon",
                     _castResult,
                     null,
                     null,
@@ -10538,15 +10780,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             isActiveHostile(_occupantMouse) &&
             isAliveCombatant(_occupantMouse)
           ) {
-            const _spellMouse = activeSpells.find(
-              (s) => s.id === selectedSpellIdRef.current,
+            const _spellMouse = activeCaster.spellSource.find(
+              (s) => s.id === activeCaster.selectedSpellId,
             );
             if (_spellMouse) {
               const _liveMouse = isTileCastableLive(
                 _spellMouse,
-                activeControlledSummonIdRef.current
-                  ? getActiveCasterPos()
-                  : playerPositionRef.current,
+                activeCaster.casterPos,
                 gridPos,
                 _liveCombatantsMouse,
                 currentMap.tiles,
@@ -10560,9 +10800,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   targetId: _occupantMouse.id,
                   targetsCount: 1,
                   targetIds: [_occupantMouse.id],
-                  casterId: activeControlledSummonIdRef.current
-                    ? activeControlledSummonIdRef.current
-                    : "player",
+                  casterId: activeCaster.casterId,
                 });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
@@ -11066,6 +11304,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           return;
         }
       }
+      // SECTION 2 — resolve the active caster ONCE for this touch. Mirrors
+      // the mouse handler: every cast branch below consumes
+      // activeCaster.{casterId,casterPos,spellSource,apRef,selectedSpellId}.
+      const activeCaster = resolveActiveCaster();
       // ── SPRITE-FIRST HIT TESTING (touch) ────────────────────────────
       // Mirrors the mouse handler exactly but uses 8px padding for finger
       // imprecision. A sprite hit resolves the entity directly with NO
@@ -11083,6 +11325,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (_hit) {
             const _summonControlled = !!activeControlledSummonIdRef.current;
             if (
+              inBattleRef.current &&
               (_summonControlled
                 ? selectedSummonSpellIdRef.current
                 : selectedSpellIdRef.current) &&
@@ -11123,9 +11366,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                     targetsCount: 1,
                     targetIds: [_hit.id],
-                    casterId: _summonControlled
-                      ? activeControlledSummonIdRef.current
-                      : "player",
+                    casterId: activeCaster.casterId,
                   });
                   const { castResult: _castResult, apCost: _apCost } =
                     executeCastAttempt(
@@ -11153,7 +11394,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
                 return;
               }
-            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
+            } else if (
+              inBattleRef.current &&
+              !selectedSpellIdRef.current &&
+              _hit.kind === "enemy"
+            ) {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
@@ -11191,6 +11436,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               const _spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
+              // Damage-rejection guard: a non-self/ally-targeted spell (e.g. a
+              // damage spell) touched on a friendly player sprite is rejected
+              // with a float message and does NOT fall through to tile logic,
+              // so it can never resolve to an enemy. Metadata-based, not
+              // name-based.
+              if (
+                _spell &&
+                _spell.targetType !== "self" &&
+                _spell.targetType !== "ally"
+              ) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell",
+                );
+                return;
+              }
               if (
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
@@ -11200,6 +11463,45 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     _spell,
                     { x: _hit.logicalX, y: _hit.logicalY },
                     "sprite-player",
+                  );
+                void _castResult;
+                void _apCost;
+                return;
+              }
+              // Not self/ally-targetable → fall through to tile logic.
+            } else if (selectedSpellIdRef.current && _hit.kind === "summon") {
+              // Self/ally-targetable spell + friendly summon sprite hit → cast
+              // at the summon's tile. Mirrors the sprite-player branch. Uses the
+              // spell's explicit targetType metadata (NOT name heuristics).
+              const _summonSpell = activeSpells.find(
+                (s) => s.id === selectedSpellIdRef.current,
+              );
+              // Damage-rejection guard: a non-self/ally-targeted spell on a
+              // friendly summon is rejected with a float and does NOT fall
+              // through to tile logic.
+              if (
+                _summonSpell &&
+                _summonSpell.targetType !== "self" &&
+                _summonSpell.targetType !== "ally"
+              ) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Can't target allies with that spell",
+                );
+                return;
+              }
+              if (
+                _summonSpell &&
+                (_summonSpell.targetType === "self" ||
+                  _summonSpell.targetType === "ally")
+              ) {
+                const { castResult: _castResult, apCost: _apCost } =
+                  executeCastAttempt(
+                    _summonSpell,
+                    { x: _hit.logicalX, y: _hit.logicalY },
+                    "sprite-summon",
                   );
                 void _castResult;
                 void _apCost;
@@ -11235,11 +11537,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // spell selected is a silent return.
         if (selectedSpellIdRef.current) {
           // Attack mode: cast selected spell on touched tile if in range
-          const _apSource = activeControlledSummonIdRef.current
-            ? (combatantsRef.current?.find(
-                (c) => c.id === activeControlledSummonIdRef.current,
-              )?.currentAp ?? 0)
-            : currentBattleApRef.current;
+          const _apSource = activeCaster.apRef.current;
           if (_apSource <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -11277,15 +11575,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             isActiveHostile(_occupantTouch) &&
             isAliveCombatant(_occupantTouch)
           ) {
-            const _spellTouch = activeSpells.find(
-              (s) => s.id === selectedSpellIdRef.current,
+            const _spellTouch = activeCaster.spellSource.find(
+              (s) => s.id === activeCaster.selectedSpellId,
             );
             if (_spellTouch) {
               const _liveTouch = isTileCastableLive(
                 _spellTouch,
-                activeControlledSummonIdRef.current
-                  ? getActiveCasterPos()
-                  : playerPositionRef.current,
+                activeCaster.casterPos,
                 gridPos,
                 _liveCombatantsTouch,
                 currentMap.tiles,
@@ -11299,9 +11595,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   targetId: _occupantTouch.id,
                   targetsCount: 1,
                   targetIds: [_occupantTouch.id],
-                  casterId: activeControlledSummonIdRef.current
-                    ? activeControlledSummonIdRef.current
-                    : "player",
+                  casterId: activeCaster.casterId,
                 });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
@@ -12567,8 +12861,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           reconcileBattleState(combatantStoreCtx, {
             inBattle: true,
             victoryFiredThisBattleRef,
+            // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
+            // instead of an EMPTY array [] so the recap builder sees every
+            // kill appended by attributeKillReward (line 9517).
             triggerVictory: () =>
-              handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
+              handleBattleEndRef.current?.(
+                true,
+                0,
+                battleHitsRef.current,
+                battleDefeatedRef.current.map((e) => ({
+                  name: e.pieceType ?? "unknown",
+                  level: e.level ?? 1,
+                })),
+              ),
           });
         });
         // [TURN] battle-init breadcrumb #2 — fires only on a successful
@@ -13920,8 +14225,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     reconcileBattleState(combatantStoreCtx, {
       inBattle: inBattleRef.current,
       victoryFiredThisBattleRef,
+      // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
+      // instead of an EMPTY array [] so the recap builder (handleBattleEnd)
+      // sees every kill appended by attributeKillReward (line 9517). The
+      // previous `[]` here was the third dead empty-array path that bypassed
+      // the single canonical defeated list and produced an empty recap.
       triggerVictory: () =>
-        handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []),
+        handleBattleEndRef.current?.(
+          true,
+          0,
+          battleHitsRef.current,
+          battleDefeatedRef.current.map((e) => ({
+            name: e.pieceType ?? "unknown",
+            level: e.level ?? 1,
+          })),
+        ),
     });
     if (victoryFiredThisBattleRef.current) return;
     flushSync(() => {
@@ -19065,6 +19383,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   );
                   if (!_s2Confirmed) return;
                 }
+                // SECTION 3(c) — FLEE DESPAWN: mirror the victory despawn at
+                // lines 13102-13105 so surviving player summons are removed
+                // from both the combatant store and the map render before the
+                // death flow runs.
+                syncCombatants(
+                  combatantStoreCtx,
+                  despawnSummons(combatantsRef.current),
+                );
                 _handlePlayerDeath();
               }}
               onEndTurn={() => {

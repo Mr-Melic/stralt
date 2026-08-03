@@ -1513,31 +1513,17 @@ function decideCharger(
       }
     }
   }
-  // PASS 3 — no legal damaging action on any reachable target. If the top
-  // target is out of reach, hold rather than suicide-advance; otherwise advance.
+  // PASS 3 — no legal damaging action on any reachable target. Advance toward
+  // the top target unconditionally so distant chargers close the gap instead of
+  // idling. The previous hold-when-out-of-reach early return (dist > budget+1)
+  // caused distant chargers to idle forever — the "no approach movement" bug.
+  // stepToward falls back to any reachable free step when the direct axis is
+  // blocked, so the charger always emits a real advance path when one exists.
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  const dist = chebyshev(origin, targetCell);
-  const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
-  if (!canReach) {
-    // Out of reach: hold rather than suicide-advance into a bad position.
-    ctx.log(`${ctx.enemy.pieceType} waits to charge`, SKIP_COLOR);
-    logIntent("charger", "wait", target.combatant.id, "out-of-reach");
-    return {
-      archetype: "charger",
-      destination: origin,
-      spell: null,
-      targetId: null,
-      kind: "skip",
-      intent: "wait",
-      intentColor: SKIP_COLOR,
-      retreating: false,
-    };
-  }
-  // Advance toward the target.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     ctx.log(`${ctx.enemy.pieceType} charges forward!`, MOVE_COLOR);
-    logIntent("charger", "advance", target.combatant.id, "in-reach");
+    logIntent("charger", "advance", target.combatant.id, "approach");
   } else {
     logIntent(
       "charger",

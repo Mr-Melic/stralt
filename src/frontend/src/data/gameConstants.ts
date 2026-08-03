@@ -151,7 +151,7 @@ export const JUICE = {
 // tuning knobs consumed by decideEnemyAction in engine/enemyAI.ts.
 
 /** HP fraction (current/max) below which a non-berserk enemy retreats. */
-export const ENEMY_RETREAT_HP_PCT = 0.3;
+export const ENEMY_RETREAT_HP_PCT = 0.25;
 
 /** HP fraction below which an enemy is considered "wounded" and may sacrifice. */
 export const ENEMY_WOUNDED_SACRIFICE_HP_PCT = 0.2;
