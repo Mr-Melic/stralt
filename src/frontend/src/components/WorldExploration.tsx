@@ -2123,6 +2123,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     let cancelled = false;
     (async () => {
       try {
+        // GUARD-SET (HOTFIX b — Option A): write the module guard
+        // SYNCHRONOUSLY at the TOP of the async IIFE, BEFORE any await. The
+        // previous guard-set lived further down, gated behind
+        // `await actor.getCharacter` + `if (cancelled) return;` + the
+        // dirty-guard check. When ownedSpells identity churned on first cast,
+        // the cleanup at the effect's return set `cancelled = true` BEFORE the
+        // await resolved, so the early return at the cancelled check fired and
+        // the guard-set was never reached — leaving moduleGuardHas:false on
+        // every fire (the exact bisect symptom: prevCharKey:null +
+        // moduleGuardHas:false across 8+ fires). Writing it here, immediately
+        // after entering the IIFE and BEFORE the first await, guarantees the
+        // guard is set the moment the character resolve begins successfully,
+        // regardless of later churn/cancellation. The second fire now logs
+        // moduleGuardHas:true. The post-IIFE backstop below remains as a
+        // redundant no-op re-add for diagnostic continuity.
+        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
+        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         // Read the character record to get spellBarOrder (backend-authoritative).
         const character = await (actor as ActorAny).getCharacter(
           BigInt(characterSlot),
@@ -2148,22 +2165,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           return;
         }
-        // GUARD-SET (belt-and-braces): mark this character as loaded
-        // SYNCHRONOUSLY, before the await below. The previous guard-set lived
-        // at the END of the async IIFE, gated behind `await actor.getCharacter`
-        // and `if (cancelled) return;`. When ownedSpells identity churned on
-        // first cast, the cleanup set `cancelled = true` BEFORE the await
-        // resolved, so the early return fired and the guard-set was never
-        // reached — leaving moduleGuardHas:false on every fire and the load
-        // effect re-running forever. Setting it here (after the dirty-guard
-        // check passes, before the await) guarantees it's reached on EVERY
-        // non-skipped completion path: saved-order, empty-order, and even
-        // post-await cancellation (the await may still throw or cancel, but
-        // the guard is already set so the next fire skips). The post-IIFE
-        // guard-set below remains as a redundant backstop (re-adding to a Set
-        // is a no-op).
-        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
-        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         const savedOrder: string[] | undefined =
           character?.spellBarOrder ?? undefined;
         const ownedIds = new Set(ownedSpells.map((s) => s.id));
@@ -2194,13 +2195,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             nsKey("pbv_active_spells"),
             JSON.stringify(padded),
           );
-        } else {
-          // (b) EMPTY IS VALID: spellBarOrder is empty/null. Apply the empty
-          // bar VERBATIM — no default derivation, no auto-save. The player
-          // assigns spells manually from the spellbook; empty slots stay empty.
-          // The loader is APPLY-ONLY: it never writes here. Persistence flows
-          // exclusively through handleSetActiveSpells → debounced
-          // setSpellBarOrder → flushSpellBarSave (the user-driven assign path).
+        } else if (Array.isArray(savedOrder) && savedOrder.length === 0) {
+          // (b) EXPLICIT EMPTY IS VALID: spellBarOrder is a genuinely empty
+          // array (a new/emptied bar). Apply the empty bar VERBATIM — no
+          // default derivation, no auto-save. The player assigns spells
+          // manually from the spellbook; empty slots stay empty. The loader is
+          // APPLY-ONLY: it never writes here. Persistence flows exclusively
+          // through handleSetActiveSpells → debounced setSpellBarOrder →
+          // flushSpellBarSave (the user-driven assign path).
           setActiveSpellIds([]);
           try {
             localStorage.setItem(
@@ -2217,6 +2219,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               slot: characterSlot,
               charKey: _charKey,
               ownedCount: ownedSpells.length,
+            },
+          );
+        } else {
+          // (c) UNDEFINED IS NOT EMPTY (HOTFIX a): savedOrder is
+          // undefined/null — the character was fetched but the spellBarOrder
+          // field has not resolved yet (still loading, or the backend returned
+          // an absent field). DO NOT apply setActiveSpellIds at all — applying
+          // empty here would clobber a previously-saved bar (the bisect
+          // symptom: after relogin the bar showed saved spells then EMPTIED
+          // seconds later when a later loader fire applied an
+          // absent/undefined spellBarOrder as if it were an intentional
+          // empty). Return and wait for the next fire to re-read the
+          // authoritative value. The module guard is already set (top of IIFE),
+          // so subsequent fires skip until the dirty-guard clears and a real
+          // value arrives — but the bar is left untouched here, so no clobber.
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR] spellBarOrder undefined/null — not applying (waiting for next fire)",
+            {
+              slot: characterSlot,
+              charKey: _charKey,
+              ownedCount: ownedSpells.length,
+              savedOrder,
             },
           );
         }
@@ -9266,7 +9291,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       triggerShatter: (id, x, y) =>
         effectsManagerRef.current?.triggerDeath(String(id), x, y),
       logDefeated: (name) => logBattleEntry(`${name} is defeated`, "#ef4444"),
-      applyLeaderDeathBoost: (deadId) => {
+      applyLeaderDeathBoost: (deadId, side, isSummon) => {
+        // SECTION 1 FIX (b) — LEADER FLOW ONLY FOR REAL ENEMY LEADERS.
+        // The death pipeline snapshots side/isSummon BEFORE removal (step 2)
+        // and passes them here (step 8). A player-side death or any summon
+        // death must NOT fire the leader-death animation, set the
+        // leaderDied/battleLeaderSlain flags, or scale surviving enemy stats.
+        // Early-return BEFORE touching any leader flag, BEFORE calling
+        // triggerLeaderDeathAnim, and BEFORE the stat-scaling loop. This is
+        // the single guard that prevents a player-side summon's own-turn
+        // expiry (which previously funneled through processCombatantDeath)
+        // from triggering the leader-death cascade.
+        if (isSummon || side !== "enemy") {
+          return;
+        }
         leaderDiedRef.current = true;
         battleLeaderSlainRef.current = true;
         const c = combatantsRef.current?.find((e) => e.id === deadId);
@@ -9355,6 +9393,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       getCombatantPos: (id) => {
         const c = combatantsRef.current?.find((e) => e.id === id);
         return { x: c?.x ?? 0, y: c?.y ?? 0 };
+      },
+      // SECTION 1 FIX (b) — side/isSummon accessors for the death pipeline.
+      // Both read from the live roster BEFORE removal (pipeline step 2
+      // snapshots these for step 8's applyLeaderDeathBoost guard). Absent
+      // `side` defaults to "enemy" for legacy non-summon combatants (matches
+      // battleSetup.isActiveHostile semantics); absent `isSummon` defaults
+      // to false.
+      getCombatantSide: (id) => {
+        const c = combatantsRef.current?.find((e) => e.id === id);
+        return c?.side ?? "enemy";
+      },
+      getCombatantIsSummon: (id) => {
+        const c = combatantsRef.current?.find((e) => e.id === id);
+        return !!c?.isSummon;
       },
       reconcileBattleState: () =>
         reconcileBattleState(combatantStoreCtx, {
@@ -10070,15 +10122,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 10);
           if (_hit) {
-            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+            const _summonControlled = !!activeControlledSummonIdRef.current;
+            if (
+              (_summonControlled
+                ? selectedSummonSpellIdRef.current
+                : selectedSpellIdRef.current) &&
+              _hit.kind === "enemy"
+            ) {
+              if (_summonControlled && !selectedSummonSpellIdRef.current) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Select a kit spell",
+                );
+                return;
+              }
               const _spell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
+                (s) =>
+                  s.id ===
+                  (_summonControlled
+                    ? selectedSummonSpellIdRef.current
+                    : selectedSpellIdRef.current),
               );
               if (_spell) {
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  playerPositionRef.current,
+                  _summonControlled
+                    ? getActiveCasterPos()
+                    : playerPositionRef.current,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles,
@@ -10091,6 +10164,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                     targetsCount: 1,
                     targetIds: [_hit.id],
+                    casterId: _summonControlled
+                      ? activeControlledSummonIdRef.current
+                      : "player",
                   });
                   // Reuse the existing cast body — same path the
                   // cast-live branch at 9092 takes. AP cost is computed
@@ -10265,7 +10341,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
           // No spell selected → silent return (inspect opens only via the
           // BattleUIPanel initiative chip button, NOT via canvas click).
-          if (currentBattleApRef.current <= 0) {
+          const _apSource = activeControlledSummonIdRef.current
+            ? (combatantsRef.current?.find(
+                (c) => c.id === activeControlledSummonIdRef.current,
+              )?.currentAp ?? 0)
+            : currentBattleApRef.current;
+          if (_apSource <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -10310,7 +10391,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (_spellMouse) {
               const _liveMouse = isTileCastableLive(
                 _spellMouse,
-                playerPositionRef.current,
+                activeControlledSummonIdRef.current
+                  ? getActiveCasterPos()
+                  : playerPositionRef.current,
                 gridPos,
                 _liveCombatantsMouse,
                 currentMap.tiles,
@@ -10324,6 +10407,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   targetId: _occupantMouse.id,
                   targetsCount: 1,
                   targetIds: [_occupantMouse.id],
+                  casterId: activeControlledSummonIdRef.current
+                    ? activeControlledSummonIdRef.current
+                    : "player",
                 });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
@@ -10797,20 +10883,52 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 14);
           if (_hit) {
-            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+            const _summonControlled = !!activeControlledSummonIdRef.current;
+            if (
+              (_summonControlled
+                ? selectedSummonSpellIdRef.current
+                : selectedSpellIdRef.current) &&
+              _hit.kind === "enemy"
+            ) {
+              if (_summonControlled && !selectedSummonSpellIdRef.current) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Select a kit spell",
+                );
+                return;
+              }
               const _spell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
+                (s) =>
+                  s.id ===
+                  (_summonControlled
+                    ? selectedSummonSpellIdRef.current
+                    : selectedSpellIdRef.current),
               );
               if (_spell) {
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  playerPositionRef.current,
+                  _summonControlled
+                    ? getActiveCasterPos()
+                    : playerPositionRef.current,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles,
                 );
                 if (_live.ok) {
+                  // eslint-disable-next-line no-console
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "cast-sprite",
+                    hitId: _hit.id,
+                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
+                    targetsCount: 1,
+                    targetIds: [_hit.id],
+                    casterId: _summonControlled
+                      ? activeControlledSummonIdRef.current
+                      : "player",
+                  });
                   const { castResult: _castResult, apCost: _apCost } =
                     executeCastAttempt(
                       _spell,
@@ -10919,7 +11037,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // spell selected is a silent return.
         if (selectedSpellIdRef.current) {
           // Attack mode: cast selected spell on touched tile if in range
-          if (currentBattleApRef.current <= 0) {
+          const _apSource = activeControlledSummonIdRef.current
+            ? (combatantsRef.current?.find(
+                (c) => c.id === activeControlledSummonIdRef.current,
+              )?.currentAp ?? 0)
+            : currentBattleApRef.current;
+          if (_apSource <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -10962,12 +11085,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (_spellTouch) {
               const _liveTouch = isTileCastableLive(
                 _spellTouch,
-                playerPositionRef.current,
+                activeControlledSummonIdRef.current
+                  ? getActiveCasterPos()
+                  : playerPositionRef.current,
                 gridPos,
                 _liveCombatantsTouch,
                 currentMap.tiles,
               );
               if (_liveTouch.ok) {
+                // eslint-disable-next-line no-console
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "cast-live",
+                  tile: gridPos,
+                  spellId: _spellTouch.id,
+                  targetId: _occupantTouch.id,
+                  targetsCount: 1,
+                  targetIds: [_occupantTouch.id],
+                  casterId: activeControlledSummonIdRef.current
+                    ? activeControlledSummonIdRef.current
+                    : "player",
+                });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
                 // the existing cast body below by skipping the gate.
@@ -13953,10 +14090,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setActiveControlledSummonId(null);
                 activeControlledSummonIdRef.current = null;
                 setSelectedSummonSpellId(null);
-                processCombatantDeathCb(nextCombatant.id);
+                // SECTION 1 FIX (a) — SUMMON EXPIRY GETS ITS OWN PATH.
+                // A player-side summon's own-turn expiry must NOT funnel
+                // through processCombatantDeath: that pipeline runs
+                // applyLeaderDeathBoost (step 8) + reconcileBattleState
+                // (step 11, consumes victoryFiredThisBattleRef when
+                // hostiles===0). A player-side summon is never a hostile
+                // (battleSetup.isActiveHostile excludes summons + player-side
+                // combatants), so its removal cannot legitimately consume
+                // the victory guard — but routing it through the full pipeline
+                // risked the leader-death cascade (now guarded at the boost)
+                // and the defeated-list append (attributeKillReward). Instead
+                // remove the summon atomically via the store helper (drops
+                // it from combatants + turn queue + initiative strip in one
+                // setTurnOrder call), log a soft fade line, and advance.
+                // Do NOT call processCombatantDeath, triggerLeaderDeathAnim,
+                // applyLeaderDeathBoost, the defeated list, or
+                // victoryFiredThisBattleRef.
+                removeCombatant(combatantStoreCtx, nextCombatant.id);
                 logBattleEntry(
-                  `${nextCombatant.pieceType ?? "Summon"} expired`,
-                  "#ef4444",
+                  `${nextCombatant.pieceType ?? "Summon"} returns to the aether`,
+                  "#a78bfa",
                 );
                 // SECTION 1 (R12) FIX (d) — NAME THE ended:null PATH: this
                 // summon-expired advance previously called advanceTurn() with
@@ -15142,7 +15296,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (allyNewHp <= 0) {
               if (
                 allyT.id === leaderEnemyIdRef.current &&
-                !leaderDiedRef.current
+                !leaderDiedRef.current &&
+                !allyT.isSummon // SECTION 1 FIX (c) — defense-in-depth: never fire the leader-death animation for a summon, even if it somehow matched leaderEnemyIdRef.
               ) {
                 leaderDiedRef.current = true;
                 triggerLeaderDeathAnimation(allyT.x, allyT.y);
@@ -16747,6 +16902,121 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       targetTile: { x: number; y: number },
       source: string,
     ): { castResult: string; apCost: number } => {
+      // SECTION 2 — CONTROLLED-SUMMON CASTS: when a controlled summon is
+      // active, the SUMMON is the caster. Resolve the kit spell, gate on the
+      // summon's currentAp (NOT currentBattleApRef), build a CombatantSnapshot
+      // for the summon, and call resolveSpellCast with the same SpellContext
+      // shape the existing summon routing block uses. Return after the summon
+      // cast — do NOT fall through to the player path.
+      if (activeControlledSummonIdRef.current) {
+        const kitSpells = getSummonKitSpells();
+        const kitSpell =
+          kitSpells.find((s) => s.id === selectedSummonSpellIdRef.current) ??
+          kitSpells[0];
+        if (!kitSpell) {
+          const _screen = tileCenter(targetTile.x, targetTile.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            "Select a kit spell",
+          );
+          return { castResult: "no_spell", apCost: 0 };
+        }
+        const _summonCasterPos = getActiveCasterPos();
+        const _summonCombatant = combatantsRef.current?.find(
+          (c) => c.id === activeControlledSummonIdRef.current,
+        );
+        const _summonAp = _summonCombatant?.currentAp ?? 0;
+        const _summonApCost = mapModifierRegistry.applyApCost(
+          Number(kitSpell.apCost),
+          activeMapModifierTypes,
+          {
+            log: (msg: string) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random,
+          },
+        );
+        if (_summonAp < _summonApCost) {
+          const _screen = tileCenter(targetTile.x, targetTile.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            "Not enough AP",
+          );
+          return { castResult: "no_ap", apCost: _summonApCost };
+        }
+        // Resolve the target snapshot at targetTile (living hostile occupant).
+        const _summonLiveCombatants = getLiveCombatants(combatantStoreCtx);
+        const _summonTarget = _summonLiveCombatants.find(
+          (e: any) => e.x === targetTile.x && e.y === targetTile.y,
+        );
+        if (!_summonTarget) {
+          const _screen = tileCenter(targetTile.x, targetTile.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            "invalid target",
+          );
+          return { castResult: "no_target", apCost: _summonApCost };
+        }
+        // Build the summon caster CombatantSnapshot — mirrors the inline
+        // pattern at the existing summon routing block (id, side, level, hp,
+        // maxHp, sp, sr, res, init, chc, currentAp, maxAp, effects,
+        // activeEffects, fail:0).
+        const _summonSnapshot: any = {
+          id: _summonCombatant?.id ?? activeControlledSummonIdRef.current,
+          side: _summonCombatant?.side ?? "player",
+          level: _summonCombatant?.level ?? 1,
+          hp: _summonCombatant?.hp ?? 0,
+          maxHp: _summonCombatant?.maxHp ?? 0,
+          sp: _summonCombatant?.sp ?? 0,
+          sr: _summonCombatant?.sr ?? 0,
+          res: _summonCombatant?.res ?? 0,
+          init: _summonCombatant?.init ?? 0,
+          chc: _summonCombatant?.chc ?? 0,
+          currentAp: _summonAp,
+          maxAp: _summonCombatant?.maxAp ?? 0,
+          effects: [],
+          activeEffects: [],
+          fail: 0,
+        };
+        const _summonTargetSnapshot: any = {
+          id: _summonTarget.id,
+          side: _summonTarget.side ?? "enemy",
+          cell: { x: _summonTarget.x, y: _summonTarget.y },
+          hp: _summonTarget.hp ?? 0,
+          maxHp: _summonTarget.maxHp ?? 0,
+          level: _summonTarget.level ?? 1,
+          effects: [],
+          stats: { res: 0, sp: 0 },
+        };
+        try {
+          resolveSpellCast(
+            kitSpell as any,
+            _summonSnapshot,
+            _summonTargetSnapshot,
+            playerSpellContext() as any,
+            { getStatModifier, calcScaledDamage } as any,
+          );
+          logDebugInfo(
+            "BATTLE",
+            `[CLICK-ENEMY] source=${source} spell=${kitSpell.id} tile=${targetTile.x},${targetTile.y} apCost=${_summonApCost} castResult=cast casterId=${activeControlledSummonIdRef.current} targetsCount=1 targetIds=${_summonTarget.id}`,
+          );
+          logBattleEntry(
+            `${_summonCombatant?.pieceType ?? "Summon"} casts ${kitSpell.name}`,
+            "#a855f7",
+          );
+          // Deduct the summon's AP for the cast.
+          if (_summonCombatant) {
+            updateCombatant(combatantStoreCtx, _summonCombatant.id, {
+              currentAp: Math.max(0, _summonAp - _summonApCost),
+            });
+          }
+          setSelectedSummonSpellId(null);
+        } catch (e) {
+          console.error("[SummonExecuteCast]", e);
+        }
+        return { castResult: "cast", apCost: _summonApCost };
+      }
       const _apCost = mapModifierRegistry.applyApCost(
         Number(spell.apCost),
         activeMapModifierTypes,
@@ -16765,7 +17035,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
         logDebugInfo(
           "BATTLE",
-          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t: any) => t.id).join(",")}`,
+          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} casterId=player targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t: any) => t.id).join(",")}`,
         );
         // SECTION 5: deduct AP on both 'cast' and 'fizzled' — the attempt was
         // made (the fail chance is the point of the roll), so the spell's AP
@@ -16788,6 +17058,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       markFirstAction,
       playerSpellContext,
       setCurrentBattleApSynced,
+      getActiveCasterPos,
+      getSummonKitSpells,
+      getStatModifier,
+      combatantStoreCtx,
+      logBattleEntry,
+      tileCenter,
     ],
   );
   const attackNearestEnemy = useCallback(() => {

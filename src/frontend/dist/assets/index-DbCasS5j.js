@@ -51319,12 +51319,14 @@ function processCombatantDeath(id, ctx) {
   }
   const name = ctx.getCombatantName(id);
   const pos = ctx.getCombatantPos(id);
+  const side = ctx.getCombatantSide(id);
+  const isSummon = ctx.getCombatantIsSummon(id);
   ctx.removeCombatant(id);
   ctx.removeFromTurnQueue(id);
   ctx.removeFromInitiativeStrip(id);
   ctx.triggerShatter(id, pos.x, pos.y);
   ctx.logDefeated(name);
-  ctx.applyLeaderDeathBoost(id);
+  ctx.applyLeaderDeathBoost(id, side, isSummon);
   ctx.recheckVictory();
   ctx.attributeKillReward(id);
   (_a3 = ctx.reconcileBattleState) == null ? void 0 : _a3.call(ctx);
@@ -61432,6 +61434,8 @@ const WorldExplorationInner = ({
     let cancelled = false;
     (async () => {
       try {
+        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
+        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         const character2 = await actor.getCharacter(
           BigInt(characterSlot)
         );
@@ -61448,8 +61452,6 @@ const WorldExplorationInner = ({
           );
           return;
         }
-        _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
-        loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         const savedOrder = (character2 == null ? void 0 : character2.spellBarOrder) ?? void 0;
         const ownedIds = new Set(ownedSpells.map((s2) => s2.id));
         if (savedOrder && savedOrder.length > 0) {
@@ -61473,7 +61475,7 @@ const WorldExplorationInner = ({
             nsKey("pbv_active_spells"),
             JSON.stringify(padded)
           );
-        } else {
+        } else if (Array.isArray(savedOrder) && savedOrder.length === 0) {
           setActiveSpellIds([]);
           try {
             localStorage.setItem(
@@ -61489,6 +61491,17 @@ const WorldExplorationInner = ({
               slot: characterSlot,
               charKey: _charKey,
               ownedCount: ownedSpells.length
+            }
+          );
+        } else {
+          logDebugInfo(
+            "SPELLS",
+            "[SPELLBAR] spellBarOrder undefined/null — not applying (waiting for next fire)",
+            {
+              slot: characterSlot,
+              charKey: _charKey,
+              ownedCount: ownedSpells.length,
+              savedOrder
             }
           );
         }
@@ -66858,8 +66871,11 @@ const WorldExplorationInner = ({
         return (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.triggerDeath(String(id), x3, y2);
       },
       logDefeated: (name) => logBattleEntry(`${name} is defeated`, "#ef4444"),
-      applyLeaderDeathBoost: (deadId) => {
+      applyLeaderDeathBoost: (deadId, side, isSummon) => {
         var _a4, _b4;
+        if (isSummon || side !== "enemy") {
+          return;
+        }
         leaderDiedRef.current = true;
         battleLeaderSlainRef.current = true;
         const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === deadId);
@@ -66925,6 +66941,22 @@ const WorldExplorationInner = ({
         var _a4;
         const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === id);
         return { x: (c2 == null ? void 0 : c2.x) ?? 0, y: (c2 == null ? void 0 : c2.y) ?? 0 };
+      },
+      // SECTION 1 FIX (b) — side/isSummon accessors for the death pipeline.
+      // Both read from the live roster BEFORE removal (pipeline step 2
+      // snapshots these for step 8's applyLeaderDeathBoost guard). Absent
+      // `side` defaults to "enemy" for legacy non-summon combatants (matches
+      // battleSetup.isActiveHostile semantics); absent `isSummon` defaults
+      // to false.
+      getCombatantSide: (id) => {
+        var _a4;
+        const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === id);
+        return (c2 == null ? void 0 : c2.side) ?? "enemy";
+      },
+      getCombatantIsSummon: (id) => {
+        var _a4;
+        const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === id);
+        return !!(c2 == null ? void 0 : c2.isSummon);
       },
       reconcileBattleState: () => reconcileBattleState(combatantStoreCtx, {
         inBattle: inBattleRef.current,
@@ -67355,7 +67387,7 @@ const WorldExplorationInner = ({
   );
   const handleCanvasClick = reactExports.useCallback(
     (event) => {
-      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2;
+      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2, _l2, _m, _n;
       if (!currentMap || transitionInProgressRef.current) return;
       if (activeControlledSummonIdRef.current) {
         const summon = getLiveCombatants(combatantStoreCtx).find(
@@ -67441,15 +67473,25 @@ const WorldExplorationInner = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 10);
           if (_hit) {
-            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+            const _summonControlled = !!activeControlledSummonIdRef.current;
+            if ((_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current) && _hit.kind === "enemy") {
+              if (_summonControlled && !selectedSummonSpellIdRef.current) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Select a kit spell"
+                );
+                return;
+              }
               const _spell = activeSpells.find(
-                (s2) => s2.id === selectedSpellIdRef.current
+                (s2) => s2.id === (_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current)
               );
               if (_spell) {
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  playerPositionRef.current,
+                  _summonControlled ? getActiveCasterPos() : playerPositionRef.current,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles
@@ -67460,7 +67502,8 @@ const WorldExplorationInner = ({
                     hitId: _hit.id,
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                     targetsCount: 1,
-                    targetIds: [_hit.id]
+                    targetIds: [_hit.id],
+                    casterId: _summonControlled ? activeControlledSummonIdRef.current : "player"
                   });
                   const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                     _spell,
@@ -67469,7 +67512,7 @@ const WorldExplorationInner = ({
                   );
                   if (_castResult !== "cast") {
                     const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
+                    (_b4 = effectsManagerRef.current) == null ? void 0 : _b4.spawnFloatText(
                       _screen.x,
                       _screen.y,
                       _castResult === "no_ap" ? "Not enough AP" : `Cast ${_castResult}!`
@@ -67491,7 +67534,7 @@ const WorldExplorationInner = ({
                 }
                 {
                   const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                  (_b4 = effectsManagerRef.current) == null ? void 0 : _b4.spawnFloatText(
+                  (_c3 = effectsManagerRef.current) == null ? void 0 : _c3.spawnFloatText(
                     _screen.x,
                     _screen.y,
                     _live.reason
@@ -67522,7 +67565,7 @@ const WorldExplorationInner = ({
                 _spriteBasicCastResult = _castResult;
                 if (_castResult !== "cast") {
                   const _screen = tileCenter(_tile.x, _tile.y);
-                  (_c3 = effectsManagerRef.current) == null ? void 0 : _c3.spawnFloatText(
+                  (_d3 = effectsManagerRef.current) == null ? void 0 : _d3.spawnFloatText(
                     _screen.x,
                     _screen.y,
                     _castResult === "no_ap" ? "Not enough AP" : `Cast ${_castResult}!`
@@ -67585,10 +67628,13 @@ const WorldExplorationInner = ({
           }
         }
         if (selectedSpellIdRef.current) {
-          if (currentBattleApRef.current <= 0) {
+          const _apSource = activeControlledSummonIdRef.current ? ((_f3 = (_e3 = combatantsRef.current) == null ? void 0 : _e3.find(
+            (c2) => c2.id === activeControlledSummonIdRef.current
+          )) == null ? void 0 : _f3.currentAp) ?? 0 : currentBattleApRef.current;
+          if (_apSource <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_d3 = effectsManagerRef.current) == null ? void 0 : _d3.spawnFloatText(
+              (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "Not enough AP"
@@ -67614,7 +67660,7 @@ const WorldExplorationInner = ({
             if (_spellMouse) {
               const _liveMouse = isTileCastableLive(
                 _spellMouse,
-                playerPositionRef.current,
+                activeControlledSummonIdRef.current ? getActiveCasterPos() : playerPositionRef.current,
                 gridPos,
                 _liveCombatantsMouse,
                 currentMap.tiles
@@ -67626,11 +67672,12 @@ const WorldExplorationInner = ({
                   spellId: _spellMouse.id,
                   targetId: _occupantMouse.id,
                   targetsCount: 1,
-                  targetIds: [_occupantMouse.id]
+                  targetIds: [_occupantMouse.id],
+                  casterId: activeControlledSummonIdRef.current ? activeControlledSummonIdRef.current : "player"
                 });
               } else {
                 const _screen = tileCenter(gridPos.x, gridPos.y);
-                (_e3 = effectsManagerRef.current) == null ? void 0 : _e3.spawnFloatText(
+                (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
                   _screen.x,
                   _screen.y,
                   "invalid target"
@@ -67693,7 +67740,7 @@ const WorldExplorationInner = ({
           const _isSelfOrAllySpellMouse = spell.targetType === "self" || spell.targetType === "ally" || spell.effectType === "buff";
           if (!_isSelfOrAllySpellMouse && gridPos.x === playerPositionRef.current.x && gridPos.y === playerPositionRef.current.y) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_f3 = effectsManagerRef.current) == null ? void 0 : _f3.spawnFloatText(
+            (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
               _screen.x,
               _screen.y,
               "invalid target"
@@ -67729,7 +67776,7 @@ const WorldExplorationInner = ({
             markFirstAction();
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
+              (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "✦ FIZZLED! ✦",
@@ -67761,7 +67808,7 @@ const WorldExplorationInner = ({
             }
           } else {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
+            (_k2 = effectsManagerRef.current) == null ? void 0 : _k2.spawnFloatText(
               _screen.x,
               _screen.y,
               castResult === "no_ap" ? "No AP!" : "Aborted"
@@ -67769,14 +67816,14 @@ const WorldExplorationInner = ({
           }
         } else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
-          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_i2 = currentMap.voidTiles) == null ? void 0 : _i2.has(`${gridPos.x},${gridPos.y}`)))
+          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_l2 = currentMap.voidTiles) == null ? void 0 : _l2.has(`${gridPos.x},${gridPos.y}`)))
             return;
           const _walkOccupantMouse = getLiveCombatants(combatantStoreCtx).find(
             (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
           );
           if (_walkOccupantMouse) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
+            (_m = effectsManagerRef.current) == null ? void 0 : _m.spawnFloatText(
               _screen.x,
               _screen.y,
               "Occupied"
@@ -67826,7 +67873,7 @@ const WorldExplorationInner = ({
         checkBattleTriggerRef.current();
         return;
       }
-      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`))) {
+      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_n = currentMap.voidTiles) == null ? void 0 : _n.has(`${gridPos.x},${gridPos.y}`))) {
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
         const path = findPath(playerPositionRef.current, gridPos);
         if (path.length > 0) {
@@ -67846,8 +67893,8 @@ const WorldExplorationInner = ({
         }
       }
       if (getGeometryOverlayEnabled()) {
-        const _l2 = pointerToRenderSpace(event.clientX, event.clientY);
-        lastClickOverlayRef.current = { x: _l2.x, y: _l2.y, ts: Date.now() };
+        const _l3 = pointerToRenderSpace(event.clientX, event.clientY);
+        lastClickOverlayRef.current = { x: _l3.x, y: _l3.y, ts: Date.now() };
       }
       try {
         recordClickOutcome(
@@ -67915,7 +67962,7 @@ const WorldExplorationInner = ({
   );
   const handleCanvasTouch = reactExports.useCallback(
     (event) => {
-      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2;
+      var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2, _j2, _k2, _l2, _m, _n;
       if (!currentMap || transitionInProgressRef.current) return;
       event.preventDefault();
       const touch = event.changedTouches[0];
@@ -68004,20 +68051,38 @@ const WorldExplorationInner = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 14);
           if (_hit) {
-            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+            const _summonControlled = !!activeControlledSummonIdRef.current;
+            if ((_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current) && _hit.kind === "enemy") {
+              if (_summonControlled && !selectedSummonSpellIdRef.current) {
+                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  "Select a kit spell"
+                );
+                return;
+              }
               const _spell = activeSpells.find(
-                (s2) => s2.id === selectedSpellIdRef.current
+                (s2) => s2.id === (_summonControlled ? selectedSummonSpellIdRef.current : selectedSpellIdRef.current)
               );
               if (_spell) {
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  playerPositionRef.current,
+                  _summonControlled ? getActiveCasterPos() : playerPositionRef.current,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles
                 );
                 if (_live.ok) {
+                  console.log("[CLICK-ENEMY]", {
+                    branchTaken: "cast-sprite",
+                    hitId: _hit.id,
+                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
+                    targetsCount: 1,
+                    targetIds: [_hit.id],
+                    casterId: _summonControlled ? activeControlledSummonIdRef.current : "player"
+                  });
                   const { castResult: _castResult, apCost: _apCost } = executeCastAttempt(
                     _spell,
                     { x: _hit.logicalX, y: _hit.logicalY },
@@ -68025,7 +68090,7 @@ const WorldExplorationInner = ({
                   );
                   if (_castResult !== "cast") {
                     const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
+                    (_b4 = effectsManagerRef.current) == null ? void 0 : _b4.spawnFloatText(
                       _screen.x,
                       _screen.y,
                       `Cast ${_castResult}!`
@@ -68035,7 +68100,7 @@ const WorldExplorationInner = ({
                 }
                 {
                   const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                  (_b4 = effectsManagerRef.current) == null ? void 0 : _b4.spawnFloatText(
+                  (_c3 = effectsManagerRef.current) == null ? void 0 : _c3.spawnFloatText(
                     _screen.x,
                     _screen.y,
                     _live.reason
@@ -68061,7 +68126,7 @@ const WorldExplorationInner = ({
                 if (_castResult !== "cast") {
                   const _screen = tileCenter(_tile.x, _tile.y);
                   const _reason = !_live.ok ? _live.reason : "Not enough AP";
-                  (_c3 = effectsManagerRef.current) == null ? void 0 : _c3.spawnFloatText(
+                  (_d3 = effectsManagerRef.current) == null ? void 0 : _d3.spawnFloatText(
                     _screen.x,
                     _screen.y,
                     _reason
@@ -68100,10 +68165,13 @@ const WorldExplorationInner = ({
           }
         }
         if (selectedSpellIdRef.current) {
-          if (currentBattleApRef.current <= 0) {
+          const _apSource = activeControlledSummonIdRef.current ? ((_f3 = (_e3 = combatantsRef.current) == null ? void 0 : _e3.find(
+            (c2) => c2.id === activeControlledSummonIdRef.current
+          )) == null ? void 0 : _f3.currentAp) ?? 0 : currentBattleApRef.current;
+          if (_apSource <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_d3 = effectsManagerRef.current) == null ? void 0 : _d3.spawnFloatText(
+              (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "Not enough AP"
@@ -68127,16 +68195,25 @@ const WorldExplorationInner = ({
             if (_spellTouch) {
               const _liveTouch = isTileCastableLive(
                 _spellTouch,
-                playerPositionRef.current,
+                activeControlledSummonIdRef.current ? getActiveCasterPos() : playerPositionRef.current,
                 gridPos,
                 _liveCombatantsTouch,
                 currentMap.tiles
               );
-              if (_liveTouch.ok) ;
-              else {
+              if (_liveTouch.ok) {
+                console.log("[CLICK-ENEMY]", {
+                  branchTaken: "cast-live",
+                  tile: gridPos,
+                  spellId: _spellTouch.id,
+                  targetId: _occupantTouch.id,
+                  targetsCount: 1,
+                  targetIds: [_occupantTouch.id],
+                  casterId: activeControlledSummonIdRef.current ? activeControlledSummonIdRef.current : "player"
+                });
+              } else {
                 {
                   const _screen = tileCenter(gridPos.x, gridPos.y);
-                  (_e3 = effectsManagerRef.current) == null ? void 0 : _e3.spawnFloatText(
+                  (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
                     _screen.x,
                     _screen.y,
                     _liveTouch.reason
@@ -68158,7 +68235,7 @@ const WorldExplorationInner = ({
           const _isSelfOrAllySpellTouch = spell.targetType === "self" || spell.targetType === "ally" || spell.effectType === "buff";
           if (!_isSelfOrAllySpellTouch && gridPos.x === playerPositionRef.current.x && gridPos.y === playerPositionRef.current.y) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_f3 = effectsManagerRef.current) == null ? void 0 : _f3.spawnFloatText(
+            (_i2 = effectsManagerRef.current) == null ? void 0 : _i2.spawnFloatText(
               _screen.x,
               _screen.y,
               "invalid target"
@@ -68206,7 +68283,7 @@ const WorldExplorationInner = ({
             markFirstAction();
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
-              (_g2 = effectsManagerRef.current) == null ? void 0 : _g2.spawnFloatText(
+              (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 "✦ FIZZLED! ✦",
@@ -68238,7 +68315,7 @@ const WorldExplorationInner = ({
             }
           } else {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_h2 = effectsManagerRef.current) == null ? void 0 : _h2.spawnFloatText(
+            (_k2 = effectsManagerRef.current) == null ? void 0 : _k2.spawnFloatText(
               _screen.x,
               _screen.y,
               castResult === "no_ap" ? "No AP!" : "Aborted"
@@ -68246,14 +68323,14 @@ const WorldExplorationInner = ({
           }
         } else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
-          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_i2 = currentMap.voidTiles) == null ? void 0 : _i2.has(`${gridPos.x},${gridPos.y}`)))
+          if (currentMap.tiles[gridPos.y][gridPos.x] === "wall" || ((_l2 = currentMap.voidTiles) == null ? void 0 : _l2.has(`${gridPos.x},${gridPos.y}`)))
             return;
           const _walkOccupantTouch = getLiveCombatants(combatantStoreCtx).find(
             (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
           );
           if (_walkOccupantTouch) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
-            (_j2 = effectsManagerRef.current) == null ? void 0 : _j2.spawnFloatText(
+            (_m = effectsManagerRef.current) == null ? void 0 : _m.spawnFloatText(
               _screen.x,
               _screen.y,
               "Occupied"
@@ -68288,7 +68365,7 @@ const WorldExplorationInner = ({
         checkBattleTriggerRef.current();
         return;
       }
-      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_k2 = currentMap.voidTiles) == null ? void 0 : _k2.has(`${gridPos.x},${gridPos.y}`))) {
+      if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_n = currentMap.voidTiles) == null ? void 0 : _n.has(`${gridPos.x},${gridPos.y}`))) {
         if (inBattleRef.current && currentMap.portals.some((p2) => p2.x === gridPos.x && p2.y === gridPos.y))
           return;
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
@@ -68310,8 +68387,8 @@ const WorldExplorationInner = ({
         }
       }
       if (getGeometryOverlayEnabled()) {
-        const _l2 = pointerToRenderSpace(touch.clientX, touch.clientY);
-        lastClickOverlayRef.current = { x: _l2.x, y: _l2.y, ts: Date.now() };
+        const _l3 = pointerToRenderSpace(touch.clientX, touch.clientY);
+        lastClickOverlayRef.current = { x: _l3.x, y: _l3.y, ts: Date.now() };
       }
       try {
         recordClickOutcome(
@@ -70243,10 +70320,10 @@ const WorldExplorationInner = ({
                 setActiveControlledSummonId(null);
                 activeControlledSummonIdRef.current = null;
                 setSelectedSummonSpellId(null);
-                processCombatantDeathCb(nextCombatant.id);
+                removeCombatant(combatantStoreCtx, nextCombatant.id);
                 logBattleEntry(
-                  `${nextCombatant.pieceType ?? "Summon"} expired`,
-                  "#ef4444"
+                  `${nextCombatant.pieceType ?? "Summon"} returns to the aether`,
+                  "#a78bfa"
                 );
                 turnEndReasonRef.current = "action-complete";
                 setTimeout(() => advanceTurn(), 0);
@@ -71073,7 +71150,7 @@ const WorldExplorationInner = ({
             );
             battleBetrayalOccurredRef.current = true;
             if (allyNewHp <= 0) {
-              if (allyT.id === leaderEnemyIdRef.current && !leaderDiedRef.current) {
+              if (allyT.id === leaderEnemyIdRef.current && !leaderDiedRef.current && !allyT.isSummon) {
                 leaderDiedRef.current = true;
                 triggerLeaderDeathAnimation(allyT.x, allyT.y);
                 logBattleEntry(
@@ -72336,6 +72413,108 @@ const WorldExplorationInner = ({
   }, [currentChallenge]);
   const executeCastAttempt = reactExports.useCallback(
     (spell, targetTile, source) => {
+      var _a4, _b4, _c3, _d3;
+      if (activeControlledSummonIdRef.current) {
+        const kitSpells = getSummonKitSpells();
+        const kitSpell = kitSpells.find((s2) => s2.id === selectedSummonSpellIdRef.current) ?? kitSpells[0];
+        if (!kitSpell) {
+          const _screen = tileCenter(targetTile.x, targetTile.y);
+          (_a4 = effectsManagerRef.current) == null ? void 0 : _a4.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            "Select a kit spell"
+          );
+          return { castResult: "no_spell", apCost: 0 };
+        }
+        getActiveCasterPos();
+        const _summonCombatant = (_b4 = combatantsRef.current) == null ? void 0 : _b4.find(
+          (c2) => c2.id === activeControlledSummonIdRef.current
+        );
+        const _summonAp = (_summonCombatant == null ? void 0 : _summonCombatant.currentAp) ?? 0;
+        const _summonApCost = mapModifierRegistry.applyApCost(
+          Number(kitSpell.apCost),
+          activeMapModifierTypes,
+          {
+            log: (msg) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random
+          }
+        );
+        if (_summonAp < _summonApCost) {
+          const _screen = tileCenter(targetTile.x, targetTile.y);
+          (_c3 = effectsManagerRef.current) == null ? void 0 : _c3.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            "Not enough AP"
+          );
+          return { castResult: "no_ap", apCost: _summonApCost };
+        }
+        const _summonLiveCombatants = getLiveCombatants(combatantStoreCtx);
+        const _summonTarget = _summonLiveCombatants.find(
+          (e) => e.x === targetTile.x && e.y === targetTile.y
+        );
+        if (!_summonTarget) {
+          const _screen = tileCenter(targetTile.x, targetTile.y);
+          (_d3 = effectsManagerRef.current) == null ? void 0 : _d3.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            "invalid target"
+          );
+          return { castResult: "no_target", apCost: _summonApCost };
+        }
+        const _summonSnapshot = {
+          id: (_summonCombatant == null ? void 0 : _summonCombatant.id) ?? activeControlledSummonIdRef.current,
+          side: (_summonCombatant == null ? void 0 : _summonCombatant.side) ?? "player",
+          level: (_summonCombatant == null ? void 0 : _summonCombatant.level) ?? 1,
+          hp: (_summonCombatant == null ? void 0 : _summonCombatant.hp) ?? 0,
+          maxHp: (_summonCombatant == null ? void 0 : _summonCombatant.maxHp) ?? 0,
+          sp: (_summonCombatant == null ? void 0 : _summonCombatant.sp) ?? 0,
+          sr: (_summonCombatant == null ? void 0 : _summonCombatant.sr) ?? 0,
+          res: (_summonCombatant == null ? void 0 : _summonCombatant.res) ?? 0,
+          init: (_summonCombatant == null ? void 0 : _summonCombatant.init) ?? 0,
+          chc: (_summonCombatant == null ? void 0 : _summonCombatant.chc) ?? 0,
+          currentAp: _summonAp,
+          maxAp: (_summonCombatant == null ? void 0 : _summonCombatant.maxAp) ?? 0,
+          effects: [],
+          activeEffects: [],
+          fail: 0
+        };
+        const _summonTargetSnapshot = {
+          id: _summonTarget.id,
+          side: _summonTarget.side ?? "enemy",
+          cell: { x: _summonTarget.x, y: _summonTarget.y },
+          hp: _summonTarget.hp ?? 0,
+          maxHp: _summonTarget.maxHp ?? 0,
+          level: _summonTarget.level ?? 1,
+          effects: [],
+          stats: { res: 0, sp: 0 }
+        };
+        try {
+          resolveSpellCast(
+            kitSpell,
+            _summonSnapshot,
+            _summonTargetSnapshot,
+            playerSpellContext(),
+            { getStatModifier, calcScaledDamage }
+          );
+          logDebugInfo(
+            "BATTLE",
+            `[CLICK-ENEMY] source=${source} spell=${kitSpell.id} tile=${targetTile.x},${targetTile.y} apCost=${_summonApCost} castResult=cast casterId=${activeControlledSummonIdRef.current} targetsCount=1 targetIds=${_summonTarget.id}`
+          );
+          logBattleEntry(
+            `${(_summonCombatant == null ? void 0 : _summonCombatant.pieceType) ?? "Summon"} casts ${kitSpell.name}`,
+            "#a855f7"
+          );
+          if (_summonCombatant) {
+            updateCombatant(combatantStoreCtx, _summonCombatant.id, {
+              currentAp: Math.max(0, _summonAp - _summonApCost)
+            });
+          }
+          setSelectedSummonSpellId(null);
+        } catch (e) {
+          console.error("[SummonExecuteCast]", e);
+        }
+        return { castResult: "cast", apCost: _summonApCost };
+      }
       const _apCost = mapModifierRegistry.applyApCost(
         Number(spell.apCost),
         activeMapModifierTypes,
@@ -72354,7 +72533,7 @@ const WorldExplorationInner = ({
         );
         logDebugInfo(
           "BATTLE",
-          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t) => t.id).join(",")}`
+          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} casterId=player targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t) => t.id).join(",")}`
         );
         if (_castResult === "cast" || _castResult === "fizzled") {
           setCurrentBattleApSynced(
@@ -72371,7 +72550,13 @@ const WorldExplorationInner = ({
       activeMapModifierTypes,
       markFirstAction,
       playerSpellContext,
-      setCurrentBattleApSynced
+      setCurrentBattleApSynced,
+      getActiveCasterPos,
+      getSummonKitSpells,
+      getStatModifier,
+      combatantStoreCtx,
+      logBattleEntry,
+      tileCenter
     ]
   );
   const attackNearestEnemy = reactExports.useCallback(() => {
@@ -77541,7 +77726,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-D61mKlla.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-D9ZJzd00.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

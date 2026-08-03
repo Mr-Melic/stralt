@@ -43,8 +43,18 @@ export interface DeathPipelineCtx {
   triggerShatter(id: string, x: number, y: number): void;
   /** Append a "defeated" entry to the combat log. */
   logDefeated(name: string): void;
-  /** Apply a leader-death boost triggered by this combatant's death. */
-  applyLeaderDeathBoost(deadId: string): void;
+  /** Apply a leader-death boost triggered by this combatant's death.
+   *
+   * `side` and `isSummon` are the dead combatant's values snapshotted BEFORE
+   * removal (step 2 below), so the boost can guard against summons and
+   * player-side deaths even though the dead entity is no longer in the live
+   * roster by the time this runs (step 8). The boost + leader-death
+   * animation must fire ONLY for a real enemy-side non-summon leader. */
+  applyLeaderDeathBoost(
+    deadId: string,
+    side: "player" | "enemy",
+    isSummon: boolean,
+  ): void;
   /** Re-evaluate victory/defeat conditions after a death. */
   recheckVictory(): void;
   /** Attribute the kill reward for the dead combatant. */
@@ -55,6 +65,11 @@ export interface DeathPipelineCtx {
   getCombatantName(id: string): string;
   /** Board position of the combatant (must be valid before removal). */
   getCombatantPos(id: string): { x: number; y: number };
+  /** Side of the combatant (must be valid before removal). Absent side
+   * defaults to "enemy" for legacy non-summon combatants. */
+  getCombatantSide(id: string): "player" | "enemy";
+  /** Whether the combatant is a summon (must be valid before removal). */
+  getCombatantIsSummon(id: string): boolean;
   /**
    * Optional post-death reconcile hook. When supplied, invoked at the TAIL
    * of {@link processCombatantDeath} (after step 10 — kill reward
@@ -82,9 +97,15 @@ export function processCombatantDeath(
     return false;
   }
 
-  // 2. Snapshot name + position BEFORE removal.
+  // 2. Snapshot name + position + side/isSummon BEFORE removal. The
+  // side/isSummon snapshot lets step 8 (applyLeaderDeathBoost) guard against
+  // summons and player-side deaths even though the dead entity is gone from
+  // the live roster by then. Absent `side` defaults to "enemy" for legacy
+  // non-summon combatants (matching battleSetup.isActiveHostile semantics).
   const name = ctx.getCombatantName(id);
   const pos = ctx.getCombatantPos(id);
+  const side: "player" | "enemy" = ctx.getCombatantSide(id);
+  const isSummon = ctx.getCombatantIsSummon(id);
 
   // 3. Detach from roster.
   ctx.removeCombatant(id);
@@ -96,8 +117,8 @@ export function processCombatantDeath(
   ctx.triggerShatter(id, pos.x, pos.y);
   // 7. Log the defeat.
   ctx.logDefeated(name);
-  // 8. Leader-death boost.
-  ctx.applyLeaderDeathBoost(id);
+  // 8. Leader-death boost — guarded by side/isSummon snapshot.
+  ctx.applyLeaderDeathBoost(id, side, isSummon);
   // 9. Recheck victory conditions.
   ctx.recheckVictory();
   // 10. Attribute kill reward.
