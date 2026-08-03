@@ -24,7 +24,7 @@ lintoko = "0.11.0"
 extends = true
 
 [moc]
-args = [ "-W=M0254,M0235,M0223,M0236,M0237", "-A=M0241", "--default-persistent-actors", "--actor-idl=src/backend/system-idl", "--implicit-package=core", "-no-check-ir" ]
+args = [ "-W=M0235,M0223,M0236,M0237,M0254", "-A=M0241", "--default-persistent-actors", "--actor-idl=src/backend/system-idl", "--implicit-package=core", "-no-check-ir" ]
 
 [dependencies]
 core = "2.6.0"

@@ -5553,23 +5553,53 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentX: number,
       currentY: number,
       range: number,
+      selfId?: string,
     ): PlayerPosition | null => {
       const attempts = 50;
+      // SECTION 4 — shared passability check via isCellFree.
+      // Build an OccupancyContext from the live currentMap so the wander
+      // target picker uses the SAME predicate as the player and the gen-time
+      // spawn validator. Replaces the inline bounds + "floor" + voidTiles
+      // check at the old lines 5564-5572.
+      const voidSet =
+        (currentMap?.voidTiles as Set<string> | undefined) ?? new Set<string>();
+      const portalSet = new Set<string>();
+      for (const p of currentMap?.portals ?? []) {
+        portalSet.add(`${p.x},${p.y}`);
+      }
+      const walkableGrid: boolean[][] = tiles.map((row) =>
+        row.map((t) => t === "floor"),
+      );
       for (let i = 0; i < attempts; i++) {
         const deltaX = Math.floor(Math.random() * (range * 2 + 1)) - range;
         const deltaY = Math.floor(Math.random() * (range * 2 + 1)) - range;
         const newX = currentX + deltaX;
         const newY = currentY + deltaY;
-        // Check bounds and walkability
-        if (
-          newX >= 0 &&
-          newX < WORLD_GRID_SIZE &&
-          newY >= 0 &&
-          newY < WORLD_GRID_SIZE &&
-          tiles[newY][newX] === "floor" &&
-          !currentMap?.voidTiles?.has(`${newX},${newY}`) &&
-          (newX !== currentX || newY !== currentY)
-        ) {
+        // SECTION 4 — isCellFree handles bounds, walkable tile, void,
+        // portal, barrier, and combatant occupancy in one call. The
+        // isOccupied callback excludes the wandering enemy itself (by id)
+        // so it can pick its own current tile's neighbourhood, and rejects
+        // the player's tile. The (newX !== currentX || newY !== currentY)
+        // guard is kept so the enemy actually moves.
+        if (newX === currentX && newY === currentY) continue;
+        const occCtx: OccupancyContext = {
+          tiles: walkableGrid,
+          barriers: new Set<string>(),
+          voidTiles: voidSet,
+          portals: portalSet,
+          isOccupied: (cell) => {
+            if (
+              cell.x === playerPositionRef.current.x &&
+              cell.y === playerPositionRef.current.y
+            ) {
+              return true;
+            }
+            return enemiesRef.current.some(
+              (e) => e.id !== selfId && e.x === cell.x && e.y === cell.y,
+            );
+          },
+        };
+        if (isCellFree({ x: newX, y: newY }, occCtx)) {
           return { x: newX, y: newY };
         }
       }
@@ -5649,8 +5679,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // depth 0 = normal world; depth 1-5 = escalating dungeon difficulty
       const dungeonExtraEnemies = [0, 2, 3, 4, 4, 5][Math.min(dungeonDepth, 5)];
       const dungeonTierBoost = [0, 1, 2, 2, 3, 3][Math.min(dungeonDepth, 5)];
-      const enemyCount =
-        Math.floor(Math.random() * 8) + 1 + dungeonExtraEnemies;
+      // SECTION 5 — weighted mob-size distribution.
+      // Replaces the old uniform roll (Math.floor(Math.random() * 8) + 1 +
+      // dungeonExtraEnemies) with a tiered distribution: 30% solo, 40% pair,
+      // 20% pack (4-6), 10% boss-pack (2-6 + a boss enemy appended before
+      // the return statement at the end of generateEnemies).
+      const distRoll = Math.random();
+      let enemyCount: number;
+      let includeBoss = false;
+      if (distRoll < 0.3) {
+        enemyCount = 1;
+      } else if (distRoll < 0.7) {
+        enemyCount = 2 + Math.floor(Math.random() * 2);
+      } else if (distRoll < 0.9) {
+        enemyCount = 4 + Math.floor(Math.random() * 3);
+      } else {
+        enemyCount = 2 + Math.floor(Math.random() * 5);
+        includeBoss = true;
+      }
+      enemyCount += dungeonExtraEnemies;
       const enemies: Enemy[] = [];
       const chessPieceTypes: ChessPieceType[] = [
         "king",
@@ -5931,6 +5978,82 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       if (process.env.NODE_ENV === "development")
         console.log(`${enemies.length} enemies generated with quadrant spread`);
+      // SECTION 5 — boss-pack roll: append a single boss enemy to the wave.
+      // Triggered when the weighted distribution roll above set includeBoss.
+      // Mirrors the boss construction shape used on boss-portal entry
+      // (see ~line 6616) so the combatant store, boss state, and banner
+      // all initialise consistently.
+      if (includeBoss) {
+        const bossConf =
+          DEFAULT_BOSS_CONFIGS[
+            Math.floor(Math.random() * DEFAULT_BOSS_CONFIGS.length)
+          ];
+        const bossPos = generateRandomWalkablePosition(
+          tiles,
+          Math.floor(WORLD_GRID_SIZE / 2),
+          Math.floor(WORLD_GRID_SIZE / 2),
+          Math.floor(WORLD_GRID_SIZE / 2) - 2,
+        );
+        const bx = bossPos?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+        const by = bossPos?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+        const bossLevel = Math.max(1, (characterStats.level ?? 1) + 5);
+        const bossHp = Math.max(
+          1,
+          bossConf.baseStats.hp ?? Math.round(bossLevel * 50 + 200),
+        );
+        const bossAtk = Math.max(
+          1,
+          bossConf.baseStats.atk ?? Math.round(bossLevel * 4 + 10),
+        );
+        enemies.push({
+          id: `boss_${bossConf.id}_${Date.now()}`,
+          x: bx,
+          y: by,
+          pieceType: bossConf.pieceType as ChessPieceType,
+          currentView: "front" as ViewDirection,
+          isMoving: false,
+          movementPath: [],
+          currentStepIndex: 0,
+          movementStartTime: 0,
+          initialDelay: 500,
+          spawnTime: Date.now(),
+          scaleX: 1.4,
+          scaleY: 1.4,
+          level: bossLevel,
+          nextMoveTime: Date.now() + 1000,
+          movementSpeed: 700,
+          movementRange: 2,
+          isWandering: false,
+          wanderTarget: null,
+          lastMoveTime: Date.now(),
+          hp: bossHp,
+          maxHp: bossHp,
+          damage: bossAtk,
+          res: Math.min(50, bossConf.baseStats.res),
+          sp: Math.min(50, bossConf.baseStats.sp),
+          chc: bossConf.baseStats.chc,
+          init: bossConf.baseStats.init ?? Math.max(1, 8 + bossLevel - 1),
+          sr: 10,
+          assignedName: bossConf.name,
+          isLeader: true,
+          family: "boss",
+          isBoss: true,
+          bossId: bossConf.id,
+        });
+        // Initialise boss state + banner exactly like boss-portal entry.
+        const freshBossState = initBossState(bossConf.id, bossConf);
+        bossStateRef.current = freshBossState;
+        setCurrentBossId(bossConf.id);
+        setActiveBossState(freshBossState);
+        setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConf.name}`);
+        if (bossEncounterBannerTimerRef.current !== null) {
+          clearTimeout(bossEncounterBannerTimerRef.current);
+        }
+        bossEncounterBannerTimerRef.current = window.setTimeout(() => {
+          bossEncounterBannerTimerRef.current = null;
+          setBossEncounterBanner(null);
+        }, 1500);
+      }
       return enemies;
     },
     [
@@ -5939,6 +6062,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       generateEnemyScaleFactors,
       enemyNamesFromQuery,
       pieceType,
+      generateRandomWalkablePosition,
     ],
   );
   // Improved camera following with adaptive speed and smooth easing
@@ -6996,6 +7120,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           enemy.x,
           enemy.y,
           enemy.movementRange!,
+          enemy.id,
         );
 
         if (target) {
@@ -12106,6 +12231,67 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             stage: "flushSync-committed",
           },
         );
+        // SECTION 1 (build #347) — UNCONDITIONAL FIRST-DISPATCH: previously
+        // entry 0 was only dispatched later when advanceTurn ran via End Turn,
+        // timer-expiry, or the AI-trigger effect. If none of those fired
+        // (e.g. the AI effect's deps didn't change because cleanupBattle had
+        // already reset battlePhase to "enemy" before flushSync), the battle
+        // froze on entry 0 with no dispatch. Now we dispatch entry 0
+        // immediately after the flushSync commit, inside the existing try/catch.
+        // If entry 0 is an enemy or enemy-side summon, fire the enemy executor
+        // directly and arm the dispatch watchdog (mirroring the arming pattern
+        // at lines 13585-13610). If entry 0 is the player, no dispatch is
+        // needed (player input IS the dispatch) — but still log the breadcrumb.
+        // [TURN] battle-init breadcrumb #3 — first-dispatch (moved here from
+        // advanceTurn's enemy-ai branch so it fires unconditionally after
+        // battle init, not only when advanceTurn routes to enemy-ai).
+        logDebugInfo("TURN", "[TURN] battle-init position: first-dispatch", {
+          appBuild: APP_BUILD,
+          stage: "first-dispatch",
+          entryId: orderWithLeader[0]?.id,
+          entryType: orderWithLeader[0]?.type,
+          entrySide: orderWithLeader[0]?.side,
+          isSummon: !!(orderWithLeader[0] as any)?.isSummon,
+        });
+        const _firstEntry = orderWithLeader[0];
+        if (
+          _firstEntry &&
+          _firstEntry.type !== "player" &&
+          !(_firstEntry.isSummon && _firstEntry.side === "player")
+        ) {
+          // Arm the dispatch watchdog for entry 0 (mirrors 13585-13610).
+          const _firstAIGeneration = aiGenerationRef.current;
+          const _firstDispatchWatchdog = setTimeout(() => {
+            if (
+              turnOrderRef.current[currentTurnIndexRef.current]?.id !==
+              _firstEntry.id
+            )
+              return;
+            if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
+              return;
+            if (aiGenerationRef.current !== _firstAIGeneration) return;
+            turnEndReasonRef.current = "pre-executor-stall";
+            logDebugInfo("TURN", "watchdog-advance", {
+              phase: "battle-init-first-dispatch",
+              entryId: _firstEntry.id,
+            });
+            advanceTurnRef.current();
+          }, 3000);
+          dispatchWatchdogRef.current = _firstDispatchWatchdog;
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(_firstDispatchWatchdog);
+          }
+          try {
+            scheduleEnemyExecutorRef.current(_firstEntry.id);
+          } catch (error) {
+            logDebugError("TURN", "[TURN] battle-init-error", {
+              stage: "first-dispatch",
+              error: String(error),
+              appBuild: APP_BUILD,
+            });
+            throw error;
+          }
+        }
       } catch (error) {
         logDebugError("TURN", "[TURN] battle-init-error", {
           stage: "battle-init-flushSync",
@@ -13815,21 +14001,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // same executor body in setTimeout(0) and fires for EVERY enemy
             // dispatch including consecutive enemies. The dispatch-time
             // watchdog re-arm above (13382-13407) stays as the ceiling.
-            // [TURN] battle-init breadcrumb #3 — fires immediately before the
-            // first-dispatch of the enemy executor.
-            logDebugInfo(
-              "TURN",
-              "[TURN] battle-init position: first-dispatch",
-              {
-                appBuild: APP_BUILD,
-                stage: "first-dispatch",
-              },
-            );
+            // NOTE (build #347): the [TURN] battle-init first-dispatch
+            // breadcrumb was moved to the unconditional post-flushSync site
+            // (after the breadcrumb #2 log) so it fires for EVERY battle
+            // start, not only when advanceTurn routes to enemy-ai. The
+            // scheduleEnemyExecutorRef call below remains the per-dispatch
+            // executor invocation for subsequent enemy turns.
             try {
+              logDebugInfo("TURN", "[FLOW] advance→dispatch", {
+                actorId: nextCombatant.id,
+              });
               scheduleEnemyExecutorRef.current(nextCombatant.id);
             } catch (error) {
-              logDebugError("TURN", "[TURN] battle-init-error", {
-                stage: "first-dispatch",
+              logDebugError("TURN", "[TURN] dispatch-error", {
+                stage: "enemy-ai-executor",
                 error: String(error),
                 appBuild: APP_BUILD,
               });
@@ -13966,7 +14151,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     timerIntervalRef.current = setInterval(() => {
       // FIX-1: If the generation has moved on (effect re-ran), this stale
       // interval must not fire advanceTurn on outdated state.
-      if (turnTimerGenerationRef.current !== myGeneration) return;
+      // SECTION 2 (build #347) — never silently return on a generation
+      // mismatch; log the abort so a stale callback from a prior battle
+      // (whose generation was reset to 0 by cleanupBattle @11506) cannot
+      // hide as a silent no-op. This is the root cause of the timer-expiry
+      // freezes: a stale callback captured generation 0 and silently
+      // returned, so the turn never advanced.
+      if (turnTimerGenerationRef.current !== myGeneration) {
+        logDebugInfo("TURN", "[TURN] timer-expiry-aborted", {
+          actor: turnOrderRef.current[currentTurnIndexRef.current]?.id ?? null,
+          myGen: myGeneration,
+          curGen: turnTimerGenerationRef.current,
+          appBuild: APP_BUILD,
+        });
+        return;
+      }
       setTurnTimeLeft((prev) => {
         if (prev <= 1) {
           if (timerIntervalRef.current) {
@@ -13976,6 +14175,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // FIX-1 & FIX-5: Use the ref so we always call the latest version of
           // advanceTurn (avoids stale closure over characterStats / activeEffects).
           turnEndReasonRef.current = "timer-expiry";
+          // SECTION 2 (build #347) — log the fired event with the actor so
+          // the timer-expiry path is observable in the debug log.
+          const _expiryActor =
+            turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+          logDebugInfo("TURN", "[TURN] timer-expiry-fired", {
+            actor: _expiryActor?.id ?? null,
+            actorType: _expiryActor?.type ?? null,
+            actorSide: _expiryActor?.side ?? null,
+            isSummon: !!(_expiryActor as any)?.isSummon,
+            appBuild: APP_BUILD,
+          });
           // FIX (root_cause_2): timer-expiry previously only set the reason +
           // advanced the turn, skipping the summon-control cleanup that the
           // other exit paths (End button, AP+MP exhausted, summon death/expiry)
@@ -13984,18 +14194,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // turn's spell row. Route through the shared clearSummonControl so
           // this path matches the others.
           clearSummonControl();
-          // SECTION 4 — FIX 2 (30s timer scoping): the 30s timer is the ONLY
-          // auto-advance path for the PLAYER. If the current actor is an enemy
-          // or summon, do NOT advance here — the enemy's own 800ms timeout +
-          // 3000ms watchdog handle enemy turns. Advancing during an enemy turn
-          // would orphan the watchdog (it would later fire on the player and
-          // auto-advance them). Guard reads the desync-proof source of turn
-          // truth: turnOrderRef.current[currentTurnIndexRef.current]?.type.
-          if (
-            turnOrderRef.current[currentTurnIndexRef.current]?.type === "player"
-          ) {
-            advanceTurnRef.current();
-          }
+          // SECTION 2 (build #347) — UNIFIED ADVANCE: previously only the
+          // player actor advanced here, so enemy and summon-control turns
+          // whose 30s timer expired would freeze (the enemy's own 800ms
+          // timeout + 3000ms watchdog were the only fallbacks, and a stale
+          // generation callback silently no-op'd them). Now advance through
+          // the unified ref path based on actor type:
+          //   player        → advanceTurnRef.current()
+          //   summon-control→ clearSummonControl() (already called above) then advanceTurnRef.current()
+          //   enemy         → advanceTurnRef.current() (force-advance; the
+          //                   enemy executor's own timeouts are the ceiling,
+          //                   but a stalled executor must not freeze the turn)
+          // All three routes converge on advanceTurnRef.current(); the
+          // clearSummonControl() above is a no-op for non-summon actors.
+          advanceTurnRef.current();
           return timerStart;
         }
         return prev - 1;
@@ -14007,7 +14219,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         timerIntervalRef.current = null;
       }
     };
-  }, [inBattle, currentTurnIndex, isTimeWarp]);
+    // SECTION 3 (build #347) — added activeControlledSummonId to the deps so
+    // the timer re-arms (and resets to the full 30s / 15s-in-warp duration)
+    // when control shifts to a player-controlled summon. Previously the timer
+    // only re-armed when currentTurnIndex changed; a summon dispatch that
+    // didn't advance currentTurnIndex left the timer showing the prior
+    // actor's remaining seconds (e.g. "2s") instead of resetting to full.
+  }, [inBattle, currentTurnIndex, isTimeWarp, activeControlledSummonId]);
 
   // SECTION 4 (build #325): thread the live debug context up to the parent
   // (GameFlow → ChatPanel export-report builder). Fires whenever the battle
@@ -14134,6 +14352,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
     enemyTurnInProgressRef.current = true;
+    logDebugInfo("TURN", "[FLOW] dispatch→executor-start", {
+      actorId: enemyId,
+    });
     // SECTION 3 — FIX (b): the executor has started, so the dispatch-time
     // watchdog is no longer needed. Clear it (and drop it from the pending
     // set) so it cannot fire after the executor is running. The executor's
@@ -15778,6 +15999,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // SECTION 2a — WATCHDOG FIX: decide returned an intent; mark it so
           // the watchdog knows the decide phase completed successfully.
           aiPhaseRef.current = "intent-produced";
+          logDebugInfo("TURN", "[FLOW] executor→intent", { actorId: enemyId });
           // 3e: short-circuit the enemy turn when a summoner casts a summon
           // spell — the spawn is applied via spawnEnemySummonRef, the turn
           // is handed off to the next combatant, and we return before the
@@ -15832,6 +16054,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // SECTION 2a — WATCHDOG FIX: mark apply phase start so the watchdog
           // can report phase-of-failure if an apply/cast/melee branch hangs.
           aiPhaseRef.current = "apply-started";
+          logDebugInfo("TURN", "[FLOW] intent→apply", { actorId: enemyId });
           // ── Apply spell cast ──────────────────────────────────────────────
           if (action.kind === "cast" && chosenSpell) {
             const spellRange = Number(chosenSpell.range);
@@ -16389,6 +16612,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // enemy-phase gate is open.
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
+            logDebugInfo("TURN", "[FLOW] apply→advance-called", {
+              actorId: enemyId,
+            });
             clearEnemyTurnFlagAndAdvance();
             advanced = true;
           } else {

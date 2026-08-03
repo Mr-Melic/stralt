@@ -44044,7 +44044,7 @@ function getGeometrySnapshot(input) {
     spriteRectsSummary: { count: count2, ids }
   };
 }
-const APP_BUILD = "#346";
+const APP_BUILD = "#347";
 function esc(s2) {
   return s2.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -44151,6 +44151,65 @@ function invariantRows(rec) {
   });
   return rows;
 }
+const MECHANICS_MAP_ROWS = [
+  {
+    mechanic: "battle-init",
+    trigger: "flushSync commit → unconditional entry-0 dispatch → scheduleEnemyExecutor",
+    chain: "flushSync → setBattlePhase → scheduleEnemyExecutorRef.current"
+  },
+  {
+    mechanic: "dispatch→executor→intent→apply→advance",
+    trigger: "scheduleEnemyExecutor fires → decideEnemyAction returns → effect applied → advanceTurn called",
+    chain: "scheduleEnemyExecutor → decideEnemyAction → executeIntent/applyEffect → advanceTurn"
+  },
+  {
+    mechanic: "death→reconcile→victory",
+    trigger: "combatant hp ≤ 0 → death pipeline → battle-end gate",
+    chain: "processCombatantDeath → reconcileBattleState → handleBattleEnd"
+  },
+  {
+    mechanic: "timer→expiry→advance",
+    trigger: "30s/15s interval elapses → expiry callback → advanceTurnRef",
+    chain: "setInterval expiry → clearSummonControl → advanceTurnRef.current"
+  },
+  {
+    mechanic: "summon-control→input routing→cleanup",
+    trigger: "summon-control route → spell select/cast → clearSummonControl → advance",
+    chain: "summon-control route → setSelectedSummonSpellId → clearSummonControl → advanceTurn"
+  }
+];
+function buildMechanicsMap() {
+  const lines = [];
+  lines.push("--- MECHANICS MAP (static battle-flow chains) ---");
+  lines.push("");
+  const mechanicW = 38;
+  const triggerW = 60;
+  const chainW = 60;
+  const header = `  ${"MECHANIC".padEnd(mechanicW)}  ${"TRIGGER".padEnd(triggerW)}  ${"HANDLER CHAIN".padEnd(chainW)}`;
+  const sep = `  ${"-".repeat(mechanicW)}  ${"-".repeat(triggerW)}  ${"-".repeat(chainW)}`;
+  lines.push(header);
+  lines.push(sep);
+  for (const row of MECHANICS_MAP_ROWS) {
+    lines.push(
+      `  ${row.mechanic.padEnd(mechanicW)}  ${row.trigger.padEnd(triggerW)}  ${row.chain.padEnd(chainW)}`
+    );
+  }
+  lines.push("");
+  lines.push(
+    "  NOTE: match the LAST [FLOW] edge reached in the debug log buffer against"
+  );
+  lines.push("  the chain above to localize a freeze in one read.");
+  lines.push("");
+  return lines.join("\n");
+}
+function buildMechanicsMapHtml() {
+  const rows = MECHANICS_MAP_ROWS.map(
+    (r2) => `<tr><td>${esc(r2.mechanic)}</td><td>${esc(r2.trigger)}</td><td>${esc(r2.chain)}</td></tr>`
+  ).join("");
+  return `<h2>Mechanics Map (static battle-flow chains)</h2>
+<table><tr><th>Mechanic</th><th>Trigger</th><th>Handler chain</th></tr>${rows}</table>
+<div class="meta">Match the LAST [FLOW] edge reached in the debug log buffer against the chain above to localize a freeze in one read.</div>`;
+}
 function buildDebugReportText(ctx) {
   var _a3, _b3, _c2;
   const now2 = (/* @__PURE__ */ new Date()).toISOString();
@@ -44197,6 +44256,7 @@ function buildDebugReportText(ctx) {
     `Turn order ids (${turnIds.length}): ${turnIds.join(", ") || "(none)"}`
   );
   lines.push("");
+  lines.push(buildMechanicsMap());
   const buffer = ((_a3 = ctx == null ? void 0 : ctx.getDebugLogBuffer) == null ? void 0 : _a3.call(ctx)) ?? [];
   lines.push("--- DEBUG LOG BUFFER (ALL CATEGORIES) ---");
   lines.push(`Total entries: ${buffer.length}`);
@@ -44364,6 +44424,7 @@ function buildDebugReportHtml(ctx) {
 <table><tr><th>id</th><th>side</th><th>isSummon</th><th>hp</th><th>pos</th></tr>${combatantRows || '<tr><td colspan="5">(none reported)</td></tr>'}</table>
 <h3>Turn order ids</h3>
 <div>${esc(turnIds)}</div>
+${buildMechanicsMapHtml()}
 <h2>Debug Log Buffer (ALL categories, ${buffer.length} entries)</h2>
 <table><tr><th>Timestamp</th><th>Category</th><th>Level</th><th>Message</th></tr>${logRows || '<tr><td colspan="4">(empty)</td></tr>'}</table>
 <h2>Click Geometry Traces (${clickBuffer.length})</h2>
@@ -63986,15 +64047,37 @@ const WorldExplorationInner = ({
     []
   );
   const generateRandomWalkablePosition = reactExports.useCallback(
-    (tiles, currentX, currentY, range) => {
-      var _a4;
+    (tiles, currentX, currentY, range, selfId) => {
       const attempts = 50;
+      const voidSet = (currentMap == null ? void 0 : currentMap.voidTiles) ?? /* @__PURE__ */ new Set();
+      const portalSet = /* @__PURE__ */ new Set();
+      for (const p2 of (currentMap == null ? void 0 : currentMap.portals) ?? []) {
+        portalSet.add(`${p2.x},${p2.y}`);
+      }
+      const walkableGrid = tiles.map(
+        (row) => row.map((t) => t === "floor")
+      );
       for (let i = 0; i < attempts; i++) {
         const deltaX = Math.floor(Math.random() * (range * 2 + 1)) - range;
         const deltaY = Math.floor(Math.random() * (range * 2 + 1)) - range;
         const newX = currentX + deltaX;
         const newY = currentY + deltaY;
-        if (newX >= 0 && newX < WORLD_GRID_SIZE && newY >= 0 && newY < WORLD_GRID_SIZE && tiles[newY][newX] === "floor" && !((_a4 = currentMap == null ? void 0 : currentMap.voidTiles) == null ? void 0 : _a4.has(`${newX},${newY}`)) && (newX !== currentX || newY !== currentY)) {
+        if (newX === currentX && newY === currentY) continue;
+        const occCtx = {
+          tiles: walkableGrid,
+          barriers: /* @__PURE__ */ new Set(),
+          voidTiles: voidSet,
+          portals: portalSet,
+          isOccupied: (cell) => {
+            if (cell.x === playerPositionRef.current.x && cell.y === playerPositionRef.current.y) {
+              return true;
+            }
+            return enemiesRef.current.some(
+              (e) => e.id !== selfId && e.x === cell.x && e.y === cell.y
+            );
+          }
+        };
+        if (isCellFree({ x: newX, y: newY }, occCtx)) {
           return { x: newX, y: newY };
         }
       }
@@ -64048,7 +64131,20 @@ const WorldExplorationInner = ({
     (tiles, portals, dungeonDepth = 0, voidTilesParam) => {
       const dungeonExtraEnemies = [0, 2, 3, 4, 4, 5][Math.min(dungeonDepth, 5)];
       const dungeonTierBoost = [0, 1, 2, 2, 3, 3][Math.min(dungeonDepth, 5)];
-      const enemyCount = Math.floor(Math.random() * 8) + 1 + dungeonExtraEnemies;
+      const distRoll = Math.random();
+      let enemyCount;
+      let includeBoss = false;
+      if (distRoll < 0.3) {
+        enemyCount = 1;
+      } else if (distRoll < 0.7) {
+        enemyCount = 2 + Math.floor(Math.random() * 2);
+      } else if (distRoll < 0.9) {
+        enemyCount = 4 + Math.floor(Math.random() * 3);
+      } else {
+        enemyCount = 2 + Math.floor(Math.random() * 5);
+        includeBoss = true;
+      }
+      enemyCount += dungeonExtraEnemies;
       const enemies2 = [];
       const chessPieceTypes = [
         "king",
@@ -64255,6 +64351,73 @@ const WorldExplorationInner = ({
           en.aiTier = computeAITier(en.level ?? 1);
         }
       }
+      if (includeBoss) {
+        const bossConf = DEFAULT_BOSS_CONFIGS[Math.floor(Math.random() * DEFAULT_BOSS_CONFIGS.length)];
+        const bossPos = generateRandomWalkablePosition(
+          tiles,
+          Math.floor(WORLD_GRID_SIZE / 2),
+          Math.floor(WORLD_GRID_SIZE / 2),
+          Math.floor(WORLD_GRID_SIZE / 2) - 2
+        );
+        const bx = (bossPos == null ? void 0 : bossPos.x) ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+        const by = (bossPos == null ? void 0 : bossPos.y) ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+        const bossLevel = Math.max(1, (characterStats.level ?? 1) + 5);
+        const bossHp = Math.max(
+          1,
+          bossConf.baseStats.hp ?? Math.round(bossLevel * 50 + 200)
+        );
+        const bossAtk = Math.max(
+          1,
+          bossConf.baseStats.atk ?? Math.round(bossLevel * 4 + 10)
+        );
+        enemies2.push({
+          id: `boss_${bossConf.id}_${Date.now()}`,
+          x: bx,
+          y: by,
+          pieceType: bossConf.pieceType,
+          currentView: "front",
+          isMoving: false,
+          movementPath: [],
+          currentStepIndex: 0,
+          movementStartTime: 0,
+          initialDelay: 500,
+          spawnTime: Date.now(),
+          scaleX: 1.4,
+          scaleY: 1.4,
+          level: bossLevel,
+          nextMoveTime: Date.now() + 1e3,
+          movementSpeed: 700,
+          movementRange: 2,
+          isWandering: false,
+          wanderTarget: null,
+          lastMoveTime: Date.now(),
+          hp: bossHp,
+          maxHp: bossHp,
+          damage: bossAtk,
+          res: Math.min(50, bossConf.baseStats.res),
+          sp: Math.min(50, bossConf.baseStats.sp),
+          chc: bossConf.baseStats.chc,
+          init: bossConf.baseStats.init ?? Math.max(1, 8 + bossLevel - 1),
+          sr: 10,
+          assignedName: bossConf.name,
+          isLeader: true,
+          family: "boss",
+          isBoss: true,
+          bossId: bossConf.id
+        });
+        const freshBossState = initBossState(bossConf.id);
+        bossStateRef.current = freshBossState;
+        setCurrentBossId(bossConf.id);
+        setActiveBossState(freshBossState);
+        setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConf.name}`);
+        if (bossEncounterBannerTimerRef.current !== null) {
+          clearTimeout(bossEncounterBannerTimerRef.current);
+        }
+        bossEncounterBannerTimerRef.current = window.setTimeout(() => {
+          bossEncounterBannerTimerRef.current = null;
+          setBossEncounterBanner(null);
+        }, 1500);
+      }
       return enemies2;
     },
     [
@@ -64262,7 +64425,8 @@ const WorldExplorationInner = ({
       isAdjacentToPortal,
       generateEnemyScaleFactors,
       enemyNamesFromQuery,
-      pieceType
+      pieceType,
+      generateRandomWalkablePosition
     ]
   );
   const updateCameraToFollowPlayer = reactExports.useCallback(() => {
@@ -65097,7 +65261,8 @@ const WorldExplorationInner = ({
           currentMap.tiles,
           enemy.x,
           enemy.y,
-          enemy.movementRange
+          enemy.movementRange,
+          enemy.id
         );
         if (target) {
           const path = findPath({ x: enemy.x, y: enemy.y }, target);
@@ -68567,6 +68732,7 @@ const WorldExplorationInner = ({
   }, [cleanupBattle]);
   const battleInitInProgressRef = reactExports.useRef(false);
   const checkBattleTrigger = reactExports.useCallback(() => {
+    var _a4, _b4, _c3, _d3;
     if (inBattle || inBattleRef.current || transitionInProgressRef.current)
       return;
     if (battleTriggerCooldownRef.current) return;
@@ -68810,8 +68976,8 @@ const WorldExplorationInner = ({
             inBattle: true,
             victoryFiredThisBattleRef,
             triggerVictory: () => {
-              var _a4;
-              return (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
+              var _a5;
+              return (_a5 = handleBattleEndRef.current) == null ? void 0 : _a5.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
             }
           });
         });
@@ -68823,6 +68989,46 @@ const WorldExplorationInner = ({
             stage: "flushSync-committed"
           }
         );
+        logDebugInfo("TURN", "[TURN] battle-init position: first-dispatch", {
+          appBuild: APP_BUILD,
+          stage: "first-dispatch",
+          entryId: (_a4 = orderWithLeader[0]) == null ? void 0 : _a4.id,
+          entryType: (_b4 = orderWithLeader[0]) == null ? void 0 : _b4.type,
+          entrySide: (_c3 = orderWithLeader[0]) == null ? void 0 : _c3.side,
+          isSummon: !!((_d3 = orderWithLeader[0]) == null ? void 0 : _d3.isSummon)
+        });
+        const _firstEntry = orderWithLeader[0];
+        if (_firstEntry && _firstEntry.type !== "player" && !(_firstEntry.isSummon && _firstEntry.side === "player")) {
+          const _firstAIGeneration = aiGenerationRef.current;
+          const _firstDispatchWatchdog = setTimeout(() => {
+            var _a5;
+            if (((_a5 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a5.id) !== _firstEntry.id)
+              return;
+            if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
+              return;
+            if (aiGenerationRef.current !== _firstAIGeneration) return;
+            turnEndReasonRef.current = "pre-executor-stall";
+            logDebugInfo("TURN", "watchdog-advance", {
+              phase: "battle-init-first-dispatch",
+              entryId: _firstEntry.id
+            });
+            advanceTurnRef.current();
+          }, 3e3);
+          dispatchWatchdogRef.current = _firstDispatchWatchdog;
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(_firstDispatchWatchdog);
+          }
+          try {
+            scheduleEnemyExecutorRef.current(_firstEntry.id);
+          } catch (error) {
+            logDebugError("TURN", "[TURN] battle-init-error", {
+              stage: "first-dispatch",
+              error: String(error),
+              appBuild: APP_BUILD
+            });
+            throw error;
+          }
+        }
       } catch (error) {
         logDebugError("TURN", "[TURN] battle-init-error", {
           stage: "battle-init-flushSync",
@@ -70072,19 +70278,14 @@ const WorldExplorationInner = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current
             });
-            logDebugInfo(
-              "TURN",
-              "[TURN] battle-init position: first-dispatch",
-              {
-                appBuild: APP_BUILD,
-                stage: "first-dispatch"
-              }
-            );
             try {
+              logDebugInfo("TURN", "[FLOW] advance→dispatch", {
+                actorId: nextCombatant.id
+              });
               scheduleEnemyExecutorRef.current(nextCombatant.id);
             } catch (error) {
-              logDebugError("TURN", "[TURN] battle-init-error", {
-                stage: "first-dispatch",
+              logDebugError("TURN", "[TURN] dispatch-error", {
+                stage: "enemy-ai-executor",
                 error: String(error),
                 appBuild: APP_BUILD
               });
@@ -70180,19 +70381,33 @@ const WorldExplorationInner = ({
     const timerStart = isTimeWarp ? 15 : 30;
     setTurnTimeLeft(timerStart);
     timerIntervalRef.current = setInterval(() => {
-      if (turnTimerGenerationRef.current !== myGeneration) return;
+      var _a5;
+      if (turnTimerGenerationRef.current !== myGeneration) {
+        logDebugInfo("TURN", "[TURN] timer-expiry-aborted", {
+          actor: ((_a5 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a5.id) ?? null,
+          myGen: myGeneration,
+          curGen: turnTimerGenerationRef.current,
+          appBuild: APP_BUILD
+        });
+        return;
+      }
       setTurnTimeLeft((prev) => {
-        var _a5;
         if (prev <= 1) {
           if (timerIntervalRef.current) {
             clearInterval(timerIntervalRef.current);
             timerIntervalRef.current = null;
           }
           turnEndReasonRef.current = "timer-expiry";
+          const _expiryActor = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
+          logDebugInfo("TURN", "[TURN] timer-expiry-fired", {
+            actor: (_expiryActor == null ? void 0 : _expiryActor.id) ?? null,
+            actorType: (_expiryActor == null ? void 0 : _expiryActor.type) ?? null,
+            actorSide: (_expiryActor == null ? void 0 : _expiryActor.side) ?? null,
+            isSummon: !!(_expiryActor == null ? void 0 : _expiryActor.isSummon),
+            appBuild: APP_BUILD
+          });
           clearSummonControl();
-          if (((_a5 = turnOrderRef.current[currentTurnIndexRef.current]) == null ? void 0 : _a5.type) === "player") {
-            advanceTurnRef.current();
-          }
+          advanceTurnRef.current();
           return timerStart;
         }
         return prev - 1;
@@ -70204,7 +70419,7 @@ const WorldExplorationInner = ({
         timerIntervalRef.current = null;
       }
     };
-  }, [inBattle, currentTurnIndex, isTimeWarp]);
+  }, [inBattle, currentTurnIndex, isTimeWarp, activeControlledSummonId]);
   reactExports.useEffect(() => {
     if (!onDebugContextChange) return;
     onDebugContextChange({
@@ -70292,6 +70507,9 @@ const WorldExplorationInner = ({
     const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
     enemyTurnInProgressRef.current = true;
+    logDebugInfo("TURN", "[FLOW] dispatch→executor-start", {
+      actorId: enemyId
+    });
     if (dispatchWatchdogRef.current) {
       clearTimeout(dispatchWatchdogRef.current);
       pendingTimeoutsRef.current.delete(dispatchWatchdogRef.current);
@@ -71512,6 +71730,7 @@ const WorldExplorationInner = ({
             aiCtx
           ) : decideEnemyAction(enemy, aiCtx);
           aiPhaseRef.current = "intent-produced";
+          logDebugInfo("TURN", "[FLOW] executor→intent", { actorId: enemyId });
           if (action.kind === "cast" && ((_g2 = action.spell) == null ? void 0 : _g2.isSummon) && action.destination) {
             (_h2 = spawnEnemySummonRef.current) == null ? void 0 : _h2.call(spawnEnemySummonRef, action.destination, action.spell);
             enemySummonCooldownRef.current.set(enemyId, battleTurn);
@@ -71534,6 +71753,7 @@ const WorldExplorationInner = ({
           }
           let didAct = false;
           aiPhaseRef.current = "apply-started";
+          logDebugInfo("TURN", "[FLOW] intent→apply", { actorId: enemyId });
           if (action.kind === "cast" && chosenSpell) {
             const spellRange = Number(chosenSpell.range);
             const distAM = Math.max(
@@ -72005,6 +72225,9 @@ const WorldExplorationInner = ({
         } finally {
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
+            logDebugInfo("TURN", "[FLOW] apply→advance-called", {
+              actorId: enemyId
+            });
             clearEnemyTurnFlagAndAdvance();
             advanced = true;
           } else {
@@ -77318,7 +77541,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-CowCbUZE.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-D61mKlla.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

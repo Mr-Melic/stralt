@@ -36,7 +36,7 @@ import type { DebugLogEntry } from "./debugLogger";
  * SECTION 4 (build #329): moved here from ChatPanel.tsx and bumped from
  * "#325" to "#329".
  */
-export const APP_BUILD = "#346";
+export const APP_BUILD = "#347";
 
 /**
  * Existing debug context fields threaded in from the parent
@@ -304,15 +304,116 @@ function invariantRows(rec: ClickTraceRecord): InvariantRow[] {
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */
+/*  MECHANICS MAP (static battle-flow documentation)                      */
+/* ─────────────────────────────────────────────────────────────────────── */
+
+/**
+ * SECTION 6a — MECHANICS MAP: static documentation of the five core battle
+ * mechanic chains. This is a STATIC generated table — it does not change at
+ * runtime and does not read any state. Each row documents one mechanic →
+ * trigger → handler chain (function names) so a freeze can be diagnosed by
+ * matching the LAST [FLOW] edge reached (see WorldExploration.tsx) against
+ * the chain that should have run next.
+ *
+ * The five chains mirror the [FLOW] edge tracing in WorldExploration.tsx:
+ *   1. battle-init  → first dispatch
+ *   2. dispatch     → executor → intent → apply → advance
+ *   3. death        → reconcile → victory
+ *   4. timer        → expiry → advance
+ *   5. summon-control → input routing → cleanup
+ */
+const MECHANICS_MAP_ROWS: ReadonlyArray<{
+  mechanic: string;
+  trigger: string;
+  chain: string;
+}> = [
+  {
+    mechanic: "battle-init",
+    trigger:
+      "flushSync commit → unconditional entry-0 dispatch → scheduleEnemyExecutor",
+    chain: "flushSync → setBattlePhase → scheduleEnemyExecutorRef.current",
+  },
+  {
+    mechanic: "dispatch→executor→intent→apply→advance",
+    trigger:
+      "scheduleEnemyExecutor fires → decideEnemyAction returns → effect applied → advanceTurn called",
+    chain:
+      "scheduleEnemyExecutor → decideEnemyAction → executeIntent/applyEffect → advanceTurn",
+  },
+  {
+    mechanic: "death→reconcile→victory",
+    trigger: "combatant hp ≤ 0 → death pipeline → battle-end gate",
+    chain: "processCombatantDeath → reconcileBattleState → handleBattleEnd",
+  },
+  {
+    mechanic: "timer→expiry→advance",
+    trigger: "30s/15s interval elapses → expiry callback → advanceTurnRef",
+    chain: "setInterval expiry → clearSummonControl → advanceTurnRef.current",
+  },
+  {
+    mechanic: "summon-control→input routing→cleanup",
+    trigger:
+      "summon-control route → spell select/cast → clearSummonControl → advance",
+    chain:
+      "summon-control route → setSelectedSummonSpellId → clearSummonControl → advanceTurn",
+  },
+];
+
+/**
+ * Returns the MECHANICS MAP as a formatted plain-text table. Static — no
+ * runtime state is read. Used by buildDebugReportText.
+ */
+function buildMechanicsMap(): string {
+  const lines: string[] = [];
+  lines.push("--- MECHANICS MAP (static battle-flow chains) ---");
+  lines.push("");
+  // Column widths chosen so the longest mechanic/trigger/chain fit without
+  // wrapping for the five documented rows.
+  const mechanicW = 38;
+  const triggerW = 60;
+  const chainW = 60;
+  const header = `  ${"MECHANIC".padEnd(mechanicW)}  ${"TRIGGER".padEnd(triggerW)}  ${"HANDLER CHAIN".padEnd(chainW)}`;
+  const sep = `  ${"-".repeat(mechanicW)}  ${"-".repeat(triggerW)}  ${"-".repeat(chainW)}`;
+  lines.push(header);
+  lines.push(sep);
+  for (const row of MECHANICS_MAP_ROWS) {
+    lines.push(
+      `  ${row.mechanic.padEnd(mechanicW)}  ${row.trigger.padEnd(triggerW)}  ${row.chain.padEnd(chainW)}`,
+    );
+  }
+  lines.push("");
+  lines.push(
+    "  NOTE: match the LAST [FLOW] edge reached in the debug log buffer against",
+  );
+  lines.push("  the chain above to localize a freeze in one read.");
+  lines.push("");
+  return lines.join("\n");
+}
+
+/**
+ * Returns the MECHANICS MAP as an HTML table block (for buildDebugReportHtml).
+ * Static — no runtime state is read.
+ */
+function buildMechanicsMapHtml(): string {
+  const rows = MECHANICS_MAP_ROWS.map(
+    (r) =>
+      `<tr><td>${esc(r.mechanic)}</td><td>${esc(r.trigger)}</td><td>${esc(r.chain)}</td></tr>`,
+  ).join("");
+  return `<h2>Mechanics Map (static battle-flow chains)</h2>
+<table><tr><th>Mechanic</th><th>Trigger</th><th>Handler chain</th></tr>${rows}</table>
+<div class="meta">Match the LAST [FLOW] edge reached in the debug log buffer against the chain above to localize a freeze in one read.</div>`;
+}
+
+/* ─────────────────────────────────────────────────────────────────────── */
 /*  Plain-text report                                                     */
 /* ─────────────────────────────────────────────────────────────────────── */
 
 /**
  * Builds the plain-text export report body. Includes app build, timestamp,
- * character summary, current map, battle state summary, ALL buffered log
- * lines (full messages + timestamps), the CLICK GEOMETRY TRACES section
- * (one block per buffered click trace), and the ALWAYS-included GEOMETRY
- * SNAPSHOT section.
+ * character summary, current map, battle state summary, the MECHANICS MAP
+ * (static battle-flow chains), ALL buffered log lines (full messages +
+ * timestamps), the CLICK GEOMETRY TRACES section (one block per buffered
+ * click trace), and the ALWAYS-included GEOMETRY SNAPSHOT section.
  *
  * Completeness beats beauty — every log line and every click trace is
  * included.
@@ -368,6 +469,12 @@ export function buildDebugReportText(ctx: ExportContext | undefined): string {
     `Turn order ids (${turnIds.length}): ${turnIds.join(", ") || "(none)"}`,
   );
   lines.push("");
+
+  // SECTION 6a — MECHANICS MAP: static battle-flow chain documentation.
+  // Inserted between the battle state section and the debug log buffer so a
+  // freeze can be diagnosed by matching the LAST [FLOW] edge in the buffer
+  // (next section) against the chain that should have run next.
+  lines.push(buildMechanicsMap());
 
   // Debug log buffer
   const buffer = ctx?.getDebugLogBuffer?.() ?? [];
@@ -606,6 +713,7 @@ export function buildDebugReportHtml(ctx: ExportContext | undefined): string {
 <table><tr><th>id</th><th>side</th><th>isSummon</th><th>hp</th><th>pos</th></tr>${combatantRows || '<tr><td colspan="5">(none reported)</td></tr>'}</table>
 <h3>Turn order ids</h3>
 <div>${esc(turnIds)}</div>
+${buildMechanicsMapHtml()}
 <h2>Debug Log Buffer (ALL categories, ${buffer.length} entries)</h2>
 <table><tr><th>Timestamp</th><th>Category</th><th>Level</th><th>Message</th></tr>${logRows || '<tr><td colspan="4">(empty)</td></tr>'}</table>
 <h2>Click Geometry Traces (${clickBuffer.length})</h2>
