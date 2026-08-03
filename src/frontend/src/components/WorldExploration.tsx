@@ -3060,7 +3060,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Route the HP update through the combatant store so the ref mirrors
       // stay in sync; the subsequent removeCombatant (on death) filters the
       // enemy out atomically, so a separate setEnemies filter is redundant.
-      updateCombatant(combatantStoreCtx, enemyId, { hp: newHp });
+      updateCombatant(
+        combatantStoreCtx,
+        enemyId,
+        { hp: newHp },
+        "resolveSpellCast-damage",
+      );
       const _em = effectsManagerRef.current;
       _em.spawnDamageNumber(0, 0, dmg, isCrit ? "crit" : "damage");
       _em.triggerHitFlash(String(enemyId));
@@ -6019,8 +6024,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           Math.floor(WORLD_GRID_SIZE / 2),
           Math.floor(WORLD_GRID_SIZE / 2) - 2,
         );
-        const bx = bossPos?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
-        const by = bossPos?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+        // FIX 5(a) — validate walkability for the fallback coordinates.
+        // Previously the ?? fallbacks hardcoded tiles without checking they
+        // were walkable. Build a gen-time OccupancyContext (mirrors the
+        // pattern at ~line 5751) and resolve the fallback via the shared
+        // findNearestFreeCell so the boss never lands on a wall/void/portal.
+        let bx: number;
+        let by: number;
+        if (bossPos) {
+          bx = bossPos.x;
+          by = bossPos.y;
+        } else {
+          const bossOccCtx: OccupancyContext = {
+            tiles: tiles.map((row) => row.map((t) => t === "floor")),
+            barriers: new Set<string>(),
+            voidTiles: voidSet,
+            portals: new Set(portals.map((p) => `${p.x},${p.y}`)),
+            isOccupied: () => false,
+          };
+          const fallback = findNearestFreeCell(
+            {
+              x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
+              y: Math.floor(WORLD_GRID_SIZE / 2) - 3,
+            },
+            bossOccCtx,
+            Math.floor(WORLD_GRID_SIZE / 2),
+          );
+          bx = fallback?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+          by = fallback?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+        }
         const bossLevel = Math.max(1, (characterStats.level ?? 1) + 5);
         const bossHp = Math.max(
           1,
@@ -6674,6 +6706,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // ── BOSS PORTAL HANDLING ─────────────────────────────────────────
       const isBossPortalEntry =
         portal.isBossPortal === true && !!portal.bossPortalId;
+      // FIX 5(b) — local binding so the downstream enemy-spawn block reads
+      // the freshly-resolved config instead of the ref, which could be stale
+      // by the time that block runs.
+      let activeBossConfig: BossConfig | undefined;
       if (isBossPortalEntry && portal.bossPortalId) {
         // Load boss config from localStorage (admin-editable)
         const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
@@ -6686,6 +6722,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (bossConfig) {
           currentBossConfigRef.current = bossConfig;
           setCurrentBossId(bossConfig.id);
+          // FIX 5(b) — bind a local so the downstream enemy-spawn block
+          // reads the freshly-resolved config instead of the ref, which
+          // could be stale by the time that block runs.
+          activeBossConfig = bossConfig;
           // Show BOSS ENCOUNTER banner for 1.5s
           setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
           if (bossEncounterBannerTimerRef.current !== null) {
@@ -6704,14 +6744,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Generate enemies — boss maps spawn only one boss enemy, normal maps use tier system
       const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
       let newEnemies: Enemy[];
-      if (
-        isBossPortalEntry &&
-        portal.bossPortalId &&
-        currentBossConfigRef.current
-      ) {
-        const bossConf = currentBossConfigRef.current;
-        const midX = Math.floor(WORLD_GRID_SIZE / 2) + 3;
-        const midY = Math.floor(WORLD_GRID_SIZE / 2) - 3;
+      if (isBossPortalEntry && portal.bossPortalId && activeBossConfig) {
+        const bossConf = activeBossConfig;
+        const bossOccCtx: OccupancyContext = {
+          tiles: newMap.tiles.map((row) => row.map((t) => t === "floor")),
+          barriers: new Set<string>(),
+          voidTiles: newMap.voidTiles ?? new Set<string>(),
+          portals: new Set(newMap.portals.map((p) => `${p.x},${p.y}`)),
+          isOccupied: () => false,
+        };
+        const fallback = findNearestFreeCell(
+          {
+            x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
+            y: Math.floor(WORLD_GRID_SIZE / 2) - 3,
+          },
+          bossOccCtx,
+          Math.floor(WORLD_GRID_SIZE / 2),
+        );
+        const midX = fallback?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+        const midY = fallback?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
         newEnemies = [
           {
             id: `boss_${bossConf.id}_${Date.now()}`,
@@ -9339,15 +9390,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const newSp = Math.round(combatant.sp * multiplier);
           const newChc = Math.round(combatant.chc * multiplier);
           const newInit = Math.round(combatant.init * multiplier);
-          updateCombatant(combatantStoreCtx, combatant.id, {
-            maxHp: newMax,
-            hp: newHp,
-            atk: newAtk,
-            res: newRes,
-            sp: newSp,
-            chc: newChc,
-            init: newInit,
-          });
+          updateCombatant(
+            combatantStoreCtx,
+            combatant.id,
+            {
+              maxHp: newMax,
+              hp: newHp,
+              atk: newAtk,
+              res: newRes,
+              sp: newSp,
+              chc: newChc,
+              init: newInit,
+            },
+            "applyLeaderDeathBoost",
+          );
           logDebugInfo("LEADER-BOOST", "apply", {
             id: combatant.id,
             hpBefore,
@@ -9358,13 +9414,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
       },
       recheckVictory: () => {
-        if (
-          activeHostilesRemaining(combatantsRef.current) === 0 &&
-          combatantStoreCtx.battleStartIds.size > 0 &&
-          inBattle
-        ) {
-          handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []);
-        }
+        // FIX 4(b) — this used to fire handleBattleEnd directly with an
+        // EMPTY defeated list [] and WITHOUT setting victoryFiredThisBattleRef,
+        // racing the canonical victory path (reconcileBattleState, step 11
+        // of the death pipeline) which IS guarded by
+        // victoryFiredThisBattleRef and reads the populated battleDefeatedRef.
+        // The direct call here produced a phantom post-kill turn (empty
+        // recap for battle 1). Victory is now owned solely by
+        // reconcileBattleState, so this hook is a no-op retained only for
+        // call-site compatibility with the death pipeline.
       },
       attributeKillReward: (deadId) => {
         // SECTION 1c: Append the slain enemy to the per-kill defeated roster
@@ -9373,7 +9431,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // appended list. The previous implementation both overwrote
         // enemiesDefeated with a single-enemy array AND called
         // resolveBattleRewards per-kill (double-applying rewards).
-        const c = combatantsRef.current?.find((e) => e.id === deadId);
+        //
+        // FIX 4(a) — the death pipeline's remove step (removeCombatant)
+        // runs BEFORE this reward step, so by now the dead combatant is
+        // already filtered out of combatantsRef.current and a `find` would
+        // return undefined (skipping the append and producing an empty
+        // recap for battle 1). removeCombatant stashes the removed
+        // combatant in ctx.lastRemovedCombatant BEFORE its filter, so read
+        // the snapshot here instead. We still guard on deadId so a stale
+        // snapshot from a prior death can never be mis-attributed.
+        const c =
+          combatantStoreCtx.lastRemovedCombatant?.id === deadId
+            ? combatantStoreCtx.lastRemovedCombatant
+            : combatantsRef.current?.find((e) => e.id === deadId);
         if (c) {
           battleDefeatedRef.current.push({
             id: deadId,
@@ -9425,9 +9495,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       logBattleEntry,
       triggerLeaderDeathAnimRef,
       setLeaderBoostMultiplier,
-      activeHostilesRemaining,
       combatantsRef,
-      inBattle,
       handleBattleEndRef,
       battleHitsRef,
       actor,
@@ -9656,10 +9724,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setPlayerPositionSynced({ x: target.x, y: target.y });
         // Route the enemy position swap through the combatant store so the
         // ref mirrors stay atomically in sync (replaces a setEnemies map).
-        updateCombatant(combatantStoreCtx, targetEnemyId, {
-          x: oldPlayerPos.x,
-          y: oldPlayerPos.y,
-        });
+        updateCombatant(
+          combatantStoreCtx,
+          targetEnemyId,
+          {
+            x: oldPlayerPos.x,
+            y: oldPlayerPos.y,
+          },
+          "swapPositions",
+        );
       },
       placeMark: (cell: { x: number; y: number }) => {
         markedTilesRef.current.add(`${cell.x},${cell.y}`);
@@ -10083,11 +10156,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
-                  currentMp: (summon.currentMp ?? 0) - moveCost,
-                });
+                updateCombatant(
+                  combatantStoreCtx,
+                  summon.id,
+                  {
+                    x: gridPos.x,
+                    y: gridPos.y,
+                    currentMp: (summon.currentMp ?? 0) - moveCost,
+                  },
+                  "summonMove-mouse",
+                );
                 logBattleEntry(
                   `${summon.pieceType} moves ${moveCost} tiles`,
                   "#22c55e",
@@ -10675,8 +10753,48 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
       );
       if (_walkEnemy) {
-        setPlayerPositionSynced(gridPos);
-        checkBattleTriggerRef.current();
+        // Find an adjacent walkable tile (Chebyshev distance 1) to path toward.
+        const candidates = [
+          { x: gridPos.x - 1, y: gridPos.y },
+          { x: gridPos.x + 1, y: gridPos.y },
+          { x: gridPos.x, y: gridPos.y - 1 },
+          { x: gridPos.x, y: gridPos.y + 1 },
+          { x: gridPos.x - 1, y: gridPos.y - 1 },
+          { x: gridPos.x - 1, y: gridPos.y + 1 },
+          { x: gridPos.x + 1, y: gridPos.y - 1 },
+          { x: gridPos.x + 1, y: gridPos.y + 1 },
+        ];
+        const adjacentTile = candidates.find(
+          (c) =>
+            c.x >= 0 &&
+            c.y >= 0 &&
+            c.x < WORLD_GRID_SIZE &&
+            c.y < WORLD_GRID_SIZE &&
+            !(
+              c.x === playerPositionRef.current.x &&
+              c.y === playerPositionRef.current.y
+            ) &&
+            currentMap.tiles[c.y]?.[c.x] !== "wall" &&
+            !currentMap.voidTiles?.has(`${c.x},${c.y}`),
+        );
+        if (adjacentTile) {
+          const path = findPath(playerPositionRef.current, adjacentTile);
+          if (path.length > 0) {
+            setMovementPath(path);
+            setCurrentStepIndex(0);
+            setIsMoving(true);
+            movementStartTimeRef.current = Date.now();
+          } else {
+            const dx = Math.abs(adjacentTile.x - playerPositionRef.current.x);
+            const dy = Math.abs(adjacentTile.y - playerPositionRef.current.y);
+            if (dx <= 1 && dy <= 1 && dx + dy > 0) {
+              setMovementPath([adjacentTile]);
+              setCurrentStepIndex(0);
+              setIsMoving(true);
+              movementStartTimeRef.current = Date.now();
+            }
+          }
+        }
         return;
       }
       if (
@@ -10851,11 +10969,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
-                  currentMp: (summon.currentMp ?? 0) - moveCost,
-                });
+                updateCombatant(
+                  combatantStoreCtx,
+                  summon.id,
+                  {
+                    x: gridPos.x,
+                    y: gridPos.y,
+                    currentMp: (summon.currentMp ?? 0) - moveCost,
+                  },
+                  "summonMove-touch",
+                );
                 logBattleEntry(
                   `${summon.pieceType} moves ${moveCost} tiles`,
                   "#22c55e",
@@ -11976,7 +12099,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       },
     );
 
-    if (collidingEnemy && currentMap) {
+    const adjacentEnemy = getLiveCombatants(combatantStoreCtx).find(
+      (e) =>
+        isAliveCombatant(e) &&
+        Math.max(
+          Math.abs(e.x - playerPositionRef.current.x),
+          Math.abs(e.y - playerPositionRef.current.y),
+        ) === 1 &&
+        !(
+          e.x === playerPositionRef.current.x &&
+          e.y === playerPositionRef.current.y
+        ),
+    );
+
+    const triggerEnemy = collidingEnemy || adjacentEnemy;
+
+    if (triggerEnemy && currentMap) {
       // H7: Claim re-entry guard immediately — before any other work
       battleInitInProgressRef.current = true;
       // --- Debounce: block any further triggers for 600ms ---
@@ -13752,7 +13890,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ? _nextCombatant.id
         : null;
       syncExpiredSummonsFromTurnQueue(
-        enemies,
+        getLiveCombatants(combatantStoreCtx),
         turnOrderRef.current,
         turnOrderRef,
         currentTurnIndexRef,
@@ -14957,11 +15095,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // and does not accept currentAp/currentMp.
           summonEnemy.currentAp = execResult.currentAp;
           summonEnemy.currentMp = execResult.currentMp;
-          updateCombatant(combatantStoreCtx, enemyId, {
-            x: execResult.newPosition.x,
-            y: execResult.newPosition.y,
-            hp: execResult.hp,
-          });
+          updateCombatant(
+            combatantStoreCtx,
+            enemyId,
+            {
+              x: execResult.newPosition.x,
+              y: execResult.newPosition.y,
+              hp: execResult.hp,
+            },
+            "summonExecute",
+          );
           // Always advance the turn — no stalls.
           // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
           // useEffect gate (line ~10639) does not early-return on the next
@@ -15268,7 +15411,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (!cleanupRanRef.current) {
               pendingTimeoutsRef.current.add(erraticTimer);
             }
-            updateCombatant(combatantStoreCtx, enemyId, { x: erX, y: erY });
+            updateCombatant(
+              combatantStoreCtx,
+              enemyId,
+              { x: erX, y: erY },
+              "erraticMove",
+            );
             // SECTION 2 FIX: erratic branch already schedules its own advance.
             advanced = true;
             return;
@@ -15319,16 +15467,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // battleEnemies, so the explicit setBattleEnemies sync is
               // redundant and removed.
               removeCombatant(combatantStoreCtx, allyT.id);
-              updateCombatant(combatantStoreCtx, enemyId, {
-                maxHp: Math.round(
-                  (turnOrderRef.current.find((c) => c.id === enemyId)?.maxHp ??
-                    calcEnemyMaxHp(enemy.level)) * 6,
-                ),
-                hp: Math.round(
-                  (turnOrderRef.current.find((c) => c.id === enemyId)?.hp ??
-                    calcEnemyMaxHp(enemy.level)) * 6,
-                ),
-              });
+              updateCombatant(
+                combatantStoreCtx,
+                enemyId,
+                {
+                  maxHp: Math.round(
+                    (turnOrderRef.current.find((c) => c.id === enemyId)
+                      ?.maxHp ?? calcEnemyMaxHp(enemy.level)) * 6,
+                  ),
+                  hp: Math.round(
+                    (turnOrderRef.current.find((c) => c.id === enemyId)?.hp ??
+                      calcEnemyMaxHp(enemy.level)) * 6,
+                  ),
+                },
+                "betrayalEnrage",
+              );
               setEnemyHpMap((prev) => {
                 const n = { ...prev };
                 delete n[allyT.id];
@@ -15454,6 +15607,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (currentBossEntry?.isBoss && currentBossConfig) {
             // Phase transition: apply stat multiplier in same flushSync
             if (bossPhaseTransitioned && newBossStateAfterPhase) {
+              const _bossNow = turnOrderRef.current.find(
+                (c) => c.id === enemyId,
+              );
+              if (
+                !_bossNow ||
+                _bossNow.hp <= 0 ||
+                deathPipelineCtx.isCombatantRemoved(enemyId)
+              ) {
+                processCombatantDeathCb(enemyId);
+                advanced = true;
+                return;
+              }
               const mult = currentBossConfig.phase2.statMultiplier;
               // ISSUE 5 — Weeping Pawn PROMOTE_QUEEN: restore FULL HP on transition
               const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
@@ -15707,10 +15872,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }, 0);
                   if (!cleanupRanRef.current)
                     pendingTimeoutsRef.current.add(bSpellTimer);
-                  updateCombatant(combatantStoreCtx, enemyId, {
-                    x: bossSpellDest.x,
-                    y: bossSpellDest.y,
-                  });
+                  updateCombatant(
+                    combatantStoreCtx,
+                    enemyId,
+                    {
+                      x: bossSpellDest.x,
+                      y: bossSpellDest.y,
+                    },
+                    "bossSpellMove",
+                  );
                   advanced = true;
                   return;
                 }
@@ -15915,10 +16085,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 // reason before the advance.
                 turnEndReasonRef.current = "action-complete";
                 clearEnemyTurnFlagAndAdvance();
-                updateCombatant(combatantStoreCtx, enemyId, {
-                  x: newBossX,
-                  y: newBossY,
-                });
+                updateCombatant(
+                  combatantStoreCtx,
+                  enemyId,
+                  {
+                    x: newBossX,
+                    y: newBossY,
+                  },
+                  "bossEndsTurnMove",
+                );
                 advanced = true;
                 return;
               }
@@ -15950,10 +16125,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }, 0);
               if (!cleanupRanRef.current)
                 pendingTimeoutsRef.current.add(bossAdvTimer);
-              updateCombatant(combatantStoreCtx, enemyId, {
-                x: newBossX,
-                y: newBossY,
-              });
+              updateCombatant(
+                combatantStoreCtx,
+                enemyId,
+                {
+                  x: newBossX,
+                  y: newBossY,
+                },
+                "bossAdvanceMove",
+              );
               advanced = true;
               return;
             }
@@ -15995,10 +16175,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const battleEnemyData = battleEnemiesRef.current.find(
             (be) => be.id === enemyId,
           );
-          const assignedSpells = (((currentCombatant.spells?.length ?? 0) > 0
-            ? currentCombatant.spells
-            : (battleEnemyData?.spells ?? currentCombatant.spells)) ??
-            []) as SpellConfig[];
+          // SECTION 6 FIX — assignedSpells resolution must be authoritative so
+          // enemy kits are NEVER empty at decide time. The previous order
+          // (currentCombatant.spells first) returned [] when the turnOrder
+          // entry carried an empty spells array, degrading every decide to
+          // pure movement. New priority:
+          //   (1) battleEnemyData?.spells — the kit-populated source from
+          //       setBattleEnemies (WX 12301), authoritative kit array.
+          //   (2) currentCombatant.spells — turnOrder entry fallback.
+          //   (3) rebuild via buildEnemyKit(enemy.pieceType, currentMap.levelZone)
+          //       resolved through normalizedSpellPool — guarantees a populated
+          //       kit even when both live sources are empty.
+          const resolveEnemySpells = (): SpellConfig[] => {
+            if (battleEnemyData?.spells && battleEnemyData.spells.length > 0) {
+              return battleEnemyData.spells as SpellConfig[];
+            }
+            if (currentCombatant.spells && currentCombatant.spells.length > 0) {
+              return currentCombatant.spells as SpellConfig[];
+            }
+            // Both live sources empty — rebuild the kit from the piece type
+            // and level zone, resolving ids through normalizedSpellPool
+            // (same path as the kit-population site at WX 12093-12096).
+            const kitIds = buildEnemyKit(
+              enemy.pieceType,
+              currentMap?.levelZone ?? 0,
+            );
+            return kitIds
+              .map((id) => normalizedSpellPool.find((s) => s.id === id))
+              .filter((s): s is (typeof normalizedSpellPool)[number] =>
+                Boolean(s),
+              );
+          };
+          const assignedSpells = resolveEnemySpells();
           const enemyCooldownMap =
             enemyCooldownsRef.current.get(enemyId) ?? new Map<string, number>();
           const availableSpells = assignedSpells.filter(
@@ -16605,7 +16813,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // SECTION 3 — MOVE-THEN-ACT: re-evaluate for a legal attack after moving
           if (action.kind === "move" && !didAct) {
             // commit the post-move position (normal moves don't commit elsewhere)
-            updateCombatant(combatantStoreCtx, enemyId, { x: newX, y: newY });
+            updateCombatant(
+              combatantStoreCtx,
+              enemyId,
+              { x: newX, y: newY },
+              "moveThenAct",
+            );
             // re-decide with post-move position + remaining AP/MP
             const postMoveEnemy = {
               ...enemy,
@@ -17007,9 +17220,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           // Deduct the summon's AP for the cast.
           if (_summonCombatant) {
-            updateCombatant(combatantStoreCtx, _summonCombatant.id, {
-              currentAp: Math.max(0, _summonAp - _summonApCost),
-            });
+            updateCombatant(
+              combatantStoreCtx,
+              _summonCombatant.id,
+              {
+                currentAp: Math.max(0, _summonAp - _summonApCost),
+              },
+              "summonCastApDeduct",
+            );
           }
           setSelectedSummonSpellId(null);
         } catch (e) {

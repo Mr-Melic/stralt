@@ -51159,6 +51159,7 @@ function initCombatantStore(combatantsRef, enemiesRef, battleEnemiesRef, turnOrd
     battleEnemiesRef,
     turnOrderRef,
     currentTurnIndexRef,
+    lastRemovedCombatant: null,
     setEnemies,
     setBattleEnemies,
     setTurnOrder
@@ -51200,6 +51201,7 @@ function addCombatant(ctx, combatant, opts) {
 }
 function removeCombatant(ctx, id) {
   var _a3;
+  ctx.lastRemovedCombatant = ctx.combatantsRef.current.find((c2) => c2.id === id) ?? null;
   const nextCombatants = ctx.combatantsRef.current.filter((c2) => c2.id !== id);
   const nextEnemies = nextCombatants;
   ctx.battleStartIds.delete(id);
@@ -51220,8 +51222,19 @@ function removeCombatant(ctx, id) {
   ctx.setBattleEnemies(() => nextBattleEnemies);
   (_a3 = ctx.onMutation) == null ? void 0 : _a3.call(ctx);
 }
-function updateCombatant(ctx, id, patch) {
+function updateCombatant(ctx, id, patch, source) {
   var _a3;
+  if (patch.hp !== void 0) {
+    const live = ctx.combatantsRef.current.find((c2) => c2.id === id);
+    const alreadyRemoved = live === void 0;
+    const alreadyDead = live !== void 0 && live.hp <= 0;
+    if (alreadyRemoved || alreadyDead) {
+      console.log(
+        `[DEATH-TRACE] rejected-write {id: ${id}, attemptedHp: ${patch.hp}, source: ${source}}`
+      );
+      return;
+    }
+  }
   const nextCombatants = ctx.combatantsRef.current.map(
     (c2) => c2.id === id ? { ...c2, ...patch } : c2
   );
@@ -62023,7 +62036,12 @@ const WorldExplorationInner = ({
       );
       const newHp = Math.max(0, enemy.hp - _dmgAfterMods);
       setEnemyHpMap((prev) => ({ ...prev, [enemyId]: newHp }));
-      updateCombatant(combatantStoreCtx, enemyId, { hp: newHp });
+      updateCombatant(
+        combatantStoreCtx,
+        enemyId,
+        { hp: newHp },
+        "resolveSpellCast-damage"
+      );
       const _em = effectsManagerRef.current;
       _em.spawnDamageNumber(0, 0, dmg, isCrit ? "crit" : "damage");
       _em.triggerHitFlash(String(enemyId));
@@ -64372,8 +64390,30 @@ const WorldExplorationInner = ({
           Math.floor(WORLD_GRID_SIZE / 2),
           Math.floor(WORLD_GRID_SIZE / 2) - 2
         );
-        const bx = (bossPos == null ? void 0 : bossPos.x) ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
-        const by = (bossPos == null ? void 0 : bossPos.y) ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+        let bx;
+        let by;
+        if (bossPos) {
+          bx = bossPos.x;
+          by = bossPos.y;
+        } else {
+          const bossOccCtx = {
+            tiles: tiles.map((row) => row.map((t) => t === "floor")),
+            barriers: /* @__PURE__ */ new Set(),
+            voidTiles: voidSet,
+            portals: new Set(portals.map((p2) => `${p2.x},${p2.y}`)),
+            isOccupied: () => false
+          };
+          const fallback = findNearestFreeCell(
+            {
+              x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
+              y: Math.floor(WORLD_GRID_SIZE / 2) - 3
+            },
+            bossOccCtx,
+            Math.floor(WORLD_GRID_SIZE / 2)
+          );
+          bx = (fallback == null ? void 0 : fallback.x) ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+          by = (fallback == null ? void 0 : fallback.y) ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
+        }
         const bossLevel = Math.max(1, (characterStats.level ?? 1) + 5);
         const bossHp = Math.max(
           1,
@@ -64904,6 +64944,7 @@ const WorldExplorationInner = ({
       } catch {
       }
       const isBossPortalEntry = portal.isBossPortal === true && !!portal.bossPortalId;
+      let activeBossConfig;
       if (isBossPortalEntry && portal.bossPortalId) {
         const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
         const allBossConfigs = bossConfigsRaw ? JSON.parse(bossConfigsRaw) : DEFAULT_BOSS_CONFIGS;
@@ -64911,6 +64952,7 @@ const WorldExplorationInner = ({
         if (bossConfig) {
           currentBossConfigRef.current = bossConfig;
           setCurrentBossId(bossConfig.id);
+          activeBossConfig = bossConfig;
           setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
           if (bossEncounterBannerTimerRef.current !== null) {
             clearTimeout(bossEncounterBannerTimerRef.current);
@@ -64926,10 +64968,25 @@ const WorldExplorationInner = ({
       setTargetCameraOffset({ x: 0, y: 0 });
       const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
       let newEnemies;
-      if (isBossPortalEntry && portal.bossPortalId && currentBossConfigRef.current) {
-        const bossConf = currentBossConfigRef.current;
-        const midX = Math.floor(WORLD_GRID_SIZE / 2) + 3;
-        const midY = Math.floor(WORLD_GRID_SIZE / 2) - 3;
+      if (isBossPortalEntry && portal.bossPortalId && activeBossConfig) {
+        const bossConf = activeBossConfig;
+        const bossOccCtx = {
+          tiles: newMap.tiles.map((row) => row.map((t) => t === "floor")),
+          barriers: /* @__PURE__ */ new Set(),
+          voidTiles: newMap.voidTiles ?? /* @__PURE__ */ new Set(),
+          portals: new Set(newMap.portals.map((p2) => `${p2.x},${p2.y}`)),
+          isOccupied: () => false
+        };
+        const fallback = findNearestFreeCell(
+          {
+            x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
+            y: Math.floor(WORLD_GRID_SIZE / 2) - 3
+          },
+          bossOccCtx,
+          Math.floor(WORLD_GRID_SIZE / 2)
+        );
+        const midX = (fallback == null ? void 0 : fallback.x) ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
+        const midY = (fallback == null ? void 0 : fallback.y) ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
         newEnemies = [
           {
             id: `boss_${bossConf.id}_${Date.now()}`,
@@ -66895,15 +66952,20 @@ const WorldExplorationInner = ({
           const newSp = Math.round(combatant.sp * multiplier);
           const newChc = Math.round(combatant.chc * multiplier);
           const newInit = Math.round(combatant.init * multiplier);
-          updateCombatant(combatantStoreCtx, combatant.id, {
-            maxHp: newMax,
-            hp: newHp,
-            atk: newAtk,
-            res: newRes,
-            sp: newSp,
-            chc: newChc,
-            init: newInit
-          });
+          updateCombatant(
+            combatantStoreCtx,
+            combatant.id,
+            {
+              maxHp: newMax,
+              hp: newHp,
+              atk: newAtk,
+              res: newRes,
+              sp: newSp,
+              chc: newChc,
+              init: newInit
+            },
+            "applyLeaderDeathBoost"
+          );
           logDebugInfo("LEADER-BOOST", "apply", {
             id: combatant.id,
             hpBefore,
@@ -66914,14 +66976,10 @@ const WorldExplorationInner = ({
         }
       },
       recheckVictory: () => {
-        var _a4;
-        if (activeHostilesRemaining(combatantsRef.current) === 0 && combatantStoreCtx.battleStartIds.size > 0 && inBattle) {
-          (_a4 = handleBattleEndRef.current) == null ? void 0 : _a4.call(handleBattleEndRef, true, 0, battleHitsRef.current, []);
-        }
       },
       attributeKillReward: (deadId) => {
-        var _a4;
-        const c2 = (_a4 = combatantsRef.current) == null ? void 0 : _a4.find((e) => e.id === deadId);
+        var _a4, _b4;
+        const c2 = ((_a4 = combatantStoreCtx.lastRemovedCombatant) == null ? void 0 : _a4.id) === deadId ? combatantStoreCtx.lastRemovedCombatant : (_b4 = combatantsRef.current) == null ? void 0 : _b4.find((e) => e.id === deadId);
         if (c2) {
           battleDefeatedRef.current.push({
             id: deadId,
@@ -66976,9 +67034,7 @@ const WorldExplorationInner = ({
       logBattleEntry,
       triggerLeaderDeathAnimRef,
       setLeaderBoostMultiplier,
-      activeHostilesRemaining,
       combatantsRef,
-      inBattle,
       handleBattleEndRef,
       battleHitsRef,
       actor,
@@ -67152,10 +67208,15 @@ const WorldExplorationInner = ({
         if (!target) return;
         const oldPlayerPos = { ...playerPosition };
         setPlayerPositionSynced({ x: target.x, y: target.y });
-        updateCombatant(combatantStoreCtx, targetEnemyId, {
-          x: oldPlayerPos.x,
-          y: oldPlayerPos.y
-        });
+        updateCombatant(
+          combatantStoreCtx,
+          targetEnemyId,
+          {
+            x: oldPlayerPos.x,
+            y: oldPlayerPos.y
+          },
+          "swapPositions"
+        );
       },
       placeMark: (cell) => {
         markedTilesRef.current.add(`${cell.x},${cell.y}`);
@@ -67448,11 +67509,16 @@ const WorldExplorationInner = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos2.x,
-                  y: gridPos2.y,
-                  currentMp: (summon.currentMp ?? 0) - moveCost
-                });
+                updateCombatant(
+                  combatantStoreCtx,
+                  summon.id,
+                  {
+                    x: gridPos2.x,
+                    y: gridPos2.y,
+                    currentMp: (summon.currentMp ?? 0) - moveCost
+                  },
+                  "summonMove-mouse"
+                );
                 logBattleEntry(
                   `${summon.pieceType} moves ${moveCost} tiles`,
                   "#22c55e"
@@ -67869,8 +67935,40 @@ const WorldExplorationInner = ({
         (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e)
       );
       if (_walkEnemy) {
-        setPlayerPositionSynced(gridPos);
-        checkBattleTriggerRef.current();
+        const candidates = [
+          { x: gridPos.x - 1, y: gridPos.y },
+          { x: gridPos.x + 1, y: gridPos.y },
+          { x: gridPos.x, y: gridPos.y - 1 },
+          { x: gridPos.x, y: gridPos.y + 1 },
+          { x: gridPos.x - 1, y: gridPos.y - 1 },
+          { x: gridPos.x - 1, y: gridPos.y + 1 },
+          { x: gridPos.x + 1, y: gridPos.y - 1 },
+          { x: gridPos.x + 1, y: gridPos.y + 1 }
+        ];
+        const adjacentTile = candidates.find(
+          (c2) => {
+            var _a5, _b5;
+            return c2.x >= 0 && c2.y >= 0 && c2.x < WORLD_GRID_SIZE && c2.y < WORLD_GRID_SIZE && !(c2.x === playerPositionRef.current.x && c2.y === playerPositionRef.current.y) && ((_a5 = currentMap.tiles[c2.y]) == null ? void 0 : _a5[c2.x]) !== "wall" && !((_b5 = currentMap.voidTiles) == null ? void 0 : _b5.has(`${c2.x},${c2.y}`));
+          }
+        );
+        if (adjacentTile) {
+          const path = findPath(playerPositionRef.current, adjacentTile);
+          if (path.length > 0) {
+            setMovementPath(path);
+            setCurrentStepIndex(0);
+            setIsMoving(true);
+            movementStartTimeRef.current = Date.now();
+          } else {
+            const dx = Math.abs(adjacentTile.x - playerPositionRef.current.x);
+            const dy = Math.abs(adjacentTile.y - playerPositionRef.current.y);
+            if (dx <= 1 && dy <= 1 && dx + dy > 0) {
+              setMovementPath([adjacentTile]);
+              setCurrentStepIndex(0);
+              setIsMoving(true);
+              movementStartTimeRef.current = Date.now();
+            }
+          }
+        }
         return;
       }
       if (currentMap.tiles[gridPos.y][gridPos.x] !== "wall" && !((_n = currentMap.voidTiles) == null ? void 0 : _n.has(`${gridPos.x},${gridPos.y}`))) {
@@ -68026,11 +68124,16 @@ const WorldExplorationInner = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos2.x,
-                  y: gridPos2.y,
-                  currentMp: (summon.currentMp ?? 0) - moveCost
-                });
+                updateCombatant(
+                  combatantStoreCtx,
+                  summon.id,
+                  {
+                    x: gridPos2.x,
+                    y: gridPos2.y,
+                    currentMp: (summon.currentMp ?? 0) - moveCost
+                  },
+                  "summonMove-touch"
+                );
                 logBattleEntry(
                   `${summon.pieceType} moves ${moveCost} tiles`,
                   "#22c55e"
@@ -68819,7 +68922,14 @@ const WorldExplorationInner = ({
         return enemy.x === playerPositionRef.current.x && enemy.y === playerPositionRef.current.y;
       }
     );
-    if (collidingEnemy && currentMap) {
+    const adjacentEnemy = getLiveCombatants(combatantStoreCtx).find(
+      (e) => isAliveCombatant(e) && Math.max(
+        Math.abs(e.x - playerPositionRef.current.x),
+        Math.abs(e.y - playerPositionRef.current.y)
+      ) === 1 && !(e.x === playerPositionRef.current.x && e.y === playerPositionRef.current.y)
+    );
+    const triggerEnemy = collidingEnemy || adjacentEnemy;
+    if (triggerEnemy && currentMap) {
       battleInitInProgressRef.current = true;
       battleTriggerCooldownRef.current = true;
       enemyTurnInProgressRef.current = false;
@@ -70088,7 +70198,7 @@ const WorldExplorationInner = ({
       const _nextCombatant = _order[_nextIdx];
       const _activeSummonId = (_nextCombatant == null ? void 0 : _nextCombatant.isSummon) ? _nextCombatant.id : null;
       syncExpiredSummonsFromTurnQueue(
-        enemies,
+        getLiveCombatants(combatantStoreCtx),
         turnOrderRef.current,
         turnOrderRef,
         currentTurnIndexRef,
@@ -70903,11 +71013,16 @@ const WorldExplorationInner = ({
           );
           summonEnemy.currentAp = execResult.currentAp;
           summonEnemy.currentMp = execResult.currentMp;
-          updateCombatant(combatantStoreCtx, enemyId, {
-            x: execResult.newPosition.x,
-            y: execResult.newPosition.y,
-            hp: execResult.hp
-          });
+          updateCombatant(
+            combatantStoreCtx,
+            enemyId,
+            {
+              x: execResult.newPosition.x,
+              y: execResult.newPosition.y,
+              hp: execResult.hp
+            },
+            "summonExecute"
+          );
           enemyTurnInProgressRef.current = false;
           turnEndReasonRef.current = "action-complete";
           setTimeout(() => advanceTurnRef.current(), 600);
@@ -71042,7 +71157,7 @@ const WorldExplorationInner = ({
         }
       }
       reactDomExports.flushSync(() => {
-        var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2, _i2;
+        var _a4, _b4, _c3, _d3, _e3, _f3, _g2, _h2;
         let advanced = false;
         try {
           const prevEnemies = getLiveCombatants(combatantStoreCtx);
@@ -71131,7 +71246,12 @@ const WorldExplorationInner = ({
             if (!cleanupRanRef.current) {
               pendingTimeoutsRef.current.add(erraticTimer);
             }
-            updateCombatant(combatantStoreCtx, enemyId, { x: erX, y: erY });
+            updateCombatant(
+              combatantStoreCtx,
+              enemyId,
+              { x: erX, y: erY },
+              "erraticMove"
+            );
             advanced = true;
             return;
           }
@@ -71164,14 +71284,19 @@ const WorldExplorationInner = ({
                 return n;
               });
               removeCombatant(combatantStoreCtx, allyT.id);
-              updateCombatant(combatantStoreCtx, enemyId, {
-                maxHp: Math.round(
-                  (((_a4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _a4.maxHp) ?? calcEnemyMaxHp(enemy.level)) * 6
-                ),
-                hp: Math.round(
-                  (((_b4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _b4.hp) ?? calcEnemyMaxHp(enemy.level)) * 6
-                )
-              });
+              updateCombatant(
+                combatantStoreCtx,
+                enemyId,
+                {
+                  maxHp: Math.round(
+                    (((_a4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _a4.maxHp) ?? calcEnemyMaxHp(enemy.level)) * 6
+                  ),
+                  hp: Math.round(
+                    (((_b4 = turnOrderRef.current.find((c2) => c2.id === enemyId)) == null ? void 0 : _b4.hp) ?? calcEnemyMaxHp(enemy.level)) * 6
+                  )
+                },
+                "betrayalEnrage"
+              );
               setEnemyHpMap((prev) => {
                 const n = { ...prev };
                 delete n[allyT.id];
@@ -71264,6 +71389,14 @@ const WorldExplorationInner = ({
           }
           if ((currentBossEntry == null ? void 0 : currentBossEntry.isBoss) && currentBossConfig) {
             if (bossPhaseTransitioned && newBossStateAfterPhase) {
+              const _bossNow = turnOrderRef.current.find(
+                (c2) => c2.id === enemyId
+              );
+              if (!_bossNow || _bossNow.hp <= 0 || deathPipelineCtx.isCombatantRemoved(enemyId)) {
+                processCombatantDeathCb(enemyId);
+                advanced = true;
+                return;
+              }
               const mult = currentBossConfig.phase2.statMultiplier;
               const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
               setTurnOrder(
@@ -71443,10 +71576,15 @@ const WorldExplorationInner = ({
                   }, 0);
                   if (!cleanupRanRef.current)
                     pendingTimeoutsRef.current.add(bSpellTimer);
-                  updateCombatant(combatantStoreCtx, enemyId, {
-                    x: bossSpellDest.x,
-                    y: bossSpellDest.y
-                  });
+                  updateCombatant(
+                    combatantStoreCtx,
+                    enemyId,
+                    {
+                      x: bossSpellDest.x,
+                      y: bossSpellDest.y
+                    },
+                    "bossSpellMove"
+                  );
                   advanced = true;
                   return;
                 }
@@ -71626,10 +71764,15 @@ const WorldExplorationInner = ({
                 pendingTimeoutsRef.current.delete(watchdog);
                 turnEndReasonRef.current = "action-complete";
                 clearEnemyTurnFlagAndAdvance();
-                updateCombatant(combatantStoreCtx, enemyId, {
-                  x: newBossX,
-                  y: newBossY
-                });
+                updateCombatant(
+                  combatantStoreCtx,
+                  enemyId,
+                  {
+                    x: newBossX,
+                    y: newBossY
+                  },
+                  "bossEndsTurnMove"
+                );
                 advanced = true;
                 return;
               }
@@ -71648,10 +71791,15 @@ const WorldExplorationInner = ({
               }, 0);
               if (!cleanupRanRef.current)
                 pendingTimeoutsRef.current.add(bossAdvTimer);
-              updateCombatant(combatantStoreCtx, enemyId, {
-                x: newBossX,
-                y: newBossY
-              });
+              updateCombatant(
+                combatantStoreCtx,
+                enemyId,
+                {
+                  x: newBossX,
+                  y: newBossY
+                },
+                "bossAdvanceMove"
+              );
               advanced = true;
               return;
             }
@@ -71677,7 +71825,22 @@ const WorldExplorationInner = ({
           const battleEnemyData = battleEnemiesRef.current.find(
             (be2) => be2.id === enemyId
           );
-          const assignedSpells = ((((_f3 = currentCombatant.spells) == null ? void 0 : _f3.length) ?? 0) > 0 ? currentCombatant.spells : (battleEnemyData == null ? void 0 : battleEnemyData.spells) ?? currentCombatant.spells) ?? [];
+          const resolveEnemySpells = () => {
+            if ((battleEnemyData == null ? void 0 : battleEnemyData.spells) && battleEnemyData.spells.length > 0) {
+              return battleEnemyData.spells;
+            }
+            if (currentCombatant.spells && currentCombatant.spells.length > 0) {
+              return currentCombatant.spells;
+            }
+            const kitIds = buildEnemyKit(
+              enemy.pieceType,
+              (currentMap == null ? void 0 : currentMap.levelZone) ?? 0
+            );
+            return kitIds.map((id) => normalizedSpellPool.find((s2) => s2.id === id)).filter(
+              (s2) => Boolean(s2)
+            );
+          };
+          const assignedSpells = resolveEnemySpells();
           const enemyCooldownMap = enemyCooldownsRef.current.get(enemyId) ?? /* @__PURE__ */ new Map();
           const availableSpells = assignedSpells.filter(
             (s2) => (enemyCooldownMap.get(s2.id) ?? 0) <= 0 && s2.usableByEnemy !== false
@@ -71808,8 +71971,8 @@ const WorldExplorationInner = ({
           ) : decideEnemyAction(enemy, aiCtx);
           aiPhaseRef.current = "intent-produced";
           logDebugInfo("TURN", "[FLOW] executor→intent", { actorId: enemyId });
-          if (action.kind === "cast" && ((_g2 = action.spell) == null ? void 0 : _g2.isSummon) && action.destination) {
-            (_h2 = spawnEnemySummonRef.current) == null ? void 0 : _h2.call(spawnEnemySummonRef, action.destination, action.spell);
+          if (action.kind === "cast" && ((_f3 = action.spell) == null ? void 0 : _f3.isSummon) && action.destination) {
+            (_g2 = spawnEnemySummonRef.current) == null ? void 0 : _g2.call(spawnEnemySummonRef, action.destination, action.spell);
             enemySummonCooldownRef.current.set(enemyId, battleTurn);
             enemyTurnInProgressRef.current = false;
             turnEndReasonRef.current = "action-complete";
@@ -72162,7 +72325,12 @@ const WorldExplorationInner = ({
             }
           }
           if (action.kind === "move" && !didAct) {
-            updateCombatant(combatantStoreCtx, enemyId, { x: newX, y: newY });
+            updateCombatant(
+              combatantStoreCtx,
+              enemyId,
+              { x: newX, y: newY },
+              "moveThenAct"
+            );
             const postMoveEnemy = {
               ...enemy,
               x: newX,
@@ -72244,7 +72412,7 @@ const WorldExplorationInner = ({
           }
           logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
           if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
-            const enemyHazard = (_i2 = currentMap.hazardTiles) == null ? void 0 : _i2.get(`${newX},${newY}`);
+            const enemyHazard = (_h2 = currentMap.hazardTiles) == null ? void 0 : _h2.get(`${newX},${newY}`);
             if (enemyHazard) {
               if (enemyHazard === "lava") {
                 const hDmg = 8 + Math.floor(Math.random() * 8);
@@ -72505,9 +72673,14 @@ const WorldExplorationInner = ({
             "#a855f7"
           );
           if (_summonCombatant) {
-            updateCombatant(combatantStoreCtx, _summonCombatant.id, {
-              currentAp: Math.max(0, _summonAp - _summonApCost)
-            });
+            updateCombatant(
+              combatantStoreCtx,
+              _summonCombatant.id,
+              {
+                currentAp: Math.max(0, _summonAp - _summonApCost)
+              },
+              "summonCastApDeduct"
+            );
           }
           setSelectedSummonSpellId(null);
         } catch (e) {
@@ -77726,7 +77899,7 @@ const CHANGELOG_ITEMS = [
   "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
   "💰 Doka ground loot visual trails — pick up coins scattered across maps"
 ];
-const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-D9ZJzd00.js"), true ? [] : void 0));
+const AdminDashboard = reactExports.lazy(() => __vitePreload(() => import("./AdminDashboard-KiWdIvM-.js"), true ? [] : void 0));
 function SmallScreenGuard() {
   const [isSmall, setIsSmall] = reactExports.useState(() => window.innerWidth < 768);
   reactExports.useEffect(() => {

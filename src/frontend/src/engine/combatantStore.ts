@@ -86,6 +86,15 @@ export interface CombatantStoreCtx {
   turnOrderRef: TurnOrderRef;
   /** Active-turn index ref (consumed by `removeCombatantFromTurnQueue`). */
   currentTurnIndexRef: CurrentTurnIndexRef;
+  /** Snapshot of the most recently removed combatant. Populated by
+   *  {@link removeCombatant} BEFORE the filter that drops the combatant
+   *  from `combatantsRef.current`, so a downstream reader (e.g. WX
+   *  `attributeKillReward`) can still recover the dead combatant's
+   *  `pieceType` / `level` for the per-kill defeated-roster append AFTER
+   *  the death pipeline's remove step has already filtered it out.
+   *  Reset to `null` at the start of every `removeCombatant` call so a
+   *  stale snapshot can never leak across deaths. */
+  lastRemovedCombatant: Enemy | null;
   /** React state setter for the enemies array. */
   setEnemies: SetCombatants;
   /** React state setter for the battle-enemies array. */
@@ -241,6 +250,7 @@ export function initCombatantStore(
     battleEnemiesRef,
     turnOrderRef,
     currentTurnIndexRef,
+    lastRemovedCombatant: null,
     setEnemies,
     setBattleEnemies,
     setTurnOrder,
@@ -334,6 +344,16 @@ export function addCombatant(
  * its setter — preserving the assign-refs-then-set-setters ordering.
  */
 export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
+  // FIX 4(a) — snapshot the combatant being removed BEFORE the filter drops
+  // it from combatantsRef.current. The death pipeline's reward step
+  // (WX attributeKillReward) runs AFTER removeCombatant, so by then the
+  // dead combatant is already filtered out of combatantsRef.current and a
+  // `find` would return undefined. Stashing the snapshot here lets the
+  // reward step read ctx.lastRemovedCombatant instead. Reset to null first
+  // so a stale snapshot from a prior death can never leak.
+  ctx.lastRemovedCombatant =
+    ctx.combatantsRef.current.find((c) => c.id === id) ?? null;
+
   const nextCombatants = ctx.combatantsRef.current.filter((c) => c.id !== id);
   const nextEnemies = nextCombatants;
 
@@ -380,14 +400,56 @@ export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
  *   (spreading `patch` over the entry) and syncs `setTurnOrder`.
  * - Calls `setEnemies` and `setBattleEnemies` with the new arrays.
  *
+ * DEATH-PIPELINE GUARD (FIX 1, round 16):
+ *   When `patch` contains an `hp` field AND the combatant identified by
+ *   `id` is already dead (no longer in the live roster, OR still present
+ *   with `hp <= 0`), the write is REJECTED. A rejected write logs
+ *   `[DEATH-TRACE] rejected-write {id, attemptedHp, source}` and returns
+ *   without mutating any ref or setter. This is the permanent guard that
+ *   prevents a post-death HP write (e.g. a phase-transition heal that
+ *   bypassed the damage path) from resurrecting a combatant the death
+ *   pipeline already processed (or is about to process).
+ *
+ *   The guard is intentionally narrow: it only rejects patches that
+ *   carry an `hp` field. Patches that touch only position / AP / MP /
+ *   buffs on a live combatant are unaffected. A patch that carries `hp`
+ *   but targets a combatant that is alive (present in the roster with
+ *   `hp > 0`) is applied as before.
+ *
  * Atomic: all next-arrays are computed first, then refs are assigned,
  * then setters are called.
+ *
+ * @param source  Cheap string tag identifying the caller (e.g.
+ *   `"resolveSpellCast-damage"`, `"applyLeaderDeathBoost"`). Logged on a
+ *   rejected write so the offender is self-announcing.
  */
 export function updateCombatant(
   ctx: CombatantStoreCtx,
   id: string,
   patch: Partial<Enemy>,
+  source: string,
 ): void {
+  // ── DEATH-PIPELINE GUARD ─────────────────────────────────────────────
+  // Reject HP writes to a combatant that is already dead: either removed
+  // from the live roster (death pipeline already ran) or still present
+  // with hp <= 0 (death pipeline is about to run / was bypassed). This is
+  // the single chokepoint every HP write passes through, so a heal that
+  // bypassed the damage path (e.g. the boss phase-transition block that
+  // wrote setTurnOrder directly) is caught here when it later routes
+  // through the store.
+  if (patch.hp !== undefined) {
+    const live = ctx.combatantsRef.current.find((c) => c.id === id);
+    const alreadyRemoved = live === undefined;
+    const alreadyDead = live !== undefined && live.hp <= 0;
+    if (alreadyRemoved || alreadyDead) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[DEATH-TRACE] rejected-write {id: ${id}, attemptedHp: ${patch.hp}, source: ${source}}`,
+      );
+      return;
+    }
+  }
+
   const nextCombatants = ctx.combatantsRef.current.map((c) =>
     c.id === id ? { ...c, ...patch } : c,
   );
