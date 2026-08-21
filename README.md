@@ -1,0 +1,61 @@
+# Stralt
+
+Turn-based tactical RPG (Dofus-inspired combat, isometric chess-piece aesthetic) on the Internet Computer. Players explore maps, fight, summon units, enter portals, and progress through dungeon / boss-rush rooms. Persistence is backend-authoritative.
+
+Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in [`AGENTS.md`](AGENTS.md).
+
+## Repo map
+
+| Path | Role |
+| :--- | :--- |
+| `src/backend/main.mo` | Canonical Motoko actor (characters, Doka, admin config, rewards) |
+| `src/backend/migrations/` | Stable-memory migration chain (wired via root `mops.toml`) |
+| `src/backend/types/` | Shared Motoko types (`common.mo` combat, `admin.mo` config) |
+| `src/frontend/src/` | React + Vite client |
+| `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit |
+| `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
+| `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
+| `declarations/backend/` | Stale Candid snapshot (still lists `wp`/`wr`/`scp`) |
+
+Canonical build entry: root `mops.toml` → `src/backend/main.mo`.  
+`dfx.json` still points at `backend_extended/main.mo` and must not be used as the source of truth.
+
+## Quick start
+
+```bash
+pnpm install
+pnpm typecheck    # tsc --noEmit in each package
+pnpm fix          # biome --write on frontend
+pnpm build        # frontend Vite build + env.json copy
+```
+
+Regenerate the frontend actor after Motoko/Candid changes:
+
+```bash
+pnpm bindgen      # caffeine-bindgen from src/backend/dist/backend.did
+```
+
+Frontend-only mock actor (no canister):
+
+```bash
+VITE_USE_MOCK=true pnpm --filter '@caffeine/template-frontend' dev
+```
+
+This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine build` for Motoko, not `mops build`.
+
+## Doc index
+
+| Doc | Contents |
+| :--- | :--- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, public canister API, frontend flows, combat engine |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid pitfalls, deploy, debug overlay |
+| [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
+| [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
+
+## Hard rules (product)
+
+- Backend owns persisted state. `localStorage` is a cache / UI preference only.
+- Battle XP and Doka persist only through `applyRewards`. Do not write rewards via `updateCharacter`.
+- Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics.
+- Admin and debug tools stay gated. Do not ship them to normal players as first-class UI.
+- Recap UI mounts once, at app root (`App.tsx` → `PostBattleRecap`).
