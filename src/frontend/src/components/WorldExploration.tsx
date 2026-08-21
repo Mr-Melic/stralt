@@ -204,7 +204,11 @@ import {
   logDebugInfo,
   logDebugWarn,
 } from "../utils/debugLogger";
-import { RewardInput, resolveBattleRewards } from "../utils/rewardResolver";
+import {
+  RewardInput,
+  computeVictoryExp,
+  resolveBattleRewards,
+} from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -13124,13 +13128,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const bossXpMultiplier = activeBossConfForXP
             ? activeBossConfForXP.rewardXpMultiplier
             : 1;
-          const finalExp =
-            boostMode === "xp"
-              ? Math.round((expGained ?? 0) * 1.5 * bossXpMultiplier)
-              : Math.round((expGained ?? 0) * bossXpMultiplier);
-
           // Award experience and calculate Doka
           const defeated = enemiesDefeated || [];
+          // Reconcile-driven victory passes expGained=0; derive from the
+          // defeated list so applyRewards does not persist 0 XP.
+          const rawExp = computeVictoryExp(
+            expGained,
+            defeated,
+            characterStats.level || 1,
+          );
+          const finalExp =
+            boostMode === "xp"
+              ? Math.round(rawExp * 1.5 * bossXpMultiplier)
+              : Math.round(rawExp * bossXpMultiplier);
 
           // Calculate Doka per enemy with random multiplier tiers
           const dokaBreakdown: Array<{
@@ -14132,9 +14142,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         name: e.pieceType ?? "unknown",
         level: e.level ?? 1,
       }));
-      const expGained =
-        defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) ||
-        Number(characterStats.level) * 20;
+      const expGained = computeVictoryExp(
+        undefined,
+        defeatedList,
+        Number(characterStats.level) || 1,
+      );
       if (bossRushActiveRef.current) {
         handleBossRushRoomClear();
       } else {
