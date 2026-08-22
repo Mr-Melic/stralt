@@ -16449,28 +16449,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   0,
                   MAX_ENEMIES - combatantsRef.current.length,
                 );
-                const _newMinionEnemies = [
-                  ...combatantsRef.current,
-                  ...minionEnemies.slice(0, _spawnSlots),
-                ];
-                syncCombatants(combatantStoreCtx, _newMinionEnemies);
-                const minionEntries: CombatantEntry[] = minionEnemies.map(
-                  (m) => ({
-                    id: m.id,
-                    type: "enemy",
-                    initiative: 6,
-                    name: m.assignedName ?? "Minion",
-                    pieceIcon: "☠",
-                    hp: 20,
-                    maxHp: 20,
-                    level: m.level,
-                    pieceType: m.pieceType,
-                  }),
-                );
-                setTurnOrder((prev) => [...prev, ...minionEntries]);
+                const spawnedMinions = minionEnemies.slice(0, _spawnSlots);
+                // Incremental ADD. syncCombatants rebuilds turnOrder from
+                // store combatants only and drops the player entry (the
+                // player is not in the combatant store).
+                for (const minion of spawnedMinions) {
+                  addCombatant(combatantStoreCtx, minion, {
+                    battleParticipant: true,
+                  });
+                }
                 setEnemyHpMap((h) => {
                   const n = { ...h };
-                  for (const m of minionEnemies) n[m.id] = 20;
+                  for (const m of spawnedMinions) n[m.id] = m.hp;
                   return n;
                 });
               }
