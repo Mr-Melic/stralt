@@ -204,7 +204,11 @@ import {
   logDebugInfo,
   logDebugWarn,
 } from "../utils/debugLogger";
-import { RewardInput, resolveBattleRewards } from "../utils/rewardResolver";
+import {
+  PREAPPLIED_REWARD_MULTIPLIER,
+  buildBossRushPersistInput,
+  resolveBattleRewards,
+} from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -13238,7 +13242,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       },
                     ]
                   : [],
-                dungeonMultiplier: chainMult || 1,
+                // totalDoka already includes chainMult; re-applying it here
+                // would persist chainMult² Doka and also scale XP that the
+                // recap displayed without a dungeon multiplier.
+                dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
                 baseDoka: totalDoka || 0,
                 baseXp: finalExp || 0,
               },
@@ -13423,9 +13430,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // ── 2. REWARDS + POPUP (non-blocking, wrapped in try/catch) ──
     try {
-      const defeatedList = _battleEnemies.map((e) => ({
-        name: e.pieceType,
-        level: e.level,
+      const defeatedList = battleDefeatedRef.current.map((e) => ({
+        name: e.pieceType ?? "unknown",
+        level: e.level ?? 1,
       }));
       const expGained =
         defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) ||
@@ -13446,21 +13453,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const challengeDokaReward = 0;
       const completedChallenges: string[] = [];
 
-      // Rewards persisted via applyRewards in resolveBattleRewards
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
       const newXp = (characterStats.exp || 0) + expGained;
 
       onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
-      // Rewards persisted via applyRewards in resolveBattleRewards
-      // if (actor) {
-      //   void actor.addDoka(BigInt(totalDoka + challengeDokaReward));
-      //   void actor.updateCharacterStats({
-      //     ...characterStats,
-      //     xp: newXp,
-      //   });
-      // }
+      // Persist via the single atomic applyRewards funnel. Recap stays
+      // non-blocking; later completeBossRushRoom(slot, room, 0, 0) only
+      // records progress and must not be used to grant these rewards.
+      if (actor) {
+        void resolveBattleRewards(
+          actor,
+          characterSlot,
+          buildBossRushPersistInput({
+            enemiesDefeated: defeatedList,
+            baseDoka: totalDoka + challengeDokaReward,
+            baseXp: expGained,
+          }),
+        )
+          .then((persisted) => {
+            onDokaBalanceChange(persisted.newDoka ?? newDokaBalance);
+            setCharacterStats((prev) => ({
+              ...prev,
+              exp: persisted.newXp ?? newXp,
+              level: persisted.currentLevel || prev.level,
+            }));
+          })
+          .catch((persistErr: unknown) => {
+            logDebugError(
+              "BOSS",
+              "BossRush reward persist failed",
+              String(persistErr),
+            );
+          });
+      }
 
       // Build recap data
       const finalRecapData = {

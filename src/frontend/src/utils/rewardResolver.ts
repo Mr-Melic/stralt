@@ -1,5 +1,4 @@
 import type { BattleRecapData } from "../components/PostBattleRecap";
-import { EnemyConfig } from "../types/gameTypes";
 
 export interface RewardInput {
   victory: boolean;
@@ -9,6 +8,59 @@ export interface RewardInput {
   bossRushRoomReward?: { doka: number; xp: number };
   baseDoka: number;
   baseXp: number;
+}
+
+/**
+ * Pass this when callers have already baked dungeon/boss multipliers into
+ * baseDoka / baseXp. resolveBattleRewards multiplies again otherwise.
+ */
+export const PREAPPLIED_REWARD_MULTIPLIER = 1;
+
+/** Boss-rush room totals are already final — do not re-apply dungeonMultiplier. */
+export function buildBossRushPersistInput(args: {
+  enemiesDefeated: Array<{ name: string; level: number }>;
+  baseDoka: number;
+  baseXp: number;
+}): RewardInput {
+  return {
+    victory: true,
+    enemiesDefeated: args.enemiesDefeated,
+    completedChallenges: [],
+    dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+    baseDoka: args.baseDoka,
+    baseXp: args.baseXp,
+  };
+}
+
+export function computeRewardDeltas(input: RewardInput): {
+  dokaDelta: number;
+  xpDelta: number;
+  dokaFromChallenges: number;
+} {
+  let dokaDelta = 0;
+  let xpDelta = 0;
+
+  if (input.victory) {
+    dokaDelta += Math.floor(input.baseDoka * input.dungeonMultiplier);
+    xpDelta += Math.floor(input.baseXp * input.dungeonMultiplier);
+  }
+
+  let dokaFromChallenges = 0;
+  for (const ch of input.completedChallenges) {
+    dokaFromChallenges += ch.dokaReward;
+  }
+  dokaDelta += dokaFromChallenges;
+
+  if (input.bossRushRoomReward) {
+    dokaDelta += input.bossRushRoomReward.doka;
+    xpDelta += input.bossRushRoomReward.xp;
+  }
+
+  return {
+    dokaDelta: Math.max(0, dokaDelta),
+    xpDelta: Math.max(0, xpDelta),
+    dokaFromChallenges,
+  };
 }
 
 export async function resolveBattleRewards(
@@ -21,36 +73,9 @@ export async function resolveBattleRewards(
     enemiesDefeated,
     completedChallenges,
     dungeonMultiplier,
-    bossRushRoomReward,
     baseDoka,
-    baseXp,
   } = input;
-
-  // Compute deltas
-  let dokaDelta = 0;
-  let xpDelta = 0;
-
-  if (victory) {
-    dokaDelta += Math.floor(baseDoka * dungeonMultiplier);
-    xpDelta += Math.floor(baseXp * dungeonMultiplier);
-  }
-
-  // Challenge rewards
-  let dokaFromChallenges = 0;
-  for (const ch of completedChallenges) {
-    dokaFromChallenges += ch.dokaReward;
-  }
-  dokaDelta += dokaFromChallenges;
-
-  // Boss rush room reward
-  if (bossRushRoomReward) {
-    dokaDelta += bossRushRoomReward.doka;
-    xpDelta += bossRushRoomReward.xp;
-  }
-
-  // Ensure non-negative
-  dokaDelta = Math.max(0, dokaDelta);
-  xpDelta = Math.max(0, xpDelta);
+  const { dokaDelta, xpDelta, dokaFromChallenges } = computeRewardDeltas(input);
 
   // Call backend atomic applyRewards
   const result = await actor.applyRewards(
