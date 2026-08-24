@@ -200,6 +200,10 @@ import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
+  computeDeathPenalty,
+  persistDeathPenalty,
+} from "../utils/deathPenalty";
+import {
   logDebugError,
   logDebugInfo,
   logDebugWarn,
@@ -12976,6 +12980,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // aborted flee or a crash mid-deathRealmTimer), the next battle's death
       // would be silently swallowed. This makes the guard battle-scoped.
       deathTriggeredRef.current = false;
+      deathPenaltyAppliedRef.current = false;
       // Reset per-battle achievement tracking
       battleCritHitsRef.current = 0;
       battleBetrayalOccurredRef.current = false;
@@ -13515,6 +13520,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       inBattle: inBattleRef.current,
     });
     onDebugLog?.("PLAYER_DEATH", "Player HP reached 0");
+    // Death penalty (20% XP / 40% Doka) used to live only in the HP-watch
+    // fallback. Combat deaths go through this linchpin first and set
+    // deathTriggeredRef, so the watch never ran and the penalty was skipped.
+    // applyRewards cannot accept negative Nats — persist via saveBattleStats.
+    if (!deathPenaltyAppliedRef.current) {
+      deathPenaltyAppliedRef.current = true;
+      const stats = characterStatsRef.current;
+      const penalty = computeDeathPenalty(stats.exp, dokaBalance);
+      deathXpLostRef.current = penalty.xpLost;
+      setDeathPenalty({ xpLost: penalty.xpLost, dokaLost: penalty.dokaLost });
+      setCharacterStats((prev) => ({ ...prev, exp: penalty.newXp }));
+      onDokaBalanceChange(penalty.newDoka);
+      void persistDeathPenalty(actor, {
+        slot: characterSlot,
+        level: stats.level,
+        hp: stats.hp,
+        maxHp: stats.maxHp,
+        ap: stats.ap,
+        maxAp: stats.maxAp,
+        mp: stats.mp,
+        maxMp: stats.maxMp,
+        defense: stats.res,
+        initiative: stats.init,
+        newXp: penalty.newXp,
+        newDoka: penalty.newDoka,
+        spellLevels: spellLevelsRef.current,
+      }).catch((err) => {
+        console.error("[death-save] failed:", err);
+      });
+    }
     // ── S2: RESET ALL RUN STATE BEFORE THE DEATH FLOW PROCEEDS ──────────
     // Dying inside a dungeon or boss-rush run must end the run immediately so
     // the Death Realm map generates in free-exploration mode (no locked
@@ -13529,7 +13564,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       abortBossRush,
     });
     setShowGameOver(true);
-  }, [abortBossRush, onDebugLog]);
+  }, [
+    abortBossRush,
+    actor,
+    characterSlot,
+    dokaBalance,
+    onDebugLog,
+    onDokaBalanceChange,
+  ]);
 
   // FEATURE 1: Watch HP — send to Death Realm when HP reaches 0 in battle
   const [deathPenalty, setDeathPenalty] = useState<{
@@ -13538,19 +13580,40 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }>({ xpLost: 0, dokaLost: 0 });
   const deathXpLostRef = useRef<number>(0);
   const deathTriggeredRef = useRef(false);
+  const deathPenaltyAppliedRef = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
   useEffect(() => {
     if (!inBattle) {
       if (characterStatsRef.current.hp <= 0 && !deathTriggeredRef.current) {
         deathTriggeredRef.current = true;
-        const xpLost = Math.floor(characterStats.exp * 0.2);
-        const dokaLost = Math.floor(dokaBalance * 0.4);
-        const newXp = Math.max(0, characterStats.exp - xpLost);
-        const newDoka = Math.max(0, dokaBalance - dokaLost);
-        if (actor) {
-          actor.applyRewards(characterSlot, 0, -xpLost).catch(() => {});
-          actor.applyRewards(characterSlot, -dokaLost, 0).catch(() => {});
+        const stats = characterStatsRef.current;
+        const penalty = computeDeathPenalty(stats.exp, dokaBalance);
+        if (!deathPenaltyAppliedRef.current) {
+          deathPenaltyAppliedRef.current = true;
+          deathXpLostRef.current = penalty.xpLost;
+          setDeathPenalty({
+            xpLost: penalty.xpLost,
+            dokaLost: penalty.dokaLost,
+          });
+          void persistDeathPenalty(actor, {
+            slot: characterSlot,
+            level: stats.level,
+            hp: stats.hp,
+            maxHp: stats.maxHp,
+            ap: stats.ap,
+            maxAp: stats.maxAp,
+            mp: stats.mp,
+            maxMp: stats.maxMp,
+            defense: stats.res,
+            initiative: stats.init,
+            newXp: penalty.newXp,
+            newDoka: penalty.newDoka,
+            spellLevels: spellLevelsRef.current,
+          }).catch((err) => {
+            console.error("[death-save] failed:", err);
+          });
         }
+        const { xpLost, dokaLost, newXp, newDoka } = penalty;
         setCharacterStats((prev) => ({
           ...prev,
           exp: newXp,
@@ -13584,6 +13647,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           setInBattle(false);
           cleanupBattle();
           deathTriggeredRef.current = false;
+          deathPenaltyAppliedRef.current = false;
         }, 1500);
       }
       return;
@@ -13593,35 +13657,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     deathTriggeredRef.current = true;
     // Apply XP penalty: 20%, floored so level never decreases
     // Apply Doka penalty: 40%, min 0
-    setCharacterStats((prev) => {
-      const xpLost = Math.floor(prev.exp * 0.2);
-      const newExp = Math.max(0, prev.exp - xpLost);
-      deathXpLostRef.current = xpLost;
-      return { ...prev, exp: newExp };
-    });
-    const dokaLost = Math.floor(dokaBalance * 0.4);
-    const newDoka = Math.max(0, dokaBalance - dokaLost);
-    const xpLostAccurate = deathXpLostRef.current;
-    setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
-    if (actor) {
-      (async () => {
-        try {
-          await actor.applyRewards(
-            BigInt(characterSlot),
-            BigInt(0),
-            BigInt(-xpLostAccurate),
-          );
-          await actor.applyRewards(
-            BigInt(characterSlot),
-            BigInt(-dokaLost),
-            BigInt(0),
-          );
-        } catch (err) {
-          console.error("[death-save] failed:", err);
-        }
-      })();
+    // applyRewards takes Nat and only adds — persist the reduced totals via
+    // saveBattleStats so a reload cannot restore the pre-death balances.
+    const stats = characterStatsRef.current;
+    const penalty = computeDeathPenalty(stats.exp, dokaBalance);
+    if (!deathPenaltyAppliedRef.current) {
+      deathPenaltyAppliedRef.current = true;
+      deathXpLostRef.current = penalty.xpLost;
+      setDeathPenalty({ xpLost: penalty.xpLost, dokaLost: penalty.dokaLost });
+      setCharacterStats((prev) => ({ ...prev, exp: penalty.newXp }));
+      onDokaBalanceChange(penalty.newDoka);
+      void persistDeathPenalty(actor, {
+        slot: characterSlot,
+        level: stats.level,
+        hp: stats.hp,
+        maxHp: stats.maxHp,
+        ap: stats.ap,
+        maxAp: stats.maxAp,
+        mp: stats.mp,
+        maxMp: stats.maxMp,
+        defense: stats.res,
+        initiative: stats.init,
+        newXp: penalty.newXp,
+        newDoka: penalty.newDoka,
+        spellLevels: spellLevelsRef.current,
+      }).catch((err) => {
+        console.error("[death-save] failed:", err);
+      });
     }
-    onDokaBalanceChange(newDoka);
     // ── UNIFIED CLEANUP on defeat: terminates all timers, AI, VFX, caches
     // DEATH REALM FIX: Use cleanupMap() here (not just cleanupBattle()) so that
     // all particle refs are also fully reset before entering
