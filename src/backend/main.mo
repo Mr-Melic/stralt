@@ -225,7 +225,11 @@ actor {
             case 3 { existingSlots.slot3 };
             case _ { null };
         };
-        switch (existingChar) {
+        // Incremental WorldExploration saves (portal XP, spell upgrade, Doka
+        // heal) omit optional session fields. A full replace would wipe
+        // spellBarOrder / bossRushMasterComplete / session state. Keep the
+        // persisted value whenever the incoming optional is null.
+        let merged : Character = switch (existingChar) {
             case null { return #err("Slot " # slot.toText() # " is empty") };
             case (?ec) {
                 if (character.level < ec.level) {
@@ -234,13 +238,40 @@ actor {
                 if (character.stats.killCount < ec.stats.killCount) {
                     return #err("validation failed: killCount cannot decrease");
                 };
+                {
+                    character with
+                    bloodBalance = switch (character.bloodBalance) {
+                        case (?_) { character.bloodBalance };
+                        case null { ec.bloodBalance };
+                    };
+                    covenantBuff = switch (character.covenantBuff) {
+                        case (?_) { character.covenantBuff };
+                        case null { ec.covenantBuff };
+                    };
+                    shrineCount = switch (character.shrineCount) {
+                        case (?_) { character.shrineCount };
+                        case null { ec.shrineCount };
+                    };
+                    activeSpells = switch (character.activeSpells) {
+                        case (?_) { character.activeSpells };
+                        case null { ec.activeSpells };
+                    };
+                    spellBarOrder = switch (character.spellBarOrder) {
+                        case (?_) { character.spellBarOrder };
+                        case null { ec.spellBarOrder };
+                    };
+                    bossRushMasterComplete = switch (character.bossRushMasterComplete) {
+                        case (?_) { character.bossRushMasterComplete };
+                        case null { ec.bossRushMasterComplete };
+                    };
+                }
             };
         };
 
         let updatedSlots = switch (slot) {
-            case 1 { { existingSlots with slot1 = ?character } };
-            case 2 { { existingSlots with slot2 = ?character } };
-            case 3 { { existingSlots with slot3 = ?character } };
+            case 1 { { existingSlots with slot1 = ?merged } };
+            case 2 { { existingSlots with slot2 = ?merged } };
+            case 3 { { existingSlots with slot3 = ?merged } };
             case _ { return #err("Invalid slot number") };
         };
 

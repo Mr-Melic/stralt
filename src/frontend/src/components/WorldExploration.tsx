@@ -204,7 +204,11 @@ import {
   logDebugInfo,
   logDebugWarn,
 } from "../utils/debugLogger";
-import { RewardInput, resolveBattleRewards } from "../utils/rewardResolver";
+import {
+  RewardInput,
+  persistIncrementalRewards,
+  resolveBattleRewards,
+} from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -7190,45 +7194,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newLevel += 1;
             newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
           }
-          // Save to backend asynchronously
-          if (actor) {
-            const spellKeys = Object.keys(spellLevels);
-            const spellVals = spellKeys.map((k) => BigInt(spellLevels[k] ?? 0));
-            const portalXpUpdate = {
-              name: characterName,
-              pieceType: pieceType,
-              colors: [colors.primary, colors.secondary, colors.accent],
-              pixelPattern: "",
-              rotation: BigInt(0),
-              level: BigInt(newLevel),
-              experience: BigInt(newExp),
-              dokaBalance: BigInt(dokaBalance),
-              stats: {
-                hp: BigInt(prev.hp),
-                ap: BigInt(prev.ap),
-                mp: BigInt(prev.mp),
-                sp: BigInt(prev.sp),
-                sr: BigInt(prev.sr),
-                init: BigInt(prev.init),
-                res: BigInt(prev.res),
-                chc: BigInt(prev.chc),
-                atk: BigInt(0),
-                resilience: BigInt(0),
-                evasion: BigInt(0),
-                killCount: BigInt(character?.stats?.killCount ?? 0),
-              },
-              spellLevelKeys: spellKeys,
-              spellLevelValues: spellVals,
-            };
-            const portalXpSlot = BigInt(characterSlot);
+          // Persist portal XP through applyRewards. updateCharacter is a full
+          // replace and the payload here omitted spellBarOrder / session
+          // optionals, which wiped the arranged spell bar on every map change.
+          if (actor && characterSlot != null) {
             (async () => {
               try {
-                await actor.updateCharacter(portalXpSlot, portalXpUpdate);
-              } catch (err) {
-                console.warn("[PBV] Character save failed:", err);
-                pendingSavesRef.current.push(() =>
-                  actor.updateCharacter(portalXpSlot, portalXpUpdate),
+                const persisted = await persistIncrementalRewards(
+                  actor,
+                  characterSlot,
+                  0,
+                  PORTAL_XP,
                 );
+                setCharacterStats((p) => ({
+                  ...p,
+                  exp: persisted.newXp,
+                  level: persisted.newLevel,
+                  expToNext: Math.floor(100 * 2 ** (persisted.newLevel - 1)),
+                }));
+              } catch (err) {
+                console.warn("[PBV] Portal XP persist failed:", err);
               }
             })();
           }
