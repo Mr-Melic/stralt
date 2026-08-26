@@ -1,8 +1,8 @@
 import {
+  type ApplyRewardsActor,
   normalizeDokaCredit,
   persistDokaCredit,
-  type ApplyRewardsActor,
-} from "./rewardResolver";
+} from "./dokaPersist";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);

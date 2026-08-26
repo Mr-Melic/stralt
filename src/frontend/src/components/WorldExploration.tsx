@@ -205,8 +205,8 @@ import {
   logDebugWarn,
 } from "../utils/debugLogger";
 import {
-  persistDokaCredit,
   RewardInput,
+  persistDokaCredit,
   resolveBattleRewards,
 } from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
@@ -2871,7 +2871,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         })
         .catch((err: unknown) => {
           logDebugWarn(
-            "DOKA",
+            "BACKEND",
             "World doka credit persist failed",
             String(err),
           );
