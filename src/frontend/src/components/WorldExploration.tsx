@@ -204,7 +204,11 @@ import {
   logDebugInfo,
   logDebugWarn,
 } from "../utils/debugLogger";
-import { RewardInput, resolveBattleRewards } from "../utils/rewardResolver";
+import {
+  persistDokaCredit,
+  RewardInput,
+  resolveBattleRewards,
+} from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -2849,6 +2853,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       });
     },
     [dokaBalance, onDokaBalanceChange, actor, character, characterSlot, nsKey],
+  );
+
+  // World Doka grants (ground piles, shrine, dungeon-chain bonus) must hit
+  // applyRewards. Local onDokaBalanceChange is only a cache; GameFlow hydrates
+  // from getCallerDokaBalance on every refetch (staleTime: 0), so an
+  // unpersisted credit is permanently lost when the loot is marked collected.
+  const creditWorldDoka = useCallback(
+    (amount: number) => {
+      const credit = Math.max(0, Math.floor(amount));
+      if (credit === 0) return;
+      onDokaBalanceChange(dokaBalance + credit);
+      if (!actor) return;
+      void persistDokaCredit(actor, characterSlot, credit)
+        .then((newDoka) => {
+          onDokaBalanceChange(newDoka);
+        })
+        .catch((err: unknown) => {
+          logDebugWarn(
+            "DOKA",
+            "World doka credit persist failed",
+            String(err),
+          );
+        });
+    },
+    [actor, characterSlot, dokaBalance, onDokaBalanceChange],
   );
 
   // Character stats with experience system — restore from backend character if available
@@ -6727,7 +6756,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (currentDepth >= maxDepth) {
             // CHAIN COMPLETED — award bonus and reset
             const chainBonus = maxDepth * 50;
-            onDokaBalanceChange(dokaBalance + chainBonus);
+            creditWorldDoka(chainBonus);
             chainJustCompleted = true;
             nextDungeonDepth = 0;
             setDungeonChainActive(false);
@@ -7282,6 +7311,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     setDungeonChainMaxDepth,
     setDungeonChainBaseLevel,
     onDokaBalanceChange,
+    creditWorldDoka,
   ]);
   // NEW: Enhanced enemy movement system with visible random wandering
   const updateEnemyMovement = useCallback(() => {
@@ -11940,7 +11970,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newPos.y === shrineAltarPosRef.current.y
           ) {
             const _purePath = !shrinePathViolatedRef.current;
-            onDokaBalanceChange(dokaBalance + 300);
+            creditWorldDoka(300);
             if (_purePath) {
               covenantBuffMapsRef.current = 3;
               try {
@@ -11979,7 +12009,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           if (!hit) return prev;
           // Trigger collection
-          onDokaBalanceChange(dokaBalance + hit.value);
+          creditWorldDoka(hit.value);
           playSound("doka_collected", String(hit.value));
           // Track ground doka pickup count for achievement
           groundDokaPickupCountRef.current += 1;
@@ -12096,6 +12126,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     characterSlot,
     dokaBalance,
     onDokaBalanceChange,
+    creditWorldDoka,
     setPlayerPositionSynced,
   ]);
   // FIXED: Check portal interaction whenever player position changes
