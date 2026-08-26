@@ -57,4 +57,8 @@ export default defineConfig({
     ],
     dedupe: ["@dfinity/agent"]
   },
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts"],
+  },
 });
