@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { persistSpellUpgrade, readUpgradeSpellOk } from "./spellUpgrade.ts";
+import { createProgressPersist } from "./progressPersist.ts";
+import {
+  applySpellLevel,
+  persistSpellUpgrade,
+  readUpgradeSpellOk,
+} from "./spellUpgrade.ts";
+
+assert.deepEqual(applySpellLevel({ fireball: 1 }, "fireball", 2), {
+  fireball: 2,
+});
+assert.deepEqual(applySpellLevel({}, "heal", 1), { heal: 1 });
 
 assert.equal(readUpgradeSpellOk({ ok: 2n }), 2);
 assert.equal(readUpgradeSpellOk({ _ok: 3 }), 3);
@@ -50,5 +60,32 @@ try {
   persistThrew = String((e as Error).message).includes("Account banned");
 }
 assert.equal(persistThrew, true);
+
+// A heal queued during upgradeSpell must persist the new level, not the
+// click-time map. React setState for spellLevels runs after enqueue returns.
+{
+  const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
+  let levels: Record<string, number> = { fireball: 1 };
+  let wroteLevels: Record<string, number> | null = null;
+  let releaseUpgrade!: () => void;
+  const upgradeGate = new Promise<void>((resolve) => {
+    releaseUpgrade = resolve;
+  });
+
+  const upgrade = lock.enqueue(async () => {
+    await upgradeGate;
+    const next = applySpellLevel(levels, "fireball", 2);
+    levels = next;
+    return next;
+  });
+
+  const heal = lock.enqueue(async () => {
+    wroteLevels = { ...levels };
+  });
+
+  releaseUpgrade();
+  await Promise.all([upgrade, heal]);
+  assert.deepEqual(wroteLevels, { fireball: 2 });
+}
 
 console.log("spellUpgrade.test: ok");

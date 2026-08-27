@@ -10,6 +10,19 @@ export interface SpellUpgradeOk {
   newDoka?: number;
 }
 
+/**
+ * Apply an upgradeSpell result to the local level map.
+ * Must run inside the persist lock, before any queued saveBattleStats
+ * snapshot, or a heal/death write will persist the pre-upgrade map.
+ */
+export function applySpellLevel(
+  levels: Record<string, number>,
+  spellId: string,
+  newLevel: number,
+): Record<string, number> {
+  return { ...levels, [spellId]: newLevel };
+}
+
 export interface SpellUpgradeActor {
   upgradeSpell: (
     slot: bigint,
