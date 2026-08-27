@@ -1,5 +1,10 @@
 import { Principal } from "@dfinity/principal";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  parseBossRushStateTuple,
+  persistBossRushRoomClear,
+  resumeRoomFromPersisted,
+} from "./bossRushProgress";
 
 export interface BossRushRoom {
   roomIndex: number;
@@ -149,8 +154,12 @@ export function useBossRush(
 ) {
   const [bossRushState, setBossRushState] =
     useState<BossRushState>(INITIAL_STATE);
+  const currentRoomRef = useRef(0);
+  currentRoomRef.current = bossRushState.currentRoom;
 
-  // Load persisted Boss Rush progress from the backend on mount
+  // Cache mid-run currentRoom on mount so startBossRush can resume if the
+  // live getBossRushState call fails. Do not set active here — the world
+  // overlay must not appear until the player actually enters the portal.
   useEffect(() => {
     if (!actor || !principal) return;
     const slot = BigInt(characterSlot ?? 0);
@@ -167,22 +176,14 @@ export function useBossRush(
     (async () => {
       try {
         const result = await actor.getBossRushState?.(resolvedPrincipal, slot);
-        if (result && Array.isArray(result) && result.length >= 3) {
-          const [roomIndex, totalDoka, totalXp] = result as [
-            bigint,
-            bigint,
-            bigint,
-          ];
-          const room = Number(roomIndex);
-          if (room > 0) {
-            setBossRushState({
-              active: true,
-              currentRoom: Math.min(room, BOSS_RUSH_ROOMS.length - 1),
-              complete: room >= BOSS_RUSH_ROOMS.length,
-              totalDokaEarned: Number(totalDoka),
-              totalXpEarned: Number(totalXp),
-            });
-          }
+        const parsed = parseBossRushStateTuple(result);
+        if (!parsed) return;
+        const room = resumeRoomFromPersisted(parsed.currentRoom);
+        if (room > 0) {
+          setBossRushState((prev) => ({
+            ...prev,
+            currentRoom: room,
+          }));
         }
       } catch (e) {
         console.error("[BossRush] Failed to load state from backend:", e);
@@ -232,9 +233,59 @@ export function useBossRush(
     })();
   }, [actor]);
 
-  const startBossRush = useCallback(() => {
-    setBossRushState({ ...INITIAL_STATE, active: true });
-  }, []);
+  const startBossRush = useCallback(async (): Promise<number> => {
+    let resumeRoom = 0;
+    if (actor && principal) {
+      let resolvedPrincipal: Principal | null = null;
+      try {
+        resolvedPrincipal =
+          typeof principal === "string"
+            ? Principal.fromText(principal)
+            : (principal ?? null);
+      } catch {
+        resolvedPrincipal = null;
+      }
+      if (resolvedPrincipal) {
+        try {
+          const result = await actor.getBossRushState?.(
+            resolvedPrincipal,
+            BigInt(characterSlot ?? 0),
+          );
+          const parsed = parseBossRushStateTuple(result);
+          if (parsed) {
+            resumeRoom = resumeRoomFromPersisted(parsed.currentRoom);
+          }
+        } catch (e) {
+          console.error("[BossRush] Failed to read resume room:", e);
+        }
+      }
+    }
+    if (resumeRoom <= 0) {
+      resumeRoom = resumeRoomFromPersisted(currentRoomRef.current);
+    }
+    setBossRushState({
+      ...INITIAL_STATE,
+      active: true,
+      currentRoom: resumeRoom,
+    });
+    return resumeRoom;
+  }, [actor, characterSlot, principal]);
+
+  const persistRoomClear = useCallback(
+    async (clearedRoomIndex: number) => {
+      if (!actor) return;
+      try {
+        await persistBossRushRoomClear(
+          actor,
+          characterSlot ?? 0,
+          clearedRoomIndex,
+        );
+      } catch (e) {
+        console.error("[BossRush] Failed to persist room clear:", e);
+      }
+    },
+    [actor, characterSlot],
+  );
 
   const advanceBossRushRoom = useCallback(async () => {
     let nextRoomSnapshot = 0;
@@ -292,6 +343,7 @@ export function useBossRush(
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    persistRoomClear,
     getCurrentRoom,
     BOSS_RUSH_ROOMS,
     /** True when the final boss-rush room has been cleared (run complete). */
