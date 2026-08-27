@@ -889,6 +889,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    persistRoomClear,
     BOSS_RUSH_ROOMS,
     subscribeRunComplete,
   } = useBossRush(actor, characterSlot, userId);
@@ -5385,6 +5386,81 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return { map, spawnPosition };
   }, [characterStats?.level, arePortalsReachable, enemies.length]);
 
+  const spawnBossRushRoom = useCallback(
+    (roomIndex: number) => {
+      const roomDef = BOSS_RUSH_ROOMS[roomIndex];
+      if (!roomDef) return;
+      const { map: nextMap, spawnPosition } = generateRandomMap();
+      if (!nextMap) return;
+      currentMapRef.current = nextMap;
+      setCurrentMap(nextMap);
+      if (spawnPosition) {
+        setPlayerPositionSynced({ ...spawnPosition });
+      }
+      const newEnemies: any[] = [];
+      if (roomDef.boss1Id) {
+        newEnemies.push({
+          id: `boss-rush-${roomIndex}-0`,
+          pieceType: roomDef.boss1Name || "Boss 1",
+          x: 4,
+          y: 5,
+          level: characterStats.level + 2,
+          hp: 100,
+          maxHp: 100,
+          ap: 6,
+          mp: 3,
+          initiative: 10,
+          attack: 20,
+          defense: 10,
+          resistance: 5,
+          spells: [],
+          isBoss: true,
+          isLeader: false,
+          behavior: "aggressive",
+          family: "boss",
+          statusEffects: [],
+          activeEffects: [],
+        });
+      }
+      if (roomDef.boss2Id) {
+        newEnemies.push({
+          id: `boss-rush-${roomIndex}-1`,
+          pieceType: roomDef.boss2Name || "Boss 2",
+          x: 6,
+          y: 5,
+          level: characterStats.level + 2,
+          hp: 100,
+          maxHp: 100,
+          ap: 6,
+          mp: 3,
+          initiative: 10,
+          attack: 20,
+          defense: 10,
+          resistance: 5,
+          spells: [],
+          isBoss: true,
+          isLeader: false,
+          behavior: "aggressive",
+          family: "boss",
+          statusEffects: [],
+          activeEffects: [],
+        });
+      }
+      syncCombatants(combatantStoreCtx, newEnemies, {
+        resetBattle: true,
+      });
+      battleDefeatedRef.current = [];
+      deathPenaltyAppliedRef.current = false;
+    },
+    [
+      BOSS_RUSH_ROOMS,
+      generateRandomMap,
+      setPlayerPositionSynced,
+      characterStats.level,
+      combatantStoreCtx,
+    ],
+  );
+
   /** Generate the special Death Realm map — no walls, eerie grey/purple palette */
   const generateDeathRealmMap = useCallback((): {
     map: GameMap;
@@ -6145,13 +6221,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         transitionInProgressRef.current = false;
         return;
       }
-      // Boss Rush portal entry
+      // Boss Rush portal entry — generate the persisted/first room immediately.
+      // startBossRush used to only flip local flags, leaving the player on the
+      // world map so a clear credited applyRewards and a reload re-farmed room 0.
       if (portal.isBossRushPortal || portal.color === "bossRush") {
         lastPortalRef.current = { x: portal.x, y: portal.y };
+        cleanupMap();
         bossRushActiveRef.current = true;
-        startBossRush();
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
+        void startBossRush()
+          .then((roomIndex) => {
+            spawnBossRushRoom(roomIndex);
+          })
+          .finally(() => {
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          });
         return;
       }
       // Boss Rush room-advance: stepping into a progression portal during a
@@ -6169,70 +6253,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
         if (nextRoomDef) {
           void advanceBossRushRoom();
-          const { map: nextMap, spawnPosition } = generateRandomMap();
-          if (nextMap) {
-            setCurrentMap(nextMap);
-            if (spawnPosition) {
-              setPlayerPositionSynced({ ...spawnPosition });
-            }
-            const newEnemies: any[] = [];
-            if (nextRoomDef.boss1Id) {
-              newEnemies.push({
-                id: `boss-rush-${nextRoomIndex}-0`,
-                pieceType: nextRoomDef.boss1Name || "Boss 1",
-                x: 4,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: [],
-              });
-            }
-            if (nextRoomDef.boss2Id) {
-              newEnemies.push({
-                id: `boss-rush-${nextRoomIndex}-1`,
-                pieceType: nextRoomDef.boss2Name || "Boss 2",
-                x: 6,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: [],
-              });
-            }
-            syncCombatants(combatantStoreCtx, newEnemies, {
-              resetBattle: true,
-            });
-            // SECTION 1c: clear the per-kill defeated roster for the new battle.
-            battleDefeatedRef.current = [];
-            // Section 6: a new battle starts — re-arm the one-shot death-penalty
-            // guard so the 20% XP / 40% Doka penalty applies once per death event.
-            deathPenaltyAppliedRef.current = false;
-          }
+          spawnBossRushRoom(nextRoomIndex);
         }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
@@ -6932,6 +6953,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     playerPosition,
     mapModifiers,
     generateRandomMap,
+    spawnBossRushRoom,
     generateEnemies,
     canvasSize,
     updateCameraToFollowPlayer,
@@ -12396,31 +12418,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
-      // SECTION 3a: Persist the room-clear grant through the single atomic
-      // reward funnel (multiplier 1) so rewards survive a reload. Room progress
-      // recording stays progress-only via completeBossRushRoom(..., 0, 0).
+      // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
+      // the room that just paid out. completeBossRushRoom stays progress-only
+      // (0, 0); wallet/XP still go through the single reward funnel.
       if (actor) {
-        void progressPersistRef.current
-          .enqueue(async () => {
-            const persisted = await resolveBattleRewards(
-              actor,
-              characterSlot,
-              buildBossRushPersistInput({
-                defeatedEnemies: defeatedList,
-                characterLevel: characterStats.level,
-                baseDoka: totalDoka + challengeDokaReward,
-              }),
-            );
-            progressPersistRef.current.commit({
-              doka:
-                persisted.newDoka ?? progressPersistRef.current.snapshot().doka,
-              xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
-              level:
-                persisted.currentLevel ||
-                progressPersistRef.current.snapshot().level,
-            });
-            return persisted;
-          })
+        void persistRoomClear(currentRoomIndex)
+          .then(() =>
+            progressPersistRef.current.enqueue(async () => {
+              const persisted = await resolveBattleRewards(
+                actor,
+                characterSlot,
+                buildBossRushPersistInput({
+                  defeatedEnemies: defeatedList,
+                  characterLevel: characterStats.level,
+                  baseDoka: totalDoka + challengeDokaReward,
+                }),
+              );
+              progressPersistRef.current.commit({
+                doka:
+                  persisted.newDoka ??
+                  progressPersistRef.current.snapshot().doka,
+                xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
+                level:
+                  persisted.currentLevel ||
+                  progressPersistRef.current.snapshot().level,
+              });
+              return persisted;
+            }),
+          )
           .then((persisted) => {
             onDokaBalanceChange(persisted.newDoka ?? newDokaBalance);
             setCharacterStats((prev) => ({
