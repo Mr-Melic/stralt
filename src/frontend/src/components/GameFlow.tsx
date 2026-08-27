@@ -12,6 +12,7 @@ import type {
   UserProfile,
 } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
+import { shouldApplyCallerDokaHydrate } from "../utils/dokaBalanceQuery";
 import BossGuideModal from "./BossGuideModal";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
@@ -70,9 +71,10 @@ const GameFlow: React.FC<GameFlowProps> = ({
   // Doka balance: backend-authoritative via useGetCallerDokaBalance (query key
   // ['callerDokaBalance']). Local state is a session cache that WorldExploration
   // mutates synchronously (pickups, rewards, shop, healing) for immediate UI
-  // feedback; the effect below hydrates it from the backend on mount and re-syncs
-  // it whenever the query refetches (e.g., after a claim invalidates the key),
-  // so the displayed value always converges to the real persisted balance.
+  // feedback. Hydrate from the query on mount / character select, and once
+  // when entering the world — never again while WorldExploration owns the
+  // wallet. A claim invalidate or window-focus refetch is an absolute
+  // snapshot that can restore a pre-heal balance and refund spent Doka.
   const [dokaBalance, setDokaBalance] = useState(0);
   // SECTION 4 (build #325): debug context threaded up from WorldExploration so
   // ChatPanel's export-report builder can include live character/map/battle state.
@@ -119,17 +121,30 @@ const GameFlow: React.FC<GameFlowProps> = ({
     queryClient.clear();
   };
 
-  // Hydrate / re-sync local dokaBalance from the backend query. On mount this
-  // fixes the previous "always 0" bug (useState(0) was never hydrated). After a
-  // claim, useClaimAchievementReward invalidates ['callerDokaBalance']; the
-  // refetch updates backendDokaBalance, this effect updates local state to the
-  // real persisted value (which includes the granted reward), correcting any
-  // optimistic drift from session mutations.
+  // Seed the session cache from the backend query. Do not keep replacing it
+  // after WorldExploration is hydrated: persistClaim / applyRewards already
+  // add their deltas onto the live wallet, and a later absolute refetch
+  // refunds a recap heal that deducted in between.
+  const worldDokaHydratedRef = useRef(false);
   useEffect(() => {
-    if (backendDokaBalance !== undefined) {
-      setDokaBalance(backendDokaBalance);
+    if (currentStage !== "world") {
+      worldDokaHydratedRef.current = false;
     }
-  }, [backendDokaBalance]);
+    if (backendDokaBalance === undefined) return;
+    if (
+      !shouldApplyCallerDokaHydrate({
+        backendDoka: backendDokaBalance,
+        inWorld: currentStage === "world",
+        alreadyHydratedInWorld: worldDokaHydratedRef.current,
+      })
+    ) {
+      return;
+    }
+    setDokaBalance(backendDokaBalance);
+    if (currentStage === "world") {
+      worldDokaHydratedRef.current = true;
+    }
+  }, [backendDokaBalance, currentStage]);
 
   // Register the in-game top bar with panelRegistry so it participates in the
   // same mutual edge-snap computation as DraggablePanels. The bar is full
