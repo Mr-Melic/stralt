@@ -114,3 +114,26 @@ export async function creditPendingPurchases(
     credited: readCallerDokaBalance(await actor.getCallerDokaBalance()),
   };
 }
+
+/**
+ * saveBattleStats writes an absolute Doka snapshot. Shop credits must join the
+ * same persist lock as applyRewards / heals / death, or a later absolute write
+ * persists the pre-purchase wallet and wipes paid Doka.
+ */
+export type ShopCreditPersistLock = {
+  enqueue<T>(fn: () => Promise<T>): Promise<T>;
+  commit(next: { doka?: number }): void;
+};
+
+export async function creditPendingPurchasesThroughPersist(
+  actor: PurchaseCreditActor,
+  persist: ShopCreditPersistLock,
+): Promise<{ previous: number | null; credited: number | null }> {
+  return persist.enqueue(async () => {
+    const result = await creditPendingPurchases(actor);
+    if (result.credited != null) {
+      persist.commit({ doka: result.credited });
+    }
+    return result;
+  });
+}

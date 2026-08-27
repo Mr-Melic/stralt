@@ -226,7 +226,7 @@ import {
   PENDING_PURCHASE_CREDIT_DELAY_MS,
   type PurchaseCreditActor,
   buildInitiatePurchaseArgs,
-  creditPendingPurchases,
+  creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
   readInitiatePurchaseResult,
 } from "../utils/shopPurchase";
@@ -1146,13 +1146,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const shopCreditTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(
     new Set(),
   );
+  // Created here so shop-credit timers can enqueue onto the same lock as
+  // applyRewards / saveBattleStats. Hydrate-when-idle still lives next to
+  // characterStats because that effect depends on those values.
+  const progressPersistRef = useRef(
+    createProgressPersist({
+      doka: dokaBalance,
+      xp: character?.experience != null ? Number(character.experience) : 0,
+      level: character?.level != null ? Number(character.level) : 1,
+    }),
+  );
   const applyPendingPurchaseCredit = useCallback(
     async (announceAmount?: number) => {
       if (!actor) return;
       try {
-        const { previous, credited } = await creditPendingPurchases(
-          actor as PurchaseCreditActor,
-        );
+        // Must serialize with applyRewards / saveBattleStats. Updating the UI
+        // alone leaves committed.doka stale, so the next heal/death write
+        // overwrites the canister with the pre-purchase wallet.
+        const { previous, credited } =
+          await creditPendingPurchasesThroughPersist(
+            actor as PurchaseCreditActor,
+            progressPersistRef.current,
+          );
         if (credited == null) return;
         onDokaBalanceChange(credited);
         const gained = creditedDokaDelta(previous, credited);
@@ -2776,16 +2791,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     spellLevelsRef.current = spellLevels;
   }, [spellLevels]);
-
-  // Serializes applyRewards deltas and saveBattleStats absolute writes so a
-  // post-victory heal/shop cannot overwrite an in-flight reward credit.
-  const progressPersistRef = useRef(
-    createProgressPersist({
-      doka: dokaBalance,
-      xp: character?.experience != null ? Number(character.experience) : 0,
-      level: character?.level != null ? Number(character.level) : 1,
-    }),
-  );
 
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
