@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { buildInitiatePurchaseArgs } from "../utils/shopPurchase";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -64,7 +65,11 @@ export function useInitiatePurchase() {
       if (!actor) throw new Error("Actor not available");
       if (!actor)
         throw new Error("Not connected — please log in before purchasing");
-      return (actor as ActorAny).initiatePurchase(packageId, customerData);
+      const proofFileUrl =
+        customerData.proofFileUrl ?? customerData.proofOfAddressBase64 ?? "";
+      return (actor as ActorAny).initiatePurchase(
+        ...buildInitiatePurchaseArgs(packageId, customerData, proofFileUrl),
+      );
     },
   });
 }

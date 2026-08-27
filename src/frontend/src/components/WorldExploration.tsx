@@ -214,6 +214,11 @@ import {
   resolveBattleRewards,
 } from "../utils/rewardResolver";
 import {
+  buildInitiatePurchaseArgs,
+  readCallerDokaBalance,
+  readInitiatePurchaseResult,
+} from "../utils/shopPurchase";
+import {
   type SpellUpgradeActor,
   persistSpellUpgrade,
 } from "../utils/spellUpgrade";
@@ -18056,42 +18061,74 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       return;
                     }
                     try {
-                      if (actor) {
-                        // Convert proof-of-address file to base64 for submission
-                        const proofBase64 = await new Promise<string>(
-                          (resolve) => {
-                            const reader = new FileReader();
-                            reader.onload = () =>
-                              resolve(
-                                (reader.result as string).split(",")[1] ?? "",
-                              );
-                            reader.readAsDataURL(shopProofFile);
-                          },
+                      if (!actor) {
+                        toast.error(
+                          "Not connected — please log in before purchasing",
                         );
-                        await (actor as Record<string, any>).initiatePurchase(
+                        return;
+                      }
+                      // Convert proof-of-address file to base64 for submission
+                      const proofBase64 = await new Promise<string>(
+                        (resolve) => {
+                          const reader = new FileReader();
+                          reader.onload = () =>
+                            resolve(
+                              (reader.result as string).split(",")[1] ?? "",
+                            );
+                          reader.readAsDataURL(shopProofFile);
+                        },
+                      );
+                      const proofFileUrl = `data:${shopProofFile.type || "application/octet-stream"};base64,${proofBase64}`;
+                      // initiatePurchase takes nine positional Text args. Passing
+                      // a customer-data object is rejected by Candid, so the
+                      // purchase record never lands and paid Doka cannot be credited.
+                      const result = await actor.initiatePurchase(
+                        ...buildInitiatePurchaseArgs(
                           selectedPkg.id,
-                          {
-                            ...shopCustomerData,
-                            proofOfAddressBase64: proofBase64,
-                            proofOfAddressFileName: shopProofFile.name,
-                          },
-                        );
+                          shopCustomerData,
+                          proofFileUrl,
+                        ),
+                      );
+                      const parsed = readInitiatePurchaseResult(result);
+                      if ("err" in parsed) {
+                        toast.error(parsed.err);
+                        return;
                       }
                     } catch {
-                      /* silent */
+                      toast.error(
+                        "Purchase could not be recorded. Payment was not opened.",
+                      );
+                      return;
                     }
                     // Open payment link if available
                     if (selectedPkg.paymentLink) {
                       window.open(selectedPkg.paymentLink, "_blank");
                     }
-                    // C2: Auto-credit after 60s — timer registered in pendingTimeoutsRef
-                    // so it is cancelled on unmount and never fires on stale state.
+                    // C2: After 60s the canister auto-completes pending purchases.
+                    // Credit through processPendingPurchases + a balance reread so
+                    // the wallet is backend-authoritative (local-only credit was
+                    // wiped on the next getCallerDokaBalance refetch).
+                    const purchaseActor = actor;
                     const autoCreditTimer = setTimeout(() => {
                       pendingTimeoutsRef.current.delete(autoCreditTimer);
-                      onDokaBalanceChange(dokaBalance + selectedPkg.dokaAmount);
-                      toast.success(
-                        `${selectedPkg.dokaAmount.toLocaleString()} Doka credited!`,
-                      );
+                      void (async () => {
+                        if (!purchaseActor) return;
+                        try {
+                          await purchaseActor.processPendingPurchases();
+                          const bal = readCallerDokaBalance(
+                            await purchaseActor.getCallerDokaBalance(),
+                          );
+                          if (bal == null) return;
+                          onDokaBalanceChange(bal);
+                          toast.success(
+                            `${selectedPkg.dokaAmount.toLocaleString()} Doka credited!`,
+                          );
+                        } catch {
+                          toast.error(
+                            "Payment recorded, but Doka credit is still pending.",
+                          );
+                        }
+                      })();
                     }, 60000);
                     // FIX-4: Guard with cleanupRanRef so late shop timers don't fire after map cleanup
                     if (!cleanupRanRef.current) {
