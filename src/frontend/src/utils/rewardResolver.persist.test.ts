@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  persistIncrementalRewards,
+  readApplyRewardsOk,
+} from "./applyRewardsResult.ts";
+import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
   computeRewardDeltas,
@@ -60,5 +64,54 @@ describe("pre-applied dungeon multiplier", () => {
     });
     assert.equal(correct.dokaDelta, recapDoka);
     assert.equal(correct.xpDelta, recapXp);
+  });
+});
+
+describe("applyRewards result parsing", () => {
+  it("reads ok, _ok, and __kind__ payloads and rejects errors", () => {
+    assert.deepEqual(
+      readApplyRewardsOk({
+        ok: { newDoka: 12, newXp: 40, newLevel: 2 },
+      }),
+      { newDoka: 12, newXp: 40, newLevel: 2 },
+    );
+
+    assert.deepEqual(
+      readApplyRewardsOk({
+        _ok: { newDoka: 1n, newXp: 9n, newLevel: 1n },
+      }),
+      { newDoka: 1, newXp: 9, newLevel: 1 },
+    );
+
+    assert.deepEqual(
+      readApplyRewardsOk({
+        __kind__: "ok",
+        ok: { newDoka: 5, newXp: 15, newLevel: 1 },
+      }),
+      { newDoka: 5, newXp: 15, newLevel: 1 },
+    );
+
+    assert.throws(
+      () => readApplyRewardsOk({ err: "Anonymous caller" }),
+      /Anonymous caller/,
+    );
+    assert.throws(
+      () => readApplyRewardsOk({ __kind__: "err", err: "Account banned" }),
+      /Account banned/,
+    );
+    assert.throws(() => readApplyRewardsOk(null), /empty result/);
+  });
+
+  it("persists incremental XP through applyRewards", async () => {
+    const calls: Array<[bigint, bigint, bigint]> = [];
+    const actor = {
+      applyRewards: async (slot: bigint, doka: bigint, xp: bigint) => {
+        calls.push([slot, doka, xp]);
+        return { ok: { newDoka: 100, newXp: 30, newLevel: 2 } };
+      },
+    };
+    const persisted = await persistIncrementalRewards(actor, 2, 0, 10);
+    assert.deepEqual(calls, [[2n, 0n, 10n]]);
+    assert.deepEqual(persisted, { newDoka: 100, newXp: 30, newLevel: 2 });
   });
 });

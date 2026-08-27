@@ -32,6 +32,6 @@
     "dist",
     "build",
     "*.config.js",
-    "src/utils/rewardResolver.persist.test.ts"
+    "src/**/*.test.ts"
   ]
 }

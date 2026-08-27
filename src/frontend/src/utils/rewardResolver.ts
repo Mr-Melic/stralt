@@ -1,4 +1,11 @@
 import type { BattleRecapData } from "../components/PostBattleRecap";
+import { readApplyRewardsOk } from "./applyRewardsResult";
+
+export type { ApplyRewardsOk } from "./applyRewardsResult";
+export {
+  persistIncrementalRewards,
+  readApplyRewardsOk,
+} from "./applyRewardsResult";
 
 export interface RewardInput {
   victory: boolean;
@@ -124,11 +131,7 @@ export async function resolveBattleRewards(
     BigInt(xpDelta),
   );
 
-  if ("err" in result) {
-    throw new Error(`applyRewards failed: ${result.err}`);
-  }
-
-  const { newDoka, newXp, newLevel } = result.ok;
+  const { newDoka, newXp, newLevel } = readApplyRewardsOk(result);
 
   // Build recap data
   const recap: BattleRecapData = {
