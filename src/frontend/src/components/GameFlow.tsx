@@ -71,8 +71,9 @@ const GameFlow: React.FC<GameFlowProps> = ({
   // ['callerDokaBalance']). Local state is a session cache that WorldExploration
   // mutates synchronously (pickups, rewards, shop, healing) for immediate UI
   // feedback; the effect below hydrates it from the backend on mount and re-syncs
-  // it whenever the query refetches (e.g., after a claim invalidates the key),
-  // so the displayed value always converges to the real persisted balance.
+  // it when the query data changes. Persist-lock feat claims must not
+  // invalidate this key — an absolute refetch overwrites a recap heal that
+  // already deducted locally.
   const [dokaBalance, setDokaBalance] = useState(0);
   // SECTION 4 (build #325): debug context threaded up from WorldExploration so
   // ChatPanel's export-report builder can include live character/map/battle state.
@@ -120,11 +121,10 @@ const GameFlow: React.FC<GameFlowProps> = ({
   };
 
   // Hydrate / re-sync local dokaBalance from the backend query. On mount this
-  // fixes the previous "always 0" bug (useState(0) was never hydrated). After a
-  // claim, useClaimAchievementReward invalidates ['callerDokaBalance']; the
-  // refetch updates backendDokaBalance, this effect updates local state to the
-  // real persisted value (which includes the granted reward), correcting any
-  // optimistic drift from session mutations.
+  // fixes the previous "always 0" bug (useState(0) was never hydrated). Do not
+  // treat every refetch as a correction of session drift: persist-lock claims
+  // already apply the grant as a UI delta, and an absolute overwrite refunds
+  // a heal that deducted while that claim was in flight.
   useEffect(() => {
     if (backendDokaBalance !== undefined) {
       setDokaBalance(backendDokaBalance);

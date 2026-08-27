@@ -12,6 +12,7 @@ import type {
   AchievementConfig,
   AchievementProgress,
 } from "../types/gameTypes";
+import { shouldInvalidateCallerDokaAfterClaim } from "../utils/achievementReward";
 
 interface AchievementsPanelProps {
   userId?: string;
@@ -95,7 +96,9 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
             ),
         );
         queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
-        queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+        if (shouldInvalidateCallerDokaAfterClaim(Boolean(persistClaim))) {
+          queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+        }
         // persistClaim already added the grant onto the live UI wallet.
         if (!persistClaim) {
           onDokaBalanceChange(dokaBalance + granted);
