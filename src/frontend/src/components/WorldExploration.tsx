@@ -221,8 +221,11 @@ import {
   selectDefeatedEnemiesForRewards,
 } from "../utils/rewardResolver";
 import {
+  PENDING_PURCHASE_CREDIT_DELAY_MS,
+  type PurchaseCreditActor,
   buildInitiatePurchaseArgs,
-  readCallerDokaBalance,
+  creditPendingPurchases,
+  creditedDokaDelta,
   readInitiatePurchaseResult,
 } from "../utils/shopPurchase";
 import {
@@ -1133,6 +1136,59 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(
     new Set(),
   );
+  // Paid-Doka credit timers. Must NOT share pendingTimeoutsRef — cleanupBattle
+  // clears that set on every portal, death, and victory, which would cancel
+  // processPendingPurchases and leave a recorded purchase uncredited.
+  const shopCreditTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(
+    new Set(),
+  );
+  const applyPendingPurchaseCredit = useCallback(
+    async (announceAmount?: number) => {
+      if (!actor) return;
+      try {
+        const { previous, credited } = await creditPendingPurchases(
+          actor as PurchaseCreditActor,
+        );
+        if (credited == null) return;
+        onDokaBalanceChange(credited);
+        const gained = creditedDokaDelta(previous, credited);
+        if (gained > 0) {
+          toast.success(
+            `${(announceAmount ?? gained).toLocaleString()} Doka credited!`,
+          );
+        } else if (announceAmount != null) {
+          toast.error("Payment recorded, but Doka credit is still pending.");
+        }
+      } catch {
+        if (announceAmount != null) {
+          toast.error("Payment recorded, but Doka credit is still pending.");
+        }
+      }
+    },
+    [actor, onDokaBalanceChange],
+  );
+  // Recover credits whose 60s timer was cancelled by an earlier cleanupBattle,
+  // and keep one retry so a purchase made just before remount still lands.
+  useEffect(() => {
+    if (!actor) return;
+    void applyPendingPurchaseCredit();
+    const retry = setTimeout(() => {
+      shopCreditTimersRef.current.delete(retry);
+      void applyPendingPurchaseCredit();
+    }, PENDING_PURCHASE_CREDIT_DELAY_MS);
+    shopCreditTimersRef.current.add(retry);
+    return () => {
+      clearTimeout(retry);
+      shopCreditTimersRef.current.delete(retry);
+    };
+  }, [actor, applyPendingPurchaseCredit]);
+  useEffect(() => {
+    const timers = shopCreditTimersRef.current;
+    return () => {
+      for (const id of timers) clearTimeout(id);
+      timers.clear();
+    };
+  }, []);
   // M-4: Guard that prevents new timeouts from registering after cleanup has run.
   // Set true at start of cleanupBattle, reset false when a new battle starts.
   const cleanupRanRef = useRef(false);
@@ -16541,6 +16597,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             onClick={() => {
               setShowShop(true);
               setShopStep("packages");
+              void applyPendingPurchaseCredit();
             }}
             title="Buy Doka"
             style={{
@@ -18246,38 +18303,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     if (selectedPkg.paymentLink) {
                       window.open(selectedPkg.paymentLink, "_blank");
                     }
-                    // C2: After 60s the canister auto-completes pending purchases.
-                    // Credit through processPendingPurchases + a balance reread so
-                    // the wallet is backend-authoritative (local-only credit was
-                    // wiped on the next getCallerDokaBalance refetch).
-                    const purchaseActor = actor;
+                    // After 60s the canister auto-completes pending purchases.
+                    // Keep this timer off pendingTimeoutsRef / cleanupRanRef —
+                    // those exist to cancel battle AI, and wiping them here
+                    // leaves a recorded payment uncredited.
                     const autoCreditTimer = setTimeout(() => {
-                      pendingTimeoutsRef.current.delete(autoCreditTimer);
-                      void (async () => {
-                        if (!purchaseActor) return;
-                        try {
-                          await purchaseActor.processPendingPurchases();
-                          const bal = readCallerDokaBalance(
-                            await purchaseActor.getCallerDokaBalance(),
-                          );
-                          if (bal == null) return;
-                          onDokaBalanceChange(bal);
-                          toast.success(
-                            `${selectedPkg.dokaAmount.toLocaleString()} Doka credited!`,
-                          );
-                        } catch {
-                          toast.error(
-                            "Payment recorded, but Doka credit is still pending.",
-                          );
-                        }
-                      })();
-                    }, 60000);
-                    // FIX-4: Guard with cleanupRanRef so late shop timers don't fire after map cleanup
-                    if (!cleanupRanRef.current) {
-                      pendingTimeoutsRef.current.add(autoCreditTimer);
-                    } else {
-                      clearTimeout(autoCreditTimer);
-                    }
+                      shopCreditTimersRef.current.delete(autoCreditTimer);
+                      void applyPendingPurchaseCredit(selectedPkg.dokaAmount);
+                    }, PENDING_PURCHASE_CREDIT_DELAY_MS);
+                    shopCreditTimersRef.current.add(autoCreditTimer);
                     setShowShop(false);
                     setShopStep("packages");
                     setShopProofFile(null);

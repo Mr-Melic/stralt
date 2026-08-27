@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import {
   buildInitiatePurchaseArgs,
+  creditPendingPurchases,
+  creditedDokaDelta,
   readCallerDokaBalance,
   readInitiatePurchaseResult,
+  shopCreditUsesBattleTimeoutSet,
 } from "./shopPurchase.ts";
 
 const args = buildInitiatePurchaseArgs(
@@ -65,4 +68,41 @@ assert.equal(readCallerDokaBalance(42), 42);
 assert.equal(readCallerDokaBalance(undefined), null);
 assert.equal(readCallerDokaBalance(Number.NaN), null);
 
-console.log("shopPurchase.test: ok");
+assert.equal(
+  shopCreditUsesBattleTimeoutSet(),
+  false,
+  "cleanupBattle wipes pendingTimeoutsRef; shop credit must not live there",
+);
+assert.equal(creditedDokaDelta(100, 600), 500);
+assert.equal(creditedDokaDelta(600, 600), 0);
+assert.equal(creditedDokaDelta(null, 600), 0);
+
+void (async () => {
+  let processed = 0;
+  const actor = {
+    processPendingPurchases: async () => {
+      processed += 1;
+      return 1n;
+    },
+    getCallerDokaBalance: async () => (processed === 0 ? 100n : 600n),
+  };
+  const result = await creditPendingPurchases(actor);
+  assert.equal(processed, 1);
+  assert.deepEqual(result, { previous: 100, credited: 600 });
+  assert.equal(creditedDokaDelta(result.previous, result.credited), 500);
+
+  const emptyActor = {
+    processPendingPurchases: async () => 0n,
+    getCallerDokaBalance: async () => undefined,
+  };
+  assert.deepEqual(await creditPendingPurchases(emptyActor), {
+    previous: null,
+    credited: null,
+  });
+  assert.deepEqual(await creditPendingPurchases({}), {
+    previous: null,
+    credited: null,
+  });
+
+  console.log("shopPurchase.test: ok");
+})();
