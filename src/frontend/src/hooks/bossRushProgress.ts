@@ -44,6 +44,31 @@ export function resumeRoomFromPersisted(
   return Math.min(Math.floor(currentRoom), roomCount - 1);
 }
 
+/**
+ * Hydrate currentRoom from the canister only when no run is in progress.
+ * After a room clear, persist writes nextCurrentRoom while local currentRoom
+ * still names the room just cleared (the portal uses local+1). Adopting the
+ * persisted value mid-run would make that portal skip a room.
+ */
+export function adoptPersistedResumeRoom(
+  runActive: boolean,
+  persistedCurrentRoom: number,
+  roomCount = BOSS_RUSH_ROOM_COUNT,
+): number | null {
+  if (runActive) return null;
+  const room = resumeRoomFromPersisted(persistedCurrentRoom, roomCount);
+  return room > 0 ? room : null;
+}
+
+/** Drop slot-scoped progress so a new occupant cannot resume a prior run. */
+export async function clearBossRushForSlot(
+  actor: BossRushProgressActor,
+  slot: number | bigint,
+): Promise<void> {
+  const slotId = typeof slot === "bigint" ? slot : BigInt(slot);
+  await actor.resetBossRush?.(slotId);
+}
+
 export function progressAfterRoomClear(
   clearedRoomIndex: number,
   roomCount = BOSS_RUSH_ROOM_COUNT,

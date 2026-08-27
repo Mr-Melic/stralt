@@ -1,6 +1,7 @@
 import { Principal } from "@dfinity/principal";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  adoptPersistedResumeRoom,
   parseBossRushStateTuple,
   persistBossRushRoomClear,
   resumeRoomFromPersisted,
@@ -181,13 +182,17 @@ export function useBossRush(
         const result = await actor.getBossRushState?.(resolvedPrincipal, slot);
         const parsed = parseBossRushStateTuple(result);
         if (!parsed) return;
-        const room = resumeRoomFromPersisted(parsed.currentRoom);
-        if (room > 0) {
-          setBossRushState((prev) => ({
+        setBossRushState((prev) => {
+          const room = adoptPersistedResumeRoom(
+            prev.active,
+            parsed.currentRoom,
+          );
+          if (room == null) return prev;
+          return {
             ...prev,
             currentRoom: room,
-          }));
-        }
+          };
+        });
       } catch (e) {
         console.error("[BossRush] Failed to load state from backend:", e);
       }

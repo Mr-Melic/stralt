@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  adoptPersistedResumeRoom,
+  clearBossRushForSlot,
   parseBossRushStateTuple,
   persistBossRushRoomClear,
   progressAfterRoomClear,
@@ -32,6 +34,36 @@ describe("resumeRoomFromPersisted", () => {
     assert.equal(resumeRoomFromPersisted(1), 1);
     assert.equal(resumeRoomFromPersisted(9), 9);
     assert.equal(resumeRoomFromPersisted(12), 9);
+  });
+});
+
+describe("adoptPersistedResumeRoom", () => {
+  it("hydrates mid-run progress before the player enters", () => {
+    assert.equal(adoptPersistedResumeRoom(false, 4), 4);
+  });
+
+  it("does not overwrite an active run after persist advanced currentRoom", () => {
+    assert.equal(adoptPersistedResumeRoom(true, 1), null);
+    assert.equal(adoptPersistedResumeRoom(true, 4), null);
+  });
+
+  it("leaves room 0 unset so startBossRush can begin a fresh run", () => {
+    assert.equal(adoptPersistedResumeRoom(false, 0), null);
+  });
+});
+
+describe("clearBossRushForSlot", () => {
+  it("resets currentRoom so a new slot occupant cannot resume", async () => {
+    const calls: string[] = [];
+    await clearBossRushForSlot(
+      {
+        resetBossRush: async (slot) => {
+          calls.push(`reset:${slot}`);
+        },
+      },
+      2,
+    );
+    assert.deepEqual(calls, ["reset:2"]);
   });
 });
 

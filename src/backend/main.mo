@@ -192,6 +192,9 @@ actor {
         };
 
         characterSlots.add(caller, updatedSlots);
+        // Boss rush progress is keyed by principal#slot, not character identity.
+        // A new occupant must not resume the previous occupant's currentRoom.
+        _clearBossRushForSlot(caller, slot);
         #ok;
     };
 
@@ -321,6 +324,8 @@ actor {
         };
 
         characterSlots.add(caller, updatedSlots);
+        // Drop mid-run currentRoom so a later create in this slot cannot skip rooms.
+        _clearBossRushForSlot(caller, slot);
         #ok;
     };
 
@@ -2385,6 +2390,12 @@ actor {
 
     func _bossRushKey(caller : Principal, slot : Nat) : Text {
         caller.toText() # "#" # slot.toText()
+    };
+
+    /// Clears slot-scoped Boss Rush progress. create/delete must call this so a
+    /// new character cannot resume another occupant's currentRoom.
+    func _clearBossRushForSlot(caller : Principal, slot : Nat) {
+        bossRushStates.remove(_bossRushKey(caller, slot));
     };
 
     /// Returns (currentRoom, highestRoomCompleted, totalBossRushRuns) for any player+slot.
