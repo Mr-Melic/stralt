@@ -197,7 +197,10 @@ import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
 import { evaluateChallenges } from "../utils/battleFixes";
-import { computeDeathPenalty } from "../utils/deathPenalty";
+import {
+  computeDeathPenalty,
+  persistDeathPenalty as persistAbsoluteStats,
+} from "../utils/deathPenalty";
 import {
   logDebugError,
   logDebugInfo,
@@ -215,6 +218,10 @@ import {
   readCallerDokaBalance,
   readInitiatePurchaseResult,
 } from "../utils/shopPurchase";
+import {
+  type SpellUpgradeActor,
+  persistSpellUpgrade,
+} from "../utils/spellUpgrade";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -2691,74 +2698,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
       if (dokaBalance < cost) return;
-      const newDoka = dokaBalance - cost;
-      onDokaBalanceChange(newDoka);
-      setSpellLevels((prev) => {
-        const next = { ...prev, [spellId]: (prev[spellId] ?? 0) + 1 };
+      if (!actor?.upgradeSpell) return;
+      void (async () => {
         try {
-          // M6: Use namespaced key for per-character spell levels
-          localStorage.setItem(nsKey("pbv_spell_levels"), JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        // Save to backend after upgrade — derive character info from props directly
-        if (actor) {
-          setCharacterStats((stats) => {
-            const spellKeys = Object.keys(next);
-            const spellVals = spellKeys.map((k) => BigInt(next[k] ?? 0));
-            const rawColors = character?.colors;
-            const charColors = Array.isArray(rawColors)
-              ? [
-                  rawColors[0] ?? "#F5F5F5",
-                  rawColors[1] ?? "#D3D3D3",
-                  rawColors[2] ?? "#000000",
-                ]
-              : ["#F5F5F5", "#D3D3D3", "#000000"];
-            const charToSave = {
-              name: character?.name ?? "Adventurer",
-              pieceType: character?.pieceType ?? "king",
-              colors: charColors,
-              pixelPattern: "",
-              rotation: BigInt(0),
-              level: BigInt(stats.level),
-              experience: BigInt(stats.exp),
-              dokaBalance: BigInt(newDoka),
-              stats: {
-                hp: BigInt(stats.hp),
-                ap: BigInt(stats.ap),
-                mp: BigInt(stats.mp),
-                sp: BigInt(stats.sp),
-                sr: BigInt(stats.sr),
-                init: BigInt(stats.init),
-                res: BigInt(stats.res),
-                chc: BigInt(stats.chc),
-                atk: BigInt(0),
-                resilience: BigInt(0),
-                evasion: BigInt(0),
-                killCount: BigInt(character?.stats?.killCount ?? 0),
-              },
-              spellLevelKeys: spellKeys,
-              spellLevelValues: spellVals,
-            };
-            (async () => {
-              try {
-                await actor.updateCharacter(BigInt(characterSlot), charToSave);
-              } catch (err) {
-                console.warn("[PBV] Character save failed:", err);
-                const savedSlot = BigInt(characterSlot);
-                const savedUpdate = charToSave;
-                pendingSavesRef.current.push(() =>
-                  actor.updateCharacter(savedSlot, savedUpdate),
-                );
-              }
-            })();
-            return stats;
+          const { newLevel, newDoka } = await persistSpellUpgrade(
+            actor as SpellUpgradeActor,
+            characterSlot,
+            spellId,
+          );
+          onDokaBalanceChange(
+            newDoka != null ? newDoka : Math.max(0, dokaBalance - cost),
+          );
+          setSpellLevels((prev) => {
+            const next = { ...prev, [spellId]: newLevel };
+            try {
+              // M6: Use namespaced key for per-character spell levels
+              localStorage.setItem(
+                nsKey("pbv_spell_levels"),
+                JSON.stringify(next),
+              );
+            } catch {
+              /* ignore */
+            }
+            return next;
           });
+        } catch (err) {
+          console.warn("[PBV] Spell upgrade failed:", err);
         }
-        return next;
-      });
+      })();
     },
-    [dokaBalance, onDokaBalanceChange, actor, character, characterSlot, nsKey],
+    [dokaBalance, onDokaBalanceChange, actor, characterSlot, nsKey],
   );
 
   // Character stats with experience system — restore from backend character if available
@@ -12345,29 +12314,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       (50 + characterStatsRef.current.level) * 10 * 0.5,
     );
     if (actor) {
-      const spellKeys = Object.keys(spellLevelsRef.current);
-      const spellVals = spellKeys.map((k) =>
-        BigInt(spellLevelsRef.current[k] ?? 0),
-      );
-      actor
-        .saveBattleStats(
-          BigInt(characterSlot),
-          BigInt(characterStatsRef.current.level ?? 1),
-          BigInt(xpAfter),
-          BigInt(respawnHp),
-          BigInt(characterStatsRef.current.maxHp ?? 0),
-          BigInt(characterStatsRef.current.ap ?? 0),
-          BigInt(characterStatsRef.current.maxAp ?? 0),
-          BigInt(characterStatsRef.current.mp ?? 0),
-          BigInt(characterStatsRef.current.maxMp ?? 0),
-          BigInt(0),
-          BigInt(characterStatsRef.current.res ?? 0),
-          BigInt(characterStatsRef.current.init ?? 0),
-          BigInt(dokaAfter),
-          spellKeys,
-          spellVals,
-        )
-        .catch((err) => console.error("[death-save] failed:", err));
+      void persistAbsoluteStats(actor, {
+        slot: characterSlot,
+        level: characterStatsRef.current.level ?? 1,
+        hp: respawnHp,
+        maxHp: characterStatsRef.current.maxHp ?? 0,
+        ap: characterStatsRef.current.ap ?? 0,
+        maxAp: characterStatsRef.current.maxAp ?? 0,
+        mp: characterStatsRef.current.mp ?? 0,
+        maxMp: characterStatsRef.current.maxMp ?? 0,
+        attack: Number(character?.stats?.atk ?? 0),
+        defense: characterStatsRef.current.res ?? 0,
+        initiative: characterStatsRef.current.init ?? 0,
+        newXp: xpAfter,
+        newDoka: dokaAfter,
+        spellLevels: spellLevelsRef.current,
+      }).catch((err) => console.error("[death-save] failed:", err));
     }
     setCharacterStats((prev) => ({
       ...prev,
@@ -12379,11 +12341,39 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return { xpLost, dokaLost, xpAfter, dokaAfter };
   }, [
     actor,
+    character,
     characterSlot,
     dokaBalance,
     onDokaBalanceChange,
     setCharacterStats,
   ]);
+
+  // Persist an out-of-combat HP/Doka write through saveBattleStats so the
+  // per-principal dokaBalances map is updated. updateCharacter cannot debit
+  // Doka — it only replaces the Character record, which no longer stores a
+  // wallet field.
+  const persistAbsoluteProgress = useCallback(
+    (newHp: number, newDoka: number) => {
+      if (!actor) return;
+      void persistAbsoluteStats(actor, {
+        slot: characterSlot,
+        level: characterStatsRef.current.level ?? 1,
+        hp: newHp,
+        maxHp: characterStatsRef.current.maxHp ?? 0,
+        ap: characterStatsRef.current.ap ?? 0,
+        maxAp: characterStatsRef.current.maxAp ?? 0,
+        mp: characterStatsRef.current.mp ?? 0,
+        maxMp: characterStatsRef.current.maxMp ?? 0,
+        attack: Number(character?.stats?.atk ?? 0),
+        defense: characterStatsRef.current.res ?? 0,
+        initiative: characterStatsRef.current.init ?? 0,
+        newXp: characterStatsRef.current.exp ?? 0,
+        newDoka,
+        spellLevels: spellLevelsRef.current,
+      }).catch((err) => console.error("[doka-spend save] failed:", err));
+    },
+    [actor, character, characterSlot],
+  );
 
   // Handle player death
   // biome-ignore lint/correctness/useExhaustiveDependencies: characterStats.hp read as stale snapshot for diagnostic log only; death decision is made by callers using computed post-damage values
@@ -16521,9 +16511,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         {/* EXP6: Item (Buff) Shop draggable panel */}
         <BuffShop
           dokaBalance={dokaBalance}
-          onDeductDoka={(amount) =>
-            onDokaBalanceChange(Math.max(0, dokaBalance - amount))
-          }
+          onDeductDoka={(amount) => {
+            const next = Math.max(0, dokaBalance - amount);
+            onDokaBalanceChange(next);
+            persistAbsoluteProgress(characterStatsRef.current.hp, next);
+          }}
           onUseItem={handleUseItem}
           isPlayerTurn={battlePhase === "player" && inBattle}
           inBattle={inBattle}
@@ -16998,47 +16990,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         toast.success("🎰 JACKPOT HEAL! Full HP restored!", {
                           duration: 4000,
                         });
-                        // Auto-save
-                        if (actor) {
-                          actor
-                            .updateCharacter(BigInt(characterSlot), {
-                              name: characterName,
-                              pieceType,
-                              colors: [
-                                colors.primary,
-                                colors.secondary,
-                                colors.accent,
-                              ],
-                              pixelPattern: "",
-                              rotation: BigInt(0),
-                              level: BigInt(characterStats.level),
-                              experience: BigInt(characterStats.exp),
-                              dokaBalance: BigInt(Math.max(0, dokaBalance - 1)),
-                              stats: {
-                                hp: BigInt(maxHp),
-                                ap: BigInt(characterStats.ap),
-                                mp: BigInt(characterStats.mp),
-                                sp: BigInt(characterStats.sp),
-                                sr: BigInt(characterStats.sr),
-                                init: BigInt(characterStats.init),
-                                res: BigInt(characterStats.res),
-                                chc: BigInt(characterStats.chc),
-                                atk: BigInt(0),
-                                resilience: BigInt(0),
-                                evasion: BigInt(0),
-                                killCount: BigInt(
-                                  character?.stats?.killCount ?? 0,
-                                ),
-                              },
-                              spellLevelKeys: Object.keys(spellLevels),
-                              spellLevelValues: Object.keys(spellLevels).map(
-                                (k) => BigInt(spellLevels[k] ?? 0),
-                              ),
-                            })
-                            .catch((e: unknown) =>
-                              console.error("[jackpot-heal save]", e),
-                            );
-                        }
+                        persistAbsoluteProgress(
+                          maxHp,
+                          Math.max(0, dokaBalance - 1),
+                        );
                         return;
                       }
 
@@ -17051,52 +17006,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       }));
                       challengeHealUsedRef.current = true;
                       onDokaBalanceChange(Math.max(0, dokaBalance - dokaCost));
-                      // Auto-save
-                      if (actor) {
-                        const newHp = Math.min(
-                          maxHp,
-                          characterStats.hp + hpToAdd,
-                        );
-                        const newDoka = Math.max(0, dokaBalance - dokaCost);
-                        actor
-                          .updateCharacter(BigInt(characterSlot), {
-                            name: characterName,
-                            pieceType,
-                            colors: [
-                              colors.primary,
-                              colors.secondary,
-                              colors.accent,
-                            ],
-                            pixelPattern: "",
-                            rotation: BigInt(0),
-                            level: BigInt(characterStats.level),
-                            experience: BigInt(characterStats.exp),
-                            dokaBalance: BigInt(newDoka),
-                            stats: {
-                              hp: BigInt(newHp),
-                              ap: BigInt(characterStats.ap),
-                              mp: BigInt(characterStats.mp),
-                              sp: BigInt(characterStats.sp),
-                              sr: BigInt(characterStats.sr),
-                              init: BigInt(characterStats.init),
-                              res: BigInt(characterStats.res),
-                              chc: BigInt(characterStats.chc),
-                              atk: BigInt(0),
-                              resilience: BigInt(0),
-                              evasion: BigInt(0),
-                              killCount: BigInt(
-                                character?.stats?.killCount ?? 0,
-                              ),
-                            },
-                            spellLevelKeys: Object.keys(spellLevels),
-                            spellLevelValues: Object.keys(spellLevels).map(
-                              (k) => BigInt(spellLevels[k] ?? 0),
-                            ),
-                          })
-                          .catch((e: unknown) =>
-                            console.error("[doka-heal save]", e),
-                          );
-                      }
+                      persistAbsoluteProgress(
+                        Math.min(maxHp, characterStats.hp + hpToAdd),
+                        Math.max(0, dokaBalance - dokaCost),
+                      );
                       // Toast
                       toast.success(
                         `Healed +${hpToAdd} HP (-${dokaCost} Doka)`,

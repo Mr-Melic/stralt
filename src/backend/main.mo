@@ -1355,9 +1355,16 @@ actor {
       let character = switch (characterOpt) { case (?c) { c }; case null { return #err "Empty slot" } };
       var newXp = character.experience + xpDelta;
       var newLevel = character.level;
+      // Canonical curve: level N→N+1 costs 100 * 2^(N-1).
+      // Must match frontend xpForNextLevel; 100 * 2^N was off-by-one and
+      // silently blocked intended level-ups after applyRewards persist.
       func pow2(n : Nat) : Nat { var r = 1; var i = 0; while (i < n) { r *= 2; i += 1 }; r };
+      func xpToAdvance(level : Nat) : Nat {
+        let exponent : Nat = if (level == 0) { 0 } else { level - 1 };
+        100 * pow2(exponent)
+      };
       label lvlLoop while (true) {
-        let xpToNext = 100 * pow2(newLevel);
+        let xpToNext = xpToAdvance(newLevel);
         if (newXp < xpToNext) { break lvlLoop };
         newXp -= xpToNext;
         newLevel += 1;
