@@ -76,6 +76,12 @@ assert.equal(
 assert.equal(creditedDokaDelta(100, 600), 500);
 assert.equal(creditedDokaDelta(600, 600), 0);
 assert.equal(creditedDokaDelta(null, 600), 0);
+assert.equal(
+  creditedDokaDelta(600, 100),
+  0,
+  "a refetch that looks poorer must not apply a negative credit",
+);
+assert.deepEqual(readInitiatePurchaseResult({ _ok: "pur_3" }), { ok: "pur_3" });
 
 void (async () => {
   let processed = 0;

@@ -11,6 +11,7 @@ describe("spend math", () => {
     assert.equal(spendFromUiBalance(200, 170), 30);
     assert.equal(spendFromUiBalance(0, 0), 0);
     assert.equal(spendFromUiBalance(10, 50), 0);
+    assert.equal(spendFromUiBalance(Number.NaN, 10), 0);
   });
 
   it("applies the spend to the last committed wallet", () => {
@@ -87,5 +88,24 @@ describe("progress persist lock", () => {
     assert.equal(backendDoka, 220);
     assert.equal(backendXp, 130);
     assert.equal(backendLevel, 5);
+  });
+
+  it("releases the lock when a queued write rejects so hydrate is not stuck", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    await assert.rejects(
+      lock.enqueue(async () => {
+        throw new Error("applyRewards failed");
+      }),
+      /applyRewards failed/,
+    );
+    assert.equal(lock.pendingCount(), 0);
+    assert.equal(lock.hydrateWhenIdle({ doka: 180, xp: 40, level: 4 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 180, xp: 40, level: 4 });
+  });
+
+  it("keeps the last committed wallet when commit receives NaN/undefined", () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    lock.commit({ doka: Number.NaN, xp: undefined, level: 0 });
+    assert.deepEqual(lock.snapshot(), { doka: 200, xp: 50, level: 1 });
   });
 });

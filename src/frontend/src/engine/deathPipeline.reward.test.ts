@@ -73,5 +73,24 @@ describe("death pipeline reward attribution", () => {
       roster.find((c) => c.id === "rat-1"),
       undefined,
     );
+
+    let secondAttribute = 0;
+    const second = processCombatantDeath("rat-1", {
+      isCombatantRemoved: (id) => roster.find((c) => c.id === id) === undefined,
+      getCombatantName: () => "Unknown",
+      getCombatantPos: () => ({ x: 0, y: 0 }),
+      removeCombatant: () => {},
+      removeFromTurnQueue: () => {},
+      removeFromInitiativeStrip: () => {},
+      triggerShatter: () => {},
+      logDefeated: () => {},
+      applyLeaderDeathBoost: () => {},
+      recheckVictory: () => {},
+      attributeKillReward: () => {
+        secondAttribute += 1;
+      },
+    });
+    assert.equal(second, false, "already-removed combatant must be a no-op");
+    assert.equal(secondAttribute, 0, "must not double-attribute a kill");
   });
 });

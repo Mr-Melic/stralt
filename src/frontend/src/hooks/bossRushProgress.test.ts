@@ -20,6 +20,18 @@ describe("parseBossRushStateTuple", () => {
     assert.equal(parseBossRushStateTuple(null), null);
     assert.equal(parseBossRushStateTuple([1n, 2n]), null);
   });
+
+  it("reads only the first three slots of a longer tuple", () => {
+    assert.deepEqual(parseBossRushStateTuple([2n, 3n, 1n, 999n, 50n]), {
+      currentRoom: 2,
+      highestRoomCompleted: 3,
+      totalBossRushRuns: 1,
+    });
+  });
+
+  it("rejects a non-finite currentRoom", () => {
+    assert.equal(parseBossRushStateTuple([Number.NaN, 1, 0]), null);
+  });
 });
 
 describe("resumeRoomFromPersisted", () => {
@@ -90,5 +102,9 @@ describe("persistBossRushRoomClear", () => {
       9,
     );
     assert.deepEqual(calls, ["reset:1", "complete:9"]);
+  });
+
+  it("is a no-op when the actor has no progress methods", async () => {
+    await persistBossRushRoomClear({}, 1, 0);
   });
 });

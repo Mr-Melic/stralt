@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { shouldAwardVictory } from "./battleSetup.ts";
+import {
+  activeHostilesRemaining,
+  despawnSummons,
+  shouldAwardVictory,
+} from "./battleSetup.ts";
 
 assert.equal(
   shouldAwardVictory({
@@ -54,6 +58,56 @@ assert.equal(
   }),
   false,
   "living hostiles must not award victory",
+);
+
+const leftoverPlayerSummon = [
+  { hp: 0, isSummon: false, side: "enemy" as const },
+  { hp: 12, isSummon: true, side: "player" as const },
+];
+assert.equal(
+  activeHostilesRemaining(leftoverPlayerSummon),
+  0,
+  "living player-side summons must not block the victory gate",
+);
+assert.equal(
+  shouldAwardVictory({
+    inBattle: true,
+    deathTriggered: false,
+    battleStartIdsSize: 2,
+    hostilesRemaining: activeHostilesRemaining(leftoverPlayerSummon),
+  }),
+  true,
+  "cleared hostiles with leftover player summons still award victory",
+);
+
+const livingEnemySummon = [
+  { hp: 0, isSummon: false, side: "enemy" as const },
+  { hp: 8, isSummon: true, side: "enemy" as const },
+];
+assert.equal(
+  activeHostilesRemaining(livingEnemySummon),
+  1,
+  "enemy-side summons remain hostile and must be defeated",
+);
+assert.equal(
+  shouldAwardVictory({
+    inBattle: true,
+    deathTriggered: false,
+    battleStartIdsSize: 2,
+    hostilesRemaining: activeHostilesRemaining(livingEnemySummon),
+  }),
+  false,
+  "an alive enemy summon must not award victory",
+);
+
+const afterVictory = despawnSummons([
+  { hp: 0, isSummon: false, id: "rat" },
+  { hp: 12, isSummon: true, id: "wolf", side: "player" as const },
+]);
+assert.deepEqual(
+  afterVictory.map((e) => e.id),
+  ["rat"],
+  "victory cleanup must drop summons so the board is not left occupied",
 );
 
 console.log("battleSetup.victory.test: ok");

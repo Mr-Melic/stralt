@@ -1,7 +1,7 @@
 import {
   computeVictoryExp,
   selectDefeatedEnemiesForRewards,
-} from "./rewardResolver";
+} from "./rewardResolver.ts";
 
 function assertEqual(actual: number, expected: number, label: string): void {
   if (actual !== expected) {

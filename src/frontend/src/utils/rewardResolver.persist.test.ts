@@ -141,3 +141,49 @@ describe("selectDefeatedEnemiesForRewards", () => {
     );
   });
 });
+
+describe("lost-fight reward deltas", () => {
+  it("does not persist victory Doka/XP when victory is false", () => {
+    const deltas = computeRewardDeltas({
+      victory: false,
+      enemiesDefeated: [
+        { name: "wraith", level: 4 },
+        { name: "golem", level: 6 },
+      ],
+      completedChallenges: [],
+      dungeonMultiplier: 2,
+      baseDoka: 200,
+      baseXp: 160,
+    });
+    assert.equal(deltas.dokaDelta, 0);
+    assert.equal(deltas.xpDelta, 0);
+  });
+
+  it("still credits completed-challenge Doka on a loss", () => {
+    const deltas = computeRewardDeltas({
+      victory: false,
+      enemiesDefeated: [],
+      completedChallenges: [{ name: "no_healing", dokaReward: 25 }],
+      dungeonMultiplier: 1,
+      baseDoka: 200,
+      baseXp: 80,
+    });
+    assert.equal(deltas.dokaDelta, 25);
+    assert.equal(deltas.xpDelta, 0);
+    assert.equal(deltas.dokaFromChallenges, 25);
+  });
+});
+
+describe("persistIncrementalRewards clamping", () => {
+  it("floors fractional deltas and never sends a negative applyRewards Nat", async () => {
+    const calls: Array<[bigint, bigint, bigint]> = [];
+    const actor = {
+      applyRewards: async (slot: bigint, doka: bigint, xp: bigint) => {
+        calls.push([slot, doka, xp]);
+        return { ok: { newDoka: 10, newXp: 5, newLevel: 1 } };
+      },
+    };
+    await persistIncrementalRewards(actor, 1, -40, 10.9);
+    assert.deepEqual(calls, [[1n, 0n, 10n]]);
+  });
+});

@@ -51,4 +51,23 @@ try {
 }
 assert.equal(persistThrew, true);
 
+const noBalance = await persistSpellUpgrade(
+  {
+    upgradeSpell: async () => ({ ok: 3n }),
+    getCallerDokaBalance: async () => null,
+  },
+  1,
+  "ice_lance",
+);
+assert.equal(noBalance.newLevel, 3);
+assert.equal(noBalance.newDoka, undefined);
+
+let invalidLevel = false;
+try {
+  readUpgradeSpellOk({ ok: 0 });
+} catch (e) {
+  invalidLevel = String((e as Error).message).includes("invalid level");
+}
+assert.equal(invalidLevel, true);
+
 console.log("spellUpgrade.test: ok");

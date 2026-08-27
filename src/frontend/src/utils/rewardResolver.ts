@@ -1,11 +1,11 @@
 import type { BattleRecapData } from "../components/PostBattleRecap";
-import { readApplyRewardsOk } from "./applyRewardsResult";
+import { readApplyRewardsOk } from "./applyRewardsResult.ts";
 
-export type { ApplyRewardsOk } from "./applyRewardsResult";
+export type { ApplyRewardsOk } from "./applyRewardsResult.ts";
 export {
   persistIncrementalRewards,
   readApplyRewardsOk,
-} from "./applyRewardsResult";
+} from "./applyRewardsResult.ts";
 
 export interface RewardInput {
   victory: boolean;
