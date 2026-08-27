@@ -210,6 +210,10 @@ import {
   computeVictoryExp,
   resolveBattleRewards,
 } from "../utils/rewardResolver";
+import {
+  type SpellUpgradeActor,
+  persistSpellUpgrade,
+} from "../utils/spellUpgrade";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -2686,74 +2690,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
       if (dokaBalance < cost) return;
-      const newDoka = dokaBalance - cost;
-      onDokaBalanceChange(newDoka);
-      setSpellLevels((prev) => {
-        const next = { ...prev, [spellId]: (prev[spellId] ?? 0) + 1 };
+      if (!actor?.upgradeSpell) return;
+      void (async () => {
         try {
-          // M6: Use namespaced key for per-character spell levels
-          localStorage.setItem(nsKey("pbv_spell_levels"), JSON.stringify(next));
-        } catch {
-          /* ignore */
-        }
-        // Save to backend after upgrade — derive character info from props directly
-        if (actor) {
-          setCharacterStats((stats) => {
-            const spellKeys = Object.keys(next);
-            const spellVals = spellKeys.map((k) => BigInt(next[k] ?? 0));
-            const rawColors = character?.colors;
-            const charColors = Array.isArray(rawColors)
-              ? [
-                  rawColors[0] ?? "#F5F5F5",
-                  rawColors[1] ?? "#D3D3D3",
-                  rawColors[2] ?? "#000000",
-                ]
-              : ["#F5F5F5", "#D3D3D3", "#000000"];
-            const charToSave = {
-              name: character?.name ?? "Adventurer",
-              pieceType: character?.pieceType ?? "king",
-              colors: charColors,
-              pixelPattern: "",
-              rotation: BigInt(0),
-              level: BigInt(stats.level),
-              experience: BigInt(stats.exp),
-              dokaBalance: BigInt(newDoka),
-              stats: {
-                hp: BigInt(stats.hp),
-                ap: BigInt(stats.ap),
-                mp: BigInt(stats.mp),
-                sp: BigInt(stats.sp),
-                sr: BigInt(stats.sr),
-                init: BigInt(stats.init),
-                res: BigInt(stats.res),
-                chc: BigInt(stats.chc),
-                atk: BigInt(0),
-                resilience: BigInt(0),
-                evasion: BigInt(0),
-                killCount: BigInt(character?.stats?.killCount ?? 0),
-              },
-              spellLevelKeys: spellKeys,
-              spellLevelValues: spellVals,
-            };
-            (async () => {
-              try {
-                await actor.updateCharacter(BigInt(characterSlot), charToSave);
-              } catch (err) {
-                console.warn("[PBV] Character save failed:", err);
-                const savedSlot = BigInt(characterSlot);
-                const savedUpdate = charToSave;
-                pendingSavesRef.current.push(() =>
-                  actor.updateCharacter(savedSlot, savedUpdate),
-                );
-              }
-            })();
-            return stats;
+          const { newLevel, newDoka } = await persistSpellUpgrade(
+            actor as SpellUpgradeActor,
+            characterSlot,
+            spellId,
+          );
+          onDokaBalanceChange(
+            newDoka != null ? newDoka : Math.max(0, dokaBalance - cost),
+          );
+          setSpellLevels((prev) => {
+            const next = { ...prev, [spellId]: newLevel };
+            try {
+              // M6: Use namespaced key for per-character spell levels
+              localStorage.setItem(
+                nsKey("pbv_spell_levels"),
+                JSON.stringify(next),
+              );
+            } catch {
+              /* ignore */
+            }
+            return next;
           });
+        } catch (err) {
+          console.warn("[PBV] Spell upgrade failed:", err);
         }
-        return next;
-      });
+      })();
     },
-    [dokaBalance, onDokaBalanceChange, actor, character, characterSlot, nsKey],
+    [dokaBalance, onDokaBalanceChange, actor, characterSlot, nsKey],
   );
 
   // Character stats with experience system — restore from backend character if available
