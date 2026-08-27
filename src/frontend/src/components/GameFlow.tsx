@@ -14,7 +14,6 @@ import type {
 import { logDebugInfo } from "../utils/debugLogger";
 import AchievementsPanel from "./AchievementsPanel";
 import BossGuideModal from "./BossGuideModal";
-import BuffShop from "./BuffShop";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
 import ChatPanel from "./ChatPanel";
@@ -232,6 +231,8 @@ const GameFlow: React.FC<GameFlowProps> = ({
           dokaBalance={dokaBalance}
           onDokaBalanceChange={setDokaBalance}
           onDebugContextChange={setDebugContext}
+          itemShopOpen={showShop}
+          onItemShopClose={() => setShowShop(false)}
         />
         <ChatPanel
           playerName={userProfile.name}
@@ -376,20 +377,6 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onDokaBalanceChange={setDokaBalance}
           isOpen={showAchievements}
           onClose={() => setShowAchievements(false)}
-        />
-
-        {/* Shop modal */}
-        <BuffShop
-          dokaBalance={dokaBalance}
-          onDeductDoka={(amount) => setDokaBalance((prev) => prev - amount)}
-          onUseItem={() => {
-            /* item use handled by WorldExploration */
-          }}
-          isPlayerTurn={false}
-          inBattle={false}
-          userId={String(userProfile.id ?? userProfile.name ?? "guest")}
-          isOpen={showShop}
-          onClose={() => setShowShop(false)}
         />
       </>
     );
