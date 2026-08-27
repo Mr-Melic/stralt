@@ -102,6 +102,21 @@ export function shouldAwardVictory(opts: {
 }
 
 /**
+ * World / next-room encounters may start only when React `inBattle` AND the
+ * sync `inBattleRef` are both false. `cleanupBattle()` only clears the ref;
+ * `handleBattleEnd` / `handleBossRushRoomClear` / death must also
+ * `setInBattle(false)` or `checkBattleTrigger` stays blocked — Boss Rush
+ * room 2 never starts after a room-clear, and later overworld fights stay dead.
+ */
+export function shouldAllowBattleTrigger(opts: {
+  inBattle: boolean;
+  inBattleRef: boolean;
+  transitionInProgress: boolean;
+}): boolean {
+  return !opts.inBattle && !opts.inBattleRef && !opts.transitionInProgress;
+}
+
+/**
  * Returns `enemies` with all summons removed (living or dead). Used on
  * victory to despawn player-side summons cleanly so the post-battle state
  * contains only the original non-summon combatants.

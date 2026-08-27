@@ -79,6 +79,7 @@ import {
   despawnSummons,
   isActiveHostile,
   isAliveCombatant,
+  shouldAllowBattleTrigger,
   shouldAwardVictory,
 } from "../engine/battleSetup";
 import {
@@ -11522,8 +11523,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Check for battle trigger — fires only when player steps on the EXACT same cell as an enemy
   // biome-ignore lint/correctness/useExhaustiveDependencies: calcEnemyMaxHp is a stable useCallback — included in dep array
   const checkBattleTrigger = useCallback(() => {
-    // Guard: never re-trigger while battle is already initialising or active
-    if (inBattle || inBattleRef.current || transitionInProgressRef.current)
+    // Guard: never re-trigger while battle is already initialising or active.
+    // Both React inBattle and inBattleRef must be false — cleanupBattle only
+    // clears the ref. Boss-rush room clear used to leave inBattle true and
+    // permanently block room 2 / later overworld fights.
+    if (
+      !shouldAllowBattleTrigger({
+        inBattle,
+        inBattleRef: inBattleRef.current,
+        transitionInProgress: transitionInProgressRef.current,
+      })
+    )
       return;
     if (battleTriggerCooldownRef.current) return;
     // H7: Secondary re-entry guard for the 2-frame init window
@@ -12491,8 +12501,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       logDebugError("BOSS", "BossRush reward/popup error", String(err));
     }
 
-    // Clear battle state
+    // Clear battle state. cleanupBattle() only drops inBattleRef; React
+    // inBattle must also fall or checkBattleTrigger stays blocked and the
+    // next Boss Rush room (and later overworld fights) never start.
     cleanupBattle();
+    setInBattle(false);
   }
 
   // Game Over recap reflects the actual persisted XP and Doka lost.
