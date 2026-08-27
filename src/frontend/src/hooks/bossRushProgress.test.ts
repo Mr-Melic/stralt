@@ -3,11 +3,33 @@ import { describe, it } from "node:test";
 import {
   adoptPersistedResumeRoom,
   clearBossRushForSlot,
+  isPrincipalText,
   parseBossRushStateTuple,
   persistBossRushRoomClear,
   progressAfterRoomClear,
+  resolveBossRushQueryPrincipalText,
   resumeRoomFromPersisted,
 } from "./bossRushProgress.ts";
+
+describe("resolveBossRushQueryPrincipalText", () => {
+  const caller = "2vxsx-fae";
+
+  it("rejects profile display names so resume does not skip the canister", () => {
+    assert.equal(isPrincipalText("guest"), false);
+    assert.equal(isPrincipalText("VampireBob"), false);
+    assert.equal(resolveBossRushQueryPrincipalText(null, "guest"), null);
+    assert.equal(resolveBossRushQueryPrincipalText(null, "VampireBob"), null);
+  });
+
+  it("prefers the authenticated II principal over a display-name userId", () => {
+    assert.equal(resolveBossRushQueryPrincipalText(caller, "guest"), caller);
+  });
+
+  it("accepts a valid principal text when identity is missing", () => {
+    assert.equal(isPrincipalText(caller), true);
+    assert.equal(resolveBossRushQueryPrincipalText(null, caller), caller);
+  });
+});
 
 describe("parseBossRushStateTuple", () => {
   it("reads (currentRoom, highestRoomCompleted, totalBossRushRuns)", () => {

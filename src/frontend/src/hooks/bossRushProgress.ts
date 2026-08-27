@@ -10,6 +10,32 @@
 
 export const BOSS_RUSH_ROOM_COUNT = 10;
 
+/**
+ * IC principal text is lowercase base32 groups separated by dashes
+ * (`2vxsx-fae`, `aaaaa-aa`). Profile display names (`guest`, `VampireBob`)
+ * never match, so getBossRushState is not called with a throwing fromText.
+ */
+export function isPrincipalText(value: string): boolean {
+  if (typeof value !== "string" || value.length < 7) return false;
+  if (value !== value.toLowerCase()) return false;
+  return /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value);
+}
+
+/**
+ * getBossRushState requires userId == caller. GameFlow's `userId` is the
+ * profile display name (`userProfile.id ?? name ?? "guest"`); UserProfile has
+ * no id, so Principal.fromText throws and hydrate/resume skip. Writes still
+ * persist via caller. Prefer the authenticated II principal text.
+ */
+export function resolveBossRushQueryPrincipalText(
+  identityText?: string | null,
+  passedText?: string | null,
+): string | null {
+  if (identityText && isPrincipalText(identityText)) return identityText;
+  if (passedText && isPrincipalText(passedText)) return passedText;
+  return null;
+}
+
 export interface ParsedBossRushState {
   currentRoom: number;
   highestRoomCompleted: number;
