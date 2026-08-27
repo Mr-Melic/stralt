@@ -197,6 +197,7 @@ import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
 import { evaluateChallenges } from "../utils/battleFixes";
+import { armDeathGuards } from "../utils/deathGuards";
 import {
   computeDeathPenalty,
   persistDeathPenalty as persistAbsoluteStats,
@@ -12498,8 +12499,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           resetCombatantStore(combatantStoreCtx);
           setInBattle(false);
           cleanupBattle();
-          deathTriggeredRef.current = false;
-          deathPenaltyAppliedRef.current = false;
+          armDeathGuards({
+            deathTriggered: deathTriggeredRef,
+            deathPenaltyApplied: deathPenaltyAppliedRef,
+          });
         }, 1500);
       }
       return;
@@ -12551,9 +12554,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         deathTriggered: deathTriggeredRef.current,
         mapCount,
       });
-      // RC FIX: No generation check needed — loop runs forever
-      const ctx = canvasRef.current?.getContext("2d");
-      if (!ctx) return;
+      // Canvas is not required to generate the Death Realm. The previous
+      // getContext gate aborted here and left deathTriggeredRef set, so a
+      // later exploration death (lava) never ran.
       deathRealmTimerRef.current = null;
       try {
         const { map: drMap, spawnPosition: drSpawn } = generateDeathRealmMap();
@@ -12585,6 +12588,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5),
           ),
         }));
+        armDeathGuards({
+          deathTriggered: deathTriggeredRef,
+          deathPenaltyApplied: deathPenaltyAppliedRef,
+        });
         resetCombatantStore(combatantStoreCtx);
         // Skate-rail system removed
         toast(
@@ -12661,6 +12668,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5),
           ),
         }));
+        armDeathGuards({
+          deathTriggered: deathTriggeredRef,
+          deathPenaltyApplied: deathPenaltyAppliedRef,
+        });
         resetCombatantStore(combatantStoreCtx);
         toast(
           "💀 You have fallen... find a portal to escape the Death Realm.",
@@ -12715,6 +12726,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ap: 4,
       mp: 3,
     }));
+    // Re-arm so a later exploration death (lava/spikes after Death Realm)
+    // can run. The in-battle path used to leave these set.
+    armDeathGuards({
+      deathTriggered: deathTriggeredRef,
+      deathPenaltyApplied: deathPenaltyAppliedRef,
+    });
 
     // Generate death realm map
     let newMap: GameMap;
