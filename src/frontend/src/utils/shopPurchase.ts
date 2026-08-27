@@ -74,3 +74,43 @@ export function readCallerDokaBalance(raw: unknown): number | null {
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Backend auto-completes purchases older than 60s. Match that delay. */
+export const PENDING_PURCHASE_CREDIT_DELAY_MS = 60_000;
+
+export type PurchaseCreditActor = {
+  processPendingPurchases?: () => Promise<unknown>;
+  getCallerDokaBalance?: () => Promise<unknown>;
+};
+
+/**
+ * Battle cleanup clears `pendingTimeoutsRef` on every portal, death, and
+ * victory. Shop credit timers must live in a separate set or paid Doka
+ * never reaches processPendingPurchases.
+ */
+export function shopCreditUsesBattleTimeoutSet(): boolean {
+  return false;
+}
+
+export function creditedDokaDelta(
+  previous: number | null,
+  credited: number | null,
+): number {
+  if (credited == null || previous == null) return 0;
+  return Math.max(0, credited - previous);
+}
+
+/** Complete aged pending purchases and return the wallet before/after. */
+export async function creditPendingPurchases(
+  actor: PurchaseCreditActor,
+): Promise<{ previous: number | null; credited: number | null }> {
+  if (!actor.getCallerDokaBalance || !actor.processPendingPurchases) {
+    return { previous: null, credited: null };
+  }
+  const previous = readCallerDokaBalance(await actor.getCallerDokaBalance());
+  await actor.processPendingPurchases();
+  return {
+    previous,
+    credited: readCallerDokaBalance(await actor.getCallerDokaBalance()),
+  };
+}
