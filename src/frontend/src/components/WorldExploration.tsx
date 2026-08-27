@@ -206,7 +206,6 @@ import {
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
-  RewardInput,
   buildBossRushPersistInput,
   computeVictoryExp,
   resolveBattleRewards,
@@ -12245,7 +12244,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const challengeDokaReward = 0;
       const completedChallenges: string[] = [];
 
-      // Rewards persisted via applyRewards in resolveBattleRewards
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
       const newXp = (characterStats.exp || 0) + expGained;
 
@@ -12264,9 +12262,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             characterLevel: characterStats.level,
             baseDoka: totalDoka + challengeDokaReward,
           }),
-        ).catch((err) =>
-          logDebugError("BOSS", "BossRush persist failed", String(err)),
-        );
+        )
+          .then((persisted) => {
+            onDokaBalanceChange(persisted.newDoka ?? newDokaBalance);
+            setCharacterStats((prev) => ({
+              ...prev,
+              exp: persisted.newXp ?? newXp,
+              level: persisted.currentLevel || prev.level,
+            }));
+          })
+          .catch((persistErr: unknown) => {
+            logDebugError(
+              "BOSS",
+              "BossRush reward persist failed",
+              String(persistErr),
+            );
+          });
       }
 
       // Build recap data

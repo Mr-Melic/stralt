@@ -1,50 +1,117 @@
 import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import {
   persistIncrementalRewards,
   readApplyRewardsOk,
 } from "./applyRewardsResult.ts";
+import {
+  PREAPPLIED_REWARD_MULTIPLIER,
+  buildBossRushPersistInput,
+  computeRewardDeltas,
+  computeVictoryExp,
+} from "./rewardResolver.ts";
 
-function testReadApplyRewardsOk() {
-  const ok = readApplyRewardsOk({
-    ok: { newDoka: 12, newXp: 40, newLevel: 2 },
+describe("boss-rush persist input", () => {
+  it("persists the room totals exactly (no extra dungeon multiplier)", () => {
+    const defeatedEnemies = [
+      { name: "larva", level: 4 },
+      { name: "queen", level: 8 },
+    ];
+    const input = buildBossRushPersistInput({
+      defeatedEnemies,
+      characterLevel: 5,
+      baseDoka: 42,
+    });
+
+    assert.equal(input.dungeonMultiplier, PREAPPLIED_REWARD_MULTIPLIER);
+    assert.equal(input.victory, true);
+    assert.equal(
+      input.baseXp,
+      computeVictoryExp({ defeatedEnemies, characterLevel: 5 }),
+    );
+
+    const deltas = computeRewardDeltas(input);
+    assert.equal(deltas.dokaDelta, 42);
+    assert.equal(deltas.xpDelta, 240);
   });
-  assert.deepEqual(ok, { newDoka: 12, newXp: 40, newLevel: 2 });
+});
 
-  const underscored = readApplyRewardsOk({
-    _ok: { newDoka: 1n, newXp: 9n, newLevel: 1n },
+describe("pre-applied dungeon multiplier", () => {
+  it("does not square a chain multiplier already baked into the bases", () => {
+    const chainMult = 2;
+    const rawDoka = 100;
+    const recapDoka = rawDoka * chainMult;
+    const recapXp = 80;
+
+    const wrong = computeRewardDeltas({
+      victory: true,
+      enemiesDefeated: [],
+      completedChallenges: [],
+      dungeonMultiplier: chainMult,
+      baseDoka: recapDoka,
+      baseXp: recapXp,
+    });
+    assert.equal(wrong.dokaDelta, 400);
+    assert.equal(wrong.xpDelta, 160);
+
+    const correct = computeRewardDeltas({
+      victory: true,
+      enemiesDefeated: [],
+      completedChallenges: [],
+      dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+      baseDoka: recapDoka,
+      baseXp: recapXp,
+    });
+    assert.equal(correct.dokaDelta, recapDoka);
+    assert.equal(correct.xpDelta, recapXp);
   });
-  assert.deepEqual(underscored, { newDoka: 1, newXp: 9, newLevel: 1 });
+});
 
-  const kinded = readApplyRewardsOk({
-    __kind__: "ok",
-    ok: { newDoka: 5, newXp: 15, newLevel: 1 },
+describe("applyRewards result parsing", () => {
+  it("reads ok, _ok, and __kind__ payloads and rejects errors", () => {
+    assert.deepEqual(
+      readApplyRewardsOk({
+        ok: { newDoka: 12, newXp: 40, newLevel: 2 },
+      }),
+      { newDoka: 12, newXp: 40, newLevel: 2 },
+    );
+
+    assert.deepEqual(
+      readApplyRewardsOk({
+        _ok: { newDoka: 1n, newXp: 9n, newLevel: 1n },
+      }),
+      { newDoka: 1, newXp: 9, newLevel: 1 },
+    );
+
+    assert.deepEqual(
+      readApplyRewardsOk({
+        __kind__: "ok",
+        ok: { newDoka: 5, newXp: 15, newLevel: 1 },
+      }),
+      { newDoka: 5, newXp: 15, newLevel: 1 },
+    );
+
+    assert.throws(
+      () => readApplyRewardsOk({ err: "Anonymous caller" }),
+      /Anonymous caller/,
+    );
+    assert.throws(
+      () => readApplyRewardsOk({ __kind__: "err", err: "Account banned" }),
+      /Account banned/,
+    );
+    assert.throws(() => readApplyRewardsOk(null), /empty result/);
   });
-  assert.deepEqual(kinded, { newDoka: 5, newXp: 15, newLevel: 1 });
 
-  assert.throws(
-    () => readApplyRewardsOk({ err: "Anonymous caller" }),
-    /Anonymous caller/,
-  );
-  assert.throws(
-    () => readApplyRewardsOk({ __kind__: "err", err: "Account banned" }),
-    /Account banned/,
-  );
-  assert.throws(() => readApplyRewardsOk(null), /empty result/);
-}
-
-async function testPersistIncrementalRewards() {
-  const calls: Array<[bigint, bigint, bigint]> = [];
-  const actor = {
-    applyRewards: async (slot: bigint, doka: bigint, xp: bigint) => {
-      calls.push([slot, doka, xp]);
-      return { ok: { newDoka: 100, newXp: 30, newLevel: 2 } };
-    },
-  };
-  const persisted = await persistIncrementalRewards(actor, 2, 0, 10);
-  assert.deepEqual(calls, [[2n, 0n, 10n]]);
-  assert.deepEqual(persisted, { newDoka: 100, newXp: 30, newLevel: 2 });
-}
-
-testReadApplyRewardsOk();
-await testPersistIncrementalRewards();
-console.log("rewardResolver persist tests passed");
+  it("persists incremental XP through applyRewards", async () => {
+    const calls: Array<[bigint, bigint, bigint]> = [];
+    const actor = {
+      applyRewards: async (slot: bigint, doka: bigint, xp: bigint) => {
+        calls.push([slot, doka, xp]);
+        return { ok: { newDoka: 100, newXp: 30, newLevel: 2 } };
+      },
+    };
+    const persisted = await persistIncrementalRewards(actor, 2, 0, 10);
+    assert.deepEqual(calls, [[2n, 0n, 10n]]);
+    assert.deepEqual(persisted, { newDoka: 100, newXp: 30, newLevel: 2 });
+  });
+});
