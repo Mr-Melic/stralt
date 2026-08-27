@@ -15,7 +15,6 @@
  */
 
 import type { SpellConfig } from "../types/gameTypes";
-import type { DeathSource } from "./deathPipeline";
 import type {
   ActiveEffectLike,
   PlayerCastEnemy,
@@ -211,9 +210,8 @@ export interface PlayerSpellContextDeps extends SpellContextDeps {
    * Idempotent combatant death processing. Called by the damage loop after
    * applyDamageToEnemy when a target's post-damage hp drops to <= 0. Returns
    * true if the death sequence ran this call, false if already removed.
-   * `source` tags the kill provenance for the [DEATH] log entry.
    */
-  processCombatantDeath: (id: string, source?: DeathSource) => boolean;
+  processCombatantDeath: (id: string) => boolean;
 }
 
 /**

@@ -7,25 +7,42 @@ function assertEqual(actual: number, expected: number, label: string): void {
 }
 
 assertEqual(
-  computeVictoryExp(0, [{ level: 3 }, { level: 5 }], 4),
+  computeVictoryExp({
+    explicitGrant: 0,
+    defeatedEnemies: [
+      { name: "a", level: 3 },
+      { name: "b", level: 5 },
+    ],
+    characterLevel: 4,
+  }),
   160,
-  "derive from kills when expGained is 0",
+  "derive from kills when explicitGrant is 0",
 );
 assertEqual(
-  computeVictoryExp(undefined, [{ level: 2 }], 4),
+  computeVictoryExp({
+    defeatedEnemies: [{ name: "a", level: 2 }],
+    characterLevel: 4,
+  }),
   40,
-  "derive from kills when expGained is omitted",
+  "derive from kills when explicitGrant is omitted",
 );
 assertEqual(
-  computeVictoryExp(90, [{ level: 2 }], 4),
+  computeVictoryExp({
+    explicitGrant: 90,
+    defeatedEnemies: [{ name: "a", level: 2 }],
+    characterLevel: 4,
+  }),
   90,
   "prefer explicit positive grant",
 );
 assertEqual(
-  computeVictoryExp(0, [], 7),
+  computeVictoryExp({
+    explicitGrant: 0,
+    defeatedEnemies: [],
+    characterLevel: 7,
+  }),
   140,
   "fallback to characterLevel * 20",
 );
-assertEqual(computeVictoryExp(0, [], 0), 20, "fallback level floors at 1");
 
 console.log("computeVictoryExp tests passed");

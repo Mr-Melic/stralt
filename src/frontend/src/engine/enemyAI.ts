@@ -43,7 +43,6 @@ import { logDebugInfo } from "../utils/debugLogger";
 import {
   type OccupancyContext,
   isCellFree as sharedIsCellFree,
-  isCellFreeDiagnostic as sharedIsCellFreeDiagnostic,
 } from "./occupancy";
 
 // ---------------------------------------------------------------------------
@@ -331,23 +330,8 @@ function effectiveHp(c: AICombatant): number {
 function computeReachable(
   origin: AICell,
   ctx: DecideEnemyContext,
-  destination?: AICell,
 ): Set<string> {
   const occCtx = toOccupancyContext(ctx);
-  // When a destination is supplied, exempt it from occupancy so the BFS can
-  // route a step onto the target's tile (the move-then-strike path). Wall,
-  // void, barrier, and oob checks still apply via sharedIsCellFree.
-  const passCtx: OccupancyContext =
-    destination !== undefined
-      ? {
-          ...occCtx,
-          isOccupied: (cell) => {
-            if (cell.x === destination.x && cell.y === destination.y)
-              return false;
-            return occCtx.isOccupied(cell);
-          },
-        }
-      : occCtx;
   const reachable = new Set<string>();
   const visited = new Map<string, number>();
   const queue: { x: number; y: number; steps: number }[] = [
@@ -371,9 +355,8 @@ function computeReachable(
       const k = key(nx, ny);
       if (nx < 0 || nx >= WORLD_GRID_SIZE || ny < 0 || ny >= WORLD_GRID_SIZE)
         continue;
-      // Shared passability check: grid + barriers + portals + void + occupied
-      // (with the destination exempted from occupancy when supplied).
-      if (!sharedIsCellFree({ x: nx, y: ny }, passCtx)) continue;
+      // Shared passability check: grid + barriers + portals + void + occupied.
+      if (!sharedIsCellFree({ x: nx, y: ny }, occCtx)) continue;
       if ((visited.get(k) ?? Number.POSITIVE_INFINITY) <= nextSteps) continue;
       visited.set(k, nextSteps);
       reachable.add(k);
@@ -406,32 +389,9 @@ function toOccupancyContext(ctx: DecideEnemyContext): OccupancyContext {
  * Delegates to the shared `isCellFree` from engine/occupancy.ts so the
  * enemy AI, summon AI, spawn placement, and swap/pushback/attract resolvers
  * all use ONE occupancy + passability implementation.
- *
- * When `destination` is provided and `(x, y)` equals it, the occupancy
- * check is exempted: the caller is moving INTO the target's tile (e.g. a
- * charger stepping onto a target it will melee), so the target's own body
- * must not block the step. Wall/void/barrier/oob checks still apply.
  */
-function isStepFree(
-  x: number,
-  y: number,
-  ctx: DecideEnemyContext,
-  destination?: AICell,
-): boolean {
-  const occCtx = toOccupancyContext(ctx);
-  if (destination !== undefined && x === destination.x && y === destination.y) {
-    // Exempt occupancy: build a context whose isOccupied never reports the
-    // destination tile as blocked, so only wall/void/barrier/oob remain.
-    const exemptedCtx: OccupancyContext = {
-      ...occCtx,
-      isOccupied: (cell) => {
-        if (cell.x === destination.x && cell.y === destination.y) return false;
-        return occCtx.isOccupied(cell);
-      },
-    };
-    return sharedIsCellFree({ x, y }, exemptedCtx);
-  }
-  return sharedIsCellFree({ x, y }, occCtx);
+function isStepFree(x: number, y: number, ctx: DecideEnemyContext): boolean {
+  return sharedIsCellFree({ x, y }, toOccupancyContext(ctx));
 }
 
 /** Filter candidate move tiles to avoid hazards when the enemy is low HP. */
@@ -585,36 +545,6 @@ function pickBestDamageSpell(
   );
 }
 
-/**
- * Pick the best available damaging spell WITHOUT the current-range filter.
- *
- * `pickBestDamageSpell` filters by `Number(s.range) >= dist` using the
- * CURRENT distance, so it returns null when the target is out of range —
- * exactly when move-then-attack planning needs the spell. This helper drops
- * the range filter (keeping only damage > 0 + damage-type) so the
- * move-then-attack paths can pick a spell to cast AFTER moving into range.
- *
- * Used by the move-then-attack branches of charger/flanker/berserker/generic
- * (and the caster move-then-cast path) to satisfy the aggression invariant:
- * when a legal damaging action exists this turn (reachable via move-then-attack
- * within MP+AP), it MUST be chosen over pure movement.
- */
-function pickBestDamageSpellForReach(
-  ctx: DecideEnemyContext,
-): SpellConfig | null {
-  const damaging = ctx.availableSpells.filter(
-    (s) =>
-      Number(s.damage) > 0 &&
-      (s.spellType === "damage" ||
-        s.effectType === "damage" ||
-        s.effectType === "drain"),
-  );
-  if (damaging.length === 0) return null;
-  return damaging.reduce((best, s) =>
-    Number(s.damage) > Number(best.damage) ? s : best,
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Movement: approach, retreat, flank, reposition
 // ---------------------------------------------------------------------------
@@ -625,11 +555,7 @@ function stepToward(
   target: AICell,
   ctx: DecideEnemyContext,
   reachable: Set<string>,
-  destination?: AICell,
 ): AICell {
-  // Default the destination exemption to the target tile so a charger/flanker
-  // can step onto a target it will strike this turn.
-  const dest = destination ?? target;
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
   const sx = dx > 0 ? 1 : dx < 0 ? -1 : 0;
@@ -644,7 +570,7 @@ function stepToward(
   if (sx !== 0) candidates.push({ x: origin.x + sx, y: origin.y });
   if (sy !== 0) candidates.push({ x: origin.x, y: origin.y + sy });
   for (const c of candidates) {
-    if (!isStepFree(c.x, c.y, ctx, dest)) continue;
+    if (!isStepFree(c.x, c.y, ctx)) continue;
     if (!reachable.has(key(c.x, c.y))) continue;
     return c;
   }
@@ -692,10 +618,7 @@ function stepFlank(
   target: AICell,
   ctx: DecideEnemyContext,
   reachable: Set<string>,
-  destination?: AICell,
 ): AICell {
-  // Default the destination exemption to the target tile.
-  const dest = destination ?? target;
   const dx = target.x - origin.x;
   const dy = target.y - origin.y;
   // Perpendicular candidates (side approach).
@@ -721,12 +644,12 @@ function stepFlank(
   }
   for (const c of candidates) {
     if (tackleZone.has(key(c.x, c.y))) continue;
-    if (!isStepFree(c.x, c.y, ctx, dest)) continue;
+    if (!isStepFree(c.x, c.y, ctx)) continue;
     if (!reachable.has(key(c.x, c.y))) continue;
     return c;
   }
   // Fallback: plain approach.
-  return stepToward(origin, target, ctx, reachable, dest);
+  return stepToward(origin, target, ctx, reachable);
 }
 
 // ---------------------------------------------------------------------------
@@ -939,78 +862,15 @@ function countTargetsInBlast(
  * Section 4(f): structured intent log line for readability. Emits a
  * `logDebugInfo('TURN', 'intent', {archetype, action, target, reason})` entry
  * when AI_INTENT_LOG_ENABLED. Readability only — does not influence behavior.
- *
- * `reason` may be a plain string (e.g. "adjacent", "no-target") or a structured
- * blocked-reason object produced by `blockedReason` for the six "blocked"
- * sites. Structured reasons are JSON-stringified so the debug log stays a flat
- * `{ archetype, action, target, reason }` payload.
  */
-type BlockedReason = {
-  reason: "blocked";
-  firstBlockedStep: { x: number; y: number };
-  blockedBy: "wall" | "occupied" | "void";
-};
-
 function logIntent(
   archetype: string,
   action: string,
   target: string | null,
-  reason: string | BlockedReason,
+  reason: string,
 ): void {
   if (!AI_INTENT_LOG_ENABLED) return;
-  const reasonPayload =
-    typeof reason === "string" ? reason : JSON.stringify(reason);
-  logDebugInfo("TURN", "intent", {
-    archetype,
-    action,
-    target,
-    reason: reasonPayload,
-  });
-}
-
-/**
- * Section 4(f.1): compute a structured "blocked" reason for a step from `origin`
- * toward `target`. Returns the candidate step tile and the mapped cause
- * ('wall' | 'occupied' | 'void') from the shared diagnostic occupancy check.
- * Readability/debug only — does not change behavior.
- *
- * Cause mapping: 'wall' and 'oob' both surface as 'wall' (the AI cannot step
- * off the grid or into a wall/barrier/portal), 'occupied' stays 'occupied',
- * and 'void' stays 'void'. When origin === target (dx === 0 && dy === 0) the
- * candidate step is the origin itself, and the cause is whatever the
- * diagnostic reports for that tile (typically 'occupied' by the target).
- */
-function blockedReason(
-  origin: AICell,
-  target: AICell,
-  ctx: DecideEnemyContext,
-): BlockedReason {
-  const dx = Math.sign(target.x - origin.x);
-  const dy = Math.sign(target.y - origin.y);
-  const candidateX = origin.x + dx;
-  const candidateY = origin.y + dy;
-  const diag = sharedIsCellFreeDiagnostic(
-    { x: candidateX, y: candidateY },
-    toOccupancyContext(ctx),
-  );
-  let blockedBy: BlockedReason["blockedBy"];
-  if (diag.ok) {
-    // Should not happen at a "blocked" site, but stay type-safe: default to
-    // 'wall' so the log line still parses.
-    blockedBy = "wall";
-  } else if (diag.cause === "occupied") {
-    blockedBy = "occupied";
-  } else if (diag.cause === "void") {
-    blockedBy = "void";
-  } else {
-    // 'wall' or 'oob' → 'wall'
-    blockedBy = "wall";
-  }
-  return {
-    reason: "blocked",
-    firstBlockedStep: { x: candidateX, y: candidateY },
-    blockedBy,
-  };
+  logDebugInfo("TURN", "intent", { archetype, action, target, reason });
 }
 
 /** Find the player's healer summon (Wisp) for harassment, if present. */
@@ -1065,12 +925,6 @@ function decideCaster(
   }
   // Pick best target + spell, requiring range AND LoS.
   const scored = scoreTargets(opponents, ctx, null);
-  // PASS 1 — collect every in-range + LoS damaging cast across ALL scored
-  // targets. We must NOT return a reposition on the FIRST LoS-blocked target,
-  // because a DIFFERENT target may already have a clear damaging shot. Only
-  // after confirming no damaging cast exists on ANY target do we fall back to
-  // reposition-for-LoS (PASS 2) and then move-then-cast / advance.
-  let bestCast: { target: ScoredTarget; spell: SpellConfig } | null = null;
   for (const t of scored) {
     const spell = pickBestDamageSpell(ctx, t.combatant);
     if (!spell) continue;
@@ -1079,88 +933,24 @@ function decideCaster(
     const inRange = dist <= Number(spell.range);
     const los = ctx.hasLineOfSight(origin, targetCell);
     if (inRange && los) {
-      bestCast = { target: t, spell };
-      break;
+      // Section 4(a): prefer a target that dies this turn when lookahead is on.
+      const lethal = applyLethalLookahead(scored, ctx, spell);
+      const final = applyOverkillSpread(lethal, scored, ctx, spell);
+      ctx.setFocusTargetId(final.combatant.id);
+      ctx.markFocusSet();
+      ctx.log(`${ctx.enemy.pieceType} casts ${spell.name}!`, CAST_COLOR);
+      logIntent("caster", "cast", final.combatant.id, "in-range+los");
+      return {
+        archetype: "caster",
+        destination: origin,
+        spell,
+        targetId: final.combatant.id,
+        kind: "cast",
+        intent: "cast",
+        intentColor: CAST_COLOR,
+        retreating: false,
+      };
     }
-  }
-  if (bestCast) {
-    const { spell } = bestCast;
-    // Section 4(a): prefer a target that dies this turn when lookahead is on.
-    const lethal = applyLethalLookahead(scored, ctx, spell);
-    const final = applyOverkillSpread(lethal, scored, ctx, spell);
-    ctx.setFocusTargetId(final.combatant.id);
-    ctx.markFocusSet();
-    ctx.log(`${ctx.enemy.pieceType} casts ${spell.name}!`, CAST_COLOR);
-    logIntent("caster", "cast", final.combatant.id, "in-range+los");
-    return {
-      archetype: "caster",
-      destination: origin,
-      spell,
-      targetId: final.combatant.id,
-      kind: "cast",
-      intent: "cast",
-      intentColor: CAST_COLOR,
-      retreating: false,
-    };
-  }
-  // PASS 1.5 — no in-range+LoS ranged cast on ANY target. Before repositioning
-  // for a ranged shot, scan ALL scored targets for an adjacent hostile and
-  // strike it in melee. This satisfies the aggression invariant: when a legal
-  // damaging action exists this turn (adjacency for melee), it MUST be chosen
-  // over pure movement / reposition. Without this fallback a caster adjacent
-  // to a hostile but LoS-blocked on every ranged spell would fall through to
-  // PASS 2 reposition and silently no-op its melee option.
-  let adjacentMelee: {
-    target: ScoredTarget;
-    spell: SpellConfig | null;
-  } | null = null;
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    if (chebyshev(origin, tCell) <= 1) {
-      // Use the reach helper so a melee-range damaging spell (range <= 1) is
-      // picked even when the ranged LoS-blocked spells filtered it out above.
-      const spell = pickBestDamageSpellForReach(ctx);
-      adjacentMelee = { target: t, spell };
-      break;
-    }
-  }
-  if (adjacentMelee) {
-    const { spell } = adjacentMelee;
-    // Section 4(a): prefer a target that dies this turn.
-    const lethal = applyLethalLookahead(scored, ctx, spell);
-    const final = applyOverkillSpread(lethal, scored, ctx, spell);
-    ctx.setFocusTargetId(final.combatant.id);
-    ctx.markFocusSet();
-    ctx.log(
-      `${ctx.enemy.pieceType} strikes ${final.combatant.name} in melee!`,
-      CAST_COLOR,
-    );
-    logIntent(
-      "caster",
-      spell ? "cast" : "melee",
-      final.combatant.id,
-      "adjacent-melee-fallback",
-    );
-    return {
-      archetype: "caster",
-      destination: origin,
-      spell,
-      targetId: final.combatant.id,
-      kind: spell ? "cast" : "melee",
-      intent: "melee",
-      intentColor: CAST_COLOR,
-      retreating: false,
-    };
-  }
-  // PASS 2 — no damaging cast on ANY target. Try reposition-for-LoS across all
-  // targets that are in range but LoS-blocked, so a sidestep can unlock a shot.
-  for (const t of scored) {
-    const spell = pickBestDamageSpell(ctx, t.combatant);
-    if (!spell) continue;
-    const targetCell = { x: t.combatant.x, y: t.combatant.y };
-    const dist = chebyshev(origin, targetCell);
-    const inRange = dist <= Number(spell.range);
-    const los = ctx.hasLineOfSight(origin, targetCell);
     // Section 4(c): in range but LoS blocked — reposition for a clear shot.
     if (inRange && !los) {
       const reposition = repositionForLOS(
@@ -1280,49 +1070,7 @@ function decideHealer(
   reachable: Set<string>,
 ): EnemyAction {
   const origin: AICell = { x: ctx.enemy.x, y: ctx.enemy.y };
-  // Aggression pre-check: if a legal damaging action exists this turn on ANY
-  // hostile — adjacent melee, in-range+LoS cast, OR a reachable move-then-attack
-  // within MP+AP — skip the backline-guard pure-move below and fall straight
-  // through to the decideCaster fallback so the healer damages when no heal is
-  // needed. This enforces the aggression invariant: a damaging action MUST be
-  // chosen over pure movement. Without this pre-check a healer with no wounded
-  // ally would always interpose (pure move) and never attack even when an
-  // opponent is adjacent or reachable.
-  const hasLegalDamagingAction = (() => {
-    for (const o of opponents) {
-      const oCell = { x: o.x, y: o.y };
-      const dist = chebyshev(origin, oCell);
-      // Adjacent melee is always legal.
-      if (dist <= 1) return true;
-      // In-range + LoS ranged cast.
-      const rangedSpell = pickBestDamageSpell(ctx, o);
-      if (rangedSpell && dist <= Number(rangedSpell.range)) {
-        const los =
-          rangedSpell.lineOfSight === false
-            ? true
-            : ctx.hasLineOfSight(origin, oCell);
-        if (los) return true;
-      }
-      // Reachable move-then-attack within MP+AP.
-      const reachSpell = pickBestDamageSpellForReach(ctx);
-      if (reachSpell) {
-        const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1;
-        if (canReach) {
-          const castTile = findNearestLegalCastTile(
-            origin,
-            oCell,
-            ctx,
-            reachable,
-            reachSpell,
-          );
-          if (castTile) return true;
-        }
-      }
-    }
-    return false;
-  })();
-  // Heal the most-wounded ally below 50% HP (not random). Healing always takes
-  // priority over the aggression pre-check — a healer heals before it damages.
+  // Heal the most-wounded ally below 50% HP (not random).
   const wounded = allies
     .filter((a) => hpFrac(a) < ENEMY_HEAL_ALLY_THRESHOLD_PCT)
     .sort((a, b) => hpFrac(a) - hpFrac(b))[0];
@@ -1365,23 +1113,9 @@ function decideHealer(
       retreating: false,
     };
   }
-  // No healing needed. If a legal damaging action exists this turn, skip the
-  // backline-guard pure-move and fall straight through to the decideCaster
-  // fallback so the healer damages (aggression invariant).
-  if (hasLegalDamagingAction) {
-    const fallback = decideCaster(ctx, opponents, reachable);
-    logIntent(
-      "healer",
-      fallback.intent,
-      fallback.targetId,
-      "fallback-caster-aggression",
-    );
-    return fallback;
-  }
-  // Section 4(d): no healing needed and no legal damaging action — interpose
-  // between the nearest threat and the most valuable ward (the player, or the
-  // lowest-HP ally) so the backline is protected while the healer waits for a
-  // wound to appear.
+  // Section 4(d): no healing needed — interpose between the nearest threat
+  // and the most valuable ward (the player, or the lowest-HP ally) so the
+  // backline is protected while the healer waits for a wound to appear.
   if (
     AI_BACKLINE_PROTECT_ENABLED &&
     opponents.length > 0 &&
@@ -1438,23 +1172,13 @@ function decideCharger(
       retreating: false,
     };
   }
-  // PASS 1 — scan ALL scored targets for a legal damaging action (adjacent
-  // melee/cast OR a reachable move-then-cast) BEFORE falling back to advance or
-  // hold. The charger must not lock onto scored[0] alone: a different target
-  // may already be adjacent or reachable for a same-turn cast.
-  let adjacentHit: { target: ScoredTarget; spell: SpellConfig | null } | null =
-    null;
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    if (chebyshev(origin, tCell) <= 1) {
-      const spell = pickBestDamageSpell(ctx, t.combatant);
-      adjacentHit = { target: t, spell };
-      break;
-    }
-  }
-  if (adjacentHit) {
-    const { spell } = adjacentHit;
-    // Section 4(a): prefer a target that dies this turn.
+  const targetCell = { x: target.combatant.x, y: target.combatant.y };
+  const dist = chebyshev(origin, targetCell);
+  // Commit only when the charger can REACH the target this turn (dist <= budget).
+  const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
+  if (dist <= 1) {
+    // Adjacent: melee. Section 4(a): prefer a target that dies this turn.
+    const spell = pickBestDamageSpell(ctx, target.combatant);
     const lethal = applyLethalLookahead(scored, ctx, spell);
     const finalTarget = lethal.combatant;
     ctx.log(`${ctx.enemy.pieceType} charges ${finalTarget.name}!`, CAST_COLOR);
@@ -1470,67 +1194,58 @@ function decideCharger(
       retreating: false,
     };
   }
-  // PASS 2 — no adjacent target. Scan ALL targets for a reachable move-then-cast
-  // (a legal-cast tile reachable this turn) before falling back to advance.
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const dist = chebyshev(origin, tCell);
-    // Commit only when the charger can REACH the target this turn (dist <= budget).
-    const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
-    if (!canReach) continue;
-    // Section 2a — move-then-cast: the charger has a ranged option. If a
-    // legal-cast tile is reachable this turn, path there and cast from it in the
-    // same turn. Use pickBestDamageSpellForReach (not pickBestDamageSpell) so
-    // the spell is selected WITHOUT the current-range filter — the target is
-    // out of current range by definition here, and the range filter would
-    // return null and silently no-op the move-then-cast path (the aggression
-    // invariant requires this damaging action be chosen over pure movement).
-    const chargeSpell = pickBestDamageSpellForReach(ctx);
-    if (chargeSpell) {
-      const castTile = findNearestLegalCastTile(
-        origin,
-        tCell,
-        ctx,
-        reachable,
-        chargeSpell,
+  if (!canReach) {
+    // Out of reach: hold rather than suicide-advance into a bad position.
+    ctx.log(`${ctx.enemy.pieceType} waits to charge`, SKIP_COLOR);
+    logIntent("charger", "wait", target.combatant.id, "out-of-reach");
+    return {
+      archetype: "charger",
+      destination: origin,
+      spell: null,
+      targetId: null,
+      kind: "skip",
+      intent: "wait",
+      intentColor: SKIP_COLOR,
+      retreating: false,
+    };
+  }
+  // Section 2a — move-then-cast: the charger has a ranged option. If a
+  // legal-cast tile is reachable this turn, path there and cast from it in the
+  // same turn. Otherwise advance toward the target with intent 'closes-in'.
+  const chargeSpell = pickBestDamageSpell(ctx, target.combatant);
+  if (chargeSpell) {
+    const castTile = findNearestLegalCastTile(
+      origin,
+      targetCell,
+      ctx,
+      reachable,
+      chargeSpell,
+    );
+    if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
+      ctx.log(
+        `${ctx.enemy.pieceType} closes in and casts ${chargeSpell.name}!`,
+        CAST_COLOR,
       );
-      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
-        ctx.log(
-          `${ctx.enemy.pieceType} closes in and casts ${chargeSpell.name}!`,
-          CAST_COLOR,
-        );
-        logIntent("charger", "closes-in", t.combatant.id, "move-then-cast");
-        return {
-          archetype: "charger",
-          destination: castTile,
-          spell: chargeSpell,
-          targetId: t.combatant.id,
-          kind: "cast",
-          intent: "closes-in",
-          intentColor: CAST_COLOR,
-          retreating: false,
-        };
-      }
+      logIntent("charger", "closes-in", target.combatant.id, "move-then-cast");
+      return {
+        archetype: "charger",
+        destination: castTile,
+        spell: chargeSpell,
+        targetId: target.combatant.id,
+        kind: "cast",
+        intent: "closes-in",
+        intentColor: CAST_COLOR,
+        retreating: false,
+      };
     }
   }
-  // PASS 3 — no legal damaging action on any reachable target. Advance toward
-  // the top target unconditionally so distant chargers close the gap instead of
-  // idling. The previous hold-when-out-of-reach early return (dist > budget+1)
-  // caused distant chargers to idle forever — the "no approach movement" bug.
-  // stepToward falls back to any reachable free step when the direct axis is
-  // blocked, so the charger always emits a real advance path when one exists.
-  const targetCell = { x: target.combatant.x, y: target.combatant.y };
+  // Advance toward the target.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     ctx.log(`${ctx.enemy.pieceType} charges forward!`, MOVE_COLOR);
-    logIntent("charger", "advance", target.combatant.id, "approach");
+    logIntent("charger", "advance", target.combatant.id, "in-reach");
   } else {
-    logIntent(
-      "charger",
-      "hold",
-      target.combatant.id,
-      blockedReason(origin, targetCell, ctx),
-    );
+    logIntent("charger", "hold", target.combatant.id, "blocked");
   }
   return {
     archetype: "charger",
@@ -1599,21 +1314,9 @@ function decideFlanker(
     };
   }
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  // PASS 1 — scan ALL scored targets for an adjacent damaging strike BEFORE
-  // falling back to a flank move. The flanker must not lock onto scored[0]
-  // alone: a different target may already be adjacent and strikeable this turn.
-  let adjacentHit: { target: ScoredTarget; spell: SpellConfig | null } | null =
-    null;
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    if (chebyshev(origin, tCell) <= 1) {
-      const spell = pickBestDamageSpell(ctx, t.combatant);
-      adjacentHit = { target: t, spell };
-      break;
-    }
-  }
-  if (adjacentHit) {
-    const { spell } = adjacentHit;
+  const dist = chebyshev(origin, targetCell);
+  if (dist <= 1) {
+    const spell = pickBestDamageSpell(ctx, target.combatant);
     // Section 4(a): prefer a target that dies this turn.
     const lethal = applyLethalLookahead(scored, ctx, spell);
     const finalTarget = lethal.combatant;
@@ -1635,51 +1338,6 @@ function decideFlanker(
       retreating: false,
     };
   }
-  // PASS 1.5 — no adjacent damaging strike on any target. Before falling
-  // through to the pure flank-move (PASS 2), scan ALL scored targets for a
-  // reachable move-then-attack: pick a damaging spell WITHOUT the current-range
-  // filter (pickBestDamageSpellForReach) and, if a legal-cast tile is reachable
-  // this turn, path there and attack from it in the same turn. This satisfies
-  // the aggression invariant: when a legal damaging action exists this turn
-  // (reachable via move-then-attack within MP+AP), it MUST be chosen over pure
-  // movement. Without this pass the flanker would always pure-flank and never
-  // close-then-strike a target that is out of current range but reachable.
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const dist = chebyshev(origin, tCell);
-    // Commit only when the flanker can REACH the target this turn.
-    const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
-    if (!canReach) continue;
-    const flankSpell = pickBestDamageSpellForReach(ctx);
-    if (flankSpell) {
-      const castTile = findNearestLegalCastTile(
-        origin,
-        tCell,
-        ctx,
-        reachable,
-        flankSpell,
-      );
-      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
-        ctx.log(
-          `${ctx.enemy.pieceType} flanks in and casts ${flankSpell.name}!`,
-          CAST_COLOR,
-        );
-        logIntent("flanker", "closes-in", t.combatant.id, "move-then-cast");
-        return {
-          archetype: "flanker",
-          destination: castTile,
-          spell: flankSpell,
-          targetId: t.combatant.id,
-          kind: "cast",
-          intent: "closes-in",
-          intentColor: CAST_COLOR,
-          retreating: false,
-        };
-      }
-    }
-  }
-  // PASS 2 — no adjacent damaging strike AND no reachable move-then-attack on
-  // any target. Flank toward the top target, avoiding tackle zones.
   // Path to a side/rear tile, avoiding tackle zones.
   const dest = stepFlank(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
@@ -1695,12 +1353,7 @@ function decideFlanker(
     ctx.log(`${ctx.enemy.pieceType} flanks your ${dir}!`, FLANK_COLOR);
     logIntent("flanker", "flank", target.combatant.id, `approach-${dir}`);
   } else {
-    logIntent(
-      "flanker",
-      "hold",
-      target.combatant.id,
-      blockedReason(origin, targetCell, ctx),
-    );
+    logIntent("flanker", "hold", target.combatant.id, "blocked");
   }
   return {
     archetype: "flanker",
@@ -1752,21 +1405,9 @@ function decideBerserker(
   // berserkerSacrifice key, so the threshold alone is the gate.
   const sacrificeEligible = hp < ENEMY_WOUNDED_SACRIFICE_HP_PCT;
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  // PASS 1 — scan ALL scored targets for an adjacent damaging strike BEFORE
-  // falling back to a rage-advance. The berserker must not lock onto scored[0]
-  // alone: a different target may already be adjacent and strikeable this turn.
-  let adjacentHit: { target: ScoredTarget; spell: SpellConfig | null } | null =
-    null;
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    if (chebyshev(origin, tCell) <= 1) {
-      const spell = pickBestDamageSpell(ctx, t.combatant);
-      adjacentHit = { target: t, spell };
-      break;
-    }
-  }
-  if (adjacentHit) {
-    const { spell } = adjacentHit;
+  const dist = chebyshev(origin, targetCell);
+  if (dist <= 1) {
+    const spell = pickBestDamageSpell(ctx, target.combatant);
     // Section 4(a): prefer a target that dies this turn.
     const lethal = applyLethalLookahead(scored, ctx, spell);
     const finalTarget = lethal.combatant;
@@ -1788,56 +1429,6 @@ function decideBerserker(
       retreating: false,
     };
   }
-  // PASS 1.5 — no adjacent damaging strike on any target. Before falling
-  // through to the pure rage-advance, scan ALL scored targets for a reachable
-  // move-then-attack: pick a damaging spell WITHOUT the current-range filter
-  // (pickBestDamageSpellForReach) and, if a legal-cast tile is reachable this
-  // turn, path there and attack from it in the same turn. This satisfies the
-  // aggression invariant: when a legal damaging action exists this turn
-  // (reachable via move-then-attack within MP+AP), it MUST be chosen over pure
-  // movement. Without this pass the berserker would always rage-advance and
-  // never close-then-strike a target that is out of current range but reachable.
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const dist = chebyshev(origin, tCell);
-    // The berserker never retreats, so it always commits when it can reach.
-    const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
-    if (!canReach) continue;
-    const rageSpell = pickBestDamageSpellForReach(ctx);
-    if (rageSpell) {
-      const castTile = findNearestLegalCastTile(
-        origin,
-        tCell,
-        ctx,
-        reachable,
-        rageSpell,
-      );
-      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
-        ctx.log(
-          `${ctx.enemy.pieceType} rages in and casts ${rageSpell.name}!`,
-          CAST_COLOR,
-        );
-        logIntent(
-          "berserker",
-          "closes-in",
-          t.combatant.id,
-          sacrificeEligible ? "wounded-sacrifice-move-cast" : "move-then-cast",
-        );
-        return {
-          archetype: "berserker",
-          destination: castTile,
-          spell: rageSpell,
-          targetId: t.combatant.id,
-          kind: "cast",
-          intent: "closes-in",
-          intentColor: CAST_COLOR,
-          retreating: false,
-        };
-      }
-    }
-  }
-  // PASS 2 — no adjacent damaging strike AND no reachable move-then-attack on
-  // any target. Rage-advance toward the top target.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (sacrificeEligible) {
     ctx.log(`${ctx.enemy.pieceType} rages forward, bleeding!`, RETREAT_COLOR);
@@ -1851,12 +1442,7 @@ function decideBerserker(
     ctx.log(`${ctx.enemy.pieceType} rages forward!`, MOVE_COLOR);
     logIntent("berserker", "rage-advance", target.combatant.id, "advance");
   } else {
-    logIntent(
-      "berserker",
-      "hold",
-      target.combatant.id,
-      blockedReason(origin, targetCell, ctx),
-    );
+    logIntent("berserker", "hold", target.combatant.id, "blocked");
   }
   return {
     archetype: "berserker",
@@ -1924,139 +1510,102 @@ function decideGeneric(
     };
   }
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
-  // PASS 1 — collect every in-range + LoS damaging cast OR adjacent melee
-  // across ALL scored targets. We must NOT return a reposition on the FIRST
-  // LoS-blocked target, because a DIFFERENT target may already have a clear
-  // damaging shot (ranged or melee). Only after confirming no damaging action
-  // exists on ANY target do we fall back to reposition-for-LoS (PASS 2) and
-  // then move-then-cast / advance / hold.
-  let bestCast: {
-    target: ScoredTarget;
-    spell: SpellConfig | null;
-    isMelee: boolean;
-  } | null = null;
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const tDist = chebyshev(origin, tCell);
-    // Adjacent melee strike on this target.
-    if (tDist <= 1) {
-      const meleeSpell = pickBestDamageSpell(ctx, t.combatant);
-      bestCast = { target: t, spell: meleeSpell, isMelee: true };
-      break;
+  const dist = chebyshev(origin, targetCell);
+  // Try a ranged spell first.
+  const spell = pickBestDamageSpell(ctx, target.combatant);
+  if (spell && dist <= Number(spell.range)) {
+    const los =
+      spell.lineOfSight === false
+        ? true
+        : ctx.hasLineOfSight(origin, targetCell);
+    if (los) {
+      // Section 4(a): prefer a target that dies this turn when lookahead is on.
+      const lethal = applyLethalLookahead(scored, ctx, spell);
+      const final = applyOverkillSpread(lethal, scored, ctx, spell);
+      ctx.setFocusTargetId(final.combatant.id);
+      ctx.markFocusSet();
+      ctx.log(`${ctx.enemy.pieceType} casts ${spell.name}!`, CAST_COLOR);
+      logIntent("generic", "cast", final.combatant.id, "in-range+los");
+      return {
+        archetype: "generic",
+        destination: origin,
+        spell,
+        targetId: final.combatant.id,
+        kind: "cast",
+        intent: "cast",
+        intentColor: CAST_COLOR,
+        retreating: false,
+      };
     }
-    // In-range + LoS ranged cast on this target.
-    const rangedSpell = pickBestDamageSpell(ctx, t.combatant);
-    if (rangedSpell && tDist <= Number(rangedSpell.range)) {
-      const los =
-        rangedSpell.lineOfSight === false
-          ? true
-          : ctx.hasLineOfSight(origin, tCell);
-      if (los) {
-        bestCast = { target: t, spell: rangedSpell, isMelee: false };
-        break;
-      }
+    // Section 4(c): in range but LoS blocked — reposition for a clear shot.
+    const reposition = repositionForLOS(
+      origin,
+      targetCell,
+      ctx,
+      reachable,
+      spell,
+    );
+    if (reposition) {
+      ctx.log(`${ctx.enemy.pieceType} sidesteps for a shot`, MOVE_COLOR);
+      logIntent(
+        "generic",
+        "reposition-los",
+        target.combatant.id,
+        "los-blocked",
+      );
+      return {
+        archetype: "generic",
+        destination: reposition,
+        spell: null,
+        targetId: null,
+        kind: "skip",
+        intent: "reposition-los",
+        intentColor: MOVE_COLOR,
+        retreating: false,
+      };
     }
   }
-  if (bestCast) {
-    const { spell, isMelee } = bestCast;
-    // Section 4(a): prefer a target that dies this turn when lookahead is on.
+  // Melee if adjacent.
+  if (dist <= 1) {
+    // Section 4(a): prefer a target that dies this turn.
     const lethal = applyLethalLookahead(scored, ctx, spell);
-    const final = applyOverkillSpread(lethal, scored, ctx, spell);
-    ctx.setFocusTargetId(final.combatant.id);
-    ctx.markFocusSet();
-    if (isMelee) {
-      ctx.log(
-        `${ctx.enemy.pieceType} strikes ${final.combatant.name}`,
-        CAST_COLOR,
-      );
-      logIntent("generic", "melee", final.combatant.id, "adjacent");
-    } else {
-      ctx.log(`${ctx.enemy.pieceType} casts ${spell!.name}!`, CAST_COLOR);
-      logIntent("generic", "cast", final.combatant.id, "in-range+los");
-    }
+    const finalTarget = lethal.combatant;
+    ctx.log(`${ctx.enemy.pieceType} strikes ${finalTarget.name}`, CAST_COLOR);
+    logIntent("generic", "melee", finalTarget.id, "adjacent");
     return {
       archetype: "generic",
       destination: origin,
-      spell,
-      targetId: final.combatant.id,
+      spell: spell,
+      targetId: finalTarget.id,
       kind: spell ? "cast" : "melee",
-      intent: isMelee ? "melee" : "cast",
+      intent: "melee",
       intentColor: CAST_COLOR,
       retreating: false,
     };
   }
-  // PASS 2 — no damaging cast OR melee on ANY target. Try reposition-for-LoS
-  // across ALL targets that are in range but LoS-blocked, so a sidestep can
-  // unlock a shot. The reposition branch must NOT return on the first blocked
-  // target — keep scanning so a later target may still yield a reposition tile.
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const tDist = chebyshev(origin, tCell);
-    const losSpell = pickBestDamageSpell(ctx, t.combatant);
-    if (!losSpell) continue;
-    // Section 4(c): in range but LoS blocked — reposition for a clear shot.
-    if (tDist <= Number(losSpell.range)) {
-      const los =
-        losSpell.lineOfSight === false
-          ? true
-          : ctx.hasLineOfSight(origin, tCell);
-      if (!los) {
-        const reposition = repositionForLOS(
-          origin,
-          tCell,
-          ctx,
-          reachable,
-          losSpell,
-        );
-        if (reposition) {
-          ctx.log(`${ctx.enemy.pieceType} sidesteps for a shot`, MOVE_COLOR);
-          logIntent("generic", "reposition-los", t.combatant.id, "los-blocked");
-          return {
-            archetype: "generic",
-            destination: reposition,
-            spell: null,
-            targetId: null,
-            kind: "skip",
-            intent: "reposition-los",
-            intentColor: MOVE_COLOR,
-            retreating: false,
-          };
-        }
-      }
-    }
-  }
-  // No in-range+LoS spell and no reposition tile on any target. Try
-  // move-then-cast across ALL targets: pick the first target for which a
-  // legal-cast tile is reachable this turn, path there, and cast from it in
-  // the same turn. Use pickBestDamageSpellForReach (not pickBestDamageSpell)
-  // so the spell is selected WITHOUT the current-range filter — the target is
-  // out of current range by definition here, and the range filter would
-  // return null and silently no-op the move-then-cast path (the aggression
-  // invariant requires this damaging action be chosen over pure movement).
-  for (const t of scored) {
-    const tCell = { x: t.combatant.x, y: t.combatant.y };
-    const moveCastSpell = pickBestDamageSpellForReach(ctx);
-    if (!moveCastSpell) continue;
-    // Section 2a — move-then-cast: if a legal-cast tile is reachable this
-    // turn, path there and cast from it in the same turn.
+  // Section 2a — move-then-cast: the generic has a ranged option. If a
+  // legal-cast tile is reachable this turn, path there and cast from it in the
+  // same turn. Otherwise advance toward the target with intent 'closes-in'.
+  const advanceSpell = pickBestDamageSpell(ctx, target.combatant);
+  if (advanceSpell) {
     const castTile = findNearestLegalCastTile(
       origin,
-      tCell,
+      targetCell,
       ctx,
       reachable,
-      moveCastSpell,
+      advanceSpell,
     );
     if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
       ctx.log(
-        `${ctx.enemy.pieceType} closes in and casts ${moveCastSpell.name}!`,
+        `${ctx.enemy.pieceType} closes in and casts ${advanceSpell.name}!`,
         CAST_COLOR,
       );
-      logIntent("generic", "closes-in", t.combatant.id, "move-then-cast");
+      logIntent("generic", "closes-in", target.combatant.id, "move-then-cast");
       return {
         archetype: "generic",
         destination: castTile,
-        spell: moveCastSpell,
-        targetId: t.combatant.id,
+        spell: advanceSpell,
+        targetId: target.combatant.id,
         kind: "cast",
         intent: "closes-in",
         intentColor: CAST_COLOR,
@@ -2064,18 +1613,13 @@ function decideGeneric(
       };
     }
   }
-  // No legal damaging action on any target. Advance toward the top target.
+  // Advance.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     ctx.log(`${ctx.enemy.pieceType} moves toward you`, MOVE_COLOR);
     logIntent("generic", "advance", target.combatant.id, "approach");
   } else {
-    logIntent(
-      "generic",
-      "hold",
-      target.combatant.id,
-      blockedReason(origin, targetCell, ctx),
-    );
+    logIntent("generic", "hold", target.combatant.id, "blocked");
   }
   return {
     archetype: "generic",
@@ -2419,56 +1963,13 @@ function decideSummonHunter(
       retreating: false,
     };
   }
-  // Move-then-attack: the target is out of current range but may be reachable
-  // this turn. Pick a damaging spell WITHOUT the current-range filter
-  // (pickBestDamageSpellForReach) and, if a legal-cast tile is reachable within
-  // MP+AP, path there and attack from it in the same turn. This satisfies the
-  // aggression invariant: when a legal damaging action exists this turn
-  // (reachable via move-then-attack), it MUST be chosen over pure movement.
-  // Without this pass the hunter would always pure-advance and never
-  // close-then-strike a target that is out of current range but reachable.
-  const canReach = dist <= ENEMY_REACHABLE_STEP_BUDGET + 1; // +1 for the attack step
-  if (canReach) {
-    const hunterSpell = pickBestDamageSpellForReach(ctx);
-    if (hunterSpell) {
-      const castTile = findNearestLegalCastTile(
-        origin,
-        targetCell,
-        ctx,
-        reachable,
-        hunterSpell,
-      );
-      if (castTile && (castTile.x !== origin.x || castTile.y !== origin.y)) {
-        ctx.log(
-          `${summon.pieceType} stalks in and casts ${hunterSpell.name}!`,
-          CAST_COLOR,
-        );
-        logIntent("hunter", "closes-in", target.combatant.id, "move-then-cast");
-        return {
-          archetype: "generic",
-          destination: castTile,
-          spell: hunterSpell,
-          targetId: target.combatant.id,
-          kind: "cast",
-          intent: "closes-in",
-          intentColor: CAST_COLOR,
-          retreating: false,
-        };
-      }
-    }
-  }
   // Advance toward the nearest/lowest-HP target.
   const dest = stepToward(origin, targetCell, ctx, reachable);
   if (dest.x !== origin.x || dest.y !== origin.y) {
     ctx.log(`${summon.pieceType} stalks ${target.combatant.name}`, MOVE_COLOR);
     logIntent("hunter", "advance", target.combatant.id, "stalk");
   } else {
-    logIntent(
-      "hunter",
-      "hold",
-      target.combatant.id,
-      blockedReason(origin, targetCell, ctx),
-    );
+    logIntent("hunter", "hold", target.combatant.id, "blocked");
   }
   return {
     archetype: "generic",
@@ -2931,12 +2432,7 @@ function decideSummonBomber(
       ctx.log(`${summon.pieceType} charges the cluster!`, MOVE_COLOR);
       logIntent("bomber", "advance", bestCenter.id, "approach-cluster");
     } else {
-      logIntent(
-        "bomber",
-        "hold",
-        bestCenter.id,
-        blockedReason(origin, centerCell, ctx),
-      );
+      logIntent("bomber", "hold", bestCenter.id, "blocked");
     }
     return {
       archetype: "generic",

@@ -12,36 +12,61 @@ export interface RewardInput {
 }
 
 /**
- * XP granted for a victory.
- *
- * Reconcile-driven victory calls historically passed `expGained = 0` and
- * raced ahead of the useEffect that knew the real formula, so applyRewards
- * persisted 0 XP. Prefer an explicit positive grant; otherwise use the
- * canonical kill formula: sum(enemy.level * 20), falling back to
- * characterLevel * 20 when the defeated list is empty.
+ * Marker passed as `dungeonMultiplier` to signal that the caller has already
+ * multiplied `baseDoka` by the dungeon chain multiplier. When present,
+ * `resolveBattleRewards` must NOT multiply the victory Doka again, so the
+ * dungeon-chain victory persists exactly once (no double multiplier).
  */
-export function computeVictoryExp(
-  expGained: number | undefined,
-  enemiesDefeated: Array<{ level: number }>,
-  characterLevel: number,
-): number {
-  if (
-    typeof expGained === "number" &&
-    Number.isFinite(expGained) &&
-    expGained > 0
-  ) {
-    return Math.round(expGained);
+export const PREAPPLIED_REWARD_MULTIPLIER = 1;
+
+export interface VictoryExpInput {
+  /** Explicit positive XP grant; wins over the derived fallbacks when > 0. */
+  explicitGrant?: number;
+  defeatedEnemies: Array<{ name: string; level: number }>;
+  characterLevel: number;
+}
+
+/**
+ * Derives the XP for a won battle: an explicit positive grant wins, otherwise
+ * the sum of defeated enemies' level * 20, falling back to characterLevel * 20.
+ */
+export function computeVictoryExp({
+  explicitGrant,
+  defeatedEnemies,
+  characterLevel,
+}: VictoryExpInput): number {
+  if (explicitGrant !== undefined && explicitGrant > 0) {
+    return explicitGrant;
   }
-  const fromKills = enemiesDefeated.reduce(
-    (sum, enemy) => sum + Number(enemy.level) * 20,
-    0,
-  );
-  if (fromKills > 0) return fromKills;
-  const fallbackLevel = Number(characterLevel);
-  return (
-    (Number.isFinite(fallbackLevel) && fallbackLevel > 0 ? fallbackLevel : 1) *
-    20
-  );
+  if (defeatedEnemies.length > 0) {
+    return defeatedEnemies.reduce((sum, enemy) => sum + enemy.level * 20, 0);
+  }
+  return characterLevel * 20;
+}
+
+export interface BossRushPersistInput {
+  defeatedEnemies: Array<{ name: string; level: number }>;
+  characterLevel: number;
+  baseDoka: number;
+}
+
+/**
+ * Builds the reward input for a Boss Rush room clear with multiplier 1,
+ * reading the defeated list so mid-battle minion kills count toward XP.
+ */
+export function buildBossRushPersistInput({
+  defeatedEnemies,
+  characterLevel,
+  baseDoka,
+}: BossRushPersistInput): RewardInput {
+  return {
+    victory: true,
+    enemiesDefeated: defeatedEnemies,
+    completedChallenges: [],
+    dungeonMultiplier: 1,
+    baseDoka,
+    baseXp: computeVictoryExp({ defeatedEnemies, characterLevel }),
+  };
 }
 
 export async function resolveBattleRewards(
@@ -64,7 +89,11 @@ export async function resolveBattleRewards(
   let xpDelta = 0;
 
   if (victory) {
-    dokaDelta += Math.floor(baseDoka * dungeonMultiplier);
+    const dokaAlreadyApplied =
+      dungeonMultiplier === PREAPPLIED_REWARD_MULTIPLIER;
+    dokaDelta += dokaAlreadyApplied
+      ? baseDoka
+      : Math.floor(baseDoka * dungeonMultiplier);
     xpDelta += Math.floor(baseXp * dungeonMultiplier);
   }
 
@@ -102,7 +131,11 @@ export async function resolveBattleRewards(
   const recap: BattleRecapData = {
     xpEarned: xpDelta,
     dokaEarned: dokaDelta,
-    dokaFromVictory: victory ? Math.floor(baseDoka * dungeonMultiplier) : 0,
+    dokaFromVictory: victory
+      ? dungeonMultiplier === PREAPPLIED_REWARD_MULTIPLIER
+        ? baseDoka
+        : Math.floor(baseDoka * dungeonMultiplier)
+      : 0,
     dokaFromChallenges: dokaFromChallenges,
     completedChallenges: completedChallenges.map((c) => c.name),
     enemiesDefeated: enemiesDefeated,

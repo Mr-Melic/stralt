@@ -86,15 +86,6 @@ export interface CombatantStoreCtx {
   turnOrderRef: TurnOrderRef;
   /** Active-turn index ref (consumed by `removeCombatantFromTurnQueue`). */
   currentTurnIndexRef: CurrentTurnIndexRef;
-  /** Snapshot of the most recently removed combatant. Populated by
-   *  {@link removeCombatant} BEFORE the filter that drops the combatant
-   *  from `combatantsRef.current`, so a downstream reader (e.g. WX
-   *  `attributeKillReward`) can still recover the dead combatant's
-   *  `pieceType` / `level` for the per-kill defeated-roster append AFTER
-   *  the death pipeline's remove step has already filtered it out.
-   *  Reset to `null` at the start of every `removeCombatant` call so a
-   *  stale snapshot can never leak across deaths. */
-  lastRemovedCombatant: Enemy | null;
   /** React state setter for the enemies array. */
   setEnemies: SetCombatants;
   /** React state setter for the battle-enemies array. */
@@ -250,7 +241,6 @@ export function initCombatantStore(
     battleEnemiesRef,
     turnOrderRef,
     currentTurnIndexRef,
-    lastRemovedCombatant: null,
     setEnemies,
     setBattleEnemies,
     setTurnOrder,
@@ -344,16 +334,6 @@ export function addCombatant(
  * its setter — preserving the assign-refs-then-set-setters ordering.
  */
 export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
-  // FIX 4(a) — snapshot the combatant being removed BEFORE the filter drops
-  // it from combatantsRef.current. The death pipeline's reward step
-  // (WX attributeKillReward) runs AFTER removeCombatant, so by then the
-  // dead combatant is already filtered out of combatantsRef.current and a
-  // `find` would return undefined. Stashing the snapshot here lets the
-  // reward step read ctx.lastRemovedCombatant instead. Reset to null first
-  // so a stale snapshot from a prior death can never leak.
-  ctx.lastRemovedCombatant =
-    ctx.combatantsRef.current.find((c) => c.id === id) ?? null;
-
   const nextCombatants = ctx.combatantsRef.current.filter((c) => c.id !== id);
   const nextEnemies = nextCombatants;
 
@@ -400,56 +380,14 @@ export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
  *   (spreading `patch` over the entry) and syncs `setTurnOrder`.
  * - Calls `setEnemies` and `setBattleEnemies` with the new arrays.
  *
- * DEATH-PIPELINE GUARD (FIX 1, round 16):
- *   When `patch` contains an `hp` field AND the combatant identified by
- *   `id` is already dead (no longer in the live roster, OR still present
- *   with `hp <= 0`), the write is REJECTED. A rejected write logs
- *   `[DEATH-TRACE] rejected-write {id, attemptedHp, source}` and returns
- *   without mutating any ref or setter. This is the permanent guard that
- *   prevents a post-death HP write (e.g. a phase-transition heal that
- *   bypassed the damage path) from resurrecting a combatant the death
- *   pipeline already processed (or is about to process).
- *
- *   The guard is intentionally narrow: it only rejects patches that
- *   carry an `hp` field. Patches that touch only position / AP / MP /
- *   buffs on a live combatant are unaffected. A patch that carries `hp`
- *   but targets a combatant that is alive (present in the roster with
- *   `hp > 0`) is applied as before.
- *
  * Atomic: all next-arrays are computed first, then refs are assigned,
  * then setters are called.
- *
- * @param source  Cheap string tag identifying the caller (e.g.
- *   `"resolveSpellCast-damage"`, `"applyLeaderDeathBoost"`). Logged on a
- *   rejected write so the offender is self-announcing.
  */
 export function updateCombatant(
   ctx: CombatantStoreCtx,
   id: string,
   patch: Partial<Enemy>,
-  source: string,
 ): void {
-  // ── DEATH-PIPELINE GUARD ─────────────────────────────────────────────
-  // Reject HP writes to a combatant that is already dead: either removed
-  // from the live roster (death pipeline already ran) or still present
-  // with hp <= 0 (death pipeline is about to run / was bypassed). This is
-  // the single chokepoint every HP write passes through, so a heal that
-  // bypassed the damage path (e.g. the boss phase-transition block that
-  // wrote setTurnOrder directly) is caught here when it later routes
-  // through the store.
-  if (patch.hp !== undefined) {
-    const live = ctx.combatantsRef.current.find((c) => c.id === id);
-    const alreadyRemoved = live === undefined;
-    const alreadyDead = live !== undefined && live.hp <= 0;
-    if (alreadyRemoved || alreadyDead) {
-      // eslint-disable-next-line no-console
-      console.log(
-        `[DEATH-TRACE] rejected-write {id: ${id}, attemptedHp: ${patch.hp}, source: ${source}}`,
-      );
-      return;
-    }
-  }
-
   const nextCombatants = ctx.combatantsRef.current.map((c) =>
     c.id === id ? { ...c, ...patch } : c,
   );
@@ -607,139 +545,6 @@ export function resetCombatantStore(ctx: CombatantStoreCtx): void {
  */
 export function getLiveCombatants(ctx: CombatantStoreCtx): Enemy[] {
   return ctx.combatantsRef.current;
-}
-
-/**
- * Context handed to {@link reconcileBattleState}. Carries the battle-status
- * inputs the reconciler cannot derive from the store alone.
- *
- * - `inBattle`: whether a battle is currently active. Victory is only
- *   evaluated when this is true (a no-op reconcile outside battle must not
- *   fire victory).
- * - `victoryFiredThisBattleRef`: idempotency guard owned by the caller
- *   (WX). Set to `true` the first time victory fires in a battle and reset
- *   to `false` on the next battle start so each battle can fire victory
- *   exactly once.
- * - `triggerVictory`: the caller's victory callback (e.g.
- *   `handleBattleEnd(true, ...)`). Invoked at most once per battle.
- */
-export interface ReconcileBattleStateCtx {
-  inBattle: boolean;
-  victoryFiredThisBattleRef: MutableRefObject<boolean>;
-  triggerVictory: () => void;
-}
-
-/**
- * Reconcile the turn queue against the live combatant set and evaluate
- * victory. The single post-mutation sanity pass that heals any ghost ids
- * that leaked into `turnOrderRef` / the `setTurnOrder` state mirror / the
- * initiative-strip UI mirror, then fires victory exactly once when the
- * last active hostile is gone.
- *
- * This is the canonical home for the reconcile: `combatantStore.ts` already
- * imports `activeHostilesRemaining`, owns `getLiveCombatants`, and owns
- * `battleStartIds`, so all three inputs are local.
- *
- * Duty (a) — QUEUE HEAL:
- *   Build the set of live ids via {@link getLiveCombatants}. Iterate
- *   `turnOrderRef.current`; for each entry whose id is NOT the player id
- *   (`"player"`) AND NOT in the live set, drop it from:
- *     - `turnOrderRef.current`
- *     - the `setTurnOrder` state mirror
- *     - the initiative-strip UI mirror (the same `setTurnOrder` call — the
- *       strip reads the `turnOrder` React state)
- *   Adjust `currentTurnIndexRef.current`: for every dropped entry that sat
- *   at an index `<=` the current index, decrement the current index by the
- *   count of such drops that came at or before it (clamp at 0). This keeps
- *   the active-turn pointer on the same logical combatant after earlier
- *   entries are removed.
- *   When any drop occurs, log `[RECONCILE] dropped {ids}` listing the
- *   dropped ids. When zero drops occur, do not log (the queue was already
- *   clean — the call site is a no-op sanity pass).
- *
- * Duty (b) — VICTORY:
- *   After the heal, evaluate
- *     `activeHostilesRemaining(storeCtx) === 0 && battleStartIds.size > 0
- *      && inBattle`.
- *   When true AND `!victoryFiredThisBattleRef.current`, set
- *   `victoryFiredThisBattleRef.current = true` and call `triggerVictory()`.
- *   Idempotent — a second call in the same beat is a no-op because the ref
- *   is already `true`.
- *
- * Duty (c) — TARGETING SAFETY:
- *   The heal above already excludes ghosts from `turnOrderRef`. This
- *   function does NOT mutate target-list builders; the actual targeting fix
- *   (reading `getLiveCombatants` instead of `enemiesRef.current`) lives at
- *   the call site (WX `getEnemyById` / `getAoEVictims`).
- *
- * Pure with respect to external state: it only mutates the refs / setters
- * handed to it via `storeCtx` plus the `victoryFiredThisBattleRef` from
- * `reconcileCtx`. No other side effects (the `[RECONCILE]` log is a
- * dev-visible side effect but does not touch combatant state).
- */
-export function reconcileBattleState(
-  storeCtx: CombatantStoreCtx,
-  reconcileCtx: ReconcileBattleStateCtx,
-): void {
-  // ── Duty (a) — QUEUE HEAL ─────────────────────────────────────────────
-  const liveIds = new Set(getLiveCombatants(storeCtx).map((c) => c.id));
-  const PLAYER_ID = "player";
-
-  const currentOrder = storeCtx.turnOrderRef.current;
-  const droppedIds: string[] = [];
-  const keptOrder: CombatantEntry[] = [];
-  // Map old index -> kept (true) or dropped (false) so we can count drops
-  // at or before the current index for the index adjustment.
-  const keptFlags: boolean[] = [];
-  for (const entry of currentOrder) {
-    const isPlayer = entry.id === PLAYER_ID || entry.type === "player";
-    const isLive = isPlayer || liveIds.has(entry.id);
-    keptFlags.push(isLive);
-    if (isLive) {
-      keptOrder.push(entry);
-    } else {
-      droppedIds.push(entry.id);
-    }
-  }
-
-  if (droppedIds.length > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[RECONCILE] dropped ${droppedIds.join(",")}`);
-
-    // Adjust currentTurnIndexRef: decrement by the count of dropped entries
-    // at indices <= currentTurnIndexRef.current. Each such drop shifts the
-    // active combatant down by one. Clamp at 0.
-    const currentIdx = storeCtx.currentTurnIndexRef.current;
-    let dropsAtOrBefore = 0;
-    for (let i = 0; i < keptFlags.length && i <= currentIdx; i++) {
-      if (!keptFlags[i]) dropsAtOrBefore += 1;
-    }
-    let nextIdx = currentIdx - dropsAtOrBefore;
-    if (nextIdx < 0) nextIdx = 0;
-    if (keptOrder.length === 0) nextIdx = 0;
-    else if (nextIdx >= keptOrder.length) nextIdx = keptOrder.length - 1;
-    storeCtx.currentTurnIndexRef.current = nextIdx;
-
-    // Assign the ref BEFORE the state update so any synchronous reader
-    // (e.g. the turn-advance gate) sees a fresh value, matching the
-    // existing pattern in removeCombatantFromTurnQueue.
-    storeCtx.turnOrderRef.current = keptOrder;
-    // The setTurnOrder state mirror IS the initiative-strip UI mirror —
-    // the strip reads the `turnOrder` React state, so a single
-    // setTurnOrder call syncs both.
-    storeCtx.setTurnOrder(() => keptOrder);
-  }
-
-  // ── Duty (b) — VICTORY ────────────────────────────────────────────────
-  if (
-    reconcileCtx.inBattle &&
-    storeCtx.battleStartIds.size > 0 &&
-    activeHostilesRemaining(getLiveCombatants(storeCtx)) === 0 &&
-    !reconcileCtx.victoryFiredThisBattleRef.current
-  ) {
-    reconcileCtx.victoryFiredThisBattleRef.current = true;
-    reconcileCtx.triggerVictory();
-  }
 }
 
 /**
