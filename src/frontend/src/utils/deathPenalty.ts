@@ -70,6 +70,8 @@ export type DeathPenaltyPersistInput = {
   maxAp: number;
   mp: number;
   maxMp: number;
+  /** Persisted as CharacterStats.atk. Must be the current stored value. */
+  attack: number;
   defense: number;
   initiative: number;
   newXp: number;
@@ -101,7 +103,7 @@ export async function persistDeathPenalty(
     toNat(input.maxAp),
     toNat(input.mp),
     toNat(input.maxMp),
-    0n,
+    toNat(input.attack),
     toNat(input.defense),
     toNat(input.initiative),
     toNat(input.newDoka),

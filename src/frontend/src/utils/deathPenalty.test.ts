@@ -49,6 +49,7 @@ await persistDeathPenalty(
     maxAp: 4,
     mp: 3,
     maxMp: 3,
+    attack: 15,
     defense: 2,
     initiative: 10,
     newXp: 80,
@@ -60,6 +61,7 @@ await persistDeathPenalty(
 assert.ok(persistArgs);
 assert.equal(persistArgs[0], 1n);
 assert.equal(persistArgs[2], 80n);
+assert.equal(persistArgs[9], 15n);
 assert.equal(persistArgs[12], 60n);
 assert.deepEqual(persistArgs[13], ["fireball"]);
 assert.deepEqual(persistArgs[14], [2n]);
@@ -79,6 +81,7 @@ try {
       maxAp: 1,
       mp: 1,
       maxMp: 1,
+      attack: 0,
       defense: 0,
       initiative: 0,
       newXp: 0,

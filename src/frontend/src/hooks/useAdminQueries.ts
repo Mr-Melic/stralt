@@ -6,6 +6,7 @@ import type {
   AdminGameConfig,
   MapModifierConfig,
 } from "../types/gameTypes";
+import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,19 +103,13 @@ export function useGetCallerDokaBalance() {
   return useQuery<number>({
     queryKey: ["callerDokaBalance"],
     queryFn: async () => {
-      if (!actor) return 0;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = (await withTimeout(
-          (actor as ActorAny).getCallerDokaBalance(),
-        )) as any;
-        // Normalize: bigint / number / null / undefined → safe number
-        if (raw === null || raw === undefined) return 0;
-        const n = Number(raw);
-        return Number.isFinite(n) ? n : 0;
-      } catch {
-        return 0;
-      }
+      if (!actor) throw new Error("Actor not available");
+      // Do not catch timeouts / replica errors here. Returning 0 on failure
+      // made React Query treat the miss as a successful empty wallet, and
+      // GameFlow then overwrote the session cache. A later death persist
+      // would write dokaBalances = 0.
+      const raw = await withTimeout((actor as ActorAny).getCallerDokaBalance());
+      return normalizeCallerDokaBalance(raw);
     },
     enabled: !!actor && !actorFetching,
     staleTime: 0,
