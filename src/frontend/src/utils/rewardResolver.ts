@@ -25,6 +25,34 @@ export interface RewardInput {
  */
 export const PREAPPLIED_REWARD_MULTIPLIER = 1;
 
+export type AttributedKill = {
+  name?: string;
+  pieceType?: string;
+  level?: number;
+};
+
+/**
+ * Picks the defeated roster for victory XP/Doka persist.
+ *
+ * Death-pipeline `recheckVictory` runs BEFORE `attributeKillReward` and used
+ * to call handleBattleEnd with `[]`. The live combatant list is also empty
+ * after the last death. Prefer the per-kill attributed roster (complete only
+ * after every death has been attributed). Fall back to the caller-supplied
+ * list when nothing has been attributed yet.
+ */
+export function selectDefeatedEnemiesForRewards(
+  passed: Array<{ name: string; level: number }> | undefined,
+  attributed: AttributedKill[],
+): Array<{ name: string; level: number }> {
+  if (attributed.length > 0) {
+    return attributed.map((e) => ({
+      name: e.pieceType ?? e.name ?? "unknown",
+      level: e.level ?? 1,
+    }));
+  }
+  return passed ?? [];
+}
+
 export interface VictoryExpInput {
   /** Explicit positive XP grant; wins over the derived fallbacks when > 0. */
   explicitGrant?: number;

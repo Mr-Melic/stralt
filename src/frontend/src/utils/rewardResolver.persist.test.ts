@@ -9,6 +9,7 @@ import {
   buildBossRushPersistInput,
   computeRewardDeltas,
   computeVictoryExp,
+  selectDefeatedEnemiesForRewards,
 } from "./rewardResolver.ts";
 
 describe("boss-rush persist input", () => {
@@ -113,5 +114,30 @@ describe("applyRewards result parsing", () => {
     const persisted = await persistIncrementalRewards(actor, 2, 0, 10);
     assert.deepEqual(calls, [[2n, 0n, 10n]]);
     assert.deepEqual(persisted, { newDoka: 100, newXp: 30, newLevel: 2 });
+  });
+});
+
+describe("selectDefeatedEnemiesForRewards", () => {
+  it("prefers the attributed roster over an empty recheckVictory list", () => {
+    assert.deepEqual(
+      selectDefeatedEnemiesForRewards(
+        [],
+        [
+          { pieceType: "wraith", level: 4 },
+          { name: "golem", level: 6 },
+        ],
+      ),
+      [
+        { name: "wraith", level: 4 },
+        { name: "golem", level: 6 },
+      ],
+    );
+  });
+
+  it("falls back to the caller-supplied list when nothing was attributed", () => {
+    assert.deepEqual(
+      selectDefeatedEnemiesForRewards([{ name: "fallback", level: 2 }], []),
+      [{ name: "fallback", level: 2 }],
+    );
   });
 });
