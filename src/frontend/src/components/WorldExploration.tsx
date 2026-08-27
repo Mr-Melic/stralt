@@ -79,6 +79,7 @@ import {
   despawnSummons,
   isActiveHostile,
   isAliveCombatant,
+  shouldAwardVictory,
 } from "../engine/battleSetup";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
@@ -11958,6 +11959,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         victory,
         isBossRush: bossRushActiveRef.current,
       });
+      // A lost fight must never enter the victory persist funnel. Death
+      // leaves Game Over up while timers/AI can still kill the last hostile.
+      if (deathTriggeredRef.current) return;
       // M3 FIX: Idempotency guard — bail out immediately if we've already
       // run the battle-end logic once for this battle.
       // BOSS RUSH FIX: reset the guard for each boss rush room so every
@@ -12311,6 +12315,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
 
   function handleBossRushRoomClear() {
+    // A death mid-room must not persist the room-clear grant or recap.
+    if (deathTriggeredRef.current) return;
     // Idempotency guard
     if (battleEndedRef.current) return;
     battleEndedRef.current = true;
@@ -12607,8 +12613,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     });
     // Apply the 20% XP / 40% Doka death penalty exactly once (one-shot guard).
     persistDeathPenalty();
+    // Stop the fight immediately. The HP-watch fallback used to do this
+    // cleanup, but it bails once deathTriggeredRef is set, so enemy-spell /
+    // melee / DoT / flee deaths left inBattle true. A later last-hostile
+    // death (DoT tick after Game Over) then hit the victory gate and
+    // applyRewards raced the penalty save. cleanupBattle resets
+    // battleEndedRef for the next fight; re-arm it so this death cannot
+    // enter handleBattleEnd / handleBossRushRoomClear.
+    cleanupBattle();
+    battleEndedRef.current = true;
+    setInBattle(false);
     setShowGameOver(true);
-  }, [abortBossRush, onDebugLog, persistDeathPenalty]);
+  }, [abortBossRush, cleanupBattle, onDebugLog, persistDeathPenalty]);
 
   // FEATURE 1: Watch HP — send to Death Realm when HP reaches 0 in battle
   const deathTriggeredRef = useRef(false);
@@ -13126,9 +13142,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable callback
   useEffect(() => {
     if (
-      inBattle &&
-      combatantStoreCtx.battleStartIds.size > 0 &&
-      activeHostilesRemaining(combatantsRef.current) === 0
+      shouldAwardVictory({
+        inBattle,
+        deathTriggered: deathTriggeredRef.current,
+        battleStartIdsSize: combatantStoreCtx.battleStartIds.size,
+        hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+      })
     ) {
       dumpStateSync("victory-gate", combatantStoreCtx);
       // SECTION 1a: ALWAYS print { hostiles, battleStartIdsSize } so this class
