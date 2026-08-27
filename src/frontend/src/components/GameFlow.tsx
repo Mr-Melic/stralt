@@ -12,7 +12,6 @@ import type {
   UserProfile,
 } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
-import AchievementsPanel from "./AchievementsPanel";
 import BossGuideModal from "./BossGuideModal";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
@@ -233,6 +232,8 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onDebugContextChange={setDebugContext}
           itemShopOpen={showShop}
           onItemShopClose={() => setShowShop(false)}
+          achievementsOpen={showAchievements}
+          onAchievementsClose={() => setShowAchievements(false)}
         />
         <ChatPanel
           playerName={userProfile.name}
@@ -370,14 +371,8 @@ const GameFlow: React.FC<GameFlowProps> = ({
           <LeaderboardModal onClose={() => setShowLeaderboard(false)} />
         )}
 
-        {/* Achievements panel */}
-        <AchievementsPanel
-          userId={String(userProfile.id ?? userProfile.name ?? "guest")}
-          dokaBalance={dokaBalance}
-          onDokaBalanceChange={setDokaBalance}
-          isOpen={showAchievements}
-          onClose={() => setShowAchievements(false)}
-        />
+        {/* Achievements panel is hosted in WorldExploration so claims serialize
+            with applyRewards / saveBattleStats. */}
       </>
     );
   }
