@@ -161,4 +161,20 @@ describe("progress persist lock", () => {
     assert.equal(applyShopCreditDeltaToUi(170, 100), 270);
     assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
   });
+
+  it("does not re-inflate committed when a credit is applied as a UI delta after a heal", () => {
+    // Reward committed 250, heal wrote 220. Replacing the UI with the
+    // absolute 250 and hydrating copies the refund into committed.
+    const replaced = createProgressPersist({ doka: 220, xp: 50, level: 4 });
+    replaced.hydrateWhenIdle({ doka: 250, xp: 50, level: 4 });
+    assert.equal(replaced.snapshot().doka, 250);
+
+    // Adding the +50 reward onto the already-healed 170 keeps 220, so
+    // hydrateWhenIdle cannot restore the spent Doka.
+    const delta = createProgressPersist({ doka: 220, xp: 50, level: 4 });
+    const uiAfterDelta = applyShopCreditDeltaToUi(170, 50);
+    assert.equal(uiAfterDelta, 220);
+    delta.hydrateWhenIdle({ doka: uiAfterDelta, xp: 50, level: 4 });
+    assert.equal(delta.snapshot().doka, 220);
+  });
 });

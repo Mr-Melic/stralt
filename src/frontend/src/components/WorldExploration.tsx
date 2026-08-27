@@ -2804,8 +2804,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (!actor?.upgradeSpell) return;
       void (async () => {
         try {
-          const { newLevel, newDoka } =
-            await progressPersistRef.current.enqueue(async () => {
+          const { newLevel } = await progressPersistRef.current.enqueue(
+            async () => {
               const result = await persistSpellUpgrade(
                 actor as SpellUpgradeActor,
                 characterSlot,
@@ -2824,10 +2824,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 progressPersistRef.current.commit({ doka: result.newDoka });
               }
               return result;
-            });
-          onDokaBalanceChange(
-            newDoka != null ? newDoka : Math.max(0, dokaBalance - cost),
+            },
           );
+          // Never replace the live wallet with the absolute post-upgrade
+          // read. A recap heal can already be deducted locally; an absolute
+          // write here refunds it, and hydrateWhenIdle then re-inflates
+          // committed.doka so the next persist restores the spent Doka.
+          onDokaBalanceChange(Math.max(0, dokaBalanceRef.current - cost));
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
@@ -6474,7 +6477,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             if (newDoka > 0) {
               progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(newDoka);
+              onDokaBalanceChange(
+                applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
+              );
             }
             return newDoka;
           });
@@ -11059,7 +11064,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
               if (newDoka > 0) {
                 progressPersistRef.current.commit({ doka: newDoka });
-                onDokaBalanceChange(newDoka);
+                onDokaBalanceChange(
+                  applyShopCreditDeltaToUi(dokaBalanceRef.current, 300),
+                );
               }
               return newDoka;
             });
@@ -11109,7 +11116,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             if (newDoka > 0) {
               progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(newDoka);
+              onDokaBalanceChange(
+                applyShopCreditDeltaToUi(dokaBalanceRef.current, hit.value),
+              );
             }
             return newDoka;
           });
@@ -12245,7 +12254,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ap: 6 + Math.floor(prev.level / 20),
               expToNext: Math.floor(100 * 2 ** (_rewardRecap.currentLevel - 1)),
             }));
-            onDokaBalanceChange(_rewardRecap.newDoka ?? dokaBalance);
+            // Add the credited delta onto the live wallet. Replacing with
+            // applyRewards' absolute newDoka refunds a recap heal/shop spend
+            // the player already applied locally; hydrateWhenIdle then
+            // copies that inflated UI into committed and the next persist
+            // writes the pre-spend wallet back to the canister.
+            onDokaBalanceChange(
+              applyShopCreditDeltaToUi(
+                dokaBalanceRef.current,
+                _rewardRecap.dokaEarned ?? totalDoka,
+              ),
+            );
           } catch (persistErr) {
             logDebugInfo(
               "BATTLE",
@@ -12478,7 +12497,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }),
           )
           .then((persisted) => {
-            onDokaBalanceChange(persisted.newDoka ?? newDokaBalance);
+            // Wallet was already credited locally above. Do not replace it
+            // with the absolute applyRewards read — that refunds a recap
+            // heal that deducted while this persist was in flight.
             setCharacterStats((prev) => ({
               ...prev,
               exp: persisted.newXp ?? newXp,
