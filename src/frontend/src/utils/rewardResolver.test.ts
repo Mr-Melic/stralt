@@ -1,4 +1,7 @@
-import { computeVictoryExp } from "./rewardResolver";
+import {
+  computeVictoryExp,
+  selectDefeatedEnemiesForRewards,
+} from "./rewardResolver";
 
 function assertEqual(actual: number, expected: number, label: string): void {
   if (actual !== expected) {
@@ -44,5 +47,43 @@ assertEqual(
   140,
   "fallback to characterLevel * 20",
 );
+
+const attributed = selectDefeatedEnemiesForRewards(
+  [],
+  [
+    { pieceType: "wraith", level: 4 },
+    { name: "golem", level: 6 },
+  ],
+);
+if (
+  attributed.length !== 2 ||
+  attributed[0].name !== "wraith" ||
+  attributed[0].level !== 4 ||
+  attributed[1].name !== "golem" ||
+  attributed[1].level !== 6
+) {
+  throw new Error(
+    `selectDefeatedEnemiesForRewards should prefer attributed roster, got ${JSON.stringify(attributed)}`,
+  );
+}
+
+const passedFallback = selectDefeatedEnemiesForRewards(
+  [{ name: "fallback", level: 2 }],
+  [],
+);
+if (
+  passedFallback.length !== 1 ||
+  passedFallback[0].name !== "fallback" ||
+  passedFallback[0].level !== 2
+) {
+  throw new Error(
+    `selectDefeatedEnemiesForRewards should fall back to passed list, got ${JSON.stringify(passedFallback)}`,
+  );
+}
+
+const emptyBoth = selectDefeatedEnemiesForRewards(undefined, []);
+if (emptyBoth.length !== 0) {
+  throw new Error("empty attributed + omitted passed should be []");
+}
 
 console.log("computeVictoryExp tests passed");

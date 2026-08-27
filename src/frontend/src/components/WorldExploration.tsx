@@ -209,6 +209,7 @@ import {
   buildBossRushPersistInput,
   computeVictoryExp,
   resolveBattleRewards,
+  selectDefeatedEnemiesForRewards,
 } from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
@@ -1676,6 +1677,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const battleDefeatedRef = useRef<
     Array<{ id: string; name: string; pieceType: string; level: number }>
   >([]);
+  // processCombatantDeath snapshots name/pos BEFORE removeCombatant, then
+  // attributes the kill AFTER the roster drop. Stash the reward row here so
+  // attributeKillReward can still record level/name after the live lookup
+  // would miss.
+  const pendingDeathRewardRef = useRef<{
+    id: string;
+    name: string;
+    pieceType: string;
+    level: number;
+  } | null>(null);
 
   // Rename modal state
   const [showRenameModal, setShowRenameModal] = useState(false);
@@ -8972,12 +8983,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setLeaderBoostMultiplier((prev) => Math.min(prev + 0.25, 2.0));
       },
       recheckVictory: () => {
+        // Do NOT persist here. processCombatantDeath calls recheckVictory
+        // BEFORE attributeKillReward, so battleDefeatedRef is still missing
+        // the last kill, and the previous `handleBattleEnd(..., [])` call
+        // raced the victory-gate, set battleEndedRef, and persisted 0 Doka
+        // plus fallback XP. The [inBattle, enemies] victory-gate runs after
+        // the full death sequence (including the last attribute) and is the
+        // only persist entry.
         if (
           activeHostilesRemaining(combatantsRef.current) === 0 &&
           combatantStoreCtx.battleStartIds.size > 0 &&
           inBattle
         ) {
-          handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []);
+          logDebugInfo("BATTLE", "recheckVictory observed last hostile down", {
+            attributed: battleDefeatedRef.current.length,
+          });
         }
       },
       attributeKillReward: (deadId) => {
@@ -8987,6 +9007,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // appended list. The previous implementation both overwrote
         // enemiesDefeated with a single-enemy array AND called
         // resolveBattleRewards per-kill (double-applying rewards).
+        //
+        // The live roster is already empty for this id (removeCombatant ran
+        // at pipeline step 3). Use the pre-removal snapshot from
+        // getCombatantName so the last kill is not dropped.
+        const snap = pendingDeathRewardRef.current;
+        if (snap?.id === deadId) {
+          battleDefeatedRef.current.push(snap);
+          pendingDeathRewardRef.current = null;
+          return;
+        }
         const c = combatantsRef.current?.find((e) => e.id === deadId);
         if (c) {
           battleDefeatedRef.current.push({
@@ -9002,6 +9032,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         undefined,
       getCombatantName: (id) => {
         const c = combatantsRef.current?.find((e) => e.id === id);
+        if (c) {
+          pendingDeathRewardRef.current = {
+            id,
+            name: c.pieceType ?? "unknown",
+            pieceType: c.pieceType ?? "unknown",
+            level: c.level ?? 1,
+          };
+        }
         return c?.pieceType ?? "Unknown";
       },
       getCombatantPos: (id) => {
@@ -11899,7 +11937,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
 
           // Award experience and calculate Doka
-          const defeated = enemiesDefeated || [];
+          const defeated = selectDefeatedEnemiesForRewards(
+            enemiesDefeated,
+            battleDefeatedRef.current,
+          );
 
           // SECTION 1: Derive real XP via the shared helper even when callers
           // pass 0 (all triggerVictory sites hardcode expGained to 0). Prefer an
@@ -11992,7 +12033,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             xpEarned: finalExp,
             dokaEarned: totalDoka,
             hitsDealt: battleHitsRef.current,
-            enemiesDefeated: enemiesDefeated || [],
+            enemiesDefeated: defeated,
             currentLevel: characterStats.level,
             currentXP: characterStats.exp,
             xpForNextLevel: (characterStats.level || 1) * 100,
@@ -12019,7 +12060,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               characterSlot,
               {
                 victory,
-                enemiesDefeated: enemiesDefeated || [],
+                enemiesDefeated: defeated,
                 completedChallenges: challengeCompleted
                   ? [
                       {
