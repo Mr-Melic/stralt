@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyShopCreditDeltaToUi,
   applySpendToCommitted,
+  committedDokaAfterShopCredit,
   createProgressPersist,
   spendFromUiBalance,
 } from "./progressPersist.ts";
@@ -150,5 +152,13 @@ describe("progress persist lock", () => {
     assert.equal(wroteDoka, 749);
     assert.equal(lock.snapshot().doka, 749);
     assert.equal(backendDoka, 749);
+  });
+
+  it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {
+    assert.equal(committedDokaAfterShopCredit(350), 350);
+    assert.equal(committedDokaAfterShopCredit(null), null);
+    // Heal already deducted 30 locally while the credit was queued.
+    assert.equal(applyShopCreditDeltaToUi(170, 100), 270);
+    assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
   });
 });

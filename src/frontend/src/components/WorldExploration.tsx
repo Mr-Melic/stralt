@@ -212,6 +212,7 @@ import {
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
 import { nextDokaAfterShopSpend } from "../utils/itemShop";
 import {
+  applyShopCreditDeltaToUi,
   applySpendToCommitted,
   createProgressPersist,
   spendFromUiBalance,
@@ -1147,6 +1148,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const shopCreditTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(
     new Set(),
   );
+  const dokaBalanceRef = useRef(dokaBalance);
+  dokaBalanceRef.current = dokaBalance;
   // Created here so shop-credit timers can enqueue onto the same lock as
   // applyRewards / saveBattleStats. Hydrate-when-idle still lives next to
   // characterStats because that effect depends on those values.
@@ -1170,9 +1173,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             progressPersistRef.current,
           );
         if (credited == null) return;
-        onDokaBalanceChange(credited);
         const gained = creditedDokaDelta(previous, credited);
         if (gained > 0) {
+          onDokaBalanceChange(
+            applyShopCreditDeltaToUi(dokaBalanceRef.current, gained),
+          );
           toast.success(
             `${(announceAmount ?? gained).toLocaleString()} Doka credited!`,
           );
