@@ -197,6 +197,7 @@ import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
 import { evaluateChallenges } from "../utils/battleFixes";
+import { computeDeathPenalty } from "../utils/deathPenalty";
 import {
   logDebugError,
   logDebugInfo,
@@ -563,20 +564,6 @@ class CanvasErrorBoundary extends Component<
     }
     return this.props.children;
   }
-}
-
-// Shared death-penalty math: 20% XP / 40% Doka, floored, clamped at 0.
-// Returns both the lost amounts (for the recap) and the reduced absolute
-// values that are actually persisted to the backend.
-function computeDeathPenalty(currentXp: number, currentDoka: number) {
-  const xpLost = Math.floor(currentXp * 0.2);
-  const dokaLost = Math.floor(currentDoka * 0.4);
-  return {
-    xpLost,
-    dokaLost,
-    xpAfter: Math.max(0, currentXp - xpLost),
-    dokaAfter: Math.max(0, currentDoka - dokaLost),
-  };
 }
 
 const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
@@ -11768,6 +11755,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // aborted flee or a crash mid-deathRealmTimer), the next battle's death
       // would be silently swallowed. This makes the guard battle-scoped.
       deathTriggeredRef.current = false;
+      deathPenaltyAppliedRef.current = false;
       // Reset per-battle achievement tracking
       battleCritHitsRef.current = 0;
       battleBetrayalOccurredRef.current = false;
@@ -12331,10 +12319,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     deathPenaltyAppliedRef.current = true;
     const currentXp = characterStatsRef.current.exp ?? 0;
     const currentDoka = dokaBalance;
-    const { xpLost, dokaLost, xpAfter, dokaAfter } = computeDeathPenalty(
-      currentXp,
-      currentDoka,
-    );
+    const {
+      xpLost,
+      dokaLost,
+      newXp: xpAfter,
+      newDoka: dokaAfter,
+    } = computeDeathPenalty(currentXp, currentDoka);
     const respawnHp = Math.floor(
       (50 + characterStatsRef.current.level) * 10 * 0.5,
     );
@@ -12416,7 +12406,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // Apply the 20% XP / 40% Doka death penalty exactly once (one-shot guard).
     persistDeathPenalty();
     setShowGameOver(true);
-  }, [abortBossRush, onDebugLog]);
+  }, [abortBossRush, onDebugLog, persistDeathPenalty]);
 
   // FEATURE 1: Watch HP — send to Death Realm when HP reaches 0 in battle
   const deathTriggeredRef = useRef(false);
@@ -12456,6 +12446,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           setInBattle(false);
           cleanupBattle();
           deathTriggeredRef.current = false;
+          deathPenaltyAppliedRef.current = false;
         }, 1500);
       }
       return;
