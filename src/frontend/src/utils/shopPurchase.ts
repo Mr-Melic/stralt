@@ -114,3 +114,28 @@ export async function creditPendingPurchases(
     credited: readCallerDokaBalance(await actor.getCallerDokaBalance()),
   };
 }
+
+/** Persist-lock surface used so shop credit cannot race saveBattleStats. */
+export type PurchaseCreditPersist = {
+  enqueue: <T>(fn: () => Promise<T>) => Promise<T>;
+  commit: (next: { doka: number }) => void;
+};
+
+/**
+ * processPendingPurchases writes the paid wallet on the canister. A later
+ * saveBattleStats (heal / shop spend / death) writes an absolute snapshot
+ * from the persist lock — if this credit stays off that lock, the snapshot
+ * still has the pre-purchase balance and the paid Doka is wiped.
+ */
+export async function persistPendingPurchaseCredit(
+  persist: PurchaseCreditPersist,
+  actor: PurchaseCreditActor,
+): Promise<{ previous: number | null; credited: number | null }> {
+  return persist.enqueue(async () => {
+    const result = await creditPendingPurchases(actor);
+    if (result.credited != null) {
+      persist.commit({ doka: result.credited });
+    }
+    return result;
+  });
+}

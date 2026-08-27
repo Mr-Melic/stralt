@@ -225,8 +225,8 @@ import {
   PENDING_PURCHASE_CREDIT_DELAY_MS,
   type PurchaseCreditActor,
   buildInitiatePurchaseArgs,
-  creditPendingPurchases,
   creditedDokaDelta,
+  persistPendingPurchaseCredit,
   readInitiatePurchaseResult,
 } from "../utils/shopPurchase";
 import {
@@ -1147,7 +1147,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     async (announceAmount?: number) => {
       if (!actor) return;
       try {
-        const { previous, credited } = await creditPendingPurchases(
+        // Must share the persist lock with saveBattleStats. Credit writes the
+        // paid wallet on the canister; a queued heal/death otherwise persists
+        // the pre-purchase snapshot and wipes the purchase.
+        const { previous, credited } = await persistPendingPurchaseCredit(
+          progressPersistRef.current,
           actor as PurchaseCreditActor,
         );
         if (credited == null) return;

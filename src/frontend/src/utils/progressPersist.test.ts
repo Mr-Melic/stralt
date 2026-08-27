@@ -88,4 +88,28 @@ describe("progress persist lock", () => {
     assert.equal(backendXp, 130);
     assert.equal(backendLevel, 5);
   });
+
+  it("keeps a shop credit that lands through the lock ahead of a queued heal", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    let backendDoka = 200;
+
+    const credit = lock.enqueue(async () => {
+      backendDoka += 500;
+      lock.commit({ doka: backendDoka });
+    });
+
+    const spend = spendFromUiBalance(200, 170);
+    let wroteDoka = 0;
+    const heal = lock.enqueue(async () => {
+      wroteDoka = applySpendToCommitted(lock.snapshot().doka, spend);
+      backendDoka = wroteDoka;
+      lock.commit({ doka: wroteDoka });
+    });
+
+    await Promise.all([credit, heal]);
+
+    assert.equal(wroteDoka, 670);
+    assert.equal(backendDoka, 670);
+    assert.deepEqual(lock.snapshot(), { doka: 670, xp: 50, level: 4 });
+  });
 });
