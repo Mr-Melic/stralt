@@ -192,6 +192,9 @@ actor {
         };
 
         characterSlots.add(caller, updatedSlots);
+        // Boss rush progress is keyed by principal#slot, not character identity.
+        // A new occupant must not resume the previous occupant's currentRoom.
+        _clearBossRushForSlot(caller, slot);
         #ok;
     };
 
@@ -321,6 +324,8 @@ actor {
         };
 
         characterSlots.add(caller, updatedSlots);
+        // Drop mid-run currentRoom so a later create in this slot cannot skip rooms.
+        _clearBossRushForSlot(caller, slot);
         #ok;
     };
 
@@ -1291,8 +1296,8 @@ actor {
         defense          : Nat,
         initiative       : Nat,
         dokaBalance      : Nat,   // kept in signature for frontend compat; stored in dokaBalances map
-        spellLevelKeys   : [Text],
-        spellLevelValues : [Nat],
+        _spellLevelKeys  : [Text], // upgradeSpell owns these; heal/death snapshots can be stale
+        _spellLevelValues : [Nat],
     ) : async { #ok; #err : Text } {
         if (bannedPrincipals.containsKey(caller.toText())) {
             return #err("Account banned for non-payment");
@@ -1326,13 +1331,14 @@ actor {
             init = initiative;
         };
 
+        // upgradeSpell is the sole writer of spell levels. Heal / death / shop
+        // snapshots are often captured before an in-flight upgrade commits in
+        // React, and replacing the arrays here would wipe a paid level.
         let updatedCharacter : Character = {
             character with
             level            = level;
             experience       = xp;
             stats            = updatedStats;
-            spellLevelKeys   = spellLevelKeys;
-            spellLevelValues = spellLevelValues;
         };
 
         let updatedSlots = switch (slot) {
@@ -2385,6 +2391,12 @@ actor {
 
     func _bossRushKey(caller : Principal, slot : Nat) : Text {
         caller.toText() # "#" # slot.toText()
+    };
+
+    /// Clears slot-scoped Boss Rush progress. create/delete must call this so a
+    /// new character cannot resume another occupant's currentRoom.
+    func _clearBossRushForSlot(caller : Principal, slot : Nat) {
+        bossRushStates.remove(_bossRushKey(caller, slot));
     };
 
     /// Returns (currentRoom, highestRoomCompleted, totalBossRushRuns) for any player+slot.

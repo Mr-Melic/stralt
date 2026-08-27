@@ -7,8 +7,8 @@ import {
 import {
   buildInitiatePurchaseArgs,
   creditPendingPurchases,
+  creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
-  persistPendingPurchaseCredit,
   readCallerDokaBalance,
   readInitiatePurchaseResult,
   shopCreditUsesBattleTimeoutSet,
@@ -129,7 +129,7 @@ void (async () => {
     backendDoka = wroteDoka;
     lock.commit({ doka: wroteDoka });
   });
-  const credit = persistPendingPurchaseCredit(lock, creditActor);
+  const credit = creditPendingPurchasesThroughPersist(creditActor, lock);
   await Promise.all([heal, credit]);
   assert.equal(wroteDoka, 170);
   assert.equal(backendDoka, 670);
@@ -137,13 +137,16 @@ void (async () => {
 
   backendDoka = 200;
   const lock2 = createProgressPersist({ doka: 200, xp: 50, level: 4 });
-  const creditFirst = persistPendingPurchaseCredit(lock2, {
-    processPendingPurchases: async () => {
-      backendDoka += 500;
-      return 1n;
+  const creditFirst = creditPendingPurchasesThroughPersist(
+    {
+      processPendingPurchases: async () => {
+        backendDoka += 500;
+        return 1n;
+      },
+      getCallerDokaBalance: async () => backendDoka,
     },
-    getCallerDokaBalance: async () => backendDoka,
-  });
+    lock2,
+  );
   const healAfter = lock2.enqueue(async () => {
     wroteDoka = applySpendToCommitted(lock2.snapshot().doka, spend);
     backendDoka = wroteDoka;
@@ -153,6 +156,30 @@ void (async () => {
   assert.equal(wroteDoka, 670);
   assert.equal(backendDoka, 670);
   assert.equal(lock2.snapshot().doka, 670);
+
+  const persist = createProgressPersist({ doka: 100, xp: 0, level: 1 });
+  let releaseReward!: () => void;
+  const rewardGate = new Promise<void>((resolve) => {
+    releaseReward = resolve;
+  });
+  const reward = persist.enqueue(async () => {
+    await rewardGate;
+    persist.commit({ doka: 150 });
+  });
+  let processedThroughPersist = 0;
+  const queuedActor = {
+    processPendingPurchases: async () => {
+      processedThroughPersist += 1;
+      return 1n;
+    },
+    getCallerDokaBalance: async () =>
+      processedThroughPersist === 0 ? 150n : 650n,
+  };
+  const queued = creditPendingPurchasesThroughPersist(queuedActor, persist);
+  releaseReward();
+  await reward;
+  assert.deepEqual(await queued, { previous: 150, credited: 650 });
+  assert.equal(persist.snapshot().doka, 650);
 
   console.log("shopPurchase.test: ok");
 })();

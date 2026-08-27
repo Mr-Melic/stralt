@@ -112,4 +112,43 @@ describe("progress persist lock", () => {
     assert.equal(backendDoka, 670);
     assert.deepEqual(lock.snapshot(), { doka: 670, xp: 50, level: 4 });
   });
+
+  it("keeps a shop credit that lands while applyRewards is in flight", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    let backendDoka = 200;
+
+    let releaseReward!: () => void;
+    const rewardGate = new Promise<void>((resolve) => {
+      releaseReward = resolve;
+    });
+
+    const reward = lock.enqueue(async () => {
+      await rewardGate;
+      backendDoka += 50;
+      lock.commit({ doka: backendDoka });
+    });
+
+    // processPendingPurchases is additive on the canister. Serialized on the
+    // same lock it sees the rewarded wallet; a later heal then spends from
+    // that total instead of persisting the pre-purchase snapshot.
+    const credit = lock.enqueue(async () => {
+      backendDoka += 500;
+      lock.commit({ doka: backendDoka });
+    });
+
+    let wroteDoka = 0;
+    const heal = lock.enqueue(async () => {
+      const committed = lock.snapshot().doka;
+      wroteDoka = applySpendToCommitted(committed, 1);
+      backendDoka = wroteDoka;
+      lock.commit({ doka: wroteDoka });
+    });
+
+    releaseReward();
+    await Promise.all([reward, credit, heal]);
+
+    assert.equal(wroteDoka, 749);
+    assert.equal(lock.snapshot().doka, 749);
+    assert.equal(backendDoka, 749);
+  });
 });

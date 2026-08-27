@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { shouldAwardVictory } from "./battleSetup.ts";
+import { shouldAllowBattleTrigger, shouldAwardVictory } from "./battleSetup.ts";
 
 assert.equal(
   shouldAwardVictory({
@@ -54,6 +54,46 @@ assert.equal(
   }),
   false,
   "living hostiles must not award victory",
+);
+
+assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: true,
+    inBattleRef: false,
+    transitionInProgress: false,
+  }),
+  false,
+  "stale React inBattle after cleanupBattle must block the next encounter",
+);
+
+assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: false,
+    inBattleRef: true,
+    transitionInProgress: false,
+  }),
+  false,
+  "in-battle ref must still block a world encounter",
+);
+
+assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: false,
+    inBattleRef: false,
+    transitionInProgress: true,
+  }),
+  false,
+  "map transition must not start a fight",
+);
+
+assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: false,
+    inBattleRef: false,
+    transitionInProgress: false,
+  }),
+  true,
+  "room-clear / death must drop both inBattle flags so the next room can start",
 );
 
 console.log("battleSetup.victory.test: ok");
