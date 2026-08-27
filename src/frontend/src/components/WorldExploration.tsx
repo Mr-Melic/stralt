@@ -207,6 +207,7 @@ import {
   logDebugWarn,
 } from "../utils/debugLogger";
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
+import { nextDokaAfterShopSpend } from "../utils/itemShop";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
@@ -298,6 +299,9 @@ interface WorldExplorationProps {
   userId?: string;
   onDebugLog?: (event: string, detail: string) => void;
   onShowBattleSummary?: (data: BattleRecapData) => void;
+  /** Top-bar item shop open flag. BuffShop is a modal and returns null when this is not true. */
+  itemShopOpen?: boolean;
+  onItemShopClose?: () => void;
 }
 
 type TileType = "floor" | "wall" | "portal";
@@ -593,6 +597,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   userId,
   onDebugLog,
   onShowBattleSummary,
+  itemShopOpen = false,
+  onItemShopClose,
 }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ActorAny = Record<string, any>;
@@ -16553,7 +16559,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         <BuffShop
           dokaBalance={dokaBalance}
           onDeductDoka={(amount) => {
-            const next = Math.max(0, dokaBalance - amount);
+            const next = nextDokaAfterShopSpend(dokaBalance, amount);
             onDokaBalanceChange(next);
             persistAbsoluteProgress(characterStatsRef.current.hp, next);
           }}
@@ -16562,6 +16568,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           inBattle={inBattle}
           userId={userId}
           principalId={userId}
+          isOpen={itemShopOpen}
+          onClose={onItemShopClose}
         />
 
         {/* Achievement toast — world explorer only (not during battle) */}
