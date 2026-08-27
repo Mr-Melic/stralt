@@ -11,24 +11,60 @@ export interface RewardInput {
 }
 
 /**
- * Pass this when callers have already baked dungeon/boss multipliers into
- * baseDoka / baseXp. resolveBattleRewards multiplies again otherwise.
+ * Marker passed as `dungeonMultiplier` to signal that the caller has already
+ * multiplied `baseDoka` by the dungeon chain multiplier. When present,
+ * `resolveBattleRewards` must NOT multiply the victory Doka again, so the
+ * dungeon-chain victory persists exactly once (no double multiplier).
  */
 export const PREAPPLIED_REWARD_MULTIPLIER = 1;
 
-/** Boss-rush room totals are already final — do not re-apply dungeonMultiplier. */
-export function buildBossRushPersistInput(args: {
-  enemiesDefeated: Array<{ name: string; level: number }>;
+export interface VictoryExpInput {
+  /** Explicit positive XP grant; wins over the derived fallbacks when > 0. */
+  explicitGrant?: number;
+  defeatedEnemies: Array<{ name: string; level: number }>;
+  characterLevel: number;
+}
+
+/**
+ * Derives the XP for a won battle: an explicit positive grant wins, otherwise
+ * the sum of defeated enemies' level * 20, falling back to characterLevel * 20.
+ */
+export function computeVictoryExp({
+  explicitGrant,
+  defeatedEnemies,
+  characterLevel,
+}: VictoryExpInput): number {
+  if (explicitGrant !== undefined && explicitGrant > 0) {
+    return explicitGrant;
+  }
+  if (defeatedEnemies.length > 0) {
+    return defeatedEnemies.reduce((sum, enemy) => sum + enemy.level * 20, 0);
+  }
+  return characterLevel * 20;
+}
+
+export interface BossRushPersistInput {
+  defeatedEnemies: Array<{ name: string; level: number }>;
+  characterLevel: number;
   baseDoka: number;
-  baseXp: number;
-}): RewardInput {
+}
+
+/**
+ * Builds the reward input for a Boss Rush room clear with multiplier 1,
+ * reading the defeated list so mid-battle minion kills count toward XP.
+ */
+export function buildBossRushPersistInput({
+  defeatedEnemies,
+  characterLevel,
+  baseDoka,
+}: BossRushPersistInput): RewardInput {
   return {
     victory: true,
-    enemiesDefeated: args.enemiesDefeated,
+    enemiesDefeated: defeatedEnemies,
     completedChallenges: [],
     dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
-    baseDoka: args.baseDoka,
-    baseXp: args.baseXp,
+    baseDoka,
+    baseXp: computeVictoryExp({ defeatedEnemies, characterLevel }),
   };
 }
 
@@ -41,7 +77,11 @@ export function computeRewardDeltas(input: RewardInput): {
   let xpDelta = 0;
 
   if (input.victory) {
-    dokaDelta += Math.floor(input.baseDoka * input.dungeonMultiplier);
+    const dokaAlreadyApplied =
+      input.dungeonMultiplier === PREAPPLIED_REWARD_MULTIPLIER;
+    dokaDelta += dokaAlreadyApplied
+      ? input.baseDoka
+      : Math.floor(input.baseDoka * input.dungeonMultiplier);
     xpDelta += Math.floor(input.baseXp * input.dungeonMultiplier);
   }
 
@@ -94,7 +134,11 @@ export async function resolveBattleRewards(
   const recap: BattleRecapData = {
     xpEarned: xpDelta,
     dokaEarned: dokaDelta,
-    dokaFromVictory: victory ? Math.floor(baseDoka * dungeonMultiplier) : 0,
+    dokaFromVictory: victory
+      ? dungeonMultiplier === PREAPPLIED_REWARD_MULTIPLIER
+        ? baseDoka
+        : Math.floor(baseDoka * dungeonMultiplier)
+      : 0,
     dokaFromChallenges: dokaFromChallenges,
     completedChallenges: completedChallenges.map((c) => c.name),
     enemiesDefeated: enemiesDefeated,

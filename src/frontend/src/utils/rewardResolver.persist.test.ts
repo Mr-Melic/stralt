@@ -4,21 +4,27 @@ import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
   computeRewardDeltas,
+  computeVictoryExp,
 } from "./rewardResolver.ts";
 
 describe("boss-rush persist input", () => {
   it("persists the room totals exactly (no extra dungeon multiplier)", () => {
+    const defeatedEnemies = [
+      { name: "larva", level: 4 },
+      { name: "queen", level: 8 },
+    ];
     const input = buildBossRushPersistInput({
-      enemiesDefeated: [
-        { name: "larva", level: 4 },
-        { name: "queen", level: 8 },
-      ],
+      defeatedEnemies,
+      characterLevel: 5,
       baseDoka: 42,
-      baseXp: 240,
     });
 
     assert.equal(input.dungeonMultiplier, PREAPPLIED_REWARD_MULTIPLIER);
     assert.equal(input.victory, true);
+    assert.equal(
+      input.baseXp,
+      computeVictoryExp({ defeatedEnemies, characterLevel: 5 }),
+    );
 
     const deltas = computeRewardDeltas(input);
     assert.equal(deltas.dokaDelta, 42);

@@ -44,6 +44,7 @@ import MapModifiersPanel from "./MapModifiersPanel";
 import PostBattleRecap from "./PostBattleRecap";
 import type { BattleRecapData } from "./PostBattleRecap";
 import SettingsPanel from "./SettingsPanel";
+import SummonControlPanel from "./SummonControlPanel";
 
 import {
   CHARACTER_Y_OFFSET,
@@ -69,7 +70,6 @@ import { physicalAttackSpell, starterSpells } from "../data/spellData";
 // import.meta.env.DEV at the call site; this import is a pure module.
 import { getGeometrySnapshot, recordClickTrace } from "../debug/clickTrace";
 import type { SpriteRect } from "../debug/clickTrace";
-import { APP_BUILD } from "../debug/debugExport";
 // [CLICK-TRACE] Shared geometry-overlay toggle (read each frame by the render
 // post-pass and at click time to arm lastClickOverlayRef).
 import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
@@ -98,7 +98,6 @@ import {
   dumpStateSync,
   getLiveCombatants,
   initCombatantStore,
-  reconcileBattleState,
   removeCombatant,
   resetCombatantStore,
   syncCombatants,
@@ -106,9 +105,7 @@ import {
 } from "../engine/combatantStore";
 import {
   type DeathPipelineCtx,
-  type DeathSource,
   processCombatantDeath,
-  processPlayerDeath,
 } from "../engine/deathPipeline";
 import {
   type DotTickResult,
@@ -182,6 +179,7 @@ import {
   computeTargetableTiles,
   isTileCastableLive,
 } from "../engine/targeting";
+import { removeCombatantFromTurnQueue } from "../engine/turnQueue";
 import {
   getCameraFollowSpeed,
   getSessionVersion,
@@ -204,9 +202,11 @@ import {
   logDebugInfo,
   logDebugWarn,
 } from "../utils/debugLogger";
+import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
+  computeVictoryExp,
   resolveBattleRewards,
 } from "../utils/rewardResolver";
 import BuffShop from "./BuffShop";
@@ -247,6 +247,17 @@ let _spellbarBisectConsoleCount = 0;
 // async IIFE's continuation, so a later cancellation cannot un-set it).
 // Keyed as `${userId}:${characterSlot}`.
 const _spellbarLoadedForCharKey = new Set<string>();
+
+// ─── [SPELLBAR BLOCKED-OVERWRITE INVARIANT] (HOTFIX) ────────────────────────
+// Last line of defense against the initial-derivation branch (the `else if`
+// that saves a default order when the fetched spellBarOrder is empty) re-running
+// and overwriting a bar that already got an initial save #ok this session.
+// Tracks charKeys (`${userId}:${characterSlot}`) that have already received a
+// [SPELLBAR] initial save #ok. If the initial-save branch is about to run AND
+// this charKey is already in the set, we log [SPELLBAR] BLOCKED-overwrite and
+// SKIP the save (just apply the fetched/active order). Module-level so it
+// survives remounts and cancellation races (same rationale as the guard above).
+const _spellbarInitialSavedCharKey = new Set<string>();
 
 // SECTION 1 — [TURN] skip-log throttle. The dead-entity skip guard in
 // advanceTurn logs whenever it skips a turn-order entry. A future skip must
@@ -553,6 +564,20 @@ class CanvasErrorBoundary extends Component<
   }
 }
 
+// Shared death-penalty math: 20% XP / 40% Doka, floored, clamped at 0.
+// Returns both the lost amounts (for the recap) and the reduced absolute
+// values that are actually persisted to the backend.
+function computeDeathPenalty(currentXp: number, currentDoka: number) {
+  const xpLost = Math.floor(currentXp * 0.2);
+  const dokaLost = Math.floor(currentDoka * 0.4);
+  return {
+    xpLost,
+    dokaLost,
+    xpAfter: Math.max(0, currentXp - xpLost),
+    dokaAfter: Math.max(0, currentDoka - dokaLost),
+  };
+}
+
 const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   dokaBalance,
   onDokaBalanceChange,
@@ -640,6 +665,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           };
           localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(merged));
         }
+        tierConfigRef.current = loadTierConfig();
       } catch (_e) {
         /* use localStorage fallback */
       }
@@ -725,22 +751,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const isInitializedRef = useRef(false);
   const transitionInProgressRef = useRef(false);
   const lastPortalRef = useRef<{ x: number; y: number } | null>(null);
-  // SECTION 3(a) — Edge-triggered on-tile portal latch. Tracks the
-  // (portalKey, tileKey) of the last portal tile the player ARRIVED on. Fires
-  // the portal handler exactly once per arrival and re-arms only after the
-  // player LEAVES that tile (tileKey changes). This makes the same-millisecond
-  // 6× "Portal entered" spam impossible: the first arrival latches, subsequent
-  // same-tile calls are no-ops until the player steps off.
-  const portalLatchRef = useRef<{
-    portalKey: string;
-    tileKey: string;
-    armed: boolean;
-  } | null>(null);
-  // SECTION 3(a) — Timeout safety for the transition lock. If a transition's
-  // finally block never fires (e.g. a tab is backgrounded mid-await), this
-  // timer clears the lock so a failed transition cannot brick subsequent
-  // portals. Cleared in the finally block on a clean release.
-  const transitionLockTimeoutRef = useRef<number | null>(null);
   // Edge-trigger for the sealed-portal announcement. Remembers which locked
   // portal was last announced so the "way forward is sealed" log fires exactly
   // once per on-portal dwell, re-arms when the player steps off, and always
@@ -757,10 +767,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // callback so the effect's deps array can stay [isMoving] only.
   const prevIsMovingRef = useRef(false);
   const checkPortalInteractionRef = useRef<() => void>(() => {});
-  // Stable ref indirection for checkBattleTrigger (declared later in the file).
-  // Lets the mouse/touch world-mode walk handlers call it without a TDZ
-  // "used-before-declaration" error, mirroring the checkPortalInteractionRef pattern.
-  const checkBattleTriggerRef = useRef<() => void>(() => {});
   const dprRef = useRef<number>(window.devicePixelRatio || 1);
   // ── Visual enhancement refs (avoid useState to prevent re-renders) ──────────
   // Fade overlay for portal transitions
@@ -913,43 +919,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [selectedSummonSpellId, setSelectedSummonSpellId] = useState<
     string | null
   >(null);
-  // Ref mirror of selectedSummonSpellId so the RAF loop / getSpellRangeTiles
-  // (dep array omits the state) can read the fresh value without re-subscribing.
-  // Parallel to the activeControlledSummonIdRef pattern above.
-  const selectedSummonSpellIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    selectedSummonSpellIdRef.current = selectedSummonSpellId;
-  }, [selectedSummonSpellId]);
-  // Shared cleanup for summon-control exit paths. Every route that ends a
-  // player-controlled summon turn (End button, AP+MP exhausted, summon
-  // death/expiry, AND timer-expiry) must run this so the spell row un-greys
-  // and the inline SummonControlPanel disappears together. Without it, the
-  // timer-expiry path skipped cleanup and left the next player turn's spell
-  // row stuck grey (root_cause_2). Both setters are stable setState fns, so
-  // the dep array is intentionally minimal.
-  // SECTION 4 (a) — MODE RESTORE ON CLEANUP: also reset the PLAYER's input
-  // state deterministically so the player's next turn accepts the first
-  // WALK/ATTACK press. battleActionMode → 'walk', selectedSpellId cleared
-  // (ref + version bump so the spell bar re-renders unselected), and the
-  // spell-range cache flushed so a stale preview set can never gate the
-  // next player click. selectedSummonSpellId is cleared above; the summon
-  // action mode is reset in its own setter below.
-  const clearSummonControl = useCallback(() => {
-    setActiveControlledSummonId(null);
-    activeControlledSummonIdRef.current = null;
-    setSelectedSummonSpellId(null);
-    selectedSummonSpellIdRef.current = null;
-    setBattleActionMode("walk");
-    battleActionModeRef.current = "walk";
-    selectedSpellIdRef.current = null;
-    setSpellSelectionVersion((v) => v + 1);
-    spellRangeCacheRef.current.clear();
-    setSummonActionMode("walk");
-    summonActionModeRef.current = "walk";
-  }, []);
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = useState(false);
+  const tierConfigRef = useRef<ReturnType<typeof loadTierConfig> | null>(null);
   // inBattle intentionally read via inBattleRef inside the render callback to prevent
   // the animation loop from restarting (and producing a black frame) on battle start.
   // See battleActionModeRef / selectedSpellIdRef for the same pattern.
@@ -980,10 +953,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // (e.g. the useEffect that watches inBattle===false && enemies.length===0
   // can fire the same callback multiple times in rapid succession).
   const battleEndedRef = useRef(false);
-  // M3 FIX: Idempotency guard — prevents handleBattleEnd from firing twice
-  // (e.g. the useEffect that watches inBattle===false && enemies.length===0
-  // can fire the same callback multiple times in rapid succession).
-  const victoryFiredThisBattleRef = useRef<boolean>(false);
   const battleStartSkipRef = useRef(0);
   // Weather suppress: pause new particle spawns for ~60 frames at battle start
   const _weatherSuppressRef = useRef(false); // Weather effects removed, ref kept to avoid larger refactor
@@ -1228,23 +1197,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // H2: Mirror of turnOrder in a ref so enemy AI always reads the current value
   // without relying on a stale React-state closure captured at effect creation time.
   const turnOrderRef = useRef<CombatantEntry[]>([]);
-  // SECTION 1 (RETRY) — SINGLE source of truth for whose turn it is.
-  // `currentActor` is a useState<CombatantEntry | null> updated via an effect
-  // keyed on [currentTurnIndex, turnOrder] that reads
-  // turnOrderRef.current[currentTurnIndexRef.current]. Every turn-label and
-  // turn-guard consumer (BattleUIPanel label/chip/EndTurn, the enemy-AI effect
-  // gate, and the END TURN handler guard) derives from currentActor.type —
-  // NOT from the stale battlePhase flag. This eliminates the dual-label bug
-  // (battlePhase stays "player" during summon turns because advanceTurn does
-  // NOT setBattlePhase('enemy') for summon turns) and the skip-lockout (END
-  // TURN guard disabled on battlePhase !== 'player' even when the ref-derived
-  // isPlayerTurn was true).
-  const [currentActor, setCurrentActor] = useState<CombatantEntry | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refs are the source of truth; state deps trigger re-read
-  useEffect(() => {
-    const entry = turnOrderRef.current[currentTurnIndexRef.current] ?? null;
-    setCurrentActor(entry);
-  }, [currentTurnIndex, turnOrder]);
   // FIX (d): Escalated-skip tracking. Maps a skipped combatant id to the
   // number of times it has been skipped in a row. When the count reaches 2,
   // the skip log escalates to [TURN] ESCALATED so a stuck removal (e.g. an
@@ -1283,41 +1235,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const _phaseChangeCounterRef = useRef(0);
 
   const enemyTurnInProgressRef = useRef(false);
-  // SECTION 2a — WATCHDOG FIX: tracks the AI executor's current phase so the
-  // watchdog fire callback can log the phase-of-failure when it recovers a
-  // stuck turn. Set at decide-entry, intent-produced, and apply-started.
-  const aiPhaseRef = useRef<string>("not-entered");
   // EDIT 3: tracks WHY the current turn ended (action-complete vs timer-expiry)
   // so the [TURN] dispatch log can distinguish clean advances from watchdog/
   // turn-timer recoveries. Reset on every advance path; read by the three
   // logDebugInfo("TURN","dispatch",...) call sites.
-  const turnEndReasonRef = useRef<
-    | "action-complete"
-    | "timer-expiry"
-    | "pre-executor-stall"
-    | "player-end-turn"
-    | null
-  >(null);
-  // SECTION 3 — PRE-EXECUTOR STALL FIX (b): holds the dispatch-time watchdog
-  // timeout id so the executor effect can clear it once the enemy AI actually
-  // begins running. If the executor never starts (dispatch chain threw or
-  // stalled), the watchdog fires at 3000ms and force-advances the turn.
-  const dispatchWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(
+  const turnEndReasonRef = useRef<"action-complete" | "timer-expiry" | null>(
     null,
   );
-  // SECTION 3 — PRE-EXECUTOR STALL FIX (c): tracks the id of the last actor
-  // the timer effect ran for. The timer generation is only incremented when
-  // the actor id actually changes, so a watchdog re-advance that re-dispatches
-  // the same enemy restarts the 30s/15s chip instead of sticking.
-  const lastTimerActorIdRef = useRef<string | null>(null);
-  // SECTION 1 — EXECUTOR-GATE LOG THROTTLE: timestamps the last [TURN]
-  // executor-gate log so the gate logs the blockedBy reason at most 1/s.
-  const lastGateLogRef = useRef(0);
-  // SECTION 1 — DIRECT EXECUTOR INVOCATION: scheduleEnemyExecutor is defined
-  // later (after clearEnemyTurnFlagAndAdvance) but the dispatch site inside
-  // advanceTurn (useCallback) is declared earlier. Mirror it through a ref so
-  // the dispatch can invoke the latest version without a stale-closure risk.
-  const scheduleEnemyExecutorRef = useRef<(enemyId: string) => void>(() => {});
   // Ref holding the enemy-side summon spawn callback so the enemy turn
   // executor (a different closure from the SpellContext builder) can
   // invoke it when a summoner enemy decides to cast a summon spell.
@@ -1645,7 +1569,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 hpAfter: characterStats.hp - postResDamage,
                 dotTypeLabel,
               });
-              processPlayerDeathCb("player", "dot");
               _handlePlayerDeath();
             }
           } else {
@@ -1733,17 +1656,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     battleActionModeRef.current = battleActionMode;
   }, [battleActionMode]);
-  // SECTION 4 (b) — Summon WALK/ATTACK toggle. Mirrors battleActionMode but
-  // tracks the action mode of the player-controlled summon. Reset to 'walk'
-  // at every summon turn start (so movement-range preview shows first) and on
-  // clearSummonControl. Read inside canvas callbacks via summonActionModeRef.
-  const [summonActionMode, setSummonActionMode] = useState<"walk" | "attack">(
-    "walk",
-  );
-  const summonActionModeRef = useRef<"walk" | "attack">("walk");
-  useEffect(() => {
-    summonActionModeRef.current = summonActionMode;
-  }, [summonActionMode]);
   // Current MP and AP available this turn (reset each turn)
   const [currentBattleAp, setCurrentBattleAp] = useState(4);
   // Stale-closure hardening: live ref mirrors currentBattleAp so AP gate
@@ -2107,12 +2019,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // browser storage clears and device switches.
   // SECTION 4: spellBarOrder is the backend-authoritative source for the
   // arranged spell-bar order. We read it from getCharacter (the Character
-  // record now includes spellBarOrder: ?[Text]). The loader is APPLY-ONLY:
-  // it applies the fetched order verbatim (empty stays empty) and NEVER
-  // writes. There is NO default-derivation branch — empty slots stay empty
-  // and the player assigns spells manually from the spellbook. Persistence
-  // flows exclusively through handleSetActiveSpells → debounced
-  // setSpellBarOrder → flushSpellBarSave (the user-driven assign path).
+  // record now includes spellBarOrder: ?[Text]). Only the FIRST assignment
+  // after character creation may be automatic — and even then it uses the
+  // ownedSpells in their natural/learned order (NOT a random shuffle) and is
+  // immediately persisted via setSpellBarOrder so the next load reads it back.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isSpellBarErr/spellBarErrMsg are stable local helpers (defined once, never reassigned)
   useEffect(() => {
     if (
       !userId ||
@@ -2170,28 +2081,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     });
     let cancelled = false;
     (async () => {
-      // HOTFIX c (Section 3): the module guard is set ONLY after a real
-      // apply (branch a or b). Branch (c) (undefined order) leaves this false
-      // so subsequent fires can retry. The dirty-skip return above also
-      // leaves it false (it returns before reaching here). Declared OUTSIDE
-      // the try so the post-apply guard-set (after the catch) can read it.
-      let applied = false;
       try {
-        // GUARD-SET (HOTFIX c — Section 3 cross-device load): the module guard
-        // is now written AFTER the apply succeeds (post-branch, near the end of
-        // the IIFE), NOT synchronously before the await. The previous design
-        // (HOTFIX b) wrote the guard at the top of the IIFE before
-        // `await actor.getCharacter`. On a cold device the first fire's await
-        // could be cancelled (the effect cleanup sets `cancelled = true` while
-        // the await is still in-flight, e.g. ownedSpells identity churn on
-        // first cast), so the `if (cancelled) return` check at the post-await
-        // guard fired and the apply was never reached — but the guard was
-        // ALREADY set, so every subsequent fire skipped at line 2102 and the
-        // bar stayed empty forever. Moving the guard-set to AFTER the apply
-        // means a cancelled first fire does NOT set the guard, so the next
-        // fire can retry the fetch+apply. The guard is only set once the
-        // backend order has actually been applied (or explicitly determined
-        // to be empty). The in-component ref mirror is also moved here.
         // Read the character record to get spellBarOrder (backend-authoritative).
         const character = await (actor as ActorAny).getCharacter(
           BigInt(characterSlot),
@@ -2220,6 +2110,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const savedOrder: string[] | undefined =
           character?.spellBarOrder ?? undefined;
         const ownedIds = new Set(ownedSpells.map((s) => s.id));
+
         if (savedOrder && savedOrder.length > 0) {
           // (a) Render exactly the saved order — skip unknown/no-longer-owned
           // ids (filter against ownedSpells), then append any newly-learned
@@ -2242,82 +2133,105 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             null,
           ].slice(0, 8);
           setActiveSpellIds(resolved);
-          // SECTION 3 acceptance evidence: the loader APPLIED the fetched
-          // backend spellBarOrder exactly once on a cold device. This log line
-          // is the acceptance marker for the cross-device load fix.
-          console.log("[SPELLBAR-BISECT] applied", {
-            source: "backend",
-            ids: resolved,
-          });
           localStorage.setItem(
             nsKey("pbv_active_spells"),
             JSON.stringify(padded),
           );
-          applied = true;
-        } else if (Array.isArray(savedOrder) && savedOrder.length === 0) {
-          // (b) EXPLICIT EMPTY IS VALID: spellBarOrder is a genuinely empty
-          // array (a new/emptied bar). Apply the empty bar VERBATIM — no
-          // default derivation, no auto-save. The player assigns spells
-          // manually from the spellbook; empty slots stay empty. The loader is
-          // APPLY-ONLY: it never writes here. Persistence flows exclusively
-          // through handleSetActiveSpells → debounced setSpellBarOrder →
-          // flushSpellBarSave (the user-driven assign path).
-          setActiveSpellIds([]);
-          try {
+        } else if (ownedSpells.length > 0) {
+          // (b) spellBarOrder is empty/null — derive the default ONCE using the
+          // ownedSpells in their natural/learned order (NOT a random shuffle)
+          // and SAVE it immediately via setSpellBarOrder so the next load
+          // reads it back.
+          // HOTFIX (b): BLOCKED-overwrite invariant. This branch must run ONLY
+          // when the FETCHED character.spellBarOrder is genuinely empty (the
+          // `else if` above already verified savedOrder is empty/null). As a
+          // last line of defense against a re-run that would overwrite a bar
+          // that already got an initial save #ok this session, check the
+          // module-level `_spellbarInitialSavedCharKey` Set. If this charKey
+          // already has an initial save #ok, log BLOCKED-overwrite and SKIP the
+          // save entirely (just apply the active/fetched order). This survives
+          // remounts and cancellation races (module-level, same rationale as
+          // the load-once guard).
+          if (_spellbarInitialSavedCharKey.has(_charKey)) {
+            logDebugInfo("SPELLS", "[SPELLBAR] BLOCKED-overwrite", {
+              slot: characterSlot,
+              charKey: _charKey,
+              existingOrder: activeSpellIds,
+              fetchedOrder: savedOrder,
+            });
+            // Apply the current active order (do NOT save, do NOT clobber).
+            // activeSpellIds already holds the user's bar; just re-affirm it
+            // and the localStorage cache so the render is consistent.
+            setActiveSpellIds(activeSpellIds);
+            try {
+              localStorage.setItem(
+                nsKey("pbv_active_spells"),
+                JSON.stringify(activeSpellIds),
+              );
+            } catch {
+              // ignore
+            }
+          } else {
+            const first8 = ownedSpells.slice(0, 8).map((s) => s.id);
+            if (cancelled) return;
+            setActiveSpellIds(first8);
             localStorage.setItem(
               nsKey("pbv_active_spells"),
-              JSON.stringify(Array(8).fill(null)),
+              JSON.stringify(first8),
             );
-          } catch {
-            // ignore
+            try {
+              // FIX 2b: Log the initial-save round-trip result too (the
+              // non-debounced fallback path). Same variant inspection as the
+              // debounced save above.
+              const result = await (actor as ActorAny).setSpellBarOrder(
+                BigInt(characterSlot),
+                first8,
+              );
+              if (isSpellBarErr(result)) {
+                logDebugError("SPELLS", "[SPELLBAR] initial save #err", {
+                  msg: spellBarErrMsg(result),
+                  slot: characterSlot,
+                  orderIds: first8,
+                });
+                console.error(
+                  "[SpellInit] setSpellBarOrder #err:",
+                  spellBarErrMsg(result),
+                );
+              } else {
+                // HOTFIX (b): record this charKey as having received an initial
+                // save #ok this session so the BLOCKED-overwrite invariant
+                // above can catch any future re-run.
+                _spellbarInitialSavedCharKey.add(_charKey);
+                logDebugInfo("SPELLS", "[SPELLBAR] initial save #ok", {
+                  slot: characterSlot,
+                  orderIds: first8,
+                });
+              }
+            } catch (e) {
+              logDebugError("SPELLS", "[SPELLBAR] initial save failed", {
+                error: String(e),
+                slot: characterSlot,
+                orderIds: first8,
+              });
+              console.warn(
+                "[SpellInit] Failed to save initial spellBarOrder:",
+                e,
+              );
+            }
           }
-          logDebugInfo(
-            "SPELLS",
-            "[SPELLBAR] applied empty order (no defaults)",
-            {
-              slot: characterSlot,
-              charKey: _charKey,
-              ownedCount: ownedSpells.length,
-            },
-          );
-          applied = true;
-        } else {
-          // (c) UNDEFINED IS NOT EMPTY (HOTFIX a): savedOrder is
-          // undefined/null — the character was fetched but the spellBarOrder
-          // field has not resolved yet (still loading, or the backend returned
-          // an absent field). DO NOT apply setActiveSpellIds at all — applying
-          // empty here would clobber a previously-saved bar (the bisect
-          // symptom: after relogin the bar showed saved spells then EMPTIED
-          // seconds later when a later loader fire applied an
-          // absent/undefined spellBarOrder as if it were an intentional
-          // empty). Return and wait for the next fire to re-read the
-          // authoritative value. The module guard is NOT set in this branch
-          // (HOTFIX c — guard-set moved to post-apply, gated on actual apply),
-          // so subsequent fires can retry the fetch until a real value arrives
-          // — the bar is left untouched here, so no clobber.
-          logDebugInfo(
-            "SPELLS",
-            "[SPELLBAR] spellBarOrder undefined/null — not applying (waiting for next fire)",
-            {
-              slot: characterSlot,
-              charKey: _charKey,
-              ownedCount: ownedSpells.length,
-              savedOrder,
-            },
-          );
         }
       } catch (e) {
         console.warn("[SpellLoad] Failed to load spells from backend:", e);
       }
-      // HOTFIX c (Section 3): AUTHORITATIVE guard-set. The module guard is
-      // set ONLY when a real apply happened (branch a or b set `applied`) AND
-      // the effect was not cancelled mid-flight. Branch (c) (undefined order)
-      // leaves `applied` false, so the guard is NOT set and subsequent fires
-      // can retry the fetch until an authoritative value arrives. The
-      // dirty-skip early return above also leaves `applied` false. This is
-      // the single authoritative guard-set — there is no synchronous backstop
-      // before the await anymore.
-      if (applied && !cancelled) {
+      // BREAK 2a: Mark this character as loaded ONLY if the effect wasn't
+      // cancelled mid-flight. A cancelled load (deps changed again before
+      // the await resolved) leaves the guard unset so the next run re-loads.
+      // HOTFIX (a): the authoritative guard is now the MODULE-LEVEL
+      // `_spellbarLoadedForCharKey` Set (persists across remounts and is
+      // visible to the next effect run even if THIS run is cancelled right
+      // after). The in-component ref is kept only as a debug mirror for the
+      // bisect log's prevCharKey field.
+      if (!cancelled) {
         _spellbarLoadedForCharKey.add(`${userId}:${characterSlot}`);
         loadedForCharacterRef.current = `${userId}:${characterSlot}`;
         logDebugInfo("SPELLS", "[SPELLBAR-BISECT] load completed, guard set", {
@@ -3106,7 +3020,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         casterId === "player"
           ? ({
               hp: characterStats.hp,
-              maxHp: characterStats.maxHp,
+              maxHp: characterStats.hp,
               id: "player",
               isEnemy: false,
             } as any)
@@ -3125,19 +3039,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Route the HP update through the combatant store so the ref mirrors
       // stay in sync; the subsequent removeCombatant (on death) filters the
       // enemy out atomically, so a separate setEnemies filter is redundant.
-      updateCombatant(
-        combatantStoreCtx,
-        enemyId,
-        { hp: newHp },
-        "resolveSpellCast-damage",
-      );
+      updateCombatant(combatantStoreCtx, enemyId, { hp: newHp });
       const _em = effectsManagerRef.current;
       _em.spawnDamageNumber(0, 0, dmg, isCrit ? "crit" : "damage");
       _em.triggerHitFlash(String(enemyId));
       _em.triggerShake(isCrit ? 8 : 4);
       if (isCrit) _em.triggerHitStop();
       if (newHp === 0) {
-        processCombatantDeathCb(enemyId, _source as DeathSource);
+        processCombatantDeathCb(enemyId);
       }
       return dmg;
     },
@@ -3146,7 +3055,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       combatantStoreCtx,
       activeMapModifierTypes,
       characterStats.hp,
-      characterStats.maxHp,
     ],
   );
 
@@ -5648,53 +5556,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentX: number,
       currentY: number,
       range: number,
-      selfId?: string,
     ): PlayerPosition | null => {
       const attempts = 50;
-      // SECTION 4 — shared passability check via isCellFree.
-      // Build an OccupancyContext from the live currentMap so the wander
-      // target picker uses the SAME predicate as the player and the gen-time
-      // spawn validator. Replaces the inline bounds + "floor" + voidTiles
-      // check at the old lines 5564-5572.
-      const voidSet =
-        (currentMap?.voidTiles as Set<string> | undefined) ?? new Set<string>();
-      const portalSet = new Set<string>();
-      for (const p of currentMap?.portals ?? []) {
-        portalSet.add(`${p.x},${p.y}`);
-      }
-      const walkableGrid: boolean[][] = tiles.map((row) =>
-        row.map((t) => t === "floor"),
-      );
       for (let i = 0; i < attempts; i++) {
         const deltaX = Math.floor(Math.random() * (range * 2 + 1)) - range;
         const deltaY = Math.floor(Math.random() * (range * 2 + 1)) - range;
         const newX = currentX + deltaX;
         const newY = currentY + deltaY;
-        // SECTION 4 — isCellFree handles bounds, walkable tile, void,
-        // portal, barrier, and combatant occupancy in one call. The
-        // isOccupied callback excludes the wandering enemy itself (by id)
-        // so it can pick its own current tile's neighbourhood, and rejects
-        // the player's tile. The (newX !== currentX || newY !== currentY)
-        // guard is kept so the enemy actually moves.
-        if (newX === currentX && newY === currentY) continue;
-        const occCtx: OccupancyContext = {
-          tiles: walkableGrid,
-          barriers: new Set<string>(),
-          voidTiles: voidSet,
-          portals: portalSet,
-          isOccupied: (cell) => {
-            if (
-              cell.x === playerPositionRef.current.x &&
-              cell.y === playerPositionRef.current.y
-            ) {
-              return true;
-            }
-            return enemiesRef.current.some(
-              (e) => e.id !== selfId && e.x === cell.x && e.y === cell.y,
-            );
-          },
-        };
-        if (isCellFree({ x: newX, y: newY }, occCtx)) {
+        // Check bounds and walkability
+        if (
+          newX >= 0 &&
+          newX < WORLD_GRID_SIZE &&
+          newY >= 0 &&
+          newY < WORLD_GRID_SIZE &&
+          tiles[newY][newX] === "floor" &&
+          !currentMap?.voidTiles?.has(`${newX},${newY}`) &&
+          (newX !== currentX || newY !== currentY)
+        ) {
           return { x: newX, y: newY };
         }
       }
@@ -5746,23 +5624,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   ];
   // Generate enemies with level assignment and enhanced movement properties
   // Generate enemies with level assignment, minimum spread, and quadrant coverage
-  //
-  // SECTION 3 — VOID VALIDATION FOR ENEMIES (FIX SITE 1):
-  // Map-gen enemy spawn now routes tile passability through the SHARED
-  // `isCellFree` predicate from engine/occupancy.ts — the same check the
-  // player, battle-start placement, enemy/summon movement, and summon spawn
-  // all use. This guarantees no enemy spawns on a void/hole, barrier, or
-  // portal tile, matching the player's walkability check exactly.
-  //
-  // At map-gen time no combatants exist yet, so occupancy is a no-op
-  // (isOccupied always returns false) and barriers are empty (spell-placed
-  // walls cannot exist before battle). We build a minimal OccupancyContext
-  // with empty occupancy + empty barriers, the voidTiles set passed in, and a
-  // portals set derived from the portals array. The gen-specific
-  // `isAdjacentToPortal` (spawn-distribution: keep spawns away from portal
-  // NEIGHBORS, not just portal tiles) and the (8,8) player-start exclusion
-  // are KEPT on top of the shared check — they are spawn-spread concerns,
-  // not passability, and are stricter than the shared predicate alone.
   const generateEnemies = useCallback(
     (
       tiles: TileType[][],
@@ -5774,25 +5635,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // depth 0 = normal world; depth 1-5 = escalating dungeon difficulty
       const dungeonExtraEnemies = [0, 2, 3, 4, 4, 5][Math.min(dungeonDepth, 5)];
       const dungeonTierBoost = [0, 1, 2, 2, 3, 3][Math.min(dungeonDepth, 5)];
-      // SECTION 5 — weighted mob-size distribution.
-      // Replaces the old uniform roll (Math.floor(Math.random() * 8) + 1 +
-      // dungeonExtraEnemies) with a tiered distribution: 30% solo, 40% pair,
-      // 20% pack (4-6), 10% boss-pack (2-6 + a boss enemy appended before
-      // the return statement at the end of generateEnemies).
-      const distRoll = Math.random();
-      let enemyCount: number;
-      let includeBoss = false;
-      if (distRoll < 0.3) {
-        enemyCount = 1;
-      } else if (distRoll < 0.7) {
-        enemyCount = 2 + Math.floor(Math.random() * 2);
-      } else if (distRoll < 0.9) {
-        enemyCount = 4 + Math.floor(Math.random() * 3);
-      } else {
-        enemyCount = 2 + Math.floor(Math.random() * 5);
-        includeBoss = true;
-      }
-      enemyCount += dungeonExtraEnemies;
+      const enemyCount =
+        Math.floor(Math.random() * 8) + 1 + dungeonExtraEnemies;
       const enemies: Enemy[] = [];
       const chessPieceTypes: ChessPieceType[] = [
         "king",
@@ -5805,42 +5649,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // FIX 3 — Tier-based enemy level selection
       // Each enemy independently picks its level via the tier probability function.
       // No more flat LEVEL_ZONES lookup.
-      // SECTION 3 — shared passability context for gen-time spawn validation.
-      // Build the boolean[][] walkable grid the shared isCellFree expects
-      // (tiles[y][x] === true ⇒ passable base tile). "floor" is the only
-      // passable base tile; "wall" and "portal" are not (portals are rejected
-      // via the portals Set below, matching the shared predicate's layering).
-      // Barriers are empty at gen time (spell-placed walls do not exist
-      // outside battle). Occupancy is a no-op (no combatants exist yet).
-      const voidSet = voidTilesParam ?? new Set<string>();
-      const portalSet = new Set<string>();
-      for (const p of portals) portalSet.add(`${p.x},${p.y}`);
-      const walkableGrid: boolean[][] = tiles.map((row) =>
-        row.map((t) => t === "floor"),
-      );
-      const genOccCtx: OccupancyContext = {
-        tiles: walkableGrid,
-        barriers: new Set<string>(),
-        voidTiles: voidSet,
-        portals: portalSet,
-        isOccupied: () => false,
-      };
-      // Collect all valid floor positions spread across entire map.
-      // The shared isCellFree call rejects void/barrier/portal/non-floor
-      // tiles; the gen-specific isAdjacentToPortal + (8,8) exclusions below
-      // are spawn-distribution constraints layered ON TOP of passability.
+      // Collect all valid floor positions spread across entire map
       const allValid: PlayerPosition[] = [];
       for (let y = 0; y < WORLD_GRID_SIZE; y++) {
         for (let x = 0; x < WORLD_GRID_SIZE; x++) {
-          // SECTION 3 — shared passability check (void/barrier/portal/wall
-          // rejection via the SAME predicate the player uses). Replaces the
-          // inline `tiles[y][x] !== "floor"` + `voidTilesParam.has(...)`
-          // checks with one call to isCellFree.
-          if (!isCellFree({ x, y }, genOccCtx)) continue;
-          // Gen-specific spawn-distribution constraints (stricter than
-          // passability alone — kept separate from the shared predicate):
+          if (tiles[y][x] !== "floor") continue;
           if (isAdjacentToPortal(x, y, portals)) continue;
           if (Math.abs(x - 8) <= 3 && Math.abs(y - 8) <= 3) continue;
+          // FIX 2 — skip void tiles for enemy spawns
+          if ((voidTilesParam ?? new Set<string>()).has(`${x},${y}`)) continue;
           allValid.push({ x, y });
         }
       }
@@ -5878,10 +5695,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const initialDelay = Math.random() * 9000 + 1000;
           const currentTime = Date.now();
           const scaleFactors = generateEnemyScaleFactors();
+          // FIX 3 — use tier-based level selection; dungeon depth adds tier boost
+          const baseEnemyLevel = pickEnemyLevelFromTiers(
+            characterStats?.level ?? 1,
+          );
+          const tierSize = Math.max(
+            1,
+            (tierConfigRef.current ?? loadTierConfig()).tierSize,
+          );
+          const enemyLevel =
+            dungeonTierBoost > 0
+              ? Math.max(1, baseEnemyLevel + dungeonTierBoost * tierSize)
+              : baseEnemyLevel;
+          const movementSpeed = Math.random() * 400 + 600;
+          const movementRange = Math.floor(Math.random() * 3) + 1;
+          const nextMoveDelay =
+            Math.random() *
+              (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
+            ENEMY_MOVE_INTERVAL_MIN;
           // H4: Pick the next name that hasn't been used on this map yet.
           // Advance past duplicates, then mark as used so no two enemies share a name.
-          // (Moved before level selection so named enemies can opt into the
-          // bounded +7 outlier bucket — see pickEnemyLevelFromTiers.)
           let assignedName: string | undefined;
           while (nameIndex < namePool.length) {
             const candidate = namePool[nameIndex++];
@@ -5900,31 +5733,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   ]
                 : undefined;
           }
-          // SECTION 3 — clustered enemy spawn levels.
-          // NEW formula: mob levels draw from [max(1, playerLevel-2) ..
-          // playerLevel+5] with a weighted center near the player's level
-          // (70% within ±2, 25% in +3..+5, 5% outlier max +7 for named/leader
-          // enemies only). The player's level at MAP GENERATION time anchors
-          // the distribution. `zoneShift` lets the dungeon tier nudge the
-          // center slightly (capped at +2 inside the function) without the old
-          // unbounded `dungeonTierBoost * tierSize` add-on that pushed mobs
-          // 10-30 levels above the player. Only named enemies (assignedName
-          // set) are eligible for the +7 outlier bucket; the group leader is
-          // later designated as the highest-level enemy, so named outliers tend
-          // to become leaders. Admin tier config override (localStorage
-          // `pbv_tier_spawn_config`) is honored inside the function and falls
-          // back to the legacy tier-based algorithm.
-          const enemyLevel = pickEnemyLevelFromTiers(
-            characterStats?.level ?? 1,
-            dungeonTierBoost,
-            assignedName !== undefined,
-          );
-          const movementSpeed = Math.random() * 400 + 600;
-          const movementRange = Math.floor(Math.random() * 3) + 1;
-          const nextMoveDelay =
-            Math.random() *
-              (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
-            ENEMY_MOVE_INTERVAL_MIN;
           enemies.push({
             id: `enemy-${enemies.length}-${currentTime}`,
             x: pos.x,
@@ -6073,109 +5881,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       if (process.env.NODE_ENV === "development")
         console.log(`${enemies.length} enemies generated with quadrant spread`);
-      // SECTION 5 — boss-pack roll: append a single boss enemy to the wave.
-      // Triggered when the weighted distribution roll above set includeBoss.
-      // Mirrors the boss construction shape used on boss-portal entry
-      // (see ~line 6616) so the combatant store, boss state, and banner
-      // all initialise consistently.
-      if (includeBoss) {
-        const bossConf =
-          DEFAULT_BOSS_CONFIGS[
-            Math.floor(Math.random() * DEFAULT_BOSS_CONFIGS.length)
-          ];
-        const bossPos = generateRandomWalkablePosition(
-          tiles,
-          Math.floor(WORLD_GRID_SIZE / 2),
-          Math.floor(WORLD_GRID_SIZE / 2),
-          Math.floor(WORLD_GRID_SIZE / 2) - 2,
-        );
-        // FIX 5(a) — validate walkability for the fallback coordinates.
-        // Previously the ?? fallbacks hardcoded tiles without checking they
-        // were walkable. Build a gen-time OccupancyContext (mirrors the
-        // pattern at ~line 5751) and resolve the fallback via the shared
-        // findNearestFreeCell so the boss never lands on a wall/void/portal.
-        let bx: number;
-        let by: number;
-        if (bossPos) {
-          bx = bossPos.x;
-          by = bossPos.y;
-        } else {
-          const bossOccCtx: OccupancyContext = {
-            tiles: tiles.map((row) => row.map((t) => t === "floor")),
-            barriers: new Set<string>(),
-            voidTiles: voidSet,
-            portals: new Set(portals.map((p) => `${p.x},${p.y}`)),
-            isOccupied: () => false,
-          };
-          const fallback = findNearestFreeCell(
-            {
-              x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
-              y: Math.floor(WORLD_GRID_SIZE / 2) - 3,
-            },
-            bossOccCtx,
-            Math.floor(WORLD_GRID_SIZE / 2),
-          );
-          bx = fallback?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
-          by = fallback?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
-        }
-        const bossLevel = Math.max(1, (characterStats.level ?? 1) + 5);
-        const bossHp = Math.max(
-          1,
-          bossConf.baseStats.hp ?? Math.round(bossLevel * 50 + 200),
-        );
-        const bossAtk = Math.max(
-          1,
-          bossConf.baseStats.atk ?? Math.round(bossLevel * 4 + 10),
-        );
-        enemies.push({
-          id: `boss_${bossConf.id}_${Date.now()}`,
-          x: bx,
-          y: by,
-          pieceType: bossConf.pieceType as ChessPieceType,
-          currentView: "front" as ViewDirection,
-          isMoving: false,
-          movementPath: [],
-          currentStepIndex: 0,
-          movementStartTime: 0,
-          initialDelay: 500,
-          spawnTime: Date.now(),
-          scaleX: 1.4,
-          scaleY: 1.4,
-          level: bossLevel,
-          nextMoveTime: Date.now() + 1000,
-          movementSpeed: 700,
-          movementRange: 2,
-          isWandering: false,
-          wanderTarget: null,
-          lastMoveTime: Date.now(),
-          hp: bossHp,
-          maxHp: bossHp,
-          damage: bossAtk,
-          res: Math.min(50, bossConf.baseStats.res),
-          sp: Math.min(50, bossConf.baseStats.sp),
-          chc: bossConf.baseStats.chc,
-          init: bossConf.baseStats.init ?? Math.max(1, 8 + bossLevel - 1),
-          sr: 10,
-          assignedName: bossConf.name,
-          isLeader: true,
-          family: "boss",
-          isBoss: true,
-          bossId: bossConf.id,
-        });
-        // Initialise boss state + banner exactly like boss-portal entry.
-        const freshBossState = initBossState(bossConf.id, bossConf);
-        bossStateRef.current = freshBossState;
-        setCurrentBossId(bossConf.id);
-        setActiveBossState(freshBossState);
-        setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConf.name}`);
-        if (bossEncounterBannerTimerRef.current !== null) {
-          clearTimeout(bossEncounterBannerTimerRef.current);
-        }
-        bossEncounterBannerTimerRef.current = window.setTimeout(() => {
-          bossEncounterBannerTimerRef.current = null;
-          setBossEncounterBanner(null);
-        }, 1500);
-      }
       return enemies;
     },
     [
@@ -6184,7 +5889,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       generateEnemyScaleFactors,
       enemyNamesFromQuery,
       pieceType,
-      generateRandomWalkablePosition,
     ],
   );
   // Improved camera following with adaptive speed and smooth easing
@@ -6288,978 +5992,858 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return; // ← use ref, not stale closure state
     if (!currentMap) return;
-    // SECTION 3(a) — Edge-triggered on-tile latch. Compute the current tile
-    // key and the portal key the player is standing on. If the player is on
-    // the SAME (portalKey, tileKey) that already fired, this is a duplicate
-    // same-tile call (the 6× same-ms spam) — return immediately WITHOUT
-    // claiming the lock or logging. The latch re-arms only when the player
-    // steps off (handled in the no-portal-found branch below, which clears
-    // the latch when the tile changes).
-    const _tileKey = `${playerPositionRef.current.x},${playerPositionRef.current.y}`;
-    const _candidatePortal = currentMap.portals.find(
-      (p) =>
-        p.x === playerPositionRef.current.x &&
-        p.y === playerPositionRef.current.y,
-    );
-    if (_candidatePortal) {
-      const _candidatePortalKey = `${_candidatePortal.x},${_candidatePortal.y}`;
-      const _latch = portalLatchRef.current;
-      if (
-        _latch?.armed &&
-        _latch.portalKey === _candidatePortalKey &&
-        _latch.tileKey === _tileKey
-      ) {
-        // Already fired for this arrival on this tile — same-ms duplicate.
-        return;
-      }
-    } else {
-      // SECTION 3(a) — Player is NOT on a portal tile. If the latch was
-      // armed for a different tile, the player has left the latched portal
-      // tile — re-arm by clearing so the next arrival fires again.
-      const _latch = portalLatchRef.current;
-      if (_latch && _latch.tileKey !== _tileKey) {
-        portalLatchRef.current = null;
-      }
-    }
     // FIX #14: Check-and-set is the very first synchronous operation so there
     // is no gap between the check and the lock being claimed.
     setTransitionInProgress(true);
     transitionInProgressRef.current = true;
-    // SECTION 3(a) — Timeout safety: if the finally below never fires (e.g.
-    // the tab is backgrounded mid-await or an async path rejects without
-    // surfacing), this timer clears the lock so a failed transition cannot
-    // brick subsequent portals. Cleared in the finally on a clean release.
-    if (transitionLockTimeoutRef.current !== null) {
-      clearTimeout(transitionLockTimeoutRef.current);
-    }
-    transitionLockTimeoutRef.current = window.setTimeout(() => {
-      transitionLockTimeoutRef.current = null;
-      if (transitionInProgressRef.current) {
-        transitionInProgressRef.current = false;
-        setTransitionInProgress(false);
-        onDebugLog?.(
-          "MAP_TRANSITION",
-          "Transition lock cleared by timeout safety",
-        );
-      }
-    }, 5000);
-    // SECTION 3(a) — Helper to release the lock + clear the timeout safety.
-    // Called from the finally block below so EVERY exit path (return, throw,
-    // early-return) releases the lock. This replaces the scattered
-    // setTransitionInProgress(false) + transitionInProgressRef.current=false
-    // pairs that previously lived at each return site.
-    const _releaseTransitionLock = () => {
-      if (transitionLockTimeoutRef.current !== null) {
-        clearTimeout(transitionLockTimeoutRef.current);
-        transitionLockTimeoutRef.current = null;
-      }
-      transitionInProgressRef.current = false;
-      setTransitionInProgress(false);
-    };
     lastPortalRef.current = null; // ensure every portal check starts fresh
     onDebugLog?.("MAP_TRANSITION", "Portal entered");
-    // SECTION 3(a) — Wrap the entire transition body in try/finally so the
-    // lock is ALWAYS released, even on throw or an early return that forgets
-    // to call _releaseTransitionLock. The finally is the single source of
-    // truth for lock release; the timeout safety above is the backstop.
-    try {
-      // Check if player is currently on a portal tile
-      let portal = currentMap.portals.find(
+    // Check if player is currently on a portal tile
+    let portal = currentMap.portals.find(
+      (p) =>
+        p.x === playerPositionRef.current.x &&
+        p.y === playerPositionRef.current.y,
+    );
+    if (!portal) {
+      // Proximity fallback for rest portals (catches coordinate rounding)
+      const nearbyRest = currentMap.portals.find(
         (p) =>
-          p.x === playerPositionRef.current.x &&
-          p.y === playerPositionRef.current.y,
+          p.isRestPortal &&
+          Math.sqrt(
+            (playerPositionRef.current.x - p.x) ** 2 +
+              (playerPositionRef.current.y - p.y) ** 2,
+          ) < 1.5,
       );
-      if (!portal) {
-        // Proximity fallback for rest portals (catches coordinate rounding)
-        const nearbyRest = currentMap.portals.find(
-          (p) =>
-            p.isRestPortal &&
-            Math.sqrt(
-              (playerPositionRef.current.x - p.x) ** 2 +
-                (playerPositionRef.current.y - p.y) ** 2,
-            ) < 1.5,
-        );
-        if (nearbyRest) portal = nearbyRest;
+      if (nearbyRest) portal = nearbyRest;
+    }
+    if (!portal) {
+      // C1 FIX: No portal found — release the lock to prevent permanent stuck state
+      setTransitionInProgress(false);
+      transitionInProgressRef.current = false;
+      // EDIT 2 — Player stepped off any portal: re-arm the sealed-portal
+      // announcement so the next on-portal dwell logs exactly once more.
+      sealedPortalAnnouncedRef.current = null;
+      return;
+    }
+    if (portal) {
+      // Prevent multiple triggers from the same portal
+      const portalKey = `${portal.x},${portal.y}`;
+      const lastPortal = lastPortalRef.current;
+      let lastPortalKey: string | null = null;
+      if (lastPortal) {
+        lastPortalKey = `${(lastPortal as any).x},${(lastPortal as any).y}`;
       }
-      if (!portal) {
-        // C1 FIX: No portal found — release the lock to prevent permanent stuck state
-        // (handled by the finally block below — no explicit release needed here).
-        // EDIT 2 — Player stepped off any portal: re-arm the sealed-portal
-        // announcement so the next on-portal dwell logs exactly once more.
-        sealedPortalAnnouncedRef.current = null;
+      if (portalKey === lastPortalKey) {
+        // FIX #14: Release the lock before returning so a different portal can trigger later
+        setTransitionInProgress(false);
+        transitionInProgressRef.current = false;
+        return; // Already processed this portal
+      }
+      // S2: progression gate — run portal locked until map cleared (engine/portalRules.ts)
+      const _s2InteractRunMode: RunMode = bossRushActiveRef.current
+        ? "bossRush"
+        : dungeonChainActiveRef.current
+          ? "dungeon"
+          : "none";
+      const _s2IsProgressionPortal =
+        _s2InteractRunMode !== "none" &&
+        !portal.isBossRushPortal &&
+        !portal.isRestPortal &&
+        !portal.isRestExit &&
+        !portal.isBossPortal &&
+        !portal.isDungeonEntry;
+      if (
+        _s2IsProgressionPortal &&
+        isProgressionLocked(
+          _s2InteractRunMode,
+          activeHostilesRemaining(combatantsRef.current) === 0,
+        )
+      ) {
+        // EDIT 2 — Edge-trigger the "sealed" announcement so it fires exactly
+        // once per on-portal dwell. sealedPortalAnnouncedRef remembers the last
+        // announced portalKey; we only log when the key differs (first dwell on
+        // this portal). The ref is cleared in the no-portal-found branch above
+        // when the player steps off, re-arming it for the next entry.
+        if (sealedPortalAnnouncedRef.current?.portalKey !== portalKey) {
+          logBattleEntry(
+            "🔒 The way forward is sealed until every foe falls.",
+            "#8a6a3a",
+          );
+          sealedPortalAnnouncedRef.current = {
+            portalKey,
+            announcedAt: Date.now(),
+          };
+        }
+        setTransitionInProgress(false);
+        transitionInProgressRef.current = false;
         return;
       }
-      if (portal) {
-        // SECTION 3(a) — Arm the on-tile latch now that we have a real portal
-        // and are about to process it. Subsequent same-tile calls (the 6×
-        // same-ms spam) hit the latch guard at the top and return immediately.
-        const portalKey = `${portal.x},${portal.y}`;
-        portalLatchRef.current = {
-          portalKey,
-          tileKey: _tileKey,
-          armed: true,
-        };
-        // Prevent multiple triggers from the same portal
-        const lastPortal = lastPortalRef.current;
-        let lastPortalKey: string | null = null;
-        if (lastPortal) {
-          lastPortalKey = `${(lastPortal as any).x},${(lastPortal as any).y}`;
-        }
-        if (portalKey === lastPortalKey) {
-          // FIX #14: Release the lock before returning so a different portal can trigger later
-          // (handled by the finally block below — no explicit release needed here).
-          return; // Already processed this portal
-        }
-        // S2: progression gate — run portal locked until map cleared (engine/portalRules.ts)
-        const _s2InteractRunMode: RunMode = bossRushActiveRef.current
-          ? "bossRush"
-          : dungeonChainActiveRef.current
-            ? "dungeon"
-            : "none";
-        const _s2IsProgressionPortal =
-          _s2InteractRunMode !== "none" &&
-          !portal.isBossRushPortal &&
-          !portal.isRestPortal &&
-          !portal.isRestExit &&
-          !portal.isBossPortal &&
-          !portal.isDungeonEntry;
-        if (
-          _s2IsProgressionPortal &&
-          isProgressionLocked(
-            _s2InteractRunMode,
-            activeHostilesRemaining(combatantsRef.current) === 0,
-          )
-        ) {
-          // EDIT 2 — Edge-trigger the "sealed" announcement so it fires exactly
-          // once per on-portal dwell. sealedPortalAnnouncedRef remembers the last
-          // announced portalKey; we only log when the key differs (first dwell on
-          // this portal). The ref is cleared in the no-portal-found branch above
-          // when the player steps off, re-arming it for the next entry.
-          if (sealedPortalAnnouncedRef.current?.portalKey !== portalKey) {
-            logBattleEntry(
-              "🔒 The way forward is sealed until every foe falls.",
-              "#8a6a3a",
-            );
-            sealedPortalAnnouncedRef.current = {
-              portalKey,
-              announcedAt: Date.now(),
-            };
-          }
-          // SECTION 3(a) — Disarm the latch for a SEALED progression portal so
-          // the player can re-trigger the moment the seal lifts (room cleared).
-          // If we left it armed, the player would have to step off and back on
-          // to advance after clearing the room — which would block the boss-rush
-          // advance path in 3(b).
-          portalLatchRef.current = null;
-          return;
-        }
-        // Boss Rush portal entry
-        if (portal.isBossRushPortal || portal.color === "bossRush") {
-          lastPortalRef.current = { x: portal.x, y: portal.y };
-          bossRushActiveRef.current = true;
-          startBossRush();
-          return;
-        }
-        // Boss Rush room-advance: stepping into a progression portal during a
-        // boss rush advances to the next room once the current room is cleared.
-        // The portal stays locked (handled above) until activeHostilesRemaining
-        // is zero. This replaces the old auto-advance in handleBossRushRoomClear.
-        if (
-          bossRushActiveRef.current &&
-          (portal.isProgressionPortal ||
-            portal.kind === PROGRESSION_PORTAL_KIND) &&
-          activeHostilesRemaining(combatantsRef.current) === 0
-        ) {
-          lastPortalRef.current = { x: portal.x, y: portal.y };
-          const nextRoomIndex = bossRushState.currentRoom + 1;
-          const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
-          if (nextRoomDef) {
-            void advanceBossRushRoom();
-            const { map: nextMap, spawnPosition } = generateRandomMap();
-            if (nextMap) {
-              setCurrentMap(nextMap);
-              if (spawnPosition) {
-                setPlayerPositionSynced({ ...spawnPosition });
-              }
-              const newEnemies: any[] = [];
-              if (nextRoomDef.boss1Id) {
-                newEnemies.push({
-                  id: `boss-rush-${nextRoomIndex}-0`,
-                  pieceType: nextRoomDef.boss1Name || "Boss 1",
-                  x: 4,
-                  y: 5,
-                  level: characterStats.level + 2,
-                  hp: 100,
-                  maxHp: 100,
-                  ap: 6,
-                  mp: 3,
-                  initiative: 10,
-                  attack: 20,
-                  defense: 10,
-                  resistance: 5,
-                  spells: [],
-                  isBoss: true,
-                  isLeader: false,
-                  behavior: "aggressive",
-                  family: "boss",
-                  statusEffects: [],
-                  activeEffects: [],
-                });
-              }
-              if (nextRoomDef.boss2Id) {
-                newEnemies.push({
-                  id: `boss-rush-${nextRoomIndex}-1`,
-                  pieceType: nextRoomDef.boss2Name || "Boss 2",
-                  x: 6,
-                  y: 5,
-                  level: characterStats.level + 2,
-                  hp: 100,
-                  maxHp: 100,
-                  ap: 6,
-                  mp: 3,
-                  initiative: 10,
-                  attack: 20,
-                  defense: 10,
-                  resistance: 5,
-                  spells: [],
-                  isBoss: true,
-                  isLeader: false,
-                  behavior: "aggressive",
-                  family: "boss",
-                  statusEffects: [],
-                  activeEffects: [],
-                });
-              }
-              syncCombatants(combatantStoreCtx, newEnemies, {
-                resetBattle: true,
-              });
-              // SECTION 1c: clear the per-kill defeated roster for the new battle.
-              battleDefeatedRef.current = [];
-            }
-          }
-          // SECTION 3(a) — Disarm the latch after a successful rush advance so
-          // the next room's progression portal can fire on arrival (the player
-          // teleports to a new spawn tile, so the tileKey changes anyway, but
-          // disarming here is belt-and-suspenders against same-tile spawns).
-          portalLatchRef.current = null;
-          return;
-        }
-        // White portal entry — sanctuary transition on run/dungeon completion.
-        // Mirrors the rest portal entry: cleanupMap + generateRestMap. Completion
-        // keeps rewards; this is NOT a death/flee reset.
-        if (portal.isWhitePortal) {
-          lastPortalRef.current = { x: portal.x, y: portal.y };
-          cleanupMap();
-          try {
-            const { map: restMap, spawnPosition: restSpawn } =
-              generateRestMap();
-            currentMapRef.current = restMap;
-            setCurrentMap(restMap);
-            setPlayerPositionSynced(restSpawn);
-            resetCombatantStore(combatantStoreCtx);
-            setPlayerView("front");
-            const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
-            const centerX = canvasSize.width / 2;
-            const centerY = canvasSize.height / 2;
-            const camX = centerX - playerScreenPos.x;
-            const camY = centerY - playerScreenPos.y;
-            cameraRef.current = { x: camX, y: camY };
-            targetCameraRef.current = { x: camX, y: camY };
-            cameraVelocityRef.current = { x: 0, y: 0 };
-            if (cameraFollowTimerRef.current !== null)
-              clearTimeout(cameraFollowTimerRef.current);
-            setTimeout(() => {
-              cameraFollowTimerRef.current = null;
-              updateCameraToFollowPlayer();
-            }, 100);
-            transitionInProgressRef.current = false;
-            setTransitionInProgress(false);
-            setMapCount((prev) => prev + 1);
-            toast("✨ Sanctuary — your run is complete. Rest, hero.", {
-              duration: 4000,
-              style: {
-                background: "#1a1a2e",
-                border: "1px solid #6a6a8a",
-                color: "#e0e0ff",
-              },
-            });
-          } catch (err) {
-            console.error("[white] sanctuary map generation failed:", err);
-            setTransitionInProgress(false);
-            transitionInProgressRef.current = false;
-          }
-          return;
-        }
-        // Rest portal entry — safe zone (enemy-free, with return portals)
-        if (portal.isRestPortal) {
-          lastPortalRef.current = { x: portal.x, y: portal.y };
-          cleanupMap();
-          // Use the same pattern as the death-realm transition (line ~11182):
-          // synchronous map creation, immediate state application, no generation counter
-          try {
-            const { map: restMap, spawnPosition: restSpawn } =
-              generateRestMap();
-            currentMapRef.current = restMap;
-            setCurrentMap(restMap);
-            setPlayerPositionSynced(restSpawn);
-            resetCombatantStore(combatantStoreCtx);
-            setPlayerView("front");
-            // Explicitly center camera on player for rest map
-            const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
-            const centerX = canvasSize.width / 2;
-            const centerY = canvasSize.height / 2;
-            const camX = centerX - playerScreenPos.x;
-            const camY = centerY - playerScreenPos.y;
-            cameraRef.current = { x: camX, y: camY };
-            targetCameraRef.current = { x: camX, y: camY };
-            cameraVelocityRef.current = { x: 0, y: 0 };
-            if (cameraFollowTimerRef.current !== null)
-              clearTimeout(cameraFollowTimerRef.current);
-            setTimeout(() => {
-              cameraFollowTimerRef.current = null;
-              updateCameraToFollowPlayer();
-            }, 100);
-            transitionInProgressRef.current = false;
-            setTransitionInProgress(false);
-            setMapCount((prev) => prev + 1);
-            // DEBUG: prove player and portals are within bounds
-            console.log(
-              "REST_MAP_PLAYER",
-              restSpawn,
-              "MAP_DIMS",
-              restMap.tiles[0]?.length || 0,
-              restMap.tiles.length || 0,
-            );
-            console.log(
-              "REST_MAP_PORTALS",
-              restMap.portals.map((p: any) => ({
-                x: p.x,
-                y: p.y,
-                isRestExit: p.isRestExit,
-              })),
-            );
-            console.log("REST_MAP_CAMERA", cameraRef.current);
-            toast("🛡️ Safe Zone — no enemies here. Use a portal to return.", {
-              duration: 4000,
-              style: {
-                background: "#1a1a2e",
-                border: "1px solid #4a4a6a",
-                color: "#e0e0ff",
-              },
-            });
-          } catch (err) {
-            console.error("[rest] rest map generation failed:", err);
-            setTransitionInProgress(false);
-            transitionInProgressRef.current = false;
-          }
-          return;
-        }
-        // Rest portal exit
-        if (portal.isRestExit && currentMap?.isRestMap) {
-          aiGenerationRef.current++;
-          const _myGen2 = aiGenerationRef.current;
-          lastPortalRef.current = { x: portal.x, y: portal.y };
-          cleanupMap();
-          if (portal.restExitType === "dungeon") {
-            dungeonChainActiveRef.current = true;
-            setDungeonChainActive(true);
-            setDungeonChainDepth(1);
-            const newMaxDepth = 3 + Math.floor(Math.random() * 3);
-            setDungeonChainMaxDepth(newMaxDepth);
-            dungeonChainMaxDepthRef.current = newMaxDepth;
-          }
-          const reTimerId = setTimeout(() => {
-            // RC FIX: No generation check needed — loop runs forever
-            const { map: newMap, spawnPosition } = generateRandomMap();
-            currentMapRef.current = newMap;
-            setCurrentMap(newMap);
-            setPlayerPositionSynced(spawnPosition);
-            resetCombatantStore(combatantStoreCtx);
-            setTransitionInProgress(false);
-            transitionInProgressRef.current = false;
-          }, 400);
-          pendingTimeoutsRef.current.add(reTimerId);
-          return;
-        }
-        // Fire portal sound
-        playSound("map_transition");
-        // ── UNIFIED MAP CLEANUP: terminates ALL battle processes, timers, AI callbacks,
-        // VFX, particle systems, DoT effects, and caches from the previous map.
-        // cleanupMap() calls cleanupBattle() internally — this is the single point
-        // that guarantees nothing from the old map carries over to the new one.
-        cleanupMap();
-        setCoinParticles([]);
-        effectsManagerRef.current.clear();
-        // Ensure fade overlay is cleared (no fade animation)
-        fadeOverlayRef.current = { opacity: 0, direction: "none" };
-        // RC FIX: No manual loop cancel/restart — cleanupMap already bumped generation
-        // The single RAF loop effect (empty deps) will auto-restart via its cleanup+re-run
-        // when the component re-renders, OR the existing loop will pick up the new map via
-        // currentMapRef on its next frame.
-        // H2: transitionInProgressRef already set at the very top of this function (line ~3824).
-        // Setting it again here is redundant and removed.
+      // Boss Rush portal entry
+      if (portal.isBossRushPortal || portal.color === "bossRush") {
         lastPortalRef.current = { x: portal.x, y: portal.y };
-        // Stop any current movement immediately
-        setIsMoving(false);
-        setMovementPath([]);
-        setCurrentStepIndex(0);
-        setClickedTile(null);
-        setPendingDestination(null);
-        // ── EXP8: DUNGEON CHAIN STATE MANAGEMENT ──────────────────────────
-        const isDungeonEntryPortal = portal.isDungeonEntry === true;
-        const isInsideChain = dungeonChainActiveRef.current;
-        const currentDepth = dungeonChainDepthRef.current;
-        const maxDepth = dungeonChainMaxDepthRef.current;
-        let nextDungeonDepth = 0;
-        let chainJustCompleted = false;
-        if (isDungeonEntryPortal && !isInsideChain) {
-          // ENTER THE CHAIN
-          const newMaxDepth = 3 + Math.floor(Math.random() * 3); // 3-5
-          nextDungeonDepth = 1;
+        bossRushActiveRef.current = true;
+        startBossRush();
+        setTransitionInProgress(false);
+        transitionInProgressRef.current = false;
+        return;
+      }
+      // Boss Rush room-advance: stepping into a progression portal during a
+      // boss rush advances to the next room once the current room is cleared.
+      // The portal stays locked (handled above) until activeHostilesRemaining
+      // is zero. This replaces the old auto-advance in handleBossRushRoomClear.
+      if (
+        bossRushActiveRef.current &&
+        (portal.isProgressionPortal ||
+          portal.kind === PROGRESSION_PORTAL_KIND) &&
+        activeHostilesRemaining(combatantsRef.current) === 0
+      ) {
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        const nextRoomIndex = bossRushState.currentRoom + 1;
+        const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
+        if (nextRoomDef) {
+          void advanceBossRushRoom();
+          const { map: nextMap, spawnPosition } = generateRandomMap();
+          if (nextMap) {
+            setCurrentMap(nextMap);
+            if (spawnPosition) {
+              setPlayerPositionSynced({ ...spawnPosition });
+            }
+            const newEnemies: any[] = [];
+            if (nextRoomDef.boss1Id) {
+              newEnemies.push({
+                id: `boss-rush-${nextRoomIndex}-0`,
+                pieceType: nextRoomDef.boss1Name || "Boss 1",
+                x: 4,
+                y: 5,
+                level: characterStats.level + 2,
+                hp: 100,
+                maxHp: 100,
+                ap: 6,
+                mp: 3,
+                initiative: 10,
+                attack: 20,
+                defense: 10,
+                resistance: 5,
+                spells: [],
+                isBoss: true,
+                isLeader: false,
+                behavior: "aggressive",
+                family: "boss",
+                statusEffects: [],
+                activeEffects: [],
+              });
+            }
+            if (nextRoomDef.boss2Id) {
+              newEnemies.push({
+                id: `boss-rush-${nextRoomIndex}-1`,
+                pieceType: nextRoomDef.boss2Name || "Boss 2",
+                x: 6,
+                y: 5,
+                level: characterStats.level + 2,
+                hp: 100,
+                maxHp: 100,
+                ap: 6,
+                mp: 3,
+                initiative: 10,
+                attack: 20,
+                defense: 10,
+                resistance: 5,
+                spells: [],
+                isBoss: true,
+                isLeader: false,
+                behavior: "aggressive",
+                family: "boss",
+                statusEffects: [],
+                activeEffects: [],
+              });
+            }
+            syncCombatants(combatantStoreCtx, newEnemies, {
+              resetBattle: true,
+            });
+            // SECTION 1c: clear the per-kill defeated roster for the new battle.
+            battleDefeatedRef.current = [];
+            // Section 6: a new battle starts — re-arm the one-shot death-penalty
+            // guard so the 20% XP / 40% Doka penalty applies once per death event.
+            deathPenaltyAppliedRef.current = false;
+          }
+        }
+        setTransitionInProgress(false);
+        transitionInProgressRef.current = false;
+        return;
+      }
+      // White portal entry — sanctuary transition on run/dungeon completion.
+      // Mirrors the rest portal entry: cleanupMap + generateRestMap. Completion
+      // keeps rewards; this is NOT a death/flee reset.
+      if (portal.isWhitePortal) {
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        cleanupMap();
+        try {
+          const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
+          currentMapRef.current = restMap;
+          setCurrentMap(restMap);
+          setPlayerPositionSynced(restSpawn);
+          resetCombatantStore(combatantStoreCtx);
+          setPlayerView("front");
+          const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
+          const centerX = canvasSize.width / 2;
+          const centerY = canvasSize.height / 2;
+          const camX = centerX - playerScreenPos.x;
+          const camY = centerY - playerScreenPos.y;
+          cameraRef.current = { x: camX, y: camY };
+          targetCameraRef.current = { x: camX, y: camY };
+          cameraVelocityRef.current = { x: 0, y: 0 };
+          if (cameraFollowTimerRef.current !== null)
+            clearTimeout(cameraFollowTimerRef.current);
+          setTimeout(() => {
+            cameraFollowTimerRef.current = null;
+            updateCameraToFollowPlayer();
+          }, 100);
+          transitionInProgressRef.current = false;
+          setTransitionInProgress(false);
+          setMapCount((prev) => prev + 1);
+          toast("✨ Sanctuary — your run is complete. Rest, hero.", {
+            duration: 4000,
+            style: {
+              background: "#1a1a2e",
+              border: "1px solid #6a6a8a",
+              color: "#e0e0ff",
+            },
+          });
+        } catch (err) {
+          console.error("[white] sanctuary map generation failed:", err);
+          setTransitionInProgress(false);
+          transitionInProgressRef.current = false;
+        }
+        return;
+      }
+      // Rest portal entry — safe zone (enemy-free, with return portals)
+      if (portal.isRestPortal) {
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        cleanupMap();
+        // Use the same pattern as the death-realm transition (line ~11182):
+        // synchronous map creation, immediate state application, no generation counter
+        try {
+          const { map: restMap, spawnPosition: restSpawn } = generateRestMap();
+          currentMapRef.current = restMap;
+          setCurrentMap(restMap);
+          setPlayerPositionSynced(restSpawn);
+          resetCombatantStore(combatantStoreCtx);
+          setPlayerView("front");
+          // Explicitly center camera on player for rest map
+          const playerScreenPos = gridToScreen(restSpawn.x, restSpawn.y);
+          const centerX = canvasSize.width / 2;
+          const centerY = canvasSize.height / 2;
+          const camX = centerX - playerScreenPos.x;
+          const camY = centerY - playerScreenPos.y;
+          cameraRef.current = { x: camX, y: camY };
+          targetCameraRef.current = { x: camX, y: camY };
+          cameraVelocityRef.current = { x: 0, y: 0 };
+          if (cameraFollowTimerRef.current !== null)
+            clearTimeout(cameraFollowTimerRef.current);
+          setTimeout(() => {
+            cameraFollowTimerRef.current = null;
+            updateCameraToFollowPlayer();
+          }, 100);
+          transitionInProgressRef.current = false;
+          setTransitionInProgress(false);
+          setMapCount((prev) => prev + 1);
+          // DEBUG: prove player and portals are within bounds
+          console.log(
+            "REST_MAP_PLAYER",
+            restSpawn,
+            "MAP_DIMS",
+            restMap.tiles[0]?.length || 0,
+            restMap.tiles.length || 0,
+          );
+          console.log(
+            "REST_MAP_PORTALS",
+            restMap.portals.map((p: any) => ({
+              x: p.x,
+              y: p.y,
+              isRestExit: p.isRestExit,
+            })),
+          );
+          console.log("REST_MAP_CAMERA", cameraRef.current);
+          toast("🛡️ Safe Zone — no enemies here. Use a portal to return.", {
+            duration: 4000,
+            style: {
+              background: "#1a1a2e",
+              border: "1px solid #4a4a6a",
+              color: "#e0e0ff",
+            },
+          });
+        } catch (err) {
+          console.error("[rest] rest map generation failed:", err);
+          setTransitionInProgress(false);
+          transitionInProgressRef.current = false;
+        }
+        return;
+      }
+      // Rest portal exit
+      if (portal.isRestExit && currentMap?.isRestMap) {
+        aiGenerationRef.current++;
+        const _myGen2 = aiGenerationRef.current;
+        lastPortalRef.current = { x: portal.x, y: portal.y };
+        cleanupMap();
+        if (portal.restExitType === "dungeon") {
+          dungeonChainActiveRef.current = true;
           setDungeonChainActive(true);
           setDungeonChainDepth(1);
+          const newMaxDepth = 3 + Math.floor(Math.random() * 3);
           setDungeonChainMaxDepth(newMaxDepth);
-          setDungeonChainBaseLevel(characterStats.level);
-          dungeonChainActiveRef.current = true;
-          dungeonChainDepthRef.current = 1;
           dungeonChainMaxDepthRef.current = newMaxDepth;
+        }
+        const reTimerId = setTimeout(() => {
+          // RC FIX: No generation check needed — loop runs forever
+          const { map: newMap, spawnPosition } = generateRandomMap();
+          currentMapRef.current = newMap;
+          setCurrentMap(newMap);
+          setPlayerPositionSynced(spawnPosition);
+          resetCombatantStore(combatantStoreCtx);
+          setTransitionInProgress(false);
+          transitionInProgressRef.current = false;
+        }, 400);
+        pendingTimeoutsRef.current.add(reTimerId);
+        return;
+      }
+      // Fire portal sound
+      playSound("map_transition");
+      // ── UNIFIED MAP CLEANUP: terminates ALL battle processes, timers, AI callbacks,
+      // VFX, particle systems, DoT effects, and caches from the previous map.
+      // cleanupMap() calls cleanupBattle() internally — this is the single point
+      // that guarantees nothing from the old map carries over to the new one.
+      cleanupMap();
+      setCoinParticles([]);
+      effectsManagerRef.current.clear();
+      // Ensure fade overlay is cleared (no fade animation)
+      fadeOverlayRef.current = { opacity: 0, direction: "none" };
+      // RC FIX: No manual loop cancel/restart — cleanupMap already bumped generation
+      // The single RAF loop effect (empty deps) will auto-restart via its cleanup+re-run
+      // when the component re-renders, OR the existing loop will pick up the new map via
+      // currentMapRef on its next frame.
+      // H2: transitionInProgressRef already set at the very top of this function (line ~3824).
+      // Setting it again here is redundant and removed.
+      lastPortalRef.current = { x: portal.x, y: portal.y };
+      // Stop any current movement immediately
+      setIsMoving(false);
+      setMovementPath([]);
+      setCurrentStepIndex(0);
+      setClickedTile(null);
+      setPendingDestination(null);
+      // ── EXP8: DUNGEON CHAIN STATE MANAGEMENT ──────────────────────────
+      const isDungeonEntryPortal = portal.isDungeonEntry === true;
+      const isInsideChain = dungeonChainActiveRef.current;
+      const currentDepth = dungeonChainDepthRef.current;
+      const maxDepth = dungeonChainMaxDepthRef.current;
+      let nextDungeonDepth = 0;
+      let chainJustCompleted = false;
+      if (isDungeonEntryPortal && !isInsideChain) {
+        // ENTER THE CHAIN
+        const newMaxDepth = 3 + Math.floor(Math.random() * 3); // 3-5
+        nextDungeonDepth = 1;
+        setDungeonChainActive(true);
+        setDungeonChainDepth(1);
+        setDungeonChainMaxDepth(newMaxDepth);
+        setDungeonChainBaseLevel(characterStats.level);
+        dungeonChainActiveRef.current = true;
+        dungeonChainDepthRef.current = 1;
+        dungeonChainMaxDepthRef.current = newMaxDepth;
+        logBattleEntry(
+          `⚔️ Dungeon Chain entered! Prepare for ${newMaxDepth} escalating maps.`,
+          "#cc0000",
+        );
+      } else if (isInsideChain) {
+        if (currentDepth >= maxDepth) {
+          // CHAIN COMPLETED — award bonus and reset
+          const chainBonus = maxDepth * 50;
+          persistDokaCredit(
+            actor as DokaCreditActor,
+            characterSlot,
+            chainBonus,
+          ).then((newDoka) => {
+            if (newDoka > 0) onDokaBalanceChange(newDoka);
+          });
+          chainJustCompleted = true;
+          nextDungeonDepth = 0;
+          setDungeonChainActive(false);
+          setDungeonChainDepth(0);
+          setDungeonChainMaxDepth(0);
+          dungeonChainActiveRef.current = false;
+          dungeonChainDepthRef.current = 0;
+          dungeonChainMaxDepthRef.current = 0;
           logBattleEntry(
-            `⚔️ Dungeon Chain entered! Prepare for ${newMaxDepth} escalating maps.`,
+            `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
+            "#ffd700",
+          );
+          // Spawn a white portal to sanctuary on dungeon-chain completion.
+          // Completion keeps rewards (no death penalty / no Death Realm reset).
+          const whiteDungeonPortal = {
+            x: 0,
+            y: 0,
+            color: "white" as const,
+            isWhitePortal: true,
+            animationOffset: Math.random() * Math.PI * 2,
+          };
+          // Attach to the next generated map (created below) via a ref hook
+          // so the portal entry handler can find it after map swap.
+          pendingWhitePortalRef.current = whiteDungeonPortal;
+          logBattleEntry("A white gateway to sanctuary opens…", "white");
+        } else {
+          // PROGRESS DEEPER
+          nextDungeonDepth = currentDepth + 1;
+          setDungeonChainDepth(nextDungeonDepth);
+          dungeonChainDepthRef.current = nextDungeonDepth;
+          logBattleEntry(
+            `⚔️ Dungeon depth ${nextDungeonDepth}/${maxDepth} — enemies grow stronger!`,
             "#cc0000",
           );
-        } else if (isInsideChain) {
-          if (currentDepth >= maxDepth) {
-            // CHAIN COMPLETED — award bonus and reset
-            const chainBonus = maxDepth * 50;
-            onDokaBalanceChange(dokaBalance + chainBonus);
-            chainJustCompleted = true;
-            nextDungeonDepth = 0;
-            setDungeonChainActive(false);
-            setDungeonChainDepth(0);
-            setDungeonChainMaxDepth(0);
-            dungeonChainActiveRef.current = false;
-            dungeonChainDepthRef.current = 0;
-            dungeonChainMaxDepthRef.current = 0;
-            logBattleEntry(
-              `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
-              "#ffd700",
-            );
-            // Spawn a white portal to sanctuary on dungeon-chain completion.
-            // Completion keeps rewards (no death penalty / no Death Realm reset).
-            const whiteDungeonPortal = {
-              x: 0,
-              y: 0,
-              color: "white" as const,
-              isWhitePortal: true,
-              animationOffset: Math.random() * Math.PI * 2,
-            };
-            // Attach to the next generated map (created below) via a ref hook
-            // so the portal entry handler can find it after map swap.
-            pendingWhitePortalRef.current = whiteDungeonPortal;
-            logBattleEntry("A white gateway to sanctuary opens…", "white");
-          } else {
-            // PROGRESS DEEPER
-            nextDungeonDepth = currentDepth + 1;
-            setDungeonChainDepth(nextDungeonDepth);
-            dungeonChainDepthRef.current = nextDungeonDepth;
-            logBattleEntry(
-              `⚔️ Dungeon depth ${nextDungeonDepth}/${maxDepth} — enemies grow stronger!`,
-              "#cc0000",
-            );
-          }
         }
-        // Generate new map — dungeon chain maps never get dungeon entry portals
-        // (dungeonChainActiveRef is already updated above before this call)
-        const { map: newMap, spawnPosition } = generateRandomMap();
-        // Attach any pending white portal (run-complete portal) to the new map
-        if (pendingWhitePortalRef.current && newMap) {
-          newMap.portals = [
-            ...(newMap.portals || []),
-            pendingWhitePortalRef.current,
-          ];
-          pendingWhitePortalRef.current = null;
-        }
-        // Update all states for the new map
-        currentMapRef.current = newMap;
-        setCurrentMap(newMap);
-        if (newMap?.tiles?.length) {
-          const _miRows = newMap.tiles.length;
-          const _miCols = newMap.tiles[0]?.length ?? 0;
-          let _miWalls = 0;
-          const _miChoke = new Set<string>();
-          const _miBN = new Set<string>();
-          for (let _ri = 0; _ri < _miRows; _ri++) {
-            for (let _ci = 0; _ci < _miCols; _ci++) {
-              const _isW = newMap.tiles[_ri][_ci] === "wall";
-              if (_isW) {
-                _miWalls++;
-                continue;
+      }
+      // Generate new map — dungeon chain maps never get dungeon entry portals
+      // (dungeonChainActiveRef is already updated above before this call)
+      const { map: newMap, spawnPosition } = generateRandomMap();
+      // Attach any pending white portal (run-complete portal) to the new map
+      if (pendingWhitePortalRef.current && newMap) {
+        newMap.portals = [
+          ...(newMap.portals || []),
+          pendingWhitePortalRef.current,
+        ];
+        pendingWhitePortalRef.current = null;
+      }
+      // Update all states for the new map
+      currentMapRef.current = newMap;
+      setCurrentMap(newMap);
+      if (newMap?.tiles?.length) {
+        const _miRows = newMap.tiles.length;
+        const _miCols = newMap.tiles[0]?.length ?? 0;
+        let _miWalls = 0;
+        const _miChoke = new Set<string>();
+        const _miBN = new Set<string>();
+        for (let _ri = 0; _ri < _miRows; _ri++) {
+          for (let _ci = 0; _ci < _miCols; _ci++) {
+            const _isW = newMap.tiles[_ri][_ci] === "wall";
+            if (_isW) {
+              _miWalls++;
+              continue;
+            }
+            let _wn = 0;
+            for (let _dr = -1; _dr <= 1; _dr++)
+              for (let _dc = -1; _dc <= 1; _dc++) {
+                if (_dr === 0 && _dc === 0) continue;
+                const _nr = _ri + _dr;
+                const _nc = _ci + _dc;
+                if (
+                  _nr < 0 ||
+                  _nr >= _miRows ||
+                  _nc < 0 ||
+                  _nc >= _miCols ||
+                  newMap.tiles[_nr][_nc] === "wall"
+                )
+                  _wn++;
               }
-              let _wn = 0;
-              for (let _dr = -1; _dr <= 1; _dr++)
-                for (let _dc = -1; _dc <= 1; _dc++) {
-                  if (_dr === 0 && _dc === 0) continue;
-                  const _nr = _ri + _dr;
-                  const _nc = _ci + _dc;
-                  if (
-                    _nr < 0 ||
-                    _nr >= _miRows ||
-                    _nc < 0 ||
-                    _nc >= _miCols ||
-                    newMap.tiles[_nr][_nc] === "wall"
-                  )
-                    _wn++;
-                }
-              if (_wn >= 6) _miChoke.add(`${_ri},${_ci}`);
-              const _cf = [
-                [_ri - 1, _ci],
-                [_ri + 1, _ci],
-                [_ri, _ci - 1],
-                [_ri, _ci + 1],
-              ].filter(
-                ([_rr, _cc]) =>
-                  _rr >= 0 &&
-                  _rr < _miRows &&
-                  _cc >= 0 &&
-                  _cc < _miCols &&
-                  newMap.tiles[_rr][_cc] !== "wall",
-              ).length;
-              if (_cf === 2) _miBN.add(`${_ri},${_ci}`);
-            }
-          }
-          const _miDensity =
-            _miRows * _miCols > 0 ? _miWalls / (_miRows * _miCols) : 0;
-          mapWallDensityRef.current = _miDensity;
-          mapIsCorridorRef.current = _miDensity >= 0.5;
-          mapChokePointsRef.current = _miChoke;
-          mapBottleneckTilesRef.current = _miBN;
-        }
-        setPlayerPositionSynced(spawnPosition);
-        // RC FIX: No manual loop restart — the single RAF loop (empty deps) continues
-        // running and reads the new map from currentMapRef on its next frame.
-        setPlayerView("front");
-        setMapCount((prev) => prev + 1);
-        // Track map visits for achievement
-        mapsVisitedCountRef.current += 1;
-        try {
-          // M6: Namespace by userId+slot so switching accounts doesn't cross-pollute
-          const mvKey = userId
-            ? `${userId}_slot${characterSlot}_pbv_maps_visited_count`
-            : "pbv_maps_visited_count";
-          localStorage.setItem(mvKey, String(mapsVisitedCountRef.current));
-        } catch {
-          /* ignore */
-        }
-        // ── BOSS PORTAL HANDLING ─────────────────────────────────────────
-        const isBossPortalEntry =
-          portal.isBossPortal === true && !!portal.bossPortalId;
-        // FIX 5(b) — local binding so the downstream enemy-spawn block reads
-        // the freshly-resolved config instead of the ref, which could be stale
-        // by the time that block runs.
-        let activeBossConfig: BossConfig | undefined;
-        if (isBossPortalEntry && portal.bossPortalId) {
-          // Load boss config from localStorage (admin-editable)
-          const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
-          const allBossConfigs: BossConfig[] = bossConfigsRaw
-            ? (JSON.parse(bossConfigsRaw) as BossConfig[])
-            : DEFAULT_BOSS_CONFIGS;
-          const bossConfig =
-            allBossConfigs.find((b) => b.id === portal.bossPortalId) ??
-            DEFAULT_BOSS_CONFIGS.find((b) => b.id === portal.bossPortalId);
-          if (bossConfig) {
-            currentBossConfigRef.current = bossConfig;
-            setCurrentBossId(bossConfig.id);
-            // FIX 5(b) — bind a local so the downstream enemy-spawn block
-            // reads the freshly-resolved config instead of the ref, which
-            // could be stale by the time that block runs.
-            activeBossConfig = bossConfig;
-            // Show BOSS ENCOUNTER banner for 1.5s
-            setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
-            if (bossEncounterBannerTimerRef.current !== null) {
-              clearTimeout(bossEncounterBannerTimerRef.current);
-            }
-            bossEncounterBannerTimerRef.current = window.setTimeout(() => {
-              bossEncounterBannerTimerRef.current = null;
-              setBossEncounterBanner(null);
-            }, 1500);
+            if (_wn >= 6) _miChoke.add(`${_ri},${_ci}`);
+            const _cf = [
+              [_ri - 1, _ci],
+              [_ri + 1, _ci],
+              [_ri, _ci - 1],
+              [_ri, _ci + 1],
+            ].filter(
+              ([_rr, _cc]) =>
+                _rr >= 0 &&
+                _rr < _miRows &&
+                _cc >= 0 &&
+                _cc < _miCols &&
+                newMap.tiles[_rr][_cc] !== "wall",
+            ).length;
+            if (_cf === 2) _miBN.add(`${_ri},${_ci}`);
           }
         }
-        // Reset camera system for smooth transition
-        cameraVelocityRef.current = { x: 0, y: 0 };
-        setCameraOffset({ x: 0, y: 0 });
-        setTargetCameraOffset({ x: 0, y: 0 });
-        // Generate enemies — boss maps spawn only one boss enemy, normal maps use tier system
-        const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
-        let newEnemies: Enemy[];
-        if (isBossPortalEntry && portal.bossPortalId && activeBossConfig) {
-          const bossConf = activeBossConfig;
-          const bossOccCtx: OccupancyContext = {
-            tiles: newMap.tiles.map((row) => row.map((t) => t === "floor")),
-            barriers: new Set<string>(),
-            voidTiles: newMap.voidTiles ?? new Set<string>(),
-            portals: new Set(newMap.portals.map((p) => `${p.x},${p.y}`)),
-            isOccupied: () => false,
-          };
-          const fallback = findNearestFreeCell(
-            {
-              x: Math.floor(WORLD_GRID_SIZE / 2) + 3,
-              y: Math.floor(WORLD_GRID_SIZE / 2) - 3,
-            },
-            bossOccCtx,
-            Math.floor(WORLD_GRID_SIZE / 2),
-          );
-          const midX = fallback?.x ?? Math.floor(WORLD_GRID_SIZE / 2) + 3;
-          const midY = fallback?.y ?? Math.floor(WORLD_GRID_SIZE / 2) - 3;
-          newEnemies = [
-            {
-              id: `boss_${bossConf.id}_${Date.now()}`,
-              x: midX,
-              y: midY,
-              pieceType: bossConf.pieceType as ChessPieceType,
-              currentView: "front" as ViewDirection,
-              isMoving: false,
-              movementPath: [],
-              currentStepIndex: 0,
-              movementStartTime: 0,
-              initialDelay: 500,
-              spawnTime: Date.now(),
-              scaleX: 1.4,
-              scaleY: 1.4,
-              level: Math.max(1, characterStats.level + 5),
-              nextMoveTime: Date.now() + 1000,
-              movementSpeed: 700,
-              movementRange: 2,
-              isWandering: false,
-              wanderTarget: null,
-              lastMoveTime: Date.now(),
-              hp: Math.max(
-                1,
-                bossConf.baseStats.hp ??
-                  Math.round((characterStats.level + 5) * 50 + 200),
-              ),
-              maxHp: Math.max(
-                1,
-                bossConf.baseStats.hp ??
-                  Math.round((characterStats.level + 5) * 50 + 200),
-              ),
-              damage: Math.max(
-                1,
-                bossConf.baseStats.atk ??
-                  Math.round((characterStats.level + 5) * 4 + 10),
-              ),
-              res: Math.min(50, bossConf.baseStats.res),
-              sp: Math.min(50, bossConf.baseStats.sp),
-              chc: bossConf.baseStats.chc,
-              init:
-                bossConf.baseStats.init ??
-                Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
-              sr: 10,
-              assignedName: bossConf.name,
-              isLeader: true,
-              family: "boss",
-            },
-          ];
-          // Initialise boss state
-          const freshBossState = initBossState(bossConf.id, bossConf);
-          bossStateRef.current = freshBossState;
-          setActiveBossState(freshBossState);
-        } else {
-          newEnemies = newMap.isDeathRealm
-            ? []
-            : generateEnemies(
-                newMap.tiles,
-                newMap.portals,
-                effectiveDepth,
-                newMap.voidTiles,
-              );
+        const _miDensity =
+          _miRows * _miCols > 0 ? _miWalls / (_miRows * _miCols) : 0;
+        mapWallDensityRef.current = _miDensity;
+        mapIsCorridorRef.current = _miDensity >= 0.5;
+        mapChokePointsRef.current = _miChoke;
+        mapBottleneckTilesRef.current = _miBN;
+      }
+      setPlayerPositionSynced(spawnPosition);
+      // RC FIX: No manual loop restart — the single RAF loop (empty deps) continues
+      // running and reads the new map from currentMapRef on its next frame.
+      setPlayerView("front");
+      setMapCount((prev) => prev + 1);
+      // Track map visits for achievement
+      mapsVisitedCountRef.current += 1;
+      try {
+        // M6: Namespace by userId+slot so switching accounts doesn't cross-pollute
+        const mvKey = userId
+          ? `${userId}_slot${characterSlot}_pbv_maps_visited_count`
+          : "pbv_maps_visited_count";
+        localStorage.setItem(mvKey, String(mapsVisitedCountRef.current));
+      } catch {
+        /* ignore */
+      }
+      // ── BOSS PORTAL HANDLING ─────────────────────────────────────────
+      const isBossPortalEntry =
+        portal.isBossPortal === true && !!portal.bossPortalId;
+      if (isBossPortalEntry && portal.bossPortalId) {
+        // Load boss config from localStorage (admin-editable)
+        const bossConfigsRaw = localStorage.getItem("pbv_boss_configs");
+        const allBossConfigs: BossConfig[] = bossConfigsRaw
+          ? (JSON.parse(bossConfigsRaw) as BossConfig[])
+          : DEFAULT_BOSS_CONFIGS;
+        const bossConfig =
+          allBossConfigs.find((b) => b.id === portal.bossPortalId) ??
+          DEFAULT_BOSS_CONFIGS.find((b) => b.id === portal.bossPortalId);
+        if (bossConfig) {
+          currentBossConfigRef.current = bossConfig;
+          setCurrentBossId(bossConfig.id);
+          // Show BOSS ENCOUNTER banner for 1.5s
+          setBossEncounterBanner(`☠️ BOSS ENCOUNTER: ${bossConfig.name}`);
+          if (bossEncounterBannerTimerRef.current !== null) {
+            clearTimeout(bossEncounterBannerTimerRef.current);
+          }
+          bossEncounterBannerTimerRef.current = window.setTimeout(() => {
+            bossEncounterBannerTimerRef.current = null;
+            setBossEncounterBanner(null);
+          }, 1500);
         }
-        // Section 6: ensure all spawns + player + portal are mutually reachable
-        const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
-        const _portal = newMap.portals?.[0];
-        if (_portal) {
-          const { tiles: _tiles, spawns: _spawns } = ensureReachability(
-            newMap.tiles as string[][],
-            newMap.voidTiles,
-            _enemySpawns,
-            spawnPosition,
-            _portal,
-            WORLD_GRID_SIZE,
-            WORLD_GRID_SIZE,
-          );
-          newMap.tiles = _tiles as typeof newMap.tiles;
-          newEnemies.forEach((e, i) => {
-            if (_spawns[i]) {
-              e.x = _spawns[i].x;
-              e.y = _spawns[i].y;
-            }
-          });
-        }
-        syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
-        // SECTION 1c: clear the per-kill defeated roster for the new battle.
-        battleDefeatedRef.current = [];
-        // M2 FIX: Cloud cluster generation deferred into the portal timer callback
-        // so it never blocks the synchronous portal-transition path on mobile
-        // (synchronous cloud gen was pushing transitions past 16ms → dropped frames).
-        // Skate-rail system removed
-        // Weather effects removed
-        // Update camera to follow player to new position
-        // FIX 1: Cancel any previously-queued portal timers before scheduling new ones.
-        // Without this, crossing two portals within 1.6 s lets the first timer clear the
-        // transition lock mid-render, allowing two map-generation calls to race.
-        if (portalTimerRef1.current !== null) {
-          clearTimeout(portalTimerRef1.current);
-          portalTimerRef1.current = null;
-        }
-        if (portalTimerRef2.current !== null) {
-          clearTimeout(portalTimerRef2.current);
-          portalTimerRef2.current = null;
-        }
-        portalTimerRef1.current = window.setTimeout(() => {
-          // RC FIX: No generation check needed — loop runs forever
-          portalTimerRef1.current = null;
-          updateCameraToFollowPlayer();
-          // Clear transition flag and last portal reference after camera update
-          portalTimerRef2.current = window.setTimeout(() => {
-            portalTimerRef2.current = null;
-            setTransitionInProgress(false);
-            transitionInProgressRef.current = false;
-            lastPortalRef.current = null;
-          }, 1500); // H4: 1500ms guard prevents immediate re-entry when spawning on a portal
-        }, 100);
-        // Apply map modifiers on portal transition — delegated to the
-        // map-modifier registry (engine/mapModifiers.ts). The registry performs
-        // the same two-roll trigger logic (global chance → weighted first pick →
-        // second-modifier chance) and returns the set of activated modifier ids.
-        const triggered = mapModifierRegistry.rollActiveModifiers(
-          mapModifiers,
+      }
+      // Reset camera system for smooth transition
+      cameraVelocityRef.current = { x: 0, y: 0 };
+      setCameraOffset({ x: 0, y: 0 });
+      setTargetCameraOffset({ x: 0, y: 0 });
+      // Generate enemies — boss maps spawn only one boss enemy, normal maps use tier system
+      const effectiveDepth = chainJustCompleted ? 0 : nextDungeonDepth;
+      let newEnemies: Enemy[];
+      if (
+        isBossPortalEntry &&
+        portal.bossPortalId &&
+        currentBossConfigRef.current
+      ) {
+        const bossConf = currentBossConfigRef.current;
+        const midX = Math.floor(WORLD_GRID_SIZE / 2) + 3;
+        const midY = Math.floor(WORLD_GRID_SIZE / 2) - 3;
+        newEnemies = [
           {
-            log: (msg: string) => logDebugInfo("MODIFIER", msg),
-            rng: Math.random,
+            id: `boss_${bossConf.id}_${Date.now()}`,
+            x: midX,
+            y: midY,
+            pieceType: bossConf.pieceType as ChessPieceType,
+            currentView: "front" as ViewDirection,
+            isMoving: false,
+            movementPath: [],
+            currentStepIndex: 0,
+            movementStartTime: 0,
+            initialDelay: 500,
+            spawnTime: Date.now(),
+            scaleX: 1.4,
+            scaleY: 1.4,
+            level: Math.max(1, characterStats.level + 5),
+            nextMoveTime: Date.now() + 1000,
+            movementSpeed: 700,
+            movementRange: 2,
+            isWandering: false,
+            wanderTarget: null,
+            lastMoveTime: Date.now(),
+            hp: Math.max(
+              1,
+              bossConf.baseStats.hp ??
+                Math.round((characterStats.level + 5) * 50 + 200),
+            ),
+            maxHp: Math.max(
+              1,
+              bossConf.baseStats.hp ??
+                Math.round((characterStats.level + 5) * 50 + 200),
+            ),
+            damage: Math.max(
+              1,
+              bossConf.baseStats.atk ??
+                Math.round((characterStats.level + 5) * 4 + 10),
+            ),
+            res: Math.min(50, bossConf.baseStats.res),
+            sp: Math.min(50, bossConf.baseStats.sp),
+            chc: bossConf.baseStats.chc,
+            init:
+              bossConf.baseStats.init ??
+              Math.max(1, 8 + Math.max(1, characterStats.level + 5) - 1),
+            sr: 10,
+            assignedName: bossConf.name,
+            isLeader: true,
+            family: "boss",
           },
+        ];
+        // Initialise boss state
+        const freshBossState = initBossState(bossConf.id, bossConf);
+        bossStateRef.current = freshBossState;
+        setActiveBossState(freshBossState);
+      } else {
+        newEnemies = newMap.isDeathRealm
+          ? []
+          : generateEnemies(
+              newMap.tiles,
+              newMap.portals,
+              effectiveDepth,
+              newMap.voidTiles,
+            );
+      }
+      // Section 6: ensure all spawns + player + portal are mutually reachable
+      const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
+      const _portal = newMap.portals?.[0];
+      if (_portal) {
+        const { tiles: _tiles, spawns: _spawns } = ensureReachability(
+          newMap.tiles as string[][],
+          newMap.voidTiles,
+          _enemySpawns,
+          spawnPosition,
+          _portal,
+          WORLD_GRID_SIZE,
+          WORLD_GRID_SIZE,
         );
-        setActiveMapModifierTypes(triggered);
-        // EXP5: Apply hazard tiles based on active modifiers (lava/ice/spikes)
-        // These add to whatever random hazards were already seeded during map generation.
-        if (!newMap.isDeathRealm) {
-          const hazardMap = newMap.hazardTiles;
-          const spawnCxMod = Math.floor(WORLD_GRID_SIZE / 2);
-          const spawnCyMod = Math.floor(WORLD_GRID_SIZE / 2);
-          const portalSetMod = new Set(
-            newMap.portals.map((p) => `${p.x},${p.y}`),
-          );
-          const eligMod: { x: number; y: number }[] = [];
-          for (let hy = 0; hy < WORLD_GRID_SIZE; hy++) {
-            for (let hx = 0; hx < WORLD_GRID_SIZE; hx++) {
-              if (newMap.tiles[hy][hx] !== "floor") continue;
-              if (portalSetMod.has(`${hx},${hy}`)) continue;
-              if (
-                Math.abs(hx - spawnCxMod) <= 3 &&
-                Math.abs(hy - spawnCyMod) <= 3
-              )
-                continue;
-              if (hazardMap.has(`${hx},${hy}`)) continue;
-              eligMod.push({ x: hx, y: hy });
-            }
+        newMap.tiles = _tiles as typeof newMap.tiles;
+        newEnemies.forEach((e, i) => {
+          if (_spawns[i]) {
+            e.x = _spawns[i].x;
+            e.y = _spawns[i].y;
           }
-          for (let i = eligMod.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [eligMod[i], eligMod[j]] = [eligMod[j], eligMod[i]];
-          }
-          let modHazardIdx = 0;
-          const addModHazards = (type: HazardType) => {
-            const count = 3 + Math.floor(Math.random() * 6); // 3-8
-            for (
-              let hi = 0;
-              hi < count && modHazardIdx < eligMod.length;
-              hi++, modHazardIdx++
-            ) {
-              hazardMap.set(
-                `${eligMod[modHazardIdx].x},${eligMod[modHazardIdx].y}`,
-                type,
-              );
-            }
-          };
-          if (
-            triggered.has("thorned_ground") ||
-            triggered.has("blood_moon") ||
-            triggered.has("spike_pit")
-          )
-            addModHazards("spikes");
-          if (triggered.has("frozen_terrain") || triggered.has("ice_fields"))
-            addModHazards("ice");
-          if (
-            triggered.has("plague_zone") ||
-            triggered.has("void_rift") ||
-            triggered.has("lava_fields")
-          )
-            addModHazards("lava");
-          // Any other active modifier: 40% chance to add mixed hazards
-          if (
-            triggered.size > 0 &&
-            !triggered.has("thorned_ground") &&
-            !triggered.has("blood_moon") &&
-            !triggered.has("frozen_terrain") &&
-            !triggered.has("plague_zone") &&
-            !triggered.has("void_rift") &&
-            Math.random() < 0.4
-          ) {
-            const randHType: HazardType[] = ["lava", "ice", "spikes"];
-            addModHazards(
-              randHType[Math.floor(Math.random() * randHType.length)],
-            );
-          }
-          if (hazardMap.size > 0) {
-            logBattleEntry(
-              `⚠️ ${hazardMap.size} hazard tile${hazardMap.size !== 1 ? "s" : ""} detected on this map!`,
-              "#ff7675",
-            );
+        });
+      }
+      syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
+      // SECTION 1c: clear the per-kill defeated roster for the new battle.
+      battleDefeatedRef.current = [];
+      // Section 6: a new battle starts — re-arm the one-shot death-penalty
+      // guard so the 20% XP / 40% Doka penalty applies once per death event.
+      deathPenaltyAppliedRef.current = false;
+      // M2 FIX: Cloud cluster generation deferred into the portal timer callback
+      // so it never blocks the synchronous portal-transition path on mobile
+      // (synchronous cloud gen was pushing transitions past 16ms → dropped frames).
+      // Skate-rail system removed
+      // Weather effects removed
+      // Update camera to follow player to new position
+      // FIX 1: Cancel any previously-queued portal timers before scheduling new ones.
+      // Without this, crossing two portals within 1.6 s lets the first timer clear the
+      // transition lock mid-render, allowing two map-generation calls to race.
+      if (portalTimerRef1.current !== null) {
+        clearTimeout(portalTimerRef1.current);
+        portalTimerRef1.current = null;
+      }
+      if (portalTimerRef2.current !== null) {
+        clearTimeout(portalTimerRef2.current);
+        portalTimerRef2.current = null;
+      }
+      portalTimerRef1.current = window.setTimeout(() => {
+        // RC FIX: No generation check needed — loop runs forever
+        portalTimerRef1.current = null;
+        updateCameraToFollowPlayer();
+        // Clear transition flag and last portal reference after camera update
+        portalTimerRef2.current = window.setTimeout(() => {
+          portalTimerRef2.current = null;
+          setTransitionInProgress(false);
+          transitionInProgressRef.current = false;
+          lastPortalRef.current = null;
+        }, 1500); // H4: 1500ms guard prevents immediate re-entry when spawning on a portal
+      }, 100);
+      // Apply map modifiers on portal transition — delegated to the
+      // map-modifier registry (engine/mapModifiers.ts). The registry performs
+      // the same two-roll trigger logic (global chance → weighted first pick →
+      // second-modifier chance) and returns the set of activated modifier ids.
+      const triggered = mapModifierRegistry.rollActiveModifiers(mapModifiers, {
+        log: (msg: string) => logDebugInfo("MODIFIER", msg),
+        rng: Math.random,
+      });
+      setActiveMapModifierTypes(triggered);
+      // EXP5: Apply hazard tiles based on active modifiers (lava/ice/spikes)
+      // These add to whatever random hazards were already seeded during map generation.
+      if (!newMap.isDeathRealm) {
+        const hazardMap = newMap.hazardTiles;
+        const spawnCxMod = Math.floor(WORLD_GRID_SIZE / 2);
+        const spawnCyMod = Math.floor(WORLD_GRID_SIZE / 2);
+        const portalSetMod = new Set(
+          newMap.portals.map((p) => `${p.x},${p.y}`),
+        );
+        const eligMod: { x: number; y: number }[] = [];
+        for (let hy = 0; hy < WORLD_GRID_SIZE; hy++) {
+          for (let hx = 0; hx < WORLD_GRID_SIZE; hx++) {
+            if (newMap.tiles[hy][hx] !== "floor") continue;
+            if (portalSetMod.has(`${hx},${hy}`)) continue;
+            if (
+              Math.abs(hx - spawnCxMod) <= 3 &&
+              Math.abs(hy - spawnCyMod) <= 3
+            )
+              continue;
+            if (hazardMap.has(`${hx},${hy}`)) continue;
+            eligMod.push({ x: hx, y: hy });
           }
         }
-        if (triggered.size > 0) {
-          const names = [...triggered]
-            .map((t) => MAP_MODIFIERS.find((m) => m.id === t)?.name ?? t)
-            .join(" + ");
+        for (let i = eligMod.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [eligMod[i], eligMod[j]] = [eligMod[j], eligMod[i]];
+        }
+        let modHazardIdx = 0;
+        const addModHazards = (type: HazardType) => {
+          const count = 3 + Math.floor(Math.random() * 6); // 3-8
+          for (
+            let hi = 0;
+            hi < count && modHazardIdx < eligMod.length;
+            hi++, modHazardIdx++
+          ) {
+            hazardMap.set(
+              `${eligMod[modHazardIdx].x},${eligMod[modHazardIdx].y}`,
+              type,
+            );
+          }
+        };
+        if (
+          triggered.has("thorned_ground") ||
+          triggered.has("blood_moon") ||
+          triggered.has("spike_pit")
+        )
+          addModHazards("spikes");
+        if (triggered.has("frozen_terrain") || triggered.has("ice_fields"))
+          addModHazards("ice");
+        if (
+          triggered.has("plague_zone") ||
+          triggered.has("void_rift") ||
+          triggered.has("lava_fields")
+        )
+          addModHazards("lava");
+        // Any other active modifier: 40% chance to add mixed hazards
+        if (
+          triggered.size > 0 &&
+          !triggered.has("thorned_ground") &&
+          !triggered.has("blood_moon") &&
+          !triggered.has("frozen_terrain") &&
+          !triggered.has("plague_zone") &&
+          !triggered.has("void_rift") &&
+          Math.random() < 0.4
+        ) {
+          const randHType: HazardType[] = ["lava", "ice", "spikes"];
+          addModHazards(
+            randHType[Math.floor(Math.random() * randHType.length)],
+          );
+        }
+        if (hazardMap.size > 0) {
           logBattleEntry(
-            `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
+            `⚠️ ${hazardMap.size} hazard tile${hazardMap.size !== 1 ? "s" : ""} detected on this map!`,
             "#ff7675",
           );
-        } else {
-          logBattleEntry("No map modifier this area.", "#888888");
         }
-        // Spawn ground Doka loot on this map (balance: more enemies = more loot)
-        // Only if map is not death realm and has enemies
-        // ── #18 Always read Doka spawn config from ref (never stale closure) ──
-        const { dokaSpawnChance: spawnChance, dokaSpawnBaseValue: spawnBase } =
-          dokaSpawnConfigRef.current;
-        if (
-          !newMap.isDeathRealm &&
-          Math.random() * 100 < spawnChance &&
-          newEnemies.length > 0
-        ) {
-          const avgLevel =
-            newEnemies.reduce((s, e) => s + Number(e.level), 0) /
-            newEnemies.length;
-          const lootCount = Math.max(1, Math.ceil(newEnemies.length / 3));
-          // Collect walkable tiles not occupied by player/enemies
-          const walkable: { x: number; y: number }[] = [];
-          for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-            for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-              if (
-                newMap.tiles[gy]?.[gx] === "floor" &&
-                !newMap.voidTiles?.has(`${gx},${gy}`) &&
-                !(gx === spawnPosition.x && gy === spawnPosition.y) &&
-                !newEnemies.some((e) => e.x === gx && e.y === gy)
-              ) {
-                walkable.push({ x: gx, y: gy });
-              }
+      }
+      if (triggered.size > 0) {
+        const names = [...triggered]
+          .map((t) => MAP_MODIFIERS.find((m) => m.id === t)?.name ?? t)
+          .join(" + ");
+        logBattleEntry(
+          `Map modifier${triggered.size > 1 ? "s" : ""} active: ${names}`,
+          "#ff7675",
+        );
+      } else {
+        logBattleEntry("No map modifier this area.", "#888888");
+      }
+      // Spawn ground Doka loot on this map (balance: more enemies = more loot)
+      // Only if map is not death realm and has enemies
+      // ── #18 Always read Doka spawn config from ref (never stale closure) ──
+      const { dokaSpawnChance: spawnChance, dokaSpawnBaseValue: spawnBase } =
+        dokaSpawnConfigRef.current;
+      if (
+        !newMap.isDeathRealm &&
+        Math.random() * 100 < spawnChance &&
+        newEnemies.length > 0
+      ) {
+        const avgLevel =
+          newEnemies.reduce((s, e) => s + Number(e.level), 0) /
+          newEnemies.length;
+        const lootCount = Math.max(1, Math.ceil(newEnemies.length / 3));
+        // Collect walkable tiles not occupied by player/enemies
+        const walkable: { x: number; y: number }[] = [];
+        for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
+          for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
+            if (
+              newMap.tiles[gy]?.[gx] === "floor" &&
+              !newMap.voidTiles?.has(`${gx},${gy}`) &&
+              !(gx === spawnPosition.x && gy === spawnPosition.y) &&
+              !newEnemies.some((e) => e.x === gx && e.y === gy)
+            ) {
+              walkable.push({ x: gx, y: gy });
             }
           }
-          // Shuffle and pick lootCount tiles
-          for (let i = walkable.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [walkable[i], walkable[j]] = [walkable[j], walkable[i]];
-          }
-          const lootItems: DokaLootItem[] = walkable
-            .slice(0, lootCount)
-            .map((tile) => ({
-              id: `doka-${Date.now()}-${tile.x}-${tile.y}`,
-              tileX: tile.x,
-              tileY: tile.y,
-              value: Math.max(
-                1,
-                Math.round(
-                  (spawnBase + avgLevel * 2) * (0.8 + Math.random() * 0.4),
-                ),
-              ),
-              collected: false,
-            }));
-          setDokaLoot(lootItems);
-          if (lootItems.length > 0) {
-            logBattleEntry(
-              `\uD83D\uDCB0 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
-              "#f1c40f",
-            );
-          }
-        } else {
-          setDokaLoot([]);
         }
-        // FIX 2: Award 10 XP for portal transition and save progress
-        setCharacterStats((prev) => {
-          const PORTAL_XP = 10;
-          let newExp = prev.exp + PORTAL_XP;
-          let newLevel = prev.level;
-          let newExpToNext = prev.expToNext;
-          while (newExp >= newExpToNext) {
-            newExp -= newExpToNext;
-            newLevel += 1;
-            newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
-          }
-          // Save to backend asynchronously
-          if (actor) {
-            const spellKeys = Object.keys(spellLevels);
-            const spellVals = spellKeys.map((k) => BigInt(spellLevels[k] ?? 0));
-            const portalXpUpdate = {
-              name: characterName,
-              pieceType: pieceType,
-              colors: [colors.primary, colors.secondary, colors.accent],
-              pixelPattern: "",
-              rotation: BigInt(0),
-              level: BigInt(newLevel),
-              experience: BigInt(newExp),
-              dokaBalance: BigInt(dokaBalance),
-              stats: {
-                hp: BigInt(prev.hp),
-                ap: BigInt(prev.ap),
-                mp: BigInt(prev.mp),
-                sp: BigInt(prev.sp),
-                sr: BigInt(prev.sr),
-                init: BigInt(prev.init),
-                res: BigInt(prev.res),
-                chc: BigInt(prev.chc),
-                atk: BigInt(0),
-                resilience: BigInt(0),
-                evasion: BigInt(0),
-                killCount: BigInt(character?.stats?.killCount ?? 0),
-              },
-              spellLevelKeys: spellKeys,
-              spellLevelValues: spellVals,
-            };
-            const portalXpSlot = BigInt(characterSlot);
-            (async () => {
-              try {
-                await actor.updateCharacter(portalXpSlot, portalXpUpdate);
-              } catch (err) {
-                console.warn("[PBV] Character save failed:", err);
-                pendingSavesRef.current.push(() =>
-                  actor.updateCharacter(portalXpSlot, portalXpUpdate),
-                );
-              }
-            })();
-          }
-          return {
-            ...prev,
-            exp: newExp,
-            level: newLevel,
-            expToNext: newExpToNext,
-          };
-        });
+        // Shuffle and pick lootCount tiles
+        for (let i = walkable.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [walkable[i], walkable[j]] = [walkable[j], walkable[i]];
+        }
+        const lootItems: DokaLootItem[] = walkable
+          .slice(0, lootCount)
+          .map((tile) => ({
+            id: `doka-${Date.now()}-${tile.x}-${tile.y}`,
+            tileX: tile.x,
+            tileY: tile.y,
+            value: Math.max(
+              1,
+              Math.round(
+                (spawnBase + avgLevel * 2) * (0.8 + Math.random() * 0.4),
+              ),
+            ),
+            collected: false,
+          }));
+        setDokaLoot(lootItems);
+        if (lootItems.length > 0) {
+          logBattleEntry(
+            `\uD83D\uDCB0 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
+            "#f1c40f",
+          );
+        }
       } else {
-        // FIX #14: Player is not on a portal — release lock immediately
-        transitionInProgressRef.current = false;
-        setTransitionInProgress(false);
+        setDokaLoot([]);
       }
-    } catch (err) {
-      // SECTION 3(a) — Surface unexpected throws so they are not silently
-      // swallowed by the finally; the lock is still released below.
-      console.error("[MAP_TRANSITION] checkPortalInteraction threw:", err);
-      throw err;
-    } finally {
-      // SECTION 3(a) — Single source of truth for lock release. EVERY exit
-      // path (early return, throw, normal completion) runs this finally, so
-      // a failed transition can never brick subsequent portals. The 5000ms
-      // timeout safety above is the backstop for the case where this finally
-      // itself never fires (e.g. tab backgrounded mid-await).
-      _releaseTransitionLock();
+      // FIX 2: Award 10 XP for portal transition and save progress
+      setCharacterStats((prev) => {
+        const PORTAL_XP = 10;
+        let newExp = prev.exp + PORTAL_XP;
+        let newLevel = prev.level;
+        let newExpToNext = prev.expToNext;
+        while (newExp >= newExpToNext) {
+          newExp -= newExpToNext;
+          newLevel += 1;
+          newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
+        }
+        // Persist portal XP atomically through the reward funnel (applyRewards),
+        // not a partial updateCharacter (which would clobber optional loadout
+        // fields like spellBarOrder and bossRushMasterComplete).
+        if (actor) {
+          (async () => {
+            try {
+              const result = await actor.applyRewards(
+                BigInt(characterSlot),
+                BigInt(0),
+                BigInt(PORTAL_XP),
+              );
+              if ("err" in result) {
+                console.warn("[PBV] Portal XP save failed:", result.err);
+                return;
+              }
+              const { newXp, newLevel: newLvl } = result.ok;
+              setCharacterStats((cur) => ({
+                ...cur,
+                exp: Number(newXp),
+                level: Number(newLvl),
+                expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
+              }));
+            } catch (err) {
+              console.warn("[PBV] Portal XP save failed:", err);
+            }
+          })();
+        }
+        return {
+          ...prev,
+          exp: newExp,
+          level: newLevel,
+          expToNext: newExpToNext,
+        };
+      });
+    } else {
+      // FIX #14: Player is not on a portal — release lock immediately
+      transitionInProgressRef.current = false;
+      setTransitionInProgress(false);
     }
   }, [
     inBattle,
@@ -7359,7 +6943,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           enemy.x,
           enemy.y,
           enemy.movementRange!,
-          enemy.id,
         );
 
         if (target) {
@@ -7393,36 +6976,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       return enemy;
     });
-    // FIX (c) R12: enemy-triggered battles. The world-mode click chain only
-    // checks for an enemy on the player's clicked tile, so an enemy wandering
-    // onto a tile adjacent to the player never triggered battle. After
-    // computing nextEnemies, run a Chebyshev-adjacency check (<=1 on both
-    // axes covers the 8 surrounding tiles) against the player's current
-    // position. Guarded by !inBattleRef.current && !transitionInProgressRef
-    // to avoid double-triggering when a battle/transition is already in
-    // flight; checkBattleTrigger itself is also internally guarded.
-    if (!inBattleRef.current && !transitionInProgressRef.current) {
-      for (const enemy of nextEnemies) {
-        if (
-          Math.abs(enemy.x - playerPositionRef.current.x) <= 1 &&
-          Math.abs(enemy.y - playerPositionRef.current.y) <= 1
-        ) {
-          // FIX (Approach A): defer battle-init to a clean macrotask so the
-          // flushSync block inside checkBattleTrigger runs OUTSIDE this RAF
-          // callback (updateEnemyMovement is invoked from the animate loop,
-          // which is a requestAnimationFrame callback). Calling flushSync
-          // synchronously from inside a RAF callback can fail or half-apply,
-          // leaving battle state partially committed with no dispatch. The
-          // first-dispatch chain (advanceTurn → scheduleEnemyExecutorRef at
-          // the enemy-ai branch) runs inside checkBattleTrigger's flushSync
-          // block, so it still fires after the deferred init commits.
-          setTimeout(() => {
-            checkBattleTriggerRef.current();
-          }, 0);
-          break;
-        }
-      }
-    }
     // H3: skip store update if nothing changed
     if (hasChanged) {
       syncCombatants(combatantStoreCtx, nextEnemies);
@@ -7452,89 +7005,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return playerPositionRef.current;
   }, [combatantStoreCtx]);
 
-  // SECTION 2 — getSummonKitSpells: resolves the controlled summon's kit spell
-  // definitions from starterSpells via explicit metadata (summonUnitDef by
-  // pieceType → summonKit ids → full SpellConfig from starterSpells). Falls back
-  // to summon.spells only if the kit is absent/empty. Shared by the
-  // SummonControlPanel prop wiring and the spell-range preview path so the two
-  // can never diverge.
-  const getSummonKitSpells = useCallback((): SpellConfig[] => {
-    const summonId = activeControlledSummonIdRef.current;
-    if (!summonId) return [];
-    const summon = getLiveCombatants(combatantStoreCtx).find(
-      (e: any) => e.id === summonId,
-    );
-    if (!summon) return [];
-    const unitDef = starterSpells.find(
-      (sp: any) => sp.summonUnitDef?.pieceType === summon.pieceType,
-    )?.summonUnitDef;
-    const kitIds: string[] =
-      unitDef && Array.isArray(unitDef.summonKit) ? unitDef.summonKit : [];
-    const resolved = kitIds
-      .map((id) => starterSpells.find((sp: any) => sp.id === id))
-      .filter((sp: any): sp is SpellConfig => !!sp);
-    return resolved.length > 0
-      ? resolved
-      : ((summon.spells ?? []) as SpellConfig[]);
-  }, [combatantStoreCtx]);
-
-  // SECTION 2 — CLICK-LAYER CASTER ROUTING. Single source of truth for the
-  // active caster at click time. When a summon is controlled, returns the
-  // summon's id, tile, KIT spell list, a live-AP ref-like object, and the
-  // summon's selected spell id. Otherwise returns the player's id, tile,
-  // activeSpells, currentBattleApRef, and selectedSpellIdRef. Both mouse and
-  // touch click handlers call this ONCE at entry and consume only its fields —
-  // no inline `activeControlledSummonIdRef.current ? ... : 'player'` ternaries
-  // remain in the cast branches. The apRef for a summon is a getter-backed
-  // object whose .current reads the summon's live currentAp via
-  // combatantsRef.current?.find(...)?.currentAp (pattern at :10510-10514 and
-  // :11251-11255), so AP stays authoritative as the summon's AP changes.
-  const resolveActiveCaster = useCallback(() => {
-    const summonId = activeControlledSummonIdRef.current;
-    if (summonId) {
-      const apRef = {
-        get current(): number {
-          return (
-            combatantsRef.current?.find((c) => c.id === summonId)?.currentAp ??
-            0
-          );
-        },
-      };
-      return {
-        casterId: summonId,
-        casterPos: getActiveCasterPos(),
-        spellSource: getSummonKitSpells(),
-        apRef,
-        selectedSpellId: selectedSummonSpellIdRef.current,
-      };
-    }
-    return {
-      casterId: "player" as const,
-      casterPos: getActiveCasterPos(),
-      spellSource: activeSpells,
-      apRef: currentBattleApRef,
-      selectedSpellId: selectedSpellIdRef.current,
-    };
-  }, [activeSpells, getSummonKitSpells, getActiveCasterPos]);
-
   // BFS flood-fill for MP reachable tiles
-  // SECTION 4 (e) — SUMMON-MP-AWARE: when a summon is controlled, the BFS
-  // budget is the controlled summon's currentMp (read live via
-  // getLiveCombatants), NOT the player's currentBattleMp. The origin is
-  // already the summon's tile via getActiveCasterPos. When no summon is
-  // controlled, behavior is unchanged (player's currentBattleMp).
   const getMpReachableTiles = useCallback((): Set<string> => {
-    // Resolve the MP budget for THIS call: summon's currentMp when controlling,
-    // else the player's currentBattleMp.
-    let mpBudget = currentBattleMp;
-    const _summonId = activeControlledSummonIdRef.current;
-    if (_summonId) {
-      const _summon = getLiveCombatants(combatantStoreCtx).find(
-        (e: any) => e.id === _summonId,
-      );
-      mpBudget = _summon ? Number(_summon.currentMp ?? 0) : 0;
-    }
-    if (!currentMap || !inBattleRef.current || mpBudget <= 0) return new Set();
+    if (!currentMap || !inBattleRef.current || currentBattleMp <= 0)
+      return new Set();
     // SECTION 2c — origin is the active caster's tile (controlled summon or
     // player) so movement-range previews render from the summon's position.
     const origin = getActiveCasterPos();
@@ -7560,7 +7034,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     while (queue.length > 0) {
       const current = queue.shift()!;
       const nextSteps = current.steps + moveCostPerTile;
-      if (nextSteps > mpBudget) continue;
+      if (nextSteps > currentBattleMp) continue;
       const dirs = [
         { x: 1, y: 0 },
         { x: -1, y: 0 },
@@ -7580,19 +7054,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (prevBest !== undefined && prevBest <= nextSteps) continue;
         visited.set(key, nextSteps);
         reachable.add(key);
-        if (nextSteps < mpBudget) {
+        if (nextSteps < currentBattleMp) {
           queue.push({ x: nx, y: ny, steps: nextSteps });
         }
       }
     }
     return reachable;
-  }, [
-    currentMap,
-    currentBattleMp,
-    activeMapModifierTypes,
-    getActiveCasterPos,
-    combatantStoreCtx,
-  ]);
+  }, [currentMap, currentBattleMp, activeMapModifierTypes, getActiveCasterPos]);
 
   // Get tiles in spell range (Chebyshev) for blue highlights
   // STRUCTURAL FIX: read LIVE combatant truth at invocation via
@@ -7603,15 +7071,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // The version-keyed cache (key includes battleWorldVersionRef.current) is
   // preserved unchanged — it still invalidates on every enemies-identity change.
   const getSpellRangeTiles = useCallback((): Set<string> => {
-    // SECTION 2 — summon-controlled path: when a summon is controlled, the
-    // selected spell lives in selectedSummonSpellIdRef (the summon's kit),
-    // NOT in selectedSpellIdRef (the player's equipped slots). The player path
-    // is unchanged when no summon is controlled.
-    const controllingSummon = !!activeControlledSummonIdRef.current;
-    const selectedSpellId = controllingSummon
-      ? selectedSummonSpellIdRef.current
-      : selectedSpellIdRef.current;
-    if (!currentMap || !inBattleRef.current || !selectedSpellId) {
+    if (!currentMap || !inBattleRef.current || !selectedSpellIdRef.current) {
       // [TARGET-BISECT] one-shot: identify WHICH empty-set return fired.
       // Dev-gated via logDebugInfo (console no-op in prod; overlay always gets it).
       logDebugInfo("BATTLE", "[TARGET-BISECT] empty-set return", {
@@ -7622,26 +7082,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             : "noSelectedSpellId",
         currentMap: !!currentMap,
         inBattle: inBattleRef.current,
-        selectedSpellId: selectedSpellId,
-        controllingSummon,
+        selectedSpellId: selectedSpellIdRef.current,
       });
       return new Set();
     }
-    // SECTION 2 — resolve the spell definition. Summon-controlled: from the
-    // summon's kit via getSummonKitSpells. Player: from activeSpells (unchanged).
-    const spell = controllingSummon
-      ? getSummonKitSpells().find((s) => s.id === selectedSpellId)
-      : activeSpells.find((s) => s.id === selectedSpellId);
+    const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) {
       // [TARGET-BISECT] one-shot: spell lookup failed — log the missing id
-      // alongside the available spell ids so the divergence is visible.
+      // alongside the activeSpells ids so the divergence is visible.
       logDebugInfo("BATTLE", "[TARGET-BISECT] spell lookup failed", {
-        selectedSpellId: selectedSpellId,
-        controllingSummon,
+        selectedSpellId: selectedSpellIdRef.current,
         activeSpellIds: activeSpells.map((s) => s.id),
-        summonKitSpellIds: controllingSummon
-          ? getSummonKitSpells().map((s) => s.id)
-          : [],
       });
       return new Set();
     }
@@ -7650,7 +7101,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // SECTION 2c — cache key uses the active caster's tile (controlled summon
     // or player) so spell-range previews render from the summon's position.
     const casterPos = getActiveCasterPos();
-    const cacheKey = `${selectedSpellId}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
+    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     // ── #19 Pacifist Run: flip flag for ANY offensive spell usage ──────────────
@@ -7678,7 +7129,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     activeSpells,
     getEffectiveSpellRange,
     combatantStoreCtx,
-    getSummonKitSpells,
   ]);
 
   // Main render function — DPR-aware, DOFUS-style aesthetics
@@ -7835,29 +7285,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // Compute highlight tile sets for battle mode
     // inBattle intentionally read via inBattleRef to prevent animation loop restart
-    // SECTION 4 (f) — SUMMON WALK/ATTACK TOGGLE DRIVES PREVIEW: when a summon
-    // is controlled, the green movement tiles vs blue spell-range tiles are
-    // selected by summonActionModeRef.current ('walk' → mpTiles, 'attack' +
-    // a kit spell selected → spellTiles), mirroring the player's
-    // battleActionMode toggle. The player path is unchanged.
-    const _summonControlled = !!activeControlledSummonIdRef.current;
     const mpTiles =
-      inBattleRef.current &&
-      (!_summonControlled
-        ? battleActionModeRef.current === "walk"
-        : summonActionModeRef.current === "walk")
+      inBattleRef.current && battleActionModeRef.current === "walk"
         ? getMpReachableTiles()
         : new Set<string>();
-    // SECTION 4 (f) — summon attack-mode requires a kit spell selected to
-    // render blue tiles (matches the player path which requires
-    // selectedSpellIdRef). Player path unchanged.
     const spellTiles =
       inBattleRef.current &&
-      (!_summonControlled
-        ? battleActionModeRef.current === "attack" &&
-          !!selectedSpellIdRef.current
-        : summonActionModeRef.current === "attack" &&
-          !!selectedSummonSpellIdRef.current)
+      battleActionModeRef.current === "attack" &&
+      selectedSpellIdRef.current
         ? getSpellRangeTiles()
         : new Set<string>();
     const barrierTileSnapshot = new Map(barrierTilesRef.current);
@@ -8607,8 +8042,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
               drawOrder: renderItem.depth,
               id: enemy.id,
-              kind:
-                enemy.isSummon && enemy.side === "player" ? "summon" : "enemy",
+              kind: "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
               isAlive: (enemy.hp ?? 0) > 0,
@@ -9529,127 +8963,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable values are intentionally omitted
   const deathPipelineCtx = useMemo<DeathPipelineCtx>(
     () => ({
-      // SECTION 1 FIX (a) — ATOMIC DEATH REMOVAL, ONE SOURCE OF TRUTH.
-      // The `removeCombatant` store helper (combatantStore.ts:336) ALREADY
-      // atomically removes the dead id from `turnOrderRef.current` + the
-      // `turnOrder` React state AND adjusts `currentTurnIndexRef.current` via
-      // its internal `removeCombatantFromTurnQueue` call (turnQueue.ts:69). It
-      // assigns the ref BEFORE calling `setTurnOrder`, so any synchronous
-      // reader sees the fresh value.
-      //
-      // The previous wiring fired TWO EXTRA `setTurnOrder` mutations AFTER
-      // `removeCombatant` had already synced the ref + state + index:
-      //   - `removeFromTurnQueue` re-called `removeCombatantFromTurnQueue` on
-      //     the already-filtered ref (a redundant no-op that re-assigned the
-      //     ref to itself).
-      //   - `removeFromInitiativeStrip` called `setTurnOrder((prev) =>
-      //     prev.filter(...))` — a SECOND `setTurnOrder` that did NOT touch
-      //     `currentTurnIndexRef`, racing the ref sync and leaving the React
-      //     state and the ref desynced so dead ids survived in the rendered
-      //     queue. This was the FOURTH recurrence of the dead-enemy-lingering
-      //     bug.
-      //
-      // FIX: steps 4 (removeFromTurnQueue) and 5 (removeFromInitiativeStrip)
-      // of the death pipeline are now NO-OPS. The work is done atomically by
-      // step 3 (`removeCombatant`). The `DeathPipelineCtx` interface and the
-      // 10-step sequence are preserved (the pipeline still calls these
-      // callbacks), but they no longer mutate anything — eliminating the
-      // double-mutation race. Key invariant after `processCombatantDeath`
-      // returns: `turnOrderRef.current` and the `turnOrder` React state
-      // contain NO dead id, and `currentTurnIndexRef.current` points at a
-      // valid live entry (adjusted by `removeCombatantFromTurnQueue`).
       removeCombatant: (id) => removeCombatant(combatantStoreCtx, id),
-      removeFromTurnQueue: (_id) => {
-        // NO-OP: handled atomically by removeCombatant above.
-      },
-      removeFromInitiativeStrip: (_id) => {
-        // NO-OP: handled atomically by removeCombatant above (the same
-        // setTurnOrder call that syncs the ref also updates the strip).
-      },
+      removeFromTurnQueue: (id) =>
+        removeCombatantFromTurnQueue(
+          turnOrderRef.current,
+          turnOrderRef,
+          currentTurnIndexRef,
+          id,
+          setTurnOrder,
+        ),
+      removeFromInitiativeStrip: (id) =>
+        setTurnOrder((prev) => prev.filter((c) => c.id !== id)),
       triggerShatter: (id, x, y) =>
         effectsManagerRef.current?.triggerDeath(String(id), x, y),
       logDefeated: (name) => logBattleEntry(`${name} is defeated`, "#ef4444"),
-      applyLeaderDeathBoost: (deadId, side, isSummon) => {
-        // SECTION 1 FIX (b) — LEADER FLOW ONLY FOR REAL ENEMY LEADERS.
-        // The death pipeline snapshots side/isSummon BEFORE removal (step 2)
-        // and passes them here (step 8). A player-side death or any summon
-        // death must NOT fire the leader-death animation, set the
-        // leaderDied/battleLeaderSlain flags, or scale surviving enemy stats.
-        // Early-return BEFORE touching any leader flag, BEFORE calling
-        // triggerLeaderDeathAnim, and BEFORE the stat-scaling loop. This is
-        // the single guard that prevents a player-side summon's own-turn
-        // expiry (which previously funneled through processCombatantDeath)
-        // from triggering the leader-death cascade.
-        if (isSummon || side !== "enemy") {
-          return;
-        }
+      applyLeaderDeathBoost: (deadId) => {
         leaderDiedRef.current = true;
         battleLeaderSlainRef.current = true;
         const c = combatantsRef.current?.find((e) => e.id === deadId);
         triggerLeaderDeathAnimRef.current?.(c?.x ?? 0, c?.y ?? 0);
-        // SECTION 2 — leader-boost scaling write. Compute the new multiplier
-        // synchronously (setLeaderBoostMultiplier is async state) so the stat
-        // patch uses the same value the state will settle on. Caps at 2.0,
-        // matching the original bump semantics.
-        const multiplier = Math.min((_leaderBoostMultiplier ?? 1) + 0.25, 2.0);
-        setLeaderBoostMultiplier(multiplier);
-        // Apply the boost to every surviving enemy-side combatant. Regular
-        // enemies have no `side` field; only summons carry one. Treat
-        // `side !== "player"` as enemy-side so both unset-side regulars and
-        // explicit enemy summons are covered. The dead leader is already
-        // removed from the roster before this runs, so it is excluded by the
-        // live-combatants read. hp scales by the SAME proportion as maxHp
-        // (capped at newMax) — never restored to full. Patch shape mirrors
-        // the 6× enrage boost at lines 14705-14714.
-        const live = getLiveCombatants(combatantStoreCtx);
-        for (const combatant of live) {
-          if (combatant.id === deadId) continue;
-          if (combatant.side === "player") continue;
-          const maxBefore = combatant.maxHp;
-          const hpBefore = combatant.hp;
-          const newMax = Math.round(maxBefore * multiplier);
-          const newHp = Math.min(newMax, Math.round(hpBefore * multiplier));
-          const newAtk =
-            combatant.atk !== undefined
-              ? Math.round(combatant.atk * multiplier)
-              : undefined;
-          const newRes = Math.round(combatant.res * multiplier);
-          const newSp = Math.round(combatant.sp * multiplier);
-          const newChc = Math.round(combatant.chc * multiplier);
-          const newInit = Math.round(combatant.init * multiplier);
-          updateCombatant(
-            combatantStoreCtx,
-            combatant.id,
-            {
-              maxHp: newMax,
-              hp: newHp,
-              atk: newAtk,
-              res: newRes,
-              sp: newSp,
-              chc: newChc,
-              init: newInit,
-            },
-            "applyLeaderDeathBoost",
-          );
-          logDebugInfo("LEADER-BOOST", "apply", {
-            id: combatant.id,
-            hpBefore,
-            hpAfter: newHp,
-            maxBefore,
-            maxAfter: newMax,
-          });
-        }
+        setLeaderBoostMultiplier((prev) => Math.min(prev + 0.25, 2.0));
       },
       recheckVictory: () => {
-        // FIX 4(b) — this used to fire handleBattleEnd directly with an
-        // EMPTY defeated list [] and WITHOUT setting victoryFiredThisBattleRef,
-        // racing the canonical victory path (reconcileBattleState, step 11
-        // of the death pipeline) which IS guarded by
-        // victoryFiredThisBattleRef and reads the populated battleDefeatedRef.
-        // The direct call here produced a phantom post-kill turn (empty
-        // recap for battle 1). Victory is now owned solely by
-        // reconcileBattleState, so this hook is a no-op retained only for
-        // call-site compatibility with the death pipeline.
+        if (
+          activeHostilesRemaining(combatantsRef.current) === 0 &&
+          combatantStoreCtx.battleStartIds.size > 0 &&
+          inBattle
+        ) {
+          handleBattleEndRef.current?.(true, 0, battleHitsRef.current, []);
+        }
       },
       attributeKillReward: (deadId) => {
         // SECTION 1c: Append the slain enemy to the per-kill defeated roster
@@ -9658,19 +9000,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // appended list. The previous implementation both overwrote
         // enemiesDefeated with a single-enemy array AND called
         // resolveBattleRewards per-kill (double-applying rewards).
-        //
-        // FIX 4(a) — the death pipeline's remove step (removeCombatant)
-        // runs BEFORE this reward step, so by now the dead combatant is
-        // already filtered out of combatantsRef.current and a `find` would
-        // return undefined (skipping the append and producing an empty
-        // recap for battle 1). removeCombatant stashes the removed
-        // combatant in ctx.lastRemovedCombatant BEFORE its filter, so read
-        // the snapshot here instead. We still guard on deadId so a stale
-        // snapshot from a prior death can never be mis-attributed.
-        const c =
-          combatantStoreCtx.lastRemovedCombatant?.id === deadId
-            ? combatantStoreCtx.lastRemovedCombatant
-            : combatantsRef.current?.find((e) => e.id === deadId);
+        const c = combatantsRef.current?.find((e) => e.id === deadId);
         if (c) {
           battleDefeatedRef.current.push({
             id: deadId,
@@ -9691,40 +9021,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const c = combatantsRef.current?.find((e) => e.id === id);
         return { x: c?.x ?? 0, y: c?.y ?? 0 };
       },
-      // SECTION 1 FIX (b) — side/isSummon accessors for the death pipeline.
-      // Both read from the live roster BEFORE removal (pipeline step 2
-      // snapshots these for step 8's applyLeaderDeathBoost guard). Absent
-      // `side` defaults to "enemy" for legacy non-summon combatants (matches
-      // battleSetup.isActiveHostile semantics); absent `isSummon` defaults
-      // to false.
-      getCombatantSide: (id) => {
-        const c = combatantsRef.current?.find((e) => e.id === id);
-        return c?.side ?? "enemy";
-      },
-      getCombatantIsSummon: (id) => {
-        const c = combatantsRef.current?.find((e) => e.id === id);
-        return !!c?.isSummon;
-      },
-      reconcileBattleState: () =>
-        // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
-        // instead of an EMPTY array [] so the recap builder (handleBattleEnd)
-        // sees every kill appended by attributeKillReward (line 9517). The
-        // previous `[]` here was the dead empty-array path that bypassed the
-        // single canonical defeated list and produced an empty recap.
-        reconcileBattleState(combatantStoreCtx, {
-          inBattle: inBattleRef.current,
-          victoryFiredThisBattleRef,
-          triggerVictory: () =>
-            handleBattleEndRef.current?.(
-              true,
-              0,
-              battleHitsRef.current,
-              battleDefeatedRef.current.map((e) => ({
-                name: e.pieceType ?? "unknown",
-                level: e.level ?? 1,
-              })),
-            ),
-        }),
     }),
     [
       combatantStoreCtx,
@@ -9735,24 +9031,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       logBattleEntry,
       triggerLeaderDeathAnimRef,
       setLeaderBoostMultiplier,
+      activeHostilesRemaining,
       combatantsRef,
+      inBattle,
       handleBattleEndRef,
       battleHitsRef,
       actor,
       characterSlot,
       getLiveCombatants,
-      reconcileBattleState,
-      victoryFiredThisBattleRef,
     ],
   );
   const processCombatantDeathCb = useCallback(
-    (id: string, source: DeathSource = "player-cast") =>
-      processCombatantDeath(id, deathPipelineCtx, source),
-    [deathPipelineCtx],
-  );
-  const processPlayerDeathCb = useCallback(
-    (id: string, source: DeathSource = "enemy-melee") =>
-      processPlayerDeath(id, deathPipelineCtx, source),
+    (id: string) => processCombatantDeath(id, deathPipelineCtx),
     [deathPipelineCtx],
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs and exhaustive dep list is intentionally curated
@@ -9970,15 +9260,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setPlayerPositionSynced({ x: target.x, y: target.y });
         // Route the enemy position swap through the combatant store so the
         // ref mirrors stay atomically in sync (replaces a setEnemies map).
-        updateCombatant(
-          combatantStoreCtx,
-          targetEnemyId,
-          {
-            x: oldPlayerPos.x,
-            y: oldPlayerPos.y,
-          },
-          "swapPositions",
-        );
+        updateCombatant(combatantStoreCtx, targetEnemyId, {
+          x: oldPlayerPos.x,
+          y: oldPlayerPos.y,
+        });
       },
       placeMark: (cell: { x: number; y: number }) => {
         markedTilesRef.current.add(`${cell.x},${cell.y}`);
@@ -10402,16 +9687,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(
-                  combatantStoreCtx,
-                  summon.id,
-                  {
-                    x: gridPos.x,
-                    y: gridPos.y,
-                    currentMp: (summon.currentMp ?? 0) - moveCost,
-                  },
-                  "summonMove-mouse",
-                );
+                updateCombatant(combatantStoreCtx, summon.id, {
+                  x: gridPos.x,
+                  y: gridPos.y,
+                  currentMp: (summon.currentMp ?? 0) - moveCost,
+                });
                 logBattleEntry(
                   `${summon.pieceType} moves ${moveCost} tiles`,
                   "#22c55e",
@@ -10424,10 +9704,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           return;
         }
       }
-      // SECTION 2 — resolve the active caster ONCE for this click. Every cast
-      // branch below consumes activeCaster.{casterId,casterPos,spellSource,
-      // apRef,selectedSpellId} instead of inline summon/player ternaries.
-      const activeCaster = resolveActiveCaster();
       // ── SPRITE-FIRST HIT TESTING (mouse) ────────────────────────────
       // Before any screen→grid conversion, hit-test the per-frame
       // spriteRectsRef map populated during the render pass. A sprite hit
@@ -10450,37 +9726,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 10);
           if (_hit) {
-            const _summonControlled = !!activeControlledSummonIdRef.current;
-            if (
-              inBattleRef.current &&
-              (_summonControlled
-                ? selectedSummonSpellIdRef.current
-                : selectedSpellIdRef.current) &&
-              _hit.kind === "enemy"
-            ) {
-              if (_summonControlled && !selectedSummonSpellIdRef.current) {
-                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                effectsManagerRef.current?.spawnFloatText(
-                  _screen.x,
-                  _screen.y,
-                  "Select a kit spell",
-                );
-                return;
-              }
+            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _spell = activeSpells.find(
-                (s) =>
-                  s.id ===
-                  (_summonControlled
-                    ? selectedSummonSpellIdRef.current
-                    : selectedSpellIdRef.current),
+                (s) => s.id === selectedSpellIdRef.current,
               );
               if (_spell) {
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  _summonControlled
-                    ? getActiveCasterPos()
-                    : playerPositionRef.current,
+                  playerPositionRef.current,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles,
@@ -10493,7 +9747,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
                     targetsCount: 1,
                     targetIds: [_hit.id],
-                    casterId: activeCaster.casterId,
                   });
                   // Reuse the existing cast body — same path the
                   // cast-live branch at 9092 takes. AP cost is computed
@@ -10550,11 +9803,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 } catch {}
                 return;
               }
-            } else if (
-              inBattleRef.current &&
-              !selectedSpellIdRef.current &&
-              _hit.kind === "enemy"
-            ) {
+            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
@@ -10597,27 +9846,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // Self/ally-targetable spell + player sprite hit → self-cast.
               // Uses the spell's explicit targetType metadata (NOT name
               // heuristics) per the targeting-rule spec.
-              const _spell = activeCaster.spellSource.find(
-                (s) => s.id === activeCaster.selectedSpellId,
+              const _spell = activeSpells.find(
+                (s) => s.id === selectedSpellIdRef.current,
               );
-              // Damage-rejection guard: a non-self/ally-targeted spell (e.g. a
-              // damage spell) clicked on a friendly player sprite is rejected
-              // with a float message and does NOT fall through to tile logic,
-              // so it can never resolve to an enemy. Metadata-based, not
-              // name-based.
-              if (
-                _spell &&
-                _spell.targetType !== "self" &&
-                _spell.targetType !== "ally"
-              ) {
-                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                effectsManagerRef.current?.spawnFloatText(
-                  _screen.x,
-                  _screen.y,
-                  "Can't target allies with that spell",
-                );
-                return;
-              }
               if (
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
@@ -10644,56 +9875,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 return;
               }
               // Not self/ally-targetable → fall through to tile logic.
-            } else if (activeCaster.selectedSpellId && _hit.kind === "summon") {
-              // Self/ally-targetable spell + friendly summon sprite hit → cast
-              // at the summon's tile. Mirrors the sprite-player branch. Uses the
-              // spell's explicit targetType metadata (NOT name heuristics).
-              const _summonSpell = activeCaster.spellSource.find(
-                (s) => s.id === activeCaster.selectedSpellId,
-              );
-              // Damage-rejection guard: a non-self/ally-targeted spell on a
-              // friendly summon is rejected with a float and does NOT fall
-              // through to tile logic.
-              if (
-                _summonSpell &&
-                _summonSpell.targetType !== "self" &&
-                _summonSpell.targetType !== "ally"
-              ) {
-                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                effectsManagerRef.current?.spawnFloatText(
-                  _screen.x,
-                  _screen.y,
-                  "Can't target allies with that spell",
-                );
-                return;
-              }
-              if (
-                _summonSpell &&
-                (_summonSpell.targetType === "self" ||
-                  _summonSpell.targetType === "ally")
-              ) {
-                const { castResult: _castResult, apCost: _apCost } =
-                  executeCastAttempt(
-                    _summonSpell,
-                    { x: _hit.logicalX, y: _hit.logicalY },
-                    "sprite-summon",
-                  );
-                void _castResult;
-                void _apCost;
-                try {
-                  recordClickOutcome(
-                    event.clientX,
-                    event.clientY,
-                    "sprite-summon",
-                    _castResult,
-                    null,
-                    null,
-                    null,
-                  );
-                } catch {}
-                return;
-              }
-              // Not self/ally-targetable → fall through to tile logic.
             }
           }
         }
@@ -10708,16 +9889,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       )
         return;
       // --- BATTLE MODE ---
-      // FIX (a) R12: use inBattleRef.current (synchronous ref) instead of the
-      // `inBattle` React state. After a battle ends, cleanupBattle flips
-      // inBattleRef.current=false synchronously (line ~11507) but the `inBattle`
-      // React state update is batched and can lag by a render. A stale
-      // inBattle=true here would route the player's next world-mode click into
-      // the battle branch (which then early-returns on the turn-truth guard),
-      // making the first post-battle click silently no-op. The ref is the
-      // authoritative source of truth — every other guard in this file reads
-      // inBattleRef.current.
-      if (inBattleRef.current) {
+      if (inBattle) {
         // Part 3: Desync-proof click guard. PRIMARY gate is the turn-truth
         // (turnOrderRef/currentTurnIndexRef), so a stale battlePhase flag can
         // never lock the player out of their own turn. battlePhase remains a
@@ -10740,12 +9912,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
           // No spell selected → silent return (inspect opens only via the
           // BattleUIPanel initiative chip button, NOT via canvas click).
-          const _apSource = activeControlledSummonIdRef.current
-            ? (combatantsRef.current?.find(
-                (c) => c.id === activeControlledSummonIdRef.current,
-              )?.currentAp ?? 0)
-            : currentBattleApRef.current;
-          if (_apSource <= 0) {
+          if (currentBattleApRef.current <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -10784,13 +9951,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             isActiveHostile(_occupantMouse) &&
             isAliveCombatant(_occupantMouse)
           ) {
-            const _spellMouse = activeCaster.spellSource.find(
-              (s) => s.id === activeCaster.selectedSpellId,
+            const _spellMouse = activeSpells.find(
+              (s) => s.id === selectedSpellIdRef.current,
             );
             if (_spellMouse) {
               const _liveMouse = isTileCastableLive(
                 _spellMouse,
-                activeCaster.casterPos,
+                playerPositionRef.current,
                 gridPos,
                 _liveCombatantsMouse,
                 currentMap.tiles,
@@ -10804,7 +9971,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   targetId: _occupantMouse.id,
                   targetsCount: 1,
                   targetIds: [_occupantMouse.id],
-                  casterId: activeCaster.casterId,
                 });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
@@ -11021,12 +10187,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
           const path = findPath(playerPositionRef.current, gridPos);
           if (path.length === 0) return;
-          const cost =
-            path.length *
-            mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
-              log: (msg: string) => logDebugInfo("MODIFIER", msg),
-              rng: Math.random,
-            });
+          const cost = path.length;
           if (cost > currentBattleMp) return;
           // Thorned Ground — 5 dmg per extra tile beyond the first.
           if (isThornedGround && path.length > 1) {
@@ -11066,54 +10227,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       }
       // --- WORLD MODE ---
-      const _walkEnemy = getLiveCombatants(combatantStoreCtx).find(
-        (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
-      );
-      if (_walkEnemy) {
-        // Find an adjacent walkable tile (Chebyshev distance 1) to path toward.
-        const candidates = [
-          { x: gridPos.x - 1, y: gridPos.y },
-          { x: gridPos.x + 1, y: gridPos.y },
-          { x: gridPos.x, y: gridPos.y - 1 },
-          { x: gridPos.x, y: gridPos.y + 1 },
-          { x: gridPos.x - 1, y: gridPos.y - 1 },
-          { x: gridPos.x - 1, y: gridPos.y + 1 },
-          { x: gridPos.x + 1, y: gridPos.y - 1 },
-          { x: gridPos.x + 1, y: gridPos.y + 1 },
-        ];
-        const adjacentTile = candidates.find(
-          (c) =>
-            c.x >= 0 &&
-            c.y >= 0 &&
-            c.x < WORLD_GRID_SIZE &&
-            c.y < WORLD_GRID_SIZE &&
-            !(
-              c.x === playerPositionRef.current.x &&
-              c.y === playerPositionRef.current.y
-            ) &&
-            currentMap.tiles[c.y]?.[c.x] !== "wall" &&
-            !currentMap.voidTiles?.has(`${c.x},${c.y}`),
-        );
-        if (adjacentTile) {
-          const path = findPath(playerPositionRef.current, adjacentTile);
-          if (path.length > 0) {
-            setMovementPath(path);
-            setCurrentStepIndex(0);
-            setIsMoving(true);
-            movementStartTimeRef.current = Date.now();
-          } else {
-            const dx = Math.abs(adjacentTile.x - playerPositionRef.current.x);
-            const dy = Math.abs(adjacentTile.y - playerPositionRef.current.y);
-            if (dx <= 1 && dy <= 1 && dx + dy > 0) {
-              setMovementPath([adjacentTile]);
-              setCurrentStepIndex(0);
-              setIsMoving(true);
-              movementStartTimeRef.current = Date.now();
-            }
-          }
-        }
-        return;
-      }
       if (
         currentMap.tiles[gridPos.y][gridPos.x] !== "wall" &&
         !currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
@@ -11156,14 +10269,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentMap,
       clientToGrid,
       findPath,
+      inBattle,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
       getSpellRangeTiles,
       activeSpells,
-      activeMapModifierTypes,
       logBattleEntry,
-      logDebugInfo,
       isThornedGround,
       isVoidRift,
       voidRiftTile,
@@ -11173,9 +10285,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       tileCenter,
       pointerToRenderSpace,
       recordClickOutcome,
-      getLiveCombatants,
-      isAliveCombatant,
-      setPlayerPositionSynced,
     ],
   );
   // Handle canvas mouse move
@@ -11286,16 +10395,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(
-                  combatantStoreCtx,
-                  summon.id,
-                  {
-                    x: gridPos.x,
-                    y: gridPos.y,
-                    currentMp: (summon.currentMp ?? 0) - moveCost,
-                  },
-                  "summonMove-touch",
-                );
+                updateCombatant(combatantStoreCtx, summon.id, {
+                  x: gridPos.x,
+                  y: gridPos.y,
+                  currentMp: (summon.currentMp ?? 0) - moveCost,
+                });
                 logBattleEntry(
                   `${summon.pieceType} moves ${moveCost} tiles`,
                   "#22c55e",
@@ -11308,10 +10412,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           return;
         }
       }
-      // SECTION 2 — resolve the active caster ONCE for this touch. Mirrors
-      // the mouse handler: every cast branch below consumes
-      // activeCaster.{casterId,casterPos,spellSource,apRef,selectedSpellId}.
-      const activeCaster = resolveActiveCaster();
       // ── SPRITE-FIRST HIT TESTING (touch) ────────────────────────────
       // Mirrors the mouse handler exactly but uses 8px padding for finger
       // imprecision. A sprite hit resolves the entity directly with NO
@@ -11327,51 +10427,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 14);
           if (_hit) {
-            const _summonControlled = !!activeControlledSummonIdRef.current;
-            if (
-              inBattleRef.current &&
-              (_summonControlled
-                ? selectedSummonSpellIdRef.current
-                : selectedSpellIdRef.current) &&
-              _hit.kind === "enemy"
-            ) {
-              if (_summonControlled && !selectedSummonSpellIdRef.current) {
-                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                effectsManagerRef.current?.spawnFloatText(
-                  _screen.x,
-                  _screen.y,
-                  "Select a kit spell",
-                );
-                return;
-              }
+            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
               const _spell = activeSpells.find(
-                (s) =>
-                  s.id ===
-                  (_summonControlled
-                    ? selectedSummonSpellIdRef.current
-                    : selectedSpellIdRef.current),
+                (s) => s.id === selectedSpellIdRef.current,
               );
               if (_spell) {
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  _summonControlled
-                    ? getActiveCasterPos()
-                    : playerPositionRef.current,
+                  playerPositionRef.current,
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles,
                 );
                 if (_live.ok) {
-                  // eslint-disable-next-line no-console
-                  console.log("[CLICK-ENEMY]", {
-                    branchTaken: "cast-sprite",
-                    hitId: _hit.id,
-                    logicalTile: { x: _hit.logicalX, y: _hit.logicalY },
-                    targetsCount: 1,
-                    targetIds: [_hit.id],
-                    casterId: activeCaster.casterId,
-                  });
                   const { castResult: _castResult, apCost: _apCost } =
                     executeCastAttempt(
                       _spell,
@@ -11398,11 +10467,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
                 return;
               }
-            } else if (
-              inBattleRef.current &&
-              !selectedSpellIdRef.current &&
-              _hit.kind === "enemy"
-            ) {
+            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
@@ -11440,24 +10505,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               const _spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
-              // Damage-rejection guard: a non-self/ally-targeted spell (e.g. a
-              // damage spell) touched on a friendly player sprite is rejected
-              // with a float message and does NOT fall through to tile logic,
-              // so it can never resolve to an enemy. Metadata-based, not
-              // name-based.
-              if (
-                _spell &&
-                _spell.targetType !== "self" &&
-                _spell.targetType !== "ally"
-              ) {
-                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                effectsManagerRef.current?.spawnFloatText(
-                  _screen.x,
-                  _screen.y,
-                  "Can't target allies with that spell",
-                );
-                return;
-              }
               if (
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
@@ -11467,45 +10514,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     _spell,
                     { x: _hit.logicalX, y: _hit.logicalY },
                     "sprite-player",
-                  );
-                void _castResult;
-                void _apCost;
-                return;
-              }
-              // Not self/ally-targetable → fall through to tile logic.
-            } else if (selectedSpellIdRef.current && _hit.kind === "summon") {
-              // Self/ally-targetable spell + friendly summon sprite hit → cast
-              // at the summon's tile. Mirrors the sprite-player branch. Uses the
-              // spell's explicit targetType metadata (NOT name heuristics).
-              const _summonSpell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
-              );
-              // Damage-rejection guard: a non-self/ally-targeted spell on a
-              // friendly summon is rejected with a float and does NOT fall
-              // through to tile logic.
-              if (
-                _summonSpell &&
-                _summonSpell.targetType !== "self" &&
-                _summonSpell.targetType !== "ally"
-              ) {
-                const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                effectsManagerRef.current?.spawnFloatText(
-                  _screen.x,
-                  _screen.y,
-                  "Can't target allies with that spell",
-                );
-                return;
-              }
-              if (
-                _summonSpell &&
-                (_summonSpell.targetType === "self" ||
-                  _summonSpell.targetType === "ally")
-              ) {
-                const { castResult: _castResult, apCost: _apCost } =
-                  executeCastAttempt(
-                    _summonSpell,
-                    { x: _hit.logicalX, y: _hit.logicalY },
-                    "sprite-summon",
                   );
                 void _castResult;
                 void _apCost;
@@ -11541,8 +10549,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // spell selected is a silent return.
         if (selectedSpellIdRef.current) {
           // Attack mode: cast selected spell on touched tile if in range
-          const _apSource = activeCaster.apRef.current;
-          if (_apSource <= 0) {
+          if (currentBattleApRef.current <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -11579,28 +10586,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             isActiveHostile(_occupantTouch) &&
             isAliveCombatant(_occupantTouch)
           ) {
-            const _spellTouch = activeCaster.spellSource.find(
-              (s) => s.id === activeCaster.selectedSpellId,
+            const _spellTouch = activeSpells.find(
+              (s) => s.id === selectedSpellIdRef.current,
             );
             if (_spellTouch) {
               const _liveTouch = isTileCastableLive(
                 _spellTouch,
-                activeCaster.casterPos,
+                playerPositionRef.current,
                 gridPos,
                 _liveCombatantsTouch,
                 currentMap.tiles,
               );
               if (_liveTouch.ok) {
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "cast-live",
-                  tile: gridPos,
-                  spellId: _spellTouch.id,
-                  targetId: _occupantTouch.id,
-                  targetsCount: 1,
-                  targetIds: [_occupantTouch.id],
-                  casterId: activeCaster.casterId,
-                });
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
                 // the existing cast body below by skipping the gate.
@@ -11772,12 +10769,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
           const path = findPath(playerPositionRef.current, gridPos);
           if (path.length === 0) return;
-          const cost =
-            path.length *
-            mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
-              log: (msg: string) => logDebugInfo("MODIFIER", msg),
-              rng: Math.random,
-            });
+          const cost = path.length;
           if (cost > currentBattleMp) return;
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
@@ -11790,14 +10782,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         } else {
           // Attack mode with no spell selected — silent return.
         }
-        return;
-      }
-      const _walkEnemy = getLiveCombatants(combatantStoreCtx).find(
-        (e) => e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
-      );
-      if (_walkEnemy) {
-        setPlayerPositionSynced(gridPos);
-        checkBattleTriggerRef.current();
         return;
       }
       if (
@@ -11856,12 +10840,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       pointerToRenderSpace,
       setCurrentBattleApSynced,
       recordClickOutcome,
-      activeMapModifierTypes,
-      logDebugInfo,
-      combatantStoreCtx,
-      getLiveCombatants,
-      isAliveCombatant,
-      setPlayerPositionSynced,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -11904,29 +10882,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           y: Math.round(newPosition.y),
         };
         setPlayerPositionSynced(newPos);
-        // FIX (b) R12: world-mode pathing steps onto enemy tiles mid-path
-        // without triggering battle. The world-mode click chain (handleCanvasClick
-        // ~10487) only checks for an enemy on the FINAL clicked tile — if the
-        // player clicks a free tile whose path happens to cross an enemy tile,
-        // movePlayer walks the player straight through that enemy with no battle
-        // trigger. checkBattleTrigger itself is fully guarded (transitionInProgressRef
-        // + inBattleRef + cooldown), so calling it on every step is cheap and
-        // safe: it no-ops when no enemy is on the new tile or when a battle is
-        // already in progress. This restores pre-round-11 sensitivity where
-        // stepping onto an enemy tile triggered battle.
-        // FIX (Approach A): defer battle-init to a clean macrotask so the
-        // flushSync block inside checkBattleTrigger runs OUTSIDE this RAF
-        // callback. Calling flushSync synchronously from inside a RAF callback
-        // can fail or half-apply, leaving battle state partially committed with
-        // no dispatch (matches the export with ZERO [TURN] lines). The
-        // first-dispatch chain (advanceTurn → scheduleEnemyExecutorRef at the
-        // enemy-ai branch) runs inside checkBattleTrigger's flushSync block, so
-        // it still fires after the deferred init commits.
-        if (!inBattleRef.current && !transitionInProgressRef.current) {
-          setTimeout(() => {
-            checkBattleTriggerRef.current();
-          }, 0);
-        }
         if (isShrineRoomRef.current && shrineAltarPosRef.current) {
           const _isHazardTile =
             currentMap?.hazardTiles?.has(`${newPos.x},${newPos.y}`) ?? false;
@@ -11944,7 +10899,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newPos.y === shrineAltarPosRef.current.y
           ) {
             const _purePath = !shrinePathViolatedRef.current;
-            onDokaBalanceChange(dokaBalance + 300);
+            persistDokaCredit(
+              actor as DokaCreditActor,
+              characterSlot,
+              300,
+            ).then((newDoka) => {
+              if (newDoka > 0) onDokaBalanceChange(newDoka);
+            });
             if (_purePath) {
               covenantBuffMapsRef.current = 3;
               try {
@@ -11983,7 +10944,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           if (!hit) return prev;
           // Trigger collection
-          onDokaBalanceChange(dokaBalance + hit.value);
+          persistDokaCredit(
+            actor as DokaCreditActor,
+            characterSlot,
+            hit.value,
+          ).then((newDoka) => {
+            if (newDoka > 0) onDokaBalanceChange(newDoka);
+          });
           playSound("doka_collected", String(hit.value));
           // Track ground doka pickup count for achievement
           groundDokaPickupCountRef.current += 1;
@@ -12112,16 +11079,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // sealedPortalAnnouncedRef above). We keep the latest callback in a ref so
   // the effect's deps array can be [isMoving] only.
   checkPortalInteractionRef.current = checkPortalInteraction;
-  // Keep the latest checkBattleTrigger in a ref so earlier-declared handlers
-  // (mouse/touch world-mode walk branches) can invoke it without TDZ issues.
-  // Wrapped in useEffect (not a bare assignment) because checkBattleTrigger is
-  // declared later in the component body (line ~11652); a bare top-level
-  // assignment would be evaluated in declaration order and trigger TS2448/TS2454
-  // (used-before-declaration). The effect runs after render, by which point
-  // checkBattleTrigger is fully assigned.
-  useEffect(() => {
-    checkBattleTriggerRef.current = checkBattleTrigger;
-  });
   useEffect(() => {
     const wasMoving = prevIsMovingRef.current;
     prevIsMovingRef.current = isMoving;
@@ -12231,37 +11188,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       battleInitSafetyTimeoutRef.current = null;
     }
     // 2. Increment AI generation counter so stale AI callbacks self-terminate.
-    // SECTION 1 (R12) — this bump ONLY invalidates the CURRENT battle's
-    // callbacks. The next battle's checkBattleTrigger bumps again at
-    // battle-start (before its first dispatch arms anything), so this bump
-    // cannot pre-bump the next battle's generation and kill its first arming.
     aiGenerationRef.current += 1;
     // 3. Cancel ALL tracked pending timeouts from enemy AI
     for (const tid of pendingTimeoutsRef.current) {
       clearTimeout(tid);
     }
     pendingTimeoutsRef.current.clear();
-    // SECTION 1 (R12) FIX (b) — clear+null the dispatch-time watchdog so a
-    // stale watchdog from the just-ended battle cannot fire into the next
-    // battle's first dispatch window. The timeout itself was tracked in
-    // pendingTimeoutsRef and cleared above, but the ref handle must also be
-    // nulled so the next executor's "clear if set" guard at 14029 is a no-op
-    // and cannot accidentally clear a DIFFERENT battle's watchdog.
-    if (dispatchWatchdogRef.current) {
-      clearTimeout(dispatchWatchdogRef.current);
-      dispatchWatchdogRef.current = null;
-    }
     // 4. Clear the turn-timer interval (LEAK-2: single guarded clearInterval)
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
-    // SECTION 1 (R12) FIX (b) — reset the turn-timer generation so a stale
-    // interval callback from the just-ended battle (whose myGeneration was
-    // captured before this cleanup) cannot race the next battle's first
-    // timer-effect arming. The next battle's timer effect re-increments this
-    // only when the actor id changes, so resetting here is safe.
-    turnTimerGenerationRef.current = 0;
     // 5. Cancel jackpot heal timer (LEAK-4: was not tracked in pendingTimeoutsRef)
     if (jackpotHealTimerRef.current) {
       clearTimeout(jackpotHealTimerRef.current);
@@ -12270,16 +11207,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // 6. Reset all battle-phase boolean flags
     inBattleRef.current = false;
-    // FIX (a) R12: reset the transition flag here too. checkBattleTrigger sets
-    // transitionInProgressRef.current=true at battle-start (line ~6102) and
-    // several portal/transition paths reset it, but a battle that ends via the
-    // normal victory/defeat flow (not a portal transition) never ran any of
-    // those reset sites — leaving transitionInProgressRef stuck true. The next
-    // world-mode click then hit the top guard at line ~9869
-    // (`if (... || transitionInProgressRef.current) return;`) and was silently
-    // dropped, producing the "first click after battle does nothing" symptom.
-    // setTransitionInProgress also notifies the parent so its UI mirrors clear.
-    setTransitionInProgress(false);
     // FIX 2d: Flush any spell-bar change the player queued DURING battle.
     // handleSetActiveSpells stashed the requested list into pendingSpellBarRef
     // (instead of silently dropping it) because the bar is locked mid-fight.
@@ -12354,12 +11281,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     idleTurnCountRef.current = 0;
     // M3 FIX: Reset battleEndedRef so the NEXT battle can call handleBattleEnd
     battleEndedRef.current = false;
-    victoryFiredThisBattleRef.current = false;
     // H2 FIX: Clear active effects state and ref so status icons don't linger after victory
     activeEffectsRef.current = [];
     setActiveEffects([]);
     // enemy effects are stored in activeEffects with targetId === enemy.id, already cleared above
-  }, [onDebugLog, setTransitionInProgress]);
+  }, [onDebugLog]);
 
   // cleanupMap: runs cleanupBattle then also clears map-level particle/effect state.
   // Call this as the FIRST action inside checkPortalInteraction.
@@ -12472,22 +11398,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       },
     );
 
-    const adjacentEnemy = getLiveCombatants(combatantStoreCtx).find(
-      (e) =>
-        isAliveCombatant(e) &&
-        Math.max(
-          Math.abs(e.x - playerPositionRef.current.x),
-          Math.abs(e.y - playerPositionRef.current.y),
-        ) === 1 &&
-        !(
-          e.x === playerPositionRef.current.x &&
-          e.y === playerPositionRef.current.y
-        ),
-    );
-
-    const triggerEnemy = collidingEnemy || adjacentEnemy;
-
-    if (triggerEnemy && currentMap) {
+    if (collidingEnemy && currentMap) {
       // H7: Claim re-entry guard immediately — before any other work
       battleInitInProgressRef.current = true;
       // --- Debounce: block any further triggers for 600ms ---
@@ -12688,28 +11599,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       // FIX #15: Increment AI generation so residual callbacks from previous
       // battles see a stale generation and abort without touching state.
-      // SECTION 1 (R12) FIX (a) — ORDERING: this bump happens ONCE at
-      // battle-start, BEFORE the flushSync commit below opens. The first
-      // dispatch (setBattlePhase("enemy") inside flushSync → AI-trigger effect
-      // → scheduleEnemyExecutor) arms its setTimeout AFTER flushSync closes,
-      // so it captures THIS new generation. cleanupBattle's bump (11465) only
-      // invalidates the previous battle's callbacks; it cannot pre-bump this
-      // battle's generation because this line re-bumps unconditionally. The
-      // triple-silence signature (executor + watchdog + timer-advance all
-      // aborting) is impossible as long as this bump precedes the first
-      // dispatch arming — which it does, by construction.
       aiGenerationRef.current += 1;
-      // SECTION 1 (R12) FIX (c) — LIFECYCLE LOG: emit at every battle start
-      // (after the generation bump, before the first dispatch) so a silent
-      // battle-2 is impossible to hide. pendingTimeouts count is read here
-      // (post-cleanup, pre-flushSync) so it reflects the clean slate.
-      logDebugInfo("TURN", "[TURN] lifecycle", {
-        aiGen: aiGenerationRef.current,
-        sessionVer: sessionVersionRef.current,
-        inProgressFlag: enemyTurnInProgressRef.current,
-        pendingTimeouts: pendingTimeoutsRef.current.size,
-        appBuild: APP_BUILD,
-      });
       playSound("battle_start");
 
       // Designate the highest-level enemy (or first) as the group leader
@@ -12776,189 +11666,86 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         localIds: activeSpellIdsForSaveRef.current,
         dirty: spellBarDirtyRef.current,
       });
-      // [TURN] battle-init breadcrumb #1 — fires immediately before the
-      // flushSync commit so we can confirm the dispatch reached this point.
-      logDebugInfo("TURN", "[TURN] battle-init position: start", {
-        appBuild: APP_BUILD,
-        stage: "start",
-      });
-      try {
-        flushSync(() => {
-          syncCombatants(combatantStoreCtx, enemiesWithSpells);
-          mapModifierRegistry.applyBattleStart(
-            combatantsRef.current,
-            activeMapModifierTypes,
-          );
-          setEnragedEnemies(new Set());
-          setEnemyHpMap(hpMap);
-          setTurnOrder(orderWithLeader);
-          turnOrderRef.current = orderWithLeader;
-          setCurrentTurnIndex(0);
-          currentTurnIndexRef.current = 0;
-          // Part 2: Explicit turn-0 dispatch. advanceTurn's AI branches drive
-          // AI turns via setBattlePhase("enemy") (see @11197/@11207), which
-          // triggers the AI-trigger effect (@11310, deps [inBattle,
-          // currentTurnIndex, battlePhase]). Part 1's cleanupBattle reset
-          // guarantees this setBattlePhase("enemy") is a REAL state change
-          // (player→enemy) when entry 0 is an AI combatant, so the effect
-          // fires turn 0 even after a prior battle ended mid-enemy-phase.
-          // No parallel AI runner is introduced — this IS the same mechanism.
-          setBattlePhase(
-            orderWithLeader[0].type === "player" ? "player" : "enemy",
-          );
-          setInBattle(true);
-          inBattleRef.current = true;
-          onDebugLog?.("BATTLE_START", "Battle started");
-          setBattleEnemies([...enemiesWithSpells]);
-          // Battle-start AP/MP init now reads from the canonical progression
-          // formula (getPlayerBaseStats) + active-effect modifiers, NOT the raw
-          // persisted characterStats.ap/mp. The formula is the floor
-          // (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence.
-          const _baseStats = getPlayerBaseStats(
-            characterStats.level,
-            levelUpConfig,
-          );
-          const _baseAp =
-            _baseStats.ap +
-            getStatModifier("player", "ap", activeEffectsRef.current);
-          const _baseMp =
-            _baseStats.mp +
-            getStatModifier("player", "mp", activeEffectsRef.current);
-          setCurrentBattleApSynced(_baseAp);
-          setCurrentBattleMp(_baseMp);
-          if (
-            !_progressionDivergenceWarned &&
-            (Number(characterStats.ap) !== _baseStats.ap ||
-              Number(characterStats.mp) !== _baseStats.mp)
-          ) {
-            _progressionDivergenceWarned = true;
-            logDebugWarn(
-              "BATTLE",
-              "[PROGRESSION] persisted ap/mp diverges from formula",
-              {
-                persistedAp: Number(characterStats.ap),
-                formulaAp: _baseStats.ap,
-                persistedMp: Number(characterStats.mp),
-                formulaMp: _baseStats.mp,
-                level: characterStats.level,
-              },
-            );
-          }
-          setBattleActionMode("walk");
-          setBattleTurn(1);
-          activeEffectsRef.current = [];
-          setActiveEffects([]);
-          // Reset cooldowns at start of every battle
-          spellCooldownsRef.current.clear();
-          setSpellCooldownVersion((v) => v + 1);
-          setEnemyCooldowns({});
-          // H-2: battleReadyRef set INSIDE flushSync so it is true by the time
-          // the AI effect runs after the single commit — first enemy turn never skips.
-          battleReadyRef.current = true;
-          // C1: enemyTurnAbortRef MUST be reset inside flushSync — if it's reset
-          // after flushSync closes there is a tiny window where AI fires with abort=true
-          // and the first enemy turn silently skips.
-          enemyTurnAbortRef.current = false;
-          // C4: battleStartSkipRef MUST be set before the flushSync commit so the
-          // VFX canvas is paused from the very first rendered frame of the new battle.
-          battleStartSkipRef.current = 2;
-          reconcileBattleState(combatantStoreCtx, {
-            inBattle: true,
-            victoryFiredThisBattleRef,
-            // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
-            // instead of an EMPTY array [] so the recap builder sees every
-            // kill appended by attributeKillReward (line 9517).
-            triggerVictory: () =>
-              handleBattleEndRef.current?.(
-                true,
-                0,
-                battleHitsRef.current,
-                battleDefeatedRef.current.map((e) => ({
-                  name: e.pieceType ?? "unknown",
-                  level: e.level ?? 1,
-                })),
-              ),
-          });
-        });
-        // [TURN] battle-init breadcrumb #2 — fires only on a successful
-        // flushSync commit (inside the try, after the }); closes).
-        logDebugInfo(
-          "TURN",
-          "[TURN] battle-init position: flushSync-committed",
-          {
-            appBuild: APP_BUILD,
-            stage: "flushSync-committed",
-          },
+      flushSync(() => {
+        syncCombatants(combatantStoreCtx, enemiesWithSpells);
+        mapModifierRegistry.applyBattleStart(
+          combatantsRef.current,
+          activeMapModifierTypes,
         );
-        // SECTION 1 (build #347) — UNCONDITIONAL FIRST-DISPATCH: previously
-        // entry 0 was only dispatched later when advanceTurn ran via End Turn,
-        // timer-expiry, or the AI-trigger effect. If none of those fired
-        // (e.g. the AI effect's deps didn't change because cleanupBattle had
-        // already reset battlePhase to "enemy" before flushSync), the battle
-        // froze on entry 0 with no dispatch. Now we dispatch entry 0
-        // immediately after the flushSync commit, inside the existing try/catch.
-        // If entry 0 is an enemy or enemy-side summon, fire the enemy executor
-        // directly and arm the dispatch watchdog (mirroring the arming pattern
-        // at lines 13585-13610). If entry 0 is the player, no dispatch is
-        // needed (player input IS the dispatch) — but still log the breadcrumb.
-        // [TURN] battle-init breadcrumb #3 — first-dispatch (moved here from
-        // advanceTurn's enemy-ai branch so it fires unconditionally after
-        // battle init, not only when advanceTurn routes to enemy-ai).
-        logDebugInfo("TURN", "[TURN] battle-init position: first-dispatch", {
-          appBuild: APP_BUILD,
-          stage: "first-dispatch",
-          entryId: orderWithLeader[0]?.id,
-          entryType: orderWithLeader[0]?.type,
-          entrySide: orderWithLeader[0]?.side,
-          isSummon: !!(orderWithLeader[0] as any)?.isSummon,
-        });
-        const _firstEntry = orderWithLeader[0];
+        setEnragedEnemies(new Set());
+        setEnemyHpMap(hpMap);
+        setTurnOrder(orderWithLeader);
+        turnOrderRef.current = orderWithLeader;
+        setCurrentTurnIndex(0);
+        currentTurnIndexRef.current = 0;
+        // Part 2: Explicit turn-0 dispatch. advanceTurn's AI branches drive
+        // AI turns via setBattlePhase("enemy") (see @11197/@11207), which
+        // triggers the AI-trigger effect (@11310, deps [inBattle,
+        // currentTurnIndex, battlePhase]). Part 1's cleanupBattle reset
+        // guarantees this setBattlePhase("enemy") is a REAL state change
+        // (player→enemy) when entry 0 is an AI combatant, so the effect
+        // fires turn 0 even after a prior battle ended mid-enemy-phase.
+        // No parallel AI runner is introduced — this IS the same mechanism.
+        setBattlePhase(
+          orderWithLeader[0].type === "player" ? "player" : "enemy",
+        );
+        setInBattle(true);
+        inBattleRef.current = true;
+        onDebugLog?.("BATTLE_START", "Battle started");
+        setBattleEnemies([...enemiesWithSpells]);
+        // Battle-start AP/MP init now reads from the canonical progression
+        // formula (getPlayerBaseStats) + active-effect modifiers, NOT the raw
+        // persisted characterStats.ap/mp. The formula is the floor
+        // (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence.
+        const _baseStats = getPlayerBaseStats(
+          characterStats.level,
+          levelUpConfig,
+        );
+        const _baseAp =
+          _baseStats.ap +
+          getStatModifier("player", "ap", activeEffectsRef.current);
+        const _baseMp =
+          _baseStats.mp +
+          getStatModifier("player", "mp", activeEffectsRef.current);
+        setCurrentBattleApSynced(_baseAp);
+        setCurrentBattleMp(_baseMp);
         if (
-          _firstEntry &&
-          _firstEntry.type !== "player" &&
-          !(_firstEntry.isSummon && _firstEntry.side === "player")
+          !_progressionDivergenceWarned &&
+          (Number(characterStats.ap) !== _baseStats.ap ||
+            Number(characterStats.mp) !== _baseStats.mp)
         ) {
-          // Arm the dispatch watchdog for entry 0 (mirrors 13585-13610).
-          const _firstAIGeneration = aiGenerationRef.current;
-          const _firstDispatchWatchdog = setTimeout(() => {
-            if (
-              turnOrderRef.current[currentTurnIndexRef.current]?.id !==
-              _firstEntry.id
-            )
-              return;
-            if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
-              return;
-            if (aiGenerationRef.current !== _firstAIGeneration) return;
-            turnEndReasonRef.current = "pre-executor-stall";
-            logDebugInfo("TURN", "watchdog-advance", {
-              phase: "battle-init-first-dispatch",
-              entryId: _firstEntry.id,
-            });
-            advanceTurnRef.current();
-          }, 3000);
-          dispatchWatchdogRef.current = _firstDispatchWatchdog;
-          if (!cleanupRanRef.current) {
-            pendingTimeoutsRef.current.add(_firstDispatchWatchdog);
-          }
-          try {
-            scheduleEnemyExecutorRef.current(_firstEntry.id);
-          } catch (error) {
-            logDebugError("TURN", "[TURN] battle-init-error", {
-              stage: "first-dispatch",
-              error: String(error),
-              appBuild: APP_BUILD,
-            });
-            throw error;
-          }
+          _progressionDivergenceWarned = true;
+          logDebugWarn(
+            "BATTLE",
+            "[PROGRESSION] persisted ap/mp diverges from formula",
+            {
+              persistedAp: Number(characterStats.ap),
+              formulaAp: _baseStats.ap,
+              persistedMp: Number(characterStats.mp),
+              formulaMp: _baseStats.mp,
+              level: characterStats.level,
+            },
+          );
         }
-      } catch (error) {
-        logDebugError("TURN", "[TURN] battle-init-error", {
-          stage: "battle-init-flushSync",
-          error: String(error),
-          appBuild: APP_BUILD,
-        });
-        throw error;
-      }
+        setBattleActionMode("walk");
+        setBattleTurn(1);
+        activeEffectsRef.current = [];
+        setActiveEffects([]);
+        // Reset cooldowns at start of every battle
+        spellCooldownsRef.current.clear();
+        setSpellCooldownVersion((v) => v + 1);
+        setEnemyCooldowns({});
+        // H-2: battleReadyRef set INSIDE flushSync so it is true by the time
+        // the AI effect runs after the single commit — first enemy turn never skips.
+        battleReadyRef.current = true;
+        // C1: enemyTurnAbortRef MUST be reset inside flushSync — if it's reset
+        // after flushSync closes there is a tiny window where AI fires with abort=true
+        // and the first enemy turn silently skips.
+        enemyTurnAbortRef.current = false;
+        // C4: battleStartSkipRef MUST be set before the flushSync commit so the
+        // VFX canvas is paused from the very first rendered frame of the new battle.
+        battleStartSkipRef.current = 2;
+      });
 
       inBattleRef.current = true;
       if (battleInitSafetyTimeoutRef.current)
@@ -13123,6 +11910,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             despawnSummons(combatantsRef.current),
           );
 
+          // Award experience and calculate Doka
+          const defeated = enemiesDefeated || [];
+
+          // SECTION 1: Derive real XP via the shared helper even when callers
+          // pass 0 (all triggerVictory sites hardcode expGained to 0). Prefer an
+          // explicit positive grant, else sum(level*20) over the defeated list,
+          // else characterLevel*20 — so the canonical persist path always awards
+          // real XP and the recap matches what gets persisted.
+          const derivedBaseXp = computeVictoryExp({
+            explicitGrant: expGained,
+            defeatedEnemies: defeated,
+            characterLevel: characterStats.level,
+          });
+
           // Apply boost multiplier + boss XP multiplier
           const activeBossConfForXP = currentBossConfigRef.current;
           const bossXpMultiplier = activeBossConfForXP
@@ -13130,11 +11931,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             : 1;
           const finalExp =
             boostMode === "xp"
-              ? Math.round((expGained ?? 0) * 1.5 * bossXpMultiplier)
-              : Math.round((expGained ?? 0) * bossXpMultiplier);
-
-          // Award experience and calculate Doka
-          const defeated = enemiesDefeated || [];
+              ? Math.round(derivedBaseXp * 1.5 * bossXpMultiplier)
+              : Math.round(derivedBaseXp * bossXpMultiplier);
 
           // Calculate Doka per enemy with random multiplier tiers
           const dokaBreakdown: Array<{
@@ -13242,9 +12040,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       },
                     ]
                   : [],
-                // totalDoka already includes chainMult; re-applying it here
-                // would persist chainMult² Doka and also scale XP that the
-                // recap displayed without a dungeon multiplier.
+                // SECTION 3b: handleBattleEnd already applies chainMult to Doka
+                // locally; pass PREAPPLIED_REWARD_MULTIPLIER so resolveBattleRewards
+                // does NOT multiply baseDoka again (fixes the chainMult² double
+                // multiplier). XP still uses the pre-applied baseXp.
                 dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
                 baseDoka: totalDoka || 0,
                 baseXp: finalExp || 0,
@@ -13430,13 +12229,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // ── 2. REWARDS + POPUP (non-blocking, wrapped in try/catch) ──
     try {
+      // SECTION 3a: Read the defeated list from battleDefeatedRef.current — the
+      // same source the victory gate reads — so mid-battle minion kills count
+      // toward the room-clear XP/Doka grant.
       const defeatedList = battleDefeatedRef.current.map((e) => ({
         name: e.pieceType ?? "unknown",
         level: e.level ?? 1,
       }));
-      const expGained =
-        defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) ||
-        Number(characterStats.level) * 20;
+      const expGained = computeVictoryExp({
+        defeatedEnemies: defeatedList,
+        characterLevel: characterStats.level,
+      });
 
       // Compute Doka rewards
       const dokaPerEnemy = Math.max(
@@ -13459,17 +12262,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
-      // Persist via the single atomic applyRewards funnel. Recap stays
-      // non-blocking; later completeBossRushRoom(slot, room, 0, 0) only
-      // records progress and must not be used to grant these rewards.
+      // SECTION 3a: Persist the room-clear grant through the single atomic
+      // reward funnel (multiplier 1) so rewards survive a reload. Room progress
+      // recording stays progress-only via completeBossRushRoom(..., 0, 0).
       if (actor) {
         void resolveBattleRewards(
           actor,
           characterSlot,
           buildBossRushPersistInput({
-            enemiesDefeated: defeatedList,
+            defeatedEnemies: defeatedList,
+            characterLevel: characterStats.level,
             baseDoka: totalDoka + challengeDokaReward,
-            baseXp: expGained,
           }),
         )
           .then((persisted) => {
@@ -13521,6 +12324,72 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     cleanupBattle();
   }
 
+  // Game Over recap reflects the actual persisted XP and Doka lost.
+  const [deathPenalty, setDeathPenalty] = useState<{
+    xpLost: number;
+    dokaLost: number;
+  }>({ xpLost: 0, dokaLost: 0 });
+  // One-shot guard shared by the _handlePlayerDeath linchpin and the HP-watch
+  // fallback so the death penalty can never be applied twice for a single death.
+  const deathPenaltyAppliedRef = useRef(false);
+  // Shared death-penalty persistence. Computes the 20% XP / 40% Doka penalty,
+  // persists the already-reduced absolute values via saveBattleStats (the method
+  // that writes both character XP and the per-principal Doka store), and updates
+  // local state + the recap. applyRewards only adds unsigned Nat values, so
+  // negative deltas are rejected by Candid — never use it for a penalty.
+  const persistDeathPenalty = useCallback(() => {
+    if (deathPenaltyAppliedRef.current) return null;
+    deathPenaltyAppliedRef.current = true;
+    const currentXp = characterStatsRef.current.exp ?? 0;
+    const currentDoka = dokaBalance;
+    const { xpLost, dokaLost, xpAfter, dokaAfter } = computeDeathPenalty(
+      currentXp,
+      currentDoka,
+    );
+    const respawnHp = Math.floor(
+      (50 + characterStatsRef.current.level) * 10 * 0.5,
+    );
+    if (actor) {
+      const spellKeys = Object.keys(spellLevelsRef.current);
+      const spellVals = spellKeys.map((k) =>
+        BigInt(spellLevelsRef.current[k] ?? 0),
+      );
+      actor
+        .saveBattleStats(
+          BigInt(characterSlot),
+          BigInt(characterStatsRef.current.level ?? 1),
+          BigInt(xpAfter),
+          BigInt(respawnHp),
+          BigInt(characterStatsRef.current.maxHp ?? 0),
+          BigInt(characterStatsRef.current.ap ?? 0),
+          BigInt(characterStatsRef.current.maxAp ?? 0),
+          BigInt(characterStatsRef.current.mp ?? 0),
+          BigInt(characterStatsRef.current.maxMp ?? 0),
+          BigInt(0),
+          BigInt(characterStatsRef.current.res ?? 0),
+          BigInt(characterStatsRef.current.init ?? 0),
+          BigInt(dokaAfter),
+          spellKeys,
+          spellVals,
+        )
+        .catch((err) => console.error("[death-save] failed:", err));
+    }
+    setCharacterStats((prev) => ({
+      ...prev,
+      exp: xpAfter,
+      hp: respawnHp,
+    }));
+    onDokaBalanceChange(dokaAfter);
+    setDeathPenalty({ xpLost, dokaLost });
+    return { xpLost, dokaLost, xpAfter, dokaAfter };
+  }, [
+    actor,
+    characterSlot,
+    dokaBalance,
+    onDokaBalanceChange,
+    setCharacterStats,
+  ]);
+
   // Handle player death
   // biome-ignore lint/correctness/useExhaustiveDependencies: characterStats.hp read as stale snapshot for diagnostic log only; death decision is made by callers using computed post-damage values
   const _handlePlayerDeath = useCallback(() => {
@@ -13555,35 +12424,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       dungeonChainMaxDepthRef,
       abortBossRush,
     });
+    // Apply the 20% XP / 40% Doka death penalty exactly once (one-shot guard).
+    persistDeathPenalty();
     setShowGameOver(true);
   }, [abortBossRush, onDebugLog]);
 
   // FEATURE 1: Watch HP — send to Death Realm when HP reaches 0 in battle
-  const [deathPenalty, setDeathPenalty] = useState<{
-    xpLost: number;
-    dokaLost: number;
-  }>({ xpLost: 0, dokaLost: 0 });
-  const deathXpLostRef = useRef<number>(0);
   const deathTriggeredRef = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
   useEffect(() => {
     if (!inBattle) {
       if (characterStatsRef.current.hp <= 0 && !deathTriggeredRef.current) {
         deathTriggeredRef.current = true;
-        const xpLost = Math.floor(characterStats.exp * 0.2);
-        const dokaLost = Math.floor(dokaBalance * 0.4);
-        const newXp = Math.max(0, characterStats.exp - xpLost);
-        const newDoka = Math.max(0, dokaBalance - dokaLost);
-        if (actor) {
-          actor.applyRewards(characterSlot, 0, -xpLost).catch(() => {});
-          actor.applyRewards(characterSlot, -dokaLost, 0).catch(() => {});
-        }
-        setCharacterStats((prev) => ({
-          ...prev,
-          exp: newXp,
-          hp: Math.floor((50 + prev.level * 10) * 0.5),
-        }));
-        onDokaBalanceChange(newDoka);
+        const penalty = persistDeathPenalty();
+        const xpLost = penalty?.xpLost ?? 0;
+        const dokaLost = penalty?.dokaLost ?? 0;
+        const newXp = penalty?.xpAfter ?? characterStats.exp;
         const defeatRecap: any = {
           isDefeat: true,
           xpLost,
@@ -13620,35 +12476,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     deathTriggeredRef.current = true;
     // Apply XP penalty: 20%, floored so level never decreases
     // Apply Doka penalty: 40%, min 0
-    setCharacterStats((prev) => {
-      const xpLost = Math.floor(prev.exp * 0.2);
-      const newExp = Math.max(0, prev.exp - xpLost);
-      deathXpLostRef.current = xpLost;
-      return { ...prev, exp: newExp };
-    });
-    const dokaLost = Math.floor(dokaBalance * 0.4);
-    const newDoka = Math.max(0, dokaBalance - dokaLost);
-    const xpLostAccurate = deathXpLostRef.current;
-    setDeathPenalty({ xpLost: xpLostAccurate, dokaLost });
-    if (actor) {
-      (async () => {
-        try {
-          await actor.applyRewards(
-            BigInt(characterSlot),
-            BigInt(0),
-            BigInt(-xpLostAccurate),
-          );
-          await actor.applyRewards(
-            BigInt(characterSlot),
-            BigInt(-dokaLost),
-            BigInt(0),
-          );
-        } catch (err) {
-          console.error("[death-save] failed:", err);
-        }
-      })();
-    }
-    onDokaBalanceChange(newDoka);
+    // Shared one-shot helper persists the reduced absolute values via
+    // saveBattleStats and updates local state + the Game Over recap.
+    persistDeathPenalty();
     // ── UNIFIED CLEANUP on defeat: terminates all timers, AI, VFX, caches
     // DEATH REALM FIX: Use cleanupMap() here (not just cleanupBattle()) so that
     // all particle refs are also fully reset before entering
@@ -13994,6 +12824,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
     // SECTION 1c: clear the per-kill defeated roster for the new battle.
     battleDefeatedRef.current = [];
+    // Section 6: a new battle starts — re-arm the one-shot death-penalty
+    // guard so the 20% XP / 40% Doka penalty applies once per death event.
+    deathPenaltyAppliedRef.current = false;
     // Weather effects removed
 
     // Skate-rail system removed
@@ -14159,9 +12992,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         name: e.pieceType ?? "unknown",
         level: e.level ?? 1,
       }));
-      const expGained =
-        defeatedList.reduce((sum, e) => sum + Number(e.level) * 20, 0) ||
-        Number(characterStats.level) * 20;
+      // SECTION 1 (cont): Derive XP through the shared computeVictoryExp so the
+      // recap and the persisted XP always match (same source, same formula).
+      const expGained = computeVictoryExp({
+        defeatedEnemies: defeatedList,
+        characterLevel: characterStats.level,
+      });
       if (bossRushActiveRef.current) {
         handleBossRushRoomClear();
       } else {
@@ -14249,26 +13085,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Advance to next combatant in turn order and reset timer
   // biome-ignore lint/correctness/useExhaustiveDependencies: flushSync-wrapped advanceTurn intentionally captures stable refs
   const advanceTurn = useCallback(() => {
-    reconcileBattleState(combatantStoreCtx, {
-      inBattle: inBattleRef.current,
-      victoryFiredThisBattleRef,
-      // SECTION 1 FIX — pass the populated battleDefeatedRef snapshot
-      // instead of an EMPTY array [] so the recap builder (handleBattleEnd)
-      // sees every kill appended by attributeKillReward (line 9517). The
-      // previous `[]` here was the third dead empty-array path that bypassed
-      // the single canonical defeated list and produced an empty recap.
-      triggerVictory: () =>
-        handleBattleEndRef.current?.(
-          true,
-          0,
-          battleHitsRef.current,
-          battleDefeatedRef.current.map((e) => ({
-            name: e.pieceType ?? "unknown",
-            level: e.level ?? 1,
-          })),
-        ),
-    });
-    if (victoryFiredThisBattleRef.current) return;
     flushSync(() => {
       // FIX 1.1: Bump the battle-world version at the top of advanceTurn (after
       // flushSync open, before turn-order advancement) so the spell-range cache
@@ -14310,7 +13126,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ? _nextCombatant.id
         : null;
       syncExpiredSummonsFromTurnQueue(
-        getLiveCombatants(combatantStoreCtx),
+        enemies,
         turnOrderRef.current,
         turnOrderRef,
         currentTurnIndexRef,
@@ -14453,42 +13269,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // Otherwise fall through to the dispatch branches with the
             // landed live entry (nextIdx/nextCombatant now point at it).
           }
-          // SECTION 2 — UNCONDITIONAL AI-ENTRY WATCHDOG: arms a 3000ms
-          // watchdog at dispatch time for ANY AI entry (enemy-ai OR
-          // summon-ai), BEFORE the routing branches run. Player and
-          // player-controlled-summon entries are excluded. If the executor
-          // effect never starts (chain threw or stalled), this fires and
-          // force-advances the turn so the 30s chip does not stick on a
-          // re-dispatched enemy after a mid-battle kill leaves one alive.
-          // Cleared by the executor effect once enemyTurnInProgressRef
-          // flips true. (Moved out of the enemy-ai branch so summon-ai
-          // entries are also covered.)
-          if (
-            nextCombatant.type !== "player" &&
-            !(nextCombatant.isSummon && nextCombatant.side === "player")
-          ) {
-            const myAIGeneration = aiGenerationRef.current;
-            const dispatchWatchdog = setTimeout(() => {
-              if (
-                turnOrderRef.current[currentTurnIndexRef.current]?.id !==
-                nextCombatant.id
-              )
-                return;
-              if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current)
-                return;
-              if (aiGenerationRef.current !== myAIGeneration) return;
-              turnEndReasonRef.current = "pre-executor-stall";
-              logDebugInfo("TURN", "watchdog-advance", {
-                phase: "pre-executor",
-                entryId: nextCombatant.id,
-              });
-              advanceTurnRef.current();
-            }, 3000);
-            dispatchWatchdogRef.current = dispatchWatchdog;
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(dispatchWatchdog);
-            }
-          }
           if (nextCombatant.type === "player") {
             logDebugInfo("TURN", "dispatch", {
               entryId: nextCombatant.id,
@@ -14622,30 +13402,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ) {
               return nextIdx;
             }
+            logDebugInfo("TURN", "dispatch", {
+              entryId: nextCombatant.id,
+              side: nextCombatant.side,
+              isSummon: true,
+              round: battleTurn,
+              idx: nextIdx,
+              route: "summon-ai",
+              ended: turnEndReasonRef.current,
+            });
             // Player-side summons enter "control mode": surface the
             // SummonControlPanel and let the player drive the summon. Do NOT
             // call setBattlePhase("enemy") — that would hand the turn to the
-            // AI executor. Instead explicitly set "player" so arriving from
-            // an enemy turn can never leave battlePhase as "enemy".
-            // Enemy-side summons keep the existing AI path.
+            // AI executor. Enemy-side summons keep the existing AI path.
             if (nextCombatant.side === "player") {
-              logDebugInfo("TURN", "dispatch", {
-                entryId: nextCombatant.id,
-                side: nextCombatant.side,
-                isSummon: true,
-                round: battleTurn,
-                idx: nextIdx,
-                route: "summon-control",
-                ended: turnEndReasonRef.current,
-              });
               setActiveControlledSummonId(nextCombatant.id);
               activeControlledSummonIdRef.current = nextCombatant.id;
-              // SECTION 4 (g) — every summon turn starts in walk-mode so the
-              // green movement-range preview shows first (mirrors the player
-              // turn-start reset of battleActionMode to 'walk'). The ref mirror
-              // is synced by the summonActionMode useEffect.
-              setSummonActionMode("walk");
-              setBattlePhase("player");
               const _summon = getLiveCombatants(combatantStoreCtx).find(
                 (e: any) => e.id === nextCombatant.id,
               );
@@ -14653,46 +13425,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setActiveControlledSummonId(null);
                 activeControlledSummonIdRef.current = null;
                 setSelectedSummonSpellId(null);
-                // SECTION 1 FIX (a) — SUMMON EXPIRY GETS ITS OWN PATH.
-                // A player-side summon's own-turn expiry must NOT funnel
-                // through processCombatantDeath: that pipeline runs
-                // applyLeaderDeathBoost (step 8) + reconcileBattleState
-                // (step 11, consumes victoryFiredThisBattleRef when
-                // hostiles===0). A player-side summon is never a hostile
-                // (battleSetup.isActiveHostile excludes summons + player-side
-                // combatants), so its removal cannot legitimately consume
-                // the victory guard — but routing it through the full pipeline
-                // risked the leader-death cascade (now guarded at the boost)
-                // and the defeated-list append (attributeKillReward). Instead
-                // remove the summon atomically via the store helper (drops
-                // it from combatants + turn queue + initiative strip in one
-                // setTurnOrder call), log a soft fade line, and advance.
-                // Do NOT call processCombatantDeath, triggerLeaderDeathAnim,
-                // applyLeaderDeathBoost, the defeated list, or
-                // victoryFiredThisBattleRef.
-                removeCombatant(combatantStoreCtx, nextCombatant.id);
+                processCombatantDeathCb(nextCombatant.id);
                 logBattleEntry(
-                  `${nextCombatant.pieceType ?? "Summon"} returns to the aether`,
-                  "#a78bfa",
+                  `${nextCombatant.pieceType ?? "Summon"} expired`,
+                  "#ef4444",
                 );
-                // SECTION 1 (R12) FIX (d) — NAME THE ended:null PATH: this
-                // summon-expired advance previously called advanceTurn() with
-                // turnEndReasonRef still null (the prior turn's reason or
-                // null), so the dispatch log showed ended:null. Set an explicit
-                // reason before the advance so the log names the path.
-                turnEndReasonRef.current = "action-complete";
                 setTimeout(() => advanceTurn(), 0);
               }
             } else {
-              logDebugInfo("TURN", "dispatch", {
-                entryId: nextCombatant.id,
-                side: nextCombatant.side,
-                isSummon: true,
-                round: battleTurn,
-                idx: nextIdx,
-                route: "summon-ai",
-                ended: turnEndReasonRef.current,
-              });
               setBattlePhase("enemy");
             }
           } else {
@@ -14713,68 +13453,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current,
             });
-            // SECTION 1 — DIRECT EXECUTOR INVOCATION: fire the enemy executor
-            // directly from the dispatch (no useEffect re-entry). Wraps the
-            // same executor body in setTimeout(0) and fires for EVERY enemy
-            // dispatch including consecutive enemies. The dispatch-time
-            // watchdog re-arm above (13382-13407) stays as the ceiling.
-            // NOTE (build #347): the [TURN] battle-init first-dispatch
-            // breadcrumb was moved to the unconditional post-flushSync site
-            // (after the breadcrumb #2 log) so it fires for EVERY battle
-            // start, not only when advanceTurn routes to enemy-ai. The
-            // scheduleEnemyExecutorRef call below remains the per-dispatch
-            // executor invocation for subsequent enemy turns.
-            try {
-              logDebugInfo("TURN", "[FLOW] advance→dispatch", {
-                actorId: nextCombatant.id,
+            setBattlePhase("enemy");
+            // Process this enemy's active effects
+            mapModifierRegistry.applyTurnStart(
+              nextCombatant,
+              activeMapModifierTypes,
+              {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              },
+            );
+            processActiveEffects(nextCombatant.id);
+            // Plague Zone on enemies too
+            if (isPlagueZone) {
+              setEnemyHpMap((prev) => {
+                const cur = prev[nextCombatant.id] ?? 0;
+                const newHp = Math.max(0, cur - 2);
+                return { ...prev, [nextCombatant.id]: newHp };
               });
-              scheduleEnemyExecutorRef.current(nextCombatant.id);
-            } catch (error) {
-              logDebugError("TURN", "[TURN] dispatch-error", {
-                stage: "enemy-ai-executor",
-                error: String(error),
-                appBuild: APP_BUILD,
-              });
-              throw error;
-            }
-            // SECTION 3 — FIX (a) TRY/CATCH WRAP: the post-dispatch chain
-            // (setBattlePhase('enemy') → applyTurnStart → processActiveEffects →
-            // plague zone → log) is wrapped so a throw in any of these does not
-            // leave the turn stuck. On catch we log the dispatch-error and
-            // advance the turn via the ref. The executor effect (13772+) is
-            // intentionally NOT wrapped here.
-            try {
-              setBattlePhase("enemy");
-              // Process this enemy's active effects
-              mapModifierRegistry.applyTurnStart(
-                nextCombatant,
-                activeMapModifierTypes,
-                {
-                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                  rng: Math.random,
-                },
+              logBattleEntry(
+                `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                "#a855f7",
               );
-              processActiveEffects(nextCombatant.id);
-              // Plague Zone on enemies too
-              if (isPlagueZone) {
-                setEnemyHpMap((prev) => {
-                  const cur = prev[nextCombatant.id] ?? 0;
-                  const newHp = Math.max(0, cur - 2);
-                  return { ...prev, [nextCombatant.id]: newHp };
-                });
-                logBattleEntry(
-                  `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
-                  "#a855f7",
-                );
-              }
-              logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
-            } catch (error) {
-              logDebugInfo("TURN", "dispatch-error", {
-                entryId: nextCombatant.id,
-                error: String(error),
-              });
-              advanceTurnRef.current();
             }
+            logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
           }
           return nextIdx;
         });
@@ -14803,17 +13505,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     advanceTurnRef.current = advanceTurn;
   }, [advanceTurn]);
-
-  // SECTION 1 — ATOMIC CLEAR+ADVANCE HELPER: clears the enemy-turn-in-progress
-  // flag and advances the turn in one synchronous step. Routing the three
-  // synchronous completion paths (endsTurn immediate, summon finally, main
-  // finally) through this helper guarantees the clear and the advance are
-  // never split by a 1ms re-entrancy window. useCallback with [] deps because
-  // both refs are stable.
-  const clearEnemyTurnFlagAndAdvance = useCallback(() => {
-    enemyTurnInProgressRef.current = false;
-    advanceTurnRef.current();
-  }, []);
 
   // Auto-end control when the player-controlled summon has no AP and no MP
   // left to act. Defers the turn advance via setTimeout to avoid re-entrancy
@@ -14849,18 +13540,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     // FIX-1: Increment generation counter so any stale interval callback from
     // the previous render cycle becomes an instant no-op.
-    // SECTION 3 — FIX (c): only increment the generation (and reset the chip)
-    // when the actor id actually changes. A watchdog re-advance that
-    // re-dispatches the same enemy re-runs this effect with the same
-    // currentTurnIndex/actor id; without this guard the generation would bump
-    // and the chip would stick at its current count instead of restarting at
-    // 30s (or 15s in time warp).
-    const currentActorId =
-      turnOrderRef.current[currentTurnIndexRef.current]?.id ?? null;
-    if (currentActorId !== lastTimerActorIdRef.current) {
-      lastTimerActorIdRef.current = currentActorId;
-      turnTimerGenerationRef.current += 1;
-    }
+    turnTimerGenerationRef.current += 1;
     const myGeneration = turnTimerGenerationRef.current;
     // Reset timer whenever the active turn changes (Time Warp: 15s instead of 30s)
     const timerStart = isTimeWarp ? 15 : 30;
@@ -14868,21 +13548,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     timerIntervalRef.current = setInterval(() => {
       // FIX-1: If the generation has moved on (effect re-ran), this stale
       // interval must not fire advanceTurn on outdated state.
-      // SECTION 2 (build #347) — never silently return on a generation
-      // mismatch; log the abort so a stale callback from a prior battle
-      // (whose generation was reset to 0 by cleanupBattle @11506) cannot
-      // hide as a silent no-op. This is the root cause of the timer-expiry
-      // freezes: a stale callback captured generation 0 and silently
-      // returned, so the turn never advanced.
-      if (turnTimerGenerationRef.current !== myGeneration) {
-        logDebugInfo("TURN", "[TURN] timer-expiry-aborted", {
-          actor: turnOrderRef.current[currentTurnIndexRef.current]?.id ?? null,
-          myGen: myGeneration,
-          curGen: turnTimerGenerationRef.current,
-          appBuild: APP_BUILD,
-        });
-        return;
-      }
+      if (turnTimerGenerationRef.current !== myGeneration) return;
       setTurnTimeLeft((prev) => {
         if (prev <= 1) {
           if (timerIntervalRef.current) {
@@ -14892,38 +13558,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // FIX-1 & FIX-5: Use the ref so we always call the latest version of
           // advanceTurn (avoids stale closure over characterStats / activeEffects).
           turnEndReasonRef.current = "timer-expiry";
-          // SECTION 2 (build #347) — log the fired event with the actor so
-          // the timer-expiry path is observable in the debug log.
-          const _expiryActor =
-            turnOrderRef.current[currentTurnIndexRef.current] ?? null;
-          logDebugInfo("TURN", "[TURN] timer-expiry-fired", {
-            actor: _expiryActor?.id ?? null,
-            actorType: _expiryActor?.type ?? null,
-            actorSide: _expiryActor?.side ?? null,
-            isSummon: !!(_expiryActor as any)?.isSummon,
-            appBuild: APP_BUILD,
-          });
-          // FIX (root_cause_2): timer-expiry previously only set the reason +
-          // advanced the turn, skipping the summon-control cleanup that the
-          // other exit paths (End button, AP+MP exhausted, summon death/expiry)
-          // perform. That left activeControlledSummonId / selectedSummonSpellId
-          // set after a summon turn ended by timer, greying the next player
-          // turn's spell row. Route through the shared clearSummonControl so
-          // this path matches the others.
-          clearSummonControl();
-          // SECTION 2 (build #347) — UNIFIED ADVANCE: previously only the
-          // player actor advanced here, so enemy and summon-control turns
-          // whose 30s timer expired would freeze (the enemy's own 800ms
-          // timeout + 3000ms watchdog were the only fallbacks, and a stale
-          // generation callback silently no-op'd them). Now advance through
-          // the unified ref path based on actor type:
-          //   player        → advanceTurnRef.current()
-          //   summon-control→ clearSummonControl() (already called above) then advanceTurnRef.current()
-          //   enemy         → advanceTurnRef.current() (force-advance; the
-          //                   enemy executor's own timeouts are the ceiling,
-          //                   but a stalled executor must not freeze the turn)
-          // All three routes converge on advanceTurnRef.current(); the
-          // clearSummonControl() above is a no-op for non-summon actors.
           advanceTurnRef.current();
           return timerStart;
         }
@@ -14936,13 +13570,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         timerIntervalRef.current = null;
       }
     };
-    // SECTION 3 (build #347) — added activeControlledSummonId to the deps so
-    // the timer re-arms (and resets to the full 30s / 15s-in-warp duration)
-    // when control shifts to a player-controlled summon. Previously the timer
-    // only re-armed when currentTurnIndex changed; a summon dispatch that
-    // didn't advance currentTurnIndex left the timer showing the prior
-    // actor's remaining seconds (e.g. "2s") instead of resetting to full.
-  }, [inBattle, currentTurnIndex, isTimeWarp, activeControlledSummonId]);
+  }, [inBattle, currentTurnIndex, isTimeWarp]);
 
   // SECTION 4 (build #325): thread the live debug context up to the parent
   // (GameFlow → ChatPanel export-report builder). Fires whenever the battle
@@ -15024,63 +13652,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // store's atomic assignments and re-introduced desync — they were removed
   // as part of the store-unification pass.
 
-  // SECTION 1 — DIRECT EXECUTOR INVOCATION: the enemy executor is now invoked
-  // directly from the dispatch (scheduleEnemyExecutorRef.current(enemyId) right
-  // after the [TURN] dispatch log) instead of re-entering via a useEffect on
-  // [inBattle, currentTurnIndex, battlePhase]. This fires for EVERY enemy
-  // dispatch including consecutive enemies — no dependency arrays, no
-  // state-change requirements. The executor body guards (aiGeneration/session/
-  // inProgress) are preserved. The dispatch-time watchdog re-arm (13382-13407)
-  // stays as the ceiling. useCallback with [] deps because every dependency
-  // is a ref or a stable callback.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional — direct dispatch invocation must fire unconditionally on every enemy dispatch (including consecutive enemies), no state-change gating; every referenced value is a ref or stable callback
-  const scheduleEnemyExecutor = useCallback((enemyId: string) => {
-    // SECTION 1 — EXECUTOR-GATE LOG: log the blockedBy reason at most 1/s so
-    // the gate is observable without flooding the console. Wired through
-    // logDebugInfo (not console.log) so it actually lands in the debug
-    // channel. Only the inProgress / battleReady blocks log; the missing-
-    // combatant branch returns silently.
-    if (enemyTurnInProgressRef.current) {
-      const now = Date.now();
-      if (now - lastGateLogRef.current > 1000) {
-        lastGateLogRef.current = now;
-        logDebugInfo("TURN", "executor-gate", {
-          actorId: enemyId,
-          blockedBy: "inProgress",
-        });
-      }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs
+  useEffect(() => {
+    if (!inBattle || battlePhase !== "enemy" || enemyTurnInProgressRef.current)
       return;
-    }
-    if (!battleReadyRef.current) {
-      const now = Date.now();
-      if (now - lastGateLogRef.current > 1000) {
-        lastGateLogRef.current = now;
-        logDebugInfo("TURN", "executor-gate", {
-          actorId: enemyId,
-          blockedBy: "battleReady",
-        });
-      }
-      return;
-    }
+    if (!battleReadyRef.current) return;
     // H2: Read from the ref mirror so we always get the latest turnOrder
     // even if the React state closure captured a stale snapshot. The ref is
     // the authoritative source of turn truth; if it were missing that would
     // itself be a bug, so there is NO state-snapshot fallback here.
     const currentCombatant = turnOrderRef.current[currentTurnIndexRef.current];
     if (!currentCombatant || currentCombatant.type !== "enemy") return;
+    const enemyId = currentCombatant.id;
     enemyTurnInProgressRef.current = true;
-    logDebugInfo("TURN", "[FLOW] dispatch→executor-start", {
-      actorId: enemyId,
-    });
-    // SECTION 3 — FIX (b): the executor has started, so the dispatch-time
-    // watchdog is no longer needed. Clear it (and drop it from the pending
-    // set) so it cannot fire after the executor is running. The executor's
-    // own watchdog (below) takes over from here.
-    if (dispatchWatchdogRef.current) {
-      clearTimeout(dispatchWatchdogRef.current);
-      pendingTimeoutsRef.current.delete(dispatchWatchdogRef.current);
-      dispatchWatchdogRef.current = null;
-    }
     // E2: Clear per-turn path cache so this enemy's computations are fresh.
     enemyPathCacheRef.current.clear();
     // FIX #15: Capture AI generation at the start of this enemy turn.
@@ -15095,18 +13679,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // H2 fix: declare watchdog first so timeout callback can reference it (forward reference fix)
     let watchdog: ReturnType<typeof setTimeout>;
     const timeout = setTimeout(() => {
-      // SECTION 1 (R12) FIX (c) — EXECUTOR-START LOG: the very first lines of
-      // the executor body, before any guard. If a battle-2 enemy never acts,
-      // this line is absent from the console — making a silent battle
-      // impossible to hide. myGen is the generation captured at arming time;
-      // curGen is the live value. A mismatch (myGen !== curGen) means the
-      // callback is stale and every guard below will abort — which is exactly
-      // the triple-silence signature when it happens to the FIRST dispatch.
-      logDebugInfo("TURN", "[TURN] executor-start", {
-        id: enemyId,
-        myGen: myAIGeneration,
-        curGen: aiGenerationRef.current,
-      });
       // Read from enemiesRef.current (fresh mirror) — the dep array omits `enemies` to avoid double-firing.
       const summonEnemy = enemiesRef.current.find((e: any) => e.id === enemyId);
       if (summonEnemy?.isSummon && summonEnemy.side === "player") {
@@ -15367,13 +13939,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           (row ?? []).map((t: any) => t !== "wall"),
         );
         const aiOccupied = new Set<string>();
-        for (const e of enemiesRef.current) {
-          if (e.id === enemyId) continue;
-          aiOccupied.add(`${e.x},${e.y}`);
-        }
-        aiOccupied.add(
-          `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
-        );
         const aiBarriers = new Set<string>(barrierTilesRef.current.keys());
         const aiPortals = new Set<string>(
           (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
@@ -15460,12 +14025,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           mpCostPerTile: 1,
           meleeApCost: 1,
           getEnemyById: (id: string) =>
-            getLiveCombatants(combatantStoreCtx).find((e: any) => e.id === id),
+            enemiesRef.current.find((e: any) => e.id === id),
           getAoEVictims: (primaryId: string, blastR: number) => {
-            const liveEnemies = getLiveCombatants(combatantStoreCtx);
-            const primary = liveEnemies.find((e: any) => e.id === primaryId);
+            const primary = enemiesRef.current.find(
+              (e: any) => e.id === primaryId,
+            );
             if (!primary) return [];
-            return liveEnemies.filter((e: any) => {
+            return enemiesRef.current.filter((e: any) => {
               if (e.id === primaryId) return false;
               if (e.side === summonEnemy.side) return false;
               const dx = Math.abs((e.x ?? 0) - (primary.x ?? 0));
@@ -15527,16 +14093,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // and does not accept currentAp/currentMp.
           summonEnemy.currentAp = execResult.currentAp;
           summonEnemy.currentMp = execResult.currentMp;
-          updateCombatant(
-            combatantStoreCtx,
-            enemyId,
-            {
-              x: execResult.newPosition.x,
-              y: execResult.newPosition.y,
-              hp: execResult.hp,
-            },
-            "summonExecute",
-          );
+          updateCombatant(combatantStoreCtx, enemyId, {
+            x: execResult.newPosition.x,
+            y: execResult.newPosition.y,
+            hp: execResult.hp,
+          });
           // Always advance the turn — no stalls.
           // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
           // useEffect gate (line ~10639) does not early-return on the next
@@ -15548,17 +14109,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           setTimeout(() => advanceTurnRef.current(), 600);
           advanced = true;
         } finally {
-          // SECTION 1 — route the summon finally path through the atomic
-          // clear+advance helper. When the try threw before its own advance,
-          // clear the flag and advance together (no 1ms re-entrancy gap);
-          // when the try already advanced, defensively clear the flag so the
-          // next enemy-phase gate is open.
+          // Unconditionally reset the ref so the next enemy-phase gate is open.
+          enemyTurnInProgressRef.current = false;
+          // If the try threw before its own advance, advance exactly once here.
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
-            clearEnemyTurnFlagAndAdvance();
+            advanceTurnRef.current();
             advanced = true;
-          } else {
-            enemyTurnInProgressRef.current = false;
           }
         }
         return;
@@ -15712,561 +14269,355 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // so ALL nested setters (setCharacterStats, setTurnOrder, setEnemyHpMap, etc.)
       // are committed in ONE React render. Prevents canvas from reading stale refs
       // mid-AI-logic due to cascading separate re-renders.
-      //
-      // SECTION 2 FIX: the try/finally MUST wrap the ENTIRE flushSync body so every
-      // early-return path (!enemy, erratic, betrayal, boss branches) hits the
-      // finally and advances with action-complete. Previously the try opened at
-      // L15148 — early returns before it bypassed the advance guarantee and fell to
-      // the 5s watchdog (timer-expiry). Now `advanced` + `try` open here, and the
-      // `finally` closes immediately before the flushSync close. Early-return paths
-      // that already schedule their own advance set `advanced = true` first so the
-      // finally does not double-advance.
       flushSync(() => {
-        let advanced = false;
-        try {
-          const prevEnemies = getLiveCombatants(combatantStoreCtx);
-          const enemy = prevEnemies.find((e) => e.id === enemyId);
-          if (!enemy) {
-            clearTimeout(watchdog);
-            pendingTimeoutsRef.current.delete(watchdog);
-            enemyTurnInProgressRef.current = false;
-            const _t = setTimeout(() => {
-              pendingTimeoutsRef.current.delete(_t);
-              if (
-                !enemyTurnAbortRef.current &&
-                aiGenerationRef.current === myAIGeneration
-              )
-                advanceTurnRef.current(); // FIX #15
-            }, 0);
-            // M-4: Only register if cleanup hasn't run yet
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(_t);
-            }
-            // SECTION 2 FIX: this branch already schedules its own advance, so mark
-            // advanced to prevent the outer finally from double-advancing.
-            advanced = true;
-            return;
+        const prevEnemies = getLiveCombatants(combatantStoreCtx);
+        const enemy = prevEnemies.find((e) => e.id === enemyId);
+        if (!enemy) {
+          clearTimeout(watchdog);
+          pendingTimeoutsRef.current.delete(watchdog);
+          enemyTurnInProgressRef.current = false;
+          const _t = setTimeout(() => {
+            pendingTimeoutsRef.current.delete(_t);
+            if (
+              !enemyTurnAbortRef.current &&
+              aiGenerationRef.current === myAIGeneration
+            )
+              advanceTurnRef.current(); // FIX #15
+          }, 0);
+          // M-4: Only register if cleanup hasn't run yet
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(_t);
           }
-          const myMap = enemyCooldownsRef.current.get(enemyId);
-          if (myMap) {
-            for (const [sid, turns] of myMap.entries()) {
-              if (turns > 0) myMap.set(sid, turns - 1);
-            }
+          return;
+        }
+        const myMap = enemyCooldownsRef.current.get(enemyId);
+        if (myMap) {
+          for (const [sid, turns] of myMap.entries()) {
+            if (turns > 0) myMap.set(sid, turns - 1);
           }
-          if (
-            (enemy.aiTier ?? 1) >= 5 &&
-            leaderDiedRef.current &&
-            !allEnemiesErraticRef.current &&
-            erraticTurnsLeftRef.current <= 0
-          ) {
-            allEnemiesErraticRef.current = true;
-            erraticTurnsLeftRef.current = prevEnemies.length;
+        }
+        if (
+          (enemy.aiTier ?? 1) >= 5 &&
+          leaderDiedRef.current &&
+          !allEnemiesErraticRef.current &&
+          erraticTurnsLeftRef.current <= 0
+        ) {
+          allEnemiesErraticRef.current = true;
+          erraticTurnsLeftRef.current = prevEnemies.length;
+          logBattleEntry(
+            "[Leader died] Enemies acting erratically!",
+            "#ef4444",
+          );
+        }
+        if (allEnemiesErraticRef.current) {
+          logBattleEntry(
+            `[Leader died] ${enemy.pieceType} acts erratically!`,
+            "#ef4444",
+          );
+          erraticTurnsLeftRef.current = Math.max(
+            0,
+            erraticTurnsLeftRef.current - 1,
+          );
+          if (erraticTurnsLeftRef.current <= 0)
+            allEnemiesErraticRef.current = false;
+          const adjCells = [
+            { x: enemy.x - 1, y: enemy.y },
+            { x: enemy.x + 1, y: enemy.y },
+            { x: enemy.x, y: enemy.y - 1 },
+            { x: enemy.x, y: enemy.y + 1 },
+          ].filter(
+            (c) =>
+              c.x >= 0 &&
+              c.x < WORLD_GRID_SIZE &&
+              c.y >= 0 &&
+              c.y < WORLD_GRID_SIZE &&
+              currentMap?.tiles[c.y]?.[c.x] !== "wall" &&
+              !prevEnemies.some(
+                (e) => e.id !== enemyId && e.x === c.x && e.y === c.y,
+              ) &&
+              !(
+                c.x === playerPositionRef.current.x &&
+                c.y === playerPositionRef.current.y
+              ),
+          );
+          let erX = enemy.x;
+          let erY = enemy.y;
+          if (adjCells.length > 0) {
+            const p = adjCells[Math.floor(Math.random() * adjCells.length)];
+            erX = p.x;
+            erY = p.y;
+          }
+          const erSpells = (currentCombatant.spells ?? []) as SpellConfig[];
+          if (Math.random() < 0.5 && erSpells.length > 0) {
+            const rs = erSpells[Math.floor(Math.random() * erSpells.length)];
             logBattleEntry(
-              "[Leader died] Enemies acting erratically!",
+              `${enemy.pieceType} wildly casts ${rs.name}!`,
               "#ef4444",
             );
           }
-          if (allEnemiesErraticRef.current) {
-            logBattleEntry(
-              `[Leader died] ${enemy.pieceType} acts erratically!`,
-              "#ef4444",
-            );
-            erraticTurnsLeftRef.current = Math.max(
-              0,
-              erraticTurnsLeftRef.current - 1,
-            );
-            if (erraticTurnsLeftRef.current <= 0)
-              allEnemiesErraticRef.current = false;
-            const adjCells = [
-              { x: enemy.x - 1, y: enemy.y },
-              { x: enemy.x + 1, y: enemy.y },
-              { x: enemy.x, y: enemy.y - 1 },
-              { x: enemy.x, y: enemy.y + 1 },
-            ].filter(
-              (c) =>
-                c.x >= 0 &&
-                c.x < WORLD_GRID_SIZE &&
-                c.y >= 0 &&
-                c.y < WORLD_GRID_SIZE &&
-                currentMap?.tiles[c.y]?.[c.x] !== "wall" &&
-                !prevEnemies.some(
-                  (e) => e.id !== enemyId && e.x === c.x && e.y === c.y,
-                ) &&
-                !(
-                  c.x === playerPositionRef.current.x &&
-                  c.y === playerPositionRef.current.y
-                ),
-            );
-            let erX = enemy.x;
-            let erY = enemy.y;
-            if (adjCells.length > 0) {
-              const p = adjCells[Math.floor(Math.random() * adjCells.length)];
-              erX = p.x;
-              erY = p.y;
-            }
-            const erSpells = (currentCombatant.spells ?? []) as SpellConfig[];
-            if (Math.random() < 0.5 && erSpells.length > 0) {
-              const rs = erSpells[Math.floor(Math.random() * erSpells.length)];
+          clearTimeout(watchdog);
+          enemyTurnInProgressRef.current = false;
+          // FIX-4a: Register erratic-action timer in cleanup registry so it
+          // can be cancelled if battle ends before it fires.
+          const myErraticGen = aiGenerationRef.current;
+          let erraticTimer: ReturnType<typeof setTimeout>;
+          erraticTimer = setTimeout(() => {
+            if (
+              cleanupPhaseRef.current !== "idle" ||
+              cleanupRanRef.current ||
+              aiGenerationRef.current !== myErraticGen
+            )
+              return;
+            // Delete from registry on entry so cleanup doesn't double-cancel.
+            pendingTimeoutsRef.current.delete(erraticTimer);
+            if (
+              !enemyTurnAbortRef.current &&
+              aiGenerationRef.current === myAIGeneration
+            )
+              advanceTurnRef.current(); // FIX #15
+          }, 0);
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(erraticTimer);
+          }
+          updateCombatant(combatantStoreCtx, enemyId, { x: erX, y: erY });
+          return;
+        }
+        const aliveAllies = prevEnemies.filter((e) => e.id !== enemyId);
+        if (
+          (enemy.aiTier ?? 1) >= 10 &&
+          aliveAllies.length > 0 &&
+          Math.random() < 0.05
+        ) {
+          const allyT =
+            aliveAllies[Math.floor(Math.random() * aliveAllies.length)];
+          const btDmg = Math.max(
+            1,
+            enemy.level * 2 + Math.floor(Math.random() * 5),
+          );
+          const allyPrevHp =
+            enemyHpMap[allyT.id] ?? calcEnemyMaxHp(allyT.level);
+          const allyNewHp = Math.max(0, allyPrevHp - btDmg);
+          logBattleEntry(
+            `${enemy.pieceType} turns on ${allyT.pieceType}! Betrayal!`,
+            "#ef4444",
+          );
+          battleBetrayalOccurredRef.current = true;
+          if (allyNewHp <= 0) {
+            if (
+              allyT.id === leaderEnemyIdRef.current &&
+              !leaderDiedRef.current
+            ) {
+              leaderDiedRef.current = true;
+              triggerLeaderDeathAnimation(allyT.x, allyT.y);
               logBattleEntry(
-                `${enemy.pieceType} wildly casts ${rs.name}!`,
-                "#ef4444",
+                `\ud83d\udc51 The leader ${allyT.pieceType} fell via betrayal!`,
+                "#f97316",
               );
             }
-            clearTimeout(watchdog);
-            enemyTurnInProgressRef.current = false;
-            // FIX-4a: Register erratic-action timer in cleanup registry so it
-            // can be cancelled if battle ends before it fires.
-            const myErraticGen = aiGenerationRef.current;
-            let erraticTimer: ReturnType<typeof setTimeout>;
-            erraticTimer = setTimeout(() => {
-              if (
-                cleanupPhaseRef.current !== "idle" ||
-                cleanupRanRef.current ||
-                aiGenerationRef.current !== myErraticGen
-              )
-                return;
-              // Delete from registry on entry so cleanup doesn't double-cancel.
-              pendingTimeoutsRef.current.delete(erraticTimer);
-              if (
-                !enemyTurnAbortRef.current &&
-                aiGenerationRef.current === myAIGeneration
-              ) {
-                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
-                // erratic-branch advance previously called
-                // advanceTurnRef.current() with turnEndReasonRef still null,
-                // so the dispatch log showed ended:null. Set an explicit
-                // reason before the advance.
-                turnEndReasonRef.current = "action-complete";
-                advanceTurnRef.current(); // FIX #15
-              }
-            }, 0);
-            if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(erraticTimer);
-            }
-            updateCombatant(
-              combatantStoreCtx,
-              enemyId,
-              { x: erX, y: erY },
-              "erraticMove",
-            );
-            // SECTION 2 FIX: erratic branch already schedules its own advance.
-            advanced = true;
-            return;
-          }
-          const aliveAllies = prevEnemies.filter((e) => e.id !== enemyId);
-          if (
-            (enemy.aiTier ?? 1) >= 10 &&
-            aliveAllies.length > 0 &&
-            Math.random() < 0.05
-          ) {
-            const allyT =
-              aliveAllies[Math.floor(Math.random() * aliveAllies.length)];
-            const btDmg = Math.max(
-              1,
-              enemy.level * 2 + Math.floor(Math.random() * 5),
-            );
-            const allyPrevHp =
-              enemyHpMap[allyT.id] ?? calcEnemyMaxHp(allyT.level);
-            const allyNewHp = Math.max(0, allyPrevHp - btDmg);
-            logBattleEntry(
-              `${enemy.pieceType} turns on ${allyT.pieceType}! Betrayal!`,
-              "#ef4444",
-            );
-            battleBetrayalOccurredRef.current = true;
-            if (allyNewHp <= 0) {
-              if (
-                allyT.id === leaderEnemyIdRef.current &&
-                !leaderDiedRef.current &&
-                !allyT.isSummon // SECTION 1 FIX (c) — defense-in-depth: never fire the leader-death animation for a summon, even if it somehow matched leaderEnemyIdRef.
-              ) {
-                leaderDiedRef.current = true;
-                triggerLeaderDeathAnimation(allyT.x, allyT.y);
+            setEnragedEnemies((prev) => {
+              const n = new Set(prev);
+              n.add(enemyId);
+              return n;
+            });
+            // Route the ally removal + enemy enrage through the unified
+            // combatant store: removeCombatant drops allyT from
+            // combatants/enemies/battleEnemies/turnOrder atomically;
+            // updateCombatant applies the 6× maxHp/hp boost to enemyId
+            // across all mirrors + setters. The store auto-syncs
+            // battleEnemies, so the explicit setBattleEnemies sync is
+            // redundant and removed.
+            removeCombatant(combatantStoreCtx, allyT.id);
+            updateCombatant(combatantStoreCtx, enemyId, {
+              maxHp: Math.round(
+                (turnOrderRef.current.find((c) => c.id === enemyId)?.maxHp ??
+                  calcEnemyMaxHp(enemy.level)) * 6,
+              ),
+              hp: Math.round(
+                (turnOrderRef.current.find((c) => c.id === enemyId)?.hp ??
+                  calcEnemyMaxHp(enemy.level)) * 6,
+              ),
+            });
+            setEnemyHpMap((prev) => {
+              const n = { ...prev };
+              delete n[allyT.id];
+              n[enemyId] = Math.round(
+                (prev[enemyId] ?? calcEnemyMaxHp(enemy.level)) * 6,
+              );
+              return n;
+            });
+            const afterFirst = prevEnemies.filter((e) => e.id !== allyT.id);
+            const secondPool = afterFirst.filter((e) => e.id !== enemyId);
+            if (secondPool.length > 0 && Math.random() < 0.15) {
+              battleDoubleBetrayelOccurredRef.current = true;
+              let dbTimer: ReturnType<typeof setTimeout>;
+              dbTimer = setTimeout(() => {
+                // C-1: Guard — if cleanup ran before this fires, abort immediately
+                if (!pendingTimeoutsRef.current.has(dbTimer)) return;
+                pendingTimeoutsRef.current.delete(dbTimer);
+                if (enemyTurnAbortRef.current) return;
+                if (
+                  cleanupPhaseRef.current !== "idle" ||
+                  cleanupRanRef.current ||
+                  aiGenerationRef.current !== myAIGeneration
+                )
+                  return; // FIX #15 + triple-check
+                if (sessionVersionRef.current !== mySessionVersion) return; // FIX-2
+                const sb =
+                  secondPool[Math.floor(Math.random() * secondPool.length)];
                 logBattleEntry(
-                  `\ud83d\udc51 The leader ${allyT.pieceType} fell via betrayal!`,
+                  `\u26a1 DOUBLE BETRAYAL! ${sb.pieceType} also turns!`,
                   "#f97316",
                 );
-              }
-              setEnragedEnemies((prev) => {
-                const n = new Set(prev);
-                n.add(enemyId);
-                return n;
-              });
-              // Route the ally removal + enemy enrage through the unified
-              // combatant store: removeCombatant drops allyT from
-              // combatants/enemies/battleEnemies/turnOrder atomically;
-              // updateCombatant applies the 6× maxHp/hp boost to enemyId
-              // across all mirrors + setters. The store auto-syncs
-              // battleEnemies, so the explicit setBattleEnemies sync is
-              // redundant and removed.
-              removeCombatant(combatantStoreCtx, allyT.id);
-              updateCombatant(
-                combatantStoreCtx,
-                enemyId,
-                {
-                  maxHp: Math.round(
-                    (turnOrderRef.current.find((c) => c.id === enemyId)
-                      ?.maxHp ?? calcEnemyMaxHp(enemy.level)) * 6,
-                  ),
-                  hp: Math.round(
-                    (turnOrderRef.current.find((c) => c.id === enemyId)?.hp ??
-                      calcEnemyMaxHp(enemy.level)) * 6,
-                  ),
-                },
-                "betrayalEnrage",
-              );
-              setEnemyHpMap((prev) => {
-                const n = { ...prev };
-                delete n[allyT.id];
-                n[enemyId] = Math.round(
-                  (prev[enemyId] ?? calcEnemyMaxHp(enemy.level)) * 6,
-                );
-                return n;
-              });
-              const afterFirst = prevEnemies.filter((e) => e.id !== allyT.id);
-              const secondPool = afterFirst.filter((e) => e.id !== enemyId);
-              if (secondPool.length > 0 && Math.random() < 0.15) {
-                battleDoubleBetrayelOccurredRef.current = true;
-                let dbTimer: ReturnType<typeof setTimeout>;
-                dbTimer = setTimeout(() => {
-                  // C-1: Guard — if cleanup ran before this fires, abort immediately
-                  if (!pendingTimeoutsRef.current.has(dbTimer)) return;
-                  pendingTimeoutsRef.current.delete(dbTimer);
-                  if (enemyTurnAbortRef.current) return;
-                  if (
-                    cleanupPhaseRef.current !== "idle" ||
-                    cleanupRanRef.current ||
-                    aiGenerationRef.current !== myAIGeneration
-                  )
-                    return; // FIX #15 + triple-check
-                  if (sessionVersionRef.current !== mySessionVersion) return; // FIX-2
-                  const sb =
-                    secondPool[Math.floor(Math.random() * secondPool.length)];
+                const sbTgts = afterFirst.filter((e) => e.id !== sb.id);
+                if (sbTgts.length > 0) {
+                  const sbT = sbTgts[Math.floor(Math.random() * sbTgts.length)];
+                  const sbDmg = Math.max(
+                    1,
+                    sb.level * 2 + Math.floor(Math.random() * 5),
+                  );
                   logBattleEntry(
-                    `\u26a1 DOUBLE BETRAYAL! ${sb.pieceType} also turns!`,
+                    `${sb.pieceType} attacks ${sbT.pieceType} for ${sbDmg}!`,
                     "#f97316",
                   );
-                  const sbTgts = afterFirst.filter((e) => e.id !== sb.id);
-                  if (sbTgts.length > 0) {
-                    const sbT =
-                      sbTgts[Math.floor(Math.random() * sbTgts.length)];
-                    const sbDmg = Math.max(
-                      1,
-                      sb.level * 2 + Math.floor(Math.random() * 5),
-                    );
-                    logBattleEntry(
-                      `${sb.pieceType} attacks ${sbT.pieceType} for ${sbDmg}!`,
-                      "#f97316",
-                    );
-                    setEnemyHpMap((h) => {
-                      const curHp = h[sbT.id] ?? calcEnemyMaxHp(sbT.level);
-                      const nHp = Math.max(0, curHp - sbDmg);
-                      if (nHp <= 0) {
-                        // Route the double-betrayal kill through the unified
-                        // store: removeCombatant drops sbT from
-                        // combatants/enemies/battleEnemies/turnOrder
-                        // atomically (replaces the separate setTurnOrder +
-                        // setEnemies filters).
-                        removeCombatant(combatantStoreCtx, sbT.id);
-                      }
-                      return { ...h, [sbT.id]: nHp };
-                    });
-                  }
-                }, 200);
-                // C-1 / M-4: Register AFTER assigning ID, guard with cleanupRanRef
-                if (!cleanupRanRef.current) {
-                  pendingTimeoutsRef.current.add(dbTimer);
+                  setEnemyHpMap((h) => {
+                    const curHp = h[sbT.id] ?? calcEnemyMaxHp(sbT.level);
+                    const nHp = Math.max(0, curHp - sbDmg);
+                    if (nHp <= 0) {
+                      // Route the double-betrayal kill through the unified
+                      // store: removeCombatant drops sbT from
+                      // combatants/enemies/battleEnemies/turnOrder
+                      // atomically (replaces the separate setTurnOrder +
+                      // setEnemies filters).
+                      removeCombatant(combatantStoreCtx, sbT.id);
+                    }
+                    return { ...h, [sbT.id]: nHp };
+                  });
                 }
-              }
-              clearTimeout(watchdog);
-              pendingTimeoutsRef.current.delete(watchdog);
-              enemyTurnInProgressRef.current = false;
-              const _at1 = setTimeout(() => {
-                // H-1: Guard — if cleanup ran before this fires, abort immediately
-                if (!pendingTimeoutsRef.current.has(_at1)) return;
-                pendingTimeoutsRef.current.delete(_at1);
-                if (
-                  !enemyTurnAbortRef.current &&
-                  aiGenerationRef.current === myAIGeneration
-                ) {
-                  turnEndReasonRef.current = "action-complete";
-                  advanceTurnRef.current(); // FIX #15
-                }
-              }, 0);
-              // M-4: Only register if cleanup hasn't run yet
+              }, 200);
+              // C-1 / M-4: Register AFTER assigning ID, guard with cleanupRanRef
               if (!cleanupRanRef.current) {
-                pendingTimeoutsRef.current.add(_at1);
+                pendingTimeoutsRef.current.add(dbTimer);
               }
-              // SECTION 2 FIX: double-betrayal branch already schedules its own advance.
-              advanced = true;
-              return;
             }
-            setEnemyHpMap((prev) => ({ ...prev, [allyT.id]: allyNewHp }));
-            setTurnOrder((prev) =>
-              prev.map((c) =>
-                c.id === allyT.id ? { ...c, hp: allyNewHp } : c,
-              ),
-            );
             clearTimeout(watchdog);
             pendingTimeoutsRef.current.delete(watchdog);
             enemyTurnInProgressRef.current = false;
-            const _at2 = setTimeout(() => {
+            const _at1 = setTimeout(() => {
               // H-1: Guard — if cleanup ran before this fires, abort immediately
-              if (!pendingTimeoutsRef.current.has(_at2)) return;
-              pendingTimeoutsRef.current.delete(_at2);
+              if (!pendingTimeoutsRef.current.has(_at1)) return;
+              pendingTimeoutsRef.current.delete(_at1);
               if (
                 !enemyTurnAbortRef.current &&
                 aiGenerationRef.current === myAIGeneration
               ) {
-                // SECTION 1 (R12) FIX (d) — NAME THE ended:null PATH: this
-                // betrayal-ally-kill advance previously called
-                // advanceTurnRef.current() with turnEndReasonRef still null
-                // (the prior turn's reason or null), so the dispatch log
-                // showed ended:null. Set an explicit reason before the advance.
                 turnEndReasonRef.current = "action-complete";
                 advanceTurnRef.current(); // FIX #15
               }
             }, 0);
             // M-4: Only register if cleanup hasn't run yet
             if (!cleanupRanRef.current) {
-              pendingTimeoutsRef.current.add(_at2);
+              pendingTimeoutsRef.current.add(_at1);
             }
-            advanced = true;
             return;
           }
-          // ── BOSS AI ACTION APPLICATION ─────────────────────────────────
-          // If this is a boss enemy, apply the pre-computed boss action and skip
-          // the regular AI pipeline entirely. Phase transition also applied here.
-          if (currentBossEntry?.isBoss && currentBossConfig) {
-            // Phase transition: apply stat multiplier in same flushSync
-            if (bossPhaseTransitioned && newBossStateAfterPhase) {
-              const _bossNow = turnOrderRef.current.find(
-                (c) => c.id === enemyId,
-              );
-              if (
-                !_bossNow ||
-                _bossNow.hp <= 0 ||
-                deathPipelineCtx.isCombatantRemoved(enemyId)
-              ) {
-                processCombatantDeathCb(enemyId, "boss-phase");
-                advanced = true;
-                return;
-              }
-              const mult = currentBossConfig.phase2.statMultiplier;
-              // ISSUE 5 — Weeping Pawn PROMOTE_QUEEN: restore FULL HP on transition
-              const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
-              setTurnOrder((prev) =>
-                prev.map((c) => {
-                  if (c.id !== enemyId) return c;
-                  const newMaxHp = Math.round(c.maxHp * mult);
-                  const newHp = isWeepingPawn
-                    ? newMaxHp
-                    : Math.min(Math.round(c.hp * mult), newMaxHp);
-                  return {
-                    ...c,
-                    maxHp: newMaxHp,
-                    hp: newHp,
-                    currentBossPhase: 2 as const,
-                  };
-                }),
-              );
-              setEnemyHpMap((h) => {
-                const newMaxHp = Math.round((h[enemyId] ?? 0) * mult);
+          setEnemyHpMap((prev) => ({ ...prev, [allyT.id]: allyNewHp }));
+          setTurnOrder((prev) =>
+            prev.map((c) => (c.id === allyT.id ? { ...c, hp: allyNewHp } : c)),
+          );
+          clearTimeout(watchdog);
+          pendingTimeoutsRef.current.delete(watchdog);
+          enemyTurnInProgressRef.current = false;
+          const _at2 = setTimeout(() => {
+            // H-1: Guard — if cleanup ran before this fires, abort immediately
+            if (!pendingTimeoutsRef.current.has(_at2)) return;
+            pendingTimeoutsRef.current.delete(_at2);
+            if (
+              !enemyTurnAbortRef.current &&
+              aiGenerationRef.current === myAIGeneration
+            )
+              advanceTurnRef.current(); // FIX #15
+          }, 0);
+          // M-4: Only register if cleanup hasn't run yet
+          if (!cleanupRanRef.current) {
+            pendingTimeoutsRef.current.add(_at2);
+          }
+          return;
+        }
+        // ── BOSS AI ACTION APPLICATION ─────────────────────────────────
+        // If this is a boss enemy, apply the pre-computed boss action and skip
+        // the regular AI pipeline entirely. Phase transition also applied here.
+        if (currentBossEntry?.isBoss && currentBossConfig) {
+          // Phase transition: apply stat multiplier in same flushSync
+          if (bossPhaseTransitioned && newBossStateAfterPhase) {
+            const mult = currentBossConfig.phase2.statMultiplier;
+            // ISSUE 5 — Weeping Pawn PROMOTE_QUEEN: restore FULL HP on transition
+            const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
+            setTurnOrder((prev) =>
+              prev.map((c) => {
+                if (c.id !== enemyId) return c;
+                const newMaxHp = Math.round(c.maxHp * mult);
                 const newHp = isWeepingPawn
                   ? newMaxHp
-                  : Math.round((h[enemyId] ?? 0) * mult);
-                return { ...h, [enemyId]: newHp };
-              });
-              bossStateRef.current = newBossStateAfterPhase;
-              flushSync(() => {
-                setActiveBossState(newBossStateAfterPhase);
-              });
-              if (isWeepingPawn) {
-                logBattleEntry(
-                  "👑 The Weeping Pawn PROMOTES to the Weeping Queen — FULL HP RESTORED!",
-                  "#ffd700",
-                );
-              } else {
-                logBattleEntry(
-                  `⚡ ${currentBossConfig.name} PHASE 2! Stats boosted ×${mult}!`,
-                  "#ffd700",
-                );
-              }
+                  : Math.min(Math.round(c.hp * mult), newMaxHp);
+                return {
+                  ...c,
+                  maxHp: newMaxHp,
+                  hp: newHp,
+                  currentBossPhase: 2 as const,
+                };
+              }),
+            );
+            setEnemyHpMap((h) => {
+              const newMaxHp = Math.round((h[enemyId] ?? 0) * mult);
+              const newHp = isWeepingPawn
+                ? newMaxHp
+                : Math.round((h[enemyId] ?? 0) * mult);
+              return { ...h, [enemyId]: newHp };
+            });
+            bossStateRef.current = newBossStateAfterPhase;
+            flushSync(() => {
+              setActiveBossState(newBossStateAfterPhase);
+            });
+            if (isWeepingPawn) {
+              logBattleEntry(
+                "👑 The Weeping Pawn PROMOTES to the Weeping Queen — FULL HP RESTORED!",
+                "#ffd700",
+              );
+            } else {
+              logBattleEntry(
+                `⚡ ${currentBossConfig.name} PHASE 2! Stats boosted ×${mult}!`,
+                "#ffd700",
+              );
             }
-            // Apply boss action result
-            if (bossAIAction) {
-              // ── Boss kit spell cast branch ─────────────────────────────────
-              // SECTION 3 PART 2 STEP 2. When useBossAI picks a kit spell it
-              // returns { type: 'spell', spellId, targetId, targetX, targetY }.
-              // Resolve it through the SAME engine calls as the enemy cast path
-              // (WX ~13510-13750): summon short-circuit, damage/drain via
-              // playerTakesDamage, heal via setTurnOrder, debuff/DoT via
-              // applyActiveEffect, self-buff via applyActiveEffect on the boss
-              // enemyId, cooldown via enemyCooldownsRef. If the lookup fails,
-              // fall through to the existing abilityResult handling below.
-              if (bossAIAction.type === "spell" && bossAIAction.spellId) {
-                const bossSpell = starterSpells.find(
-                  (sp) => sp.id === bossAIAction.spellId,
-                );
-                if (bossSpell) {
-                  if (bossAIAction.logMessage) {
-                    logBattleEntry(bossAIAction.logMessage, "#a855f7");
-                  }
-                  const bossSpellType = bossSpell.spellType ?? "damage";
-                  const bossTargetId = bossAIAction.targetId ?? "player";
-                  const bossSpellDest = {
-                    x: bossAIAction.targetX ?? enemy.x,
-                    y: bossAIAction.targetY ?? enemy.y,
-                  };
-                  // Summon short-circuit (mirror WX 13465-13479).
-                  if (bossSpell.isSummon) {
-                    spawnEnemySummonRef.current?.(bossSpellDest, bossSpell);
-                    if (bossSpell.cooldown && bossSpell.cooldown > 0) {
-                      const bcdm =
-                        enemyCooldownsRef.current.get(enemyId) ??
-                        new Map<string, number>();
-                      bcdm.set(bossSpell.id, bossSpell.cooldown);
-                      enemyCooldownsRef.current.set(enemyId, bcdm);
-                    }
-                    clearTimeout(watchdog);
-                    pendingTimeoutsRef.current.delete(watchdog);
-                    enemyTurnInProgressRef.current = false;
-                    const bSumGen = aiGenerationRef.current;
-                    const bSumTimer = setTimeout(() => {
-                      if (
-                        cleanupPhaseRef.current !== "idle" ||
-                        cleanupRanRef.current ||
-                        aiGenerationRef.current !== bSumGen
-                      )
-                        return;
-                      pendingTimeoutsRef.current.delete(bSumTimer);
-                      if (
-                        !enemyTurnAbortRef.current &&
-                        aiGenerationRef.current === myAIGeneration
-                      ) {
-                        // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
-                        // boss-summon-branch advance previously called
-                        // advanceTurnRef.current() with turnEndReasonRef still
-                        // null, so the dispatch log showed ended:null. Set an
-                        // explicit reason before the advance.
-                        turnEndReasonRef.current = "action-complete";
-                        advanceTurnRef.current();
-                      }
-                    }, 600);
-                    if (!cleanupRanRef.current)
-                      pendingTimeoutsRef.current.add(bSumTimer);
-                    advanced = true;
-                    return;
-                  }
-                  // Damage / drain → playerTakesDamage (mirror WX 13520-13646).
-                  if (bossSpellType === "damage" || bossSpellType === "drain") {
-                    const bSpellDmg = Number(bossSpell.damage);
-                    if (bSpellDmg > 0) {
-                      const bRawDmg = Math.max(1, Math.round(bSpellDmg));
-                      const bDmg = playerTakesDamage(
-                        bRawDmg,
-                        `${currentBossConfig.name} spell ${bossSpell.name}`,
-                      );
-                      logBattleEntry(
-                        `${currentBossConfig.name} casts ${bossSpell.name} on you for ${bDmg} dmg`,
-                        "#ef4444",
-                      );
-                      // Drain heals the boss (mirror WX 13680-13689).
-                      if (bossSpellType === "drain" && bossSpell.healAmount) {
-                        const bHa = bossSpell.healAmount;
-                        setTurnOrder((prev) =>
-                          prev.map((c) =>
-                            c.id === enemyId
-                              ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
-                              : c,
-                          ),
-                        );
-                      }
-                    }
-                  }
-                  // Heal → setTurnOrder on boss (mirror WX 13699-13718).
-                  if (bossSpellType === "heal" && bossSpell.healAmount) {
-                    const bHa = bossSpell.healAmount;
-                    setTurnOrder((prev) =>
-                      prev.map((c) =>
-                        c.id === enemyId
-                          ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
-                          : c,
-                      ),
-                    );
-                    logBattleEntry(
-                      `${currentBossConfig.name} heals ${bHa} HP`,
-                      "#a855f7",
-                    );
-                  }
-                  // Debuff → applyActiveEffect (mirror WX 13648-13662).
-                  if (bossSpell.debuffStat && bossSpell.debuffDuration) {
-                    applyActiveEffect({
-                      id: `boss-debuff-${Date.now()}`,
-                      effectName: bossSpell.name,
-                      type: "debuff",
-                      targetId: bossTargetId,
-                      stat: bossSpell.debuffStat,
-                      modifier: bossSpell.debuffModifier ?? 1,
-                      duration: bossSpell.debuffDuration,
-                      iconEmoji: bossSpell.iconEmoji,
-                      description: `${bossSpell.debuffStat} debuffed`,
-                    });
-                    if (
-                      bossSpell.debuffStat === "ap" &&
-                      bossTargetId === "player"
-                    )
-                      playerApWasDebuffedRef.current = true;
-                    logBattleEntry(
-                      `${currentBossConfig.name} uses ${bossSpell.name}!`,
-                      "#a855f7",
-                    );
-                  }
-                  // DoT → applyActiveEffect (mirror WX 13663-13679).
-                  if (
-                    (bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) &&
-                    bossSpell.dotDuration
-                  ) {
-                    const bDotPpt =
-                      bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage ?? 0;
-                    applyActiveEffect({
-                      id: `boss-dot-${Date.now()}`,
-                      effectName: `${bossSpell.name} DoT`,
-                      type: "dot",
-                      targetId: bossTargetId,
-                      dotDamagePerTurn: bDotPpt,
-                      duration: bossSpell.dotDuration,
-                      iconEmoji: "\u2620\uFE0F",
-                      description: `${bDotPpt} dmg/turn`,
-                    });
-                  }
-                  // Self/ally buff (no damage/heal/debuff) → applyActiveEffect
-                  // on the boss enemyId so the buff lands on the boss.
-                  if (
-                    bossSpellType !== "damage" &&
-                    bossSpellType !== "drain" &&
-                    bossSpellType !== "heal" &&
-                    !bossSpell.debuffStat &&
-                    !(bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) &&
-                    (bossSpell.targetType === "self" ||
-                      bossSpell.targetType === "ally")
-                  ) {
-                    applyActiveEffect({
-                      id: `boss-buff-${Date.now()}`,
-                      effectName: bossSpell.name,
-                      type: "buff",
-                      targetId: enemyId,
-                      stat: bossSpell.debuffStat ?? "atk",
-                      modifier: bossSpell.debuffModifier ?? 1,
-                      duration: bossSpell.debuffDuration ?? 3,
-                      iconEmoji: bossSpell.iconEmoji,
-                      description: `${bossSpell.name} active`,
-                    });
-                    logBattleEntry(
-                      `${currentBossConfig.name} empowers itself with ${bossSpell.name}!`,
-                      "#a855f7",
-                    );
-                  }
-                  // Cooldown via enemyCooldownsRef (boss is an enemy).
+          }
+          // Apply boss action result
+          if (bossAIAction) {
+            // ── Boss kit spell cast branch ─────────────────────────────────
+            // SECTION 3 PART 2 STEP 2. When useBossAI picks a kit spell it
+            // returns { type: 'spell', spellId, targetId, targetX, targetY }.
+            // Resolve it through the SAME engine calls as the enemy cast path
+            // (WX ~13510-13750): summon short-circuit, damage/drain via
+            // playerTakesDamage, heal via setTurnOrder, debuff/DoT via
+            // applyActiveEffect, self-buff via applyActiveEffect on the boss
+            // enemyId, cooldown via enemyCooldownsRef. If the lookup fails,
+            // fall through to the existing abilityResult handling below.
+            if (bossAIAction.type === "spell" && bossAIAction.spellId) {
+              const bossSpell = starterSpells.find(
+                (sp) => sp.id === bossAIAction.spellId,
+              );
+              if (bossSpell) {
+                if (bossAIAction.logMessage) {
+                  logBattleEntry(bossAIAction.logMessage, "#a855f7");
+                }
+                const bossSpellType = bossSpell.spellType ?? "damage";
+                const bossTargetId = bossAIAction.targetId ?? "player";
+                const bossSpellDest = {
+                  x: bossAIAction.targetX ?? enemy.x,
+                  y: bossAIAction.targetY ?? enemy.y,
+                };
+                // Summon short-circuit (mirror WX 13465-13479).
+                if (bossSpell.isSummon) {
+                  spawnEnemySummonRef.current?.(bossSpellDest, bossSpell);
                   if (bossSpell.cooldown && bossSpell.cooldown > 0) {
                     const bcdm =
                       enemyCooldownsRef.current.get(enemyId) ??
@@ -16274,514 +14625,564 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     bcdm.set(bossSpell.id, bossSpell.cooldown);
                     enemyCooldownsRef.current.set(enemyId, bcdm);
                   }
-                  // End-of-turn flags — mirror the existing abilityResult tail
-                  // (WX 13263-13288): clear watchdog, hand off to advanceTurn,
-                  // persist boss position.
                   clearTimeout(watchdog);
                   pendingTimeoutsRef.current.delete(watchdog);
                   enemyTurnInProgressRef.current = false;
-                  const bSpellGen = aiGenerationRef.current;
-                  const bSpellTimer = setTimeout(() => {
+                  const bSumGen = aiGenerationRef.current;
+                  const bSumTimer = setTimeout(() => {
                     if (
                       cleanupPhaseRef.current !== "idle" ||
                       cleanupRanRef.current ||
-                      aiGenerationRef.current !== bSpellGen
+                      aiGenerationRef.current !== bSumGen
                     )
                       return;
-                    pendingTimeoutsRef.current.delete(bSpellTimer);
+                    pendingTimeoutsRef.current.delete(bSumTimer);
                     if (
                       !enemyTurnAbortRef.current &&
                       aiGenerationRef.current === myAIGeneration
-                    ) {
-                      // SECTION 1 (R12) FIX (d) — NAME THE ended:null PATH: this
-                      // !enemy early-return advance previously called
-                      // advanceTurnRef.current() with turnEndReasonRef still null,
-                      // so the dispatch log showed ended:null. Set an explicit
-                      // reason before the advance.
-                      turnEndReasonRef.current = "action-complete";
-                      advanceTurnRef.current(); // FIX #15
-                    }
-                  }, 0);
+                    )
+                      advanceTurnRef.current();
+                  }, 600);
                   if (!cleanupRanRef.current)
-                    pendingTimeoutsRef.current.add(bSpellTimer);
-                  updateCombatant(
-                    combatantStoreCtx,
-                    enemyId,
-                    {
-                      x: bossSpellDest.x,
-                      y: bossSpellDest.y,
-                    },
-                    "bossSpellMove",
-                  );
-                  advanced = true;
+                    pendingTimeoutsRef.current.add(bSumTimer);
                   return;
                 }
-                // Spell lookup failed — fall through to abilityResult handling.
-              }
-              const res = bossAIAction.abilityResult;
-              // Log messages
-              if (bossAIAction.logMessage) {
-                logBattleEntry(bossAIAction.logMessage, "#a855f7");
-              }
-              if (res?.logMessages) {
-                for (const msg of res.logMessages)
-                  logBattleEntry(msg, "#a855f7");
-              }
-              // Apply position change
-              const newBossX = res?.newBossPosition?.x ?? enemy.x;
-              const newBossY = res?.newBossPosition?.y ?? enemy.y;
-              // Apply player damage
-              if (res?.damageToPlayer && res.damageToPlayer > 0) {
-                const rawDmg = res.damageToPlayer;
-                const absorbed = Math.min(shieldHpRef.current, rawDmg);
-                shieldHpRef.current = Math.max(
-                  0,
-                  shieldHpRef.current - absorbed,
-                );
-                const finalDmg = rawDmg - absorbed;
-                if (finalDmg > 0) {
-                  setCharacterStats((s) => ({
-                    ...s,
-                    hp: Math.max(0, s.hp - finalDmg),
-                  }));
-                  challengeTotalDamageRef.current += finalDmg;
-                }
-              }
-              // Apply player AP drain
-              if (res?.playerApModifier && res.playerApModifier !== 0) {
-                setCurrentBattleApSynced((prev) =>
-                  Math.max(0, prev + res.playerApModifier!),
-                );
-              }
-              // Apply debuffs to player
-              if (res?.debuffsApplied) {
-                for (const d of res.debuffsApplied) {
-                  applyActiveEffect({
-                    id: `debuff_${Date.now()}`,
-                    targetId: "player",
-                    type: "debuff",
-                    stat: d.stat,
-                    modifier: d.modifier,
-                    duration: d.duration,
-                    effectName: d.effectName,
-                    iconEmoji: d.iconEmoji,
-                    description: d.effectName,
-                  });
-                }
-              }
-              // Apply DoT to player
-              if (res?.dotApplied) {
-                for (const dot of res.dotApplied) {
-                  applyActiveEffect({
-                    id: `dot_${Date.now()}`,
-                    targetId: "player",
-                    type: "dot",
-                    dotDamagePerTurn: dot.damage,
-                    duration: dot.duration,
-                    effectName: dot.effectName,
-                    iconEmoji: dot.iconEmoji,
-                    description: `${dot.damage} dmg/turn`,
-                  });
-                }
-              }
-              // Update boss state
-              if (res?.newBossState) {
-                const merged = {
-                  ...bossStateRef.current!,
-                  ...res.newBossState,
-                };
-                bossStateRef.current = merged;
-                setActiveBossState(merged);
-              }
-              // Add hazard tiles to map
-              if (res?.newHazardTiles && currentMap) {
-                for (const ht of res.newHazardTiles) {
-                  if (currentMap.hazardTiles.size >= MAX_HAZARD_TILES) {
-                    const firstHazardKey = currentMap.hazardTiles
-                      .keys()
-                      .next().value;
-                    if (firstHazardKey !== undefined)
-                      currentMap.hazardTiles.delete(firstHazardKey);
+                // Damage / drain → playerTakesDamage (mirror WX 13520-13646).
+                if (bossSpellType === "damage" || bossSpellType === "drain") {
+                  const bSpellDmg = Number(bossSpell.damage);
+                  if (bSpellDmg > 0) {
+                    const bRawDmg = Math.max(1, Math.round(bSpellDmg));
+                    const bDmg = playerTakesDamage(
+                      bRawDmg,
+                      `${currentBossConfig.name} spell ${bossSpell.name}`,
+                    );
+                    logBattleEntry(
+                      `${currentBossConfig.name} casts ${bossSpell.name} on you for ${bDmg} dmg`,
+                      "#ef4444",
+                    );
+                    // Drain heals the boss (mirror WX 13680-13689).
+                    if (bossSpellType === "drain" && bossSpell.healAmount) {
+                      const bHa = bossSpell.healAmount;
+                      setTurnOrder((prev) =>
+                        prev.map((c) =>
+                          c.id === enemyId
+                            ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
+                            : c,
+                        ),
+                      );
+                    }
                   }
-                  currentMap.hazardTiles.set(
-                    `${ht.x},${ht.y}`,
-                    ht.type as HazardType,
+                }
+                // Heal → setTurnOrder on boss (mirror WX 13699-13718).
+                if (bossSpellType === "heal" && bossSpell.healAmount) {
+                  const bHa = bossSpell.healAmount;
+                  setTurnOrder((prev) =>
+                    prev.map((c) =>
+                      c.id === enemyId
+                        ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
+                        : c,
+                    ),
+                  );
+                  logBattleEntry(
+                    `${currentBossConfig.name} heals ${bHa} HP`,
+                    "#a855f7",
                   );
                 }
-              }
-              // Spawn minions
-              if (res?.spawns && res.spawns.length > 0) {
-                const minionEnemies: Enemy[] = res.spawns.map((s) => ({
-                  id: s.id,
-                  x: s.x,
-                  y: s.y,
-                  pieceType: s.pieceType as ChessPieceType,
-                  currentView: "front" as ViewDirection,
-                  isMoving: false,
-                  movementPath: [],
-                  currentStepIndex: 0,
-                  movementStartTime: 0,
-                  initialDelay: 0,
-                  hasStartedMoving: true,
-                  spawnTime: Date.now(),
-                  scaleX: 1,
-                  scaleY: 1,
-                  level: Math.max(1, currentBossConfig.baseStats.init - 2),
-                  nextMoveTime: Date.now() + 1000,
-                  movementSpeed: 800,
-                  movementRange: 1,
-                  isWandering: false,
-                  wanderTarget: null,
-                  lastMoveTime: Date.now(),
-                  hp: Math.max(
-                    1,
-                    Math.round(
-                      Math.max(1, currentBossConfig.baseStats.init - 2) * 8 +
-                        20,
-                    ),
-                  ),
-                  maxHp: Math.max(
-                    1,
-                    Math.round(
-                      Math.max(1, currentBossConfig.baseStats.init - 2) * 8 +
-                        20,
-                    ),
-                  ),
-                  damage: Math.max(
-                    1,
-                    Math.round(
-                      Math.max(1, currentBossConfig.baseStats.init - 2) * 2 + 3,
-                    ),
-                  ),
-                  res: 0,
-                  sp: 0,
-                  chc: 0,
-                  init: Math.max(
-                    1,
-                    8 + Math.max(1, currentBossConfig.baseStats.init - 2) - 1,
-                  ),
-                  sr: 5,
-                  assignedName: s.parentBossId ? "Minion" : "Ghost",
-                  ap: 0,
-                  mp: 0,
-                  atk: 0,
-                  family: "",
-                  tier: "",
-                  intelligence: 0,
-                  aiStrategy: "",
-                  spellCooldowns: {},
-                  activeEffects: [],
-                }));
-                const _spawnSlots = Math.max(
-                  0,
-                  MAX_ENEMIES - combatantsRef.current.length,
-                );
-                const _newMinionEnemies = [
-                  ...combatantsRef.current,
-                  ...minionEnemies.slice(0, _spawnSlots),
-                ];
-                syncCombatants(combatantStoreCtx, _newMinionEnemies);
-                const minionEntries: CombatantEntry[] = minionEnemies.map(
-                  (m) => ({
-                    id: m.id,
-                    type: "enemy",
-                    initiative: 6,
-                    name: m.assignedName ?? "Minion",
-                    pieceIcon: "☠",
-                    hp: 20,
-                    maxHp: 20,
-                    level: m.level,
-                    pieceType: m.pieceType,
-                  }),
-                );
-                setTurnOrder((prev) => [...prev, ...minionEntries]);
-                setEnemyHpMap((h) => {
-                  const n = { ...h };
-                  for (const m of minionEnemies) n[m.id] = 20;
-                  return n;
-                });
-              }
-              // ISSUE 4 — endsTurn flag: if the ability ends the turn immediately
-              // (PROMOTE_QUEEN, SPLIT_ROOKS, MERGE_BISHOPS), advance right away
-              // and skip the normal deferred advanceTurn below.
-              if (res?.endsTurn === true) {
+                // Debuff → applyActiveEffect (mirror WX 13648-13662).
+                if (bossSpell.debuffStat && bossSpell.debuffDuration) {
+                  applyActiveEffect({
+                    id: `boss-debuff-${Date.now()}`,
+                    effectName: bossSpell.name,
+                    type: "debuff",
+                    targetId: bossTargetId,
+                    stat: bossSpell.debuffStat,
+                    modifier: bossSpell.debuffModifier ?? 1,
+                    duration: bossSpell.debuffDuration,
+                    iconEmoji: bossSpell.iconEmoji,
+                    description: `${bossSpell.debuffStat} debuffed`,
+                  });
+                  if (
+                    bossSpell.debuffStat === "ap" &&
+                    bossTargetId === "player"
+                  )
+                    playerApWasDebuffedRef.current = true;
+                  logBattleEntry(
+                    `${currentBossConfig.name} uses ${bossSpell.name}!`,
+                    "#a855f7",
+                  );
+                }
+                // DoT → applyActiveEffect (mirror WX 13663-13679).
+                if (
+                  (bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) &&
+                  bossSpell.dotDuration
+                ) {
+                  const bDotPpt =
+                    bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage ?? 0;
+                  applyActiveEffect({
+                    id: `boss-dot-${Date.now()}`,
+                    effectName: `${bossSpell.name} DoT`,
+                    type: "dot",
+                    targetId: bossTargetId,
+                    dotDamagePerTurn: bDotPpt,
+                    duration: bossSpell.dotDuration,
+                    iconEmoji: "\u2620\uFE0F",
+                    description: `${bDotPpt} dmg/turn`,
+                  });
+                }
+                // Self/ally buff (no damage/heal/debuff) → applyActiveEffect
+                // on the boss enemyId so the buff lands on the boss.
+                if (
+                  bossSpellType !== "damage" &&
+                  bossSpellType !== "drain" &&
+                  bossSpellType !== "heal" &&
+                  !bossSpell.debuffStat &&
+                  !(bossSpell.dotDamagePerTurn ?? bossSpell.dotDamage) &&
+                  (bossSpell.targetType === "self" ||
+                    bossSpell.targetType === "ally")
+                ) {
+                  applyActiveEffect({
+                    id: `boss-buff-${Date.now()}`,
+                    effectName: bossSpell.name,
+                    type: "buff",
+                    targetId: enemyId,
+                    stat: bossSpell.debuffStat ?? "atk",
+                    modifier: bossSpell.debuffModifier ?? 1,
+                    duration: bossSpell.debuffDuration ?? 3,
+                    iconEmoji: bossSpell.iconEmoji,
+                    description: `${bossSpell.name} active`,
+                  });
+                  logBattleEntry(
+                    `${currentBossConfig.name} empowers itself with ${bossSpell.name}!`,
+                    "#a855f7",
+                  );
+                }
+                // Cooldown via enemyCooldownsRef (boss is an enemy).
+                if (bossSpell.cooldown && bossSpell.cooldown > 0) {
+                  const bcdm =
+                    enemyCooldownsRef.current.get(enemyId) ??
+                    new Map<string, number>();
+                  bcdm.set(bossSpell.id, bossSpell.cooldown);
+                  enemyCooldownsRef.current.set(enemyId, bcdm);
+                }
+                // End-of-turn flags — mirror the existing abilityResult tail
+                // (WX 13263-13288): clear watchdog, hand off to advanceTurn,
+                // persist boss position.
                 clearTimeout(watchdog);
                 pendingTimeoutsRef.current.delete(watchdog);
-                // SECTION 1 — route the endsTurn immediate-advance path through
-                // the atomic clear+advance helper so the flag clear and the
-                // turn advance cannot be split by a 1ms re-entrancy window.
-                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
-                // endsTurn advance previously called
-                // clearEnemyTurnFlagAndAdvance() with turnEndReasonRef still
-                // null, so the dispatch log showed ended:null. Set an explicit
-                // reason before the advance.
-                turnEndReasonRef.current = "action-complete";
-                clearEnemyTurnFlagAndAdvance();
-                updateCombatant(
-                  combatantStoreCtx,
-                  enemyId,
-                  {
-                    x: newBossX,
-                    y: newBossY,
-                  },
-                  "bossEndsTurnMove",
-                );
-                advanced = true;
+                enemyTurnInProgressRef.current = false;
+                const bSpellGen = aiGenerationRef.current;
+                const bSpellTimer = setTimeout(() => {
+                  if (
+                    cleanupPhaseRef.current !== "idle" ||
+                    cleanupRanRef.current ||
+                    aiGenerationRef.current !== bSpellGen
+                  )
+                    return;
+                  pendingTimeoutsRef.current.delete(bSpellTimer);
+                  if (
+                    !enemyTurnAbortRef.current &&
+                    aiGenerationRef.current === myAIGeneration
+                  )
+                    advanceTurnRef.current();
+                }, 0);
+                if (!cleanupRanRef.current)
+                  pendingTimeoutsRef.current.add(bSpellTimer);
+                updateCombatant(combatantStoreCtx, enemyId, {
+                  x: bossSpellDest.x,
+                  y: bossSpellDest.y,
+                });
                 return;
               }
-              // Update boss position in enemies
+              // Spell lookup failed — fall through to abilityResult handling.
+            }
+            const res = bossAIAction.abilityResult;
+            // Log messages
+            if (bossAIAction.logMessage) {
+              logBattleEntry(bossAIAction.logMessage, "#a855f7");
+            }
+            if (res?.logMessages) {
+              for (const msg of res.logMessages) logBattleEntry(msg, "#a855f7");
+            }
+            // Apply position change
+            const newBossX = res?.newBossPosition?.x ?? enemy.x;
+            const newBossY = res?.newBossPosition?.y ?? enemy.y;
+            // Apply player damage
+            if (res?.damageToPlayer && res.damageToPlayer > 0) {
+              const rawDmg = res.damageToPlayer;
+              const absorbed = Math.min(shieldHpRef.current, rawDmg);
+              shieldHpRef.current = Math.max(0, shieldHpRef.current - absorbed);
+              const finalDmg = rawDmg - absorbed;
+              if (finalDmg > 0) {
+                setCharacterStats((s) => ({
+                  ...s,
+                  hp: Math.max(0, s.hp - finalDmg),
+                }));
+                challengeTotalDamageRef.current += finalDmg;
+              }
+            }
+            // Apply player AP drain
+            if (res?.playerApModifier && res.playerApModifier !== 0) {
+              setCurrentBattleApSynced((prev) =>
+                Math.max(0, prev + res.playerApModifier!),
+              );
+            }
+            // Apply debuffs to player
+            if (res?.debuffsApplied) {
+              for (const d of res.debuffsApplied) {
+                applyActiveEffect({
+                  id: `debuff_${Date.now()}`,
+                  targetId: "player",
+                  type: "debuff",
+                  stat: d.stat,
+                  modifier: d.modifier,
+                  duration: d.duration,
+                  effectName: d.effectName,
+                  iconEmoji: d.iconEmoji,
+                  description: d.effectName,
+                });
+              }
+            }
+            // Apply DoT to player
+            if (res?.dotApplied) {
+              for (const dot of res.dotApplied) {
+                applyActiveEffect({
+                  id: `dot_${Date.now()}`,
+                  targetId: "player",
+                  type: "dot",
+                  dotDamagePerTurn: dot.damage,
+                  duration: dot.duration,
+                  effectName: dot.effectName,
+                  iconEmoji: dot.iconEmoji,
+                  description: `${dot.damage} dmg/turn`,
+                });
+              }
+            }
+            // Update boss state
+            if (res?.newBossState) {
+              const merged = {
+                ...bossStateRef.current!,
+                ...res.newBossState,
+              };
+              bossStateRef.current = merged;
+              setActiveBossState(merged);
+            }
+            // Add hazard tiles to map
+            if (res?.newHazardTiles && currentMap) {
+              for (const ht of res.newHazardTiles) {
+                if (currentMap.hazardTiles.size >= MAX_HAZARD_TILES) {
+                  const firstHazardKey = currentMap.hazardTiles
+                    .keys()
+                    .next().value;
+                  if (firstHazardKey !== undefined)
+                    currentMap.hazardTiles.delete(firstHazardKey);
+                }
+                currentMap.hazardTiles.set(
+                  `${ht.x},${ht.y}`,
+                  ht.type as HazardType,
+                );
+              }
+            }
+            // Spawn minions
+            if (res?.spawns && res.spawns.length > 0) {
+              const minionEnemies: Enemy[] = res.spawns.map((s) => ({
+                id: s.id,
+                x: s.x,
+                y: s.y,
+                pieceType: s.pieceType as ChessPieceType,
+                currentView: "front" as ViewDirection,
+                isMoving: false,
+                movementPath: [],
+                currentStepIndex: 0,
+                movementStartTime: 0,
+                initialDelay: 0,
+                hasStartedMoving: true,
+                spawnTime: Date.now(),
+                scaleX: 1,
+                scaleY: 1,
+                level: Math.max(1, currentBossConfig.baseStats.init - 2),
+                nextMoveTime: Date.now() + 1000,
+                movementSpeed: 800,
+                movementRange: 1,
+                isWandering: false,
+                wanderTarget: null,
+                lastMoveTime: Date.now(),
+                hp: Math.max(
+                  1,
+                  Math.round(
+                    Math.max(1, currentBossConfig.baseStats.init - 2) * 8 + 20,
+                  ),
+                ),
+                maxHp: Math.max(
+                  1,
+                  Math.round(
+                    Math.max(1, currentBossConfig.baseStats.init - 2) * 8 + 20,
+                  ),
+                ),
+                damage: Math.max(
+                  1,
+                  Math.round(
+                    Math.max(1, currentBossConfig.baseStats.init - 2) * 2 + 3,
+                  ),
+                ),
+                res: 0,
+                sp: 0,
+                chc: 0,
+                init: Math.max(
+                  1,
+                  8 + Math.max(1, currentBossConfig.baseStats.init - 2) - 1,
+                ),
+                sr: 5,
+                assignedName: s.parentBossId ? "Minion" : "Ghost",
+                ap: 0,
+                mp: 0,
+                atk: 0,
+                family: "",
+                tier: "",
+                intelligence: 0,
+                aiStrategy: "",
+                spellCooldowns: {},
+                activeEffects: [],
+              }));
+              const _spawnSlots = Math.max(
+                0,
+                MAX_ENEMIES - combatantsRef.current.length,
+              );
+              // S2: Boss minion spawns commit via the store's atomic ADD
+              // (addCombatant) — the SAME path player summons use — NEVER a
+              // wholesale syncCombatants REPLACE. The old path rebuilt
+              // turnOrder from store combatants only and dropped the player
+              // entry (id 'player' lives outside the combatant store),
+              // locking End Turn into an endless enemy/minion cycle.
+              // addCombatant appends to combatantsRef.current (the live
+              // source of truth), adds each minion to battleStartIds, and
+              // inserts the turn-order entry directly after the player —
+              // all atomically, preserving the existing queue including the
+              // player.
+              for (const m of minionEnemies.slice(0, _spawnSlots)) {
+                addCombatant(combatantStoreCtx, m, {
+                  battleParticipant: true,
+                  insertAfterId: "player",
+                });
+              }
+              setEnemyHpMap((h) => {
+                const n = { ...h };
+                for (const m of minionEnemies) n[m.id] = 20;
+                return n;
+              });
+            }
+            // ISSUE 4 — endsTurn flag: if the ability ends the turn immediately
+            // (PROMOTE_QUEEN, SPLIT_ROOKS, MERGE_BISHOPS), advance right away
+            // and skip the normal deferred advanceTurn below.
+            if (res?.endsTurn === true) {
               clearTimeout(watchdog);
               pendingTimeoutsRef.current.delete(watchdog);
               enemyTurnInProgressRef.current = false;
-              const myBossAdvGen = aiGenerationRef.current;
-              const bossAdvTimer = setTimeout(() => {
-                if (
-                  cleanupPhaseRef.current !== "idle" ||
-                  cleanupRanRef.current ||
-                  aiGenerationRef.current !== myBossAdvGen
-                )
-                  return;
-                pendingTimeoutsRef.current.delete(bossAdvTimer);
-                if (
-                  !enemyTurnAbortRef.current &&
-                  aiGenerationRef.current === myAIGeneration
-                ) {
-                  // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
-                  // boss-advance-branch advance previously called
-                  // advanceTurnRef.current() with turnEndReasonRef still null,
-                  // so the dispatch log showed ended:null. Set an explicit
-                  // reason before the advance.
-                  turnEndReasonRef.current = "action-complete";
-                  advanceTurnRef.current();
-                }
-              }, 0);
-              if (!cleanupRanRef.current)
-                pendingTimeoutsRef.current.add(bossAdvTimer);
-              updateCombatant(
-                combatantStoreCtx,
-                enemyId,
-                {
-                  x: newBossX,
-                  y: newBossY,
-                },
-                "bossAdvanceMove",
-              );
-              advanced = true;
+              advanceTurnRef.current();
+              updateCombatant(combatantStoreCtx, enemyId, {
+                x: newBossX,
+                y: newBossY,
+              });
               return;
             }
-            // No action from boss AI — skip turn
+            // Update boss position in enemies
             clearTimeout(watchdog);
             pendingTimeoutsRef.current.delete(watchdog);
             enemyTurnInProgressRef.current = false;
-            const myBossSkipGen = aiGenerationRef.current;
-            const bossSkipTimer = setTimeout(() => {
+            const myBossAdvGen = aiGenerationRef.current;
+            const bossAdvTimer = setTimeout(() => {
               if (
                 cleanupPhaseRef.current !== "idle" ||
                 cleanupRanRef.current ||
-                aiGenerationRef.current !== myBossSkipGen
+                aiGenerationRef.current !== myBossAdvGen
               )
                 return;
-              pendingTimeoutsRef.current.delete(bossSkipTimer);
+              pendingTimeoutsRef.current.delete(bossAdvTimer);
               if (
                 !enemyTurnAbortRef.current &&
                 aiGenerationRef.current === myAIGeneration
-              ) {
-                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: this
-                // boss-skip-branch advance previously called
-                // advanceTurnRef.current() with turnEndReasonRef still null,
-                // so the dispatch log showed ended:null. Set an explicit
-                // reason before the advance.
-                turnEndReasonRef.current = "action-complete";
+              )
                 advanceTurnRef.current();
-              }
             }, 0);
             if (!cleanupRanRef.current)
-              pendingTimeoutsRef.current.add(bossSkipTimer);
-            advanced = true;
+              pendingTimeoutsRef.current.add(bossAdvTimer);
+            updateCombatant(combatantStoreCtx, enemyId, {
+              x: newBossX,
+              y: newBossY,
+            });
             return;
           }
-          // ── END BOSS AI ────────────────────────────────────────────
-          // ── BEGIN enemyAI.ts call site (Section 3 extraction) ──────────────
-          const enrageMultiplier = enragedEnemies.has(enemyId) ? 6 : 1;
-          // FIX #3: first-turn spell fallback via battleEnemiesRef
-          const battleEnemyData = battleEnemiesRef.current.find(
-            (be) => be.id === enemyId,
-          );
-          // SECTION 6 FIX — assignedSpells resolution must be authoritative so
-          // enemy kits are NEVER empty at decide time. The previous order
-          // (currentCombatant.spells first) returned [] when the turnOrder
-          // entry carried an empty spells array, degrading every decide to
-          // pure movement. New priority:
-          //   (1) battleEnemyData?.spells — the kit-populated source from
-          //       setBattleEnemies (WX 12301), authoritative kit array.
-          //   (2) currentCombatant.spells — turnOrder entry fallback.
-          //   (3) rebuild via buildEnemyKit(enemy.pieceType, currentMap.levelZone)
-          //       resolved through normalizedSpellPool — guarantees a populated
-          //       kit even when both live sources are empty.
-          const resolveEnemySpells = (): SpellConfig[] => {
-            if (battleEnemyData?.spells && battleEnemyData.spells.length > 0) {
-              return battleEnemyData.spells as SpellConfig[];
-            }
-            if (currentCombatant.spells && currentCombatant.spells.length > 0) {
-              return currentCombatant.spells as SpellConfig[];
-            }
-            // Both live sources empty — rebuild the kit from the piece type
-            // and level zone, resolving ids through normalizedSpellPool
-            // (same path as the kit-population site at WX 12093-12096).
-            const kitIds = buildEnemyKit(
-              enemy.pieceType,
-              currentMap?.levelZone ?? 0,
-            );
-            return kitIds
-              .map((id) => normalizedSpellPool.find((s) => s.id === id))
-              .filter((s): s is (typeof normalizedSpellPool)[number] =>
-                Boolean(s),
-              );
-          };
-          const assignedSpells = resolveEnemySpells();
-          const enemyCooldownMap =
-            enemyCooldownsRef.current.get(enemyId) ?? new Map<string, number>();
-          const availableSpells = assignedSpells.filter(
-            (s) =>
-              (enemyCooldownMap.get(s.id) ?? 0) <= 0 &&
-              s.usableByEnemy !== false,
-          );
+          // No action from boss AI — skip turn
+          clearTimeout(watchdog);
+          pendingTimeoutsRef.current.delete(watchdog);
+          enemyTurnInProgressRef.current = false;
+          const myBossSkipGen = aiGenerationRef.current;
+          const bossSkipTimer = setTimeout(() => {
+            if (
+              cleanupPhaseRef.current !== "idle" ||
+              cleanupRanRef.current ||
+              aiGenerationRef.current !== myBossSkipGen
+            )
+              return;
+            pendingTimeoutsRef.current.delete(bossSkipTimer);
+            if (
+              !enemyTurnAbortRef.current &&
+              aiGenerationRef.current === myAIGeneration
+            )
+              advanceTurnRef.current();
+          }, 0);
+          if (!cleanupRanRef.current)
+            pendingTimeoutsRef.current.add(bossSkipTimer);
+          return;
+        }
+        // ── END BOSS AI ────────────────────────────────────────────
+        // ── BEGIN enemyAI.ts call site (Section 3 extraction) ──────────────
+        const enrageMultiplier = enragedEnemies.has(enemyId) ? 6 : 1;
+        // FIX #3: first-turn spell fallback via battleEnemiesRef
+        const battleEnemyData = battleEnemiesRef.current.find(
+          (be) => be.id === enemyId,
+        );
+        const assignedSpells = (((currentCombatant.spells?.length ?? 0) > 0
+          ? currentCombatant.spells
+          : (battleEnemyData?.spells ?? currentCombatant.spells)) ??
+          []) as SpellConfig[];
+        const enemyCooldownMap =
+          enemyCooldownsRef.current.get(enemyId) ?? new Map<string, number>();
+        const availableSpells = assignedSpells.filter(
+          (s) =>
+            (enemyCooldownMap.get(s.id) ?? 0) <= 0 && s.usableByEnemy !== false,
+        );
 
-          // Build AICombatant[] from prevEnemies + player + player-side summons.
-          const aiCombatants: AICombatant[] = [];
-          for (const e of prevEnemies) {
-            if (e.id === enemyId) continue;
-            const eHp = enemyHpMap[e.id] ?? e.hp;
-            if (eHp <= 0) continue;
-            aiCombatants.push({
-              id: e.id,
-              side: e.isSummon && e.side === "player" ? "player" : "enemy",
-              isSummon: e.isSummon,
-              summonAI: e.summonAI,
-              name: e.pieceType,
-              x: e.x,
-              y: e.y,
-              hp: eHp,
-              maxHp: e.maxHp,
-              level: e.level,
-            });
-          }
-          // Player combatant
+        // Build AICombatant[] from prevEnemies + player + player-side summons.
+        const aiCombatants: AICombatant[] = [];
+        for (const e of prevEnemies) {
+          if (e.id === enemyId) continue;
+          const eHp = enemyHpMap[e.id] ?? e.hp;
+          if (eHp <= 0) continue;
           aiCombatants.push({
-            id: "player",
-            side: "player",
-            name: "player",
-            x: playerPositionRef.current.x,
-            y: playerPositionRef.current.y,
-            hp: characterStats.hp,
-            maxHp: characterStats.maxHp ?? characterStats.hp,
-            level: characterStats.level ?? 1,
+            id: e.id,
+            side: e.isSummon && e.side === "player" ? "player" : "enemy",
+            isSummon: e.isSummon,
+            summonAI: e.summonAI,
+            name: e.pieceType,
+            x: e.x,
+            y: e.y,
+            hp: eHp,
+            maxHp: e.maxHp,
+            level: e.level,
           });
+        }
+        // Player combatant
+        aiCombatants.push({
+          id: "player",
+          side: "player",
+          name: "player",
+          x: playerPositionRef.current.x,
+          y: playerPositionRef.current.y,
+          hp: characterStats.hp,
+          maxHp: characterStats.maxHp ?? characterStats.hp,
+          level: characterStats.level ?? 1,
+        });
 
-          // Grid: passable = not wall. Build boolean[][] once.
-          const aiGrid: boolean[][] = (currentMap?.tiles ?? []).map((row) =>
-            (row ?? []).map((t) => t !== "wall"),
-          );
-          const aiOccupied = new Set<string>();
-          const liveEnemies = getLiveCombatants(combatantStoreCtx);
-          for (const e of liveEnemies) {
-            if (e.id === enemyId) continue;
-            aiOccupied.add(`${e.x},${e.y}`);
-          }
-          aiOccupied.add(
-            `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
-          );
-          const aiBarriers = new Set(barrierTilesRef.current.keys());
-          const aiPortals = new Set(
-            (currentMap?.portals ?? []).map((p) => `${p.x},${p.y}`),
-          );
-          const aiVoid = currentMap?.voidTiles ?? new Set<string>();
-          const aiHazards =
-            currentMap?.hazardTiles ?? new Map<string, string>();
+        // Grid: passable = not wall. Build boolean[][] once.
+        const aiGrid: boolean[][] = (currentMap?.tiles ?? []).map((row) =>
+          (row ?? []).map((t) => t !== "wall"),
+        );
+        const aiOccupied = new Set<string>();
+        for (const e of prevEnemies) {
+          if (e.id === enemyId) continue;
+          aiOccupied.add(`${e.x},${e.y}`);
+        }
+        aiOccupied.add(
+          `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
+        );
+        const aiBarriers = new Set(barrierTilesRef.current.keys());
+        const aiPortals = new Set(
+          (currentMap?.portals ?? []).map((p) => `${p.x},${p.y}`),
+        );
+        const aiVoid = currentMap?.voidTiles ?? new Set<string>();
+        const aiHazards = currentMap?.hazardTiles ?? new Map<string, string>();
 
-          // Local Bresenham LoS (targeting.ts does not export one).
-          const aiHasLineOfSight = (from: AICell, to: AICell): boolean => {
-            let x0 = from.x;
-            let y0 = from.y;
-            const x1 = to.x;
-            const y1 = to.y;
-            const dx = Math.abs(x1 - x0);
-            const dy = Math.abs(y1 - y0);
-            const sx = x0 < x1 ? 1 : -1;
-            const sy = y0 < y1 ? 1 : -1;
-            let err = dx - dy;
-            let guard = 0;
-            while (guard++ < 256) {
-              if (x0 === x1 && y0 === y1) return true;
-              const k = `${x0},${y0}`;
-              if (!(x0 === from.x && y0 === from.y)) {
-                if (aiBarriers.has(k)) return false;
-                const t = currentMap?.tiles?.[y0]?.[x0];
-                if (t === "wall") return false;
-              }
-              const e2 = 2 * err;
-              if (e2 > -dy) {
-                err -= dy;
-                x0 += sx;
-              }
-              if (e2 < dx) {
-                err += dx;
-                y0 += sy;
-              }
+        // Local Bresenham LoS (targeting.ts does not export one).
+        const aiHasLineOfSight = (from: AICell, to: AICell): boolean => {
+          let x0 = from.x;
+          let y0 = from.y;
+          const x1 = to.x;
+          const y1 = to.y;
+          const dx = Math.abs(x1 - x0);
+          const dy = Math.abs(y1 - y0);
+          const sx = x0 < x1 ? 1 : -1;
+          const sy = y0 < y1 ? 1 : -1;
+          let err = dx - dy;
+          let guard = 0;
+          while (guard++ < 256) {
+            if (x0 === x1 && y0 === y1) return true;
+            const k = `${x0},${y0}`;
+            if (!(x0 === from.x && y0 === from.y)) {
+              if (aiBarriers.has(k)) return false;
+              const t = currentMap?.tiles?.[y0]?.[x0];
+              if (t === "wall") return false;
             }
-            return false;
-          };
+            const e2 = 2 * err;
+            if (e2 > -dy) {
+              err -= dy;
+              x0 += sx;
+            }
+            if (e2 < dx) {
+              err += dx;
+              y0 += sy;
+            }
+          }
+          return false;
+        };
 
-          const aiCtx: DecideEnemyContext = {
-            enemy,
-            combatants: aiCombatants,
-            grid: aiGrid,
-            occupied: aiOccupied,
-            barriers: aiBarriers,
-            portals: aiPortals,
-            voidTiles: aiVoid,
-            hazardTiles: aiHazards,
-            availableSpells,
-            assignedSpells,
-            battleTurn,
-            allyCount: prevEnemies.filter(
-              (e) => e.id !== enemyId && (enemyHpMap[e.id] ?? e.hp) > 0,
-            ).length,
-            enemyCount: prevEnemies.filter(
-              (e) => (enemyHpMap[e.id] ?? e.hp) > 0,
-            ).length,
-            enrageMultiplier,
-            isSlimeFlood: isSlimeFloodRef.current,
-            rng: Math.random,
-            getEffectiveStat: (cid, stat) =>
-              getStatModifier(cid, stat, activeEffectsRef.current) as number,
-            calcScaledDamage,
-            hasLineOfSight: aiHasLineOfSight,
-            log: logBattleEntry,
-            focusTargetId: focusTargetRef.current,
-            setFocusTargetId: (id) => {
-              focusTargetRef.current = id;
-            },
-            focusAlreadySet: focusTurnRef.current === battleTurn,
-            markFocusSet: () => {
-              focusTurnRef.current = battleTurn;
-            },
-            // Enemy summoner cooldown: only read by decideSummonerAction.
-            // lastSummonTurn is null when the summoner has not yet cast.
-            currentTurn: battleTurn,
-            lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null,
-          };
+        const aiCtx: DecideEnemyContext = {
+          enemy,
+          combatants: aiCombatants,
+          grid: aiGrid,
+          occupied: aiOccupied,
+          barriers: aiBarriers,
+          portals: aiPortals,
+          voidTiles: aiVoid,
+          hazardTiles: aiHazards,
+          availableSpells,
+          assignedSpells,
+          battleTurn,
+          allyCount: prevEnemies.filter(
+            (e) => e.id !== enemyId && (enemyHpMap[e.id] ?? e.hp) > 0,
+          ).length,
+          enemyCount: prevEnemies.filter((e) => (enemyHpMap[e.id] ?? e.hp) > 0)
+            .length,
+          enrageMultiplier,
+          isSlimeFlood: isSlimeFloodRef.current,
+          rng: Math.random,
+          getEffectiveStat: (cid, stat) =>
+            getStatModifier(cid, stat, activeEffectsRef.current) as number,
+          calcScaledDamage,
+          hasLineOfSight: aiHasLineOfSight,
+          log: logBattleEntry,
+          focusTargetId: focusTargetRef.current,
+          setFocusTargetId: (id) => {
+            focusTargetRef.current = id;
+          },
+          focusAlreadySet: focusTurnRef.current === battleTurn,
+          markFocusSet: () => {
+            focusTurnRef.current = battleTurn;
+          },
+          // Enemy summoner cooldown: only read by decideSummonerAction.
+          // lastSummonTurn is null when the summoner has not yet cast.
+          currentTurn: battleTurn,
+          lastSummonTurn: enemySummonCooldownRef.current.get(enemyId) ?? null,
+        };
 
-          // SECTION 4: wrap the entire decide/apply body in try/finally with an
-          // `advanced` flag (mirrors the summon-branch template at L13815-L13854).
-          // Guarantees that EVERY enemy turn ends "action-complete" (or a logged
-          // immediate skip) and advances exactly once — even if decideEnemyAction
-          // or any apply branch throws. Without this, a throw escapes the body
-          // before reaching the L15426 try/finally, falling to the watchdog at
-          // L15453 which advances with turnEndReasonRef = "timer-expiry".
-          // SECTION 2a — WATCHDOG FIX: mark decide phase entry so the watchdog
-          // can report phase-of-failure if the decide call hangs/throws.
-          aiPhaseRef.current = "decide-entered";
+        // SECTION 4: wrap the entire decide/apply body in try/finally with an
+        // `advanced` flag (mirrors the summon-branch template at L13815-L13854).
+        // Guarantees that EVERY enemy turn ends "action-complete" (or a logged
+        // immediate skip) and advances exactly once — even if decideEnemyAction
+        // or any apply branch throws. Without this, a throw escapes the body
+        // before reaching the L15426 try/finally, falling to the watchdog at
+        // L15453 which advances with turnEndReasonRef = "timer-expiry".
+        let advanced = false;
+        try {
           const action = enemy.isSummoner
             ? decideSummonerAction(
                 {
@@ -16792,10 +15193,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 aiCtx,
               )
             : decideEnemyAction(enemy, aiCtx);
-          // SECTION 2a — WATCHDOG FIX: decide returned an intent; mark it so
-          // the watchdog knows the decide phase completed successfully.
-          aiPhaseRef.current = "intent-produced";
-          logDebugInfo("TURN", "[FLOW] executor→intent", { actorId: enemyId });
           // 3e: short-circuit the enemy turn when a summoner casts a summon
           // spell — the spawn is applied via spawnEnemySummonRef, the turn
           // is handed off to the next combatant, and we return before the
@@ -16847,10 +15244,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
 
           let didAct = false;
-          // SECTION 2a — WATCHDOG FIX: mark apply phase start so the watchdog
-          // can report phase-of-failure if an apply/cast/melee branch hangs.
-          aiPhaseRef.current = "apply-started";
-          logDebugInfo("TURN", "[FLOW] intent→apply", { actorId: enemyId });
           // ── Apply spell cast ──────────────────────────────────────────────
           if (action.kind === "cast" && chosenSpell) {
             const spellRange = Number(chosenSpell.range);
@@ -17170,7 +15563,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     meleeDmg,
                     hpAfter: characterStats.hp - meleeDmg,
                   });
-                  processPlayerDeathCb("player", "enemy-melee");
                   _handlePlayerDeath();
                 }
                 logBattleEntry(
@@ -17244,102 +15636,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
             }
           }
-          // SECTION 3 — MOVE-THEN-ACT: re-evaluate for a legal attack after moving
-          if (action.kind === "move" && !didAct) {
-            // commit the post-move position (normal moves don't commit elsewhere)
-            updateCombatant(
-              combatantStoreCtx,
-              enemyId,
-              { x: newX, y: newY },
-              "moveThenAct",
-            );
-            // re-decide with post-move position + remaining AP/MP
-            const postMoveEnemy = {
-              ...enemy,
-              x: newX,
-              y: newY,
-              currentAp: enemy.currentAp,
-              currentMp: enemy.currentMp,
-            };
-            const redecide = decideEnemyAction(postMoveEnemy, aiCtx);
-            if (
-              redecide &&
-              (redecide.kind === "cast" || redecide.kind === "melee")
-            ) {
-              // execute the re-decided attack inline (minimal — apply damage)
-              if (redecide.kind === "cast" && redecide.spell) {
-                const spellDmg =
-                  calcScaledDamage(
-                    Number(redecide.spell.damage),
-                    enemy.level,
-                    0,
-                  ) * enrageMultiplier;
-                if (redecide.targetId) {
-                  enemyTakesDamage(
-                    redecide.targetId,
-                    spellDmg,
-                    enemyId,
-                    "spell",
-                    false,
-                  );
-                } else {
-                  playerTakesDamage(spellDmg, enemy.id);
-                }
-                didAct = true;
-              } else if (redecide.kind === "melee") {
-                const meleeDmg =
-                  calcScaledDamage(enemy.atk ?? 0, enemy.level, 0) *
-                  enrageMultiplier;
-                if (redecide.targetId) {
-                  enemyTakesDamage(
-                    redecide.targetId,
-                    meleeDmg,
-                    enemyId,
-                    "melee",
-                    false,
-                  );
-                } else {
-                  playerTakesDamage(meleeDmg, enemy.id);
-                }
-                didAct = true;
-              }
-            }
-          }
-          // SECTION 3 — no-attack-reason tactical visibility log
-          if (!didAct) {
-            let adjacentHostile = false;
-            // check player position
-            const pd = Math.max(
-              Math.abs(newX - playerPositionRef.current.x),
-              Math.abs(newY - playerPositionRef.current.y),
-            );
-            if (pd <= 1) adjacentHostile = true;
-            // check player-side summons
-            if (!adjacentHostile) {
-              for (const e of prevEnemies) {
-                if (e.side === "player") {
-                  const ed = Math.max(
-                    Math.abs(newX - e.x),
-                    Math.abs(newY - e.y),
-                  );
-                  if (ed <= 1) {
-                    adjacentHostile = true;
-                    break;
-                  }
-                }
-              }
-            }
-            if (adjacentHostile && (enemy.currentAp ?? 0) > 0) {
-              console.log("[AI] no-attack-reason", {
-                id: enemy.id,
-                reason: "no-legal-target",
-              });
-            }
-          }
           // ── DoT death check (any enemy) + leader flag ────────────────────
           const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
           if (thisHp <= 0) {
-            processCombatantDeathCb(enemyId, "dot");
+            processCombatantDeathCb(enemyId);
             if (
               enemyId === leaderEnemyIdRef.current &&
               !leaderDiedRef.current
@@ -17406,64 +15706,51 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
           }
           // ── END enemyAI.ts call site ──────────────────────────────────────
+        } catch (e) {
+          // SECTION 4: a throw in decideEnemyAction or any apply branch must
+          // still end the turn cleanly. Log and let the finally advance.
+          console.error("[enemyAI] decide/apply threw — ending turn", e);
         } finally {
-          // SECTION 1 — route the main finally path through the atomic
-          // clear+advance helper. When the try did not already advance, clear
-          // the flag and advance together (no 1ms re-entrancy gap); when the
-          // try already advanced, defensively clear the flag so the next
-          // enemy-phase gate is open.
+          // Unconditionally reset the ref so the next enemy-phase gate is open.
+          enemyTurnInProgressRef.current = false;
+          // If the body threw (or returned early without marking advanced),
+          // advance exactly once here with "action-complete" — never timer.
           if (!advanced) {
             turnEndReasonRef.current = "action-complete";
-            logDebugInfo("TURN", "[FLOW] apply→advance-called", {
-              actorId: enemyId,
-            });
-            clearEnemyTurnFlagAndAdvance();
+            advanceTurnRef.current();
             advanced = true;
-          } else {
-            enemyTurnInProgressRef.current = false;
           }
-          clearTimeout(watchdog);
-          pendingTimeoutsRef.current.delete(watchdog);
         }
+        clearTimeout(watchdog);
+        pendingTimeoutsRef.current.delete(watchdog);
       }); // end C-3 flushSync
-    }, 0);
+    }, 800);
     // M-4: Only register main timeout if cleanup hasn't run yet
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(timeout);
     }
     // H2 fix: watchdog assigned here after timeout is scheduled
     watchdog = setTimeout(() => {
-      // SECTION 4 — FIX 1 (Watchdog scoping): the watchdog may ONLY
-      // force-advance when the current actor is an enemy. If the 30s timer
-      // already advanced the turn to the player (or any non-enemy actor),
-      // return WITHOUT advancing — otherwise the orphaned watchdog fires at
-      // 3000ms and auto-advances the player's turn. This guard runs BEFORE the
-      // cleanupPhaseRef/cleanupRanRef/aiGenerationRef guards so a stale
-      // watchdog can never bypass it.
-      if (turnOrderRef.current[currentTurnIndexRef.current]?.type !== "enemy")
-        return;
       if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current) return;
       if (aiGenerationRef.current !== myAIGeneration) return;
       pendingTimeoutsRef.current.delete(watchdog);
       // EDIT 3e: record why the turn ended before advancing.
       turnEndReasonRef.current = "timer-expiry";
-      // SECTION 2a — WATCHDOG FIX: log phase-of-failure before advancing so
-      // stuck-turn recoveries are diagnosable. Reduced from 5000ms to 3000ms
-      // to surface hangs faster.
-      console.log(
-        `[TURN] watchdog {id:${enemyId}, phase-of-failure:${aiPhaseRef.current}}`,
-      );
       advanceTurnRef.current();
-    }, 3000);
+    }, 5000);
     if (!cleanupRanRef.current) {
       pendingTimeoutsRef.current.add(watchdog);
     }
-    // SECTION 1 — hotfix: cleanup removed; executor reads refs only, deps emptied.
-    // The scheduleEnemyExecutorRef is kept in sync by the ref-assign useEffect below.
-  }, []);
-  useEffect(() => {
-    scheduleEnemyExecutorRef.current = scheduleEnemyExecutor;
-  }, [scheduleEnemyExecutor]);
+    return () => {
+      clearTimeout(timeout);
+      pendingTimeoutsRef.current.delete(timeout);
+      if (!enemyTurnInProgressRef.current) {
+        clearTimeout(watchdog);
+        pendingTimeoutsRef.current.delete(watchdog);
+      }
+      enemyTurnInProgressRef.current = false;
+    };
+  }, [inBattle, currentTurnIndex, battlePhase]);
   // Track player spell type for Adaptive Resistance AI
   const recordPlayerSpellType = useCallback((effectType: string) => {
     playerSpellTypeHistoryRef.current = [
@@ -17549,126 +15836,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       targetTile: { x: number; y: number },
       source: string,
     ): { castResult: string; apCost: number } => {
-      // SECTION 2 — CONTROLLED-SUMMON CASTS: when a controlled summon is
-      // active, the SUMMON is the caster. Resolve the kit spell, gate on the
-      // summon's currentAp (NOT currentBattleApRef), build a CombatantSnapshot
-      // for the summon, and call resolveSpellCast with the same SpellContext
-      // shape the existing summon routing block uses. Return after the summon
-      // cast — do NOT fall through to the player path.
-      if (activeControlledSummonIdRef.current) {
-        const kitSpells = getSummonKitSpells();
-        const kitSpell =
-          kitSpells.find((s) => s.id === selectedSummonSpellIdRef.current) ??
-          kitSpells[0];
-        if (!kitSpell) {
-          const _screen = tileCenter(targetTile.x, targetTile.y);
-          effectsManagerRef.current?.spawnFloatText(
-            _screen.x,
-            _screen.y,
-            "Select a kit spell",
-          );
-          return { castResult: "no_spell", apCost: 0 };
-        }
-        const _summonCasterPos = getActiveCasterPos();
-        const _summonCombatant = combatantsRef.current?.find(
-          (c) => c.id === activeControlledSummonIdRef.current,
-        );
-        const _summonAp = _summonCombatant?.currentAp ?? 0;
-        const _summonApCost = mapModifierRegistry.applyApCost(
-          Number(kitSpell.apCost),
-          activeMapModifierTypes,
-          {
-            log: (msg: string) => logDebugInfo("MODIFIER", msg),
-            rng: Math.random,
-          },
-        );
-        if (_summonAp < _summonApCost) {
-          const _screen = tileCenter(targetTile.x, targetTile.y);
-          effectsManagerRef.current?.spawnFloatText(
-            _screen.x,
-            _screen.y,
-            "Not enough AP",
-          );
-          return { castResult: "no_ap", apCost: _summonApCost };
-        }
-        // Resolve the target snapshot at targetTile (living hostile occupant).
-        const _summonLiveCombatants = getLiveCombatants(combatantStoreCtx);
-        const _summonTarget = _summonLiveCombatants.find(
-          (e: any) => e.x === targetTile.x && e.y === targetTile.y,
-        );
-        if (!_summonTarget) {
-          const _screen = tileCenter(targetTile.x, targetTile.y);
-          effectsManagerRef.current?.spawnFloatText(
-            _screen.x,
-            _screen.y,
-            "invalid target",
-          );
-          return { castResult: "no_target", apCost: _summonApCost };
-        }
-        // Build the summon caster CombatantSnapshot — mirrors the inline
-        // pattern at the existing summon routing block (id, side, level, hp,
-        // maxHp, sp, sr, res, init, chc, currentAp, maxAp, effects,
-        // activeEffects, fail:0).
-        const _summonSnapshot: any = {
-          id: _summonCombatant?.id ?? activeControlledSummonIdRef.current,
-          side: _summonCombatant?.side ?? "player",
-          level: _summonCombatant?.level ?? 1,
-          hp: _summonCombatant?.hp ?? 0,
-          maxHp: _summonCombatant?.maxHp ?? 0,
-          sp: _summonCombatant?.sp ?? 0,
-          sr: _summonCombatant?.sr ?? 0,
-          res: _summonCombatant?.res ?? 0,
-          init: _summonCombatant?.init ?? 0,
-          chc: _summonCombatant?.chc ?? 0,
-          currentAp: _summonAp,
-          maxAp: _summonCombatant?.maxAp ?? 0,
-          effects: [],
-          activeEffects: [],
-          fail: 0,
-        };
-        const _summonTargetSnapshot: any = {
-          id: _summonTarget.id,
-          side: _summonTarget.side ?? "enemy",
-          cell: { x: _summonTarget.x, y: _summonTarget.y },
-          hp: _summonTarget.hp ?? 0,
-          maxHp: _summonTarget.maxHp ?? 0,
-          level: _summonTarget.level ?? 1,
-          effects: [],
-          stats: { res: 0, sp: 0 },
-        };
-        try {
-          resolveSpellCast(
-            kitSpell as any,
-            _summonSnapshot,
-            _summonTargetSnapshot,
-            playerSpellContext() as any,
-            { getStatModifier, calcScaledDamage } as any,
-          );
-          logDebugInfo(
-            "BATTLE",
-            `[CLICK-ENEMY] source=${source} spell=${kitSpell.id} tile=${targetTile.x},${targetTile.y} apCost=${_summonApCost} castResult=cast casterId=${activeControlledSummonIdRef.current} targetsCount=1 targetIds=${_summonTarget.id}`,
-          );
-          logBattleEntry(
-            `${_summonCombatant?.pieceType ?? "Summon"} casts ${kitSpell.name}`,
-            "#a855f7",
-          );
-          // Deduct the summon's AP for the cast.
-          if (_summonCombatant) {
-            updateCombatant(
-              combatantStoreCtx,
-              _summonCombatant.id,
-              {
-                currentAp: Math.max(0, _summonAp - _summonApCost),
-              },
-              "summonCastApDeduct",
-            );
-          }
-          setSelectedSummonSpellId(null);
-        } catch (e) {
-          console.error("[SummonExecuteCast]", e);
-        }
-        return { castResult: "cast", apCost: _summonApCost };
-      }
       const _apCost = mapModifierRegistry.applyApCost(
         Number(spell.apCost),
         activeMapModifierTypes,
@@ -17687,7 +15854,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
         logDebugInfo(
           "BATTLE",
-          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} casterId=player targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t: any) => t.id).join(",")}`,
+          `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t: any) => t.id).join(",")}`,
         );
         // SECTION 5: deduct AP on both 'cast' and 'fizzled' — the attempt was
         // made (the fail chance is the point of the roll), so the spell's AP
@@ -17710,12 +15877,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       markFirstAction,
       playerSpellContext,
       setCurrentBattleApSynced,
-      getActiveCasterPos,
-      getSummonKitSpells,
-      getStatModifier,
-      combatantStoreCtx,
-      logBattleEntry,
-      tileCenter,
     ],
   );
   const attackNearestEnemy = useCallback(() => {
@@ -19281,240 +17442,195 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         </div>
       )}
 
+      {activeControlledSummonId && (
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-50 text-amber-400 font-bold text-sm bg-slate-900/80 px-4 py-1 rounded">
+          Summon's Turn
+        </div>
+      )}
+
       <div>
         {/* Battle UI Panel — always visible; battle-only sections gated by inBattle prop */}
-        {/* Hoisted summon lookup (root_cause_1): isSummonControlled was wired to
-            the RAW activeControlledSummonId, but controlledSummon below returns
-            null when the summon is gone from the store. When a summon died or
-            expired mid-turn while activeControlledSummonId was still set, the
-            spell row greyed (isSummonControlled=true) while the inline control
-            block disappeared (controlledSummon=null) — the stuck-grey-lock.
-            Compute the lookup ONCE here and feed BOTH props so they can never
-            disagree. */}
-        {(() => {
-          const _controlledSummonLookup = activeControlledSummonId
-            ? (getLiveCombatants(combatantStoreCtx).find(
-                (e: any) => e.id === activeControlledSummonId,
-              ) ?? null)
-            : null;
-          // SECTION 4 (d) — STUCK-STATE GUARD: if activeControlledSummonId is
-          // set but the live lookup returns null, the summon expired mid-turn
-          // (turnsRemaining hit 0 between turn-start and this render). Without
-          // this guard the spell row would grey (isSummonControlled=true) while
-          // the inline control block disappeared (controlledSummon=null) — the
-          // stuck-grey-lock. Reset all summon-control state atomically so the
-          // next render shows the player's bar cleanly.
-          if (activeControlledSummonId && !_controlledSummonLookup) {
-            clearSummonControl();
+        <BattleUIPanel
+          inBattle={inBattle}
+          isPlayerTurn={
+            turnOrderRef.current[currentTurnIndexRef.current]?.type === "player"
           }
-          return (
-            <BattleUIPanel
-              inBattle={inBattle}
-              currentActor={currentActor}
-              isSummonControlled={!!_controlledSummonLookup}
-              inspectCombatantId={inspectCombatantId}
-              onInspectCombatant={setInspectCombatantId}
-              activeSpells={activeSpells}
-              selectedSpellIdRef={selectedSpellIdRef}
-              spellSelectionVersion={spellSelectionVersion}
-              hasSelectedSpell={!!selectedSpellIdRef.current}
-              onSelectSpell={(id) => {
-                if (!inBattle || currentBattleAp > 0) {
-                  selectedSpellIdRef.current = id;
-                  setSpellSelectionVersion((v) => v + 1);
-                  spellRangeCacheRef.current.clear();
-                  if (inBattle) setBattleActionMode("attack");
+          isSummonControlled={!!activeControlledSummonId}
+          inspectCombatantId={inspectCombatantId}
+          onInspectCombatant={setInspectCombatantId}
+          activeSpells={activeSpells}
+          selectedSpellIdRef={selectedSpellIdRef}
+          spellSelectionVersion={spellSelectionVersion}
+          hasSelectedSpell={!!selectedSpellIdRef.current}
+          onSelectSpell={(id) => {
+            if (!inBattle || currentBattleAp > 0) {
+              selectedSpellIdRef.current = id;
+              setSpellSelectionVersion((v) => v + 1);
+              spellRangeCacheRef.current.clear();
+              if (inBattle) setBattleActionMode("attack");
+            }
+          }}
+          onOpenSpellbook={() => setSpellbookOpen(true)}
+          onAttackNearest={attackNearestEnemy}
+          canAttackNearest={
+            inBattle &&
+            battleActionMode === "attack" &&
+            !!selectedSpellIdRef.current &&
+            currentBattleAp >=
+              (activeSpells.find((s) => s.id === selectedSpellIdRef.current)
+                ? Number(
+                    activeSpells.find(
+                      (s) => s.id === selectedSpellIdRef.current,
+                    )!.apCost,
+                  )
+                : 999) &&
+            enemies.some((e) => {
+              const spell = activeSpells.find(
+                (s) => s.id === selectedSpellIdRef.current,
+              );
+              const range = spell ? Math.max(1, Number(spell.range)) : 0;
+              return (
+                Math.max(
+                  Math.abs(e.x - playerPositionRef.current.x),
+                  Math.abs(e.y - playerPositionRef.current.y),
+                ) <= range
+              );
+            })
+          }
+          isMobile={isMobile}
+          turnOrder={turnOrder.map((c) => {
+            if (c.type === "player") {
+              return {
+                ...c,
+                ap: currentBattleAp,
+                mp: currentBattleMp,
+                atk: 0,
+                res: characterStats.res,
+                sp: characterStats.sp,
+                chc: characterStats.chc,
+              };
+            }
+            const e = enemies.find((en) => en.id === c.id);
+            return {
+              ...c,
+              ...resolveEnemyApMp(e, c.level),
+              atk: e ? e.level * 2 : 0,
+              res: 0,
+              sp: 0,
+              chc: 2,
+              spells: e?.spells,
+              enraged: enragedEnemies.has(c.id),
+            };
+          })}
+          currentTurnIndex={currentTurnIndex}
+          battlePhase={battlePhase}
+          battleTurn={battleTurn}
+          turnTimeLeft={turnTimeLeft}
+          battleActionMode={battleActionMode}
+          onSetWalk={() => {
+            setBattleActionMode("walk");
+            selectedSpellIdRef.current = null;
+            setSpellSelectionVersion((v) => v + 1);
+            spellRangeCacheRef.current.clear();
+          }}
+          onSetAttack={() => {
+            if (currentBattleAp > 0) setBattleActionMode("attack");
+          }}
+          currentBattleAp={currentBattleAp}
+          currentBattleMp={currentBattleMp}
+          onEndBattle={() => {
+            // ── S2: RUN-THEMED FLEE CONFIRM ────────────────────────────────
+            // Fleeing a battle inside an active dungeon or boss-rush run ends
+            // the run (the player "falls"). Show a themed confirm dialog before
+            // invoking the death flow so the choice is deliberate. In free
+            // exploration, fleeing proceeds with no extra prompt.
+            const _s2RunActive =
+              bossRushActiveRef.current || dungeonChainActiveRef.current;
+            if (_s2RunActive) {
+              const _s2RunName = bossRushActiveRef.current
+                ? "Boss Rush"
+                : "Dungeon Chain";
+              const _s2Confirmed = window.confirm(
+                `Fleeing ends your ${_s2RunName} run — you will fall. Continue?`,
+              );
+              if (!_s2Confirmed) return;
+            }
+            _handlePlayerDeath();
+          }}
+          onEndTurn={() => {
+            // SECTION 3 — turn discipline. Mirror the canvas click guard: the
+            // END TURN control advances the turn ONLY when the current
+            // turn-order entry is the player. Refs are the desync-proof source
+            // of turn truth (battlePhase is a secondary flag). This prevents
+            // the skip/End Turn control from acting during enemy turns even if
+            // the button were somehow reachable.
+            const _entry = turnOrderRef.current[currentTurnIndexRef.current];
+            if (_entry?.type !== "player") return;
+            if (battlePhase !== "player") return;
+            advanceTurn();
+          }}
+          spellCooldowns={
+            spellCooldownVersion >= 0
+              ? Object.fromEntries(spellCooldownsRef.current)
+              : {}
+          }
+          userId={userId}
+        />
+        {activeControlledSummonId &&
+          (() => {
+            const summon = getLiveCombatants(combatantStoreCtx).find(
+              (e: any) => e.id === activeControlledSummonId,
+            );
+            if (!summon) return null;
+            return (
+              <SummonControlPanel
+                summonName={summon.pieceType}
+                summonPieceType={summon.pieceType}
+                lifespan={summon.turnsRemaining ?? 0}
+                maxLifespan={summon.summonLifespan ?? 0}
+                currentAp={summon.currentAp ?? 0}
+                maxAp={summon.maxAp ?? 0}
+                currentMp={summon.currentMp ?? 0}
+                maxMp={summon.maxMp ?? 0}
+                currentHp={summon.hp ?? 0}
+                maxHp={summon.maxHp ?? 0}
+                kitSpells={(() => {
+                  // SECTION 2a — resolve kit by summon.pieceType via explicit
+                  // metadata: find the summonUnitDef in starterSpells where
+                  // pieceType matches, read its summonKit array, map each kit
+                  // spell id to the full spell definition from starterSpells.
+                  // Fallback to summon.spells only if the kit is absent/empty.
+                  const unitDef = starterSpells.find(
+                    (sp: any) =>
+                      sp.summonUnitDef?.pieceType === summon.pieceType,
+                  )?.summonUnitDef;
+                  const kitIds: string[] =
+                    unitDef && Array.isArray(unitDef.summonKit)
+                      ? unitDef.summonKit
+                      : [];
+                  const resolved = kitIds
+                    .map((id) => starterSpells.find((sp: any) => sp.id === id))
+                    .filter((sp: any): sp is SpellConfig => !!sp);
+                  const source =
+                    resolved.length > 0 ? resolved : (summon.spells ?? []);
+                  return source.map((s: any) => ({
+                    id: s.id,
+                    name: s.name,
+                    apCost: Number(s.apCost),
+                  }));
+                })()}
+                onSpellSelect={(spellId: string) =>
+                  setSelectedSummonSpellId(spellId)
                 }
-              }}
-              onOpenSpellbook={() => setSpellbookOpen(true)}
-              onAttackNearest={attackNearestEnemy}
-              canAttackNearest={
-                inBattle &&
-                battleActionMode === "attack" &&
-                !!selectedSpellIdRef.current &&
-                currentBattleAp >=
-                  (activeSpells.find((s) => s.id === selectedSpellIdRef.current)
-                    ? Number(
-                        activeSpells.find(
-                          (s) => s.id === selectedSpellIdRef.current,
-                        )!.apCost,
-                      )
-                    : 999) &&
-                enemies.some((e) => {
-                  const spell = activeSpells.find(
-                    (s) => s.id === selectedSpellIdRef.current,
-                  );
-                  const range = spell ? Math.max(1, Number(spell.range)) : 0;
-                  return (
-                    Math.max(
-                      Math.abs(e.x - playerPositionRef.current.x),
-                      Math.abs(e.y - playerPositionRef.current.y),
-                    ) <= range
-                  );
-                })
-              }
-              isMobile={isMobile}
-              turnOrder={turnOrder.map((c) => {
-                if (c.type === "player") {
-                  return {
-                    ...c,
-                    ap: currentBattleAp,
-                    mp: currentBattleMp,
-                    atk: 0,
-                    res: characterStats.res,
-                    sp: characterStats.sp,
-                    chc: characterStats.chc,
-                  };
-                }
-                const e = enemies.find((en) => en.id === c.id);
-                return {
-                  ...c,
-                  ...resolveEnemyApMp(e, c.level),
-                  atk: e ? e.level * 2 : 0,
-                  res: 0,
-                  sp: 0,
-                  chc: 2,
-                  spells: e?.spells,
-                  enraged: enragedEnemies.has(c.id),
-                };
-              })}
-              currentTurnIndex={currentTurnIndex}
-              battleTurn={battleTurn}
-              turnTimeLeft={turnTimeLeft}
-              battleActionMode={battleActionMode}
-              onSetWalk={() => {
-                setBattleActionMode("walk");
-                selectedSpellIdRef.current = null;
-                setSpellSelectionVersion((v) => v + 1);
-                spellRangeCacheRef.current.clear();
-              }}
-              onSetAttack={() => {
-                if (currentBattleAp > 0) setBattleActionMode("attack");
-              }}
-              currentBattleAp={currentBattleAp}
-              currentBattleMp={currentBattleMp}
-              onEndBattle={() => {
-                // ── S2: RUN-THEMED FLEE CONFIRM ────────────────────────────────
-                // Fleeing a battle inside an active dungeon or boss-rush run ends
-                // the run (the player "falls"). Show a themed confirm dialog before
-                // invoking the death flow so the choice is deliberate. In free
-                // exploration, fleeing proceeds with no extra prompt.
-                const _s2RunActive =
-                  bossRushActiveRef.current || dungeonChainActiveRef.current;
-                if (_s2RunActive) {
-                  const _s2RunName = bossRushActiveRef.current
-                    ? "Boss Rush"
-                    : "Dungeon Chain";
-                  const _s2Confirmed = window.confirm(
-                    `Fleeing ends your ${_s2RunName} run — you will fall. Continue?`,
-                  );
-                  if (!_s2Confirmed) return;
-                }
-                // SECTION 3(c) — FLEE DESPAWN: mirror the victory despawn at
-                // lines 13102-13105 so surviving player summons are removed
-                // from both the combatant store and the map render before the
-                // death flow runs.
-                syncCombatants(
-                  combatantStoreCtx,
-                  despawnSummons(combatantsRef.current),
-                );
-                _handlePlayerDeath();
-              }}
-              onEndTurn={() => {
-                // SECTION 3 — turn discipline. Mirror the canvas click guard: the
-                // END TURN control advances the turn ONLY when the current
-                // turn-order entry is the player. Refs are the desync-proof source
-                // of turn truth (battlePhase is a secondary flag). This prevents
-                // the skip/End Turn control from acting during enemy turns even if
-                // the button were somehow reachable.
-                const _entry =
-                  turnOrderRef.current[currentTurnIndexRef.current];
-                if (_entry?.type !== "player") return;
-                // SECTION 1 (R12) FIX — NAME THE ended:null PATH: the
-                // player-initiated End Turn advance previously called
-                // advanceTurn() with turnEndReasonRef still null, so the
-                // dispatch log showed ended:null. Set an explicit reason
-                // before the advance.
-                turnEndReasonRef.current = "player-end-turn";
-                advanceTurn();
-              }}
-              spellCooldowns={
-                spellCooldownVersion >= 0
-                  ? Object.fromEntries(spellCooldownsRef.current)
-                  : {}
-              }
-              userId={userId}
-              controlledSummon={
-                _controlledSummonLookup
-                  ? {
-                      name: _controlledSummonLookup.pieceType,
-                      pieceType: _controlledSummonLookup.pieceType,
-                      lifespan: _controlledSummonLookup.turnsRemaining ?? 0,
-                      // maxLifespan mirrors the spawn-time lifespan budget. The
-                      // summon object only carries `turnsRemaining` (set at spawn
-                      // in summonSpawn.ts and decremented each turn); there is no
-                      // separate stored max, so we use turnsRemaining as the
-                      // denominator. See QA cleanup note in episode learnings.
-                      maxLifespan: _controlledSummonLookup.turnsRemaining ?? 0,
-                      currentAp: _controlledSummonLookup.currentAp ?? 0,
-                      maxAp: _controlledSummonLookup.maxAp ?? 0,
-                      currentMp: _controlledSummonLookup.currentMp ?? 0,
-                      maxMp: _controlledSummonLookup.maxMp ?? 0,
-                      currentHp: _controlledSummonLookup.hp ?? 0,
-                      maxHp: _controlledSummonLookup.maxHp ?? 0,
-                      sp: _controlledSummonLookup.sp ?? 0,
-                      sr: _controlledSummonLookup.sr ?? 0,
-                      res: _controlledSummonLookup.res ?? 0,
-                      init: _controlledSummonLookup.init ?? 0,
-                    }
-                  : null
-              }
-              summonKitSpells={
-                // SECTION 2 — Step 3: resolved via the shared getSummonKitSpells()
-                // helper so the panel and the spell-range preview path never diverge.
-                activeControlledSummonId
-                  ? getSummonKitSpells().map((s) => ({
-                      id: s.id,
-                      name: s.name,
-                      apCost: Number(s.apCost),
-                      iconEmoji: s.iconEmoji,
-                    }))
-                  : []
-              }
-              onSummonSpellSelect={(slotIndex) => {
-                // SECTION 2 — Step 3: resolve the kit spell at slotIndex via the
-                // shared getSummonKitSpells() helper and forward its id to the
-                // existing setSelectedSummonSpellId flow.
-                // SECTION 4 (h) — selecting a kit spell flips the summon into
-                // attack-mode so blue spell-range tiles render (mirrors the
-                // player's onSelectSpell → setBattleActionMode('attack')).
-                if (!activeControlledSummonId) return;
-                const spell = getSummonKitSpells()[slotIndex];
-                if (spell) {
-                  setSelectedSummonSpellId(spell.id);
-                  setSummonActionMode("attack");
-                }
-              }}
-              onSummonEndTurn={() => {
-                // SECTION 4 (c) — funnel the summon-initiated End Turn cleanup
-                // through the shared clearSummonControl() so activeControlledSummonId,
-                // selectedSummonSpellId, battleActionMode, spell-range cache, and
-                // summonActionMode all reset together. PRESERVE the explicit
-                // turnEndReasonRef + advanceTurn() calls (R12 fix for ended:null).
-                clearSummonControl();
-                turnEndReasonRef.current = "player-end-turn";
-                advanceTurn();
-              }}
-              // SECTION 4 (STEP 7) — summon WALK/ATTACK toggle wiring. Routes
-              // the inline summon block's toggle buttons through the same
-              // setSummonActionMode state the canvas reads via
-              // summonActionModeRef to render mp (walk) or attack-range tiles.
-              onSetSummonWalk={() => setSummonActionMode("walk")}
-              onSetSummonAttack={() => setSummonActionMode("attack")}
-              summonActionMode={summonActionMode}
-            />
-          );
-        })()}
+                onEndTurn={() => {
+                  setActiveControlledSummonId(null);
+                  activeControlledSummonIdRef.current = null;
+                  setSelectedSummonSpellId(null);
+                  advanceTurn();
+                }}
+              />
+            );
+          })()}
       </div>
       <SettingsPanel userId={userId} />
 
@@ -19837,7 +17953,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }}
                 >
                   <span style={{ color: "#f1c40f", fontSize: 22 }}>💰</span>
-
                   <div>
                     <div
                       style={{
