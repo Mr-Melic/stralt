@@ -15,7 +15,6 @@
 
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
-import type { DeathSource } from "./deathPipeline";
 
 export type Side = "player" | "enemy";
 
@@ -192,9 +191,8 @@ export interface PlayerSpellContext extends SpellContext {
    * Idempotent combatant death processing. Called by the damage loop after
    * applyDamageToEnemy when a target's post-damage hp drops to <= 0. Returns
    * true if the death sequence ran this call, false if already removed.
-   * `source` tags the kill provenance for the [DEATH] log entry.
    */
-  processCombatantDeath: (id: string, source?: DeathSource) => boolean;
+  processCombatantDeath: (id: string) => boolean;
   /** hitsAllies __player__ branch — apply finalDmg to the player. */
   applyDamageToPlayer(finalDmg: number): void;
   /** Inline Mirror-redirect branch (target has mirror active). Returns true if redirected. */
@@ -1008,7 +1006,7 @@ export function resolvePlayerCast(
       // applyDamageToEnemy returns void and updates enemyHpMap asynchronously,
       // so the synchronous hp - finalDmg check is the reliable death signal here.
       if (hitTarget.hp - finalDmg <= 0 && hitTarget.id !== "__player__") {
-        ctx.processCombatantDeath(hitTarget.id, "player-cast");
+        ctx.processCombatantDeath(hitTarget.id);
         killedThisCast.add(hitTarget.id);
       }
       ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");

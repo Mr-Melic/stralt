@@ -1,46 +1,41 @@
-export interface ApplyRewardsActor {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+/**
+ * Minimal actor surface used by persistDokaCredit. Matches the backend
+ * applyRewards(slot : Nat, dokaDelta : Nat, xpDelta : Nat) signature.
+ */
+export interface DokaCreditActor {
   applyRewards: (
     slot: bigint,
     dokaDelta: bigint,
     xpDelta: bigint,
-  ) => Promise<any>;
-}
-
-/** Clamp a world Doka credit to a non-negative integer. */
-export function normalizeDokaCredit(amount: number): number {
-  if (!Number.isFinite(amount)) return 0;
-  return Math.max(0, Math.floor(amount));
+  ) => Promise<
+    | { ok: { newDoka: bigint; newXp: bigint; newLevel: bigint } }
+    | { err: string }
+  >;
 }
 
 /**
- * Persist a Doka-only credit through the atomic applyRewards funnel.
- * Used for world pickups, shrine completion, and dungeon-chain bonuses so
- * GameFlow's getCallerDokaBalance hydration cannot wipe unpersisted grants.
+ * Credits Doka to a character slot via the single atomic backend funnel
+ * applyRewards(slot, doka, 0) and returns the new absolute Doka balance.
+ * On backend error the failure is logged and 0 is returned so the caller can
+ * fall back gracefully instead of crashing the reward flow.
  */
 export async function persistDokaCredit(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  actor: any,
+  actor: DokaCreditActor,
   slot: number,
-  dokaDelta: number,
+  doka: number,
 ): Promise<number> {
-  const credit = normalizeDokaCredit(dokaDelta);
-  if (credit === 0) {
-    throw new Error("persistDokaCredit requires a positive doka delta");
+  try {
+    const result = await actor.applyRewards(
+      BigInt(slot),
+      BigInt(doka),
+      BigInt(0),
+    );
+    if ("err" in result) {
+      throw new Error(`applyRewards failed: ${result.err}`);
+    }
+    return Number(result.ok.newDoka);
+  } catch (error) {
+    console.error("persistDokaCredit failed", error);
+    return 0;
   }
-  const result = await actor.applyRewards(
-    BigInt(slot),
-    BigInt(credit),
-    BigInt(0),
-  );
-  if (result && typeof result === "object" && "err" in result && result.err) {
-    throw new Error(`applyRewards failed: ${result.err}`);
-  }
-  const payload =
-    result && typeof result === "object" && "ok" in result ? result.ok : null;
-  const newDoka = payload?.newDoka;
-  if (newDoka === undefined || newDoka === null) {
-    throw new Error("applyRewards returned no newDoka");
-  }
-  return Number(newDoka);
 }

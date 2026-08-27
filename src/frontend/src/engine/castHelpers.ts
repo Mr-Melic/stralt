@@ -25,11 +25,7 @@ import type { CharacterStats } from "../components/WorldExploration";
 import type { SoundEvent } from "../hooks/useSoundHooks";
 import type { ActiveEffect } from "../types/gameTypes";
 import type { Enemy } from "../types/gameTypes";
-import {
-  type DeathPipelineCtx,
-  type DeathSource,
-  processCombatantDeath,
-} from "./deathPipeline";
+import { type DeathPipelineCtx, processCombatantDeath } from "./deathPipeline";
 import type { PlayerCastEnemy, PlayerCastTarget } from "./spellEngine";
 import { removeCombatantFromTurnQueue } from "./turnQueue";
 
@@ -233,7 +229,7 @@ export interface ApplyDamageToEnemyDeps {
   setCharacterStats: (
     updater: (prev: CharacterStats) => CharacterStats,
   ) => void;
-  processCombatantDeath: (id: string, source?: DeathSource) => boolean;
+  processCombatantDeath: (id: string) => boolean;
 }
 
 export interface ApplyDamageToEnemyArgs {
@@ -432,7 +428,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
       hp: Math.max(0, prev.hp - finalDmg),
     }));
   } else if (enemyNewHp <= 0) {
-    processCombatantDeath(hitTarget.id, "player-cast");
+    processCombatantDeath(hitTarget.id);
   }
 
   // Drain: heal player too (once per cast, not per target)

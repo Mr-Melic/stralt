@@ -5,6 +5,8 @@ version = "0.1.0"
 [build]
 outputDir = "src/backend/dist"
 args = [ "--release" ]
+check-wasm = true
+check-deploy = true
 
 [canisters.backend]
 main = "src/backend/main.mo"
@@ -24,10 +26,11 @@ lintoko = "0.11.0"
 extends = true
 
 [moc]
-args = [ "-W=M0235,M0223,M0236,M0237,M0254", "-A=M0241", "--default-persistent-actors", "--actor-idl=src/backend/system-idl", "--implicit-package=core", "-no-check-ir" ]
+args = [ "-E=M0236,M0235,M0223,M0237", "-W=M0254", "-A=M0198", "--default-persistent-actors", "--implicit-package=core", "-no-check-ir" ]
 
 [dependencies]
-core = "2.6.0"
+core = "2.6.1"
 base = "0.16.0"
 caffeineai-authorization = "0.1.1"
 caffeineai-oql = "0.4.0"
+ic = "4.2.0"
