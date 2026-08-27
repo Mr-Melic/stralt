@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { createProgressPersist } from "./progressPersist.ts";
+import {
+  applySpendToCommitted,
+  createProgressPersist,
+  spendFromUiBalance,
+} from "./progressPersist.ts";
 import {
   buildInitiatePurchaseArgs,
   creditPendingPurchases,
@@ -105,6 +109,53 @@ void (async () => {
     previous: null,
     credited: null,
   });
+
+  // Paid credit must serialize with saveBattleStats. If the 60s credit lands
+  // while a heal is already queued, a lock-less write leaves committed at
+  // 200 and persistAbsoluteProgress then overwrites the canister with 170.
+  let backendDoka = 200;
+  const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+  const creditActor = {
+    processPendingPurchases: async () => {
+      backendDoka += 500;
+      return 1n;
+    },
+    getCallerDokaBalance: async () => backendDoka,
+  };
+  const spend = spendFromUiBalance(200, 170);
+  let wroteDoka = 0;
+  const heal = lock.enqueue(async () => {
+    wroteDoka = applySpendToCommitted(lock.snapshot().doka, spend);
+    backendDoka = wroteDoka;
+    lock.commit({ doka: wroteDoka });
+  });
+  const credit = creditPendingPurchasesThroughPersist(creditActor, lock);
+  await Promise.all([heal, credit]);
+  assert.equal(wroteDoka, 170);
+  assert.equal(backendDoka, 670);
+  assert.equal(lock.snapshot().doka, 670);
+
+  backendDoka = 200;
+  const lock2 = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+  const creditFirst = creditPendingPurchasesThroughPersist(
+    {
+      processPendingPurchases: async () => {
+        backendDoka += 500;
+        return 1n;
+      },
+      getCallerDokaBalance: async () => backendDoka,
+    },
+    lock2,
+  );
+  const healAfter = lock2.enqueue(async () => {
+    wroteDoka = applySpendToCommitted(lock2.snapshot().doka, spend);
+    backendDoka = wroteDoka;
+    lock2.commit({ doka: wroteDoka });
+  });
+  await Promise.all([creditFirst, healAfter]);
+  assert.equal(wroteDoka, 670);
+  assert.equal(backendDoka, 670);
+  assert.equal(lock2.snapshot().doka, 670);
 
   const persist = createProgressPersist({ doka: 100, xp: 0, level: 1 });
   let releaseReward!: () => void;
