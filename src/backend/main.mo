@@ -1296,8 +1296,8 @@ actor {
         defense          : Nat,
         initiative       : Nat,
         dokaBalance      : Nat,   // kept in signature for frontend compat; stored in dokaBalances map
-        spellLevelKeys   : [Text],
-        spellLevelValues : [Nat],
+        _spellLevelKeys  : [Text], // upgradeSpell owns these; heal/death snapshots can be stale
+        _spellLevelValues : [Nat],
     ) : async { #ok; #err : Text } {
         if (bannedPrincipals.containsKey(caller.toText())) {
             return #err("Account banned for non-payment");
@@ -1331,13 +1331,14 @@ actor {
             init = initiative;
         };
 
+        // upgradeSpell is the sole writer of spell levels. Heal / death / shop
+        // snapshots are often captured before an in-flight upgrade commits in
+        // React, and replacing the arrays here would wipe a paid level.
         let updatedCharacter : Character = {
             character with
             level            = level;
             experience       = xp;
             stats            = updatedStats;
-            spellLevelKeys   = spellLevelKeys;
-            spellLevelValues = spellLevelValues;
         };
 
         let updatedSlots = switch (slot) {

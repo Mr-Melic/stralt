@@ -232,6 +232,7 @@ import {
 } from "../utils/shopPurchase";
 import {
   type SpellUpgradeActor,
+  applySpellLevel,
   persistSpellUpgrade,
 } from "../utils/spellUpgrade";
 import BuffShop from "./BuffShop";
@@ -2799,6 +2800,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 characterSlot,
                 spellId,
               );
+              // saveBattleStats (heal/death) reads spellLevelsRef inside the
+              // same queue. Update it here — not after React commits — or a
+              // click during this upgrade persists the pre-upgrade map and
+              // wipes the paid level.
+              spellLevelsRef.current = applySpellLevel(
+                spellLevelsRef.current,
+                spellId,
+                result.newLevel,
+              );
               if (result.newDoka != null) {
                 progressPersistRef.current.commit({ doka: result.newDoka });
               }
@@ -2808,7 +2818,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newDoka != null ? newDoka : Math.max(0, dokaBalance - cost),
           );
           setSpellLevels((prev) => {
-            const next = { ...prev, [spellId]: newLevel };
+            const next = applySpellLevel(prev, spellId, newLevel);
             try {
               // M6: Use namespaced key for per-character spell levels
               localStorage.setItem(
