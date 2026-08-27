@@ -12658,6 +12658,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!inBattle) {
       if (characterStatsRef.current.hp <= 0 && !deathTriggeredRef.current) {
         deathTriggeredRef.current = true;
+        // Lava/spike deaths never call _handlePlayerDeath. Without this, a
+        // Boss Rush death leaves currentRoom on the canister and the next
+        // portal entry resumes mid-tree.
+        resetRunState({
+          bossRushActiveRef,
+          dungeonChainActiveRef,
+          dungeonChainDepthRef,
+          dungeonChainMaxDepthRef,
+          abortBossRush,
+        });
         const penalty = persistDeathPenalty();
         const xpLost = penalty?.xpLost ?? 0;
         const dokaLost = penalty?.dokaLost ?? 0;
@@ -12697,6 +12707,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (characterStatsRef.current.hp > 0) return;
     if (deathTriggeredRef.current) return;
     deathTriggeredRef.current = true;
+    // Same linchpin reset as _handlePlayerDeath — lava/spikes set HP to 0
+    // without calling that function, so HP-watch must abort the run here.
+    resetRunState({
+      bossRushActiveRef,
+      dungeonChainActiveRef,
+      dungeonChainDepthRef,
+      dungeonChainMaxDepthRef,
+      abortBossRush,
+    });
     // Apply XP penalty: 20%, floored so level never decreases
     // Apply Doka penalty: 40%, min 0
     // Shared one-shot helper persists the reduced absolute values via

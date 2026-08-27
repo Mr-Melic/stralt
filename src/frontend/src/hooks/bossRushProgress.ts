@@ -66,6 +66,15 @@ export interface BossRushProgressActor {
   ) => Promise<unknown>;
 }
 
+export interface PersistBossRushRoomClearOptions {
+  /**
+   * When true after the progress write, the run was aborted (death/flee)
+   * while this persist was in flight. Re-reset currentRoom so the late
+   * write cannot resume the next occupant mid-tree.
+   */
+  wasSuperseded?: () => boolean;
+}
+
 /**
  * Writes currentRoom before the room-clear applyRewards so a reload cannot
  * re-enter the room that just paid out. Final-room clear resets currentRoom
@@ -75,6 +84,7 @@ export async function persistBossRushRoomClear(
   actor: BossRushProgressActor,
   slot: number,
   clearedRoomIndex: number,
+  options?: PersistBossRushRoomClearOptions,
 ): Promise<void> {
   const { nextCurrentRoom, runComplete } =
     progressAfterRoomClear(clearedRoomIndex);
@@ -90,4 +100,7 @@ export async function persistBossRushRoomClear(
     BigInt(0),
     BigInt(0),
   );
+  if (options?.wasSuperseded?.()) {
+    await actor.resetBossRush?.(slotId);
+  }
 }
