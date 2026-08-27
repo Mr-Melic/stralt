@@ -91,7 +91,7 @@ describe("progress persist lock", () => {
     assert.equal(backendLevel, 5);
   });
 
-  it("lets a queued shop credit land before a heal so saveBattleStats cannot wipe paid Doka", async () => {
+  it("keeps a shop credit that lands while applyRewards is in flight", async () => {
     const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
     let backendDoka = 200;
 
@@ -106,19 +106,18 @@ describe("progress persist lock", () => {
       lock.commit({ doka: backendDoka });
     });
 
-    // 60s shop timer / shop-open retry: processPendingPurchases credits 100.
+    // processPendingPurchases is additive on the canister. Serialized on the
+    // same lock it sees the rewarded wallet; a later heal then spends from
+    // that total instead of persisting the pre-purchase snapshot.
     const credit = lock.enqueue(async () => {
-      backendDoka += 100;
-      const next = committedDokaAfterShopCredit(backendDoka);
-      if (next != null) lock.commit({ doka: next });
+      backendDoka += 500;
+      lock.commit({ doka: backendDoka });
     });
 
-    // Recap heal: UI still shows the pre-reward, pre-credit 200.
-    const spend = spendFromUiBalance(200, 170);
     let wroteDoka = 0;
     const heal = lock.enqueue(async () => {
-      const committed = lock.snapshot();
-      wroteDoka = applySpendToCommitted(committed.doka, spend);
+      const committed = lock.snapshot().doka;
+      wroteDoka = applySpendToCommitted(committed, 1);
       backendDoka = wroteDoka;
       lock.commit({ doka: wroteDoka });
     });
@@ -126,9 +125,9 @@ describe("progress persist lock", () => {
     releaseReward();
     await Promise.all([reward, credit, heal]);
 
-    assert.equal(wroteDoka, 320);
-    assert.equal(backendDoka, 320);
-    assert.equal(lock.snapshot().doka, 320);
+    assert.equal(wroteDoka, 749);
+    assert.equal(lock.snapshot().doka, 749);
+    assert.equal(backendDoka, 749);
   });
 
   it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {

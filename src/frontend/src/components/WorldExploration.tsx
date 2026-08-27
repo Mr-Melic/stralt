@@ -79,6 +79,7 @@ import {
   despawnSummons,
   isActiveHostile,
   isAliveCombatant,
+  shouldAllowBattleTrigger,
   shouldAwardVictory,
 } from "../engine/battleSetup";
 import {
@@ -198,6 +199,7 @@ import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
 import { evaluateChallenges } from "../utils/battleFixes";
+import { armDeathGuards } from "../utils/deathGuards";
 import {
   computeDeathPenalty,
   persistDeathPenalty as persistAbsoluteStats,
@@ -212,7 +214,6 @@ import { nextDokaAfterShopSpend } from "../utils/itemShop";
 import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
-  committedDokaAfterShopCredit,
   createProgressPersist,
   spendFromUiBalance,
 } from "../utils/progressPersist";
@@ -227,12 +228,13 @@ import {
   PENDING_PURCHASE_CREDIT_DELAY_MS,
   type PurchaseCreditActor,
   buildInitiatePurchaseArgs,
-  creditPendingPurchases,
+  creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
   readInitiatePurchaseResult,
 } from "../utils/shopPurchase";
 import {
   type SpellUpgradeActor,
+  applySpellLevel,
   persistSpellUpgrade,
 } from "../utils/spellUpgrade";
 import BuffShop from "./BuffShop";
@@ -891,6 +893,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    persistRoomClear,
     BOSS_RUSH_ROOMS,
     subscribeRunComplete,
   } = useBossRush(actor, characterSlot, userId);
@@ -1147,8 +1150,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
   const dokaBalanceRef = useRef(dokaBalance);
   dokaBalanceRef.current = dokaBalance;
-  // Serializes applyRewards deltas, paid-Doka credits, and saveBattleStats
-  // absolute writes so a recap heal/shop cannot overwrite an in-flight credit.
+  // Created here so shop-credit timers can enqueue onto the same lock as
+  // applyRewards / saveBattleStats. Hydrate-when-idle still lives next to
+  // characterStats because that effect depends on those values.
   const progressPersistRef = useRef(
     createProgressPersist({
       doka: dokaBalance,
@@ -1160,22 +1164,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     async (announceAmount?: number) => {
       if (!actor) return;
       try {
-        // Must share the persist lock with applyRewards / saveBattleStats.
-        // processPendingPurchases is an absolute wallet write; if it lands
-        // between a reward commit and a recap heal, the heal reconstructs
-        // from the pre-credit snapshot and wipes paid Doka.
-        const { previous, credited } = await progressPersistRef.current.enqueue(
-          async () => {
-            const result = await creditPendingPurchases(
-              actor as PurchaseCreditActor,
-            );
-            const nextDoka = committedDokaAfterShopCredit(result.credited);
-            if (nextDoka != null) {
-              progressPersistRef.current.commit({ doka: nextDoka });
-            }
-            return result;
-          },
-        );
+        // Must serialize with applyRewards / saveBattleStats. Updating the UI
+        // alone leaves committed.doka stale, so the next heal/death write
+        // overwrites the canister with the pre-purchase wallet.
+        const { previous, credited } =
+          await creditPendingPurchasesThroughPersist(
+            actor as PurchaseCreditActor,
+            progressPersistRef.current,
+          );
         if (credited == null) return;
         const gained = creditedDokaDelta(previous, credited);
         if (gained > 0) {
@@ -2815,6 +2811,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 characterSlot,
                 spellId,
               );
+              // saveBattleStats (heal/death) reads spellLevelsRef inside the
+              // same queue. Update it here — not after React commits — or a
+              // click during this upgrade persists the pre-upgrade map and
+              // wipes the paid level.
+              spellLevelsRef.current = applySpellLevel(
+                spellLevelsRef.current,
+                spellId,
+                result.newLevel,
+              );
               if (result.newDoka != null) {
                 progressPersistRef.current.commit({ doka: result.newDoka });
               }
@@ -2824,7 +2829,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newDoka != null ? newDoka : Math.max(0, dokaBalance - cost),
           );
           setSpellLevels((prev) => {
-            const next = { ...prev, [spellId]: newLevel };
+            const next = applySpellLevel(prev, spellId, newLevel);
             try {
               // M6: Use namespaced key for per-character spell levels
               localStorage.setItem(
@@ -5403,6 +5408,81 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return { map, spawnPosition };
   }, [characterStats?.level, arePortalsReachable, enemies.length]);
 
+  const spawnBossRushRoom = useCallback(
+    (roomIndex: number) => {
+      const roomDef = BOSS_RUSH_ROOMS[roomIndex];
+      if (!roomDef) return;
+      const { map: nextMap, spawnPosition } = generateRandomMap();
+      if (!nextMap) return;
+      currentMapRef.current = nextMap;
+      setCurrentMap(nextMap);
+      if (spawnPosition) {
+        setPlayerPositionSynced({ ...spawnPosition });
+      }
+      const newEnemies: any[] = [];
+      if (roomDef.boss1Id) {
+        newEnemies.push({
+          id: `boss-rush-${roomIndex}-0`,
+          pieceType: roomDef.boss1Name || "Boss 1",
+          x: 4,
+          y: 5,
+          level: characterStats.level + 2,
+          hp: 100,
+          maxHp: 100,
+          ap: 6,
+          mp: 3,
+          initiative: 10,
+          attack: 20,
+          defense: 10,
+          resistance: 5,
+          spells: [],
+          isBoss: true,
+          isLeader: false,
+          behavior: "aggressive",
+          family: "boss",
+          statusEffects: [],
+          activeEffects: [],
+        });
+      }
+      if (roomDef.boss2Id) {
+        newEnemies.push({
+          id: `boss-rush-${roomIndex}-1`,
+          pieceType: roomDef.boss2Name || "Boss 2",
+          x: 6,
+          y: 5,
+          level: characterStats.level + 2,
+          hp: 100,
+          maxHp: 100,
+          ap: 6,
+          mp: 3,
+          initiative: 10,
+          attack: 20,
+          defense: 10,
+          resistance: 5,
+          spells: [],
+          isBoss: true,
+          isLeader: false,
+          behavior: "aggressive",
+          family: "boss",
+          statusEffects: [],
+          activeEffects: [],
+        });
+      }
+      syncCombatants(combatantStoreCtx, newEnemies, {
+        resetBattle: true,
+      });
+      battleDefeatedRef.current = [];
+      deathPenaltyAppliedRef.current = false;
+    },
+    [
+      BOSS_RUSH_ROOMS,
+      generateRandomMap,
+      setPlayerPositionSynced,
+      characterStats.level,
+      combatantStoreCtx,
+    ],
+  );
+
   /** Generate the special Death Realm map — no walls, eerie grey/purple palette */
   const generateDeathRealmMap = useCallback((): {
     map: GameMap;
@@ -6163,13 +6243,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         transitionInProgressRef.current = false;
         return;
       }
-      // Boss Rush portal entry
+      // Boss Rush portal entry — generate the persisted/first room immediately.
+      // startBossRush used to only flip local flags, leaving the player on the
+      // world map so a clear credited applyRewards and a reload re-farmed room 0.
       if (portal.isBossRushPortal || portal.color === "bossRush") {
         lastPortalRef.current = { x: portal.x, y: portal.y };
+        cleanupMap();
         bossRushActiveRef.current = true;
-        startBossRush();
-        setTransitionInProgress(false);
-        transitionInProgressRef.current = false;
+        void startBossRush()
+          .then((roomIndex) => {
+            spawnBossRushRoom(roomIndex);
+          })
+          .finally(() => {
+            setTransitionInProgress(false);
+            transitionInProgressRef.current = false;
+          });
         return;
       }
       // Boss Rush room-advance: stepping into a progression portal during a
@@ -6187,70 +6275,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
         if (nextRoomDef) {
           void advanceBossRushRoom();
-          const { map: nextMap, spawnPosition } = generateRandomMap();
-          if (nextMap) {
-            setCurrentMap(nextMap);
-            if (spawnPosition) {
-              setPlayerPositionSynced({ ...spawnPosition });
-            }
-            const newEnemies: any[] = [];
-            if (nextRoomDef.boss1Id) {
-              newEnemies.push({
-                id: `boss-rush-${nextRoomIndex}-0`,
-                pieceType: nextRoomDef.boss1Name || "Boss 1",
-                x: 4,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: [],
-              });
-            }
-            if (nextRoomDef.boss2Id) {
-              newEnemies.push({
-                id: `boss-rush-${nextRoomIndex}-1`,
-                pieceType: nextRoomDef.boss2Name || "Boss 2",
-                x: 6,
-                y: 5,
-                level: characterStats.level + 2,
-                hp: 100,
-                maxHp: 100,
-                ap: 6,
-                mp: 3,
-                initiative: 10,
-                attack: 20,
-                defense: 10,
-                resistance: 5,
-                spells: [],
-                isBoss: true,
-                isLeader: false,
-                behavior: "aggressive",
-                family: "boss",
-                statusEffects: [],
-                activeEffects: [],
-              });
-            }
-            syncCombatants(combatantStoreCtx, newEnemies, {
-              resetBattle: true,
-            });
-            // SECTION 1c: clear the per-kill defeated roster for the new battle.
-            battleDefeatedRef.current = [];
-            // Section 6: a new battle starts — re-arm the one-shot death-penalty
-            // guard so the 20% XP / 40% Doka penalty applies once per death event.
-            deathPenaltyAppliedRef.current = false;
-          }
+          spawnBossRushRoom(nextRoomIndex);
         }
         setTransitionInProgress(false);
         transitionInProgressRef.current = false;
@@ -6950,6 +6975,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     playerPosition,
     mapModifiers,
     generateRandomMap,
+    spawnBossRushRoom,
     generateEnemies,
     canvasSize,
     updateCameraToFollowPlayer,
@@ -11518,8 +11544,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Check for battle trigger — fires only when player steps on the EXACT same cell as an enemy
   // biome-ignore lint/correctness/useExhaustiveDependencies: calcEnemyMaxHp is a stable useCallback — included in dep array
   const checkBattleTrigger = useCallback(() => {
-    // Guard: never re-trigger while battle is already initialising or active
-    if (inBattle || inBattleRef.current || transitionInProgressRef.current)
+    // Guard: never re-trigger while battle is already initialising or active.
+    // Both React inBattle and inBattleRef must be false — cleanupBattle only
+    // clears the ref. Boss-rush room clear used to leave inBattle true and
+    // permanently block room 2 / later overworld fights.
+    if (
+      !shouldAllowBattleTrigger({
+        inBattle,
+        inBattleRef: inBattleRef.current,
+        transitionInProgress: transitionInProgressRef.current,
+      })
+    )
       return;
     if (battleTriggerCooldownRef.current) return;
     // H7: Secondary re-entry guard for the 2-frame init window
@@ -12414,31 +12449,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
-      // SECTION 3a: Persist the room-clear grant through the single atomic
-      // reward funnel (multiplier 1) so rewards survive a reload. Room progress
-      // recording stays progress-only via completeBossRushRoom(..., 0, 0).
+      // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
+      // the room that just paid out. completeBossRushRoom stays progress-only
+      // (0, 0); wallet/XP still go through the single reward funnel.
       if (actor) {
-        void progressPersistRef.current
-          .enqueue(async () => {
-            const persisted = await resolveBattleRewards(
-              actor,
-              characterSlot,
-              buildBossRushPersistInput({
-                defeatedEnemies: defeatedList,
-                characterLevel: characterStats.level,
-                baseDoka: totalDoka + challengeDokaReward,
-              }),
-            );
-            progressPersistRef.current.commit({
-              doka:
-                persisted.newDoka ?? progressPersistRef.current.snapshot().doka,
-              xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
-              level:
-                persisted.currentLevel ||
-                progressPersistRef.current.snapshot().level,
-            });
-            return persisted;
-          })
+        void persistRoomClear(currentRoomIndex)
+          .then(() =>
+            progressPersistRef.current.enqueue(async () => {
+              const persisted = await resolveBattleRewards(
+                actor,
+                characterSlot,
+                buildBossRushPersistInput({
+                  defeatedEnemies: defeatedList,
+                  characterLevel: characterStats.level,
+                  baseDoka: totalDoka + challengeDokaReward,
+                }),
+              );
+              progressPersistRef.current.commit({
+                doka:
+                  persisted.newDoka ??
+                  progressPersistRef.current.snapshot().doka,
+                xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
+                level:
+                  persisted.currentLevel ||
+                  progressPersistRef.current.snapshot().level,
+              });
+              return persisted;
+            }),
+          )
           .then((persisted) => {
             onDokaBalanceChange(persisted.newDoka ?? newDokaBalance);
             setCharacterStats((prev) => ({
@@ -12484,8 +12522,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       logDebugError("BOSS", "BossRush reward/popup error", String(err));
     }
 
-    // Clear battle state
+    // Clear battle state. cleanupBattle() only drops inBattleRef; React
+    // inBattle must also fall or checkBattleTrigger stays blocked and the
+    // next Boss Rush room (and later overworld fights) never start.
     cleanupBattle();
+    setInBattle(false);
   }
 
   // Game Over recap reflects the actual persisted XP and Doka lost.
@@ -12651,6 +12692,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!inBattle) {
       if (characterStatsRef.current.hp <= 0 && !deathTriggeredRef.current) {
         deathTriggeredRef.current = true;
+        // Lava/spike deaths never call _handlePlayerDeath. Without this, a
+        // Boss Rush death leaves currentRoom on the canister and the next
+        // portal entry resumes mid-tree.
+        resetRunState({
+          bossRushActiveRef,
+          dungeonChainActiveRef,
+          dungeonChainDepthRef,
+          dungeonChainMaxDepthRef,
+          abortBossRush,
+        });
         const penalty = persistDeathPenalty();
         const xpLost = penalty?.xpLost ?? 0;
         const dokaLost = penalty?.dokaLost ?? 0;
@@ -12681,8 +12732,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           resetCombatantStore(combatantStoreCtx);
           setInBattle(false);
           cleanupBattle();
-          deathTriggeredRef.current = false;
-          deathPenaltyAppliedRef.current = false;
+          armDeathGuards({
+            deathTriggered: deathTriggeredRef,
+            deathPenaltyApplied: deathPenaltyAppliedRef,
+          });
         }, 1500);
       }
       return;
@@ -12690,6 +12743,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (characterStatsRef.current.hp > 0) return;
     if (deathTriggeredRef.current) return;
     deathTriggeredRef.current = true;
+    // Same linchpin reset as _handlePlayerDeath — lava/spikes set HP to 0
+    // without calling that function, so HP-watch must abort the run here.
+    resetRunState({
+      bossRushActiveRef,
+      dungeonChainActiveRef,
+      dungeonChainDepthRef,
+      dungeonChainMaxDepthRef,
+      abortBossRush,
+    });
     // Apply XP penalty: 20%, floored so level never decreases
     // Apply Doka penalty: 40%, min 0
     // Shared one-shot helper persists the reduced absolute values via
@@ -12734,9 +12796,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         deathTriggered: deathTriggeredRef.current,
         mapCount,
       });
-      // RC FIX: No generation check needed — loop runs forever
-      const ctx = canvasRef.current?.getContext("2d");
-      if (!ctx) return;
+      // Canvas is not required to generate the Death Realm. The previous
+      // getContext gate aborted here and left deathTriggeredRef set, so a
+      // later exploration death (lava) never ran.
       deathRealmTimerRef.current = null;
       try {
         const { map: drMap, spawnPosition: drSpawn } = generateDeathRealmMap();
@@ -12768,6 +12830,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5),
           ),
         }));
+        armDeathGuards({
+          deathTriggered: deathTriggeredRef,
+          deathPenaltyApplied: deathPenaltyAppliedRef,
+        });
         resetCombatantStore(combatantStoreCtx);
         // Skate-rail system removed
         toast(
@@ -12844,6 +12910,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5),
           ),
         }));
+        armDeathGuards({
+          deathTriggered: deathTriggeredRef,
+          deathPenaltyApplied: deathPenaltyAppliedRef,
+        });
         resetCombatantStore(combatantStoreCtx);
         toast(
           "💀 You have fallen... find a portal to escape the Death Realm.",
@@ -12898,6 +12968,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ap: 4,
       mp: 3,
     }));
+    // Re-arm so a later exploration death (lava/spikes after Death Realm)
+    // can run. The in-battle path used to leave these set.
+    armDeathGuards({
+      deathTriggered: deathTriggeredRef,
+      deathPenaltyApplied: deathPenaltyAppliedRef,
+    });
 
     // Generate death realm map
     let newMap: GameMap;

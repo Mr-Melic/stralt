@@ -5,6 +5,7 @@ import type {
   CharacterSlots,
   UserProfile,
 } from "../types/gameTypes";
+import { clearBossRushForSlot } from "./bossRushProgress";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -122,6 +123,12 @@ export function useCreateCharacter() {
       );
       if (result.__kind__ === "err")
         throw new Error(result.err || "Failed to create character");
+      try {
+        await clearBossRushForSlot(actor as ActorAny, slot);
+      } catch {
+        // Character exists; leftover currentRoom is also cleared on the canister
+        // create/delete path after upgrade. Do not fail character creation.
+      }
       return result;
     },
     onSuccess: () => {
@@ -174,6 +181,11 @@ export function useDeleteCharacter() {
       );
       if (result.__kind__ === "err")
         throw new Error(result.err || "Failed to delete character");
+      try {
+        await clearBossRushForSlot(actor as ActorAny, slot);
+      } catch {
+        // Slot is already empty; leftover currentRoom must not block delete.
+      }
       return result;
     },
     onSuccess: () => {

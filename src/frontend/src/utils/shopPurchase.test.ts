@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { createProgressPersist } from "./progressPersist.ts";
 import {
   buildInitiatePurchaseArgs,
   creditPendingPurchases,
+  creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
   readCallerDokaBalance,
   readInitiatePurchaseResult,
@@ -103,6 +105,30 @@ void (async () => {
     previous: null,
     credited: null,
   });
+
+  const persist = createProgressPersist({ doka: 100, xp: 0, level: 1 });
+  let releaseReward!: () => void;
+  const rewardGate = new Promise<void>((resolve) => {
+    releaseReward = resolve;
+  });
+  const reward = persist.enqueue(async () => {
+    await rewardGate;
+    persist.commit({ doka: 150 });
+  });
+  let processedThroughPersist = 0;
+  const queuedActor = {
+    processPendingPurchases: async () => {
+      processedThroughPersist += 1;
+      return 1n;
+    },
+    getCallerDokaBalance: async () =>
+      processedThroughPersist === 0 ? 150n : 650n,
+  };
+  const queued = creditPendingPurchasesThroughPersist(queuedActor, persist);
+  releaseReward();
+  await reward;
+  assert.deepEqual(await queued, { previous: 150, credited: 650 });
+  assert.equal(persist.snapshot().doka, 650);
 
   console.log("shopPurchase.test: ok");
 })();
