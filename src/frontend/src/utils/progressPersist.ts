@@ -9,9 +9,10 @@
  * while applyRewards is still in flight — a click-time snapshot then overwrites
  * the just-credited wallet.
  *
- * Paid-Doka processPendingPurchases is the same class of absolute write: it
- * must enqueue on this lock and commit the post-credit balance, or a recap
- * heal reconstructs from the pre-credit snapshot and wipes the purchase.
+ * Paid-Doka processPendingPurchases and claimAchievementReward are the same
+ * class of backend delta: they must enqueue on this lock and commit the
+ * post-credit balance, or a recap heal reconstructs from the pre-credit
+ * snapshot and wipes the grant.
  */
 
 export type CommittedProgress = {

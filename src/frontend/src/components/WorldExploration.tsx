@@ -198,6 +198,10 @@ import {
 import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
+import {
+  type AchievementCreditActor,
+  creditAchievementRewardThroughPersist,
+} from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
 import { armDeathGuards } from "../utils/deathGuards";
 import {
@@ -315,6 +319,9 @@ interface WorldExplorationProps {
   /** Top-bar item shop open flag. BuffShop is a modal and returns null when this is not true. */
   itemShopOpen?: boolean;
   onItemShopClose?: () => void;
+  /** Top-bar Feats panel. Hosted here so claims can join the persist lock. */
+  achievementsOpen?: boolean;
+  onAchievementsClose?: () => void;
 }
 
 type TileType = "floor" | "wall" | "portal";
@@ -612,6 +619,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   onShowBattleSummary,
   itemShopOpen = false,
   onItemShopClose,
+  achievementsOpen = false,
+  onAchievementsClose,
 }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ActorAny = Record<string, any>;
@@ -1189,6 +1198,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           toast.error("Payment recorded, but Doka credit is still pending.");
         }
       }
+    },
+    [actor, onDokaBalanceChange],
+  );
+  const persistAchievementClaim = useCallback(
+    async (achievementId: string) => {
+      if (!actor?.claimAchievementReward) {
+        return { err: "Actor not available" };
+      }
+      const result = await creditAchievementRewardThroughPersist(
+        actor as AchievementCreditActor,
+        progressPersistRef.current,
+        achievementId,
+      );
+      if ("ok" in result && result.ok > 0) {
+        onDokaBalanceChange(
+          applyShopCreditDeltaToUi(dokaBalanceRef.current, result.ok),
+        );
+      }
+      return result;
     },
     [actor, onDokaBalanceChange],
   );
@@ -16816,7 +16844,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           onTouchEnd={handleCanvasTouch}
         />
 
-        {/* Achievements panel is now rendered from GameFlow.tsx */}
+        <AchievementsPanel
+          userId={userId}
+          dokaBalance={dokaBalance}
+          onDokaBalanceChange={onDokaBalanceChange}
+          isOpen={achievementsOpen}
+          onClose={onAchievementsClose}
+          persistClaim={persistAchievementClaim}
+        />
 
         {/* EXP6: Item (Buff) Shop draggable panel */}
         <BuffShop

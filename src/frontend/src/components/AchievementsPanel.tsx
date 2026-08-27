@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Trophy, X } from "lucide-react";
 import type React from "react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   useClaimAchievementReward,
@@ -19,6 +19,13 @@ interface AchievementsPanelProps {
   onDokaBalanceChange: (newBalance: number) => void;
   isOpen?: boolean;
   onClose?: () => void;
+  /**
+   * When provided, the claim runs on the WorldExploration persist lock so a
+   * later saveBattleStats heal/death cannot persist the pre-claim wallet.
+   */
+  persistClaim?: (
+    achievementId: string,
+  ) => Promise<{ ok: number } | { err: string }>;
 }
 
 const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
@@ -27,6 +34,7 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
   onDokaBalanceChange,
   isOpen,
   onClose,
+  persistClaim,
 }) => {
   const queryClient = useQueryClient();
   const { data: configs = [], isLoading: configsLoading } =
@@ -34,6 +42,7 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
   const { data: progress = [], isLoading: progressLoading } =
     useGetPlayerAchievements();
   const claimMut = useClaimAchievementReward();
+  const [persistClaimPending, setPersistClaimPending] = useState(false);
 
   const progressMap = useMemo(() => {
     const map = new Map<string, { unlocked: boolean; claimed: boolean }>();
@@ -69,48 +78,72 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
     [queryClient],
   );
 
+  const applyClaimResult = useCallback(
+    (
+      achievement: AchievementConfig,
+      result: { ok?: unknown; err?: unknown },
+    ) => {
+      if ("ok" in result && result.ok != null && result.err == null) {
+        const granted = Number(result.ok);
+        // Optimistic update: flip claimed=true immediately so the UI
+        // reflects the claim without waiting for the refetch to propagate.
+        queryClient.setQueryData(
+          ["playerAchievements"],
+          (old: AchievementProgress[] | undefined) =>
+            old?.map((p) =>
+              p.achievementId === achievement.id ? { ...p, claimed: true } : p,
+            ),
+        );
+        queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
+        queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
+        // persistClaim already added the grant onto the live UI wallet.
+        if (!persistClaim) {
+          onDokaBalanceChange(dokaBalance + granted);
+        }
+        toast.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
+        return;
+      }
+      rollbackClaimed(achievement.id);
+      toast.error(
+        `Failed to claim reward: ${String(result.err ?? "unknown error")}`,
+      );
+    },
+    [
+      dokaBalance,
+      onDokaBalanceChange,
+      persistClaim,
+      queryClient,
+      rollbackClaimed,
+    ],
+  );
+
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
+      if (persistClaim) {
+        setPersistClaimPending(true);
+        void persistClaim(achievement.id)
+          .then(
+            (result) => applyClaimResult(achievement, result),
+            (error: unknown) => {
+              rollbackClaimed(achievement.id);
+              const msg =
+                error instanceof Error ? error.message : "Network error";
+              toast.error(`Failed to claim reward: ${msg}`);
+            },
+          )
+          .finally(() => setPersistClaimPending(false));
+        return;
+      }
       claimMut.mutate(achievement.id, {
-        onSuccess: (result) => {
-          if ("ok" in result) {
-            const granted = Number(result.ok);
-            // Optimistic update: flip claimed=true immediately so the UI
-            // reflects the claim without waiting for the refetch to propagate.
-            queryClient.setQueryData(
-              ["playerAchievements"],
-              (old: AchievementProgress[] | undefined) =>
-                old?.map((p) =>
-                  p.achievementId === achievement.id
-                    ? { ...p, claimed: true }
-                    : p,
-                ),
-            );
-            // Belt-and-suspenders invalidation (hook also invalidates these).
-            queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
-            queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
-            // Fix overwrite bug: add granted to current balance, not replace.
-            onDokaBalanceChange(dokaBalance + granted);
-            toast.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
-          } else if ("err" in result) {
-            // Backend rejected the claim (e.g. "Achievement not yet unlocked"
-            // or "already claimed"). Undo any optimistic claimed=true flip so
-            // the row reflects the real backend state, then refetch.
-            rollbackClaimed(achievement.id);
-            toast.error(`Failed to claim reward: ${result.err}`);
-          }
-        },
+        onSuccess: (result) => applyClaimResult(achievement, result),
         onError: (error) => {
-          // Transport-level failure (replica down, timeout, etc.). The mutation
-          // never reached a definitive #ok/#err, so we cannot trust any
-          // optimistic state. Roll back and refetch the authoritative state.
           rollbackClaimed(achievement.id);
           const msg = error instanceof Error ? error.message : "Network error";
           toast.error(`Failed to claim reward: ${msg}`);
         },
       });
     },
-    [claimMut, onDokaBalanceChange, queryClient, dokaBalance, rollbackClaimed],
+    [applyClaimResult, claimMut, persistClaim, rollbackClaimed],
   );
 
   const activeConfigs = useMemo(
@@ -288,7 +321,7 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
                       type="button"
                       data-ocid={`achievements.claim_button.${i + 1}`}
                       onClick={() => handleClaim(cfg)}
-                      disabled={claimMut.isPending}
+                      disabled={claimMut.isPending || persistClaimPending}
                       className="stone-btn-crimson"
                       style={{
                         fontSize: 10,
