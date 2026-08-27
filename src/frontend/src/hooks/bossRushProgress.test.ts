@@ -91,4 +91,48 @@ describe("persistBossRushRoomClear", () => {
     );
     assert.deepEqual(calls, ["reset:1", "complete:9"]);
   });
+
+  it("re-resets currentRoom when death aborts the run during the persist", async () => {
+    const calls: string[] = [];
+    let aborted = false;
+    await persistBossRushRoomClear(
+      {
+        setBossRushProgress: async (slot, room) => {
+          calls.push(`progress:${slot}:${room}`);
+          aborted = true;
+        },
+        resetBossRush: async (slot) => {
+          calls.push(`reset:${slot}`);
+        },
+        completeBossRushRoom: async (slot, room) => {
+          calls.push(`complete:${slot}:${room}`);
+        },
+      },
+      2,
+      0,
+      { wasSuperseded: () => aborted },
+    );
+    assert.deepEqual(calls, ["progress:2:1", "complete:2:0", "reset:2"]);
+  });
+
+  it("keeps the advanced room when the run is still live", async () => {
+    const calls: string[] = [];
+    await persistBossRushRoomClear(
+      {
+        setBossRushProgress: async (slot, room) => {
+          calls.push(`progress:${slot}:${room}`);
+        },
+        resetBossRush: async (slot) => {
+          calls.push(`reset:${slot}`);
+        },
+        completeBossRushRoom: async (slot, room) => {
+          calls.push(`complete:${slot}:${room}`);
+        },
+      },
+      2,
+      0,
+      { wasSuperseded: () => false },
+    );
+    assert.deepEqual(calls, ["progress:2:1", "complete:2:0"]);
+  });
 });

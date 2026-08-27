@@ -156,6 +156,9 @@ export function useBossRush(
     useState<BossRushState>(INITIAL_STATE);
   const currentRoomRef = useRef(0);
   currentRoomRef.current = bossRushState.currentRoom;
+  // Bumped on abort so an in-flight persistRoomClear cannot write currentRoom
+  // after death/flee already reset the run.
+  const persistEpochRef = useRef(0);
 
   // Cache mid-run currentRoom on mount so startBossRush can resume if the
   // live getBossRushState call fails. Do not set active here — the world
@@ -274,11 +277,13 @@ export function useBossRush(
   const persistRoomClear = useCallback(
     async (clearedRoomIndex: number) => {
       if (!actor) return;
+      const epoch = persistEpochRef.current;
       try {
         await persistBossRushRoomClear(
           actor,
           characterSlot ?? 0,
           clearedRoomIndex,
+          { wasSuperseded: () => persistEpochRef.current !== epoch },
         );
       } catch (e) {
         console.error("[BossRush] Failed to persist room clear:", e);
@@ -323,6 +328,7 @@ export function useBossRush(
   }, [actor, characterSlot]);
 
   const abortBossRush = useCallback(async () => {
+    persistEpochRef.current += 1;
     setBossRushState(INITIAL_STATE);
     if (actor) {
       try {
