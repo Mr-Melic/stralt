@@ -8,6 +8,10 @@
  * After a victory the recap is shown immediately and heal/shop become usable
  * while applyRewards is still in flight — a click-time snapshot then overwrites
  * the just-credited wallet.
+ *
+ * Paid-Doka processPendingPurchases is the same class of absolute write: it
+ * must enqueue on this lock and commit the post-credit balance, or a recap
+ * heal reconstructs from the pre-credit snapshot and wipes the purchase.
  */
 
 export type CommittedProgress = {
@@ -30,6 +34,29 @@ export function applySpendToCommitted(
   spend: number,
 ): number {
   return Math.max(0, toNat(committedDoka, 0) - Math.max(0, toNat(spend, 0)));
+}
+
+/**
+ * processPendingPurchases writes an absolute wallet. Commit that balance so a
+ * later saveBattleStats spend cannot reconstruct from a pre-credit snapshot.
+ */
+export function committedDokaAfterShopCredit(
+  credited: number | null,
+): number | null {
+  if (credited == null) return null;
+  return Math.max(0, toNat(credited, 0));
+}
+
+/**
+ * Add the credited delta onto the live UI wallet. Replacing with the absolute
+ * backend read would overwrite a heal/shop spend the player already applied
+ * locally while this credit was waiting on the persist queue.
+ */
+export function applyShopCreditDeltaToUi(
+  uiDoka: number,
+  gained: number,
+): number {
+  return Math.max(0, toNat(uiDoka, 0) + Math.max(0, toNat(gained, 0)));
 }
 
 export function createProgressPersist(initial?: Partial<CommittedProgress>) {

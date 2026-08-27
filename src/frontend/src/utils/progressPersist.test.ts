@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyShopCreditDeltaToUi,
   applySpendToCommitted,
+  committedDokaAfterShopCredit,
   createProgressPersist,
   spendFromUiBalance,
 } from "./progressPersist.ts";
@@ -87,5 +89,53 @@ describe("progress persist lock", () => {
     assert.equal(backendDoka, 220);
     assert.equal(backendXp, 130);
     assert.equal(backendLevel, 5);
+  });
+
+  it("lets a queued shop credit land before a heal so saveBattleStats cannot wipe paid Doka", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    let backendDoka = 200;
+
+    let releaseReward!: () => void;
+    const rewardGate = new Promise<void>((resolve) => {
+      releaseReward = resolve;
+    });
+
+    const reward = lock.enqueue(async () => {
+      await rewardGate;
+      backendDoka += 50;
+      lock.commit({ doka: backendDoka });
+    });
+
+    // 60s shop timer / shop-open retry: processPendingPurchases credits 100.
+    const credit = lock.enqueue(async () => {
+      backendDoka += 100;
+      const next = committedDokaAfterShopCredit(backendDoka);
+      if (next != null) lock.commit({ doka: next });
+    });
+
+    // Recap heal: UI still shows the pre-reward, pre-credit 200.
+    const spend = spendFromUiBalance(200, 170);
+    let wroteDoka = 0;
+    const heal = lock.enqueue(async () => {
+      const committed = lock.snapshot();
+      wroteDoka = applySpendToCommitted(committed.doka, spend);
+      backendDoka = wroteDoka;
+      lock.commit({ doka: wroteDoka });
+    });
+
+    releaseReward();
+    await Promise.all([reward, credit, heal]);
+
+    assert.equal(wroteDoka, 320);
+    assert.equal(backendDoka, 320);
+    assert.equal(lock.snapshot().doka, 320);
+  });
+
+  it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {
+    assert.equal(committedDokaAfterShopCredit(350), 350);
+    assert.equal(committedDokaAfterShopCredit(null), null);
+    // Heal already deducted 30 locally while the credit was queued.
+    assert.equal(applyShopCreditDeltaToUi(170, 100), 270);
+    assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
   });
 });

@@ -210,7 +210,9 @@ import {
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
 import { nextDokaAfterShopSpend } from "../utils/itemShop";
 import {
+  applyShopCreditDeltaToUi,
   applySpendToCommitted,
+  committedDokaAfterShopCredit,
   createProgressPersist,
   spendFromUiBalance,
 } from "../utils/progressPersist";
@@ -1143,17 +1145,43 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const shopCreditTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(
     new Set(),
   );
+  const dokaBalanceRef = useRef(dokaBalance);
+  dokaBalanceRef.current = dokaBalance;
+  // Serializes applyRewards deltas, paid-Doka credits, and saveBattleStats
+  // absolute writes so a recap heal/shop cannot overwrite an in-flight credit.
+  const progressPersistRef = useRef(
+    createProgressPersist({
+      doka: dokaBalance,
+      xp: character?.experience != null ? Number(character.experience) : 0,
+      level: character?.level != null ? Number(character.level) : 1,
+    }),
+  );
   const applyPendingPurchaseCredit = useCallback(
     async (announceAmount?: number) => {
       if (!actor) return;
       try {
-        const { previous, credited } = await creditPendingPurchases(
-          actor as PurchaseCreditActor,
+        // Must share the persist lock with applyRewards / saveBattleStats.
+        // processPendingPurchases is an absolute wallet write; if it lands
+        // between a reward commit and a recap heal, the heal reconstructs
+        // from the pre-credit snapshot and wipes paid Doka.
+        const { previous, credited } = await progressPersistRef.current.enqueue(
+          async () => {
+            const result = await creditPendingPurchases(
+              actor as PurchaseCreditActor,
+            );
+            const nextDoka = committedDokaAfterShopCredit(result.credited);
+            if (nextDoka != null) {
+              progressPersistRef.current.commit({ doka: nextDoka });
+            }
+            return result;
+          },
         );
         if (credited == null) return;
-        onDokaBalanceChange(credited);
         const gained = creditedDokaDelta(previous, credited);
         if (gained > 0) {
+          onDokaBalanceChange(
+            applyShopCreditDeltaToUi(dokaBalanceRef.current, gained),
+          );
           toast.success(
             `${(announceAmount ?? gained).toLocaleString()} Doka credited!`,
           );
@@ -2773,16 +2801,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     spellLevelsRef.current = spellLevels;
   }, [spellLevels]);
-
-  // Serializes applyRewards deltas and saveBattleStats absolute writes so a
-  // post-victory heal/shop cannot overwrite an in-flight reward credit.
-  const progressPersistRef = useRef(
-    createProgressPersist({
-      doka: dokaBalance,
-      xp: character?.experience != null ? Number(character.experience) : 0,
-      level: character?.level != null ? Number(character.level) : 1,
-    }),
-  );
 
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
