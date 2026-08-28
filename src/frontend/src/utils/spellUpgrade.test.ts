@@ -4,6 +4,7 @@ import {
   applySpellLevel,
   persistSpellUpgrade,
   readUpgradeSpellOk,
+  spellUpgradeUiSpend,
 } from "./spellUpgrade.ts";
 
 assert.deepEqual(applySpellLevel({ fireball: 1 }, "fireball", 2), {
@@ -86,6 +87,36 @@ assert.equal(persistThrew, true);
   releaseUpgrade();
   await Promise.all([upgrade, heal]);
   assert.deepEqual(wroteLevels, { fireball: 2 });
+}
+
+// Summon upgrades advertise 10× but upgradeSpell only deducts base*2^level.
+// Debiting the advertised cost leaves the UI short; hydrateWhenIdle then
+// copies that under-count over committed and the next heal persists it.
+assert.equal(spellUpgradeUiSpend(100, 200, 190), 10);
+assert.equal(spellUpgradeUiSpend(100, 200, undefined), 100);
+assert.equal(spellUpgradeUiSpend(3200, 4000, 3680), 320);
+
+{
+  const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
+  const advertisedSummonCost = 100;
+  const backendAfter = 190;
+  const committedBefore = lock.snapshot().doka;
+  lock.commit({ doka: backendAfter });
+  const spent = spellUpgradeUiSpend(
+    advertisedSummonCost,
+    committedBefore,
+    backendAfter,
+  );
+  const uiAfter = 200 - spent;
+  assert.equal(spent, 10);
+  assert.equal(uiAfter, 190);
+  lock.hydrateWhenIdle({ doka: uiAfter, xp: 0, level: 1 });
+  assert.equal(lock.snapshot().doka, 190);
+
+  const wrongUi = 200 - advertisedSummonCost;
+  const wrongLock = createProgressPersist({ doka: 190, xp: 0, level: 1 });
+  wrongLock.hydrateWhenIdle({ doka: wrongUi, xp: 0, level: 1 });
+  assert.equal(wrongLock.snapshot().doka, 100);
 }
 
 console.log("spellUpgrade.test: ok");

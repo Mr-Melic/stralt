@@ -251,6 +251,7 @@ import {
   type SpellUpgradeActor,
   applySpellLevel,
   persistSpellUpgrade,
+  spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
@@ -2857,8 +2858,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (!actor?.upgradeSpell) return;
       void (async () => {
         try {
-          const { newLevel } = await progressPersistRef.current.enqueue(
+          const { newLevel, spent } = await progressPersistRef.current.enqueue(
             async () => {
+              const committedBefore =
+                progressPersistRef.current.snapshot().doka;
               const result = await persistSpellUpgrade(
                 actor as SpellUpgradeActor,
                 characterSlot,
@@ -2876,14 +2879,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (result.newDoka != null) {
                 progressPersistRef.current.commit({ doka: result.newDoka });
               }
-              return result;
+              return {
+                newLevel: result.newLevel,
+                spent: spellUpgradeUiSpend(
+                  cost,
+                  committedBefore,
+                  result.newDoka,
+                ),
+              };
             },
           );
           // Never replace the live wallet with the absolute post-upgrade
           // read. A recap heal can already be deducted locally; an absolute
           // write here refunds it, and hydrateWhenIdle then re-inflates
           // committed.doka so the next persist restores the spent Doka.
-          onDokaBalanceChange(Math.max(0, dokaBalanceRef.current - cost));
+          // Debit the canister spend, not the advertised summon 10× cost —
+          // otherwise hydrateWhenIdle copies the short UI over committed
+          // and the next heal/shop saveBattleStats wipes the difference.
+          onDokaBalanceChange(Math.max(0, dokaBalanceRef.current - spent));
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
