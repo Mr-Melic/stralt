@@ -142,12 +142,14 @@ import {
   PROGRESSION_PORTAL_KIND,
   type RunMode,
   completeRun,
+  decideDungeonChainPortal,
   getRunMode,
   isProgressionLocked,
   isProgressionPortalUnlocked,
   resetRunState,
   shouldSpawnWhitePortal,
   shouldSuppressPortal,
+  snapshotDungeonChain,
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
 import {
@@ -6500,6 +6502,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       // Fire portal sound
       playSound("map_transition");
+      // cleanupMap always zeroes dungeon-chain refs (death/flee must not
+      // carry a run). Snapshot first — a progression portal is not a flee.
+      // Reading the wiped refs would drop the chain, generate an overworld
+      // map, and never pay the completion bonus.
+      const dungeonChainSnap = snapshotDungeonChain({
+        dungeonChainActiveRef,
+        dungeonChainDepthRef,
+        dungeonChainMaxDepthRef,
+      });
+      const dungeonChainAction = decideDungeonChainPortal(
+        portal.isDungeonEntry === true,
+        dungeonChainSnap,
+      );
       // ── UNIFIED MAP CLEANUP: terminates ALL battle processes, timers, AI callbacks,
       // VFX, particle systems, DoT effects, and caches from the previous map.
       // cleanupMap() calls cleanupBattle() internally — this is the single point
@@ -6523,13 +6538,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setClickedTile(null);
       setPendingDestination(null);
       // ── EXP8: DUNGEON CHAIN STATE MANAGEMENT ──────────────────────────
-      const isDungeonEntryPortal = portal.isDungeonEntry === true;
-      const isInsideChain = dungeonChainActiveRef.current;
-      const currentDepth = dungeonChainDepthRef.current;
-      const maxDepth = dungeonChainMaxDepthRef.current;
       let nextDungeonDepth = 0;
       let chainJustCompleted = false;
-      if (isDungeonEntryPortal && !isInsideChain) {
+      if (dungeonChainAction.kind === "enter") {
         // ENTER THE CHAIN
         const newMaxDepth = 3 + Math.floor(Math.random() * 3); // 3-5
         nextDungeonDepth = 1;
@@ -6544,59 +6555,59 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           `⚔️ Dungeon Chain entered! Prepare for ${newMaxDepth} escalating maps.`,
           "#cc0000",
         );
-      } else if (isInsideChain) {
-        if (currentDepth >= maxDepth) {
-          // CHAIN COMPLETED — award bonus and reset
-          const chainBonus = maxDepth * 50;
-          void progressPersistRef.current.enqueue(async () => {
-            const newDoka = await persistDokaCredit(
-              actor as DokaCreditActor,
-              characterSlot,
-              chainBonus,
+      } else if (dungeonChainAction.kind === "complete") {
+        // CHAIN COMPLETED — award bonus and reset
+        const chainBonus = dungeonChainAction.bonus;
+        void progressPersistRef.current.enqueue(async () => {
+          const newDoka = await persistDokaCredit(
+            actor as DokaCreditActor,
+            characterSlot,
+            chainBonus,
+          );
+          if (newDoka > 0) {
+            progressPersistRef.current.commit({ doka: newDoka });
+            onDokaBalanceChange(
+              applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
             );
-            if (newDoka > 0) {
-              progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(
-                applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
-              );
-            }
-            return newDoka;
-          });
-          chainJustCompleted = true;
-          nextDungeonDepth = 0;
-          setDungeonChainActive(false);
-          setDungeonChainDepth(0);
-          setDungeonChainMaxDepth(0);
-          dungeonChainActiveRef.current = false;
-          dungeonChainDepthRef.current = 0;
-          dungeonChainMaxDepthRef.current = 0;
-          logBattleEntry(
-            `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
-            "#ffd700",
-          );
-          // Spawn a white portal to sanctuary on dungeon-chain completion.
-          // Completion keeps rewards (no death penalty / no Death Realm reset).
-          const whiteDungeonPortal = {
-            x: 0,
-            y: 0,
-            color: "white" as const,
-            isWhitePortal: true,
-            animationOffset: Math.random() * Math.PI * 2,
-          };
-          // Attach to the next generated map (created below) via a ref hook
-          // so the portal entry handler can find it after map swap.
-          pendingWhitePortalRef.current = whiteDungeonPortal;
-          logBattleEntry("A white gateway to sanctuary opens…", "white");
-        } else {
-          // PROGRESS DEEPER
-          nextDungeonDepth = currentDepth + 1;
-          setDungeonChainDepth(nextDungeonDepth);
-          dungeonChainDepthRef.current = nextDungeonDepth;
-          logBattleEntry(
-            `⚔️ Dungeon depth ${nextDungeonDepth}/${maxDepth} — enemies grow stronger!`,
-            "#cc0000",
-          );
-        }
+          }
+          return newDoka;
+        });
+        chainJustCompleted = true;
+        nextDungeonDepth = 0;
+        setDungeonChainActive(false);
+        setDungeonChainDepth(0);
+        setDungeonChainMaxDepth(0);
+        dungeonChainActiveRef.current = false;
+        dungeonChainDepthRef.current = 0;
+        dungeonChainMaxDepthRef.current = 0;
+        logBattleEntry(
+          `🏆 Dungeon Chain COMPLETE! Bonus: ${chainBonus} Doka!`,
+          "#ffd700",
+        );
+        // Spawn a white portal to sanctuary on dungeon-chain completion.
+        // Completion keeps rewards (no death penalty / no Death Realm reset).
+        const whiteDungeonPortal = {
+          x: 0,
+          y: 0,
+          color: "white" as const,
+          isWhitePortal: true,
+          animationOffset: Math.random() * Math.PI * 2,
+        };
+        // Attach to the next generated map (created below) via a ref hook
+        // so the portal entry handler can find it after map swap.
+        pendingWhitePortalRef.current = whiteDungeonPortal;
+        logBattleEntry("A white gateway to sanctuary opens…", "white");
+      } else if (dungeonChainAction.kind === "progress") {
+        // PROGRESS DEEPER — restore refs cleanupMap just zeroed
+        nextDungeonDepth = dungeonChainAction.nextDepth;
+        setDungeonChainDepth(nextDungeonDepth);
+        dungeonChainDepthRef.current = nextDungeonDepth;
+        dungeonChainActiveRef.current = true;
+        dungeonChainMaxDepthRef.current = dungeonChainSnap.maxDepth;
+        logBattleEntry(
+          `⚔️ Dungeon depth ${nextDungeonDepth}/${dungeonChainSnap.maxDepth} — enemies grow stronger!`,
+          "#cc0000",
+        );
       }
       // Generate new map — dungeon chain maps never get dungeon entry portals
       // (dungeonChainActiveRef is already updated above before this call)
