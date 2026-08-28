@@ -6,6 +6,7 @@ import {
   committedDokaAfterShopCredit,
   createProgressPersist,
   floorHydratedLevel,
+  resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -155,6 +156,31 @@ describe("progress persist lock", () => {
     assert.equal(backendDoka, 749);
   });
 
+  it("does not treat a pre-query 0 as a seeded wallet", () => {
+    const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.hydrateWhenIdle({ doka: 0, xp: 80, level: 4 }), true);
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.snapshot().doka, 0);
+
+    assert.equal(
+      lock.hydrateWhenIdle(
+        { doka: 0, xp: 80, level: 4 },
+        { walletReady: true },
+      ),
+      true,
+    );
+    assert.equal(lock.isWalletSeeded(), true);
+    assert.equal(lock.snapshot().doka, 0);
+  });
+
+  it("seeds from a positive idle hydrate before the ready flag arrives", () => {
+    const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
+    lock.hydrateWhenIdle({ doka: 500, xp: 80, level: 4 });
+    assert.equal(lock.isWalletSeeded(), true);
+    assert.equal(lock.snapshot().doka, 500);
+  });
+
   it("does not let idle hydrate downgrade a committed level-up", () => {
     assert.equal(floorHydratedLevel(5, 4), 5);
     assert.equal(floorHydratedLevel(4, 5), 5);
@@ -190,5 +216,39 @@ describe("progress persist lock", () => {
     assert.equal(uiAfterDelta, 220);
     delta.hydrateWhenIdle({ doka: uiAfterDelta, xp: 50, level: 4 });
     assert.equal(delta.snapshot().doka, 220);
+  });
+
+  it("fetches the canister wallet when death persist runs before the query hydrates", async () => {
+    const lock = createProgressPersist({ doka: 0, xp: 100, level: 4 });
+    assert.equal(lock.isWalletSeeded(), false);
+
+    const fetched = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => 500,
+    );
+    assert.equal(fetched, 500);
+    assert.equal(lock.isWalletSeeded(), true);
+    assert.equal(lock.snapshot().doka, 500);
+
+    const alreadySeeded = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => {
+        throw new Error("must not refetch after seed");
+      },
+    );
+    assert.equal(alreadySeeded, 500);
+  });
+
+  it("skips the absolute write when the unseeded wallet read fails", async () => {
+    const lock = createProgressPersist({ doka: 0, xp: 100, level: 4 });
+    const missed = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => {
+        throw new Error("replica timeout");
+      },
+    );
+    assert.equal(missed, null);
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.snapshot().doka, 0);
   });
 });

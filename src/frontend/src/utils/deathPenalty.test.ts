@@ -9,7 +9,10 @@ import {
   shouldApplyVictoryLiveHydrate,
   victoryResourceFloor,
 } from "./deathPenalty.ts";
-import { createProgressPersist } from "./progressPersist.ts";
+import {
+  createProgressPersist,
+  resolveCommittedDokaForAbsoluteWrite,
+} from "./progressPersist.ts";
 
 assert.deepEqual(computeDeathPenalty(100, 100), {
   xpLost: 20,
@@ -312,6 +315,29 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   // level must stay at 5 so the next heal cannot revert the canister.
   lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
   assert.equal(lock.snapshot().level, 5);
+}
+
+// WorldExploration mounts with GameFlow's placeholder doka=0 while
+// getCallerDokaBalance is still in flight. Idle hydrate used to copy that
+// 0 into committed; lava death then persistAbsoluteStats(newDoka=0).
+{
+  const lock = createProgressPersist({ doka: 0, xp: 100, level: 4 });
+  lock.hydrateWhenIdle({ doka: 0, xp: 100, level: 4 });
+  assert.equal(lock.isWalletSeeded(), false);
+
+  const wiped = computeDeathPenalty(lock.snapshot().xp, lock.snapshot().doka);
+  assert.equal(wiped.newDoka, 0, "unseeded committed.doka=0 would wipe");
+
+  const dokaBase = await resolveCommittedDokaForAbsoluteWrite(
+    lock,
+    async () => 500,
+  );
+  const after = computeDeathPenalty(lock.snapshot().xp, dokaBase ?? 0);
+  assert.equal(dokaBase, 500);
+  assert.equal(after.newDoka, 300);
+  assert.equal(after.dokaLost, 200);
+  lock.commit({ doka: after.newDoka, xp: after.newXp });
+  assert.equal(lock.snapshot().doka, 300);
 }
 
 console.log("deathPenalty.test: ok");

@@ -233,6 +233,7 @@ import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
   createProgressPersist,
+  resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
 } from "../utils/progressPersist";
 import {
@@ -322,6 +323,11 @@ let _turnSkipLogLastTs = 0;
 
 interface WorldExplorationProps {
   dokaBalance: number;
+  /**
+   * True after getCallerDokaBalance has resolved. The session cache starts at
+   * 0; idle-hydrate must not treat that placeholder as the canister wallet.
+   */
+  dokaWalletReady?: boolean;
   onDokaBalanceChange: (val: number) => void;
   character: any;
   dungeon: any;
@@ -626,6 +632,7 @@ class CanvasErrorBoundary extends Component<
 
 const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   dokaBalance,
+  dokaWalletReady = false,
   onDokaBalanceChange,
   character,
   dungeon: _dungeon,
@@ -2996,12 +3003,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Seed the persist lock from backend-hydrated UI state only while no write
   // is in flight, so a GameFlow refetch cannot clobber a queued reward/spend.
   useEffect(() => {
-    progressPersistRef.current.hydrateWhenIdle({
-      doka: dokaBalance,
-      xp: characterStats.exp ?? 0,
-      level: characterStats.level ?? 1,
-    });
-  }, [dokaBalance, characterStats.exp, characterStats.level]);
+    progressPersistRef.current.hydrateWhenIdle(
+      {
+        doka: dokaBalance,
+        xp: characterStats.exp ?? 0,
+        level: characterStats.level ?? 1,
+      },
+      { walletReady: dokaWalletReady },
+    );
+  }, [dokaBalance, dokaWalletReady, characterStats.exp, characterStats.level]);
 
   // Doka balance is owned by GameFlow; no re-sync needed here.
 
@@ -12741,7 +12751,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       void progressPersistRef.current
         .enqueue(async () => {
           const committed = progressPersistRef.current.snapshot();
-          const after = computeDeathPenalty(committed.xp, committed.doka);
+          const dokaBase = await resolveCommittedDokaForAbsoluteWrite(
+            progressPersistRef.current,
+            () =>
+              (
+                actor as {
+                  getCallerDokaBalance?: () => Promise<unknown>;
+                }
+              ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+          );
+          if (
+            dokaBase == null &&
+            !progressPersistRef.current.isWalletSeeded()
+          ) {
+            throw new Error("death-save skipped: wallet not seeded");
+          }
+          const after = computeDeathPenalty(
+            committed.xp,
+            dokaBase ?? committed.doka,
+          );
           await persistAbsoluteStats(actor, {
             slot: characterSlot,
             level: committed.level,
@@ -12823,7 +12851,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       void progressPersistRef.current
         .enqueue(async () => {
           const committed = progressPersistRef.current.snapshot();
-          const writeDoka = applySpendToCommitted(committed.doka, spend);
+          const dokaBase = await resolveCommittedDokaForAbsoluteWrite(
+            progressPersistRef.current,
+            () =>
+              (
+                actor as {
+                  getCallerDokaBalance?: () => Promise<unknown>;
+                }
+              ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+          );
+          if (
+            dokaBase == null &&
+            !progressPersistRef.current.isWalletSeeded()
+          ) {
+            throw new Error("doka-spend save skipped: wallet not seeded");
+          }
+          const writeDoka = applySpendToCommitted(
+            dokaBase ?? committed.doka,
+            spend,
+          );
           await persistAbsoluteStats(actor, {
             slot: characterSlot,
             level: committed.level,

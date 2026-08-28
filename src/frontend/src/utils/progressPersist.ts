@@ -26,6 +26,12 @@ function toNat(n: number | undefined, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function readWalletNumber(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function spendFromUiBalance(uiDoka: number, nextDoka: number): number {
   return Math.max(0, toNat(uiDoka, 0) - toNat(nextDoka, 0));
 }
@@ -74,12 +80,25 @@ export function floorHydratedLevel(
   return Math.max(1, toNat(committedLevel, 1), toNat(uiLevel, 1));
 }
 
+export type HydrateWhenIdleOptions = {
+  /**
+   * True once getCallerDokaBalance has resolved (including a real 0).
+   * GameFlow's session cache starts at 0 before that query returns.
+   * Copying that placeholder into committed lets a lava-death
+   * saveBattleStats write dokaBalances = 0.
+   */
+  walletReady?: boolean;
+};
+
 export function createProgressPersist(initial?: Partial<CommittedProgress>) {
   let committed: CommittedProgress = {
     doka: Math.max(0, toNat(initial?.doka, 0)),
     xp: Math.max(0, toNat(initial?.xp, 0)),
     level: Math.max(1, toNat(initial?.level, 1)),
   };
+  // A positive constructor seed came from GameFlow after the query landed.
+  // 0 is ambiguous (new wallet vs query still in flight).
+  let walletSeeded = initial?.doka != null && toNat(initial.doka, 0) > 0;
   let pending = 0;
   let chain: Promise<void> = Promise.resolve();
 
@@ -89,6 +108,12 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
     },
     pendingCount(): number {
       return pending;
+    },
+    isWalletSeeded(): boolean {
+      return walletSeeded;
+    },
+    seedWallet(doka: number) {
+      persist.commit({ doka: Math.max(0, toNat(doka, 0)) });
     },
     commit(next: Partial<CommittedProgress>) {
       committed = {
@@ -105,11 +130,19 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
             ? Math.max(1, toNat(next.level, committed.level))
             : committed.level,
       };
+      if (next.doka != null) walletSeeded = true;
     },
-    hydrateWhenIdle(next: CommittedProgress): boolean {
+    hydrateWhenIdle(
+      next: CommittedProgress,
+      options?: HydrateWhenIdleOptions,
+    ): boolean {
       if (pending > 0) return false;
+      const copyDoka =
+        walletSeeded ||
+        options?.walletReady === true ||
+        toNat(next.doka, 0) > 0;
       persist.commit({
-        doka: next.doka,
+        doka: copyDoka ? next.doka : undefined,
         xp: next.xp,
         level: floorHydratedLevel(committed.level, next.level),
       });
@@ -134,3 +167,30 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
 }
 
 export type ProgressPersist = ReturnType<typeof createProgressPersist>;
+
+/**
+ * saveBattleStats writes an absolute wallet. The persist lock starts at 0
+ * whenever WorldExploration mounts before getCallerDokaBalance resolves.
+ * hydrateWhenIdle then copies that placeholder. A lava/combat death on the
+ * first map penalizes committed.doka=0 and persists 0 — wiping the canister.
+ *
+ * Fetch the live wallet when the lock was never seeded from an authoritative
+ * read/credit. Return null if the read fails so the caller can skip the
+ * absolute write instead of persisting the placeholder.
+ */
+export async function resolveCommittedDokaForAbsoluteWrite(
+  persist: Pick<ProgressPersist, "isWalletSeeded" | "seedWallet" | "snapshot">,
+  readWallet: () => Promise<unknown>,
+): Promise<number | null> {
+  if (persist.isWalletSeeded()) {
+    return persist.snapshot().doka;
+  }
+  try {
+    const live = readWalletNumber(await readWallet());
+    if (live == null) return null;
+    persist.seedWallet(live);
+    return live;
+  } catch {
+    return null;
+  }
+}
