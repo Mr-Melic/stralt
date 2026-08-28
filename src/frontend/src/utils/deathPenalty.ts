@@ -32,6 +32,36 @@ export function computeDeathPenalty(
   };
 }
 
+/**
+ * Optimistic death UI uses the live wallet/XP. A claim or applyRewards still
+ * on the persist lock is not in that snapshot, so the immediate 40%/20% cut
+ * is short. The queued saveBattleStats write penalizes the post-credit
+ * committed values. hydrateWhenIdle then copies the lower UI over committed
+ * and the next heal persists the under-count.
+ *
+ * After that write, raise UI to the persisted amount when it lagged.
+ */
+export function raiseUiAfterDeathPersist(
+  uiValue: number,
+  persistedValue: number,
+): number {
+  const ui = Math.max(0, Math.floor(Number(uiValue) || 0));
+  const persisted = Math.max(0, Math.floor(Number(persistedValue) || 0));
+  return Math.max(ui, persisted);
+}
+
+/**
+ * handleBattleEnd awaits applyRewards after setInBattle(false) and the recap
+ * overlay uses pointer-events: none, so a lava/spike death can land while
+ * that persist is still in flight. Applying the post-await live hydrate then
+ * restores HP and replaces XP with the unpenalized applyRewards snapshot.
+ */
+export function shouldApplyVictoryLiveHydrate(
+  deathTriggered: boolean,
+): boolean {
+  return !deathTriggered;
+}
+
 function toNat(n: number): bigint {
   return BigInt(Math.max(0, Math.floor(Number(n) || 0)));
 }

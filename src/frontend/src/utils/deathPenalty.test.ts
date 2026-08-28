@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { computeDeathPenalty, persistDeathPenalty } from "./deathPenalty.ts";
+import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
+import {
+  computeDeathPenalty,
+  persistDeathPenalty,
+  raiseUiAfterDeathPersist,
+  shouldApplyVictoryLiveHydrate,
+} from "./deathPenalty.ts";
+import { createProgressPersist } from "./progressPersist.ts";
 
 assert.deepEqual(computeDeathPenalty(100, 100), {
   xpLost: 20,
@@ -93,5 +100,51 @@ try {
   threw = String((e as Error).message).includes("banned");
 }
 assert.equal(threw, true);
+
+assert.equal(raiseUiAfterDeathPersist(600, 900), 900);
+assert.equal(raiseUiAfterDeathPersist(900, 900), 900);
+assert.equal(raiseUiAfterDeathPersist(610, 582), 610);
+assert.equal(shouldApplyVictoryLiveHydrate(true), false);
+assert.equal(shouldApplyVictoryLiveHydrate(false), true);
+
+// Win/claim persist is still on the lock. Recap overlay does not block the
+// map, so lava death applies 40% to the pre-credit UI. The queued write
+// penalizes the post-credit committed wallet. Raising UI prevents
+// hydrateWhenIdle from copying the under-count over committed.
+{
+  const lock = createProgressPersist({ doka: 1000, xp: 100, level: 4 });
+  let uiDoka = 1000;
+  let uiXp = 100;
+
+  const credit = lock.enqueue(async () => {
+    lock.commit({
+      doka: committedDokaAfterAchievementCredit(lock.snapshot().doka, 500),
+      xp: lock.snapshot().xp + 80,
+    });
+  });
+
+  const optimistic = computeDeathPenalty(uiXp, uiDoka);
+  uiDoka = optimistic.newDoka;
+  uiXp = optimistic.newXp;
+  assert.equal(uiDoka, 600);
+  assert.equal(uiXp, 80);
+
+  const death = lock.enqueue(async () => {
+    const after = computeDeathPenalty(lock.snapshot().xp, lock.snapshot().doka);
+    lock.commit({ doka: after.newDoka, xp: after.newXp });
+    uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
+    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+  });
+
+  await Promise.all([credit, death]);
+  assert.equal(uiDoka, 900);
+  assert.equal(uiXp, 144);
+  assert.equal(lock.snapshot().doka, 900);
+  assert.equal(lock.snapshot().xp, 144);
+
+  lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
+  assert.equal(lock.snapshot().doka, 900);
+  assert.equal(lock.snapshot().xp, 144);
+}
 
 console.log("deathPenalty.test: ok");
