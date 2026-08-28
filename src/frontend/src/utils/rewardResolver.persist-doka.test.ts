@@ -1,28 +1,30 @@
-import { type DokaCreditActor, persistDokaCredit } from "./dokaPersist";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import { type DokaCreditActor, persistDokaCredit } from "./dokaPersist.ts";
 
-function assert(condition: boolean, message: string): void {
-  if (!condition) throw new Error(message);
-}
+describe("persistDokaCredit", () => {
+  it("credits world Doka through applyRewards(slot, doka, 0)", async () => {
+    const calls: Array<{ slot: bigint; doka: bigint; xp: bigint }> = [];
+    const actor: DokaCreditActor = {
+      applyRewards: async (slot, doka, xp) => {
+        calls.push({ slot, doka, xp });
+        return { ok: { newDoka: 140n, newXp: 0n, newLevel: 1n } };
+      },
+    };
 
-export async function runPersistDokaCreditTests(): Promise<void> {
-  const calls: Array<{ slot: bigint; doka: bigint; xp: bigint }> = [];
-  const actor: DokaCreditActor = {
-    applyRewards: async (slot, doka, xp) => {
-      calls.push({ slot, doka, xp });
-      return { ok: { newDoka: 140n, newXp: 0n, newLevel: 1n } };
-    },
-  };
+    const newDoka = await persistDokaCredit(actor, 2, 40);
+    assert.equal(newDoka, 140);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.slot, 2n);
+    assert.equal(calls[0]?.doka, 40n);
+    assert.equal(calls[0]?.xp, 0n);
+  });
 
-  const newDoka = await persistDokaCredit(actor, 2, 40);
-  assert(newDoka === 140, `expected 140, got ${newDoka}`);
-  assert(calls.length === 1, "applyRewards should be called once");
-  assert(calls[0].slot === 2n, "slot forwarded");
-  assert(calls[0].doka === 40n, "doka credit forwarded");
-  assert(calls[0].xp === 0n, "xp delta must stay 0 for world credits");
-
-  const failing: DokaCreditActor = {
-    applyRewards: async () => ({ err: "Account banned" }),
-  };
-  const failed = await persistDokaCredit(failing, 1, 10);
-  assert(failed === 0, "backend err must return 0 instead of throwing");
-}
+  it("returns 0 on backend err instead of throwing", async () => {
+    const failing: DokaCreditActor = {
+      applyRewards: async () => ({ err: "Account banned" }),
+    };
+    const failed = await persistDokaCredit(failing, 1, 10);
+    assert.equal(failed, 0);
+  });
+});

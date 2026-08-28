@@ -1,22 +1,22 @@
 import type { BattleRecapData } from "../components/PostBattleRecap";
-import { readApplyRewardsOk } from "./applyRewardsResult";
+import { readApplyRewardsOk } from "./applyRewardsResult.ts";
 import {
   type CompletedChallengeReward,
   addChallengeRewardDeltas,
-} from "./challengeRewards";
+} from "./challengeRewards.ts";
 
-export type { ApplyRewardsOk } from "./applyRewardsResult";
+export type { ApplyRewardsOk } from "./applyRewardsResult.ts";
 export {
   persistIncrementalRewards,
   readApplyRewardsOk,
-} from "./applyRewardsResult";
+} from "./applyRewardsResult.ts";
 export {
   addChallengeRewardDeltas,
   battleChallengePersistEntries,
   challengeXpFromEntries,
   liveBattleChallengePersistEntries,
   type CompletedChallengeReward,
-} from "./challengeRewards";
+} from "./challengeRewards.ts";
 
 export interface RewardInput {
   victory: boolean;
