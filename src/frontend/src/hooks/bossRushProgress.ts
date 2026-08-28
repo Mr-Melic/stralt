@@ -10,6 +10,32 @@
 
 export const BOSS_RUSH_ROOM_COUNT = 10;
 
+/**
+ * IC principal text is lowercase base32 groups separated by dashes
+ * (`2vxsx-fae`, `aaaaa-aa`). Profile display names (`guest`, `VampireBob`)
+ * never match, so getBossRushState is not called with a throwing fromText.
+ */
+export function isPrincipalText(value: string): boolean {
+  if (typeof value !== "string" || value.length < 7) return false;
+  if (value !== value.toLowerCase()) return false;
+  return /^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(value);
+}
+
+/**
+ * getBossRushState requires userId == caller. GameFlow's `userId` is the
+ * profile display name (`userProfile.id ?? name ?? "guest"`); UserProfile has
+ * no id, so Principal.fromText throws and hydrate/resume skip. Writes still
+ * persist via caller. Prefer the authenticated II principal text.
+ */
+export function resolveBossRushQueryPrincipalText(
+  identityText?: string | null,
+  passedText?: string | null,
+): string | null {
+  if (identityText && isPrincipalText(identityText)) return identityText;
+  if (passedText && isPrincipalText(passedText)) return passedText;
+  return null;
+}
+
 export interface ParsedBossRushState {
   currentRoom: number;
   highestRoomCompleted: number;
@@ -98,6 +124,28 @@ export interface PersistBossRushRoomClearOptions {
    * write cannot resume the next occupant mid-tree.
    */
   wasSuperseded?: () => boolean;
+}
+
+/**
+ * persistRoomClear used to run outside the persist lock. Lava after a room
+ * clear (recap is pointer-events: none) could enqueue the death write first;
+ * applyRewards then credited AFTER the penalty. An idle hydrate copied the
+ * short UI over that late credit and the next persist wrote the under-count.
+ *
+ * Enqueue the progress write and applyRewards together so death waits and
+ * penalizes the post-credit snapshot — the same order as victory persist.
+ */
+export async function persistBossRushRewardsThroughLock<T>(
+  lock: {
+    enqueue: <U>(fn: () => Promise<U>) => Promise<U>;
+  },
+  persistRoomClear: () => Promise<void>,
+  applyAndCommit: () => Promise<T>,
+): Promise<T> {
+  return lock.enqueue(async () => {
+    await persistRoomClear();
+    return applyAndCommit();
+  });
 }
 
 /**

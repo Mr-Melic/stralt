@@ -20,11 +20,14 @@
 
 ## Learnings
 
-- Backend migration for WP/WR/SCP removal is complete and bindgen is regenerated. CharacterStats now has 12 required fields: hp, ap, mp, sp, sr, atk, res, chc, init, resilience, evasion, killCount. No wp/wr/scp in the persisted path.
-- Character-creation blocker root cause: WorldExploration.tsx character-update payload sites must include killCount (BigInt(0) or carried value) — omitting it causes the Candid serializer to reject the save with a missing-field error.
-- No caffeineai-oql dependency in this workspace; mops.toml has core, base, and caffeineai-authorization only. OQL companion lanes are not applicable here.
-- Migration model: standard migrating-motoko-actors pattern with explicit (with migration = Migration.run) on the actor plus hand-written migration.mo consuming OldActor and producing NewActor. BaseToCore.mo exists as completed mo:base→mo:core migration marker.
-- Character-creation blocker root cause: deployed canister was never upgraded with the new 12-field CharacterStats type + migration. The backend SOURCE on disk was correct but the deployed canister still ran the old 15-field type. Fix was to deploy/upgrade the canister so the migration runs.
-- caffeineai-oql@0.4.0 package causes M0010 'package not defined' error in caffeine check --fix due to moc/mops toolchain resolution mismatch. mops sources resolves it but caffeine check (moc) cannot. OQL imports were temporarily commented out to unblock the build. OQL exposure needs to be re-enabled when the toolchain issue is resolved.
-- dfx is not installed in the build container — mops build fails with exit 127. Use caffeine check --fix and caffeine build instead of mops build.
-- EnemyConfig in src/backend/types/common.mo was cleaned to remove wp/wr/scp fields per the stat-overhaul spec, matching the CharacterStats cleanup.
+- CharacterStats is 12 required fields: hp, ap, mp, sp, sr, atk, res, chc, init, resilience, evasion, killCount. No wp/wr/scp on the persisted path. Bindgen: `src/frontend/src/backend.ts`.
+- Character-update / create payloads must include every CharacterStats field. Omitting `killCount` fails in the Candid serializer before Motoko runs. Carry `BigInt(0)` or the existing value.
+- Deployed canister can lag source: a live 15-field actor rejects 12-field saves until it is upgraded. Source-correct is not enough.
+- Canonical actor is `src/backend/main.mo` (root `mops.toml`). `dfx.json` still points at stale `backend_extended/` (15-field stats) — do not deploy that path by accident.
+- Migrations: `mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`. Current module inlines OldActor/NewActor. Live `main.mo` is a plain persistent `actor {` (no `(with migration = Migration.run)`). That annotation exists only on `backend_extended`. `BaseToCore.mo` is the completed mo:base→mo:core marker.
+- `caffeineai-oql@0.4.0` **is** a dependency and **is imported** (`schema` / `execute` via `Expose` at the end of `main.mo`). Some `caffeine check` runs still hit M0010 (`package not defined`) even when `mops sources` resolves it — toolchain mismatch, not a missing import.
+- dfx is often absent in this container — `mops build` exits 127. Use `caffeine check --fix` and `caffeine build`.
+- Two EnemyConfig types: admin/frontend spawn template (`hp/ap/mp/initStat/...`) vs `types/common.mo` runtime combat template (`damage/res/sp/sr/chc/init`, no wp/wr/scp).
+- Battle XP/Doka persist only through `applyRewards` (`utils/rewardResolver.ts`). Do not write rewards with `updateCharacter` or call the resolver per kill.
+- New profiles must send `uiLayout: ""` — `saveCallerUserProfile` does not merge fields.
+- Developer docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`.

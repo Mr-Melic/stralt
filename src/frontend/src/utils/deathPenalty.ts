@@ -32,6 +32,96 @@ export function computeDeathPenalty(
   };
 }
 
+/**
+ * Optimistic death UI uses the live wallet/XP. A claim or applyRewards still
+ * on the persist lock is not in that snapshot, so the immediate 40%/20% cut
+ * is short. The queued saveBattleStats write penalizes the post-credit
+ * committed values. hydrateWhenIdle then copies the lower UI over committed
+ * and the next heal persists the under-count.
+ *
+ * After that write, raise UI to the persisted amount when it lagged.
+ * applyRewards can also bump committed.level while the live hydrate is
+ * skipped; raise UI level the same way so idle hydrate cannot persist a
+ * downgrade through the next saveBattleStats.
+ */
+export function raiseUiAfterDeathPersist(
+  uiValue: number,
+  persistedValue: number,
+): number {
+  const ui = Math.max(0, Math.floor(Number(uiValue) || 0));
+  const persisted = Math.max(0, Math.floor(Number(persistedValue) || 0));
+  return Math.max(ui, persisted);
+}
+
+/**
+ * handleBattleEnd and portal XP both await applyRewards after the player can
+ * walk. The recap overlay uses pointer-events: none, and a portal swap has
+ * no overlay at all, so lava/spike death can land while that persist is still
+ * in flight. Applying the post-await live hydrate then restores HP / replaces
+ * XP with the unpenalized applyRewards snapshot. raiseUiAfterDeathPersist
+ * keeps the higher UI; a later idle hydrate copies it over committed and
+ * refunds the death penalty.
+ */
+export function shouldApplyVictoryLiveHydrate(
+  deathTriggered: boolean,
+): boolean {
+  return !deathTriggered;
+}
+
+/** Post-battle HP/AP/MP floor. Uses the pre-hydrate level, matching the live setState. */
+export function victoryResourceFloor(level: number): {
+  hp: number;
+  mp: number;
+  ap: number;
+} {
+  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+  return {
+    hp: 50 + safeLevel * 10,
+    mp: 5 + Math.floor(safeLevel / 10),
+    ap: 6 + Math.floor(safeLevel / 20),
+  };
+}
+
+export type VictoryLiveHydratePrev = {
+  exp: number;
+  level: number;
+  hp: number;
+  mp: number;
+  ap: number;
+  expToNext: number;
+};
+
+export type VictoryLiveHydrateRecap = {
+  newXp?: number | null;
+  currentLevel: number;
+};
+
+/**
+ * applyRewards hydrates XP/level only. The recap overlay's outer wrapper is
+ * pointer-events: none, so a Doka heal is live once inBattle is false —
+ * before this persist await returns. Replacing HP with the post-battle floor
+ * undoes that paid heal; the player then heals again and is charged twice.
+ *
+ * Keep leftover combat HP (or a recap heal) when it is already above the
+ * floor; still raise up to the floor when combat ended lower.
+ */
+export function mergeVictoryRewardLiveStats<T extends VictoryLiveHydratePrev>(
+  prev: T,
+  recap: VictoryLiveHydrateRecap,
+): T {
+  const level = recap.currentLevel || prev.level;
+  const floor = victoryResourceFloor(prev.level);
+  return {
+    ...prev,
+    exp: recap.newXp ?? prev.exp,
+    level,
+    hp: Math.max(prev.hp, floor.hp),
+    mp: Math.max(prev.mp, floor.mp),
+    ap: Math.max(prev.ap, floor.ap),
+    expToNext: Math.floor(100 * 2 ** (level - 1)),
+  };
+}
+
 function toNat(n: number): bigint {
   return BigInt(Math.max(0, Math.floor(Number(n) || 0)));
 }

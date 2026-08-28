@@ -8,6 +8,11 @@
  * After a victory the recap is shown immediately and heal/shop become usable
  * while applyRewards is still in flight — a click-time snapshot then overwrites
  * the just-credited wallet.
+ *
+ * Paid-Doka processPendingPurchases and claimAchievementReward are the same
+ * class of backend delta: they must enqueue on this lock and commit the
+ * post-credit balance, or a recap heal reconstructs from the pre-credit
+ * snapshot and wipes the grant.
  */
 
 export type CommittedProgress = {
@@ -30,6 +35,43 @@ export function applySpendToCommitted(
   spend: number,
 ): number {
   return Math.max(0, toNat(committedDoka, 0) - Math.max(0, toNat(spend, 0)));
+}
+
+/**
+ * processPendingPurchases writes an absolute wallet. Commit that balance so a
+ * later saveBattleStats spend cannot reconstruct from a pre-credit snapshot.
+ */
+export function committedDokaAfterShopCredit(
+  credited: number | null,
+): number | null {
+  if (credited == null) return null;
+  return Math.max(0, toNat(credited, 0));
+}
+
+/**
+ * Add the credited delta onto the live UI wallet. Replacing with the absolute
+ * backend read would overwrite a heal/shop spend the player already applied
+ * locally while this credit was waiting on the persist queue.
+ */
+export function applyShopCreditDeltaToUi(
+  uiDoka: number,
+  gained: number,
+): number {
+  return Math.max(0, toNat(uiDoka, 0) + Math.max(0, toNat(gained, 0)));
+}
+
+/**
+ * Idle hydrate copies UI onto committed. applyRewards can bump
+ * committed.level while shouldApplyVictoryLiveHydrate skips the live UI
+ * update (lava/spike death mid-persist). Copying the stale UI level then
+ * lets the next saveBattleStats downgrade the canister. Never write a
+ * lower level than the lock already committed.
+ */
+export function floorHydratedLevel(
+  committedLevel: number,
+  uiLevel: number,
+): number {
+  return Math.max(1, toNat(committedLevel, 1), toNat(uiLevel, 1));
 }
 
 export function createProgressPersist(initial?: Partial<CommittedProgress>) {
@@ -66,7 +108,11 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
     },
     hydrateWhenIdle(next: CommittedProgress): boolean {
       if (pending > 0) return false;
-      persist.commit(next);
+      persist.commit({
+        doka: next.doka,
+        xp: next.xp,
+        level: floorHydratedLevel(committed.level, next.level),
+      });
       return true;
     },
     enqueue<T>(fn: () => Promise<T>): Promise<T> {

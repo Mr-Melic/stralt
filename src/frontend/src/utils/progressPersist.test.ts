@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyShopCreditDeltaToUi,
   applySpendToCommitted,
+  committedDokaAfterShopCredit,
   createProgressPersist,
+  floorHydratedLevel,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -89,6 +92,30 @@ describe("progress persist lock", () => {
     assert.equal(backendLevel, 5);
   });
 
+  it("keeps a shop credit that lands through the lock ahead of a queued heal", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    let backendDoka = 200;
+
+    const credit = lock.enqueue(async () => {
+      backendDoka += 500;
+      lock.commit({ doka: backendDoka });
+    });
+
+    const spend = spendFromUiBalance(200, 170);
+    let wroteDoka = 0;
+    const heal = lock.enqueue(async () => {
+      wroteDoka = applySpendToCommitted(lock.snapshot().doka, spend);
+      backendDoka = wroteDoka;
+      lock.commit({ doka: wroteDoka });
+    });
+
+    await Promise.all([credit, heal]);
+
+    assert.equal(wroteDoka, 670);
+    assert.equal(backendDoka, 670);
+    assert.deepEqual(lock.snapshot(), { doka: 670, xp: 50, level: 4 });
+  });
+
   it("keeps a shop credit that lands while applyRewards is in flight", async () => {
     const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
     let backendDoka = 200;
@@ -126,5 +153,42 @@ describe("progress persist lock", () => {
     assert.equal(wroteDoka, 749);
     assert.equal(lock.snapshot().doka, 749);
     assert.equal(backendDoka, 749);
+  });
+
+  it("does not let idle hydrate downgrade a committed level-up", () => {
+    assert.equal(floorHydratedLevel(5, 4), 5);
+    assert.equal(floorHydratedLevel(4, 5), 5);
+    assert.equal(floorHydratedLevel(4, 4), 4);
+
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    lock.commit({ doka: 250, xp: 30, level: 5 });
+    // #38 skipped the live UI level hydrate because lava death landed
+    // during applyRewards. The hydrate effect then copies UI level 4.
+    assert.equal(lock.hydrateWhenIdle({ doka: 150, xp: 24, level: 4 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 150, xp: 24, level: 5 });
+  });
+
+  it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {
+    assert.equal(committedDokaAfterShopCredit(350), 350);
+    assert.equal(committedDokaAfterShopCredit(null), null);
+    // Heal already deducted 30 locally while the credit was queued.
+    assert.equal(applyShopCreditDeltaToUi(170, 100), 270);
+    assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
+  });
+
+  it("does not re-inflate committed when a credit is applied as a UI delta after a heal", () => {
+    // Reward committed 250, heal wrote 220. Replacing the UI with the
+    // absolute 250 and hydrating copies the refund into committed.
+    const replaced = createProgressPersist({ doka: 220, xp: 50, level: 4 });
+    replaced.hydrateWhenIdle({ doka: 250, xp: 50, level: 4 });
+    assert.equal(replaced.snapshot().doka, 250);
+
+    // Adding the +50 reward onto the already-healed 170 keeps 220, so
+    // hydrateWhenIdle cannot restore the spent Doka.
+    const delta = createProgressPersist({ doka: 220, xp: 50, level: 4 });
+    const uiAfterDelta = applyShopCreditDeltaToUi(170, 50);
+    assert.equal(uiAfterDelta, 220);
+    delta.hydrateWhenIdle({ doka: uiAfterDelta, xp: 50, level: 4 });
+    assert.equal(delta.snapshot().doka, 220);
   });
 });

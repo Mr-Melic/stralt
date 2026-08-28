@@ -189,6 +189,7 @@ import {
   getSessionVersion,
   nowTimestamp,
 } from "../engine/worldHelpers";
+import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress";
 import { useBossAI } from "../hooks/useBossAI";
 import { useBossRush } from "../hooks/useBossRush";
 import {
@@ -200,10 +201,23 @@ import {
 import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import type { BossConfig, BossState } from "../types/bossTypes";
 import { BOSS_IDS } from "../types/bossTypes";
+import {
+  type AchievementCreditActor,
+  creditAchievementRewardThroughPersist,
+} from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
+  addChallengeRewardDeltas,
+  challengeXpFromEntries,
+  liveBattleChallengePersistEntries,
+} from "../utils/challengeRewards";
+import { armDeathGuards } from "../utils/deathGuards";
+import {
   computeDeathPenalty,
+  mergeVictoryRewardLiveStats,
   persistDeathPenalty as persistAbsoluteStats,
+  raiseUiAfterDeathPersist,
+  shouldApplyVictoryLiveHydrate,
 } from "../utils/deathPenalty";
 import {
   logDebugError,
@@ -213,10 +227,15 @@ import {
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
 import { nextDokaAfterShopSpend } from "../utils/itemShop";
 import {
+  applyShopCreditDeltaToUi,
   applySpendToCommitted,
   createProgressPersist,
   spendFromUiBalance,
 } from "../utils/progressPersist";
+import {
+  RENAME_DOKA_COST,
+  readRenameCharacterResult,
+} from "../utils/renameCharacter";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
@@ -236,6 +255,7 @@ import {
   type SpellUpgradeActor,
   applySpellLevel,
   persistSpellUpgrade,
+  spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
@@ -315,6 +335,9 @@ interface WorldExplorationProps {
   /** Top-bar item shop open flag. BuffShop is a modal and returns null when this is not true. */
   itemShopOpen?: boolean;
   onItemShopClose?: () => void;
+  /** Top-bar Feats panel. Hosted here so claims can join the persist lock. */
+  achievementsOpen?: boolean;
+  onAchievementsClose?: () => void;
 }
 
 type TileType = "floor" | "wall" | "portal";
@@ -612,6 +635,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   onShowBattleSummary,
   itemShopOpen = false,
   onItemShopClose,
+  achievementsOpen = false,
+  onAchievementsClose,
 }) => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type ActorAny = Record<string, any>;
@@ -994,14 +1019,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // (cast/move handlers are useCallback-memoized and would otherwise see a
   // stale closure of the accepted flag).
   const challengeAcceptedRef = useRef(false);
+  const currentChallengeRef = useRef<Challenge | null>(null);
   // Accept window: once the player takes their first MP/AP-spending action
   // without having accepted the offered challenge, the offer is dismissed.
   const firstActionTakenRef = useRef(false);
-  // Keep a ref mirror of challengeAccepted so non-React callbacks (move/cast
-  // handlers) read the latest accepted flag without stale-closure issues.
+  // Keep ref mirrors so handleBattleEnd / move / cast read the live offer.
+  // Those callbacks omit challenge state from their deps; a closure snapshot
+  // stays at accepted=false (or the previous fight's challenge) and drops or
+  // double-pays the advertised XP.
   useEffect(() => {
     challengeAcceptedRef.current = challengeAccepted;
   }, [challengeAccepted]);
+  useEffect(() => {
+    currentChallengeRef.current = currentChallenge;
+  }, [currentChallenge]);
   const [bloodBalance, _setBloodBalance] = useState<number>(() => {
     try {
       const _bs = localStorage.getItem(
@@ -1148,6 +1179,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const shopCreditTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(
     new Set(),
   );
+  const dokaBalanceRef = useRef(dokaBalance);
+  dokaBalanceRef.current = dokaBalance;
   // Created here so shop-credit timers can enqueue onto the same lock as
   // applyRewards / saveBattleStats. Hydrate-when-idle still lives next to
   // characterStats because that effect depends on those values.
@@ -1171,9 +1204,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             progressPersistRef.current,
           );
         if (credited == null) return;
-        onDokaBalanceChange(credited);
         const gained = creditedDokaDelta(previous, credited);
         if (gained > 0) {
+          onDokaBalanceChange(
+            applyShopCreditDeltaToUi(dokaBalanceRef.current, gained),
+          );
           toast.success(
             `${(announceAmount ?? gained).toLocaleString()} Doka credited!`,
           );
@@ -1185,6 +1220,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           toast.error("Payment recorded, but Doka credit is still pending.");
         }
       }
+    },
+    [actor, onDokaBalanceChange],
+  );
+  const persistAchievementClaim = useCallback(
+    async (achievementId: string) => {
+      if (!actor?.claimAchievementReward) {
+        return { err: "Actor not available" };
+      }
+      const result = await creditAchievementRewardThroughPersist(
+        actor as AchievementCreditActor,
+        progressPersistRef.current,
+        achievementId,
+      );
+      if ("ok" in result && result.ok > 0) {
+        onDokaBalanceChange(
+          applyShopCreditDeltaToUi(dokaBalanceRef.current, result.ok),
+        );
+      }
+      return result;
     },
     [actor, onDokaBalanceChange],
   );
@@ -1810,22 +1864,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Boost toggle state
   const [boostMode, _setBoostMode] = useState<"xp" | "rewards">("xp");
 
-  // Simple rename handler — calls backend renameCharacter and deducts Doka locally
+  // Rename is a Motoko Result: #err does not throw. Debit the live wallet
+  // only after #ok — a phantom -100 hydrates into committed and the next
+  // heal/shop saveBattleStats writes it on-chain.
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (dokaBalance < 100) {
+    if (dokaBalance < RENAME_DOKA_COST) {
       toast.error("Insufficient Doka (need 100)");
       return;
     }
     setIsRenaming(true);
     try {
       if (actor) {
-        await (actor as Record<string, any>).renameCharacter(
-          BigInt(characterSlot),
-          newName,
+        const parsed = readRenameCharacterResult(
+          await (actor as Record<string, any>).renameCharacter(
+            BigInt(characterSlot),
+            newName,
+          ),
         );
-        onDokaBalanceChange(Math.max(0, dokaBalance - 100));
+        if ("err" in parsed) {
+          toast.error(parsed.err);
+          return;
+        }
+        onDokaBalanceChange(Math.max(0, dokaBalance - RENAME_DOKA_COST));
         toast.success(`Name changed to "${newName}"`);
         setShowRenameModal(false);
         setRenameInput("");
@@ -2800,8 +2862,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (!actor?.upgradeSpell) return;
       void (async () => {
         try {
-          const { newLevel, newDoka } =
-            await progressPersistRef.current.enqueue(async () => {
+          const { newLevel, spent } = await progressPersistRef.current.enqueue(
+            async () => {
+              const committedBefore =
+                progressPersistRef.current.snapshot().doka;
               const result = await persistSpellUpgrade(
                 actor as SpellUpgradeActor,
                 characterSlot,
@@ -2819,11 +2883,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (result.newDoka != null) {
                 progressPersistRef.current.commit({ doka: result.newDoka });
               }
-              return result;
-            });
-          onDokaBalanceChange(
-            newDoka != null ? newDoka : Math.max(0, dokaBalance - cost),
+              return {
+                newLevel: result.newLevel,
+                spent: spellUpgradeUiSpend(
+                  cost,
+                  committedBefore,
+                  result.newDoka,
+                ),
+              };
+            },
           );
+          // Never replace the live wallet with the absolute post-upgrade
+          // read. A recap heal can already be deducted locally; an absolute
+          // write here refunds it, and hydrateWhenIdle then re-inflates
+          // committed.doka so the next persist restores the spent Doka.
+          // Debit the canister spend, not the advertised summon 10× cost —
+          // otherwise hydrateWhenIdle copies the short UI over committed
+          // and the next heal/shop saveBattleStats wipes the difference.
+          onDokaBalanceChange(Math.max(0, dokaBalanceRef.current - spent));
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
@@ -6153,6 +6230,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return; // ← use ref, not stale closure state
     if (!currentMap) return;
+    // A pending Death Realm transition (exploration lava/spike at 0 HP) must
+    // not be interrupted by cleanupMap() inside this handler — that cancels
+    // deathRealmTimerRef while deathTriggeredRef stays set, so the HP watch
+    // never re-runs and the player is stranded at 0 HP with no realm load.
+    if (
+      deathTriggeredRef.current &&
+      characterStatsRef.current.hp <= 0 &&
+      deathRealmTimerRef.current !== null
+    ) {
+      return;
+    }
     // FIX #14: Check-and-set is the very first synchronous operation so there
     // is no gap between the check and the lock being claimed.
     setTransitionInProgress(true);
@@ -6478,7 +6566,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           if (newDoka > 0) {
             progressPersistRef.current.commit({ doka: newDoka });
-            onDokaBalanceChange(newDoka);
+            onDokaBalanceChange(
+              applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
+            );
           }
           return newDoka;
         });
@@ -6951,12 +7041,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 },
               );
               const { newXp, newLevel: newLvl } = result.ok;
-              setCharacterStats((cur) => ({
-                ...cur,
-                exp: Number(newXp),
-                level: Number(newLvl),
-                expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
-              }));
+              // Recap is not up after a portal swap. Lava on the new map
+              // can land while this applyRewards is still in flight. The
+              // death write already penalized the post-credit snapshot;
+              // restoring absolute XP here lets raiseUiAfterDeathPersist
+              // keep the unpenalized UI and refund the penalty.
+              if (shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+                setCharacterStats((cur) => ({
+                  ...cur,
+                  exp: Number(newXp),
+                  level: Number(newLvl),
+                  expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
+                }));
+              }
             } catch (err) {
               console.warn("[PBV] Portal XP save failed:", err);
             }
@@ -11064,7 +11161,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
               if (newDoka > 0) {
                 progressPersistRef.current.commit({ doka: newDoka });
-                onDokaBalanceChange(newDoka);
+                onDokaBalanceChange(
+                  applyShopCreditDeltaToUi(dokaBalanceRef.current, 300),
+                );
               }
               return newDoka;
             });
@@ -11114,7 +11213,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             if (newDoka > 0) {
               progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(newDoka);
+              onDokaBalanceChange(
+                applyShopCreditDeltaToUi(dokaBalanceRef.current, hit.value),
+              );
             }
             return newDoka;
           });
@@ -11342,6 +11443,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     challengeTurnCountRef.current = 0;
     challengeMaxApThisTurnRef.current = 0;
     challengeDirectHitRef.current = true;
+    challengeAcceptedRef.current = false;
+    currentChallengeRef.current = null;
+    firstActionTakenRef.current = false;
+    setChallengeAccepted(false);
+    setCurrentChallenge(null);
     // M-4: Mark cleanup as having run so no new timeouts can register after this
     cleanupRanRef.current = true;
     // FIX 4: Cancel recap timer so it never fires after battle ends
@@ -11960,6 +12066,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         DEFAULT_CHALLENGES[
           Math.floor(Math.random() * DEFAULT_CHALLENGES.length)
         ];
+      challengeAcceptedRef.current = false;
+      currentChallengeRef.current = _randChallenge;
+      firstActionTakenRef.current = false;
+      setChallengeAccepted(false);
       setCurrentChallenge(_randChallenge);
       // H7: Release re-entry guard after full init commit
       battleInitInProgressRef.current = false;
@@ -12043,9 +12153,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           JSON.stringify(challengeResults),
         );
         // Snapshot challenge state BEFORE cleanup wipes it
+        const liveChallenge = currentChallengeRef.current;
+        const liveAccepted = challengeAcceptedRef.current;
         const challengeCompleted =
-          challengeAccepted && currentChallenge
-            ? isChallengeCompleted(currentChallenge, {
+          liveAccepted && liveChallenge
+            ? isChallengeCompleted(liveChallenge, {
                 turnCount: challengeTurnCountRef.current,
                 totalDamage: challengeTotalDamageRef.current,
                 healUsed: challengeHealUsedRef.current,
@@ -12053,14 +12165,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 maxApUsedInTurn: challengeMaxApThisTurnRef.current,
               })
             : false;
-        const challengeDokaReward = challengeCompleted
-          ? currentChallenge?.rewards?.doka || 0
-          : 0;
-        const _challengeXpReward = challengeCompleted
-          ? currentChallenge?.rewards?.xp || 0
-          : 0;
+        const challengePersistEntries = liveBattleChallengePersistEntries(
+          liveAccepted,
+          liveChallenge,
+          challengeCompleted,
+        );
+        const challengeXpReward = challengeXpFromEntries(
+          challengePersistEntries,
+        );
         const _completedChallengeName = challengeCompleted
-          ? currentChallenge?.description || currentChallenge?.id || "Challenge"
+          ? liveChallenge?.description || liveChallenge?.id || "Challenge"
           : null;
         // ── UNIFIED CLEANUP: terminates ALL timers, intervals, AI callbacks, VFX ──
         // cleanupBattle() handles: abort flag, both generation counters, all
@@ -12184,7 +12298,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Build and show recap IMMEDIATELY — never block on persistence
           const finalRecapData: BattleRecapData = {
             mapTitle: currentMapRef.current?.id || "Unknown",
-            xpEarned: finalExp,
+            xpEarned: finalExp + challengeXpReward,
             dokaEarned: totalDoka,
             hitsDealt: battleHitsRef.current,
             enemiesDefeated: defeated,
@@ -12214,14 +12328,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 const recap = await resolveBattleRewards(actor, characterSlot, {
                   victory,
                   enemiesDefeated: defeated,
-                  completedChallenges: challengeCompleted
-                    ? [
-                        {
-                          name: "Battle Challenge",
-                          dokaReward: challengeDokaReward || 0,
-                        },
-                      ]
-                    : [],
+                  completedChallenges: challengePersistEntries,
                   // SECTION 3b: handleBattleEnd already applies chainMult to Doka
                   // locally; pass PREAPPLIED_REWARD_MULTIPLIER so resolveBattleRewards
                   // does NOT multiply baseDoka again (fixes the chainMult² double
@@ -12241,16 +12348,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             const _rewardRecap = _recapData;
 
-            setCharacterStats((prev) => ({
-              ...prev,
-              exp: _rewardRecap.newXp ?? characterStats.exp,
-              level: _rewardRecap.currentLevel,
-              hp: 50 + prev.level * 10,
-              mp: 5 + Math.floor(prev.level / 10),
-              ap: 6 + Math.floor(prev.level / 20),
-              expToNext: Math.floor(100 * 2 ** (_rewardRecap.currentLevel - 1)),
-            }));
-            onDokaBalanceChange(_rewardRecap.newDoka ?? dokaBalance);
+            // Recap overlay is pointer-events: none. A lava/spike death can
+            // land while this applyRewards await is still in flight. The
+            // death write already penalized the post-credit committed
+            // snapshot; restoring HP / unpenalized XP here resurrects the
+            // player and lets hydrateWhenIdle refund the penalty.
+            if (shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+              // Recap overlay does not block the heal button. A paid Doka
+              // heal during this await must keep its HP; the old absolute
+              // floor (50+level*10) dropped them back and they paid twice.
+              setCharacterStats((prev) =>
+                mergeVictoryRewardLiveStats(prev, {
+                  newXp: _rewardRecap.newXp,
+                  currentLevel: _rewardRecap.currentLevel,
+                }),
+              );
+              // Add the credited delta onto the live wallet. Replacing with
+              // applyRewards' absolute newDoka refunds a recap heal/shop spend
+              // the player already applied locally; hydrateWhenIdle then
+              // copies that inflated UI into committed and the next persist
+              // writes the pre-spend wallet back to the canister.
+              onDokaBalanceChange(
+                applyShopCreditDeltaToUi(
+                  dokaBalanceRef.current,
+                  _rewardRecap.dokaEarned ?? totalDoka,
+                ),
+              );
+            }
           } catch (persistErr) {
             logDebugInfo(
               "BATTLE",
@@ -12444,46 +12568,79 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const roomMultiplier = 1;
       totalDoka = Math.floor(totalDoka * roomMultiplier);
 
-      // Challenge rewards (placeholder — challenges evaluated elsewhere)
-      const challengeDokaReward = 0;
-      const completedChallenges: string[] = [];
+      // Victory gate never calls handleBattleEnd during a run, so the
+      // advertised panel rewards have to persist here. Snapshot refs
+      // before cleanupBattle zeros them.
+      const liveChallenge = currentChallengeRef.current;
+      const liveAccepted = challengeAcceptedRef.current;
+      const challengeCompleted =
+        liveAccepted && liveChallenge
+          ? isChallengeCompleted(liveChallenge, {
+              turnCount: challengeTurnCountRef.current,
+              totalDamage: challengeTotalDamageRef.current,
+              healUsed: challengeHealUsedRef.current,
+              directHit: challengeDirectHitRef.current,
+              maxApUsedInTurn: challengeMaxApThisTurnRef.current,
+            })
+          : false;
+      const challengePersistEntries = liveBattleChallengePersistEntries(
+        liveAccepted,
+        liveChallenge,
+        challengeCompleted,
+      );
+      const challengeReward = addChallengeRewardDeltas(
+        0,
+        0,
+        challengePersistEntries,
+      );
+      const challengeDokaReward = challengeReward.dokaFromChallenges;
+      const challengeXpReward = challengeReward.xpDelta;
+      const completedChallenges = challengePersistEntries.map((c) => c.name);
 
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
-      const newXp = (characterStats.exp || 0) + expGained;
+      const newXp = (characterStats.exp || 0) + expGained + challengeXpReward;
 
       onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
       // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
-      // the room that just paid out. completeBossRushRoom stays progress-only
-      // (0, 0); wallet/XP still go through the single reward funnel.
+      // the room that just paid out. Both writes stay on the persist lock so
+      // a lava death during persistRoomClear cannot jump the queue and let
+      // applyRewards credit after the penalty. completeBossRushRoom stays
+      // progress-only (0, 0); wallet/XP still go through the single funnel.
       if (actor) {
-        void persistRoomClear(currentRoomIndex)
-          .then(() =>
-            progressPersistRef.current.enqueue(async () => {
-              const persisted = await resolveBattleRewards(
-                actor,
-                characterSlot,
-                buildBossRushPersistInput({
-                  defeatedEnemies: defeatedList,
-                  characterLevel: characterStats.level,
-                  baseDoka: totalDoka + challengeDokaReward,
-                }),
-              );
-              progressPersistRef.current.commit({
-                doka:
-                  persisted.newDoka ??
-                  progressPersistRef.current.snapshot().doka,
-                xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
-                level:
-                  persisted.currentLevel ||
-                  progressPersistRef.current.snapshot().level,
-              });
-              return persisted;
-            }),
-          )
+        void persistBossRushRewardsThroughLock(
+          progressPersistRef.current,
+          () => persistRoomClear(currentRoomIndex),
+          async () => {
+            const persisted = await resolveBattleRewards(
+              actor,
+              characterSlot,
+              buildBossRushPersistInput({
+                defeatedEnemies: defeatedList,
+                characterLevel: characterStats.level,
+                baseDoka: totalDoka,
+                completedChallenges: challengePersistEntries,
+              }),
+            );
+            progressPersistRef.current.commit({
+              doka:
+                persisted.newDoka ?? progressPersistRef.current.snapshot().doka,
+              xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
+              level:
+                persisted.currentLevel ||
+                progressPersistRef.current.snapshot().level,
+            });
+            return persisted;
+          },
+        )
           .then((persisted) => {
-            onDokaBalanceChange(persisted.newDoka ?? newDokaBalance);
+            // Wallet was already credited locally above. Do not replace it
+            // with the absolute applyRewards read — that refunds a recap
+            // heal that deducted while this persist was in flight.
+            if (!shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+              return;
+            }
             setCharacterStats((prev) => ({
               ...prev,
               exp: persisted.newXp ?? newXp,
@@ -12502,7 +12659,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Build recap data
       const finalRecapData = {
         mapTitle: `Boss Rush - Room ${currentRoomIndex + 1}`,
-        xpEarned: expGained,
+        xpEarned: expGained + challengeXpReward,
         hitsDealt: battleHitsRef.current,
         enemiesDefeated: defeatedList,
         currentXP: characterStats.exp || 0,
@@ -12551,7 +12708,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (deathPenaltyAppliedRef.current) return null;
     deathPenaltyAppliedRef.current = true;
     const currentXp = characterStatsRef.current.exp ?? 0;
-    const currentDoka = dokaBalance;
+    const currentDoka = dokaBalanceRef.current;
     const {
       xpLost,
       dokaLost,
@@ -12585,7 +12742,44 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           progressPersistRef.current.commit({
             doka: after.newDoka,
             xp: after.newXp,
+            level: committed.level,
           });
+          // A claim/applyRewards ahead of this write is in committed, not
+          // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
+          // the pre-credit snapshot over the persisted penalty. Level is
+          // the same class: victory persist can bump committed.level while
+          // the live hydrate is skipped, so raise UI level too.
+          const nextDoka = raiseUiAfterDeathPersist(
+            dokaBalanceRef.current,
+            after.newDoka,
+          );
+          const nextXp = raiseUiAfterDeathPersist(
+            characterStatsRef.current.exp ?? 0,
+            after.newXp,
+          );
+          const nextLevel = raiseUiAfterDeathPersist(
+            characterStatsRef.current.level ?? 1,
+            committed.level,
+          );
+          if (nextDoka !== dokaBalanceRef.current) {
+            onDokaBalanceChange(nextDoka);
+          }
+          if (
+            nextXp !== (characterStatsRef.current.exp ?? 0) ||
+            nextLevel !== (characterStatsRef.current.level ?? 1)
+          ) {
+            setCharacterStats((prev) => ({
+              ...prev,
+              exp: nextXp,
+              level: nextLevel,
+            }));
+          }
+          if (nextDoka !== dokaAfter || nextXp !== xpAfter) {
+            setDeathPenalty({
+              xpLost: after.xpLost,
+              dokaLost: after.dokaLost,
+            });
+          }
         })
         .catch((err) => console.error("[death-save] failed:", err));
     }
@@ -12597,14 +12791,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     onDokaBalanceChange(dokaAfter);
     setDeathPenalty({ xpLost, dokaLost });
     return { xpLost, dokaLost, xpAfter, dokaAfter };
-  }, [
-    actor,
-    character,
-    characterSlot,
-    dokaBalance,
-    onDokaBalanceChange,
-    setCharacterStats,
-  ]);
+  }, [actor, character, characterSlot, onDokaBalanceChange, setCharacterStats]);
 
   // Persist an out-of-combat HP/Doka write through saveBattleStats so the
   // per-principal dokaBalances map is updated. updateCharacter cannot debit
@@ -12737,8 +12924,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           resetCombatantStore(combatantStoreCtx);
           setInBattle(false);
           cleanupBattle();
-          deathTriggeredRef.current = false;
-          deathPenaltyAppliedRef.current = false;
+          armDeathGuards({
+            deathTriggered: deathTriggeredRef,
+            deathPenaltyApplied: deathPenaltyAppliedRef,
+          });
         }, 1500);
       }
       return;
@@ -12799,9 +12988,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         deathTriggered: deathTriggeredRef.current,
         mapCount,
       });
-      // RC FIX: No generation check needed — loop runs forever
-      const ctx = canvasRef.current?.getContext("2d");
-      if (!ctx) return;
+      // Canvas is not required to generate the Death Realm. The previous
+      // getContext gate aborted here and left deathTriggeredRef set, so a
+      // later exploration death (lava) never ran.
       deathRealmTimerRef.current = null;
       try {
         const { map: drMap, spawnPosition: drSpawn } = generateDeathRealmMap();
@@ -12833,6 +13022,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5),
           ),
         }));
+        armDeathGuards({
+          deathTriggered: deathTriggeredRef,
+          deathPenaltyApplied: deathPenaltyAppliedRef,
+        });
         resetCombatantStore(combatantStoreCtx);
         // Skate-rail system removed
         toast(
@@ -12909,6 +13102,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             Math.floor(100 * (1 + (prev.level - 1) * 0.05) * 0.5),
           ),
         }));
+        armDeathGuards({
+          deathTriggered: deathTriggeredRef,
+          deathPenaltyApplied: deathPenaltyAppliedRef,
+        });
         resetCombatantStore(combatantStoreCtx);
         toast(
           "💀 You have fallen... find a portal to escape the Death Realm.",
@@ -12963,6 +13160,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ap: 4,
       mp: 3,
     }));
+    // Re-arm so a later exploration death (lava/spikes after Death Realm)
+    // can run. The in-battle path used to leave these set.
+    armDeathGuards({
+      deathTriggered: deathTriggeredRef,
+      deathPenaltyApplied: deathPenaltyAppliedRef,
+    });
 
     // Generate death realm map
     let newMap: GameMap;
@@ -16109,10 +16312,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // but not yet accepted, dismiss the offer (accept window has elapsed).
   const markFirstAction = useCallback(() => {
     firstActionTakenRef.current = true;
-    if (!challengeAcceptedRef.current && currentChallenge) {
+    if (!challengeAcceptedRef.current) {
+      currentChallengeRef.current = null;
       setCurrentChallenge(null);
     }
-  }, [currentChallenge]);
+  }, []);
   // Unified cast helper: ONE AP gate (inclusive >=), ONE ritual, ONE [CLICK-ENEMY] log, ONE floating-reason path.
   const executeCastAttempt = useCallback(
     (
@@ -16805,7 +17009,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           onTouchEnd={handleCanvasTouch}
         />
 
-        {/* Achievements panel is now rendered from GameFlow.tsx */}
+        <AchievementsPanel
+          userId={userId}
+          dokaBalance={dokaBalance}
+          onDokaBalanceChange={onDokaBalanceChange}
+          isOpen={achievementsOpen}
+          onClose={onAchievementsClose}
+          persistClaim={persistAchievementClaim}
+        />
 
         {/* EXP6: Item (Buff) Shop draggable panel */}
         <BuffShop
@@ -18467,8 +18678,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         userId={userId ?? ""}
         currentChallenge={currentChallenge}
         accepted={challengeAccepted}
-        onAccept={() => setChallengeAccepted(true)}
-        onDecline={() => setCurrentChallenge(null)}
+        onAccept={() => {
+          challengeAcceptedRef.current = true;
+          setChallengeAccepted(true);
+        }}
+        onDecline={() => {
+          challengeAcceptedRef.current = false;
+          currentChallengeRef.current = null;
+          setChallengeAccepted(false);
+          setCurrentChallenge(null);
+        }}
         progress={{
           turnCount: challengeTurnCountRef.current,
           totalDamage: challengeTotalDamageRef.current,

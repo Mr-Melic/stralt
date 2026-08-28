@@ -1,13 +1,37 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { createProgressPersist } from "../utils/progressPersist.ts";
 import {
   adoptPersistedResumeRoom,
   clearBossRushForSlot,
+  isPrincipalText,
   parseBossRushStateTuple,
+  persistBossRushRewardsThroughLock,
   persistBossRushRoomClear,
   progressAfterRoomClear,
+  resolveBossRushQueryPrincipalText,
   resumeRoomFromPersisted,
 } from "./bossRushProgress.ts";
+
+describe("resolveBossRushQueryPrincipalText", () => {
+  const caller = "2vxsx-fae";
+
+  it("rejects profile display names so resume does not skip the canister", () => {
+    assert.equal(isPrincipalText("guest"), false);
+    assert.equal(isPrincipalText("VampireBob"), false);
+    assert.equal(resolveBossRushQueryPrincipalText(null, "guest"), null);
+    assert.equal(resolveBossRushQueryPrincipalText(null, "VampireBob"), null);
+  });
+
+  it("prefers the authenticated II principal over a display-name userId", () => {
+    assert.equal(resolveBossRushQueryPrincipalText(caller, "guest"), caller);
+  });
+
+  it("accepts a valid principal text when identity is missing", () => {
+    assert.equal(isPrincipalText(caller), true);
+    assert.equal(resolveBossRushQueryPrincipalText(null, caller), caller);
+  });
+});
 
 describe("parseBossRushStateTuple", () => {
   it("reads (currentRoom, highestRoomCompleted, totalBossRushRuns)", () => {
@@ -166,5 +190,44 @@ describe("persistBossRushRoomClear", () => {
       { wasSuperseded: () => false },
     );
     assert.deepEqual(calls, ["progress:2:1", "complete:2:0"]);
+  });
+});
+
+describe("persistBossRushRewardsThroughLock", () => {
+  it("keeps persistRoomClear on the lock so death penalizes the post-credit wallet", async () => {
+    const lock = createProgressPersist({ doka: 1000, xp: 10000, level: 4 });
+    const order: string[] = [];
+    let releaseClear!: () => void;
+    const clearGate = new Promise<void>((resolve) => {
+      releaseClear = resolve;
+    });
+
+    const roomClear = persistBossRushRewardsThroughLock(
+      lock,
+      async () => {
+        await clearGate;
+        order.push("progress");
+      },
+      async () => {
+        lock.commit({ doka: 1200, xp: 10080 });
+        order.push("rewards");
+        return { doka: 1200, xp: 10080 };
+      },
+    );
+
+    const death = lock.enqueue(async () => {
+      order.push("death");
+      const committed = lock.snapshot();
+      lock.commit({
+        doka: Math.floor(committed.doka * 0.6),
+        xp: Math.floor(committed.xp * 0.8),
+      });
+    });
+
+    releaseClear();
+    await Promise.all([roomClear, death]);
+    assert.deepEqual(order, ["progress", "rewards", "death"]);
+    assert.equal(lock.snapshot().doka, 720);
+    assert.equal(lock.snapshot().xp, 8064);
   });
 });
