@@ -3,9 +3,11 @@ import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress.ts"
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
   computeDeathPenalty,
+  mergeVictoryRewardLiveStats,
   persistDeathPenalty,
   raiseUiAfterDeathPersist,
   shouldApplyVictoryLiveHydrate,
+  victoryResourceFloor,
 } from "./deathPenalty.ts";
 import { createProgressPersist } from "./progressPersist.ts";
 
@@ -107,6 +109,37 @@ assert.equal(raiseUiAfterDeathPersist(900, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(610, 582), 610);
 assert.equal(shouldApplyVictoryLiveHydrate(true), false);
 assert.equal(shouldApplyVictoryLiveHydrate(false), true);
+
+assert.deepEqual(victoryResourceFloor(1), { hp: 60, mp: 5, ap: 6 });
+assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
+
+{
+  const recapHeal = mergeVictoryRewardLiveStats(
+    { exp: 40, level: 1, hp: 100, mp: 5, ap: 6, expToNext: 100 },
+    { newXp: 80, currentLevel: 1 },
+  );
+  assert.equal(recapHeal.hp, 100);
+  assert.equal(recapHeal.exp, 80);
+  assert.equal(recapHeal.expToNext, 100);
+
+  const combatLow = mergeVictoryRewardLiveStats(
+    { exp: 40, level: 1, hp: 20, mp: 2, ap: 3, expToNext: 100 },
+    { newXp: 80, currentLevel: 1 },
+  );
+  assert.equal(combatLow.hp, 60);
+  assert.equal(combatLow.mp, 5);
+  assert.equal(combatLow.ap, 6);
+
+  const leftoverHigh = mergeVictoryRewardLiveStats(
+    { exp: 40, level: 1, hp: 80, mp: 8, ap: 7, expToNext: 100 },
+    { newXp: 80, currentLevel: 2 },
+  );
+  assert.equal(leftoverHigh.hp, 80);
+  assert.equal(leftoverHigh.mp, 8);
+  assert.equal(leftoverHigh.ap, 7);
+  assert.equal(leftoverHigh.level, 2);
+  assert.equal(leftoverHigh.expToNext, 200);
+}
 
 // Win/claim persist is still on the lock. Recap overlay does not block the
 // map, so lava death applies 40% to the pre-credit UI. The queued write
