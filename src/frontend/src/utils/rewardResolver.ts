@@ -1,16 +1,26 @@
 import type { BattleRecapData } from "../components/PostBattleRecap";
 import { readApplyRewardsOk } from "./applyRewardsResult";
+import {
+  type CompletedChallengeReward,
+  addChallengeRewardDeltas,
+} from "./challengeRewards";
 
 export type { ApplyRewardsOk } from "./applyRewardsResult";
 export {
   persistIncrementalRewards,
   readApplyRewardsOk,
 } from "./applyRewardsResult";
+export {
+  addChallengeRewardDeltas,
+  battleChallengePersistEntries,
+  challengeXpFromEntries,
+  type CompletedChallengeReward,
+} from "./challengeRewards";
 
 export interface RewardInput {
   victory: boolean;
   enemiesDefeated: Array<{ name: string; level: number }>;
-  completedChallenges: { name: string; dokaReward: number }[];
+  completedChallenges: CompletedChallengeReward[];
   dungeonMultiplier: number;
   bossRushRoomReward?: { doka: number; xp: number };
   baseDoka: number;
@@ -120,11 +130,14 @@ export function computeRewardDeltas(input: RewardInput): {
     xpDelta += Math.floor(input.baseXp * input.dungeonMultiplier);
   }
 
-  let dokaFromChallenges = 0;
-  for (const ch of input.completedChallenges) {
-    dokaFromChallenges += ch.dokaReward;
-  }
-  dokaDelta += dokaFromChallenges;
+  const withChallenges = addChallengeRewardDeltas(
+    dokaDelta,
+    xpDelta,
+    input.completedChallenges,
+  );
+  dokaDelta = withChallenges.dokaDelta;
+  xpDelta = withChallenges.xpDelta;
+  const dokaFromChallenges = withChallenges.dokaFromChallenges;
 
   if (input.bossRushRoomReward) {
     dokaDelta += input.bossRushRoomReward.doka;
