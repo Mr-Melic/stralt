@@ -14,6 +14,9 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/` | React + Vite client |
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit |
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
+| `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards` + `saveBattleStats` |
+| `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` |
+| `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` level threshold |
 | `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
 | `declarations/backend/` | Stale Candid snapshot (still lists `wp`/`wr`/`scp`) |
 
@@ -47,15 +50,16 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 
 | Doc | Contents |
 | :--- | :--- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, public canister API, frontend flows, combat engine |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid pitfalls, deploy, debug overlay |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, persist lock, public canister API, frontend flows, combat engine |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid/wallet pitfalls, shop, boss rush, deploy, debug overlay |
 | [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
 
 ## Hard rules (product)
 
 - Backend owns persisted state. `localStorage` is a cache / UI preference only.
-- Battle XP and Doka persist only through `applyRewards`. Do not write rewards via `updateCharacter`.
+- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`.
+- Penalties and shop/heal spends persist through `saveBattleStats` on the same progress-persist lock. `applyRewards` cannot subtract.
 - Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics.
 - Admin and debug tools stay gated. Do not ship them to normal players as first-class UI.
 - Recap UI mounts once, at app root (`App.tsx` → `PostBattleRecap`).
