@@ -3,6 +3,7 @@ import {
   committedDokaAfterAchievementCredit,
   creditAchievementRewardThroughPersist,
   readClaimAchievementReward,
+  shouldInvalidateCallerDokaAfterClaim,
 } from "./achievementReward.ts";
 import {
   applyShopCreditDeltaToUi,
@@ -109,6 +110,26 @@ void (async () => {
 
   // UI already deducted a heal while the claim waited on the lock.
   assert.equal(applyShopCreditDeltaToUi(170, 500), 670);
+
+  // persistClaim already committed the grant. An absolute callerDokaBalance
+  // refetch (the post-claim invalidate) returns the pre-heal backend and
+  // hydrateWhenIdle copies that refund into committed.
+  assert.equal(shouldInvalidateCallerDokaAfterClaim(true), false);
+  assert.equal(shouldInvalidateCallerDokaAfterClaim(false), true);
+  const afterClaimAndHeal = createProgressPersist({
+    doka: 720,
+    xp: 50,
+    level: 4,
+  });
+  const refetchBeforeHealLanded = 750;
+  const uiAfterDelta = applyShopCreditDeltaToUi(170, 500);
+  assert.equal(uiAfterDelta, 670);
+  afterClaimAndHeal.hydrateWhenIdle({
+    doka: refetchBeforeHealLanded,
+    xp: 50,
+    level: 4,
+  });
+  assert.equal(afterClaimAndHeal.snapshot().doka, 750);
 
   console.log("achievementReward.test: ok");
 })();
