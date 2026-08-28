@@ -23,3 +23,18 @@ export function armDeathGuards(refs: DeathGuardRefs): void {
   refs.deathTriggered.current = false;
   refs.deathPenaltyApplied.current = false;
 }
+
+/**
+ * Block portal entry while a Death Realm timer is pending.
+ *
+ * persistDeathPenalty restores HP in the same death tick, so an hp<=0 check
+ * is already false by the time the player can step on a portal. cleanupMap
+ * then cancels deathRealmTimerRef while deathTriggered stays set — the HP
+ * watch never re-runs, and the next lava/spike death strands the player.
+ */
+export function shouldBlockPortalDuringPendingDeathRealm(
+  deathTriggered: boolean,
+  deathRealmTimerPending: boolean,
+): boolean {
+  return deathTriggered && deathRealmTimerPending;
+}

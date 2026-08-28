@@ -211,7 +211,10 @@ import {
   challengeXpFromEntries,
   liveBattleChallengePersistEntries,
 } from "../utils/challengeRewards";
-import { armDeathGuards } from "../utils/deathGuards";
+import {
+  armDeathGuards,
+  shouldBlockPortalDuringPendingDeathRealm,
+} from "../utils/deathGuards";
 import {
   computeDeathPenalty,
   mergeVictoryRewardLiveStats,
@@ -6245,14 +6248,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return; // ← use ref, not stale closure state
     if (!currentMap) return;
-    // A pending Death Realm transition (exploration lava/spike at 0 HP) must
-    // not be interrupted by cleanupMap() inside this handler — that cancels
-    // deathRealmTimerRef while deathTriggeredRef stays set, so the HP watch
-    // never re-runs and the player is stranded at 0 HP with no realm load.
+    // A pending Death Realm timer must not be cancelled by cleanupMap() here.
+    // persistDeathPenalty already restored HP, so an hp<=0 check is a no-op
+    // by the time the player can walk onto a portal. If the timer is cleared
+    // while deathTriggered stays set, the next lava death never loads the realm.
     if (
-      deathTriggeredRef.current &&
-      characterStatsRef.current.hp <= 0 &&
-      deathRealmTimerRef.current !== null
+      shouldBlockPortalDuringPendingDeathRealm(
+        deathTriggeredRef.current,
+        deathRealmTimerRef.current !== null,
+      )
     ) {
       return;
     }

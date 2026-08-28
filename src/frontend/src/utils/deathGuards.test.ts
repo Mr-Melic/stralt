@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { armDeathGuards, deathGuardsAreArmed } from "./deathGuards.ts";
+import {
+  armDeathGuards,
+  deathGuardsAreArmed,
+  shouldBlockPortalDuringPendingDeathRealm,
+} from "./deathGuards.ts";
 
 const spent = {
   deathTriggered: { current: true },
@@ -27,5 +31,24 @@ const armed = {
 assert.equal(deathGuardsAreArmed(armed), true);
 armDeathGuards(armed);
 assert.equal(deathGuardsAreArmed(armed), true);
+
+// persistDeathPenalty restores HP before the player can reach a portal.
+// The guard must not depend on hp<=0 — only deathTriggered + pending timer.
+assert.equal(
+  shouldBlockPortalDuringPendingDeathRealm(true, true),
+  true,
+  "pending Death Realm + deathTriggered must block portals after HP restore",
+);
+assert.equal(
+  shouldBlockPortalDuringPendingDeathRealm(true, false),
+  false,
+  "Death Realm already loaded (timer cleared) must allow the exit portal",
+);
+assert.equal(
+  shouldBlockPortalDuringPendingDeathRealm(false, true),
+  false,
+  "a stray timer without deathTriggered must not lock exploration",
+);
+assert.equal(shouldBlockPortalDuringPendingDeathRealm(false, false), false);
 
 console.log("deathGuards.test: ok");
