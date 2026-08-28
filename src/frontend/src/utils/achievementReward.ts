@@ -45,6 +45,19 @@ export function committedDokaAfterAchievementCredit(
   return base + add;
 }
 
+/**
+ * GameFlow hydrates the session wallet from ['callerDokaBalance']. After a
+ * persist-lock claim the live UI already has the grant as a delta. Invalidating
+ * that key refetches an absolute backend balance and overwrites a recap heal
+ * that deducted while the claim was on the lock; hydrateWhenIdle then copies
+ * the refund into committed so the next saveBattleStats restores the spend.
+ */
+export function shouldInvalidateCallerDokaAfterClaim(
+  claimedThroughPersistLock: boolean,
+): boolean {
+  return !claimedThroughPersistLock;
+}
+
 /** Claim on the same persist lock as applyRewards / saveBattleStats. */
 export async function creditAchievementRewardThroughPersist(
   actor: AchievementCreditActor,

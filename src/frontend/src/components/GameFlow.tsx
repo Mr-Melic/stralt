@@ -73,8 +73,9 @@ const GameFlow: React.FC<GameFlowProps> = ({
   // mutates synchronously (pickups, rewards, shop, healing) for immediate UI
   // feedback. Hydrate from the query on mount / character select, and once
   // when entering the world — never again while WorldExploration owns the
-  // wallet. A claim invalidate or window-focus refetch is an absolute
-  // snapshot that can restore a pre-heal balance and refund spent Doka.
+  // wallet. Persist-lock feat claims must not invalidate this key, and a
+  // window-focus refetch is the same class of absolute snapshot: either one
+  // can restore a pre-heal balance and refund spent Doka.
   const [dokaBalance, setDokaBalance] = useState(0);
   // SECTION 4 (build #325): debug context threaded up from WorldExploration so
   // ChatPanel's export-report builder can include live character/map/battle state.
@@ -121,10 +122,11 @@ const GameFlow: React.FC<GameFlowProps> = ({
     queryClient.clear();
   };
 
-  // Seed the session cache from the backend query. Do not keep replacing it
-  // after WorldExploration is hydrated: persistClaim / applyRewards already
-  // add their deltas onto the live wallet, and a later absolute refetch
-  // refunds a recap heal that deducted in between.
+  // Seed the session cache from the backend query. On mount this fixes the
+  // previous "always 0" bug. Do not keep replacing it after WorldExploration
+  // is hydrated: persistClaim / applyRewards already add their deltas onto
+  // the live wallet, persist-lock claims skip this key's invalidate, and a
+  // later absolute refetch (claim or window focus) refunds a recap heal.
   const worldDokaHydratedRef = useRef(false);
   useEffect(() => {
     if (currentStage !== "world") {
