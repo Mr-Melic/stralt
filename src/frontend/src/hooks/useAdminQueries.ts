@@ -7,7 +7,9 @@ import type {
   MapModifierConfig,
 } from "../types/gameTypes";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
+import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
+import { useInternetIdentity } from "./useInternetIdentity";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ActorAny = Record<string, any>;
@@ -278,20 +280,17 @@ export function useGetAchievementConfigs() {
 
 export function useGetPlayerAchievements() {
   const { actor, isFetching: actorFetching } = useActor();
+  const { identity } = useInternetIdentity();
+  const player = identity?.getPrincipal?.() ?? null;
 
   return useQuery<AchievementProgress[]>({
     queryKey: ["playerAchievements"],
     queryFn: async () => {
-      if (!actor) return [];
+      if (!actor || !player) return [];
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = (await withTimeout(
-          (actor as ActorAny).getPlayerAchievements(),
-        )) as any;
-        const mapped = (raw as AchievementProgress[]).map((p) => ({
-          ...p,
-          unlockedAt: Number(p.unlockedAt),
-        }));
+        const mapped = await withTimeout(
+          fetchPlayerAchievements(actor, player),
+        );
         // [FEATS] LIST — log the refetched claimed flag per achievement so
         // the chain shows the post-claim/unlock state from the backend.
         console.log("[FEATS] LIST", {
@@ -306,7 +305,7 @@ export function useGetPlayerAchievements() {
         return [];
       }
     },
-    enabled: !!actor && !actorFetching,
+    enabled: !!actor && !actorFetching && !!player,
     staleTime: 0,
     gcTime: 60000,
   });
