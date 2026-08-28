@@ -12669,10 +12669,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           progressPersistRef.current.commit({
             doka: after.newDoka,
             xp: after.newXp,
+            level: committed.level,
           });
           // A claim/applyRewards ahead of this write is in committed, not
           // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
-          // the pre-credit snapshot over the persisted penalty.
+          // the pre-credit snapshot over the persisted penalty. Level is
+          // the same class: victory persist can bump committed.level while
+          // the live hydrate is skipped, so raise UI level too.
           const nextDoka = raiseUiAfterDeathPersist(
             dokaBalanceRef.current,
             after.newDoka,
@@ -12681,11 +12684,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             characterStatsRef.current.exp ?? 0,
             after.newXp,
           );
+          const nextLevel = raiseUiAfterDeathPersist(
+            characterStatsRef.current.level ?? 1,
+            committed.level,
+          );
           if (nextDoka !== dokaBalanceRef.current) {
             onDokaBalanceChange(nextDoka);
           }
-          if (nextXp !== (characterStatsRef.current.exp ?? 0)) {
-            setCharacterStats((prev) => ({ ...prev, exp: nextXp }));
+          if (
+            nextXp !== (characterStatsRef.current.exp ?? 0) ||
+            nextLevel !== (characterStatsRef.current.level ?? 1)
+          ) {
+            setCharacterStats((prev) => ({
+              ...prev,
+              exp: nextXp,
+              level: nextLevel,
+            }));
           }
           if (nextDoka !== dokaAfter || nextXp !== xpAfter) {
             setDeathPenalty({

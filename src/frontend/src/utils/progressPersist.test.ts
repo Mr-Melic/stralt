@@ -5,6 +5,7 @@ import {
   applySpendToCommitted,
   committedDokaAfterShopCredit,
   createProgressPersist,
+  floorHydratedLevel,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -152,6 +153,19 @@ describe("progress persist lock", () => {
     assert.equal(wroteDoka, 749);
     assert.equal(lock.snapshot().doka, 749);
     assert.equal(backendDoka, 749);
+  });
+
+  it("does not let idle hydrate downgrade a committed level-up", () => {
+    assert.equal(floorHydratedLevel(5, 4), 5);
+    assert.equal(floorHydratedLevel(4, 5), 5);
+    assert.equal(floorHydratedLevel(4, 4), 4);
+
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    lock.commit({ doka: 250, xp: 30, level: 5 });
+    // #38 skipped the live UI level hydrate because lava death landed
+    // during applyRewards. The hydrate effect then copies UI level 4.
+    assert.equal(lock.hydrateWhenIdle({ doka: 150, xp: 24, level: 4 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 150, xp: 24, level: 5 });
   });
 
   it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {
