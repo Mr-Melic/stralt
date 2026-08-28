@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress.ts";
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
   computeDeathPenalty,
@@ -145,6 +146,90 @@ assert.equal(shouldApplyVictoryLiveHydrate(false), true);
   lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
   assert.equal(lock.snapshot().doka, 900);
   assert.equal(lock.snapshot().xp, 144);
+}
+
+// Portal applyRewards hydrates absolute XP after await. Lava on the new
+// map can land while that persist is in flight. Restoring the pre-penalty
+// snapshot lets raiseUi keep the unpenalized UI; an idle hydrate then
+// copies it over committed and refunds the death penalty.
+{
+  const lock = createProgressPersist({ doka: 1000, xp: 10000, level: 4 });
+  let uiXp = 10010;
+  let uiDoka = 1000;
+  let deathTriggered = false;
+
+  const portal = lock.enqueue(async () => {
+    lock.commit({ xp: 10010 });
+  });
+
+  const optimistic = computeDeathPenalty(uiXp, uiDoka);
+  uiXp = optimistic.newXp;
+  uiDoka = optimistic.newDoka;
+  deathTriggered = true;
+  assert.equal(uiXp, 8008);
+
+  const death = lock.enqueue(async () => {
+    const after = computeDeathPenalty(lock.snapshot().xp, lock.snapshot().doka);
+    lock.commit({ doka: after.newDoka, xp: after.newXp });
+    uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
+    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+  });
+
+  await portal;
+  if (shouldApplyVictoryLiveHydrate(deathTriggered)) {
+    uiXp = 10010;
+  }
+  await death;
+
+  assert.equal(uiXp, 8008);
+  assert.equal(lock.snapshot().xp, 8008);
+
+  lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
+  assert.equal(lock.snapshot().xp, 8008);
+}
+
+// persistRoomClear + applyRewards share the lock. Death waits, penalizes
+// the post-credit snapshot, and an idle hydrate cannot wipe the grant.
+{
+  const lock = createProgressPersist({ doka: 1000, xp: 10000, level: 4 });
+  let uiDoka = 1200;
+  let uiXp = 10080;
+  let releaseClear!: () => void;
+  const clearGate = new Promise<void>((resolve) => {
+    releaseClear = resolve;
+  });
+
+  const roomClear = persistBossRushRewardsThroughLock(
+    lock,
+    async () => {
+      await clearGate;
+    },
+    async () => {
+      lock.commit({ doka: 1200, xp: 10080 });
+      return { doka: 1200, xp: 10080 };
+    },
+  );
+
+  const optimistic = computeDeathPenalty(uiXp, uiDoka);
+  uiDoka = optimistic.newDoka;
+  uiXp = optimistic.newXp;
+  const death = lock.enqueue(async () => {
+    const after = computeDeathPenalty(lock.snapshot().xp, lock.snapshot().doka);
+    lock.commit({ doka: after.newDoka, xp: after.newXp });
+    uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
+    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+  });
+
+  releaseClear();
+  await Promise.all([roomClear, death]);
+  assert.equal(uiDoka, 720);
+  assert.equal(uiXp, 8064);
+  assert.equal(lock.snapshot().doka, 720);
+  assert.equal(lock.snapshot().xp, 8064);
+
+  lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
+  assert.equal(lock.snapshot().doka, 720);
+  assert.equal(lock.snapshot().xp, 8064);
 }
 
 console.log("deathPenalty.test: ok");

@@ -127,6 +127,28 @@ export interface PersistBossRushRoomClearOptions {
 }
 
 /**
+ * persistRoomClear used to run outside the persist lock. Lava after a room
+ * clear (recap is pointer-events: none) could enqueue the death write first;
+ * applyRewards then credited AFTER the penalty. An idle hydrate copied the
+ * short UI over that late credit and the next persist wrote the under-count.
+ *
+ * Enqueue the progress write and applyRewards together so death waits and
+ * penalizes the post-credit snapshot — the same order as victory persist.
+ */
+export async function persistBossRushRewardsThroughLock<T>(
+  lock: {
+    enqueue: <U>(fn: () => Promise<U>) => Promise<U>;
+  },
+  persistRoomClear: () => Promise<void>,
+  applyAndCommit: () => Promise<T>,
+): Promise<T> {
+  return lock.enqueue(async () => {
+    await persistRoomClear();
+    return applyAndCommit();
+  });
+}
+
+/**
  * Writes currentRoom before the room-clear applyRewards so a reload cannot
  * re-enter the room that just paid out. Final-room clear resets currentRoom
  * so the jackpot room is not resumable.

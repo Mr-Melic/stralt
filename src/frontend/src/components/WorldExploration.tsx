@@ -187,6 +187,7 @@ import {
   getSessionVersion,
   nowTimestamp,
 } from "../engine/worldHelpers";
+import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress";
 import { useBossAI } from "../hooks/useBossAI";
 import { useBossRush } from "../hooks/useBossRush";
 import {
@@ -6981,12 +6982,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 },
               );
               const { newXp, newLevel: newLvl } = result.ok;
-              setCharacterStats((cur) => ({
-                ...cur,
-                exp: Number(newXp),
-                level: Number(newLvl),
-                expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
-              }));
+              // Recap is not up after a portal swap. Lava on the new map
+              // can land while this applyRewards is still in flight. The
+              // death write already penalized the post-credit snapshot;
+              // restoring absolute XP here lets raiseUiAfterDeathPersist
+              // keep the unpenalized UI and refund the penalty.
+              if (shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+                setCharacterStats((cur) => ({
+                  ...cur,
+                  exp: Number(newXp),
+                  level: Number(newLvl),
+                  expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
+                }));
+              }
             } catch (err) {
               console.warn("[PBV] Portal XP save failed:", err);
             }
@@ -12508,33 +12516,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
 
       // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
-      // the room that just paid out. completeBossRushRoom stays progress-only
-      // (0, 0); wallet/XP still go through the single reward funnel.
+      // the room that just paid out. Both writes stay on the persist lock so
+      // a lava death during persistRoomClear cannot jump the queue and let
+      // applyRewards credit after the penalty. completeBossRushRoom stays
+      // progress-only (0, 0); wallet/XP still go through the single funnel.
       if (actor) {
-        void persistRoomClear(currentRoomIndex)
-          .then(() =>
-            progressPersistRef.current.enqueue(async () => {
-              const persisted = await resolveBattleRewards(
-                actor,
-                characterSlot,
-                buildBossRushPersistInput({
-                  defeatedEnemies: defeatedList,
-                  characterLevel: characterStats.level,
-                  baseDoka: totalDoka + challengeDokaReward,
-                }),
-              );
-              progressPersistRef.current.commit({
-                doka:
-                  persisted.newDoka ??
-                  progressPersistRef.current.snapshot().doka,
-                xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
-                level:
-                  persisted.currentLevel ||
-                  progressPersistRef.current.snapshot().level,
-              });
-              return persisted;
-            }),
-          )
+        void persistBossRushRewardsThroughLock(
+          progressPersistRef.current,
+          () => persistRoomClear(currentRoomIndex),
+          async () => {
+            const persisted = await resolveBattleRewards(
+              actor,
+              characterSlot,
+              buildBossRushPersistInput({
+                defeatedEnemies: defeatedList,
+                characterLevel: characterStats.level,
+                baseDoka: totalDoka + challengeDokaReward,
+              }),
+            );
+            progressPersistRef.current.commit({
+              doka:
+                persisted.newDoka ?? progressPersistRef.current.snapshot().doka,
+              xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
+              level:
+                persisted.currentLevel ||
+                progressPersistRef.current.snapshot().level,
+            });
+            return persisted;
+          },
+        )
           .then((persisted) => {
             // Wallet was already credited locally above. Do not replace it
             // with the absolute applyRewards read — that refunds a recap
