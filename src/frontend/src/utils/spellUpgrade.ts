@@ -87,3 +87,25 @@ export async function persistSpellUpgrade(
     newDoka: Number.isFinite(newDoka) ? newDoka : undefined,
   };
 }
+
+/**
+ * Debit the canister spend, not the spellbook's advertised cost.
+ *
+ * Summon upgrades show `SUMMON_UPGRADE_COST_MULTIPLIER * 10 * 2^level` (100
+ * at level 0) but `upgradeSpell` only charges `spellLevelingBaseCost *
+ * 2^level` (10). Subtracting the advertised amount leaves the live wallet
+ * short. hydrateWhenIdle then copies that under-count over committed, and
+ * the next saveBattleStats (heal/shop) permanently wipes the difference.
+ */
+export function spellUpgradeUiSpend(
+  advertisedCost: number,
+  committedDokaBefore: number,
+  backendDokaAfter: number | undefined,
+): number {
+  if (backendDokaAfter == null) {
+    return Math.max(0, Math.floor(Number(advertisedCost) || 0));
+  }
+  const before = Math.max(0, Math.floor(Number(committedDokaBefore) || 0));
+  const after = Math.max(0, Math.floor(Number(backendDokaAfter) || 0));
+  return Math.max(0, before - after);
+}
