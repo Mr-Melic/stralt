@@ -229,6 +229,10 @@ import {
   spendFromUiBalance,
 } from "../utils/progressPersist";
 import {
+  RENAME_DOKA_COST,
+  readRenameCharacterResult,
+} from "../utils/renameCharacter";
+import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
   computeVictoryExp,
@@ -1855,22 +1859,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Boost toggle state
   const [boostMode, _setBoostMode] = useState<"xp" | "rewards">("xp");
 
-  // Simple rename handler — calls backend renameCharacter and deducts Doka locally
+  // Rename is a Motoko Result: #err does not throw. Debit the live wallet
+  // only after #ok — a phantom -100 hydrates into committed and the next
+  // heal/shop saveBattleStats writes it on-chain.
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (dokaBalance < 100) {
+    if (dokaBalance < RENAME_DOKA_COST) {
       toast.error("Insufficient Doka (need 100)");
       return;
     }
     setIsRenaming(true);
     try {
       if (actor) {
-        await (actor as Record<string, any>).renameCharacter(
-          BigInt(characterSlot),
-          newName,
+        const parsed = readRenameCharacterResult(
+          await (actor as Record<string, any>).renameCharacter(
+            BigInt(characterSlot),
+            newName,
+          ),
         );
-        onDokaBalanceChange(Math.max(0, dokaBalance - 100));
+        if ("err" in parsed) {
+          toast.error(parsed.err);
+          return;
+        }
+        onDokaBalanceChange(Math.max(0, dokaBalance - RENAME_DOKA_COST));
         toast.success(`Name changed to "${newName}"`);
         setShowRenameModal(false);
         setRenameInput("");
