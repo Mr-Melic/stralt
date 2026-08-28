@@ -68,6 +68,60 @@ export function shouldApplyVictoryLiveHydrate(
   return !deathTriggered;
 }
 
+/** Post-battle HP/AP/MP floor. Uses the pre-hydrate level, matching the live setState. */
+export function victoryResourceFloor(level: number): {
+  hp: number;
+  mp: number;
+  ap: number;
+} {
+  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+  return {
+    hp: 50 + safeLevel * 10,
+    mp: 5 + Math.floor(safeLevel / 10),
+    ap: 6 + Math.floor(safeLevel / 20),
+  };
+}
+
+export type VictoryLiveHydratePrev = {
+  exp: number;
+  level: number;
+  hp: number;
+  mp: number;
+  ap: number;
+  expToNext: number;
+};
+
+export type VictoryLiveHydrateRecap = {
+  newXp?: number | null;
+  currentLevel: number;
+};
+
+/**
+ * applyRewards hydrates XP/level only. The recap overlay's outer wrapper is
+ * pointer-events: none, so a Doka heal is live once inBattle is false —
+ * before this persist await returns. Replacing HP with the post-battle floor
+ * undoes that paid heal; the player then heals again and is charged twice.
+ *
+ * Keep leftover combat HP (or a recap heal) when it is already above the
+ * floor; still raise up to the floor when combat ended lower.
+ */
+export function mergeVictoryRewardLiveStats<T extends VictoryLiveHydratePrev>(
+  prev: T,
+  recap: VictoryLiveHydrateRecap,
+): T {
+  const level = recap.currentLevel || prev.level;
+  const floor = victoryResourceFloor(prev.level);
+  return {
+    ...prev,
+    exp: recap.newXp ?? prev.exp,
+    level,
+    hp: Math.max(prev.hp, floor.hp),
+    mp: Math.max(prev.mp, floor.mp),
+    ap: Math.max(prev.ap, floor.ap),
+    expToNext: Math.floor(100 * 2 ** (level - 1)),
+  };
+}
+
 function toNat(n: number): bigint {
   return BigInt(Math.max(0, Math.floor(Number(n) || 0)));
 }

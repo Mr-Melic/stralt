@@ -211,6 +211,7 @@ import {
 import { armDeathGuards } from "../utils/deathGuards";
 import {
   computeDeathPenalty,
+  mergeVictoryRewardLiveStats,
   persistDeathPenalty as persistAbsoluteStats,
   raiseUiAfterDeathPersist,
   shouldApplyVictoryLiveHydrate,
@@ -12341,17 +12342,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // snapshot; restoring HP / unpenalized XP here resurrects the
             // player and lets hydrateWhenIdle refund the penalty.
             if (shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
-              setCharacterStats((prev) => ({
-                ...prev,
-                exp: _rewardRecap.newXp ?? characterStats.exp,
-                level: _rewardRecap.currentLevel,
-                hp: 50 + prev.level * 10,
-                mp: 5 + Math.floor(prev.level / 10),
-                ap: 6 + Math.floor(prev.level / 20),
-                expToNext: Math.floor(
-                  100 * 2 ** (_rewardRecap.currentLevel - 1),
-                ),
-              }));
+              // Recap overlay does not block the heal button. A paid Doka
+              // heal during this await must keep its HP; the old absolute
+              // floor (50+level*10) dropped them back and they paid twice.
+              setCharacterStats((prev) =>
+                mergeVictoryRewardLiveStats(prev, {
+                  newXp: _rewardRecap.newXp,
+                  currentLevel: _rewardRecap.currentLevel,
+                }),
+              );
               // Add the credited delta onto the live wallet. Replacing with
               // applyRewards' absolute newDoka refunds a recap heal/shop spend
               // the player already applied locally; hydrateWhenIdle then
