@@ -6201,6 +6201,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (transitionInProgressRef.current) return;
     if (inBattleRef.current) return; // ← use ref, not stale closure state
     if (!currentMap) return;
+    // A pending Death Realm transition (exploration lava/spike at 0 HP) must
+    // not be interrupted by cleanupMap() inside this handler — that cancels
+    // deathRealmTimerRef while deathTriggeredRef stays set, so the HP watch
+    // never re-runs and the player is stranded at 0 HP with no realm load.
+    if (
+      deathTriggeredRef.current &&
+      characterStatsRef.current.hp <= 0 &&
+      deathRealmTimerRef.current !== null
+    ) {
+      return;
+    }
     // FIX #14: Check-and-set is the very first synchronous operation so there
     // is no gap between the check and the lock being claimed.
     setTransitionInProgress(true);
