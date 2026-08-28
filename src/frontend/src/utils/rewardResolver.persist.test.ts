@@ -4,6 +4,7 @@ import {
   persistIncrementalRewards,
   readApplyRewardsOk,
 } from "./applyRewardsResult.ts";
+import { liveBattleChallengePersistEntries } from "./challengeRewards.ts";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
@@ -34,6 +35,45 @@ describe("boss-rush persist input", () => {
     const deltas = computeRewardDeltas(input);
     assert.equal(deltas.dokaDelta, 42);
     assert.equal(deltas.xpDelta, 240);
+    assert.deepEqual(input.completedChallenges, []);
+  });
+
+  it("credits accepted hard/legendary panel rewards through applyRewards", () => {
+    const defeatedEnemies = [{ name: "larva", level: 4 }];
+    const legendary = liveBattleChallengePersistEntries(
+      true,
+      { rewards: { doka: 500, xp: 1000 } },
+      true,
+    );
+    const input = buildBossRushPersistInput({
+      defeatedEnemies,
+      characterLevel: 5,
+      baseDoka: 42,
+      completedChallenges: legendary,
+    });
+    const deltas = computeRewardDeltas(input);
+    // Victory gate skips handleBattleEnd on a run. Empty completedChallenges
+    // used to drop the 400–1000 XP / 150–500 Doka the panel advertised.
+    assert.equal(deltas.dokaDelta, 542);
+    assert.equal(deltas.xpDelta, 1080);
+    assert.equal(deltas.dokaFromChallenges, 500);
+  });
+
+  it("does not pay the panel when the offer was declined", () => {
+    const input = buildBossRushPersistInput({
+      defeatedEnemies: [{ name: "larva", level: 4 }],
+      characterLevel: 5,
+      baseDoka: 42,
+      completedChallenges: liveBattleChallengePersistEntries(
+        false,
+        { rewards: { doka: 500, xp: 1000 } },
+        true,
+      ),
+    });
+    const deltas = computeRewardDeltas(input);
+    assert.equal(deltas.dokaDelta, 42);
+    assert.equal(deltas.xpDelta, 80);
+    assert.equal(deltas.dokaFromChallenges, 0);
   });
 });
 

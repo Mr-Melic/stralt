@@ -52,4 +52,18 @@ describe("battle challenge XP persist", () => {
       [],
     );
   });
+
+  it("keeps boss-rush room-clear on the same live accept path", () => {
+    // handleBossRushRoomClear used to hardcode challengeDokaReward = 0 and
+    // completedChallenges: []. The panel is still offered during a run.
+    const hard = liveBattleChallengePersistEntries(
+      true,
+      { rewards: { doka: 200, xp: 500 } },
+      true,
+    );
+    const deltas = addChallengeRewardDeltas(42, 80, hard);
+    assert.equal(deltas.dokaDelta, 242);
+    assert.equal(deltas.xpDelta, 580);
+    assert.equal(deltas.dokaFromChallenges, 200);
+  });
 });

@@ -93,21 +93,31 @@ export interface BossRushPersistInput {
   defeatedEnemies: Array<{ name: string; level: number }>;
   characterLevel: number;
   baseDoka: number;
+  /**
+   * Victory gate calls handleBossRushRoomClear instead of handleBattleEnd,
+   * so accepted hard/legendary panel rewards must ride this input. Empty
+   * means the offer was declined, failed, or never taken.
+   */
+  completedChallenges?: CompletedChallengeReward[];
 }
 
 /**
  * Builds the reward input for a Boss Rush room clear with multiplier 1,
  * reading the defeated list so mid-battle minion kills count toward XP.
+ * Challenge XP/Doka go through completedChallenges — the same funnel as
+ * a normal victory — so they are not baked into baseDoka (which would
+ * drop advertised XP).
  */
 export function buildBossRushPersistInput({
   defeatedEnemies,
   characterLevel,
   baseDoka,
+  completedChallenges = [],
 }: BossRushPersistInput): RewardInput {
   return {
     victory: true,
     enemiesDefeated: defeatedEnemies,
-    completedChallenges: [],
+    completedChallenges,
     dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
     baseDoka,
     baseXp: computeVictoryExp({ defeatedEnemies, characterLevel }),
