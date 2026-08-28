@@ -232,4 +232,53 @@ assert.equal(shouldApplyVictoryLiveHydrate(false), true);
   assert.equal(lock.snapshot().xp, 8064);
 }
 
+// Victory applyRewards levels the character, then lava death skips the live
+// UI hydrate. Death persist writes the committed (post-level) snapshot, but
+// the hydrate effect still sees UI level 4. Idle hydrate must not let the
+// next saveBattleStats downgrade the canister.
+{
+  const lock = createProgressPersist({ doka: 1000, xp: 80, level: 4 });
+  let uiDoka = 1000;
+  let uiXp = 80;
+  let uiLevel = 4;
+
+  const victory = lock.enqueue(async () => {
+    lock.commit({ doka: 1200, xp: 30, level: 5 });
+  });
+
+  const optimistic = computeDeathPenalty(uiXp, uiDoka);
+  uiDoka = optimistic.newDoka;
+  uiXp = optimistic.newXp;
+  const deathTriggered = true;
+  const death = lock.enqueue(async () => {
+    const committed = lock.snapshot();
+    const after = computeDeathPenalty(committed.xp, committed.doka);
+    lock.commit({
+      doka: after.newDoka,
+      xp: after.newXp,
+      level: committed.level,
+    });
+    uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
+    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+    uiLevel = raiseUiAfterDeathPersist(uiLevel, committed.level);
+  });
+
+  await victory;
+  if (shouldApplyVictoryLiveHydrate(deathTriggered)) {
+    uiLevel = 5;
+    uiXp = 30;
+  }
+  await death;
+
+  assert.equal(uiLevel, 5);
+  assert.equal(lock.snapshot().level, 5);
+  assert.equal(lock.snapshot().doka, 720);
+  assert.equal(lock.snapshot().xp, 24);
+
+  // Even if the hydrate effect still sees the pre-level UI, committed
+  // level must stay at 5 so the next heal cannot revert the canister.
+  lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
+  assert.equal(lock.snapshot().level, 5);
+}
+
 console.log("deathPenalty.test: ok");

@@ -60,6 +60,20 @@ export function applyShopCreditDeltaToUi(
   return Math.max(0, toNat(uiDoka, 0) + Math.max(0, toNat(gained, 0)));
 }
 
+/**
+ * Idle hydrate copies UI onto committed. applyRewards can bump
+ * committed.level while shouldApplyVictoryLiveHydrate skips the live UI
+ * update (lava/spike death mid-persist). Copying the stale UI level then
+ * lets the next saveBattleStats downgrade the canister. Never write a
+ * lower level than the lock already committed.
+ */
+export function floorHydratedLevel(
+  committedLevel: number,
+  uiLevel: number,
+): number {
+  return Math.max(1, toNat(committedLevel, 1), toNat(uiLevel, 1));
+}
+
 export function createProgressPersist(initial?: Partial<CommittedProgress>) {
   let committed: CommittedProgress = {
     doka: Math.max(0, toNat(initial?.doka, 0)),
@@ -94,7 +108,11 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
     },
     hydrateWhenIdle(next: CommittedProgress): boolean {
       if (pending > 0) return false;
-      persist.commit(next);
+      persist.commit({
+        doka: next.doka,
+        xp: next.xp,
+        level: floorHydratedLevel(committed.level, next.level),
+      });
       return true;
     },
     enqueue<T>(fn: () => Promise<T>): Promise<T> {

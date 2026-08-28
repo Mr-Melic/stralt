@@ -40,6 +40,9 @@ export function computeDeathPenalty(
  * and the next heal persists the under-count.
  *
  * After that write, raise UI to the persisted amount when it lagged.
+ * applyRewards can also bump committed.level while the live hydrate is
+ * skipped; raise UI level the same way so idle hydrate cannot persist a
+ * downgrade through the next saveBattleStats.
  */
 export function raiseUiAfterDeathPersist(
   uiValue: number,
