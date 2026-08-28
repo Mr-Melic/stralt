@@ -203,6 +203,10 @@ import {
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
+import {
+  battleChallengePersistEntries,
+  challengeXpFromEntries,
+} from "../utils/challengeRewards";
 import { armDeathGuards } from "../utils/deathGuards";
 import {
   computeDeathPenalty,
@@ -12087,12 +12091,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 maxApUsedInTurn: challengeMaxApThisTurnRef.current,
               })
             : false;
-        const challengeDokaReward = challengeCompleted
-          ? currentChallenge?.rewards?.doka || 0
-          : 0;
-        const _challengeXpReward = challengeCompleted
-          ? currentChallenge?.rewards?.xp || 0
-          : 0;
+        const challengePersistEntries = battleChallengePersistEntries(
+          challengeCompleted,
+          currentChallenge,
+        );
+        const challengeXpReward = challengeXpFromEntries(
+          challengePersistEntries,
+        );
         const _completedChallengeName = challengeCompleted
           ? currentChallenge?.description || currentChallenge?.id || "Challenge"
           : null;
@@ -12218,7 +12223,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Build and show recap IMMEDIATELY — never block on persistence
           const finalRecapData: BattleRecapData = {
             mapTitle: currentMapRef.current?.id || "Unknown",
-            xpEarned: finalExp,
+            xpEarned: finalExp + challengeXpReward,
             dokaEarned: totalDoka,
             hitsDealt: battleHitsRef.current,
             enemiesDefeated: defeated,
@@ -12248,14 +12253,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 const recap = await resolveBattleRewards(actor, characterSlot, {
                   victory,
                   enemiesDefeated: defeated,
-                  completedChallenges: challengeCompleted
-                    ? [
-                        {
-                          name: "Battle Challenge",
-                          dokaReward: challengeDokaReward || 0,
-                        },
-                      ]
-                    : [],
+                  completedChallenges: challengePersistEntries,
                   // SECTION 3b: handleBattleEnd already applies chainMult to Doka
                   // locally; pass PREAPPLIED_REWARD_MULTIPLIER so resolveBattleRewards
                   // does NOT multiply baseDoka again (fixes the chainMult² double
