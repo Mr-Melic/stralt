@@ -204,8 +204,8 @@ import {
 } from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
-  battleChallengePersistEntries,
   challengeXpFromEntries,
+  liveBattleChallengePersistEntries,
 } from "../utils/challengeRewards";
 import { armDeathGuards } from "../utils/deathGuards";
 import {
@@ -1009,14 +1009,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // (cast/move handlers are useCallback-memoized and would otherwise see a
   // stale closure of the accepted flag).
   const challengeAcceptedRef = useRef(false);
+  const currentChallengeRef = useRef<Challenge | null>(null);
   // Accept window: once the player takes their first MP/AP-spending action
   // without having accepted the offered challenge, the offer is dismissed.
   const firstActionTakenRef = useRef(false);
-  // Keep a ref mirror of challengeAccepted so non-React callbacks (move/cast
-  // handlers) read the latest accepted flag without stale-closure issues.
+  // Keep ref mirrors so handleBattleEnd / move / cast read the live offer.
+  // Those callbacks omit challenge state from their deps; a closure snapshot
+  // stays at accepted=false (or the previous fight's challenge) and drops or
+  // double-pays the advertised XP.
   useEffect(() => {
     challengeAcceptedRef.current = challengeAccepted;
   }, [challengeAccepted]);
+  useEffect(() => {
+    currentChallengeRef.current = currentChallenge;
+  }, [currentChallenge]);
   const [bloodBalance, _setBloodBalance] = useState<number>(() => {
     try {
       const _bs = localStorage.getItem(
@@ -11380,6 +11386,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     challengeTurnCountRef.current = 0;
     challengeMaxApThisTurnRef.current = 0;
     challengeDirectHitRef.current = true;
+    challengeAcceptedRef.current = false;
+    currentChallengeRef.current = null;
+    firstActionTakenRef.current = false;
+    setChallengeAccepted(false);
+    setCurrentChallenge(null);
     // M-4: Mark cleanup as having run so no new timeouts can register after this
     cleanupRanRef.current = true;
     // FIX 4: Cancel recap timer so it never fires after battle ends
@@ -11998,6 +12009,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         DEFAULT_CHALLENGES[
           Math.floor(Math.random() * DEFAULT_CHALLENGES.length)
         ];
+      challengeAcceptedRef.current = false;
+      currentChallengeRef.current = _randChallenge;
+      firstActionTakenRef.current = false;
+      setChallengeAccepted(false);
       setCurrentChallenge(_randChallenge);
       // H7: Release re-entry guard after full init commit
       battleInitInProgressRef.current = false;
@@ -12081,9 +12096,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           JSON.stringify(challengeResults),
         );
         // Snapshot challenge state BEFORE cleanup wipes it
+        const liveChallenge = currentChallengeRef.current;
+        const liveAccepted = challengeAcceptedRef.current;
         const challengeCompleted =
-          challengeAccepted && currentChallenge
-            ? isChallengeCompleted(currentChallenge, {
+          liveAccepted && liveChallenge
+            ? isChallengeCompleted(liveChallenge, {
                 turnCount: challengeTurnCountRef.current,
                 totalDamage: challengeTotalDamageRef.current,
                 healUsed: challengeHealUsedRef.current,
@@ -12091,15 +12108,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 maxApUsedInTurn: challengeMaxApThisTurnRef.current,
               })
             : false;
-        const challengePersistEntries = battleChallengePersistEntries(
+        const challengePersistEntries = liveBattleChallengePersistEntries(
+          liveAccepted,
+          liveChallenge,
           challengeCompleted,
-          currentChallenge,
         );
         const challengeXpReward = challengeXpFromEntries(
           challengePersistEntries,
         );
         const _completedChallengeName = challengeCompleted
-          ? currentChallenge?.description || currentChallenge?.id || "Challenge"
+          ? liveChallenge?.description || liveChallenge?.id || "Challenge"
           : null;
         // ── UNIFIED CLEANUP: terminates ALL timers, intervals, AI callbacks, VFX ──
         // cleanupBattle() handles: abort flag, both generation counters, all
@@ -16197,10 +16215,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // but not yet accepted, dismiss the offer (accept window has elapsed).
   const markFirstAction = useCallback(() => {
     firstActionTakenRef.current = true;
-    if (!challengeAcceptedRef.current && currentChallenge) {
+    if (!challengeAcceptedRef.current) {
+      currentChallengeRef.current = null;
       setCurrentChallenge(null);
     }
-  }, [currentChallenge]);
+  }, []);
   // Unified cast helper: ONE AP gate (inclusive >=), ONE ritual, ONE [CLICK-ENEMY] log, ONE floating-reason path.
   const executeCastAttempt = useCallback(
     (
@@ -18562,8 +18581,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         userId={userId ?? ""}
         currentChallenge={currentChallenge}
         accepted={challengeAccepted}
-        onAccept={() => setChallengeAccepted(true)}
-        onDecline={() => setCurrentChallenge(null)}
+        onAccept={() => {
+          challengeAcceptedRef.current = true;
+          setChallengeAccepted(true);
+        }}
+        onDecline={() => {
+          challengeAcceptedRef.current = false;
+          currentChallengeRef.current = null;
+          setChallengeAccepted(false);
+          setCurrentChallenge(null);
+        }}
         progress={{
           turnCount: challengeTurnCountRef.current,
           totalDamage: challengeTotalDamageRef.current,

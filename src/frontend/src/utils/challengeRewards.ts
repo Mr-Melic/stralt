@@ -25,6 +25,25 @@ export function battleChallengePersistEntries(
   ];
 }
 
+/**
+ * handleBattleEnd is a useCallback that omits `challengeAccepted` /
+ * `currentChallenge` from its deps. The victory-gate effect also closes over
+ * that callback. Passing the live accept flag (from a ref) is required —
+ * a stale `accepted === false` drops the 400–1000 XP the panel advertised.
+ */
+export function liveBattleChallengePersistEntries(
+  accepted: boolean,
+  challenge: {
+    rewards?: { doka?: number; xp?: number };
+  } | null,
+  completed: boolean,
+): CompletedChallengeReward[] {
+  return battleChallengePersistEntries(
+    Boolean(accepted) && completed,
+    challenge,
+  );
+}
+
 export function challengeXpFromEntries(
   entries: CompletedChallengeReward[],
 ): number {

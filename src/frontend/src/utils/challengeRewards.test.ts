@@ -4,6 +4,7 @@ import {
   addChallengeRewardDeltas,
   battleChallengePersistEntries,
   challengeXpFromEntries,
+  liveBattleChallengePersistEntries,
 } from "./challengeRewards.ts";
 
 describe("battle challenge XP persist", () => {
@@ -31,5 +32,24 @@ describe("battle challenge XP persist", () => {
     const deltas = addChallengeRewardDeltas(10, 20, easy);
     assert.equal(deltas.xpDelta, 20);
     assert.equal(deltas.dokaDelta, 60);
+  });
+
+  it("uses the live accept flag, not a stale handleBattleEnd closure", () => {
+    const legendary = { rewards: { doka: 500, xp: 1000 } };
+    // Accept click never recreates handleBattleEnd. A closure snapshot stays
+    // at accepted=false and would drop the advertised XP.
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(false, legendary, true),
+      [],
+    );
+    const live = liveBattleChallengePersistEntries(true, legendary, true);
+    assert.equal(live[0]?.xpReward, 1000);
+    assert.equal(live[0]?.dokaReward, 500);
+
+    // Next fight must start unaccepted even if the previous offer was taken.
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(false, { rewards: { xp: 400 } }, true),
+      [],
+    );
   });
 });

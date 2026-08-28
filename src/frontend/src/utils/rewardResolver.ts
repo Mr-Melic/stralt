@@ -14,6 +14,7 @@ export {
   addChallengeRewardDeltas,
   battleChallengePersistEntries,
   challengeXpFromEntries,
+  liveBattleChallengePersistEntries,
   type CompletedChallengeReward,
 } from "./challengeRewards";
 
