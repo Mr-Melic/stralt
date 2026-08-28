@@ -7,6 +7,8 @@ import {
 } from "./progressPersist.ts";
 import {
   RENAME_DOKA_COST,
+  committedDokaAfterRename,
+  liveDokaAfterRename,
   readRenameCharacterResult,
   shouldDebitRenameDoka,
 } from "./renameCharacter.ts";
@@ -67,5 +69,42 @@ describe("readRenameCharacterResult", () => {
     // Canister was 200; a 30 Doka heal should leave 170. The phantom
     // rename spend ate 100 and the next saveBattleStats writes 70.
     assert.equal(healWrite, 70);
+  });
+});
+
+describe("liveDokaAfterRename / committedDokaAfterRename", () => {
+  it("documents the wipe if #ok debits the click-time wallet after applyRewards", () => {
+    const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
+    // Victory persist landed while rename was awaiting the canister.
+    lock.commit({ doka: 250 });
+    const clickTimeDoka = 200;
+    lock.hydrateWhenIdle({
+      doka: clickTimeDoka - RENAME_DOKA_COST,
+      xp: 0,
+      level: 1,
+    });
+    const healWrite = applySpendToCommitted(
+      lock.snapshot().doka,
+      spendFromUiBalance(100, 70),
+    );
+    // Canister after applyRewards+rename is 150; a 30 heal should leave 120.
+    // The stale 200-100 overwrite hydrated committed to 100 and writes 70.
+    assert.equal(healWrite, 70);
+  });
+
+  it("keeps the credited wallet when #ok spends from the live ref and lock", () => {
+    const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
+    lock.commit({ doka: 250 });
+    const live = 250;
+    lock.commit({ doka: committedDokaAfterRename(lock.snapshot().doka) });
+    const ui = liveDokaAfterRename(live);
+    assert.equal(lock.snapshot().doka, 150);
+    assert.equal(ui, 150);
+    assert.equal(lock.hydrateWhenIdle({ doka: ui, xp: 0, level: 1 }), true);
+    const healWrite = applySpendToCommitted(
+      lock.snapshot().doka,
+      spendFromUiBalance(ui, ui - 30),
+    );
+    assert.equal(healWrite, 120);
   });
 });

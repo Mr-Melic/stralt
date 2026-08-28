@@ -230,7 +230,10 @@ import {
 } from "../utils/progressPersist";
 import {
   RENAME_DOKA_COST,
+  committedDokaAfterRename,
+  liveDokaAfterRename,
   readRenameCharacterResult,
+  shouldDebitRenameDoka,
 } from "../utils/renameCharacter";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
@@ -1860,30 +1863,42 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Boost toggle state
   const [boostMode, _setBoostMode] = useState<"xp" | "rewards">("xp");
 
-  // Rename is a Motoko Result: #err does not throw. Debit the live wallet
-  // only after #ok — a phantom -100 hydrates into committed and the next
-  // heal/shop saveBattleStats writes it on-chain.
+  // Rename is a Motoko Result: #err does not throw. Debit only after #ok,
+  // from the live wallet (not the click-time closure), and commit the spend
+  // on the persist lock. Recap is pointer-events: none, so a rename can
+  // await while applyRewards is in flight; a stale `dokaBalance - 100` then
+  // overwrites the credited UI and hydrateWhenIdle writes it on-chain.
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (dokaBalance < RENAME_DOKA_COST) {
+    if (dokaBalanceRef.current < RENAME_DOKA_COST) {
       toast.error("Insufficient Doka (need 100)");
       return;
     }
     setIsRenaming(true);
     try {
       if (actor) {
-        const parsed = readRenameCharacterResult(
-          await (actor as Record<string, any>).renameCharacter(
-            BigInt(characterSlot),
-            newName,
-          ),
-        );
+        const parsed = await progressPersistRef.current.enqueue(async () => {
+          const result = readRenameCharacterResult(
+            await (actor as Record<string, any>).renameCharacter(
+              BigInt(characterSlot),
+              newName,
+            ),
+          );
+          if (shouldDebitRenameDoka(result)) {
+            progressPersistRef.current.commit({
+              doka: committedDokaAfterRename(
+                progressPersistRef.current.snapshot().doka,
+              ),
+            });
+          }
+          return result;
+        });
         if ("err" in parsed) {
           toast.error(parsed.err);
           return;
         }
-        onDokaBalanceChange(Math.max(0, dokaBalance - RENAME_DOKA_COST));
+        onDokaBalanceChange(liveDokaAfterRename(dokaBalanceRef.current));
         toast.success(`Name changed to "${newName}"`);
         setShowRenameModal(false);
         setRenameInput("");

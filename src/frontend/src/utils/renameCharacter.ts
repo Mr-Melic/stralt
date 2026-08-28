@@ -3,6 +3,12 @@
  * resolve that as a value (`{ __kind__: "err" }` / `{ err }`) instead of
  * throwing. Callers that debit the live wallet on await-without-check will
  * treat a rejected rename as a successful 100 Doka spend.
+ *
+ * On #ok the handler must debit the *live* wallet (dokaBalanceRef), not the
+ * click-time closure. Recap is pointer-events: none, so a player can rename
+ * while applyRewards is still in flight. A stale `dokaBalance - 100` then
+ * overwrites the credited UI; hydrateWhenIdle copies that short wallet into
+ * committed and the next heal/shop saveBattleStats writes it on-chain.
  */
 
 export function readRenameCharacterResult(
@@ -31,4 +37,17 @@ export function shouldDebitRenameDoka(
   parsed: { ok: true } | { err: string },
 ): boolean {
   return "ok" in parsed;
+}
+
+/** Subtract the rename fee from the live UI wallet after #ok. */
+export function liveDokaAfterRename(liveDoka: number): number {
+  return Math.max(0, Math.floor(Number(liveDoka) || 0) - RENAME_DOKA_COST);
+}
+
+/**
+ * Subtract the rename fee from the persist-lock snapshot so a later
+ * saveBattleStats spend cannot reconstruct from a pre-rename committed value.
+ */
+export function committedDokaAfterRename(committedDoka: number): number {
+  return Math.max(0, Math.floor(Number(committedDoka) || 0) - RENAME_DOKA_COST);
 }
