@@ -207,6 +207,8 @@ import { armDeathGuards } from "../utils/deathGuards";
 import {
   computeDeathPenalty,
   persistDeathPenalty as persistAbsoluteStats,
+  raiseUiAfterDeathPersist,
+  shouldApplyVictoryLiveHydrate,
 } from "../utils/deathPenalty";
 import {
   logDebugError,
@@ -12273,26 +12275,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             const _rewardRecap = _recapData;
 
-            setCharacterStats((prev) => ({
-              ...prev,
-              exp: _rewardRecap.newXp ?? characterStats.exp,
-              level: _rewardRecap.currentLevel,
-              hp: 50 + prev.level * 10,
-              mp: 5 + Math.floor(prev.level / 10),
-              ap: 6 + Math.floor(prev.level / 20),
-              expToNext: Math.floor(100 * 2 ** (_rewardRecap.currentLevel - 1)),
-            }));
-            // Add the credited delta onto the live wallet. Replacing with
-            // applyRewards' absolute newDoka refunds a recap heal/shop spend
-            // the player already applied locally; hydrateWhenIdle then
-            // copies that inflated UI into committed and the next persist
-            // writes the pre-spend wallet back to the canister.
-            onDokaBalanceChange(
-              applyShopCreditDeltaToUi(
-                dokaBalanceRef.current,
-                _rewardRecap.dokaEarned ?? totalDoka,
-              ),
-            );
+            // Recap overlay is pointer-events: none. A lava/spike death can
+            // land while this applyRewards await is still in flight. The
+            // death write already penalized the post-credit committed
+            // snapshot; restoring HP / unpenalized XP here resurrects the
+            // player and lets hydrateWhenIdle refund the penalty.
+            if (shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+              setCharacterStats((prev) => ({
+                ...prev,
+                exp: _rewardRecap.newXp ?? characterStats.exp,
+                level: _rewardRecap.currentLevel,
+                hp: 50 + prev.level * 10,
+                mp: 5 + Math.floor(prev.level / 10),
+                ap: 6 + Math.floor(prev.level / 20),
+                expToNext: Math.floor(
+                  100 * 2 ** (_rewardRecap.currentLevel - 1),
+                ),
+              }));
+              // Add the credited delta onto the live wallet. Replacing with
+              // applyRewards' absolute newDoka refunds a recap heal/shop spend
+              // the player already applied locally; hydrateWhenIdle then
+              // copies that inflated UI into committed and the next persist
+              // writes the pre-spend wallet back to the canister.
+              onDokaBalanceChange(
+                applyShopCreditDeltaToUi(
+                  dokaBalanceRef.current,
+                  _rewardRecap.dokaEarned ?? totalDoka,
+                ),
+              );
+            }
           } catch (persistErr) {
             logDebugInfo(
               "BATTLE",
@@ -12528,6 +12539,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // Wallet was already credited locally above. Do not replace it
             // with the absolute applyRewards read — that refunds a recap
             // heal that deducted while this persist was in flight.
+            if (!shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+              return;
+            }
             setCharacterStats((prev) => ({
               ...prev,
               exp: persisted.newXp ?? newXp,
@@ -12595,7 +12609,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (deathPenaltyAppliedRef.current) return null;
     deathPenaltyAppliedRef.current = true;
     const currentXp = characterStatsRef.current.exp ?? 0;
-    const currentDoka = dokaBalance;
+    const currentDoka = dokaBalanceRef.current;
     const {
       xpLost,
       dokaLost,
@@ -12630,6 +12644,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             doka: after.newDoka,
             xp: after.newXp,
           });
+          // A claim/applyRewards ahead of this write is in committed, not
+          // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
+          // the pre-credit snapshot over the persisted penalty.
+          const nextDoka = raiseUiAfterDeathPersist(
+            dokaBalanceRef.current,
+            after.newDoka,
+          );
+          const nextXp = raiseUiAfterDeathPersist(
+            characterStatsRef.current.exp ?? 0,
+            after.newXp,
+          );
+          if (nextDoka !== dokaBalanceRef.current) {
+            onDokaBalanceChange(nextDoka);
+          }
+          if (nextXp !== (characterStatsRef.current.exp ?? 0)) {
+            setCharacterStats((prev) => ({ ...prev, exp: nextXp }));
+          }
+          if (nextDoka !== dokaAfter || nextXp !== xpAfter) {
+            setDeathPenalty({
+              xpLost: after.xpLost,
+              dokaLost: after.dokaLost,
+            });
+          }
         })
         .catch((err) => console.error("[death-save] failed:", err));
     }
@@ -12641,14 +12678,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     onDokaBalanceChange(dokaAfter);
     setDeathPenalty({ xpLost, dokaLost });
     return { xpLost, dokaLost, xpAfter, dokaAfter };
-  }, [
-    actor,
-    character,
-    characterSlot,
-    dokaBalance,
-    onDokaBalanceChange,
-    setCharacterStats,
-  ]);
+  }, [actor, character, characterSlot, onDokaBalanceChange, setCharacterStats]);
 
   // Persist an out-of-combat HP/Doka write through saveBattleStats so the
   // per-principal dokaBalances map is updated. updateCharacter cannot debit
