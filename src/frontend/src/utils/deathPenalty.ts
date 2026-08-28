@@ -51,10 +51,13 @@ export function raiseUiAfterDeathPersist(
 }
 
 /**
- * handleBattleEnd awaits applyRewards after setInBattle(false) and the recap
- * overlay uses pointer-events: none, so a lava/spike death can land while
- * that persist is still in flight. Applying the post-await live hydrate then
- * restores HP and replaces XP with the unpenalized applyRewards snapshot.
+ * handleBattleEnd and portal XP both await applyRewards after the player can
+ * walk. The recap overlay uses pointer-events: none, and a portal swap has
+ * no overlay at all, so lava/spike death can land while that persist is still
+ * in flight. Applying the post-await live hydrate then restores HP / replaces
+ * XP with the unpenalized applyRewards snapshot. raiseUiAfterDeathPersist
+ * keeps the higher UI; a later idle hydrate copies it over committed and
+ * refunds the death penalty.
  */
 export function shouldApplyVictoryLiveHydrate(
   deathTriggered: boolean,
