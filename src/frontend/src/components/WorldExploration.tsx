@@ -205,6 +205,7 @@ import {
 } from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
+  challengeDokaFromEntries,
   challengeXpFromEntries,
   liveBattleChallengePersistEntries,
 } from "../utils/challengeRewards";
@@ -12521,12 +12522,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const roomMultiplier = 1;
       totalDoka = Math.floor(totalDoka * roomMultiplier);
 
-      // Challenge rewards (placeholder — challenges evaluated elsewhere)
-      const challengeDokaReward = 0;
-      const completedChallenges: string[] = [];
+      // Same live-ref snapshot as handleBattleEnd. Victory-gate `[inBattle,
+      // enemies]` closes over this function; a stale accepted=false would
+      // drop the advertised hard/legendary XP the same way #41 did.
+      const liveChallenge = currentChallengeRef.current;
+      const liveAccepted = challengeAcceptedRef.current;
+      const challengeCompleted =
+        liveAccepted && liveChallenge
+          ? isChallengeCompleted(liveChallenge, {
+              turnCount: challengeTurnCountRef.current,
+              totalDamage: challengeTotalDamageRef.current,
+              healUsed: challengeHealUsedRef.current,
+              directHit: challengeDirectHitRef.current,
+              maxApUsedInTurn: challengeMaxApThisTurnRef.current,
+            })
+          : false;
+      const challengePersistEntries = liveBattleChallengePersistEntries(
+        liveAccepted,
+        liveChallenge,
+        challengeCompleted,
+      );
+      const challengeXpReward = challengeXpFromEntries(challengePersistEntries);
+      const challengeDokaReward = challengeDokaFromEntries(
+        challengePersistEntries,
+      );
+      const completedChallenges = challengeCompleted
+        ? ["Battle Challenge"]
+        : [];
 
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
-      const newXp = (characterStats.exp || 0) + expGained;
+      const newXp = (characterStats.exp || 0) + expGained + challengeXpReward;
 
       onDokaBalanceChange(newDokaBalance);
       setCharacterStats((prev) => ({ ...prev, exp: newXp }));
@@ -12547,7 +12572,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               buildBossRushPersistInput({
                 defeatedEnemies: defeatedList,
                 characterLevel: characterStats.level,
-                baseDoka: totalDoka + challengeDokaReward,
+                baseDoka: totalDoka,
+                completedChallenges: challengePersistEntries,
               }),
             );
             progressPersistRef.current.commit({
@@ -12586,7 +12612,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Build recap data
       const finalRecapData = {
         mapTitle: `Boss Rush - Room ${currentRoomIndex + 1}`,
-        xpEarned: expGained,
+        xpEarned: expGained + challengeXpReward,
         hitsDealt: battleHitsRef.current,
         enemiesDefeated: defeatedList,
         currentXP: characterStats.exp || 0,

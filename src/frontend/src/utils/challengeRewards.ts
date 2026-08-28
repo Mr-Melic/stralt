@@ -50,6 +50,12 @@ export function challengeXpFromEntries(
   return entries.reduce((sum, ch) => sum + (ch.xpReward || 0), 0);
 }
 
+export function challengeDokaFromEntries(
+  entries: CompletedChallengeReward[],
+): number {
+  return entries.reduce((sum, ch) => sum + (ch.dokaReward || 0), 0);
+}
+
 export function addChallengeRewardDeltas(
   dokaDelta: number,
   xpDelta: number,

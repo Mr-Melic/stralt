@@ -35,6 +35,23 @@ describe("boss-rush persist input", () => {
     assert.equal(deltas.dokaDelta, 42);
     assert.equal(deltas.xpDelta, 240);
   });
+
+  it("persists live challenge XP/Doka instead of a hardcoded empty list", () => {
+    const defeatedEnemies = [{ name: "queen", level: 8 }];
+    const input = buildBossRushPersistInput({
+      defeatedEnemies,
+      characterLevel: 5,
+      baseDoka: 40,
+      completedChallenges: [
+        { name: "Battle Challenge", dokaReward: 500, xpReward: 1000 },
+      ],
+    });
+
+    const deltas = computeRewardDeltas(input);
+    assert.equal(deltas.dokaDelta, 540);
+    assert.equal(deltas.xpDelta, 1160);
+    assert.equal(deltas.dokaFromChallenges, 500);
+  });
 });
 
 describe("pre-applied dungeon multiplier", () => {

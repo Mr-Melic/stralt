@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   addChallengeRewardDeltas,
   battleChallengePersistEntries,
+  challengeDokaFromEntries,
   challengeXpFromEntries,
   liveBattleChallengePersistEntries,
 } from "./challengeRewards.ts";
@@ -51,5 +52,27 @@ describe("battle challenge XP persist", () => {
       liveBattleChallengePersistEntries(false, { rewards: { xp: 400 } }, true),
       [],
     );
+  });
+
+  it("credits accepted hard/legendary rewards on the Boss Rush room-clear path", () => {
+    // handleBossRushRoomClear used to hardcode challengeDokaReward = 0 and
+    // completedChallenges: []. Accept + complete still dropped the panel XP.
+    const legendary = { rewards: { doka: 500, xp: 1000 } };
+    const dropped = liveBattleChallengePersistEntries(false, legendary, true);
+    assert.equal(challengeXpFromEntries(dropped), 0);
+    assert.equal(challengeDokaFromEntries(dropped), 0);
+
+    const live = liveBattleChallengePersistEntries(true, legendary, true);
+    assert.equal(challengeXpFromEntries(live), 1000);
+    assert.equal(challengeDokaFromEntries(live), 500);
+
+    // Room-clear persist used to pass baseDoka only and drop entries, so
+    // applyRewards never saw the advertised 400–1000 XP.
+    const roomDoka = 40;
+    const roomXp = 160;
+    const deltas = addChallengeRewardDeltas(roomDoka, roomXp, live);
+    assert.equal(deltas.dokaDelta, 540);
+    assert.equal(deltas.xpDelta, 1160);
+    assert.equal(deltas.dokaFromChallenges, 500);
   });
 });

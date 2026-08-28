@@ -13,6 +13,7 @@ export {
 export {
   addChallengeRewardDeltas,
   battleChallengePersistEntries,
+  challengeDokaFromEntries,
   challengeXpFromEntries,
   liveBattleChallengePersistEntries,
   type CompletedChallengeReward,
@@ -93,6 +94,11 @@ export interface BossRushPersistInput {
   defeatedEnemies: Array<{ name: string; level: number }>;
   characterLevel: number;
   baseDoka: number;
+  /**
+   * Room-clear used to hardcode `completedChallenges: []`, so an accepted
+   * hard/legendary objective never reached applyRewards (400–1000 XP).
+   */
+  completedChallenges?: CompletedChallengeReward[];
 }
 
 /**
@@ -103,11 +109,12 @@ export function buildBossRushPersistInput({
   defeatedEnemies,
   characterLevel,
   baseDoka,
+  completedChallenges = [],
 }: BossRushPersistInput): RewardInput {
   return {
     victory: true,
     enemiesDefeated: defeatedEnemies,
-    completedChallenges: [],
+    completedChallenges,
     dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
     baseDoka,
     baseXp: computeVictoryExp({ defeatedEnemies, characterLevel }),
