@@ -210,7 +210,9 @@ import {
   castResultSpendsAp,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengePlayerTurnStart,
   recordInBattleChallengeDamage,
+  shouldCountOpeningPlayerTurn,
 } from "../utils/challengeCompletion";
 import {
   addChallengeRewardDeltas,
@@ -12095,6 +12097,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
         setBattleActionMode("walk");
         setBattleTurn(1);
+        // Opening player turn never enters advanceTurn. Count it here so
+        // legendary_2 cannot persist after six player turns (turn 1 was 0).
+        if (
+          shouldCountOpeningPlayerTurn(orderWithLeader[0]?.type === "player")
+        ) {
+          challengeTurnCountRef.current = recordChallengePlayerTurnStart(
+            challengeTurnCountRef.current,
+          );
+        }
         activeEffectsRef.current = [];
         setActiveEffects([]);
         // Reset cooldowns at start of every battle
@@ -13990,7 +14001,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v) => v + 1);
             setBattleTurn((t) => t + 1);
-            challengeTurnCountRef.current += 1;
+            challengeTurnCountRef.current = recordChallengePlayerTurnStart(
+              challengeTurnCountRef.current,
+            );
             challengeApThisTurnRef.current = 0;
             // Void Rift: pick a new random walkable void tile each turn
             if (isVoidRift) {

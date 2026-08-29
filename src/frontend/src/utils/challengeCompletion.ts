@@ -163,6 +163,29 @@ export function recordInBattleChallengeDamage(
 }
 
 /**
+ * Count a player-turn start toward under_N_turns challenges.
+ *
+ * handleBattleEnd persists legendary_2 (450 Doka / 900 XP) from
+ * `challengeTurnCountRef`. The opening player turn used to skip this
+ * increment (only `advanceTurn`'s later player branch counted), so six
+ * player turns still read as 5 and credited Blitz.
+ */
+export function recordChallengePlayerTurnStart(current: number): number {
+  return Math.max(0, Math.floor(Number(current) || 0)) + 1;
+}
+
+/**
+ * The first combatant never goes through `advanceTurn`. Count that opening
+ * player turn here so Blitz / under-10 / under-15 use the same counter as
+ * later player-turn starts.
+ */
+export function shouldCountOpeningPlayerTurn(
+  firstCombatantIsPlayer: boolean,
+): boolean {
+  return firstCombatantIsPlayer === true;
+}
+
+/**
  * AP actually spent this battle for `under_8_ap_per_turn`.
  *
  * handleBattleEnd persists hard_3 (150 Doka / 450 XP) from the peak
