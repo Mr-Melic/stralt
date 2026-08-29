@@ -183,7 +183,11 @@ import {
   computeTargetableTiles,
   isTileCastableLive,
 } from "../engine/targeting";
-import { removeCombatantFromTurnQueue } from "../engine/turnQueue";
+import {
+  liveTurnOrder,
+  nextTurnIndex,
+  removeCombatantFromTurnQueue,
+} from "../engine/turnQueue";
 import {
   getCameraFollowSpeed,
   getSessionVersion,
@@ -13807,11 +13811,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       for (const expiredId of _expiredSummonIds) {
         removeCombatant(combatantStoreCtx, expiredId);
       }
-      setTurnOrder((prevOrder) => {
-        if (prevOrder.length === 0) return prevOrder;
+      setTurnOrder((reactPrevOrder) => {
+        // removeCombatant (kill or #74 expire) already filtered turnOrderRef
+        // and shifted currentTurnIndexRef. React turnOrder / currentTurnIndex
+        // can still be the pre-remove snapshot — (reactIdx + 1) % length then
+        // repeats the combatant who just acted.
+        const prevOrder = liveTurnOrder(reactPrevOrder, turnOrderRef.current);
+        if (prevOrder.length === 0) return reactPrevOrder;
         // H7: ref is set to the new computed order BEFORE the state update so AI reads a fresh value
-        setCurrentTurnIndex((prevIdx) => {
-          let nextIdx = (prevIdx + 1) % prevOrder.length;
+        setCurrentTurnIndex((_prevIdx) => {
+          let nextIdx = nextTurnIndex(
+            currentTurnIndexRef.current,
+            prevOrder.length,
+          );
           currentTurnIndexRef.current = nextIdx;
           let nextCombatant = prevOrder[nextIdx];
           // Dead-entity skip guard: if the next combatant was already removed

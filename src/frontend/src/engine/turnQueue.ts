@@ -125,3 +125,28 @@ export function removeCombatantFromTurnQueue(
 
   setTurnOrder(() => newOrder);
 }
+
+/**
+ * Prefer the live turn-order ref after `removeCombatantFromTurnQueue`.
+ * That helper writes the filtered array to the ref immediately; React
+ * `turnOrder` can still be the pre-remove snapshot in the same
+ * `flushSync` (or a later End Turn if only the ref was shifted).
+ */
+export function liveTurnOrder<T>(reactOrder: T[], liveOrder: T[]): T[] {
+  return liveOrder.length > 0 ? liveOrder : reactOrder;
+}
+
+/**
+ * Advance one slot from the live current index.
+ *
+ * `removeCombatantFromTurnQueue` shifts `currentTurnIndexRef` when an
+ * earlier combatant dies or a wrap-around summon expires at index 0. It
+ * does not write React `currentTurnIndex`. `(reactIdx + 1) % length`
+ * then repeats the combatant who just acted (kill the initiative-first
+ * enemy, End Turn) or skips the next living combatant after #74 expires
+ * a summon at the head of the queue.
+ */
+export function nextTurnIndex(currentIdx: number, orderLength: number): number {
+  if (orderLength <= 0) return 0;
+  return (currentIdx + 1) % orderLength;
+}
