@@ -245,6 +245,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onDebugLog={(event, detail) => logDebugInfo("GENERAL", event, detail)}
           onShowBattleSummary={onShowBattleSummary}
           dokaBalance={dokaBalance}
+          dokaWalletReady={backendDokaBalance !== undefined}
           onDokaBalanceChange={setDokaBalance}
           onDebugContextChange={setDebugContext}
           itemShopOpen={showShop}
