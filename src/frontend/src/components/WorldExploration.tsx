@@ -175,8 +175,8 @@ import {
   buildSpellContext,
   getPlayerSideTargets,
   resolveEnemyApMp,
-  syncExpiredSummonsFromTurnQueue,
 } from "../engine/summonIntegration";
+import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
@@ -13783,8 +13783,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // BEFORE the `(prevIdx + 1) % prevOrder.length` advance also guarantees
       // the advance always runs against a turnOrder that no longer contains
       // faded summons — closing the ghost-slot race where currentTurnIndexRef
-      // could point at a removed combatant. See syncExpiredSummonsFromTurnQueue
-      // in engine/summonIntegration.ts for the full atomic contract.
+      // could point at a removed combatant. See expireSummonsAtTurnStart
+      // in engine/summonLifespan.ts; expired ids drop through
+      // removeCombatant so the live store stays aligned.
       const _order = turnOrderRef.current;
       const _nextIdx =
         _order.length > 0
@@ -13794,16 +13795,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const _activeSummonId = _nextCombatant?.isSummon
         ? _nextCombatant.id
         : null;
-      syncExpiredSummonsFromTurnQueue(
-        enemies,
-        turnOrderRef.current,
-        turnOrderRef,
-        currentTurnIndexRef,
-        setTurnOrder,
-        setEnemies,
+      // Live store only. advanceTurn does not list `enemies` in its deps,
+      // so the React snapshot is the pre-battle roster (often []). Ticking
+      // that list and setEnemies(it) dropped mid-fight summons and skipped
+      // their lifespan decrement.
+      const _expiredSummonIds = expireSummonsAtTurnStart(
+        getLiveCombatants(combatantStoreCtx),
         logBattleEntry,
         _activeSummonId,
       );
+      for (const expiredId of _expiredSummonIds) {
+        removeCombatant(combatantStoreCtx, expiredId);
+      }
       setTurnOrder((prevOrder) => {
         if (prevOrder.length === 0) return prevOrder;
         // H7: ref is set to the new computed order BEFORE the state update so AI reads a fresh value
