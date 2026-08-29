@@ -109,3 +109,29 @@ export function summonControlCastFailMessage(
       return "Unknown spell";
   }
 }
+
+/**
+ * Summon-control id after a turn advance.
+ *
+ * Previous control is never carried forward. The 30s turn timer (and any
+ * other advanceTurn caller) used to leave activeControlledSummonId set, so
+ * canvas clicks and BattleUIPanel End Turn stayed locked to the summon
+ * through later player and enemy turns.
+ */
+export function summonControlIdAfterAdvance(
+  nextCombatant:
+    | { id?: string; isSummon?: boolean; side?: string }
+    | null
+    | undefined,
+): string | null {
+  if (
+    nextCombatant &&
+    nextCombatant.isSummon === true &&
+    nextCombatant.side === "player" &&
+    typeof nextCombatant.id === "string" &&
+    nextCombatant.id.length > 0
+  ) {
+    return nextCombatant.id;
+  }
+  return null;
+}
