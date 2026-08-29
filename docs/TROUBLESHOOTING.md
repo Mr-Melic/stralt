@@ -79,6 +79,21 @@ The field was removed from the Motoko `Character` type. Frontend `gameTypes.Char
 
 Fix: run the credit on the persist lock and `commit` the post-credit Doka. Add the granted delta onto the live UI (`applyShopCreditDeltaToUi`). Do not `invalidateQueries(['callerDokaBalance'])` after a persist-lock claim (`shouldInvalidateCallerDokaAfterClaim`). Once the world is hydrated, `shouldApplyCallerDokaHydrate` must stay false — window-focus refetch is the same class of bug.
 
+### First-map death / idle hydrate writes Doka 0
+
+The persist lock starts at `doka = 0` until an authoritative read or credit seeds it. GameFlow's pre-query state is also 0. A lava/combat death that penalizes that placeholder and `saveBattleStats`s it wipes the canister.
+
+- `walletReady` is `queryResolved && sessionCacheApplied` — not merely “React Query has data”.
+- Once seeded, `shouldCopyIdleWalletDoka` refuses any idle **cut** (stale pre-credit 50 over committed 550 is the same class).
+- Unseeded death/heal must `resolveCommittedDokaForAbsoluteWrite` (live `getCallerDokaBalance`); skip the absolute write if the read fails.
+- Do not `commit` a rename/feat delta stacked on the placeholder (`shouldCommitRenameDokaSpend`).
+
+### Rename debit on a rejected name / stale click-time wallet
+
+`renameCharacter` returns `{ #ok | #err }`. Candid resolves `#err` as a value — it does not throw. Parse with `readRenameCharacterResult` and debit only on `#ok`.
+
+Debit `dokaBalanceRef` (live), not the click-time `dokaBalance - 100`. Recap is `pointer-events: none`, so a rename can finish after `applyRewards` credits the wallet. A stale subtract then lets idle hydrate persist the short wallet.
+
 ### Shop purchase never credits / nine-arg Candid reject
 
 `initiatePurchase` is nine positional `Text` fields (`packageId`, name, surname, email, address, city, country, postal, proof URL). Passing one customer object fails at serialize time.
@@ -91,7 +106,21 @@ Credits are **not** instant: backend auto-completes pending records ≥ 60s. The
 
 ### Challenge XP advertised but never persisted
 
-`handleBattleEnd` is a `useCallback` that omits `challengeAccepted` / `currentChallenge`. Pass the live accept flag and challenge from refs (`liveBattleChallengePersistEntries`). Persist both `dokaReward` **and** `xpReward` (hard/legendary objectives show 400–1000 XP).
+`handleBattleEnd` is a `useCallback` that omits `challengeAccepted` / `currentChallenge`. Pass the live accept flag and challenge from refs (`liveBattleChallengePersistEntries`). Persist both `dokaReward` **and** `xpReward` (hard/legendary objectives show 400–1000 XP). Persist only when `isChallengeCompleted` is true (`utils/challengeCompletion.ts`).
+
+### Untouchable / under-damage challenge credited after a hit
+
+`challengeTotalDamageRef` used to increment only on the boss-ability branch. Regular melee, spells, Void Mirror, Reflect Shield, Mirror Field, Thorned Ground, and Void Rift must call `recordChallengeDamageTaken`. Lava / spikes must call `recordInBattleChallengeDamage(inBattleRef, …)` — **not** out of combat, because the counter is zeroed in `cleanupBattle`, not at battle start.
+
+`hard_3` (`under_8_ap_per_turn`) uses a **peak** AP spend. Reset only the per-turn accumulator at turn start; the peak clears in `cleanupBattle`.
+
+### Attack Nearest / canvas summon costs 0 AP
+
+Attack Nearest calls `resolvePlayerCast` directly (not `executeCastAttempt`). Canvas summons return `"summon"` — `castResultSpendsAp` includes that result. Both paths must debit AP and `recordChallengeApSpend`. A free cast also hides a 9+ AP dump from `hard_3`.
+
+### Spell upgrade debit is 10× too large (summons)
+
+Spellbook summon UI shows `SUMMON_UPGRADE_COST_MULTIPLIER * 10 * 2^level` (100 at level 0). `upgradeSpell` charges `spellLevelingBaseCost * 2^level` (default base **10**). Debit with `spellUpgradeUiSpend(advertised, committedBefore, backendAfter)` so idle hydrate cannot copy the under-count over committed.
 
 ### Spell upgrade wiped by the next heal
 
@@ -155,6 +184,15 @@ On the world stage, press **Shift+D** (ignored while typing in an input). The De
 - Transition lock has a 5s timeout and must release in `finally`.
 - Player death uses `deathTriggeredRef` so the death-realm flow cannot run twice.
 - Re-arm both death guards (`armDeathGuards`) after Death Realm entry or Respawn. Leaving them set skips the next exploration death (0 HP, no penalty, no Game Over).
+- While the 1.5s Death Realm timer is pending, block **portals and encounters**. `persistDeathPenalty` already restored HP, so an `hp <= 0` check is false. A new fight resets the guards without clearing the timer; the leftover callback aborts the battle.
+
+### Dungeon chain drops after a progression portal
+
+`cleanupMap` zeroes `dungeonChainActiveRef` / depth / maxDepth (death/flee must not carry a run). Snapshot **before** cleanup (`snapshotDungeonChain` → `decideDungeonChainPortal`). Reading the wiped refs yields `none`, generates an overworld map, and skips the `maxDepth * 50` completion bonus.
+
+### Feats panel empty / Claim never appears
+
+`getPlayerAchievements(player)` returns `[]` unless `player` is the caller Principal. `useGetPlayerAchievements` must pass `identity.getPrincipal()`. A display name or omitted arg fails Candid encode (caught → `[]`) or the `caller == player` guard. Advertised 50–1000 Doka then cannot be claimed even after `markAchievementUnlocked` succeeds.
 
 ### Lava death after victory / portal refunds the penalty
 
@@ -180,3 +218,5 @@ The recap wrapper in `App.tsx` is `pointer-events: none` (world tiles still rece
 5. Smoke: create character (full stats), play, win a battle **and** a boss-rush room, confirm recap + wallet/XP moved **once**; then heal once and confirm the credit was not refunded.
 6. Smoke: accept a battle challenge, complete it, confirm advertised XP landed. Die on lava after a recap — HP stays down and the 20/40 penalty sticks.
 7. Confirm chat empty after upgrade is expected; Doka / slots / configs / boss-rush `currentRoom` are not.
+8. Smoke: accept Untouchable, take a regular melee **or** a Void Mirror / lava-in-battle hit, confirm the reward is **not** granted. Attack Nearest and a canvas summon both debit AP.
+9. Smoke: die on the first map before the Doka query paints — canister wallet must not become 0. Walk a dungeon-chain progression portal and confirm the next depth (not an overworld map).

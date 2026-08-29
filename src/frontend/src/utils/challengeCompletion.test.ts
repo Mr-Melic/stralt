@@ -9,7 +9,9 @@ import {
   isChallengeFailed,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeDirectHit,
   recordInBattleChallengeDamage,
+  recordInBattleChallengeHealUsed,
 } from "./challengeCompletion.ts";
 import {
   addChallengeRewardDeltas,
@@ -204,6 +206,37 @@ describe("recordChallengeDamageTaken", () => {
   });
 });
 
+describe("recordInBattleChallengeHealUsed", () => {
+  it("leaves healUsed unset for an overworld Doka heal so easy_1 / hard_1 still persist", () => {
+    const healUsed = recordInBattleChallengeHealUsed(false, false);
+    assert.equal(healUsed, false);
+    const easy1 = byId("easy_1");
+    const hard1 = byId("hard_1");
+    assert.equal(isChallengeCompleted(easy1, progress({ healUsed })), true);
+    assert.equal(isChallengeCompleted(hard1, progress({ healUsed })), true);
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, hard1, true),
+      ),
+      500,
+    );
+  });
+
+  it("does not clear an in-battle heal that already failed the objective", () => {
+    assert.equal(recordInBattleChallengeHealUsed(false, true), true);
+    assert.equal(recordInBattleChallengeHealUsed(true, false), true);
+    assert.equal(
+      isChallengeCompleted(
+        byId("easy_1"),
+        progress({
+          healUsed: recordInBattleChallengeHealUsed(true, false),
+        }),
+      ),
+      false,
+    );
+  });
+});
+
 describe("recordInBattleChallengeDamage", () => {
   it("counts in-battle spike/lava HP loss so Untouchable cannot persist", () => {
     let total = 0;
@@ -347,5 +380,79 @@ describe("recordChallengeApSpend", () => {
     assert.equal(castResultSpendsAp("summon"), true);
     assert.equal(castResultSpendsAp("no_ap"), false);
     assert.equal(castResultSpendsAp("abort"), false);
+  });
+});
+
+describe("recordChallengeDirectHit", () => {
+  it("fails Striker after a sprite-click beyond Chebyshev 2", () => {
+    const caster = { x: 8, y: 8 };
+    let direct = true;
+    direct = recordChallengeDirectHit(direct, caster, { x: 10, y: 8 });
+    assert.equal(direct, true);
+
+    direct = recordChallengeDirectHit(direct, caster, { x: 11, y: 8 });
+    assert.equal(direct, false);
+    direct = recordChallengeDirectHit(direct, caster, { x: 8, y: 9 });
+    assert.equal(direct, false);
+
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, progress({ directHit: direct })),
+      ),
+      [],
+    );
+  });
+
+  it("fails Striker after a controlled summon casts beyond Chebyshev 2", () => {
+    const summon = { x: 8, y: 8 };
+    let direct = true;
+    // Adjacent / range-2 shots stay legal.
+    direct = recordChallengeDirectHit(direct, summon, { x: 10, y: 8 });
+    assert.equal(direct, true);
+
+    // Archer Poison Arrow (range 4) / Slow (range 3) from control mode.
+    direct = recordChallengeDirectHit(direct, summon, { x: 12, y: 8 });
+    assert.equal(direct, false);
+    direct = recordChallengeDirectHit(direct, summon, { x: 8, y: 9 });
+    assert.equal(direct, false);
+
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, progress({ directHit: direct })),
+      ),
+      [],
+    );
+  });
+
+  it("still completes when every spent attempt stays within 2 tiles", () => {
+    const caster = { x: 5, y: 5 };
+    let direct = true;
+    direct = recordChallengeDirectHit(direct, caster, { x: 7, y: 6 });
+    direct = recordChallengeDirectHit(direct, caster, { x: 5, y: 5 });
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      true,
+    );
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, striker, true),
+      ),
+      800,
+    );
   });
 });
