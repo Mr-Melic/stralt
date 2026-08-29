@@ -206,6 +206,7 @@ import {
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
+import { recordChallengeDamageTaken } from "../utils/challengeCompletion";
 import {
   addChallengeRewardDeltas,
   challengeXpFromEntries,
@@ -3177,6 +3178,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       const newHp = Math.max(0, characterStats.hp - dmg);
       setCharacterStats((prev) => ({ ...prev, hp: newHp }));
+      if (dmg > 0) {
+        challengeTotalDamageRef.current = recordChallengeDamageTaken(
+          challengeTotalDamageRef.current,
+          dmg,
+        );
+      }
       logBattleEntry(`Player took ${dmg} damage from ${source}`, "#ef4444");
       const _em = effectsManagerRef.current;
       _em.triggerHitFlash("player");
@@ -9681,6 +9688,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ...prev,
             hp: Math.max(0, prev.hp - preCritDmgBM),
           }));
+          if (preCritDmgBM > 0) {
+            challengeTotalDamageRef.current = recordChallengeDamageTaken(
+              challengeTotalDamageRef.current,
+              preCritDmgBM,
+            );
+          }
           logBattleEntry(
             `Mirror Field reflects ${preCritDmgBM} damage back at you!`,
             "#c084fc",
@@ -10485,6 +10498,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ...prev,
               hp: Math.max(0, prev.hp - thornDmg),
             }));
+            challengeTotalDamageRef.current = recordChallengeDamageTaken(
+              challengeTotalDamageRef.current,
+              thornDmg,
+            );
             logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
           }
           // Void Rift — destination tile matches voidRiftTile → -3 HP.
@@ -10498,6 +10515,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ...prev,
               hp: Math.max(0, prev.hp - 3),
             }));
+            challengeTotalDamageRef.current = recordChallengeDamageTaken(
+              challengeTotalDamageRef.current,
+              3,
+            );
             logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
           }
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
@@ -13886,6 +13907,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // Plague Zone: all units lose 2 HP at start of each turn
             if (isPlagueZone) {
               setCharacterStats((s) => ({ ...s, hp: Math.max(0, s.hp - 2) }));
+              challengeTotalDamageRef.current = recordChallengeDamageTaken(
+                challengeTotalDamageRef.current,
+                2,
+              );
               logBattleEntry("Plague Zone deals 2 damage to you!", "#a855f7");
             }
             // Reset the AP-debuff flag at start of player's turn
@@ -15375,7 +15400,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   ...s,
                   hp: Math.max(0, s.hp - finalDmg),
                 }));
-                challengeTotalDamageRef.current += finalDmg;
+                challengeTotalDamageRef.current = recordChallengeDamageTaken(
+                  challengeTotalDamageRef.current,
+                  finalDmg,
+                );
               }
             }
             // Apply player AP drain
@@ -16111,6 +16139,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   ...prev,
                   hp: Math.max(0, prev.hp - meleeDmg),
                 }));
+                if (meleeDmg > 0) {
+                  challengeTotalDamageRef.current = recordChallengeDamageTaken(
+                    challengeTotalDamageRef.current,
+                    meleeDmg,
+                  );
+                }
                 // [DEATH-BISECT] Immediate death check after enemy melee attack.
                 // Melee does NOT use playerTakesDamage — it directly mutates HP via
                 // setCharacterStats, so read the computed post-damage value

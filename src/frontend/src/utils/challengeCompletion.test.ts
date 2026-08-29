@@ -6,6 +6,7 @@ import {
   DEFAULT_CHALLENGES,
   isChallengeCompleted,
   isChallengeFailed,
+  recordChallengeDamageTaken,
 } from "./challengeCompletion.ts";
 import {
   addChallengeRewardDeltas,
@@ -157,6 +158,46 @@ describe("isChallengeCompleted", () => {
     } as unknown as Challenge;
     assert.equal(isChallengeCompleted(unknown, progress()), false);
     assert.equal(isChallengeFailed(unknown, progress()), false);
+  });
+});
+
+describe("recordChallengeDamageTaken", () => {
+  it("accumulates post-hit HP loss so Untouchable cannot persist after a melee", () => {
+    let total = 0;
+    total = recordChallengeDamageTaken(total, 12);
+    total = recordChallengeDamageTaken(total, 8);
+    assert.equal(total, 20);
+    const untouchable = byId("legendary_1");
+    const under50 = byId("easy_3");
+    assert.equal(
+      isChallengeCompleted(untouchable, progress({ totalDamage: total })),
+      false,
+    );
+    assert.equal(
+      isChallengeCompleted(under50, progress({ totalDamage: total })),
+      true,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        untouchable,
+        isChallengeCompleted(untouchable, progress({ totalDamage: total })),
+      ),
+      [],
+    );
+  });
+
+  it("ignores absorbed / invalid hits so a full-shield block stays at 0", () => {
+    assert.equal(recordChallengeDamageTaken(0, 0), 0);
+    assert.equal(recordChallengeDamageTaken(0, -4), 0);
+    assert.equal(recordChallengeDamageTaken(0, Number.NaN), 0);
+    assert.equal(
+      isChallengeCompleted(
+        byId("legendary_1"),
+        progress({ totalDamage: recordChallengeDamageTaken(0, 0) }),
+      ),
+      true,
+    );
   });
 });
 
