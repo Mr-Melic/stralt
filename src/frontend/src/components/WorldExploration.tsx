@@ -210,6 +210,7 @@ import {
   castResultSpendsAp,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordInBattleChallengeHealUsed,
 } from "../utils/challengeCompletion";
 import {
   addChallengeRewardDeltas,
@@ -17684,7 +17685,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         ...prev,
                         hp: Math.min(maxHp, prev.hp + hpToAdd),
                       }));
-                      challengeHealUsedRef.current = true;
+                      // This button is overworld-only (`!inBattle`). The flag
+                      // is only cleared in cleanupBattle, so flipping it here
+                      // failed the next fight's easy_1 / hard_1.
+                      challengeHealUsedRef.current =
+                        recordInBattleChallengeHealUsed(
+                          inBattleRef.current,
+                          challengeHealUsedRef.current,
+                        );
                       onDokaBalanceChange(Math.max(0, dokaBalance - dokaCost));
                       persistAbsoluteProgress(
                         Math.min(maxHp, characterStats.hp + hpToAdd),

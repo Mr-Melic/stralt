@@ -148,6 +148,23 @@ export function recordChallengeDamageTaken(
 }
 
 /**
+ * Mark heal-used for `no_healing` / `no_healing_under_30_damage`.
+ *
+ * handleBattleEnd persists easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP)
+ * from `healUsed`. The flag is only cleared in cleanupBattle (battle end),
+ * not at the next battle start. The overworld Doka-to-HP button used to
+ * flip it, so a pre-fight heal failed the following no-heal challenge
+ * even when no healing spell was cast.
+ */
+export function recordInBattleChallengeHealUsed(
+  inBattle: boolean,
+  alreadyUsed: boolean,
+): boolean {
+  if (!inBattle) return alreadyUsed === true;
+  return true;
+}
+
+/**
  * AP actually spent this battle for `under_8_ap_per_turn`.
  *
  * handleBattleEnd persists hard_3 (150 Doka / 450 XP) from the peak
