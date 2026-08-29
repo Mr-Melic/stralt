@@ -52,6 +52,7 @@ Frontend `localStorage` is cache or UI-only. Backend wins on conflict:
 | Cache key | Backend winner |
 | :--- | :--- |
 | `{userId}_slot{N}_pbv_active_spells` | `Character.spellBarOrder` |
+| `{userId}_slot{N}_pbv_spell_levels` | `Character.spellLevelKeys` / `spellLevelValues` via `upgradeSpell` |
 | `pbv_panel_layout_{userId}` | `UserProfile.uiLayout` via `saveUserUiLayout` |
 | `pbv_tier_spawn_config` | `getTierSpawnConfig` (hydrated on world mount) |
 
@@ -63,7 +64,7 @@ Slots are `1 | 2 | 3`. `Character` required fields: `name`, `pieceType`, `level`
 
 ### CharacterStats (12 fields)
 
-Persisted type in `src/backend/main.mo` (lines 117–130). WP / WR / SCP are gone.
+Persisted type in `src/backend/main.mo` (lines 123–136). WP / WR / SCP are gone.
 
 | Field | Meaning |
 | :--- | :--- |
@@ -101,34 +102,84 @@ Auth: `mo:caffeineai-authorization`. Roles `#admin | #user | #guest`. First non-
 
 | Method | Notes |
 | :--- | :--- |
-| `createCharacter(slot, character)` | Slots 1–3; fails if occupied |
+| `createCharacter(slot, character)` | Slots 1–3; fails if occupied. Clears slot-scoped boss-rush state |
 | `updateCharacter(slot, character)` | Full record replace + validation above |
-| `deleteCharacter(slot)` | |
+| `deleteCharacter(slot)` | Also clears slot-scoped boss-rush state |
 | `getCharacterSlots` / `getCharacter` / `getCharacterStats` | Caller-scoped |
 | `renameCharacter(slot, newName)` | 1–20 chars, unique per account, **100 Doka** from `dokaBalances` |
 | `setSpellBarOrder(slot, spellIds)` | Drops unknown ids; keeps max 8 |
 | `saveActiveSpells` / `updateSessionState` / `getSessionState` | Session fields on `Character` |
 | `saveKillCount(slot, kills)` | Increments `stats.killCount`. Hook exists; no UI caller yet |
-| `applyRewards(slot, dokaDelta, xpDelta)` | **Atomic** XP + level + Doka. See reward funnel |
-| `saveBattleStats(...)` | HP/AP/MP/atk/res/init + spell levels. `dokaBalance` arg writes `dokaBalances` (compat) |
+| `applyRewards(slot, dokaDelta, xpDelta)` | **Atomic additive** XP + level + Doka. `Nat` only — cannot subtract |
+| `saveBattleStats(...)` | Absolute HP/AP/MP/atk/res/init + XP + Doka snapshot. **Ignores** spell-level arrays (`upgradeSpell` owns those) |
 | `getCallerDokaBalance` / `getDokaBalance` | Same per-principal map |
 | `upgradeSpell(slot, spellId)` | Spends Doka |
 | `getBuffCatalog` / `purchaseBuff` / `useBuffItem` | |
-| `markAchievementUnlocked` / `claimAchievementReward` | |
+| `markAchievementUnlocked` / `claimAchievementReward` | Claim is a Doka delta — enqueue on the persist lock |
+| `initiatePurchase` / `processPendingPurchases` | Nine positional Text args; 60s auto-complete |
+| `getBossRushState` / `setBossRushProgress` / `completeBossRushRoom` / `resetBossRush` | Slot-scoped; query `userId` must be the caller principal |
 | `sendMessage` / `getMessages` | Chat; lost on upgrade |
 | `getLeaderboard` | Top 50 by level |
 
 ### Rewards (`applyRewards`)
 
+Canonical curve (must match `utils/xpCurve.ts` `xpForNextLevel`):
+
 ```
+threshold(N) = 100 * 2^(N-1)     // 1→2 = 100, 2→3 = 200, 3→4 = 400, …
 newXp = experience + xpDelta
-while newXp >= 100 * 2^level:
-    newXp -= 100 * 2^level
+while newXp >= threshold(level):
+    newXp -= threshold(level)
     level += 1
 dokaBalances[caller] += dokaDelta
 ```
 
-Deltas are `Nat` (non-negative). Frontend `resolveBattleRewards` clamps to `>= 0` then calls this once.
+`100 * 2^N` is off-by-one and silently blocks intended level-ups. Deltas are `Nat` (non-negative). Frontend `resolveBattleRewards` / `persistIncrementalRewards` clamp to `>= 0` then call this.
+
+Victory XP: explicit grant if `> 0`, else sum of defeated `level * 20`, else `characterLevel * 20` (`computeVictoryExp`). Dungeon chain multipliers already baked into the recap must pass `PREAPPLIED_REWARD_MULTIPLIER` (`1`) so Doka is not squared.
+
+### Progress persist lock
+
+`createProgressPersist` (`utils/progressPersist.ts`) is the world-session queue. Recap / shop / heal become usable while `applyRewards` is still in flight. An absolute `saveBattleStats` snapshot taken then overwrites the just-credited wallet.
+
+| Kind | Writer | Typical callers |
+| :--- | :--- | :--- |
+| Additive credit | `applyRewards` | Victory, portal +10 XP, world Doka pickups, boss-rush room clear |
+| Paid spend | `upgradeSpell` | Spellbook. Deducts from `dokaBalances`; sole writer of spell levels |
+| Paid credit | `claimAchievementReward` | Feat claim. Returns granted Nat |
+| Paid credit | `processPendingPurchases` | Shop packages aged ≥ 60s |
+| Absolute snapshot | `saveBattleStats` | Recap heals, item-shop spends, death 20% XP / 40% Doka |
+
+Rules verified in `WorldExploration` + the persist unit tests:
+
+1. Enqueue **both** credits and snapshots on `progressPersistRef`.
+2. `commit({ doka, xp, level })` inside the queued fn after the canister write.
+3. `hydrateWhenIdle` returns false while `pending > 0` — do not copy UI over an in-flight credit.
+4. Live UI **adds deltas** (`applyShopCreditDeltaToUi`). Replacing with an absolute backend read refunds a heal/shop spend the player already applied locally.
+5. After world hydrate, `shouldApplyCallerDokaHydrate` ignores `['callerDokaBalance']` refetches (claim invalidate / window focus).
+6. After death has fired, `shouldApplyVictoryLiveHydrate` is false — a late `applyRewards` hydrate must not restore HP or unpenalized XP.
+
+Death penalty cannot use `applyRewards` (Nat-only add). `persistDeathPenalty` writes the already-reduced absolute XP/Doka through `saveBattleStats`, then `raiseUiAfterDeathPersist` so a short optimistic UI cannot overwrite the post-credit cut.
+
+| Helper | Path |
+| :--- | :--- |
+| `createProgressPersist` | `utils/progressPersist.ts` |
+| `resolveBattleRewards` / `computeVictoryExp` / `PREAPPLIED_REWARD_MULTIPLIER` | `utils/rewardResolver.ts` |
+| `persistIncrementalRewards` / `readApplyRewardsOk` | `utils/applyRewardsResult.ts` |
+| `persistDeathPenalty` / `shouldApplyVictoryLiveHydrate` | `utils/deathPenalty.ts` |
+| `creditPendingPurchasesThroughPersist` | `utils/shopPurchase.ts` |
+| `creditAchievementRewardThroughPersist` | `utils/achievementReward.ts` |
+| `persistSpellUpgrade` | `utils/spellUpgrade.ts` |
+| `shouldApplyCallerDokaHydrate` | `utils/dokaBalanceQuery.ts` |
+| `persistBossRushRoomClear` / `resolveBossRushQueryPrincipalText` | `hooks/bossRushProgress.ts` |
+
+### Shop and item purchases
+
+`initiatePurchase` takes **nine positional `Text` args** (`utils/shopPurchase.ts` `buildInitiatePurchaseArgs`). A customer-data object is rejected by Candid and no purchase record is created.
+
+Backend `_autoCompletePendingPurchases` credits packages with `status == "pending"` older than 60s (`PENDING_PURCHASE_CREDIT_DELAY_MS`). The player must call `processPendingPurchases`. That credit **and** the following `commit` go through `creditPendingPurchasesThroughPersist`. Shop-credit timers live in `shopCreditTimersRef` — `cleanupBattle` clears `pendingTimeoutsRef` on every portal/death/victory.
+
+`BuffShop` is hosted in `WorldExploration` (not `GameFlow`). A GameFlow-only local deduct + no-op `onUseItem` refunds the spend on the next wallet refetch and makes bought items unusable.
 
 ### Admin (gated)
 
@@ -142,7 +193,7 @@ CRUD for enemy / region / sprite / spell / map-modifier / shop / achievement / b
 
 `main.tsx` wraps TanStack Query + Internet Identity. Viewport `< 768px` is blocked (`SmallScreenGuard`).
 
-`App.tsx` (`APP_VERSION = "v164"`):
+`App.tsx` (`APP_VERSION = "v163"`):
 
 1. Version mismatch → wipe `localStorage` except `pbv_tier_spawn_config` / `pbv_levelup_config` → reload.
 2. No identity → `LandingPage`.
@@ -159,9 +210,23 @@ CRUD for enemy / region / sprite / spell / map-modifier / shop / achievement / b
 ### Battle → recap
 
 1. Combatants mutate through `engine/combatantStore.ts` (atomic roster + turn-order + mirrors).
-2. Deaths go through `engine/deathPipeline.ts` (10-step, idempotent). Per-kill code **must not** call `resolveBattleRewards`.
-3. Victory: `WorldExploration` builds recap locally, calls `onShowBattleSummary` **first**, then `resolveBattleRewards` → `actor.applyRewards`.
-4. Recap popup is only mounted in `App.tsx` (z-index 9999) so it survives the battle → exploration transition.
+2. Deaths go through `engine/deathPipeline.ts` (10-step, idempotent). Per-kill code **must not** call `resolveBattleRewards`. `selectDefeatedEnemiesForRewards` prefers the attributed-kill roster — `recheckVictory` used to pass `[]`.
+3. Victory: `WorldExploration` builds recap locally, calls `onShowBattleSummary` **first**, then enqueues `resolveBattleRewards` → `actor.applyRewards` on the persist lock.
+4. Challenge XP/Doka must be read from **live refs** (`liveBattleChallengePersistEntries`). `handleBattleEnd` omits `challengeAccepted` / `currentChallenge` from its deps; a stale `accepted === false` drops the 400–1000 XP the panel advertised.
+5. Recap popup is only mounted in `App.tsx` (z-index 9999) so it survives the battle → exploration transition. The full-screen wrapper is `pointer-events: none` (the card itself is `auto`) — lava/spike tiles under the recap still receive input while persist is in flight.
+6. Both React `inBattle` **and** `inBattleRef` must be false after `handleBattleEnd` / room clear / death. `cleanupBattle` only clears the ref; leaving React state true blocks the next fight (`shouldAllowBattleTrigger`).
+
+### Boss rush persist / resume
+
+`bossRushStates` is keyed `principalText#slot`. `getBossRushState(userId, slot)` returns `(0,0,0)` unless `userId == caller`. GameFlow `userId` is the **display name** — `Principal.fromText("VampireBob")` throws. Query with the authenticated II principal (`resolveBossRushQueryPrincipalText`).
+
+On room clear (`persistBossRushRoomClear` + `persistBossRushRewardsThroughLock`):
+
+1. Write `currentRoom` (`setBossRushProgress` or `resetBossRush` on the final room) **before** `applyRewards`.
+2. Call `completeBossRushRoom(slot, roomIndex, 0, 0)` — progress / master flag only. Wallet/XP still go through `applyRewards`.
+3. Both writes stay on the persist lock so a lava death cannot jump the queue and let the credit land after the penalty.
+4. `createCharacter` / `deleteCharacter` call `_clearBossRushForSlot` so a new occupant cannot resume mid-tree.
+5. Lava/spike death calls `abortBossRush` → `resetBossRush` (`currentRoom = 0`). A late in-flight room-clear write is superseded (`wasSuperseded`).
 
 ### Portals
 
@@ -196,11 +261,11 @@ Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRang
 
 ## Migrations
 
-`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`. Current module: `src/backend/migrations/20260803_185500.mo`.
+`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`. Current module: `src/backend/migrations/20260827_000000.mo`.
 
 - Inlined `OldActor` / `NewActor` (no project type imports).
-- This build: `NewActor = OldActor`; upgrade returns `old` unchanged.
-- Fresh install (`BUFF_CATALOG.size() == 0`) seeds default buffs, enemy names, ad boxes, `appVersion = "v163"`.
+- Legacy → enhanced-orthogonal upgrade: `NewActor` drops transients that `main.mo` now marks `transient` (`BUFF_CATALOG`, `DEFAULT_ENEMY_NAMES`, `ROLE_CHANGE_MIN_NS`, `chatMessages`, `nextChatId`, `enemyNamesInitialised`). Player/config maps copy through unchanged.
+- Fresh-install seeds live in `main.mo` `do { }` blocks (empty `appVersion` → `"v163"`, default game config, etc.) — not in the migration module.
 - Current `main.mo` is a plain `actor {` — it does **not** use `(with migration = Migration.run)`. That annotation exists only on the legacy `backend_extended` actor.
 
-A deployed canister still running the old 15-field `CharacterStats` will reject 12-field saves until it is upgraded so the migration / type change actually lands on-chain.
+A deployed canister still running the old 15-field `CharacterStats` will reject 12-field saves until it is upgraded so the type change actually lands on-chain.

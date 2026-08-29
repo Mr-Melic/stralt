@@ -58,22 +58,44 @@ Fix: always send the full record. Carry `character.stats.killCount` or `0n` on c
 
 `saveCallerUserProfile` writes the payload as-is (no field merge). `{ name }` without `uiLayout` fails Candid. New accounts must send `uiLayout: ""`.
 
-### Rewards applied twice or not at all
+### Rewards applied twice, wiped, or not at all
 
-- Persist XP/Doka **only** with `applyRewards` (`src/frontend/src/utils/rewardResolver.ts`).
-- Do **not** call `updateCharacter` to write reward XP/Doka.
+- Persist **credits** (victory, portal XP, pickups, boss-rush room) only with `applyRewards` (`rewardResolver.ts` / `applyRewardsResult.ts`).
+- Persist **penalties and spends** with `saveBattleStats` through the persist lock. `applyRewards` is `Nat`-only and cannot subtract.
+- Do **not** call `updateCharacter` to write reward XP/Doka (or to debit the wallet — `Character` has no `dokaBalance`).
 - Do **not** call `resolveBattleRewards` per kill. Death pipeline attributes kills into a list; victory calls the resolver once.
+- Enqueue every credit **and** every `saveBattleStats` on `createProgressPersist`. A recap heal/shop click that snapshots the pre-credit wallet wipes the grant.
 - Recap must stay mounted in `App.tsx`. Showing it from `WorldExploration` loses it on the battle → map transition.
 
-`saveBattleStats` still exists for HP / caps / spell levels. Its `dokaBalance` argument writes the **per-principal** `dokaBalances` map. It is not the battle-reward funnel.
+`saveBattleStats` writes HP / AP / MP / atk / res / init / XP and the per-principal `dokaBalances` map. It **ignores** the spell-level arrays — `upgradeSpell` is the sole writer. It is not the battle-reward funnel.
 
 ### `dokaBalance` on `Character`
 
 The field was removed from the Motoko `Character` type. Frontend `gameTypes.Character.dokaBalance` is a convenience alias. Bindgen drops unknown fields. Balance APIs: `getCallerDokaBalance`, `applyRewards`, admin grants.
 
-### Some `WorldExploration` saves zero combat stats
+### Recap heal refunds a just-claimed or just-won wallet
 
-Several `updateCharacter` sites (spell-bar / portal XP / heal pickups) still hardcode `atk`, `resilience`, and `evasion` to `0n` while carrying `killCount`. That is a real overwrite risk — do not copy that pattern for new saves. Carry the existing `character.stats` values.
+`saveBattleStats` is an absolute write. After victory / shop credit / feat claim, the recap is already clickable. A heal that reconstructs from the pre-credit snapshot (or from `getCallerDokaBalance` after a query invalidate) persists the old balance.
+
+Fix: run the credit on the persist lock and `commit` the post-credit Doka. Add the granted delta onto the live UI (`applyShopCreditDeltaToUi`). Do not `invalidateQueries(['callerDokaBalance'])` after a persist-lock claim (`shouldInvalidateCallerDokaAfterClaim`). Once the world is hydrated, `shouldApplyCallerDokaHydrate` must stay false — window-focus refetch is the same class of bug.
+
+### Shop purchase never credits / nine-arg Candid reject
+
+`initiatePurchase` is nine positional `Text` fields (`packageId`, name, surname, email, address, city, country, postal, proof URL). Passing one customer object fails at serialize time.
+
+Credits are **not** instant: backend auto-completes pending records ≥ 60s. The client must call `processPendingPurchases` via `creditPendingPurchasesThroughPersist`. Shop-credit timers must **not** live in `pendingTimeoutsRef` — `cleanupBattle` clears that set on portal/death/victory (`shopCreditUsesBattleTimeoutSet` is false).
+
+### Item shop spend refunds and items do nothing
+
+`BuffShop` returns `null` unless `isOpen === true`. Host it in `WorldExploration` so buys go through `saveBattleStats` on the persist lock and uses reach `handleUseItem`. A `GameFlow`-only local deduct is restored on the next `getCallerDokaBalance` hydrate.
+
+### Challenge XP advertised but never persisted
+
+`handleBattleEnd` is a `useCallback` that omits `challengeAccepted` / `currentChallenge`. Pass the live accept flag and challenge from refs (`liveBattleChallengePersistEntries`). Persist both `dokaReward` **and** `xpReward` (hard/legendary objectives show 400–1000 XP).
+
+### Spell upgrade wiped by the next heal
+
+`upgradeSpell` must enqueue on the persist lock and update `spellLevelsRef` **inside** that queued fn, before any later `saveBattleStats`. The canister now ignores heal/death spell-level arrays, but a local map rollback still shows the pre-upgrade level until reload. Deduct Doka as a UI delta (`dokaBalance - cost`); do not replace the wallet with the absolute post-upgrade read.
 
 ### `killCount` never increments in the client
 
@@ -81,7 +103,7 @@ Several `updateCharacter` sites (spell-bar / portal XP / heal pickups) still har
 
 ### Deployed canister still on 15-field stats
 
-Source on disk can be 12-field while the live canister is not. Symptom: Candid / upgrade errors on create or update. Fix: upgrade the canister so `src/backend/migrations/20260803_185500.mo` (and the new type) actually run. Restarting the frontend is not enough.
+Source on disk can be 12-field while the live canister is not. Symptom: Candid / upgrade errors on create or update. Fix: upgrade the canister so `src/backend/migrations/20260827_000000.mo` (and the new type) actually run. Restarting the frontend is not enough.
 
 ### `dfx.json` vs `mops.toml`
 
@@ -132,6 +154,18 @@ On the world stage, press **Shift+D** (ignored while typing in an input). The De
 - Portal interaction must read `inBattleRef` / `transitionInProgressRef`.
 - Transition lock has a 5s timeout and must release in `finally`.
 - Player death uses `deathTriggeredRef` so the death-realm flow cannot run twice.
+- Re-arm both death guards (`armDeathGuards`) after Death Realm entry or Respawn. Leaving them set skips the next exploration death (0 HP, no penalty, no Game Over).
+
+### Lava death after victory / portal refunds the penalty
+
+The recap wrapper in `App.tsx` is `pointer-events: none` (world tiles still receive input); a portal swap has no overlay. `applyRewards` can still be in flight when lava/spikes fire. The death write already penalized the post-credit committed snapshot. Applying the post-await live hydrate (`shouldApplyVictoryLiveHydrate`) restores HP and unpenalized XP; `hydrateWhenIdle` then copies that into committed and the next persist refunds the death.
+
+### Boss rush resume / farm / stuck between rooms
+
+- `getBossRushState` requires `userId == caller` as a **principal**. Pass the II identity text (`isPrincipalText`), not the profile display name.
+- Persist `currentRoom` on room clear **before** `applyRewards`, both on the persist lock. Otherwise a reload re-enters room 0 and farms the same credit.
+- `createCharacter` / `deleteCharacter` clear slot-scoped progress. Lava/spike death must `abortBossRush` so a late room-clear write cannot resume mid-tree.
+- After a room clear, `setInBattle(false)` as well as `inBattleRef = false`. `cleanupBattle` only clears the ref; React `inBattle === true` blocks `checkBattleTrigger` and room 2 never starts.
 
 ### Motoko / frontend level-up floors differ
 
@@ -139,8 +173,10 @@ On the world stage, press **Shift+D** (ignored while typing in an input). The De
 
 ## Operational checklist (canister upgrade)
 
-1. Confirm `src/backend/main.mo` and `migrations/` match the intended `CharacterStats` (12 fields, `killCount` present, no `wp`/`wr`/`scp`).
-2. `caffeine check --fix` then `caffeine build` (or the project’s deploy pipeline). Do not use `dfx` against `backend_extended` by accident.
-3. `pnpm bindgen` and commit generated client files.
-4. Smoke: create character (full stats), play, win a battle, confirm recap + `getCallerDokaBalance` / slot XP moved **once**.
-5. Confirm chat empty after upgrade is expected; Doka / slots / configs are not.
+1. Confirm `src/backend/main.mo` and `migrations/` match the intended `CharacterStats` (12 fields, `killCount` present, no `wp`/`wr`/`scp`). Current chain module: `20260827_000000.mo`.
+2. Confirm `applyRewards` uses `100 * 2^(N-1)` (same as `utils/xpCurve.ts`).
+3. `caffeine check --fix` then `caffeine build` (or the project’s deploy pipeline). Do not use `dfx` against `backend_extended` by accident.
+4. `pnpm bindgen` and commit generated client files.
+5. Smoke: create character (full stats), play, win a battle **and** a boss-rush room, confirm recap + wallet/XP moved **once**; then heal once and confirm the credit was not refunded.
+6. Smoke: accept a battle challenge, complete it, confirm advertised XP landed. Die on lava after a recap — HP stays down and the 20/40 penalty sticks.
+7. Confirm chat empty after upgrade is expected; Doka / slots / configs / boss-rush `currentRoom` are not.

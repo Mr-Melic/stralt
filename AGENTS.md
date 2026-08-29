@@ -24,10 +24,13 @@
 - Character-update / create payloads must include every CharacterStats field. Omitting `killCount` fails in the Candid serializer before Motoko runs. Carry `BigInt(0)` or the existing value.
 - Deployed canister can lag source: a live 15-field actor rejects 12-field saves until it is upgraded. Source-correct is not enough.
 - Canonical actor is `src/backend/main.mo` (root `mops.toml`). `dfx.json` still points at stale `backend_extended/` (15-field stats) — do not deploy that path by accident.
-- Migrations: `mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`. Current module inlines OldActor/NewActor. Live `main.mo` is a plain persistent `actor {` (no `(with migration = Migration.run)`). That annotation exists only on `backend_extended`. `BaseToCore.mo` is the completed mo:base→mo:core marker.
+- Migrations: `mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`. Current module `20260827_000000.mo` inlines OldActor/NewActor and drops transients. Live `main.mo` is a plain persistent `actor {` (no `(with migration = Migration.run)`). That annotation exists only on `backend_extended`. `BaseToCore.mo` is the completed mo:base→mo:core marker.
 - `caffeineai-oql@0.4.0` **is** a dependency and **is imported** (`schema` / `execute` via `Expose` at the end of `main.mo`). Some `caffeine check` runs still hit M0010 (`package not defined`) even when `mops sources` resolves it — toolchain mismatch, not a missing import.
 - dfx is often absent in this container — `mops build` exits 127. Use `caffeine check --fix` and `caffeine build`.
 - Two EnemyConfig types: admin/frontend spawn template (`hp/ap/mp/initStat/...`) vs `types/common.mo` runtime combat template (`damage/res/sp/sr/chc/init`, no wp/wr/scp).
 - Battle XP/Doka persist only through `applyRewards` (`utils/rewardResolver.ts`). Do not write rewards with `updateCharacter` or call the resolver per kill.
+- `applyRewards` XP curve is `100 * 2^(N-1)` (`utils/xpCurve.ts`). `100 * 2^N` silently blocks level-ups.
+- World wallet writes share `createProgressPersist`. Credits (`applyRewards`, `upgradeSpell`, `claimAchievementReward`, `processPendingPurchases`) and absolute snapshots (`saveBattleStats` heals/spends/death) must enqueue on that lock and `commit` after the canister write. Do not replace the live UI wallet with an absolute backend read after world hydrate.
+- `saveBattleStats` ignores spell-level arrays — `upgradeSpell` is the sole writer. Death penalty is 20% XP / 40% Doka via `saveBattleStats` (Nat-only `applyRewards` cannot subtract).
 - New profiles must send `uiLayout: ""` — `saveCallerUserProfile` does not merge fields.
 - Developer docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`.
