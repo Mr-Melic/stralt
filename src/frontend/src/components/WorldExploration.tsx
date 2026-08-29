@@ -282,6 +282,7 @@ import {
   planSummonControlCast,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
+  summonControlTurnResources,
 } from "../utils/summonControlCast";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
@@ -14106,6 +14107,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   "#ef4444",
                 );
                 setTimeout(() => advanceTurn(), 0);
+              } else if (_summon) {
+                // Control mode never reset AP/MP (the AI path does). A
+                // spent 0/0 budget trips the auto-end effect and later
+                // turns skip. Mutate in place — updateCombatant would
+                // nest setTurnOrder inside this dispatcher.
+                const restored = summonControlTurnResources(_summon);
+                _summon.currentAp = restored.currentAp;
+                _summon.currentMp = restored.currentMp;
               }
             } else {
               setBattlePhase("enemy");

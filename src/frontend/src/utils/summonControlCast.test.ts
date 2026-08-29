@@ -7,6 +7,7 @@ import {
   resolveSummonControlSpell,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
+  summonControlTurnResources,
 } from "./summonControlCast.ts";
 
 describe("resolveSummonControlSpell", () => {
@@ -162,5 +163,30 @@ describe("summonControlIdAfterAdvance", () => {
     );
     assert.equal(summonControlIdAfterAdvance(null), null);
     assert.equal(summonControlIdAfterAdvance(undefined), null);
+  });
+});
+
+describe("summonControlTurnResources", () => {
+  it("refills leftover 0/0 to the summon max so later control turns can act", () => {
+    // Wolf spent 2 AP + 2 MP on turn 1. Without a refill the auto-end
+    // effect sees 0/0 and skips every later lifespan turn.
+    assert.deepEqual(
+      summonControlTurnResources({
+        maxAp: 2,
+        maxMp: 2,
+      }),
+      { currentAp: 2, currentMp: 2 },
+    );
+  });
+
+  it("floors missing or invalid max budgets to 0", () => {
+    assert.deepEqual(summonControlTurnResources({}), {
+      currentAp: 0,
+      currentMp: 0,
+    });
+    assert.deepEqual(
+      summonControlTurnResources({ maxAp: -3, maxMp: Number.NaN }),
+      { currentAp: 0, currentMp: 0 },
+    );
   });
 });

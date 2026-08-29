@@ -135,3 +135,24 @@ export function summonControlIdAfterAdvance(
   }
   return null;
 }
+
+/**
+ * AP/MP budget at the start of a player-controlled summon turn.
+ *
+ * The AI path resets currentAp/currentMp to max when the summon acts.
+ * Control mode never did, so a Wolf that spent 2/2 on turn 1 entered
+ * later turns at 0/0. The auto-end effect then advanced after 500ms
+ * and the summon never acted again for the rest of its lifespan.
+ *
+ * Mutate the live object with these values (same as the AI path) —
+ * do not call updateCombatant from inside advanceTurn's setTurnOrder.
+ */
+export function summonControlTurnResources(summon: {
+  maxAp?: unknown;
+  maxMp?: unknown;
+}): { currentAp: number; currentMp: number } {
+  return {
+    currentAp: Math.max(0, Math.floor(Number(summon.maxAp) || 0)),
+    currentMp: Math.max(0, Math.floor(Number(summon.maxMp) || 0)),
+  };
+}
