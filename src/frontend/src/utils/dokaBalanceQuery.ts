@@ -30,3 +30,18 @@ export function shouldApplyCallerDokaHydrate(args: {
   if (args.inWorld && args.alreadyHydratedInWorld) return false;
   return true;
 }
+
+/**
+ * WorldExploration's idle hydrate treats walletReady as "the session cache
+ * is the canister wallet, including a real 0".
+ *
+ * `queryResolved` alone is one render too early: GameFlow still holds the
+ * placeholder 0 until the hydrate effect calls setDokaBalance. Passing that
+ * pair lets hydrateWhenIdle overwrite a shop-credit seed with 0.
+ */
+export function shouldMarkCallerDokaWalletReady(args: {
+  queryResolved: boolean;
+  sessionCacheApplied: boolean;
+}): boolean {
+  return args.queryResolved && args.sessionCacheApplied;
+}

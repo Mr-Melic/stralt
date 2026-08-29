@@ -241,6 +241,7 @@ import {
   committedDokaAfterRename,
   liveDokaAfterRename,
   readRenameCharacterResult,
+  shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
 } from "../utils/renameCharacter";
 import {
@@ -1899,7 +1900,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               newName,
             ),
           );
-          if (shouldDebitRenameDoka(result)) {
+          if (
+            shouldDebitRenameDoka(result) &&
+            shouldCommitRenameDokaSpend(
+              progressPersistRef.current.isWalletSeeded(),
+            )
+          ) {
             progressPersistRef.current.commit({
               doka: committedDokaAfterRename(
                 progressPersistRef.current.snapshot().doka,

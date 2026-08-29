@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   normalizeCallerDokaBalance,
   shouldApplyCallerDokaHydrate,
+  shouldMarkCallerDokaWalletReady,
 } from "./dokaBalanceQuery.ts";
 
 assert.equal(normalizeCallerDokaBalance(0), 0);
@@ -78,5 +79,29 @@ const wouldReplace = shouldApplyCallerDokaHydrate({
 });
 assert.equal(wouldReplace, false);
 assert.equal(uiAfterHeal, 720);
+
+// Query data exists one render before setDokaBalance. Marking ready then
+// lets idle hydrate copy the placeholder 0 over a shop-credit seed.
+assert.equal(
+  shouldMarkCallerDokaWalletReady({
+    queryResolved: true,
+    sessionCacheApplied: false,
+  }),
+  false,
+);
+assert.equal(
+  shouldMarkCallerDokaWalletReady({
+    queryResolved: true,
+    sessionCacheApplied: true,
+  }),
+  true,
+);
+assert.equal(
+  shouldMarkCallerDokaWalletReady({
+    queryResolved: false,
+    sessionCacheApplied: false,
+  }),
+  false,
+);
 
 console.log("dokaBalanceQuery.test: ok");

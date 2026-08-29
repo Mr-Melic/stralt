@@ -7,6 +7,7 @@ import {
   createProgressPersist,
   floorHydratedLevel,
   resolveCommittedDokaForAbsoluteWrite,
+  shouldCopyIdleWalletDoka,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -174,11 +175,41 @@ describe("progress persist lock", () => {
     assert.equal(lock.snapshot().doka, 0);
   });
 
-  it("seeds from a positive idle hydrate before the ready flag arrives", () => {
+  it("does not seed from a positive UI delta before the session cache is applied", () => {
     const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
-    lock.hydrateWhenIdle({ doka: 500, xp: 80, level: 4 });
+    lock.hydrateWhenIdle({ doka: 100, xp: 80, level: 4 });
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.snapshot().doka, 0);
+    assert.equal(
+      shouldCopyIdleWalletDoka({
+        walletSeeded: false,
+        walletReady: false,
+        incomingDoka: 100,
+        committedDoka: 0,
+      }),
+      false,
+    );
+  });
+
+  it("does not let a placeholder 0 overwrite a shop-credit seed when ready is early", () => {
+    const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
+    lock.commit({ doka: 500 });
     assert.equal(lock.isWalletSeeded(), true);
+
+    assert.equal(
+      shouldCopyIdleWalletDoka({
+        walletSeeded: true,
+        walletReady: true,
+        incomingDoka: 0,
+        committedDoka: 500,
+      }),
+      false,
+    );
+    lock.hydrateWhenIdle({ doka: 0, xp: 80, level: 4 }, { walletReady: true });
     assert.equal(lock.snapshot().doka, 500);
+
+    const after = applySpendToCommitted(lock.snapshot().doka, 0);
+    assert.equal(after, 500);
   });
 
   it("does not let idle hydrate downgrade a committed level-up", () => {

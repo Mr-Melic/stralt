@@ -3,6 +3,7 @@ import {
   committedDokaAfterAchievementCredit,
   creditAchievementRewardThroughPersist,
   readClaimAchievementReward,
+  shouldCommitAchievementCredit,
   shouldInvalidateCallerDokaAfterClaim,
 } from "./achievementReward.ts";
 import {
@@ -116,6 +117,24 @@ void (async () => {
   // hydrateWhenIdle copies that refund into committed.
   assert.equal(shouldInvalidateCallerDokaAfterClaim(true), false);
   assert.equal(shouldInvalidateCallerDokaAfterClaim(false), true);
+  assert.equal(shouldCommitAchievementCredit(true), true);
+  assert.equal(shouldCommitAchievementCredit(false), false);
+
+  // Unseeded lock starts at placeholder 0. Committing 0+grant would mark
+  // the wallet seeded at the grant only; death persist then writes that
+  // under-count over the live canister.
+  const unseeded = createProgressPersist({ doka: 0, xp: 80, level: 4 });
+  assert.equal(unseeded.isWalletSeeded(), false);
+  const unseededClaim = await creditAchievementRewardThroughPersist(
+    {
+      claimAchievementReward: async () => ({ ok: 100 }),
+    },
+    unseeded,
+    "first_blood",
+  );
+  assert.deepEqual(unseededClaim, { ok: 100 });
+  assert.equal(unseeded.isWalletSeeded(), false);
+  assert.equal(unseeded.snapshot().doka, 0);
   const afterClaimAndHeal = createProgressPersist({
     doka: 720,
     xp: 50,
