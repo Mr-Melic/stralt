@@ -148,6 +148,23 @@ export function recordChallengeDamageTaken(
 }
 
 /**
+ * Mark heal-used for `no_healing` / `no_healing_under_30_damage`.
+ *
+ * handleBattleEnd persists easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP)
+ * from `healUsed`. The flag is only cleared in cleanupBattle (battle end),
+ * not at the next battle start. The overworld Doka-to-HP button used to
+ * flip it, so a pre-fight heal failed the following no-heal challenge
+ * even when no healing spell was cast.
+ */
+export function recordInBattleChallengeHealUsed(
+  inBattle: boolean,
+  alreadyUsed: boolean,
+): boolean {
+  if (!inBattle) return alreadyUsed === true;
+  return true;
+}
+
+/**
  * Lava / spike tiles live on the overworld map and also deal HP during
  * combat walks. The challenge counter is zeroed in cleanupBattle, not at
  * battle start, so an out-of-combat hazard step must not increment it —
@@ -160,6 +177,29 @@ export function recordInBattleChallengeDamage(
 ): number {
   if (!inBattle) return current;
   return recordChallengeDamageTaken(current, incoming);
+}
+
+/**
+ * Count a player-turn start toward under_N_turns challenges.
+ *
+ * handleBattleEnd persists legendary_2 (450 Doka / 900 XP) from
+ * `challengeTurnCountRef`. The opening player turn used to skip this
+ * increment (only `advanceTurn`'s later player branch counted), so six
+ * player turns still read as 5 and credited Blitz.
+ */
+export function recordChallengePlayerTurnStart(current: number): number {
+  return Math.max(0, Math.floor(Number(current) || 0)) + 1;
+}
+
+/**
+ * The first combatant never goes through `advanceTurn`. Count that opening
+ * player turn here so Blitz / under-10 / under-15 use the same counter as
+ * later player-turn starts.
+ */
+export function shouldCountOpeningPlayerTurn(
+  firstCombatantIsPlayer: boolean,
+): boolean {
+  return firstCombatantIsPlayer === true;
 }
 
 /**
@@ -214,6 +254,26 @@ export function castFollowUpShouldDebitAp(result: string): boolean {
  */
 export function shouldClearSpellAfterApSpend(remainingAp: number): boolean {
   return Math.max(0, Math.floor(Number(remainingAp) || 0)) <= 0;
+}
+
+/**
+ * legendary_3 Striker (400 Doka / 800 XP) requires every spent attempt
+ * to land within Chebyshev distance 2 of the caster. Sprite-click used
+ * to skip the tile-click follow-up, and player-controlled summons
+ * (Archer Poison Arrow range 4, Slow range 3) call resolveSpellCast
+ * without that follow-up, so a range-3+ hit still persisted the reward.
+ * Once false, it stays false for the fight.
+ */
+export function recordChallengeDirectHit(
+  stillDirect: boolean,
+  caster: { x: number; y: number },
+  target: { x: number; y: number },
+): boolean {
+  if (!stillDirect) return false;
+  const dx = Math.abs(Number(target.x) - Number(caster.x));
+  const dy = Math.abs(Number(target.y) - Number(caster.y));
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+  return Math.max(dx, dy) <= 2;
 }
 
 /**

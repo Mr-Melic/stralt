@@ -211,8 +211,12 @@ import {
   castResultSpendsAp,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeDirectHit,
+  recordChallengePlayerTurnStart,
   recordInBattleChallengeDamage,
+  recordInBattleChallengeHealUsed,
   shouldClearSpellAfterApSpend,
+  shouldCountOpeningPlayerTurn,
 } from "../utils/challengeCompletion";
 import {
   addChallengeRewardDeltas,
@@ -274,6 +278,10 @@ import {
   persistSpellUpgrade,
   spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
+import {
+  planSummonControlCast,
+  summonControlCastFailMessage,
+} from "../utils/summonControlCast";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -9937,6 +9945,94 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
 
+  // Player-controlled summons never copy summonKit onto summon.spells.
+  // Resolve kit from starterSpells (same source as SummonControlPanel),
+  // gate AP/range, then debit AP so a 2-AP Archer cannot dump the kit
+  // for free. Distance is from the summon tile — legendary_3 Striker
+  // must fail a range-3+ Poison Arrow / Slow.
+  const castControlledSummonSpell = useCallback(
+    (
+      summon: { id: string; pieceType: string; x: number; y: number } & Record<
+        string,
+        unknown
+      >,
+      targetEnemy: {
+        id: string;
+        x: number;
+        y: number;
+        side?: string;
+        hp?: number;
+        maxHp?: number;
+        level?: number;
+      },
+    ) => {
+      if (!selectedSummonSpellId) return;
+      const plan = planSummonControlCast({
+        pieceType: summon.pieceType,
+        spellId: selectedSummonSpellId,
+        catalog: starterSpells,
+        fallbackSpells: Array.isArray(summon.spells)
+          ? (summon.spells as typeof starterSpells)
+          : [],
+        currentAp: Number(summon.currentAp ?? 0),
+        caster: { x: summon.x, y: summon.y },
+        target: { x: targetEnemy.x, y: targetEnemy.y },
+      });
+      if (!plan.ok) {
+        logBattleEntry(summonControlCastFailMessage(plan.reason), "#ef4444");
+        return;
+      }
+      try {
+        resolveSpellCast(
+          plan.spell as any,
+          {
+            id: summon.id,
+            side: (summon.side as string) ?? "player",
+            level: Number(summon.level ?? 1),
+            effects: [],
+            hp: Number(summon.hp ?? 0),
+            maxHp: Number(summon.maxHp ?? 0),
+            stats: { res: 0, sp: 0 },
+          } as any,
+          {
+            id: targetEnemy.id,
+            side: targetEnemy.side ?? "enemy",
+            cell: { x: targetEnemy.x, y: targetEnemy.y },
+            hp: targetEnemy.hp ?? 0,
+            maxHp: targetEnemy.maxHp ?? 0,
+            level: targetEnemy.level ?? 1,
+            effects: [],
+            stats: { res: 0, sp: 0 },
+          } as any,
+          playerSpellContext() as any,
+          { getStatModifier, calcScaledDamage } as any,
+        );
+        challengeDirectHitRef.current = recordChallengeDirectHit(
+          challengeDirectHitRef.current,
+          { x: summon.x, y: summon.y },
+          { x: targetEnemy.x, y: targetEnemy.y },
+        );
+        updateCombatant(combatantStoreCtx, summon.id, {
+          currentAp: plan.remainingAp,
+        });
+        logBattleEntry(
+          `${summon.pieceType} casts ${plan.spell.name ?? plan.spell.id}`,
+          "#a855f7",
+        );
+        setSelectedSummonSpellId(null);
+      } catch (e) {
+        console.error("[SummonCast]", e);
+      }
+    },
+    [
+      selectedSummonSpellId,
+      playerSpellContext,
+      getStatModifier,
+      combatantStoreCtx,
+      logBattleEntry,
+    ],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable callbacks are intentionally omitted
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -9952,49 +10048,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const gridPos = clientToGrid(event.clientX, event.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
-            const spell = (summon.spells ?? []).find(
-              (s: any) => s.id === selectedSummonSpellId,
+            const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
+              (e: any) =>
+                e.x === gridPos.x && e.y === gridPos.y && e.side !== "player",
             );
-            if (spell) {
-              const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
-                (e: any) =>
-                  e.x === gridPos.x && e.y === gridPos.y && e.side !== "player",
-              );
-              if (targetEnemy) {
-                try {
-                  resolveSpellCast(
-                    spell as any,
-                    {
-                      id: summon.id,
-                      side: summon.side ?? "player",
-                      level: summon.level ?? 1,
-                      effects: [],
-                      hp: summon.hp ?? 0,
-                      maxHp: summon.maxHp ?? 0,
-                      stats: { res: 0, sp: 0 },
-                    } as any,
-                    {
-                      id: targetEnemy.id,
-                      side: targetEnemy.side ?? "enemy",
-                      cell: { x: targetEnemy.x, y: targetEnemy.y },
-                      hp: targetEnemy.hp ?? 0,
-                      maxHp: targetEnemy.maxHp ?? 0,
-                      level: targetEnemy.level ?? 1,
-                      effects: [],
-                      stats: { res: 0, sp: 0 },
-                    } as any,
-                    playerSpellContext() as any,
-                    { getStatModifier, calcScaledDamage } as any,
-                  );
-                  logBattleEntry(
-                    `${summon.pieceType} casts ${spell.name}`,
-                    "#a855f7",
-                  );
-                  setSelectedSummonSpellId(null);
-                } catch (e) {
-                  console.error("[SummonCast]", e);
-                }
-              }
+            if (targetEnemy) {
+              castControlledSummonSpell(summon as any, targetEnemy);
             }
           } else {
             const path = findPath(
@@ -10447,11 +10506,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               setBattleActionMode("walk");
             }
           } else if (castResult === "summon") {
-            // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
-            // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
-            // owned by another task — do NOT touch it here.
-            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
-            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
+            // AP / Striker / first-action already recorded in executeCastAttempt.
+            // Only cooldown and empty-AP mode switch belong here.
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
@@ -10614,6 +10670,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       tileCenter,
       pointerToRenderSpace,
       recordClickOutcome,
+      castControlledSummonSpell,
     ],
   );
   // Handle canvas mouse move
@@ -10672,49 +10729,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const gridPos = clientToGrid(touch.clientX, touch.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
-            const spell = (summon.spells ?? []).find(
-              (s: any) => s.id === selectedSummonSpellId,
+            const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
+              (e: any) =>
+                e.x === gridPos.x && e.y === gridPos.y && e.side !== "player",
             );
-            if (spell) {
-              const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
-                (e: any) =>
-                  e.x === gridPos.x && e.y === gridPos.y && e.side !== "player",
-              );
-              if (targetEnemy) {
-                try {
-                  resolveSpellCast(
-                    spell as any,
-                    {
-                      id: summon.id,
-                      side: summon.side ?? "player",
-                      level: summon.level ?? 1,
-                      effects: [],
-                      hp: summon.hp ?? 0,
-                      maxHp: summon.maxHp ?? 0,
-                      stats: { res: 0, sp: 0 },
-                    } as any,
-                    {
-                      id: targetEnemy.id,
-                      side: targetEnemy.side ?? "enemy",
-                      cell: { x: targetEnemy.x, y: targetEnemy.y },
-                      hp: targetEnemy.hp ?? 0,
-                      maxHp: targetEnemy.maxHp ?? 0,
-                      level: targetEnemy.level ?? 1,
-                      effects: [],
-                      stats: { res: 0, sp: 0 },
-                    } as any,
-                    playerSpellContext() as any,
-                    { getStatModifier, calcScaledDamage } as any,
-                  );
-                  logBattleEntry(
-                    `${summon.pieceType} casts ${spell.name}`,
-                    "#a855f7",
-                  );
-                  setSelectedSummonSpellId(null);
-                } catch (e) {
-                  console.error("[SummonCast]", e);
-                }
-              }
+            if (targetEnemy) {
+              castControlledSummonSpell(summon as any, targetEnemy);
             }
           } else {
             const path = findPath(
@@ -11046,11 +11066,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               setBattleActionMode("walk");
             }
           } else if (castResult === "summon") {
-            // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
-            // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
-            // owned by another task — do NOT touch it here.
-            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
-            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
+            // AP / Striker / first-action already recorded in executeCastAttempt.
+            // Only cooldown and empty-AP mode switch belong here.
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
@@ -11173,6 +11190,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       pointerToRenderSpace,
       setCurrentBattleApSynced,
       recordClickOutcome,
+      castControlledSummonSpell,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -12105,6 +12123,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
         setBattleActionMode("walk");
         setBattleTurn(1);
+        // Opening player turn never enters advanceTurn. Count it here so
+        // legendary_2 cannot persist after six player turns (turn 1 was 0).
+        if (
+          shouldCountOpeningPlayerTurn(orderWithLeader[0]?.type === "player")
+        ) {
+          challengeTurnCountRef.current = recordChallengePlayerTurnStart(
+            challengeTurnCountRef.current,
+          );
+        }
         activeEffectsRef.current = [];
         setActiveEffects([]);
         // Reset cooldowns at start of every battle
@@ -14000,7 +14027,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             selectedSpellIdRef.current = null;
             setSpellSelectionVersion((v) => v + 1);
             setBattleTurn((t) => t + 1);
-            challengeTurnCountRef.current += 1;
+            challengeTurnCountRef.current = recordChallengePlayerTurnStart(
+              challengeTurnCountRef.current,
+            );
             challengeApThisTurnRef.current = 0;
             // Void Rift: pick a new random walkable void tile each turn
             if (isVoidRift) {
@@ -16517,6 +16546,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           challengeMaxApThisTurnRef.current = nextAp.peak;
           challengeApThisTurnRef.current = nextAp.spentThisTurn;
+          // Sprite-click (sprite-enemy / sprite-basic) used to return
+          // without the tile-click follow-up that flips Striker. Record
+          // here so every executeCastAttempt caller shares the gate.
+          challengeDirectHitRef.current = recordChallengeDirectHit(
+            challengeDirectHitRef.current,
+            playerPositionRef.current,
+            targetTile,
+          );
+        }
+        if (
+          _castResult === "cast" &&
+          spell.targetType === "self" &&
+          spell.effectType === "heal"
+        ) {
+          challengeHealUsedRef.current = true;
         }
         return { castResult: _castResult, apCost: _apCost };
       }
@@ -16659,8 +16703,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
     } else if (castResult === "summon") {
       // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
-      // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
-      // owned by another task — do NOT touch it here.
+      // cooldown, mirroring the "cast" branch. Record Striker distance
+      // here — this path does not go through executeCastAttempt.
       setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
       {
@@ -16672,6 +16716,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         challengeMaxApThisTurnRef.current = nextAp.peak;
         challengeApThisTurnRef.current = nextAp.spentThisTurn;
       }
+      challengeDirectHitRef.current = recordChallengeDirectHit(
+        challengeDirectHitRef.current,
+        playerPositionRef.current,
+        gridPos,
+      );
       if (spell.cooldown && spell.cooldown > 0) {
         spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
         setSpellCooldownVersion((v) => v + 1);
@@ -17705,7 +17754,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         ...prev,
                         hp: Math.min(maxHp, prev.hp + hpToAdd),
                       }));
-                      challengeHealUsedRef.current = true;
+                      // This button is overworld-only (`!inBattle`). The flag
+                      // is only cleared in cleanupBattle, so flipping it here
+                      // failed the next fight's easy_1 / hard_1.
+                      challengeHealUsedRef.current =
+                        recordInBattleChallengeHealUsed(
+                          inBattleRef.current,
+                          challengeHealUsedRef.current,
+                        );
                       onDokaBalanceChange(Math.max(0, dokaBalance - dokaCost));
                       persistAbsoluteProgress(
                         Math.min(maxHp, characterStats.hp + hpToAdd),

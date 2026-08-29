@@ -10,8 +10,12 @@ import {
   isChallengeFailed,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeDirectHit,
+  recordChallengePlayerTurnStart,
   recordInBattleChallengeDamage,
+  recordInBattleChallengeHealUsed,
   shouldClearSpellAfterApSpend,
+  shouldCountOpeningPlayerTurn,
 } from "./challengeCompletion.ts";
 import {
   addChallengeRewardDeltas,
@@ -79,6 +83,69 @@ describe("isChallengeCompleted", () => {
     assert.equal(
       isChallengeCompleted(under5, progress({ turnCount: 6 })),
       false,
+    );
+  });
+
+  it("counts the opening player turn so six turns cannot persist Blitz", () => {
+    // Battle start used to leave turnCount at 0 when the player was first.
+    // Five later advanceTurn increments then read as 5 after six player
+    // turns and credited legendary_2 (450 Doka / 900 XP).
+    assert.equal(shouldCountOpeningPlayerTurn(true), true);
+    assert.equal(shouldCountOpeningPlayerTurn(false), false);
+
+    let skippedOpening = 0;
+    for (let i = 0; i < 5; i++) {
+      skippedOpening = recordChallengePlayerTurnStart(skippedOpening);
+    }
+    const blitz = byId("legendary_2");
+    assert.equal(skippedOpening, 5);
+    assert.equal(
+      isChallengeCompleted(blitz, progress({ turnCount: skippedOpening })),
+      true,
+    );
+    assert.deepEqual(liveBattleChallengePersistEntries(true, blitz, true), [
+      {
+        name: "Battle Challenge",
+        dokaReward: 450,
+        xpReward: 900,
+      },
+    ]);
+
+    let counted = 0;
+    if (shouldCountOpeningPlayerTurn(true)) {
+      counted = recordChallengePlayerTurnStart(counted);
+    }
+    for (let i = 0; i < 5; i++) {
+      counted = recordChallengePlayerTurnStart(counted);
+    }
+    assert.equal(counted, 6);
+    assert.equal(
+      isChallengeCompleted(blitz, progress({ turnCount: counted })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        blitz,
+        isChallengeCompleted(blitz, progress({ turnCount: counted })),
+      ),
+      [],
+    );
+  });
+
+  it("still counts the first player turn when an enemy opened the fight", () => {
+    let counted = 0;
+    if (shouldCountOpeningPlayerTurn(false)) {
+      counted = recordChallengePlayerTurnStart(counted);
+    }
+    counted = recordChallengePlayerTurnStart(counted);
+    assert.equal(counted, 1);
+    assert.equal(
+      isChallengeCompleted(
+        byId("legendary_2"),
+        progress({ turnCount: counted }),
+      ),
+      true,
     );
   });
 
@@ -202,6 +269,37 @@ describe("recordChallengeDamageTaken", () => {
         progress({ totalDamage: recordChallengeDamageTaken(0, 0) }),
       ),
       true,
+    );
+  });
+});
+
+describe("recordInBattleChallengeHealUsed", () => {
+  it("leaves healUsed unset for an overworld Doka heal so easy_1 / hard_1 still persist", () => {
+    const healUsed = recordInBattleChallengeHealUsed(false, false);
+    assert.equal(healUsed, false);
+    const easy1 = byId("easy_1");
+    const hard1 = byId("hard_1");
+    assert.equal(isChallengeCompleted(easy1, progress({ healUsed })), true);
+    assert.equal(isChallengeCompleted(hard1, progress({ healUsed })), true);
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, hard1, true),
+      ),
+      500,
+    );
+  });
+
+  it("does not clear an in-battle heal that already failed the objective", () => {
+    assert.equal(recordInBattleChallengeHealUsed(false, true), true);
+    assert.equal(recordInBattleChallengeHealUsed(true, false), true);
+    assert.equal(
+      isChallengeCompleted(
+        byId("easy_1"),
+        progress({
+          healUsed: recordInBattleChallengeHealUsed(true, false),
+        }),
+      ),
+      false,
     );
   });
 });
@@ -366,5 +464,79 @@ describe("recordChallengeApSpend", () => {
     assert.equal(shouldClearSpellAfterApSpend(4), false);
     assert.equal(shouldClearSpellAfterApSpend(0), true);
     assert.equal(shouldClearSpellAfterApSpend(-1), true);
+  });
+});
+
+describe("recordChallengeDirectHit", () => {
+  it("fails Striker after a sprite-click beyond Chebyshev 2", () => {
+    const caster = { x: 8, y: 8 };
+    let direct = true;
+    direct = recordChallengeDirectHit(direct, caster, { x: 10, y: 8 });
+    assert.equal(direct, true);
+
+    direct = recordChallengeDirectHit(direct, caster, { x: 11, y: 8 });
+    assert.equal(direct, false);
+    direct = recordChallengeDirectHit(direct, caster, { x: 8, y: 9 });
+    assert.equal(direct, false);
+
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, progress({ directHit: direct })),
+      ),
+      [],
+    );
+  });
+
+  it("fails Striker after a controlled summon casts beyond Chebyshev 2", () => {
+    const summon = { x: 8, y: 8 };
+    let direct = true;
+    // Adjacent / range-2 shots stay legal.
+    direct = recordChallengeDirectHit(direct, summon, { x: 10, y: 8 });
+    assert.equal(direct, true);
+
+    // Archer Poison Arrow (range 4) / Slow (range 3) from control mode.
+    direct = recordChallengeDirectHit(direct, summon, { x: 12, y: 8 });
+    assert.equal(direct, false);
+    direct = recordChallengeDirectHit(direct, summon, { x: 8, y: 9 });
+    assert.equal(direct, false);
+
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, progress({ directHit: direct })),
+      ),
+      [],
+    );
+  });
+
+  it("still completes when every spent attempt stays within 2 tiles", () => {
+    const caster = { x: 5, y: 5 };
+    let direct = true;
+    direct = recordChallengeDirectHit(direct, caster, { x: 7, y: 6 });
+    direct = recordChallengeDirectHit(direct, caster, { x: 5, y: 5 });
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      true,
+    );
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, striker, true),
+      ),
+      800,
+    );
   });
 });
