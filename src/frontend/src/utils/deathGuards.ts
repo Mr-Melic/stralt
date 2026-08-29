@@ -25,6 +25,22 @@ export function armDeathGuards(refs: DeathGuardRefs): void {
 }
 
 /**
+ * True while an exploration (or in-battle) death has armed the Death Realm
+ * timer and that timer has not fired yet.
+ *
+ * persistDeathPenalty restores HP in the same death tick, so an hp<=0 check
+ * is already false by the time the player can walk. World actions that
+ * cancel the timer (portal → cleanupMap) or reset the death guards
+ * (battle start) must stay blocked until the realm loads.
+ */
+export function isDeathRealmTransitionPending(
+  deathTriggered: boolean,
+  deathRealmTimerPending: boolean,
+): boolean {
+  return deathTriggered && deathRealmTimerPending;
+}
+
+/**
  * Block portal entry while a Death Realm timer is pending.
  *
  * persistDeathPenalty restores HP in the same death tick, so an hp<=0 check
@@ -36,5 +52,5 @@ export function shouldBlockPortalDuringPendingDeathRealm(
   deathTriggered: boolean,
   deathRealmTimerPending: boolean,
 ): boolean {
-  return deathTriggered && deathRealmTimerPending;
+  return isDeathRealmTransitionPending(deathTriggered, deathRealmTimerPending);
 }

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   armDeathGuards,
   deathGuardsAreArmed,
+  isDeathRealmTransitionPending,
   shouldBlockPortalDuringPendingDeathRealm,
 } from "./deathGuards.ts";
 
@@ -50,5 +51,13 @@ assert.equal(
   "a stray timer without deathTriggered must not lock exploration",
 );
 assert.equal(shouldBlockPortalDuringPendingDeathRealm(false, false), false);
+
+assert.equal(
+  isDeathRealmTransitionPending(true, true),
+  true,
+  "pending Death Realm must also block world encounters",
+);
+assert.equal(isDeathRealmTransitionPending(true, false), false);
+assert.equal(isDeathRealmTransitionPending(false, true), false);
 
 console.log("deathGuards.test: ok");
