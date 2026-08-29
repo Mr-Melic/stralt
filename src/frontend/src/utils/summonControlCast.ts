@@ -137,17 +137,14 @@ export function summonControlIdAfterAdvance(
 }
 
 /**
- * AP/MP budget at the start of a player-controlled summon turn.
+ * Per-turn AP/MP budget when a player-controlled summon's turn starts.
  *
- * The AI path resets currentAp/currentMp to max when the summon acts.
- * Control mode never did, so a Wolf that spent 2/2 on turn 1 entered
- * later turns at 0/0. The auto-end effect then advanced after 500ms
- * and the summon never acted again for the rest of its lifespan.
- *
- * Mutate the live object with these values (same as the AI path) —
- * do not call updateCombatant from inside advanceTurn's setTurnOrder.
+ * spawnSummonUnit seeds currentAp/currentMp once. The enemy-AI path
+ * resets them at the start of handleSummonTurn, but player-side control
+ * never calls that — leftover 0 AP after Poison Arrow (2) from a 2-AP
+ * Archer then auto-ends the remaining lifespan-4 turns.
  */
-export function summonControlTurnResources(summon: {
+export function summonTurnBudget(summon: {
   maxAp?: unknown;
   maxMp?: unknown;
 }): { currentAp: number; currentMp: number } {

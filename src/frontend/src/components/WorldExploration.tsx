@@ -282,7 +282,7 @@ import {
   planSummonControlCast,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
-  summonControlTurnResources,
+  summonTurnBudget,
 } from "../utils/summonControlCast";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
@@ -14108,13 +14108,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 setTimeout(() => advanceTurn(), 0);
               } else if (_summon) {
-                // Control mode never reset AP/MP (the AI path does). A
-                // spent 0/0 budget trips the auto-end effect and later
-                // turns skip. Mutate in place — updateCombatant would
-                // nest setTurnOrder inside this dispatcher.
-                const restored = summonControlTurnResources(_summon);
-                _summon.currentAp = restored.currentAp;
-                _summon.currentMp = restored.currentMp;
+                // spawnSummonUnit seeds AP/MP once. The AI path resets them
+                // at handleSummonTurn; control mode never entered that path,
+                // so a 2-AP Archer that spent Poison Arrow stayed at 0 AP
+                // and later lifespan turns auto-ended.
+                const budget = summonTurnBudget(_summon);
+                (
+                  _summon as { currentAp?: number; currentMp?: number }
+                ).currentAp = budget.currentAp;
+                (_summon as { currentMp?: number }).currentMp =
+                  budget.currentMp;
               }
             } else {
               setBattlePhase("enemy");
