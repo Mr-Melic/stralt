@@ -258,6 +258,26 @@ describe("progress persist lock", () => {
     assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
   });
 
+  it("releases the lock when a queued write rejects so hydrate is not stuck", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    await assert.rejects(
+      lock.enqueue(async () => {
+        throw new Error("applyRewards failed");
+      }),
+      /applyRewards failed/,
+    );
+    assert.equal(lock.pendingCount(), 0);
+    assert.equal(lock.hydrateWhenIdle({ doka: 1, xp: 1, level: 1 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 1, xp: 1, level: 1 });
+
+    lock.commit({ doka: Number.NaN });
+    assert.equal(
+      lock.snapshot().doka,
+      1,
+      "NaN commit must keep the last wallet",
+    );
+  });
+
   it("does not re-inflate committed when a credit is applied as a UI delta after a heal", () => {
     // Reward committed 250, heal wrote 220. Replacing the UI with the
     // absolute 250 and hydrating copies the refund into committed.
