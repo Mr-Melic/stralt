@@ -277,6 +277,7 @@ import {
 import {
   planSummonControlCast,
   summonControlCastFailMessage,
+  summonControlIdAfterAdvance,
 } from "../utils/summonControlCast";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
@@ -13723,6 +13724,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: flushSync-wrapped advanceTurn intentionally captures stable refs
   const advanceTurn = useCallback(() => {
     flushSync(() => {
+      // Drop leftover summon control before dispatch. The 30s timer (and
+      // any other advanceTurn caller) used to leave the previous summon
+      // id set, so canvas clicks and BattleUIPanel End Turn stayed locked
+      // to the summon through later player/enemy turns. Dispatch below
+      // re-enters control only when the incoming combatant is a
+      // player-side summon.
+      setActiveControlledSummonId(null);
+      activeControlledSummonIdRef.current = null;
+      setSelectedSummonSpellId(null);
       // FIX 1.1: Bump the battle-world version at the top of advanceTurn (after
       // flushSync open, before turn-order advancement) so the spell-range cache
       // key changes every turn and a stale tile set can never gate a click.
@@ -13906,6 +13916,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // Otherwise fall through to the dispatch branches with the
             // landed live entry (nextIdx/nextCombatant now point at it).
           }
+          const nextControlId = summonControlIdAfterAdvance(nextCombatant);
+          setActiveControlledSummonId(nextControlId);
+          activeControlledSummonIdRef.current = nextControlId;
           if (nextCombatant.type === "player") {
             logDebugInfo("TURN", "dispatch", {
               entryId: nextCombatant.id,
@@ -14057,8 +14070,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // call setBattlePhase("enemy") — that would hand the turn to the
             // AI executor. Enemy-side summons keep the existing AI path.
             if (nextCombatant.side === "player") {
-              setActiveControlledSummonId(nextCombatant.id);
-              activeControlledSummonIdRef.current = nextCombatant.id;
               const _summon = getLiveCombatants(combatantStoreCtx).find(
                 (e: any) => e.id === nextCombatant.id,
               );

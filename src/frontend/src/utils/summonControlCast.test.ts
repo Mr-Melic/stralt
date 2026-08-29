@@ -6,6 +6,7 @@ import {
   planSummonControlCast,
   resolveSummonControlSpell,
   summonControlCastFailMessage,
+  summonControlIdAfterAdvance,
 } from "./summonControlCast.ts";
 
 describe("resolveSummonControlSpell", () => {
@@ -126,5 +127,40 @@ describe("planSummonControlCast", () => {
     assert.equal(summonControlCastFailMessage("no_ap"), "Not enough AP");
     assert.equal(summonControlCastFailMessage("out_of_range"), "Out of range");
     assert.equal(summonControlCastFailMessage("no_spell"), "Unknown spell");
+  });
+});
+
+describe("summonControlIdAfterAdvance", () => {
+  it("drops leftover control when the next combatant is the player or an enemy", () => {
+    assert.equal(summonControlIdAfterAdvance({ id: "player" }), null);
+    assert.equal(
+      summonControlIdAfterAdvance({
+        id: "goblin-1",
+        isSummon: false,
+        side: "enemy",
+      }),
+      null,
+    );
+    assert.equal(
+      summonControlIdAfterAdvance({
+        id: "hostile-wolf",
+        isSummon: true,
+        side: "enemy",
+      }),
+      null,
+    );
+  });
+
+  it("rebinds control only when the incoming combatant is a player-side summon", () => {
+    assert.equal(
+      summonControlIdAfterAdvance({
+        id: "summon-archer",
+        isSummon: true,
+        side: "player",
+      }),
+      "summon-archer",
+    );
+    assert.equal(summonControlIdAfterAdvance(null), null);
+    assert.equal(summonControlIdAfterAdvance(undefined), null);
   });
 });
