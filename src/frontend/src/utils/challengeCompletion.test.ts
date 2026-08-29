@@ -4,9 +4,12 @@ import {
   type Challenge,
   type ChallengePanelProgress,
   DEFAULT_CHALLENGES,
+  castResultAppliesCooldown,
   castResultSpendsAp,
   isChallengeCompleted,
   isChallengeFailed,
+  isSpellOnCooldown,
+  nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
@@ -426,5 +429,29 @@ describe("recordChallengeDirectHit", () => {
       ),
       800,
     );
+  });
+});
+
+describe("spell cooldown gate", () => {
+  it("blocks a still-selected Inferno recast while turns remain", () => {
+    // Sprite / tile / Attack Nearest leave the spell selected when AP
+    // remains. The bar only disables re-selection, so leftover 5 AP
+    // used to fire Inferno again the same turn (and every later turn).
+    assert.equal(isSpellOnCooldown(3), true);
+    assert.equal(isSpellOnCooldown(1), true);
+    assert.equal(isSpellOnCooldown(0), false);
+    assert.equal(isSpellOnCooldown(undefined), false);
+    assert.equal(isSpellOnCooldown(Number.NaN), false);
+  });
+
+  it("locks the spell after cast/summon, not after a fizzle", () => {
+    assert.equal(castResultAppliesCooldown("cast"), true);
+    assert.equal(castResultAppliesCooldown("summon"), true);
+    assert.equal(castResultAppliesCooldown("fizzled"), false);
+    assert.equal(castResultAppliesCooldown("on_cooldown"), false);
+    assert.equal(castResultAppliesCooldown("no_ap"), false);
+    assert.equal(nextSpellCooldownTurns(3), 3);
+    assert.equal(nextSpellCooldownTurns(0), 0);
+    assert.equal(nextSpellCooldownTurns(undefined), 0);
   });
 });
