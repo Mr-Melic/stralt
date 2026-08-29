@@ -148,6 +148,40 @@ export function recordChallengeDamageTaken(
 }
 
 /**
+ * AP actually spent this battle for `under_8_ap_per_turn`.
+ *
+ * handleBattleEnd persists hard_3 (150 Doka / 450 XP) from the peak
+ * `maxApUsedInTurn`. The live ref used to reset to 0 at every player
+ * turn start, so a 9+ AP dump on turn 1 followed by a cheap finish
+ * still credited the reward.
+ *
+ * Keep a per-turn accumulator (reset on turn start) and a peak that
+ * only clears in cleanupBattle.
+ */
+export function recordChallengeApSpend(
+  peak: number,
+  spentThisTurn: number,
+  cost: number,
+): { peak: number; spentThisTurn: number } {
+  const add = Math.max(0, Math.floor(Number(cost) || 0));
+  const thisTurn = Math.max(0, Math.floor(Number(spentThisTurn) || 0)) + add;
+  return {
+    spentThisTurn: thisTurn,
+    peak: Math.max(0, Math.floor(Number(peak) || 0), thisTurn),
+  };
+}
+
+/**
+ * resolvePlayerCast results that consumed the spell attempt.
+ * `summon` must debit the same as `cast` / `fizzled` — canvas click
+ * routed summons through executeCastAttempt and then skipped the
+ * follow-up debit because a stale comment claimed it was already paid.
+ */
+export function castResultSpendsAp(result: string): boolean {
+  return result === "cast" || result === "fizzled" || result === "summon";
+}
+
+/**
  * True when the condition can no longer be satisfied this battle
  * (banner chip should flip to ✗). "under_N_turns" challenges are only
  * failed at battle end (turn count is final only on victory), so they
