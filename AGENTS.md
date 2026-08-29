@@ -33,4 +33,10 @@
 - World wallet writes share `createProgressPersist`. Credits (`applyRewards`, `upgradeSpell`, `claimAchievementReward`, `processPendingPurchases`) and absolute snapshots (`saveBattleStats` heals/spends/death) must enqueue on that lock and `commit` after the canister write. Do not replace the live UI wallet with an absolute backend read after world hydrate.
 - `saveBattleStats` ignores spell-level arrays — `upgradeSpell` is the sole writer. Death penalty is 20% XP / 40% Doka via `saveBattleStats` (Nat-only `applyRewards` cannot subtract).
 - New profiles must send `uiLayout: ""` — `saveCallerUserProfile` does not merge fields.
+- Challenge HP loss must go through `recordChallengeDamageTaken` (combat / reflect / modifiers) or `recordInBattleChallengeDamage` (lava/spikes only while `inBattleRef`). Attack Nearest and canvas `"summon"` must debit AP + `recordChallengeApSpend`.
+- Persist lock starts at placeholder Doka 0. Seed only from an authoritative read/credit. Unseeded `saveBattleStats` must `resolveCommittedDokaForAbsoluteWrite`. Idle hydrate must not cut a seeded wallet (`shouldCopyIdleWalletDoka`).
+- Death Realm 1.5s timer: `persistDeathPenalty` restores HP immediately. Block portals **and** encounters until the timer fires; `armDeathGuards` after realm entry / Respawn.
+- `getPlayerAchievements` requires the caller Principal (`identity.getPrincipal()`), not the display name.
+- `upgradeSpell` charges `spellLevelingBaseCost * 2^level` (base 10). Summon UI advertises 10× that — debit with `spellUpgradeUiSpend`.
+- Dungeon-chain refs are zeroed by `cleanupMap`. Snapshot with `snapshotDungeonChain` **before** cleanup, then `decideDungeonChainPortal`.
 - Developer docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`.
