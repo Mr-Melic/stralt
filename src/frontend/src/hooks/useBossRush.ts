@@ -1,5 +1,13 @@
 import { Principal } from "@dfinity/principal";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  adoptPersistedResumeRoom,
+  parseBossRushStateTuple,
+  persistBossRushRoomClear,
+  resolveBossRushQueryPrincipalText,
+  resumeRoomFromPersisted,
+} from "./bossRushProgress";
+import { useInternetIdentity } from "./useInternetIdentity";
 
 export interface BossRushRoom {
   roomIndex: number;
@@ -147,19 +155,30 @@ export function useBossRush(
   characterSlot?: number,
   principal?: Principal | string,
 ) {
+  const { identity } = useInternetIdentity();
+  const passedPrincipalText =
+    typeof principal === "string" ? principal : (principal?.toText() ?? null);
+  const queryPrincipalText = resolveBossRushQueryPrincipalText(
+    identity?.getPrincipal?.()?.toText() ?? null,
+    passedPrincipalText,
+  );
   const [bossRushState, setBossRushState] =
     useState<BossRushState>(INITIAL_STATE);
+  const currentRoomRef = useRef(0);
+  currentRoomRef.current = bossRushState.currentRoom;
+  // Bumped on abort so an in-flight persistRoomClear cannot write currentRoom
+  // after death/flee already reset the run.
+  const persistEpochRef = useRef(0);
 
-  // Load persisted Boss Rush progress from the backend on mount
+  // Cache mid-run currentRoom on mount so startBossRush can resume if the
+  // live getBossRushState call fails. Do not set active here — the world
+  // overlay must not appear until the player actually enters the portal.
   useEffect(() => {
-    if (!actor || !principal) return;
+    if (!actor || !queryPrincipalText) return;
     const slot = BigInt(characterSlot ?? 0);
     let resolvedPrincipal: Principal | null = null;
     try {
-      resolvedPrincipal =
-        typeof principal === "string"
-          ? Principal.fromText(principal)
-          : (principal ?? null);
+      resolvedPrincipal = Principal.fromText(queryPrincipalText);
     } catch {
       return; // not a valid IC principal — skip backend load gracefully
     }
@@ -167,28 +186,24 @@ export function useBossRush(
     (async () => {
       try {
         const result = await actor.getBossRushState?.(resolvedPrincipal, slot);
-        if (result && Array.isArray(result) && result.length >= 3) {
-          const [roomIndex, totalDoka, totalXp] = result as [
-            bigint,
-            bigint,
-            bigint,
-          ];
-          const room = Number(roomIndex);
-          if (room > 0) {
-            setBossRushState({
-              active: true,
-              currentRoom: Math.min(room, BOSS_RUSH_ROOMS.length - 1),
-              complete: room >= BOSS_RUSH_ROOMS.length,
-              totalDokaEarned: Number(totalDoka),
-              totalXpEarned: Number(totalXp),
-            });
-          }
-        }
+        const parsed = parseBossRushStateTuple(result);
+        if (!parsed) return;
+        setBossRushState((prev) => {
+          const room = adoptPersistedResumeRoom(
+            prev.active,
+            parsed.currentRoom,
+          );
+          if (room == null) return prev;
+          return {
+            ...prev,
+            currentRoom: room,
+          };
+        });
       } catch (e) {
         console.error("[BossRush] Failed to load state from backend:", e);
       }
     })();
-  }, [actor, characterSlot, principal]);
+  }, [actor, characterSlot, queryPrincipalText]);
 
   const [_rewardMultiplier, setRewardMultiplier] = useState(1.0);
 
@@ -232,9 +247,58 @@ export function useBossRush(
     })();
   }, [actor]);
 
-  const startBossRush = useCallback(() => {
-    setBossRushState({ ...INITIAL_STATE, active: true });
-  }, []);
+  const startBossRush = useCallback(async (): Promise<number> => {
+    let resumeRoom = 0;
+    if (actor && queryPrincipalText) {
+      let resolvedPrincipal: Principal | null = null;
+      try {
+        resolvedPrincipal = Principal.fromText(queryPrincipalText);
+      } catch {
+        resolvedPrincipal = null;
+      }
+      if (resolvedPrincipal) {
+        try {
+          const result = await actor.getBossRushState?.(
+            resolvedPrincipal,
+            BigInt(characterSlot ?? 0),
+          );
+          const parsed = parseBossRushStateTuple(result);
+          if (parsed) {
+            resumeRoom = resumeRoomFromPersisted(parsed.currentRoom);
+          }
+        } catch (e) {
+          console.error("[BossRush] Failed to read resume room:", e);
+        }
+      }
+    }
+    if (resumeRoom <= 0) {
+      resumeRoom = resumeRoomFromPersisted(currentRoomRef.current);
+    }
+    setBossRushState({
+      ...INITIAL_STATE,
+      active: true,
+      currentRoom: resumeRoom,
+    });
+    return resumeRoom;
+  }, [actor, characterSlot, queryPrincipalText]);
+
+  const persistRoomClear = useCallback(
+    async (clearedRoomIndex: number) => {
+      if (!actor) return;
+      const epoch = persistEpochRef.current;
+      try {
+        await persistBossRushRoomClear(
+          actor,
+          characterSlot ?? 0,
+          clearedRoomIndex,
+          { wasSuperseded: () => persistEpochRef.current !== epoch },
+        );
+      } catch (e) {
+        console.error("[BossRush] Failed to persist room clear:", e);
+      }
+    },
+    [actor, characterSlot],
+  );
 
   const advanceBossRushRoom = useCallback(async () => {
     let nextRoomSnapshot = 0;
@@ -272,6 +336,7 @@ export function useBossRush(
   }, [actor, characterSlot]);
 
   const abortBossRush = useCallback(async () => {
+    persistEpochRef.current += 1;
     setBossRushState(INITIAL_STATE);
     if (actor) {
       try {
@@ -292,6 +357,7 @@ export function useBossRush(
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    persistRoomClear,
     getCurrentRoom,
     BOSS_RUSH_ROOMS,
     /** True when the final boss-rush room has been cleared (run complete). */

@@ -14,6 +14,12 @@ import Float "mo:core/Float";
 
 import OQL "mo:caffeineai-oql";
 import Expose "mo:caffeineai-oql/Expose";
+import Entity "mo:caffeineai-oql/Entity";
+import TextValue "mo:caffeineai-oql/TextValue";
+import NatValue "mo:caffeineai-oql/NatValue";
+import BoolValue "mo:caffeineai-oql/BoolValue";
+import IntValue "mo:caffeineai-oql/IntValue";
+import FloatValue "mo:caffeineai-oql/FloatValue";
 import Text "mo:core/Text";
 
 
@@ -186,6 +192,9 @@ actor {
         };
 
         characterSlots.add(caller, updatedSlots);
+        // Boss rush progress is keyed by principal#slot, not character identity.
+        // A new occupant must not resume the previous occupant's currentRoom.
+        _clearBossRushForSlot(caller, slot);
         #ok;
     };
 
@@ -225,22 +234,52 @@ actor {
             case 3 { existingSlots.slot3 };
             case _ { null };
         };
-        switch (existingChar) {
+        let ec = switch (existingChar) {
             case null { return #err("Slot " # slot.toText() # " is empty") };
-            case (?ec) {
-                if (character.level < ec.level) {
-                    return #err("validation failed: level cannot decrease");
-                };
-                if (character.stats.killCount < ec.stats.killCount) {
-                    return #err("validation failed: killCount cannot decrease");
-                };
+            case (?c) { c };
+        };
+        if (character.level < ec.level) {
+            return #err("validation failed: level cannot decrease");
+        };
+        if (character.stats.killCount < ec.stats.killCount) {
+            return #err("validation failed: killCount cannot decrease");
+        };
+
+        // Merge optional session fields: when the incoming value is null, keep
+        // the existing stored value so incremental saves cannot clobber the
+        // saved loadout (spell bar order, boss-rush master completion, etc.).
+        let mergedCharacter : Character = {
+            character with
+            bloodBalance = switch (character.bloodBalance) {
+                case null { ec.bloodBalance };
+                case (?v) { ?v };
+            };
+            covenantBuff = switch (character.covenantBuff) {
+                case null { ec.covenantBuff };
+                case (?v) { ?v };
+            };
+            shrineCount = switch (character.shrineCount) {
+                case null { ec.shrineCount };
+                case (?v) { ?v };
+            };
+            activeSpells = switch (character.activeSpells) {
+                case null { ec.activeSpells };
+                case (?v) { ?v };
+            };
+            spellBarOrder = switch (character.spellBarOrder) {
+                case null { ec.spellBarOrder };
+                case (?v) { ?v };
+            };
+            bossRushMasterComplete = switch (character.bossRushMasterComplete) {
+                case null { ec.bossRushMasterComplete };
+                case (?v) { ?v };
             };
         };
 
         let updatedSlots = switch (slot) {
-            case 1 { { existingSlots with slot1 = ?character } };
-            case 2 { { existingSlots with slot2 = ?character } };
-            case 3 { { existingSlots with slot3 = ?character } };
+            case 1 { { existingSlots with slot1 = ?mergedCharacter } };
+            case 2 { { existingSlots with slot2 = ?mergedCharacter } };
+            case 3 { { existingSlots with slot3 = ?mergedCharacter } };
             case _ { return #err("Invalid slot number") };
         };
 
@@ -285,6 +324,8 @@ actor {
         };
 
         characterSlots.add(caller, updatedSlots);
+        // Drop mid-run currentRoom so a later create in this slot cannot skip rooms.
+        _clearBossRushForSlot(caller, slot);
         #ok;
     };
 
@@ -388,6 +429,23 @@ actor {
 
     var levelUpConfig : AdminTypes.LevelUpConfig;
 
+    // Seed the default level-up config on first run (fresh installs only).
+    do {
+        if (levelUpConfig.statGrowthPercent == 0) {
+            levelUpConfig := {
+                statGrowthPercent           = 5;
+                apMpLevelThreshold          = 25;
+                spellLevelingBaseCost       = 10;
+                spellLevelingCostMultiplier = 2.0;
+                spellDmgGrowthPercent       = 3;
+                maxSpellRange               = 5;
+                spellRangeGrowthLevels      = 10;
+                spellFailBaseChance         = 20.0;
+                spellFailReductionPerLevel  = 0.1;
+            };
+        };
+    };
+
     public shared ({ caller }) func adminSetLevelUpConfig(config : AdminTypes.LevelUpConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
@@ -450,7 +508,7 @@ actor {
     //
     // M1: role-change timestamps prevent rapid cycling via assignUserRole.
     let roleChangeTimestamps : Map.Map<Text, Int>;
-    let ROLE_CHANGE_MIN_NS : Int;
+    transient let ROLE_CHANGE_MIN_NS : Int = 30_000_000_000; // 30 seconds in nanoseconds
 
     /// Ensure the caller is registered in AccessControl.
     /// The first non-anonymous caller becomes admin; all others become #user.
@@ -993,6 +1051,13 @@ actor {
 
     var gameConfig : AdminTypes.AdminGameConfig;
 
+    // Seed the default game config on first run (fresh installs only).
+    do {
+        if (gameConfig.dokaSpawnChance == 0) {
+            gameConfig := AdminLib.defaultGameConfig();
+        };
+    };
+
     public shared ({ caller }) func adminSetGameConfig(config : AdminTypes.AdminGameConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
@@ -1011,6 +1076,19 @@ actor {
     // ─── Tier spawn config (singleton, admin-editable) ──────────────────
 
     var tierSpawnConfig : AdminTypes.TierSpawnConfig;
+
+    // Seed the default tier spawn config on first run (fresh installs only).
+    do {
+        if (tierSpawnConfig.tierSize == 0) {
+            tierSpawnConfig := {
+                tierSize            = 10;
+                sameTierPercent     = 60.0;
+                adjacentTierPercent = 20.0;
+                twoAwayPercent      = 10.0;
+                threeOrMorePercent  = 5.0;
+            };
+        };
+    };
 
     public shared ({ caller }) func adminSetTierSpawnConfig(config : AdminTypes.TierSpawnConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -1218,8 +1296,8 @@ actor {
         defense          : Nat,
         initiative       : Nat,
         dokaBalance      : Nat,   // kept in signature for frontend compat; stored in dokaBalances map
-        spellLevelKeys   : [Text],
-        spellLevelValues : [Nat],
+        _spellLevelKeys  : [Text], // upgradeSpell owns these; heal/death snapshots can be stale
+        _spellLevelValues : [Nat],
     ) : async { #ok; #err : Text } {
         if (bannedPrincipals.containsKey(caller.toText())) {
             return #err("Account banned for non-payment");
@@ -1253,13 +1331,14 @@ actor {
             init = initiative;
         };
 
+        // upgradeSpell is the sole writer of spell levels. Heal / death / shop
+        // snapshots are often captured before an in-flight upgrade commits in
+        // React, and replacing the arrays here would wipe a paid level.
         let updatedCharacter : Character = {
             character with
             level            = level;
             experience       = xp;
             stats            = updatedStats;
-            spellLevelKeys   = spellLevelKeys;
-            spellLevelValues = spellLevelValues;
         };
 
         let updatedSlots = switch (slot) {
@@ -1282,9 +1361,16 @@ actor {
       let character = switch (characterOpt) { case (?c) { c }; case null { return #err "Empty slot" } };
       var newXp = character.experience + xpDelta;
       var newLevel = character.level;
+      // Canonical curve: level N→N+1 costs 100 * 2^(N-1).
+      // Must match frontend xpForNextLevel; 100 * 2^N was off-by-one and
+      // silently blocked intended level-ups after applyRewards persist.
       func pow2(n : Nat) : Nat { var r = 1; var i = 0; while (i < n) { r *= 2; i += 1 }; r };
+      func xpToAdvance(level : Nat) : Nat {
+        let exponent : Nat = if (level == 0) { 0 } else { level - 1 };
+        100 * pow2(exponent)
+      };
       label lvlLoop while (true) {
-        let xpToNext = 100 * pow2(newLevel);
+        let xpToNext = xpToAdvance(newLevel);
         if (newXp < xpToNext) { break lvlLoop };
         newXp -= xpToNext;
         newLevel += 1;
@@ -1331,6 +1417,13 @@ actor {
 
     /// Current app version string, set by admin (e.g. "v161").
     var appVersion : Text;
+
+    // Seed the default app version on first run (fresh installs only).
+    do {
+        if (appVersion == "") {
+            appVersion := "v163";
+        };
+    };
 
     /// Changelog entries keyed by version string.
     let changelogs : Map.Map<Text, Text>;
@@ -1645,8 +1738,8 @@ actor {
     };
 
     /// In-memory only — intentionally clears on canister upgrade.
-    var chatMessages : List.List<ChatMessage>;
-    var nextChatId   : Nat;
+    transient var chatMessages : List.List<ChatMessage> = List.empty();
+    transient var nextChatId   : Nat = 0;
 
     /// Append a new message; trims list to at most 200 entries (oldest dropped).
     public shared func sendMessage(playerName : Text, text : Text, colorHex : Text) : async () {
@@ -1677,10 +1770,36 @@ actor {
     /// Admin-managed pool of ancient names used for enemy naming.
     /// Each enemy on a map gets at most one unique name drawn from this list.
     var enemyNames : List.List<Text>;
-    var enemyNamesInitialised : Bool;
 
     /// Pre-filled list of 90 ancient names from various cultures.
-    let DEFAULT_ENEMY_NAMES : [Text];
+    transient let DEFAULT_ENEMY_NAMES : [Text] = [
+        // Roman
+        "Maximus", "Brutus", "Cassius", "Octavian", "Tiberius",
+        "Caligula", "Nero", "Vespasian", "Hadrian", "Trajan",
+        "Marcus", "Lucius", "Gaius", "Quintus", "Flavius",
+        "Decimus", "Publius", "Aulus", "Gnaeus", "Servius",
+        // Greek
+        "Achilles", "Hector", "Ajax", "Odysseus", "Perseus",
+        "Theseus", "Heracles", "Leonidas", "Pericles", "Themistocles",
+        "Xenophon", "Lysander", "Agamemnon", "Priam", "Diomedes",
+        "Patroclus", "Menelaus", "Ptolemy", "Pyrrhus", "Alcibiades",
+        // Egyptian
+        "Ramses", "Thutmose", "Amenhotep", "Akhenaten", "Seti",
+        "Khafre", "Djoser", "Narmer", "Khufu", "Sneferu",
+        "Mentuhotep", "Ahmose", "Horemheb", "Tutankhamun", "Nefertiti",
+        // Mesopotamian
+        "Gilgamesh", "Sargon", "Hammurabi", "Nebuchadnezzar", "Ashurbanipal",
+        "Tiglath", "Nimrod", "Enkidu", "Shamshi", "Naram",
+        // Norse / Germanic
+        "Odin", "Thor", "Loki", "Freyr", "Tyr",
+        "Baldur", "Fenrir", "Sigurd", "Ragnar", "Ivar",
+        // Persian / Achaemenid
+        "Cyrus", "Darius", "Xerxes", "Artaxerxes", "Cambyses",
+        // Celtic
+        "Vercingetorix", "Brennus", "Boudicca", "Caractacus", "Ambiorix",
+        // Aztec / Mayan
+        "Itzcoatl", "Tlacaelel", "Moctezuma", "Cuauhtemoc", "Chimalli"
+    ];
 
     /// Seed the names list on first call if it is empty.
     public shared func initDefaultNames() : async () {
@@ -1745,7 +1864,14 @@ actor {
 
     /// Hardcoded buff item catalog.
     /// itemId → (name, dokaCost)
-    let BUFF_CATALOG : [(Text, Text, Nat)];
+    transient let BUFF_CATALOG : [(Text, Text, Nat)] = [
+        ("health_potion",   "Health Potion",   50),
+        ("greater_potion",  "Greater Potion",  120),
+        ("battle_elixir",   "Battle Elixir",   200),
+        ("swift_boots",     "Swift Boots",     80),
+        ("shield_charm",    "Shield Charm",    150),
+        ("fury_potion",     "Fury Potion",     100),
+    ];
 
     /// Returns the cost of a buff item, or null if unknown.
     func _buffItemCost(itemId : Text) : ?Nat {
@@ -2267,6 +2393,12 @@ actor {
         caller.toText() # "#" # slot.toText()
     };
 
+    /// Clears slot-scoped Boss Rush progress. create/delete must call this so a
+    /// new character cannot resume another occupant's currentRoom.
+    func _clearBossRushForSlot(caller : Principal, slot : Nat) {
+        bossRushStates.remove(_bossRushKey(caller, slot));
+    };
+
     /// Returns (currentRoom, highestRoomCompleted, totalBossRushRuns) for any player+slot.
     public query ({ caller }) func getBossRushState(userId : Principal, slot : Nat) : async (Nat, Nat, Nat) {
         if (caller != userId) {
@@ -2482,426 +2614,385 @@ actor {
             // Map key (Principal), so iterate .entries() in manual mode and promote
             // the key as the primary key column. Each slot is flattened into its own
             // row so the agent can query individual characters.
-            (func () : OQL.Entity.Decl {
-                let cs0 = OQL.Entity.manual<(Principal, CharacterSlots)>(
-                    "characterSlots",
-                    func () = characterSlots.entries(),
-                    "CharacterSlotRow",
-                    "rowId",
-                );
-                let cs1 = OQL.Entity.payload(cs0, "rowId", func ((p, _slots)) = p.toText() # "#" # "slots", OQL.TextValue._toRow);
-                let cs2 = OQL.Entity.payload(cs1, "owner", func ((p, _)) = p.toText(), OQL.TextValue._toRow);
-                let cs3 = OQL.Entity.payload(cs2, "slot1Name", func ((_, s)) =
-                    switch (s.slot1) { case null ""; case (?c) c.name }, OQL.TextValue._toRow);
-                let cs4 = OQL.Entity.payload(cs3, "slot1PieceType", func ((_, s)) =
-                    switch (s.slot1) { case null ""; case (?c) c.pieceType }, OQL.TextValue._toRow);
-                let cs5 = OQL.Entity.payload(cs4, "slot1Level", func ((_, s)) =
-                    switch (s.slot1) { case null 0; case (?c) c.level }, OQL.NatValue._toRow);
-                let cs6 = OQL.Entity.payload(cs5, "slot1Experience", func ((_, s)) =
-                    switch (s.slot1) { case null 0; case (?c) c.experience }, OQL.NatValue._toRow);
-                let cs7 = OQL.Entity.payload(cs6, "slot1Hp", func ((_, s)) =
-                    switch (s.slot1) { case null 0; case (?c) c.stats.hp }, OQL.NatValue._toRow);
-                let cs8 = OQL.Entity.payload(cs7, "slot1KillCount", func ((_, s)) =
-                    switch (s.slot1) { case null 0; case (?c) c.stats.killCount }, OQL.NatValue._toRow);
-                let cs9 = OQL.Entity.payload(cs8, "slot2Name", func ((_, s)) =
-                    switch (s.slot2) { case null ""; case (?c) c.name }, OQL.TextValue._toRow);
-                let cs10 = OQL.Entity.payload(cs9, "slot2PieceType", func ((_, s)) =
-                    switch (s.slot2) { case null ""; case (?c) c.pieceType }, OQL.TextValue._toRow);
-                let cs11 = OQL.Entity.payload(cs10, "slot2Level", func ((_, s)) =
-                    switch (s.slot2) { case null 0; case (?c) c.level }, OQL.NatValue._toRow);
-                let cs12 = OQL.Entity.payload(cs11, "slot2Experience", func ((_, s)) =
-                    switch (s.slot2) { case null 0; case (?c) c.experience }, OQL.NatValue._toRow);
-                let cs13 = OQL.Entity.payload(cs12, "slot2Hp", func ((_, s)) =
-                    switch (s.slot2) { case null 0; case (?c) c.stats.hp }, OQL.NatValue._toRow);
-                let cs14 = OQL.Entity.payload(cs13, "slot2KillCount", func ((_, s)) =
-                    switch (s.slot2) { case null 0; case (?c) c.stats.killCount }, OQL.NatValue._toRow);
-                let cs15 = OQL.Entity.payload(cs14, "slot3Name", func ((_, s)) =
-                    switch (s.slot3) { case null ""; case (?c) c.name }, OQL.TextValue._toRow);
-                let cs16 = OQL.Entity.payload(cs15, "slot3PieceType", func ((_, s)) =
-                    switch (s.slot3) { case null ""; case (?c) c.pieceType }, OQL.TextValue._toRow);
-                let cs17 = OQL.Entity.payload(cs16, "slot3Level", func ((_, s)) =
-                    switch (s.slot3) { case null 0; case (?c) c.level }, OQL.NatValue._toRow);
-                let cs18 = OQL.Entity.payload(cs17, "slot3Experience", func ((_, s)) =
-                    switch (s.slot3) { case null 0; case (?c) c.experience }, OQL.NatValue._toRow);
-                let cs19 = OQL.Entity.payload(cs18, "slot3Hp", func ((_, s)) =
-                    switch (s.slot3) { case null 0; case (?c) c.stats.hp }, OQL.NatValue._toRow);
-                let cs20 = OQL.Entity.payload(cs19, "slot3KillCount", func ((_, s)) =
-                    switch (s.slot3) { case null 0; case (?c) c.stats.killCount }, OQL.NatValue._toRow);
-                let cs21 = OQL.Entity.ownedBy(cs20, "owner");
-                let cs22 = OQL.Entity.controllerOrScoped(cs21);
-                OQL.Entity.build(cs22)
-            })(),
+            OQL.Entity.manual<(Principal, CharacterSlots)>(
+                "characterSlots",
+                func () = characterSlots.entries(),
+                "CharacterSlotRow",
+                "rowId",
+            )
+                .payload("rowId", func ((p, _slots)) = p.toText() # "#" # "slots")
+                .payload("owner", func ((p, _)) = p.toText())
+                .payload("slot1Name", func ((_, s)) =
+                    switch (s.slot1) { case null ""; case (?c) c.name })
+                .payload("slot1PieceType", func ((_, s)) =
+                    switch (s.slot1) { case null ""; case (?c) c.pieceType })
+                .payload("slot1Level", func ((_, s)) =
+                    switch (s.slot1) { case null 0; case (?c) c.level })
+                .payload("slot1Experience", func ((_, s)) =
+                    switch (s.slot1) { case null 0; case (?c) c.experience })
+                .payload("slot1Hp", func ((_, s)) =
+                    switch (s.slot1) { case null 0; case (?c) c.stats.hp })
+                .payload("slot1KillCount", func ((_, s)) =
+                    switch (s.slot1) { case null 0; case (?c) c.stats.killCount })
+                .payload("slot2Name", func ((_, s)) =
+                    switch (s.slot2) { case null ""; case (?c) c.name })
+                .payload("slot2PieceType", func ((_, s)) =
+                    switch (s.slot2) { case null ""; case (?c) c.pieceType })
+                .payload("slot2Level", func ((_, s)) =
+                    switch (s.slot2) { case null 0; case (?c) c.level })
+                .payload("slot2Experience", func ((_, s)) =
+                    switch (s.slot2) { case null 0; case (?c) c.experience })
+                .payload("slot2Hp", func ((_, s)) =
+                    switch (s.slot2) { case null 0; case (?c) c.stats.hp })
+                .payload("slot2KillCount", func ((_, s)) =
+                    switch (s.slot2) { case null 0; case (?c) c.stats.killCount })
+                .payload("slot3Name", func ((_, s)) =
+                    switch (s.slot3) { case null ""; case (?c) c.name })
+                .payload("slot3PieceType", func ((_, s)) =
+                    switch (s.slot3) { case null ""; case (?c) c.pieceType })
+                .payload("slot3Level", func ((_, s)) =
+                    switch (s.slot3) { case null 0; case (?c) c.level })
+                .payload("slot3Experience", func ((_, s)) =
+                    switch (s.slot3) { case null 0; case (?c) c.experience })
+                .payload("slot3Hp", func ((_, s)) =
+                    switch (s.slot3) { case null 0; case (?c) c.stats.hp })
+                .payload("slot3KillCount", func ((_, s)) =
+                    switch (s.slot3) { case null 0; case (?c) c.stats.killCount })
+                .ownedBy("owner")
+                .controllerOrScoped()
+                .build(),
             // dokaBalances : Map<Principal, Nat> — per-player currency.
-            (func () : OQL.Entity.Decl {
-                let db0 = OQL.Entity.manual<(Principal, Nat)>(
-                    "dokaBalances",
-                    func () = dokaBalances.entries(),
-                    "DokaBalance",
-                    "owner",
-                );
-                let db1 = OQL.Entity.payload(db0, "owner",   func ((p, _)) = p.toText(), OQL.TextValue._toRow);
-                let db2 = OQL.Entity.payload(db1, "balance", func ((_, n)) = n, OQL.NatValue._toRow);
-                let db3 = OQL.Entity.ownedBy(db2, "owner");
-                let db4 = OQL.Entity.controllerOrScoped(db3);
-                OQL.Entity.build(db4)
-            })(),
+            OQL.Entity.manual<(Principal, Nat)>(
+                "dokaBalances",
+                func () = dokaBalances.entries(),
+                "DokaBalance",
+                "owner",
+            )
+                .payload("owner",   func ((p, _)) = p.toText())
+                .payload("balance", func ((_, n)) = n)
+                .ownedBy("owner")
+                .controllerOrScoped()
+                .build(),
             // userProfiles : Map<Principal, UserProfile> — per-player display name.
-            (func () : OQL.Entity.Decl {
-                let up0 = OQL.Entity.manual<(Principal, UserProfile)>(
-                    "userProfiles",
-                    func () = userProfiles.entries(),
-                    "UserProfile",
-                    "owner",
-                );
-                let up1 = OQL.Entity.payload(up0, "owner", func ((p, _)) = p.toText(), OQL.TextValue._toRow);
-                let up2 = OQL.Entity.payload(up1, "name",  func ((_, u)) = u.name, OQL.TextValue._toRow);
-                let up3 = OQL.Entity.ownedBy(up2, "owner");
-                let up4 = OQL.Entity.controllerOrScoped(up3);
-                OQL.Entity.build(up4)
-            })(),
+            OQL.Entity.manual<(Principal, UserProfile)>(
+                "userProfiles",
+                func () = userProfiles.entries(),
+                "UserProfile",
+                "owner",
+            )
+                .payload("owner", func ((p, _)) = p.toText())
+                .payload("name",  func ((_, u)) = u.name)
+                .ownedBy("owner")
+                .controllerOrScoped()
+                .build(),
             // changelogShownVersions : Map<Principal, Text> — per-player last-seen version.
-            (func () : OQL.Entity.Decl {
-                let cl0 = OQL.Entity.manual<(Principal, Text)>(
-                    "changelogShownVersions",
-                    func () = changelogShownVersions.entries(),
-                    "ChangelogShownVersion",
-                    "owner",
-                );
-                let cl1 = OQL.Entity.payload(cl0, "owner",   func ((p, _)) = p.toText(), OQL.TextValue._toRow);
-                let cl2 = OQL.Entity.payload(cl1, "version", func ((_, v)) = v, OQL.TextValue._toRow);
-                let cl3 = OQL.Entity.ownedBy(cl2, "owner");
-                let cl4 = OQL.Entity.controllerOrScoped(cl3);
-                OQL.Entity.build(cl4)
-            })(),
+            OQL.Entity.manual<(Principal, Text)>(
+                "changelogShownVersions",
+                func () = changelogShownVersions.entries(),
+                "ChangelogShownVersion",
+                "owner",
+            )
+                .payload("owner",   func ((p, _)) = p.toText())
+                .payload("version", func ((_, v)) = v)
+                .ownedBy("owner")
+                .controllerOrScoped()
+                .build(),
             // dungeonRecords : Map<Principal, AdminTypes.DungeonRecord> — per-player chain progress.
-            (func () : OQL.Entity.Decl {
-                let dr0 = OQL.Entity.manual<(Principal, AdminTypes.DungeonRecord)>(
-                    "dungeonRecords",
-                    func () = dungeonRecords.entries(),
-                    "DungeonRecord",
-                    "owner",
-                );
-                let dr1 = OQL.Entity.payload(dr0, "owner", func ((p, _)) = p.toText(), OQL.TextValue._toRow);
-                let dr2 = OQL.Entity.payload(dr1, "chainDepth", func ((_, r)) = r.chainDepth, OQL.NatValue._toRow);
-                let dr3 = OQL.Entity.payload(dr2, "totalMapsCompleted", func ((_, r)) = r.totalMapsCompleted, OQL.NatValue._toRow);
-                let dr4 = OQL.Entity.payload(dr3, "bestRewardMultiplier", func ((_, r)) = r.bestRewardMultiplier, OQL.FloatValue._toRow);
-                let dr5 = OQL.Entity.ownedBy(dr4, "owner");
-                let dr6 = OQL.Entity.controllerOrScoped(dr5);
-                OQL.Entity.build(dr6)
-            })(),
+            OQL.Entity.manual<(Principal, AdminTypes.DungeonRecord)>(
+                "dungeonRecords",
+                func () = dungeonRecords.entries(),
+                "DungeonRecord",
+                "owner",
+            )
+                .payload("owner", func ((p, _)) = p.toText())
+                .payload("chainDepth", func ((_, r)) = r.chainDepth)
+                .payload("totalMapsCompleted", func ((_, r)) = r.totalMapsCompleted)
+                .payload("bestRewardMultiplier", func ((_, r)) = r.bestRewardMultiplier)
+                .ownedBy("owner")
+                .controllerOrScoped()
+                .build(),
             // ── Admin-managed config collections (controllerOnly) ─────────────
             // enemyConfigs : Map<Text, EnemyConfig> — admin enemy templates.
-            (func () : OQL.Entity.Decl {
-                let ec0 = OQL.Entity.manual<(Text, EnemyConfig)>(
-                    "enemyConfigs",
-                    func () = enemyConfigs.entries(),
-                    "EnemyConfig",
-                    "id",
-                );
-                let ec1 = OQL.Entity.payload(ec0, "id",       func ((k, _)) = k, OQL.TextValue._toRow);
-                let ec2 = OQL.Entity.payload(ec1, "name",      func ((_, c)) = c.name, OQL.TextValue._toRow);
-                let ec3 = OQL.Entity.payload(ec2, "hp",        func ((_, c)) = c.hp, OQL.NatValue._toRow);
-                let ec4 = OQL.Entity.payload(ec3, "ap",        func ((_, c)) = c.ap, OQL.NatValue._toRow);
-                let ec5 = OQL.Entity.payload(ec4, "mp",        func ((_, c)) = c.mp, OQL.NatValue._toRow);
-                let ec6 = OQL.Entity.payload(ec5, "initStat",  func ((_, c)) = c.initStat, OQL.NatValue._toRow);
-                let ec7 = OQL.Entity.payload(ec6, "levelMin",  func ((_, c)) = c.levelMin, OQL.NatValue._toRow);
-                let ec8 = OQL.Entity.payload(ec7, "levelMax",  func ((_, c)) = c.levelMax, OQL.NatValue._toRow);
-                let ec9 = OQL.Entity.payload(ec8, "regions",   func ((_, c)) = c.regions.vals().join(", "), OQL.TextValue._toRow);
-                let ec10 = OQL.Entity.payload(ec9, "spriteUrl", func ((_, c)) =
-                    switch (c.spriteUrl) { case null ""; case (?u) u }, OQL.TextValue._toRow);
-                let ec11 = OQL.Entity.controllerOnly(ec10);
-                OQL.Entity.build(ec11)
-            })(),
+            OQL.Entity.manual<(Text, EnemyConfig)>(
+                "enemyConfigs",
+                func () = enemyConfigs.entries(),
+                "EnemyConfig",
+                "id",
+            )
+                .payload("id",       func ((k, _)) = k)
+                .payload("name",      func ((_, c)) = c.name)
+                .payload("hp",        func ((_, c)) = c.hp)
+                .payload("ap",        func ((_, c)) = c.ap)
+                .payload("mp",        func ((_, c)) = c.mp)
+                .payload("initStat",  func ((_, c)) = c.initStat)
+                .payload("levelMin",  func ((_, c)) = c.levelMin)
+                .payload("levelMax",  func ((_, c)) = c.levelMax)
+                .payload("regions",   func ((_, c)) = c.regions.vals().join(", "))
+                .payload("spriteUrl", func ((_, c)) =
+                    switch (c.spriteUrl) { case null ""; case (?u) u })
+                .controllerOnly()
+                .build(),
             // regionConfigs : Map<Text, RegionConfig> — admin region templates.
-            (func () : OQL.Entity.Decl {
-                let rc0 = OQL.Entity.manual<(Text, RegionConfig)>(
-                    "regionConfigs",
-                    func () = regionConfigs.entries(),
-                    "RegionConfig",
-                    "id",
-                );
-                let rc1 = OQL.Entity.payload(rc0, "id",              func ((k, _)) = k, OQL.TextValue._toRow);
-                let rc2 = OQL.Entity.payload(rc1, "name",            func ((_, c)) = c.name, OQL.TextValue._toRow);
-                let rc3 = OQL.Entity.payload(rc2, "levelMin",        func ((_, c)) = c.levelMin, OQL.NatValue._toRow);
-                let rc4 = OQL.Entity.payload(rc3, "levelMax",        func ((_, c)) = c.levelMax, OQL.NatValue._toRow);
-                let rc5 = OQL.Entity.payload(rc4, "backgroundColor",func ((_, c)) = c.backgroundColor, OQL.TextValue._toRow);
-                let rc6 = OQL.Entity.payload(rc5, "battleEffectCount", func ((_, c)) = c.battleEffects.size(), OQL.NatValue._toRow);
-                let rc7 = OQL.Entity.controllerOnly(rc6);
-                OQL.Entity.build(rc7)
-            })(),
+            OQL.Entity.manual<(Text, RegionConfig)>(
+                "regionConfigs",
+                func () = regionConfigs.entries(),
+                "RegionConfig",
+                "id",
+            )
+                .payload("id",              func ((k, _)) = k)
+                .payload("name",            func ((_, c)) = c.name)
+                .payload("levelMin",        func ((_, c)) = c.levelMin)
+                .payload("levelMax",        func ((_, c)) = c.levelMax)
+                .payload("backgroundColor",func ((_, c)) = c.backgroundColor)
+                .payload("battleEffectCount", func ((_, c)) = c.battleEffects.size())
+                .controllerOnly()
+                .build(),
             // playerSpriteConfigs : Map<Text, PlayerSpriteConfig> — admin sprite templates.
-            (func () : OQL.Entity.Decl {
-                let psc0 = OQL.Entity.manual<(Text, PlayerSpriteConfig)>(
-                    "playerSpriteConfigs",
-                    func () = playerSpriteConfigs.entries(),
-                    "PlayerSpriteConfig",
-                    "id",
-                );
-                let psc1 = OQL.Entity.payload(psc0, "id",                 func ((k, _)) = k, OQL.TextValue._toRow);
-                let psc2 = OQL.Entity.payload(psc1, "name",               func ((_, c)) = c.name, OQL.TextValue._toRow);
-                let psc3 = OQL.Entity.payload(psc2, "characterPieceType", func ((_, c)) = c.characterPieceType, OQL.TextValue._toRow);
-                let psc4 = OQL.Entity.payload(psc3, "frontUrl", func ((_, c)) =
-                    switch (c.frontUrl) { case null ""; case (?u) u }, OQL.TextValue._toRow);
-                let psc5 = OQL.Entity.payload(psc4, "rightUrl", func ((_, c)) =
-                    switch (c.rightUrl) { case null ""; case (?u) u }, OQL.TextValue._toRow);
-                let psc6 = OQL.Entity.payload(psc5, "leftUrl", func ((_, c)) =
-                    switch (c.leftUrl) { case null ""; case (?u) u }, OQL.TextValue._toRow);
-                let psc7 = OQL.Entity.payload(psc6, "backUrl", func ((_, c)) =
-                    switch (c.backUrl) { case null ""; case (?u) u }, OQL.TextValue._toRow);
-                let psc8 = OQL.Entity.controllerOnly(psc7);
-                OQL.Entity.build(psc8)
-            })(),
+            OQL.Entity.manual<(Text, PlayerSpriteConfig)>(
+                "playerSpriteConfigs",
+                func () = playerSpriteConfigs.entries(),
+                "PlayerSpriteConfig",
+                "id",
+            )
+                .payload("id",                 func ((k, _)) = k)
+                .payload("name",               func ((_, c)) = c.name)
+                .payload("characterPieceType", func ((_, c)) = c.characterPieceType)
+                .payload("frontUrl", func ((_, c)) =
+                    switch (c.frontUrl) { case null ""; case (?u) u })
+                .payload("rightUrl", func ((_, c)) =
+                    switch (c.rightUrl) { case null ""; case (?u) u })
+                .payload("leftUrl", func ((_, c)) =
+                    switch (c.leftUrl) { case null ""; case (?u) u })
+                .payload("backUrl", func ((_, c)) =
+                    switch (c.backUrl) { case null ""; case (?u) u })
+                .controllerOnly()
+                .build(),
             // spellConfigs : Map<Text, AdminTypes.SpellConfig> — admin spell definitions.
-            (func () : OQL.Entity.Decl {
-                let sc0 = OQL.Entity.manual<(Text, AdminTypes.SpellConfig)>(
-                    "spellConfigs",
-                    func () = spellConfigs.entries(),
-                    "SpellConfig",
-                    "id",
-                );
-                let sc1  = OQL.Entity.payload(sc0, "id",             func ((k, _)) = k, OQL.TextValue._toRow);
-                let sc2  = OQL.Entity.payload(sc1, "name",           func ((_, c)) = c.name, OQL.TextValue._toRow);
-                let sc3  = OQL.Entity.payload(sc2, "description",    func ((_, c)) = c.description, OQL.TextValue._toRow);
-                let sc4  = OQL.Entity.payload(sc3, "iconEmoji",      func ((_, c)) = c.iconEmoji, OQL.TextValue._toRow);
-                let sc5  = OQL.Entity.payload(sc4, "apCost",         func ((_, c)) = c.apCost, OQL.NatValue._toRow);
-                let sc6  = OQL.Entity.payload(sc5, "mpCost",         func ((_, c)) = c.mpCost, OQL.NatValue._toRow);
-                let sc7  = OQL.Entity.payload(sc6, "damage",         func ((_, c)) = c.damage, OQL.NatValue._toRow);
-                let sc8  = OQL.Entity.payload(sc7, "healAmount",     func ((_, c)) = c.healAmount, OQL.NatValue._toRow);
-                let sc9  = OQL.Entity.payload(sc8, "effectType",     func ((_, c)) = c.effectType, OQL.TextValue._toRow);
-                let sc10 = OQL.Entity.payload(sc9, "spellType",      func ((_, c)) = c.spellType, OQL.TextValue._toRow);
-                let sc11 = OQL.Entity.payload(sc10, "isPhysical",     func ((_, c)) = c.isPhysical, OQL.BoolValue._toRow);
-                let sc12 = OQL.Entity.payload(sc11, "range",          func ((_, c)) = c.range, OQL.NatValue._toRow);
-                let sc13 = OQL.Entity.payload(sc12, "minRange",       func ((_, c)) = c.minRange, OQL.NatValue._toRow);
-                let sc14 = OQL.Entity.payload(sc13, "maxRange",       func ((_, c)) = c.maxRange, OQL.NatValue._toRow);
-                let sc15 = OQL.Entity.payload(sc14, "modifiableRange",func ((_, c)) = c.modifiableRange, OQL.BoolValue._toRow);
-                let sc16 = OQL.Entity.payload(sc15, "lineOfSight",    func ((_, c)) = c.lineOfSight, OQL.BoolValue._toRow);
-                let sc17 = OQL.Entity.payload(sc16, "linear",         func ((_, c)) = c.linear, OQL.BoolValue._toRow);
-                let sc18 = OQL.Entity.payload(sc17, "diagonal",      func ((_, c)) = c.diagonal, OQL.BoolValue._toRow);
-                let sc19 = OQL.Entity.payload(sc18, "freeCells",      func ((_, c)) = c.freeCells, OQL.BoolValue._toRow);
-                let sc20 = OQL.Entity.payload(sc19, "aoe",            func ((_, c)) = c.aoe, OQL.BoolValue._toRow);
-                let sc21 = OQL.Entity.payload(sc20, "multiTarget",    func ((_, c)) = c.multiTarget, OQL.BoolValue._toRow);
-                let sc22 = OQL.Entity.payload(sc21, "hitsAllies",     func ((_, c)) = c.hitsAllies, OQL.BoolValue._toRow);
-                let sc23 = OQL.Entity.payload(sc22, "effectCategory", func ((_, c)) = c.effectCategory, OQL.TextValue._toRow);
-                let sc24 = OQL.Entity.payload(sc23, "usableByPlayer", func ((_, c)) = c.usableByPlayer, OQL.BoolValue._toRow);
-                let sc25 = OQL.Entity.payload(sc24, "usableByEnemy",  func ((_, c)) = c.usableByEnemy, OQL.BoolValue._toRow);
-                let sc26 = OQL.Entity.payload(sc25, "minLevel",       func ((_, c)) = c.minLevel, OQL.NatValue._toRow);
-                let sc27 = OQL.Entity.payload(sc26, "effectParams", func ((_, c)) =
-                    switch (c.effectParams) { case null ""; case (?p) p }, OQL.TextValue._toRow);
-                let sc28 = OQL.Entity.payload(sc27, "cooldown",       func ((_, c)) = c.cooldown, OQL.NatValue._toRow);
-                let sc29 = OQL.Entity.controllerOnly(sc28);
-                OQL.Entity.build(sc29)
-            })(),
+            OQL.Entity.manual<(Text, AdminTypes.SpellConfig)>(
+                "spellConfigs",
+                func () = spellConfigs.entries(),
+                "SpellConfig",
+                "id",
+            )
+                .payload("id",             func ((k, _)) = k)
+                .payload("name",           func ((_, c)) = c.name)
+                .payload("description",    func ((_, c)) = c.description)
+                .payload("iconEmoji",      func ((_, c)) = c.iconEmoji)
+                .payload("apCost",         func ((_, c)) = c.apCost)
+                .payload("mpCost",         func ((_, c)) = c.mpCost)
+                .payload("damage",         func ((_, c)) = c.damage)
+                .payload("healAmount",     func ((_, c)) = c.healAmount)
+                .payload("effectType",     func ((_, c)) = c.effectType)
+                .payload("spellType",      func ((_, c)) = c.spellType)
+                .payload("isPhysical",     func ((_, c)) = c.isPhysical)
+                .payload("range",          func ((_, c)) = c.range)
+                .payload("minRange",       func ((_, c)) = c.minRange)
+                .payload("maxRange",       func ((_, c)) = c.maxRange)
+                .payload("modifiableRange",func ((_, c)) = c.modifiableRange)
+                .payload("lineOfSight",    func ((_, c)) = c.lineOfSight)
+                .payload("linear",         func ((_, c)) = c.linear)
+                .payload("diagonal",      func ((_, c)) = c.diagonal)
+                .payload("freeCells",      func ((_, c)) = c.freeCells)
+                .payload("aoe",            func ((_, c)) = c.aoe)
+                .payload("multiTarget",    func ((_, c)) = c.multiTarget)
+                .payload("hitsAllies",     func ((_, c)) = c.hitsAllies)
+                .payload("effectCategory", func ((_, c)) = c.effectCategory)
+                .payload("usableByPlayer", func ((_, c)) = c.usableByPlayer)
+                .payload("usableByEnemy",  func ((_, c)) = c.usableByEnemy)
+                .payload("minLevel",       func ((_, c)) = c.minLevel)
+                .payload("effectParams", func ((_, c)) =
+                    switch (c.effectParams) { case null ""; case (?p) p })
+                .payload("cooldown",       func ((_, c)) = c.cooldown)
+                .controllerOnly()
+                .build(),
             // mapModifierConfigs : Map<Text, AdminTypes.MapModifierConfig>.
-            (func () : OQL.Entity.Decl {
-                let mmc0 = OQL.Entity.manual<(Text, AdminTypes.MapModifierConfig)>(
-                    "mapModifierConfigs",
-                    func () = mapModifierConfigs.entries(),
-                    "MapModifierConfig",
-                    "id",
-                );
-                let mmc1 = OQL.Entity.payload(mmc0, "id",            func ((k, _)) = k, OQL.TextValue._toRow);
-                let mmc2 = OQL.Entity.payload(mmc1, "name",          func ((_, c)) = c.name, OQL.TextValue._toRow);
-                let mmc3 = OQL.Entity.payload(mmc2, "description",   func ((_, c)) = c.description, OQL.TextValue._toRow);
-                let mmc4 = OQL.Entity.payload(mmc3, "modifierType",  func ((_, c)) = c.modifierType, OQL.TextValue._toRow);
-                let mmc5 = OQL.Entity.payload(mmc4, "active",        func ((_, c)) = c.active, OQL.BoolValue._toRow);
-                let mmc6 = OQL.Entity.payload(mmc5, "triggerChance", func ((_, c)) = c.triggerChance, OQL.NatValue._toRow);
-                let mmc7 = OQL.Entity.controllerOnly(mmc6);
-                OQL.Entity.build(mmc7)
-            })(),
+            OQL.Entity.manual<(Text, AdminTypes.MapModifierConfig)>(
+                "mapModifierConfigs",
+                func () = mapModifierConfigs.entries(),
+                "MapModifierConfig",
+                "id",
+            )
+                .payload("id",            func ((k, _)) = k)
+                .payload("name",          func ((_, c)) = c.name)
+                .payload("description",   func ((_, c)) = c.description)
+                .payload("modifierType",  func ((_, c)) = c.modifierType)
+                .payload("active",        func ((_, c)) = c.active)
+                .payload("triggerChance", func ((_, c)) = c.triggerChance)
+                .controllerOnly()
+                .build(),
             // shopPackages : Map<Text, AdminTypes.ShopPackage>.
-            (func () : OQL.Entity.Decl {
-                let sp0 = OQL.Entity.manual<(Text, AdminTypes.ShopPackage)>(
-                    "shopPackages",
-                    func () = shopPackages.entries(),
-                    "ShopPackage",
-                    "id",
-                );
-                let sp1 = OQL.Entity.payload(sp0, "id",            func ((k, _)) = k, OQL.TextValue._toRow);
-                let sp2 = OQL.Entity.payload(sp1, "dokaAmount",    func ((_, c)) = c.dokaAmount, OQL.NatValue._toRow);
-                let sp3 = OQL.Entity.payload(sp2, "priceEuroCents",func ((_, c)) = c.priceEuroCents, OQL.NatValue._toRow);
-                let sp4 = OQL.Entity.payload(sp3, "paymentLink",   func ((_, c)) = c.paymentLink, OQL.TextValue._toRow);
-                let sp5 = OQL.Entity.payload(sp4, "displayOrder", func ((_, c)) = c.displayOrder, OQL.NatValue._toRow);
-                let sp6 = OQL.Entity.controllerOnly(sp5);
-                OQL.Entity.build(sp6)
-            })(),
+            OQL.Entity.manual<(Text, AdminTypes.ShopPackage)>(
+                "shopPackages",
+                func () = shopPackages.entries(),
+                "ShopPackage",
+                "id",
+            )
+                .payload("id",            func ((k, _)) = k)
+                .payload("dokaAmount",    func ((_, c)) = c.dokaAmount)
+                .payload("priceEuroCents",func ((_, c)) = c.priceEuroCents)
+                .payload("paymentLink",   func ((_, c)) = c.paymentLink)
+                .payload("displayOrder", func ((_, c)) = c.displayOrder)
+                .controllerOnly()
+                .build(),
             // achievementConfigs : Map<Text, AdminTypes.AchievementConfig>.
-            (func () : OQL.Entity.Decl {
-                let ac0 = OQL.Entity.manual<(Text, AdminTypes.AchievementConfig)>(
-                    "achievementConfigs",
-                    func () = achievementConfigs.entries(),
-                    "AchievementConfig",
-                    "id",
-                );
-                let ac1 = OQL.Entity.payload(ac0, "id",          func ((k, _)) = k, OQL.TextValue._toRow);
-                let ac2 = OQL.Entity.payload(ac1, "name",        func ((_, c)) = c.name, OQL.TextValue._toRow);
-                let ac3 = OQL.Entity.payload(ac2, "description", func ((_, c)) = c.description, OQL.TextValue._toRow);
-                let ac4 = OQL.Entity.payload(ac3, "dokaReward",  func ((_, c)) = c.dokaReward, OQL.NatValue._toRow);
-                let ac5 = OQL.Entity.payload(ac4, "condition",   func ((_, c)) = c.condition, OQL.TextValue._toRow);
-                let ac6 = OQL.Entity.payload(ac5, "active",      func ((_, c)) = c.active, OQL.BoolValue._toRow);
-                let ac7 = OQL.Entity.controllerOnly(ac6);
-                OQL.Entity.build(ac7)
-            })(),
+            OQL.Entity.manual<(Text, AdminTypes.AchievementConfig)>(
+                "achievementConfigs",
+                func () = achievementConfigs.entries(),
+                "AchievementConfig",
+                "id",
+            )
+                .payload("id",          func ((k, _)) = k)
+                .payload("name",        func ((_, c)) = c.name)
+                .payload("description", func ((_, c)) = c.description)
+                .payload("dokaReward",  func ((_, c)) = c.dokaReward)
+                .payload("condition",   func ((_, c)) = c.condition)
+                .payload("active",      func ((_, c)) = c.active)
+                .controllerOnly()
+                .build(),
             // achievementProgress : Map<Text, AdminTypes.AchievementProgress> — keyed by
             // "principalText#achievementId". Per-player rows: each signed-in user reads
             // only their own progress; the controller (Data Intelligence agent) reads all.
-            (func () : OQL.Entity.Decl {
-                let ap0 = OQL.Entity.manual<(Text, AdminTypes.AchievementProgress)>(
-                    "achievementProgress",
-                    func () = achievementProgress.entries(),
-                    "AchievementProgress",
-                    "key",
-                );
-                let ap1 = OQL.Entity.payload(ap0, "key", func ((k, _)) = k, OQL.TextValue._toRow);
-                let ap2 = OQL.Entity.payload(ap1, "principalId",   func ((_, p)) = p.principalId, OQL.TextValue._toRow);
-                let ap3 = OQL.Entity.payload(ap2, "achievementId", func ((_, p)) = p.achievementId, OQL.TextValue._toRow);
-                let ap4 = OQL.Entity.payload(ap3, "unlocked",       func ((_, p)) = p.unlocked, OQL.BoolValue._toRow);
-                let ap5 = OQL.Entity.payload(ap4, "unlockedAt",     func ((_, p)) = p.unlockedAt, OQL.IntValue._toRow);
-                let ap6 = OQL.Entity.payload(ap5, "claimed",        func ((_, p)) = p.claimed, OQL.BoolValue._toRow);
-                let ap7 = OQL.Entity.ownedBy(ap6, "principalId");
-                let ap8 = OQL.Entity.controllerOrScoped(ap7);
-                OQL.Entity.build(ap8)
-            })(),
+            OQL.Entity.manual<(Text, AdminTypes.AchievementProgress)>(
+                "achievementProgress",
+                func () = achievementProgress.entries(),
+                "AchievementProgress",
+                "key",
+            )
+                .payload("key", func ((k, _)) = k)
+                .payload("principalId",   func ((_, p)) = p.principalId)
+                .payload("achievementId", func ((_, p)) = p.achievementId)
+                .payload("unlocked",       func ((_, p)) = p.unlocked)
+                .payload("unlockedAt",     func ((_, p)) = p.unlockedAt)
+                .payload("claimed",        func ((_, p)) = p.claimed)
+                .ownedBy("principalId")
+                .controllerOrScoped()
+                .build(),
             // purchaseRecords : Map<Text, AdminTypes.PurchaseRecord> — keyed by purchase id.
             // Per-player rows: each signed-in user reads only their own purchases.
-            (func () : OQL.Entity.Decl {
-                let pr0 = OQL.Entity.manual<(Text, AdminTypes.PurchaseRecord)>(
-                    "purchaseRecords",
-                    func () = purchaseRecords.entries(),
-                    "PurchaseRecord",
-                    "id",
-                );
-                let pr1 = OQL.Entity.payload(pr0, "id", func ((k, _)) = k, OQL.TextValue._toRow);
-                let pr2 = OQL.Entity.payload(pr1, "userPrincipal", func ((_, r)) = r.userPrincipal.toText(), OQL.TextValue._toRow);
-                let pr3 = OQL.Entity.payload(pr2, "dokaAmount",     func ((_, r)) = r.dokaAmount, OQL.NatValue._toRow);
-                let pr4 = OQL.Entity.payload(pr3, "packageId",      func ((_, r)) = r.packageId, OQL.TextValue._toRow);
-                let pr5 = OQL.Entity.payload(pr4, "customerName",    func ((_, r)) = r.customerName, OQL.TextValue._toRow);
-                let pr6 = OQL.Entity.payload(pr5, "customerSurname", func ((_, r)) = r.customerSurname, OQL.TextValue._toRow);
-                let pr7 = OQL.Entity.payload(pr6, "customerEmail",   func ((_, r)) = r.customerEmail, OQL.TextValue._toRow);
-                let pr8 = OQL.Entity.payload(pr7, "customerCity",    func ((_, r)) = r.customerCity, OQL.TextValue._toRow);
-                let pr9 = OQL.Entity.payload(pr8, "customerCountry", func ((_, r)) = r.customerCountry, OQL.TextValue._toRow);
-                let pr10 = OQL.Entity.payload(pr9, "timestamp",       func ((_, r)) = r.timestamp, OQL.IntValue._toRow);
-                let pr11 = OQL.Entity.payload(pr10, "status",          func ((_, r)) = r.status, OQL.TextValue._toRow);
-                let pr12 = OQL.Entity.ownedBy(pr11, "userPrincipal");
-                let pr13 = OQL.Entity.controllerOrScoped(pr12);
-                OQL.Entity.build(pr13)
-            })(),
+            OQL.Entity.manual<(Text, AdminTypes.PurchaseRecord)>(
+                "purchaseRecords",
+                func () = purchaseRecords.entries(),
+                "PurchaseRecord",
+                "id",
+            )
+                .payload("id", func ((k, _)) = k)
+                .payload("userPrincipal", func ((_, r)) = r.userPrincipal.toText())
+                .payload("dokaAmount",     func ((_, r)) = r.dokaAmount)
+                .payload("packageId",      func ((_, r)) = r.packageId)
+                .payload("customerName",    func ((_, r)) = r.customerName)
+                .payload("customerSurname", func ((_, r)) = r.customerSurname)
+                .payload("customerEmail",   func ((_, r)) = r.customerEmail)
+                .payload("customerCity",    func ((_, r)) = r.customerCity)
+                .payload("customerCountry", func ((_, r)) = r.customerCountry)
+                .payload("timestamp",       func ((_, r)) = r.timestamp)
+                .payload("status",          func ((_, r)) = r.status)
+                .ownedBy("userPrincipal")
+                .controllerOrScoped()
+                .build(),
             // bannedPrincipals : Map<Text, Bool> — admin-only ban registry.
-            (func () : OQL.Entity.Decl {
-                let bp0 = OQL.Entity.manual<(Text, Bool)>(
-                    "bannedPrincipals",
-                    func () = bannedPrincipals.entries(),
-                    "BannedPrincipal",
-                    "principalText",
-                );
-                let bp1 = OQL.Entity.payload(bp0, "principalText", func ((k, _)) = k, OQL.TextValue._toRow);
-                let bp2 = OQL.Entity.payload(bp1, "banned",         func ((_, b)) = b, OQL.BoolValue._toRow);
-                let bp3 = OQL.Entity.controllerOnly(bp2);
-                OQL.Entity.build(bp3)
-            })(),
+            OQL.Entity.manual<(Text, Bool)>(
+                "bannedPrincipals",
+                func () = bannedPrincipals.entries(),
+                "BannedPrincipal",
+                "principalText",
+            )
+                .payload("principalText", func ((k, _)) = k)
+                .payload("banned",         func ((_, b)) = b)
+                .controllerOnly()
+                .build(),
             // changelogs : Map<Text, Text> — admin-managed version changelog text.
-            (func () : OQL.Entity.Decl {
-                let cl0 = OQL.Entity.manual<(Text, Text)>(
-                    "changelogs",
-                    func () = changelogs.entries(),
-                    "Changelog",
-                    "version",
-                );
-                let cl1 = OQL.Entity.payload(cl0, "version", func ((k, _)) = k, OQL.TextValue._toRow);
-                let cl2 = OQL.Entity.payload(cl1, "text",    func ((_, v)) = v, OQL.TextValue._toRow);
-                let cl3 = OQL.Entity.controllerOnly(cl2);
-                OQL.Entity.build(cl3)
-            })(),
+            OQL.Entity.manual<(Text, Text)>(
+                "changelogs",
+                func () = changelogs.entries(),
+                "Changelog",
+                "version",
+            )
+                .payload("version", func ((k, _)) = k)
+                .payload("text",    func ((_, v)) = v)
+                .controllerOnly()
+                .build(),
             // buffInventories : Map<Text, AdminTypes.BuffInventory> — keyed by
             // "principalText#slot". Per-player rows: each signed-in user reads only
             // their own inventories.
-            (func () : OQL.Entity.Decl {
-                let bi0 = OQL.Entity.manual<(Text, AdminTypes.BuffInventory)>(
-                    "buffInventories",
-                    func () = buffInventories.entries(),
-                    "BuffInventory",
-                    "key",
-                );
-                let bi1 = OQL.Entity.payload(bi0, "key", func ((k, _)) = k, OQL.TextValue._toRow);
-                let bi2 = OQL.Entity.payload(bi1, "owner", func ((k, _)) =
+            OQL.Entity.manual<(Text, AdminTypes.BuffInventory)>(
+                "buffInventories",
+                func () = buffInventories.entries(),
+                "BuffInventory",
+                "key",
+            )
+                .payload("key", func ((k, _)) = k)
+                .payload("owner", func ((k, _)) =
                     // Extract the principalText portion (before the first "#").
                     switch (k.split(#char '#').next()) {
                         case null "";
                         case (?s) s;
-                    }, OQL.TextValue._toRow);
-                let bi3 = OQL.Entity.payload(bi2, "itemCount", func ((_, inv)) = inv.size(), OQL.NatValue._toRow);
-                let bi4 = OQL.Entity.payload(bi3, "totalQuantity", func ((_, inv)) {
+                    })
+                .payload("itemCount", func ((_, inv)) = inv.size())
+                .payload("totalQuantity", func ((_, inv)) {
                     var total : Nat = 0;
                     for (item in inv.vals()) { total += item.quantity };
                     total
-                }, OQL.NatValue._toRow);
-                let bi5 = OQL.Entity.ownedBy(bi4, "owner");
-                let bi6 = OQL.Entity.controllerOrScoped(bi5);
-                OQL.Entity.build(bi6)
-            })(),
+                })
+                .ownedBy("owner")
+                .controllerOrScoped()
+                .build(),
             // bossConfigs : Map<Text, AdminTypes.BossConfig> — admin boss templates.
-            (func () : OQL.Entity.Decl {
-                let bc0 = OQL.Entity.manual<(Text, AdminTypes.BossConfig)>(
-                    "bossConfigs",
-                    func () = bossConfigs.entries(),
-                    "BossConfig",
-                    "id",
-                );
-                let bc1 = OQL.Entity.payload(bc0, "id",   func ((k, _)) = k, OQL.TextValue._toRow);
-                let bc2 = OQL.Entity.payload(bc1, "name", func ((_, c)) = c.name, OQL.TextValue._toRow);
-                let bc3 = OQL.Entity.payload(bc2, "pieceType", func ((_, c)) = c.pieceType, OQL.TextValue._toRow);
-                let bc4 = OQL.Entity.payload(bc3, "baseHp",  func ((_, c)) = c.baseStats.hp, OQL.NatValue._toRow);
-                let bc5 = OQL.Entity.payload(bc4, "baseAp",  func ((_, c)) = c.baseStats.ap, OQL.NatValue._toRow);
-                let bc6 = OQL.Entity.payload(bc5, "baseMp",  func ((_, c)) = c.baseStats.mp, OQL.NatValue._toRow);
-                let bc7 = OQL.Entity.payload(bc6, "baseAtk", func ((_, c)) = c.baseStats.atk, OQL.NatValue._toRow);
-                let bc8 = OQL.Entity.payload(bc7, "baseRes", func ((_, c)) = c.baseStats.res, OQL.NatValue._toRow);
-                let bc9 = OQL.Entity.payload(bc8, "baseInit",func ((_, c)) = c.baseStats.init, OQL.NatValue._toRow);
-                let bc10 = OQL.Entity.payload(bc9, "baseSp",  func ((_, c)) = c.baseStats.sp, OQL.NatValue._toRow);
-                let bc11 = OQL.Entity.payload(bc10, "bossMapColor", func ((_, c)) = c.bossMapColor, OQL.TextValue._toRow);
-                let bc12 = OQL.Entity.payload(bc11, "portalColor",   func ((_, c)) = c.portalColor, OQL.TextValue._toRow);
-                let bc13 = OQL.Entity.payload(bc12, "rewardDokaMultiplier", func ((_, c)) = c.rewardDokaMultiplier, OQL.FloatValue._toRow);
-                let bc14 = OQL.Entity.payload(bc13, "rewardXpMultiplier",   func ((_, c)) = c.rewardXpMultiplier, OQL.FloatValue._toRow);
-                let bc15 = OQL.Entity.payload(bc14, "defeated",   func ((_, c)) = c.defeated, OQL.BoolValue._toRow);
-                let bc16 = OQL.Entity.payload(bc15, "adminNotes", func ((_, c)) = c.adminNotes, OQL.TextValue._toRow);
-                let bc17 = OQL.Entity.controllerOnly(bc16);
-                OQL.Entity.build(bc17)
-            })(),
+            OQL.Entity.manual<(Text, AdminTypes.BossConfig)>(
+                "bossConfigs",
+                func () = bossConfigs.entries(),
+                "BossConfig",
+                "id",
+            )
+                .payload("id",   func ((k, _)) = k)
+                .payload("name", func ((_, c)) = c.name)
+                .payload("pieceType", func ((_, c)) = c.pieceType)
+                .payload("baseHp",  func ((_, c)) = c.baseStats.hp)
+                .payload("baseAp",  func ((_, c)) = c.baseStats.ap)
+                .payload("baseMp",  func ((_, c)) = c.baseStats.mp)
+                .payload("baseAtk", func ((_, c)) = c.baseStats.atk)
+                .payload("baseRes", func ((_, c)) = c.baseStats.res)
+                .payload("baseInit",func ((_, c)) = c.baseStats.init)
+                .payload("baseSp",  func ((_, c)) = c.baseStats.sp)
+                .payload("bossMapColor", func ((_, c)) = c.bossMapColor)
+                .payload("portalColor",   func ((_, c)) = c.portalColor)
+                .payload("rewardDokaMultiplier", func ((_, c)) = c.rewardDokaMultiplier)
+                .payload("rewardXpMultiplier",   func ((_, c)) = c.rewardXpMultiplier)
+                .payload("defeated",   func ((_, c)) = c.defeated)
+                .payload("adminNotes", func ((_, c)) = c.adminNotes)
+                .controllerOnly()
+                .build(),
             // bossPortalAssignments : Map<Text, Text> — portalId → bossId.
-            (func () : OQL.Entity.Decl {
-                let bpa0 = OQL.Entity.manual<(Text, Text)>(
-                    "bossPortalAssignments",
-                    func () = bossPortalAssignments.entries(),
-                    "BossPortalAssignment",
-                    "portalId",
-                );
-                let bpa1 = OQL.Entity.payload(bpa0, "portalId", func ((k, _)) = k, OQL.TextValue._toRow);
-                let bpa2 = OQL.Entity.payload(bpa1, "bossId",    func ((_, v)) = v, OQL.TextValue._toRow);
-                let bpa3 = OQL.Entity.controllerOnly(bpa2);
-                OQL.Entity.build(bpa3)
-            })(),
+            OQL.Entity.manual<(Text, Text)>(
+                "bossPortalAssignments",
+                func () = bossPortalAssignments.entries(),
+                "BossPortalAssignment",
+                "portalId",
+            )
+                .payload("portalId", func ((k, _)) = k)
+                .payload("bossId",    func ((_, v)) = v)
+                .controllerOnly()
+                .build(),
             // bossRushStates : Map<Text, BossRushState> — keyed by "principalText#slot".
             // Per-player rows: each signed-in user reads only their own boss-rush state.
-            (func () : OQL.Entity.Decl {
-                let brs0 = OQL.Entity.manual<(Text, BossRushState)>(
-                    "bossRushStates",
-                    func () = bossRushStates.entries(),
-                    "BossRushState",
-                    "key",
-                );
-                let brs1 = OQL.Entity.payload(brs0, "key", func ((k, _)) = k, OQL.TextValue._toRow);
-                let brs2 = OQL.Entity.payload(brs1, "owner", func ((k, _)) =
+            OQL.Entity.manual<(Text, BossRushState)>(
+                "bossRushStates",
+                func () = bossRushStates.entries(),
+                "BossRushState",
+                "key",
+            )
+                .payload("key", func ((k, _)) = k)
+                .payload("owner", func ((k, _)) =
                     switch (k.split(#char '#').next()) {
                         case null "";
                         case (?s) s;
-                    }, OQL.TextValue._toRow);
-                let brs3 = OQL.Entity.payload(brs2, "currentRoom",          func ((_, s)) = s.currentRoom, OQL.NatValue._toRow);
-                let brs4 = OQL.Entity.payload(brs3, "highestRoomCompleted",  func ((_, s)) = s.highestRoomCompleted, OQL.NatValue._toRow);
-                let brs5 = OQL.Entity.payload(brs4, "totalBossRushRuns",     func ((_, s)) = s.totalBossRushRuns, OQL.NatValue._toRow);
-                let brs6 = OQL.Entity.ownedBy(brs5, "owner");
-                let brs7 = OQL.Entity.controllerOrScoped(brs6);
-                OQL.Entity.build(brs7)
-            })(),
+                    })
+                .payload("currentRoom",          func ((_, s)) = s.currentRoom)
+                .payload("highestRoomCompleted",  func ((_, s)) = s.highestRoomCompleted)
+                .payload("totalBossRushRuns",     func ((_, s)) = s.totalBossRushRuns)
+                .ownedBy("owner")
+                .controllerOrScoped()
+                .build(),
         ];
     });
-    // ─── end OQL block ───────────────────────────────────────────────────
 
 };

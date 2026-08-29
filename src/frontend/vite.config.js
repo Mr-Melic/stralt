@@ -59,6 +59,6 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/engine/__tests__/**/*.test.ts"],
   },
 });

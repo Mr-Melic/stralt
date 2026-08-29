@@ -6,7 +6,10 @@ import type {
   AdminGameConfig,
   MapModifierConfig,
 } from "../types/gameTypes";
+import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
+import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
+import { useInternetIdentity } from "./useInternetIdentity";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ActorAny = Record<string, any>;
@@ -102,19 +105,13 @@ export function useGetCallerDokaBalance() {
   return useQuery<number>({
     queryKey: ["callerDokaBalance"],
     queryFn: async () => {
-      if (!actor) return 0;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = (await withTimeout(
-          (actor as ActorAny).getCallerDokaBalance(),
-        )) as any;
-        // Normalize: bigint / number / null / undefined → safe number
-        if (raw === null || raw === undefined) return 0;
-        const n = Number(raw);
-        return Number.isFinite(n) ? n : 0;
-      } catch {
-        return 0;
-      }
+      if (!actor) throw new Error("Actor not available");
+      // Do not catch timeouts / replica errors here. Returning 0 on failure
+      // made React Query treat the miss as a successful empty wallet, and
+      // GameFlow then overwrote the session cache. A later death persist
+      // would write dokaBalances = 0.
+      const raw = await withTimeout((actor as ActorAny).getCallerDokaBalance());
+      return normalizeCallerDokaBalance(raw);
     },
     enabled: !!actor && !actorFetching,
     staleTime: 0,
@@ -283,20 +280,17 @@ export function useGetAchievementConfigs() {
 
 export function useGetPlayerAchievements() {
   const { actor, isFetching: actorFetching } = useActor();
+  const { identity } = useInternetIdentity();
+  const player = identity?.getPrincipal?.() ?? null;
 
   return useQuery<AchievementProgress[]>({
     queryKey: ["playerAchievements"],
     queryFn: async () => {
-      if (!actor) return [];
+      if (!actor || !player) return [];
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const raw = (await withTimeout(
-          (actor as ActorAny).getPlayerAchievements(),
-        )) as any;
-        const mapped = (raw as AchievementProgress[]).map((p) => ({
-          ...p,
-          unlockedAt: Number(p.unlockedAt),
-        }));
+        const mapped = await withTimeout(
+          fetchPlayerAchievements(actor, player),
+        );
         // [FEATS] LIST — log the refetched claimed flag per achievement so
         // the chain shows the post-claim/unlock state from the backend.
         console.log("[FEATS] LIST", {
@@ -311,7 +305,7 @@ export function useGetPlayerAchievements() {
         return [];
       }
     },
-    enabled: !!actor && !actorFetching,
+    enabled: !!actor && !actorFetching && !!player,
     staleTime: 0,
     gcTime: 60000,
   });

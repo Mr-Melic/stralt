@@ -140,6 +140,61 @@ export interface RunStateRefs {
   abortBossRush: () => Promise<void>;
 }
 
+export interface DungeonChainSnapshot {
+  active: boolean;
+  depth: number;
+  maxDepth: number;
+}
+
+export type DungeonChainPortalAction =
+  | { kind: "enter" }
+  | { kind: "progress"; nextDepth: number }
+  | { kind: "complete"; bonus: number }
+  | { kind: "none" };
+
+/**
+ * Read dungeon-chain refs before cleanupMap. cleanupMap always zeroes these
+ * refs (death/flee must not carry a run onto the next map). A progression
+ * portal is not a flee — deciding enter/progress/complete from the wiped
+ * refs drops the chain, generates an overworld map, and never pays the
+ * completion bonus.
+ */
+export function snapshotDungeonChain(refs: {
+  dungeonChainActiveRef: { current: boolean };
+  dungeonChainDepthRef: { current: number };
+  dungeonChainMaxDepthRef: { current: number };
+}): DungeonChainSnapshot {
+  return {
+    active: refs.dungeonChainActiveRef.current,
+    depth: refs.dungeonChainDepthRef.current,
+    maxDepth: refs.dungeonChainMaxDepthRef.current,
+  };
+}
+
+export function dungeonChainCompletionBonus(maxDepth: number): number {
+  return Math.max(0, maxDepth) * 50;
+}
+
+/**
+ * Decide the dungeon-chain step from a pre-cleanup snapshot.
+ * Post-cleanup zeros always yield "none" (or "enter" on a dungeon-entry
+ * portal) — never progress/complete — which is the bug this snapshot avoids.
+ */
+export function decideDungeonChainPortal(
+  isDungeonEntry: boolean,
+  snap: DungeonChainSnapshot,
+): DungeonChainPortalAction {
+  if (isDungeonEntry && !snap.active) return { kind: "enter" };
+  if (!snap.active) return { kind: "none" };
+  if (snap.depth >= snap.maxDepth) {
+    return {
+      kind: "complete",
+      bonus: dungeonChainCompletionBonus(snap.maxDepth),
+    };
+  }
+  return { kind: "progress", nextDepth: snap.depth + 1 };
+}
+
 /**
  * Reset every piece of run state before a flow that must see free-exploration
  * mode (e.g. the player-death → Death Realm transition). Clears the boss-rush

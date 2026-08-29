@@ -100,40 +100,27 @@ describe("computeAITier", () => {
 });
 
 describe("pickEnemyLevelFromTiers", () => {
-  it("draws the 70% band within ±2 of the player-centered level", () => {
-    stubRandom(0, 0);
-    expect(pickEnemyLevelFromTiers(10)).toBe(8);
+  it("picks the same-tier band when variance misses and the same-tier weight wins", () => {
+    installLocalStorage();
+    // player 15 → tier 1 → levels 11..20 with default tierSize=10.
+    // Rolls: variance (0.5 = no ±1), weight (0 = same-tier), level (0 = low).
+    stubRandom(0.5, 0, 0);
+    expect(pickEnemyLevelFromTiers(15)).toBe(11);
+    stubRandom(0.5, 0, 0.99);
+    expect(pickEnemyLevelFromTiers(15)).toBe(20);
   });
 
-  it("draws the 25% band in +3..+5 above the center", () => {
-    stubRandom(0.8, 0);
-    expect(pickEnemyLevelFromTiers(10)).toBe(13);
+  it("shifts one tier when the adjacent-tier weight wins", () => {
+    installLocalStorage();
+    // default same=60 / adj=20 → weight 0.70 is adjacent.
+    // side = random < 0.5 ? +1 : -1
+    stubRandom(0.5, 0.7, 0.0, 0);
+    expect(pickEnemyLevelFromTiers(15)).toBe(21);
+    stubRandom(0.5, 0.7, 0.9, 0);
+    expect(pickEnemyLevelFromTiers(15)).toBe(1);
   });
 
-  it("folds the 5% outlier into +3..+5 unless allowOutlier is set", () => {
-    stubRandom(0.96, 0);
-    expect(pickEnemyLevelFromTiers(10, 0, false)).toBe(13);
-
-    stubRandom(0.96, 0);
-    expect(pickEnemyLevelFromTiers(10, 0, true)).toBe(16);
-  });
-
-  it("caps zoneShift at +2 and ignores a negative shift", () => {
-    stubRandom(0, 0);
-    expect(pickEnemyLevelFromTiers(10, 9)).toBe(10);
-
-    stubRandom(0, 0);
-    expect(pickEnemyLevelFromTiers(10, -4)).toBe(8);
-  });
-
-  it("floors a sub-1 player level at 1", () => {
-    stubRandom(0, 0);
-    expect(pickEnemyLevelFromTiers(0)).toBe(1);
-    stubRandom(0, 0);
-    expect(pickEnemyLevelFromTiers(-3)).toBe(1);
-  });
-
-  it("honors an admin localStorage override with the legacy same-tier band", () => {
+  it("honors an admin localStorage config with a forced same-tier band", () => {
     const mem = installLocalStorage();
     mem.set(
       "pbv_tier_spawn_config",
@@ -146,11 +133,17 @@ describe("pickEnemyLevelFromTiers", () => {
         levelVarianceChance: 0,
       }),
     );
-    // player 15 → tier 1 → levels 11..20. First roll is unused variance,
-    // second picks the same-tier bucket, third picks the low end of the band.
     stubRandom(0, 0, 0);
     expect(pickEnemyLevelFromTiers(15)).toBe(11);
     stubRandom(0, 0, 0.99);
     expect(pickEnemyLevelFromTiers(15)).toBe(20);
+  });
+
+  it("clamps a sub-1 player level into tier 0 (levels 1..10)", () => {
+    installLocalStorage();
+    stubRandom(0.5, 0, 0);
+    expect(pickEnemyLevelFromTiers(0)).toBe(1);
+    stubRandom(0.5, 0, 0);
+    expect(pickEnemyLevelFromTiers(-3)).toBe(1);
   });
 });

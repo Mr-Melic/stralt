@@ -82,6 +82,41 @@ export function activeHostilesRemaining(enemies: Combatant[]): number {
 }
 
 /**
+ * Victory persist may run only for a fight the player is still in and did
+ * not already lose. `_handlePlayerDeath` used to leave `inBattle` true, so a
+ * later last-hostile death (DoT tick, leftover AI turn) could still enter
+ * handleBattleEnd / applyRewards and race the death-penalty save.
+ */
+export function shouldAwardVictory(opts: {
+  inBattle: boolean;
+  deathTriggered: boolean;
+  battleStartIdsSize: number;
+  hostilesRemaining: number;
+}): boolean {
+  return (
+    opts.inBattle &&
+    !opts.deathTriggered &&
+    opts.battleStartIdsSize > 0 &&
+    opts.hostilesRemaining === 0
+  );
+}
+
+/**
+ * World / next-room encounters may start only when React `inBattle` AND the
+ * sync `inBattleRef` are both false. `cleanupBattle()` only clears the ref;
+ * `handleBattleEnd` / `handleBossRushRoomClear` / death must also
+ * `setInBattle(false)` or `checkBattleTrigger` stays blocked — Boss Rush
+ * room 2 never starts after a room-clear, and later overworld fights stay dead.
+ */
+export function shouldAllowBattleTrigger(opts: {
+  inBattle: boolean;
+  inBattleRef: boolean;
+  transitionInProgress: boolean;
+}): boolean {
+  return !opts.inBattle && !opts.inBattleRef && !opts.transitionInProgress;
+}
+
+/**
  * Returns `enemies` with all summons removed (living or dead). Used on
  * victory to despawn player-side summons cleanly so the post-battle state
  * contains only the original non-summon combatants.

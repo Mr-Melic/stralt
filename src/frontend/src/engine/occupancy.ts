@@ -84,38 +84,6 @@ export function isCellFree(cell: OccCell, ctx: OccupancyContext): boolean {
 }
 
 /**
- * Diagnostic variant of `isCellFree`: returns the failure cause at each
- * rejection point instead of a bare boolean. Mirrors `isCellFree` exactly —
- * same check order, same semantics — but reports WHY a tile is not free.
- *
- * Causes:
- *   - `oob`: out of bounds (x or y outside 0..WORLD_GRID_SIZE-1)
- *   - `wall`: grid tile not walkable, or a barrier, or a portal
- *   - `void`: void tile
- *   - `occupied`: occupied by a combatant
- *
- * Used by the enemy AI `logIntent` "blocked" sites to surface the precise
- * reason a step was rejected (readability/debug only — does not change
- * behavior). `isCellFree` itself is unchanged.
- */
-export function isCellFreeDiagnostic(
-  cell: OccCell,
-  ctx: OccupancyContext,
-): { ok: true } | { ok: false; cause: "wall" | "occupied" | "void" | "oob" } {
-  const { x, y } = cell;
-  if (x < 0 || x >= WORLD_GRID_SIZE || y < 0 || y >= WORLD_GRID_SIZE) {
-    return { ok: false, cause: "oob" };
-  }
-  if (!ctx.tiles[y]?.[x]) return { ok: false, cause: "wall" };
-  const k = occKey(x, y);
-  if (ctx.barriers.has(k)) return { ok: false, cause: "wall" };
-  if (ctx.portals.has(k)) return { ok: false, cause: "wall" };
-  if (ctx.voidTiles.has(k)) return { ok: false, cause: "void" };
-  if (ctx.isOccupied(cell)) return { ok: false, cause: "occupied" };
-  return { ok: true };
-}
-
-/**
  * Find the nearest free cell to `origin` within `maxRadius` (Manhattan). Used
  * by spawn placement so summons/enemies land on the nearest free cell when
  * the requested cell is occupied. Returns `origin` itself if it is free,

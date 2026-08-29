@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isBuffShopOpen } from "../utils/itemShop";
 
 // ── Item Definitions ──────────────────────────────────────────────────────────
 export type BuffItemType =
@@ -215,7 +216,10 @@ const BuffShop: React.FC<BuffShopProps> = ({
     0,
   );
 
-  if (!isOpen) return null;
+  // Modal: omitted isOpen is false. Do not default this to true — an always-on
+  // overlay would cover the world map. GameFlow owns the open flag and must
+  // pass it into WorldExploration so persist + item-use stay on that host.
+  if (!isBuffShopOpen(isOpen)) return null;
 
   return (
     <div

@@ -85,7 +85,6 @@ export function makeStoreCtx(
     battleEnemiesRef,
     turnOrderRef,
     currentTurnIndexRef,
-    lastRemovedCombatant: null,
     setEnemies: (updater) => {
       enemiesRef.current = updater(enemiesRef.current);
     },
