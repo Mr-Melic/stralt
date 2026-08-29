@@ -4,8 +4,10 @@ import {
   type Challenge,
   type ChallengePanelProgress,
   DEFAULT_CHALLENGES,
+  castResultSpendsAp,
   isChallengeCompleted,
   isChallengeFailed,
+  recordChallengeApSpend,
   recordChallengeDamageTaken,
 } from "./challengeCompletion.ts";
 import {
@@ -231,5 +233,82 @@ describe("challenge completion → persist XP", () => {
       liveBattleChallengePersistEntries(false, legendary, true),
       [],
     );
+  });
+});
+
+describe("recordChallengeApSpend", () => {
+  it("keeps the peak after a later cheap turn so hard_3 cannot persist", () => {
+    let peak = 0;
+    let thisTurn = 0;
+    ({ peak, spentThisTurn: thisTurn } = recordChallengeApSpend(
+      peak,
+      thisTurn,
+      5,
+    ));
+    ({ peak, spentThisTurn: thisTurn } = recordChallengeApSpend(
+      peak,
+      thisTurn,
+      6,
+    ));
+    assert.equal(thisTurn, 11);
+    assert.equal(peak, 11);
+
+    thisTurn = 0;
+    ({ peak, spentThisTurn: thisTurn } = recordChallengeApSpend(
+      peak,
+      thisTurn,
+      3,
+    ));
+    assert.equal(thisTurn, 3);
+    assert.equal(peak, 11);
+
+    const hard3 = byId("hard_3");
+    assert.equal(
+      isChallengeCompleted(hard3, progress({ maxApUsedInTurn: peak })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        hard3,
+        isChallengeCompleted(hard3, progress({ maxApUsedInTurn: peak })),
+      ),
+      [],
+    );
+  });
+
+  it("still completes when every turn stays at or under 8 AP", () => {
+    let peak = 0;
+    let thisTurn = 0;
+    ({ peak, spentThisTurn: thisTurn } = recordChallengeApSpend(
+      peak,
+      thisTurn,
+      8,
+    ));
+    thisTurn = 0;
+    ({ peak, spentThisTurn: thisTurn } = recordChallengeApSpend(
+      peak,
+      thisTurn,
+      4,
+    ));
+    const hard3 = byId("hard_3");
+    assert.equal(
+      isChallengeCompleted(hard3, progress({ maxApUsedInTurn: peak })),
+      true,
+    );
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, hard3, true),
+      ),
+      450,
+    );
+  });
+
+  it("treats summon the same as cast/fizzle for the AP debit", () => {
+    assert.equal(castResultSpendsAp("cast"), true);
+    assert.equal(castResultSpendsAp("fizzled"), true);
+    assert.equal(castResultSpendsAp("summon"), true);
+    assert.equal(castResultSpendsAp("no_ap"), false);
+    assert.equal(castResultSpendsAp("abort"), false);
   });
 });
