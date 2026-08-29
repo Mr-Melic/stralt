@@ -9,6 +9,7 @@ import {
   isChallengeFailed,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeDirectHit,
   recordInBattleChallengeDamage,
 } from "./challengeCompletion.ts";
 import {
@@ -347,5 +348,51 @@ describe("recordChallengeApSpend", () => {
     assert.equal(castResultSpendsAp("summon"), true);
     assert.equal(castResultSpendsAp("no_ap"), false);
     assert.equal(castResultSpendsAp("abort"), false);
+  });
+});
+
+describe("recordChallengeDirectHit", () => {
+  it("fails Striker after a sprite-click beyond Chebyshev 2", () => {
+    const caster = { x: 8, y: 8 };
+    let direct = true;
+    direct = recordChallengeDirectHit(direct, caster, { x: 10, y: 8 });
+    assert.equal(direct, true);
+
+    direct = recordChallengeDirectHit(direct, caster, { x: 11, y: 8 });
+    assert.equal(direct, false);
+    direct = recordChallengeDirectHit(direct, caster, { x: 8, y: 9 });
+    assert.equal(direct, false);
+
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, progress({ directHit: direct })),
+      ),
+      [],
+    );
+  });
+
+  it("still completes when every spent attempt stays within 2 tiles", () => {
+    const caster = { x: 5, y: 5 };
+    let direct = true;
+    direct = recordChallengeDirectHit(direct, caster, { x: 7, y: 6 });
+    direct = recordChallengeDirectHit(direct, caster, { x: 5, y: 5 });
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      true,
+    );
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, striker, true),
+      ),
+      800,
+    );
   });
 });
