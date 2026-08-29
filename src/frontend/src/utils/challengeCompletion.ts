@@ -197,6 +197,26 @@ export function castResultSpendsAp(result: string): boolean {
 }
 
 /**
+ * legendary_3 Striker (400 Doka / 800 XP) requires every spent attempt
+ * to land within Chebyshev distance 2 of the caster. Player-controlled
+ * summons (Archer Poison Arrow range 4, Slow range 3) call
+ * resolveSpellCast and used to skip the tile-click follow-up that flips
+ * `challengeDirectHitRef`, so a kite shot still persisted the reward.
+ * Once false, it stays false for the fight.
+ */
+export function recordChallengeDirectHit(
+  stillDirect: boolean,
+  caster: { x: number; y: number },
+  target: { x: number; y: number },
+): boolean {
+  if (!stillDirect) return false;
+  const dx = Math.abs(Number(target.x) - Number(caster.x));
+  const dy = Math.abs(Number(target.y) - Number(caster.y));
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+  return Math.max(dx, dy) <= 2;
+}
+
+/**
  * True when the condition can no longer be satisfied this battle
  * (banner chip should flip to ✗). "under_N_turns" challenges are only
  * failed at battle end (turn count is final only on victory), so they

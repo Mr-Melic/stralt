@@ -9,6 +9,7 @@ import {
   isChallengeFailed,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeDirectHit,
   recordInBattleChallengeDamage,
 } from "./challengeCompletion.ts";
 import {
@@ -347,5 +348,53 @@ describe("recordChallengeApSpend", () => {
     assert.equal(castResultSpendsAp("summon"), true);
     assert.equal(castResultSpendsAp("no_ap"), false);
     assert.equal(castResultSpendsAp("abort"), false);
+  });
+});
+
+describe("recordChallengeDirectHit", () => {
+  it("fails Striker after a controlled summon casts beyond Chebyshev 2", () => {
+    const summon = { x: 8, y: 8 };
+    let direct = true;
+    // Adjacent / range-2 shots stay legal.
+    direct = recordChallengeDirectHit(direct, summon, { x: 10, y: 8 });
+    assert.equal(direct, true);
+
+    // Archer Poison Arrow (range 4) / Slow (range 3) from control mode.
+    direct = recordChallengeDirectHit(direct, summon, { x: 12, y: 8 });
+    assert.equal(direct, false);
+    direct = recordChallengeDirectHit(direct, summon, { x: 8, y: 9 });
+    assert.equal(direct, false);
+
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, progress({ directHit: direct })),
+      ),
+      [],
+    );
+  });
+
+  it("still completes when every summon-control shot stays within 2 tiles", () => {
+    const summon = { x: 5, y: 5 };
+    let direct = true;
+    direct = recordChallengeDirectHit(direct, summon, { x: 7, y: 6 });
+    direct = recordChallengeDirectHit(direct, summon, { x: 5, y: 5 });
+    const striker = byId("legendary_3");
+    assert.equal(
+      isChallengeCompleted(striker, progress({ directHit: direct })),
+      true,
+    );
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, striker, true),
+      ),
+      800,
+    );
   });
 });
