@@ -55,9 +55,10 @@ describe("readRenameCharacterResult", () => {
     assert.equal(healWrite, 170);
   });
 
-  it("documents the data-loss if the UI debit is applied on err", () => {
+  it("does not let an err-path UI debit cut a seeded wallet via idle hydrate", () => {
     const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
-    // Bug: handler deducted UI to 100, then hydrateWhenIdle copied it in.
+    // Handler deducted UI to 100 on #err. Idle hydrate must keep 200 so a
+    // later heal spends from the live canister, not a phantom rename.
     lock.hydrateWhenIdle({
       doka: 200 - RENAME_DOKA_COST,
       xp: 0,
@@ -67,14 +68,13 @@ describe("readRenameCharacterResult", () => {
       lock.snapshot().doka,
       spendFromUiBalance(100, 70),
     );
-    // Canister was 200; a 30 Doka heal should leave 170. The phantom
-    // rename spend ate 100 and the next saveBattleStats writes 70.
-    assert.equal(healWrite, 70);
+    assert.equal(lock.snapshot().doka, 200);
+    assert.equal(healWrite, 170);
   });
 });
 
 describe("liveDokaAfterRename / committedDokaAfterRename", () => {
-  it("documents the wipe if #ok debits the click-time wallet after applyRewards", () => {
+  it("does not let a stale click-time rename debit cut a credited wallet", () => {
     const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
     // Victory persist landed while rename was awaiting the canister.
     lock.commit({ doka: 250 });
@@ -84,13 +84,14 @@ describe("liveDokaAfterRename / committedDokaAfterRename", () => {
       xp: 0,
       level: 1,
     });
+    // Idle hydrate must keep the credited 250. The handler still has to
+    // debit the live ref + lock on #ok; this only blocks the stale UI cut.
+    assert.equal(lock.snapshot().doka, 250);
     const healWrite = applySpendToCommitted(
       lock.snapshot().doka,
       spendFromUiBalance(100, 70),
     );
-    // Canister after applyRewards+rename is 150; a 30 heal should leave 120.
-    // The stale 200-100 overwrite hydrated committed to 100 and writes 70.
-    assert.equal(healWrite, 70);
+    assert.equal(healWrite, 220);
   });
 
   it("keeps the credited wallet when #ok spends from the live ref and lock", () => {

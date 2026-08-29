@@ -97,8 +97,12 @@ export type HydrateWhenIdleOptions = {
  * the React Query data exists. A positive UI value can also be a feat-claim
  * or rename delta stacked on the placeholder; that must not seed.
  *
- * Once the lock is seeded, a later placeholder 0 must not replace a
- * shop-credit / fetch snapshot. Real spends commit through the lock.
+ * Once the lock is seeded, idle UI must not cut the committed wallet.
+ * GameFlow's first hydrate can apply a stale pre-credit query (not only
+ * placeholder 0). Mount shop-credit recovery / persistDokaCredit already
+ * committed the live canister; copying 50 over 550 lets the next
+ * death/heal saveBattleStats wipe the grant. Real spends commit through
+ * the lock, so committed is already the post-spend value.
  */
 export function shouldCopyIdleWalletDoka(args: {
   walletSeeded: boolean;
@@ -109,7 +113,7 @@ export function shouldCopyIdleWalletDoka(args: {
   const incoming = Math.max(0, toNat(args.incomingDoka, 0));
   const committed = Math.max(0, toNat(args.committedDoka, 0));
   if (args.walletSeeded) {
-    return !(incoming === 0 && committed > 0);
+    return incoming >= committed;
   }
   return args.walletReady === true;
 }

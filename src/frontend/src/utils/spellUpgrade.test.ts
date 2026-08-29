@@ -116,7 +116,9 @@ assert.equal(spellUpgradeUiSpend(3200, 4000, 3680), 320);
   const wrongUi = 200 - advertisedSummonCost;
   const wrongLock = createProgressPersist({ doka: 190, xp: 0, level: 1 });
   wrongLock.hydrateWhenIdle({ doka: wrongUi, xp: 0, level: 1 });
-  assert.equal(wrongLock.snapshot().doka, 100);
+  // Advertised-cost UI is short; idle hydrate must not copy that cut over
+  // the seeded post-upgrade wallet.
+  assert.equal(wrongLock.snapshot().doka, 190);
 }
 
 console.log("spellUpgrade.test: ok");

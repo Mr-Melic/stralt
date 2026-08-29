@@ -37,7 +37,9 @@ export function shouldApplyCallerDokaHydrate(args: {
  *
  * `queryResolved` alone is one render too early: GameFlow still holds the
  * placeholder 0 until the hydrate effect calls setDokaBalance. Passing that
- * pair lets hydrateWhenIdle overwrite a shop-credit seed with 0.
+ * pair lets hydrateWhenIdle overwrite a shop-credit seed with 0. A stale
+ * positive query (pre-credit snapshot) is the same class — the persist
+ * lock must refuse any idle cut of a seeded wallet.
  */
 export function shouldMarkCallerDokaWalletReady(args: {
   queryResolved: boolean;

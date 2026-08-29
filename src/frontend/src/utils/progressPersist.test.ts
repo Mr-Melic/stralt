@@ -212,6 +212,29 @@ describe("progress persist lock", () => {
     assert.equal(after, 500);
   });
 
+  it("does not let a stale positive query overwrite a shop-credit seed", () => {
+    const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
+    // Mount processPendingPurchases credited 500 while getCallerDokaBalance
+    // was still in flight. GameFlow then applies the stale pre-credit 50.
+    lock.commit({ doka: 550 });
+    assert.equal(lock.isWalletSeeded(), true);
+
+    assert.equal(
+      shouldCopyIdleWalletDoka({
+        walletSeeded: true,
+        walletReady: true,
+        incomingDoka: 50,
+        committedDoka: 550,
+      }),
+      false,
+    );
+    lock.hydrateWhenIdle({ doka: 50, xp: 80, level: 4 }, { walletReady: true });
+    assert.equal(lock.snapshot().doka, 550);
+
+    const after = applySpendToCommitted(lock.snapshot().doka, 0);
+    assert.equal(after, 550);
+  });
+
   it("does not let idle hydrate downgrade a committed level-up", () => {
     assert.equal(floorHydratedLevel(5, 4), 5);
     assert.equal(floorHydratedLevel(4, 5), 5);
@@ -221,8 +244,10 @@ describe("progress persist lock", () => {
     lock.commit({ doka: 250, xp: 30, level: 5 });
     // #38 skipped the live UI level hydrate because lava death landed
     // during applyRewards. The hydrate effect then copies UI level 4.
+    // A stale/optimistic lower wallet must not cut the seeded commit —
+    // death persist already wrote the penalty through the lock.
     assert.equal(lock.hydrateWhenIdle({ doka: 150, xp: 24, level: 4 }), true);
-    assert.deepEqual(lock.snapshot(), { doka: 150, xp: 24, level: 5 });
+    assert.deepEqual(lock.snapshot(), { doka: 250, xp: 24, level: 5 });
   });
 
   it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {
