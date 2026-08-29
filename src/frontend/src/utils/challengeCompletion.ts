@@ -131,6 +131,23 @@ export function isChallengeCompleted(
 }
 
 /**
+ * Accumulate HP actually lost this battle for challenge predicates.
+ *
+ * handleBattleEnd / handleBossRushRoomClear persist advertised Untouchable
+ * (1000 XP / 500 Doka) and under-50-damage rewards from this total. Only
+ * the boss-ability branch used to increment it, so a regular melee or
+ * spell hit left totalDamage at 0 and credited a failed objective.
+ */
+export function recordChallengeDamageTaken(
+  current: number,
+  incoming: number,
+): number {
+  const base = Math.max(0, Math.floor(Number(current) || 0));
+  const add = Math.max(0, Math.floor(Number(incoming) || 0));
+  return base + add;
+}
+
+/**
  * True when the condition can no longer be satisfied this battle
  * (banner chip should flip to ✗). "under_N_turns" challenges are only
  * failed at battle end (turn count is final only on victory), so they
