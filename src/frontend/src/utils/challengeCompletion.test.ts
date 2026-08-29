@@ -10,6 +10,7 @@ import {
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordInBattleChallengeDamage,
+  recordInBattleChallengeHealUsed,
 } from "./challengeCompletion.ts";
 import {
   addChallengeRewardDeltas,
@@ -200,6 +201,37 @@ describe("recordChallengeDamageTaken", () => {
         progress({ totalDamage: recordChallengeDamageTaken(0, 0) }),
       ),
       true,
+    );
+  });
+});
+
+describe("recordInBattleChallengeHealUsed", () => {
+  it("leaves healUsed unset for an overworld Doka heal so easy_1 / hard_1 still persist", () => {
+    const healUsed = recordInBattleChallengeHealUsed(false, false);
+    assert.equal(healUsed, false);
+    const easy1 = byId("easy_1");
+    const hard1 = byId("hard_1");
+    assert.equal(isChallengeCompleted(easy1, progress({ healUsed })), true);
+    assert.equal(isChallengeCompleted(hard1, progress({ healUsed })), true);
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(true, hard1, true),
+      ),
+      500,
+    );
+  });
+
+  it("does not clear an in-battle heal that already failed the objective", () => {
+    assert.equal(recordInBattleChallengeHealUsed(false, true), true);
+    assert.equal(recordInBattleChallengeHealUsed(true, false), true);
+    assert.equal(
+      isChallengeCompleted(
+        byId("easy_1"),
+        progress({
+          healUsed: recordInBattleChallengeHealUsed(true, false),
+        }),
+      ),
+      false,
     );
   });
 });
