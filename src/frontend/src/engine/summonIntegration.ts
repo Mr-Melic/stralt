@@ -6,10 +6,10 @@
  */
 
 import type { CombatantEntry } from "../components/InitiativeStrip";
-import { SUMMON_BASE_LIFESPAN } from "../data/gameConstants";
-import { logDebugError, logDebugInfo } from "../utils/debugLogger";
+import { logDebugInfo } from "../utils/debugLogger";
 import { type SpellContextDeps, createSpellContext } from "./spellContext";
 import type { SpellContext } from "./spellEngine";
+import { expireSummonsAtTurnStart } from "./summonLifespan";
 import {
   type CurrentTurnIndexRef,
   type SetTurnOrder,
@@ -63,7 +63,6 @@ export function decrementSummonLifespan(
   log: (msg: string, color?: string, isSummon?: boolean) => void,
   activeSummonId?: string | null,
 ): { enemies: any[]; expiredIds: string[] } {
-  const expiredIds: string[] = [];
   logDebugInfo("SUMMON", "[SUMMON-LIFE] decrementSummonLifespan ENTER", {
     activeSummonId: activeSummonId ?? null,
     summonCount: enemies.filter((e: any) => e.isSummon).length,
@@ -74,48 +73,7 @@ export function decrementSummonLifespan(
       hp: e.hp,
     })),
   });
-  for (const e of enemies) {
-    if (!e.isSummon) continue;
-    // Section 2: only decrement the summon whose own turn is about to begin.
-    // When activeSummonId is null/undefined, skip the decrement entirely —
-    // this tick is a cleanup-only pass (no summon's turn is starting).
-    if (activeSummonId != null && e.id !== activeSummonId) continue;
-    const beforeTurns = e.turnsRemaining;
-    const beforeHp = e.hp;
-    if (activeSummonId != null) {
-      // Defensive fallback: if turnsRemaining is missing (undefined/null),
-      // the summon was committed without a lifespan — log the anomaly and
-      // treat it as the canonical base-4 default BEFORE decrementing. The
-      // previous `(e.turnsRemaining || 1) - 1` fallback treated a missing
-      // value as 1, which decremented to 0 and expired the summon on the
-      // very first tick (the instant-despawn bug). Restoring the base-4
-      // default gives the summon its full expected lifespan.
-      if (e.turnsRemaining == null) {
-        logDebugError("SUMMON", "turnsRemaining missing", { id: e.id });
-        e.turnsRemaining = SUMMON_BASE_LIFESPAN;
-      }
-      e.turnsRemaining = e.turnsRemaining - 1;
-    }
-    logDebugInfo("SUMMON", "[SUMMON-LIFE] decrement AFTER", {
-      activeSummonId: activeSummonId ?? null,
-      id: e.id,
-      turnsBefore: beforeTurns,
-      turnsAfter: e.turnsRemaining,
-      hpBefore: beforeHp,
-      hpAfter: e.hp,
-    });
-    if (e.turnsRemaining <= 0) {
-      e.hp = 0;
-      log(`${e.name} fades away...`, "#a78bfa", true);
-      expiredIds.push(e.id);
-      logDebugInfo("SUMMON", "[SUMMON-LIFE] EXPIRY path triggered", {
-        id: e.id,
-        turnsRemaining: e.turnsRemaining,
-        hp: e.hp,
-        reason: "turnsRemaining<=0",
-      });
-    }
-  }
+  const expiredIds = expireSummonsAtTurnStart(enemies, log, activeSummonId);
   // Removal filter: distinguish expiry (hp set to 0 above) from any other
   // hp<=0 cause (e.g. death path that already zeroed hp before this call).
   const removed: any[] = [];
