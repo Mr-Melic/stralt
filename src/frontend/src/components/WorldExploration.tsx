@@ -9986,6 +9986,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     playerSpellContext() as any,
                     { getStatModifier, calcScaledDamage } as any,
                   );
+                  // Summon-control skips executeCastAttempt / tile-click
+                  // follow-up. Record Striker from the summon tile so a
+                  // range-3+ Archer / Bomber shot cannot persist legendary_3.
+                  challengeDirectHitRef.current = recordChallengeDirectHit(
+                    challengeDirectHitRef.current,
+                    { x: summon.x, y: summon.y },
+                    { x: targetEnemy.x, y: targetEnemy.y },
+                  );
                   logBattleEntry(
                     `${summon.pieceType} casts ${spell.name}`,
                     "#a855f7",
@@ -10698,6 +10706,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     } as any,
                     playerSpellContext() as any,
                     { getStatModifier, calcScaledDamage } as any,
+                  );
+                  // Summon-control skips executeCastAttempt / tile-click
+                  // follow-up. Record Striker from the summon tile so a
+                  // range-3+ Archer / Bomber shot cannot persist legendary_3.
+                  challengeDirectHitRef.current = recordChallengeDirectHit(
+                    challengeDirectHitRef.current,
+                    { x: summon.x, y: summon.y },
+                    { x: targetEnemy.x, y: targetEnemy.y },
                   );
                   logBattleEntry(
                     `${summon.pieceType} casts ${spell.name}`,

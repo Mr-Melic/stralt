@@ -204,11 +204,22 @@ export function recordChallengeApSpend(
 }
 
 /**
+ * resolvePlayerCast results that consumed the spell attempt.
+ * `summon` must debit the same as `cast` / `fizzled` — canvas click
+ * routed summons through executeCastAttempt and then skipped the
+ * follow-up debit because a stale comment claimed it was already paid.
+ */
+export function castResultSpendsAp(result: string): boolean {
+  return result === "cast" || result === "fizzled" || result === "summon";
+}
+
+/**
  * legendary_3 Striker (400 Doka / 800 XP) requires every spent attempt
- * to land within Chebyshev distance 2. Sprite-click (the primary enemy
- * targeting path) used to skip the follow-up that flipped
- * `challengeDirectHitRef`, so a range-3+ Poison / Inferno / Frost hit
- * still persisted the reward. Once false, it stays false for the fight.
+ * to land within Chebyshev distance 2 of the caster. Sprite-click used
+ * to skip the tile-click follow-up, and player-controlled summons
+ * (Archer Poison Arrow range 4, Slow range 3) call resolveSpellCast
+ * without that follow-up, so a range-3+ hit still persisted the reward.
+ * Once false, it stays false for the fight.
  */
 export function recordChallengeDirectHit(
   stillDirect: boolean,
@@ -220,16 +231,6 @@ export function recordChallengeDirectHit(
   const dy = Math.abs(Number(target.y) - Number(caster.y));
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
   return Math.max(dx, dy) <= 2;
-}
-
-/**
- * resolvePlayerCast results that consumed the spell attempt.
- * `summon` must debit the same as `cast` / `fizzled` — canvas click
- * routed summons through executeCastAttempt and then skipped the
- * follow-up debit because a stale comment claimed it was already paid.
- */
-export function castResultSpendsAp(result: string): boolean {
-  return result === "cast" || result === "fizzled" || result === "summon";
 }
 
 /**
