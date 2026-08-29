@@ -237,6 +237,26 @@ export function castResultSpendsAp(result: string): boolean {
 }
 
 /**
+ * Tile-click / touch follow-up after executeCastAttempt.
+ *
+ * #59 moved the debit into executeCastAttempt for cast / fizzled / summon.
+ * The tile follow-up still deducted on fizzle, so a 4-AP miss from 6 AP
+ * left 0 instead of 2 and ended the turn. Follow-up must not debit again.
+ */
+export function castFollowUpShouldDebitAp(result: string): boolean {
+  return !castResultSpendsAp(result);
+}
+
+/**
+ * After AP has already been deducted, leftover is in the live ref.
+ * Subtracting the cost again kicks the player to walk whenever remaining
+ * AP is less than the spell cost (8 AP, 4-cost cast → 4 left, still cleared).
+ */
+export function shouldClearSpellAfterApSpend(remainingAp: number): boolean {
+  return Math.max(0, Math.floor(Number(remainingAp) || 0)) <= 0;
+}
+
+/**
  * legendary_3 Striker (400 Doka / 800 XP) requires every spent attempt
  * to land within Chebyshev distance 2 of the caster. Sprite-click used
  * to skip the tile-click follow-up, and player-controlled summons

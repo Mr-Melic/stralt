@@ -4,6 +4,7 @@ import {
   type Challenge,
   type ChallengePanelProgress,
   DEFAULT_CHALLENGES,
+  castFollowUpShouldDebitAp,
   castResultSpendsAp,
   isChallengeCompleted,
   isChallengeFailed,
@@ -13,6 +14,7 @@ import {
   recordChallengePlayerTurnStart,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
+  shouldClearSpellAfterApSpend,
   shouldCountOpeningPlayerTurn,
 } from "./challengeCompletion.ts";
 import {
@@ -445,6 +447,23 @@ describe("recordChallengeApSpend", () => {
     assert.equal(castResultSpendsAp("summon"), true);
     assert.equal(castResultSpendsAp("no_ap"), false);
     assert.equal(castResultSpendsAp("abort"), false);
+  });
+
+  it("does not let a tile-click follow-up debit AP after executeCastAttempt", () => {
+    assert.equal(castFollowUpShouldDebitAp("fizzled"), false);
+    assert.equal(castFollowUpShouldDebitAp("cast"), false);
+    assert.equal(castFollowUpShouldDebitAp("summon"), false);
+    assert.equal(castFollowUpShouldDebitAp("no_ap"), true);
+    assert.equal(castFollowUpShouldDebitAp("abort"), true);
+  });
+
+  it("clears the selected spell from leftover AP, not leftover minus cost again", () => {
+    // 6 AP, 4-cost fizzle already paid inside executeCastAttempt → 2 left.
+    assert.equal(shouldClearSpellAfterApSpend(2), false);
+    // 8 AP, 4-cost cast already paid → 4 left; old `remaining - cost` cleared.
+    assert.equal(shouldClearSpellAfterApSpend(4), false);
+    assert.equal(shouldClearSpellAfterApSpend(0), true);
+    assert.equal(shouldClearSpellAfterApSpend(-1), true);
   });
 });
 
