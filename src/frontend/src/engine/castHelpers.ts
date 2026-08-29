@@ -25,9 +25,12 @@ import type { CharacterStats } from "../components/WorldExploration";
 import type { SoundEvent } from "../hooks/useSoundHooks";
 import type { ActiveEffect } from "../types/gameTypes";
 import type { Enemy } from "../types/gameTypes";
-import { type DeathPipelineCtx, processCombatantDeath } from "./deathPipeline";
+import {
+  type DeathPipelineCtx,
+  processCombatantDeath,
+} from "./deathPipeline.ts";
 import type { PlayerCastEnemy, PlayerCastTarget } from "./spellEngine";
-import { removeCombatantFromTurnQueue } from "./turnQueue";
+import { removeCombatantFromTurnQueue } from "./turnQueue.ts";
 
 /**
  * Minimal structural shape of BossState from bossTypes.ts.
@@ -230,6 +233,12 @@ export interface ApplyDamageToEnemyDeps {
     updater: (prev: CharacterStats) => CharacterStats,
   ) => void;
   processCombatantDeath: (id: string) => boolean;
+  /**
+   * Spell-reflect HP loss (Void Mirror / Reflect Shield) never goes through
+   * playerTakesDamage. Callers must record it here so Untouchable and
+   * under-damage challenges cannot persist after a reflected hit.
+   */
+  onPlayerReflectedDamage: (amount: number) => void;
 }
 
 export interface ApplyDamageToEnemyArgs {
@@ -284,6 +293,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     setLeaderBoostMultiplier: _setLeaderBoostMultiplier,
     setCharacterStats,
     processCombatantDeath,
+    onPlayerReflectedDamage,
   } = deps;
 
   const targetEnemy =
@@ -312,6 +322,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
         ...prev,
         hp: Math.max(0, prev.hp - voidReflect),
       }));
+      onPlayerReflectedDamage(voidReflect);
       logBattleEntry(`Void Mirror reflects ${voidReflect} damage!`, "#E2E8F0");
     }
   }
@@ -338,6 +349,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
         ...s,
         hp: Math.max(0, s.hp - reflectAmtBM),
       }));
+      onPlayerReflectedDamage(reflectAmtBM);
       logBattleEntry(
         `🛡️ Reflect Shield deflects ${reflectAmtBM} damage back at you!`,
         "#f97316",

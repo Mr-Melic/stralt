@@ -9654,6 +9654,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setLeaderBoostMultiplier,
             setCharacterStats,
             processCombatantDeath: processCombatantDeathCb,
+            onPlayerReflectedDamage: (amount: number) => {
+              challengeTotalDamageRef.current = recordChallengeDamageTaken(
+                challengeTotalDamageRef.current,
+                amount,
+              );
+            },
           },
         });
       },
