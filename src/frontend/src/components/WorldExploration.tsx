@@ -207,10 +207,12 @@ import {
 } from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
+  castFollowUpShouldDebitAp,
   castResultSpendsAp,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordInBattleChallengeDamage,
+  shouldClearSpellAfterApSpend,
 } from "../utils/challengeCompletion";
 import {
   addChallengeRewardDeltas,
@@ -10408,15 +10410,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleApRef.current - apCost <= 0) {
+            if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
               setBattleActionMode("walk");
             }
           } else if (castResult === "fizzled") {
-            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-            markFirstAction();
+            // executeCastAttempt already paid AP for fizzle. A second debit
+            // here zeros leftover AP (6 AP, 4-cost miss → 0 instead of 2).
+            if (castFollowUpShouldDebitAp(castResult)) {
+              setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
+              markFirstAction();
+            }
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -10434,7 +10440,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ) > 2
             )
               challengeDirectHitRef.current = false;
-            if (currentBattleApRef.current - apCost <= 0) {
+            if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -10450,7 +10456,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleApRef.current - apCost <= 0) {
+            if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -11003,15 +11009,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleApRef.current - apCost <= 0) {
+            if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
               setBattleActionMode("walk");
             }
           } else if (castResult === "fizzled") {
-            setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-            markFirstAction();
+            // executeCastAttempt already paid AP for fizzle. A second debit
+            // here zeros leftover AP (6 AP, 4-cost miss → 0 instead of 2).
+            if (castFollowUpShouldDebitAp(castResult)) {
+              setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
+              markFirstAction();
+            }
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -11029,7 +11039,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ) > 2
             )
               challengeDirectHitRef.current = false;
-            if (currentBattleApRef.current - apCost <= 0) {
+            if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -11045,7 +11055,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
             }
-            if (currentBattleApRef.current - apCost <= 0) {
+            if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -16606,7 +16616,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
         setSpellCooldownVersion((v) => v + 1);
       }
-      if (currentBattleApRef.current - apCost <= 0) {
+      if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
         spellRangeCacheRef.current.clear();
@@ -16641,7 +16651,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ) > 2
       )
         challengeDirectHitRef.current = false;
-      if (currentBattleApRef.current - apCost <= 0) {
+      if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
         spellRangeCacheRef.current.clear();
@@ -16666,7 +16676,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
         setSpellCooldownVersion((v) => v + 1);
       }
-      if (currentBattleApRef.current - apCost <= 0) {
+      if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
         spellRangeCacheRef.current.clear();

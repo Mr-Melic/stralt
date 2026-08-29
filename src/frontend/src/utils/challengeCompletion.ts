@@ -197,6 +197,26 @@ export function castResultSpendsAp(result: string): boolean {
 }
 
 /**
+ * Tile-click / touch follow-up after executeCastAttempt.
+ *
+ * #59 moved the debit into executeCastAttempt for cast / fizzled / summon.
+ * The tile follow-up still deducted on fizzle, so a 4-AP miss from 6 AP
+ * left 0 instead of 2 and ended the turn. Follow-up must not debit again.
+ */
+export function castFollowUpShouldDebitAp(result: string): boolean {
+  return !castResultSpendsAp(result);
+}
+
+/**
+ * After AP has already been deducted, leftover is in the live ref.
+ * Subtracting the cost again kicks the player to walk whenever remaining
+ * AP is less than the spell cost (8 AP, 4-cost cast → 4 left, still cleared).
+ */
+export function shouldClearSpellAfterApSpend(remainingAp: number): boolean {
+  return Math.max(0, Math.floor(Number(remainingAp) || 0)) <= 0;
+}
+
+/**
  * True when the condition can no longer be satisfied this battle
  * (banner chip should flip to ✗). "under_N_turns" challenges are only
  * failed at battle end (turn count is final only on victory), so they
