@@ -10,6 +10,7 @@ import {
   committedDokaAfterRename,
   liveDokaAfterRename,
   readRenameCharacterResult,
+  shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
 } from "./renameCharacter.ts";
 
@@ -106,5 +107,22 @@ describe("liveDokaAfterRename / committedDokaAfterRename", () => {
       spendFromUiBalance(ui, ui - 30),
     );
     assert.equal(healWrite, 120);
+  });
+
+  it("does not persist a rename spend from an unseeded placeholder 0", () => {
+    assert.equal(shouldCommitRenameDokaSpend(true), true);
+    assert.equal(shouldCommitRenameDokaSpend(false), false);
+
+    const lock = createProgressPersist({ doka: 0, xp: 0, level: 1 });
+    assert.equal(lock.isWalletSeeded(), false);
+    const parsed = readRenameCharacterResult({ __kind__: "ok", ok: null });
+    if (
+      shouldDebitRenameDoka(parsed) &&
+      shouldCommitRenameDokaSpend(lock.isWalletSeeded())
+    ) {
+      lock.commit({ doka: committedDokaAfterRename(lock.snapshot().doka) });
+    }
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.snapshot().doka, 0);
   });
 });

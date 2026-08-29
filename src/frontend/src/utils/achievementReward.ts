@@ -9,7 +9,18 @@ export type AchievementCreditPersistLock = {
   enqueue<T>(fn: () => Promise<T>): Promise<T>;
   commit(next: { doka?: number }): void;
   snapshot(): { doka: number };
+  isWalletSeeded(): boolean;
 };
+
+/**
+ * claimAchievementReward is a backend delta. Adding it onto an unseeded
+ * placeholder 0 marks the lock seeded at `grant` only; the next death/heal
+ * saveBattleStats then writes that under-count and wipes the canister.
+ * Leave the lock unseeded so resolveCommittedDokaForAbsoluteWrite fetches.
+ */
+export function shouldCommitAchievementCredit(walletSeeded: boolean): boolean {
+  return walletSeeded;
+}
 
 export type AchievementCreditActor = {
   claimAchievementReward: (achievementId: string) => Promise<unknown>;
@@ -68,7 +79,10 @@ export async function creditAchievementRewardThroughPersist(
     const parsed = readClaimAchievementReward(
       await actor.claimAchievementReward(achievementId),
     );
-    if ("ok" in parsed) {
+    if (
+      "ok" in parsed &&
+      shouldCommitAchievementCredit(persist.isWalletSeeded())
+    ) {
       persist.commit({
         doka: committedDokaAfterAchievementCredit(
           persist.snapshot().doka,

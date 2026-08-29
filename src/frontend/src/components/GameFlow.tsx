@@ -12,7 +12,10 @@ import type {
   UserProfile,
 } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
-import { shouldApplyCallerDokaHydrate } from "../utils/dokaBalanceQuery";
+import {
+  shouldApplyCallerDokaHydrate,
+  shouldMarkCallerDokaWalletReady,
+} from "../utils/dokaBalanceQuery";
 import BossGuideModal from "./BossGuideModal";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
@@ -77,6 +80,10 @@ const GameFlow: React.FC<GameFlowProps> = ({
   // window-focus refetch is the same class of absolute snapshot: either one
   // can restore a pre-heal balance and refund spent Doka.
   const [dokaBalance, setDokaBalance] = useState(0);
+  // Must flip in the same update as setDokaBalance(query). Passing
+  // backendDokaBalance !== undefined is one render too early: the session
+  // cache is still 0 and idle hydrate would treat that placeholder as live.
+  const [dokaSessionApplied, setDokaSessionApplied] = useState(false);
   // SECTION 4 (build #325): debug context threaded up from WorldExploration so
   // ChatPanel's export-report builder can include live character/map/battle state.
   const [debugContext, setDebugContext] = useState<DebugContext | undefined>(
@@ -143,6 +150,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
       return;
     }
     setDokaBalance(backendDokaBalance);
+    setDokaSessionApplied(true);
     if (currentStage === "world") {
       worldDokaHydratedRef.current = true;
     }
@@ -245,7 +253,10 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onDebugLog={(event, detail) => logDebugInfo("GENERAL", event, detail)}
           onShowBattleSummary={onShowBattleSummary}
           dokaBalance={dokaBalance}
-          dokaWalletReady={backendDokaBalance !== undefined}
+          dokaWalletReady={shouldMarkCallerDokaWalletReady({
+            queryResolved: backendDokaBalance !== undefined,
+            sessionCacheApplied: dokaSessionApplied,
+          })}
           onDokaBalanceChange={setDokaBalance}
           onDebugContextChange={setDebugContext}
           itemShopOpen={showShop}

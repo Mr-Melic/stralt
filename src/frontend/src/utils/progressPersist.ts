@@ -82,13 +82,37 @@ export function floorHydratedLevel(
 
 export type HydrateWhenIdleOptions = {
   /**
-   * True once getCallerDokaBalance has resolved (including a real 0).
-   * GameFlow's session cache starts at 0 before that query returns.
-   * Copying that placeholder into committed lets a lava-death
-   * saveBattleStats write dokaBalances = 0.
+   * True once the session cache has been set from getCallerDokaBalance
+   * (including a real 0). The query resolving is not enough: GameFlow's
+   * dokaBalance state stays 0 for one render, and copying that placeholder
+   * over a shop-credit seed lets a lava-death saveBattleStats write 0.
    */
   walletReady?: boolean;
 };
+
+/**
+ * Idle hydrate must not treat GameFlow's pre-query 0 as the canister wallet.
+ *
+ * `walletReady` is only safe after setDokaBalance(query) — not merely when
+ * the React Query data exists. A positive UI value can also be a feat-claim
+ * or rename delta stacked on the placeholder; that must not seed.
+ *
+ * Once the lock is seeded, a later placeholder 0 must not replace a
+ * shop-credit / fetch snapshot. Real spends commit through the lock.
+ */
+export function shouldCopyIdleWalletDoka(args: {
+  walletSeeded: boolean;
+  walletReady?: boolean;
+  incomingDoka: number;
+  committedDoka: number;
+}): boolean {
+  const incoming = Math.max(0, toNat(args.incomingDoka, 0));
+  const committed = Math.max(0, toNat(args.committedDoka, 0));
+  if (args.walletSeeded) {
+    return !(incoming === 0 && committed > 0);
+  }
+  return args.walletReady === true;
+}
 
 export function createProgressPersist(initial?: Partial<CommittedProgress>) {
   let committed: CommittedProgress = {
@@ -137,10 +161,12 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
       options?: HydrateWhenIdleOptions,
     ): boolean {
       if (pending > 0) return false;
-      const copyDoka =
-        walletSeeded ||
-        options?.walletReady === true ||
-        toNat(next.doka, 0) > 0;
+      const copyDoka = shouldCopyIdleWalletDoka({
+        walletSeeded,
+        walletReady: options?.walletReady,
+        incomingDoka: next.doka,
+        committedDoka: committed.doka,
+      });
       persist.commit({
         doka: copyDoka ? next.doka : undefined,
         xp: next.xp,

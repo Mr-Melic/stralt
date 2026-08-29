@@ -51,3 +51,12 @@ export function liveDokaAfterRename(liveDoka: number): number {
 export function committedDokaAfterRename(committedDoka: number): number {
   return Math.max(0, Math.floor(Number(committedDoka) || 0) - RENAME_DOKA_COST);
 }
+
+/**
+ * renameCharacter already deducted on the canister. Reconstructing the
+ * spend from an unseeded placeholder 0 commits 0 and marks the lock
+ * seeded, so the next death/heal persist wipes the live wallet.
+ */
+export function shouldCommitRenameDokaSpend(walletSeeded: boolean): boolean {
+  return walletSeeded;
+}
