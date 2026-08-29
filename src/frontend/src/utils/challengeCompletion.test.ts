@@ -7,6 +7,7 @@ import {
   isChallengeCompleted,
   isChallengeFailed,
   recordChallengeDamageTaken,
+  recordInBattleChallengeDamage,
 } from "./challengeCompletion.ts";
 import {
   addChallengeRewardDeltas,
@@ -195,6 +196,42 @@ describe("recordChallengeDamageTaken", () => {
       isChallengeCompleted(
         byId("legendary_1"),
         progress({ totalDamage: recordChallengeDamageTaken(0, 0) }),
+      ),
+      true,
+    );
+  });
+});
+
+describe("recordInBattleChallengeDamage", () => {
+  it("counts in-battle spike/lava HP loss so Untouchable cannot persist", () => {
+    let total = 0;
+    total = recordInBattleChallengeDamage(true, total, 8);
+    total = recordInBattleChallengeDamage(true, total, 5);
+    assert.equal(total, 13);
+    const untouchable = byId("legendary_1");
+    assert.equal(
+      isChallengeCompleted(untouchable, progress({ totalDamage: total })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        untouchable,
+        isChallengeCompleted(untouchable, progress({ totalDamage: total })),
+      ),
+      [],
+    );
+  });
+
+  it("leaves the counter unchanged for overworld hazard steps", () => {
+    assert.equal(recordInBattleChallengeDamage(false, 0, 12), 0);
+    assert.equal(recordInBattleChallengeDamage(false, 7, 9), 7);
+    assert.equal(
+      isChallengeCompleted(
+        byId("legendary_1"),
+        progress({
+          totalDamage: recordInBattleChallengeDamage(false, 0, 15),
+        }),
       ),
       true,
     );

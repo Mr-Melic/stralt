@@ -148,6 +148,21 @@ export function recordChallengeDamageTaken(
 }
 
 /**
+ * Lava / spike tiles live on the overworld map and also deal HP during
+ * combat walks. The challenge counter is zeroed in cleanupBattle, not at
+ * battle start, so an out-of-combat hazard step must not increment it —
+ * leftover overworld damage would fail the next fight's Untouchable.
+ */
+export function recordInBattleChallengeDamage(
+  inBattle: boolean,
+  current: number,
+  incoming: number,
+): number {
+  if (!inBattle) return current;
+  return recordChallengeDamageTaken(current, incoming);
+}
+
+/**
  * True when the condition can no longer be satisfied this battle
  * (banner chip should flip to ✗). "under_N_turns" challenges are only
  * failed at battle end (turn count is final only on victory), so they

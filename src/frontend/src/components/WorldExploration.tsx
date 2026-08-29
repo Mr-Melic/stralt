@@ -206,7 +206,10 @@ import {
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
-import { recordChallengeDamageTaken } from "../utils/challengeCompletion";
+import {
+  recordChallengeDamageTaken,
+  recordInBattleChallengeDamage,
+} from "../utils/challengeCompletion";
 import {
   addChallengeRewardDeltas,
   challengeXpFromEntries,
@@ -11317,6 +11320,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 ...prev,
                 hp: Math.max(0, prev.hp - rawDmg),
               }));
+              challengeTotalDamageRef.current = recordInBattleChallengeDamage(
+                inBattleRef.current,
+                challengeTotalDamageRef.current,
+                rawDmg,
+              );
               logBattleEntry(
                 `🌋 You stepped on lava! -${rawDmg} HP`,
                 "#ff4400",
@@ -11352,6 +11360,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 ...prev,
                 hp: Math.max(0, prev.hp - spikeDmg),
               }));
+              challengeTotalDamageRef.current = recordInBattleChallengeDamage(
+                inBattleRef.current,
+                challengeTotalDamageRef.current,
+                spikeDmg,
+              );
               logBattleEntry(
                 `⚔️ You stepped on spikes! -${spikeDmg} HP`,
                 "#cc8800",
