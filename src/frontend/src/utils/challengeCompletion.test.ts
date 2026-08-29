@@ -10,8 +10,10 @@ import {
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
+  recordChallengePlayerTurnStart,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
+  shouldCountOpeningPlayerTurn,
 } from "./challengeCompletion.ts";
 import {
   addChallengeRewardDeltas,
@@ -79,6 +81,69 @@ describe("isChallengeCompleted", () => {
     assert.equal(
       isChallengeCompleted(under5, progress({ turnCount: 6 })),
       false,
+    );
+  });
+
+  it("counts the opening player turn so six turns cannot persist Blitz", () => {
+    // Battle start used to leave turnCount at 0 when the player was first.
+    // Five later advanceTurn increments then read as 5 after six player
+    // turns and credited legendary_2 (450 Doka / 900 XP).
+    assert.equal(shouldCountOpeningPlayerTurn(true), true);
+    assert.equal(shouldCountOpeningPlayerTurn(false), false);
+
+    let skippedOpening = 0;
+    for (let i = 0; i < 5; i++) {
+      skippedOpening = recordChallengePlayerTurnStart(skippedOpening);
+    }
+    const blitz = byId("legendary_2");
+    assert.equal(skippedOpening, 5);
+    assert.equal(
+      isChallengeCompleted(blitz, progress({ turnCount: skippedOpening })),
+      true,
+    );
+    assert.deepEqual(liveBattleChallengePersistEntries(true, blitz, true), [
+      {
+        name: "Battle Challenge",
+        dokaReward: 450,
+        xpReward: 900,
+      },
+    ]);
+
+    let counted = 0;
+    if (shouldCountOpeningPlayerTurn(true)) {
+      counted = recordChallengePlayerTurnStart(counted);
+    }
+    for (let i = 0; i < 5; i++) {
+      counted = recordChallengePlayerTurnStart(counted);
+    }
+    assert.equal(counted, 6);
+    assert.equal(
+      isChallengeCompleted(blitz, progress({ turnCount: counted })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        blitz,
+        isChallengeCompleted(blitz, progress({ turnCount: counted })),
+      ),
+      [],
+    );
+  });
+
+  it("still counts the first player turn when an enemy opened the fight", () => {
+    let counted = 0;
+    if (shouldCountOpeningPlayerTurn(false)) {
+      counted = recordChallengePlayerTurnStart(counted);
+    }
+    counted = recordChallengePlayerTurnStart(counted);
+    assert.equal(counted, 1);
+    assert.equal(
+      isChallengeCompleted(
+        byId("legendary_2"),
+        progress({ turnCount: counted }),
+      ),
+      true,
     );
   });
 
