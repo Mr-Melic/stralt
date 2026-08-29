@@ -210,6 +210,7 @@ import {
   castResultSpendsAp,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeDirectHit,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
 } from "../utils/challengeCompletion";
@@ -10442,11 +10443,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               setBattleActionMode("walk");
             }
           } else if (castResult === "summon") {
-            // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
-            // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
-            // owned by another task — do NOT touch it here.
-            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
-            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
+            // AP / Striker / first-action already recorded in executeCastAttempt.
+            // Only cooldown and empty-AP mode switch belong here.
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
@@ -11037,11 +11035,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               setBattleActionMode("walk");
             }
           } else if (castResult === "summon") {
-            // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
-            // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
-            // owned by another task — do NOT touch it here.
-            // AP deduction + markFirstAction + challengeMaxApThisTurnRef are already
-            // performed inside executeCastAttempt for "cast" — do NOT repeat here.
+            // AP / Striker / first-action already recorded in executeCastAttempt.
+            // Only cooldown and empty-AP mode switch belong here.
             if (spell.cooldown && spell.cooldown > 0) {
               spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
               setSpellCooldownVersion((v) => v + 1);
@@ -16508,6 +16503,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           challengeMaxApThisTurnRef.current = nextAp.peak;
           challengeApThisTurnRef.current = nextAp.spentThisTurn;
+          // Sprite-click (sprite-enemy / sprite-basic) used to return
+          // without the tile-click follow-up that flips Striker. Record
+          // here so every executeCastAttempt caller shares the gate.
+          challengeDirectHitRef.current = recordChallengeDirectHit(
+            challengeDirectHitRef.current,
+            playerPositionRef.current,
+            targetTile,
+          );
+        }
+        if (
+          _castResult === "cast" &&
+          spell.targetType === "self" &&
+          spell.effectType === "heal"
+        ) {
+          challengeHealUsedRef.current = true;
         }
         return { castResult: _castResult, apCost: _apCost };
       }
@@ -16650,8 +16660,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
     } else if (castResult === "summon") {
       // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
-      // cooldown, mirroring the "cast" branch. challengeDirectHitRef is
-      // owned by another task — do NOT touch it here.
+      // cooldown, mirroring the "cast" branch. Record Striker distance
+      // here — this path does not go through executeCastAttempt.
       setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
       {
@@ -16663,6 +16673,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         challengeMaxApThisTurnRef.current = nextAp.peak;
         challengeApThisTurnRef.current = nextAp.spentThisTurn;
       }
+      challengeDirectHitRef.current = recordChallengeDirectHit(
+        challengeDirectHitRef.current,
+        playerPositionRef.current,
+        gridPos,
+      );
       if (spell.cooldown && spell.cooldown > 0) {
         spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
         setSpellCooldownVersion((v) => v + 1);

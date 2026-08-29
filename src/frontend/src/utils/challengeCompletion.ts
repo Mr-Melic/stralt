@@ -204,6 +204,25 @@ export function recordChallengeApSpend(
 }
 
 /**
+ * legendary_3 Striker (400 Doka / 800 XP) requires every spent attempt
+ * to land within Chebyshev distance 2. Sprite-click (the primary enemy
+ * targeting path) used to skip the follow-up that flipped
+ * `challengeDirectHitRef`, so a range-3+ Poison / Inferno / Frost hit
+ * still persisted the reward. Once false, it stays false for the fight.
+ */
+export function recordChallengeDirectHit(
+  stillDirect: boolean,
+  caster: { x: number; y: number },
+  target: { x: number; y: number },
+): boolean {
+  if (!stillDirect) return false;
+  const dx = Math.abs(Number(target.x) - Number(caster.x));
+  const dy = Math.abs(Number(target.y) - Number(caster.y));
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+  return Math.max(dx, dy) <= 2;
+}
+
+/**
  * resolvePlayerCast results that consumed the spell attempt.
  * `summon` must debit the same as `cast` / `fizzled` — canvas click
  * routed summons through executeCastAttempt and then skipped the
