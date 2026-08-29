@@ -282,6 +282,7 @@ import {
   planSummonControlCast,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
+  summonTurnBudget,
 } from "../utils/summonControlCast";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
@@ -14106,6 +14107,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   "#ef4444",
                 );
                 setTimeout(() => advanceTurn(), 0);
+              } else if (_summon) {
+                // spawnSummonUnit seeds AP/MP once. The AI path resets them
+                // at handleSummonTurn; control mode never entered that path,
+                // so a 2-AP Archer that spent Poison Arrow stayed at 0 AP
+                // and later lifespan turns auto-ended.
+                const budget = summonTurnBudget(_summon);
+                (
+                  _summon as { currentAp?: number; currentMp?: number }
+                ).currentAp = budget.currentAp;
+                (_summon as { currentMp?: number }).currentMp =
+                  budget.currentMp;
               }
             } else {
               setBattlePhase("enemy");

@@ -135,3 +135,21 @@ export function summonControlIdAfterAdvance(
   }
   return null;
 }
+
+/**
+ * Per-turn AP/MP budget when a player-controlled summon's turn starts.
+ *
+ * spawnSummonUnit seeds currentAp/currentMp once. The enemy-AI path
+ * resets them at the start of handleSummonTurn, but player-side control
+ * never calls that — leftover 0 AP after Poison Arrow (2) from a 2-AP
+ * Archer then auto-ends the remaining lifespan-4 turns.
+ */
+export function summonTurnBudget(summon: {
+  maxAp?: unknown;
+  maxMp?: unknown;
+}): { currentAp: number; currentMp: number } {
+  return {
+    currentAp: Math.max(0, Math.floor(Number(summon.maxAp) || 0)),
+    currentMp: Math.max(0, Math.floor(Number(summon.maxMp) || 0)),
+  };
+}

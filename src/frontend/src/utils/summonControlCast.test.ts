@@ -7,6 +7,7 @@ import {
   resolveSummonControlSpell,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
+  summonTurnBudget,
 } from "./summonControlCast.ts";
 
 describe("resolveSummonControlSpell", () => {
@@ -162,5 +163,28 @@ describe("summonControlIdAfterAdvance", () => {
     );
     assert.equal(summonControlIdAfterAdvance(null), null);
     assert.equal(summonControlIdAfterAdvance(undefined), null);
+  });
+});
+
+describe("summonTurnBudget", () => {
+  it("refreshes leftover 0/0 so a spent Archer can act on later lifespan turns", () => {
+    // First turn: 2 AP Poison Arrow + 3 MP walk leaves 0/0. Without a
+    // refresh, turn 2+ of a lifespan-4 Archer auto-ends immediately.
+    assert.deepEqual(summonTurnBudget({ maxAp: 2, maxMp: 3 }), {
+      currentAp: 2,
+      currentMp: 3,
+    });
+    assert.deepEqual(summonTurnBudget({ maxAp: 2, maxMp: 2 }), {
+      currentAp: 2,
+      currentMp: 2,
+    });
+  });
+
+  it("floors missing or invalid max budgets to 0", () => {
+    assert.deepEqual(summonTurnBudget({}), { currentAp: 0, currentMp: 0 });
+    assert.deepEqual(summonTurnBudget({ maxAp: -1, maxMp: Number.NaN }), {
+      currentAp: 0,
+      currentMp: 0,
+    });
   });
 });
