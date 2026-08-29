@@ -106,18 +106,20 @@ Auth: `mo:caffeineai-authorization`. Roles `#admin | #user | #guest`. First non-
 | `updateCharacter(slot, character)` | Full record replace + validation above |
 | `deleteCharacter(slot)` | Also clears slot-scoped boss-rush state |
 | `getCharacterSlots` / `getCharacter` / `getCharacterStats` | Caller-scoped |
-| `renameCharacter(slot, newName)` | 1–20 chars, unique per account, **100 Doka** from `dokaBalances` |
+| `renameCharacter(slot, newName)` | 1–20 chars, unique per account, **100 Doka**. Returns `{ #ok \| #err }` — Candid does **not** throw on `#err`. Debit the **live** wallet only after `readRenameCharacterResult` is `#ok` |
 | `setSpellBarOrder(slot, spellIds)` | Drops unknown ids; keeps max 8 |
 | `saveActiveSpells` / `updateSessionState` / `getSessionState` | Session fields on `Character` |
 | `saveKillCount(slot, kills)` | Increments `stats.killCount`. Hook exists; no UI caller yet |
 | `applyRewards(slot, dokaDelta, xpDelta)` | **Atomic additive** XP + level + Doka. `Nat` only — cannot subtract |
 | `saveBattleStats(...)` | Absolute HP/AP/MP/atk/res/init + XP + Doka snapshot. **Ignores** spell-level arrays (`upgradeSpell` owns those) |
 | `getCallerDokaBalance` / `getDokaBalance` | Same per-principal map |
-| `upgradeSpell(slot, spellId)` | Spends Doka |
+| `upgradeSpell(slot, spellId)` | Spends `spellLevelingBaseCost * 2^currentLevel` (default base **10**). Spellbook summon UI advertises `10×` that — debit the **canister** spend via `spellUpgradeUiSpend` |
 | `getBuffCatalog` / `purchaseBuff` / `useBuffItem` | |
+| `getPlayerAchievements(player)` | Empty unless `player == caller` Principal. Pass `identity.getPrincipal()`, never the display name |
 | `markAchievementUnlocked` / `claimAchievementReward` | Claim is a Doka delta — enqueue on the persist lock |
 | `initiatePurchase` / `processPendingPurchases` | Nine positional Text args; 60s auto-complete |
 | `getBossRushState` / `setBossRushProgress` / `completeBossRushRoom` / `resetBossRush` | Slot-scoped; query `userId` must be the caller principal |
+| `getDungeonRecord` / `updateDungeonProgress` / `resetDungeonChain` | `dungeonRecords` keyed by Principal. Query/update require `caller == principal` (admin may update/reset) |
 | `sendMessage` / `getMessages` | Chat; lost on upgrade |
 | `getLeaderboard` | Top 50 by level |
 
@@ -172,6 +174,26 @@ Death penalty cannot use `applyRewards` (Nat-only add). `persistDeathPenalty` wr
 | `persistSpellUpgrade` | `utils/spellUpgrade.ts` |
 | `shouldApplyCallerDokaHydrate` | `utils/dokaBalanceQuery.ts` |
 | `persistBossRushRoomClear` / `resolveBossRushQueryPrincipalText` | `hooks/bossRushProgress.ts` |
+| `shouldCopyIdleWalletDoka` / `resolveCommittedDokaForAbsoluteWrite` | `utils/progressPersist.ts` |
+| `shouldMarkCallerDokaWalletReady` | `utils/dokaBalanceQuery.ts` |
+| `readRenameCharacterResult` / `shouldDebitRenameDoka` | `utils/renameCharacter.ts` |
+| `spellUpgradeUiSpend` | `utils/spellUpgrade.ts` |
+| `fetchPlayerAchievements` | `utils/playerAchievements.ts` |
+
+### Wallet seeding (placeholder 0)
+
+`createProgressPersist` starts at `doka = 0`. That 0 is **ambiguous**: a new empty wallet vs GameFlow's pre-query placeholder. A lava/combat death on the first map that penalizes committed `0` and `saveBattleStats`s it wipes the canister.
+
+| Rule | Helper |
+| :--- | :--- |
+| Constructor seed is live only when `initial.doka > 0` | `createProgressPersist` |
+| Idle hydrate copies UI Doka only after `setDokaBalance(query)` (`walletReady`) | `shouldMarkCallerDokaWalletReady` |
+| Once seeded, idle UI must not **cut** committed Doka (stale pre-credit query is the same class as placeholder 0) | `shouldCopyIdleWalletDoka` |
+| Idle hydrate must not write a **lower level** than committed (lava death mid-`applyRewards`) | `floorHydratedLevel` |
+| Unseeded absolute writes (`saveBattleStats` death/heal) must fetch the live wallet first; skip the write if the read fails | `resolveCommittedDokaForAbsoluteWrite` |
+| Credits/renames stacked on the placeholder must not mark the lock seeded | `shouldCommitRenameDokaSpend`, `creditAchievementRewardThroughPersist` |
+
+`walletReady` is `queryResolved && sessionCacheApplied`. React Query resolving one render before `setDokaBalance` still leaves GameFlow at placeholder 0.
 
 ### Shop and item purchases
 
@@ -183,7 +205,18 @@ Backend `_autoCompletePendingPurchases` credits packages with `status == "pendin
 
 ### Admin (gated)
 
-CRUD for enemy / region / sprite / spell / map-modifier / shop / achievement / boss / ad-box configs, plus bans, Doka grants, version / changelog, color palette, boss-rush config. Reads of most configs are public queries.
+UI is lazy-loaded (`AdminDashboard.tsx`) and shown only when `isAdmin && onOpenAdmin`. Backend still enforces `#admin` on every write. Do not ship admin as first-class player UI.
+
+| Operator action | Method | Constraint |
+| :--- | :--- | :--- |
+| Ban / unban | `adminBanAccount` / `banPrincipal` / `banPlayer` + matching unban | Banned principals fail purchases, buffs, achievements, boss rush, Doka awards |
+| Grant Doka | `adminGrantDoka` / `adminAddDoka` / `adminAddDokaToUser` | Writes `dokaBalances` — not a field on `Character` |
+| Config CRUD | `adminSet*` / `adminDelete*` for enemy, region, sprite, spell, map-modifier, shop, achievement, boss, game, tier-spawn | Reads of most configs are public queries |
+| Login ads | `adminSetAdBox(index, imageUrl, linkUrl)` / `adminClearAdBox` / `getAdBoxes` | Three slots (`index` 0–2). Tuple is `(imageUrl, linkUrl, isActive)` |
+| Version | `setAppVersion` / `setChangelog` | Frontend wipe still keys off `APP_VERSION` in `App.tsx` |
+| Role | `assignUserRole` | Admin-only; rate-limited once per 30s |
+
+Password admin is removed. First non-anonymous caller of `getUserRole` becomes `#admin`.
 
 ### OQL
 
@@ -216,6 +249,48 @@ CRUD for enemy / region / sprite / spell / map-modifier / shop / achievement / b
 5. Recap popup is only mounted in `App.tsx` (z-index 9999) so it survives the battle → exploration transition. The full-screen wrapper is `pointer-events: none` (the card itself is `auto`) — lava/spike tiles under the recap still receive input while persist is in flight.
 6. Both React `inBattle` **and** `inBattleRef` must be false after `handleBattleEnd` / room clear / death. `cleanupBattle` only clears the ref; leaving React state true blocks the next fight (`shouldAllowBattleTrigger`).
 
+### Battle challenges
+
+Catalog and predicates live in `utils/challengeCompletion.ts`. `handleBattleEnd` / `handleBossRushRoomClear` persist advertised Doka/XP only when `isChallengeCompleted(liveChallenge, progress)` is true.
+
+| Id | Condition | Persist reward |
+| :--- | :--- | :--- |
+| `easy_1` | `no_healing` | 50 Doka |
+| `easy_2` | `under_15_turns` | 75 Doka |
+| `easy_3` | `under_50_damage` | 60 Doka |
+| `hard_1` | `no_healing_under_30_damage` | 200 Doka / 500 XP |
+| `hard_2` | `under_10_turns` | 175 Doka / 400 XP |
+| `hard_3` | `under_8_ap_per_turn` | 150 Doka / 450 XP |
+| `legendary_1` | `no_damage_taken` (Untouchable) | 500 Doka / 1000 XP |
+| `legendary_2` | `under_5_turns` | 450 Doka / 900 XP |
+| `legendary_3` | `direct_hit` (Chebyshev ≤ 2) | 400 Doka / 800 XP |
+
+**Damage that must increment `challengeTotalDamageRef`** (HP actually lost after shields):
+
+| Source | Helper | Constraint |
+| :--- | :--- | :--- |
+| Regular melee / spell / `playerTakesDamage` | `recordChallengeDamageTaken` | Boss-ability-only increment used to leave `totalDamage` at 0 and credit a failed Untouchable |
+| Void Mirror / Reflect Shield / Mirror Field | `recordChallengeDamageTaken` via `onPlayerReflectedDamage` | Reflect never went through `playerTakesDamage` |
+| Thorned Ground / Void Rift walk | `recordChallengeDamageTaken` | In-combat map modifiers |
+| Lava (8–15) / spikes (5–10) | `recordInBattleChallengeDamage(inBattleRef, …)` | **In-battle only.** Counter is zeroed in `cleanupBattle`, not at battle start — overworld hazard steps must not fail the next fight |
+
+**AP for `under_8_ap_per_turn`:** `recordChallengeApSpend` keeps a per-turn accumulator (reset on turn start) and a **peak** that only clears in `cleanupBattle`. A 9+ AP dump on turn 1 still fails even if later turns are cheap.
+
+`castResultSpendsAp` is true for `"cast" | "fizzled" | "summon"`. Both the canvas click path (`executeCastAttempt`) and **Attack Nearest** (`resolvePlayerCast` directly) must debit AP + record the spend. Skipping either made the cast free and hid a 9+ AP dump from `hard_3`.
+
+Turn-count challenges (`under_N_turns`) only fail at battle end — `isChallengeFailed` stays false mid-fight so the banner chip does not flip early.
+
+### Death Realm transition
+
+Exploration (or in-battle) lava/spike death arms a **1.5s** timer (`deathRealmTimerRef`) and `persistDeathPenalty` **restores HP in the same tick**. An `hp <= 0` check is already false when the player can walk.
+
+While `isDeathRealmTransitionPending(deathTriggered, timerPending)`:
+
+1. Portals stay blocked (`shouldBlockPortalDuringPendingDeathRealm`). `cleanupMap` would cancel the timer while `deathTriggered` stays set — the HP watch never re-runs and the next lava death strands the player.
+2. World encounters stay blocked (`shouldAllowBattleTrigger.deathRealmPending`). Starting a fight resets the death guards without clearing the timer; the leftover callback aborts the battle (and a second death persist can fire).
+
+After Death Realm loads or Respawn is clicked, call `armDeathGuards` so both `deathTriggered` and `deathPenaltyApplied` are false. Leaving them set skips the next exploration death (0 HP, no penalty, no Game Over).
+
 ### Boss rush persist / resume
 
 `bossRushStates` is keyed `principalText#slot`. `getBossRushState(userId, slot)` returns `(0,0,0)` unless `userId == caller`. GameFlow `userId` is the **display name** — `Principal.fromText("VampireBob")` throws. Query with the authenticated II principal (`resolveBossRushQueryPrincipalText`).
@@ -228,9 +303,35 @@ On room clear (`persistBossRushRoomClear` + `persistBossRushRewardsThroughLock`)
 4. `createCharacter` / `deleteCharacter` call `_clearBossRushForSlot` so a new occupant cannot resume mid-tree.
 5. Lava/spike death calls `abortBossRush` → `resetBossRush` (`currentRoom = 0`). A late in-flight room-clear write is superseded (`wasSuperseded`).
 
+Ten rooms (`BOSS_RUSH_ROOMS` in `hooks/useBossRush.ts`), indexes 0–9. Room 9 is the jackpot (5000 Doka / 2000 XP). Pair kits and combined mechanics live in that table — do not invent a parallel inventory.
+
 ### Portals
 
 `engine/portalRules.ts` `filterRunPortals`: free exploration keeps generator candidates; dungeon / boss-rush keeps only `"progression"` and only when the map is cleared. Portal checks must read `inBattleRef`, not stale `inBattle` state.
+
+### Dungeon chain
+
+`dungeonRecords` is Principal-keyed (`chainDepth`, `totalMapsCompleted`, `bestRewardMultiplier`). Frontend run flags (`dungeonChainActiveRef` / `depth` / `maxDepth`) are **session refs**. `cleanupMap` always zeroes them (death/flee must not carry a run onto the next map).
+
+A progression portal is not a flee. Snapshot **before** `cleanupMap`, then decide the step:
+
+```
+snap = snapshotDungeonChain(refs)
+action = decideDungeonChainPortal(portal.isDungeonEntry, snap)
+```
+
+| Action | When | Effect |
+| :--- | :--- | :--- |
+| `enter` | `isDungeonEntry && !snap.active` | Depth 1; `maxDepth = 3 + random(0..2)` (3–5 maps) |
+| `progress` | active and `depth < maxDepth` | `nextDepth = depth + 1` |
+| `complete` | active and `depth >= maxDepth` | Bonus `maxDepth * 50` Doka via persist-lock credit; then reset flags |
+| `none` | not in a chain, not an entry portal | Free exploration |
+
+Post-cleanup zeros always yield `none` (or `enter` on a dungeon-entry portal) — never `progress` / `complete` — which drops the chain, generates an overworld map, and skips the completion bonus.
+
+`getRunMode`: boss rush wins over dungeon. `resetRunState` on death → Death Realm (aborts rush + zeroes chain). `completeRun` is the non-penalty counterpart (rewards stay). White sanctuary portal: `shouldSpawnWhitePortal` after a successful final room / final depth.
+
+Backend `updateDungeonProgress` writes `chainDepth` and `1.0 + depth * 0.25` into `bestRewardMultiplier`. Victory Doka that already baked the chain multiplier must pass `PREAPPLIED_REWARD_MULTIPLIER` (`1`) so it is not squared.
 
 ## Combat engine (`src/frontend/src/engine/`)
 
@@ -242,13 +343,14 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `turnQueue.ts` | Index-safe removal from the turn queue |
 | `deathPipeline.ts` | Idempotent death sequence + optional reconcile hook |
 | `spellEngine.ts` | Pure player / enemy spell resolution |
+| `castHelpers.ts` | AoE target list + `applyDamageToEnemy` (Void Mirror / Reflect Shield call `onPlayerReflectedDamage`) |
 | `targeting.ts` | Preview + live cast gate from **explicit** spell metadata |
 | `occupancy.ts` | Tile passability, pushback, attract |
 | `battleSetup.ts` | Liveness / remaining-hostile predicates |
 | `combatMath.ts` | Spawn clustering, damage helpers |
 | `progression.ts` | Level-derived base stats (player / enemy / summon) |
 | `mapGen.ts` | Map archetypes (do not casually rewrite) |
-| `portalRules.ts` | Run-mode portal filter |
+| `portalRules.ts` | Run-mode portal filter + dungeon-chain snapshot / `decideDungeonChainPortal` |
 | `summonSpawn.ts` / `summonAI.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle; lifespan decrements on the summon's **own** turn |
 
 Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRange`, `lineOfSight`, `linear`, `diagonal`, `freeCells`, `areaRadius`, `isBarrier`. `spell.name` is UI/log only.
@@ -257,6 +359,7 @@ Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRang
 
 - Actor hook: `hooks/useActor.ts`. `VITE_USE_MOCK=true` returns the shared `mocks/backend.ts` singleton.
 - Admin UI is lazy-loaded. Button is `isAdmin && onOpenAdmin`. Backend still enforces `#admin` on writes.
+- Feats: `useGetPlayerAchievements` must pass `identity.getPrincipal()`. Omitting the Principal throws at Candid encode (caught → `[]`) or fails `caller == player` and returns `[]` — every feat stays locked and Claim never renders.
 - Debug overlay lives in `ChatPanel` (always mounted on the world stage). **Shift+D** opens the Debug channel. Ring buffer (`debug/debugLogger.ts`) runs in production; console output is dev-only. Click-trace / geometry overlay are `import.meta.env.DEV`.
 
 ## Migrations

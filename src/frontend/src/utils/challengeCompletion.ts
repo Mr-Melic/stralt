@@ -148,6 +148,23 @@ export function recordChallengeDamageTaken(
 }
 
 /**
+ * Mark heal-used for `no_healing` / `no_healing_under_30_damage`.
+ *
+ * handleBattleEnd persists easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP)
+ * from `healUsed`. The flag is only cleared in cleanupBattle (battle end),
+ * not at the next battle start. The overworld Doka-to-HP button used to
+ * flip it, so a pre-fight heal failed the following no-heal challenge
+ * even when no healing spell was cast.
+ */
+export function recordInBattleChallengeHealUsed(
+  inBattle: boolean,
+  alreadyUsed: boolean,
+): boolean {
+  if (!inBattle) return alreadyUsed === true;
+  return true;
+}
+
+/**
  * Lava / spike tiles live on the overworld map and also deal HP during
  * combat walks. The challenge counter is zeroed in cleanupBattle, not at
  * battle start, so an out-of-combat hazard step must not increment it —
@@ -217,6 +234,26 @@ export function recordChallengeApSpend(
  */
 export function castResultSpendsAp(result: string): boolean {
   return result === "cast" || result === "fizzled" || result === "summon";
+}
+
+/**
+ * legendary_3 Striker (400 Doka / 800 XP) requires every spent attempt
+ * to land within Chebyshev distance 2 of the caster. Sprite-click used
+ * to skip the tile-click follow-up, and player-controlled summons
+ * (Archer Poison Arrow range 4, Slow range 3) call resolveSpellCast
+ * without that follow-up, so a range-3+ hit still persisted the reward.
+ * Once false, it stays false for the fight.
+ */
+export function recordChallengeDirectHit(
+  stillDirect: boolean,
+  caster: { x: number; y: number },
+  target: { x: number; y: number },
+): boolean {
+  if (!stillDirect) return false;
+  const dx = Math.abs(Number(target.x) - Number(caster.x));
+  const dy = Math.abs(Number(target.y) - Number(caster.y));
+  if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+  return Math.max(dx, dy) <= 2;
 }
 
 /**

@@ -14,7 +14,10 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/` | React + Vite client |
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit |
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
+| `src/frontend/src/engine/portalRules.ts` | Run-mode portals + dungeon-chain snapshot (before `cleanupMap`) |
 | `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards` + `saveBattleStats` |
+| `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP accumulators |
+| `src/frontend/src/utils/deathGuards.ts` | Death-realm timer + one-shot death guards |
 | `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` |
 | `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` level threshold |
 | `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
@@ -50,8 +53,8 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 
 | Doc | Contents |
 | :--- | :--- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, persist lock, public canister API, frontend flows, combat engine |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid/wallet pitfalls, shop, boss rush, deploy, debug overlay |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, persist lock, challenges, Death Realm, dungeon chain, public API |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid/wallet pitfalls, challenges, shop, boss rush, deploy, debug overlay |
 | [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
 
