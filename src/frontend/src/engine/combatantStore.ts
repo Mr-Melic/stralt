@@ -31,13 +31,13 @@
 import type { MutableRefObject } from "react";
 import type { CombatantEntry } from "../components/InitiativeStrip";
 import type { Enemy } from "../types/gameTypes";
-import { activeHostilesRemaining } from "./battleSetup";
-import { removeCombatantFromTurnQueue } from "./turnQueue";
+import { activeHostilesRemaining } from "./battleSetup.ts";
 import type {
   CurrentTurnIndexRef,
   SetTurnOrder,
   TurnOrderRef,
 } from "./turnQueue";
+import { removeCombatantFromTurnQueue } from "./turnQueue.ts";
 
 /** React state setter for an array of combatants. */
 type SetCombatants = (updater: (prev: Enemy[]) => Enemy[]) => void;
@@ -168,7 +168,7 @@ function assertNoDivergence(
   nextCombatants: Enemy[],
   nextEnemies: Enemy[],
 ): void {
-  if (!import.meta.env.DEV) return;
+  if (!import.meta.env?.DEV) return;
 
   const refIds = ctx.combatantsRef.current.map((c) => c.id);
   const stateIds = ctx.enemiesRef.current.map((c) => c.id);
@@ -558,7 +558,7 @@ export function getLiveCombatants(ctx: CombatantStoreCtx): Enemy[] {
  *   turnOrder=N ids=[...] hostiles=K
  */
 export function dumpStateSync(label: string, ctx: CombatantStoreCtx): void {
-  if (!import.meta.env.DEV) return;
+  if (!import.meta.env?.DEV) return;
 
   const ids = (arr: Enemy[]): string[] => arr.map((c) => c.id);
   const turnIds = ctx.turnOrderRef.current.map((e) => e.id);

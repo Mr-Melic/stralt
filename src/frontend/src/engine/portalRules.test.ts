@@ -3,6 +3,12 @@ import { describe, it } from "node:test";
 import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
+  filterRunPortals,
+  getRunMode,
+  isProgressionLocked,
+  isProgressionPortalUnlocked,
+  shouldSpawnWhitePortal,
+  shouldSuppressPortal,
   snapshotDungeonChain,
 } from "./portalRules.ts";
 
@@ -55,5 +61,60 @@ describe("decideDungeonChainPortal", () => {
       { kind: "complete", bonus: dungeonChainCompletionBonus(4) },
     );
     assert.equal(dungeonChainCompletionBonus(4), 200);
+  });
+});
+
+describe("filterRunPortals", () => {
+  const mixed = [
+    "regular",
+    "dungeonEntry",
+    "bossRushEntry",
+    "deathRealm",
+    "progression",
+    "white",
+  ] as const;
+
+  it("passes candidates through during free exploration", () => {
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "none",
+        mapCleared: false,
+        candidates: [...mixed],
+      }),
+      [...mixed],
+    );
+    assert.equal(shouldSuppressPortal("dungeonEntry", "none", false), false);
+    assert.equal(getRunMode(false, false), "none");
+  });
+
+  it("hides every portal until a dungeon or boss-rush map is cleared", () => {
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "dungeon",
+        mapCleared: false,
+        candidates: [...mixed],
+      }),
+      [],
+    );
+    assert.equal(shouldSuppressPortal("progression", "dungeon", false), true);
+    assert.equal(shouldSuppressPortal("regular", "dungeon", true), true);
+    assert.equal(isProgressionLocked("dungeon", false), true);
+    assert.equal(isProgressionPortalUnlocked("dungeon", false), false);
+  });
+
+  it("keeps only the progression portal after a run map is cleared", () => {
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "bossRush",
+        mapCleared: true,
+        candidates: [...mixed],
+      }),
+      ["progression"],
+    );
+    assert.equal(shouldSuppressPortal("progression", "bossRush", true), false);
+    assert.equal(isProgressionPortalUnlocked("bossRush", true), true);
+    assert.equal(getRunMode(true, true), "bossRush");
+    assert.equal(shouldSpawnWhitePortal(true, false), true);
+    assert.equal(shouldSpawnWhitePortal(false, false), false);
   });
 });

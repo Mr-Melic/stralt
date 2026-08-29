@@ -268,12 +268,13 @@ describe("progress persist lock", () => {
     );
     assert.equal(lock.pendingCount(), 0);
     assert.equal(lock.hydrateWhenIdle({ doka: 1, xp: 1, level: 1 }), true);
-    assert.deepEqual(lock.snapshot(), { doka: 1, xp: 1, level: 1 });
+    // #56: a stale/placeholder 1 must not cut the seeded 200 wallet.
+    assert.deepEqual(lock.snapshot(), { doka: 200, xp: 1, level: 4 });
 
     lock.commit({ doka: Number.NaN });
     assert.equal(
       lock.snapshot().doka,
-      1,
+      200,
       "NaN commit must keep the last wallet",
     );
   });
