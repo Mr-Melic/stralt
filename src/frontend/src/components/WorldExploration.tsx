@@ -214,6 +214,7 @@ import {
 } from "../utils/challengeRewards";
 import {
   armDeathGuards,
+  isDeathRealmTransitionPending,
   shouldBlockPortalDuringPendingDeathRealm,
 } from "../utils/deathGuards";
 import {
@@ -11720,6 +11721,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         inBattle,
         inBattleRef: inBattleRef.current,
         transitionInProgress: transitionInProgressRef.current,
+        deathRealmPending: isDeathRealmTransitionPending(
+          deathTriggeredRef.current,
+          deathRealmTimerRef.current !== null,
+        ),
       })
     )
       return;
@@ -12104,6 +12109,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // start. If a prior battle's death path failed to reset it (e.g. an
       // aborted flee or a crash mid-deathRealmTimer), the next battle's death
       // would be silently swallowed. This makes the guard battle-scoped.
+      // Cancel a leftover exploration Death Realm timer first. Lava/spike
+      // death restores HP and arms a 1.5s callback; if a fight still starts
+      // (another entry path), that callback would setInBattle(false) and
+      // cleanupBattle mid-fight.
+      if (deathRealmTimerRef.current !== null) {
+        clearTimeout(deathRealmTimerRef.current);
+        deathRealmTimerRef.current = null;
+      }
       deathTriggeredRef.current = false;
       deathPenaltyAppliedRef.current = false;
       // Reset per-battle achievement tracking
@@ -13004,6 +13017,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           mapTitle: currentMapRef.current?.id || "Unknown",
         };
         if (onShowBattleSummary) onShowBattleSummary(defeatRecap);
+        // Drop the live path so a dismissed recap cannot queue another walk
+        // onto an enemy during the 1.5s Death Realm wait. checkBattleTrigger
+        // also blocks while the timer is pending.
+        setIsMoving(false);
+        setMovementPath([]);
+        setCurrentStepIndex(0);
         if (deathRealmTimerRef.current !== null)
           clearTimeout(deathRealmTimerRef.current);
         deathRealmTimerRef.current = window.setTimeout(() => {

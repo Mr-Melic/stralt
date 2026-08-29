@@ -96,4 +96,26 @@ assert.equal(
   "room-clear / death must drop both inBattle flags so the next room can start",
 );
 
+assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: false,
+    inBattleRef: false,
+    transitionInProgress: false,
+    deathRealmPending: true,
+  }),
+  false,
+  "pending Death Realm after lava/spike death must not start a fight",
+);
+
+assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: false,
+    inBattleRef: false,
+    transitionInProgress: false,
+    deathRealmPending: false,
+  }),
+  true,
+  "Death Realm already loaded must allow the next encounter",
+);
+
 console.log("battleSetup.victory.test: ok");
