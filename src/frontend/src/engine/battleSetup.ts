@@ -112,8 +112,21 @@ export function shouldAllowBattleTrigger(opts: {
   inBattle: boolean;
   inBattleRef: boolean;
   transitionInProgress: boolean;
+  /**
+   * Exploration lava/spike death arms a 1.5s Death Realm timer and restores
+   * HP immediately. Mid-path movement can still land on an enemy cell.
+   * Starting that fight resets the death guards without clearing the timer,
+   * so the leftover callback aborts the battle (and a second persistDeathPenalty
+   * can fire if the player also dies in it).
+   */
+  deathRealmPending?: boolean;
 }): boolean {
-  return !opts.inBattle && !opts.inBattleRef && !opts.transitionInProgress;
+  return (
+    !opts.inBattle &&
+    !opts.inBattleRef &&
+    !opts.transitionInProgress &&
+    !opts.deathRealmPending
+  );
 }
 
 /**

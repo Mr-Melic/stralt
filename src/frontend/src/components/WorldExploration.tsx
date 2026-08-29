@@ -207,6 +207,8 @@ import {
 } from "../utils/achievementReward";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
+  castResultSpendsAp,
+  recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordInBattleChallengeDamage,
 } from "../utils/challengeCompletion";
@@ -217,6 +219,7 @@ import {
 } from "../utils/challengeRewards";
 import {
   armDeathGuards,
+  isDeathRealmTransitionPending,
   shouldBlockPortalDuringPendingDeathRealm,
 } from "../utils/deathGuards";
 import {
@@ -1032,6 +1035,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const challengeTotalDamageRef = useRef(0);
   const challengeTurnCountRef = useRef(0);
   const challengeMaxApThisTurnRef = useRef(0);
+  const challengeApThisTurnRef = useRef(0);
   const challengeDirectHitRef = useRef(true);
   // Mirror of challengeAccepted state for stable access inside callbacks
   // (cast/move handlers are useCallback-memoized and would otherwise see a
@@ -9657,6 +9661,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setLeaderBoostMultiplier,
             setCharacterStats,
             processCombatantDeath: processCombatantDeathCb,
+            onPlayerReflectedDamage: (amount: number) => {
+              challengeTotalDamageRef.current = recordChallengeDamageTaken(
+                challengeTotalDamageRef.current,
+                amount,
+              );
+            },
           },
         });
       },
@@ -11511,6 +11521,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     challengeTotalDamageRef.current = 0;
     challengeTurnCountRef.current = 0;
     challengeMaxApThisTurnRef.current = 0;
+    challengeApThisTurnRef.current = 0;
     challengeDirectHitRef.current = true;
     challengeAcceptedRef.current = false;
     currentChallengeRef.current = null;
@@ -11733,6 +11744,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         inBattle,
         inBattleRef: inBattleRef.current,
         transitionInProgress: transitionInProgressRef.current,
+        deathRealmPending: isDeathRealmTransitionPending(
+          deathTriggeredRef.current,
+          deathRealmTimerRef.current !== null,
+        ),
       })
     )
       return;
@@ -12117,6 +12132,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // start. If a prior battle's death path failed to reset it (e.g. an
       // aborted flee or a crash mid-deathRealmTimer), the next battle's death
       // would be silently swallowed. This makes the guard battle-scoped.
+      // Cancel a leftover exploration Death Realm timer first. Lava/spike
+      // death restores HP and arms a 1.5s callback; if a fight still starts
+      // (another entry path), that callback would setInBattle(false) and
+      // cleanupBattle mid-fight.
+      if (deathRealmTimerRef.current !== null) {
+        clearTimeout(deathRealmTimerRef.current);
+        deathRealmTimerRef.current = null;
+      }
       deathTriggeredRef.current = false;
       deathPenaltyAppliedRef.current = false;
       // Reset per-battle achievement tracking
@@ -13017,6 +13040,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           mapTitle: currentMapRef.current?.id || "Unknown",
         };
         if (onShowBattleSummary) onShowBattleSummary(defeatRecap);
+        // Drop the live path so a dismissed recap cannot queue another walk
+        // onto an enemy during the 1.5s Death Realm wait. checkBattleTrigger
+        // also blocks while the timer is pending.
+        setIsMoving(false);
+        setMovementPath([]);
+        setCurrentStepIndex(0);
         if (deathRealmTimerRef.current !== null)
           clearTimeout(deathRealmTimerRef.current);
         deathRealmTimerRef.current = window.setTimeout(() => {
@@ -13962,7 +13991,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setSpellSelectionVersion((v) => v + 1);
             setBattleTurn((t) => t + 1);
             challengeTurnCountRef.current += 1;
-            challengeMaxApThisTurnRef.current = 0;
+            challengeApThisTurnRef.current = 0;
             // Void Rift: pick a new random walkable void tile each turn
             if (isVoidRift) {
               setCurrentMap((cm) => {
@@ -16462,17 +16491,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           "BATTLE",
           `[CLICK-ENEMY] source=${source} spell=${spell.id} tile=${targetTile.x},${targetTile.y} apCost=${_apCost} castResult=${_castResult} targetsCount=${castRuntimeRef.current.targetsToHit.length} targetIds=${castRuntimeRef.current.targetsToHit.map((t: any) => t.id).join(",")}`,
         );
-        // SECTION 5: deduct AP on both 'cast' and 'fizzled' — the attempt was
-        // made (the fail chance is the point of the roll), so the spell's AP
-        // cost is consumed either way. Pre-roll rejections ('no_ap' below, or
-        // any abort before the roll) do NOT deduct — those never reached the
-        // resolvePlayerCast roll.
-        if (_castResult === "cast" || _castResult === "fizzled") {
+        // Deduct AP on cast / fizzled / summon — the attempt was made.
+        // Pre-roll rejections ('no_ap' / 'abort') do NOT deduct.
+        // Summon used to skip this gate; canvas click then skipped the
+        // follow-up debit, so a placed summon cost 0 AP.
+        if (castResultSpendsAp(_castResult)) {
           setCurrentBattleApSynced((prev: number) =>
             Math.max(0, prev - _apCost),
           );
           markFirstAction();
-          challengeMaxApThisTurnRef.current += _apCost;
+          const nextAp = recordChallengeApSpend(
+            challengeMaxApThisTurnRef.current,
+            challengeApThisTurnRef.current,
+            _apCost,
+          );
+          challengeMaxApThisTurnRef.current = nextAp.peak;
+          challengeApThisTurnRef.current = nextAp.spentThisTurn;
         }
         return { castResult: _castResult, apCost: _apCost };
       }
@@ -16545,9 +16579,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     const castResult = resolvePlayerCast(spell, gridPos, playerSpellContext());
     if (castResult === "cast") {
-      // AP deduction + markFirstAction + challengeMaxApThisTurnRef are
-      // already performed inside executeCastAttempt for the "cast"
-      // result — do NOT repeat them here (was a double-application bug).
+      // This path calls resolvePlayerCast directly — it does NOT go
+      // through executeCastAttempt. Skipping the debit here made
+      // Attack Nearest a free cast.
+      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
+      {
+        const nextAp = recordChallengeApSpend(
+          challengeMaxApThisTurnRef.current,
+          challengeApThisTurnRef.current,
+          apCost,
+        );
+        challengeMaxApThisTurnRef.current = nextAp.peak;
+        challengeApThisTurnRef.current = nextAp.spentThisTurn;
+      }
       if (
         Math.max(
           Math.abs(gridPos.x - playerPositionRef.current.x),
@@ -16571,6 +16615,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     } else if (castResult === "fizzled") {
       setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
+      {
+        const nextAp = recordChallengeApSpend(
+          challengeMaxApThisTurnRef.current,
+          challengeApThisTurnRef.current,
+          apCost,
+        );
+        challengeMaxApThisTurnRef.current = nextAp.peak;
+        challengeApThisTurnRef.current = nextAp.spentThisTurn;
+      }
       {
         const _screen = tileCenter(gridPos.x, gridPos.y);
         effectsManagerRef.current?.spawnFloatText(
@@ -16600,7 +16653,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // owned by another task — do NOT touch it here.
       setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
       markFirstAction();
-      challengeMaxApThisTurnRef.current += apCost;
+      {
+        const nextAp = recordChallengeApSpend(
+          challengeMaxApThisTurnRef.current,
+          challengeApThisTurnRef.current,
+          apCost,
+        );
+        challengeMaxApThisTurnRef.current = nextAp.peak;
+        challengeApThisTurnRef.current = nextAp.spentThisTurn;
+      }
       if (spell.cooldown && spell.cooldown > 0) {
         spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
         setSpellCooldownVersion((v) => v + 1);
