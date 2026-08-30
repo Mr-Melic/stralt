@@ -106,6 +106,49 @@ describe("playerTurnStartModifierTarget", () => {
 });
 
 describe("turn-start plague store write", () => {
+  it("React-only plague HP write leaves a last-hostile enemy summon blocking victory", () => {
+    const minion = {
+      ...enemy("larva-1", 2),
+      isSummon: true,
+      side: "enemy" as const,
+    };
+    const ctx = store([minion]);
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 1);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: activeHostilesRemaining(ctx.combatantsRef.current),
+      }),
+      false,
+      "enemy minions are hostiles — UI 0 HP must not award while store hp > 0",
+    );
+
+    const { newHp, lethal } = enemyHpAfterHazardDamage(2, PLAGUE_ZONE_TICK);
+    updateCombatant(ctx, "larva-1", { hp: newHp });
+    if (lethal) removeCombatant(ctx, "larva-1");
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "summon-ai branch must commit plague like #84 or applyRewards never runs",
+    );
+    assert.equal(
+      shouldDispatchEnemyAiAfterTurnStart({
+        stillInStore: false,
+        storeHp: 0,
+      }),
+      false,
+      "lethal last-minion tick must not dispatch AI",
+    );
+  });
+
   it("React-only plague HP write leaves the last enemy blocking victory", () => {
     const ctx = store([enemy("rat-1", 2)]);
     assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 1);

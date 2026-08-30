@@ -164,7 +164,8 @@ export const PLAGUE_ZONE_TICK = 2;
 
 /**
  * After DoT / plague at enemy turn start, dispatch AI only if the unit
- * is still alive in the store. `setBattlePhase("enemy")` before a lethal
+ * is still alive in the store. Applies to non-summon enemies and enemy
+ * summons (hostiles after #79). `setBattlePhase("enemy")` before a lethal
  * tick leaves battlePhase stuck when `processCombatantDeath` points the
  * queue at a non-enemy predecessor.
  */

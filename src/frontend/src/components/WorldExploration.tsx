@@ -14174,6 +14174,58 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   budget.currentMp;
               }
             } else {
+              // Enemy summons are hostiles (#79) but this branch skipped the
+              // #84 turn-start ticks. Last-minion plague/DoT left store hp > 0,
+              // so shouldAwardVictory stayed false and the minion still took a
+              // full AI turn (death penalty instead of applyRewards).
+              mapModifierRegistry.applyTurnStart(
+                nextCombatant,
+                activeMapModifierTypes,
+                {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                },
+              );
+              processActiveEffects(nextCombatant.id);
+              if (isPlagueZone) {
+                const live = getLiveCombatants(combatantStoreCtx).find(
+                  (e) => e.id === nextCombatant.id,
+                );
+                if (live && live.hp > 0) {
+                  const { newHp, lethal } = enemyHpAfterHazardDamage(
+                    live.hp,
+                    PLAGUE_ZONE_TICK,
+                  );
+                  setEnemyHpMap((prev) => ({
+                    ...prev,
+                    [nextCombatant.id]: newHp,
+                  }));
+                  updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                    hp: newHp,
+                  });
+                  if (lethal) {
+                    processCombatantDeathCb(nextCombatant.id);
+                  }
+                  logBattleEntry(
+                    `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                    "#a855f7",
+                  );
+                }
+              }
+              const afterTicks = getLiveCombatants(combatantStoreCtx).find(
+                (e) => e.id === nextCombatant.id,
+              );
+              if (
+                !shouldDispatchEnemyAiAfterTurnStart({
+                  stillInStore: afterTicks !== undefined,
+                  storeHp: afterTicks?.hp ?? 0,
+                })
+              ) {
+                if (activeHostilesRemaining(combatantsRef.current) > 0) {
+                  setTimeout(() => advanceTurn(), 0);
+                }
+                return nextIdx;
+              }
               setBattlePhase("enemy");
             }
           } else {
