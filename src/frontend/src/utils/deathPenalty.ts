@@ -68,6 +68,18 @@ export function shouldApplyVictoryLiveHydrate(
   return !deathTriggered;
 }
 
+/**
+ * 50% of the level-scaled max HP (`100 * (1 + (level-1) * 0.05)`).
+ *
+ * Must match handleRespawn / Death Realm UI. persistDeathPenalty used to
+ * write `(50 + level) * 10 * 0.5` (255 at level 1) — a reload then hydrated
+ * the player far above max HP.
+ */
+export function respawnHpAfterDeath(level: number): number {
+  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+  return Math.max(1, Math.floor(100 * (1 + (safeLevel - 1) * 0.05) * 0.5));
+}
+
 /** Post-battle HP/AP/MP floor. Uses the pre-hydrate level, matching the live setState. */
 export function victoryResourceFloor(level: number): {
   hp: number;

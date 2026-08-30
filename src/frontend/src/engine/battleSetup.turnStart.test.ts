@@ -4,6 +4,7 @@ import type { CombatantEntry } from "../components/InitiativeStrip";
 import type { Enemy } from "../types/gameTypes";
 import {
   PLAGUE_ZONE_TICK,
+  VOID_RIFT_TICK,
   activeHostilesRemaining,
   enemyHpAfterHazardDamage,
   playerTurnStartModifierTarget,
@@ -164,6 +165,43 @@ describe("turn-start plague store write", () => {
     );
 
     const { newHp, lethal } = enemyHpAfterHazardDamage(2, PLAGUE_ZONE_TICK);
+    updateCombatant(ctx, "rat-1", { hp: newHp });
+    if (lethal) removeCombatant(ctx, "rat-1");
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "store write + processCombatantDeath must award so applyRewards can run",
+    );
+  });
+});
+
+describe("turn-start void rift store write", () => {
+  it("marks void rift as lethal so callers must processCombatantDeath", () => {
+    assert.deepEqual(enemyHpAfterHazardDamage(3, VOID_RIFT_TICK), {
+      newHp: 0,
+      lethal: true,
+    });
+    assert.deepEqual(enemyHpAfterHazardDamage(2, VOID_RIFT_TICK), {
+      newHp: 0,
+      lethal: true,
+    });
+    assert.deepEqual(enemyHpAfterHazardDamage(10, VOID_RIFT_TICK), {
+      newHp: 7,
+      lethal: false,
+    });
+  });
+
+  it("React-only void-rift HP write leaves the last enemy blocking victory", () => {
+    const ctx = store([enemy("rat-1", 3)]);
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 1);
+
+    const { newHp, lethal } = enemyHpAfterHazardDamage(3, VOID_RIFT_TICK);
     updateCombatant(ctx, "rat-1", { hp: newHp });
     if (lethal) removeCombatant(ctx, "rat-1");
     assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);

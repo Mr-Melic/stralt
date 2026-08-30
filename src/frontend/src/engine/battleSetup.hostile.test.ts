@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   activeHostilesRemaining,
+  countsTowardKillRewards,
   despawnSummons,
   enemyHpAfterHazardDamage,
   isActiveHostile,
@@ -54,6 +55,45 @@ describe("isActiveHostile", () => {
     assert.deepEqual(
       after.map((e) => e.id),
       ["rat"],
+    );
+  });
+});
+
+describe("countsTowardKillRewards", () => {
+  it("excludes player-side summons even after HP is already 0", () => {
+    assert.equal(
+      countsTowardKillRewards({
+        isSummon: true,
+        side: "player",
+      }),
+      false,
+    );
+    assert.equal(
+      isActiveHostile({
+        hp: 0,
+        isSummon: true,
+        side: "player",
+      }),
+      false,
+    );
+  });
+
+  it("still attributes enemy minions and legacy non-summons after a lethal hit", () => {
+    assert.equal(
+      countsTowardKillRewards({
+        isSummon: true,
+        side: "enemy",
+      }),
+      true,
+    );
+    assert.equal(countsTowardKillRewards({ isSummon: false }), true);
+    assert.equal(
+      isActiveHostile({
+        hp: 0,
+        isSummon: false,
+        side: "enemy",
+      }),
+      false,
     );
   });
 });

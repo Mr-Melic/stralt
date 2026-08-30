@@ -46,21 +46,34 @@ export interface Combatant {
 }
 
 /**
- * Returns true when `e` is a living non-summon enemy that must be defeated
- * for victory.
+ * Returns true when `e` is a living enemy-side combatant that must be
+ * defeated for victory (including enemy-summoner minions after #79).
  *
  * - hp must be > 0.
- * - `isSummon` must be falsy (summons are never hostile).
- * - `side === 'player'` is never hostile.
+ * - Player-side summons are never hostile.
  * - `side === 'enemy'` (or absent side, defaulted to enemy for non-summons)
  *   is hostile when alive.
  */
 export function isActiveHostile(e: Combatant): boolean {
   if (e.hp <= 0) return false;
+  return countsTowardKillRewards(e);
+}
+
+/**
+ * Whether a combatant's death should enter the victory XP/Doka roster.
+ *
+ * The death pipeline snapshots the row after HP is already 0, so
+ * `isActiveHostile` would drop real enemy kills. Player-side summons
+ * (and the player) must still be excluded — otherwise a dead wolf / bomber
+ * is treated as a defeated enemy and `applyRewards` credits extra XP/Doka.
+ */
+export function countsTowardKillRewards(e: {
+  isSummon?: boolean;
+  side?: "player" | "enemy";
+}): boolean {
   if (e.isSummon && e.side !== "enemy") return false;
   // Absent side on a non-summon defaults to enemy-side (legacy combatants).
-  const side = e.side ?? "enemy";
-  return side === "enemy";
+  return (e.side ?? "enemy") === "enemy";
 }
 
 /**
@@ -161,6 +174,9 @@ export function enemyHpAfterHazardDamage(
 
 /** Plague Zone WX tick. Must match the inline "deals 2 damage" log. */
 export const PLAGUE_ZONE_TICK = 2;
+
+/** Void Rift WX tick. Must match mapModifiers VOID_RIFT_TICK / MAP_MODIFIER_VOID_RIFT_DAMAGE. */
+export const VOID_RIFT_TICK = 3;
 
 /**
  * After DoT / plague at enemy turn start, dispatch AI only if the unit
