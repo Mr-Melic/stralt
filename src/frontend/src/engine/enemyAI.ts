@@ -37,13 +37,13 @@ import {
   ENEMY_UTILITY_WEIGHTS,
   ENEMY_WOUNDED_SACRIFICE_HP_PCT,
   WORLD_GRID_SIZE,
-} from "../data/gameConstants";
+} from "../data/gameConstants.ts";
 import type { ChessPieceType, Enemy, SpellConfig } from "../types/gameTypes";
-import { logDebugInfo } from "../utils/debugLogger";
+import { logDebugInfo } from "../utils/debugLogger.ts";
 import {
   type OccupancyContext,
   isCellFree as sharedIsCellFree,
-} from "./occupancy";
+} from "./occupancy.ts";
 
 // ---------------------------------------------------------------------------
 // Public types

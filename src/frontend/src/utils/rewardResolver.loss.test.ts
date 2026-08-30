@@ -67,3 +67,19 @@ describe("persistIncrementalRewards Nat floor", () => {
     ]);
   });
 });
+
+describe("persistIncrementalRewards flooring", () => {
+  it("floors negatives and fractions so applyRewards never sees a negative Nat", async () => {
+    const calls: Array<[bigint, bigint, bigint]> = [];
+    const actor = {
+      applyRewards: async (slot: bigint, doka: bigint, xp: bigint) => {
+        calls.push([slot, doka, xp]);
+        return { ok: { newDoka: 1, newXp: 2, newLevel: 1 } };
+      },
+    };
+    await persistIncrementalRewards(actor, 1, -4.7, 3.9);
+    assert.deepEqual(calls, [[1n, 0n, 3n]]);
+    await persistIncrementalRewards(actor, 1, 2.2, -9);
+    assert.deepEqual(calls[1], [1n, 2n, 0n]);
+  });
+});
