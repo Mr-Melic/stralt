@@ -12885,10 +12885,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const challengeXpReward = challengeReward.xpDelta;
       const completedChallenges = challengePersistEntries.map((c) => c.name);
 
-      const newDokaBalance = applyShopCreditDeltaToUi(
-        dokaBalanceRef.current,
-        totalDoka + challengeDokaReward,
-      );
+      const roomClearDoka = totalDoka + challengeDokaReward;
       const leveled = applyXpDelta(
         characterStats.exp || 0,
         characterStats.level,
@@ -12896,25 +12893,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       );
       const newXp = leveled.newXp;
 
-      onDokaBalanceChange(newDokaBalance);
-      setCharacterStats((prev) => {
-        const next = applyXpDelta(
-          prev.exp || 0,
-          prev.level,
-          expGained + challengeXpReward,
-        );
-        return {
-          ...prev,
-          exp: next.newXp,
-          level: next.newLevel,
-        };
-      });
-
       // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
       // the room that just paid out. Both writes stay on the persist lock so
       // a lava death during persistRoomClear cannot jump the queue and let
       // applyRewards credit after the penalty. completeBossRushRoom stays
       // progress-only (0, 0); wallet/XP still go through the single funnel.
+      //
+      // Do not credit the HUD before that write. handleBattleEnd waits;
+      // crediting first left ghost Doka/XP when applyRewards rejected.
+      // hydrateWhenIdle then copies incoming >= committed and the next
+      // saveBattleStats mints the unpaid wallet — or a recap shop spend
+      // drains the real pre-reward balance.
       const deathEpochAtPersistStart = deathEpochRef.current;
       if (actor) {
         void persistBossRushRewardsThroughLock(
@@ -12943,9 +12932,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           },
         )
           .then((persisted) => {
-            // Wallet was already credited locally above. Do not replace it
-            // with the absolute applyRewards read — that refunds a recap
-            // heal that deducted while this persist was in flight.
             if (
               !shouldApplyVictoryLiveHydrate(
                 deathTriggeredRef.current,
@@ -12960,6 +12946,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               exp: persisted.newXp ?? newXp,
               level: persisted.currentLevel || prev.level,
             }));
+            // Add the credited delta onto the live wallet. Replacing with
+            // applyRewards' absolute newDoka refunds a recap heal/shop spend
+            // the player already applied locally while this persist ran.
+            onDokaBalanceChange(
+              applyShopCreditDeltaToUi(
+                dokaBalanceRef.current,
+                persisted.dokaEarned ?? roomClearDoka,
+              ),
+            );
           })
           .catch((persistErr: unknown) => {
             logDebugError(
