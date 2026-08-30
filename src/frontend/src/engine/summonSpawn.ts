@@ -57,12 +57,10 @@ export interface TurnOrderEntry {
   maxHp: number;
   isPlayer: boolean;
   /**
-   * Combatant type used by the turn-advance gate in WorldExploration.tsx
-   * (currentCombatant.type !== "enemy" rejects entries without type: "enemy").
-   * Player-side summons are tagged "enemy" so they receive turns — their
-   * side: "player" field still routes their AI through handleSummonTurn.
+   * Player-side summons are "summon" (control panel). Enemy-side summons
+   * are "enemy" so the WorldExploration AI effect does not bail.
    */
-  type: "player" | "enemy";
+  type: "player" | "enemy" | "summon";
   isSummon?: boolean;
   summonAI?: string;
   ownerId?: string;
@@ -97,6 +95,7 @@ export function spawnSummonUnit(
   computeEnemyStats: (level: number, pieceType: string, seedKey: string) => any,
   spellLevel = 0,
   occupancyCtx?: OccupancyContext,
+  /** Hostile summons must pass `"enemy"`. Default is the player kit path. */
   side: "player" | "enemy" = "player",
 ): SpawnSummonResult {
   const unitDef: SummonUnitDef | undefined = spell.summonUnitDef;
@@ -176,10 +175,9 @@ export function spawnSummonUnit(
     maxHp: summon.maxHp,
     level,
     pieceIcon: SUMMON_PIECE_ICONS[unitDef.pieceType] ?? "\u265F",
-    // Tag as "enemy" so the turn-advance gate (currentCombatant.type !== "enemy")
-    // grants the summon a turn. side: "player" still routes its AI through
-    // handleSummonTurn (player-side summon AI), not the enemy AI branch.
-    type: "enemy",
+    // Player-side: "summon" so control mode / summonControlIdAfterAdvance
+    // bind. Enemy-side: "enemy" so the AI effect (type !== "enemy") runs.
+    type: side === "player" ? "summon" : "enemy",
     isSummon: true,
     summonAI: summon.summonAI,
     ownerId,

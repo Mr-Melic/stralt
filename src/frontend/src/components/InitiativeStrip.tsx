@@ -5,10 +5,10 @@ import DraggablePanel from "./DraggablePanel";
 export interface CombatantEntry {
   id: string;
   /** Turn-route discriminator: "player" for the human player, "enemy"
-   * for AI-controlled enemies, "summon" for any combatant with
-   * `isSummon` (regardless of side). The router keys summon dispatch
-   * off `isSummon`, not this field, but `type` must not match "player"
-   * for a player-side summon or it would wrongly take the player route. */
+   * for AI-controlled hostiles (including enemy-side summons), "summon"
+   * for player-side summons. The enemy-AI effect gates on type ===
+   * "enemy". Player-side summons must not be "player" or they take the
+   * player route. */
   type: "player" | "enemy" | "summon";
   initiative: number;
   name: string;
