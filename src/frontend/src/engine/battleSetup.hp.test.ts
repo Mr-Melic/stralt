@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   battleWalkHazardDamages,
+  hpAfterBossPhase2,
+  hpAfterHeal,
   hpAfterIncomingDamage,
   thornedGroundWalkDamage,
   voidRiftWalkDamage,
@@ -78,5 +80,29 @@ describe("battle-walk hazards (mouse and touch must match)", () => {
       }).riftDmg,
       0,
     );
+  });
+});
+
+describe("hpAfterHeal store contract", () => {
+  it("caps at maxHp so a drain/heal cannot inflate past the strip", () => {
+    assert.equal(hpAfterHeal(100, 200, 50), 150);
+    assert.equal(hpAfterHeal(180, 200, 50), 200);
+  });
+});
+
+describe("hpAfterBossPhase2 store contract", () => {
+  it("doubles live HP/maxHp and full-heals Weeping Pawn", () => {
+    assert.deepEqual(hpAfterBossPhase2(200, 200, 2, false), {
+      hp: 400,
+      maxHp: 400,
+    });
+    assert.deepEqual(hpAfterBossPhase2(50, 200, 2, false), {
+      hp: 100,
+      maxHp: 400,
+    });
+    assert.deepEqual(hpAfterBossPhase2(50, 200, 2, true), {
+      hp: 400,
+      maxHp: 400,
+    });
   });
 });
