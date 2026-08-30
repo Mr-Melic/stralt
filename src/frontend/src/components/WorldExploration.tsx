@@ -342,7 +342,11 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
-import { applyXpDelta, xpForNextLevel } from "../utils/xpCurve";
+import {
+  applyXpDelta,
+  recapXpAfterGrant,
+  xpForNextLevel,
+} from "../utils/xpCurve";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -12758,15 +12762,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Do NOT call updateCharacter here — rewards must ONLY persist via applyRewards.
 
           // Build and show recap IMMEDIATELY — never block on persistence
+          const recapXp = recapXpAfterGrant(
+            characterStats.exp,
+            characterStats.level,
+            finalExp + challengeXpReward,
+          );
           const finalRecapData: BattleRecapData = {
             mapTitle: currentMapRef.current?.id || "Unknown",
             xpEarned: finalExp + challengeXpReward,
             dokaEarned: totalDoka,
             hitsDealt: battleHitsRef.current,
             enemiesDefeated: defeated,
-            currentLevel: characterStats.level,
-            currentXP: characterStats.exp,
-            xpForNextLevel: (characterStats.level || 1) * 100,
+            currentLevel: recapXp.level,
+            currentXP: recapXp.leftover,
+            xpForNextLevel: recapXp.needed,
             dokaBreakdown: [],
             completedChallenges: challengeCompleted ? ["Battle Challenge"] : [],
             dungeonMultiplier: chainMult || 1,
@@ -12924,7 +12933,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 hitsDealt: 0,
                 enemiesDefeated: [],
                 currentXP: characterStats.exp,
-                xpForNextLevel: (characterStats.level || 1) * 100,
+                xpForNextLevel: xpForNextLevel(characterStats.level),
                 currentLevel: characterStats.level,
                 dokaBreakdown: [],
               },
@@ -13149,9 +13158,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         xpEarned: expGained + challengeXpReward,
         hitsDealt: battleHitsRef.current,
         enemiesDefeated: defeatedList,
-        currentXP: characterStats.exp || 0,
-        xpForNextLevel: (characterStats.level || 1) * 100,
-        currentLevel: characterStats.level || 1,
+        currentXP: newXp,
+        xpForNextLevel: xpForNextLevel(leveled.newLevel),
+        currentLevel: leveled.newLevel,
         dokaEarned: totalDoka + challengeDokaReward,
         dokaBreakdown: defeatedList.map((e) => ({
           enemyName: e.name,
@@ -13451,7 +13460,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           dokaEarned: 0,
           currentLevel: characterStats.level,
           currentXP: newXp,
-          xpForNextLevel: (characterStats.level || 1) * 100,
+          xpForNextLevel: xpForNextLevel(characterStats.level),
           enemiesDefeated: [],
           hitsDealt: 0,
           mapTitle: currentMapRef.current?.id || "Unknown",

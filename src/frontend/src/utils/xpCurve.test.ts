@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { applyXpDelta, xpForNextLevel } from "./xpCurve.ts";
+import {
+  applyXpDelta,
+  recapXpAfterGrant,
+  xpForNextLevel,
+  xpHudProgress,
+} from "./xpCurve.ts";
 
 assert.equal(xpForNextLevel(1), 100);
 assert.equal(xpForNextLevel(2), 200);
@@ -28,5 +33,29 @@ assert.deepEqual(applyXpDelta(150, 2, 60), { newXp: 10, newLevel: 3 });
 // death raiseUi + idle hydrate persists the inflated leftover.
 // 80 + 400 = 480 → consume 100 then 200 → level 3 with 180 leftover.
 assert.deepEqual(applyXpDelta(80, 1, 400), { newXp: 180, newLevel: 3 });
+
+// Leftover HUD: experience is remainder in the current level, not cumulative.
+assert.deepEqual(xpHudProgress(50, 2), {
+  leftover: 50,
+  needed: 200,
+  percent: 25,
+});
+assert.deepEqual(xpHudProgress(0, 3), {
+  leftover: 0,
+  needed: 400,
+  percent: 0,
+});
+// The selection screen used to subtract cumulativeXpAtLevel(2)=100 from a
+// leftover of 50 and show 0 / 200.
+assert.notEqual(xpHudProgress(50, 2).leftover, 0);
+
+// Recap used (level * 100) as the next-level threshold (300 at level 3).
+assert.deepEqual(recapXpAfterGrant(90, 1, 20), {
+  leftover: 10,
+  level: 2,
+  needed: 200,
+});
+assert.equal(xpForNextLevel(3), 400);
+assert.notEqual(3 * 100, xpForNextLevel(3));
 
 console.log("xpCurve.test: ok");

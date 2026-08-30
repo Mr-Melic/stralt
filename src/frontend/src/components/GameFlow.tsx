@@ -16,6 +16,7 @@ import {
   shouldApplyCallerDokaHydrate,
   shouldMarkCallerDokaWalletReady,
 } from "../utils/dokaBalanceQuery";
+import { xpHudProgress } from "../utils/xpCurve";
 import BossGuideModal from "./BossGuideModal";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
@@ -32,7 +33,6 @@ interface GameFlowProps {
   isAdmin?: boolean;
   onOpenAdmin?: () => void;
   onShowBattleSummary?: (data: BattleRecapData) => void;
-  selectedCharacter?: Character | null;
   boostMode?: "xp" | "rewards";
   onBoostToggle?: () => void;
   // onShopToggle removed — shop is now handled internally via showShop state
@@ -43,7 +43,6 @@ const GameFlow: React.FC<GameFlowProps> = ({
   isAdmin,
   onOpenAdmin,
   onShowBattleSummary,
-  selectedCharacter: selectedCharacterProp,
   boostMode = "xp",
   onBoostToggle,
   // onShopToggle removed — shop is now handled internally via showShop state
@@ -244,6 +243,14 @@ const GameFlow: React.FC<GameFlowProps> = ({
 
   // Game mode: pass through to WorldExploration directly (it handles its own layout)
   if (isGameMode && selectedCharacter !== null) {
+    const xpHud = xpHudProgress(
+      Number(selectedCharacter.experience ?? 0),
+      Number(selectedCharacter.level ?? 1),
+    );
+    const blood = Number(
+      selectedCharacter.bloodBalance ?? selectedCharacter.blood ?? 0,
+    );
+    const bloodMax = Number(selectedCharacter.maxBlood ?? 100);
     return (
       <>
         <WorldExploration
@@ -298,30 +305,28 @@ const GameFlow: React.FC<GameFlowProps> = ({
               <div className="flex items-center justify-between">
                 <span className="stone-bar-label">XP</span>
                 <span className="stone-bar-value">
-                  {selectedCharacterProp?.xp ?? 0} /{" "}
-                  {selectedCharacterProp?.xpToNextLevel ?? 100}
+                  {xpHud.leftover} / {xpHud.needed}
                 </span>
               </div>
               <div className="stone-bar-track">
                 <div
                   className="stone-bar-fill stone-bar-fill-xp"
                   style={{
-                    width: `${Math.min(100, ((selectedCharacterProp?.xp ?? 0) / (selectedCharacterProp?.xpToNextLevel || 1)) * 100)}%`,
+                    width: `${xpHud.percent}%`,
                   }}
                 />
               </div>
               <div className="flex items-center justify-between mt-0.5">
                 <span className="stone-bar-label">BLOOD</span>
                 <span className="stone-bar-value">
-                  {selectedCharacterProp?.blood ?? 0} /{" "}
-                  {selectedCharacterProp?.maxBlood ?? 100}
+                  {blood} / {bloodMax}
                 </span>
               </div>
               <div className="stone-bar-track">
                 <div
                   className="stone-bar-fill stone-bar-fill-blood"
                   style={{
-                    width: `${Math.min(100, ((selectedCharacterProp?.blood ?? 0) / (selectedCharacterProp?.maxBlood || 1)) * 100)}%`,
+                    width: `${Math.min(100, (blood / (bloodMax || 1)) * 100)}%`,
                   }}
                 />
               </div>

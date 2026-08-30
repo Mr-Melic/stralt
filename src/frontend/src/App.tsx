@@ -8,7 +8,6 @@ import ProfileSetup from "./components/ProfileSetup";
 import StarfieldBackground from "./components/StarfieldBackground";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetCallerUserProfile, useGetUserRole } from "./hooks/useQueries";
-import type { Character } from "./types/gameTypes";
 import { collectPreservedLocalStorage } from "./utils/versionGate";
 
 /** Current app version — bump this on every deploy to force re-login and show changelog. */
@@ -280,10 +279,8 @@ function App() {
   // Admin dashboard state
   const [showAdmin, setShowAdmin] = useState(false);
 
-  // Character, boost, and shop state for header integration
-  const [selectedCharacter, _setSelectedCharacter] = useState<Character | null>(
-    null,
-  );
+  // Boost toggle lives here so the GameFlow top-bar pill can flip it.
+  // WorldExploration still owns its own boostMode for reward math.
   const [boostMode, setBoostMode] = useState<"xp" | "rewards">("xp");
   const [_showShop, _setShowShop] = useState(false);
 
@@ -417,7 +414,6 @@ function App() {
         {showGame && userProfile && (
           <>
             <GameFlow
-              selectedCharacter={selectedCharacter}
               boostMode={boostMode}
               onBoostToggle={() =>
                 setBoostMode((m) => (m === "xp" ? "rewards" : "xp"))
