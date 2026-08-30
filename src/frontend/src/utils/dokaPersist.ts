@@ -16,16 +16,6 @@ export interface DokaCreditActor {
 }
 
 /**
- * Credits Doka to a character slot via the single atomic backend funnel
- * applyRewards(slot, doka, 0) and returns the new absolute Doka balance.
- * On backend error the failure is logged and 0 is returned so the caller can
- * fall back gracefully instead of crashing the reward flow.
- *
- * Parse through readApplyRewardsOk. A `{ _ok }` / `{ __kind__: "ok" }`
- * success that used to yield NaN left the canister credited and the persist
- * lock unchanged, so the next saveBattleStats wiped the pickup.
- */
-/**
  * Ground Doka / shrine credits must claim a pickup id synchronously before
  * enqueueing applyRewards. The movement RAF can re-enter the same tile
  * (stale step index, Strict Mode updater) and used to call persistDokaCredit
@@ -58,6 +48,16 @@ export function tryClaimDungeonChainBonus(claimed: {
   return tryClaimFlag(claimed);
 }
 
+/**
+ * Credits Doka to a character slot via the single atomic backend funnel
+ * applyRewards(slot, doka, 0) and returns the new absolute Doka balance.
+ * On backend error the failure is logged and 0 is returned so the caller can
+ * fall back gracefully instead of crashing the reward flow.
+ *
+ * Parse through readApplyRewardsOk. A `{ _ok }` / `{ __kind__: "ok" }`
+ * success that used to yield NaN left the canister credited and the persist
+ * lock unchanged, so the next saveBattleStats wiped the pickup.
+ */
 export async function persistDokaCredit(
   actor: DokaCreditActor,
   slot: number,
