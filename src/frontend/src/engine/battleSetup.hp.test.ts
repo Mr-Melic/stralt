@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  battleWalkHazardDamages,
   hpAfterBossPhase2,
   hpAfterHeal,
   hpAfterIncomingDamage,
+  thornedGroundWalkDamage,
+  voidRiftWalkDamage,
 } from "./battleSetup.ts";
 
 describe("hpAfterIncomingDamage live HP", () => {
@@ -23,6 +26,60 @@ describe("hpAfterIncomingDamage live HP", () => {
       lethal: true,
     });
     assert.equal(hpAfterIncomingDamage(100, 5).lethal, false);
+  });
+});
+
+describe("battle-walk hazards (mouse and touch must match)", () => {
+  it("charges 5 HP per extra tile after the first on Thorned Ground", () => {
+    assert.equal(thornedGroundWalkDamage(1), 0);
+    assert.equal(thornedGroundWalkDamage(2), 5);
+    assert.equal(thornedGroundWalkDamage(4), 15);
+    assert.equal(
+      battleWalkHazardDamages({
+        thornedActive: true,
+        pathLength: 3,
+        voidRiftActive: false,
+        dest: { x: 2, y: 2 },
+        riftTile: null,
+      }).thornDmg,
+      10,
+    );
+    assert.equal(
+      battleWalkHazardDamages({
+        thornedActive: false,
+        pathLength: 4,
+        voidRiftActive: false,
+        dest: { x: 2, y: 2 },
+        riftTile: null,
+      }).thornDmg,
+      0,
+    );
+  });
+
+  it("charges 3 HP only when the destination is the live Void Rift tile", () => {
+    assert.equal(voidRiftWalkDamage({ x: 5, y: 5 }, { x: 5, y: 5 }), 3);
+    assert.equal(voidRiftWalkDamage({ x: 5, y: 5 }, { x: 4, y: 5 }), 0);
+    assert.equal(voidRiftWalkDamage({ x: 5, y: 5 }, null), 0);
+    assert.equal(
+      battleWalkHazardDamages({
+        thornedActive: false,
+        pathLength: 1,
+        voidRiftActive: true,
+        dest: { x: 8, y: 3 },
+        riftTile: { x: 8, y: 3 },
+      }).riftDmg,
+      3,
+    );
+    assert.equal(
+      battleWalkHazardDamages({
+        thornedActive: false,
+        pathLength: 1,
+        voidRiftActive: false,
+        dest: { x: 8, y: 3 },
+        riftTile: { x: 8, y: 3 },
+      }).riftDmg,
+      0,
+    );
   });
 });
 
