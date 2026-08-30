@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
+  dungeonDokaMultiplierFor,
   resetRunState,
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
@@ -88,6 +89,48 @@ describe("decideDungeonChainPortal", () => {
       { kind: "complete", bonus: dungeonChainCompletionBonus(4) },
     );
     assert.equal(dungeonChainCompletionBonus(4), 200);
+  });
+});
+
+describe("dungeonDokaMultiplierFor", () => {
+  it("is 1x outside a run and scales with live depth while active", () => {
+    assert.equal(dungeonDokaMultiplierFor(false, 3), 1);
+    assert.equal(dungeonDokaMultiplierFor(true, 0), 1);
+    assert.equal(dungeonDokaMultiplierFor(true, 1), 1.5);
+    assert.equal(dungeonDokaMultiplierFor(true, 3), 2.5);
+    assert.equal(dungeonDokaMultiplierFor(true, 5), 4);
+  });
+});
+
+describe("resetRunState", () => {
+  it("clears dungeon React state so the HUD and multiplier cannot stick", () => {
+    let active = true;
+    let depth = 3;
+    let maxDepth = 4;
+    const refs = {
+      bossRushActiveRef: { current: false },
+      dungeonChainActiveRef: { current: true },
+      dungeonChainDepthRef: { current: 3 },
+      dungeonChainMaxDepthRef: { current: 4 },
+      abortBossRush: async () => {},
+      setDungeonChainActive: (next: boolean) => {
+        active = next;
+      },
+      setDungeonChainDepth: (next: number) => {
+        depth = next;
+      },
+      setDungeonChainMaxDepth: (next: number) => {
+        maxDepth = next;
+      },
+    };
+    resetRunState(refs);
+    assert.equal(refs.dungeonChainActiveRef.current, false);
+    assert.equal(refs.dungeonChainDepthRef.current, 0);
+    assert.equal(refs.dungeonChainMaxDepthRef.current, 0);
+    assert.equal(active, false);
+    assert.equal(depth, 0);
+    assert.equal(maxDepth, 0);
+    assert.equal(dungeonDokaMultiplierFor(active, depth), 1);
   });
 });
 

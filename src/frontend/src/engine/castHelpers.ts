@@ -426,7 +426,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     hitTarget.id !== "__player__"
   ) {
     const otherEnemies = enemies.filter(
-      (e) => e.id !== hitTarget.id && (e.hp ?? 0) > 0,
+      (e) => e.id !== hitTarget.id && isActiveHostile(e),
     );
     const sorted = otherEnemies.sort((a, b) => {
       const distA = Math.abs(a.x - hitTarget.x) + Math.abs(a.y - hitTarget.y);
