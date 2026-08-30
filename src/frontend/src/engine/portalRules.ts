@@ -138,6 +138,27 @@ export interface RunStateRefs {
   dungeonChainMaxDepthRef: { current: number };
   /** Aborts an in-progress boss rush (no-op when no rush is active). */
   abortBossRush: () => Promise<void>;
+  /** React HUD / multiplier state — refs alone leave these stale after death. */
+  setDungeonChainActive?: (active: boolean) => void;
+  setDungeonChainDepth?: (depth: number) => void;
+  setDungeonChainMaxDepth?: (maxDepth: number) => void;
+  dungeonDokaMultiplierRef?: { current: number };
+}
+
+const DUNGEON_DOKA_MULTIPLIERS = [1, 1.5, 2.0, 2.5, 3.0, 4.0];
+
+/**
+ * Doka multiplier for a dungeon-chain floor. Drive this from the live refs
+ * at reward time — React state can stay true after resetRunState zeroes refs,
+ * which used to inflate overworld kills 1.5×–4× until the next remount.
+ */
+export function dungeonDokaMultiplierFor(
+  active: boolean,
+  depth: number,
+): number {
+  if (!active) return 1;
+  const safeDepth = Math.max(0, Math.floor(Number(depth) || 0));
+  return DUNGEON_DOKA_MULTIPLIERS[Math.min(safeDepth, 5)] ?? 1;
 }
 
 export interface DungeonChainSnapshot {
@@ -206,10 +227,14 @@ export function resetRunState(refs: RunStateRefs): void {
     refs.bossRushActiveRef.current = false;
     void refs.abortBossRush();
   }
-  if (refs.dungeonChainActiveRef.current) {
-    refs.dungeonChainActiveRef.current = false;
-    refs.dungeonChainDepthRef.current = 0;
-    refs.dungeonChainMaxDepthRef.current = 0;
+  refs.dungeonChainActiveRef.current = false;
+  refs.dungeonChainDepthRef.current = 0;
+  refs.dungeonChainMaxDepthRef.current = 0;
+  refs.setDungeonChainActive?.(false);
+  refs.setDungeonChainDepth?.(0);
+  refs.setDungeonChainMaxDepth?.(0);
+  if (refs.dungeonDokaMultiplierRef) {
+    refs.dungeonDokaMultiplierRef.current = 1;
   }
 }
 
@@ -246,4 +271,20 @@ export function shouldSpawnWhitePortal(
   dungeonComplete: boolean,
 ): boolean {
   return bossRushComplete || dungeonComplete;
+}
+
+/**
+ * Rest-exit `cleanupMap` zeroes dungeon refs, then this path re-arms them.
+ * Depth must be written on the ref (not only React state) so
+ * `generateEnemies(..., depth)` and later progression snapshots see floor 1.
+ */
+export function shouldArmDungeonChainOnRestExit(
+  restExitType: string | undefined,
+): boolean {
+  return restExitType === "dungeon";
+}
+
+/** Dungeon rest-exit starts at depth 1; overworld/boss rest-exit stay 0. */
+export function restExitSpawnDepth(restExitType: string | undefined): number {
+  return restExitType === "dungeon" ? 1 : 0;
 }

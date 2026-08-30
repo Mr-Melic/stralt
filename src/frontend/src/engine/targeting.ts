@@ -360,7 +360,9 @@ export interface TileCastableResult {
  * Validates range metric + line-of-sight + target rules for ONE tile against
  * the CURRENT world. Reuses the SAME range metric and LoS logic as
  * {@link computeTargetableTiles} so the highlight (precomputed set) and the
- * live gate (this helper) can never disagree on geometry:
+ * live gate (this helper) can never disagree on geometry. Pass the same
+ * `effectiveRange` the highlight used (level / modifier bonus); the raw
+ * `spell.maxRange` fallback is only for callers that have no grown range.
  *   - ground / barrier spells → MANHATTAN distance (|dx|+|dy| <= range),
  *   - area / enemy / chain spells → CHEBYSHEV distance (max(|dx|,|dy|) <= range),
  *   - line spells → Bresenham LoS ray-walk (must reach the tile),
@@ -388,10 +390,12 @@ export function isTileCastableLive(
   tile: { x: number; y: number },
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
+  effectiveRange?: number,
 ): TileCastableResult {
   const targetType = (spell.targetType ?? "enemy") as string;
   const worldGridSize = mapTiles.length;
-  const range = spell.maxRange ?? Math.max(1, Number(spell.range));
+  const range =
+    effectiveRange ?? spell.maxRange ?? Math.max(1, Number(spell.range));
   const minR = spell.minRange ?? 1;
   const tx = tile.x;
   const ty = tile.y;
@@ -635,4 +639,14 @@ export function isTileCastableLive(
   }
 
   return { ok: false, reason: "no_matching_branch" };
+}
+
+/**
+ * Sprite-click Strike (no spell selected) must honor the live gate.
+ * `executeCastAttempt` / `resolvePlayerCast` do not re-check caster range —
+ * `getAoETargets` includes the occupant of the clicked tile unconditionally.
+ * Calling the cast when the gate fails lets melee Strike hit from anywhere.
+ */
+export function shouldExecuteLiveCast(live: TileCastableResult): boolean {
+  return live.ok;
 }

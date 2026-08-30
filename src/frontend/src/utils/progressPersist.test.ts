@@ -7,6 +7,7 @@ import {
   createProgressPersist,
   floorHydratedLevel,
   resolveCommittedDokaForAbsoluteWrite,
+  resolveHydratedXp,
   shouldCopyIdleWalletDoka,
   spendFromUiBalance,
 } from "./progressPersist.ts";
@@ -16,6 +17,19 @@ describe("spend math", () => {
     assert.equal(spendFromUiBalance(200, 170), 30);
     assert.equal(spendFromUiBalance(0, 0), 0);
     assert.equal(spendFromUiBalance(10, 50), 0);
+  });
+
+  it("second click spends from the live wallet, not the render snapshot", () => {
+    const live = { current: 200 };
+    const firstNext = 150;
+    const firstSpend = spendFromUiBalance(live.current, firstNext);
+    live.current = firstNext;
+    const secondNext = 100;
+    const secondSpend = spendFromUiBalance(live.current, secondNext);
+    live.current = secondNext;
+    assert.equal(firstSpend, 50);
+    assert.equal(secondSpend, 50);
+    assert.equal(live.current, 100);
   });
 
   it("applies the spend to the last committed wallet", () => {
@@ -241,13 +255,24 @@ describe("progress persist lock", () => {
     assert.equal(floorHydratedLevel(4, 4), 4);
 
     const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
-    lock.commit({ doka: 250, xp: 30, level: 5 });
-    // #38 skipped the live UI level hydrate because lava death landed
-    // during applyRewards. The hydrate effect then copies UI level 4.
-    // A stale/optimistic lower wallet must not cut the seeded commit —
-    // death persist already wrote the penalty through the lock.
-    assert.equal(lock.hydrateWhenIdle({ doka: 150, xp: 24, level: 4 }), true);
+    lock.commit({ doka: 250, xp: 24, level: 5 });
+    // Victory leveled up, lava death skipped the live UI hydrate, then
+    // death persist wrote the post-level leftover. The hydrate effect
+    // still sees the old-level leftover — do not copy it over committed.
+    assert.equal(lock.hydrateWhenIdle({ doka: 150, xp: 64, level: 4 }), true);
     assert.deepEqual(lock.snapshot(), { doka: 250, xp: 24, level: 5 });
+  });
+
+  it("does not copy a pre-level leftover over a committed level-up", () => {
+    assert.equal(resolveHydratedXp(30, 5, 80, 4), 30);
+    assert.equal(resolveHydratedXp(24, 5, 64, 4), 24);
+    assert.equal(resolveHydratedXp(80, 4, 80, 4), 80);
+
+    const lock = createProgressPersist({ doka: 1000, xp: 80, level: 4 });
+    lock.commit({ doka: 720, xp: 24, level: 5 });
+    // Optimistic death UI still holds the old leftover after raiseUi max().
+    assert.equal(lock.hydrateWhenIdle({ doka: 720, xp: 64, level: 4 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 720, xp: 24, level: 5 });
   });
 
   it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {
@@ -258,8 +283,11 @@ describe("progress persist lock", () => {
     assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
   });
 
-  it("releases the lock when a queued write rejects so hydrate is not stuck", async () => {
-    const lock = createProgressPersist({ doka: 0, xp: 50, level: 1 });
+  it("does not mint ghost Boss Rush Doka when applyRewards rejects", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const gained = 500;
+    // Old room-clear path credited the HUD before the lock write.
+    const ghostUi = applyShopCreditDeltaToUi(200, gained);
     await assert.rejects(
       lock.enqueue(async () => {
         throw new Error("applyRewards failed");
@@ -268,15 +296,63 @@ describe("progress persist lock", () => {
     );
     assert.equal(lock.pendingCount(), 0);
     assert.equal(
-      lock.hydrateWhenIdle({ doka: 1, xp: 1, level: 1 }, { walletReady: true }),
+      lock.hydrateWhenIdle({ doka: ghostUi, xp: 50, level: 4 }),
       true,
     );
-    assert.deepEqual(lock.snapshot(), { doka: 1, xp: 1, level: 1 });
+    assert.equal(
+      lock.snapshot().doka,
+      700,
+      "ghost HUD + idle hydrate mints unpaid Doka onto committed",
+    );
+    assert.equal(
+      applySpendToCommitted(200, spendFromUiBalance(ghostUi, ghostUi - 200)),
+      0,
+      "shop spend from the ghost wallet zeros the real canister balance",
+    );
+
+    // Credit only after persist succeeds (handleBattleEnd / room-clear).
+    const safe = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    let safeUi = 200;
+    await assert.rejects(
+      safe.enqueue(async () => {
+        throw new Error("applyRewards failed");
+      }),
+      /applyRewards failed/,
+    );
+    assert.equal(
+      safe.hydrateWhenIdle({ doka: safeUi, xp: 50, level: 4 }),
+      true,
+    );
+    assert.equal(safe.snapshot().doka, 200);
+
+    safe.commit({ doka: 700 });
+    safeUi = applyShopCreditDeltaToUi(safeUi, gained);
+    assert.equal(safeUi, 700);
+    assert.equal(
+      safe.hydrateWhenIdle({ doka: safeUi, xp: 50, level: 4 }),
+      true,
+    );
+    assert.equal(safe.snapshot().doka, 700);
+  });
+
+  it("releases the lock when a queued write rejects so hydrate is not stuck", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    await assert.rejects(
+      lock.enqueue(async () => {
+        throw new Error("applyRewards failed");
+      }),
+      /applyRewards failed/,
+    );
+    assert.equal(lock.pendingCount(), 0);
+    // Seeded wallets refuse a lower idle copy (#55/#56). A higher
+    // post-reject hydrate must still land so the lock is not stuck.
+    assert.equal(lock.hydrateWhenIdle({ doka: 250, xp: 80, level: 5 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 250, xp: 80, level: 5 });
 
     lock.commit({ doka: Number.NaN });
     assert.equal(
       lock.snapshot().doka,
-      1,
+      250,
       "NaN commit must keep the last wallet",
     );
   });

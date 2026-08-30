@@ -46,21 +46,34 @@ export interface Combatant {
 }
 
 /**
- * Returns true when `e` is a living non-summon enemy that must be defeated
- * for victory.
+ * Returns true when `e` is a living enemy-side combatant that must be
+ * defeated for victory (including enemy-summoner minions after #79).
  *
  * - hp must be > 0.
- * - `isSummon` must be falsy (summons are never hostile).
- * - `side === 'player'` is never hostile.
+ * - Player-side summons are never hostile.
  * - `side === 'enemy'` (or absent side, defaulted to enemy for non-summons)
  *   is hostile when alive.
  */
 export function isActiveHostile(e: Combatant): boolean {
   if (e.hp <= 0) return false;
+  return countsTowardKillRewards(e);
+}
+
+/**
+ * Whether a combatant's death should enter the victory XP/Doka roster.
+ *
+ * The death pipeline snapshots the row after HP is already 0, so
+ * `isActiveHostile` would drop real enemy kills. Player-side summons
+ * (and the player) must still be excluded — otherwise a dead wolf / bomber
+ * is treated as a defeated enemy and `applyRewards` credits extra XP/Doka.
+ */
+export function countsTowardKillRewards(e: {
+  isSummon?: boolean;
+  side?: "player" | "enemy";
+}): boolean {
   if (e.isSummon && e.side !== "enemy") return false;
   // Absent side on a non-summon defaults to enemy-side (legacy combatants).
-  const side = e.side ?? "enemy";
-  return side === "enemy";
+  return (e.side ?? "enemy") === "enemy";
 }
 
 /**
@@ -137,4 +150,106 @@ export function shouldAllowBattleTrigger(opts: {
  */
 export function despawnSummons<T extends Combatant>(enemies: T[]): T[] {
   return enemies.filter((e) => !e.isSummon);
+}
+
+/**
+ * Subtract incoming damage from live HP. Pass the current HP (store /
+ * characterStatsRef / setState `prev`), never a useCallback-closed snapshot.
+ *
+ * `processActiveEffects` is created once (`[logBattleEntry]` only) and used
+ * to close over mount-time `characterStats.hp`. Writing that snapshot after
+ * a mid-fight hit restores the player toward full HP on every DoT tick.
+ */
+export function hpAfterIncomingDamage(
+  currentHp: number,
+  damage: number,
+): { newHp: number; lethal: boolean } {
+  const hp = Number.isFinite(currentHp) ? currentHp : 0;
+  const dmg = Number.isFinite(damage) ? Math.max(0, damage) : 0;
+  const newHp = Math.max(0, hp - dmg);
+  return { newHp, lethal: newHp === 0 };
+}
+
+/**
+ * Lava / spike damage after an enemy lands on a hazard.
+ *
+ * Callers must then write `newHp` through `updateCombatant` and, when
+ * `lethal`, `processCombatantDeath` — the same contract as player Mirror.
+ * React-only `enemyHpMap` / `turnOrder` writes leave store hp > 0, so
+ * `isActiveHostile` still counts the unit: last-enemy lava delays
+ * applyRewards, and the "dead" unit takes another full turn (including a
+ * lethal attack that can persist a death penalty instead of victory).
+ */
+export function enemyHpAfterHazardDamage(
+  currentHp: number,
+  damage: number,
+): { newHp: number; lethal: boolean } {
+  return hpAfterIncomingDamage(currentHp, damage);
+}
+
+/**
+ * Authoritative HP for a combatant in the live store.
+ *
+ * The enemy-AI apply layer captures `enemyHpMap` in a closure that is not
+ * refreshed after an earlier `updateCombatant` in the same `flushSync`
+ * (Mirror reflect, then lava/spike). Basing the hazard off that stale map
+ * overwrites the store and can heal the attacker.
+ */
+export function liveCombatantHp(
+  combatants: Combatant[],
+  id: string,
+  fallback: number,
+): number {
+  const live = combatants.find((c) => c.id === id);
+  if (live == null || !Number.isFinite(live.hp)) return fallback;
+  return live.hp;
+}
+
+/** Plague Zone WX tick. Must match the inline "deals 2 damage" log. */
+export const PLAGUE_ZONE_TICK = 2;
+
+/** Void Rift WX tick. Must match mapModifiers VOID_RIFT_TICK / MAP_MODIFIER_VOID_RIFT_DAMAGE. */
+export const VOID_RIFT_TICK = 3;
+
+/**
+ * After DoT / plague at enemy turn start, dispatch AI only if the unit
+ * is still alive in the store. Applies to non-summon enemies and enemy
+ * summons (hostiles after #79). `setBattlePhase("enemy")` before a lethal
+ * tick leaves battlePhase stuck when `processCombatantDeath` points the
+ * queue at a non-enemy predecessor.
+ */
+export function shouldDispatchEnemyAiAfterTurnStart(opts: {
+  stillInStore: boolean;
+  storeHp: number;
+}): boolean {
+  return opts.stillInStore && opts.storeHp > 0;
+}
+
+/**
+ * Player lives outside `combatantsRef`. Falling back to `[0]` mutates the
+ * first enemy's store HP (plague −1 / void −3) every player turn without
+ * `processCombatantDeath`.
+ */
+export function playerTurnStartModifierTarget<T extends { id?: string }>(
+  combatants: T[],
+): T | undefined {
+  return combatants.find((c) => c.id === "player");
+}
+
+/**
+ * After an enemy apply-layer finally (lava/spike, Mirror bounce, thisHp
+ * check) or a last-hostile summon fade inside `advanceTurn`, do not
+ * dispatch the next turn when the fight is already over.
+ *
+ * `advanceTurn` is `flushSync` and runs before the `[inBattle, enemies]`
+ * victory useEffect. Dispatching the player's next turn lets DoT / plague
+ * call `_handlePlayerDeath` first, set `deathTriggered`, and make
+ * `shouldAwardVictory` refuse — `persistDeathPenalty` instead of
+ * `applyRewards`.
+ */
+export function shouldAdvanceAfterEnemyTurn(opts: {
+  deathTriggered: boolean;
+  hostilesRemaining: number;
+}): boolean {
+  return !opts.deathTriggered && opts.hostilesRemaining > 0;
 }

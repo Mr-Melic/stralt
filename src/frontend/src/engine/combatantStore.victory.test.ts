@@ -2,14 +2,20 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { CombatantEntry } from "../components/InitiativeStrip";
 import type { Enemy } from "../types/gameTypes";
-import { activeHostilesRemaining, shouldAwardVictory } from "./battleSetup.ts";
+import {
+  activeHostilesRemaining,
+  shouldAdvanceAfterEnemyTurn,
+  shouldAwardVictory,
+} from "./battleSetup.ts";
 import {
   deriveBattleEnemies,
   initCombatantStore,
   removeCombatant,
   resetCombatantStore,
   syncCombatants,
+  updateCombatant,
 } from "./combatantStore.ts";
+import { expireSummonsAtTurnStart } from "./summonLifespan.ts";
 
 function enemy(id: string, hp = 40): Enemy {
   return {
@@ -93,6 +99,94 @@ describe("removeCombatant preserves the battle-start snapshot", () => {
       }),
       true,
       "victory gate must fire so applyRewards / recap can run",
+    );
+  });
+
+  it("React-only hazard HP write leaves the last enemy blocking victory", () => {
+    const ctx = store([enemy("rat-1", 10)]);
+    // Simulate the old lava path: enemyHpMap / turnOrder drop to 0, store
+    // hp stays 10. Victory reads combatantsRef via isActiveHostile.
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 1);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: activeHostilesRemaining(ctx.combatantsRef.current),
+      }),
+      false,
+      "UI 0 HP must not award while the store still has a living hostile",
+    );
+
+    updateCombatant(ctx, "rat-1", { hp: 0 });
+    removeCombatant(ctx, "rat-1");
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "store write + processCombatantDeath must award so applyRewards can run",
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: true,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "flushSync advanceTurn after last-enemy lava must not run player DoT first — that sets deathTriggered and skips applyRewards",
+    );
+  });
+
+  it("last-hostile enemy summon lifespan expiry must skip the next dispatch", () => {
+    const minion = {
+      ...enemy("larva-1", 20),
+      isSummon: true,
+      side: "enemy" as const,
+      name: "Larva",
+      turnsRemaining: 1,
+    };
+    const ctx = store([minion]);
+    const expired = expireSummonsAtTurnStart(
+      ctx.combatantsRef.current,
+      () => {},
+      "larva-1",
+    );
+    for (const id of expired) removeCombatant(ctx, id);
+    assert.deepEqual(expired, ["larva-1"]);
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: activeHostilesRemaining(ctx.combatantsRef.current),
+      }),
+      false,
+      "advanceTurn expire prelude must not start player DoT after last-minion fade",
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "lifespan fade of the last hostile must still persist applyRewards",
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: true,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "flushSync player DoT after last-minion expire would refuse applyRewards",
     );
   });
 

@@ -75,12 +75,21 @@ import type { SpriteRect } from "../debug/clickTrace";
 import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
 import { drawBarrierTower } from "../engine/barrierRender";
 import {
+  PLAGUE_ZONE_TICK,
+  VOID_RIFT_TICK,
   activeHostilesRemaining,
+  countsTowardKillRewards,
   despawnSummons,
+  enemyHpAfterHazardDamage,
+  hpAfterIncomingDamage,
   isActiveHostile,
   isAliveCombatant,
+  liveCombatantHp,
+  playerTurnStartModifierTarget,
+  shouldAdvanceAfterEnemyTurn,
   shouldAllowBattleTrigger,
   shouldAwardVictory,
+  shouldDispatchEnemyAiAfterTurnStart,
 } from "../engine/battleSetup";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
@@ -131,6 +140,8 @@ import {
   countWalkableVoid,
   ensureReachability,
   pickMapArchetype,
+  placeBossRushSpawns,
+  punchRosterReachability,
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
@@ -143,10 +154,13 @@ import {
   type RunMode,
   completeRun,
   decideDungeonChainPortal,
+  dungeonDokaMultiplierFor,
   getRunMode,
   isProgressionLocked,
   isProgressionPortalUnlocked,
   resetRunState,
+  restExitSpawnDepth,
+  shouldArmDungeonChainOnRestExit,
   shouldSpawnWhitePortal,
   shouldSuppressPortal,
   snapshotDungeonChain,
@@ -182,6 +196,7 @@ import {
   applyHealBuffSideEffect,
   computeTargetableTiles,
   isTileCastableLive,
+  shouldExecuteLiveCast,
 } from "../engine/targeting";
 import {
   liveTurnOrder,
@@ -240,7 +255,9 @@ import {
   mergeVictoryRewardLiveStats,
   persistDeathPenalty as persistAbsoluteStats,
   raiseUiAfterDeathPersist,
+  respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
+  xpAfterDeathPersist,
 } from "../utils/deathPenalty";
 import {
   logDebugError,
@@ -295,6 +312,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { applyXpDelta } from "../utils/xpCurve";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -1740,20 +1758,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             )?.effectName ?? "DoT";
           let postResDamage = dotResult.damage;
           if (targetId === "player") {
+            // processActiveEffects is created once ([logBattleEntry] only).
+            // Read live HP from the ref — a closed-over characterStats.hp is
+            // the mount snapshot and would restore the player toward full HP.
+            const hpBefore = characterStatsRef.current.hp;
             postResDamage = playerTakesDamage(
               dotResult.damage,
               `${dotTypeLabel} DoT`,
             );
-            // [DEATH-BISECT] Immediate death check after DoT-to-player tick.
-            // Use the computed post-RES damage (postResDamage), not the
-            // un-flushed characterStats.hp state, since playerTakesDamage's
-            // setCharacterStats has not yet committed to this closure.
-            if (characterStats.hp - postResDamage <= 0) {
+            const afterDot = hpAfterIncomingDamage(hpBefore, postResDamage);
+            if (afterDot.lethal) {
               logDebugInfo("BATTLE", "[DEATH-BISECT] source: dot-tick", {
-                hpBefore: characterStats.hp,
+                hpBefore,
                 dotDamage: dotResult.damage,
                 postResDamage,
-                hpAfter: characterStats.hp - postResDamage,
+                hpAfter: afterDot.newHp,
                 dotTypeLabel,
               });
               _handlePlayerDeath();
@@ -1872,9 +1891,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // SECTION 1c: Per-kill defeated roster, appended once per enemy death.
   // The victory-gate recap reads this list (NOT deriveBattleEnemies, which
   // only returns LIVE combatants and would see an empty/partial list after
-  // the last enemy dies). Reset at every syncCombatants(resetBattle:true) site.
+  // the last enemy dies). Reset at every syncCombatants(resetBattle:true) site
+  // AND at checkBattleTrigger — overworld fights do not use resetBattle.
   const battleDefeatedRef = useRef<
-    Array<{ id: string; name: string; pieceType: string; level: number }>
+    Array<{
+      id: string;
+      name: string;
+      pieceType: string;
+      level: number;
+      isSummon?: boolean;
+      side?: "player" | "enemy";
+    }>
   >([]);
   // processCombatantDeath snapshots name/pos BEFORE removeCombatant, then
   // attributes the kill AFTER the roster drop. Stash the reward row here so
@@ -1885,6 +1912,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     name: string;
     pieceType: string;
     level: number;
+    isSummon?: boolean;
+    side?: "player" | "enemy";
   } | null>(null);
 
   // Rename modal state
@@ -3189,14 +3218,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     );
   }, [characterStats?.level, levelUpConfig.statGrowthPercent]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setCharacterStats is a stable useCallback (empty deps)
   const playerTakesDamage = useCallback(
     (incomingDamage: number, source: string): number => {
       let dmg = incomingDamage;
       // RES (Resistance): flat % reduction to ALL incoming damage (including DoT ticks).
       // DoT ticks do NOT apply SR — only RES. Stacking: finalDamage = baseDamage * (1 - RES/100).
       const effRes =
-        Number(characterStats.res) *
+        Number(characterStatsRef.current.res) *
         getStatModifier("player", "res", activeEffectsRef.current);
       dmg = Math.max(1, Math.round(dmg * Math.max(0, 1 - effRes / 100)));
       if (shieldHpRef.current > 0) {
@@ -3206,8 +3234,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (absorb > 0)
           logBattleEntry(`Shield absorbed ${absorb} damage`, "#a855f7");
       }
-      const newHp = Math.max(0, characterStats.hp - dmg);
-      setCharacterStats((prev) => ({ ...prev, hp: newHp }));
+      // Functional updater + live prev.hp: processActiveEffects keeps the
+      // first-render playerTakesDamage and must not write mount-time HP.
+      setCharacterStats((prev) => {
+        const { newHp } = hpAfterIncomingDamage(prev.hp, dmg);
+        return { ...prev, hp: newHp };
+      });
       if (dmg > 0) {
         challengeTotalDamageRef.current = recordChallengeDamageTaken(
           challengeTotalDamageRef.current,
@@ -3220,7 +3252,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       _em.triggerShake(4);
       return dmg;
     },
-    [characterStats.res, characterStats.hp, getStatModifier, logBattleEntry],
+    [getStatModifier, logBattleEntry, setCharacterStats],
   );
 
   const enemyTakesDamage = useCallback(
@@ -5558,18 +5590,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (!roomDef) return;
       const { map: nextMap, spawnPosition } = generateRandomMap();
       if (!nextMap) return;
+      // Hardcoded (4,5)/(6,5) sit outside the center 7×7 floor clear. A wall
+      // or void there is unwalkable, so checkBattleTrigger never fires and
+      // the locked progression portal is the only exit (flee = death penalty).
+      const preferred: { x: number; y: number }[] = [];
+      if (roomDef.boss1Id) preferred.push({ x: 4, y: 5 });
+      if (roomDef.boss2Id) preferred.push({ x: 6, y: 5 });
+      const punched = placeBossRushSpawns(
+        nextMap.tiles as string[][],
+        nextMap.voidTiles,
+        preferred,
+        spawnPosition,
+        nextMap.portals?.[0],
+        WORLD_GRID_SIZE,
+        WORLD_GRID_SIZE,
+      );
+      nextMap.tiles = punched.tiles as typeof nextMap.tiles;
       currentMapRef.current = nextMap;
       setCurrentMap(nextMap);
       if (spawnPosition) {
         setPlayerPositionSynced({ ...spawnPosition });
       }
       const newEnemies: any[] = [];
+      let spawnIdx = 0;
       if (roomDef.boss1Id) {
+        const cell = punched.spawns[spawnIdx++] ?? { x: 4, y: 5 };
         newEnemies.push({
           id: `boss-rush-${roomIndex}-0`,
           pieceType: roomDef.boss1Name || "Boss 1",
-          x: 4,
-          y: 5,
+          x: cell.x,
+          y: cell.y,
           level: characterStats.level + 2,
           hp: 100,
           maxHp: 100,
@@ -5589,11 +5639,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         });
       }
       if (roomDef.boss2Id) {
+        const cell = punched.spawns[spawnIdx++] ?? { x: 6, y: 5 };
         newEnemies.push({
           id: `boss-rush-${roomIndex}-1`,
           pieceType: roomDef.boss2Name || "Boss 2",
-          x: 6,
-          y: 5,
+          x: cell.x,
+          y: cell.y,
           level: characterStats.level + 2,
           hp: 100,
           maxHp: 100,
@@ -6551,8 +6602,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const _myGen2 = aiGenerationRef.current;
         lastPortalRef.current = { x: portal.x, y: portal.y };
         cleanupMap();
-        if (portal.restExitType === "dungeon") {
+        const restExitType = portal.restExitType;
+        if (shouldArmDungeonChainOnRestExit(restExitType)) {
           dungeonChainActiveRef.current = true;
+          dungeonChainDepthRef.current = 1;
           setDungeonChainActive(true);
           setDungeonChainDepth(1);
           const newMaxDepth = 3 + Math.floor(Math.random() * 3);
@@ -6565,7 +6618,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           currentMapRef.current = newMap;
           setCurrentMap(newMap);
           setPlayerPositionSynced(spawnPosition);
-          resetCombatantStore(combatantStoreCtx);
+          // cleanupMap + generateRandomMap leave an empty roster. Rest-exit
+          // used to skip generateEnemies, so a dungeon floor spawned an
+          // unlocked progression portal with no hostiles (skip the run).
+          const rawRoster = newMap.isDeathRealm
+            ? []
+            : generateEnemies(
+                newMap.tiles,
+                newMap.portals,
+                restExitSpawnDepth(restExitType),
+                newMap.voidTiles,
+              );
+          // Main portal path punches CA pockets so a walled-off rat cannot
+          // seal the progression portal. Rest-exit used to skip that and
+          // leave the player with flee = death penalty.
+          const punched = punchRosterReachability(
+            newMap.tiles as string[][],
+            newMap.voidTiles,
+            rawRoster,
+            spawnPosition,
+            newMap.portals?.[0],
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          );
+          newMap.tiles = punched.tiles as typeof newMap.tiles;
+          syncCombatants(combatantStoreCtx, punched.roster, {
+            resetBattle: true,
+          });
           setTransitionInProgress(false);
           transitionInProgressRef.current = false;
         }, 400);
@@ -7092,6 +7171,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // not a partial updateCharacter (which would clobber optional loadout
         // fields like spellBarOrder and bossRushMasterComplete).
         if (actor) {
+          const deathEpochAtPersistStart = deathEpochRef.current;
           (async () => {
             try {
               const result = await progressPersistRef.current.enqueue(
@@ -7118,7 +7198,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // death write already penalized the post-credit snapshot;
               // restoring absolute XP here lets raiseUiAfterDeathPersist
               // keep the unpenalized UI and refund the penalty.
-              if (shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+              if (
+                shouldApplyVictoryLiveHydrate(
+                  deathTriggeredRef.current,
+                  deathEpochAtPersistStart,
+                  deathEpochRef.current,
+                )
+              ) {
                 setCharacterStats((cur) => ({
                   ...cur,
                   exp: Number(newXp),
@@ -8341,7 +8427,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
               drawOrder: renderItem.depth,
               id: enemy.id,
-              kind: "enemy",
+              kind: enemy.side === "player" ? "summon" : "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
               isAlive: (enemy.hp ?? 0) > 0,
@@ -9312,19 +9398,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // The live roster is already empty for this id (removeCombatant ran
         // at pipeline step 3). Use the pre-removal snapshot from
         // getCombatantName so the last kill is not dropped.
+        // Player-side summons also die through this pipeline (enemy melee,
+        // bomber kamikaze, DoT). They must not count as defeated enemies
+        // or applyRewards credits extra XP/Doka for allied corpses.
         const snap = pendingDeathRewardRef.current;
         if (snap?.id === deadId) {
-          battleDefeatedRef.current.push(snap);
+          if (countsTowardKillRewards(snap)) {
+            battleDefeatedRef.current.push(snap);
+          }
           pendingDeathRewardRef.current = null;
           return;
         }
         const c = combatantsRef.current?.find((e) => e.id === deadId);
-        if (c) {
+        if (c && countsTowardKillRewards(c)) {
           battleDefeatedRef.current.push({
             id: deadId,
             name: c.pieceType ?? "unknown",
             pieceType: c.pieceType ?? "unknown",
             level: c.level ?? 1,
+            isSummon: c.isSummon,
+            side: c.side,
           });
         }
       },
@@ -9339,6 +9432,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             name: c.pieceType ?? "unknown",
             pieceType: c.pieceType ?? "unknown",
             level: c.level ?? 1,
+            isSummon: c.isSummon,
+            side: c.side,
           };
         }
         return c?.pieceType ?? "Unknown";
@@ -9689,6 +9784,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 challengeTotalDamageRef.current,
                 amount,
               );
+            },
+            // enemyTakesDamage / victory read combatantsRef. Without this
+            // commit a later DoT tick recomputes from full store HP and
+            // wipes the spell hit.
+            commitEnemyHp: (id, hp) => {
+              updateCombatant(combatantStoreCtx, id, { hp });
             },
           },
         });
@@ -10123,10 +10224,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  playerPositionRef.current,
+                  getActiveCasterPos(),
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles,
+                  getEffectiveSpellRange(
+                    _spell.maxRange ?? Math.max(1, Number(_spell.range)),
+                    _spell.modifiableRange ? _spell.id : undefined,
+                  ),
                 );
                 if (_live.ok) {
                   // eslint-disable-next-line no-console
@@ -10194,10 +10299,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 } catch {}
                 return;
               }
+            } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
+              setInspectCombatantId(_hit.id);
+              try {
+                recordClickOutcome(
+                  event.clientX,
+                  event.clientY,
+                  "inspect-sprite",
+                  null,
+                  null,
+                  null,
+                  null,
+                );
+              } catch {}
+              return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
+              // executeCastAttempt has no range check; skip it when the
+              // live gate fails or Strike hits from anywhere on the map.
               const _basicAttack = activeSpells.find(
                 (s) => s.id === "physical_attack",
               );
@@ -10208,14 +10329,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _basicAttack,
-                  playerPositionRef.current,
+                  getActiveCasterPos(),
                   _tile,
                   _liveCombatantsBasic,
                   currentMap.tiles,
+                  getEffectiveSpellRange(
+                    _basicAttack.maxRange ??
+                      Math.max(1, Number(_basicAttack.range)),
+                    _basicAttack.modifiableRange ? _basicAttack.id : undefined,
+                  ),
                 );
-                if (_live.ok) {
+                if (shouldExecuteLiveCast(_live)) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
                     executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                  void _apCostBasic;
                   _spriteBasicCastResult = _castResult;
                   if (_castResult !== "cast") {
                     const _screen = tileCenter(_tile.x, _tile.y);
@@ -10369,10 +10496,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (_spellMouse) {
               const _liveMouse = isTileCastableLive(
                 _spellMouse,
-                playerPositionRef.current,
+                getActiveCasterPos(),
                 gridPos,
                 _liveCombatantsMouse,
                 currentMap.tiles,
+                getEffectiveSpellRange(
+                  _spellMouse.maxRange ??
+                    Math.max(1, Number(_spellMouse.range)),
+                  _spellMouse.modifiableRange ? _spellMouse.id : undefined,
+                ),
               );
               if (_liveMouse.ok) {
                 // eslint-disable-next-line no-console
@@ -10824,10 +10956,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 const _liveCombatants = getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _spell,
-                  playerPositionRef.current,
+                  getActiveCasterPos(),
                   { x: _hit.logicalX, y: _hit.logicalY },
                   _liveCombatants,
                   currentMap.tiles,
+                  getEffectiveSpellRange(
+                    _spell.maxRange ?? Math.max(1, Number(_spell.range)),
+                    _spell.modifiableRange ? _spell.id : undefined,
+                  ),
                 );
                 if (_live.ok) {
                   const { castResult: _castResult, apCost: _apCost } =
@@ -10860,10 +10996,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
                 return;
               }
+            } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
+              setInspectCombatantId(_hit.id);
+              return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
+              // executeCastAttempt has no range check; skip it when the
+              // live gate fails or Strike hits from anywhere on the map.
               const _basicAttack = activeSpells.find(
                 (s) => s.id === "physical_attack",
               );
@@ -10873,14 +11014,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   getLiveCombatants(combatantStoreCtx);
                 const _live = isTileCastableLive(
                   _basicAttack,
-                  playerPositionRef.current,
+                  getActiveCasterPos(),
                   _tile,
                   _liveCombatantsBasic,
                   currentMap.tiles,
+                  getEffectiveSpellRange(
+                    _basicAttack.maxRange ??
+                      Math.max(1, Number(_basicAttack.range)),
+                    _basicAttack.modifiableRange ? _basicAttack.id : undefined,
+                  ),
                 );
-                if (_live.ok) {
+                if (shouldExecuteLiveCast(_live)) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
                     executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                  void _apCostBasic;
                   if (_castResult !== "cast") {
                     const _screen = tileCenter(_tile.x, _tile.y);
                     effectsManagerRef.current?.spawnFloatText(
@@ -10998,10 +11145,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (_spellTouch) {
               const _liveTouch = isTileCastableLive(
                 _spellTouch,
-                playerPositionRef.current,
+                getActiveCasterPos(),
                 gridPos,
                 _liveCombatantsTouch,
                 currentMap.tiles,
+                getEffectiveSpellRange(
+                  _spellTouch.maxRange ??
+                    Math.max(1, Number(_spellTouch.range)),
+                  _spellTouch.modifiableRange ? _spellTouch.id : undefined,
+                ),
               );
               if (_liveTouch.ok) {
                 // Cast at the entity's current tile BYPASSING the
@@ -12240,6 +12392,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       deathTriggeredRef.current = false;
       deathPenaltyAppliedRef.current = false;
+      // Overworld fights do not call syncCombatants({ resetBattle: true }).
+      // Leaving this list intact credits fight-1 kills again on fight 2.
+      battleDefeatedRef.current = [];
       // Reset per-battle achievement tracking
       battleCritHitsRef.current = 0;
       battleBetrayalOccurredRef.current = false;
@@ -12471,7 +12626,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             },
           );
           // EXP8: Apply dungeon chain Doka multiplier (1.5x-4x based on depth)
-          const chainMult = dungeonDokaMultiplierRef.current;
+          const chainMult = dungeonDokaMultiplierFor(
+            dungeonChainActiveRef.current,
+            dungeonChainDepthRef.current,
+          );
           // BOSS: Apply boss reward multiplier on top of chain multiplier
           const activeBossConf = currentBossConfigRef.current;
           const bossDokaMultiplier = activeBossConf
@@ -12512,6 +12670,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
 
           // Persist rewards in a separate try/catch so failures never hide the recap
+          const deathEpochAtPersistStart = deathEpochRef.current;
           try {
             const _recapData = await progressPersistRef.current.enqueue(
               async () => {
@@ -12543,7 +12702,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // death write already penalized the post-credit committed
             // snapshot; restoring HP / unpenalized XP here resurrects the
             // player and lets hydrateWhenIdle refund the penalty.
-            if (shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+            if (
+              shouldApplyVictoryLiveHydrate(
+                deathTriggeredRef.current,
+                deathEpochAtPersistStart,
+                deathEpochRef.current,
+              )
+            ) {
               // Recap overlay does not block the heal button. A paid Doka
               // heal during this await must keep its HP; the old absolute
               // floor (50+level*10) dropped them back and they paid twice.
@@ -12738,10 +12903,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // SECTION 3a: Read the defeated list from battleDefeatedRef.current — the
       // same source the victory gate reads — so mid-battle minion kills count
       // toward the room-clear XP/Doka grant.
-      const defeatedList = battleDefeatedRef.current.map((e) => ({
-        name: e.pieceType ?? "unknown",
-        level: e.level ?? 1,
-      }));
+      const defeatedList = battleDefeatedRef.current
+        .filter(countsTowardKillRewards)
+        .map((e) => ({
+          name: e.pieceType ?? "unknown",
+          level: e.level ?? 1,
+        }));
       const expGained = computeVictoryExp({
         defeatedEnemies: defeatedList,
         characterLevel: characterStats.level,
@@ -12787,17 +12954,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const challengeXpReward = challengeReward.xpDelta;
       const completedChallenges = challengePersistEntries.map((c) => c.name);
 
-      const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
-      const newXp = (characterStats.exp || 0) + expGained + challengeXpReward;
-
-      onDokaBalanceChange(newDokaBalance);
-      setCharacterStats((prev) => ({ ...prev, exp: newXp }));
+      const roomClearDoka = totalDoka + challengeDokaReward;
+      const leveled = applyXpDelta(
+        characterStats.exp || 0,
+        characterStats.level,
+        expGained + challengeXpReward,
+      );
+      const newXp = leveled.newXp;
 
       // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
       // the room that just paid out. Both writes stay on the persist lock so
       // a lava death during persistRoomClear cannot jump the queue and let
       // applyRewards credit after the penalty. completeBossRushRoom stays
       // progress-only (0, 0); wallet/XP still go through the single funnel.
+      //
+      // persistRoomClear must throw when currentRoom did not advance — a
+      // swallowed replica error still paid applyRewards and a reload farmed
+      // the same room. Do not credit the HUD before that write either:
+      // handleBattleEnd waits; crediting first left ghost Doka/XP when
+      // applyRewards rejected. hydrateWhenIdle copies incoming >= committed
+      // and the next saveBattleStats mints the unpaid wallet — or a recap
+      // shop spend drains the real pre-reward balance.
+      const deathEpochAtPersistStart = deathEpochRef.current;
       if (actor) {
         void persistBossRushRewardsThroughLock(
           progressPersistRef.current,
@@ -12825,10 +13003,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           },
         )
           .then((persisted) => {
-            // Wallet was already credited locally above. Do not replace it
-            // with the absolute applyRewards read — that refunds a recap
-            // heal that deducted while this persist was in flight.
-            if (!shouldApplyVictoryLiveHydrate(deathTriggeredRef.current)) {
+            if (
+              !shouldApplyVictoryLiveHydrate(
+                deathTriggeredRef.current,
+                deathEpochAtPersistStart,
+                deathEpochRef.current,
+              )
+            ) {
               return;
             }
             setCharacterStats((prev) => ({
@@ -12836,6 +13017,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               exp: persisted.newXp ?? newXp,
               level: persisted.currentLevel || prev.level,
             }));
+            // Add the credited delta onto the live wallet. Replacing with
+            // applyRewards' absolute newDoka refunds a recap heal/shop spend
+            // the player already applied locally while this persist ran.
+            onDokaBalanceChange(
+              applyShopCreditDeltaToUi(
+                dokaBalanceRef.current,
+                persisted.dokaEarned ?? roomClearDoka,
+              ),
+            );
           })
           .catch((persistErr: unknown) => {
             logDebugError(
@@ -12889,6 +13079,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // One-shot guard shared by the _handlePlayerDeath linchpin and the HP-watch
   // fallback so the death penalty can never be applied twice for a single death.
   const deathPenaltyAppliedRef = useRef(false);
+  const deathEpochRef = useRef(0);
   // Shared death-penalty persistence. Computes the 20% XP / 40% Doka penalty,
   // persists the already-reduced absolute values via saveBattleStats (the method
   // that writes both character XP and the per-principal Doka store), and updates
@@ -12897,6 +13088,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const persistDeathPenalty = useCallback(() => {
     if (deathPenaltyAppliedRef.current) return null;
     deathPenaltyAppliedRef.current = true;
+    deathEpochRef.current += 1;
     const currentXp = characterStatsRef.current.exp ?? 0;
     const currentDoka = dokaBalanceRef.current;
     const {
@@ -12905,9 +13097,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       newXp: xpAfter,
       newDoka: dokaAfter,
     } = computeDeathPenalty(currentXp, currentDoka);
-    const respawnHp = Math.floor(
-      (50 + characterStatsRef.current.level) * 10 * 0.5,
-    );
+    const respawnHp = respawnHpAfterDeath(characterStatsRef.current.level);
     if (actor) {
       void progressPersistRef.current
         .enqueue(async () => {
@@ -12961,12 +13151,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             dokaBalanceRef.current,
             after.newDoka,
           );
-          const nextXp = raiseUiAfterDeathPersist(
-            characterStatsRef.current.exp ?? 0,
-            after.newXp,
-          );
+          const uiLevelBefore = characterStatsRef.current.level ?? 1;
+          const nextXp = xpAfterDeathPersist({
+            uiXp: characterStatsRef.current.exp ?? 0,
+            uiLevel: uiLevelBefore,
+            persistedXp: after.newXp,
+            persistedLevel: committed.level,
+          });
           const nextLevel = raiseUiAfterDeathPersist(
-            characterStatsRef.current.level ?? 1,
+            uiLevelBefore,
             committed.level,
           );
           if (nextDoka !== dokaBalanceRef.current) {
@@ -13008,7 +13201,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const persistAbsoluteProgress = useCallback(
     (newHp: number, newDoka: number) => {
       if (!actor) return;
-      const spend = spendFromUiBalance(dokaBalance, newDoka);
+      const spend = spendFromUiBalance(dokaBalanceRef.current, newDoka);
       void progressPersistRef.current
         .enqueue(async () => {
           const committed = progressPersistRef.current.snapshot();
@@ -13048,10 +13241,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             spellLevels: spellLevelsRef.current,
           });
           progressPersistRef.current.commit({ doka: writeDoka });
+          // Death persist raiseUi can restore a pre-spend wallet while this
+          // write is queued. Sync UI down so idle hydrate cannot refund.
+          if (dokaBalanceRef.current > writeDoka) {
+            onDokaBalanceChange(writeDoka);
+          }
         })
         .catch((err) => console.error("[doka-spend save] failed:", err));
     },
-    [actor, character, characterSlot, dokaBalance],
+    [actor, character, characterSlot, onDokaBalanceChange],
   );
 
   // Handle player death
@@ -13087,7 +13285,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       dungeonChainDepthRef,
       dungeonChainMaxDepthRef,
       abortBossRush,
+      setDungeonChainActive,
+      setDungeonChainDepth,
+      setDungeonChainMaxDepth,
+      dungeonDokaMultiplierRef,
     });
+    dungeonDokaMultiplierRef.current = 1;
     // Apply the 20% XP / 40% Doka death penalty exactly once (one-shot guard).
     persistDeathPenalty();
     // Stop the fight immediately. The HP-watch fallback used to do this
@@ -13119,7 +13322,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           dungeonChainDepthRef,
           dungeonChainMaxDepthRef,
           abortBossRush,
+          setDungeonChainActive,
+          setDungeonChainDepth,
+          setDungeonChainMaxDepth,
+          dungeonDokaMultiplierRef,
         });
+        dungeonDokaMultiplierRef.current = 1;
         const penalty = persistDeathPenalty();
         const xpLost = penalty?.xpLost ?? 0;
         const dokaLost = penalty?.dokaLost ?? 0;
@@ -13175,7 +13383,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       dungeonChainDepthRef,
       dungeonChainMaxDepthRef,
       abortBossRush,
+      setDungeonChainActive,
+      setDungeonChainDepth,
+      setDungeonChainMaxDepth,
+      dungeonDokaMultiplierRef,
     });
+    dungeonDokaMultiplierRef.current = 1;
     // Apply XP penalty: 20%, floored so level never decreases
     // Apply Doka penalty: 40%, min 0
     // Shared one-shot helper persists the reduced absolute values via
@@ -13187,11 +13400,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // the Death Realm. Without this, stale particle data from the battle map
     // accumulated in refs and caused a crash when transitioning through the Death Realm portal.
     cleanupMap();
-    // EXP8: Reset dungeon chain on death — refs only; state setters are redundant
-    // since cleanupMap already resets the refs synchronously (M3 FIX).
     dungeonChainActiveRef.current = false;
     dungeonChainDepthRef.current = 0;
     dungeonChainMaxDepthRef.current = 0;
+    dungeonDokaMultiplierRef.current = 1;
     setInBattle(false);
     setBattleEnemies([]);
     setTurnOrder([]);
@@ -13703,14 +13915,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // deriveBattleEnemies(combatantStoreCtx), which only returns LIVE
       // combatants — after the last enemy dies that list is empty/partial,
       // so the recap would see no (or too few) defeated enemies and the XP
-      // formula below would fall back to the level-based default. The
-      // living-summon filter is no longer needed here because attributeKillReward
-      // only appends enemies that actually died (a living summon is never
-      // passed to it). XP = sum of (enemy.level * 20) for each defeated enemy.
-      const defeatedList = battleDefeatedRef.current.map((e) => ({
-        name: e.pieceType ?? "unknown",
-        level: e.level ?? 1,
-      }));
+      // formula below would fall back to the level-based default.
+      // Dead player summons also go through the death pipeline; drop them
+      // so allied corpses cannot inflate applyRewards XP/Doka.
+      const defeatedList = battleDefeatedRef.current
+        .filter(countsTowardKillRewards)
+        .map((e) => ({
+          name: e.pieceType ?? "unknown",
+          level: e.level ?? 1,
+        }));
       // SECTION 1 (cont): Derive XP through the shared computeVictoryExp so the
       // recap and the persisted XP always match (same source, same formula).
       const expGained = computeVictoryExp({
@@ -13865,6 +14078,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       );
       for (const expiredId of _expiredSummonIds) {
         removeCombatant(combatantStoreCtx, expiredId);
+      }
+      // Last-hostile minion fade is a store remove inside this flushSync.
+      // Continuing would dispatch the player (DoT / plague) before the
+      // [inBattle, enemies] victory useEffect — deathTriggered then
+      // refuses applyRewards and persistDeathPenalty writes instead.
+      if (
+        !shouldAdvanceAfterEnemyTurn({
+          deathTriggered: deathTriggeredRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+        })
+      ) {
+        return;
       }
       setTurnOrder((reactPrevOrder) => {
         // removeCombatant (kill or #74 expire) already filtered turnOrderRef
@@ -14031,16 +14256,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               return nextIdx;
             }
             setBattlePhase("player");
-            // Process player's active effects (DoT, duration decrement)
-            mapModifierRegistry.applyTurnStart(
-              combatantsRef.current.find((c) => (c as any).id === "player") ||
-                combatantsRef.current[0],
-              activeMapModifierTypes,
-              {
-                log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                rng: Math.random,
-              },
+            // Player is not in combatantsRef. The previous `[0]` fallback
+            // mutated the first enemy's store HP (plague −1 / void −3)
+            // every player turn without processCombatantDeath.
+            const playerModTarget = playerTurnStartModifierTarget(
+              combatantsRef.current,
             );
+            if (playerModTarget) {
+              mapModifierRegistry.applyTurnStart(
+                playerModTarget,
+                activeMapModifierTypes,
+                {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                },
+              );
+            }
             processActiveEffects("player");
             spellCooldownsRef.current.forEach((cd, id) => {
               if (cd > 1) spellCooldownsRef.current.set(id, cd - 1);
@@ -14178,6 +14409,60 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 setTimeout(() => advanceTurn(), 0);
               } else if (_summon) {
+                // Player-side control mode skipped the #84/#86 turn-start
+                // ticks. Poison/burn/plague never decremented, so a shielded
+                // Wolf stayed buffed for the rest of the fight.
+                mapModifierRegistry.applyTurnStart(
+                  nextCombatant,
+                  activeMapModifierTypes,
+                  {
+                    log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                    rng: Math.random,
+                  },
+                );
+                processActiveEffects(nextCombatant.id);
+                if (isPlagueZone) {
+                  const live = getLiveCombatants(combatantStoreCtx).find(
+                    (e) => e.id === nextCombatant.id,
+                  );
+                  if (live && live.hp > 0) {
+                    const { newHp, lethal } = enemyHpAfterHazardDamage(
+                      live.hp,
+                      PLAGUE_ZONE_TICK,
+                    );
+                    setEnemyHpMap((prev) => ({
+                      ...prev,
+                      [nextCombatant.id]: newHp,
+                    }));
+                    updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                      hp: newHp,
+                    });
+                    if (lethal) {
+                      processCombatantDeathCb(nextCombatant.id);
+                    }
+                    logBattleEntry(
+                      `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                      "#a855f7",
+                    );
+                  }
+                }
+                const afterTicks = getLiveCombatants(combatantStoreCtx).find(
+                  (e) => e.id === nextCombatant.id,
+                );
+                if (
+                  !shouldDispatchEnemyAiAfterTurnStart({
+                    stillInStore: afterTicks !== undefined,
+                    storeHp: afterTicks?.hp ?? 0,
+                  })
+                ) {
+                  setActiveControlledSummonId(null);
+                  activeControlledSummonIdRef.current = null;
+                  setSelectedSummonSpellId(null);
+                  if (activeHostilesRemaining(combatantsRef.current) > 0) {
+                    setTimeout(() => advanceTurn(), 0);
+                  }
+                  return nextIdx;
+                }
                 // spawnSummonUnit seeds AP/MP once. The AI path resets them
                 // at handleSummonTurn; control mode never entered that path,
                 // so a 2-AP Archer that spent Poison Arrow stayed at 0 AP
@@ -14190,6 +14475,85 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   budget.currentMp;
               }
             } else {
+              // Enemy summons are hostiles (#79) but this branch skipped the
+              // #84 turn-start ticks. Last-minion plague/DoT left store hp > 0,
+              // so shouldAwardVictory stayed false and the minion still took a
+              // full AI turn (death penalty instead of applyRewards).
+              mapModifierRegistry.applyTurnStart(
+                nextCombatant,
+                activeMapModifierTypes,
+                {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                },
+              );
+              processActiveEffects(nextCombatant.id);
+              if (isPlagueZone) {
+                const live = getLiveCombatants(combatantStoreCtx).find(
+                  (e) => e.id === nextCombatant.id,
+                );
+                if (live && live.hp > 0) {
+                  const { newHp, lethal } = enemyHpAfterHazardDamage(
+                    live.hp,
+                    PLAGUE_ZONE_TICK,
+                  );
+                  setEnemyHpMap((prev) => ({
+                    ...prev,
+                    [nextCombatant.id]: newHp,
+                  }));
+                  updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                    hp: newHp,
+                  });
+                  if (lethal) {
+                    processCombatantDeathCb(nextCombatant.id);
+                  }
+                  logBattleEntry(
+                    `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                    "#a855f7",
+                  );
+                }
+              }
+              // Void Rift: applyTurnStart only mutates the turn-order entry.
+              // Store HP stays > 0 so last-hostile ticks skip applyRewards.
+              if (isVoidRift) {
+                const live = getLiveCombatants(combatantStoreCtx).find(
+                  (e) => e.id === nextCombatant.id,
+                );
+                if (live && live.hp > 0) {
+                  const { newHp, lethal } = enemyHpAfterHazardDamage(
+                    live.hp,
+                    VOID_RIFT_TICK,
+                  );
+                  setEnemyHpMap((prev) => ({
+                    ...prev,
+                    [nextCombatant.id]: newHp,
+                  }));
+                  updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                    hp: newHp,
+                  });
+                  if (lethal) {
+                    processCombatantDeathCb(nextCombatant.id);
+                  }
+                  logBattleEntry(
+                    `Void Rift deals 3 damage to ${nextCombatant.name}!`,
+                    "#bc8cff",
+                  );
+                }
+              }
+              const afterTicks = getLiveCombatants(combatantStoreCtx).find(
+                (e) => e.id === nextCombatant.id,
+              );
+              if (
+                !shouldDispatchEnemyAiAfterTurnStart({
+                  stillInStore: afterTicks !== undefined,
+                  storeHp: afterTicks?.hp ?? 0,
+                })
+              ) {
+                if (activeHostilesRemaining(combatantsRef.current) > 0) {
+                  setTimeout(() => advanceTurn(), 0);
+                }
+                return nextIdx;
+              }
               setBattlePhase("enemy");
             }
           } else {
@@ -14210,8 +14574,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current,
             });
-            setBattlePhase("enemy");
-            // Process this enemy's active effects
+            // Process this enemy's active effects BEFORE dispatching AI.
+            // setBattlePhase("enemy") first left the phase stuck when a
+            // lethal DoT/plague tick processed death and pointed the queue
+            // at a non-enemy predecessor.
             mapModifierRegistry.applyTurnStart(
               nextCombatant,
               activeMapModifierTypes,
@@ -14221,18 +14587,75 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               },
             );
             processActiveEffects(nextCombatant.id);
-            // Plague Zone on enemies too
+            // Plague Zone: commit store HP. React-only enemyHpMap writes
+            // left isActiveHostile true so the last enemy still attacked.
             if (isPlagueZone) {
-              setEnemyHpMap((prev) => {
-                const cur = prev[nextCombatant.id] ?? 0;
-                const newHp = Math.max(0, cur - 2);
-                return { ...prev, [nextCombatant.id]: newHp };
-              });
-              logBattleEntry(
-                `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
-                "#a855f7",
+              const live = getLiveCombatants(combatantStoreCtx).find(
+                (e) => e.id === nextCombatant.id,
               );
+              if (live && live.hp > 0) {
+                const { newHp, lethal } = enemyHpAfterHazardDamage(
+                  live.hp,
+                  PLAGUE_ZONE_TICK,
+                );
+                setEnemyHpMap((prev) => ({
+                  ...prev,
+                  [nextCombatant.id]: newHp,
+                }));
+                updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                  hp: newHp,
+                });
+                if (lethal) {
+                  processCombatantDeathCb(nextCombatant.id);
+                }
+                logBattleEntry(
+                  `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                  "#a855f7",
+                );
+              }
             }
+            // Void Rift: applyTurnStart only mutates the turn-order entry.
+            // Store HP stays > 0 so last-hostile ticks skip applyRewards.
+            if (isVoidRift) {
+              const live = getLiveCombatants(combatantStoreCtx).find(
+                (e) => e.id === nextCombatant.id,
+              );
+              if (live && live.hp > 0) {
+                const { newHp, lethal } = enemyHpAfterHazardDamage(
+                  live.hp,
+                  VOID_RIFT_TICK,
+                );
+                setEnemyHpMap((prev) => ({
+                  ...prev,
+                  [nextCombatant.id]: newHp,
+                }));
+                updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                  hp: newHp,
+                });
+                if (lethal) {
+                  processCombatantDeathCb(nextCombatant.id);
+                }
+                logBattleEntry(
+                  `Void Rift deals 3 damage to ${nextCombatant.name}!`,
+                  "#bc8cff",
+                );
+              }
+            }
+            const afterTicks = getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === nextCombatant.id,
+            );
+            if (
+              !shouldDispatchEnemyAiAfterTurnStart({
+                stillInStore: afterTicks !== undefined,
+                storeHp: afterTicks?.hp ?? 0,
+              })
+            ) {
+              if (activeHostilesRemaining(combatantsRef.current) > 0) {
+                setTimeout(() => advanceTurn(), 0);
+              }
+              return nextIdx;
+            }
+            setBattlePhase("enemy");
             logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
           }
           return nextIdx;
@@ -14480,6 +14903,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           battleParticipant: true,
           insertAfterId: enemyId,
         });
+        setEnemyHpMap((prev) => ({
+          ...prev,
+          [spawned.summon.id]: spawned.summon.hp,
+        }));
       };
       spawnEnemySummonRef.current = commitHostileSummon;
 
@@ -14793,6 +15220,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             y: execResult.newPosition.y,
             hp: execResult.hp,
           });
+          // Bomber detonate (and any executor hp===0) used to leave a corpse
+          // in getLiveCombatants, blocking occupancy for the rest of the fight.
+          if (execResult.hp <= 0) {
+            processCombatantDeathCb(enemyId);
+          }
           // Always advance the turn — no stalls.
           // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
           // useEffect gate (line ~10639) does not early-return on the next
@@ -16344,7 +16776,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
           }
           // ── DoT death check (any enemy) + leader flag ────────────────────
-          const thisHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
+          const thisHp = liveCombatantHp(
+            getLiveCombatants(combatantStoreCtx),
+            enemyId,
+            currentCombatant.hp,
+          );
           if (thisHp <= 0) {
             processCombatantDeathCb(enemyId);
             if (
@@ -16361,12 +16797,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (enemyHazard) {
               if (enemyHazard === "lava") {
                 const hDmg = 8 + Math.floor(Math.random() * 8);
-                const curEH = enemyHpMap[enemyId] ?? currentCombatant.hp;
-                const newEH = Math.max(0, curEH - hDmg);
+                const curEH = liveCombatantHp(
+                  getLiveCombatants(combatantStoreCtx),
+                  enemyId,
+                  currentCombatant.hp,
+                );
+                const { newHp: newEH, lethal } = enemyHpAfterHazardDamage(
+                  curEH,
+                  hDmg,
+                );
                 setEnemyHpMap((h) => ({ ...h, [enemyId]: newEH }));
                 setTurnOrder((to) =>
                   to.map((c) => (c.id === enemyId ? { ...c, hp: newEH } : c)),
                 );
+                // Victory / enemyTakesDamage read combatantsRef. React-only
+                // HP writes left a lava-killed last enemy in the store so
+                // they took another full turn (and could apply death penalty).
+                updateCombatant(combatantStoreCtx, enemyId, { hp: newEH });
+                if (lethal) {
+                  processCombatantDeathCb(enemyId);
+                }
                 logBattleEntry(
                   `\ud83c\udf30 ${enemy.pieceType} walked on lava! -${hDmg} HP`,
                   "#ff4400",
@@ -16399,12 +16849,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 });
               } else if (enemyHazard === "spikes") {
                 const hsDmg = 5 + Math.floor(Math.random() * 6);
-                const curEHS = enemyHpMap[enemyId] ?? currentCombatant.hp;
-                const newEHS = Math.max(0, curEHS - hsDmg);
+                const curEHS = liveCombatantHp(
+                  getLiveCombatants(combatantStoreCtx),
+                  enemyId,
+                  currentCombatant.hp,
+                );
+                const { newHp: newEHS, lethal } = enemyHpAfterHazardDamage(
+                  curEHS,
+                  hsDmg,
+                );
                 setEnemyHpMap((h) => ({ ...h, [enemyId]: newEHS }));
                 setTurnOrder((to) =>
                   to.map((c) => (c.id === enemyId ? { ...c, hp: newEHS } : c)),
                 );
+                updateCombatant(combatantStoreCtx, enemyId, { hp: newEHS });
+                if (lethal) {
+                  processCombatantDeathCb(enemyId);
+                }
                 logBattleEntry(
                   `\u2694\ufe0f ${enemy.pieceType} hit spikes! -${hsDmg} HP`,
                   "#cc8800",
@@ -16422,9 +16883,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           enemyTurnInProgressRef.current = false;
           // If the body threw (or returned early without marking advanced),
           // advance exactly once here with "action-complete" — never timer.
+          // Skip when this kill emptied the hostile roster (or the player
+          // already died): flushSync advanceTurn would run player DoT /
+          // plague before the victory useEffect and persist a death penalty
+          // instead of applyRewards.
           if (!advanced) {
-            turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
+            if (
+              shouldAdvanceAfterEnemyTurn({
+                deathTriggered: deathTriggeredRef.current,
+                hostilesRemaining: activeHostilesRemaining(
+                  combatantsRef.current,
+                ),
+              })
+            ) {
+              turnEndReasonRef.current = "action-complete";
+              advanceTurnRef.current();
+            }
             advanced = true;
           }
         }
@@ -16664,9 +17138,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const effectiveRange = getEffectiveSpellRange(
         Math.max(1, Number(spell.range)),
       );
-      // Find closest living enemy/hostile within Chebyshev range from combatantStoreCtx
+      // Live store includes enemy summons that are not in React `enemies`.
+      // isActiveHostile is the canonical filter (enemy-side summons after #79).
       const liveHostiles = getLiveCombatants(combatantStoreCtx).filter(
-        (e: any) => e.side !== "player" && (e.hp ?? 0) > 0,
+        isActiveHostile,
       );
       let nearest: (typeof liveHostiles)[0] | null = null;
       let nearestDist = Number.POSITIVE_INFINITY;
@@ -17323,9 +17798,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         <BuffShop
           dokaBalance={dokaBalance}
           onDeductDoka={(amount) => {
-            const next = nextDokaAfterShopSpend(dokaBalance, amount);
-            onDokaBalanceChange(next);
+            const next = nextDokaAfterShopSpend(dokaBalanceRef.current, amount);
             persistAbsoluteProgress(characterStatsRef.current.hp, next);
+            dokaBalanceRef.current = next;
+            onDokaBalanceChange(next);
           }}
           onUseItem={handleUseItem}
           isPlayerTurn={battlePhase === "player" && inBattle}
@@ -17825,11 +18301,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           inBattleRef.current,
                           challengeHealUsedRef.current,
                         );
-                      onDokaBalanceChange(Math.max(0, dokaBalance - dokaCost));
-                      persistAbsoluteProgress(
-                        Math.min(maxHp, characterStats.hp + hpToAdd),
-                        Math.max(0, dokaBalance - dokaCost),
+                      const nextDoka = Math.max(
+                        0,
+                        dokaBalanceRef.current - dokaCost,
                       );
+                      persistAbsoluteProgress(
+                        Math.min(
+                          maxHp,
+                          (characterStatsRef.current.hp ?? characterStats.hp) +
+                            hpToAdd,
+                        ),
+                        nextDoka,
+                      );
+                      dokaBalanceRef.current = nextDoka;
+                      onDokaBalanceChange(nextDoka);
                       // Toast
                       toast.success(
                         `Healed +${hpToAdd} HP (-${dokaCost} Doka)`,

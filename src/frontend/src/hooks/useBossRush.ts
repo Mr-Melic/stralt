@@ -284,7 +284,9 @@ export function useBossRush(
 
   const persistRoomClear = useCallback(
     async (clearedRoomIndex: number) => {
-      if (!actor) return;
+      if (!actor) {
+        throw new Error("[BossRush] persistRoomClear requires an actor");
+      }
       const epoch = persistEpochRef.current;
       try {
         await persistBossRushRoomClear(
@@ -295,6 +297,7 @@ export function useBossRush(
         );
       } catch (e) {
         console.error("[BossRush] Failed to persist room clear:", e);
+        throw e;
       }
     },
     [actor, characterSlot],

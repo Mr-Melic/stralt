@@ -9,6 +9,7 @@ import StarfieldBackground from "./components/StarfieldBackground";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetCallerUserProfile, useGetUserRole } from "./hooks/useQueries";
 import type { Character } from "./types/gameTypes";
+import { collectPreservedLocalStorage } from "./utils/versionGate";
 
 /** Current app version — bump this on every deploy to force re-login and show changelog. */
 const APP_VERSION = "v163";
@@ -229,16 +230,19 @@ function App() {
   useEffect(() => {
     const storedVersion = localStorage.getItem("pbv_app_version");
     if (storedVersion !== APP_VERSION) {
-      // New version detected — clear auth-related keys and force re-login
-      const keysToKeep = ["pbv_tier_spawn_config", "pbv_levelup_config"];
-      const savedValues: Record<string, string | null> = {};
-      for (const key of keysToKeep) {
-        savedValues[key] = localStorage.getItem(key);
+      // New version detected — clear auth-related keys and force re-login.
+      // Buff inventory is paid Doka stored only in `${principal}_inventory`.
+      const allKeys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) allKeys.push(key);
       }
+      const savedValues = collectPreservedLocalStorage(allKeys, (key) =>
+        localStorage.getItem(key),
+      );
       localStorage.clear();
-      for (const key of keysToKeep) {
-        if (savedValues[key] !== null)
-          localStorage.setItem(key, savedValues[key]!);
+      for (const [key, value] of Object.entries(savedValues)) {
+        localStorage.setItem(key, value);
       }
       localStorage.setItem("pbv_app_version", APP_VERSION);
       localStorage.setItem("pbv_show_changelog", "true");

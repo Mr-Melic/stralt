@@ -3,6 +3,10 @@ import { describe, it } from "node:test";
 import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
+  dungeonDokaMultiplierFor,
+  resetRunState,
+  restExitSpawnDepth,
+  shouldArmDungeonChainOnRestExit,
   snapshotDungeonChain,
 } from "./portalRules.ts";
 
@@ -26,6 +30,36 @@ describe("snapshotDungeonChain", () => {
       decideDungeonChainPortal(false, snapshotDungeonChain(refs)),
       { kind: "none" },
     );
+  });
+});
+
+describe("resetRunState", () => {
+  it("clears dungeon React state and the Doka multiplier after death", () => {
+    let active = true;
+    let depth = 4;
+    let maxDepth = 5;
+    const multiplier = { current: 3 };
+    resetRunState({
+      bossRushActiveRef: { current: false },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {},
+      setDungeonChainActive: (next) => {
+        active = next;
+      },
+      setDungeonChainDepth: (next) => {
+        depth = next;
+      },
+      setDungeonChainMaxDepth: (next) => {
+        maxDepth = next;
+      },
+      dungeonDokaMultiplierRef: multiplier,
+    });
+    assert.equal(active, false);
+    assert.equal(depth, 0);
+    assert.equal(maxDepth, 0);
+    assert.equal(multiplier.current, 1);
   });
 });
 
@@ -55,5 +89,57 @@ describe("decideDungeonChainPortal", () => {
       { kind: "complete", bonus: dungeonChainCompletionBonus(4) },
     );
     assert.equal(dungeonChainCompletionBonus(4), 200);
+  });
+});
+
+describe("dungeonDokaMultiplierFor", () => {
+  it("is 1x outside a run and scales with live depth while active", () => {
+    assert.equal(dungeonDokaMultiplierFor(false, 3), 1);
+    assert.equal(dungeonDokaMultiplierFor(true, 0), 1);
+    assert.equal(dungeonDokaMultiplierFor(true, 1), 1.5);
+    assert.equal(dungeonDokaMultiplierFor(true, 3), 2.5);
+    assert.equal(dungeonDokaMultiplierFor(true, 5), 4);
+  });
+});
+
+describe("resetRunState", () => {
+  it("clears dungeon React state so the HUD and multiplier cannot stick", () => {
+    let active = true;
+    let depth = 3;
+    let maxDepth = 4;
+    const refs = {
+      bossRushActiveRef: { current: false },
+      dungeonChainActiveRef: { current: true },
+      dungeonChainDepthRef: { current: 3 },
+      dungeonChainMaxDepthRef: { current: 4 },
+      abortBossRush: async () => {},
+      setDungeonChainActive: (next: boolean) => {
+        active = next;
+      },
+      setDungeonChainDepth: (next: number) => {
+        depth = next;
+      },
+      setDungeonChainMaxDepth: (next: number) => {
+        maxDepth = next;
+      },
+    };
+    resetRunState(refs);
+    assert.equal(refs.dungeonChainActiveRef.current, false);
+    assert.equal(refs.dungeonChainDepthRef.current, 0);
+    assert.equal(refs.dungeonChainMaxDepthRef.current, 0);
+    assert.equal(active, false);
+    assert.equal(depth, 0);
+    assert.equal(maxDepth, 0);
+    assert.equal(dungeonDokaMultiplierFor(active, depth), 1);
+  });
+});
+
+describe("rest-exit dungeon spawn", () => {
+  it("re-arms the chain at depth 1 so generateEnemies is not called at 0", () => {
+    assert.equal(shouldArmDungeonChainOnRestExit("dungeon"), true);
+    assert.equal(restExitSpawnDepth("dungeon"), 1);
+    assert.equal(shouldArmDungeonChainOnRestExit("normal"), false);
+    assert.equal(restExitSpawnDepth("normal"), 0);
+    assert.equal(shouldArmDungeonChainOnRestExit(undefined), false);
   });
 });

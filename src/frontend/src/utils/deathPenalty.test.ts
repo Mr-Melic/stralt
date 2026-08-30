@@ -6,8 +6,10 @@ import {
   mergeVictoryRewardLiveStats,
   persistDeathPenalty,
   raiseUiAfterDeathPersist,
+  respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
   victoryResourceFloor,
+  xpAfterDeathPersist,
 } from "./deathPenalty.ts";
 import {
   createProgressPersist,
@@ -38,6 +40,14 @@ assert.deepEqual(computeDeathPenalty(-10, -50), {
   newXp: 0,
   newDoka: 0,
 });
+
+assert.equal(respawnHpAfterDeath(1), 50);
+assert.equal(respawnHpAfterDeath(10), 72);
+assert.notEqual(
+  respawnHpAfterDeath(1),
+  Math.floor((50 + 1) * 10 * 0.5),
+  "old persistDeathPenalty formula must not be reused (255 HP at level 1)",
+);
 assert.deepEqual(computeDeathPenalty(5, 9), {
   xpLost: 1,
   dokaLost: 3,
@@ -110,8 +120,29 @@ assert.equal(threw, true);
 assert.equal(raiseUiAfterDeathPersist(600, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(900, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(610, 582), 610);
+assert.equal(
+  xpAfterDeathPersist({
+    uiXp: 64,
+    uiLevel: 4,
+    persistedXp: 24,
+    persistedLevel: 5,
+  }),
+  24,
+);
+assert.equal(
+  xpAfterDeathPersist({
+    uiXp: 64,
+    uiLevel: 5,
+    persistedXp: 24,
+    persistedLevel: 5,
+  }),
+  64,
+);
 assert.equal(shouldApplyVictoryLiveHydrate(true), false);
 assert.equal(shouldApplyVictoryLiveHydrate(false), true);
+assert.equal(shouldApplyVictoryLiveHydrate(false, 0, 1), false);
+assert.equal(shouldApplyVictoryLiveHydrate(false, 1, 1), true);
+assert.equal(shouldApplyVictoryLiveHydrate(true, 0, 0), false);
 
 assert.deepEqual(victoryResourceFloor(1), { hp: 60, mp: 5, ap: 6 });
 assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
@@ -295,7 +326,12 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
       level: committed.level,
     });
     uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
-    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+    uiXp = xpAfterDeathPersist({
+      uiXp,
+      uiLevel,
+      persistedXp: after.newXp,
+      persistedLevel: committed.level,
+    });
     uiLevel = raiseUiAfterDeathPersist(uiLevel, committed.level);
   });
 
@@ -307,14 +343,17 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   await death;
 
   assert.equal(uiLevel, 5);
+  assert.equal(uiXp, 24);
   assert.equal(lock.snapshot().level, 5);
   assert.equal(lock.snapshot().doka, 720);
   assert.equal(lock.snapshot().xp, 24);
 
-  // Even if the hydrate effect still sees the pre-level UI, committed
-  // level must stay at 5 so the next heal cannot revert the canister.
-  lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
+  // Even if the hydrate effect still sees the pre-level leftover, committed
+  // XP/level must stay at the post-level penalty so the next heal cannot
+  // refund the death cut.
+  lock.hydrateWhenIdle({ doka: uiDoka, xp: 64, level: 4 });
   assert.equal(lock.snapshot().level, 5);
+  assert.equal(lock.snapshot().xp, 24);
 }
 
 // WorldExploration mounts with GameFlow's placeholder doka=0 while
@@ -338,6 +377,46 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   assert.equal(after.dokaLost, 200);
   lock.commit({ doka: after.newDoka, xp: after.newXp });
   assert.equal(lock.snapshot().doka, 300);
+}
+
+// Death Realm re-arms deathTriggered after 1.5s. A still-in-flight
+// applyRewards must not hydrate just because the flag flipped back.
+{
+  const lock = createProgressPersist({ doka: 1000, xp: 10000, level: 4 });
+  let uiXp = 10000;
+  let uiDoka = 1000;
+  let deathTriggered = false;
+  let deathEpoch = 0;
+  const epochAtStart = deathEpoch;
+
+  const victory = lock.enqueue(async () => {
+    lock.commit({ doka: 1500, xp: 10500 });
+  });
+
+  const optimistic = computeDeathPenalty(uiXp, uiDoka);
+  uiXp = optimistic.newXp;
+  uiDoka = optimistic.newDoka;
+  deathTriggered = true;
+  deathEpoch += 1;
+  const death = lock.enqueue(async () => {
+    const after = computeDeathPenalty(lock.snapshot().xp, lock.snapshot().doka);
+    lock.commit({ doka: after.newDoka, xp: after.newXp });
+    uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
+    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+  });
+
+  deathTriggered = false;
+  await victory;
+  if (shouldApplyVictoryLiveHydrate(deathTriggered, epochAtStart, deathEpoch)) {
+    uiXp = 10500;
+    uiDoka = 1500;
+  }
+  await death;
+
+  assert.equal(uiXp, 8400);
+  assert.equal(uiDoka, 900);
+  assert.equal(lock.snapshot().xp, 8400);
+  assert.equal(lock.snapshot().doka, 900);
 }
 
 console.log("deathPenalty.test: ok");

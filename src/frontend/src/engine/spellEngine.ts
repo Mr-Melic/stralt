@@ -15,6 +15,7 @@
 
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
+import { isActiveHostile } from "./battleSetup";
 
 export type Side = "player" | "enemy";
 
@@ -244,6 +245,8 @@ export interface PlayerCastEnemy {
   pieceType: string;
   family?: string;
   isBoss?: boolean;
+  isSummon?: boolean;
+  side?: Side;
 }
 
 /**
@@ -732,7 +735,15 @@ export function resolvePlayerCast(
 
   // ── Check if an enemy is on clicked tile (inline line 8349) ──
   const targetEnemy = ctx.enemies.find(
-    (e) => e.x === gridPos.x && e.y === gridPos.y,
+    (e) =>
+      e.x === gridPos.x &&
+      e.y === gridPos.y &&
+      isActiveHostile({
+        hp: e.hp ?? 0,
+        isSummon: e.isSummon,
+        side: e.side,
+        id: e.id,
+      }),
   );
 
   // ── Sacrifice: lose 20% HP, deal 3x that as damage (inline line 8354) ──

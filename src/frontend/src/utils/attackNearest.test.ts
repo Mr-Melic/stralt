@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { isActiveHostile } from "../engine/battleSetup.ts";
 import type { Enemy } from "../types/gameTypes.ts";
 
 function findNearestHostile(
@@ -10,13 +11,18 @@ function findNearestHostile(
       id: string;
       x: number;
       y: number;
-      side?: string;
       hp?: number;
+      side?: "player" | "enemy";
+      isSummon?: boolean;
     }
   >,
 ): (typeof liveCombatants)[0] | null {
-  const liveHostiles = liveCombatants.filter(
-    (e) => e.side !== "player" && (e.hp ?? 0) > 0,
+  const liveHostiles = liveCombatants.filter((e) =>
+    isActiveHostile({
+      hp: e.hp ?? 0,
+      side: e.side,
+      isSummon: e.isSummon,
+    }),
   );
   let nearest: (typeof liveHostiles)[0] | null = null;
   let nearestDist = Number.POSITIVE_INFINITY;
@@ -35,8 +41,8 @@ function findNearestHostile(
 describe("findNearestHostile", () => {
   it("targets enemy-side summons that are only in the live combatant store", () => {
     const liveCombatants = [
-      { id: "player-summon-wolf", x: 2, y: 2, side: "player", hp: 20 },
-      { id: "enemy-minion-rat", x: 3, y: 3, side: "enemy", hp: 15 },
+      { id: "player-summon-wolf", x: 2, y: 2, side: "player" as const, hp: 20 },
+      { id: "enemy-minion-rat", x: 3, y: 3, side: "enemy" as const, hp: 15 },
     ];
     const target = findNearestHostile({ x: 1, y: 1 }, 3, liveCombatants);
     assert.ok(target);
@@ -45,8 +51,16 @@ describe("findNearestHostile", () => {
 
   it("ignores dead enemies and player-side allies", () => {
     const liveCombatants = [
-      { id: "dead-enemy", x: 2, y: 2, side: "enemy", hp: 0 },
-      { id: "player-ally", x: 2, y: 2, side: "player", hp: 50 },
+      { id: "dead-enemy", x: 2, y: 2, side: "enemy" as const, hp: 0 },
+      { id: "player-ally", x: 2, y: 2, side: "player" as const, hp: 50 },
+    ];
+    const target = findNearestHostile({ x: 1, y: 1 }, 3, liveCombatants);
+    assert.equal(target, null);
+  });
+
+  it("ignores leftover player summons that lack an explicit side", () => {
+    const liveCombatants = [
+      { id: "leftover-wolf", x: 2, y: 2, isSummon: true, hp: 40 },
     ];
     const target = findNearestHostile({ x: 1, y: 1 }, 3, liveCombatants);
     assert.equal(target, null);

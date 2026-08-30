@@ -180,4 +180,21 @@ describe("selectDefeatedEnemiesForRewards", () => {
       [{ name: "fallback", level: 2 }],
     );
   });
+
+  it("drops player-side summons so allied deaths cannot inflate applyRewards", () => {
+    assert.deepEqual(
+      selectDefeatedEnemiesForRewards(
+        [],
+        [
+          { pieceType: "rat", level: 3, side: "enemy" },
+          { pieceType: "wolf", level: 5, isSummon: true, side: "player" },
+          { pieceType: "larva", level: 2, isSummon: true, side: "enemy" },
+        ],
+      ),
+      [
+        { name: "rat", level: 3 },
+        { name: "larva", level: 2 },
+      ],
+    );
+  });
 });
