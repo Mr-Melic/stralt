@@ -81,6 +81,7 @@ import {
   countsTowardKillRewards,
   despawnSummons,
   enemyHpAfterHazardDamage,
+  hpAfterIncomingDamage,
   isActiveHostile,
   isAliveCombatant,
   liveCombatantHp,
@@ -1757,20 +1758,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             )?.effectName ?? "DoT";
           let postResDamage = dotResult.damage;
           if (targetId === "player") {
+            // processActiveEffects is created once ([logBattleEntry] only).
+            // Read live HP from the ref — a closed-over characterStats.hp is
+            // the mount snapshot and would restore the player toward full HP.
+            const hpBefore = characterStatsRef.current.hp;
             postResDamage = playerTakesDamage(
               dotResult.damage,
               `${dotTypeLabel} DoT`,
             );
-            // [DEATH-BISECT] Immediate death check after DoT-to-player tick.
-            // Use the computed post-RES damage (postResDamage), not the
-            // un-flushed characterStats.hp state, since playerTakesDamage's
-            // setCharacterStats has not yet committed to this closure.
-            if (characterStats.hp - postResDamage <= 0) {
+            const afterDot = hpAfterIncomingDamage(hpBefore, postResDamage);
+            if (afterDot.lethal) {
               logDebugInfo("BATTLE", "[DEATH-BISECT] source: dot-tick", {
-                hpBefore: characterStats.hp,
+                hpBefore,
                 dotDamage: dotResult.damage,
                 postResDamage,
-                hpAfter: characterStats.hp - postResDamage,
+                hpAfter: afterDot.newHp,
                 dotTypeLabel,
               });
               _handlePlayerDeath();
@@ -3216,14 +3218,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     );
   }, [characterStats?.level, levelUpConfig.statGrowthPercent]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: setCharacterStats is a stable useCallback (empty deps)
   const playerTakesDamage = useCallback(
     (incomingDamage: number, source: string): number => {
       let dmg = incomingDamage;
       // RES (Resistance): flat % reduction to ALL incoming damage (including DoT ticks).
       // DoT ticks do NOT apply SR — only RES. Stacking: finalDamage = baseDamage * (1 - RES/100).
       const effRes =
-        Number(characterStats.res) *
+        Number(characterStatsRef.current.res) *
         getStatModifier("player", "res", activeEffectsRef.current);
       dmg = Math.max(1, Math.round(dmg * Math.max(0, 1 - effRes / 100)));
       if (shieldHpRef.current > 0) {
@@ -3233,8 +3234,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (absorb > 0)
           logBattleEntry(`Shield absorbed ${absorb} damage`, "#a855f7");
       }
-      const newHp = Math.max(0, characterStats.hp - dmg);
-      setCharacterStats((prev) => ({ ...prev, hp: newHp }));
+      // Functional updater + live prev.hp: processActiveEffects keeps the
+      // first-render playerTakesDamage and must not write mount-time HP.
+      setCharacterStats((prev) => {
+        const { newHp } = hpAfterIncomingDamage(prev.hp, dmg);
+        return { ...prev, hp: newHp };
+      });
       if (dmg > 0) {
         challengeTotalDamageRef.current = recordChallengeDamageTaken(
           challengeTotalDamageRef.current,
@@ -3247,7 +3252,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       _em.triggerShake(4);
       return dmg;
     },
-    [characterStats.res, characterStats.hp, getStatModifier, logBattleEntry],
+    [getStatModifier, logBattleEntry, setCharacterStats],
   );
 
   const enemyTakesDamage = useCallback(

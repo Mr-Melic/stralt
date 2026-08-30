@@ -153,6 +153,24 @@ export function despawnSummons<T extends Combatant>(enemies: T[]): T[] {
 }
 
 /**
+ * Subtract incoming damage from live HP. Pass the current HP (store /
+ * characterStatsRef / setState `prev`), never a useCallback-closed snapshot.
+ *
+ * `processActiveEffects` is created once (`[logBattleEntry]` only) and used
+ * to close over mount-time `characterStats.hp`. Writing that snapshot after
+ * a mid-fight hit restores the player toward full HP on every DoT tick.
+ */
+export function hpAfterIncomingDamage(
+  currentHp: number,
+  damage: number,
+): { newHp: number; lethal: boolean } {
+  const hp = Number.isFinite(currentHp) ? currentHp : 0;
+  const dmg = Number.isFinite(damage) ? Math.max(0, damage) : 0;
+  const newHp = Math.max(0, hp - dmg);
+  return { newHp, lethal: newHp === 0 };
+}
+
+/**
  * Lava / spike damage after an enemy lands on a hazard.
  *
  * Callers must then write `newHp` through `updateCombatant` and, when
@@ -166,10 +184,7 @@ export function enemyHpAfterHazardDamage(
   currentHp: number,
   damage: number,
 ): { newHp: number; lethal: boolean } {
-  const hp = Number.isFinite(currentHp) ? currentHp : 0;
-  const dmg = Number.isFinite(damage) ? Math.max(0, damage) : 0;
-  const newHp = Math.max(0, hp - dmg);
-  return { newHp, lethal: newHp === 0 };
+  return hpAfterIncomingDamage(currentHp, damage);
 }
 
 /**
