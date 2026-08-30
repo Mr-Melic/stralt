@@ -90,6 +90,7 @@ export function activeHostilesRemaining(enemies: Combatant[]): number {
 export function shouldAwardVictory(opts: {
   inBattle: boolean;
   deathTriggered: boolean;
+  /** Must be the battle-open snapshot size, not the living roster. */
   battleStartIdsSize: number;
   hostilesRemaining: number;
 }): boolean {

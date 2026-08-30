@@ -75,8 +75,16 @@ export interface SyncCombatantsOpts {
 export interface CombatantStoreCtx {
   /** Primary combatant array (source of truth). */
   combatantsRef: MutableRefObject<Enemy[]>;
-  /** Ids of combatants that were present at battle start — defines the
-   *  derived `battleEnemies` view. */
+  /**
+   * Snapshot of combatant ids present when the current battle roster was
+   * established (`syncCombatants({ resetBattle: true })` or
+   * `addCombatant(..., { battleParticipant: true })`).
+   *
+   * This set is NOT a living roster. Death must not delete from it —
+   * `shouldAwardVictory` requires `battleStartIdsSize > 0` so the last
+   * kill can still persist rewards. Living membership is `combatantsRef`
+   * intersected with this snapshot (`deriveBattleEnemies`).
+   */
   battleStartIds: Set<string>;
   /** Mirror of `combatantsRef` kept for synchronous reads. */
   enemiesRef: MutableRefObject<Enemy[]>;
@@ -168,7 +176,7 @@ function assertNoDivergence(
   nextCombatants: Enemy[],
   nextEnemies: Enemy[],
 ): void {
-  if (!import.meta.env.DEV) return;
+  if (!import.meta.env?.DEV) return;
 
   const refIds = ctx.combatantsRef.current.map((c) => c.id);
   const stateIds = ctx.enemiesRef.current.map((c) => c.id);
@@ -321,8 +329,11 @@ export function addCombatant(
  * Remove a combatant from the store atomically.
  *
  * - Filters `combatantsRef.current` by id and syncs `enemiesRef.current`.
- * - Removes the id from `battleStartIds` and syncs
- *   `battleEnemiesRef.current`.
+ * - Rebuilds `battleEnemiesRef` from the remaining live combatants whose
+ *   id is still in the battle-start snapshot. Does **not** delete from
+ *   `battleStartIds` — that set is the "a fight was opened" gate used by
+ *   `shouldAwardVictory`. The last kill would otherwise empty it before
+ *   the `[inBattle, enemies]` effect runs, dropping recap / applyRewards.
  * - Calls `removeCombatantFromTurnQueue` (from `./turnQueue`) on
  *   `turnOrderRef.current`, which also adjusts
  *   `currentTurnIndexRef.current` and calls `setTurnOrder`.
@@ -337,7 +348,6 @@ export function removeCombatant(ctx: CombatantStoreCtx, id: string): void {
   const nextCombatants = ctx.combatantsRef.current.filter((c) => c.id !== id);
   const nextEnemies = nextCombatants;
 
-  ctx.battleStartIds.delete(id);
   const nextBattleEnemies = nextCombatants.filter((c) =>
     ctx.battleStartIds.has(c.id),
   );
@@ -558,7 +568,7 @@ export function getLiveCombatants(ctx: CombatantStoreCtx): Enemy[] {
  *   turnOrder=N ids=[...] hostiles=K
  */
 export function dumpStateSync(label: string, ctx: CombatantStoreCtx): void {
-  if (!import.meta.env.DEV) return;
+  if (!import.meta.env?.DEV) return;
 
   const ids = (arr: Enemy[]): string[] => arr.map((c) => c.id);
   const turnIds = ctx.turnOrderRef.current.map((e) => e.id);
