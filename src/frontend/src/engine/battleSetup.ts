@@ -185,3 +185,20 @@ export function playerTurnStartModifierTarget<T extends { id?: string }>(
 ): T | undefined {
   return combatants.find((c) => c.id === "player");
 }
+
+/**
+ * After an enemy apply-layer finally (lava/spike, Mirror bounce, thisHp
+ * check), do not `advanceTurn` when the fight is already over.
+ *
+ * `advanceTurn` is `flushSync` and runs before the `[inBattle, enemies]`
+ * victory useEffect. Dispatching the player's next turn lets DoT / plague
+ * call `_handlePlayerDeath` first, set `deathTriggered`, and make
+ * `shouldAwardVictory` refuse — `persistDeathPenalty` instead of
+ * `applyRewards`.
+ */
+export function shouldAdvanceAfterEnemyTurn(opts: {
+  deathTriggered: boolean;
+  hostilesRemaining: number;
+}): boolean {
+  return !opts.deathTriggered && opts.hostilesRemaining > 0;
+}

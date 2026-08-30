@@ -5,6 +5,7 @@ import {
   despawnSummons,
   enemyHpAfterHazardDamage,
   isActiveHostile,
+  shouldAdvanceAfterEnemyTurn,
   shouldAwardVictory,
 } from "./battleSetup.ts";
 
@@ -70,5 +71,47 @@ describe("enemyHpAfterHazardDamage", () => {
       newHp: 0,
       lethal: true,
     });
+  });
+});
+
+describe("shouldAdvanceAfterEnemyTurn", () => {
+  it("skips the next dispatch after the last hostile dies so player DoT cannot block victory", () => {
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: 0,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: true,
+        battleStartIdsSize: 1,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "player DoT death during flushSync advanceTurn would refuse applyRewards",
+    );
+  });
+
+  it("still advances when other hostiles remain and the player is alive", () => {
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: 1,
+      }),
+      true,
+    );
+  });
+
+  it("does not dispatch after the player already died this turn", () => {
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: true,
+        hostilesRemaining: 1,
+      }),
+      false,
+    );
   });
 });

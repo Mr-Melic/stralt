@@ -126,6 +126,16 @@ describe("removeCombatant preserves the battle-start snapshot", () => {
       true,
       "store write + processCombatantDeath must award so applyRewards can run",
     );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: true,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "flushSync advanceTurn after last-enemy lava must not run player DoT first — that sets deathTriggered and skips applyRewards",
+    );
   });
 
   it("still clears the snapshot on store reset so idle maps cannot award", () => {
