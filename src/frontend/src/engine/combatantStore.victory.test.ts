@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { CombatantEntry } from "../components/InitiativeStrip";
 import type { Enemy } from "../types/gameTypes";
-import { activeHostilesRemaining, shouldAwardVictory } from "./battleSetup.ts";
+import {
+  activeHostilesRemaining,
+  shouldAdvanceAfterEnemyTurn,
+  shouldAwardVictory,
+} from "./battleSetup.ts";
 import {
   deriveBattleEnemies,
   initCombatantStore,
@@ -11,6 +15,7 @@ import {
   syncCombatants,
   updateCombatant,
 } from "./combatantStore.ts";
+import { expireSummonsAtTurnStart } from "./summonLifespan.ts";
 
 function enemy(id: string, hp = 40): Enemy {
   return {
@@ -135,6 +140,53 @@ describe("removeCombatant preserves the battle-start snapshot", () => {
       }),
       false,
       "flushSync advanceTurn after last-enemy lava must not run player DoT first — that sets deathTriggered and skips applyRewards",
+    );
+  });
+
+  it("last-hostile enemy summon lifespan expiry must skip the next dispatch", () => {
+    const minion = {
+      ...enemy("larva-1", 20),
+      isSummon: true,
+      side: "enemy" as const,
+      name: "Larva",
+      turnsRemaining: 1,
+    };
+    const ctx = store([minion]);
+    const expired = expireSummonsAtTurnStart(
+      ctx.combatantsRef.current,
+      () => {},
+      "larva-1",
+    );
+    for (const id of expired) removeCombatant(ctx, id);
+    assert.deepEqual(expired, ["larva-1"]);
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: activeHostilesRemaining(ctx.combatantsRef.current),
+      }),
+      false,
+      "advanceTurn expire prelude must not start player DoT after last-minion fade",
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "lifespan fade of the last hostile must still persist applyRewards",
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: true,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "flushSync player DoT after last-minion expire would refuse applyRewards",
     );
   });
 

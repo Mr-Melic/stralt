@@ -86,4 +86,22 @@ if (emptyBoth.length !== 0) {
   throw new Error("empty attributed + omitted passed should be []");
 }
 
+const alliedDropped = selectDefeatedEnemiesForRewards(
+  [],
+  [
+    { pieceType: "rat", level: 3, side: "enemy" },
+    { pieceType: "wolf", level: 5, isSummon: true, side: "player" },
+    { pieceType: "larva", level: 2, isSummon: true, side: "enemy" },
+  ],
+);
+if (
+  alliedDropped.length !== 2 ||
+  alliedDropped[0].name !== "rat" ||
+  alliedDropped[1].name !== "larva"
+) {
+  throw new Error(
+    `player-side summons must not count as defeated enemies, got ${JSON.stringify(alliedDropped)}`,
+  );
+}
+
 console.log("computeVictoryExp tests passed");

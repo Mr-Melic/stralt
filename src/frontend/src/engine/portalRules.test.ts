@@ -5,6 +5,8 @@ import {
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
   resetRunState,
+  restExitSpawnDepth,
+  shouldArmDungeonChainOnRestExit,
   snapshotDungeonChain,
 } from "./portalRules.ts";
 
@@ -99,5 +101,15 @@ describe("resetRunState", () => {
     assert.equal(depth, 0);
     assert.equal(maxDepth, 0);
     assert.equal(dungeonDokaMultiplierFor(active, depth), 1);
+  });
+});
+
+describe("rest-exit dungeon spawn", () => {
+  it("re-arms the chain at depth 1 so generateEnemies is not called at 0", () => {
+    assert.equal(shouldArmDungeonChainOnRestExit("dungeon"), true);
+    assert.equal(restExitSpawnDepth("dungeon"), 1);
+    assert.equal(shouldArmDungeonChainOnRestExit("normal"), false);
+    assert.equal(restExitSpawnDepth("normal"), 0);
+    assert.equal(shouldArmDungeonChainOnRestExit(undefined), false);
   });
 });
