@@ -2152,7 +2152,13 @@ actor {
     ///      1 / 10000 = 0.01% (≈ 0.0001%) → 1–1_000_000_000
     ///      4 remaining → 1–50  (lumped with 3% tier)
     public shared ({ caller }) func calculateAndAwardDoka(enemies : [{ level : Nat }]) : async Nat {
+        if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+            return 0;
+        };
         if (bannedPrincipals.containsKey(caller.toText())) {
+            return 0;
+        };
+        if (enemies.size() > 16) {
             return 0;
         };
         // Fetch a single random blob from the IC management canister.
@@ -2223,7 +2229,8 @@ actor {
                 inRange(valueRaw, 1, 1_000_000_000)
             };
 
-            totalDoka += enemy.level * multiplier;
+            let enemyLevel = if (enemy.level > 200) { 200 } else { enemy.level };
+            totalDoka += enemyLevel * multiplier;
         };
 
         // Update caller's balance.
@@ -2237,6 +2244,15 @@ actor {
 
     public shared(msg) func saveKillCount(slot: Nat, kills: Nat) : async {#ok; #err: Text} {
       let caller = msg.caller;
+      if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+        return #err("Unauthorized");
+      };
+      if (bannedPrincipals.containsKey(caller.toText())) {
+        return #err("Account is banned");
+      };
+      if (kills > 64) {
+        return #err("kills exceed single-battle bound");
+      };
       switch (characterSlots.get(caller)) {
         case null { #err("no character slots found") };
         case (?slots) {

@@ -138,6 +138,15 @@ export interface RunStateRefs {
   dungeonChainMaxDepthRef: { current: number };
   /** Aborts an in-progress boss rush (no-op when no rush is active). */
   abortBossRush: () => Promise<void>;
+  /**
+   * React dungeon-chain state. Death/flee used to reset only the refs;
+   * `dungeonDokaMultiplier` is derived from this state, so a stale
+   * `active=true` kept the 1.5–4× overworld payout after the run ended.
+   */
+  setDungeonChainActive?: (active: boolean) => void;
+  setDungeonChainDepth?: (depth: number) => void;
+  setDungeonChainMaxDepth?: (maxDepth: number) => void;
+  dungeonDokaMultiplierRef?: { current: number };
 }
 
 export interface DungeonChainSnapshot {
@@ -206,10 +215,14 @@ export function resetRunState(refs: RunStateRefs): void {
     refs.bossRushActiveRef.current = false;
     void refs.abortBossRush();
   }
-  if (refs.dungeonChainActiveRef.current) {
-    refs.dungeonChainActiveRef.current = false;
-    refs.dungeonChainDepthRef.current = 0;
-    refs.dungeonChainMaxDepthRef.current = 0;
+  refs.dungeonChainActiveRef.current = false;
+  refs.dungeonChainDepthRef.current = 0;
+  refs.dungeonChainMaxDepthRef.current = 0;
+  refs.setDungeonChainActive?.(false);
+  refs.setDungeonChainDepth?.(0);
+  refs.setDungeonChainMaxDepth?.(0);
+  if (refs.dungeonDokaMultiplierRef) {
+    refs.dungeonDokaMultiplierRef.current = 1;
   }
 }
 
