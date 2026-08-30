@@ -77,6 +77,69 @@ export function applyHealBuffSideEffect(
 export type TileType = "floor" | "wall" | "portal";
 
 /**
+ * Base range the highlight wrapper feeds into `getEffectiveSpellRange`.
+ * Attack Nearest used `Number(spell.range)` alone and silently dropped
+ * `maxRange` plus the modifiable-range id — this helper is the single
+ * input both preview and execution must start from.
+ */
+export function spellRangeBase(
+  spell: Pick<SpellConfig, "range" | "maxRange">,
+): number {
+  return spell.maxRange ?? Math.max(1, Number(spell.range));
+}
+
+/**
+ * Player preview + live gate: LoS only when `spell.lineOfSight` is
+ * explicitly truthy. Enemy AI still uses `lineOfSight !== false` (default
+ * on) — that is a different policy and is intentionally not unified here.
+ */
+export function playerSpellRequiresLos(spell: {
+  lineOfSight?: boolean;
+}): boolean {
+  return !!spell.lineOfSight;
+}
+
+/**
+ * Bresenham LoS shared by {@link computeTargetableTiles} and
+ * {@link isTileCastableLive}. Intermediate walls and active barrier tiles
+ * block; the origin and destination cells do not. Void is not a TileType
+ * and does not block.
+ */
+export function hasBresenhamLoS(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  tiles: TileType[][],
+  barrierTiles: ReadonlyMap<string, number> = new Map(),
+): boolean {
+  let cx = x0;
+  let cy = y0;
+  const ddx = Math.abs(x1 - cx);
+  const ddy = Math.abs(y1 - cy);
+  const sx = cx < x1 ? 1 : -1;
+  const sy = cy < y1 ? 1 : -1;
+  let err = ddx - ddy;
+  while (true) {
+    if ((cx !== x0 || cy !== y0) && (cx !== x1 || cy !== y1)) {
+      if (tiles[cy]?.[cx] === "wall") return false;
+      if (barrierTiles.has(`${cx},${cy}`)) return false;
+    }
+    if (cx === x1 && cy === y1) break;
+    const e2 = 2 * err;
+    if (e2 > -ddy) {
+      err -= ddy;
+      cx += sx;
+    }
+    if (e2 < ddx) {
+      err += ddx;
+      cy += sy;
+    }
+  }
+  return true;
+}
+
+/**
  * Grid state snapshot passed into the pure targeting function.
  *
  * Every field is a primitive or a plain data structure — no React refs, no
@@ -133,7 +196,7 @@ export function computeTargetableTiles(
     const out = new Set<string>();
     out.add(`${casterPos.x},${casterPos.y}`);
     for (const e of enemies) {
-      if (!e.isSummon || e.side !== "player") continue;
+      if (!e.isSummon || e.side !== "player" || e.hp <= 0) continue;
       const dx = Math.abs(e.x - casterPos.x);
       const dy = Math.abs(e.y - casterPos.y);
       if (Math.max(dx, dy) <= range) {
@@ -158,45 +221,8 @@ export function computeTargetableTiles(
 
   const out = new Set<string>();
 
-  // Helper: Bresenham line-of-sight — tests every grid cell the ray passes
-  // through. Blocks on walls AND active barrier tiles. Void tiles are NOT in
-  // the TileType union and must NOT block LoS (casting over void is allowed).
-  // Defined here (before all branches) so the ground/barrier and line branches
-  // can also apply LoS when spell.lineOfSight is truthy.
-  const hasLoS = (tx: number, ty: number): boolean => {
-    let x0 = casterPos.x;
-    let y0 = casterPos.y;
-    const x1 = tx;
-    const y1 = ty;
-    const ddx = Math.abs(x1 - x0);
-    const ddy = Math.abs(y1 - y0);
-    const sx = x0 < x1 ? 1 : -1;
-    const sy = y0 < y1 ? 1 : -1;
-    let err = ddx - ddy;
-    while (true) {
-      // If this intermediate cell (not origin, not destination) is a wall OR
-      // an active barrier tile, LoS is blocked. Void tiles are NOT in the
-      // TileType union and must NOT block LoS (casting over void is allowed).
-      if (
-        (x0 !== casterPos.x || y0 !== casterPos.y) &&
-        (x0 !== x1 || y0 !== y1)
-      ) {
-        if (tiles[y0]?.[x0] === "wall") return false;
-        if (barrierTiles.has(`${x0},${y0}`)) return false;
-      }
-      if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err;
-      if (e2 > -ddy) {
-        err -= ddy;
-        x0 += sx;
-      }
-      if (e2 < ddx) {
-        err += ddx;
-        y0 += sy;
-      }
-    }
-    return true;
-  };
+  const hasLoS = (tx: number, ty: number): boolean =>
+    hasBresenhamLoS(casterPos.x, casterPos.y, tx, ty, tiles, barrierTiles);
 
   // ── Ground / barrier branch: MANHATTAN distance ─────────────────────────────
   if (targetType === "ground" || spell.isBarrier) {
@@ -217,7 +243,7 @@ export function computeTargetableTiles(
           // an unobstructed ray from caster to target. Spells with falsy
           // spell.lineOfSight (e.g. Barrier, which has no lineOfSight field)
           // bypass this and keep placing on any in-range free tile.
-          if (spell.lineOfSight && !hasLoS(nx, ny)) continue;
+          if (playerSpellRequiresLos(spell) && !hasLoS(nx, ny)) continue;
           out.add(key);
         }
       }
@@ -255,7 +281,8 @@ export function computeTargetableTiles(
         // explicit guard keeps the line branch consistent with the
         // enemy/area/ground branches. Spells with falsy spell.lineOfSight
         // bypass it.
-        if (spell.lineOfSight && !hasLoS(nx, ny)) break;
+        if (playerSpellRequiresLos(spell) && !hasLoS(nx, ny)) break;
+        if (step < minR) continue;
         out.add(`${nx},${ny}`);
       }
     }
@@ -278,7 +305,7 @@ export function computeTargetableTiles(
           continue;
         if (tiles[ny][nx] === "wall") continue;
         if (barrierTiles.has(`${nx},${ny}`)) continue;
-        if (spell.lineOfSight && !hasLoS(nx, ny)) continue;
+        if (playerSpellRequiresLos(spell) && !hasLoS(nx, ny)) continue;
         out.add(`${nx},${ny}`);
       }
     }
@@ -312,7 +339,7 @@ export function computeTargetableTiles(
         if (occupied) continue;
       }
       // Line of sight check
-      if (spell.lineOfSight && !hasLoS(nx, ny)) continue;
+      if (playerSpellRequiresLos(spell) && !hasLoS(nx, ny)) continue;
 
       // H3: barrier tiles are impassable (treat as walls for LoS and range)
       if (barrierTiles.has(`${nx},${ny}`)) continue;
@@ -403,8 +430,7 @@ export function isTileCastableLive(
 ): TileCastableResult {
   const targetType = (spell.targetType ?? "enemy") as string;
   const worldGridSize = mapTiles.length;
-  const range =
-    effectiveRange ?? spell.maxRange ?? Math.max(1, Number(spell.range));
+  const range = effectiveRange ?? spellRangeBase(spell);
   const minR = spell.minRange ?? 1;
   const tx = tile.x;
   const ty = tile.y;
@@ -463,39 +489,8 @@ export function isTileCastableLive(
     return { ok: false, reason: "ally_no_summon_at_tile" };
   }
 
-  // Bresenham LoS — identical to the one inside computeTargetableTiles so the
-  // live gate and the highlight set use the SAME obstruction logic.
-  const hasLoS = (
-    lx0: number,
-    ly0: number,
-    lx1: number,
-    ly1: number,
-  ): boolean => {
-    let x0 = lx0;
-    let y0 = ly0;
-    const ddx = Math.abs(lx1 - x0);
-    const ddy = Math.abs(ly1 - y0);
-    const sx = x0 < lx1 ? 1 : -1;
-    const sy = y0 < ly1 ? 1 : -1;
-    let err = ddx - ddy;
-    while (true) {
-      if ((x0 !== lx0 || y0 !== ly0) && (x0 !== lx1 || y0 !== ly1)) {
-        if (mapTiles[y0]?.[x0] === "wall") return false;
-        if (barrierTiles.has(`${x0},${y0}`)) return false;
-      }
-      if (x0 === lx1 && y0 === ly1) break;
-      const e2 = 2 * err;
-      if (e2 > -ddy) {
-        err -= ddy;
-        x0 += sx;
-      }
-      if (e2 < ddx) {
-        err += ddx;
-        y0 += sy;
-      }
-    }
-    return true;
-  };
+  const hasLoS = (lx1: number, ly1: number): boolean =>
+    hasBresenhamLoS(casterPos.x, casterPos.y, lx1, ly1, mapTiles, barrierTiles);
 
   // ── ground / barrier: MANHATTAN distance.
   if (targetType === "ground" || spell.isBarrier) {
@@ -514,7 +509,7 @@ export function isTileCastableLive(
     if (barrierTiles.has(`${tx},${ty}`)) {
       return { ok: false, reason: "ground_barrier" };
     }
-    if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, tx, ty)) {
+    if (playerSpellRequiresLos(spell) && !hasLoS(tx, ty)) {
       return { ok: false, reason: "ground_los_blocked" };
     }
     return { ok: true, reason: "ground" };
@@ -552,6 +547,9 @@ export function isTileCastableLive(
       if (barrierTiles.has(`${cx},${cy}`)) {
         return { ok: false, reason: "line_blocked_barrier" };
       }
+      if (playerSpellRequiresLos(spell) && !hasLoS(cx, cy)) {
+        return { ok: false, reason: "line_los_blocked" };
+      }
       if (cx === tx && cy === ty) {
         // Reached the target tile along an unobstructed ray.
         return { ok: true, reason: "line" };
@@ -572,6 +570,11 @@ export function isTileCastableLive(
   const dy = ty - casterPos.y;
   const chebyshev = Math.max(Math.abs(dx), Math.abs(dy));
 
+  const destBarrier = barrierTiles.has(`${tx},${ty}`);
+  const destOccupied =
+    liveCombatants.some((e) => e.x === tx && e.y === ty) ||
+    (tx === casterPos.x && ty === casterPos.y);
+
   // Linear: only cardinal directions (dx=0 or dy=0).
   if (spell.linear && dx !== 0 && dy !== 0) {
     // For area spells, the tile may still be inside the AoE footprint of a
@@ -589,23 +592,29 @@ export function isTileCastableLive(
   }
 
   // freeCells: skip tiles occupied by a combatant or the caster.
-  if (spell.freeCells) {
-    const occupied =
-      liveCombatants.some((e) => e.x === tx && e.y === ty) ||
-      (tx === casterPos.x && ty === casterPos.y);
-    if (occupied) {
-      // For area spells an occupied anchor is still a valid anchor (the AoE
-      // expands around it); only reject when freeCells is set AND the spell
-      // is not area.
-      if (targetType !== "area") {
-        return { ok: false, reason: "free_cells_occupied" };
-      }
-    }
+  if (spell.freeCells && destOccupied && targetType !== "area") {
+    return { ok: false, reason: "free_cells_occupied" };
+  }
+  if (destBarrier && targetType !== "area") {
+    return { ok: false, reason: "barrier_tile" };
   }
 
-  // Direct in-range check (enemy / chain / area anchor).
-  if (chebyshev <= range && chebyshev >= minR && !(dx === 0 && dy === 0)) {
-    if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, tx, ty)) {
+  const isLegalAnchorShape =
+    !(spell.linear && dx !== 0 && dy !== 0) &&
+    !(spell.diagonal && Math.abs(dx) !== Math.abs(dy)) &&
+    !(spell.freeCells && destOccupied) &&
+    !destBarrier;
+
+  // Direct in-range check (enemy / chain / area anchor). Occupied /
+  // barrier tiles are not anchors when freeCells is set — they may still
+  // be legal via area expansion, matching computeTargetableTiles.
+  if (
+    isLegalAnchorShape &&
+    chebyshev <= range &&
+    chebyshev >= minR &&
+    !(dx === 0 && dy === 0)
+  ) {
+    if (playerSpellRequiresLos(spell) && !hasLoS(tx, ty)) {
       // Fall through to area-expansion check for area spells.
       if (targetType !== "area") {
         return { ok: false, reason: "los_blocked" };
@@ -641,8 +650,13 @@ export function isTileCastableLive(
         if (barrierTiles.has(`${axN},${ayN}`)) continue;
         if (spell.linear && ax !== 0 && ay !== 0) continue;
         if (spell.diagonal && Math.abs(ax) !== Math.abs(ay)) continue;
-        if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, axN, ayN))
-          continue;
+        if (spell.freeCells) {
+          const occ =
+            liveCombatants.some((e) => e.x === axN && e.y === ayN) ||
+            (axN === casterPos.x && ayN === casterPos.y);
+          if (occ) continue;
+        }
+        if (playerSpellRequiresLos(spell) && !hasLoS(axN, ayN)) continue;
         // Is the clicked tile within areaRadius of this anchor?
         const tdx = Math.abs(tx - axN);
         const tdy = Math.abs(ty - ayN);
