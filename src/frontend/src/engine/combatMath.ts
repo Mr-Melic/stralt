@@ -1,5 +1,5 @@
-import type { ChessPieceType } from "../types/gameTypes";
-import { getEnemyBaseStats } from "./progression";
+import type { ChessPieceType } from "../types/gameTypes.ts";
+import { getEnemyBaseStats } from "./progression.ts";
 
 export interface TierSpawnConfig {
   tierSize: number;

@@ -17154,11 +17154,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const effectiveRange = getEffectiveSpellRange(
         Math.max(1, Number(spell.range)),
       );
-      // Find closest enemy within Chebyshev range
-      let nearest: (typeof enemies)[0] | null = null;
+      // Live store includes enemy summons that are not in React `enemies`.
+      // isActiveHostile is the canonical filter (enemy-side summons after #79).
+      const liveHostiles =
+        getLiveCombatants(combatantStoreCtx).filter(isActiveHostile);
+      let nearest: (typeof liveHostiles)[0] | null = null;
       let nearestDist = Number.POSITIVE_INFINITY;
-      for (const e of enemies) {
-        if (!isActiveHostile(e)) continue;
+      for (const e of liveHostiles) {
         const dx = Math.abs(e.x - playerPositionRef.current.x);
         const dy = Math.abs(e.y - playerPositionRef.current.y);
         const dist = Math.max(dx, dy);
@@ -17289,7 +17291,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     battleActionMode,
     activeSpells,
     activeMapModifierTypes,
-    enemies,
+    combatantStoreCtx,
     getEffectiveSpellRange,
     playerSpellContext,
     markFirstAction,
