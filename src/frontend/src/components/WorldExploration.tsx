@@ -9691,6 +9691,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 amount,
               );
             },
+            // enemyTakesDamage / victory read combatantsRef. Without this
+            // commit a later DoT tick recomputes from full store HP and
+            // wipes the spell hit.
+            commitEnemyHp: (id, hp) => {
+              updateCombatant(combatantStoreCtx, id, { hp });
+            },
           },
         });
       },
