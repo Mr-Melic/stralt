@@ -51,6 +51,12 @@ export interface OccupancyContext {
   portals: Set<string>;
   /** True if any combatant (player/enemy/summon) currently occupies `cell`. */
   isOccupied: (cell: OccCell) => boolean;
+  /**
+   * Unique player→exit bridges. Used only by spawn fallback so a summon
+   * does not sit on the only legal progression cell. Movement still uses
+   * `isCellFree` without this set — enemies must be able to path the bridge.
+   */
+  reserved?: Set<string>;
 }
 
 /** Build the canonical "x,y" key used by the barrier/void/portal sets. */
@@ -98,23 +104,114 @@ export function findNearestFreeCell(
   origin: OccCell,
   ctx: OccupancyContext,
   maxRadius: number,
+  avoid?: Set<string>,
 ): OccCell | null {
-  if (isCellFree(origin, ctx)) return { x: origin.x, y: origin.y };
+  const ok = (cell: OccCell) =>
+    isCellFree(cell, ctx) && !avoid?.has(occKey(cell.x, cell.y));
+  if (ok(origin)) return { x: origin.x, y: origin.y };
   for (let r = 1; r <= maxRadius; r++) {
     // Walk the perimeter of the Manhattan ring of radius r.
     for (let dx = -r; dx <= r; dx++) {
       const dy = r - Math.abs(dx);
       // (+dy) row
       const a = { x: origin.x + dx, y: origin.y + dy };
-      if (isCellFree(a, ctx)) return a;
+      if (ok(a)) return a;
       if (dy !== 0) {
         // (-dy) row (skip when dy === 0 to avoid double-checking the midline)
         const b = { x: origin.x + dx, y: origin.y - dy };
-        if (isCellFree(b, ctx)) return b;
+        if (ok(b)) return b;
       }
     }
   }
   return null;
+}
+
+function floodPassable(
+  tiles: boolean[][],
+  voidTiles: Set<string>,
+  blocked: Set<string>,
+  start: OccCell,
+): Set<string> {
+  const h = tiles.length;
+  const w = tiles[0]?.length ?? 0;
+  const seen = new Set<string>();
+  const walk = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return false;
+    if (!tiles[y]?.[x]) return false;
+    const k = occKey(x, y);
+    if (voidTiles.has(k) || blocked.has(k)) return false;
+    return true;
+  };
+  if (!walk(start.x, start.y)) return seen;
+  const q: OccCell[] = [start];
+  seen.add(occKey(start.x, start.y));
+  while (q.length > 0) {
+    const cur = q.shift()!;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      const k = occKey(nx, ny);
+      if (seen.has(k) || !walk(nx, ny)) continue;
+      seen.add(k);
+      q.push({ x: nx, y: ny });
+    }
+  }
+  return seen;
+}
+
+/**
+ * Unique bridges from the player to every exit. A living summon/corpse on
+ * one of these cells permanently seals progression; spawn/relocate must
+ * prefer any other free tile.
+ */
+export function collectMandatoryProgressionCells(
+  tiles: boolean[][],
+  voidTiles: Set<string>,
+  portals: Set<string>,
+  start: OccCell,
+): Set<string> {
+  const mandatory = new Set<string>();
+  if (portals.size === 0) return mandatory;
+  const open = floodPassable(tiles, voidTiles, new Set(), start);
+  const portalReachable = [...portals].some((p) => open.has(p));
+  if (!portalReachable) return mandatory;
+  const startKey = occKey(start.x, start.y);
+  for (const k of open) {
+    if (k === startKey || portals.has(k)) continue;
+    const blocked = new Set<string>([k]);
+    const next = floodPassable(tiles, voidTiles, blocked, start);
+    const still = [...portals].some((p) => next.has(p));
+    if (!still) mandatory.add(k);
+  }
+  return mandatory;
+}
+
+export function relocateOffMandatoryCells(
+  occupants: OccCell[],
+  mandatory: Set<string>,
+  ctx: OccupancyContext,
+): OccCell[] {
+  const placed = new Set<string>();
+  return occupants.map((o) => {
+    const k = occKey(o.x, o.y);
+    if (!mandatory.has(k)) {
+      placed.add(k);
+      return { x: o.x, y: o.y };
+    }
+    const avoid = new Set<string>([...mandatory, ...placed]);
+    const next = findNearestFreeCell(o, ctx, 8, avoid);
+    if (next) {
+      placed.add(occKey(next.x, next.y));
+      return next;
+    }
+    placed.add(k);
+    return { x: o.x, y: o.y };
+  });
 }
 
 // ---------------------------------------------------------------------------

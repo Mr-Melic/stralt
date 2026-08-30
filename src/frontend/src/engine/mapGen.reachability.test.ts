@@ -76,6 +76,33 @@ describe("punchRosterReachability (rest-exit)", () => {
     );
   });
 
+  it("still punches when the exit portal is missing so hostiles cannot stay isolated", () => {
+    const W = "wall";
+    const F = "floor";
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, F, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+    ];
+    const punched = punchRosterReachability(
+      tiles,
+      new Set(),
+      [{ id: "rat", x: 5, y: 5 }],
+      { x: 1, y: 1 },
+      undefined,
+      8,
+      8,
+    );
+    const reachable = flood(punched.tiles, { x: 1, y: 1 });
+    const enemy = punched.roster[0];
+    assert.equal(reachable.has(`${enemy.x},${enemy.y}`), true);
+  });
+
   it("is a no-op when the rest-exit roster is empty", () => {
     const tiles = [
       ["floor", "floor"],

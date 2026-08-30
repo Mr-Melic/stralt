@@ -138,17 +138,20 @@ import {
   decideSummonerAction,
 } from "../engine/enemyAI";
 import {
+  applyFinalizedLayout,
   applyVoidTiles,
   checkVoidConnectivity,
   countWalkableVoid,
-  ensureReachability,
   pickMapArchetype,
+  pickProgressionPortalCell,
   placeBossRushSpawns,
   punchRosterReachability,
+  toVoidSet,
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
   type OccupancyContext,
+  collectMandatoryProgressionCells,
   findNearestFreeCell,
   isCellFree,
 } from "../engine/occupancy";
@@ -161,6 +164,7 @@ import {
   getRunMode,
   isProgressionLocked,
   isProgressionPortalUnlocked,
+  isRunProgressionPortal,
   placeWhitePortalAtSpawn,
   resetRunState,
   restExitSpawnDepth,
@@ -5361,6 +5365,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             isProgressionPortal: true,
             animationOffset: Math.random() * Math.PI * 2,
           });
+        } else {
+          // Border ring can be all walls (corridorMaze / fortress). A run
+          // without an exit is an unavoidable softlock — carve one floor.
+          const used = new Set(portals.map((p) => `${p.x},${p.y}`));
+          const forced = pickProgressionPortalCell(
+            tiles as unknown as string[][],
+            new Set(),
+            used,
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          );
+          if (forced) {
+            tiles[forced.y][forced.x] = "portal";
+            portals.push({
+              x: forced.x,
+              y: forced.y,
+              color: PROGRESSION_PORTAL_KIND as any,
+              isProgressionPortal: true,
+              animationOffset: Math.random() * Math.PI * 2,
+            });
+          } else {
+            tiles[2][2] = "portal";
+            portals.push({
+              x: 2,
+              y: 2,
+              color: PROGRESSION_PORTAL_KIND as any,
+              isProgressionPortal: true,
+              animationOffset: 0,
+            });
+          }
         }
       }
 
@@ -5475,12 +5509,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       tiles = Array(WORLD_GRID_SIZE)
         .fill(null)
         .map(() => Array(WORLD_GRID_SIZE).fill("floor" as TileType));
+      const fallbackRun = getRunMode(
+        bossRushActiveRef.current,
+        dungeonChainActiveRef.current,
+      );
       portals = [
         {
           x: 4,
           y: 4,
-          color: "blue" as const,
+          color:
+            fallbackRun === "none"
+              ? ("blue" as const)
+              : (PROGRESSION_PORTAL_KIND as any),
           animationOffset: 0,
+          isProgressionPortal: fallbackRun !== "none",
         },
       ];
       tiles[4][4] = "portal";
@@ -5644,15 +5686,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         WORLD_GRID_SIZE,
       );
       nextMap.tiles = punched.tiles as typeof nextMap.tiles;
+      const applied = applyFinalizedLayout(
+        nextMap,
+        punched.spawns,
+        punched.playerSpawn,
+        WORLD_GRID_SIZE,
+      );
       currentMapRef.current = nextMap;
       setCurrentMap(nextMap);
-      if (spawnPosition) {
-        setPlayerPositionSynced({ ...spawnPosition });
+      if (applied.spawn) {
+        setPlayerPositionSynced({ ...applied.spawn });
       }
       const newEnemies: any[] = [];
       let spawnIdx = 0;
       if (roomDef.boss1Id) {
-        const cell = punched.spawns[spawnIdx++] ?? { x: 4, y: 5 };
+        const cell = applied.roster[spawnIdx++] ?? { x: 4, y: 5 };
         newEnemies.push({
           id: `boss-rush-${roomIndex}-0`,
           pieceType: roomDef.boss1Name || "Boss 1",
@@ -5677,7 +5725,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         });
       }
       if (roomDef.boss2Id) {
-        const cell = punched.spawns[spawnIdx++] ?? { x: 6, y: 5 };
+        const cell = applied.roster[spawnIdx++] ?? { x: 6, y: 5 };
         newEnemies.push({
           id: `boss-rush-${roomIndex}-1`,
           pieceType: roomDef.boss2Name || "Boss 2",
@@ -6455,13 +6503,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         : dungeonChainActiveRef.current
           ? "dungeon"
           : "none";
-      const _s2IsProgressionPortal =
-        _s2InteractRunMode !== "none" &&
-        !portal.isBossRushPortal &&
-        !portal.isRestPortal &&
-        !portal.isRestExit &&
-        !portal.isBossPortal &&
-        !portal.isDungeonEntry;
+      const _s2IsProgressionPortal = isRunProgressionPortal(
+        portal,
+        _s2InteractRunMode,
+      );
       if (
         _s2IsProgressionPortal &&
         isProgressionLocked(
@@ -6511,8 +6556,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // is zero. This replaces the old auto-advance in handleBossRushRoomClear.
       if (
         bossRushActiveRef.current &&
-        (portal.isProgressionPortal ||
-          portal.kind === PROGRESSION_PORTAL_KIND) &&
+        isRunProgressionPortal(portal, "bossRush") &&
         activeHostilesRemaining(combatantsRef.current) === 0
       ) {
         lastPortalRef.current = { x: portal.x, y: portal.y };
@@ -6680,7 +6724,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             WORLD_GRID_SIZE,
           );
           newMap.tiles = punched.tiles as typeof newMap.tiles;
-          syncCombatants(combatantStoreCtx, punched.roster, {
+          const applied = applyFinalizedLayout(
+            newMap,
+            punched.roster,
+            punched.playerSpawn,
+            WORLD_GRID_SIZE,
+          );
+          setPlayerPositionSynced(applied.spawn);
+          syncCombatants(combatantStoreCtx, applied.roster, {
             resetBattle: true,
           });
           setTransitionInProgress(false);
@@ -6776,8 +6827,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // Spawn a white portal to sanctuary on dungeon-chain completion.
         // Completion keeps rewards (no death penalty / no Death Realm reset).
         const whiteDungeonPortal = {
-          x: 0,
-          y: 0,
+          x: 8,
+          y: 8,
           color: "white" as const,
           isWhitePortal: true,
           animationOffset: Math.random() * Math.PI * 2,
@@ -6985,25 +7036,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
       }
       // Section 6: ensure all spawns + player + portal are mutually reachable
-      const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
-      const _portal = newMap.portals?.[0];
-      if (_portal) {
-        const { tiles: _tiles, spawns: _spawns } = ensureReachability(
-          newMap.tiles as string[][],
-          newMap.voidTiles,
-          _enemySpawns,
-          spawnPosition,
-          _portal,
-          WORLD_GRID_SIZE,
-          WORLD_GRID_SIZE,
-        );
-        newMap.tiles = _tiles as typeof newMap.tiles;
-        newEnemies.forEach((e, i) => {
-          if (_spawns[i]) {
-            e.x = _spawns[i].x;
-            e.y = _spawns[i].y;
-          }
-        });
+      const appliedLayout = applyFinalizedLayout(
+        newMap,
+        newEnemies,
+        spawnPosition,
+        WORLD_GRID_SIZE,
+      );
+      newEnemies = appliedLayout.roster;
+      if (
+        appliedLayout.spawn.x !== spawnPosition.x ||
+        appliedLayout.spawn.y !== spawnPosition.y
+      ) {
+        setPlayerPositionSynced(appliedLayout.spawn);
       }
       syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
       // SECTION 1c: clear the per-kill defeated roster for the new battle.
@@ -13749,27 +13793,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       map.voidTiles,
     );
     // Section 6: ensure all spawns + player + portal are mutually reachable
-    const _enemySpawns = newEnemies.map((e) => ({ x: e.x, y: e.y }));
-    const _portal = map.portals?.[0];
-    if (_portal) {
-      const { tiles: _tiles, spawns: _spawns } = ensureReachability(
-        map.tiles as string[][],
-        map.voidTiles,
-        _enemySpawns,
-        spawnPosition,
-        _portal,
-        WORLD_GRID_SIZE,
-        WORLD_GRID_SIZE,
-      );
-      map.tiles = _tiles as typeof map.tiles;
-      newEnemies.forEach((e, i) => {
-        if (_spawns[i]) {
-          e.x = _spawns[i].x;
-          e.y = _spawns[i].y;
-        }
-      });
-    }
-    syncCombatants(combatantStoreCtx, newEnemies, { resetBattle: true });
+    const applied = applyFinalizedLayout(
+      map,
+      newEnemies,
+      spawnPosition,
+      WORLD_GRID_SIZE,
+    );
+    setPlayerPositionSynced(applied.spawn);
+    syncCombatants(combatantStoreCtx, applied.roster, { resetBattle: true });
     // SECTION 1c: clear the per-kill defeated roster for the new battle.
     battleDefeatedRef.current = [];
     // Section 6: a new battle starts — re-arm the one-shot death-penalty
@@ -14910,6 +14941,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             portals: new Set(
               (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
             ),
+            reserved: collectMandatoryProgressionCells(
+              (currentMap?.tiles ?? []).map((row: any) =>
+                (row ?? []).map((t: any) => t !== "wall"),
+              ),
+              toVoidSet(currentMap?.voidTiles),
+              new Set(
+                (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+              ),
+              playerPositionRef.current,
+            ),
             isOccupied: (oc: { x: number; y: number }) =>
               enemiesRef.current.some(
                 (e: any) => e.x === oc.x && e.y === oc.y,
@@ -15007,6 +15048,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 voidTiles: currentMap?.voidTiles ?? new Set<string>(),
                 portals: new Set(
                   (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+                ),
+                reserved: collectMandatoryProgressionCells(
+                  (currentMap?.tiles ?? []).map((row: any) =>
+                    (row ?? []).map((t: any) => t !== "wall"),
+                  ),
+                  toVoidSet(currentMap?.voidTiles),
+                  new Set(
+                    (currentMap?.portals ?? []).map(
+                      (p: any) => `${p.x},${p.y}`,
+                    ),
+                  ),
+                  playerPositionRef.current,
                 ),
                 isOccupied: (c: { x: number; y: number }) =>
                   enemiesRef.current.some(
@@ -15155,6 +15208,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           barriers: aiBarriers,
           voidTiles: aiVoid,
           portals: aiPortals,
+          reserved: collectMandatoryProgressionCells(
+            aiGrid,
+            toVoidSet(aiVoid),
+            aiPortals,
+            playerPositionRef.current,
+          ),
           isOccupied: (c: { x: number; y: number }) =>
             enemiesRef.current.some((e: any) => e.x === c.x && e.y === c.y) ||
             (playerPositionRef.current.x === c.x &&

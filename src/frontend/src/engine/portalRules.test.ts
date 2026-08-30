@@ -4,10 +4,15 @@ import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
+  filterRunPortals,
+  isProgressionLocked,
+  isProgressionPortalUnlocked,
+  isRunProgressionPortal,
   placeWhitePortalAtSpawn,
   resetRunState,
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
+  shouldSpawnWhitePortal,
   snapshotDungeonChain,
 } from "./portalRules.ts";
 
@@ -162,5 +167,48 @@ describe("rest-exit dungeon spawn", () => {
     assert.equal(shouldArmDungeonChainOnRestExit("normal"), false);
     assert.equal(restExitSpawnDepth("normal"), 0);
     assert.equal(shouldArmDungeonChainOnRestExit(undefined), false);
+  });
+});
+
+describe("progression lock and unlock", () => {
+  it("suppresses non-progression portals inside a run until the map is clear", () => {
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "dungeon",
+        mapCleared: false,
+        candidates: ["regular", "dungeonEntry", "progression"],
+      }),
+      [],
+    );
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "bossRush",
+        mapCleared: true,
+        candidates: ["regular", "progression"],
+      }),
+      ["progression"],
+    );
+  });
+
+  it("treats an unmarked fallback portal as the run exit", () => {
+    assert.equal(isRunProgressionPortal({ color: "blue" }, "bossRush"), true);
+    assert.equal(
+      isRunProgressionPortal(
+        { isWhitePortal: true, color: "white" },
+        "bossRush",
+      ),
+      false,
+    );
+    assert.equal(
+      isRunProgressionPortal({ isProgressionPortal: true }, "none"),
+      false,
+    );
+  });
+
+  it("unlocks only after the last hostile dies inside a run", () => {
+    assert.equal(isProgressionLocked("dungeon", false), true);
+    assert.equal(isProgressionPortalUnlocked("dungeon", true), true);
+    assert.equal(shouldSpawnWhitePortal(true, false), true);
+    assert.equal(shouldSpawnWhitePortal(false, false), false);
   });
 });

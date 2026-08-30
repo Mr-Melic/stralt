@@ -41,14 +41,37 @@ export const MAP_ARCHETYPES = [
   },
 ];
 
-export function pickMapArchetype() {
+/** Pluggable [0, 1) source. Production keeps `Math.random`; tests pass a seed. */
+export type Rng = () => number;
+
+/** Mulberry32 — deterministic across the solvability property suite. */
+export function createSeededRng(seed: number): Rng {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), t | 1);
+    r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function pickMapArchetype(rng: Rng = Math.random) {
   const totalWeight = MAP_ARCHETYPES.reduce((s, a) => s + a.weight, 0);
-  let r = Math.random() * totalWeight;
+  let r = rng() * totalWeight;
   for (const a of MAP_ARCHETYPES) {
     r -= a.weight;
     if (r <= 0) return a;
   }
   return MAP_ARCHETYPES[0];
+}
+
+/** Rest/Death Realm maps still store voids as `Map`. Reachability only needs `.has`. */
+export function toVoidSet(
+  vt: Set<string> | Map<string, unknown> | undefined | null,
+): Set<string> {
+  if (!vt) return new Set();
+  if (vt instanceof Set) return vt;
+  return new Set(vt.keys());
 }
 
 export function countWalkableVoid(
@@ -125,6 +148,7 @@ export function applyVoidTiles(
   prot: Set<string>,
   mw: number,
   mh: number,
+  rng: Rng = Math.random,
 ): void {
   const ec =
     arch === "arena"
@@ -138,17 +162,14 @@ export function applyVoidTiles(
     for (let y = 0; y < mh; y++) {
       if ((tilesArr[y]?.[x] as string) === "wall" || prot.has(`${x},${y}`))
         continue;
-      if (
-        (x <= 1 || y <= 1 || x >= mw - 2 || y >= mh - 2) &&
-        Math.random() < ec
-      )
+      if ((x <= 1 || y <= 1 || x >= mw - 2 || y >= mh - 2) && rng() < ec)
         vt.add(`${x},${y}`);
     }
   if (arch === "corridorMaze" || arch === "arena") return;
   const cc =
     arch === "ruinsIslands"
-      ? 5 + Math.floor(Math.random() * 3)
-      : 2 + Math.floor(Math.random() * 2);
+      ? 5 + Math.floor(rng() * 3)
+      : 2 + Math.floor(rng() * 2);
   const mw2 = countWalkableVoid(tilesArr, vt, mw, mh) * 0.55;
   for (let c = 0; c < cc; c++) {
     const ad: string[] = [];
@@ -156,8 +177,8 @@ export function applyVoidTiles(
     let cx = 0;
     let cy = 0;
     do {
-      cx = 2 + Math.floor(Math.random() * (mw - 4));
-      cy = 2 + Math.floor(Math.random() * (mh - 4));
+      cx = 2 + Math.floor(rng() * (mw - 4));
+      cy = 2 + Math.floor(rng() * (mh - 4));
       at++;
     } while (
       at < 20 &&
@@ -166,7 +187,7 @@ export function applyVoidTiles(
         prot.has(`${cx},${cy}`))
     );
     if (at >= 20) continue;
-    const sz = 2 + Math.floor(Math.random() * 3);
+    const sz = 2 + Math.floor(rng() * 3);
     const q = [`${cx},${cy}`];
     while (ad.length < sz && q.length > 0) {
       const k = q.shift()!;
@@ -358,6 +379,96 @@ function nearestReachableCell(
   return best;
 }
 
+export function legalizePlayerSpawn(
+  tiles: string[][],
+  voidTiles: Set<string>,
+  spawn: { x: number; y: number },
+  w: number,
+  h: number,
+): { x: number; y: number } {
+  if (isWalkable(tiles, voidTiles, spawn.x, spawn.y, w, h)) {
+    return { x: spawn.x, y: spawn.y };
+  }
+  // Wall (not void): carve the spawn cell so the player stands on floor.
+  if (
+    spawn.x >= 0 &&
+    spawn.y >= 0 &&
+    spawn.x < w &&
+    spawn.y < h &&
+    !voidTiles.has(`${spawn.x},${spawn.y}`)
+  ) {
+    tiles[spawn.y][spawn.x] = "floor";
+    return { x: spawn.x, y: spawn.y };
+  }
+  let best: { x: number; y: number } | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!isWalkable(tiles, voidTiles, x, y, w, h)) continue;
+      const dist = Math.max(Math.abs(x - spawn.x), Math.abs(y - spawn.y));
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { x, y };
+      }
+    }
+  }
+  if (best) return best;
+  const cx = Math.max(0, Math.min(w - 1, spawn.x));
+  const cy = Math.max(0, Math.min(h - 1, spawn.y));
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (
+        nx >= 0 &&
+        ny >= 0 &&
+        nx < w &&
+        ny < h &&
+        !voidTiles.has(`${nx},${ny}`)
+      ) {
+        tiles[ny][nx] = "floor";
+      }
+    }
+  }
+  if (isWalkable(tiles, voidTiles, cx, cy, w, h)) return { x: cx, y: cy };
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (isWalkable(tiles, voidTiles, nx, ny, w, h)) return { x: nx, y: ny };
+    }
+  }
+  return { x: cx, y: cy };
+}
+
+function relocatePortalOntoReachable(
+  tiles: string[][],
+  portal: { x: number; y: number },
+  reachable: Set<string>,
+  playerSpawn: { x: number; y: number },
+  w: number,
+  h: number,
+): { x: number; y: number } {
+  const near = nearestReachableCell(portal, reachable, w, h);
+  const dest =
+    near && `${near.x},${near.y}` !== `${playerSpawn.x},${playerSpawn.y}`
+      ? near
+      : ([...reachable]
+          .map((k) => {
+            const p = k.split(",");
+            return { x: Number(p[0]), y: Number(p[1]) };
+          })
+          .find((c) => c.x !== playerSpawn.x || c.y !== playerSpawn.y) ??
+        playerSpawn);
+  if (tiles[portal.y]?.[portal.x] === "portal") {
+    tiles[portal.y][portal.x] = "floor";
+  }
+  if (tiles[dest.y]) {
+    tiles[dest.y][dest.x] = "portal";
+  }
+  return { x: dest.x, y: dest.y };
+}
+
 export function ensureReachability(
   tiles: string[][],
   voidTiles: Set<string>,
@@ -366,7 +477,12 @@ export function ensureReachability(
   portal: { x: number; y: number },
   w: number,
   h: number,
-): { tiles: string[][]; spawns: { x: number; y: number }[] } {
+): {
+  tiles: string[][];
+  spawns: { x: number; y: number }[];
+  playerSpawn: { x: number; y: number };
+  portal: { x: number; y: number };
+} {
   // Deep-copy tiles so we never mutate the caller's grid.
   const out: string[][] = tiles.map((row) => (row ? row.slice() : []));
   const vt = voidTiles;
@@ -376,48 +492,22 @@ export function ensureReachability(
     y: s.y,
   }));
 
-  // 1. Flood-fill from the player spawn over walkable tiles.
-  let reachable = floodFillReachable(out, vt, playerSpawn, w, h);
+  // 1. Player spawn must be walkable. The old pass flooded from a fallback
+  // cell when reachable.size === 0 but left the player on wall/void.
+  const liveSpawn = legalizePlayerSpawn(out, vt, playerSpawn, w, h);
+  let reachable = floodFillReachable(out, vt, liveSpawn, w, h);
 
-  // If the player spawn itself is enclosed (no walkable neighbours and not
-  // already on a walkable cell), relocate the player spawn to the nearest
-  // walkable cell in the grid and re-flood.
   if (reachable.size === 0) {
-    const alt = nearestReachableCell(playerSpawn, new Set(), w, h);
-    // Fall back to scanning the whole grid for any walkable cell.
-    let fallback: { x: number; y: number } | null = alt;
-    if (!fallback) {
-      outerScan: for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-          if (isWalkable(out, vt, x, y, w, h)) {
-            fallback = { x, y };
-            break outerScan;
-          }
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = liveSpawn.x + dx;
+        const ny = liveSpawn.y + dy;
+        if (nx >= 0 && ny >= 0 && nx < w && ny < h && !vt.has(`${nx},${ny}`)) {
+          out[ny][nx] = "floor";
         }
       }
     }
-    if (fallback) {
-      reachable = floodFillReachable(out, vt, fallback, w, h);
-    } else {
-      // Entire grid is walls/void — carve a 3x3 clearing at the player spawn
-      // as a last resort so the game remains playable.
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = playerSpawn.x + dx;
-          const ny = playerSpawn.y + dy;
-          if (
-            nx >= 0 &&
-            ny >= 0 &&
-            nx < w &&
-            ny < h &&
-            !vt.has(`${nx},${ny}`)
-          ) {
-            out[ny][nx] = "floor";
-          }
-        }
-      }
-      reachable = floodFillReachable(out, vt, playerSpawn, w, h);
-    }
+    reachable = floodFillReachable(out, vt, liveSpawn, w, h);
   }
 
   // 2. For each enemy spawn not reachable, carve or relocate.
@@ -434,9 +524,9 @@ export function ensureReachability(
           reachable.add(`${c.x},${c.y}`);
         }
       }
-      // Re-flood from the player spawn to expand the reachable set through
-      // the newly opened corridor.
-      reachable = floodFillReachable(out, vt, playerSpawn, w, h);
+      // Re-flood from the (legal) player spawn to expand the reachable set
+      // through the newly opened corridor.
+      reachable = floodFillReachable(out, vt, liveSpawn, w, h);
       if (!reachable.has(`${sp.x},${sp.y}`)) {
         // Carving didn't connect (e.g. spawn sits in a void pocket). Relocate.
         const near = nearestReachableCell(sp, reachable, w, h);
@@ -451,9 +541,10 @@ export function ensureReachability(
   }
 
   // 3. Guarantee the portal is reachable from the player spawn.
-  const portalKey = `${portal.x},${portal.y}`;
+  let livePortal = { x: portal.x, y: portal.y };
+  const portalKey = `${livePortal.x},${livePortal.y}`;
   if (!reachable.has(portalKey)) {
-    const carve = bfsCarvePath(out, vt, portal, reachable, w, h);
+    const carve = bfsCarvePath(out, vt, livePortal, reachable, w, h);
     if (carve !== null && carve.length <= 8) {
       for (const c of carve) {
         if ((out[c.y]?.[c.x] as string) === "wall") {
@@ -461,16 +552,16 @@ export function ensureReachability(
           reachable.add(`${c.x},${c.y}`);
         }
       }
-      reachable = floodFillReachable(out, vt, playerSpawn, w, h);
+      reachable = floodFillReachable(out, vt, liveSpawn, w, h);
     }
     // If the portal still isn't reachable, carve a 3x3 clearing around it as a
     // last resort (the portal must always be reachable — player progression
     // depends on it).
-    if (!reachable.has(portalKey)) {
+    if (!reachable.has(`${livePortal.x},${livePortal.y}`)) {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
-          const nx = portal.x + dx;
-          const ny = portal.y + dy;
+          const nx = livePortal.x + dx;
+          const ny = livePortal.y + dy;
           if (
             nx >= 0 &&
             ny >= 0 &&
@@ -484,11 +575,29 @@ export function ensureReachability(
           }
         }
       }
-      reachable = floodFillReachable(out, vt, playerSpawn, w, h);
+      reachable = floodFillReachable(out, vt, liveSpawn, w, h);
+    }
+    // Void pockets and carve-cap (>8 walls) used to leave the portal
+    // isolated. Relocate onto the player's walkable graph.
+    if (!reachable.has(`${livePortal.x},${livePortal.y}`)) {
+      livePortal = relocatePortalOntoReachable(
+        out,
+        livePortal,
+        reachable,
+        liveSpawn,
+        w,
+        h,
+      );
+      reachable = floodFillReachable(out, vt, liveSpawn, w, h);
     }
   }
 
-  return { tiles: out, spawns: outSpawns };
+  return {
+    tiles: out,
+    spawns: outSpawns,
+    playerSpawn: liveSpawn,
+    portal: livePortal,
+  };
 }
 
 /**
@@ -518,13 +627,23 @@ export function placeBossRushSpawns(
   portal: { x: number; y: number } | undefined,
   w: number,
   h: number,
-): { tiles: string[][]; spawns: { x: number; y: number }[] } {
+): {
+  tiles: string[][];
+  spawns: { x: number; y: number }[];
+  playerSpawn: { x: number; y: number };
+  portal: { x: number; y: number };
+} {
   if (preferred.length === 0) {
-    return { tiles, spawns: [] };
+    return {
+      tiles,
+      spawns: [],
+      playerSpawn,
+      portal: portal ?? playerSpawn,
+    };
   }
   return ensureReachability(
     tiles,
-    voidTiles ?? new Set(),
+    toVoidSet(voidTiles),
     preferred,
     playerSpawn,
     portal ?? playerSpawn,
@@ -548,21 +667,322 @@ export function punchRosterReachability<T extends { x: number; y: number }>(
   portal: { x: number; y: number } | undefined,
   worldW: number,
   worldH: number,
-): { tiles: string[][]; roster: T[] } {
-  if (!portal || roster.length === 0) {
-    return { tiles, roster };
+): { tiles: string[][]; roster: T[]; playerSpawn: { x: number; y: number } } {
+  if (roster.length === 0) {
+    return { tiles, roster, playerSpawn: spawnPosition };
   }
-  const { tiles: nextTiles, spawns } = ensureReachability(
+  // Missing portal used to no-op, leaving CA pocket hostiles that seal
+  // isProgressionLocked. Gate through the player spawn like Boss Rush.
+  const {
+    tiles: nextTiles,
+    spawns,
+    playerSpawn,
+  } = ensureReachability(
     tiles,
-    voidTiles ?? new Set(),
+    toVoidSet(voidTiles),
     roster.map((e) => ({ x: e.x, y: e.y })),
     spawnPosition,
-    portal,
+    portal ?? spawnPosition,
     worldW,
     worldH,
   );
   const nextRoster = roster.map((e, i) =>
     spawns[i] ? { ...e, x: spawns[i].x, y: spawns[i].y } : e,
   );
-  return { tiles: nextTiles, roster: nextRoster };
+  return { tiles: nextTiles, roster: nextRoster, playerSpawn };
+}
+
+export interface PlayablePortal {
+  x: number;
+  y: number;
+  [key: string]: unknown;
+}
+
+export interface FinalizePlayableInput<
+  P extends { x: number; y: number } = PlayablePortal,
+> {
+  tiles: string[][];
+  voidTiles?: Set<string> | Map<string, unknown>;
+  playerSpawn: { x: number; y: number };
+  portals: P[];
+  spawns: { x: number; y: number }[];
+  w: number;
+  h: number;
+  /** Default true — every intended playable map needs a reachable exit. */
+  requireExit?: boolean;
+}
+
+export interface FinalizePlayableResult<
+  P extends { x: number; y: number } = PlayablePortal,
+> {
+  tiles: string[][];
+  playerSpawn: { x: number; y: number };
+  portals: P[];
+  portal: P | null;
+  spawns: { x: number; y: number }[];
+}
+
+/**
+ * Narrow post-generation correction: legalize spawn, guarantee an exit,
+ * punch hostiles onto the walkable graph. Does not change archetype aesthetics.
+ */
+export function finalizePlayableLayout<P extends { x: number; y: number }>(
+  input: FinalizePlayableInput<P>,
+): FinalizePlayableResult<P> {
+  const vt = toVoidSet(input.voidTiles);
+  const tiles = input.tiles.map((row) => (row ? row.slice() : []));
+  const liveSpawn = legalizePlayerSpawn(
+    tiles,
+    vt,
+    input.playerSpawn,
+    input.w,
+    input.h,
+  );
+  const portals = input.portals.map((p) => ({ ...p }));
+  const requireExit = input.requireExit !== false;
+
+  let primary: { x: number; y: number } | null = portals[0] ?? null;
+  if (requireExit && !primary) {
+    const reachable = floodFillReachable(
+      tiles,
+      vt,
+      liveSpawn,
+      input.w,
+      input.h,
+    );
+    const placed = pickProgressionPortalCell(
+      tiles,
+      vt,
+      new Set([`${liveSpawn.x},${liveSpawn.y}`]),
+      input.w,
+      input.h,
+      reachable,
+    );
+    if (placed) {
+      tiles[placed.y][placed.x] = "portal";
+      const added = { x: placed.x, y: placed.y } as P;
+      portals.push(added);
+      primary = added;
+    } else {
+      primary = liveSpawn;
+    }
+  }
+
+  const punched = ensureReachability(
+    tiles,
+    vt,
+    input.spawns,
+    liveSpawn,
+    primary ?? liveSpawn,
+    input.w,
+    input.h,
+  );
+
+  if (portals[0] && punched.portal) {
+    const p0 = portals[0];
+    if (p0.x !== punched.portal.x || p0.y !== punched.portal.y) {
+      if (punched.tiles[p0.y]?.[p0.x] === "portal") {
+        punched.tiles[p0.y][p0.x] = "floor";
+      }
+      p0.x = punched.portal.x;
+      p0.y = punched.portal.y;
+    }
+    if (punched.tiles[p0.y]) {
+      punched.tiles[p0.y][p0.x] = "portal";
+    }
+  }
+
+  let playerSpawn = punched.playerSpawn;
+  const exit = portals[0];
+  if (exit && playerSpawn.x === exit.x && playerSpawn.y === exit.y) {
+    const reachable = floodFillReachable(
+      punched.tiles,
+      vt,
+      playerSpawn,
+      input.w,
+      input.h,
+    );
+    for (const k of reachable) {
+      if (k === `${exit.x},${exit.y}`) continue;
+      const p = k.split(",");
+      playerSpawn = { x: Number(p[0]), y: Number(p[1]) };
+      break;
+    }
+  }
+
+  return {
+    tiles: punched.tiles,
+    playerSpawn,
+    portals,
+    portal: portals[0] ?? null,
+    spawns: punched.spawns,
+  };
+}
+
+/**
+ * Prefer a border-adjacent floor on the player's reachable graph so a
+ * walled-off ring cannot omit the run progression portal.
+ */
+export function pickProgressionPortalCell(
+  tiles: string[][],
+  voidTiles: Set<string>,
+  used: Set<string>,
+  w: number,
+  h: number,
+  reachable?: Set<string>,
+): { x: number; y: number } | null {
+  const candidates: { x: number; y: number; border: boolean }[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const k = `${x},${y}`;
+      if (used.has(k)) continue;
+      if (voidTiles.has(k)) continue;
+      const t = tiles[y]?.[x] as string;
+      if (t === "wall") continue;
+      if (reachable && !reachable.has(k)) continue;
+      const border = x <= 2 || y <= 2 || x >= w - 3 || y >= h - 3;
+      candidates.push({ x, y, border });
+    }
+  }
+  const border = candidates.find((c) => c.border);
+  if (border) return { x: border.x, y: border.y };
+  if (candidates[0]) return { x: candidates[0].x, y: candidates[0].y };
+  return null;
+}
+
+export function pickLegalWhitePortalCell(
+  tiles: string[][],
+  voidTiles: Set<string> | Map<string, unknown> | undefined,
+  spawn: { x: number; y: number },
+  w: number,
+  h: number,
+): { x: number; y: number } {
+  const vt = toVoidSet(voidTiles);
+  if (isWalkable(tiles, vt, spawn.x, spawn.y, w, h)) return { ...spawn };
+  return legalizePlayerSpawn(tiles, vt, spawn, w, h);
+}
+
+export interface SolvabilityReport {
+  ok: boolean;
+  playerSpawnLegal: boolean;
+  enemiesReachable: boolean;
+  portalReachable: boolean;
+  isolatedEnemies: number;
+  failures: string[];
+}
+
+export function floodWalkable(
+  tiles: string[][],
+  voidTiles: Set<string>,
+  start: { x: number; y: number },
+  w: number,
+  h: number,
+): Set<string> {
+  return floodFillReachable(tiles, voidTiles, start, w, h);
+}
+
+export function evaluateSolvability(
+  tiles: string[][],
+  voidTiles: Set<string> | Map<string, unknown> | undefined,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  spawns: { x: number; y: number }[],
+  w: number,
+  h: number,
+): SolvabilityReport {
+  const vt = toVoidSet(voidTiles);
+  const failures: string[] = [];
+  const playerSpawnLegal = isWalkable(
+    tiles,
+    vt,
+    playerSpawn.x,
+    playerSpawn.y,
+    w,
+    h,
+  );
+  if (!playerSpawnLegal) failures.push("player-spawn-illegal");
+  const reachable = floodFillReachable(tiles, vt, playerSpawn, w, h);
+  let isolatedEnemies = 0;
+  for (const s of spawns) {
+    if (!reachable.has(`${s.x},${s.y}`)) isolatedEnemies += 1;
+  }
+  const enemiesReachable = isolatedEnemies === 0;
+  if (!enemiesReachable) {
+    failures.push(`isolated-enemies:${isolatedEnemies}`);
+  }
+  const portalReachable =
+    portals.length === 0
+      ? false
+      : portals.some((p) => reachable.has(`${p.x},${p.y}`));
+  if (portals.length > 0 && !portalReachable) {
+    failures.push("no-reachable-portal");
+  }
+  if (portals.length === 0) failures.push("missing-exit-portal");
+  if (
+    playerSpawnLegal &&
+    portals.some((p) => p.x === playerSpawn.x && p.y === playerSpawn.y) &&
+    reachable.size > 1
+  ) {
+    // Standing on an exit is legal walkability but skips the room if the
+    // portal is unlocked. Flag it so finalize can keep spawn off the exit
+    // when another floor cell exists.
+    failures.push("spawn-on-portal");
+  }
+  return {
+    ok: failures.length === 0,
+    playerSpawnLegal,
+    enemiesReachable,
+    portalReachable,
+    isolatedEnemies,
+    failures,
+  };
+}
+
+/**
+ * Apply finalize onto a live map + roster. Call after generateEnemies /
+ * Boss Rush preferred cells / rest-exit so cleanup sequencing still sees
+ * reachable hostiles and a reachable exit.
+ */
+export function applyFinalizedLayout<
+  T extends { x: number; y: number },
+  P extends { x: number; y: number },
+>(
+  map: { tiles: string[][]; portals: P[]; voidTiles?: unknown },
+  roster: T[],
+  spawn: { x: number; y: number },
+  size: number,
+): { spawn: { x: number; y: number }; roster: T[] } {
+  const finalized = finalizePlayableLayout({
+    tiles: map.tiles,
+    voidTiles: toVoidSet(
+      map.voidTiles as Set<string> | Map<string, unknown> | undefined,
+    ),
+    playerSpawn: spawn,
+    portals: map.portals,
+    spawns: roster.map((e) => ({ x: e.x, y: e.y })),
+    w: size,
+    h: size,
+    requireExit: true,
+  });
+  map.tiles = finalized.tiles as typeof map.tiles;
+  if (finalized.portals.length > 0) {
+    if (map.portals.length === 0) {
+      map.portals.push(...(finalized.portals as P[]));
+    } else {
+      for (
+        let i = 0;
+        i < Math.min(map.portals.length, finalized.portals.length);
+        i++
+      ) {
+        map.portals[i].x = finalized.portals[i].x;
+        map.portals[i].y = finalized.portals[i].y;
+      }
+    }
+  }
+  const nextRoster = roster.map((e, i) =>
+    finalized.spawns[i]
+      ? { ...e, x: finalized.spawns[i].x, y: finalized.spawns[i].y }
+      : e,
+  );
+  return { spawn: finalized.playerSpawn, roster: nextRoster };
 }
