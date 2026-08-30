@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Trophy, X } from "lucide-react";
 import type React from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   useClaimAchievementReward,
@@ -12,7 +12,11 @@ import type {
   AchievementConfig,
   AchievementProgress,
 } from "../types/gameTypes";
-import { shouldInvalidateCallerDokaAfterClaim } from "../utils/achievementReward";
+import {
+  shouldBeginAchievementClaim,
+  shouldInvalidateCallerDokaAfterClaim,
+  shouldRollbackClaimFailure,
+} from "../utils/achievementReward";
 
 interface AchievementsPanelProps {
   userId?: string;
@@ -44,6 +48,8 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
     useGetPlayerAchievements();
   const claimMut = useClaimAchievementReward();
   const [persistClaimPending, setPersistClaimPending] = useState(false);
+  const claimingIdsRef = useRef<Set<string>>(new Set());
+  const claimedOkIdsRef = useRef<Set<string>>(new Set());
 
   const progressMap = useMemo(() => {
     const map = new Map<string, { unlocked: boolean; claimed: boolean }>();
@@ -86,6 +92,7 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
     ) => {
       if ("ok" in result && result.ok != null && result.err == null) {
         const granted = Number(result.ok);
+        claimedOkIdsRef.current.add(achievement.id);
         // Optimistic update: flip claimed=true immediately so the UI
         // reflects the claim without waiting for the refetch to propagate.
         queryClient.setQueryData(
@@ -106,9 +113,23 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
         toast.success(`🏆 Claimed ${granted.toLocaleString()} Doka!`);
         return;
       }
-      rollbackClaimed(achievement.id);
-      toast.error(
-        `Failed to claim reward: ${String(result.err ?? "unknown error")}`,
+      const err = String(result.err ?? "unknown error");
+      if (
+        shouldRollbackClaimFailure(
+          err,
+          claimedOkIdsRef.current.has(achievement.id),
+        )
+      ) {
+        rollbackClaimed(achievement.id);
+        toast.error(`Failed to claim reward: ${err}`);
+        return;
+      }
+      queryClient.setQueryData(
+        ["playerAchievements"],
+        (old: AchievementProgress[] | undefined) =>
+          old?.map((p) =>
+            p.achievementId === achievement.id ? { ...p, claimed: true } : p,
+          ),
       );
     },
     [
@@ -123,18 +144,34 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
       if (persistClaim) {
+        if (
+          !shouldBeginAchievementClaim(claimingIdsRef.current, achievement.id)
+        ) {
+          return;
+        }
+        claimingIdsRef.current.add(achievement.id);
         setPersistClaimPending(true);
         void persistClaim(achievement.id)
           .then(
             (result) => applyClaimResult(achievement, result),
             (error: unknown) => {
-              rollbackClaimed(achievement.id);
               const msg =
                 error instanceof Error ? error.message : "Network error";
-              toast.error(`Failed to claim reward: ${msg}`);
+              if (
+                shouldRollbackClaimFailure(
+                  msg,
+                  claimedOkIdsRef.current.has(achievement.id),
+                )
+              ) {
+                rollbackClaimed(achievement.id);
+                toast.error(`Failed to claim reward: ${msg}`);
+              }
             },
           )
-          .finally(() => setPersistClaimPending(false));
+          .finally(() => {
+            claimingIdsRef.current.delete(achievement.id);
+            setPersistClaimPending(false);
+          });
         return;
       }
       claimMut.mutate(achievement.id, {

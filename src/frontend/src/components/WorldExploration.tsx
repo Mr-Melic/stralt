@@ -78,9 +78,12 @@ import {
   PLAGUE_ZONE_TICK,
   VOID_RIFT_TICK,
   activeHostilesRemaining,
+  battleWalkHazardDamages,
   countsTowardKillRewards,
   despawnSummons,
   enemyHpAfterHazardDamage,
+  hpAfterBossPhase2,
+  hpAfterHeal,
   hpAfterIncomingDamage,
   isActiveHostile,
   isAliveCombatant,
@@ -162,6 +165,7 @@ import {
   isProgressionLocked,
   isProgressionPortalUnlocked,
   isRunProgressionPortal,
+  placeWhitePortalAtSpawn,
   resetRunState,
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
@@ -198,9 +202,12 @@ import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
+  canAttackNearestLive,
   computeTargetableTiles,
   isTileCastableLive,
+  pickNearestLiveHostileTile,
   shouldExecuteLiveCast,
+  spellHighlightRangeBase,
 } from "../engine/targeting";
 import {
   liveTurnOrder,
@@ -269,7 +276,10 @@ import {
   logDebugWarn,
 } from "../utils/debugLogger";
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
-import { nextDokaAfterShopSpend } from "../utils/itemShop";
+import {
+  nextDokaAfterJackpotHeal,
+  nextDokaAfterShopSpend,
+} from "../utils/itemShop";
 import {
   activatePlayerMirror,
   consumePlayerMirror,
@@ -288,11 +298,14 @@ import {
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
+  shouldStartRename,
 } from "../utils/renameCharacter";
 import {
+  PORTAL_TRANSITION_XP,
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
   computeVictoryExp,
+  persistIncrementalRewards,
   resolveBattleRewards,
   selectDefeatedEnemiesForRewards,
 } from "../utils/rewardResolver";
@@ -307,7 +320,9 @@ import {
 import {
   type SpellUpgradeActor,
   applySpellLevel,
+  committedDokaAfterSpellUpgrade,
   persistSpellUpgrade,
+  shouldCommitSpellUpgradeDoka,
   spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
 import {
@@ -316,7 +331,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
-import { applyXpDelta } from "../utils/xpCurve";
+import { applyXpDelta, xpForNextLevel } from "../utils/xpCurve";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -1950,8 +1965,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (dokaBalanceRef.current < RENAME_DOKA_COST) {
-      toast.error("Insufficient Doka (need 100)");
+    if (!shouldStartRename(isRenaming, dokaBalanceRef.current)) {
+      if (dokaBalanceRef.current < RENAME_DOKA_COST) {
+        toast.error("Insufficient Doka (need 100)");
+      }
       return;
     }
     setIsRenaming(true);
@@ -2951,10 +2968,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     spellLevelsRef.current = spellLevels;
   }, [spellLevels]);
 
+  const spellUpgradeInFlightRef = useRef<Set<string>>(new Set());
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
+      if (spellUpgradeInFlightRef.current.has(spellId)) return;
       if (dokaBalance < cost) return;
       if (!actor?.upgradeSpell) return;
+      spellUpgradeInFlightRef.current.add(spellId);
       void (async () => {
         try {
           const { newLevel, spent } = await progressPersistRef.current.enqueue(
@@ -2975,8 +2995,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 spellId,
                 result.newLevel,
               );
-              if (result.newDoka != null) {
-                progressPersistRef.current.commit({ doka: result.newDoka });
+              // getCallerDokaBalance after upgradeSpell is a query and can
+              // return the pre-spend wallet. Only commit a decrease; a
+              // stale-high read would refund the spend on the lock.
+              const nextDoka = committedDokaAfterSpellUpgrade(
+                committedBefore,
+                result.newDoka,
+                cost,
+              );
+              if (
+                shouldCommitSpellUpgradeDoka(
+                  committedBefore,
+                  nextDoka,
+                  progressPersistRef.current.isWalletSeeded(),
+                )
+              ) {
+                progressPersistRef.current.commit({ doka: nextDoka });
               }
               return {
                 newLevel: result.newLevel,
@@ -2995,7 +3029,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Debit the canister spend, not the advertised summon 10× cost —
           // otherwise hydrateWhenIdle copies the short UI over committed
           // and the next heal/shop saveBattleStats wipes the difference.
-          onDokaBalanceChange(Math.max(0, dokaBalanceRef.current - spent));
+          const nextUi = Math.max(0, dokaBalanceRef.current - spent);
+          dokaBalanceRef.current = nextUi;
+          onDokaBalanceChange(nextUi);
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
@@ -3011,6 +3047,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           });
         } catch (err) {
           console.warn("[PBV] Spell upgrade failed:", err);
+        } finally {
+          spellUpgradeInFlightRef.current.delete(spellId);
         }
       })();
     },
@@ -6816,11 +6854,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const { map: newMap, spawnPosition } = generateRandomMap();
       // Attach any pending white portal (run-complete portal) to the new map
       if (pendingWhitePortalRef.current && newMap) {
-        const white = pendingWhitePortalRef.current;
-        const cell = spawnPosition;
-        white.x = cell.x;
-        white.y = cell.y;
-        newMap.portals = [...(newMap.portals || []), white];
+        newMap.portals = [
+          ...(newMap.portals || []),
+          placeWhitePortalAtSpawn(pendingWhitePortalRef.current, spawnPosition),
+        ];
         pendingWhitePortalRef.current = null;
       }
       // Update all states for the new map
@@ -7201,74 +7238,51 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       } else {
         setDokaLoot([]);
       }
-      // FIX 2: Award 10 XP for portal transition and save progress
-      setCharacterStats((prev) => {
-        const PORTAL_XP = 10;
-        let newExp = prev.exp + PORTAL_XP;
-        let newLevel = prev.level;
-        let newExpToNext = prev.expToNext;
-        while (newExp >= newExpToNext) {
-          newExp -= newExpToNext;
-          newLevel += 1;
-          newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
-        }
-        // Persist portal XP atomically through the reward funnel (applyRewards),
-        // not a partial updateCharacter (which would clobber optional loadout
-        // fields like spellBarOrder and bossRushMasterComplete).
-        if (actor) {
-          const deathEpochAtPersistStart = deathEpochRef.current;
-          (async () => {
-            try {
-              const result = await progressPersistRef.current.enqueue(
-                async () => {
-                  const persisted = await actor.applyRewards(
-                    BigInt(characterSlot),
-                    BigInt(0),
-                    BigInt(PORTAL_XP),
-                  );
-                  if ("err" in persisted) {
-                    throw new Error(String(persisted.err));
-                  }
-                  const { newXp, newLevel: newLvl } = persisted.ok;
-                  progressPersistRef.current.commit({
-                    xp: Number(newXp),
-                    level: Number(newLvl),
-                  });
-                  return persisted;
-                },
-              );
-              const { newXp, newLevel: newLvl } = result.ok;
-              // Recap is not up after a portal swap. Lava on the new map
-              // can land while this applyRewards is still in flight. The
-              // death write already penalized the post-credit snapshot;
-              // restoring absolute XP here lets raiseUiAfterDeathPersist
-              // keep the unpenalized UI and refund the penalty.
-              if (
-                shouldApplyVictoryLiveHydrate(
-                  deathTriggeredRef.current,
-                  deathEpochAtPersistStart,
-                  deathEpochRef.current,
-                )
-              ) {
-                setCharacterStats((cur) => ({
-                  ...cur,
-                  exp: Number(newXp),
-                  level: Number(newLvl),
-                  expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
-                }));
-              }
-            } catch (err) {
-              console.warn("[PBV] Portal XP save failed:", err);
+      // Portal +10 XP must not touch the HUD before applyRewards commits.
+      // Optimistic leftover + failed persist lets hydrateWhenIdle copy the
+      // unpaid XP onto committed; the next saveBattleStats writes it.
+      if (actor) {
+        const deathEpochAtPersistStart = deathEpochRef.current;
+        void progressPersistRef.current
+          .enqueue(async () => {
+            const persisted = await persistIncrementalRewards(
+              actor,
+              characterSlot,
+              0,
+              PORTAL_TRANSITION_XP,
+            );
+            progressPersistRef.current.commit({
+              xp: persisted.newXp,
+              level: persisted.newLevel,
+            });
+            return persisted;
+          })
+          .then((persisted) => {
+            // Recap is not up after a portal swap. Lava on the new map
+            // can land while this applyRewards is still in flight. The
+            // death write already penalized the post-credit snapshot;
+            // restoring absolute XP here lets raiseUiAfterDeathPersist
+            // keep the unpenalized UI and refund the penalty.
+            if (
+              !shouldApplyVictoryLiveHydrate(
+                deathTriggeredRef.current,
+                deathEpochAtPersistStart,
+                deathEpochRef.current,
+              )
+            ) {
+              return;
             }
-          })();
-        }
-        return {
-          ...prev,
-          exp: newExp,
-          level: newLevel,
-          expToNext: newExpToNext,
-        };
-      });
+            setCharacterStats((cur) => ({
+              ...cur,
+              exp: persisted.newXp,
+              level: persisted.newLevel,
+              expToNext: xpForNextLevel(persisted.newLevel),
+            }));
+          })
+          .catch((err) => {
+            console.warn("[PBV] Portal XP save failed:", err);
+          });
+      }
     } else {
       // FIX #14: Player is not on a portal — release lock immediately
       transitionInProgressRef.current = false;
@@ -7545,7 +7559,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       enemies: liveEnemies,
       worldGridSize: WORLD_GRID_SIZE,
       effectiveRange: getEffectiveSpellRange(
-        spell.maxRange ?? Math.max(1, Number(spell.range)),
+        spellHighlightRangeBase(spell),
         spell.modifiableRange ? spell.id : undefined,
       ),
       barrierTiles: barrierTilesRef.current,
@@ -10192,6 +10206,47 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
 
+  const applyBattleWalkHazards = useCallback(
+    (pathLength: number, dest: { x: number; y: number }) => {
+      const { thornDmg, riftDmg } = battleWalkHazardDamages({
+        thornedActive: isThornedGround,
+        pathLength,
+        voidRiftActive: isVoidRift,
+        dest,
+        riftTile: voidRiftTile,
+      });
+      if (thornDmg > 0) {
+        setCharacterStats((prev) => ({
+          ...prev,
+          hp: Math.max(0, prev.hp - thornDmg),
+        }));
+        challengeTotalDamageRef.current = recordChallengeDamageTaken(
+          challengeTotalDamageRef.current,
+          thornDmg,
+        );
+        logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
+      }
+      if (riftDmg > 0) {
+        setCharacterStats((prev) => ({
+          ...prev,
+          hp: Math.max(0, prev.hp - riftDmg),
+        }));
+        challengeTotalDamageRef.current = recordChallengeDamageTaken(
+          challengeTotalDamageRef.current,
+          riftDmg,
+        );
+        logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
+      }
+    },
+    [
+      isThornedGround,
+      isVoidRift,
+      voidRiftTile,
+      logBattleEntry,
+      setCharacterStats,
+    ],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable callbacks are intentionally omitted
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -10274,7 +10329,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatants,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _spell.maxRange ?? Math.max(1, Number(_spell.range)),
+                    spellHighlightRangeBase(_spell),
                     _spell.modifiableRange ? _spell.id : undefined,
                   ),
                 );
@@ -10379,8 +10434,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatantsBasic,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _basicAttack.maxRange ??
-                      Math.max(1, Number(_basicAttack.range)),
+                    spellHighlightRangeBase(_basicAttack),
                     _basicAttack.modifiableRange ? _basicAttack.id : undefined,
                   ),
                 );
@@ -10546,8 +10600,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _liveCombatantsMouse,
                 currentMap.tiles,
                 getEffectiveSpellRange(
-                  _spellMouse.maxRange ??
-                    Math.max(1, Number(_spellMouse.range)),
+                  spellHighlightRangeBase(_spellMouse),
                   _spellMouse.modifiableRange ? _spellMouse.id : undefined,
                 ),
               );
@@ -10746,11 +10799,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
         // WALK branch — only runs with NO spell selected. Mirrors the touch
-        // handler's walk body (see lines ~9354-9374) with two mouse-only
-        // hazard checks injected between cost computation and MP deduction:
-        //   - Thorned Ground: isThornedGround → 5 dmg per extra tile beyond
-        //     the first (damage scales with path length).
-        //   - Void Rift: isVoidRift + voidRiftTile destination match → -3 HP.
+        // handler's walk body, including Thorned Ground / Void Rift debits
+        // (applyBattleWalkHazards — both input paths must charge the same HP).
         else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
           if (
@@ -10783,36 +10833,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (path.length === 0) return;
           const cost = path.length;
           if (cost > currentBattleMp) return;
-          // Thorned Ground — 5 dmg per extra tile beyond the first.
-          if (isThornedGround && path.length > 1) {
-            const thornDmg = (path.length - 1) * 5;
-            setCharacterStats((prev) => ({
-              ...prev,
-              hp: Math.max(0, prev.hp - thornDmg),
-            }));
-            challengeTotalDamageRef.current = recordChallengeDamageTaken(
-              challengeTotalDamageRef.current,
-              thornDmg,
-            );
-            logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
-          }
-          // Void Rift — destination tile matches voidRiftTile → -3 HP.
-          if (
-            isVoidRift &&
-            voidRiftTile &&
-            voidRiftTile.x === gridPos.x &&
-            voidRiftTile.y === gridPos.y
-          ) {
-            setCharacterStats((prev) => ({
-              ...prev,
-              hp: Math.max(0, prev.hp - 3),
-            }));
-            challengeTotalDamageRef.current = recordChallengeDamageTaken(
-              challengeTotalDamageRef.current,
-              3,
-            );
-            logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
-          }
+          // Thorned Ground / Void Rift — same debit as touch walk.
+          applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
           setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
@@ -10878,9 +10900,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       getSpellRangeTiles,
       activeSpells,
       logBattleEntry,
-      isThornedGround,
-      isVoidRift,
-      voidRiftTile,
+      applyBattleWalkHazards,
       combatantStoreCtx,
       hitTestSprite,
       setCurrentBattleApSynced,
@@ -10927,7 +10947,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
   // Touch handler — delegates to same grid logic as mouse click
   // Touch handler — delegates to same grid logic as mouse click
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, applyBattleWalkHazards, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
   const handleCanvasTouch = useCallback(
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
@@ -11006,7 +11026,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatants,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _spell.maxRange ?? Math.max(1, Number(_spell.range)),
+                    spellHighlightRangeBase(_spell),
                     _spell.modifiableRange ? _spell.id : undefined,
                   ),
                 );
@@ -11064,8 +11084,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatantsBasic,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _basicAttack.maxRange ??
-                      Math.max(1, Number(_basicAttack.range)),
+                    spellHighlightRangeBase(_basicAttack),
                     _basicAttack.modifiableRange ? _basicAttack.id : undefined,
                   ),
                 );
@@ -11195,8 +11214,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _liveCombatantsTouch,
                 currentMap.tiles,
                 getEffectiveSpellRange(
-                  _spellTouch.maxRange ??
-                    Math.max(1, Number(_spellTouch.range)),
+                  spellHighlightRangeBase(_spellTouch),
                   _spellTouch.modifiableRange ? _spellTouch.id : undefined,
                 ),
               );
@@ -11347,8 +11365,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
         // WALK branch — only runs with NO spell selected. Mirrors the mouse
-        // handler's walk body WITHOUT the mouse-only Thorned Ground / Void Rift
-        // hazard checks (those are mouse-only per spec).
+        // handler's walk body, including Thorned Ground / Void Rift debits.
         else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
           if (
@@ -11379,6 +11396,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (path.length === 0) return;
           const cost = path.length;
           if (cost > currentBattleMp) return;
+          applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
           setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
@@ -11449,6 +11467,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setCurrentBattleApSynced,
       recordClickOutcome,
       castControlledSummonSpell,
+      applyBattleWalkHazards,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -15676,6 +15695,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       // atomically (replaces the separate setTurnOrder +
                       // setEnemies filters).
                       removeCombatant(combatantStoreCtx, sbT.id);
+                    } else {
+                      updateCombatant(combatantStoreCtx, sbT.id, { hp: nHp });
                     }
                     return { ...h, [sbT.id]: nHp };
                   });
@@ -15708,9 +15729,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
           setEnemyHpMap((prev) => ({ ...prev, [allyT.id]: allyNewHp }));
-          setTurnOrder((prev) =>
-            prev.map((c) => (c.id === allyT.id ? { ...c, hp: allyNewHp } : c)),
-          );
+          // Store-authoritative: enemyTakesDamage / isActiveHostile read
+          // combatantsRef, not the initiative strip.
+          updateCombatant(combatantStoreCtx, allyT.id, { hp: allyNewHp });
           clearTimeout(watchdog);
           pendingTimeoutsRef.current.delete(watchdog);
           enemyTurnInProgressRef.current = false;
@@ -15739,28 +15760,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             const mult = currentBossConfig.phase2.statMultiplier;
             // ISSUE 5 — Weeping Pawn PROMOTE_QUEEN: restore FULL HP on transition
             const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
-            setTurnOrder((prev) =>
-              prev.map((c) => {
-                if (c.id !== enemyId) return c;
-                const newMaxHp = Math.round(c.maxHp * mult);
-                const newHp = isWeepingPawn
-                  ? newMaxHp
-                  : Math.min(Math.round(c.hp * mult), newMaxHp);
-                return {
-                  ...c,
-                  maxHp: newMaxHp,
-                  hp: newHp,
-                  currentBossPhase: 2 as const,
-                };
-              }),
+            const liveBoss = getLiveCombatants(combatantStoreCtx).find(
+              (c) => c.id === enemyId,
             );
-            setEnemyHpMap((h) => {
-              const newMaxHp = Math.round((h[enemyId] ?? 0) * mult);
-              const newHp = isWeepingPawn
-                ? newMaxHp
-                : Math.round((h[enemyId] ?? 0) * mult);
-              return { ...h, [enemyId]: newHp };
+            const phaseHp = hpAfterBossPhase2(
+              liveBoss?.hp ?? 0,
+              liveBoss?.maxHp ?? liveBoss?.hp ?? 0,
+              mult,
+              isWeepingPawn,
+            );
+            updateCombatant(combatantStoreCtx, enemyId, {
+              hp: phaseHp.hp,
+              maxHp: phaseHp.maxHp,
             });
+            // currentBossPhase lives on CombatantEntry, not Enemy — patch
+            // the strip after the store write so we do not drop hp/maxHp.
+            const nextPhaseOrder = turnOrderRef.current.map((c) =>
+              c.id === enemyId ? { ...c, currentBossPhase: 2 as const } : c,
+            );
+            turnOrderRef.current = nextPhaseOrder;
+            setTurnOrder(() => nextPhaseOrder);
+            setEnemyHpMap((h) => ({ ...h, [enemyId]: phaseHp.hp }));
             bossStateRef.current = newBossStateAfterPhase;
             flushSync(() => {
               setActiveBossState(newBossStateAfterPhase);
@@ -15850,26 +15870,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     // Drain heals the boss (mirror WX 13680-13689).
                     if (bossSpellType === "drain" && bossSpell.healAmount) {
                       const bHa = bossSpell.healAmount;
-                      setTurnOrder((prev) =>
-                        prev.map((c) =>
-                          c.id === enemyId
-                            ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
-                            : c,
+                      const liveDrain = getLiveCombatants(
+                        combatantStoreCtx,
+                      ).find((c) => c.id === enemyId);
+                      updateCombatant(combatantStoreCtx, enemyId, {
+                        hp: hpAfterHeal(
+                          liveDrain?.hp ?? 0,
+                          liveDrain?.maxHp ?? 0,
+                          bHa,
                         ),
-                      );
+                      });
                     }
                   }
                 }
-                // Heal → setTurnOrder on boss (mirror WX 13699-13718).
+                // Heal → updateCombatant on boss (store + strip).
                 if (bossSpellType === "heal" && bossSpell.healAmount) {
                   const bHa = bossSpell.healAmount;
-                  setTurnOrder((prev) =>
-                    prev.map((c) =>
-                      c.id === enemyId
-                        ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
-                        : c,
-                    ),
+                  const liveHeal = getLiveCombatants(combatantStoreCtx).find(
+                    (c) => c.id === enemyId,
                   );
+                  updateCombatant(combatantStoreCtx, enemyId, {
+                    hp: hpAfterHeal(
+                      liveHeal?.hp ?? 0,
+                      liveHeal?.maxHp ?? 0,
+                      bHa,
+                    ),
+                  });
                   logBattleEntry(
                     `${currentBossConfig.name} heals ${bHa} HP`,
                     "#a855f7",
@@ -16613,13 +16639,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
                 if (spellType === "drain" && chosenSpell.healAmount) {
                   const ha = chosenSpell.healAmount;
-                  setTurnOrder((prev) =>
-                    prev.map((c) =>
-                      c.id === enemyId
-                        ? { ...c, hp: Math.min(c.maxHp, c.hp + ha) }
-                        : c,
-                    ),
+                  const liveDrain = getLiveCombatants(combatantStoreCtx).find(
+                    (c) => c.id === enemyId,
                   );
+                  updateCombatant(combatantStoreCtx, enemyId, {
+                    hp: hpAfterHeal(
+                      liveDrain?.hp ?? 0,
+                      liveDrain?.maxHp ?? 0,
+                      ha,
+                    ),
+                  });
                 }
               }
               if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
@@ -16634,13 +16663,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               const ha = Math.round(
                 (chosenSpell.healAmount ?? enemy.level * 2) * enrageMultiplier,
               );
-              setTurnOrder((prev) =>
-                prev.map((c) =>
-                  c.id === enemyId
-                    ? { ...c, hp: Math.min(c.maxHp, c.hp + ha) }
-                    : c,
-                ),
+              const liveSelfHeal = getLiveCombatants(combatantStoreCtx).find(
+                (c) => c.id === enemyId,
               );
+              updateCombatant(combatantStoreCtx, enemyId, {
+                hp: hpAfterHeal(
+                  liveSelfHeal?.hp ?? 0,
+                  liveSelfHeal?.maxHp ?? 0,
+                  ha,
+                ),
+              });
               logBattleEntry(`${enemy.pieceType} heals ${ha} HP`, "#ef4444");
               if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
                 const cdm =
@@ -17186,39 +17218,51 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!(currentBattleApRef.current >= apCost)) return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
-    // Determine gridPos: player tile for heal spells (engine's heal branch
-    // requires isPlayerTile), nearest-enemy tile otherwise.
+    // Same caster + range + live gate as the highlight / sprite-click paths.
+    // Chebyshev-only nearest search used raw `spell.range` and skipped LoS,
+    // so Attack Nearest could fire on a tile the preview never offered.
+    const mapTiles = currentMapRef.current?.tiles;
+    if (!mapTiles) return;
+    const casterPos = getActiveCasterPos();
+    const liveCombatants = getLiveCombatants(combatantStoreCtx);
+    const effectiveRange = getEffectiveSpellRange(
+      spellHighlightRangeBase(spell),
+      spell.modifiableRange ? spell.id : undefined,
+    );
     let gridPos: { x: number; y: number };
     if (isHealSpell) {
-      gridPos = {
-        x: playerPositionRef.current.x,
-        y: playerPositionRef.current.y,
-      };
-    } else {
-      const effectiveRange = getEffectiveSpellRange(
-        Math.max(1, Number(spell.range)),
+      gridPos = { x: casterPos.x, y: casterPos.y };
+      const liveHeal = isTileCastableLive(
+        spell,
+        casterPos,
+        gridPos,
+        liveCombatants,
+        mapTiles,
+        effectiveRange,
       );
+      if (!shouldExecuteLiveCast(liveHeal)) {
+        setNoTargetFlash(true);
+        setTimeout(() => setNoTargetFlash(false), 1200);
+        return;
+      }
+    } else {
       // Live store includes enemy summons that are not in React `enemies`.
       // isActiveHostile is the canonical filter (enemy-side summons after #79).
-      const liveHostiles =
-        getLiveCombatants(combatantStoreCtx).filter(isActiveHostile);
-      let nearest: (typeof liveHostiles)[0] | null = null;
-      let nearestDist = Number.POSITIVE_INFINITY;
-      for (const e of liveHostiles) {
-        const dx = Math.abs(e.x - playerPositionRef.current.x);
-        const dy = Math.abs(e.y - playerPositionRef.current.y);
-        const dist = Math.max(dx, dy);
-        if (dist <= effectiveRange && dist < nearestDist) {
-          nearest = e;
-          nearestDist = dist;
-        }
-      }
+      // isTileCastableLive is the same gate as getSpellRangeTiles / sprite-click.
+      const nearest = pickNearestLiveHostileTile(
+        spell,
+        casterPos,
+        liveCombatants.filter(isActiveHostile),
+        liveCombatants,
+        mapTiles,
+        effectiveRange,
+      );
       if (!nearest) {
         setNoTargetFlash(true);
         setTimeout(() => setNoTargetFlash(false), 1200);
         return;
       }
-      gridPos = { x: nearest.x, y: nearest.y };
+      gridPos = nearest;
     }
     castRuntimeRef.current.apCost = apCost;
     castRuntimeRef.current.spell = spell;
@@ -17335,8 +17379,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     battleActionMode,
     activeSpells,
     activeMapModifierTypes,
-    combatantStoreCtx,
     getEffectiveSpellRange,
+    getActiveCasterPos,
+    combatantStoreCtx,
     playerSpellContext,
     markFirstAction,
     setCurrentBattleApSynced,
@@ -18319,9 +18364,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       // 🎰 Jackpot heal: 0.5% chance of full HP restore
                       const isJackpot = Math.random() < 0.005;
                       if (isJackpot) {
-                        // Full heal — only spend 1 Doka for the jackpot
+                        // Full heal — spend 1 Doka from the live wallet.
+                        // The render snapshot lags a same-tick shop/heal
+                        // debit; persistAbsoluteProgress then records spend
+                        // 0 and idle hydrate refunds the earlier cut.
+                        const nextDoka = nextDokaAfterJackpotHeal(
+                          dokaBalanceRef.current,
+                        );
                         setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
-                        onDokaBalanceChange(Math.max(0, dokaBalance - 1));
+                        persistAbsoluteProgress(maxHp, nextDoka);
+                        dokaBalanceRef.current = nextDoka;
+                        onDokaBalanceChange(nextDoka);
                         // Banner
                         setJackpotHealVisible(true);
                         if (jackpotHealTimerRef.current)
@@ -18338,10 +18391,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         toast.success("🎰 JACKPOT HEAL! Full HP restored!", {
                           duration: 4000,
                         });
-                        persistAbsoluteProgress(
-                          maxHp,
-                          Math.max(0, dokaBalance - 1),
-                        );
                         return;
                       }
 
@@ -18757,18 +18806,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     )!.apCost,
                   )
                 : 999) &&
-            enemies.some((e) => {
+            (() => {
               const spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
-              const range = spell ? Math.max(1, Number(spell.range)) : 0;
-              return (
-                Math.max(
-                  Math.abs(e.x - playerPositionRef.current.x),
-                  Math.abs(e.y - playerPositionRef.current.y),
-                ) <= range
+              const tiles = currentMapRef.current?.tiles;
+              if (!spell || !tiles) return false;
+              const casterPos = getActiveCasterPos();
+              const liveCombatants = getLiveCombatants(combatantStoreCtx);
+              return canAttackNearestLive(
+                spell,
+                casterPos,
+                liveCombatants.filter(isActiveHostile),
+                liveCombatants,
+                tiles,
+                getEffectiveSpellRange(
+                  spellHighlightRangeBase(spell),
+                  spell.modifiableRange ? spell.id : undefined,
+                ),
               );
-            })
+            })()
           }
           isMobile={isMobile}
           turnOrder={turnOrder.map((c) => {

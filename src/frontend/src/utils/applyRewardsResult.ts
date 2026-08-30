@@ -31,6 +31,9 @@ export function readApplyRewardsOk(result: unknown): ApplyRewardsOk {
   };
 }
 
+/** Portal step XP. Must not land in the HUD until applyRewards commits. */
+export const PORTAL_TRANSITION_XP = 10;
+
 /** Persist a non-battle XP/Doka delta through the single applyRewards funnel. */
 export async function persistIncrementalRewards(
   // Same loose actor type as resolveBattleRewards — Caffeine bindings vary.

@@ -1,3 +1,5 @@
+import { readApplyRewardsOk } from "./applyRewardsResult.ts";
+
 /**
  * Minimal actor surface used by persistDokaCredit. Matches the backend
  * applyRewards(slot : Nat, dokaDelta : Nat, xpDelta : Nat) signature.
@@ -18,6 +20,10 @@ export interface DokaCreditActor {
  * applyRewards(slot, doka, 0) and returns the new absolute Doka balance.
  * On backend error the failure is logged and 0 is returned so the caller can
  * fall back gracefully instead of crashing the reward flow.
+ *
+ * Parse through readApplyRewardsOk. A `{ _ok }` / `{ __kind__: "ok" }`
+ * success that used to yield NaN left the canister credited and the persist
+ * lock unchanged, so the next saveBattleStats wiped the pickup.
  */
 export async function persistDokaCredit(
   actor: DokaCreditActor,
@@ -30,10 +36,7 @@ export async function persistDokaCredit(
       BigInt(doka),
       BigInt(0),
     );
-    if ("err" in result) {
-      throw new Error(`applyRewards failed: ${result.err}`);
-    }
-    return Number(result.ok.newDoka);
+    return readApplyRewardsOk(result).newDoka;
   } catch (error) {
     console.error("persistDokaCredit failed", error);
     return 0;

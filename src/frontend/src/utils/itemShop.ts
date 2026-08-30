@@ -18,3 +18,10 @@ export function nextDokaAfterShopSpend(
 ): number {
   return Math.max(0, currentDoka - amount);
 }
+
+/** Jackpot heal spends 1 Doka from the live wallet, not the render snapshot. */
+export const JACKPOT_HEAL_DOKA_COST = 1;
+
+export function nextDokaAfterJackpotHeal(liveDoka: number): number {
+  return nextDokaAfterShopSpend(liveDoka, JACKPOT_HEAL_DOKA_COST);
+}

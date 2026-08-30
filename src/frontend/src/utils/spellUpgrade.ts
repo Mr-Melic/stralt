@@ -102,10 +102,63 @@ export function spellUpgradeUiSpend(
   committedDokaBefore: number,
   backendDokaAfter: number | undefined,
 ): number {
-  if (backendDokaAfter == null) {
-    return Math.max(0, Math.floor(Number(advertisedCost) || 0));
-  }
   const before = Math.max(0, Math.floor(Number(committedDokaBefore) || 0));
-  const after = Math.max(0, Math.floor(Number(backendDokaAfter) || 0));
-  return Math.max(0, before - after);
+  const next = committedDokaAfterSpellUpgrade(
+    committedDokaBefore,
+    backendDokaAfter,
+    advertisedCost,
+  );
+  if (before > 0) return Math.max(0, before - next);
+  return spellUpgradeCanisterSpend(advertisedCost);
+}
+
+/**
+ * Canister debit when getCallerDokaBalance is missing or stale-high.
+ * Summon UI advertises 10× (`100 * 2^level`); normal spells advertise
+ * `10 * 2^level`, which is never a multiple of the summon UI base (100).
+ */
+const SPELL_LEVELING_BASE_COST = 10;
+const SUMMON_UI_COST_MULTIPLIER = 10;
+
+export function spellUpgradeCanisterSpend(advertisedCost: number): number {
+  const advertised = Math.max(0, Math.floor(Number(advertisedCost) || 0));
+  const summonUiBase = SPELL_LEVELING_BASE_COST * SUMMON_UI_COST_MULTIPLIER;
+  if (advertised > 0 && advertised % summonUiBase === 0) {
+    return Math.floor(advertised / SUMMON_UI_COST_MULTIPLIER);
+  }
+  return advertised;
+}
+
+/**
+ * upgradeSpell then getCallerDokaBalance is a query. A stale pre-upgrade
+ * read is >= committedBefore. Committing that snapshot refunds the spend
+ * on the lock; the next saveBattleStats writes it back to the canister.
+ * Use the observed post-upgrade wallet only when it actually decreased.
+ */
+export function committedDokaAfterSpellUpgrade(
+  committedDokaBefore: number,
+  backendDokaAfter: number | undefined,
+  advertisedCost: number,
+): number {
+  const before = Math.max(0, Math.floor(Number(committedDokaBefore) || 0));
+  if (backendDokaAfter != null) {
+    const after = Math.max(0, Math.floor(Number(backendDokaAfter) || 0));
+    if (after < before) return after;
+    // Placeholder 0 is not a live wallet. Keep the query so we do not
+    // seed the lock at 0 and let the next saveBattleStats wipe Doka.
+    if (before === 0) return after;
+  }
+  if (before === 0) return 0;
+  return Math.max(0, before - spellUpgradeCanisterSpend(advertisedCost));
+}
+
+export function shouldCommitSpellUpgradeDoka(
+  committedBefore: number,
+  nextDoka: number,
+  walletSeeded: boolean,
+): boolean {
+  if (nextDoka === 0 && committedBefore === 0 && !walletSeeded) {
+    return false;
+  }
+  return true;
 }

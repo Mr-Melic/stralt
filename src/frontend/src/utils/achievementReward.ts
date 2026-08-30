@@ -69,6 +69,32 @@ export function shouldInvalidateCallerDokaAfterClaim(
   return !claimedThroughPersistLock;
 }
 
+/** Double-click must not enqueue a second claim of the same feat. */
+export function shouldBeginAchievementClaim(
+  inFlightIds: ReadonlySet<string>,
+  achievementId: string,
+): boolean {
+  return Boolean(achievementId) && !inFlightIds.has(achievementId);
+}
+
+/**
+ * The second click of a double-claim hits "Reward already claimed" after
+ * the first write succeeded. Rolling that back flips claimed=false and
+ * hides the grant the canister already paid.
+ */
+export function isAlreadyClaimedRewardError(err: string): boolean {
+  return String(err).toLowerCase().includes("already claimed");
+}
+
+export function shouldRollbackClaimFailure(
+  err: string,
+  alreadyAppliedOk: boolean,
+): boolean {
+  if (alreadyAppliedOk) return false;
+  if (isAlreadyClaimedRewardError(err)) return false;
+  return true;
+}
+
 /** Claim on the same persist lock as applyRewards / saveBattleStats. */
 export async function creditAchievementRewardThroughPersist(
   actor: AchievementCreditActor,
