@@ -212,7 +212,10 @@ import {
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
   castFollowUpShouldDebitAp,
+  castResultAppliesCooldown,
   castResultSpendsAp,
+  isSpellOnCooldown,
+  nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
@@ -10148,7 +10151,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       _screen.y,
                       _castResult === "no_ap"
                         ? "Not enough AP"
-                        : `Cast ${_castResult}!`,
+                        : _castResult === "on_cooldown"
+                          ? "On cooldown"
+                          : `Cast ${_castResult}!`,
                     );
                   }
                   try {
@@ -10205,7 +10210,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     _screen.y,
                     _castResult === "no_ap"
                       ? "Not enough AP"
-                      : `Cast ${_castResult}!`,
+                      : _castResult === "on_cooldown"
+                        ? "On cooldown"
+                        : `Cast ${_castResult}!`,
                   );
                   setInspectCombatantId(_hit.id);
                 }
@@ -10530,7 +10537,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screen.x,
               _screen.y,
-              castResult === "no_ap" ? "No AP!" : "Aborted",
+              castResult === "no_ap"
+                ? "No AP!"
+                : castResult === "on_cooldown"
+                  ? "On cooldown"
+                  : "Aborted",
             );
           }
         }
@@ -10807,7 +10818,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     effectsManagerRef.current?.spawnFloatText(
                       _screen.x,
                       _screen.y,
-                      `Cast ${_castResult}!`,
+                      _castResult === "no_ap"
+                        ? "Not enough AP"
+                        : _castResult === "on_cooldown"
+                          ? "On cooldown"
+                          : `Cast ${_castResult}!`,
                     );
                   }
                   return;
@@ -11090,7 +11105,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screen.x,
               _screen.y,
-              castResult === "no_ap" ? "No AP!" : "Aborted",
+              castResult === "no_ap"
+                ? "No AP!"
+                : castResult === "on_cooldown"
+                  ? "On cooldown"
+                  : "Aborted",
             );
           }
         }
@@ -16556,6 +16575,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           rng: Math.random,
         },
       );
+      if (isSpellOnCooldown(spellCooldownsRef.current.get(spell.id))) {
+        return { castResult: "on_cooldown", apCost: _apCost };
+      }
       if (currentBattleApRef.current >= _apCost) {
         castRuntimeRef.current.apCost = _apCost;
         castRuntimeRef.current.spell = spell;
@@ -16600,6 +16622,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ) {
           challengeHealUsedRef.current = true;
         }
+        // Sprite-click returns without the tile-click follow-up that
+        // wrote cooldown. Attack Nearest sets its own. Putting the lock
+        // here means every executeCastAttempt caller shares the gate.
+        const cooldownTurns = nextSpellCooldownTurns(spell.cooldown);
+        if (castResultAppliesCooldown(_castResult) && cooldownTurns > 0) {
+          spellCooldownsRef.current.set(spell.id, cooldownTurns);
+          setSpellCooldownVersion((v) => v + 1);
+        }
         return { castResult: _castResult, apCost: _apCost };
       }
       return { castResult: "no_ap", apCost: _apCost };
@@ -16621,6 +16651,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     markFirstAction();
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
+    // This path never goes through executeCastAttempt. The spell bar only
+    // disables re-selection, so a still-selected Inferno used to recast
+    // via Attack Nearest on every click while leftover AP remained.
+    if (isSpellOnCooldown(spellCooldownsRef.current.get(spell.id))) {
+      const _screen = tileCenter(
+        playerPositionRef.current.x,
+        playerPositionRef.current.y,
+      );
+      effectsManagerRef.current?.spawnFloatText(
+        _screen.x,
+        _screen.y,
+        "On cooldown",
+      );
+      return;
+    }
     // Arcane Surge: spells cost 1 less AP (minimum 1) — matches handleCanvasClick
     const apCost = mapModifierRegistry.applyApCost(
       Number(spell.apCost),

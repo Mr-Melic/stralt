@@ -248,6 +248,31 @@ export function castFollowUpShouldDebitAp(result: string): boolean {
 }
 
 /**
+ * Cooldown starts after a completed cast / summon. Fizzle spends AP
+ * but does not lock the spell (matches the tile-click follow-up).
+ */
+export function castResultAppliesCooldown(result: string): boolean {
+  return result === "cast" || result === "summon";
+}
+
+/**
+ * BattleUIPanel / SpellFooter only disable re-selection. Sprite-click,
+ * tile-click, and Attack Nearest keep the spell selected when leftover
+ * AP remains, so Inferno (5 AP / 3-turn CD) could be recast every click
+ * until AP ran out, then every later turn, without ever consulting the
+ * cooldown map.
+ */
+export function isSpellOnCooldown(turnsRemaining: unknown): boolean {
+  return Math.max(0, Math.floor(Number(turnsRemaining) || 0)) > 0;
+}
+
+/** Configured lock length. 0 / invalid → no cooldown. */
+export function nextSpellCooldownTurns(cooldown: unknown): number {
+  const n = Math.floor(Number(cooldown) || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/**
  * After AP has already been deducted, leftover is in the live ref.
  * Subtracting the cost again kicks the player to walk whenever remaining
  * AP is less than the spell cost (8 AP, 4-cost cast → 4 left, still cleared).
