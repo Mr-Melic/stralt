@@ -288,3 +288,41 @@ export function shouldArmDungeonChainOnRestExit(
 export function restExitSpawnDepth(restExitType: string | undefined): number {
   return restExitType === "dungeon" ? 1 : 0;
 }
+
+/**
+ * During a run, any non-special portal is the way forward — including the
+ * unmarked fallback cell when generateRandomMap exhausts attempts.
+ * White / rest / entry portals must not steal room-advance.
+ */
+export function isRunProgressionPortal(
+  portal: {
+    isProgressionPortal?: boolean;
+    kind?: string;
+    isBossRushPortal?: boolean;
+    isRestPortal?: boolean;
+    isRestExit?: boolean;
+    isBossPortal?: boolean;
+    isDungeonEntry?: boolean;
+    isWhitePortal?: boolean;
+    color?: string;
+  },
+  runMode: RunMode,
+): boolean {
+  if (runMode === "none") return false;
+  if (portal.isProgressionPortal || portal.kind === PROGRESSION_PORTAL_KIND) {
+    return true;
+  }
+  if (
+    portal.isBossRushPortal ||
+    portal.color === "bossRush" ||
+    portal.isRestPortal ||
+    portal.isRestExit ||
+    portal.isBossPortal ||
+    portal.isDungeonEntry ||
+    portal.isWhitePortal ||
+    portal.color === "white"
+  ) {
+    return false;
+  }
+  return true;
+}

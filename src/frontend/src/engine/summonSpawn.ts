@@ -109,9 +109,13 @@ export function spawnSummonUnit(
   // cell is not free (occupied / impassable / barrier / void / portal), fall
   // back to the nearest free cell within a 3-tile radius. Backward-compatible —
   // callers that omit occupancyCtx keep the original behavior.
+  // Reserved cells are unique progression bridges — prefer any other free
+  // tile so a summon cannot permanently seal the exit.
   let spawnCell = cell;
-  if (occupancyCtx && !sharedIsCellFree(cell, occupancyCtx)) {
-    const fallback = findNearestFreeCell(cell, occupancyCtx, 3);
+  const reserved = occupancyCtx?.reserved;
+  const reservedHit = reserved?.has(`${cell.x},${cell.y}`) === true;
+  if (occupancyCtx && (!sharedIsCellFree(cell, occupancyCtx) || reservedHit)) {
+    const fallback = findNearestFreeCell(cell, occupancyCtx, 6, reserved);
     if (fallback) spawnCell = fallback;
   }
 
