@@ -640,3 +640,13 @@ export function isTileCastableLive(
 
   return { ok: false, reason: "no_matching_branch" };
 }
+
+/**
+ * Sprite-click Strike (no spell selected) must honor the live gate.
+ * `executeCastAttempt` / `resolvePlayerCast` do not re-check caster range —
+ * `getAoETargets` includes the occupant of the clicked tile unconditionally.
+ * Calling the cast when the gate fails lets melee Strike hit from anywhere.
+ */
+export function shouldExecuteLiveCast(live: TileCastableResult): boolean {
+  return live.ok;
+}
