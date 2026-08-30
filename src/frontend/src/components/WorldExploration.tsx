@@ -139,6 +139,7 @@ import {
   countWalkableVoid,
   ensureReachability,
   pickMapArchetype,
+  placeBossRushSpawns,
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
@@ -5582,18 +5583,36 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (!roomDef) return;
       const { map: nextMap, spawnPosition } = generateRandomMap();
       if (!nextMap) return;
+      // Hardcoded (4,5)/(6,5) sit outside the center 7×7 floor clear. A wall
+      // or void there is unwalkable, so checkBattleTrigger never fires and
+      // the locked progression portal is the only exit (flee = death penalty).
+      const preferred: { x: number; y: number }[] = [];
+      if (roomDef.boss1Id) preferred.push({ x: 4, y: 5 });
+      if (roomDef.boss2Id) preferred.push({ x: 6, y: 5 });
+      const punched = placeBossRushSpawns(
+        nextMap.tiles as string[][],
+        nextMap.voidTiles,
+        preferred,
+        spawnPosition,
+        nextMap.portals?.[0],
+        WORLD_GRID_SIZE,
+        WORLD_GRID_SIZE,
+      );
+      nextMap.tiles = punched.tiles as typeof nextMap.tiles;
       currentMapRef.current = nextMap;
       setCurrentMap(nextMap);
       if (spawnPosition) {
         setPlayerPositionSynced({ ...spawnPosition });
       }
       const newEnemies: any[] = [];
+      let spawnIdx = 0;
       if (roomDef.boss1Id) {
+        const cell = punched.spawns[spawnIdx++] ?? { x: 4, y: 5 };
         newEnemies.push({
           id: `boss-rush-${roomIndex}-0`,
           pieceType: roomDef.boss1Name || "Boss 1",
-          x: 4,
-          y: 5,
+          x: cell.x,
+          y: cell.y,
           level: characterStats.level + 2,
           hp: 100,
           maxHp: 100,
@@ -5613,11 +5632,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         });
       }
       if (roomDef.boss2Id) {
+        const cell = punched.spawns[spawnIdx++] ?? { x: 6, y: 5 };
         newEnemies.push({
           id: `boss-rush-${roomIndex}-1`,
           pieceType: roomDef.boss2Name || "Boss 2",
-          x: 6,
-          y: 5,
+          x: cell.x,
+          y: cell.y,
           level: characterStats.level + 2,
           hp: 100,
           maxHp: 100,

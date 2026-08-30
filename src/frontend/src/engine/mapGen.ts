@@ -490,3 +490,45 @@ export function ensureReachability(
 
   return { tiles: out, spawns: outSpawns };
 }
+
+/**
+ * Preferred Boss Rush overworld cells. `spawnBossRushRoom` used to drop
+ * bosses here with no walkability check. WORLD_GRID_SIZE is 16 (center 8);
+ * the generator only floors the center 7×7 (x/y 5–11), so (4,5) stays a
+ * CA/void cell. Battle starts only when the player steps onto the enemy,
+ * and walls/void are unwalkable — an isolated boss seals the progression
+ * portal. Flee is the death penalty (20% XP / 40% Doka).
+ */
+export const BOSS_RUSH_PREFERRED_CELLS = [
+  { x: 4, y: 5 },
+  { x: 6, y: 5 },
+] as const;
+
+/**
+ * Relocate or carve so hardcoded Boss Rush spawns are walk-reachable from
+ * the player. Same contract as the main portal `ensureReachability` pass.
+ * When no progression portal exists, the player spawn is used as the gate
+ * so wall/void bosses still move onto the walkable graph.
+ */
+export function placeBossRushSpawns(
+  tiles: string[][],
+  voidTiles: Set<string> | undefined,
+  preferred: { x: number; y: number }[],
+  playerSpawn: { x: number; y: number },
+  portal: { x: number; y: number } | undefined,
+  w: number,
+  h: number,
+): { tiles: string[][]; spawns: { x: number; y: number }[] } {
+  if (preferred.length === 0) {
+    return { tiles, spawns: [] };
+  }
+  return ensureReachability(
+    tiles,
+    voidTiles ?? new Set(),
+    preferred,
+    playerSpawn,
+    portal ?? playerSpawn,
+    w,
+    h,
+  );
+}
