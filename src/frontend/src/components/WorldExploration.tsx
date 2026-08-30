@@ -140,6 +140,7 @@ import {
   ensureReachability,
   pickMapArchetype,
   placeBossRushSpawns,
+  punchRosterReachability,
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
@@ -194,6 +195,7 @@ import {
   applyHealBuffSideEffect,
   computeTargetableTiles,
   isTileCastableLive,
+  shouldExecuteLiveCast,
 } from "../engine/targeting";
 import {
   liveTurnOrder,
@@ -6614,7 +6616,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // cleanupMap + generateRandomMap leave an empty roster. Rest-exit
           // used to skip generateEnemies, so a dungeon floor spawned an
           // unlocked progression portal with no hostiles (skip the run).
-          const roster = newMap.isDeathRealm
+          const rawRoster = newMap.isDeathRealm
             ? []
             : generateEnemies(
                 newMap.tiles,
@@ -6622,7 +6624,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 restExitSpawnDepth(restExitType),
                 newMap.voidTiles,
               );
-          syncCombatants(combatantStoreCtx, roster, { resetBattle: true });
+          // Main portal path punches CA pockets so a walled-off rat cannot
+          // seal the progression portal. Rest-exit used to skip that and
+          // leave the player with flee = death penalty.
+          const punched = punchRosterReachability(
+            newMap.tiles as string[][],
+            newMap.voidTiles,
+            rawRoster,
+            spawnPosition,
+            newMap.portals?.[0],
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          );
+          newMap.tiles = punched.tiles as typeof newMap.tiles;
+          syncCombatants(combatantStoreCtx, punched.roster, {
+            resetBattle: true,
+          });
           setTransitionInProgress(false);
           transitionInProgressRef.current = false;
         }, 400);
@@ -10295,25 +10312,52 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
+              // executeCastAttempt has no range check; skip it when the
+              // live gate fails or Strike hits from anywhere on the map.
               const _basicAttack = activeSpells.find(
                 (s) => s.id === "physical_attack",
               );
               let _spriteBasicCastResult: string | null = null;
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                const { castResult: _castResult, apCost: _apCostBasic } =
-                  executeCastAttempt(_basicAttack, _tile, "sprite-basic");
-                _spriteBasicCastResult = _castResult;
-                if (_castResult !== "cast") {
+                const _liveCombatantsBasic =
+                  getLiveCombatants(combatantStoreCtx);
+                const _live = isTileCastableLive(
+                  _basicAttack,
+                  getActiveCasterPos(),
+                  _tile,
+                  _liveCombatantsBasic,
+                  currentMap.tiles,
+                  getEffectiveSpellRange(
+                    _basicAttack.maxRange ??
+                      Math.max(1, Number(_basicAttack.range)),
+                    _basicAttack.modifiableRange ? _basicAttack.id : undefined,
+                  ),
+                );
+                if (shouldExecuteLiveCast(_live)) {
+                  const { castResult: _castResult, apCost: _apCostBasic } =
+                    executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                  void _apCostBasic;
+                  _spriteBasicCastResult = _castResult;
+                  if (_castResult !== "cast") {
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _castResult === "no_ap"
+                        ? "Not enough AP"
+                        : _castResult === "on_cooldown"
+                          ? "On cooldown"
+                          : `Cast ${_castResult}!`,
+                    );
+                    setInspectCombatantId(_hit.id);
+                  }
+                } else {
                   const _screen = tileCenter(_tile.x, _tile.y);
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _castResult === "no_ap"
-                      ? "Not enough AP"
-                      : _castResult === "on_cooldown"
-                        ? "On cooldown"
-                        : `Cast ${_castResult}!`,
+                    _live.reason,
                   );
                   setInspectCombatantId(_hit.id);
                 }
@@ -10954,6 +10998,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
               // If not legal, show floating reason AND open inspect fallback.
+              // executeCastAttempt has no range check; skip it when the
+              // live gate fails or Strike hits from anywhere on the map.
               const _basicAttack = activeSpells.find(
                 (s) => s.id === "physical_attack",
               );
@@ -10973,15 +11019,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     _basicAttack.modifiableRange ? _basicAttack.id : undefined,
                   ),
                 );
-                const { castResult: _castResult, apCost: _apCostBasic } =
-                  executeCastAttempt(_basicAttack, _tile, "sprite-basic");
-                if (_castResult !== "cast") {
+                if (shouldExecuteLiveCast(_live)) {
+                  const { castResult: _castResult, apCost: _apCostBasic } =
+                    executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                  void _apCostBasic;
+                  if (_castResult !== "cast") {
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _castResult === "no_ap"
+                        ? "Not enough AP"
+                        : _castResult === "on_cooldown"
+                          ? "On cooldown"
+                          : `Cast ${_castResult}!`,
+                    );
+                    setInspectCombatantId(_hit.id);
+                  }
+                } else {
                   const _screen = tileCenter(_tile.x, _tile.y);
-                  const _reason = !_live.ok ? _live.reason : "Not enough AP";
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _reason,
+                    _live.reason,
                   );
                   setInspectCombatantId(_hit.id);
                 }
@@ -12889,10 +12949,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const challengeXpReward = challengeReward.xpDelta;
       const completedChallenges = challengePersistEntries.map((c) => c.name);
 
-      const newDokaBalance = applyShopCreditDeltaToUi(
-        dokaBalanceRef.current,
-        totalDoka + challengeDokaReward,
-      );
+      const roomClearDoka = totalDoka + challengeDokaReward;
       const leveled = applyXpDelta(
         characterStats.exp || 0,
         characterStats.level,
@@ -12900,25 +12957,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       );
       const newXp = leveled.newXp;
 
-      onDokaBalanceChange(newDokaBalance);
-      setCharacterStats((prev) => {
-        const next = applyXpDelta(
-          prev.exp || 0,
-          prev.level,
-          expGained + challengeXpReward,
-        );
-        return {
-          ...prev,
-          exp: next.newXp,
-          level: next.newLevel,
-        };
-      });
-
       // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
       // the room that just paid out. Both writes stay on the persist lock so
       // a lava death during persistRoomClear cannot jump the queue and let
       // applyRewards credit after the penalty. completeBossRushRoom stays
       // progress-only (0, 0); wallet/XP still go through the single funnel.
+      //
+      // Do not credit the HUD before that write. handleBattleEnd waits;
+      // crediting first left ghost Doka/XP when applyRewards rejected.
+      // hydrateWhenIdle then copies incoming >= committed and the next
+      // saveBattleStats mints the unpaid wallet — or a recap shop spend
+      // drains the real pre-reward balance.
       const deathEpochAtPersistStart = deathEpochRef.current;
       if (actor) {
         void persistBossRushRewardsThroughLock(
@@ -12947,9 +12996,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           },
         )
           .then((persisted) => {
-            // Wallet was already credited locally above. Do not replace it
-            // with the absolute applyRewards read — that refunds a recap
-            // heal that deducted while this persist was in flight.
             if (
               !shouldApplyVictoryLiveHydrate(
                 deathTriggeredRef.current,
@@ -12964,6 +13010,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               exp: persisted.newXp ?? newXp,
               level: persisted.currentLevel || prev.level,
             }));
+            // Add the credited delta onto the live wallet. Replacing with
+            // applyRewards' absolute newDoka refunds a recap heal/shop spend
+            // the player already applied locally while this persist ran.
+            onDokaBalanceChange(
+              applyShopCreditDeltaToUi(
+                dokaBalanceRef.current,
+                persisted.dokaEarned ?? roomClearDoka,
+              ),
+            );
           })
           .catch((persistErr: unknown) => {
             logDebugError(
