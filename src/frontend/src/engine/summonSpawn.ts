@@ -207,6 +207,64 @@ export function spawnSummonUnit(
 }
 
 /**
+ * Resolve the unit def for an enemy-side summon cast.
+ *
+ * Summoner AI / boss kit spells often carry `summonUnitDef` on the spell
+ * object. When they only pass an id (starter-kit lookup), fall back to
+ * the catalog. Returns undefined so the caller can no-op without throwing.
+ */
+export function resolveEnemySummonUnitDef(
+  spell: { id?: string; summonUnitDef?: SummonUnitDef } | null | undefined,
+  catalog: ReadonlyArray<{ id: string; summonUnitDef?: SummonUnitDef }>,
+): SummonUnitDef | undefined {
+  if (spell?.summonUnitDef) return spell.summonUnitDef;
+  if (!spell?.id) return undefined;
+  return catalog.find((s) => s.id === spell.id)?.summonUnitDef;
+}
+
+/**
+ * Spawn a hostile minion. Always passes `side: "enemy"` so the unit is
+ * AI-routed and not handed to SummonControlPanel.
+ *
+ * WorldExploration used to bind this only as a side-effect of the
+ * player-summon SpellContext callback. That callback never runs
+ * (`type === "summon"` fails the enemy-AI gate), so summoner / boss
+ * short-circuits called a null ref and the minion never appeared.
+ */
+export function spawnEnemySummonUnit(
+  cell: { x: number; y: number },
+  spell: {
+    id?: string;
+    summonUnitDef?: SummonUnitDef;
+  } | null,
+  catalog: ReadonlyArray<{ id: string; summonUnitDef?: SummonUnitDef }>,
+  level: number,
+  log: (msg: string, color?: string, isSummon?: boolean) => void,
+  computeEnemyStats: (level: number, pieceType: string, seedKey: string) => any,
+  occupancyCtx?: OccupancyContext,
+): SpawnSummonResult | null {
+  const unitDef = resolveEnemySummonUnitDef(spell, catalog);
+  if (!unitDef) return null;
+  return spawnSummonUnit(
+    cell,
+    {
+      id: `enemy-summon-${unitDef.pieceType}`,
+      name: `Enemy Summon ${unitDef.pieceType}`,
+      summonUnitDef: unitDef,
+      summonLifespan: 0,
+      summonAI: unitDef.pieceType,
+    },
+    "enemy",
+    level,
+    log,
+    computeEnemyStats,
+    0,
+    occupancyCtx,
+    "enemy",
+  );
+}
+
+/**
  * Pure helper that computes the new `enemies` and `turnOrder` arrays after a
  * summon has been spawned. Centralizes the `SpawnedSummon -> Enemy` cast (the
  * summon carries the runtime fields the renderer/AI need; the Enemy interface
