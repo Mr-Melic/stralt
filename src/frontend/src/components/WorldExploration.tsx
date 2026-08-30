@@ -10204,19 +10204,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               let _spriteBasicCastResult: string | null = null;
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                const { castResult: _castResult, apCost: _apCostBasic } =
-                  executeCastAttempt(_basicAttack, _tile, "sprite-basic");
-                _spriteBasicCastResult = _castResult;
-                if (_castResult !== "cast") {
+                const _liveCombatantsBasic =
+                  getLiveCombatants(combatantStoreCtx);
+                const _live = isTileCastableLive(
+                  _basicAttack,
+                  playerPositionRef.current,
+                  _tile,
+                  _liveCombatantsBasic,
+                  currentMap.tiles,
+                );
+                if (_live.ok) {
+                  const { castResult: _castResult, apCost: _apCostBasic } =
+                    executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                  _spriteBasicCastResult = _castResult;
+                  if (_castResult !== "cast") {
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _castResult === "no_ap"
+                        ? "Not enough AP"
+                        : _castResult === "on_cooldown"
+                          ? "On cooldown"
+                          : `Cast ${_castResult}!`,
+                    );
+                    setInspectCombatantId(_hit.id);
+                  }
+                } else {
                   const _screen = tileCenter(_tile.x, _tile.y);
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _castResult === "no_ap"
-                      ? "Not enough AP"
-                      : _castResult === "on_cooldown"
-                        ? "On cooldown"
-                        : `Cast ${_castResult}!`,
+                    _live.reason,
                   );
                   setInspectCombatantId(_hit.id);
                 }
@@ -10859,15 +10878,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatantsBasic,
                   currentMap.tiles,
                 );
-                const { castResult: _castResult, apCost: _apCostBasic } =
-                  executeCastAttempt(_basicAttack, _tile, "sprite-basic");
-                if (_castResult !== "cast") {
+                if (_live.ok) {
+                  const { castResult: _castResult, apCost: _apCostBasic } =
+                    executeCastAttempt(_basicAttack, _tile, "sprite-basic");
+                  if (_castResult !== "cast") {
+                    const _screen = tileCenter(_tile.x, _tile.y);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      _castResult === "no_ap"
+                        ? "Not enough AP"
+                        : _castResult === "on_cooldown"
+                          ? "On cooldown"
+                          : `Cast ${_castResult}!`,
+                    );
+                    setInspectCombatantId(_hit.id);
+                  }
+                } else {
                   const _screen = tileCenter(_tile.x, _tile.y);
-                  const _reason = !_live.ok ? _live.reason : "Not enough AP";
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _reason,
+                    _live.reason,
                   );
                   setInspectCombatantId(_hit.id);
                 }
@@ -16632,10 +16664,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const effectiveRange = getEffectiveSpellRange(
         Math.max(1, Number(spell.range)),
       );
-      // Find closest enemy within Chebyshev range
-      let nearest: (typeof enemies)[0] | null = null;
+      // Find closest living enemy/hostile within Chebyshev range from combatantStoreCtx
+      const liveHostiles = getLiveCombatants(combatantStoreCtx).filter(
+        (e: any) => e.side !== "player" && (e.hp ?? 0) > 0,
+      );
+      let nearest: (typeof liveHostiles)[0] | null = null;
       let nearestDist = Number.POSITIVE_INFINITY;
-      for (const e of enemies) {
+      for (const e of liveHostiles) {
         const dx = Math.abs(e.x - playerPositionRef.current.x);
         const dy = Math.abs(e.y - playerPositionRef.current.y);
         const dist = Math.max(dx, dy);
@@ -16766,7 +16801,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     battleActionMode,
     activeSpells,
     activeMapModifierTypes,
-    enemies,
+    combatantStoreCtx,
     getEffectiveSpellRange,
     playerSpellContext,
     markFirstAction,

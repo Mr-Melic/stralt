@@ -31,13 +31,13 @@
 import type { MutableRefObject } from "react";
 import type { CombatantEntry } from "../components/InitiativeStrip";
 import type { Enemy } from "../types/gameTypes";
-import { activeHostilesRemaining } from "./battleSetup";
-import { removeCombatantFromTurnQueue } from "./turnQueue";
+import { activeHostilesRemaining } from "./battleSetup.ts";
 import type {
   CurrentTurnIndexRef,
   SetTurnOrder,
   TurnOrderRef,
 } from "./turnQueue";
+import { removeCombatantFromTurnQueue } from "./turnQueue.ts";
 
 /** React state setter for an array of combatants. */
 type SetCombatants = (updater: (prev: Enemy[]) => Enemy[]) => void;

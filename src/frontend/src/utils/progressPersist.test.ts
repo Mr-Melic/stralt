@@ -259,7 +259,7 @@ describe("progress persist lock", () => {
   });
 
   it("releases the lock when a queued write rejects so hydrate is not stuck", async () => {
-    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const lock = createProgressPersist({ doka: 0, xp: 50, level: 1 });
     await assert.rejects(
       lock.enqueue(async () => {
         throw new Error("applyRewards failed");
@@ -267,7 +267,10 @@ describe("progress persist lock", () => {
       /applyRewards failed/,
     );
     assert.equal(lock.pendingCount(), 0);
-    assert.equal(lock.hydrateWhenIdle({ doka: 1, xp: 1, level: 1 }), true);
+    assert.equal(
+      lock.hydrateWhenIdle({ doka: 1, xp: 1, level: 1 }, { walletReady: true }),
+      true,
+    );
     assert.deepEqual(lock.snapshot(), { doka: 1, xp: 1, level: 1 });
 
     lock.commit({ doka: Number.NaN });

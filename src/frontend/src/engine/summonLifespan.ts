@@ -1,4 +1,4 @@
-import { SUMMON_BASE_LIFESPAN } from "../data/gameConstants";
+import { SUMMON_BASE_LIFESPAN } from "../data/gameConstants.ts";
 
 /**
  * Lifespan tick for the summon whose turn is about to start.

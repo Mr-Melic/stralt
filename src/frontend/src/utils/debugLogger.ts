@@ -15,7 +15,7 @@ export type {
   LogLevel,
   LogCategory,
   DebugLogEntry,
-} from "@/debug/debugLogger";
+} from "../debug/debugLogger.ts";
 export {
   setDebugPaused,
   isDebugPaused,
@@ -28,4 +28,4 @@ export {
   subscribeDebugLogs,
   getDebugLogBuffer,
   clearDebugLogBuffer,
-} from "@/debug/debugLogger";
+} from "../debug/debugLogger.ts";
