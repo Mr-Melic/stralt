@@ -231,4 +231,15 @@ describe("shouldAdvanceAfterEnemyTurn", () => {
       true,
     );
   });
+
+  it("skips leftover End Turn / timer dispatch after a last-hostile kill with no fade", () => {
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "advanceTurn must not require an expire list — player End Turn and the 30s timer still fire after a last-hit",
+    );
+  });
 });

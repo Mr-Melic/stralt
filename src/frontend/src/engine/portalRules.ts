@@ -260,3 +260,19 @@ export function shouldSpawnWhitePortal(
 ): boolean {
   return bossRushComplete || dungeonComplete;
 }
+
+/**
+ * Rest-exit `cleanupMap` zeroes dungeon refs, then this path re-arms them.
+ * Depth must be written on the ref (not only React state) so
+ * `generateEnemies(..., depth)` and later progression snapshots see floor 1.
+ */
+export function shouldArmDungeonChainOnRestExit(
+  restExitType: string | undefined,
+): boolean {
+  return restExitType === "dungeon";
+}
+
+/** Dungeon rest-exit starts at depth 1; overworld/boss rest-exit stay 0. */
+export function restExitSpawnDepth(restExitType: string | undefined): number {
+  return restExitType === "dungeon" ? 1 : 0;
+}

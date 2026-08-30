@@ -4,6 +4,8 @@ import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
   resetRunState,
+  restExitSpawnDepth,
+  shouldArmDungeonChainOnRestExit,
   snapshotDungeonChain,
 } from "./portalRules.ts";
 
@@ -86,5 +88,15 @@ describe("decideDungeonChainPortal", () => {
       { kind: "complete", bonus: dungeonChainCompletionBonus(4) },
     );
     assert.equal(dungeonChainCompletionBonus(4), 200);
+  });
+});
+
+describe("rest-exit dungeon spawn", () => {
+  it("re-arms the chain at depth 1 so generateEnemies is not called at 0", () => {
+    assert.equal(shouldArmDungeonChainOnRestExit("dungeon"), true);
+    assert.equal(restExitSpawnDepth("dungeon"), 1);
+    assert.equal(shouldArmDungeonChainOnRestExit("normal"), false);
+    assert.equal(restExitSpawnDepth("normal"), 0);
+    assert.equal(shouldArmDungeonChainOnRestExit(undefined), false);
   });
 });

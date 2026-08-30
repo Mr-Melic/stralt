@@ -18,6 +18,19 @@ describe("spend math", () => {
     assert.equal(spendFromUiBalance(10, 50), 0);
   });
 
+  it("second click spends from the live wallet, not the render snapshot", () => {
+    const live = { current: 200 };
+    const firstNext = 150;
+    const firstSpend = spendFromUiBalance(live.current, firstNext);
+    live.current = firstNext;
+    const secondNext = 100;
+    const secondSpend = spendFromUiBalance(live.current, secondNext);
+    live.current = secondNext;
+    assert.equal(firstSpend, 50);
+    assert.equal(secondSpend, 50);
+    assert.equal(live.current, 100);
+  });
+
   it("applies the spend to the last committed wallet", () => {
     assert.equal(applySpendToCommitted(250, 30), 220);
     assert.equal(applySpendToCommitted(10, 30), 0);
@@ -267,13 +280,15 @@ describe("progress persist lock", () => {
       /applyRewards failed/,
     );
     assert.equal(lock.pendingCount(), 0);
-    assert.equal(lock.hydrateWhenIdle({ doka: 1, xp: 1, level: 1 }), true);
-    assert.deepEqual(lock.snapshot(), { doka: 1, xp: 1, level: 1 });
+    // Seeded wallets refuse a lower idle copy (#55/#56). A higher
+    // post-reject hydrate must still land so the lock is not stuck.
+    assert.equal(lock.hydrateWhenIdle({ doka: 250, xp: 80, level: 5 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 250, xp: 80, level: 5 });
 
     lock.commit({ doka: Number.NaN });
     assert.equal(
       lock.snapshot().doka,
-      1,
+      250,
       "NaN commit must keep the last wallet",
     );
   });
