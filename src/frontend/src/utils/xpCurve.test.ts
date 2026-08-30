@@ -23,4 +23,10 @@ assert.deepEqual(applyXpDelta(0, 1, 300), { newXp: 0, newLevel: 3 });
 // Level 2 leftover 150 + 60 = 210; threshold 200 → level 3 with 10 leftover.
 assert.deepEqual(applyXpDelta(150, 2, 60), { newXp: 10, newLevel: 3 });
 
+// Boss-rush room-clear used to write leftover+kill XP unwrapped (480 at
+// level 1). applyXpDelta must wrap before setCharacterStats or a lava
+// death raiseUi + idle hydrate persists the inflated leftover.
+// 80 + 400 = 480 → consume 100 then 200 → level 3 with 180 leftover.
+assert.deepEqual(applyXpDelta(80, 1, 400), { newXp: 180, newLevel: 3 });
+
 console.log("xpCurve.test: ok");
