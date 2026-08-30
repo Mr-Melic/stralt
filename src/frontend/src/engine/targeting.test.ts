@@ -4,7 +4,9 @@ import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
   computeTargetableTiles,
   isTileCastableLive,
+  pickNearestLiveHostileTile,
   shouldExecuteLiveCast,
+  spellHighlightRangeBase,
 } from "./targeting.ts";
 
 function floorGrid(size: number): Array<Array<"floor" | "wall" | "portal">> {
@@ -81,6 +83,141 @@ function strikeSpell(): SpellConfig {
     minRange: 1,
   } as SpellConfig;
 }
+
+describe("spellHighlightRangeBase", () => {
+  it("prefers maxRange so Attack Nearest matches the highlight ring", () => {
+    assert.equal(spellHighlightRangeBase(enemySpell(4)), 4);
+    assert.equal(
+      spellHighlightRangeBase({ range: 1n, maxRange: 5 } as SpellConfig),
+      5,
+    );
+    assert.equal(spellHighlightRangeBase({ range: 3n } as SpellConfig), 3);
+  });
+});
+
+describe("pickNearestLiveHostileTile", () => {
+  it("skips a closer LoS-blocked hostile so Attack Nearest matches the ring", () => {
+    const tiles = floorGrid(20);
+    tiles[10][11] = "wall";
+    const caster = { x: 10, y: 10 };
+    const blocked = {
+      id: "blocked",
+      x: 12,
+      y: 10,
+      hp: 20,
+      maxHp: 20,
+      name: "Wraith",
+      pieceType: "pawn",
+    } as Enemy;
+    const open = {
+      id: "open",
+      x: 10,
+      y: 13,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const spell = {
+      ...enemySpell(5),
+      lineOfSight: true,
+    } as SpellConfig;
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [blocked, open],
+      worldGridSize: 20,
+      effectiveRange: 5,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlighted.has("12,10"), false);
+    assert.equal(highlighted.has("10,13"), true);
+
+    const picked = pickNearestLiveHostileTile(
+      spell,
+      caster,
+      [blocked, open],
+      [blocked, open],
+      tiles,
+      5,
+    );
+    assert.deepEqual(picked, { x: 10, y: 13 });
+  });
+
+  it("skips a closer off-axis hostile for linear spells", () => {
+    const tiles = floorGrid(20);
+    const caster = { x: 10, y: 10 };
+    const diagonal = {
+      id: "diag",
+      x: 11,
+      y: 11,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const cardinal = {
+      id: "card",
+      x: 13,
+      y: 10,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const spell = { ...enemySpell(4), linear: true } as SpellConfig;
+    const picked = pickNearestLiveHostileTile(
+      spell,
+      caster,
+      [diagonal, cardinal],
+      [diagonal, cardinal],
+      tiles,
+      4,
+    );
+    assert.deepEqual(picked, { x: 13, y: 10 });
+  });
+
+  it("skips a hostile inside minRange", () => {
+    const tiles = floorGrid(20);
+    const caster = { x: 10, y: 10 };
+    const adjacent = {
+      id: "adj",
+      x: 11,
+      y: 10,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const farther = {
+      id: "far",
+      x: 13,
+      y: 10,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const spell = { ...enemySpell(4), minRange: 2 } as SpellConfig;
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [adjacent, farther],
+      worldGridSize: 20,
+      effectiveRange: 4,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlighted.has("11,10"), false);
+    assert.equal(highlighted.has("13,10"), true);
+    const picked = pickNearestLiveHostileTile(
+      spell,
+      caster,
+      [adjacent, farther],
+      [adjacent, farther],
+      tiles,
+      4,
+    );
+    assert.deepEqual(picked, { x: 13, y: 10 });
+  });
+});
 
 describe("sprite-basic live gate", () => {
   it("rejects Strike beyond Chebyshev 1 so executeCastAttempt cannot snipe", () => {

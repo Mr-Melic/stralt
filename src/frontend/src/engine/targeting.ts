@@ -650,3 +650,53 @@ export function isTileCastableLive(
 export function shouldExecuteLiveCast(live: TileCastableResult): boolean {
   return live.ok;
 }
+
+/**
+ * Range base shared by `getSpellRangeTiles` and Attack Nearest.
+ * `maxRange` overrides `range` when set — using raw `spell.range` alone
+ * lets Attack Nearest miss a tile the highlight already painted.
+ */
+export function spellHighlightRangeBase(
+  spell: Pick<SpellConfig, "maxRange" | "range">,
+): number {
+  return spell.maxRange ?? Math.max(1, Number(spell.range));
+}
+
+/**
+ * Nearest hostile tile that is legal under the same live gate as the
+ * highlight set. Chebyshev-only search (raw `spell.range`, no LoS /
+ * minRange / linear) used to pick a closer blocked tile — or miss a
+ * farther highlighted one — so Attack Nearest and the blue ring disagreed.
+ */
+export function pickNearestLiveHostileTile(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  hostiles: ReadonlyArray<{ x: number; y: number }>,
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+  effectiveRange: number,
+): { x: number; y: number } | null {
+  let nearest: { x: number; y: number } | null = null;
+  let nearestDist = Number.POSITIVE_INFINITY;
+  for (const hostile of hostiles) {
+    const tile = { x: hostile.x, y: hostile.y };
+    const live = isTileCastableLive(
+      spell,
+      caster,
+      tile,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+    );
+    if (!live.ok) continue;
+    const dist = Math.max(
+      Math.abs(tile.x - caster.x),
+      Math.abs(tile.y - caster.y),
+    );
+    if (dist < nearestDist) {
+      nearest = tile;
+      nearestDist = dist;
+    }
+  }
+  return nearest;
+}

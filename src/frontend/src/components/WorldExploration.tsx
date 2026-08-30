@@ -200,7 +200,9 @@ import {
   applyHealBuffSideEffect,
   computeTargetableTiles,
   isTileCastableLive,
+  pickNearestLiveHostileTile,
   shouldExecuteLiveCast,
+  spellHighlightRangeBase,
 } from "../engine/targeting";
 import {
   liveTurnOrder,
@@ -228,6 +230,7 @@ import {
   type AchievementCreditActor,
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
+import { persistIncrementalRewards } from "../utils/applyRewardsResult";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
   castFollowUpShouldDebitAp,
@@ -316,7 +319,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
-import { applyXpDelta } from "../utils/xpCurve";
+import { applyXpDelta, xpForNextLevel } from "../utils/xpCurve";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -7160,74 +7163,52 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       } else {
         setDokaLoot([]);
       }
-      // FIX 2: Award 10 XP for portal transition and save progress
-      setCharacterStats((prev) => {
-        const PORTAL_XP = 10;
-        let newExp = prev.exp + PORTAL_XP;
-        let newLevel = prev.level;
-        let newExpToNext = prev.expToNext;
-        while (newExp >= newExpToNext) {
-          newExp -= newExpToNext;
-          newLevel += 1;
-          newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
-        }
-        // Persist portal XP atomically through the reward funnel (applyRewards),
-        // not a partial updateCharacter (which would clobber optional loadout
-        // fields like spellBarOrder and bossRushMasterComplete).
-        if (actor) {
-          const deathEpochAtPersistStart = deathEpochRef.current;
-          (async () => {
-            try {
-              const result = await progressPersistRef.current.enqueue(
-                async () => {
-                  const persisted = await actor.applyRewards(
-                    BigInt(characterSlot),
-                    BigInt(0),
-                    BigInt(PORTAL_XP),
-                  );
-                  if ("err" in persisted) {
-                    throw new Error(String(persisted.err));
-                  }
-                  const { newXp, newLevel: newLvl } = persisted.ok;
-                  progressPersistRef.current.commit({
-                    xp: Number(newXp),
-                    level: Number(newLvl),
-                  });
-                  return persisted;
-                },
-              );
-              const { newXp, newLevel: newLvl } = result.ok;
-              // Recap is not up after a portal swap. Lava on the new map
-              // can land while this applyRewards is still in flight. The
-              // death write already penalized the post-credit snapshot;
-              // restoring absolute XP here lets raiseUiAfterDeathPersist
-              // keep the unpenalized UI and refund the penalty.
-              if (
-                shouldApplyVictoryLiveHydrate(
-                  deathTriggeredRef.current,
-                  deathEpochAtPersistStart,
-                  deathEpochRef.current,
-                )
-              ) {
-                setCharacterStats((cur) => ({
-                  ...cur,
-                  exp: Number(newXp),
-                  level: Number(newLvl),
-                  expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
-                }));
-              }
-            } catch (err) {
-              console.warn("[PBV] Portal XP save failed:", err);
+      // Portal +10 XP must not touch the HUD before applyRewards commits.
+      // Optimistic leftover + failed persist lets hydrateWhenIdle copy the
+      // unpaid XP onto committed; the next saveBattleStats writes it.
+      const PORTAL_XP = 10;
+      if (actor) {
+        const deathEpochAtPersistStart = deathEpochRef.current;
+        void progressPersistRef.current
+          .enqueue(async () => {
+            const persisted = await persistIncrementalRewards(
+              actor,
+              characterSlot,
+              0,
+              PORTAL_XP,
+            );
+            progressPersistRef.current.commit({
+              xp: persisted.newXp,
+              level: persisted.newLevel,
+            });
+            return persisted;
+          })
+          .then((persisted) => {
+            // Recap is not up after a portal swap. Lava on the new map
+            // can land while this applyRewards is still in flight. The
+            // death write already penalized the post-credit snapshot;
+            // restoring absolute XP here lets raiseUiAfterDeathPersist
+            // keep the unpenalized UI and refund the penalty.
+            if (
+              !shouldApplyVictoryLiveHydrate(
+                deathTriggeredRef.current,
+                deathEpochAtPersistStart,
+                deathEpochRef.current,
+              )
+            ) {
+              return;
             }
-          })();
-        }
-        return {
-          ...prev,
-          exp: newExp,
-          level: newLevel,
-          expToNext: newExpToNext,
-        };
-      });
+            setCharacterStats((cur) => ({
+              ...cur,
+              exp: persisted.newXp,
+              level: persisted.newLevel,
+              expToNext: xpForNextLevel(persisted.newLevel),
+            }));
+          })
+          .catch((err) => {
+            console.warn("[PBV] Portal XP save failed:", err);
+          });
+      }
     } else {
       // FIX #14: Player is not on a portal — release lock immediately
       transitionInProgressRef.current = false;
@@ -7504,7 +7485,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       enemies: liveEnemies,
       worldGridSize: WORLD_GRID_SIZE,
       effectiveRange: getEffectiveSpellRange(
-        spell.maxRange ?? Math.max(1, Number(spell.range)),
+        spellHighlightRangeBase(spell),
         spell.modifiableRange ? spell.id : undefined,
       ),
       barrierTiles: barrierTilesRef.current,
@@ -10274,7 +10255,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatants,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _spell.maxRange ?? Math.max(1, Number(_spell.range)),
+                    spellHighlightRangeBase(_spell),
                     _spell.modifiableRange ? _spell.id : undefined,
                   ),
                 );
@@ -10379,8 +10360,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatantsBasic,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _basicAttack.maxRange ??
-                      Math.max(1, Number(_basicAttack.range)),
+                    spellHighlightRangeBase(_basicAttack),
                     _basicAttack.modifiableRange ? _basicAttack.id : undefined,
                   ),
                 );
@@ -10973,7 +10953,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatants,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _spell.maxRange ?? Math.max(1, Number(_spell.range)),
+                    spellHighlightRangeBase(_spell),
                     _spell.modifiableRange ? _spell.id : undefined,
                   ),
                 );
@@ -11031,8 +11011,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   _liveCombatantsBasic,
                   currentMap.tiles,
                   getEffectiveSpellRange(
-                    _basicAttack.maxRange ??
-                      Math.max(1, Number(_basicAttack.range)),
+                    spellHighlightRangeBase(_basicAttack),
                     _basicAttack.modifiableRange ? _basicAttack.id : undefined,
                   ),
                 );
@@ -17161,24 +17140,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         y: playerPositionRef.current.y,
       };
     } else {
+      const mapTiles = currentMapRef.current?.tiles;
+      if (!mapTiles) {
+        setNoTargetFlash(true);
+        setTimeout(() => setNoTargetFlash(false), 1200);
+        return;
+      }
       const effectiveRange = getEffectiveSpellRange(
-        Math.max(1, Number(spell.range)),
+        spellHighlightRangeBase(spell),
+        spell.modifiableRange ? spell.id : undefined,
       );
       // Live store includes enemy summons that are not in React `enemies`.
       // isActiveHostile is the canonical filter (enemy-side summons after #79).
-      const liveHostiles =
-        getLiveCombatants(combatantStoreCtx).filter(isActiveHostile);
-      let nearest: (typeof liveHostiles)[0] | null = null;
-      let nearestDist = Number.POSITIVE_INFINITY;
-      for (const e of liveHostiles) {
-        const dx = Math.abs(e.x - playerPositionRef.current.x);
-        const dy = Math.abs(e.y - playerPositionRef.current.y);
-        const dist = Math.max(dx, dy);
-        if (dist <= effectiveRange && dist < nearestDist) {
-          nearest = e;
-          nearestDist = dist;
-        }
-      }
+      // isTileCastableLive is the same gate as getSpellRangeTiles / sprite-click.
+      const liveCombatants = getLiveCombatants(combatantStoreCtx);
+      const nearest = pickNearestLiveHostileTile(
+        spell,
+        playerPositionRef.current,
+        liveCombatants.filter(isActiveHostile),
+        liveCombatants,
+        mapTiles,
+        effectiveRange,
+      );
       if (!nearest) {
         setNoTargetFlash(true);
         setTimeout(() => setNoTargetFlash(false), 1200);
