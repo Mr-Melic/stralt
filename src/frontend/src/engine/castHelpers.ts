@@ -239,6 +239,12 @@ export interface ApplyDamageToEnemyDeps {
    * under-damage challenges cannot persist after a reflected hit.
    */
   onPlayerReflectedDamage: (amount: number) => void;
+  /**
+   * Victory, DoT ticks, and later enemyTakesDamage read combatantsRef.
+   * React-only enemyHpMap / turnOrder writes leave store hp unchanged, so
+   * the next store-based tick recomputes from full HP and wipes this hit.
+   */
+  commitEnemyHp?: (id: string, hp: number) => void;
 }
 
 export interface ApplyDamageToEnemyArgs {
@@ -294,6 +300,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     setCharacterStats,
     processCombatantDeath,
     onPlayerReflectedDamage,
+    commitEnemyHp,
   } = deps;
 
   const targetEnemy =
@@ -380,8 +387,14 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
   } else {
     playSound("spell_hit", hitTarget.pieceType);
   }
-  const enemyPrevHp =
-    enemyHpMap[hitTarget.id] ?? calcEnemyMaxHp(hitTarget.level);
+  // Prefer the live target snapshot (combatantsRef via getAoETargets).
+  // enemyHpMap is React state and can still hold the pre-hit value in the
+  // same turn; using it as the baseline then committing would write a
+  // stale max-HP formula over a mid-fight summon.
+  const fromTarget = Number(hitTarget.hp);
+  const enemyPrevHp = Number.isFinite(fromTarget)
+    ? fromTarget
+    : (enemyHpMap[hitTarget.id] ?? calcEnemyMaxHp(hitTarget.level));
   const enemyNewHp = Math.max(0, enemyPrevHp - finalDmg);
   logBattleEntry(
     `${hitTarget.pieceType} takes ${finalDmg} damage (${enemyNewHp} HP left)`,
@@ -399,6 +412,9 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     turnOrderRef.current = newOrder;
     return newOrder;
   });
+  if (hitTarget.id !== "__player__") {
+    commitEnemyHp?.(hitTarget.id, enemyNewHp);
+  }
 
   // Chain Lightning bounce
   if (

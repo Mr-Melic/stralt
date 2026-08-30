@@ -206,3 +206,81 @@ describe("applyDamageToEnemy reflect → challenge damage", () => {
     );
   });
 });
+
+describe("applyDamageToEnemy store HP commit", () => {
+  it("commits the reduced HP so a later store-based DoT tick cannot wipe the hit", () => {
+    let storeHp = 40;
+    applyDamageToEnemy({
+      hitTarget: enemy({ hp: 40 }),
+      isFirstTarget: true,
+      deps: stubDeps({
+        preCritDmgBM: 20,
+        calculatePlayerDamage: () => ({
+          finalDamage: 20,
+          breakdown: "",
+        }),
+        commitEnemyHp: (_id, hp) => {
+          storeHp = hp;
+        },
+      }),
+    });
+    assert.equal(
+      storeHp,
+      20,
+      "player hit must land on the store, not only hpMap",
+    );
+    // enemyTakesDamage reads combatantsRef, not enemyHpMap.
+    storeHp = Math.max(0, storeHp - 4);
+    assert.equal(
+      storeHp,
+      16,
+      "DoT tick must subtract from the post-hit store HP",
+    );
+  });
+
+  it("subtracts from live target HP when enemyHpMap is stale", () => {
+    let committed = -1;
+    applyDamageToEnemy({
+      hitTarget: enemy({ hp: 18 }),
+      isFirstTarget: true,
+      deps: stubDeps({
+        enemyHpMap: { e1: 40 },
+        preCritDmgBM: 10,
+        calculatePlayerDamage: () => ({
+          finalDamage: 10,
+          breakdown: "",
+        }),
+        commitEnemyHp: (_id, hp) => {
+          committed = hp;
+        },
+      }),
+    });
+    assert.equal(committed, 8);
+  });
+
+  it("does not commit store HP for the player sentinel", () => {
+    let committedId: string | null = null;
+    applyDamageToEnemy({
+      hitTarget: {
+        id: "__player__",
+        pieceType: "player",
+        x: 0,
+        y: 0,
+        level: 1,
+        hp: 50,
+        maxHp: 50,
+        res: 0,
+        sp: 0,
+        chc: 0,
+      },
+      isFirstTarget: true,
+      deps: stubDeps({
+        preCritDmgBM: 12,
+        commitEnemyHp: (id) => {
+          committedId = id;
+        },
+      }),
+    });
+    assert.equal(committedId, null);
+  });
+});
