@@ -250,6 +250,10 @@ import {
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
 import { nextDokaAfterShopSpend } from "../utils/itemShop";
 import {
+  activatePlayerMirror,
+  consumePlayerMirror,
+} from "../utils/playerMirror";
+import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
   createProgressPersist,
@@ -9746,9 +9750,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return false;
       },
       activateMirror: () => {
-        mirrorUnitsRef.current.add(
-          `${playerPositionRef.current.x},${playerPositionRef.current.y}`,
-        );
+        // Must match the enemy-cast consume ("player"). A tile key is
+        // never read on that path, so Mirror used to be a 4-AP no-op.
+        activatePlayerMirror(mirrorUnitsRef.current);
       },
       placeBarrierTile: (cell: { x: number; y: number }, turns: number) => {
         barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
@@ -16018,9 +16022,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               } else if (
                 !chosenSpell.hitsMultiple &&
                 !chosenSpell.aoe &&
-                mirrorUnitsRef.current.has("player")
+                consumePlayerMirror(mirrorUnitsRef.current)
               ) {
-                mirrorUnitsRef.current.delete("player");
                 const mirrorDmg = Math.max(
                   1,
                   Math.round(
@@ -16037,11 +16040,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   ...prev,
                   [enemyId]: newEnemyHpMirror,
                 }));
-                setTurnOrder((prev) =>
-                  prev.map((c) =>
-                    c.id === enemyId ? { ...c, hp: newEnemyHpMirror } : c,
-                  ),
-                );
+                // Victory reads combatantsRef via activeHostilesRemaining.
+                // React-only HP writes left a dead attacker in the store so
+                // the last-enemy reflect never awarded the fight.
+                updateCombatant(combatantStoreCtx, enemyId, {
+                  hp: newEnemyHpMirror,
+                });
+                if (newEnemyHpMirror === 0) {
+                  processCombatantDeathCb(enemyId);
+                }
                 logBattleEntry(
                   `Mirror! ${enemy.pieceType}'s ${chosenSpell.name} was reflected back for ${mirrorDmg} dmg!`,
                   "#c084fc",
