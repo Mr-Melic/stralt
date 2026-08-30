@@ -283,6 +283,58 @@ describe("progress persist lock", () => {
     assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
   });
 
+  it("does not mint ghost Boss Rush Doka when applyRewards rejects", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const gained = 500;
+    // Old room-clear path credited the HUD before the lock write.
+    const ghostUi = applyShopCreditDeltaToUi(200, gained);
+    await assert.rejects(
+      lock.enqueue(async () => {
+        throw new Error("applyRewards failed");
+      }),
+      /applyRewards failed/,
+    );
+    assert.equal(lock.pendingCount(), 0);
+    assert.equal(
+      lock.hydrateWhenIdle({ doka: ghostUi, xp: 50, level: 4 }),
+      true,
+    );
+    assert.equal(
+      lock.snapshot().doka,
+      700,
+      "ghost HUD + idle hydrate mints unpaid Doka onto committed",
+    );
+    assert.equal(
+      applySpendToCommitted(200, spendFromUiBalance(ghostUi, ghostUi - 200)),
+      0,
+      "shop spend from the ghost wallet zeros the real canister balance",
+    );
+
+    // Credit only after persist succeeds (handleBattleEnd / room-clear).
+    const safe = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    let safeUi = 200;
+    await assert.rejects(
+      safe.enqueue(async () => {
+        throw new Error("applyRewards failed");
+      }),
+      /applyRewards failed/,
+    );
+    assert.equal(
+      safe.hydrateWhenIdle({ doka: safeUi, xp: 50, level: 4 }),
+      true,
+    );
+    assert.equal(safe.snapshot().doka, 200);
+
+    safe.commit({ doka: 700 });
+    safeUi = applyShopCreditDeltaToUi(safeUi, gained);
+    assert.equal(safeUi, 700);
+    assert.equal(
+      safe.hydrateWhenIdle({ doka: safeUi, xp: 50, level: 4 }),
+      true,
+    );
+    assert.equal(safe.snapshot().doka, 700);
+  });
+
   it("releases the lock when a queued write rejects so hydrate is not stuck", async () => {
     const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
     await assert.rejects(
