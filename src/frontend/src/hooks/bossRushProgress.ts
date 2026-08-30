@@ -134,6 +134,10 @@ export interface PersistBossRushRoomClearOptions {
  *
  * Enqueue the progress write and applyRewards together so death waits and
  * penalizes the post-credit snapshot — the same order as victory persist.
+ *
+ * persistRoomClear must throw when currentRoom did not advance. A swallowed
+ * progress error still ran applyAndCommit, so a reload re-entered the same
+ * room and farmed the wallet/XP credit.
  */
 export async function persistBossRushRewardsThroughLock<T>(
   lock: {
@@ -152,6 +156,14 @@ export async function persistBossRushRewardsThroughLock<T>(
  * Writes currentRoom before the room-clear applyRewards so a reload cannot
  * re-enter the room that just paid out. Final-room clear resets currentRoom
  * so the jackpot room is not resumable.
+ *
+ * The currentRoom write is required. Optional-chaining a missing method (or
+ * swallowing a replica reject) used to return successfully and let
+ * applyRewards pay an unadvanced room.
+ *
+ * completeBossRushRoom is progress-only (0, 0). A failure there after
+ * currentRoom already advanced must not skip the wallet credit — reload
+ * cannot re-farm that room.
  */
 export async function persistBossRushRoomClear(
   actor: BossRushProgressActor,
@@ -163,17 +175,36 @@ export async function persistBossRushRoomClear(
     progressAfterRoomClear(clearedRoomIndex);
   const slotId = BigInt(slot);
   if (runComplete) {
-    await actor.resetBossRush?.(slotId);
+    if (typeof actor.resetBossRush !== "function") {
+      throw new Error(
+        "resetBossRush is required to persist a final-room clear",
+      );
+    }
+    await actor.resetBossRush(slotId);
   } else {
-    await actor.setBossRushProgress?.(slotId, BigInt(nextCurrentRoom));
+    if (typeof actor.setBossRushProgress !== "function") {
+      throw new Error(
+        "setBossRushProgress is required to persist a room clear",
+      );
+    }
+    await actor.setBossRushProgress(slotId, BigInt(nextCurrentRoom));
   }
-  await actor.completeBossRushRoom?.(
-    slotId,
-    BigInt(clearedRoomIndex),
-    BigInt(0),
-    BigInt(0),
-  );
+  try {
+    await actor.completeBossRushRoom?.(
+      slotId,
+      BigInt(clearedRoomIndex),
+      BigInt(0),
+      BigInt(0),
+    );
+  } catch {
+    // currentRoom already advanced; do not block applyRewards.
+  }
   if (options?.wasSuperseded?.()) {
-    await actor.resetBossRush?.(slotId);
+    try {
+      await actor.resetBossRush?.(slotId);
+    } catch {
+      // Death/flee already reset locally. A late reset failure must not
+      // skip the room-clear credit that already landed on the lock.
+    }
   }
 }

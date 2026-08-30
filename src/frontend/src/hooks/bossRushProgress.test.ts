@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createProgressPersist } from "../utils/progressPersist.ts";
+import {
+  applyShopCreditDeltaToUi,
+  createProgressPersist,
+} from "../utils/progressPersist.ts";
 import {
   adoptPersistedResumeRoom,
   clearBossRushForSlot,
@@ -171,6 +174,68 @@ describe("persistBossRushRoomClear", () => {
     assert.deepEqual(calls, ["progress:2:1", "complete:2:0", "reset:2"]);
   });
 
+  it("throws when setBossRushProgress is missing so applyRewards cannot pay", async () => {
+    await assert.rejects(
+      () =>
+        persistBossRushRoomClear(
+          {
+            completeBossRushRoom: async () => undefined,
+          },
+          2,
+          0,
+        ),
+      /setBossRushProgress is required/,
+    );
+  });
+
+  it("throws when the currentRoom write rejects so applyRewards cannot pay", async () => {
+    await assert.rejects(
+      () =>
+        persistBossRushRoomClear(
+          {
+            setBossRushProgress: async () => {
+              throw new Error("replica timeout");
+            },
+            completeBossRushRoom: async () => undefined,
+          },
+          2,
+          0,
+        ),
+      /replica timeout/,
+    );
+  });
+
+  it("throws when resetBossRush is missing on a final-room clear", async () => {
+    await assert.rejects(
+      () =>
+        persistBossRushRoomClear(
+          {
+            completeBossRushRoom: async () => undefined,
+          },
+          1,
+          9,
+        ),
+      /resetBossRush is required/,
+    );
+  });
+
+  it("still resolves after completeBossRushRoom rejects once currentRoom advanced", async () => {
+    const calls: string[] = [];
+    await persistBossRushRoomClear(
+      {
+        setBossRushProgress: async (slot, room) => {
+          calls.push(`progress:${slot}:${room}`);
+        },
+        completeBossRushRoom: async () => {
+          throw new Error("complete failed");
+        },
+      },
+      2,
+      0,
+    );
+    assert.deepEqual(calls, ["progress:2:1"]);
+  });
+
   it("keeps the advanced room when the run is still live", async () => {
     const calls: string[] = [];
     await persistBossRushRoomClear(
@@ -229,5 +294,54 @@ describe("persistBossRushRewardsThroughLock", () => {
     assert.deepEqual(order, ["progress", "rewards", "death"]);
     assert.equal(lock.snapshot().doka, 720);
     assert.equal(lock.snapshot().xp, 8064);
+  });
+
+  it("skips applyRewards when persistRoomClear throws so a reload cannot re-farm", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const order: string[] = [];
+    await assert.rejects(
+      persistBossRushRewardsThroughLock(
+        lock,
+        async () => {
+          order.push("progress");
+          throw new Error("replica timeout");
+        },
+        async () => {
+          lock.commit({ doka: 700, xp: 130 });
+          order.push("rewards");
+          return { doka: 700, xp: 130 };
+        },
+      ),
+      /replica timeout/,
+    );
+    assert.deepEqual(order, ["progress"]);
+    assert.equal(lock.pendingCount(), 0);
+    assert.equal(lock.snapshot().doka, 200);
+    assert.equal(lock.snapshot().xp, 50);
+  });
+
+  it("does not mint ghost HUD Doka when persistRoomClear throws", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    let uiDoka = 200;
+    await assert.rejects(
+      persistBossRushRewardsThroughLock(
+        lock,
+        async () => {
+          throw new Error("replica timeout");
+        },
+        async () => {
+          lock.commit({ doka: 700 });
+          uiDoka = applyShopCreditDeltaToUi(uiDoka, 500);
+          return { doka: 700 };
+        },
+      ),
+      /replica timeout/,
+    );
+    assert.equal(uiDoka, 200, "HUD stays unpaid until applyRewards runs");
+    assert.equal(
+      lock.hydrateWhenIdle({ doka: uiDoka, xp: 50, level: 4 }),
+      true,
+    );
+    assert.equal(lock.snapshot().doka, 200);
   });
 });

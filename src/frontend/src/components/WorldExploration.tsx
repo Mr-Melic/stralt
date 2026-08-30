@@ -12968,11 +12968,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // applyRewards credit after the penalty. completeBossRushRoom stays
       // progress-only (0, 0); wallet/XP still go through the single funnel.
       //
-      // Do not credit the HUD before that write. handleBattleEnd waits;
-      // crediting first left ghost Doka/XP when applyRewards rejected.
-      // hydrateWhenIdle then copies incoming >= committed and the next
-      // saveBattleStats mints the unpaid wallet — or a recap shop spend
-      // drains the real pre-reward balance.
+      // persistRoomClear must throw when currentRoom did not advance — a
+      // swallowed replica error still paid applyRewards and a reload farmed
+      // the same room. Do not credit the HUD before that write either:
+      // handleBattleEnd waits; crediting first left ghost Doka/XP when
+      // applyRewards rejected. hydrateWhenIdle copies incoming >= committed
+      // and the next saveBattleStats mints the unpaid wallet — or a recap
+      // shop spend drains the real pre-reward balance.
       const deathEpochAtPersistStart = deathEpochRef.current;
       if (actor) {
         void persistBossRushRewardsThroughLock(
