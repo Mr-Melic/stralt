@@ -205,6 +205,48 @@ export function liveCombatantHp(
   return live.hp;
 }
 
+/**
+ * Next HP after an enemy/boss self-heal or drain.
+ *
+ * Callers must write this through `updateCombatant`. A `setTurnOrder`-only
+ * write leaves store HP at the pre-heal snapshot, so `enemyTakesDamage`
+ * (store-authoritative) ignores the heal and can kill a unit the strip
+ * still shows as healthy.
+ */
+export function hpAfterHeal(
+  currentHp: number,
+  maxHp: number,
+  healAmount: number,
+): number {
+  const hp = Number.isFinite(currentHp) ? currentHp : 0;
+  const max = Number.isFinite(maxHp) ? Math.max(0, maxHp) : hp;
+  const heal = Number.isFinite(healAmount) ? Math.max(0, healAmount) : 0;
+  return Math.min(max, hp + heal);
+}
+
+/**
+ * Phase-2 HP / maxHp after the boss stat multiplier.
+ *
+ * Same contract as {@link hpAfterHeal}: `updateCombatant` must receive
+ * these values. Strip-only phase writes leave store HP at phase-1, so the
+ * next player hit can kill a boss the initiative strip shows at 2× HP.
+ */
+export function hpAfterBossPhase2(
+  hp: number,
+  maxHp: number,
+  multiplier: number,
+  fullHeal: boolean,
+): { hp: number; maxHp: number } {
+  const safeHp = Number.isFinite(hp) ? hp : 0;
+  const safeMax = Number.isFinite(maxHp) ? maxHp : safeHp;
+  const mult = Number.isFinite(multiplier) ? multiplier : 1;
+  const newMaxHp = Math.round(safeMax * mult);
+  const newHp = fullHeal
+    ? newMaxHp
+    : Math.min(Math.round(safeHp * mult), newMaxHp);
+  return { hp: newHp, maxHp: newMaxHp };
+}
+
 /** Plague Zone WX tick. Must match the inline "deals 2 damage" log. */
 export const PLAGUE_ZONE_TICK = 2;
 

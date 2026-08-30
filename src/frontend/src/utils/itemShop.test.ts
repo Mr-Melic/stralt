@@ -12,6 +12,9 @@ assert.equal(isBuffShopOpen(true), true);
 assert.equal(nextDokaAfterShopSpend(200, 50), 150);
 assert.equal(nextDokaAfterShopSpend(30, 50), 0);
 assert.equal(nextDokaAfterShopSpend(0, 50), 0);
+// Jackpot heal is a 1-Doka spend off the live ref, not the render snapshot.
+assert.equal(nextDokaAfterShopSpend(150, 1), 149);
+assert.notEqual(nextDokaAfterShopSpend(150, 1), 199);
 
 // Double-click before re-render must debit the live wallet, not the
 // render snapshot (200 → 150 → 100, not 200 → 150 twice).

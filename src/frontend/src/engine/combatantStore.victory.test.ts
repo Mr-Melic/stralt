@@ -190,6 +190,54 @@ describe("removeCombatant preserves the battle-start snapshot", () => {
     );
   });
 
+  it("strip-only heal leaves store HP so the next hit kills early", () => {
+    const ctx = store([{ ...enemy("healer-1", 100), maxHp: 200 }]);
+    // Old enemy/boss heal path: setTurnOrder only. Store stays 100.
+    // A 120-damage hit then kills a unit the strip would show at 150.
+    const stripHp = 150;
+    assert.equal(ctx.combatantsRef.current[0]?.hp, 100);
+    assert.equal(
+      Math.max(0, (ctx.combatantsRef.current[0]?.hp ?? 0) - 120),
+      0,
+      "store-authoritative enemyTakesDamage kills from the pre-heal snapshot",
+    );
+    assert.equal(
+      Math.max(0, stripHp - 120),
+      30,
+      "the initiative strip would have survived the same hit",
+    );
+
+    updateCombatant(ctx, "healer-1", { hp: stripHp });
+    assert.equal(ctx.combatantsRef.current[0]?.hp, 150);
+    assert.equal(
+      ctx.turnOrderRef.current.find((c) => c.id === "healer-1")?.hp,
+      150,
+    );
+    assert.equal(
+      Math.max(0, (ctx.combatantsRef.current[0]?.hp ?? 0) - 120),
+      30,
+    );
+  });
+
+  it("strip-only phase-2 HP leaves the boss killable at phase-1 store HP", () => {
+    const ctx = store([{ ...enemy("boss-1", 200), maxHp: 200, isBoss: true }]);
+    const stripHp = 400;
+    assert.equal(
+      Math.max(0, (ctx.combatantsRef.current[0]?.hp ?? 0) - 250),
+      0,
+      "a 250 hit kills phase-1 store HP while the strip shows 400",
+    );
+    assert.equal(Math.max(0, stripHp - 250), 150);
+
+    updateCombatant(ctx, "boss-1", { hp: 400, maxHp: 400 });
+    assert.equal(ctx.combatantsRef.current[0]?.hp, 400);
+    assert.equal(ctx.combatantsRef.current[0]?.maxHp, 400);
+    assert.equal(
+      Math.max(0, (ctx.combatantsRef.current[0]?.hp ?? 0) - 250),
+      150,
+    );
+  });
+
   it("still clears the snapshot on store reset so idle maps cannot award", () => {
     const ctx = store([enemy("rat-1")]);
     removeCombatant(ctx, "rat-1");
