@@ -7,8 +7,10 @@ import {
   VOID_RIFT_TICK,
   activeHostilesRemaining,
   enemyHpAfterHazardDamage,
+  hpAfterIncomingDamage,
   playerTurnStartModifierTarget,
   shouldAwardVictory,
+  shouldContinuePlayerTurnAfterHazard,
   shouldDispatchEnemyAiAfterTurnStart,
 } from "./battleSetup.ts";
 import {
@@ -90,6 +92,42 @@ describe("shouldDispatchEnemyAiAfterTurnStart", () => {
     );
     assert.equal(
       shouldDispatchEnemyAiAfterTurnStart({ stillInStore: true, storeHp: 8 }),
+      true,
+    );
+  });
+});
+
+describe("player turn-start plague death", () => {
+  it("lethal plague must stop the player turn and refuse victory", () => {
+    const { newHp, lethal } = hpAfterIncomingDamage(1, PLAGUE_ZONE_TICK);
+    assert.deepEqual({ newHp, lethal }, { newHp: 0, lethal: true });
+    assert.equal(
+      shouldContinuePlayerTurnAfterHazard({
+        deathTriggered: lethal,
+        liveHp: newHp,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: true,
+        battleStartIdsSize: 1,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "plague death must set deathTriggered before a last-hostile kill can award",
+    );
+  });
+
+  it("non-lethal plague still starts the player turn", () => {
+    const { newHp, lethal } = hpAfterIncomingDamage(10, PLAGUE_ZONE_TICK);
+    assert.deepEqual({ newHp, lethal }, { newHp: 8, lethal: false });
+    assert.equal(
+      shouldContinuePlayerTurnAfterHazard({
+        deathTriggered: false,
+        liveHp: newHp,
+      }),
       true,
     );
   });

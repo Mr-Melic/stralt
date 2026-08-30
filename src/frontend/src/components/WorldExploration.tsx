@@ -92,6 +92,7 @@ import {
   shouldAdvanceAfterEnemyTurn,
   shouldAllowBattleTrigger,
   shouldAwardVictory,
+  shouldContinuePlayerTurnAfterHazard,
   shouldDispatchEnemyAiAfterTurnStart,
 } from "../engine/battleSetup";
 import {
@@ -10251,6 +10252,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
+      if (
+        inBattleRef.current &&
+        (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)
+      ) {
+        return;
+      }
       // ── SUMMON CONTROL ROUTING ──────────────────────────────────────
       // When the player is actively controlling a summon, clicks route to
       // that summon's movement/spell-cast logic instead of the player's.
@@ -10332,6 +10339,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     spellHighlightRangeBase(_spell),
                     _spell.modifiableRange ? _spell.id : undefined,
                   ),
+                  barrierTilesRef.current,
                 );
                 if (_live.ok) {
                   // eslint-disable-next-line no-console
@@ -10437,6 +10445,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     spellHighlightRangeBase(_basicAttack),
                     _basicAttack.modifiableRange ? _basicAttack.id : undefined,
                   ),
+                  barrierTilesRef.current,
                 );
                 if (shouldExecuteLiveCast(_live)) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
@@ -10603,6 +10612,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellHighlightRangeBase(_spellMouse),
                   _spellMouse.modifiableRange ? _spellMouse.id : undefined,
                 ),
+                barrierTilesRef.current,
               );
               if (_liveMouse.ok) {
                 // eslint-disable-next-line no-console
@@ -10951,6 +10961,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleCanvasTouch = useCallback(
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
+      if (
+        inBattleRef.current &&
+        (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)
+      ) {
+        return;
+      }
       // Prevent default scroll/zoom on canvas touch
       event.preventDefault();
       const touch = event.changedTouches[0];
@@ -11029,6 +11045,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     spellHighlightRangeBase(_spell),
                     _spell.modifiableRange ? _spell.id : undefined,
                   ),
+                  barrierTilesRef.current,
                 );
                 if (_live.ok) {
                   const { castResult: _castResult, apCost: _apCost } =
@@ -11087,6 +11104,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     spellHighlightRangeBase(_basicAttack),
                     _basicAttack.modifiableRange ? _basicAttack.id : undefined,
                   ),
+                  barrierTilesRef.current,
                 );
                 if (shouldExecuteLiveCast(_live)) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
@@ -11217,6 +11235,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellHighlightRangeBase(_spellTouch),
                   _spellTouch.modifiableRange ? _spellTouch.id : undefined,
                 ),
+                barrierTilesRef.current,
               );
               if (_liveTouch.ok) {
                 // Cast at the entity's current tile BYPASSING the
@@ -14298,7 +14317,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ended: turnEndReasonRef.current,
             });
             // M6: HP guard — if player is already dead, skip turn setup and call death handler
-            if (characterStats.hp <= 0) {
+            if (characterStatsRef.current.hp <= 0) {
               activeEffectsRef.current = activeEffectsRef.current.filter(
                 (e) => e.targetId !== "player",
               );
@@ -14324,6 +14343,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
             }
             processActiveEffects("player");
+            if (
+              !shouldContinuePlayerTurnAfterHazard({
+                deathTriggered: deathTriggeredRef.current,
+                liveHp: characterStatsRef.current.hp,
+              })
+            ) {
+              return nextIdx;
+            }
             spellCooldownsRef.current.forEach((cd, id) => {
               if (cd > 1) spellCooldownsRef.current.set(id, cd - 1);
               else spellCooldownsRef.current.delete(id);
@@ -14349,14 +14376,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
               barrierTilesRef.current = updatedBarriers;
             }
-            // Plague Zone: all units lose 2 HP at start of each turn
+            // Plague Zone: all units lose 2 HP at start of each turn.
+            // Must dispatch death synchronously like DoT — the HP-watch
+            // effect runs after paint, so a 1–2 HP player could still
+            // kill the last hostile and pass shouldAwardVictory.
             if (isPlagueZone) {
-              setCharacterStats((s) => ({ ...s, hp: Math.max(0, s.hp - 2) }));
+              const hpBefore = characterStatsRef.current.hp;
+              const { newHp, lethal } = hpAfterIncomingDamage(
+                hpBefore,
+                PLAGUE_ZONE_TICK,
+              );
+              setCharacterStats((s) => ({ ...s, hp: newHp }));
               challengeTotalDamageRef.current = recordChallengeDamageTaken(
                 challengeTotalDamageRef.current,
-                2,
+                PLAGUE_ZONE_TICK,
               );
               logBattleEntry("Plague Zone deals 2 damage to you!", "#a855f7");
+              if (lethal) {
+                logDebugInfo("BATTLE", "[DEATH-BISECT] source: plague-zone", {
+                  hpBefore,
+                  tick: PLAGUE_ZONE_TICK,
+                  hpAfter: newHp,
+                });
+                _handlePlayerDeath();
+                return nextIdx;
+              }
             }
             // Reset the AP-debuff flag at start of player's turn
             playerApWasDebuffedRef.current = false;
@@ -17191,6 +17235,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       !selectedSpellIdRef.current
     )
       return;
+    if (deathTriggeredRef.current || characterStatsRef.current.hp <= 0) return;
     markFirstAction();
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
@@ -17239,6 +17284,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         liveCombatants,
         mapTiles,
         effectiveRange,
+        barrierTilesRef.current,
       );
       if (!shouldExecuteLiveCast(liveHeal)) {
         setNoTargetFlash(true);
@@ -17256,6 +17302,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         liveCombatants,
         mapTiles,
         effectiveRange,
+        barrierTilesRef.current,
       );
       if (!nearest) {
         setNoTargetFlash(true);
@@ -18824,6 +18871,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellHighlightRangeBase(spell),
                   spell.modifiableRange ? spell.id : undefined,
                 ),
+                barrierTilesRef.current,
               );
             })()
           }

@@ -354,6 +354,8 @@ export interface TileCastableResult {
   reason: string;
 }
 
+const EMPTY_BARRIER_TILES: ReadonlyMap<string, number> = new Map();
+
 /**
  * #1A — Live single-tile validation helper (PURE, no cache).
  *
@@ -383,6 +385,9 @@ export interface TileCastableResult {
  * `liveCombatants` is the live combatant array (typically
  * `getLiveCombatants(combatantStoreCtx)`) used for occupied/free-cell checks.
  * `mapTiles` is the world tile grid. Both are read-only here.
+ * `barrierTiles` must be the same active-barrier map the highlight used —
+ * omitting it lets sprite-click / Attack Nearest snipe through a mid-ray
+ * barrier the blue ring never offered.
  */
 export function isTileCastableLive(
   spell: SpellConfig,
@@ -391,6 +396,9 @@ export function isTileCastableLive(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange?: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
 ): TileCastableResult {
   const targetType = (spell.targetType ?? "enemy") as string;
   const worldGridSize = mapTiles.length;
@@ -472,11 +480,7 @@ export function isTileCastableLive(
     while (true) {
       if ((x0 !== lx0 || y0 !== ly0) && (x0 !== lx1 || y0 !== ly1)) {
         if (mapTiles[y0]?.[x0] === "wall") return false;
-        if (spell.isBarrier) {
-          // barrierTiles are not passed to the live helper; barrier spells
-          // do not require LoS (lineOfSight is falsy on Barrier), so this
-          // branch is unreachable for barrier spells. Kept for parity.
-        }
+        if (barrierTiles.has(`${x0},${y0}`)) return false;
       }
       if (x0 === lx1 && y0 === ly1) break;
       const e2 = 2 * err;
@@ -505,6 +509,9 @@ export function isTileCastableLive(
       (tx === casterPos.x && ty === casterPos.y);
     if (occupied) {
       return { ok: false, reason: "ground_occupied" };
+    }
+    if (barrierTiles.has(`${tx},${ty}`)) {
+      return { ok: false, reason: "ground_barrier" };
     }
     if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, tx, ty)) {
       return { ok: false, reason: "ground_los_blocked" };
@@ -541,6 +548,9 @@ export function isTileCastableLive(
       if (mapTiles[cy]?.[cx] === "wall") {
         return { ok: false, reason: "line_blocked_wall" };
       }
+      if (barrierTiles.has(`${cx},${cy}`)) {
+        return { ok: false, reason: "line_blocked_barrier" };
+      }
       if (cx === tx && cy === ty) {
         // Reached the target tile along an unobstructed ray.
         return { ok: true, reason: "line" };
@@ -553,6 +563,10 @@ export function isTileCastableLive(
   // `area`). The clicked tile is castable when it is within Chebyshev range
   // of the caster (enemy/chain) OR within `areaRadius` of an in-range anchor
   // tile (area). LoS, linear, diagonal, freeCells, and minRange are honored.
+  // Preview skips enemy/chain destinations that are active barriers.
+  if (targetType !== "area" && barrierTiles.has(`${tx},${ty}`)) {
+    return { ok: false, reason: "barrier_tile" };
+  }
   const dx = tx - casterPos.x;
   const dy = ty - casterPos.y;
   const chebyshev = Math.max(Math.abs(dx), Math.abs(dy));
@@ -623,6 +637,7 @@ export function isTileCastableLive(
         if (axN < 0 || ayN < 0 || axN >= worldGridSize || ayN >= worldGridSize)
           continue;
         if (mapTiles[ayN]?.[axN] === "wall") continue;
+        if (barrierTiles.has(`${axN},${ayN}`)) continue;
         if (spell.linear && ax !== 0 && ay !== 0) continue;
         if (spell.diagonal && Math.abs(ax) !== Math.abs(ay)) continue;
         if (spell.lineOfSight && !hasLoS(casterPos.x, casterPos.y, axN, ayN))
@@ -675,6 +690,9 @@ export function pickNearestLiveHostileTile(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
 ): { x: number; y: number } | null {
   let nearest: { x: number; y: number } | null = null;
   let nearestDist = Number.POSITIVE_INFINITY;
@@ -687,6 +705,7 @@ export function pickNearestLiveHostileTile(
       liveCombatants,
       mapTiles,
       effectiveRange,
+      barrierTiles,
     );
     if (!shouldExecuteLiveCast(live)) continue;
     const dist = Math.max(
@@ -709,6 +728,9 @@ export function canAttackNearestLive(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
 ): boolean {
   if (spell.targetType === "self" && spell.effectType === "heal") {
     return shouldExecuteLiveCast(
@@ -719,6 +741,7 @@ export function canAttackNearestLive(
         liveCombatants,
         mapTiles,
         effectiveRange,
+        barrierTiles,
       ),
     );
   }
@@ -730,6 +753,7 @@ export function canAttackNearestLive(
       liveCombatants,
       mapTiles,
       effectiveRange,
+      barrierTiles,
     ) != null
   );
 }
