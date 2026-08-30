@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
+  canAttackNearestLive,
   computeTargetableTiles,
   isTileCastableLive,
   pickNearestLiveHostileTile,
@@ -251,5 +252,66 @@ describe("sprite-basic live gate", () => {
     assert.equal(shouldExecuteLiveCast(near), true);
     assert.equal(shouldExecuteLiveCast(far), false);
     assert.equal(far.ok, false, "Chebyshev 4 must fail melee range 1");
+  });
+});
+
+describe("Attack Nearest live gate", () => {
+  it("uses maxRange as the highlight base so grown rings stay searchable", () => {
+    const spell = enemySpell(3);
+    spell.maxRange = 5;
+    assert.equal(spellHighlightRangeBase(spell), 5);
+    assert.equal(spellHighlightRangeBase({ ...spell, maxRange: undefined }), 3);
+  });
+
+  it("skips a nearer LoS-blocked hostile so Attack Nearest cannot snipe", () => {
+    const tiles = floorGrid(20);
+    tiles[10][11] = "wall";
+    const caster = { x: 10, y: 10 };
+    const blocked = {
+      id: "blocked",
+      x: 12,
+      y: 10,
+      hp: 20,
+      maxHp: 20,
+      name: "Wraith",
+      pieceType: "bishop",
+    } as Enemy;
+    const open = {
+      id: "open",
+      x: 10,
+      y: 13,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const spell = {
+      ...enemySpell(5),
+      lineOfSight: true,
+    };
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [blocked, open],
+      worldGridSize: 20,
+      effectiveRange: 5,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlighted.has("12,10"), false);
+    assert.equal(highlighted.has("10,13"), true);
+
+    const hostiles = [blocked, open];
+    const picked = pickNearestLiveHostileTile(
+      spell,
+      caster,
+      hostiles,
+      hostiles,
+      tiles,
+      5,
+    );
+    assert.deepEqual(picked, { x: 10, y: 13 });
+    assert.equal(
+      canAttackNearestLive(spell, caster, hostiles, hostiles, tiles, 5),
+      true,
+    );
   });
 });

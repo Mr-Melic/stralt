@@ -198,6 +198,7 @@ import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
+  canAttackNearestLive,
   computeTargetableTiles,
   isTileCastableLive,
   pickNearestLiveHostileTile,
@@ -10526,8 +10527,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _liveCombatantsMouse,
                 currentMap.tiles,
                 getEffectiveSpellRange(
-                  _spellMouse.maxRange ??
-                    Math.max(1, Number(_spellMouse.range)),
+                  spellHighlightRangeBase(_spellMouse),
                   _spellMouse.modifiableRange ? _spellMouse.id : undefined,
                 ),
               );
@@ -11141,8 +11141,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _liveCombatantsTouch,
                 currentMap.tiles,
                 getEffectiveSpellRange(
-                  _spellTouch.maxRange ??
-                    Math.max(1, Number(_spellTouch.range)),
+                  spellHighlightRangeBase(_spellTouch),
                   _spellTouch.modifiableRange ? _spellTouch.id : undefined,
                 ),
               );
@@ -17131,32 +17130,40 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!(currentBattleApRef.current >= apCost)) return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
-    // Determine gridPos: player tile for heal spells (engine's heal branch
-    // requires isPlayerTile), nearest-enemy tile otherwise.
+    // Same caster + range + live gate as the highlight / sprite-click paths.
+    // Chebyshev-only nearest search used raw `spell.range` and skipped LoS,
+    // so Attack Nearest could fire on a tile the preview never offered.
+    const mapTiles = currentMapRef.current?.tiles;
+    if (!mapTiles) return;
+    const casterPos = getActiveCasterPos();
+    const liveCombatants = getLiveCombatants(combatantStoreCtx);
+    const effectiveRange = getEffectiveSpellRange(
+      spellHighlightRangeBase(spell),
+      spell.modifiableRange ? spell.id : undefined,
+    );
     let gridPos: { x: number; y: number };
     if (isHealSpell) {
-      gridPos = {
-        x: playerPositionRef.current.x,
-        y: playerPositionRef.current.y,
-      };
-    } else {
-      const mapTiles = currentMapRef.current?.tiles;
-      if (!mapTiles) {
+      gridPos = { x: casterPos.x, y: casterPos.y };
+      const liveHeal = isTileCastableLive(
+        spell,
+        casterPos,
+        gridPos,
+        liveCombatants,
+        mapTiles,
+        effectiveRange,
+      );
+      if (!shouldExecuteLiveCast(liveHeal)) {
         setNoTargetFlash(true);
         setTimeout(() => setNoTargetFlash(false), 1200);
         return;
       }
-      const effectiveRange = getEffectiveSpellRange(
-        spellHighlightRangeBase(spell),
-        spell.modifiableRange ? spell.id : undefined,
-      );
+    } else {
       // Live store includes enemy summons that are not in React `enemies`.
       // isActiveHostile is the canonical filter (enemy-side summons after #79).
       // isTileCastableLive is the same gate as getSpellRangeTiles / sprite-click.
-      const liveCombatants = getLiveCombatants(combatantStoreCtx);
       const nearest = pickNearestLiveHostileTile(
         spell,
-        playerPositionRef.current,
+        casterPos,
         liveCombatants.filter(isActiveHostile),
         liveCombatants,
         mapTiles,
@@ -17167,7 +17174,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setTimeout(() => setNoTargetFlash(false), 1200);
         return;
       }
-      gridPos = { x: nearest.x, y: nearest.y };
+      gridPos = nearest;
     }
     castRuntimeRef.current.apCost = apCost;
     castRuntimeRef.current.spell = spell;
@@ -17284,8 +17291,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     battleActionMode,
     activeSpells,
     activeMapModifierTypes,
-    combatantStoreCtx,
     getEffectiveSpellRange,
+    getActiveCasterPos,
+    combatantStoreCtx,
     playerSpellContext,
     markFirstAction,
     setCurrentBattleApSynced,
@@ -18714,18 +18722,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     )!.apCost,
                   )
                 : 999) &&
-            enemies.some((e) => {
+            (() => {
               const spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
-              const range = spell ? Math.max(1, Number(spell.range)) : 0;
-              return (
-                Math.max(
-                  Math.abs(e.x - playerPositionRef.current.x),
-                  Math.abs(e.y - playerPositionRef.current.y),
-                ) <= range
+              const tiles = currentMapRef.current?.tiles;
+              if (!spell || !tiles) return false;
+              const casterPos = getActiveCasterPos();
+              const liveCombatants = getLiveCombatants(combatantStoreCtx);
+              return canAttackNearestLive(
+                spell,
+                casterPos,
+                liveCombatants.filter(isActiveHostile),
+                liveCombatants,
+                tiles,
+                getEffectiveSpellRange(
+                  spellHighlightRangeBase(spell),
+                  spell.modifiableRange ? spell.id : undefined,
+                ),
               );
-            })
+            })()
           }
           isMobile={isMobile}
           turnOrder={turnOrder.map((c) => {

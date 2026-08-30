@@ -292,6 +292,7 @@ describe("progress persist lock", () => {
       }),
       /applyRewards failed/,
     );
+    assert.equal(lock.pendingCount(), 0);
     assert.equal(
       lock.hydrateWhenIdle({ doka: 200, xp: ghostUiXp, level: 4 }),
       true,
@@ -315,6 +316,10 @@ describe("progress persist lock", () => {
       true,
     );
     assert.equal(safe.snapshot().xp, 90);
+
+    safe.commit({ xp: 100, level: 4 });
+    assert.equal(safe.hydrateWhenIdle({ doka: 200, xp: 100, level: 4 }), true);
+    assert.equal(safe.snapshot().xp, 100);
   });
 
   it("does not mint ghost Boss Rush Doka when applyRewards rejects", async () => {

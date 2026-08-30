@@ -688,7 +688,7 @@ export function pickNearestLiveHostileTile(
       mapTiles,
       effectiveRange,
     );
-    if (!live.ok) continue;
+    if (!shouldExecuteLiveCast(live)) continue;
     const dist = Math.max(
       Math.abs(tile.x - caster.x),
       Math.abs(tile.y - caster.y),
@@ -699,4 +699,37 @@ export function pickNearestLiveHostileTile(
     }
   }
   return nearest;
+}
+
+/** Attack Nearest button: same legal set as the live execute path. */
+export function canAttackNearestLive(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  hostiles: ReadonlyArray<{ x: number; y: number }>,
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+  effectiveRange: number,
+): boolean {
+  if (spell.targetType === "self" && spell.effectType === "heal") {
+    return shouldExecuteLiveCast(
+      isTileCastableLive(
+        spell,
+        caster,
+        { x: caster.x, y: caster.y },
+        liveCombatants,
+        mapTiles,
+        effectiveRange,
+      ),
+    );
+  }
+  return (
+    pickNearestLiveHostileTile(
+      spell,
+      caster,
+      hostiles,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+    ) != null
+  );
 }
