@@ -36,7 +36,7 @@ import type {
   CurrentTurnIndexRef,
   SetTurnOrder,
   TurnOrderRef,
-} from "./turnQueue";
+} from "./turnQueue.ts";
 import { removeCombatantFromTurnQueue } from "./turnQueue.ts";
 
 /** React state setter for an array of combatants. */

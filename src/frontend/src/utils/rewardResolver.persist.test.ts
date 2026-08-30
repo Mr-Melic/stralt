@@ -222,4 +222,40 @@ describe("selectDefeatedEnemiesForRewards", () => {
       ],
     );
   });
+
+  it("persists kill XP for hostiles only, not leftover wolf level * 20", () => {
+    const defeated = selectDefeatedEnemiesForRewards(
+      [],
+      [
+        { pieceType: "rat", level: 3, side: "enemy" },
+        { pieceType: "wolf", level: 5, isSummon: true, side: "player" },
+      ],
+    );
+    const baseXp = computeVictoryExp({
+      defeatedEnemies: defeated,
+      characterLevel: 4,
+    });
+    assert.equal(baseXp, 60, "rat 3*20; wolf 5*20 must not be added");
+    const deltas = computeRewardDeltas({
+      victory: true,
+      enemiesDefeated: defeated,
+      completedChallenges: [],
+      dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+      baseDoka: defeated.length * 6,
+      baseXp,
+    });
+    assert.equal(deltas.xpDelta, 60);
+    assert.equal(deltas.dokaDelta, 6);
+    assert.notEqual(
+      computeVictoryExp({
+        defeatedEnemies: [
+          { name: "rat", level: 3 },
+          { name: "wolf", level: 5 },
+        ],
+        characterLevel: 4,
+      }),
+      60,
+      "unfiltered leftover roster used to persist 160 XP",
+    );
+  });
 });
