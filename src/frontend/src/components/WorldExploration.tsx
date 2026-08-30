@@ -77,6 +77,7 @@ import { drawBarrierTower } from "../engine/barrierRender";
 import {
   activeHostilesRemaining,
   despawnSummons,
+  enemyHpAfterHazardDamage,
   isActiveHostile,
   isAliveCombatant,
   shouldAllowBattleTrigger,
@@ -16330,11 +16331,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (enemyHazard === "lava") {
                 const hDmg = 8 + Math.floor(Math.random() * 8);
                 const curEH = enemyHpMap[enemyId] ?? currentCombatant.hp;
-                const newEH = Math.max(0, curEH - hDmg);
+                const { newHp: newEH, lethal } = enemyHpAfterHazardDamage(
+                  curEH,
+                  hDmg,
+                );
                 setEnemyHpMap((h) => ({ ...h, [enemyId]: newEH }));
                 setTurnOrder((to) =>
                   to.map((c) => (c.id === enemyId ? { ...c, hp: newEH } : c)),
                 );
+                // Victory / enemyTakesDamage read combatantsRef. React-only
+                // HP writes left a lava-killed last enemy in the store so
+                // they took another full turn (and could apply death penalty).
+                updateCombatant(combatantStoreCtx, enemyId, { hp: newEH });
+                if (lethal) {
+                  processCombatantDeathCb(enemyId);
+                }
                 logBattleEntry(
                   `\ud83c\udf30 ${enemy.pieceType} walked on lava! -${hDmg} HP`,
                   "#ff4400",
@@ -16368,11 +16379,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               } else if (enemyHazard === "spikes") {
                 const hsDmg = 5 + Math.floor(Math.random() * 6);
                 const curEHS = enemyHpMap[enemyId] ?? currentCombatant.hp;
-                const newEHS = Math.max(0, curEHS - hsDmg);
+                const { newHp: newEHS, lethal } = enemyHpAfterHazardDamage(
+                  curEHS,
+                  hsDmg,
+                );
                 setEnemyHpMap((h) => ({ ...h, [enemyId]: newEHS }));
                 setTurnOrder((to) =>
                   to.map((c) => (c.id === enemyId ? { ...c, hp: newEHS } : c)),
                 );
+                updateCombatant(combatantStoreCtx, enemyId, { hp: newEHS });
+                if (lethal) {
+                  processCombatantDeathCb(enemyId);
+                }
                 logBattleEntry(
                   `\u2694\ufe0f ${enemy.pieceType} hit spikes! -${hsDmg} HP`,
                   "#cc8800",
