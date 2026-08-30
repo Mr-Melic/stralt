@@ -78,6 +78,7 @@ import {
   PLAGUE_ZONE_TICK,
   VOID_RIFT_TICK,
   activeHostilesRemaining,
+  battleWalkHazardDamages,
   countsTowardKillRewards,
   despawnSummons,
   enemyHpAfterHazardDamage,
@@ -10147,6 +10148,47 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
 
+  const applyBattleWalkHazards = useCallback(
+    (pathLength: number, dest: { x: number; y: number }) => {
+      const { thornDmg, riftDmg } = battleWalkHazardDamages({
+        thornedActive: isThornedGround,
+        pathLength,
+        voidRiftActive: isVoidRift,
+        dest,
+        riftTile: voidRiftTile,
+      });
+      if (thornDmg > 0) {
+        setCharacterStats((prev) => ({
+          ...prev,
+          hp: Math.max(0, prev.hp - thornDmg),
+        }));
+        challengeTotalDamageRef.current = recordChallengeDamageTaken(
+          challengeTotalDamageRef.current,
+          thornDmg,
+        );
+        logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
+      }
+      if (riftDmg > 0) {
+        setCharacterStats((prev) => ({
+          ...prev,
+          hp: Math.max(0, prev.hp - riftDmg),
+        }));
+        challengeTotalDamageRef.current = recordChallengeDamageTaken(
+          challengeTotalDamageRef.current,
+          riftDmg,
+        );
+        logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
+      }
+    },
+    [
+      isThornedGround,
+      isVoidRift,
+      voidRiftTile,
+      logBattleEntry,
+      setCharacterStats,
+    ],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable callbacks are intentionally omitted
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -10701,11 +10743,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
         // WALK branch — only runs with NO spell selected. Mirrors the touch
-        // handler's walk body (see lines ~9354-9374) with two mouse-only
-        // hazard checks injected between cost computation and MP deduction:
-        //   - Thorned Ground: isThornedGround → 5 dmg per extra tile beyond
-        //     the first (damage scales with path length).
-        //   - Void Rift: isVoidRift + voidRiftTile destination match → -3 HP.
+        // handler's walk body, including Thorned Ground / Void Rift debits
+        // (applyBattleWalkHazards — both input paths must charge the same HP).
         else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
           if (
@@ -10738,36 +10777,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (path.length === 0) return;
           const cost = path.length;
           if (cost > currentBattleMp) return;
-          // Thorned Ground — 5 dmg per extra tile beyond the first.
-          if (isThornedGround && path.length > 1) {
-            const thornDmg = (path.length - 1) * 5;
-            setCharacterStats((prev) => ({
-              ...prev,
-              hp: Math.max(0, prev.hp - thornDmg),
-            }));
-            challengeTotalDamageRef.current = recordChallengeDamageTaken(
-              challengeTotalDamageRef.current,
-              thornDmg,
-            );
-            logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
-          }
-          // Void Rift — destination tile matches voidRiftTile → -3 HP.
-          if (
-            isVoidRift &&
-            voidRiftTile &&
-            voidRiftTile.x === gridPos.x &&
-            voidRiftTile.y === gridPos.y
-          ) {
-            setCharacterStats((prev) => ({
-              ...prev,
-              hp: Math.max(0, prev.hp - 3),
-            }));
-            challengeTotalDamageRef.current = recordChallengeDamageTaken(
-              challengeTotalDamageRef.current,
-              3,
-            );
-            logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
-          }
+          // Thorned Ground / Void Rift — same debit as touch walk.
+          applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
           setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
@@ -10833,9 +10844,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       getSpellRangeTiles,
       activeSpells,
       logBattleEntry,
-      isThornedGround,
-      isVoidRift,
-      voidRiftTile,
+      applyBattleWalkHazards,
       combatantStoreCtx,
       hitTestSprite,
       setCurrentBattleApSynced,
@@ -10882,7 +10891,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
   // Touch handler — delegates to same grid logic as mouse click
   // Touch handler — delegates to same grid logic as mouse click
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, applyBattleWalkHazards, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
   const handleCanvasTouch = useCallback(
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
@@ -11302,8 +11311,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
         // WALK branch — only runs with NO spell selected. Mirrors the mouse
-        // handler's walk body WITHOUT the mouse-only Thorned Ground / Void Rift
-        // hazard checks (those are mouse-only per spec).
+        // handler's walk body, including Thorned Ground / Void Rift debits.
         else if (battleActionMode === "walk") {
           if (currentBattleMp <= 0) return;
           if (
@@ -11334,6 +11342,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (path.length === 0) return;
           const cost = path.length;
           if (cost > currentBattleMp) return;
+          applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
           setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
@@ -11404,6 +11413,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       setCurrentBattleApSynced,
       recordClickOutcome,
       castControlledSummonSpell,
+      applyBattleWalkHazards,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step

@@ -212,6 +212,48 @@ export const PLAGUE_ZONE_TICK = 2;
 export const VOID_RIFT_TICK = 3;
 
 /**
+ * Battle-walk Thorned Ground: 5 HP per extra tile after the first.
+ * Matches the live mouse walk in WorldExploration (path.length > 1).
+ * Touch walk used to skip this debit; both input paths must use this helper.
+ */
+export const THORNED_WALK_DAMAGE_PER_EXTRA_TILE = 5;
+
+export function thornedGroundWalkDamage(pathLength: number): number {
+  if (!Number.isFinite(pathLength) || pathLength <= 1) return 0;
+  return (pathLength - 1) * THORNED_WALK_DAMAGE_PER_EXTRA_TILE;
+}
+
+/** −VOID_RIFT_TICK when the walk destination is the current rift tile. */
+export function voidRiftWalkDamage(
+  dest: { x: number; y: number },
+  rift: { x: number; y: number } | null | undefined,
+): number {
+  if (!rift) return 0;
+  if (rift.x !== dest.x || rift.y !== dest.y) return 0;
+  return VOID_RIFT_TICK;
+}
+
+/**
+ * Combined battle-walk hazards. Mouse and touch must apply the same
+ * thorn / rift HP so Untouchable and under-damage challenges cannot
+ * be satisfied by switching input method.
+ */
+export function battleWalkHazardDamages(opts: {
+  thornedActive: boolean;
+  pathLength: number;
+  voidRiftActive: boolean;
+  dest: { x: number; y: number };
+  riftTile: { x: number; y: number } | null | undefined;
+}): { thornDmg: number; riftDmg: number } {
+  return {
+    thornDmg: opts.thornedActive ? thornedGroundWalkDamage(opts.pathLength) : 0,
+    riftDmg: opts.voidRiftActive
+      ? voidRiftWalkDamage(opts.dest, opts.riftTile)
+      : 0,
+  };
+}
+
+/**
  * After DoT / plague at enemy turn start, dispatch AI only if the unit
  * is still alive in the store. Applies to non-summon enemies and enemy
  * summons (hostiles after #79). `setBattlePhase("enemy")` before a lethal
