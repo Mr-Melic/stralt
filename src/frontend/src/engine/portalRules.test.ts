@@ -4,6 +4,7 @@ import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
+  placeWhitePortalAtSpawn,
   resetRunState,
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
@@ -131,6 +132,26 @@ describe("resetRunState", () => {
     assert.equal(depth, 0);
     assert.equal(maxDepth, 0);
     assert.equal(dungeonDokaMultiplierFor(active, depth), 1);
+  });
+});
+
+describe("placeWhitePortalAtSpawn", () => {
+  it("relocates a (0,0) dungeon-complete portal onto the walkable spawn", () => {
+    const pending = {
+      x: 0,
+      y: 0,
+      color: "white" as const,
+      isWhitePortal: true,
+    };
+    const atSpawn = placeWhitePortalAtSpawn(pending, { x: 8, y: 8 });
+    assert.deepEqual(atSpawn, {
+      x: 8,
+      y: 8,
+      color: "white",
+      isWhitePortal: true,
+    });
+    assert.notEqual(atSpawn.x, 0);
+    assert.notEqual(atSpawn.y, 0);
   });
 });
 
