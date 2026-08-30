@@ -142,6 +142,7 @@ export interface RunStateRefs {
   setDungeonChainActive?: (active: boolean) => void;
   setDungeonChainDepth?: (depth: number) => void;
   setDungeonChainMaxDepth?: (maxDepth: number) => void;
+  dungeonDokaMultiplierRef?: { current: number };
 }
 
 const DUNGEON_DOKA_MULTIPLIERS = [1, 1.5, 2.0, 2.5, 3.0, 4.0];
@@ -232,6 +233,9 @@ export function resetRunState(refs: RunStateRefs): void {
   refs.setDungeonChainActive?.(false);
   refs.setDungeonChainDepth?.(0);
   refs.setDungeonChainMaxDepth?.(0);
+  if (refs.dungeonDokaMultiplierRef) {
+    refs.dungeonDokaMultiplierRef.current = 1;
+  }
 }
 
 /**

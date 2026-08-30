@@ -2158,6 +2158,9 @@ actor {
         if (bannedPrincipals.containsKey(caller.toText())) {
             return 0;
         };
+        if (enemies.size() > 16) {
+            return 0;
+        };
         // Fetch a single random blob from the IC management canister.
         let rawBlob = await (actor "aaaaa-aa" : actor { raw_rand : () -> async Blob }).raw_rand();
         let bytes = rawBlob.toArray();
@@ -2246,6 +2249,15 @@ actor {
 
     public shared(msg) func saveKillCount(slot: Nat, kills: Nat) : async {#ok; #err: Text} {
       let caller = msg.caller;
+      if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+        return #err("Unauthorized");
+      };
+      if (bannedPrincipals.containsKey(caller.toText())) {
+        return #err("Account is banned");
+      };
+      if (kills > 64) {
+        return #err("kills exceed single-battle bound");
+      };
       switch (characterSlots.get(caller)) {
         case null { #err("no character slots found") };
         case (?slots) {

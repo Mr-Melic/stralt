@@ -33,6 +33,36 @@ describe("snapshotDungeonChain", () => {
   });
 });
 
+describe("resetRunState", () => {
+  it("clears dungeon React state and the Doka multiplier after death", () => {
+    let active = true;
+    let depth = 4;
+    let maxDepth = 5;
+    const multiplier = { current: 3 };
+    resetRunState({
+      bossRushActiveRef: { current: false },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {},
+      setDungeonChainActive: (next) => {
+        active = next;
+      },
+      setDungeonChainDepth: (next) => {
+        depth = next;
+      },
+      setDungeonChainMaxDepth: (next) => {
+        maxDepth = next;
+      },
+      dungeonDokaMultiplierRef: multiplier,
+    });
+    assert.equal(active, false);
+    assert.equal(depth, 0);
+    assert.equal(maxDepth, 0);
+    assert.equal(multiplier.current, 1);
+  });
+});
+
 describe("decideDungeonChainPortal", () => {
   it("enters only from a dungeon-entry portal while no run is active", () => {
     assert.deepEqual(

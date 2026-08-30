@@ -86,8 +86,18 @@ export function xpAfterDeathPersist(args: {
  */
 export function shouldApplyVictoryLiveHydrate(
   deathTriggered: boolean,
+  deathEpochAtPersistStart?: number,
+  deathEpochNow?: number,
 ): boolean {
-  return !deathTriggered;
+  if (deathTriggered) return false;
+  if (
+    deathEpochAtPersistStart !== undefined &&
+    deathEpochNow !== undefined &&
+    deathEpochAtPersistStart !== deathEpochNow
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**

@@ -140,6 +140,9 @@ assert.equal(
 );
 assert.equal(shouldApplyVictoryLiveHydrate(true), false);
 assert.equal(shouldApplyVictoryLiveHydrate(false), true);
+assert.equal(shouldApplyVictoryLiveHydrate(false, 0, 1), false);
+assert.equal(shouldApplyVictoryLiveHydrate(false, 1, 1), true);
+assert.equal(shouldApplyVictoryLiveHydrate(true, 0, 0), false);
 
 assert.deepEqual(victoryResourceFloor(1), { hp: 60, mp: 5, ap: 6 });
 assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
@@ -374,6 +377,46 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   assert.equal(after.dokaLost, 200);
   lock.commit({ doka: after.newDoka, xp: after.newXp });
   assert.equal(lock.snapshot().doka, 300);
+}
+
+// Death Realm re-arms deathTriggered after 1.5s. A still-in-flight
+// applyRewards must not hydrate just because the flag flipped back.
+{
+  const lock = createProgressPersist({ doka: 1000, xp: 10000, level: 4 });
+  let uiXp = 10000;
+  let uiDoka = 1000;
+  let deathTriggered = false;
+  let deathEpoch = 0;
+  const epochAtStart = deathEpoch;
+
+  const victory = lock.enqueue(async () => {
+    lock.commit({ doka: 1500, xp: 10500 });
+  });
+
+  const optimistic = computeDeathPenalty(uiXp, uiDoka);
+  uiXp = optimistic.newXp;
+  uiDoka = optimistic.newDoka;
+  deathTriggered = true;
+  deathEpoch += 1;
+  const death = lock.enqueue(async () => {
+    const after = computeDeathPenalty(lock.snapshot().xp, lock.snapshot().doka);
+    lock.commit({ doka: after.newDoka, xp: after.newXp });
+    uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
+    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+  });
+
+  deathTriggered = false;
+  await victory;
+  if (shouldApplyVictoryLiveHydrate(deathTriggered, epochAtStart, deathEpoch)) {
+    uiXp = 10500;
+    uiDoka = 1500;
+  }
+  await death;
+
+  assert.equal(uiXp, 8400);
+  assert.equal(uiDoka, 900);
+  assert.equal(lock.snapshot().xp, 8400);
+  assert.equal(lock.snapshot().doka, 900);
 }
 
 console.log("deathPenalty.test: ok");

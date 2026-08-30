@@ -6,6 +6,7 @@ import {
   despawnSummons,
   enemyHpAfterHazardDamage,
   isActiveHostile,
+  liveCombatantHp,
   shouldAdvanceAfterEnemyTurn,
   shouldAwardVictory,
 } from "./battleSetup.ts";
@@ -138,6 +139,28 @@ describe("enemyHpAfterHazardDamage", () => {
       newHp: 0,
       lethal: true,
     });
+  });
+});
+
+describe("liveCombatantHp", () => {
+  it("prefers store HP so a later lava read cannot undo Mirror reflect", () => {
+    const store = [{ id: "caster", hp: 18 }];
+    const staleMapHp = 30;
+    const baseline = liveCombatantHp(store, "caster", staleMapHp);
+    assert.equal(baseline, 18);
+    assert.deepEqual(enemyHpAfterHazardDamage(baseline, 10), {
+      newHp: 8,
+      lethal: false,
+    });
+    assert.deepEqual(
+      enemyHpAfterHazardDamage(staleMapHp, 10),
+      { newHp: 20, lethal: false },
+      "stale enemyHpMap would heal the attacker after a 12-damage reflect",
+    );
+  });
+
+  it("falls back when the id is missing from the store", () => {
+    assert.equal(liveCombatantHp([], "gone", 22), 22);
   });
 });
 

@@ -172,6 +172,24 @@ export function enemyHpAfterHazardDamage(
   return { newHp, lethal: newHp === 0 };
 }
 
+/**
+ * Authoritative HP for a combatant in the live store.
+ *
+ * The enemy-AI apply layer captures `enemyHpMap` in a closure that is not
+ * refreshed after an earlier `updateCombatant` in the same `flushSync`
+ * (Mirror reflect, then lava/spike). Basing the hazard off that stale map
+ * overwrites the store and can heal the attacker.
+ */
+export function liveCombatantHp(
+  combatants: Combatant[],
+  id: string,
+  fallback: number,
+): number {
+  const live = combatants.find((c) => c.id === id);
+  if (live == null || !Number.isFinite(live.hp)) return fallback;
+  return live.hp;
+}
+
 /** Plague Zone WX tick. Must match the inline "deals 2 damage" log. */
 export const PLAGUE_ZONE_TICK = 2;
 
