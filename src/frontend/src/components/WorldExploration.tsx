@@ -14569,6 +14569,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     (playerPositionRef.current.x === oc.x &&
                       playerPositionRef.current.y === oc.y),
                 } satisfies OccupancyContext,
+                "enemy",
               );
               // S1 SITE #4: Atomic ADD via the combatant store. The summoner
               // is the enemy currently casting (enemyId, captured in the
@@ -14621,6 +14622,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   (playerPositionRef.current.x === c.x &&
                     playerPositionRef.current.y === c.y),
               } satisfies OccupancyContext,
+              "enemy",
             );
             // S1 SITE #5: Atomic ADD via the combatant store — inline twin of
             // site #4. Same enemyId summoner, same battleParticipant +

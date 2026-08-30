@@ -120,21 +120,33 @@ export interface CombatantStoreCtx {
  * them through and fill any missing required entry field with a safe
  * default so the function is total for any `Combatant`-shaped input.
  *
- * The `type` field discriminates the turn route: "summon" for any
- * combatant with `isSummon` (regardless of side), otherwise "player"
- * for side "player" and "enemy" for side "enemy". The router at
- * WorldExploration.tsx keys summon dispatch off `isSummon` (line 11960),
- * so a player-side summon now falls through the `type === "player"`
- * check (line 11837) into the summon-ai branch instead of the player
- * branch — matching the requirement that summons dispatch as their own
- * turn type.
+ * The `type` field discriminates the turn route:
+ *   - "summon" — player-side summons (SummonControlPanel / control id)
+ *   - "player" — the human player
+ *   - "enemy"  — hostile combatants, including enemy-side summons
+ *
+ * Tagging every `isSummon` as "summon" made enemy minions fail the
+ * `currentCombatant.type !== "enemy"` AI gate and, because spawn
+ * defaulted `side` to "player", handed those minions to the player.
  */
+export function combatantTurnEntryType(c: {
+  isSummon?: boolean;
+  side?: "player" | "enemy";
+}): CombatantEntry["type"] {
+  const side = c.side ?? "enemy";
+  if (c.isSummon && side === "player") return "summon";
+  return side === "player" ? "player" : "enemy";
+}
+
 function toCombatantEntry(c: Enemy): CombatantEntry {
   const rich = c as Enemy & Partial<CombatantEntry>;
   const side: "player" | "enemy" = rich.side ?? "enemy";
   return {
     id: c.id,
-    type: rich.isSummon ? "summon" : side === "player" ? "player" : "enemy",
+    type: combatantTurnEntryType({
+      isSummon: rich.isSummon ?? c.isSummon,
+      side,
+    }),
     initiative: rich.initiative ?? 0,
     name: rich.name ?? c.id,
     pieceIcon: rich.pieceIcon ?? "",
