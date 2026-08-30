@@ -8,6 +8,7 @@ import {
   shouldAdvanceAfterEnemyTurn,
   shouldAwardVictory,
 } from "./battleSetup.ts";
+import { expireSummonsAtTurnStart } from "./summonLifespan.ts";
 
 describe("isActiveHostile", () => {
   it("treats enemy-side summons as hostiles that still block victory", () => {
@@ -112,6 +113,59 @@ describe("shouldAdvanceAfterEnemyTurn", () => {
         hostilesRemaining: 1,
       }),
       false,
+    );
+  });
+
+  it("skips dispatch after the last hostile minion fades so player DoT cannot block victory", () => {
+    const minion = {
+      id: "larva-1",
+      isSummon: true,
+      side: "enemy" as const,
+      hp: 20,
+      name: "Larva",
+      turnsRemaining: 1,
+    };
+    const expired = expireSummonsAtTurnStart([minion], () => {}, "larva-1");
+    assert.deepEqual(expired, ["larva-1"]);
+    assert.equal(isActiveHostile(minion), false);
+    assert.equal(activeHostilesRemaining([minion]), 0);
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: activeHostilesRemaining([minion]),
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: true,
+        battleStartIdsSize: 1,
+        hostilesRemaining: 0,
+      }),
+      false,
+      "player DoT death during flushSync advanceTurn after last-minion fade would refuse applyRewards",
+    );
+  });
+
+  it("still advances after a player summon fades while hostiles remain", () => {
+    const wolf = {
+      id: "wolf",
+      isSummon: true,
+      side: "player" as const,
+      hp: 20,
+      name: "Wolf",
+      turnsRemaining: 1,
+    };
+    const rat = { id: "rat", isSummon: false, side: "enemy" as const, hp: 12 };
+    expireSummonsAtTurnStart([wolf, rat], () => {}, "wolf");
+    assert.equal(isActiveHostile(rat), true);
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: activeHostilesRemaining([wolf, rat]),
+      }),
+      true,
     );
   });
 });

@@ -13845,11 +13845,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       for (const expiredId of _expiredSummonIds) {
         removeCombatant(combatantStoreCtx, expiredId);
       }
-      // Last-hostile enemy minions expire here (turnsRemaining hit 0).
-      // flushSync would then dispatch the player turn (DoT / plague)
-      // before the [inBattle, enemies] victory effect — deathTriggered
-      // refuses applyRewards (same class as #87 lava/spike finally).
+      // Last-hostile minion fade is a store remove inside this flushSync.
+      // Continuing would dispatch the player (DoT / plague) before the
+      // [inBattle, enemies] victory useEffect — deathTriggered then
+      // refuses applyRewards and persistDeathPenalty writes instead.
       if (
+        _expiredSummonIds.length > 0 &&
         !shouldAdvanceAfterEnemyTurn({
           deathTriggered: deathTriggeredRef.current,
           hostilesRemaining: activeHostilesRemaining(combatantsRef.current),

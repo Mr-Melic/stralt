@@ -189,8 +189,8 @@ export function playerTurnStartModifierTarget<T extends { id?: string }>(
 
 /**
  * After an enemy apply-layer finally (lava/spike, Mirror bounce, thisHp
- * check) or after `expireSummonsAtTurnStart` drops the last hostile, do
- * not dispatch the next turn when the fight is already over.
+ * check) or a last-hostile summon fade inside `advanceTurn`, do not
+ * dispatch the next turn when the fight is already over.
  *
  * `advanceTurn` is `flushSync` and runs before the `[inBattle, enemies]`
  * victory useEffect. Dispatching the player's next turn lets DoT / plague
