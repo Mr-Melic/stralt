@@ -31,6 +31,32 @@ describe("isActiveHostile", () => {
     );
   });
 
+  it("does not treat a living player summon as a hostile cast target", () => {
+    const wolf = {
+      id: "wolf",
+      hp: 40,
+      isSummon: true,
+      side: "player" as const,
+      x: 3,
+      y: 3,
+    };
+    const rat = {
+      id: "rat",
+      hp: 20,
+      isSummon: false,
+      side: "enemy" as const,
+      x: 5,
+      y: 3,
+    };
+    assert.equal(isActiveHostile(wolf), false);
+    assert.equal(isActiveHostile(rat), true);
+    const nearest = [wolf, rat].filter(isActiveHostile);
+    assert.deepEqual(
+      nearest.map((e) => e.id),
+      ["rat"],
+    );
+  });
+
   it("does not let a living player summon block victory", () => {
     const leftovers = [
       { id: "wolf", hp: 40, isSummon: true, side: "player" as const },

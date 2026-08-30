@@ -9,6 +9,7 @@ import {
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
   victoryResourceFloor,
+  xpAfterDeathPersist,
 } from "./deathPenalty.ts";
 import {
   createProgressPersist,
@@ -119,6 +120,24 @@ assert.equal(threw, true);
 assert.equal(raiseUiAfterDeathPersist(600, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(900, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(610, 582), 610);
+assert.equal(
+  xpAfterDeathPersist({
+    uiXp: 64,
+    uiLevel: 4,
+    persistedXp: 24,
+    persistedLevel: 5,
+  }),
+  24,
+);
+assert.equal(
+  xpAfterDeathPersist({
+    uiXp: 64,
+    uiLevel: 5,
+    persistedXp: 24,
+    persistedLevel: 5,
+  }),
+  64,
+);
 assert.equal(shouldApplyVictoryLiveHydrate(true), false);
 assert.equal(shouldApplyVictoryLiveHydrate(false), true);
 
@@ -304,7 +323,12 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
       level: committed.level,
     });
     uiDoka = raiseUiAfterDeathPersist(uiDoka, after.newDoka);
-    uiXp = raiseUiAfterDeathPersist(uiXp, after.newXp);
+    uiXp = xpAfterDeathPersist({
+      uiXp,
+      uiLevel,
+      persistedXp: after.newXp,
+      persistedLevel: committed.level,
+    });
     uiLevel = raiseUiAfterDeathPersist(uiLevel, committed.level);
   });
 
@@ -316,14 +340,17 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   await death;
 
   assert.equal(uiLevel, 5);
+  assert.equal(uiXp, 24);
   assert.equal(lock.snapshot().level, 5);
   assert.equal(lock.snapshot().doka, 720);
   assert.equal(lock.snapshot().xp, 24);
 
-  // Even if the hydrate effect still sees the pre-level UI, committed
-  // level must stay at 5 so the next heal cannot revert the canister.
-  lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
+  // Even if the hydrate effect still sees the pre-level leftover, committed
+  // XP/level must stay at the post-level penalty so the next heal cannot
+  // refund the death cut.
+  lock.hydrateWhenIdle({ doka: uiDoka, xp: 64, level: 4 });
   assert.equal(lock.snapshot().level, 5);
+  assert.equal(lock.snapshot().xp, 24);
 }
 
 // WorldExploration mounts with GameFlow's placeholder doka=0 while

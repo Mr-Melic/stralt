@@ -80,6 +80,27 @@ export function floorHydratedLevel(
   return Math.max(1, toNat(committedLevel, 1), toNat(uiLevel, 1));
 }
 
+/**
+ * Level-up resets leftover XP onto a new threshold. applyRewards can commit
+ * `{ xp: 30, level: 5 }` while lava death skips the live UI hydrate, so the
+ * hydrate effect still sees the old-level leftover (e.g. 80). Copying that
+ * leftover over the post-level snapshot lets the next saveBattleStats refund
+ * the death XP penalty.
+ */
+export function resolveHydratedXp(
+  committedXp: number,
+  committedLevel: number,
+  uiXp: number,
+  uiLevel: number,
+): number {
+  const committedLvl = Math.max(1, toNat(committedLevel, 1));
+  const incomingLvl = Math.max(1, toNat(uiLevel, 1));
+  if (committedLvl > incomingLvl) {
+    return Math.max(0, toNat(committedXp, 0));
+  }
+  return Math.max(0, toNat(uiXp, 0));
+}
+
 export type HydrateWhenIdleOptions = {
   /**
    * True once the session cache has been set from getCallerDokaBalance
@@ -173,7 +194,12 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
       });
       persist.commit({
         doka: copyDoka ? next.doka : undefined,
-        xp: next.xp,
+        xp: resolveHydratedXp(
+          committed.xp,
+          committed.level,
+          next.xp,
+          next.level,
+        ),
         level: floorHydratedLevel(committed.level, next.level),
       });
       return true;

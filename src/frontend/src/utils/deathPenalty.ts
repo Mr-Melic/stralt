@@ -54,6 +54,28 @@ export function raiseUiAfterDeathPersist(
 }
 
 /**
+ * After a victory level-up, leftover XP is on a new scale. max(old leftover,
+ * persisted leftover) keeps the larger pre-level bar; idle hydrate then
+ * refunds the death XP penalty on the next saveBattleStats.
+ */
+export function xpAfterDeathPersist(args: {
+  uiXp: number;
+  uiLevel: number;
+  persistedXp: number;
+  persistedLevel: number;
+}): number {
+  const uiLevel = Math.max(1, Math.floor(Number(args.uiLevel) || 1));
+  const persistedLevel = Math.max(
+    1,
+    Math.floor(Number(args.persistedLevel) || 1),
+  );
+  if (persistedLevel > uiLevel) {
+    return Math.max(0, Math.floor(Number(args.persistedXp) || 0));
+  }
+  return raiseUiAfterDeathPersist(args.uiXp, args.persistedXp);
+}
+
+/**
  * handleBattleEnd and portal XP both await applyRewards after the player can
  * walk. The recap overlay uses pointer-events: none, and a portal swap has
  * no overlay at all, so lava/spike death can land while that persist is still

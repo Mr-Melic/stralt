@@ -7,6 +7,7 @@ import {
   createProgressPersist,
   floorHydratedLevel,
   resolveCommittedDokaForAbsoluteWrite,
+  resolveHydratedXp,
   shouldCopyIdleWalletDoka,
   spendFromUiBalance,
 } from "./progressPersist.ts";
@@ -254,13 +255,24 @@ describe("progress persist lock", () => {
     assert.equal(floorHydratedLevel(4, 4), 4);
 
     const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
-    lock.commit({ doka: 250, xp: 30, level: 5 });
-    // #38 skipped the live UI level hydrate because lava death landed
-    // during applyRewards. The hydrate effect then copies UI level 4.
-    // A stale/optimistic lower wallet must not cut the seeded commit —
-    // death persist already wrote the penalty through the lock.
-    assert.equal(lock.hydrateWhenIdle({ doka: 150, xp: 24, level: 4 }), true);
+    lock.commit({ doka: 250, xp: 24, level: 5 });
+    // Victory leveled up, lava death skipped the live UI hydrate, then
+    // death persist wrote the post-level leftover. The hydrate effect
+    // still sees the old-level leftover — do not copy it over committed.
+    assert.equal(lock.hydrateWhenIdle({ doka: 150, xp: 64, level: 4 }), true);
     assert.deepEqual(lock.snapshot(), { doka: 250, xp: 24, level: 5 });
+  });
+
+  it("does not copy a pre-level leftover over a committed level-up", () => {
+    assert.equal(resolveHydratedXp(30, 5, 80, 4), 30);
+    assert.equal(resolveHydratedXp(24, 5, 64, 4), 24);
+    assert.equal(resolveHydratedXp(80, 4, 80, 4), 80);
+
+    const lock = createProgressPersist({ doka: 1000, xp: 80, level: 4 });
+    lock.commit({ doka: 720, xp: 24, level: 5 });
+    // Optimistic death UI still holds the old leftover after raiseUi max().
+    assert.equal(lock.hydrateWhenIdle({ doka: 720, xp: 64, level: 4 }), true);
+    assert.deepEqual(lock.snapshot(), { doka: 720, xp: 24, level: 5 });
   });
 
   it("adds the shop-credit delta onto the live UI wallet instead of replacing it", () => {

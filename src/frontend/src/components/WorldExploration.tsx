@@ -150,6 +150,7 @@ import {
   type RunMode,
   completeRun,
   decideDungeonChainPortal,
+  dungeonDokaMultiplierFor,
   getRunMode,
   isProgressionLocked,
   isProgressionPortalUnlocked,
@@ -251,6 +252,7 @@ import {
   raiseUiAfterDeathPersist,
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
+  xpAfterDeathPersist,
 } from "../utils/deathPenalty";
 import {
   logDebugError,
@@ -8375,7 +8377,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
               drawOrder: renderItem.depth,
               id: enemy.id,
-              kind: "enemy",
+              kind: enemy.side === "player" ? "summon" : "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
               isAlive: (enemy.hp ?? 0) > 0,
@@ -10243,6 +10245,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 } catch {}
                 return;
               }
+            } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
+              setInspectCombatantId(_hit.id);
+              try {
+                recordClickOutcome(
+                  event.clientX,
+                  event.clientY,
+                  "inspect-sprite",
+                  null,
+                  null,
+                  null,
+                  null,
+                );
+              } catch {}
+              return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
@@ -10890,6 +10906,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
                 return;
               }
+            } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
+              setInspectCombatantId(_hit.id);
+              return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
               // No spell selected — attempt basic physical attack through
               // the same live validation + cast ritual as a selected spell.
@@ -12491,7 +12510,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             },
           );
           // EXP8: Apply dungeon chain Doka multiplier (1.5x-4x based on depth)
-          const chainMult = dungeonDokaMultiplierRef.current;
+          const chainMult = dungeonDokaMultiplierFor(
+            dungeonChainActiveRef.current,
+            dungeonChainDepthRef.current,
+          );
           // BOSS: Apply boss reward multiplier on top of chain multiplier
           const activeBossConf = currentBossConfigRef.current;
           const bossDokaMultiplier = activeBossConf
@@ -12990,12 +13012,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             dokaBalanceRef.current,
             after.newDoka,
           );
-          const nextXp = raiseUiAfterDeathPersist(
-            characterStatsRef.current.exp ?? 0,
-            after.newXp,
-          );
+          const uiLevelBefore = characterStatsRef.current.level ?? 1;
+          const nextXp = xpAfterDeathPersist({
+            uiXp: characterStatsRef.current.exp ?? 0,
+            uiLevel: uiLevelBefore,
+            persistedXp: after.newXp,
+            persistedLevel: committed.level,
+          });
           const nextLevel = raiseUiAfterDeathPersist(
-            characterStatsRef.current.level ?? 1,
+            uiLevelBefore,
             committed.level,
           );
           if (nextDoka !== dokaBalanceRef.current) {
@@ -13077,10 +13102,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             spellLevels: spellLevelsRef.current,
           });
           progressPersistRef.current.commit({ doka: writeDoka });
+          // Death persist raiseUi can restore a pre-spend wallet while this
+          // write is queued. Sync UI down so idle hydrate cannot refund.
+          if (dokaBalanceRef.current > writeDoka) {
+            onDokaBalanceChange(writeDoka);
+          }
         })
         .catch((err) => console.error("[doka-spend save] failed:", err));
     },
-    [actor, character, characterSlot],
+    [actor, character, characterSlot, onDokaBalanceChange],
   );
 
   // Handle player death
@@ -13116,7 +13146,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       dungeonChainDepthRef,
       dungeonChainMaxDepthRef,
       abortBossRush,
+      setDungeonChainActive,
+      setDungeonChainDepth,
+      setDungeonChainMaxDepth,
     });
+    dungeonDokaMultiplierRef.current = 1;
     // Apply the 20% XP / 40% Doka death penalty exactly once (one-shot guard).
     persistDeathPenalty();
     // Stop the fight immediately. The HP-watch fallback used to do this
@@ -13148,7 +13182,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           dungeonChainDepthRef,
           dungeonChainMaxDepthRef,
           abortBossRush,
+          setDungeonChainActive,
+          setDungeonChainDepth,
+          setDungeonChainMaxDepth,
         });
+        dungeonDokaMultiplierRef.current = 1;
         const penalty = persistDeathPenalty();
         const xpLost = penalty?.xpLost ?? 0;
         const dokaLost = penalty?.dokaLost ?? 0;
@@ -13204,7 +13242,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       dungeonChainDepthRef,
       dungeonChainMaxDepthRef,
       abortBossRush,
+      setDungeonChainActive,
+      setDungeonChainDepth,
+      setDungeonChainMaxDepth,
     });
+    dungeonDokaMultiplierRef.current = 1;
     // Apply XP penalty: 20%, floored so level never decreases
     // Apply Doka penalty: 40%, min 0
     // Shared one-shot helper persists the reduced absolute values via
@@ -14226,6 +14268,60 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 setTimeout(() => advanceTurn(), 0);
               } else if (_summon) {
+                // Player-side control mode skipped the #84/#86 turn-start
+                // ticks. Poison/burn/plague never decremented, so a shielded
+                // Wolf stayed buffed for the rest of the fight.
+                mapModifierRegistry.applyTurnStart(
+                  nextCombatant,
+                  activeMapModifierTypes,
+                  {
+                    log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                    rng: Math.random,
+                  },
+                );
+                processActiveEffects(nextCombatant.id);
+                if (isPlagueZone) {
+                  const live = getLiveCombatants(combatantStoreCtx).find(
+                    (e) => e.id === nextCombatant.id,
+                  );
+                  if (live && live.hp > 0) {
+                    const { newHp, lethal } = enemyHpAfterHazardDamage(
+                      live.hp,
+                      PLAGUE_ZONE_TICK,
+                    );
+                    setEnemyHpMap((prev) => ({
+                      ...prev,
+                      [nextCombatant.id]: newHp,
+                    }));
+                    updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                      hp: newHp,
+                    });
+                    if (lethal) {
+                      processCombatantDeathCb(nextCombatant.id);
+                    }
+                    logBattleEntry(
+                      `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                      "#a855f7",
+                    );
+                  }
+                }
+                const afterTicks = getLiveCombatants(combatantStoreCtx).find(
+                  (e) => e.id === nextCombatant.id,
+                );
+                if (
+                  !shouldDispatchEnemyAiAfterTurnStart({
+                    stillInStore: afterTicks !== undefined,
+                    storeHp: afterTicks?.hp ?? 0,
+                  })
+                ) {
+                  setActiveControlledSummonId(null);
+                  activeControlledSummonIdRef.current = null;
+                  setSelectedSummonSpellId(null);
+                  if (activeHostilesRemaining(combatantsRef.current) > 0) {
+                    setTimeout(() => advanceTurn(), 0);
+                  }
+                  return nextIdx;
+                }
                 // spawnSummonUnit seeds AP/MP once. The AI path resets them
                 // at handleSummonTurn; control mode never entered that path,
                 // so a 2-AP Archer that spent Poison Arrow stayed at 0 AP
@@ -16889,6 +16985,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       let nearest: (typeof enemies)[0] | null = null;
       let nearestDist = Number.POSITIVE_INFINITY;
       for (const e of enemies) {
+        if (!isActiveHostile(e)) continue;
         const dx = Math.abs(e.x - playerPositionRef.current.x);
         const dy = Math.abs(e.y - playerPositionRef.current.y);
         const dist = Math.max(dx, dy);
