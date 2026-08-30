@@ -13845,6 +13845,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       for (const expiredId of _expiredSummonIds) {
         removeCombatant(combatantStoreCtx, expiredId);
       }
+      // Last-hostile enemy minions expire here (turnsRemaining hit 0).
+      // flushSync would then dispatch the player turn (DoT / plague)
+      // before the [inBattle, enemies] victory effect — deathTriggered
+      // refuses applyRewards (same class as #87 lava/spike finally).
+      if (
+        !shouldAdvanceAfterEnemyTurn({
+          deathTriggered: deathTriggeredRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+        })
+      ) {
+        return;
+      }
       setTurnOrder((reactPrevOrder) => {
         // removeCombatant (kill or #74 expire) already filtered turnOrderRef
         // and shifted currentTurnIndexRef. React turnOrder / currentTurnIndex
