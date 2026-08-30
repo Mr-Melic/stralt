@@ -76,6 +76,7 @@ import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
 import { drawBarrierTower } from "../engine/barrierRender";
 import {
   PLAGUE_ZONE_TICK,
+  VOID_RIFT_TICK,
   activeHostilesRemaining,
   countsTowardKillRewards,
   despawnSummons,
@@ -246,6 +247,7 @@ import {
   mergeVictoryRewardLiveStats,
   persistDeathPenalty as persistAbsoluteStats,
   raiseUiAfterDeathPersist,
+  respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
 } from "../utils/deathPenalty";
 import {
@@ -1878,7 +1880,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // SECTION 1c: Per-kill defeated roster, appended once per enemy death.
   // The victory-gate recap reads this list (NOT deriveBattleEnemies, which
   // only returns LIVE combatants and would see an empty/partial list after
-  // the last enemy dies). Reset at every syncCombatants(resetBattle:true) site.
+  // the last enemy dies). Reset at every syncCombatants(resetBattle:true) site
+  // AND at checkBattleTrigger — overworld fights do not use resetBattle.
   const battleDefeatedRef = useRef<
     Array<{
       id: string;
@@ -12238,6 +12241,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       deathTriggeredRef.current = false;
       deathPenaltyAppliedRef.current = false;
+      // Overworld fights do not call syncCombatants({ resetBattle: true }).
+      // Leaving this list intact credits fight-1 kills again on fight 2.
+      battleDefeatedRef.current = [];
       // Reset per-battle achievement tracking
       battleCritHitsRef.current = 0;
       battleBetrayalOccurredRef.current = false;
@@ -12905,9 +12911,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       newXp: xpAfter,
       newDoka: dokaAfter,
     } = computeDeathPenalty(currentXp, currentDoka);
-    const respawnHp = Math.floor(
-      (50 + characterStatsRef.current.level) * 10 * 0.5,
-    );
+    const respawnHp = respawnHpAfterDeath(characterStatsRef.current.level);
     if (actor) {
       void progressPersistRef.current
         .enqueue(async () => {
@@ -14248,6 +14252,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   );
                 }
               }
+              // Void Rift: applyTurnStart only mutates the turn-order entry.
+              // Store HP stays > 0 so last-hostile ticks skip applyRewards.
+              if (isVoidRift) {
+                const live = getLiveCombatants(combatantStoreCtx).find(
+                  (e) => e.id === nextCombatant.id,
+                );
+                if (live && live.hp > 0) {
+                  const { newHp, lethal } = enemyHpAfterHazardDamage(
+                    live.hp,
+                    VOID_RIFT_TICK,
+                  );
+                  setEnemyHpMap((prev) => ({
+                    ...prev,
+                    [nextCombatant.id]: newHp,
+                  }));
+                  updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                    hp: newHp,
+                  });
+                  if (lethal) {
+                    processCombatantDeathCb(nextCombatant.id);
+                  }
+                  logBattleEntry(
+                    `Void Rift deals 3 damage to ${nextCombatant.name}!`,
+                    "#bc8cff",
+                  );
+                }
+              }
               const afterTicks = getLiveCombatants(combatantStoreCtx).find(
                 (e) => e.id === nextCombatant.id,
               );
@@ -14319,6 +14350,33 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 logBattleEntry(
                   `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
                   "#a855f7",
+                );
+              }
+            }
+            // Void Rift: applyTurnStart only mutates the turn-order entry.
+            // Store HP stays > 0 so last-hostile ticks skip applyRewards.
+            if (isVoidRift) {
+              const live = getLiveCombatants(combatantStoreCtx).find(
+                (e) => e.id === nextCombatant.id,
+              );
+              if (live && live.hp > 0) {
+                const { newHp, lethal } = enemyHpAfterHazardDamage(
+                  live.hp,
+                  VOID_RIFT_TICK,
+                );
+                setEnemyHpMap((prev) => ({
+                  ...prev,
+                  [nextCombatant.id]: newHp,
+                }));
+                updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                  hp: newHp,
+                });
+                if (lethal) {
+                  processCombatantDeathCb(nextCombatant.id);
+                }
+                logBattleEntry(
+                  `Void Rift deals 3 damage to ${nextCombatant.name}!`,
+                  "#bc8cff",
                 );
               }
             }

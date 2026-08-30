@@ -175,6 +175,9 @@ export function enemyHpAfterHazardDamage(
 /** Plague Zone WX tick. Must match the inline "deals 2 damage" log. */
 export const PLAGUE_ZONE_TICK = 2;
 
+/** Void Rift WX tick. Must match mapModifiers VOID_RIFT_TICK / MAP_MODIFIER_VOID_RIFT_DAMAGE. */
+export const VOID_RIFT_TICK = 3;
+
 /**
  * After DoT / plague at enemy turn start, dispatch AI only if the unit
  * is still alive in the store. Applies to non-summon enemies and enemy

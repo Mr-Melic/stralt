@@ -6,6 +6,7 @@ import {
   mergeVictoryRewardLiveStats,
   persistDeathPenalty,
   raiseUiAfterDeathPersist,
+  respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
   victoryResourceFloor,
 } from "./deathPenalty.ts";
@@ -38,6 +39,14 @@ assert.deepEqual(computeDeathPenalty(-10, -50), {
   newXp: 0,
   newDoka: 0,
 });
+
+assert.equal(respawnHpAfterDeath(1), 50);
+assert.equal(respawnHpAfterDeath(10), 72);
+assert.notEqual(
+  respawnHpAfterDeath(1),
+  Math.floor((50 + 1) * 10 * 0.5),
+  "old persistDeathPenalty formula must not be reused (255 HP at level 1)",
+);
 assert.deepEqual(computeDeathPenalty(5, 9), {
   xpLost: 1,
   dokaLost: 3,
