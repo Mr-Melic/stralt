@@ -177,7 +177,7 @@ import {
   resolveEnemyApMp,
 } from "../engine/summonIntegration";
 import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
-import { spawnSummonUnit } from "../engine/summonSpawn";
+import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
   computeTargetableTiles,
@@ -14404,6 +14404,53 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // H2 fix: declare watchdog first so timeout callback can reference it (forward reference fix)
     let watchdog: ReturnType<typeof setTimeout>;
     const timeout = setTimeout(() => {
+      // Bind the hostile spawn before any summoner / boss short-circuit.
+      // Previously this was assigned only as a side-effect of the
+      // player-summon SpellContext `spawnEnemySummon` callback. That
+      // callback never runs: player summons are `type: "summon"` and
+      // fail the `type !== "enemy"` gate above, so
+      // `spawnEnemySummonRef.current?.(dest, spell)` silently no-op'd
+      // and summoner enemies / boss summon spells spawned nothing.
+      const commitHostileSummon = (
+        cell: { x: number; y: number },
+        spell: any,
+      ) => {
+        const spawned = spawnEnemySummonUnit(
+          cell,
+          spell,
+          starterSpells,
+          characterStats.level,
+          logBattleEntry,
+          computeEnemyStats as (
+            level: number,
+            pieceType: string,
+            seedKey: string,
+          ) => any,
+          {
+            tiles: (currentMap?.tiles ?? []).map((row: any) =>
+              (row ?? []).map((t: any) => t !== "wall"),
+            ),
+            barriers: new Set(barrierTilesRef.current.keys()),
+            voidTiles: currentMap?.voidTiles ?? new Set<string>(),
+            portals: new Set(
+              (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+            ),
+            isOccupied: (oc: { x: number; y: number }) =>
+              enemiesRef.current.some(
+                (e: any) => e.x === oc.x && e.y === oc.y,
+              ) ||
+              (playerPositionRef.current.x === oc.x &&
+                playerPositionRef.current.y === oc.y),
+          } satisfies OccupancyContext,
+        );
+        if (!spawned) return;
+        addCombatant(combatantStoreCtx, spawned.summon as unknown as Enemy, {
+          battleParticipant: true,
+          insertAfterId: enemyId,
+        });
+      };
+      spawnEnemySummonRef.current = commitHostileSummon;
+
       // Read from enemiesRef.current (fresh mirror) — the dep array omits `enemies` to avoid double-firing.
       const summonEnemy = enemiesRef.current.find((e: any) => e.id === enemyId);
       if (summonEnemy?.isSummon && summonEnemy.side === "player") {
@@ -14520,118 +14567,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               return { id: "__player__", side: "player" as Side };
             return null;
           },
-          spawnEnemySummon: (cell: { x: number; y: number }, spell: any) => {
-            // Self-assign to the ref so the enemy turn executor closure
-            // (a different scope from this SpellContext builder) can invoke
-            // the latest version of this callback when a summoner enemy
-            // decides to cast a summon spell.
-            spawnEnemySummonRef.current = (
-              c: { x: number; y: number },
-              s: any,
-            ) => {
-              const unitDef: SummonUnitDef | undefined =
-                s?.summonUnitDef ??
-                starterSpells.find((sp: any) => sp.id === s?.id)?.summonUnitDef;
-              if (!unitDef) return;
-              const { summon } = spawnSummonUnit(
-                c,
-                {
-                  id: `enemy-summon-${unitDef.pieceType}`,
-                  name: `Enemy Summon ${unitDef.pieceType}`,
-                  summonUnitDef: unitDef,
-                  summonLifespan: 0,
-                  summonAI: unitDef.pieceType,
-                },
-                "enemy",
-                characterStats.level,
-                logBattleEntry,
-                computeEnemyStats as (
-                  level: number,
-                  pieceType: string,
-                  seedKey: string,
-                ) => any,
-                0,
-                {
-                  tiles: (currentMap?.tiles ?? []).map((row: any) =>
-                    (row ?? []).map((t: any) => t !== "wall"),
-                  ),
-                  barriers: new Set(barrierTilesRef.current.keys()),
-                  voidTiles: currentMap?.voidTiles ?? new Set<string>(),
-                  portals: new Set(
-                    (currentMap?.portals ?? []).map(
-                      (p: any) => `${p.x},${p.y}`,
-                    ),
-                  ),
-                  isOccupied: (oc: { x: number; y: number }) =>
-                    enemiesRef.current.some(
-                      (e: any) => e.x === oc.x && e.y === oc.y,
-                    ) ||
-                    (playerPositionRef.current.x === oc.x &&
-                      playerPositionRef.current.y === oc.y),
-                } satisfies OccupancyContext,
-                "enemy",
-              );
-              // S1 SITE #4: Atomic ADD via the combatant store. The summoner
-              // is the enemy currently casting (enemyId, captured in the
-              // outer enemy-AI-turn closure at WX ~11981). insertAfterId
-              // places the new turn-order entry right after the summoner.
-              // battleParticipant: true adds the id to battleStartIds only —
-              // the previous resetBattle: true wholesale-replaced the roster
-              // and wiped live combatants; addCombatant never resets.
-              addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
-                battleParticipant: true,
-                insertAfterId: enemyId,
-              });
-            };
-            // Invoke the same logic inline for the SpellContext caller.
-            const unitDef: SummonUnitDef | undefined =
-              spell?.summonUnitDef ??
-              starterSpells.find((s: any) => s.id === spell?.id)?.summonUnitDef;
-            if (!unitDef) return;
-            const { summon } = spawnSummonUnit(
-              cell,
-              {
-                id: `enemy-summon-${unitDef.pieceType}`,
-                name: `Enemy Summon ${unitDef.pieceType}`,
-                summonUnitDef: unitDef,
-                summonLifespan: 0,
-                summonAI: unitDef.pieceType,
-              },
-              "enemy",
-              characterStats.level,
-              logBattleEntry,
-              computeEnemyStats as (
-                level: number,
-                pieceType: string,
-                seedKey: string,
-              ) => any,
-              0,
-              {
-                tiles: (currentMap?.tiles ?? []).map((row: any) =>
-                  (row ?? []).map((t: any) => t !== "wall"),
-                ),
-                barriers: new Set(barrierTilesRef.current.keys()),
-                voidTiles: currentMap?.voidTiles ?? new Set<string>(),
-                portals: new Set(
-                  (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
-                ),
-                isOccupied: (c: { x: number; y: number }) =>
-                  enemiesRef.current.some(
-                    (e: any) => e.x === c.x && e.y === c.y,
-                  ) ||
-                  (playerPositionRef.current.x === c.x &&
-                    playerPositionRef.current.y === c.y),
-              } satisfies OccupancyContext,
-              "enemy",
-            );
-            // S1 SITE #5: Atomic ADD via the combatant store — inline twin of
-            // site #4. Same enemyId summoner, same battleParticipant +
-            // insertAfterId placement. No resetBattle, no wholesale REPLACE.
-            addCombatant(combatantStoreCtx, summon as unknown as Enemy, {
-              battleParticipant: true,
-              insertAfterId: enemyId,
-            });
-          },
+          spawnEnemySummon: commitHostileSummon,
         });
         // Build AI context for the summon (first-class AI combatant via decideSummonAction).
         const summonCombatants = enemiesRef.current
