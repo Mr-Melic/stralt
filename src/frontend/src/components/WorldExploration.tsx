@@ -75,12 +75,16 @@ import type { SpriteRect } from "../debug/clickTrace";
 import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
 import { drawBarrierTower } from "../engine/barrierRender";
 import {
+  PLAGUE_ZONE_TICK,
   activeHostilesRemaining,
   despawnSummons,
+  enemyHpAfterTurnStartTick,
   isActiveHostile,
   isAliveCombatant,
+  playerTurnStartModifierTarget,
   shouldAllowBattleTrigger,
   shouldAwardVictory,
+  shouldDispatchEnemyAiAfterTurnStart,
 } from "../engine/battleSetup";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
@@ -13999,16 +14003,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               return nextIdx;
             }
             setBattlePhase("player");
-            // Process player's active effects (DoT, duration decrement)
-            mapModifierRegistry.applyTurnStart(
-              combatantsRef.current.find((c) => (c as any).id === "player") ||
-                combatantsRef.current[0],
-              activeMapModifierTypes,
-              {
-                log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                rng: Math.random,
-              },
+            // Player is not in combatantsRef. The previous `[0]` fallback
+            // mutated the first enemy's store HP (plague −1 / void −3)
+            // every player turn without processCombatantDeath.
+            const playerModTarget = playerTurnStartModifierTarget(
+              combatantsRef.current,
             );
+            if (playerModTarget) {
+              mapModifierRegistry.applyTurnStart(
+                playerModTarget,
+                activeMapModifierTypes,
+                {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                },
+              );
+            }
             processActiveEffects("player");
             spellCooldownsRef.current.forEach((cd, id) => {
               if (cd > 1) spellCooldownsRef.current.set(id, cd - 1);
@@ -14178,8 +14188,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               route: "enemy-ai",
               ended: turnEndReasonRef.current,
             });
-            setBattlePhase("enemy");
-            // Process this enemy's active effects
+            // Process this enemy's active effects BEFORE dispatching AI.
+            // setBattlePhase("enemy") first left the phase stuck when a
+            // lethal DoT/plague tick processed death and pointed the queue
+            // at a non-enemy predecessor.
             mapModifierRegistry.applyTurnStart(
               nextCombatant,
               activeMapModifierTypes,
@@ -14189,18 +14201,48 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               },
             );
             processActiveEffects(nextCombatant.id);
-            // Plague Zone on enemies too
+            // Plague Zone: commit store HP. React-only enemyHpMap writes
+            // left isActiveHostile true so the last enemy still attacked.
             if (isPlagueZone) {
-              setEnemyHpMap((prev) => {
-                const cur = prev[nextCombatant.id] ?? 0;
-                const newHp = Math.max(0, cur - 2);
-                return { ...prev, [nextCombatant.id]: newHp };
-              });
-              logBattleEntry(
-                `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
-                "#a855f7",
+              const live = getLiveCombatants(combatantStoreCtx).find(
+                (e) => e.id === nextCombatant.id,
               );
+              if (live && live.hp > 0) {
+                const { newHp, lethal } = enemyHpAfterTurnStartTick(
+                  live.hp,
+                  PLAGUE_ZONE_TICK,
+                );
+                setEnemyHpMap((prev) => ({
+                  ...prev,
+                  [nextCombatant.id]: newHp,
+                }));
+                updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                  hp: newHp,
+                });
+                if (lethal) {
+                  processCombatantDeathCb(nextCombatant.id);
+                }
+                logBattleEntry(
+                  `Plague Zone deals 2 damage to ${nextCombatant.name}!`,
+                  "#a855f7",
+                );
+              }
             }
+            const afterTicks = getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === nextCombatant.id,
+            );
+            if (
+              !shouldDispatchEnemyAiAfterTurnStart({
+                stillInStore: afterTicks !== undefined,
+                storeHp: afterTicks?.hp ?? 0,
+              })
+            ) {
+              if (activeHostilesRemaining(combatantsRef.current) > 0) {
+                setTimeout(() => advanceTurn(), 0);
+              }
+              return nextIdx;
+            }
+            setBattlePhase("enemy");
             logBattleEntry(`${nextCombatant.name}'s turn`, "#ffffff");
           }
           return nextIdx;

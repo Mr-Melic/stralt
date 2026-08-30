@@ -102,6 +102,50 @@ export function shouldAwardVictory(opts: {
   );
 }
 
+/** Plague Zone WX tick. Must match the inline "deals 2 damage" log. */
+export const PLAGUE_ZONE_TICK = 2;
+
+/**
+ * Turn-start HP loss that callers must commit through `updateCombatant`.
+ * React-only `enemyHpMap` writes leave store hp unchanged, so
+ * `isActiveHostile` still counts the unit: last-enemy plague delays
+ * applyRewards, and the "dead" unit takes a full AI turn (including a
+ * lethal attack that can persist a death penalty instead of victory).
+ */
+export function enemyHpAfterTurnStartTick(
+  currentHp: number,
+  damage: number,
+): { newHp: number; lethal: boolean } {
+  const hp = Number.isFinite(currentHp) ? currentHp : 0;
+  const dmg = Number.isFinite(damage) ? Math.max(0, damage) : 0;
+  const newHp = Math.max(0, hp - dmg);
+  return { newHp, lethal: newHp === 0 };
+}
+
+/**
+ * After DoT / plague at enemy turn start, dispatch AI only if the unit
+ * is still alive in the store. `setBattlePhase("enemy")` before a lethal
+ * tick leaves battlePhase stuck when `processCombatantDeath` points the
+ * queue at a non-enemy predecessor.
+ */
+export function shouldDispatchEnemyAiAfterTurnStart(opts: {
+  stillInStore: boolean;
+  storeHp: number;
+}): boolean {
+  return opts.stillInStore && opts.storeHp > 0;
+}
+
+/**
+ * Player lives outside `combatantsRef`. Falling back to `[0]` mutates the
+ * first enemy's store HP (plague −1 / void −3) every player turn without
+ * `processCombatantDeath`.
+ */
+export function playerTurnStartModifierTarget<T extends { id?: string }>(
+  combatants: T[],
+): T | undefined {
+  return combatants.find((c) => c.id === "player");
+}
+
 /**
  * World / next-room encounters may start only when React `inBattle` AND the
  * sync `inBattleRef` are both false. `cleanupBattle()` only clears the ref;

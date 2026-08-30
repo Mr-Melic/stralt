@@ -1,0 +1,138 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { CombatantEntry } from "../components/InitiativeStrip";
+import type { Enemy } from "../types/gameTypes";
+import {
+  PLAGUE_ZONE_TICK,
+  activeHostilesRemaining,
+  enemyHpAfterTurnStartTick,
+  playerTurnStartModifierTarget,
+  shouldAwardVictory,
+  shouldDispatchEnemyAiAfterTurnStart,
+} from "./battleSetup.ts";
+import {
+  initCombatantStore,
+  removeCombatant,
+  syncCombatants,
+  updateCombatant,
+} from "./combatantStore.ts";
+
+function enemy(id: string, hp = 40): Enemy {
+  return {
+    id,
+    x: 1,
+    y: 1,
+    level: 3,
+    hp,
+    maxHp: 40,
+    res: 0,
+    sp: 0,
+    chc: 0,
+    init: 8,
+    pieceType: "pawn",
+    currentView: "front",
+    isMoving: false,
+    movementPath: [],
+    scaleX: 1,
+    scaleY: 1,
+    nextMoveTime: 0,
+    family: "plague_rat",
+  };
+}
+
+function store(initial: Enemy[]) {
+  const combatantsRef = { current: [] as Enemy[] };
+  const enemiesRef = { current: [] as Enemy[] };
+  const battleEnemiesRef = { current: [] as Enemy[] };
+  const turnOrderRef = { current: [] as CombatantEntry[] };
+  const currentTurnIndexRef = { current: 0 };
+  const ctx = initCombatantStore(
+    combatantsRef,
+    enemiesRef,
+    battleEnemiesRef,
+    turnOrderRef,
+    currentTurnIndexRef,
+    () => {},
+    () => {},
+    () => {},
+  );
+  syncCombatants(ctx, initial, { resetBattle: true });
+  return ctx;
+}
+
+describe("enemyHpAfterTurnStartTick", () => {
+  it("marks plague as lethal so callers must processCombatantDeath", () => {
+    assert.deepEqual(enemyHpAfterTurnStartTick(2, PLAGUE_ZONE_TICK), {
+      newHp: 0,
+      lethal: true,
+    });
+    assert.deepEqual(enemyHpAfterTurnStartTick(1, PLAGUE_ZONE_TICK), {
+      newHp: 0,
+      lethal: true,
+    });
+    assert.deepEqual(enemyHpAfterTurnStartTick(10, PLAGUE_ZONE_TICK), {
+      newHp: 8,
+      lethal: false,
+    });
+  });
+});
+
+describe("shouldDispatchEnemyAiAfterTurnStart", () => {
+  it("blocks AI after a lethal DoT/plague tick so battlePhase cannot stick", () => {
+    assert.equal(
+      shouldDispatchEnemyAiAfterTurnStart({ stillInStore: false, storeHp: 0 }),
+      false,
+    );
+    assert.equal(
+      shouldDispatchEnemyAiAfterTurnStart({ stillInStore: true, storeHp: 0 }),
+      false,
+    );
+    assert.equal(
+      shouldDispatchEnemyAiAfterTurnStart({ stillInStore: true, storeHp: 8 }),
+      true,
+    );
+  });
+});
+
+describe("playerTurnStartModifierTarget", () => {
+  it("does not fall back to the first enemy when player is absent", () => {
+    const combatants = [{ id: "rat-1" }, { id: "golem-1" }];
+    assert.equal(playerTurnStartModifierTarget(combatants), undefined);
+    assert.deepEqual(
+      playerTurnStartModifierTarget([{ id: "player" }, { id: "rat-1" }]),
+      { id: "player" },
+    );
+  });
+});
+
+describe("turn-start plague store write", () => {
+  it("React-only plague HP write leaves the last enemy blocking victory", () => {
+    const ctx = store([enemy("rat-1", 2)]);
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 1);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: activeHostilesRemaining(ctx.combatantsRef.current),
+      }),
+      false,
+      "UI 0 HP must not award while the store still has a living hostile",
+    );
+
+    const { newHp, lethal } = enemyHpAfterTurnStartTick(2, PLAGUE_ZONE_TICK);
+    updateCombatant(ctx, "rat-1", { hp: newHp });
+    if (lethal) removeCombatant(ctx, "rat-1");
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "store write + processCombatantDeath must award so applyRewards can run",
+    );
+  });
+});
