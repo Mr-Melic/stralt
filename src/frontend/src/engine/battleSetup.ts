@@ -138,3 +138,23 @@ export function shouldAllowBattleTrigger(opts: {
 export function despawnSummons<T extends Combatant>(enemies: T[]): T[] {
   return enemies.filter((e) => !e.isSummon);
 }
+
+/**
+ * Lava / spike damage after an enemy lands on a hazard.
+ *
+ * Callers must then write `newHp` through `updateCombatant` and, when
+ * `lethal`, `processCombatantDeath` — the same contract as player Mirror.
+ * React-only `enemyHpMap` / `turnOrder` writes leave store hp > 0, so
+ * `isActiveHostile` still counts the unit: last-enemy lava delays
+ * applyRewards, and the "dead" unit takes another full turn (including a
+ * lethal attack that can persist a death penalty instead of victory).
+ */
+export function enemyHpAfterHazardDamage(
+  currentHp: number,
+  damage: number,
+): { newHp: number; lethal: boolean } {
+  const hp = Number.isFinite(currentHp) ? currentHp : 0;
+  const dmg = Number.isFinite(damage) ? Math.max(0, damage) : 0;
+  const newHp = Math.max(0, hp - dmg);
+  return { newHp, lethal: newHp === 0 };
+}

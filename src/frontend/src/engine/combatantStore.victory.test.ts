@@ -9,6 +9,7 @@ import {
   removeCombatant,
   resetCombatantStore,
   syncCombatants,
+  updateCombatant,
 } from "./combatantStore.ts";
 
 function enemy(id: string, hp = 40): Enemy {
@@ -93,6 +94,37 @@ describe("removeCombatant preserves the battle-start snapshot", () => {
       }),
       true,
       "victory gate must fire so applyRewards / recap can run",
+    );
+  });
+
+  it("React-only hazard HP write leaves the last enemy blocking victory", () => {
+    const ctx = store([enemy("rat-1", 10)]);
+    // Simulate the old lava path: enemyHpMap / turnOrder drop to 0, store
+    // hp stays 10. Victory reads combatantsRef via isActiveHostile.
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 1);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: activeHostilesRemaining(ctx.combatantsRef.current),
+      }),
+      false,
+      "UI 0 HP must not award while the store still has a living hostile",
+    );
+
+    updateCombatant(ctx, "rat-1", { hp: 0 });
+    removeCombatant(ctx, "rat-1");
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "store write + processCombatantDeath must award so applyRewards can run",
     );
   });
 

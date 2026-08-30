@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   activeHostilesRemaining,
   despawnSummons,
+  enemyHpAfterHazardDamage,
   isActiveHostile,
   shouldAwardVictory,
 } from "./battleSetup.ts";
@@ -52,5 +53,22 @@ describe("isActiveHostile", () => {
       after.map((e) => e.id),
       ["rat"],
     );
+  });
+});
+
+describe("enemyHpAfterHazardDamage", () => {
+  it("marks lava/spike as lethal so callers must processCombatantDeath", () => {
+    assert.deepEqual(enemyHpAfterHazardDamage(10, 12), {
+      newHp: 0,
+      lethal: true,
+    });
+    assert.deepEqual(enemyHpAfterHazardDamage(20, 8), {
+      newHp: 12,
+      lethal: false,
+    });
+    assert.deepEqual(enemyHpAfterHazardDamage(0, 8), {
+      newHp: 0,
+      lethal: true,
+    });
   });
 });
