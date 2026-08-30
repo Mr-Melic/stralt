@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  PORTAL_TRANSITION_XP,
   persistIncrementalRewards,
   readApplyRewardsOk,
 } from "./applyRewardsResult.ts";
 import { liveBattleChallengePersistEntries } from "./challengeRewards.ts";
+import { createProgressPersist } from "./progressPersist.ts";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
@@ -154,6 +156,29 @@ describe("applyRewards result parsing", () => {
     const persisted = await persistIncrementalRewards(actor, 2, 0, 10);
     assert.deepEqual(calls, [[2n, 0n, 10n]]);
     assert.deepEqual(persisted, { newDoka: 100, newXp: 30, newLevel: 2 });
+  });
+
+  it("does not copy optimistic portal XP over committed when persist fails", async () => {
+    assert.equal(PORTAL_TRANSITION_XP, 10);
+    const lock = createProgressPersist({ doka: 200, xp: 80, level: 4 });
+    let uiXp = 80;
+    await assert.rejects(
+      lock.enqueue(async () => {
+        await persistIncrementalRewards(
+          {
+            applyRewards: async () => ({ err: "Account banned" }),
+          },
+          1,
+          0,
+          PORTAL_TRANSITION_XP,
+        );
+      }),
+      /Account banned/,
+    );
+    // HUD stays at the pre-portal leftover until applyRewards commits.
+    assert.equal(uiXp, 80);
+    assert.equal(lock.hydrateWhenIdle({ doka: 200, xp: uiXp, level: 4 }), true);
+    assert.equal(lock.snapshot().xp, 80);
   });
 });
 

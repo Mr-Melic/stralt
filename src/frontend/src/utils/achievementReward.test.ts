@@ -3,8 +3,10 @@ import {
   committedDokaAfterAchievementCredit,
   creditAchievementRewardThroughPersist,
   readClaimAchievementReward,
+  shouldBeginAchievementClaim,
   shouldCommitAchievementCredit,
   shouldInvalidateCallerDokaAfterClaim,
+  shouldRollbackClaimFailure,
 } from "./achievementReward.ts";
 import {
   applyShopCreditDeltaToUi,
@@ -119,6 +121,20 @@ void (async () => {
   assert.equal(shouldInvalidateCallerDokaAfterClaim(false), true);
   assert.equal(shouldCommitAchievementCredit(true), true);
   assert.equal(shouldCommitAchievementCredit(false), false);
+  assert.equal(shouldBeginAchievementClaim(new Set(), "first_blood"), true);
+  assert.equal(
+    shouldBeginAchievementClaim(new Set(["first_blood"]), "first_blood"),
+    false,
+  );
+  assert.equal(
+    shouldRollbackClaimFailure("Reward already claimed", false),
+    false,
+  );
+  assert.equal(shouldRollbackClaimFailure("network down", false), true);
+  assert.equal(
+    shouldRollbackClaimFailure("Reward already claimed", true),
+    false,
+  );
 
   // Unseeded lock starts at placeholder 0. Committing 0+grant would mark
   // the wallet seeded at the grant only; death persist then writes that

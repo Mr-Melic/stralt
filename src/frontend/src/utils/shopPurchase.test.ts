@@ -6,12 +6,14 @@ import {
 } from "./progressPersist.ts";
 import {
   buildInitiatePurchaseArgs,
+  committedDokaAfterShopCreditOnLock,
   creditPendingPurchases,
   creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
   readCallerDokaBalance,
   readInitiatePurchaseResult,
   shopCreditUsesBattleTimeoutSet,
+  shouldCommitShopCredit,
 } from "./shopPurchase.ts";
 
 const args = buildInitiatePurchaseArgs(
@@ -82,6 +84,14 @@ assert.equal(
 assert.equal(creditedDokaDelta(100, 600), 500);
 assert.equal(creditedDokaDelta(600, 600), 0);
 assert.equal(creditedDokaDelta(null, 600), 0);
+assert.equal(shouldCommitShopCredit(500), true);
+assert.equal(shouldCommitShopCredit(0), false);
+assert.equal(committedDokaAfterShopCreditOnLock(250, 750), 750);
+assert.equal(
+  committedDokaAfterShopCreditOnLock(750, 200),
+  750,
+  "stale pre-heal query must not cut a seeded lock",
+);
 
 void (async () => {
   let processed = 0;
@@ -180,6 +190,27 @@ void (async () => {
   await reward;
   assert.deepEqual(await queued, { previous: 150, credited: 650 });
   assert.equal(persist.snapshot().doka, 650);
+
+  // 60s remount retry / no-op processPendingPurchases used to commit the
+  // absolute query. A stale pre-heal 200 overwrites committed 170; the
+  // next saveBattleStats refunds the spend.
+  {
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    lock.commit({ doka: 170 });
+    let reads = 0;
+    await creditPendingPurchasesThroughPersist(
+      {
+        processPendingPurchases: async () => 0n,
+        getCallerDokaBalance: async () => {
+          reads += 1;
+          return 200n;
+        },
+      },
+      lock,
+    );
+    assert.equal(reads, 2);
+    assert.equal(lock.snapshot().doka, 170);
+  }
 
   console.log("shopPurchase.test: ok");
 })();

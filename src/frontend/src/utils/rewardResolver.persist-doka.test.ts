@@ -27,4 +27,27 @@ describe("persistDokaCredit", () => {
     const failed = await persistDokaCredit(failing, 1, 10);
     assert.equal(failed, 0);
   });
+
+  it("reads __kind__/ _ok applyRewards payloads so a credit is not dropped", async () => {
+    const kindOk = {
+      applyRewards: async () => ({
+        __kind__: "ok" as const,
+        ok: { newDoka: 430n, newXp: 0n, newLevel: 4n },
+      }),
+    };
+    assert.equal(
+      await persistDokaCredit(kindOk as unknown as DokaCreditActor, 1, 30),
+      430,
+    );
+
+    const underscored = {
+      applyRewards: async () => ({
+        _ok: { newDoka: 340n, newXp: 0n, newLevel: 4n },
+      }),
+    };
+    assert.equal(
+      await persistDokaCredit(underscored as unknown as DokaCreditActor, 1, 40),
+      340,
+    );
+  });
 });

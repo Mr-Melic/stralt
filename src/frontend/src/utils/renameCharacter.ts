@@ -32,6 +32,14 @@ export function readRenameCharacterResult(
 
 export const RENAME_DOKA_COST = 100;
 
+/** Double-click must not enqueue a second 100 Doka rename. */
+export function shouldStartRename(
+  isRenaming: boolean,
+  liveDoka: number,
+): boolean {
+  return !isRenaming && liveDoka >= RENAME_DOKA_COST;
+}
+
 /** Only debit the live wallet after the canister accepted the rename. */
 export function shouldDebitRenameDoka(
   parsed: { ok: true } | { err: string },

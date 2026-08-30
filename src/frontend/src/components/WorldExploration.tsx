@@ -231,7 +231,6 @@ import {
   type AchievementCreditActor,
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
-import { persistIncrementalRewards } from "../utils/applyRewardsResult";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
   castFollowUpShouldDebitAp,
@@ -273,7 +272,10 @@ import {
   logDebugWarn,
 } from "../utils/debugLogger";
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
-import { nextDokaAfterShopSpend } from "../utils/itemShop";
+import {
+  nextDokaAfterJackpotHeal,
+  nextDokaAfterShopSpend,
+} from "../utils/itemShop";
 import {
   activatePlayerMirror,
   consumePlayerMirror,
@@ -292,11 +294,14 @@ import {
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
+  shouldStartRename,
 } from "../utils/renameCharacter";
 import {
+  PORTAL_TRANSITION_XP,
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
   computeVictoryExp,
+  persistIncrementalRewards,
   resolveBattleRewards,
   selectDefeatedEnemiesForRewards,
 } from "../utils/rewardResolver";
@@ -311,7 +316,9 @@ import {
 import {
   type SpellUpgradeActor,
   applySpellLevel,
+  committedDokaAfterSpellUpgrade,
   persistSpellUpgrade,
+  shouldCommitSpellUpgradeDoka,
   spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
 import {
@@ -1954,8 +1961,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (dokaBalanceRef.current < RENAME_DOKA_COST) {
-      toast.error("Insufficient Doka (need 100)");
+    if (!shouldStartRename(isRenaming, dokaBalanceRef.current)) {
+      if (dokaBalanceRef.current < RENAME_DOKA_COST) {
+        toast.error("Insufficient Doka (need 100)");
+      }
       return;
     }
     setIsRenaming(true);
@@ -2955,10 +2964,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     spellLevelsRef.current = spellLevels;
   }, [spellLevels]);
 
+  const spellUpgradeInFlightRef = useRef<Set<string>>(new Set());
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
+      if (spellUpgradeInFlightRef.current.has(spellId)) return;
       if (dokaBalance < cost) return;
       if (!actor?.upgradeSpell) return;
+      spellUpgradeInFlightRef.current.add(spellId);
       void (async () => {
         try {
           const { newLevel, spent } = await progressPersistRef.current.enqueue(
@@ -2979,8 +2991,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 spellId,
                 result.newLevel,
               );
-              if (result.newDoka != null) {
-                progressPersistRef.current.commit({ doka: result.newDoka });
+              // getCallerDokaBalance after upgradeSpell is a query and can
+              // return the pre-spend wallet. Only commit a decrease; a
+              // stale-high read would refund the spend on the lock.
+              const nextDoka = committedDokaAfterSpellUpgrade(
+                committedBefore,
+                result.newDoka,
+                cost,
+              );
+              if (
+                shouldCommitSpellUpgradeDoka(
+                  committedBefore,
+                  nextDoka,
+                  progressPersistRef.current.isWalletSeeded(),
+                )
+              ) {
+                progressPersistRef.current.commit({ doka: nextDoka });
               }
               return {
                 newLevel: result.newLevel,
@@ -2999,7 +3025,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Debit the canister spend, not the advertised summon 10× cost —
           // otherwise hydrateWhenIdle copies the short UI over committed
           // and the next heal/shop saveBattleStats wipes the difference.
-          onDokaBalanceChange(Math.max(0, dokaBalanceRef.current - spent));
+          const nextUi = Math.max(0, dokaBalanceRef.current - spent);
+          dokaBalanceRef.current = nextUi;
+          onDokaBalanceChange(nextUi);
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
@@ -3015,6 +3043,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           });
         } catch (err) {
           console.warn("[PBV] Spell upgrade failed:", err);
+        } finally {
+          spellUpgradeInFlightRef.current.delete(spellId);
         }
       })();
     },
@@ -7167,7 +7197,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Portal +10 XP must not touch the HUD before applyRewards commits.
       // Optimistic leftover + failed persist lets hydrateWhenIdle copy the
       // unpaid XP onto committed; the next saveBattleStats writes it.
-      const PORTAL_XP = 10;
       if (actor) {
         const deathEpochAtPersistStart = deathEpochRef.current;
         void progressPersistRef.current
@@ -7176,7 +7205,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               actor,
               characterSlot,
               0,
-              PORTAL_XP,
+              PORTAL_TRANSITION_XP,
             );
             progressPersistRef.current.commit({
               xp: persisted.newXp,
@@ -18276,16 +18305,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       // 🎰 Jackpot heal: 0.5% chance of full HP restore
                       const isJackpot = Math.random() < 0.005;
                       if (isJackpot) {
-                        // Full heal — only spend 1 Doka for the jackpot.
-                        // Use the live ref (same as the normal heal / BuffShop
-                        // paths). The render-closure `dokaBalance` lags a shop
-                        // spend that already updated the ref, and
-                        // persistAbsoluteProgress computes spend as
-                        // spendFromUiBalance(ref, next). Passing dokaBalance-1
-                        // then writes spend 0 and can mint the pre-spend wallet.
-                        const nextDoka = nextDokaAfterShopSpend(
+                        // Full heal — spend 1 Doka from the live wallet.
+                        // The render snapshot lags a same-tick shop/heal
+                        // debit; persistAbsoluteProgress then records spend
+                        // 0 and idle hydrate refunds the earlier cut.
+                        const nextDoka = nextDokaAfterJackpotHeal(
                           dokaBalanceRef.current,
-                          1,
                         );
                         setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
                         persistAbsoluteProgress(maxHp, nextDoka);

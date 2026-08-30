@@ -100,6 +100,29 @@ export function creditedDokaDelta(
   return Math.max(0, credited - previous);
 }
 
+/**
+ * processPendingPurchases is a credit. The 60s remount retry and a no-op
+ * complete both still read getCallerDokaBalance and used to commit that
+ * absolute snapshot. A stale pre-heal query then refunds the spend on the
+ * persist lock; the next saveBattleStats writes it on-chain.
+ *
+ * Only commit when this pair observed a gain, and never cut a higher
+ * lock snapshot (applyRewards may have committed since the query).
+ */
+export function shouldCommitShopCredit(gained: number): boolean {
+  return gained > 0;
+}
+
+export function committedDokaAfterShopCreditOnLock(
+  committedDoka: number,
+  credited: number,
+): number {
+  return Math.max(
+    Math.max(0, Math.floor(Number(committedDoka) || 0)),
+    Math.max(0, Math.floor(Number(credited) || 0)),
+  );
+}
+
 /** Complete aged pending purchases and return the wallet before/after. */
 export async function creditPendingPurchases(
   actor: PurchaseCreditActor,
@@ -123,6 +146,7 @@ export async function creditPendingPurchases(
 export type ShopCreditPersistLock = {
   enqueue<T>(fn: () => Promise<T>): Promise<T>;
   commit(next: { doka?: number }): void;
+  snapshot(): { doka: number };
 };
 
 export async function creditPendingPurchasesThroughPersist(
@@ -131,8 +155,14 @@ export async function creditPendingPurchasesThroughPersist(
 ): Promise<{ previous: number | null; credited: number | null }> {
   return persist.enqueue(async () => {
     const result = await creditPendingPurchases(actor);
-    if (result.credited != null) {
-      persist.commit({ doka: result.credited });
+    const gained = creditedDokaDelta(result.previous, result.credited);
+    if (result.credited != null && shouldCommitShopCredit(gained)) {
+      persist.commit({
+        doka: committedDokaAfterShopCreditOnLock(
+          persist.snapshot().doka,
+          result.credited,
+        ),
+      });
     }
     return result;
   });
