@@ -154,6 +154,8 @@ import {
   isProgressionLocked,
   isProgressionPortalUnlocked,
   resetRunState,
+  restExitSpawnDepth,
+  shouldArmDungeonChainOnRestExit,
   shouldSpawnWhitePortal,
   shouldSuppressPortal,
   snapshotDungeonChain,
@@ -303,6 +305,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { applyXpDelta } from "../utils/xpCurve";
 import BuffShop from "./BuffShop";
 import type { BuffItemType } from "./BuffShop";
 import ChallengePanel, {
@@ -6569,8 +6572,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const _myGen2 = aiGenerationRef.current;
         lastPortalRef.current = { x: portal.x, y: portal.y };
         cleanupMap();
-        if (portal.restExitType === "dungeon") {
+        const restExitType = portal.restExitType;
+        if (shouldArmDungeonChainOnRestExit(restExitType)) {
           dungeonChainActiveRef.current = true;
+          dungeonChainDepthRef.current = 1;
           setDungeonChainActive(true);
           setDungeonChainDepth(1);
           const newMaxDepth = 3 + Math.floor(Math.random() * 3);
@@ -6583,7 +6588,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           currentMapRef.current = newMap;
           setCurrentMap(newMap);
           setPlayerPositionSynced(spawnPosition);
-          resetCombatantStore(combatantStoreCtx);
+          // cleanupMap + generateRandomMap leave an empty roster. Rest-exit
+          // used to skip generateEnemies, so a dungeon floor spawned an
+          // unlocked progression portal with no hostiles (skip the run).
+          const roster = newMap.isDeathRealm
+            ? []
+            : generateEnemies(
+                newMap.tiles,
+                newMap.portals,
+                restExitSpawnDepth(restExitType),
+                newMap.voidTiles,
+              );
+          syncCombatants(combatantStoreCtx, roster, { resetBattle: true });
           setTransitionInProgress(false);
           transitionInProgressRef.current = false;
         }, 400);
@@ -12794,10 +12810,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const completedChallenges = challengePersistEntries.map((c) => c.name);
 
       const newDokaBalance = dokaBalance + totalDoka + challengeDokaReward;
-      const newXp = (characterStats.exp || 0) + expGained + challengeXpReward;
+      const leveled = applyXpDelta(
+        characterStats.exp || 0,
+        characterStats.level,
+        expGained + challengeXpReward,
+      );
+      const newXp = leveled.newXp;
 
       onDokaBalanceChange(newDokaBalance);
-      setCharacterStats((prev) => ({ ...prev, exp: newXp }));
+      setCharacterStats((prev) => ({
+        ...prev,
+        exp: leveled.newXp,
+        level: leveled.newLevel,
+      }));
 
       // Persist currentRoom BEFORE applyRewards so a reload cannot re-enter
       // the room that just paid out. Both writes stay on the persist lock so
@@ -13012,7 +13037,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const persistAbsoluteProgress = useCallback(
     (newHp: number, newDoka: number) => {
       if (!actor) return;
-      const spend = spendFromUiBalance(dokaBalance, newDoka);
+      const spend = spendFromUiBalance(dokaBalanceRef.current, newDoka);
       void progressPersistRef.current
         .enqueue(async () => {
           const committed = progressPersistRef.current.snapshot();
@@ -13055,7 +13080,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         })
         .catch((err) => console.error("[doka-spend save] failed:", err));
     },
-    [actor, character, characterSlot, dokaBalance],
+    [actor, character, characterSlot],
   );
 
   // Handle player death
@@ -13876,7 +13901,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // [inBattle, enemies] victory useEffect — deathTriggered then
       // refuses applyRewards and persistDeathPenalty writes instead.
       if (
-        _expiredSummonIds.length > 0 &&
         !shouldAdvanceAfterEnemyTurn({
           deathTriggered: deathTriggeredRef.current,
           hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
@@ -14955,6 +14979,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             y: execResult.newPosition.y,
             hp: execResult.hp,
           });
+          // Bomber detonate (and any executor hp===0) used to leave a corpse
+          // in getLiveCombatants, blocking occupancy for the rest of the fight.
+          if (execResult.hp <= 0) {
+            processCombatantDeathCb(enemyId);
+          }
           // Always advance the turn — no stalls.
           // FIX #1 (router stall): reset enemyTurnInProgressRef so the enemy-phase
           // useEffect gate (line ~10639) does not early-return on the next
@@ -17512,9 +17541,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         <BuffShop
           dokaBalance={dokaBalance}
           onDeductDoka={(amount) => {
-            const next = nextDokaAfterShopSpend(dokaBalance, amount);
-            onDokaBalanceChange(next);
+            const next = nextDokaAfterShopSpend(dokaBalanceRef.current, amount);
             persistAbsoluteProgress(characterStatsRef.current.hp, next);
+            dokaBalanceRef.current = next;
+            onDokaBalanceChange(next);
           }}
           onUseItem={handleUseItem}
           isPlayerTurn={battlePhase === "player" && inBattle}
@@ -18014,11 +18044,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           inBattleRef.current,
                           challengeHealUsedRef.current,
                         );
-                      onDokaBalanceChange(Math.max(0, dokaBalance - dokaCost));
-                      persistAbsoluteProgress(
-                        Math.min(maxHp, characterStats.hp + hpToAdd),
-                        Math.max(0, dokaBalance - dokaCost),
+                      const nextDoka = Math.max(
+                        0,
+                        dokaBalanceRef.current - dokaCost,
                       );
+                      persistAbsoluteProgress(
+                        Math.min(
+                          maxHp,
+                          (characterStatsRef.current.hp ?? characterStats.hp) +
+                            hpToAdd,
+                        ),
+                        nextDoka,
+                      );
+                      dokaBalanceRef.current = nextDoka;
+                      onDokaBalanceChange(nextDoka);
                       // Toast
                       toast.success(
                         `Healed +${hpToAdd} HP (-${dokaCost} Doka)`,

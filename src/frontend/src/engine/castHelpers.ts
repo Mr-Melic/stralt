@@ -25,6 +25,7 @@ import type { CharacterStats } from "../components/WorldExploration";
 import type { SoundEvent } from "../hooks/useSoundHooks";
 import type { ActiveEffect } from "../types/gameTypes";
 import type { Enemy } from "../types/gameTypes";
+import { isActiveHostile } from "./battleSetup.ts";
 import {
   type DeathPipelineCtx,
   processCombatantDeath,
@@ -109,7 +110,7 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
           e.x === ax &&
           e.y === ay &&
           e.id !== targetEnemy.id &&
-          (e.hp ?? 0) > 0,
+          isActiveHostile(e),
       );
       if (hit) aoeEnemies.push(hit);
     }
@@ -128,9 +129,9 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
     ? enemies.filter((e) => {
         const dx = Math.abs(e.x - gridPos.x);
         const dy = Math.abs(e.y - gridPos.y);
-        return Math.max(dx, dy) <= effectiveRange && (e.hp ?? 0) > 0;
+        return Math.max(dx, dy) <= effectiveRange && isActiveHostile(e);
       })
-    : targetEnemy && (targetEnemy.hp ?? 0) > 0
+    : targetEnemy && isActiveHostile(targetEnemy)
       ? [targetEnemy, ...aoeEnemies]
       : [];
   const enemiesInRange = Array.from(
