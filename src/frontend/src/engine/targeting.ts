@@ -652,54 +652,60 @@ export function shouldExecuteLiveCast(live: TileCastableResult): boolean {
 }
 
 /**
- * Same base the highlight wrapper passes into `getEffectiveSpellRange`.
- * Attack Nearest used `spell.range` only, so a grown `maxRange` ring was
- * highlighted but the button searched a shorter Chebyshev disk.
+ * Range base shared by `getSpellRangeTiles` and Attack Nearest.
+ * `maxRange` overrides `range` when set — using raw `spell.range` alone
+ * lets Attack Nearest miss a tile the highlight already painted.
  */
-export function spellHighlightRangeBase(spell: SpellConfig): number {
+export function spellHighlightRangeBase(
+  spell: Pick<SpellConfig, "maxRange" | "range">,
+): number {
   return spell.maxRange ?? Math.max(1, Number(spell.range));
 }
 
 /**
- * Nearest hostile that the live gate would actually execute.
- * Chebyshev-only nearest-enemy search ignored LoS / minRange / linear, so
- * Attack Nearest could cast at a tile the highlight never offered.
+ * Nearest hostile tile that is legal under the same live gate as the
+ * highlight set. Chebyshev-only search (raw `spell.range`, no LoS /
+ * minRange / linear) used to pick a closer blocked tile — or miss a
+ * farther highlighted one — so Attack Nearest and the blue ring disagreed.
  */
 export function pickNearestLiveHostileTile(
   spell: SpellConfig,
-  casterPos: CasterPosition,
-  hostiles: Enemy[],
+  caster: CasterPosition,
+  hostiles: ReadonlyArray<{ x: number; y: number }>,
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
 ): { x: number; y: number } | null {
   let nearest: { x: number; y: number } | null = null;
   let nearestDist = Number.POSITIVE_INFINITY;
-  for (const e of hostiles) {
-    const dx = Math.abs(e.x - casterPos.x);
-    const dy = Math.abs(e.y - casterPos.y);
-    const dist = Math.max(dx, dy);
-    if (dist > effectiveRange || dist >= nearestDist) continue;
+  for (const hostile of hostiles) {
+    const tile = { x: hostile.x, y: hostile.y };
     const live = isTileCastableLive(
       spell,
-      casterPos,
-      { x: e.x, y: e.y },
+      caster,
+      tile,
       liveCombatants,
       mapTiles,
       effectiveRange,
     );
     if (!shouldExecuteLiveCast(live)) continue;
-    nearest = { x: e.x, y: e.y };
-    nearestDist = dist;
+    const dist = Math.max(
+      Math.abs(tile.x - caster.x),
+      Math.abs(tile.y - caster.y),
+    );
+    if (dist < nearestDist) {
+      nearest = tile;
+      nearestDist = dist;
+    }
   }
   return nearest;
 }
 
-/** Attack Nearest button: same legal set as highlight + live execute. */
+/** Attack Nearest button: same legal set as the live execute path. */
 export function canAttackNearestLive(
   spell: SpellConfig,
-  casterPos: CasterPosition,
-  hostiles: Enemy[],
+  caster: CasterPosition,
+  hostiles: ReadonlyArray<{ x: number; y: number }>,
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
@@ -708,8 +714,8 @@ export function canAttackNearestLive(
     return shouldExecuteLiveCast(
       isTileCastableLive(
         spell,
-        casterPos,
-        { x: casterPos.x, y: casterPos.y },
+        caster,
+        { x: caster.x, y: caster.y },
         liveCombatants,
         mapTiles,
         effectiveRange,
@@ -719,7 +725,7 @@ export function canAttackNearestLive(
   return (
     pickNearestLiveHostileTile(
       spell,
-      casterPos,
+      caster,
       hostiles,
       liveCombatants,
       mapTiles,

@@ -274,6 +274,22 @@ export function shouldSpawnWhitePortal(
 }
 
 /**
+ * Colocate a pending white sanctuary portal with the player spawn.
+ *
+ * Dungeon-chain completion used to hardcode `(0, 0)`. Fortress corners and
+ * chessboard even/even cells wall that tile, and entry is coordinate-based
+ * (`portals.find` on player position), so the advertised sanctuary gateway
+ * was unwalkable. Boss-rush completion already places the portal on
+ * `whiteSpawn`; this helper is the same contract.
+ */
+export function placeWhitePortalAtSpawn<T extends { x: number; y: number }>(
+  portal: T,
+  spawn: { x: number; y: number },
+): T {
+  return { ...portal, x: spawn.x, y: spawn.y };
+}
+
+/**
  * Rest-exit `cleanupMap` zeroes dungeon refs, then this path re-arms them.
  * Depth must be written on the ref (not only React state) so
  * `generateEnemies(..., depth)` and later progression snapshots see floor 1.

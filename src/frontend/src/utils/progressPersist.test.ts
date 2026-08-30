@@ -283,9 +283,9 @@ describe("progress persist lock", () => {
     assert.equal(applyShopCreditDeltaToUi(200, 100), 300);
   });
 
-  it("does not mint ghost portal XP when applyRewards rejects", async () => {
-    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
-    const ghostUiXp = 60;
+  it("does not mint unpaid portal XP when applyRewards rejects", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 90, level: 4 });
+    const ghostUiXp = 100;
     await assert.rejects(
       lock.enqueue(async () => {
         throw new Error("applyRewards failed");
@@ -299,12 +299,12 @@ describe("progress persist lock", () => {
     );
     assert.equal(
       lock.snapshot().xp,
-      60,
-      "optimistic portal HUD + idle hydrate mints unpaid XP onto committed",
+      100,
+      "ghost HUD + idle hydrate mints unpaid portal XP onto committed",
     );
 
-    const safe = createProgressPersist({ doka: 200, xp: 50, level: 4 });
-    const safeUiXp = 50;
+    const safe = createProgressPersist({ doka: 200, xp: 90, level: 4 });
+    const safeXp = 90;
     await assert.rejects(
       safe.enqueue(async () => {
         throw new Error("applyRewards failed");
@@ -312,14 +312,14 @@ describe("progress persist lock", () => {
       /applyRewards failed/,
     );
     assert.equal(
-      safe.hydrateWhenIdle({ doka: 200, xp: safeUiXp, level: 4 }),
+      safe.hydrateWhenIdle({ doka: 200, xp: safeXp, level: 4 }),
       true,
     );
-    assert.equal(safe.snapshot().xp, 50);
+    assert.equal(safe.snapshot().xp, 90);
 
-    safe.commit({ xp: 60, level: 4 });
-    assert.equal(safe.hydrateWhenIdle({ doka: 200, xp: 60, level: 4 }), true);
-    assert.equal(safe.snapshot().xp, 60);
+    safe.commit({ xp: 100, level: 4 });
+    assert.equal(safe.hydrateWhenIdle({ doka: 200, xp: 100, level: 4 }), true);
+    assert.equal(safe.snapshot().xp, 100);
   });
 
   it("does not mint ghost Boss Rush Doka when applyRewards rejects", async () => {

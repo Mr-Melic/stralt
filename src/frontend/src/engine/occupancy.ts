@@ -22,7 +22,7 @@
  * `OccupancyContext` shape, which the callers build from their live state.
  */
 
-import { WORLD_GRID_SIZE } from "../data/gameConstants";
+import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 
 /** A tile coordinate on the world grid. */
 export interface OccCell {

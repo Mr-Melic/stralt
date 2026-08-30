@@ -205,11 +205,95 @@ export function liveCombatantHp(
   return live.hp;
 }
 
+/**
+ * Next HP after an enemy/boss self-heal or drain.
+ *
+ * Callers must write this through `updateCombatant`. A `setTurnOrder`-only
+ * write leaves store HP at the pre-heal snapshot, so `enemyTakesDamage`
+ * (store-authoritative) ignores the heal and can kill a unit the strip
+ * still shows as healthy.
+ */
+export function hpAfterHeal(
+  currentHp: number,
+  maxHp: number,
+  healAmount: number,
+): number {
+  const hp = Number.isFinite(currentHp) ? currentHp : 0;
+  const max = Number.isFinite(maxHp) ? Math.max(0, maxHp) : hp;
+  const heal = Number.isFinite(healAmount) ? Math.max(0, healAmount) : 0;
+  return Math.min(max, hp + heal);
+}
+
+/**
+ * Phase-2 HP / maxHp after the boss stat multiplier.
+ *
+ * Same contract as {@link hpAfterHeal}: `updateCombatant` must receive
+ * these values. Strip-only phase writes leave store HP at phase-1, so the
+ * next player hit can kill a boss the initiative strip shows at 2× HP.
+ */
+export function hpAfterBossPhase2(
+  hp: number,
+  maxHp: number,
+  multiplier: number,
+  fullHeal: boolean,
+): { hp: number; maxHp: number } {
+  const safeHp = Number.isFinite(hp) ? hp : 0;
+  const safeMax = Number.isFinite(maxHp) ? maxHp : safeHp;
+  const mult = Number.isFinite(multiplier) ? multiplier : 1;
+  const newMaxHp = Math.round(safeMax * mult);
+  const newHp = fullHeal
+    ? newMaxHp
+    : Math.min(Math.round(safeHp * mult), newMaxHp);
+  return { hp: newHp, maxHp: newMaxHp };
+}
+
 /** Plague Zone WX tick. Must match the inline "deals 2 damage" log. */
 export const PLAGUE_ZONE_TICK = 2;
 
 /** Void Rift WX tick. Must match mapModifiers VOID_RIFT_TICK / MAP_MODIFIER_VOID_RIFT_DAMAGE. */
 export const VOID_RIFT_TICK = 3;
+
+/**
+ * Battle-walk Thorned Ground: 5 HP per extra tile after the first.
+ * Matches the live mouse walk in WorldExploration (path.length > 1).
+ * Touch walk used to skip this debit; both input paths must use this helper.
+ */
+export const THORNED_WALK_DAMAGE_PER_EXTRA_TILE = 5;
+
+export function thornedGroundWalkDamage(pathLength: number): number {
+  if (!Number.isFinite(pathLength) || pathLength <= 1) return 0;
+  return (pathLength - 1) * THORNED_WALK_DAMAGE_PER_EXTRA_TILE;
+}
+
+/** −VOID_RIFT_TICK when the walk destination is the current rift tile. */
+export function voidRiftWalkDamage(
+  dest: { x: number; y: number },
+  rift: { x: number; y: number } | null | undefined,
+): number {
+  if (!rift) return 0;
+  if (rift.x !== dest.x || rift.y !== dest.y) return 0;
+  return VOID_RIFT_TICK;
+}
+
+/**
+ * Combined battle-walk hazards. Mouse and touch must apply the same
+ * thorn / rift HP so Untouchable and under-damage challenges cannot
+ * be satisfied by switching input method.
+ */
+export function battleWalkHazardDamages(opts: {
+  thornedActive: boolean;
+  pathLength: number;
+  voidRiftActive: boolean;
+  dest: { x: number; y: number };
+  riftTile: { x: number; y: number } | null | undefined;
+}): { thornDmg: number; riftDmg: number } {
+  return {
+    thornDmg: opts.thornedActive ? thornedGroundWalkDamage(opts.pathLength) : 0,
+    riftDmg: opts.voidRiftActive
+      ? voidRiftWalkDamage(opts.dest, opts.riftTile)
+      : 0,
+  };
+}
 
 /**
  * After DoT / plague at enemy turn start, dispatch AI only if the unit

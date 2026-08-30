@@ -28,11 +28,11 @@ import {
   SUMMON_LIFESPAN_PER_HALF_LEVEL,
   SUMMON_MP,
   SUMMON_MP_PER_LEVELS,
-} from "../data/gameConstants";
-import type { BossBaseStats } from "../types/bossTypes";
-import type { ChessPieceType, LevelUpConfig } from "../types/gameTypes";
-import { seededRng } from "./combatMath";
-import type { SummonUnitDef } from "./summonSpawn";
+} from "../data/gameConstants.ts";
+import type { BossBaseStats } from "../types/bossTypes.ts";
+import type { ChessPieceType, LevelUpConfig } from "../types/gameTypes.ts";
+import { seededRng } from "./combatMath.ts";
+import type { SummonUnitDef } from "./summonSpawn.ts";
 
 // ── Player base stats ─────────────────────────────────────────────────────────
 
