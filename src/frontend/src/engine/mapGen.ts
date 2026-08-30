@@ -490,3 +490,37 @@ export function ensureReachability(
 
   return { tiles: out, spawns: outSpawns };
 }
+
+/**
+ * Rest-exit dungeon spawn (#91) called `generateEnemies` but skipped this
+ * punch. Cellular-automata maps (corridorMaze 55% walls) leave isolated
+ * floor pockets; an enemy there keeps `isProgressionLocked` true. Regular
+ * portals are suppressed during a run, and flee is `_handlePlayerDeath`
+ * (20% XP / 40% Doka). Same contract as the main portal path.
+ */
+export function punchRosterReachability<T extends { x: number; y: number }>(
+  tiles: string[][],
+  voidTiles: Set<string> | undefined,
+  roster: T[],
+  spawnPosition: { x: number; y: number },
+  portal: { x: number; y: number } | undefined,
+  worldW: number,
+  worldH: number,
+): { tiles: string[][]; roster: T[] } {
+  if (!portal || roster.length === 0) {
+    return { tiles, roster };
+  }
+  const { tiles: nextTiles, spawns } = ensureReachability(
+    tiles,
+    voidTiles ?? new Set(),
+    roster.map((e) => ({ x: e.x, y: e.y })),
+    spawnPosition,
+    portal,
+    worldW,
+    worldH,
+  );
+  const nextRoster = roster.map((e, i) =>
+    spawns[i] ? { ...e, x: spawns[i].x, y: spawns[i].y } : e,
+  );
+  return { tiles: nextTiles, roster: nextRoster };
+}

@@ -139,6 +139,7 @@ import {
   countWalkableVoid,
   ensureReachability,
   pickMapArchetype,
+  punchRosterReachability,
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
@@ -6594,7 +6595,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // cleanupMap + generateRandomMap leave an empty roster. Rest-exit
           // used to skip generateEnemies, so a dungeon floor spawned an
           // unlocked progression portal with no hostiles (skip the run).
-          const roster = newMap.isDeathRealm
+          const rawRoster = newMap.isDeathRealm
             ? []
             : generateEnemies(
                 newMap.tiles,
@@ -6602,7 +6603,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 restExitSpawnDepth(restExitType),
                 newMap.voidTiles,
               );
-          syncCombatants(combatantStoreCtx, roster, { resetBattle: true });
+          // Main portal path punches CA pockets so a walled-off rat cannot
+          // seal the progression portal. Rest-exit used to skip that and
+          // leave the player with flee = death penalty.
+          const punched = punchRosterReachability(
+            newMap.tiles as string[][],
+            newMap.voidTiles,
+            rawRoster,
+            spawnPosition,
+            newMap.portals?.[0],
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          );
+          newMap.tiles = punched.tiles as typeof newMap.tiles;
+          syncCombatants(combatantStoreCtx, punched.roster, {
+            resetBattle: true,
+          });
           setTransitionInProgress(false);
           transitionInProgressRef.current = false;
         }, 400);
