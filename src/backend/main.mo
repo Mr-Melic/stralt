@@ -2152,6 +2152,9 @@ actor {
     ///      1 / 10000 = 0.01% (≈ 0.0001%) → 1–1_000_000_000
     ///      4 remaining → 1–50  (lumped with 3% tier)
     public shared ({ caller }) func calculateAndAwardDoka(enemies : [{ level : Nat }]) : async Nat {
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+            return 0;
+        };
         if (bannedPrincipals.containsKey(caller.toText())) {
             return 0;
         };
@@ -2187,8 +2190,14 @@ actor {
 
         var totalDoka : Nat = 0;
         var byteIndex : Nat = 0;
+        var awarded : Nat = 0;
 
-        for (enemy in enemies.values()) {
+        label awardLoop for (enemy in enemies.values()) {
+            // Unused public mint: cap list size and level so a raw client
+            // cannot drop an unbounded wallet in one call.
+            if (awarded >= 8) { break awardLoop };
+            awarded += 1;
+            let level = if (enemy.level > 200) { 200 } else { enemy.level };
             // 2 bytes for tier selection (range 0..9999)
             let tierRaw = readU16(byteIndex) % 10_000;
             byteIndex += 2;
@@ -2223,7 +2232,7 @@ actor {
                 inRange(valueRaw, 1, 1_000_000_000)
             };
 
-            totalDoka += enemy.level * multiplier;
+            totalDoka += level * multiplier;
         };
 
         // Update caller's balance.
@@ -2430,8 +2439,8 @@ actor {
     public shared ({ caller }) func completeBossRushRoom(
         slot        : Nat,
         roomIndex   : Nat,
-        dokaReward  : Nat,
-        xpReward    : Nat,
+        _dokaReward  : Nat,
+        _xpReward    : Nat,
     ) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return #err("Unauthorized: must be logged in");
@@ -2441,6 +2450,21 @@ actor {
         };
         if (slot < 1 or slot > 3) { return #err("Invalid slot number") };
         if (roomIndex > 9) { return #err("roomIndex must be 0-9") };
+
+        // Character must exist before any mutation. Client-supplied
+        // dokaReward/xpReward used to mint Doka and still return #err when
+        // the slot was empty. Official frontend already credits via
+        // applyRewards and passes 0, 0.
+        let existingSlots = switch (characterSlots.get(caller)) {
+            case null { return #err("No characters found for user") };
+            case (?s) { s };
+        };
+        let character = switch (slot) {
+            case 1 { switch (existingSlots.slot1) { case null { return #err("Slot 1 is empty") }; case (?c) { c } } };
+            case 2 { switch (existingSlots.slot2) { case null { return #err("Slot 2 is empty") }; case (?c) { c } } };
+            case 3 { switch (existingSlots.slot3) { case null { return #err("Slot 3 is empty") }; case (?c) { c } } };
+            case _ { return #err("Invalid slot") };
+        };
 
         // Update boss rush state.
         let key = _bossRushKey(caller, slot);
@@ -2458,30 +2482,9 @@ actor {
             totalBossRushRuns      = newTotalRuns;
         });
 
-        // Award Doka to the per-principal balance.
-        if (dokaReward > 0) {
-            let currentDoka = switch (dokaBalances.get(caller)) {
-                case null { 0 };
-                case (?b) { b };
-            };
-            dokaBalances.add(caller, currentDoka + dokaReward);
-        };
-
-        // Award XP to the character and set bossRushMasterComplete on full run.
-        let existingSlots = switch (characterSlots.get(caller)) {
-            case null { return #err("No characters found for user") };
-            case (?s) { s };
-        };
-        let character = switch (slot) {
-            case 1 { switch (existingSlots.slot1) { case null { return #err("Slot 1 is empty") }; case (?c) { c } } };
-            case 2 { switch (existingSlots.slot2) { case null { return #err("Slot 2 is empty") }; case (?c) { c } } };
-            case 3 { switch (existingSlots.slot3) { case null { return #err("Slot 3 is empty") }; case (?c) { c } } };
-            case _ { return #err("Invalid slot") };
-        };
         let isMasterRun = roomIndex == 9;
         let updatedCharacter : Character = {
             character with
-            experience = character.experience + xpReward;
             bossRushMasterComplete = if (isMasterRun) { ?true } else { character.bossRushMasterComplete };
         };
         let updatedSlots = switch (slot) {
