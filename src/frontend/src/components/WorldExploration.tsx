@@ -81,6 +81,8 @@ import {
   countsTowardKillRewards,
   despawnSummons,
   enemyHpAfterHazardDamage,
+  hpAfterBossPhase2,
+  hpAfterHeal,
   hpAfterIncomingDamage,
   isActiveHostile,
   isAliveCombatant,
@@ -158,6 +160,7 @@ import {
   getRunMode,
   isProgressionLocked,
   isProgressionPortalUnlocked,
+  placeWhitePortalAtSpawn,
   resetRunState,
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
@@ -6767,7 +6770,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (pendingWhitePortalRef.current && newMap) {
         newMap.portals = [
           ...(newMap.portals || []),
-          pendingWhitePortalRef.current,
+          placeWhitePortalAtSpawn(pendingWhitePortalRef.current, spawnPosition),
         ];
         pendingWhitePortalRef.current = null;
       }
@@ -15616,6 +15619,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       // atomically (replaces the separate setTurnOrder +
                       // setEnemies filters).
                       removeCombatant(combatantStoreCtx, sbT.id);
+                    } else {
+                      updateCombatant(combatantStoreCtx, sbT.id, { hp: nHp });
                     }
                     return { ...h, [sbT.id]: nHp };
                   });
@@ -15648,9 +15653,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
           setEnemyHpMap((prev) => ({ ...prev, [allyT.id]: allyNewHp }));
-          setTurnOrder((prev) =>
-            prev.map((c) => (c.id === allyT.id ? { ...c, hp: allyNewHp } : c)),
-          );
+          // Store-authoritative: enemyTakesDamage / isActiveHostile read
+          // combatantsRef, not the initiative strip.
+          updateCombatant(combatantStoreCtx, allyT.id, { hp: allyNewHp });
           clearTimeout(watchdog);
           pendingTimeoutsRef.current.delete(watchdog);
           enemyTurnInProgressRef.current = false;
@@ -15679,28 +15684,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             const mult = currentBossConfig.phase2.statMultiplier;
             // ISSUE 5 — Weeping Pawn PROMOTE_QUEEN: restore FULL HP on transition
             const isWeepingPawn = currentBossConfig.id === "weeping_pawn";
-            setTurnOrder((prev) =>
-              prev.map((c) => {
-                if (c.id !== enemyId) return c;
-                const newMaxHp = Math.round(c.maxHp * mult);
-                const newHp = isWeepingPawn
-                  ? newMaxHp
-                  : Math.min(Math.round(c.hp * mult), newMaxHp);
-                return {
-                  ...c,
-                  maxHp: newMaxHp,
-                  hp: newHp,
-                  currentBossPhase: 2 as const,
-                };
-              }),
+            const liveBoss = getLiveCombatants(combatantStoreCtx).find(
+              (c) => c.id === enemyId,
             );
-            setEnemyHpMap((h) => {
-              const newMaxHp = Math.round((h[enemyId] ?? 0) * mult);
-              const newHp = isWeepingPawn
-                ? newMaxHp
-                : Math.round((h[enemyId] ?? 0) * mult);
-              return { ...h, [enemyId]: newHp };
+            const phaseHp = hpAfterBossPhase2(
+              liveBoss?.hp ?? 0,
+              liveBoss?.maxHp ?? liveBoss?.hp ?? 0,
+              mult,
+              isWeepingPawn,
+            );
+            updateCombatant(combatantStoreCtx, enemyId, {
+              hp: phaseHp.hp,
+              maxHp: phaseHp.maxHp,
             });
+            // currentBossPhase lives on CombatantEntry, not Enemy — patch
+            // the strip after the store write so we do not drop hp/maxHp.
+            const nextPhaseOrder = turnOrderRef.current.map((c) =>
+              c.id === enemyId ? { ...c, currentBossPhase: 2 as const } : c,
+            );
+            turnOrderRef.current = nextPhaseOrder;
+            setTurnOrder(() => nextPhaseOrder);
+            setEnemyHpMap((h) => ({ ...h, [enemyId]: phaseHp.hp }));
             bossStateRef.current = newBossStateAfterPhase;
             flushSync(() => {
               setActiveBossState(newBossStateAfterPhase);
@@ -15790,26 +15794,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     // Drain heals the boss (mirror WX 13680-13689).
                     if (bossSpellType === "drain" && bossSpell.healAmount) {
                       const bHa = bossSpell.healAmount;
-                      setTurnOrder((prev) =>
-                        prev.map((c) =>
-                          c.id === enemyId
-                            ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
-                            : c,
+                      const liveDrain = getLiveCombatants(
+                        combatantStoreCtx,
+                      ).find((c) => c.id === enemyId);
+                      updateCombatant(combatantStoreCtx, enemyId, {
+                        hp: hpAfterHeal(
+                          liveDrain?.hp ?? 0,
+                          liveDrain?.maxHp ?? 0,
+                          bHa,
                         ),
-                      );
+                      });
                     }
                   }
                 }
-                // Heal → setTurnOrder on boss (mirror WX 13699-13718).
+                // Heal → updateCombatant on boss (store + strip).
                 if (bossSpellType === "heal" && bossSpell.healAmount) {
                   const bHa = bossSpell.healAmount;
-                  setTurnOrder((prev) =>
-                    prev.map((c) =>
-                      c.id === enemyId
-                        ? { ...c, hp: Math.min(c.maxHp, c.hp + bHa) }
-                        : c,
-                    ),
+                  const liveHeal = getLiveCombatants(combatantStoreCtx).find(
+                    (c) => c.id === enemyId,
                   );
+                  updateCombatant(combatantStoreCtx, enemyId, {
+                    hp: hpAfterHeal(
+                      liveHeal?.hp ?? 0,
+                      liveHeal?.maxHp ?? 0,
+                      bHa,
+                    ),
+                  });
                   logBattleEntry(
                     `${currentBossConfig.name} heals ${bHa} HP`,
                     "#a855f7",
@@ -16553,13 +16563,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
                 if (spellType === "drain" && chosenSpell.healAmount) {
                   const ha = chosenSpell.healAmount;
-                  setTurnOrder((prev) =>
-                    prev.map((c) =>
-                      c.id === enemyId
-                        ? { ...c, hp: Math.min(c.maxHp, c.hp + ha) }
-                        : c,
-                    ),
+                  const liveDrain = getLiveCombatants(combatantStoreCtx).find(
+                    (c) => c.id === enemyId,
                   );
+                  updateCombatant(combatantStoreCtx, enemyId, {
+                    hp: hpAfterHeal(
+                      liveDrain?.hp ?? 0,
+                      liveDrain?.maxHp ?? 0,
+                      ha,
+                    ),
+                  });
                 }
               }
               if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
@@ -16574,13 +16587,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               const ha = Math.round(
                 (chosenSpell.healAmount ?? enemy.level * 2) * enrageMultiplier,
               );
-              setTurnOrder((prev) =>
-                prev.map((c) =>
-                  c.id === enemyId
-                    ? { ...c, hp: Math.min(c.maxHp, c.hp + ha) }
-                    : c,
-                ),
+              const liveSelfHeal = getLiveCombatants(combatantStoreCtx).find(
+                (c) => c.id === enemyId,
               );
+              updateCombatant(combatantStoreCtx, enemyId, {
+                hp: hpAfterHeal(
+                  liveSelfHeal?.hp ?? 0,
+                  liveSelfHeal?.maxHp ?? 0,
+                  ha,
+                ),
+              });
               logBattleEntry(`${enemy.pieceType} heals ${ha} HP`, "#ef4444");
               if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
                 const cdm =
@@ -18259,9 +18275,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       // 🎰 Jackpot heal: 0.5% chance of full HP restore
                       const isJackpot = Math.random() < 0.005;
                       if (isJackpot) {
-                        // Full heal — only spend 1 Doka for the jackpot
+                        // Full heal — only spend 1 Doka for the jackpot.
+                        // Use the live ref (same as the normal heal / BuffShop
+                        // paths). The render-closure `dokaBalance` lags a shop
+                        // spend that already updated the ref, and
+                        // persistAbsoluteProgress computes spend as
+                        // spendFromUiBalance(ref, next). Passing dokaBalance-1
+                        // then writes spend 0 and can mint the pre-spend wallet.
+                        const nextDoka = nextDokaAfterShopSpend(
+                          dokaBalanceRef.current,
+                          1,
+                        );
                         setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
-                        onDokaBalanceChange(Math.max(0, dokaBalance - 1));
+                        persistAbsoluteProgress(maxHp, nextDoka);
+                        dokaBalanceRef.current = nextDoka;
+                        onDokaBalanceChange(nextDoka);
                         // Banner
                         setJackpotHealVisible(true);
                         if (jackpotHealTimerRef.current)
@@ -18278,10 +18306,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         toast.success("🎰 JACKPOT HEAL! Full HP restored!", {
                           duration: 4000,
                         });
-                        persistAbsoluteProgress(
-                          maxHp,
-                          Math.max(0, dokaBalance - 1),
-                        );
                         return;
                       }
 
