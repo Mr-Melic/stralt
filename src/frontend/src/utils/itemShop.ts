@@ -85,3 +85,96 @@ export function shouldAllowShopSpend(
   const cost = Math.max(0, Math.floor(Number(amount) || 0));
   return cost > 0 && doka >= cost;
 }
+
+function toNat(n: number): number {
+  const value = Math.floor(Number(n));
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+export type BuffItemPurchaseInput = {
+  wallet: number;
+  cost: number;
+  owned: number;
+  maxStack: number;
+  inBattle: boolean;
+};
+
+export type BuffItemPurchase = {
+  nextWallet: number;
+  nextOwned: number;
+};
+
+/**
+ * Atomically decide a BuffShop buy from the live wallet and owned count.
+ * The render `dokaBalance` prop stays stale across double-clicks, so a
+ * second Buy still passed the affordability check after the first debit
+ * drained the ref. persistAbsoluteProgress then saw spend=0 (ref already 0)
+ * while inventory still incremented — a free item that survives reload.
+ */
+export function tryPurchaseBuffItem(
+  input: BuffItemPurchaseInput,
+): BuffItemPurchase | null {
+  if (input.inBattle) return null;
+  const wallet = toNat(input.wallet);
+  const cost = toNat(input.cost);
+  const owned = toNat(input.owned);
+  const maxStack = toNat(input.maxStack);
+  if (cost < 1 || wallet < cost) return null;
+  if (owned >= maxStack) return null;
+  return {
+    nextWallet: wallet - cost,
+    nextOwned: owned + 1,
+  };
+}
+
+export type OverworldHealSpendInput = {
+  currentHp: number;
+  maxHp: number;
+  liveDoka: number;
+  jackpot: boolean;
+};
+
+export type OverworldHealSpend = {
+  nextHp: number;
+  nextDoka: number;
+  hpGained: number;
+  dokaCost: number;
+  jackpot: boolean;
+};
+
+/**
+ * Price a Doka→HP heal from the live wallet, not the button's render
+ * snapshot. A double-click with 1 Doka used to heal twice: canAfford
+ * stayed true, the second persist wrote spendFromUiBalance(0,0)=0, and
+ * the extra HP survived the next saveBattleStats. Jackpot used the
+ * stale `dokaBalance` closure and could skip the 1 Doka debit entirely.
+ */
+export function resolveOverworldHealSpend(
+  input: OverworldHealSpendInput,
+): OverworldHealSpend | null {
+  const liveDoka = toNat(input.liveDoka);
+  const currentHp = toNat(input.currentHp);
+  const maxHp = toNat(input.maxHp);
+  if (liveDoka < 1) return null;
+  if (maxHp <= currentHp) return null;
+  if (input.jackpot) {
+    return {
+      nextHp: maxHp,
+      nextDoka: liveDoka - 1,
+      hpGained: maxHp - currentHp,
+      dokaCost: 1,
+      jackpot: true,
+    };
+  }
+  const hpNeeded = maxHp - currentHp;
+  const healHp = Math.min(hpNeeded, Math.floor(liveDoka * 3));
+  const dokaCost = Math.ceil(healHp / 3);
+  if (dokaCost < 1 || liveDoka < dokaCost) return null;
+  return {
+    nextHp: currentHp + healHp,
+    nextDoka: liveDoka - dokaCost,
+    hpGained: healHp,
+    dokaCost,
+    jackpot: false,
+  };
+}

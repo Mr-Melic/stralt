@@ -8,6 +8,10 @@ import {
   nextHpAfterDokaHeal,
   shouldAllowShopSpend,
   shouldStartDokaHeal,
+  isBuffShopOpen,
+  nextDokaAfterShopSpend,
+  resolveOverworldHealSpend,
+  tryPurchaseBuffItem,
 } from "./itemShop.ts";
 
 assert.equal(
@@ -98,5 +102,105 @@ assert.equal(shouldAllowShopSpend(50, 0), false);
     false,
   );
 }
+
+{
+  const first = tryPurchaseBuffItem({
+    wallet: 50,
+    cost: 50,
+    owned: 0,
+    maxStack: 5,
+    inBattle: false,
+  });
+  assert.deepEqual(first, { nextWallet: 0, nextOwned: 1 });
+  const second = tryPurchaseBuffItem({
+    wallet: first!.nextWallet,
+    cost: 50,
+    owned: first!.nextOwned,
+    maxStack: 5,
+    inBattle: false,
+  });
+  assert.equal(second, null, "double-click after draining the live wallet");
+}
+
+assert.equal(
+  tryPurchaseBuffItem({
+    wallet: 200,
+    cost: 50,
+    owned: 0,
+    maxStack: 5,
+    inBattle: true,
+  }),
+  null,
+);
+assert.equal(
+  tryPurchaseBuffItem({
+    wallet: 200,
+    cost: 50,
+    owned: 5,
+    maxStack: 5,
+    inBattle: false,
+  }),
+  null,
+);
+
+{
+  const first = resolveOverworldHealSpend({
+    currentHp: 90,
+    maxHp: 100,
+    liveDoka: 1,
+    jackpot: false,
+  });
+  assert.deepEqual(first, {
+    nextHp: 93,
+    nextDoka: 0,
+    hpGained: 3,
+    dokaCost: 1,
+    jackpot: false,
+  });
+  const second = resolveOverworldHealSpend({
+    currentHp: first!.nextHp,
+    maxHp: 100,
+    liveDoka: first!.nextDoka,
+    jackpot: false,
+  });
+  assert.equal(second, null, "second heal click must not grant free HP");
+}
+
+{
+  const jackpot = resolveOverworldHealSpend({
+    currentHp: 10,
+    maxHp: 100,
+    liveDoka: 5,
+    jackpot: true,
+  });
+  assert.deepEqual(jackpot, {
+    nextHp: 100,
+    nextDoka: 4,
+    hpGained: 90,
+    dokaCost: 1,
+    jackpot: true,
+  });
+  const afterSpend = resolveOverworldHealSpend({
+    currentHp: 10,
+    maxHp: 100,
+    liveDoka: 7,
+    jackpot: true,
+  });
+  assert.equal(
+    afterSpend!.nextDoka,
+    6,
+    "jackpot must debit the live ref, not a stale render balance",
+  );
+}
+
+assert.equal(
+  resolveOverworldHealSpend({
+    currentHp: 100,
+    maxHp: 100,
+    liveDoka: 10,
+    jackpot: false,
+  }),
+  null,
+);
 
 console.log("itemShop.test: ok");

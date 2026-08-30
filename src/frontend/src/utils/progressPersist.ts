@@ -44,6 +44,21 @@ export function applySpendToCommitted(
 }
 
 /**
+ * saveBattleStats writes an absolute snapshot. Credits belong on
+ * applyRewards / claim / shop-complete / upgrade. An absolute write must
+ * never raise the canister wallet, XP, or level — that is how a stale
+ * optimistic UI (failed applyRewards, ghost HUD) minted permanent progress.
+ */
+export function clampAbsoluteProgressWrite(
+  proposed: number,
+  current: number,
+): number {
+  const next = Math.max(0, toNat(proposed, 0));
+  const live = Math.max(0, toNat(current, 0));
+  return next > live ? live : next;
+}
+
+/**
  * processPendingPurchases writes an absolute wallet. Commit that balance so a
  * later saveBattleStats spend cannot reconstruct from a pre-credit snapshot.
  */

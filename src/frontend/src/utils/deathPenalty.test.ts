@@ -2,13 +2,18 @@ import assert from "node:assert/strict";
 import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress.ts";
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
+  clearPendingDeathPenalty,
   computeDeathPenalty,
   mergeVictoryRewardLiveStats,
   persistDeathPenalty,
+  persistWithRetry,
   raiseUiAfterDeathPersist,
+  readPendingDeathPenalty,
+  resolvePendingDeathReplay,
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
   victoryResourceFloor,
+  writePendingDeathPenalty,
   xpAfterDeathPersist,
 } from "./deathPenalty.ts";
 import {
@@ -417,6 +422,66 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   assert.equal(uiDoka, 900);
   assert.equal(lock.snapshot().xp, 8400);
   assert.equal(lock.snapshot().doka, 900);
+}
+
+{
+  let attempts = 0;
+  const result = await persistWithRetry(async () => {
+    attempts += 1;
+    if (attempts < 3) throw new Error("replica reject");
+    return "ok";
+  }, 3);
+  assert.equal(result, "ok");
+  assert.equal(attempts, 3);
+}
+
+{
+  let attempts = 0;
+  await assert.rejects(
+    persistWithRetry(async () => {
+      attempts += 1;
+      throw new Error("still down");
+    }, 2),
+    /still down/,
+  );
+  assert.equal(attempts, 2);
+}
+
+{
+  const storage = new Map<string, string>();
+  const mem: import("./deathPenalty.ts").DeathPenaltyStorage = {
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => {
+      storage.set(k, v);
+    },
+    removeItem: (k) => {
+      storage.delete(k);
+    },
+  };
+  const pending = {
+    slot: 1,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  };
+  writePendingDeathPenalty(mem, pending);
+  assert.deepEqual(readPendingDeathPenalty(mem, 1), pending);
+  assert.deepEqual(
+    resolvePendingDeathReplay(100, 200, pending),
+    { action: "write", newXp: 80, newDoka: 120 },
+    "reload before persist must replay the 20/40 cut",
+  );
+  assert.deepEqual(resolvePendingDeathReplay(80, 120, pending), {
+    action: "clear",
+  });
+  assert.deepEqual(
+    resolvePendingDeathReplay(150, 250, pending),
+    { action: "clear" },
+    "a later earn must not be penalized again",
+  );
+  clearPendingDeathPenalty(mem, 1);
+  assert.equal(readPendingDeathPenalty(mem, 1), null);
 }
 
 console.log("deathPenalty.test: ok");

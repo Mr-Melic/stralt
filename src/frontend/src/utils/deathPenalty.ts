@@ -257,3 +257,122 @@ export async function persistDeathPenalty(
     throw new Error(err);
   }
 }
+
+export const DEATH_PENALTY_PERSIST_ATTEMPTS = 3;
+
+/** Retry a failed death write so a single replica reject cannot skip the 20/40 cut. */
+export async function persistWithRetry<T>(
+  write: () => Promise<T>,
+  attempts = DEATH_PENALTY_PERSIST_ATTEMPTS,
+): Promise<T> {
+  const max = Math.max(1, Math.floor(Number(attempts) || 1));
+  let lastErr: unknown;
+  for (let i = 0; i < max; i++) {
+    try {
+      return await write();
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+export type DeathPenaltyStorage = Pick<
+  Storage,
+  "getItem" | "setItem" | "removeItem"
+>;
+
+export type PendingDeathPenalty = {
+  slot: number;
+  preXp: number;
+  preDoka: number;
+  afterXp: number;
+  afterDoka: number;
+};
+
+export function pendingDeathPenaltyStorageKey(slot: number): string {
+  return `pbv_pending_death_penalty_slot${Math.max(1, Math.floor(Number(slot) || 1))}`;
+}
+
+export function writePendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  pending: PendingDeathPenalty,
+): void {
+  try {
+    storage.setItem(
+      pendingDeathPenaltyStorageKey(pending.slot),
+      JSON.stringify(pending),
+    );
+  } catch {
+    // sessionStorage can throw in private mode; skip the reload replay.
+  }
+}
+
+export function readPendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  slot: number,
+): PendingDeathPenalty | null {
+  try {
+    const raw = storage.getItem(pendingDeathPenaltyStorageKey(slot));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingDeathPenalty>;
+    if (
+      parsed.slot == null ||
+      parsed.preXp == null ||
+      parsed.preDoka == null ||
+      parsed.afterXp == null ||
+      parsed.afterDoka == null
+    ) {
+      return null;
+    }
+    return {
+      slot: Math.floor(Number(parsed.slot)),
+      preXp: Math.max(0, Math.floor(Number(parsed.preXp))),
+      preDoka: Math.max(0, Math.floor(Number(parsed.preDoka))),
+      afterXp: Math.max(0, Math.floor(Number(parsed.afterXp))),
+      afterDoka: Math.max(0, Math.floor(Number(parsed.afterDoka))),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  slot: number,
+): void {
+  try {
+    storage.removeItem(pendingDeathPenaltyStorageKey(slot));
+  } catch {
+    // ignore
+  }
+}
+
+export type PendingDeathReplay =
+  | { action: "clear" }
+  | { action: "write"; newXp: number; newDoka: number };
+
+/**
+ * Reload before saveBattleStats lands leaves the canister unpenalized.
+ * Replay only when the backend still matches the pre-penalty snapshot so a
+ * later legitimate earn cannot be cut a second time.
+ */
+export function resolvePendingDeathReplay(
+  backendXp: number,
+  backendDoka: number,
+  pending: PendingDeathPenalty,
+): PendingDeathReplay {
+  const xp = Math.max(0, Math.floor(Number(backendXp) || 0));
+  const doka = Math.max(0, Math.floor(Number(backendDoka) || 0));
+  if (xp === pending.afterXp && doka === pending.afterDoka) {
+    return { action: "clear" };
+  }
+  if (xp === pending.preXp && doka === pending.preDoka) {
+    return {
+      action: "write",
+      newXp: pending.afterXp,
+      newDoka: pending.afterDoka,
+    };
+  }
+  return { action: "clear" };
+}

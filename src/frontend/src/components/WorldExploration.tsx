@@ -268,12 +268,17 @@ import {
   shouldBlockPortalDuringPendingDeathRealm,
 } from "../utils/deathGuards";
 import {
+  clearPendingDeathPenalty,
   computeDeathPenalty,
   mergeVictoryRewardLiveStats,
   persistDeathPenalty as persistAbsoluteStats,
+  persistWithRetry,
   raiseUiAfterDeathPersist,
+  readPendingDeathPenalty,
+  resolvePendingDeathReplay,
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
+  writePendingDeathPenalty,
   xpAfterDeathPersist,
 } from "../utils/deathPenalty";
 import {
@@ -281,12 +286,21 @@ import {
   logDebugInfo,
   logDebugWarn,
 } from "../utils/debugLogger";
-import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
+import {
+  type DokaCreditActor,
+  persistDokaCredit,
+  releaseFlag,
+  releasePickupId,
+  tryClaimDungeonChainBonus,
+  tryClaimFlag,
+  tryClaimPickupId,
+} from "../utils/dokaPersist";
 import {
   dokaHealAmounts,
   nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
   nextHpAfterDokaHeal,
+  resolveOverworldHealSpend,
   shouldStartDokaHeal,
 } from "../utils/itemShop";
 import {
@@ -296,6 +310,7 @@ import {
 import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
+  clampAbsoluteProgressWrite,
   createProgressPersist,
   resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
@@ -1230,6 +1245,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [_shrineCompleted, setShrineCompleted] = useState(false);
   const shrineAltarPosRef = useRef<{ x: number; y: number } | null>(null);
   const shrinePathViolatedRef = useRef(false);
+  const shrineRewardClaimedRef = useRef(false);
+  const claimedGroundLootIdsRef = useRef(new Set<string>());
   const bossRushActiveRef = useRef(false);
   const covenantBuffMapsRef = useRef<number>(
     (() => {
@@ -2990,7 +3007,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
       if (spellUpgradeInFlightRef.current.has(spellId)) return;
-      if (dokaBalance < cost) return;
+      if (dokaBalanceRef.current < cost) return;
       if (!actor?.upgradeSpell) return;
       spellUpgradeInFlightRef.current.add(spellId);
       void (async () => {
@@ -3070,7 +3087,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
       })();
     },
-    [dokaBalance, onDokaBalanceChange, actor, characterSlot, nsKey],
+    [onDokaBalanceChange, actor, characterSlot, nsKey],
   );
 
   // Character stats with experience system — restore from backend character if available
@@ -5424,6 +5441,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         isShrineRoomRef.current = true;
         setIsShrineRoom(true);
         shrinePathViolatedRef.current = false;
+        shrineRewardClaimedRef.current = false;
         const _sCenter = Math.floor(WORLD_GRID_SIZE / 2);
         shrineAltarPosRef.current = { x: _sCenter, y: _sCenter };
       }
@@ -6820,20 +6838,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       } else if (dungeonChainAction.kind === "complete") {
         // CHAIN COMPLETED — award bonus and reset
         const chainBonus = dungeonChainAction.bonus;
-        void progressPersistRef.current.enqueue(async () => {
-          const newDoka = await persistDokaCredit(
-            actor as DokaCreditActor,
-            characterSlot,
-            chainBonus,
-          );
-          if (newDoka > 0) {
-            progressPersistRef.current.commit({ doka: newDoka });
-            onDokaBalanceChange(
-              applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
+        if (tryClaimDungeonChainBonus(dungeonCompletionSavedRef)) {
+          void progressPersistRef.current.enqueue(async () => {
+            const newDoka = await persistDokaCredit(
+              actor as DokaCreditActor,
+              characterSlot,
+              chainBonus,
             );
-          }
-          return newDoka;
-        });
+            if (newDoka > 0) {
+              progressPersistRef.current.commit({ doka: newDoka });
+              onDokaBalanceChange(
+                applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
+              );
+            } else {
+              releaseFlag(dungeonCompletionSavedRef);
+            }
+            return newDoka;
+          });
+        }
         chainJustCompleted = true;
         nextDungeonDepth = 0;
         setDungeonChainActive(false);
@@ -7250,6 +7272,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ),
             collected: false,
           }));
+        claimedGroundLootIdsRef.current = new Set();
         setDokaLoot(lootItems);
         if (lootItems.length > 0) {
           logBattleEntry(
@@ -7258,6 +7281,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
         }
       } else {
+        claimedGroundLootIdsRef.current = new Set();
         setDokaLoot([]);
       }
       // Portal +10 XP must not touch the HUD before applyRewards commits.
@@ -11576,20 +11600,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newPos.y === shrineAltarPosRef.current.y
           ) {
             const _purePath = !shrinePathViolatedRef.current;
-            void progressPersistRef.current.enqueue(async () => {
-              const newDoka = await persistDokaCredit(
-                actor as DokaCreditActor,
-                characterSlot,
-                300,
-              );
-              if (newDoka > 0) {
-                progressPersistRef.current.commit({ doka: newDoka });
-                onDokaBalanceChange(
-                  applyShopCreditDeltaToUi(dokaBalanceRef.current, 300),
+            if (tryClaimFlag(shrineRewardClaimedRef)) {
+              void progressPersistRef.current.enqueue(async () => {
+                const newDoka = await persistDokaCredit(
+                  actor as DokaCreditActor,
+                  characterSlot,
+                  300,
                 );
-              }
-              return newDoka;
-            });
+                if (newDoka > 0) {
+                  progressPersistRef.current.commit({ doka: newDoka });
+                  onDokaBalanceChange(
+                    applyShopCreditDeltaToUi(dokaBalanceRef.current, 300),
+                  );
+                } else {
+                  releaseFlag(shrineRewardClaimedRef);
+                }
+                return newDoka;
+              });
+            }
             if (_purePath) {
               covenantBuffMapsRef.current = 3;
               try {
@@ -11618,16 +11646,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             isShrineRoomRef.current = false;
           }
         }
-        // Auto-collect Doka loot on tile contact
-        setDokaLoot((prev) => {
-          const hit = prev.find(
-            (loot) =>
-              !loot.collected &&
-              loot.tileX === newPos.x &&
-              loot.tileY === newPos.y,
-          );
-          if (!hit) return prev;
-          // Trigger collection
+        // Auto-collect Doka loot on tile contact. Claim the id before
+        // applyRewards — a stale movement step used to credit the same
+        // coin twice (side effect inside setState / leftover RAF).
+        const hit = dokaLootRef.current.find(
+          (loot) =>
+            !loot.collected &&
+            loot.tileX === newPos.x &&
+            loot.tileY === newPos.y,
+        );
+        if (hit && tryClaimPickupId(claimedGroundLootIdsRef.current, hit.id)) {
           void progressPersistRef.current.enqueue(async () => {
             const newDoka = await persistDokaCredit(
               actor as DokaCreditActor,
@@ -11639,6 +11667,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               onDokaBalanceChange(
                 applyShopCreditDeltaToUi(dokaBalanceRef.current, hit.value),
               );
+              setDokaLoot((prev) =>
+                prev.map((l) =>
+                  l.id === hit.id ? { ...l, collected: true } : l,
+                ),
+              );
+            } else {
+              releasePickupId(claimedGroundLootIdsRef.current, hit.id);
             }
             return newDoka;
           });
@@ -11661,17 +11696,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             `\uD83D\uDCB0 [COLLECT] You found ${hit.value} Doka on the ground!`,
             "#f1c40f",
           );
-          // Coin trail animation removed — pickup is instant, float text shows the value
           const playerScreen = gridToScreen(newPos.x, newPos.y);
           effectsManagerRef.current.spawnDoka(
             playerScreen.x,
             playerScreen.y,
             hit.value,
           );
-          return prev.map((l) =>
-            l.id === hit.id ? { ...l, collected: true } : l,
-          );
-        });
+        }
         // EXP5: SYNCHRONOUS hazard tile check — no setTimeout, no async
         if (currentMap) {
           const hazardType = currentMap.hazardTiles?.get(
@@ -13209,6 +13240,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       newDoka: dokaAfter,
     } = computeDeathPenalty(currentXp, currentDoka);
     const respawnHp = respawnHpAfterDeath(characterStatsRef.current.level);
+    writePendingDeathPenalty(sessionStorage, {
+      slot: characterSlot,
+      preXp: currentXp,
+      preDoka: currentDoka,
+      afterXp: xpAfter,
+      afterDoka: dokaAfter,
+    });
     if (actor) {
       void progressPersistRef.current
         .enqueue(async () => {
@@ -13232,22 +13270,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             committed.xp,
             dokaBase ?? committed.doka,
           );
-          await persistAbsoluteStats(actor, {
+          writePendingDeathPenalty(sessionStorage, {
             slot: characterSlot,
-            level: committed.level,
-            hp: respawnHp,
-            maxHp: characterStatsRef.current.maxHp ?? 0,
-            ap: characterStatsRef.current.ap ?? 0,
-            maxAp: characterStatsRef.current.maxAp ?? 0,
-            mp: characterStatsRef.current.mp ?? 0,
-            maxMp: characterStatsRef.current.maxMp ?? 0,
-            attack: Number(character?.stats?.atk ?? 0),
-            defense: characterStatsRef.current.res ?? 0,
-            initiative: characterStatsRef.current.init ?? 0,
-            newXp: after.newXp,
-            newDoka: after.newDoka,
-            spellLevels: spellLevelsRef.current,
+            preXp: committed.xp,
+            preDoka: dokaBase ?? committed.doka,
+            afterXp: after.newXp,
+            afterDoka: after.newDoka,
           });
+          await persistWithRetry(() =>
+            persistAbsoluteStats(actor, {
+              slot: characterSlot,
+              level: committed.level,
+              hp: respawnHp,
+              maxHp: characterStatsRef.current.maxHp ?? 0,
+              ap: characterStatsRef.current.ap ?? 0,
+              maxAp: characterStatsRef.current.maxAp ?? 0,
+              mp: characterStatsRef.current.mp ?? 0,
+              maxMp: characterStatsRef.current.maxMp ?? 0,
+              attack: Number(character?.stats?.atk ?? 0),
+              defense: characterStatsRef.current.res ?? 0,
+              initiative: characterStatsRef.current.init ?? 0,
+              newXp: after.newXp,
+              newDoka: after.newDoka,
+              spellLevels: spellLevelsRef.current,
+            }),
+          );
+          clearPendingDeathPenalty(sessionStorage, characterSlot);
           progressPersistRef.current.commit({
             doka: after.newDoka,
             xp: after.newXp,
@@ -13310,10 +13358,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Doka — it only replaces the Character record, which no longer stores a
   // wallet field.
   const persistAbsoluteProgress = useCallback(
-    (newHp: number, newDoka: number) => {
-      if (!actor) return;
+    (newHp: number, newDoka: number): Promise<boolean> => {
+      if (!actor) return Promise.resolve(false);
       const spend = spendFromUiBalance(dokaBalanceRef.current, newDoka);
-      void progressPersistRef.current
+      return progressPersistRef.current
         .enqueue(async () => {
           const committed = progressPersistRef.current.snapshot();
           const dokaBase = await resolveCommittedDokaForAbsoluteWrite(
@@ -13331,9 +13379,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ) {
             throw new Error("doka-spend save skipped: wallet not seeded");
           }
-          const writeDoka = applySpendToCommitted(
+          const writeDoka = clampAbsoluteProgressWrite(
+            applySpendToCommitted(dokaBase ?? committed.doka, spend),
             dokaBase ?? committed.doka,
-            spend,
           );
           await persistAbsoluteStats(actor, {
             slot: characterSlot,
@@ -13357,11 +13405,79 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (dokaBalanceRef.current > writeDoka) {
             onDokaBalanceChange(writeDoka);
           }
+          return true;
         })
-        .catch((err) => console.error("[doka-spend save] failed:", err));
+        .catch((err) => {
+          console.error("[doka-spend save] failed:", err);
+          return false;
+        });
     },
     [actor, character, characterSlot, onDokaBalanceChange],
   );
+
+  // Reload before saveBattleStats lands leaves the canister unpenalized.
+  // Replay only when the backend still matches the pre-penalty snapshot.
+  useEffect(() => {
+    if (!actor) return;
+    const pending = readPendingDeathPenalty(sessionStorage, characterSlot);
+    if (!pending) return;
+    let cancelled = false;
+    void (async () => {
+      const raw = await (
+        actor as { getCallerDokaBalance?: () => Promise<unknown> }
+      ).getCallerDokaBalance?.();
+      if (cancelled || raw == null) return;
+      const backendDoka = Number(raw);
+      const backendXp = Number(character?.experience ?? Number.NaN);
+      if (!Number.isFinite(backendDoka) || !Number.isFinite(backendXp)) return;
+      const decision = resolvePendingDeathReplay(
+        backendXp,
+        backendDoka,
+        pending,
+      );
+      if (decision.action !== "write") {
+        clearPendingDeathPenalty(sessionStorage, characterSlot);
+        return;
+      }
+      try {
+        await progressPersistRef.current.enqueue(async () => {
+          const committed = progressPersistRef.current.snapshot();
+          await persistWithRetry(() =>
+            persistAbsoluteStats(actor, {
+              slot: characterSlot,
+              level: committed.level,
+              hp: respawnHpAfterDeath(committed.level),
+              maxHp: characterStatsRef.current.maxHp ?? 0,
+              ap: characterStatsRef.current.ap ?? 0,
+              maxAp: characterStatsRef.current.maxAp ?? 0,
+              mp: characterStatsRef.current.mp ?? 0,
+              maxMp: characterStatsRef.current.maxMp ?? 0,
+              attack: Number(character?.stats?.atk ?? 0),
+              defense: characterStatsRef.current.res ?? 0,
+              initiative: characterStatsRef.current.init ?? 0,
+              newXp: decision.newXp,
+              newDoka: decision.newDoka,
+              spellLevels: spellLevelsRef.current,
+            }),
+          );
+          progressPersistRef.current.commit({
+            doka: decision.newDoka,
+            xp: decision.newXp,
+            level: committed.level,
+          });
+        });
+        if (cancelled) return;
+        clearPendingDeathPenalty(sessionStorage, characterSlot);
+        onDokaBalanceChange(decision.newDoka);
+        setCharacterStats((prev) => ({ ...prev, exp: decision.newXp }));
+      } catch (err) {
+        console.error("[death-save] replay failed:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [actor, character, characterSlot, onDokaBalanceChange, setCharacterStats]);
 
   // Handle player death
   // biome-ignore lint/correctness/useExhaustiveDependencies: characterStats.hp read as stale snapshot for diagnostic log only; death decision is made by callers using computed post-damage values
@@ -17984,10 +18100,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           dokaBalance={dokaBalance}
           getLiveDoka={() => dokaBalanceRef.current}
           onDeductDoka={(amount) => {
+            if (dokaBalanceRef.current < amount) return false;
             const next = nextDokaAfterShopSpend(dokaBalanceRef.current, amount);
-            persistAbsoluteProgress(characterStatsRef.current.hp, next);
+            const persist = persistAbsoluteProgress(
+              characterStatsRef.current.hp,
+              next,
+            );
             dokaBalanceRef.current = next;
             onDokaBalanceChange(next);
+            return persist.then((ok) => {
+              if (!ok) {
+                const restored = dokaBalanceRef.current + amount;
+                dokaBalanceRef.current = restored;
+                onDokaBalanceChange(restored);
+              }
+              return ok;
+            });
           }}
           onUseItem={handleUseItem}
           isPlayerTurn={battlePhase === "player" && inBattle}
@@ -18441,31 +18569,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         : "Not enough Doka"
                     }
                     onClick={() => {
-                      const liveHp = characterStatsRef.current.hp;
-                      const liveDoka = dokaBalanceRef.current;
-                      if (
-                        !shouldStartDokaHeal({
-                          currentHp: liveHp,
-                          maxHp,
-                          liveDoka,
-                        })
-                      ) {
-                        return;
-                      }
 
-                      // 🎰 Jackpot heal: 0.5% chance of full HP restore
-                      const isJackpot = Math.random() < 0.005;
-                      if (isJackpot) {
-                        // Full heal — spend 1 Doka from the live wallet.
-                        // The render snapshot lags a same-tick shop/heal
-                        // debit; persistAbsoluteProgress then records spend
-                        // 0 and idle hydrate refunds the earlier cut.
-                        const nextDoka = nextDokaAfterJackpotHeal(liveDoka);
-                        setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
-                        persistAbsoluteProgress(maxHp, nextDoka);
-                        dokaBalanceRef.current = nextDoka;
-                        onDokaBalanceChange(nextDoka);
-                        // Banner
+                      const resolved = resolveOverworldHealSpend({
+                        currentHp: characterStatsRef.current.hp,
+                        maxHp,
+                        liveDoka: dokaBalanceRef.current,
+                        jackpot: Math.random() < 0.005,
+                      });
+                      if (!resolved) return;
+
+                      const hpBefore = characterStatsRef.current.hp;
+                      const dokaBefore = dokaBalanceRef.current;
+                      setCharacterStats((prev) => ({
+                        ...prev,
+                        hp: resolved.nextHp,
+                      }));
+                      if (resolved.jackpot) {
                         setJackpotHealVisible(true);
                         if (jackpotHealTimerRef.current)
                           clearTimeout(jackpotHealTimerRef.current);
@@ -18473,7 +18592,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           () => setJackpotHealVisible(false),
                           3000,
                         );
-                        // Log to battle log (shows in general chat channel too)
                         logBattleEntry(
                           "🎰 [JACKPOT] Full HP restore from a Doka exchange!",
                           "#FFD700",
@@ -18481,47 +18599,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         toast.success("🎰 JACKPOT HEAL! Full HP restored!", {
                           duration: 4000,
                         });
-                        return;
-                      }
 
-                      // Persist the pre-setState HP + paid delta. The
-                      // wrapped setter eagerly writes characterStatsRef, so
-                      // `ref.hp + hpToAdd` after setState persisted the
-                      // heal twice (50+30 → ref 80 → write 110).
-                      const { hpToAdd, dokaCost } = dokaHealAmounts(
-                        liveHp,
-                        maxHp,
-                        liveDoka,
-                      );
-                      if (hpToAdd <= 0 || dokaCost <= 0) return;
-                      const healedHp = nextHpAfterDokaHeal(
-                        liveHp,
-                        maxHp,
-                        hpToAdd,
-                      );
-                      const nextDoka = nextDokaAfterShopSpend(
-                        liveDoka,
-                        dokaCost,
-                      );
-                      setCharacterStats((prev) => ({
-                        ...prev,
-                        hp: Math.min(maxHp, prev.hp + hpToAdd),
-                      }));
-                      // This button is overworld-only (`!inBattle`). The flag
-                      // is only cleared in cleanupBattle, so flipping it here
-                      // failed the next fight's easy_1 / hard_1.
-                      challengeHealUsedRef.current =
-                        recordInBattleChallengeHealUsed(
-                          inBattleRef.current,
-                          challengeHealUsedRef.current,
+                      } else {
+                        challengeHealUsedRef.current =
+                          recordInBattleChallengeHealUsed(
+                            inBattleRef.current,
+                            challengeHealUsedRef.current,
+                          );
+                        toast.success(
+                          `Healed +${resolved.hpGained} HP (-${resolved.dokaCost} Doka)`,
                         );
-                      persistAbsoluteProgress(healedHp, nextDoka);
-                      dokaBalanceRef.current = nextDoka;
-                      onDokaBalanceChange(nextDoka);
-                      // Toast
-                      toast.success(
-                        `Healed +${hpToAdd} HP (-${dokaCost} Doka)`,
+                      }
+                      const persist = persistAbsoluteProgress(
+                        resolved.nextHp,
+                        resolved.nextDoka,
                       );
+                      dokaBalanceRef.current = resolved.nextDoka;
+                      onDokaBalanceChange(resolved.nextDoka);
+                      void persist.then((ok) => {
+                        if (ok) return;
+                        setCharacterStats((prev) => ({
+                          ...prev,
+                          hp: hpBefore,
+                        }));
+                        dokaBalanceRef.current = dokaBefore;
+                        onDokaBalanceChange(dokaBefore);
+                      });
                     }}
                     style={{
                       width: "100%",
