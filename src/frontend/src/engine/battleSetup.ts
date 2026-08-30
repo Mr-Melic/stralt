@@ -158,3 +158,20 @@ export function enemyHpAfterHazardDamage(
   const newHp = Math.max(0, hp - dmg);
   return { newHp, lethal: newHp === 0 };
 }
+
+/**
+ * After an enemy apply-layer finally (lava/spike, Mirror bounce, thisHp
+ * check), do not `advanceTurn` when the fight is already over.
+ *
+ * `advanceTurn` is `flushSync` and runs before the `[inBattle, enemies]`
+ * victory useEffect. Dispatching the player's next turn lets DoT / plague
+ * call `_handlePlayerDeath` first, set `deathTriggered`, and make
+ * `shouldAwardVictory` refuse — `persistDeathPenalty` instead of
+ * `applyRewards`.
+ */
+export function shouldAdvanceAfterEnemyTurn(opts: {
+  deathTriggered: boolean;
+  hostilesRemaining: number;
+}): boolean {
+  return !opts.deathTriggered && opts.hostilesRemaining > 0;
+}

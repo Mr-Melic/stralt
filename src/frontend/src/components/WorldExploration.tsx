@@ -80,6 +80,7 @@ import {
   enemyHpAfterHazardDamage,
   isActiveHostile,
   isAliveCombatant,
+  shouldAdvanceAfterEnemyTurn,
   shouldAllowBattleTrigger,
   shouldAwardVictory,
 } from "../engine/battleSetup";
@@ -16414,9 +16415,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           enemyTurnInProgressRef.current = false;
           // If the body threw (or returned early without marking advanced),
           // advance exactly once here with "action-complete" — never timer.
+          // Skip when this kill emptied the hostile roster (or the player
+          // already died): flushSync advanceTurn would run player DoT /
+          // plague before the victory useEffect and persist a death penalty
+          // instead of applyRewards.
           if (!advanced) {
-            turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
+            if (
+              shouldAdvanceAfterEnemyTurn({
+                deathTriggered: deathTriggeredRef.current,
+                hostilesRemaining: activeHostilesRemaining(
+                  combatantsRef.current,
+                ),
+              })
+            ) {
+              turnEndReasonRef.current = "action-complete";
+              advanceTurnRef.current();
+            }
             advanced = true;
           }
         }
