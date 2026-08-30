@@ -7,15 +7,15 @@
  */
 
 import type { CombatantEntry } from "../components/InitiativeStrip";
-import { SUMMON_LIFESPAN_PER_HALF_LEVEL } from "../data/gameConstants";
+import { SUMMON_LIFESPAN_PER_HALF_LEVEL } from "../data/gameConstants.ts";
 import type { Enemy } from "../types/gameTypes";
-import { logDebugInfo } from "../utils/debugLogger";
+import { logDebugInfo } from "../utils/debugLogger.ts";
 import {
   type OccupancyContext,
   findNearestFreeCell,
   isCellFree as sharedIsCellFree,
-} from "./occupancy";
-import { getSummonBaseStats } from "./progression";
+} from "./occupancy.ts";
+import { getSummonBaseStats } from "./progression.ts";
 
 export interface SummonUnitDef {
   pieceType: string;
