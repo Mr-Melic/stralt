@@ -17140,9 +17140,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       );
       // Live store includes enemy summons that are not in React `enemies`.
       // isActiveHostile is the canonical filter (enemy-side summons after #79).
-      const liveHostiles = getLiveCombatants(combatantStoreCtx).filter(
-        isActiveHostile,
-      );
+      const liveHostiles =
+        getLiveCombatants(combatantStoreCtx).filter(isActiveHostile);
       let nearest: (typeof liveHostiles)[0] | null = null;
       let nearestDist = Number.POSITIVE_INFINITY;
       for (const e of liveHostiles) {
