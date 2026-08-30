@@ -1,4 +1,5 @@
 import type { BattleRecapData } from "../components/PostBattleRecap";
+import { countsTowardKillRewards } from "../engine/battleSetup.ts";
 import { readApplyRewardsOk } from "./applyRewardsResult.ts";
 import {
   type CompletedChallengeReward,
@@ -40,6 +41,8 @@ export type AttributedKill = {
   name?: string;
   pieceType?: string;
   level?: number;
+  isSummon?: boolean;
+  side?: "player" | "enemy";
 };
 
 /**
@@ -56,7 +59,7 @@ export function selectDefeatedEnemiesForRewards(
   attributed: AttributedKill[],
 ): Array<{ name: string; level: number }> {
   if (attributed.length > 0) {
-    return attributed.map((e) => ({
+    return attributed.filter(countsTowardKillRewards).map((e) => ({
       name: e.pieceType ?? e.name ?? "unknown",
       level: e.level ?? 1,
     }));
