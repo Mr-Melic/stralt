@@ -12,7 +12,16 @@ import {
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
+  shouldStartRename,
 } from "./renameCharacter.ts";
+
+describe("shouldStartRename", () => {
+  it("blocks a second click while the first rename is in flight", () => {
+    assert.equal(shouldStartRename(false, 200), true);
+    assert.equal(shouldStartRename(true, 200), false);
+    assert.equal(shouldStartRename(false, 99), false);
+  });
+});
 
 describe("readRenameCharacterResult", () => {
   it("accepts ok / _ok / __kind__ payloads", () => {

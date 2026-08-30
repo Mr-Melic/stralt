@@ -265,7 +265,10 @@ import {
   logDebugWarn,
 } from "../utils/debugLogger";
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
-import { nextDokaAfterShopSpend } from "../utils/itemShop";
+import {
+  nextDokaAfterJackpotHeal,
+  nextDokaAfterShopSpend,
+} from "../utils/itemShop";
 import {
   activatePlayerMirror,
   consumePlayerMirror,
@@ -284,11 +287,14 @@ import {
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
+  shouldStartRename,
 } from "../utils/renameCharacter";
 import {
+  PORTAL_TRANSITION_XP,
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
   computeVictoryExp,
+  persistIncrementalRewards,
   resolveBattleRewards,
   selectDefeatedEnemiesForRewards,
 } from "../utils/rewardResolver";
@@ -303,7 +309,9 @@ import {
 import {
   type SpellUpgradeActor,
   applySpellLevel,
+  committedDokaAfterSpellUpgrade,
   persistSpellUpgrade,
+  shouldCommitSpellUpgradeDoka,
   spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
 import {
@@ -1946,8 +1954,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (dokaBalanceRef.current < RENAME_DOKA_COST) {
-      toast.error("Insufficient Doka (need 100)");
+    if (!shouldStartRename(isRenaming, dokaBalanceRef.current)) {
+      if (dokaBalanceRef.current < RENAME_DOKA_COST) {
+        toast.error("Insufficient Doka (need 100)");
+      }
       return;
     }
     setIsRenaming(true);
@@ -2947,10 +2957,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     spellLevelsRef.current = spellLevels;
   }, [spellLevels]);
 
+  const spellUpgradeInFlightRef = useRef<Set<string>>(new Set());
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
+      if (spellUpgradeInFlightRef.current.has(spellId)) return;
       if (dokaBalance < cost) return;
       if (!actor?.upgradeSpell) return;
+      spellUpgradeInFlightRef.current.add(spellId);
       void (async () => {
         try {
           const { newLevel, spent } = await progressPersistRef.current.enqueue(
@@ -2971,8 +2984,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 spellId,
                 result.newLevel,
               );
-              if (result.newDoka != null) {
-                progressPersistRef.current.commit({ doka: result.newDoka });
+              // getCallerDokaBalance after upgradeSpell is a query and can
+              // return the pre-spend wallet. Only commit a decrease; a
+              // stale-high read would refund the spend on the lock.
+              const nextDoka = committedDokaAfterSpellUpgrade(
+                committedBefore,
+                result.newDoka,
+                cost,
+              );
+              if (
+                shouldCommitSpellUpgradeDoka(
+                  committedBefore,
+                  nextDoka,
+                  progressPersistRef.current.isWalletSeeded(),
+                )
+              ) {
+                progressPersistRef.current.commit({ doka: nextDoka });
               }
               return {
                 newLevel: result.newLevel,
@@ -2991,7 +3018,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Debit the canister spend, not the advertised summon 10× cost —
           // otherwise hydrateWhenIdle copies the short UI over committed
           // and the next heal/shop saveBattleStats wipes the difference.
-          onDokaBalanceChange(Math.max(0, dokaBalanceRef.current - spent));
+          const nextUi = Math.max(0, dokaBalanceRef.current - spent);
+          dokaBalanceRef.current = nextUi;
+          onDokaBalanceChange(nextUi);
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
@@ -3007,6 +3036,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           });
         } catch (err) {
           console.warn("[PBV] Spell upgrade failed:", err);
+        } finally {
+          spellUpgradeInFlightRef.current.delete(spellId);
         }
       })();
     },
@@ -7156,74 +7187,52 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       } else {
         setDokaLoot([]);
       }
-      // FIX 2: Award 10 XP for portal transition and save progress
-      setCharacterStats((prev) => {
-        const PORTAL_XP = 10;
-        let newExp = prev.exp + PORTAL_XP;
-        let newLevel = prev.level;
-        let newExpToNext = prev.expToNext;
-        while (newExp >= newExpToNext) {
-          newExp -= newExpToNext;
-          newLevel += 1;
-          newExpToNext = Math.floor(100 * 2 ** (newLevel - 1));
-        }
-        // Persist portal XP atomically through the reward funnel (applyRewards),
-        // not a partial updateCharacter (which would clobber optional loadout
-        // fields like spellBarOrder and bossRushMasterComplete).
-        if (actor) {
-          const deathEpochAtPersistStart = deathEpochRef.current;
-          (async () => {
-            try {
-              const result = await progressPersistRef.current.enqueue(
-                async () => {
-                  const persisted = await actor.applyRewards(
-                    BigInt(characterSlot),
-                    BigInt(0),
-                    BigInt(PORTAL_XP),
-                  );
-                  if ("err" in persisted) {
-                    throw new Error(String(persisted.err));
-                  }
-                  const { newXp, newLevel: newLvl } = persisted.ok;
-                  progressPersistRef.current.commit({
-                    xp: Number(newXp),
-                    level: Number(newLvl),
-                  });
-                  return persisted;
-                },
-              );
-              const { newXp, newLevel: newLvl } = result.ok;
-              // Recap is not up after a portal swap. Lava on the new map
-              // can land while this applyRewards is still in flight. The
-              // death write already penalized the post-credit snapshot;
-              // restoring absolute XP here lets raiseUiAfterDeathPersist
-              // keep the unpenalized UI and refund the penalty.
-              if (
-                shouldApplyVictoryLiveHydrate(
-                  deathTriggeredRef.current,
-                  deathEpochAtPersistStart,
-                  deathEpochRef.current,
-                )
-              ) {
-                setCharacterStats((cur) => ({
-                  ...cur,
-                  exp: Number(newXp),
-                  level: Number(newLvl),
-                  expToNext: Math.floor(100 * 2 ** (Number(newLvl) - 1)),
-                }));
-              }
-            } catch (err) {
-              console.warn("[PBV] Portal XP save failed:", err);
+      // Persist portal XP through applyRewards only after the write lands.
+      // Optimistic HUD +10 used to stay after a failed persist; idle hydrate
+      // then copied it over committed and the next saveBattleStats minted it.
+      if (actor) {
+        const deathEpochAtPersistStart = deathEpochRef.current;
+        void (async () => {
+          try {
+            const persisted = await progressPersistRef.current.enqueue(
+              async () => {
+                const result = await persistIncrementalRewards(
+                  actor,
+                  characterSlot,
+                  0,
+                  PORTAL_TRANSITION_XP,
+                );
+                progressPersistRef.current.commit({
+                  xp: result.newXp,
+                  level: result.newLevel,
+                });
+                return result;
+              },
+            );
+            // Recap is not up after a portal swap. Lava on the new map
+            // can land while this applyRewards is still in flight. The
+            // death write already penalized the post-credit snapshot;
+            // restoring absolute XP here lets raiseUiAfterDeathPersist
+            // keep the unpenalized UI and refund the penalty.
+            if (
+              shouldApplyVictoryLiveHydrate(
+                deathTriggeredRef.current,
+                deathEpochAtPersistStart,
+                deathEpochRef.current,
+              )
+            ) {
+              setCharacterStats((cur) => ({
+                ...cur,
+                exp: persisted.newXp,
+                level: persisted.newLevel,
+                expToNext: Math.floor(100 * 2 ** (persisted.newLevel - 1)),
+              }));
             }
-          })();
-        }
-        return {
-          ...prev,
-          exp: newExp,
-          level: newLevel,
-          expToNext: newExpToNext,
-        };
-      });
+          } catch (err) {
+            console.warn("[PBV] Portal XP save failed:", err);
+          }
+        })();
+      }
     } else {
       // FIX #14: Player is not on a portal — release lock immediately
       transitionInProgressRef.current = false;
@@ -18259,9 +18268,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       // 🎰 Jackpot heal: 0.5% chance of full HP restore
                       const isJackpot = Math.random() < 0.005;
                       if (isJackpot) {
-                        // Full heal — only spend 1 Doka for the jackpot
+                        // Full heal — spend 1 Doka from the live wallet.
+                        // The render snapshot lags a same-tick shop/heal
+                        // debit; persistAbsoluteProgress then records spend
+                        // 0 and idle hydrate refunds the earlier cut.
+                        const nextDoka = nextDokaAfterJackpotHeal(
+                          dokaBalanceRef.current,
+                        );
                         setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
-                        onDokaBalanceChange(Math.max(0, dokaBalance - 1));
+                        persistAbsoluteProgress(maxHp, nextDoka);
+                        dokaBalanceRef.current = nextDoka;
+                        onDokaBalanceChange(nextDoka);
                         // Banner
                         setJackpotHealVisible(true);
                         if (jackpotHealTimerRef.current)
@@ -18278,10 +18295,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         toast.success("🎰 JACKPOT HEAL! Full HP restored!", {
                           duration: 4000,
                         });
-                        persistAbsoluteProgress(
-                          maxHp,
-                          Math.max(0, dokaBalance - 1),
-                        );
                         return;
                       }
 

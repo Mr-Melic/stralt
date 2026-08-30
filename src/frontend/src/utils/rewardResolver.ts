@@ -8,6 +8,7 @@ import {
 
 export type { ApplyRewardsOk } from "./applyRewardsResult.ts";
 export {
+  PORTAL_TRANSITION_XP,
   persistIncrementalRewards,
   readApplyRewardsOk,
 } from "./applyRewardsResult.ts";

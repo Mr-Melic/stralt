@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { createProgressPersist } from "./progressPersist.ts";
 import {
   applySpellLevel,
+  committedDokaAfterSpellUpgrade,
   persistSpellUpgrade,
   readUpgradeSpellOk,
+  shouldCommitSpellUpgradeDoka,
+  spellUpgradeCanisterSpend,
   spellUpgradeUiSpend,
 } from "./spellUpgrade.ts";
 
@@ -93,8 +96,30 @@ assert.equal(persistThrew, true);
 // Debiting the advertised cost leaves the UI short; hydrateWhenIdle then
 // copies that under-count over committed and the next heal persists it.
 assert.equal(spellUpgradeUiSpend(100, 200, 190), 10);
-assert.equal(spellUpgradeUiSpend(100, 200, undefined), 100);
+assert.equal(spellUpgradeUiSpend(100, 200, undefined), 10);
+assert.equal(spellUpgradeUiSpend(20, 200, undefined), 20);
 assert.equal(spellUpgradeUiSpend(3200, 4000, 3680), 320);
+assert.equal(spellUpgradeCanisterSpend(100), 10);
+assert.equal(spellUpgradeCanisterSpend(200), 20);
+assert.equal(spellUpgradeCanisterSpend(10), 10);
+assert.equal(spellUpgradeCanisterSpend(80), 80);
+assert.equal(committedDokaAfterSpellUpgrade(200, 190, 100), 190);
+assert.equal(
+  committedDokaAfterSpellUpgrade(200, 200, 100),
+  190,
+  "stale pre-upgrade query must not refund the canister spend",
+);
+assert.equal(committedDokaAfterSpellUpgrade(200, undefined, 20), 180);
+assert.equal(
+  committedDokaAfterSpellUpgrade(0, 190, 100),
+  190,
+  "unseeded lock must keep the post-upgrade query instead of seeding 0",
+);
+assert.equal(committedDokaAfterSpellUpgrade(0, undefined, 100), 0);
+assert.equal(shouldCommitSpellUpgradeDoka(0, 0, false), false);
+assert.equal(shouldCommitSpellUpgradeDoka(0, 190, false), true);
+assert.equal(shouldCommitSpellUpgradeDoka(200, 190, true), true);
+assert.equal(spellUpgradeUiSpend(100, 0, 190), 10);
 
 {
   const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
@@ -119,6 +144,21 @@ assert.equal(spellUpgradeUiSpend(3200, 4000, 3680), 320);
   // Advertised-cost UI is short; idle hydrate must not copy that cut over
   // the seeded post-upgrade wallet.
   assert.equal(wrongLock.snapshot().doka, 190);
+}
+
+{
+  // upgradeSpell deducted 10. getCallerDokaBalance returned the pre-upgrade
+  // 200. Committing that snapshot refunds the spend; the next heal writes 200.
+  const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
+  const next = committedDokaAfterSpellUpgrade(200, 200, 100);
+  lock.commit({ doka: next });
+  const spent = spellUpgradeUiSpend(100, 200, 200);
+  const ui = 200 - spent;
+  assert.equal(next, 190);
+  assert.equal(spent, 10);
+  assert.equal(ui, 190);
+  lock.hydrateWhenIdle({ doka: ui, xp: 0, level: 1 });
+  assert.equal(lock.snapshot().doka, 190);
 }
 
 console.log("spellUpgrade.test: ok");
