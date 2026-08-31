@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   type OccupancyContext,
+  applyAttract,
+  applyPushback,
   collectMandatoryProgressionCells,
   findNearestFreeCell,
   occKey,
@@ -91,6 +93,59 @@ describe("relocateOffMandatoryCells", () => {
     const [moved] = relocateOffMandatoryCells([{ x: 2, y: 0 }], mandatory, ctx);
     assert.equal(mandatory.has(occKey(moved.x, moved.y)), false);
     assert.ok(tiles[moved.y][moved.x]);
+  });
+
+  it("slides a pushback off the only exit bridge", () => {
+    const tiles = [
+      [true, true, true, true, true, true],
+      [true, true, false, false, false, false],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["5,0"]);
+    const occupied = new Set<string>(["0,0"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const mandatory = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 0 },
+    );
+    ctx.reserved = mandatory;
+    assert.equal(mandatory.has("2,0"), true);
+    const landed = applyPushback({ x: 1, y: 0 }, { x: 0, y: 0 }, 1, ctx);
+    assert.equal(mandatory.has(occKey(landed.x, landed.y)), false);
+  });
+
+  it("slides an attraction off the only exit bridge", () => {
+    const tiles = [
+      [true, true, true, true, true, true],
+      [true, true, false, false, false, false],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["5,0"]);
+    const occupied = new Set<string>(["0,0", "5,0"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const mandatory = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 0 },
+    );
+    ctx.reserved = mandatory;
+    const landed = applyAttract({ x: 3, y: 0 }, { x: 0, y: 0 }, 2, ctx);
+    assert.equal(mandatory.has(occKey(landed.x, landed.y)), false);
   });
 });
 

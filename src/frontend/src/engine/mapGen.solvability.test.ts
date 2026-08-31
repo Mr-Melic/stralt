@@ -318,6 +318,150 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
     assert.equal(after.ok, true, after.failures.join(","));
   });
+
+  it("seed-portal-onto-hostile: relocating an isolated exit must not land on a rat", () => {
+    const tiles = [
+      [F, F, F, W, W],
+      [F, F, F, W, W],
+      [F, F, F, W, W],
+      [W, W, W, W, W],
+      [W, W, W, W, F],
+    ];
+    const voidTiles = new Set(["4,4"]);
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles,
+      playerSpawn: { x: 0, y: 0 },
+      portals: [{ x: 4, y: 4 }],
+      spawns: [{ x: 2, y: 2 }],
+      w: 5,
+      h: 5,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      voidTiles,
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      5,
+      5,
+    );
+    assert.equal(after.enemiesOnPortal, 0, after.failures.join(","));
+    assert.equal(after.portalReachable, true);
+    assert.equal(after.enemiesReachable, true);
+  });
+
+  it("seed-stacked-portals: two exits must not collapse onto the same cell", () => {
+    const tiles = [
+      [F, F, F, W, W],
+      [F, F, F, W, W],
+      [F, F, F, W, W],
+      [W, W, W, W, W],
+      [W, W, W, W, F],
+    ];
+    const voidTiles = new Set(["4,4"]);
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles,
+      playerSpawn: { x: 0, y: 0 },
+      portals: [
+        { x: 4, y: 4 },
+        { x: 2, y: 2 },
+      ],
+      spawns: [],
+      w: 5,
+      h: 5,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      voidTiles,
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      5,
+      5,
+    );
+    assert.equal(after.stackedPortals, 0, after.failures.join(","));
+    assert.equal(after.isolatedPortals, 0);
+    const keys = finalized.portals.map((p) => `${p.x},${p.y}`);
+    assert.equal(new Set(keys).size, 2);
+  });
+
+  it("seed-cramped-destack: three isolated hostiles get unique floors", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [W, F, F, W, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, F, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, W, F, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, F, W, W, W, W, W],
+    ];
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals: [{ x: 2, y: 1 }],
+      spawns: [
+        { x: 5, y: 3 },
+        { x: 6, y: 5 },
+        { x: 2, y: 7 },
+      ],
+      w: 8,
+      h: 8,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      8,
+    );
+    assert.equal(after.stackedEnemies, 0, after.failures.join(","));
+    assert.equal(after.enemiesOnPortal, 0);
+    assert.equal(after.enemiesReachable, true);
+    const keys = finalized.spawns.map((s) => `${s.x},${s.y}`);
+    assert.equal(new Set(keys).size, 3);
+  });
+
+  it("seed-spawn-on-second-portal: player does not start on a non-white exit", () => {
+    const tiles = [
+      [F, F, F],
+      [F, F, F],
+      [F, F, F],
+    ];
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 2, y: 2 },
+      portals: [
+        { x: 0, y: 0 },
+        { x: 2, y: 2 },
+      ],
+      spawns: [],
+      w: 3,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      3,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.ok(
+      finalized.portals.every(
+        (p) =>
+          p.x !== finalized.playerSpawn.x || p.y !== finalized.playerSpawn.y,
+      ),
+    );
+  });
 });
 
 describe("seeded world property suite", () => {
@@ -412,9 +556,15 @@ describe("seeded world property suite", () => {
   });
 
   it("Death Realm exits stay reachable", () => {
-    const realm = generateSeededDeathRealm();
-    const report = reportWorld(realm);
-    assert.equal(report.ok, true, report.failures.join(","));
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const realm = generateSeededDeathRealm(seed);
+      const report = reportWorld(realm);
+      if (!report.ok) {
+        failures.push(`seed ${seed}: ${report.failures.join(",")}`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
   });
 });
 

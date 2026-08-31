@@ -356,7 +356,9 @@ function bfsCarvePath(
 }
 
 // Find the nearest cell in `reachable` to `target` by Chebyshev distance that
-// is also walkable. Used as the relocation fallback.
+// is also walkable. Excluded cells (spawn / portals / hostiles) are never
+// returned — a fallback onto those used to stack a portal on a rat or two
+// isolated pockets onto one floor.
 function nearestReachableCell(
   target: { x: number; y: number },
   reachable: Set<string>,
@@ -366,25 +368,140 @@ function nearestReachableCell(
 ): { x: number; y: number } | null {
   let best: { x: number; y: number } | null = null;
   let bestDist = Number.POSITIVE_INFINITY;
-  let fallback: { x: number; y: number } | null = null;
-  let fallbackDist = Number.POSITIVE_INFINITY;
   for (const k of reachable) {
     const p = k.split(",");
     const rx = Number(p[0]);
     const ry = Number(p[1]);
     if (rx < 0 || ry < 0 || rx >= w || ry >= h) continue;
-    const dist = Math.max(Math.abs(rx - target.x), Math.abs(ry - target.y));
-    if (dist < fallbackDist) {
-      fallbackDist = dist;
-      fallback = { x: rx, y: ry };
-    }
     if (exclude?.has(k)) continue;
+    const dist = Math.max(Math.abs(rx - target.x), Math.abs(ry - target.y));
     if (dist < bestDist) {
       bestDist = dist;
       best = { x: rx, y: ry };
     }
   }
-  return best ?? fallback;
+  return best;
+}
+
+/** Punch one neighboring wall so destack has a unique floor. */
+function punchAdjacentFloor(
+  tiles: string[][],
+  vt: Set<string>,
+  reachable: Set<string>,
+  exclude: Set<string>,
+  w: number,
+  h: number,
+): { x: number; y: number } | null {
+  for (const k of reachable) {
+    const p = k.split(",");
+    const x = Number(p[0]);
+    const y = Number(p[1]);
+    for (const d of REACH_DIRS) {
+      const nx = x + d[0];
+      const ny = y + d[1];
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const nk = `${nx},${ny}`;
+      if (vt.has(nk) || exclude.has(nk)) continue;
+      if ((tiles[ny]?.[nx] as string) === "wall") {
+        tiles[ny][nx] = "floor";
+        reachable.add(nk);
+        return { x: nx, y: ny };
+      }
+    }
+  }
+  return null;
+}
+
+function claimUniqueReachableCell(
+  tiles: string[][],
+  vt: Set<string>,
+  from: { x: number; y: number },
+  reachable: Set<string>,
+  exclude: Set<string>,
+  w: number,
+  h: number,
+): { x: number; y: number } | null {
+  const near = nearestReachableCell(from, reachable, w, h, exclude);
+  if (near) return near;
+  return punchAdjacentFloor(tiles, vt, reachable, exclude, w, h);
+}
+
+function isWhitePortalFlag(portal: object): boolean {
+  return (portal as { isWhitePortal?: unknown }).isWhitePortal === true;
+}
+
+function destackStackedPortals<P extends { x: number; y: number }>(
+  tiles: string[][],
+  vt: Set<string>,
+  portals: P[],
+  playerSpawn: { x: number; y: number },
+  spawns: { x: number; y: number }[],
+  w: number,
+  h: number,
+): void {
+  const reachable = floodFillReachable(tiles, vt, playerSpawn, w, h);
+  const occupied = new Set<string>([
+    `${playerSpawn.x},${playerSpawn.y}`,
+    ...spawns.map((s) => `${s.x},${s.y}`),
+  ]);
+  const seen = new Set<string>();
+  for (let i = 0; i < portals.length; i++) {
+    const k = `${portals[i].x},${portals[i].y}`;
+    if (!seen.has(k)) {
+      seen.add(k);
+      occupied.add(k);
+      continue;
+    }
+    const next = relocatePortalOntoReachable(
+      tiles,
+      vt,
+      portals[i],
+      reachable,
+      playerSpawn,
+      w,
+      h,
+      new Set([...occupied, ...seen]),
+    );
+    portals[i].x = next.x;
+    portals[i].y = next.y;
+    seen.add(`${next.x},${next.y}`);
+    occupied.add(`${next.x},${next.y}`);
+  }
+}
+
+function destackSpawns(
+  tiles: string[][],
+  vt: Set<string>,
+  spawns: { x: number; y: number }[],
+  occupied: Set<string>,
+  reserved: Set<string>,
+  reachable: Set<string>,
+  w: number,
+  h: number,
+): void {
+  const seen = new Set<string>();
+  for (let i = 0; i < spawns.length; i++) {
+    const k = `${spawns[i].x},${spawns[i].y}`;
+    if (!seen.has(k) && !reserved.has(k)) {
+      seen.add(k);
+      continue;
+    }
+    const near = claimUniqueReachableCell(
+      tiles,
+      vt,
+      spawns[i],
+      reachable,
+      new Set([...reserved, ...seen, k]),
+      w,
+      h,
+    );
+    if (near && `${near.x},${near.y}` !== k) {
+      occupied.delete(k);
+      spawns[i] = near;
+      occupied.add(`${near.x},${near.y}`);
+      seen.add(`${near.x},${near.y}`);
+    }
+  }
 }
 
 export function legalizePlayerSpawn(
@@ -451,6 +568,7 @@ export function legalizePlayerSpawn(
 
 function relocatePortalOntoReachable(
   tiles: string[][],
+  vt: Set<string>,
   portal: { x: number; y: number },
   reachable: Set<string>,
   playerSpawn: { x: number; y: number },
@@ -460,22 +578,19 @@ function relocatePortalOntoReachable(
 ): { x: number; y: number } {
   const reserved = new Set<string>(exclude);
   reserved.add(`${playerSpawn.x},${playerSpawn.y}`);
-  const near = nearestReachableCell(portal, reachable, w, h, reserved);
   const dest =
-    near && `${near.x},${near.y}` !== `${playerSpawn.x},${playerSpawn.y}`
-      ? near
-      : ([...reachable]
-          .map((k) => {
-            const p = k.split(",");
-            return { x: Number(p[0]), y: Number(p[1]) };
-          })
-          .find(
-            (c) =>
-              (c.x !== playerSpawn.x || c.y !== playerSpawn.y) &&
-              !reserved.has(`${c.x},${c.y}`),
-          ) ??
-        near ??
-        playerSpawn);
+    claimUniqueReachableCell(tiles, vt, portal, reachable, reserved, w, h) ??
+    [...reachable]
+      .map((k) => {
+        const p = k.split(",");
+        return { x: Number(p[0]), y: Number(p[1]) };
+      })
+      .find(
+        (c) =>
+          (c.x !== playerSpawn.x || c.y !== playerSpawn.y) &&
+          !reserved.has(`${c.x},${c.y}`),
+      ) ??
+    playerSpawn;
   if (tiles[portal.y]?.[portal.x] === "portal") {
     tiles[portal.y][portal.x] = "floor";
   }
@@ -528,11 +643,13 @@ export function ensureReachability(
   }
 
   // 2. For each enemy spawn not reachable, carve or relocate. Occupied
-  // cells (player, portal, already-placed hostiles) are avoided so two
-  // isolated pockets do not collapse onto one tile.
+  // cells (player, portal, already-placed hostiles, other exits) are
+  // avoided so two isolated pockets do not collapse onto one tile or
+  // land on an exit.
   const occupied = new Set<string>([
     `${liveSpawn.x},${liveSpawn.y}`,
     `${portal.x},${portal.y}`,
+    ...(portalExclude ?? []),
   ]);
   for (const s of outSpawns) {
     if (reachable.has(`${s.x},${s.y}`)) occupied.add(`${s.x},${s.y}`);
@@ -555,7 +672,15 @@ export function ensureReachability(
       reachable = floodFillReachable(out, vt, liveSpawn, w, h);
       if (!reachable.has(`${sp.x},${sp.y}`)) {
         // Carving didn't connect (e.g. spawn sits in a void pocket). Relocate.
-        const near = nearestReachableCell(sp, reachable, w, h, occupied);
+        const near = claimUniqueReachableCell(
+          out,
+          vt,
+          sp,
+          reachable,
+          occupied,
+          w,
+          h,
+        );
         if (near) {
           occupied.delete(key);
           outSpawns[i] = near;
@@ -566,8 +691,17 @@ export function ensureReachability(
       }
     } else {
       // Carving impractical (too long or no path). Relocate to nearest
-      // reachable cell that is not already taken.
-      const near = nearestReachableCell(sp, reachable, w, h, occupied);
+      // reachable cell that is not already taken; punch a wall if the
+      // graph is too cramped to destack.
+      const near = claimUniqueReachableCell(
+        out,
+        vt,
+        sp,
+        reachable,
+        occupied,
+        w,
+        h,
+      );
       if (near) {
         occupied.delete(key);
         outSpawns[i] = near;
@@ -576,29 +710,12 @@ export function ensureReachability(
     }
   }
 
-  // Destack any remaining shared cells (two isolated pockets used to
-  // collapse onto the same nearest floor).
-  const seen = new Set<string>();
-  for (let i = 0; i < outSpawns.length; i++) {
-    const k = `${outSpawns[i].x},${outSpawns[i].y}`;
-    if (!seen.has(k)) {
-      seen.add(k);
-      continue;
-    }
-    const near = nearestReachableCell(
-      outSpawns[i],
-      reachable,
-      w,
-      h,
-      new Set([...occupied, k]),
-    );
-    if (near && `${near.x},${near.y}` !== k) {
-      occupied.delete(k);
-      outSpawns[i] = near;
-      occupied.add(`${near.x},${near.y}`);
-      seen.add(`${near.x},${near.y}`);
-    }
-  }
+  const reserved = new Set<string>([
+    `${liveSpawn.x},${liveSpawn.y}`,
+    `${portal.x},${portal.y}`,
+    ...(portalExclude ?? []),
+  ]);
+  destackSpawns(out, vt, outSpawns, occupied, reserved, reachable, w, h);
 
   // 3. Guarantee the portal is reachable from the player spawn.
   let livePortal = { x: portal.x, y: portal.y };
@@ -642,16 +759,20 @@ export function ensureReachability(
     if (!reachable.has(`${livePortal.x},${livePortal.y}`)) {
       livePortal = relocatePortalOntoReachable(
         out,
+        vt,
         livePortal,
         reachable,
         liveSpawn,
         w,
         h,
-        portalExclude,
+        new Set([...(portalExclude ?? []), ...occupied]),
       );
       reachable = floodFillReachable(out, vt, liveSpawn, w, h);
     }
   }
+
+  reserved.add(`${livePortal.x},${livePortal.y}`);
+  destackSpawns(out, vt, outSpawns, occupied, reserved, reachable, w, h);
 
   return {
     tiles: out,
@@ -837,6 +958,7 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     primary ?? liveSpawn,
     input.w,
     input.h,
+    new Set(portals.slice(1).map((p) => `${p.x},${p.y}`)),
   );
 
   if (portals[0] && punched.portal) {
@@ -888,9 +1010,22 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     }
   }
 
+  destackStackedPortals(
+    liveTiles,
+    vt,
+    portals,
+    playerSpawn,
+    spawns,
+    input.w,
+    input.h,
+  );
+
   const takenPortals = new Set(portals.map((p) => `${p.x},${p.y}`));
-  const exit = portals[0];
-  if (exit && playerSpawn.x === exit.x && playerSpawn.y === exit.y) {
+  const blockingExits = portals.filter((p) => !isWhitePortalFlag(p));
+  const spawnOnExit = blockingExits.some(
+    (p) => p.x === playerSpawn.x && p.y === playerSpawn.y,
+  );
+  if (spawnOnExit) {
     const reachable = floodFillReachable(
       liveTiles,
       vt,
@@ -966,6 +1101,8 @@ export interface SolvabilityReport {
   isolatedEnemies: number;
   isolatedPortals: number;
   stackedEnemies: number;
+  stackedPortals: number;
+  enemiesOnPortal: number;
   failures: string[];
 }
 
@@ -1027,15 +1164,33 @@ export function evaluateSolvability(
   for (const n of occupancy.values()) {
     if (n > 1) stackedEnemies += n - 1;
   }
+  if (stackedEnemies > 0) failures.push(`stacked-enemies:${stackedEnemies}`);
+  const portalKeys = new Set(portals.map((p) => `${p.x},${p.y}`));
+  let stackedPortals = 0;
+  if (portals.length > portalKeys.size) {
+    stackedPortals = portals.length - portalKeys.size;
+    failures.push(`stacked-portals:${stackedPortals}`);
+  }
+  let enemiesOnPortal = 0;
+  for (const s of spawns) {
+    if (portalKeys.has(`${s.x},${s.y}`)) enemiesOnPortal += 1;
+  }
+  if (enemiesOnPortal > 0) {
+    failures.push(`enemies-on-portal:${enemiesOnPortal}`);
+  }
   if (
     !opts?.allowSpawnOnPortal &&
     playerSpawnLegal &&
-    portals.some((p) => p.x === playerSpawn.x && p.y === playerSpawn.y) &&
+    portals.some(
+      (p) =>
+        p.x === playerSpawn.x && p.y === playerSpawn.y && !isWhitePortalFlag(p),
+    ) &&
     reachable.size > 1
   ) {
     // Standing on an exit is legal walkability but skips the room if the
     // portal is unlocked. Flag it so finalize can keep spawn off the exit
-    // when another floor cell exists.
+    // when another floor cell exists. White sanctuary gateways colocated
+    // with spawn are intentional.
     failures.push("spawn-on-portal");
   }
   return {
@@ -1046,6 +1201,8 @@ export function evaluateSolvability(
     isolatedEnemies,
     isolatedPortals,
     stackedEnemies,
+    stackedPortals,
+    enemiesOnPortal,
     failures,
   };
 }
