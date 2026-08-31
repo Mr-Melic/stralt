@@ -66,6 +66,7 @@ describe("collectMandatoryProgressionCells", () => {
 
 describe("relocateOffMandatoryCells", () => {
   it("moves a summon/corpse off the only path when another free cell exists", () => {
+    // executeSummonAction slides post-move occupants with this helper.
     const tiles = [
       [true, true, true, true, true, true],
       [true, true, false, false, false, false],
