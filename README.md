@@ -15,16 +15,18 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit |
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
 | `src/frontend/src/engine/portalRules.ts` | Run-mode portals + dungeon-chain snapshot (before `cleanupMap`) |
+| `src/frontend/src/engine/mapGen.ts` | Archetypes + `finalizePlayableLayout` (spawn / exit / hostile reachability) |
 | `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards` + `saveBattleStats` |
-| `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP accumulators |
+| `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn accumulators |
 | `src/frontend/src/utils/deathGuards.ts` | Death-realm timer + one-shot death guards |
 | `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` |
 | `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` level threshold |
-| `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
+| `src/frontend/src/utils/versionGate.ts` | Version-bump wipe: keep spawn/level-up config and `*_inventory` |
+| `backend_extended/` | Legacy actor (15-field stats). Not the caffeine/mops build |
 | `declarations/backend/` | Stale Candid snapshot (still lists `wp`/`wr`/`scp`) |
 
 Canonical build entry: root `mops.toml` → `src/backend/main.mo`.  
-`dfx.json` still points at `backend_extended/main.mo` and must not be used as the source of truth.
+`dfx.json` points at missing `src/backend_extended/main.mo`; the legacy tree is root `backend_extended/`. Do not treat dfx as the source of truth.
 
 ## Quick start
 
@@ -53,8 +55,8 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 
 | Doc | Contents |
 | :--- | :--- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, persist lock, challenges, Death Realm, dungeon chain, public API |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid/wallet pitfalls, challenges, shop, boss rush, deploy, debug overlay |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, persist lock, challenges, Death Realm, dungeon chain, map solvability, public API |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid/wallet pitfalls, challenges, shop, boss rush, maps, deploy, debug overlay |
 | [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
 | [docs/automation/QUALITY_AUDIT_2026-08-30.md](docs/automation/QUALITY_AUDIT_2026-08-30.md) | Weekly automation quality audit (process only) |
@@ -63,7 +65,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 ## Hard rules (product)
 
 - Backend owns persisted state. `localStorage` is a cache / UI preference only.
-- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`.
+- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`. Portal +10 XP must not update the HUD until that write commits.
 - Penalties and shop/heal spends persist through `saveBattleStats` on the same progress-persist lock. `applyRewards` cannot subtract.
 - Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics.
 - Admin and debug tools stay gated. Do not ship them to normal players as first-class UI.

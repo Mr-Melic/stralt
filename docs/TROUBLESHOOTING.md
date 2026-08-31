@@ -87,6 +87,7 @@ The persist lock starts at `doka = 0` until an authoritative read or credit seed
 - Once seeded, `shouldCopyIdleWalletDoka` refuses any idle **cut** (stale pre-credit 50 over committed 550 is the same class).
 - Unseeded death/heal must `resolveCommittedDokaForAbsoluteWrite` (live `getCallerDokaBalance`); skip the absolute write if the read fails.
 - Do not `commit` a rename/feat delta stacked on the placeholder (`shouldCommitRenameDokaSpend`).
+- Idle hydrate must not copy leftover XP from a lower UI level over a post-`applyRewards` level-up (`resolveHydratedXp`). That leftover refunds the death XP cut on the next `saveBattleStats`.
 
 ### Rename debit on a rejected name / stale click-time wallet
 
@@ -100,13 +101,21 @@ Debit `dokaBalanceRef` (live), not the click-time `dokaBalance - 100`. Recap is 
 
 Credits are **not** instant: backend auto-completes pending records ≥ 60s. The client must call `processPendingPurchases` via `creditPendingPurchasesThroughPersist`. Shop-credit timers must **not** live in `pendingTimeoutsRef` — `cleanupBattle` clears that set on portal/death/victory (`shopCreditUsesBattleTimeoutSet` is false).
 
+A 60s remount retry or a no-op complete still reads `getCallerDokaBalance`. Committing that absolute snapshot when `gained === 0` refunds a recap heal that landed while the timer was waiting. Commit only when `shouldCommitShopCredit(gained)` is true, and never cut a higher lock snapshot.
+
 ### Item shop spend refunds and items do nothing
 
 `BuffShop` returns `null` unless `isOpen === true`. Host it in `WorldExploration` so buys go through `saveBattleStats` on the persist lock and uses reach `handleUseItem`. A `GameFlow`-only local deduct is restored on the next `getCallerDokaBalance` hydrate.
 
+### Portal +10 XP appears then vanishes / unpaid XP persists
+
+Portal step XP is `PORTAL_TRANSITION_XP` (10) through `persistIncrementalRewards`. Do **not** add it to the HUD before `applyRewards` commits. Optimistic leftover + a failed persist lets `hydrateWhenIdle` copy unpaid XP onto the lock; the next `saveBattleStats` writes it. After commit, still gate the live hydrate with `shouldApplyVictoryLiveHydrate` (death epoch) — lava on the new map can land while the write is in flight.
+
 ### Challenge XP advertised but never persisted
 
 `handleBattleEnd` is a `useCallback` that omits `challengeAccepted` / `currentChallenge`. Pass the live accept flag and challenge from refs (`liveBattleChallengePersistEntries`). Persist both `dokaReward` **and** `xpReward` (hard/legendary objectives show 400–1000 XP). Persist only when `isChallengeCompleted` is true (`utils/challengeCompletion.ts`).
+
+The opening player turn never goes through `advanceTurn`. Without `shouldCountOpeningPlayerTurn`, six player turns still read as 5 and Blitz (900 XP) credits. Overworld Doka-to-HP must not flip `healUsed` — the flag only clears in `cleanupBattle`, so a pre-fight heal fails the next no-heal challenge.
 
 ### Untouchable / under-damage challenge credited after a hit
 
@@ -116,11 +125,15 @@ Credits are **not** instant: backend auto-completes pending records ≥ 60s. The
 
 ### Attack Nearest / canvas summon costs 0 AP
 
-Attack Nearest calls `resolvePlayerCast` directly (not `executeCastAttempt`). Canvas summons return `"summon"` — `castResultSpendsAp` includes that result. Both paths must debit AP and `recordChallengeApSpend`. A free cast also hides a 9+ AP dump from `hard_3`.
+Attack Nearest calls `resolvePlayerCast` directly (not `executeCastAttempt`). Canvas summons return `"summon"` — `castResultSpendsAp` includes that result. Both paths must debit AP and `recordChallengeApSpend`. A free cast also hides a 9+ AP dump from `hard_3`. Tile follow-up after `executeCastAttempt` must **not** debit again on fizzle (`castFollowUpShouldDebitAp`).
+
+Attack Nearest and sprite-click Strike must pick from `getLiveCombatants` + `isActiveHostile` / `isTileCastableLive` (range, LoS, cooldown). A React `enemies` snapshot misses enemy minions and leftover corpses, and leftover AP used to recast Inferno every click without consulting the cooldown map.
 
 ### Spell upgrade debit is 10× too large (summons)
 
 Spellbook summon UI shows `SUMMON_UPGRADE_COST_MULTIPLIER * 10 * 2^level` (100 at level 0). `upgradeSpell` charges `spellLevelingBaseCost * 2^level` (default base **10**). Debit with `spellUpgradeUiSpend(advertised, committedBefore, backendAfter)` so idle hydrate cannot copy the under-count over committed.
+
+`getCallerDokaBalance` after `upgradeSpell` is a query. A stale pre-upgrade read is `>= committedBefore`. Committing that snapshot refunds the spend on the lock; the next `saveBattleStats` writes it back. Use `committedDokaAfterSpellUpgrade` — keep the observed wallet only when it actually decreased.
 
 ### Spell upgrade wiped by the next heal
 
@@ -128,7 +141,7 @@ Spellbook summon UI shows `SUMMON_UPGRADE_COST_MULTIPLIER * 10 * 2^level` (100 a
 
 ### `killCount` never increments in the client
 
-`useSaveKillCount` is defined in `useLeaderboardQueries.ts` and is unused. World saves only **preserve** the current count. Leaderboard kill totals will stall until a caller invokes `saveKillCount`.
+`useSaveKillCount` is defined in `useLeaderboardQueries.ts` and is unused. World saves only **preserve** the current count. Leaderboard kill totals will stall until a caller invokes `saveKillCount`. The canister now requires `#user`, not banned, and `kills <= 64` (single-battle bound).
 
 ### Deployed canister still on 15-field stats
 
@@ -136,10 +149,10 @@ Source on disk can be 12-field while the live canister is not. Symptom: Candid /
 
 ### `dfx.json` vs `mops.toml`
 
-`dfx.json` → `backend_extended/main.mo` (legacy, 15-field).  
+`dfx.json` → `src/backend_extended/main.mo` (**path does not exist**). The stale 15-field actor is root `backend_extended/main.mo`.  
 Root `mops.toml` → `src/backend/main.mo` (canonical).
 
-Do not `dfx deploy` expecting the current game actor unless `dfx.json` is updated.
+Do not `dfx deploy` expecting the current game actor unless `dfx.json` is pointed at `src/backend/main.mo`.
 
 ### OQL / `caffeine check` M0010
 
@@ -151,7 +164,7 @@ Expected. `sendMessage` / `getMessages` are in-memory (`main.mo` comment at the 
 
 ### Version bump logs everyone out
 
-Changing `APP_VERSION` in `App.tsx` clears almost all `localStorage` and reloads. Keep `pbv_tier_spawn_config` and `pbv_levelup_config` if you add another exception. Bump `CHANGELOG_ITEMS` in the same change.
+Changing `APP_VERSION` in `App.tsx` clears almost all `localStorage` and reloads. Preserve via `shouldPreserveVersionGateKey`: `pbv_tier_spawn_config`, `pbv_levelup_config`, and keys ending `_inventory`. A blanket `clear()` drops paid BuffShop potions (`${principal}_inventory`) while the canister Doka spend stays. Bump `CHANGELOG_ITEMS` in the same change.
 
 ### First user is admin
 
@@ -190,20 +203,46 @@ On the world stage, press **Shift+D** (ignored while typing in an input). The De
 
 `cleanupMap` zeroes `dungeonChainActiveRef` / depth / maxDepth (death/flee must not carry a run). Snapshot **before** cleanup (`snapshotDungeonChain` → `decideDungeonChainPortal`). Reading the wiped refs yields `none`, generates an overworld map, and skips the `maxDepth * 50` completion bonus.
 
+Rest-exit is the same class: `cleanupMap` runs first, then the rest-exit path must re-arm depth 1 **on the refs** (`shouldArmDungeonChainOnRestExit` / `restExitSpawnDepth`) and `applyFinalizedLayout` so hostiles can reach the exit. Drive the Doka multiplier from those refs (`dungeonDokaMultiplierFor`), not React state after `resetRunState`.
+
+### White sanctuary portal is a wall / unwalkable
+
+Dungeon-chain completion used to hardcode the white portal at `(0, 0)`. Fortress corners and chessboard even/even cells wall that tile; entry is coordinate-based. Place it with `placeWhitePortalAtSpawn` / `pickLegalWhitePortalCell` (same contract as Boss Rush `whiteSpawn`).
+
 ### Feats panel empty / Claim never appears
 
 `getPlayerAchievements(player)` returns `[]` unless `player` is the caller Principal. `useGetPlayerAchievements` must pass `identity.getPrincipal()`. A display name or omitted arg fails Candid encode (caught → `[]`) or the `caller == player` guard. Advertised 50–1000 Doka then cannot be claimed even after `markAchievementUnlocked` succeeds.
 
+Double-click: `shouldBeginAchievementClaim` (in-flight set). The second click hits "already claimed" after the first write succeeded — rolling that back hides the grant the canister already paid (`shouldRollbackClaimFailure`).
+
 ### Lava death after victory / portal refunds the penalty
 
-The recap wrapper in `App.tsx` is `pointer-events: none` (world tiles still receive input); a portal swap has no overlay. `applyRewards` can still be in flight when lava/spikes fire. The death write already penalized the post-credit committed snapshot. Applying the post-await live hydrate (`shouldApplyVictoryLiveHydrate`) restores HP and unpenalized XP; `hydrateWhenIdle` then copies that into committed and the next persist refunds the death.
+The recap wrapper in `App.tsx` is `pointer-events: none` (world tiles still receive input); a portal swap has no overlay. `applyRewards` can still be in flight when lava/spikes fire. The death write already penalized the post-credit committed snapshot. Applying the post-await live hydrate (`shouldApplyVictoryLiveHydrate`, including death-epoch mismatch) restores HP and unpenalized XP; `hydrateWhenIdle` then copies that into committed and the next persist refunds the death.
 
 ### Boss rush resume / farm / stuck between rooms
 
 - `getBossRushState` requires `userId == caller` as a **principal**. Pass the II identity text (`isPrincipalText`), not the profile display name.
-- Persist `currentRoom` on room clear **before** `applyRewards`, both on the persist lock. Otherwise a reload re-enters room 0 and farms the same credit.
+- Persist `currentRoom` on room clear **before** `applyRewards`, both on the persist lock. `persistRoomClear` must throw if `setBossRushProgress` / `resetBossRush` did not run — a swallowed progress error still ran `applyRewards` and a reload re-entered the same room. `completeBossRushRoom` no longer mints client-supplied Doka/XP.
 - `createCharacter` / `deleteCharacter` clear slot-scoped progress. Lava/spike death must `abortBossRush` so a late room-clear write cannot resume mid-tree.
 - After a room clear, `setInBattle(false)` as well as `inBattleRef = false`. `cleanupBattle` only clears the ref; React `inBattle === true` blocks `checkBattleTrigger` and room 2 never starts.
+
+### Last-hostile victory never fires / leftover AI kills the player
+
+`isActiveHostile` reads **store** HP. Lava/spikes, plague/DoT, player-spell damage, enemy self-heal, and boss phase-2 must `updateCombatant`. Strip-only or `enemyHpMap` writes leave `hp > 0`, so the last tick never awards victory and the "dead" unit takes another turn (including a lethal hit that persists a death penalty). Tick DoT on enemy summons. After the last hostile dies, skip leftover turn dispatch (`liveTurnOrder` + `nextTurnIndex`).
+
+Enemy minions must spawn via `spawnEnemySummonUnit` (`side: "enemy"`, turn type `"enemy"`). Default `side: "player"` hands them to the control panel and drops them from victory. Player-side / allied kills must not enter `applyRewards` (`countsTowardKillRewards`).
+
+### Generated map has no reachable portal / sealed Boss Rush room
+
+Do not retune archetype fill to fix a stuck seed. After generateEnemies, Boss Rush preferred cells, or rest-exit, run `finalizePlayableLayout` / `applyFinalizedLayout`: legal spawn (not on the exit), at least one reachable portal, hostiles punched onto the walkable graph. Wall/void Boss Rush kits used to seal the progression portal. `evaluateSolvability` names the failure (`isolated-enemies`, `no-reachable-portal`, `spawn-on-portal`, …). Summons must not sit on unique player→exit bridges (`collectMandatoryProgressionCells`).
+
+### Jackpot heal refunds / charges twice
+
+Jackpot heal spends 1 Doka from the **live** wallet (`nextDokaAfterJackpotHeal`), not the render snapshot. `mergeVictoryRewardLiveStats` must keep leftover combat HP (or a recap heal) when it is already above the post-battle floor — replacing HP undoes the paid heal and the player is charged twice.
+
+### `calculateAndAwardDoka` looks like a reward API
+
+It is an unused public mint. Official XP/Doka go through `applyRewards`. The canister now requires `#user`, rejects banned callers, drops lists longer than 16, awards at most 8 rows, and caps each enemy level at 200. Do not wire the official funnel to it.
 
 ### Motoko / frontend level-up floors differ
 
@@ -213,10 +252,11 @@ The recap wrapper in `App.tsx` is `pointer-events: none` (world tiles still rece
 
 1. Confirm `src/backend/main.mo` and `migrations/` match the intended `CharacterStats` (12 fields, `killCount` present, no `wp`/`wr`/`scp`). Current chain module: `20260827_000000.mo`.
 2. Confirm `applyRewards` uses `100 * 2^(N-1)` (same as `utils/xpCurve.ts`).
-3. `caffeine check --fix` then `caffeine build` (or the project’s deploy pipeline). Do not use `dfx` against `backend_extended` by accident.
+3. `caffeine check --fix` then `caffeine build` (or the project’s deploy pipeline). Do not `dfx deploy` — `dfx.json` points at missing `src/backend_extended/main.mo`.
 4. `pnpm bindgen` and commit generated client files.
-5. Smoke: create character (full stats), play, win a battle **and** a boss-rush room, confirm recap + wallet/XP moved **once**; then heal once and confirm the credit was not refunded.
-6. Smoke: accept a battle challenge, complete it, confirm advertised XP landed. Die on lava after a recap — HP stays down and the 20/40 penalty sticks.
-7. Confirm chat empty after upgrade is expected; Doka / slots / configs / boss-rush `currentRoom` are not.
-8. Smoke: accept Untouchable, take a regular melee **or** a Void Mirror / lava-in-battle hit, confirm the reward is **not** granted. Attack Nearest and a canvas summon both debit AP.
-9. Smoke: die on the first map before the Doka query paints — canister wallet must not become 0. Walk a dungeon-chain progression portal and confirm the next depth (not an overworld map).
+5. Smoke: create character (full stats), play, win a battle **and** a boss-rush room, confirm recap + wallet/XP moved **once**; then heal once and confirm the credit was not refunded. Confirm `currentRoom` advanced before the room-clear credit (reload must not re-enter the paid room).
+6. Smoke: accept a battle challenge, complete it, confirm advertised XP landed. Die on lava after a recap — HP stays down and the 20/40 penalty sticks. Respawn HP must match `respawnHpAfterDeath` (not above max).
+7. Confirm chat empty after upgrade is expected; Doka / slots / configs / boss-rush `currentRoom` are not. Confirm `${principal}_inventory` survived if `APP_VERSION` bumped.
+8. Smoke: accept Untouchable, take a regular melee **or** a Void Mirror / lava-in-battle / **touch-walk** Thorned Ground hit, confirm the reward is **not** granted. Attack Nearest and a canvas summon both debit AP and honor cooldown.
+9. Smoke: die on the first map before the Doka query paints — canister wallet must not become 0. Walk a dungeon-chain progression portal and confirm the next depth (not an overworld map). White sanctuary portal must be walkable at spawn. Rest-exit dungeon must still be a chain at depth 1.
+10. Smoke: last-enemy lava / last-minion DoT awards victory once. A generated overworld / Boss Rush / rest-exit map must have a reachable exit from spawn.

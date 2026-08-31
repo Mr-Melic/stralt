@@ -23,7 +23,7 @@
 - CharacterStats is 12 required fields: hp, ap, mp, sp, sr, atk, res, chc, init, resilience, evasion, killCount. No wp/wr/scp on the persisted path. Bindgen: `src/frontend/src/backend.ts`.
 - Character-update / create payloads must include every CharacterStats field. Omitting `killCount` fails in the Candid serializer before Motoko runs. Carry `BigInt(0)` or the existing value.
 - Deployed canister can lag source: a live 15-field actor rejects 12-field saves until it is upgraded. Source-correct is not enough.
-- Canonical actor is `src/backend/main.mo` (root `mops.toml`). `dfx.json` still points at stale `backend_extended/` (15-field stats) — do not deploy that path by accident.
+- Canonical actor is `src/backend/main.mo` (root `mops.toml`). `dfx.json` points at missing `src/backend_extended/main.mo`; the stale 15-field actor is root `backend_extended/`. Do not `dfx deploy` expecting the current game.
 - Migrations: `mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`. Current module `20260827_000000.mo` inlines OldActor/NewActor and drops transients. Live `main.mo` is a plain persistent `actor {` (no `(with migration = Migration.run)`). That annotation exists only on `backend_extended`. `BaseToCore.mo` is the completed mo:base→mo:core marker.
 - `caffeineai-oql@0.4.0` **is** a dependency and **is imported** (`schema` / `execute` via `Expose` at the end of `main.mo`). Some `caffeine check` runs still hit M0010 (`package not defined`) even when `mops sources` resolves it — toolchain mismatch, not a missing import.
 - dfx is often absent in this container — `mops build` exits 127. Use `caffeine check --fix` and `caffeine build`.
@@ -38,5 +38,14 @@
 - Death Realm 1.5s timer: `persistDeathPenalty` restores HP immediately. Block portals **and** encounters until the timer fires; `armDeathGuards` after realm entry / Respawn.
 - `getPlayerAchievements` requires the caller Principal (`identity.getPrincipal()`), not the display name.
 - `upgradeSpell` charges `spellLevelingBaseCost * 2^level` (base 10). Summon UI advertises 10× that — debit with `spellUpgradeUiSpend`.
-- Dungeon-chain refs are zeroed by `cleanupMap`. Snapshot with `snapshotDungeonChain` **before** cleanup, then `decideDungeonChainPortal`.
+- Dungeon-chain refs are zeroed by `cleanupMap`. Snapshot with `snapshotDungeonChain` **before** cleanup, then `decideDungeonChainPortal`. Rest-exit must re-arm depth 1 on the refs (`shouldArmDungeonChainOnRestExit`). White sanctuary portal colocates with spawn (`placeWhitePortalAtSpawn`), never `(0, 0)`.
+- Portal +10 XP (`PORTAL_TRANSITION_XP`) must not update the HUD until `applyRewards` commits.
+- Shop remount / no-op `processPendingPurchases` commits the persist lock only when that pair observed a gain (`shouldCommitShopCredit`). Never cut a higher lock snapshot. `upgradeSpell` then `getCallerDokaBalance` is a query — commit only when the wallet decreased.
+- `completeBossRushRoom` ignores client `dokaReward`/`xpReward` (frontend already passes 0, 0). Character must exist before mutation. Room-clear `applyRewards` only after `currentRoom` actually advanced.
+- Death persist HP is `respawnHpAfterDeath`: 50% of `100 * (1 + (level-1) * 0.05)`. Idle hydrate must not copy leftover XP from a lower UI level over a post-`applyRewards` level-up (`resolveHydratedXp`).
+- Version-gate wipe (`utils/versionGate.ts`) keeps `pbv_tier_spawn_config`, `pbv_levelup_config`, and keys ending `_inventory`. BuffShop potions live only in `${principal}_inventory`.
+- Generated maps must stay solvable: `finalizePlayableLayout` / `applyFinalizedLayout` after generateEnemies, Boss Rush preferred cells, and rest-exit. Do not skip that pass.
+- Challenge: count the opening player turn (`shouldCountOpeningPlayerTurn`); overworld Doka-to-HP must not set `healUsed`. Sprite-click / Attack Nearest / summon-kit casts honor cooldown and Striker range.
+- Combatant HP (lava/spikes, DoT/plague, player spells, enemy heal/phase) must commit through `updateCombatant`. Enemy summons use `spawnEnemySummonUnit` (`side: "enemy"`, turn type `"enemy"`). Player-side kills do not enter `applyRewards` (`countsTowardKillRewards`).
+- `calculateAndAwardDoka` is an unused public mint (`#user`, banned, max 16 enemies / 8 awards / level 200). Do not call it from the official reward funnel. `saveKillCount` rejects `kills > 64`.
 - Developer docs: `README.md`, `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md`.
