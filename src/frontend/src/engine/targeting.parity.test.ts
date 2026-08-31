@@ -572,3 +572,84 @@ describe("highlight vs live parity", () => {
     assert.equal(playerSpellRequiresLos({ lineOfSight: true }), true);
   });
 });
+
+describe("shared helpers", () => {
+  it("requires LoS only when lineOfSight is truthy", () => {
+    assert.equal(playerSpellRequiresLos({} as SpellConfig), false);
+    assert.equal(
+      playerSpellRequiresLos({ lineOfSight: false } as SpellConfig),
+      false,
+    );
+    assert.equal(
+      playerSpellRequiresLos({ lineOfSight: true } as SpellConfig),
+      true,
+    );
+  });
+
+  it("applies the same range bonus the highlight uses", () => {
+    const spell = enemySpell(3);
+    spell.modifiableRange = true;
+    assert.equal(
+      playerSpellEffectiveRange(spell, (base, id) => {
+        assert.equal(base, spellHighlightRangeBase(spell));
+        assert.equal(id, spell.id);
+        return base + 2;
+      }),
+      5,
+    );
+  });
+
+  it("blocks LoS on intermediate walls and barriers, not origin or dest", () => {
+    const tiles = floorGrid(8);
+    tiles[3][4] = "wall";
+    tiles[4][3] = "wall";
+    const barriers = new Set(["5,3"]);
+    assert.equal(
+      hasBresenhamLoS({ x: 3, y: 3 }, { x: 6, y: 3 }, tiles, barriers),
+      false,
+    );
+    assert.equal(
+      hasBresenhamLoS({ x: 3, y: 3 }, { x: 3, y: 5 }, tiles, new Map()),
+      false,
+    );
+    assert.equal(
+      hasBresenhamLoS({ x: 3, y: 3 }, { x: 3, y: 4 }, tiles, new Map()),
+      true,
+    );
+  });
+
+  it("skips the cached highlight set only for a living hostile that is live-ok", () => {
+    assert.equal(
+      shouldBypassHighlightForLiveHostile({ hp: 10 }, true, {
+        ok: true,
+        reason: "enemy",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldBypassHighlightForLiveHostile({ hp: 0 }, true, {
+        ok: true,
+        reason: "enemy",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldBypassHighlightForLiveHostile({ hp: 10 }, true, {
+        ok: false,
+        reason: "los_blocked",
+      }),
+      false,
+    );
+  });
+
+  it("uses the execute-path AP modifier for the Attack Nearest preview", () => {
+    assert.equal(
+      canAffordCastAp(3, 4, (base) => Math.max(1, base - 1)),
+      true,
+    );
+    assert.equal(
+      canAffordCastAp(2, 4, (base) => Math.max(1, base - 1)),
+      false,
+    );
+  });
+});
