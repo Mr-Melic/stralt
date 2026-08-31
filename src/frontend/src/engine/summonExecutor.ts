@@ -29,6 +29,7 @@ import {
   type OccupancyContext,
   isCellFree,
   relocateOffMandatoryCells,
+  unsealProgressionOccupants,
 } from "./occupancy.ts";
 import type { SpellContext } from "./spellEngine.ts";
 
@@ -145,6 +146,24 @@ export function executeSummonAction(
         );
         x = slid.x;
         y = slid.y;
+      }
+    }
+    const start = helpers.occupancyCtx.progressStart;
+    if (start && helpers.occupancyCtx.portals.size > 0) {
+      const [cut] = unsealProgressionOccupants(
+        [{ x, y }],
+        helpers.occupancyCtx.tiles,
+        helpers.occupancyCtx.voidTiles,
+        helpers.occupancyCtx.portals,
+        start,
+        helpers.occupancyCtx,
+      );
+      if (cut.x !== x || cut.y !== y) {
+        logLines.push(
+          `[move] ${summonLabel} slid off sealed cut (${x},${y}) → (${cut.x},${cut.y})`,
+        );
+        x = cut.x;
+        y = cut.y;
       }
     }
     logLines.push(`[move] ${summonLabel} → (${x},${y}) spent ${mpCost}MP`);

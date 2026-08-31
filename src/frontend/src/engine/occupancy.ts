@@ -57,6 +57,12 @@ export interface OccupancyContext {
    * `isCellFree` without this set — enemies must be able to path the bridge.
    */
   reserved?: Set<string>;
+  /**
+   * Player tile for joint-cut unseal. Two summons on two 1-wide corridors
+   * are not unique bridges; without this start, spawn/move cannot tell
+   * whether they sealed every exit.
+   */
+  progressStart?: OccCell;
 }
 
 /** Build the canonical "x,y" key used by the barrier/void/portal sets. */
@@ -189,6 +195,118 @@ export function collectMandatoryProgressionCells(
     if (!still) mandatory.add(k);
   }
   return mandatory;
+}
+
+function shortestProgressionPath(
+  tiles: boolean[][],
+  voidTiles: Set<string>,
+  start: OccCell,
+  goal: OccCell,
+): OccCell[] | null {
+  const h = tiles.length;
+  const w = tiles[0]?.length ?? 0;
+  const walk = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return false;
+    if (!tiles[y]?.[x]) return false;
+    if (voidTiles.has(occKey(x, y))) return false;
+    return true;
+  };
+  if (!walk(start.x, start.y) || !walk(goal.x, goal.y)) return null;
+  const parent = new Map<string, OccCell | null>();
+  const goalK = occKey(goal.x, goal.y);
+  parent.set(occKey(start.x, start.y), null);
+  const q: OccCell[] = [start];
+  while (q.length > 0) {
+    const cur = q.shift()!;
+    if (occKey(cur.x, cur.y) === goalK) {
+      const path: OccCell[] = [];
+      let step: OccCell | null = cur;
+      while (step) {
+        path.push(step);
+        const prev = parent.get(occKey(step.x, step.y));
+        step = prev ?? null;
+      }
+      return path.reverse();
+    }
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      const nk = occKey(nx, ny);
+      if (parent.has(nk) || !walk(nx, ny)) continue;
+      parent.set(nk, cur);
+      q.push({ x: nx, y: ny });
+    }
+  }
+  return null;
+}
+
+/** True when living occupants jointly cut every player→exit route. */
+export function occupantsSealProgression(
+  tiles: boolean[][],
+  voidTiles: Set<string>,
+  portals: Set<string>,
+  start: OccCell,
+  occupants: OccCell[],
+): boolean {
+  if (portals.size === 0) return false;
+  const blocked = new Set(occupants.map((o) => occKey(o.x, o.y)));
+  blocked.delete(occKey(start.x, start.y));
+  for (const p of portals) blocked.delete(p);
+  const open = floodPassable(tiles, voidTiles, blocked, start);
+  return ![...portals].some((p) => open.has(p));
+}
+
+export function collectOccupiedCells(ctx: OccupancyContext): OccCell[] {
+  const h = ctx.tiles.length;
+  const w = ctx.tiles[0]?.length ?? 0;
+  const out: OccCell[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (ctx.isOccupied({ x, y })) out.push({ x, y });
+    }
+  }
+  return out;
+}
+
+/**
+ * Relocate movers that sit on a chosen player→exit path when current
+ * occupants jointly seal every route. Unique-bridge reserve misses
+ * min-cut=2 (one summon per corridor).
+ */
+export function unsealProgressionOccupants(
+  movers: OccCell[],
+  tiles: boolean[][],
+  voidTiles: Set<string>,
+  portals: Set<string>,
+  start: OccCell,
+  ctx: OccupancyContext,
+): OccCell[] {
+  const occupants = [...collectOccupiedCells(ctx)];
+  for (const m of movers) {
+    const k = occKey(m.x, m.y);
+    if (!occupants.some((o) => occKey(o.x, o.y) === k)) occupants.push(m);
+  }
+  if (!occupantsSealProgression(tiles, voidTiles, portals, start, occupants)) {
+    return movers;
+  }
+  const open = floodPassable(tiles, voidTiles, new Set(), start);
+  const goalKey = [...portals].find((p) => open.has(p));
+  if (!goalKey) return movers;
+  const parts = goalKey.split(",");
+  const route = shortestProgressionPath(tiles, voidTiles, start, {
+    x: Number(parts[0]),
+    y: Number(parts[1]),
+  });
+  if (!route) return movers;
+  const routeSet = new Set(route.map((c) => occKey(c.x, c.y)));
+  routeSet.delete(occKey(start.x, start.y));
+  for (const p of portals) routeSet.delete(p);
+  return relocateOffMandatoryCells(movers, routeSet, ctx);
 }
 
 export function relocateOffMandatoryCells(

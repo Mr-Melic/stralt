@@ -383,7 +383,7 @@ Generated maps must stay player-solvable across seeds. After `generateEnemies`, 
 - Player spawn is a walkable, non-void cell and **not** on a non-white exit (`spawn-on-portal` skips the room when the portal is unlocked). White sanctuary gateways may colocate with spawn.
 - At least one exit exists on the player's reachable graph (`pickProgressionPortalCell` if the generator omitted one). Every placed portal is punched, not only `portals[0]`.
 - Every hostile spawn is on that graph (`ensureReachability` / `punchRosterReachability`). Wall/void Boss Rush kits used to seal the progression portal. Destack punches a neighboring wall when the walkable graph is too cramped; exits never relocate onto a hostile.
-- `evaluateSolvability` is the report (`player-spawn-illegal`, `isolated-enemies`, `isolated-portals`, `missing-exit-portal`, `spawn-on-portal`, `stacked-enemies`, `stacked-portals`, `enemies-on-portal`). Property tests live in `mapGen.solvability.test.ts`; `mapGen.simulate.ts` is test-only.
+- `evaluateSolvability` is the report (`player-spawn-illegal`, `isolated-enemies`, `isolated-portals`, `missing-exit-portal`, `spawn-on-portal`, `stacked-enemies`, `stacked-portals`, `enemies-on-portal`, `portal-tile-mismatch`). Property tests live in `mapGen.solvability.test.ts`; `mapGen.simulate.ts` is test-only. Joint-cut summons (two 1-wide corridors) unseal via `unsealProgressionOccupants`.
 
 Do not change archetype fill/smooth weights to "fix" a stuck map — run the finalize pass.
 

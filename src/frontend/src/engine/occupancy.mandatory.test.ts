@@ -7,7 +7,9 @@ import {
   collectMandatoryProgressionCells,
   findNearestFreeCell,
   occKey,
+  occupantsSealProgression,
   relocateOffMandatoryCells,
+  unsealProgressionOccupants,
 } from "./occupancy.ts";
 import { spawnSummonUnit } from "./summonSpawn.ts";
 
@@ -146,6 +148,92 @@ describe("relocateOffMandatoryCells", () => {
     ctx.reserved = mandatory;
     const landed = applyAttract({ x: 3, y: 0 }, { x: 0, y: 0 }, 2, ctx);
     assert.equal(mandatory.has(occKey(landed.x, landed.y)), false);
+  });
+});
+
+describe("dual-path occupants cannot jointly seal the exit", () => {
+  // Stem at (0,1) splits into two 1-wide corridors that rejoin at (4,0).
+  // Unique-bridge reserve is empty; one summon per path still cuts every route.
+  function dualCorridor(extraOccupied: string[] = []) {
+    const tiles = [
+      [true, true, true, true, true],
+      [true, false, false, false, true],
+      [true, true, true, true, true],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["4,0"]);
+    const occupied = new Set<string>(["0,1", ...extraOccupied]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      progressStart: { x: 0, y: 1 },
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    return { tiles, voidTiles, portals, occupied, ctx };
+  }
+
+  it("seed-dual-corridor-occupants: unique bridges miss the joint cut", () => {
+    const { tiles, voidTiles, portals } = dualCorridor();
+    const unique = collectMandatoryProgressionCells(tiles, voidTiles, portals, {
+      x: 0,
+      y: 1,
+    });
+    assert.equal(unique.size, 0, "two routes ⇒ no unique bridge");
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 1 }, [
+        { x: 2, y: 0 },
+        { x: 2, y: 2 },
+      ]),
+      true,
+    );
+  });
+
+  it("unseals the mover so one player→exit route remains", () => {
+    const { tiles, voidTiles, portals, ctx } = dualCorridor(["2,0", "2,2"]);
+    const [moved] = unsealProgressionOccupants(
+      [{ x: 2, y: 0 }],
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 1 },
+      ctx,
+    );
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 1 }, [
+        moved,
+        { x: 2, y: 2 },
+      ]),
+      false,
+    );
+    assert.notEqual(occKey(moved.x, moved.y), "2,0");
+  });
+
+  it("spawns off a dual-path cut when progressStart is set", () => {
+    const { tiles, voidTiles, portals, ctx } = dualCorridor(["2,2"]);
+    const spawned = spawnSummonUnit(
+      { x: 2, y: 0 },
+      {
+        id: "summon-wolf",
+        name: "Summon Wolf",
+        summonUnitDef: { pieceType: "pawn", level: 1 },
+        summonAI: "hunter",
+      },
+      "player",
+      1,
+      () => {},
+      () => ({ init: 4 }),
+      0,
+      ctx,
+    );
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 1 }, [
+        { x: spawned.summon.x, y: spawned.summon.y },
+        { x: 2, y: 2 },
+      ]),
+      false,
+    );
   });
 });
 

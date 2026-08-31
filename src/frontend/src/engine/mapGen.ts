@@ -452,6 +452,9 @@ function destackStackedPortals<P extends { x: number; y: number }>(
       occupied.add(k);
       continue;
     }
+    const retainTiles = new Set(
+      portals.filter((_, j) => j !== i).map((p) => `${p.x},${p.y}`),
+    );
     const next = relocatePortalOntoReachable(
       tiles,
       vt,
@@ -461,6 +464,7 @@ function destackStackedPortals<P extends { x: number; y: number }>(
       w,
       h,
       new Set([...occupied, ...seen]),
+      retainTiles,
     );
     portals[i].x = next.x;
     portals[i].y = next.y;
@@ -575,6 +579,7 @@ function relocatePortalOntoReachable(
   w: number,
   h: number,
   exclude?: Set<string>,
+  retainTiles?: Set<string>,
 ): { x: number; y: number } {
   const reserved = new Set<string>(exclude);
   reserved.add(`${playerSpawn.x},${playerSpawn.y}`);
@@ -591,7 +596,10 @@ function relocatePortalOntoReachable(
           !reserved.has(`${c.x},${c.y}`),
       ) ??
     playerSpawn;
-  if (tiles[portal.y]?.[portal.x] === "portal") {
+  const oldKey = `${portal.x},${portal.y}`;
+  // Destacking a stacked exit used to floor the shared cell and leave the
+  // first portal object sitting on a floor tile (pathing/occupancy disagree).
+  if (tiles[portal.y]?.[portal.x] === "portal" && !retainTiles?.has(oldKey)) {
     tiles[portal.y][portal.x] = "floor";
   }
   if (tiles[dest.y]) {
@@ -1019,6 +1027,7 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     input.w,
     input.h,
   );
+  stampPortalTiles(liveTiles, portals);
 
   const takenPortals = new Set(portals.map((p) => `${p.x},${p.y}`));
   const blockingExits = portals.filter((p) => !isWhitePortalFlag(p));
@@ -1103,6 +1112,7 @@ export interface SolvabilityReport {
   stackedEnemies: number;
   stackedPortals: number;
   enemiesOnPortal: number;
+  portalTileMismatch: number;
   failures: string[];
 }
 
@@ -1178,6 +1188,13 @@ export function evaluateSolvability(
   if (enemiesOnPortal > 0) {
     failures.push(`enemies-on-portal:${enemiesOnPortal}`);
   }
+  let portalTileMismatch = 0;
+  for (const p of portals) {
+    if (tiles[p.y]?.[p.x] !== "portal") portalTileMismatch += 1;
+  }
+  if (portalTileMismatch > 0) {
+    failures.push(`portal-tile-mismatch:${portalTileMismatch}`);
+  }
   if (
     !opts?.allowSpawnOnPortal &&
     playerSpawnLegal &&
@@ -1203,6 +1220,7 @@ export function evaluateSolvability(
     stackedEnemies,
     stackedPortals,
     enemiesOnPortal,
+    portalTileMismatch,
     failures,
   };
 }
@@ -1320,6 +1338,7 @@ export function applyFinalizedLayout<
       }
     }
   }
+  stampPortalTiles(map.tiles as string[][], map.portals);
   const nextRoster = roster.map((e, i) =>
     finalized.spawns[i]
       ? { ...e, x: finalized.spawns[i].x, y: finalized.spawns[i].y }

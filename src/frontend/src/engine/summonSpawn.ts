@@ -14,6 +14,7 @@ import {
   type OccupancyContext,
   findNearestFreeCell,
   isCellFree as sharedIsCellFree,
+  unsealProgressionOccupants,
 } from "./occupancy.ts";
 import { getSummonBaseStats } from "./progression.ts";
 
@@ -117,6 +118,17 @@ export function spawnSummonUnit(
   if (occupancyCtx && (!sharedIsCellFree(cell, occupancyCtx) || reservedHit)) {
     const fallback = findNearestFreeCell(cell, occupancyCtx, 6, reserved);
     if (fallback) spawnCell = fallback;
+  }
+  if (occupancyCtx?.progressStart && occupancyCtx.portals.size > 0) {
+    const [slid] = unsealProgressionOccupants(
+      [spawnCell],
+      occupancyCtx.tiles,
+      occupancyCtx.voidTiles,
+      occupancyCtx.portals,
+      occupancyCtx.progressStart,
+      occupancyCtx,
+    );
+    spawnCell = slid;
   }
 
   const stats = computeEnemyStats(level, unitDef.pieceType, spell.id);
