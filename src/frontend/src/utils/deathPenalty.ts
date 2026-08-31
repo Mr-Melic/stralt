@@ -367,6 +367,31 @@ export type PendingDeathReplay =
  * Replay only when the backend still matches the pre-penalty snapshot so a
  * later legitimate earn cannot be cut a second time.
  */
+/**
+ * Reload replay must compare canister XP, not the React/cache
+ * `character.experience` prop. A stale leftover (UI already applied the
+ * 20% cut) plus a fresh getCallerDokaBalance (still pre-penalty) used to
+ * miss both snapshot arms and clear the pending write.
+ */
+export function experienceFromCharacterRecord(character: unknown): number {
+  if (character == null || typeof character !== "object") return Number.NaN;
+  return Number((character as { experience?: unknown }).experience);
+}
+
+export async function readDeathReplayBackendSnapshot(args: {
+  fetchDoka: () => Promise<unknown>;
+  fetchCharacter: () => Promise<unknown>;
+}): Promise<{ xp: number; doka: number } | null> {
+  const [rawDoka, rawChar] = await Promise.all([
+    args.fetchDoka(),
+    args.fetchCharacter(),
+  ]);
+  const doka = Number(rawDoka);
+  const xp = experienceFromCharacterRecord(rawChar);
+  if (!Number.isFinite(doka) || !Number.isFinite(xp)) return null;
+  return { xp, doka };
+}
+
 export function resolvePendingDeathReplay(
   backendXp: number,
   backendDoka: number,

@@ -143,15 +143,13 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
 
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
-      if (claimInFlightRef.current.has(achievement.id)) return;
-      claimInFlightRef.current.add(achievement.id);
+      if (
+        !shouldBeginAchievementClaim(claimingIdsRef.current, achievement.id)
+      ) {
+        return;
+      }
+      claimingIdsRef.current.add(achievement.id);
       if (persistClaim) {
-        if (
-          !shouldBeginAchievementClaim(claimingIdsRef.current, achievement.id)
-        ) {
-          return;
-        }
-        claimingIdsRef.current.add(achievement.id);
         setPersistClaimPending(true);
         void persistClaim(achievement.id)
           .then(
@@ -184,7 +182,7 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
           toast.error(`Failed to claim reward: ${msg}`);
         },
         onSettled: () => {
-          claimInFlightRef.current.delete(achievement.id);
+          claimingIdsRef.current.delete(achievement.id);
         },
       });
     },

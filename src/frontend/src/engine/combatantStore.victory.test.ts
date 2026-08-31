@@ -4,6 +4,7 @@ import type { CombatantEntry } from "../components/InitiativeStrip";
 import type { Enemy } from "../types/gameTypes";
 import {
   activeHostilesRemaining,
+  countsTowardKillRewards,
   hpAfterBossPhase2,
   hpAfterHeal,
   shouldAdvanceAfterEnemyTurn,
@@ -142,6 +143,33 @@ describe("removeCombatant preserves the battle-start snapshot", () => {
       }),
       false,
       "flushSync advanceTurn after last-enemy lava must not run player DoT first — that sets deathTriggered and skips applyRewards",
+    );
+  });
+
+  it("last hostile and player summon dying in one tick still awards without crediting the wolf", () => {
+    const wolf = {
+      ...enemy("wolf-1", 10),
+      isSummon: true,
+      side: "player" as const,
+    };
+    const ctx = store([enemy("rat-1", 10), wolf]);
+    removeCombatant(ctx, "rat-1");
+    removeCombatant(ctx, "wolf-1");
+    assert.equal(activeHostilesRemaining(ctx.combatantsRef.current), 0);
+    assert.equal(
+      countsTowardKillRewards(wolf),
+      false,
+      "player-side corpse must not enter applyRewards",
+    );
+    assert.equal(
+      shouldAwardVictory({
+        inBattle: true,
+        deathTriggered: false,
+        battleStartIdsSize: ctx.battleStartIds.size,
+        hostilesRemaining: 0,
+      }),
+      true,
+      "allied fade on the killing blow must not block victory",
     );
   });
 

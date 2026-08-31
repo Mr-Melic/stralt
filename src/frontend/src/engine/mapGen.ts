@@ -1227,6 +1227,20 @@ export function stampPortalTiles<P extends { x: number; y: number }>(
   }
 }
 
+function colocateWhitePortal<P extends { x: number; y: number }>(
+  map: { tiles: string[][]; portals: P[] },
+  spawn: { x: number; y: number },
+  whitePortal: P,
+): void {
+  const placed: P = { ...whitePortal, x: spawn.x, y: spawn.y };
+  const existing = map.portals.findIndex(
+    (p) => (p as { isWhitePortal?: boolean }).isWhitePortal,
+  );
+  if (existing >= 0) map.portals[existing] = placed;
+  else map.portals.push(placed);
+  stampPortalTiles(map.tiles as string[][], map.portals);
+}
+
 /**
  * Sanctuary / white-portal maps skipped finalize. Legalize the overworld
  * first, then colocate the white gateway with the (legal) spawn.
@@ -1238,14 +1252,31 @@ export function applySanctuaryLayout<P extends { x: number; y: number }>(
   whitePortal: P,
 ): { spawn: { x: number; y: number } } {
   const applied = applyFinalizedLayout(map, [], spawn, size);
-  const placed: P = { ...whitePortal, x: applied.spawn.x, y: applied.spawn.y };
-  const existing = map.portals.findIndex(
-    (p) => (p as { isWhitePortal?: boolean }).isWhitePortal,
-  );
-  if (existing >= 0) map.portals[existing] = placed;
-  else map.portals.push(placed);
-  stampPortalTiles(map.tiles as string[][], map.portals);
+  colocateWhitePortal(map, applied.spawn, whitePortal);
   return { spawn: applied.spawn };
+}
+
+/**
+ * Dungeon-chain completion used to pin the white gateway to the
+ * pre-finalize spawn, then applyFinalizedLayout moved the player off
+ * portals[0] and left the sanctuary tile behind.
+ *
+ * Legalize spawn + roster first, then colocate — same contract as
+ * applySanctuaryLayout, but keep enemy placement.
+ */
+export function attachWhitePortalAfterLegalize<
+  T extends { x: number; y: number },
+  P extends { x: number; y: number },
+>(
+  map: { tiles: string[][]; portals: P[]; voidTiles?: unknown },
+  roster: T[],
+  spawn: { x: number; y: number },
+  size: number,
+  whitePortal: P,
+): { spawn: { x: number; y: number }; roster: T[] } {
+  const applied = applyFinalizedLayout(map, roster, spawn, size);
+  colocateWhitePortal(map, applied.spawn, whitePortal);
+  return applied;
 }
 
 /**
