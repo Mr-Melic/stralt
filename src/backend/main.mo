@@ -3,7 +3,6 @@ import MixinAuthorization "mo:caffeineai-authorization/MixinAuthorization";
 import Map "mo:core/Map";
 import Principal "mo:core/Principal";
 import Runtime "mo:core/Runtime";
-import Blob "mo:core/Blob";
 import List "mo:core/List";
 import Time "mo:core/Time";
 import AdminTypes "types/admin";
@@ -63,6 +62,17 @@ actor {
     };
 
     public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
+        if (caller.isAnonymous()) {
+            return;
+        };
+        // ProfileSetup allows 2–50 chars; empty name is rejected there. Cap
+        // here so a raw client cannot store an unbounded display name.
+        if (profile.name.size() > 50) {
+            return;
+        };
+        if (profile.uiLayout.size() > 65_536) {
+            return;
+        };
         userProfiles.add(caller, profile);
     };
 
@@ -73,6 +83,9 @@ actor {
     public shared ({ caller }) func saveUserUiLayout(layout : Text) : async { #ok; #err : Text } {
         if (caller.isAnonymous()) {
             return #err("Unauthorized: anonymous caller");
+        };
+        if (layout.size() > 65_536) {
+            return #err("uiLayout exceeds maximum size");
         };
         switch (userProfiles.get(caller)) {
             case null {
@@ -145,6 +158,58 @@ actor {
 
     let characterSlots : Map.Map<Principal, CharacterSlots>;
 
+    func _isKnownPieceType(pieceType : Text) : Bool {
+        pieceType == "king" or pieceType == "queen" or pieceType == "pawn"
+            or pieceType == "rook" or pieceType == "bishop" or pieceType == "knight"
+    };
+
+    func _minNat(a : Nat, b : Nat) : Nat {
+        if (a < b) { a } else { b }
+    };
+
+    /// Official CharacterCreation starter stats. createCharacter must not
+    /// accept a god-rolled payload from a custom client.
+    func _starterStatsRejected(stats : CharacterStats) : ?Text {
+        if (stats.hp > 100) { ?"validation failed: starter hp exceeds 100" }
+        else if (stats.ap > 10) { ?"validation failed: starter ap exceeds 10" }
+        else if (stats.mp > 5) { ?"validation failed: starter mp exceeds 5" }
+        else if (stats.atk > 15) { ?"validation failed: starter atk exceeds 15" }
+        else if (stats.res > 10) { ?"validation failed: starter res exceeds 10" }
+        else if (stats.evasion > 5) { ?"validation failed: starter evasion exceeds 5" }
+        else if (stats.init > 10) { ?"validation failed: starter init exceeds 10" }
+        else if (stats.sp > 8) { ?"validation failed: starter sp exceeds 8" }
+        else if (stats.sr > 5) { ?"validation failed: starter sr exceeds 5" }
+        else if (stats.resilience > 8) { ?"validation failed: starter resilience exceeds 8" }
+        else if (stats.chc > 5) { ?"validation failed: starter chc exceeds 5" }
+        else if (stats.killCount != 0) { ?"validation failed: starter killCount must be 0" }
+        else { null }
+    };
+
+    func _anySpellLevelAboveZero(values : [Nat]) : Bool {
+        var found = false;
+        for (v in values.values()) {
+            if (v > 0) { found := true };
+        };
+        found
+    };
+
+    func _isHexDigit(c : Char) : Bool {
+        (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F')
+    };
+
+    func _isHexColor(colorHex : Text) : Bool {
+        if (colorHex.size() != 7) { return false };
+        var iter = colorHex.chars();
+        switch (iter.next()) {
+            case (?c) { if (c != '#') { return false } };
+            case null { return false };
+        };
+        for (c in iter) {
+            if (not _isHexDigit(c)) { return false };
+        };
+        true
+    };
+
     public shared ({ caller }) func createCharacter(slot : Nat, character : Character) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: Only users can create characters");
@@ -156,6 +221,25 @@ actor {
         // L1: cap colors array at 16 entries.
         if (character.colors.size() > 16) {
             return #err("colors array exceeds maximum of 16 entries");
+        };
+        if (character.name.size() == 0 or character.name.size() > 20) {
+            return #err("Name must be 1-20 characters");
+        };
+        if (not _isKnownPieceType(character.pieceType)) {
+            return #err("Invalid pieceType");
+        };
+        if (character.pixelPattern.size() > 16_384) {
+            return #err("pixelPattern exceeds maximum size");
+        };
+        if (character.level != 1 or character.experience != 0) {
+            return #err("New characters must start at level 1 with 0 XP");
+        };
+        switch (_starterStatsRejected(character.stats)) {
+            case (?msg) { return #err(msg) };
+            case null {};
+        };
+        if (_anySpellLevelAboveZero(character.spellLevelValues)) {
+            return #err("New characters cannot start with upgraded spells");
         };
 
         let existingSlots = switch (characterSlots.get(caller)) {
@@ -210,20 +294,20 @@ actor {
         if (character.colors.size() > 16) {
             return #err("colors array exceeds maximum of 16 entries");
         };
+        if (character.name.size() == 0 or character.name.size() > 20) {
+            return #err("Name must be 1-20 characters");
+        };
+        if (not _isKnownPieceType(character.pieceType)) {
+            return #err("Invalid pieceType");
+        };
+        if (character.pixelPattern.size() > 16_384) {
+            return #err("pixelPattern exceeds maximum size");
+        };
 
-        // ─── Validation ───────────────────────────────────────────────────
-        // HP cap: level * 200 + 100
-        let maxHpAllowed : Nat = character.level * 200 + 100;
-        if (character.stats.hp > maxHpAllowed) {
-            return #err("validation failed: hp exceeds maximum " # maxHpAllowed.toText() # " for level " # character.level.toText());
-        };
-        if (character.stats.ap > 20) {
-            return #err("validation failed: ap cannot exceed 20");
-        };
-        if (character.stats.mp > 20) {
-            return #err("validation failed: mp cannot exceed 20");
-        };
-        // Level and killCount can only go up — check against existing character.
+        // Level, XP, combat stats, and spell levels are owned by applyRewards /
+        // upgradeSpell / saveBattleStats. The official editor only changes
+        // cosmetics (name, piece, colors, pattern). Keep stored progression so
+        // a custom client cannot god-mode through this full-record replace.
         let existingSlots = switch (characterSlots.get(caller)) {
             case null { return #err("No characters found for user") };
             case (?slots) { slots };
@@ -238,18 +322,17 @@ actor {
             case null { return #err("Slot " # slot.toText() # " is empty") };
             case (?c) { c };
         };
-        if (character.level < ec.level) {
-            return #err("validation failed: level cannot decrease");
-        };
-        if (character.stats.killCount < ec.stats.killCount) {
-            return #err("validation failed: killCount cannot decrease");
-        };
 
         // Merge optional session fields: when the incoming value is null, keep
         // the existing stored value so incremental saves cannot clobber the
         // saved loadout (spell bar order, boss-rush master completion, etc.).
         let mergedCharacter : Character = {
             character with
+            level = ec.level;
+            experience = ec.experience;
+            stats = ec.stats;
+            spellLevelKeys = ec.spellLevelKeys;
+            spellLevelValues = ec.spellLevelValues;
             bloodBalance = switch (character.bloodBalance) {
                 case null { ec.bloodBalance };
                 case (?v) { ?v };
@@ -853,6 +936,17 @@ actor {
             case null { return #err("Unknown package: " # packageId) };
             case (?p) { p };
         };
+        if (
+            customerName.size() > 200 or customerSurname.size() > 200
+            or customerEmail.size() > 200 or customerAddress.size() > 200
+            or customerCity.size() > 200 or customerCountry.size() > 200
+            or customerPostal.size() > 200
+        ) {
+            return #err("Customer field exceeds maximum length");
+        };
+        if (proofFileUrl.size() > 524_288) {
+            return #err("proofFileUrl exceeds maximum size");
+        };
         // B4: rollover guard — wrap counter at 999_999_999 to prevent integer overflow
         //     on long-running canisters.
         nextPurchaseId += 1;
@@ -1037,6 +1131,9 @@ actor {
 
     /// Player calls this to trigger auto-completion of their pending purchases.
     public shared ({ caller }) func processPendingPurchases() : async Nat {
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+            return 0;
+        };
         if (bannedPrincipals.containsKey(caller.toText())) {
             return 0;
         };
@@ -1299,6 +1396,9 @@ actor {
         _spellLevelKeys  : [Text], // upgradeSpell owns these; heal/death snapshots can be stale
         _spellLevelValues : [Nat],
     ) : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+            return #err("Unauthorized: must be logged in");
+        };
         if (bannedPrincipals.containsKey(caller.toText())) {
             return #err("Account banned for non-payment");
         };
@@ -1318,26 +1418,38 @@ actor {
             case _ { return #err("Invalid slot") };
         };
 
-        // Clamp hp to 0 — CharacterStats.hp is Nat.
-        let safeHp : Nat = if (hp <= 0) { 0 } else { hp.toNat() };
+        // Clamp hp to 0 — CharacterStats.hp is Nat. Cap at the same formula
+        // updateCharacter used so a heal snapshot cannot mint unbounded HP.
+        let maxHpAllowed : Nat = character.level * 200 + 100;
+        let rawHp : Nat = if (hp <= 0) { 0 } else { hp.toNat() };
+        let safeHp : Nat = _minNat(rawHp, maxHpAllowed);
+        let safeAp : Nat = _minNat(maxAp, 20);
+        let safeMp : Nat = _minNat(maxMp, 20);
 
+        // Official heal/death/shop writes current stored atk/res/init. Do not
+        // accept an inflated combat snapshot from a custom client.
         let updatedStats : CharacterStats = {
             character.stats with
             hp   = safeHp;
-            ap   = maxAp;
-            mp   = maxMp;
-            atk  = attack;
-            res  = defense;
-            init = initiative;
+            ap   = safeAp;
+            mp   = safeMp;
+            atk  = _minNat(attack, character.stats.atk);
+            res  = _minNat(defense, character.stats.res);
+            init = _minNat(initiative, character.stats.init);
         };
+
+        // Absolute snapshots may lower XP/Doka (death, spend) but must not
+        // raise them — applyRewards is the only additive credit path.
+        let storedLevel = _minNat(level, character.level);
+        let storedXp = _minNat(xp, character.experience);
 
         // upgradeSpell is the sole writer of spell levels. Heal / death / shop
         // snapshots are often captured before an in-flight upgrade commits in
         // React, and replacing the arrays here would wipe a paid level.
         let updatedCharacter : Character = {
             character with
-            level            = level;
-            experience       = xp;
+            level            = storedLevel;
+            experience       = storedXp;
             stats            = updatedStats;
         };
 
@@ -1349,13 +1461,25 @@ actor {
         };
         characterSlots.add(caller, updatedSlots);
         // C1: persist dokaBalance to per-principal store (single source of truth).
-        dokaBalances.add(caller, dokaBalance);
+        // Never raise the wallet above the current store (heals/spends/death
+        // only write the same or a lower balance).
+        let currentDoka = switch (dokaBalances.get(caller)) {
+            case null { 0 };
+            case (?b) { b };
+        };
+        dokaBalances.add(caller, _minNat(dokaBalance, currentDoka));
         #ok;
     };
 
     public shared ({ caller }) func applyRewards(slot : Nat, dokaDelta : Nat, xpDelta : Nat) : async { #ok : { newDoka : Nat; newXp : Nat; newLevel : Nat }; #err : Text } {
       if (caller.isAnonymous()) { return #err "Anonymous caller" };
+      if (not AccessControl.hasPermission(accessControlState, caller, #user)) { return #err "Unauthorized: must be logged in" };
       if (bannedPrincipals.containsKey(caller.toText())) { return #err "Account banned" };
+      // Per-call ceiling above any official victory + dungeon 4× + Doka Fever
+      // 2× + challenge + Boss Rush room grant. Stops a single raw-client mint
+      // of Nat-max without changing intended payouts.
+      if (dokaDelta > 100_000) { return #err "dokaDelta exceeds per-call maximum" };
+      if (xpDelta > 500_000) { return #err "xpDelta exceeds per-call maximum" };
       let charSlots = switch (characterSlots.get(caller)) { case (?cs) { cs }; case null { return #err "No characters" } };
       let characterOpt = switch (slot) { case 1 { charSlots.slot1 }; case 2 { charSlots.slot2 }; case 3 { charSlots.slot3 }; case _ { return #err "Invalid slot" } };
       let character = switch (characterOpt) { case (?c) { c }; case null { return #err "Empty slot" } };
@@ -1742,13 +1866,34 @@ actor {
     transient var nextChatId   : Nat = 0;
 
     /// Append a new message; trims list to at most 200 entries (oldest dropped).
-    public shared func sendMessage(playerName : Text, text : Text, colorHex : Text) : async () {
+    public shared ({ caller }) func sendMessage(_playerName : Text, text : Text, colorHex : Text) : async () {
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+            return;
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return;
+        };
+        if (text.size() == 0 or text.size() > 200) {
+            return;
+        };
+        // Official ChatPanel sends userProfile.name. Bind the displayed name
+        // to the caller's stored profile so a raw client cannot impersonate.
+        let displayName = switch (userProfiles.get(caller)) {
+            case (?p) {
+                if (p.name.size() == 0) { "Player" } else if (p.name.size() > 50) {
+                    // Profile save already caps at 50; defensive slice via keep.
+                    p.name
+                } else { p.name }
+            };
+            case null { "Player" };
+        };
+        let safeColor = if (_isHexColor(colorHex)) { colorHex } else { "#cccccc" };
         let msg : ChatMessage = {
             id          = nextChatId;
-            playerName;
+            playerName  = displayName;
             text;
             timestampMs = Time.now() / 1_000_000;  // ns → ms
-            colorHex;
+            colorHex    = safeColor;
         };
         nextChatId += 1;
         chatMessages.add(msg);
@@ -1802,7 +1947,10 @@ actor {
     ];
 
     /// Seed the names list on first call if it is empty.
-    public shared func initDefaultNames() : async () {
+    public shared ({ caller }) func initDefaultNames() : async () {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return;
+        };
         // Upsert: add each default name only if not already present.
         // Does NOT use the flag guard so new names are always seeded on upgraded canisters.
         for (n in DEFAULT_ENEMY_NAMES.values()) {
@@ -1956,6 +2104,9 @@ actor {
     public shared ({ caller }) func useBuffItem(slot : Nat, itemId : Text) : async { #ok : AdminTypes.BuffInventory; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return #err("Unauthorized: must be logged in");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
         };
         if (slot < 1 or slot > 3) { return #err("Invalid slot") };
         let key = _buffKey(caller, slot);
@@ -2138,113 +2289,12 @@ actor {
         };
     };
 
-    /// For each enemy in the list, computes a Doka drop using true IC randomness,
-    /// sums the drops, adds to the caller's balance, and returns the total earned.
-    ///
-    /// Tier probabilities (out of 10_000 units):
-    ///   9000 / 10000 = 90%   → 1–3
-    ///    500 / 10000 =  5%   → 1–10
-    ///    300 / 10000 =  3%   → 1–50
-    ///    100 / 10000 =  1%   → 55–100
-    ///     50 / 10000 = 0.5%  → 1–1000
-    ///     40 / 10000 = 0.4%  → 1–5000
-    ///      5 / 10000 = 0.05% → 1–1_000_000
-    ///      1 / 10000 = 0.01% (≈ 0.0001%) → 1–1_000_000_000
-    ///      4 remaining → 1–50  (lumped with 3% tier)
+    /// Unused public mint. Official Doka credits go through applyRewards.
+    /// Candid signature kept; the body does not award. A raw client previously
+    /// could request 8×200×1e9 Doka per call via the jackpot tier.
     public shared ({ caller }) func calculateAndAwardDoka(enemies : [{ level : Nat }]) : async Nat {
-        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
-            return 0;
-        };
-        if (bannedPrincipals.containsKey(caller.toText())) {
-            return 0;
-        };
-        if (enemies.size() > 16) {
-            return 0;
-        };
-        // Fetch a single random blob from the IC management canister.
-        let rawBlob = await (actor "aaaaa-aa" : actor { raw_rand : () -> async Blob }).raw_rand();
-        let bytes = rawBlob.toArray();
-        let byteCount = bytes.size();
-
-        // Helper: consume 2 bytes at offset to get a Nat in [0, 65535].
-        // Falls back to 0 if we run out of bytes.
-        func readU16(offset : Nat) : Nat {
-            if (offset + 1 < byteCount) {
-                bytes[offset].toNat() * 256 + bytes[offset + 1].toNat()
-            } else if (offset < byteCount) {
-                bytes[offset].toNat() * 256
-            } else {
-                0
-            }
-        };
-
-        // Helper: consume 4 bytes at offset to get a Nat in [0, 2^32-1].
-        func readU32(offset : Nat) : Nat {
-            let hi = readU16(offset);
-            let lo = readU16(offset + 2);
-            hi * 65536 + lo
-        };
-
-        // Map a raw Nat to a range [lo, hi] inclusive.
-        func inRange(raw : Nat, lo : Nat, hi : Nat) : Nat {
-            let span = hi - lo + 1;
-            lo + (raw % span)
-        };
-
-        var totalDoka : Nat = 0;
-        var byteIndex : Nat = 0;
-        var awarded : Nat = 0;
-
-        label awardLoop for (enemy in enemies.values()) {
-            // Unused public mint: cap list size and level so a raw client
-            // cannot drop an unbounded wallet in one call.
-            if (awarded >= 8) { break awardLoop };
-            awarded += 1;
-            let level = if (enemy.level > 200) { 200 } else { enemy.level };
-            // 2 bytes for tier selection (range 0..9999)
-            let tierRaw = readU16(byteIndex) % 10_000;
-            byteIndex += 2;
-
-            // 4 bytes for value selection within the tier
-            let valueRaw = readU32(byteIndex);
-            byteIndex += 4;
-
-            let multiplier : Nat = if (tierRaw < 9000) {
-                // 90% → 1..3
-                inRange(valueRaw, 1, 3)
-            } else if (tierRaw < 9500) {
-                // 5% → 1..10
-                inRange(valueRaw, 1, 10)
-            } else if (tierRaw < 9800) {
-                // 3% → 1..50
-                inRange(valueRaw, 1, 50)
-            } else if (tierRaw < 9900) {
-                // 1% → 55..100
-                inRange(valueRaw, 55, 100)
-            } else if (tierRaw < 9950) {
-                // 0.5% → 1..1000
-                inRange(valueRaw, 1, 1_000)
-            } else if (tierRaw < 9990) {
-                // 0.4% → 1..5000
-                inRange(valueRaw, 1, 5_000)
-            } else if (tierRaw < 9999) {
-                // 0.09% → 1..1_000_000
-                inRange(valueRaw, 1, 1_000_000)
-            } else {
-                // 0.01% → 1..1_000_000_000
-                inRange(valueRaw, 1, 1_000_000_000)
-            };
-
-            totalDoka += level * multiplier;
-        };
-
-        // Update caller's balance.
-        let current = switch (dokaBalances.get(caller)) {
-            case null { 0 };
-            case (?b) { b };
-        };
-        dokaBalances.add(caller, current + totalDoka);
-        totalDoka;
+        ignore (caller, enemies);
+        0
     };
 
     public shared(msg) func saveKillCount(slot: Nat, kills: Nat) : async {#ok; #err: Text} {
@@ -2443,6 +2493,11 @@ actor {
             case null { { currentRoom = 0; highestRoomCompleted = 0; totalBossRushRuns = 0 } };
             case (?s) { s };
         };
+        // Official persist advances one room at a time. Reject a skip so a
+        // raw client cannot jump to room 9 for master-complete.
+        if (currentRoom > existing.currentRoom + 1) {
+            Runtime.trap("currentRoom can only advance by 1");
+        };
         bossRushStates.add(key, { existing with currentRoom });
     };
 
@@ -2483,6 +2538,11 @@ actor {
         let existing = switch (bossRushStates.get(key)) {
             case null { { currentRoom = 0; highestRoomCompleted = 0; totalBossRushRuns = 0 } };
             case (?s) { s };
+        };
+        // Official persist writes next currentRoom first, then complete(roomIdx).
+        // Accept the room just left (currentRoom - 1) or the room still occupied.
+        if (roomIndex != existing.currentRoom and roomIndex + 1 != existing.currentRoom) {
+            return #err("roomIndex must match current Boss Rush room");
         };
         let completedRoom = roomIndex + 1; // 1-indexed room completed
         let newHighest = if (completedRoom > existing.highestRoomCompleted) { completedRoom } else { existing.highestRoomCompleted };
