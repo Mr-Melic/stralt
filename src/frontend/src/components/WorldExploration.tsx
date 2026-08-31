@@ -279,8 +279,11 @@ import {
 } from "../utils/debugLogger";
 import { type DokaCreditActor, persistDokaCredit } from "../utils/dokaPersist";
 import {
+  dokaHealAmounts,
   nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
+  nextHpAfterDokaHeal,
+  shouldStartDokaHeal,
 } from "../utils/itemShop";
 import {
   activatePlayerMirror,
@@ -318,6 +321,7 @@ import {
   creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
   readInitiatePurchaseResult,
+  shouldStartShopPurchase,
 } from "../utils/shopPurchase";
 import {
   type SpellUpgradeActor,
@@ -1955,6 +1959,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     Record<string, string>
   >({});
   const [shopProofFile, setShopProofFile] = useState<File | null>(null);
+  const [isShopPurchasing, setIsShopPurchasing] = useState(false);
+  const shopPurchaseInFlightRef = useRef(false);
 
   // Boost toggle state
   const [boostMode, _setBoostMode] = useState<"xp" | "rewards">("xp");
@@ -17944,6 +17950,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         {/* EXP6: Item (Buff) Shop draggable panel */}
         <BuffShop
           dokaBalance={dokaBalance}
+          getLiveDoka={() => dokaBalanceRef.current}
           onDeductDoka={(amount) => {
             const next = nextDokaAfterShopSpend(dokaBalanceRef.current, amount);
             persistAbsoluteProgress(characterStatsRef.current.hp, next);
@@ -18402,7 +18409,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         : "Not enough Doka"
                     }
                     onClick={() => {
-                      if (!canAfford) return;
+                      const liveHp = characterStatsRef.current.hp;
+                      const liveDoka = dokaBalanceRef.current;
+                      if (
+                        !shouldStartDokaHeal({
+                          currentHp: liveHp,
+                          maxHp,
+                          liveDoka,
+                        })
+                      ) {
+                        return;
+                      }
 
                       // 🎰 Jackpot heal: 0.5% chance of full HP restore
                       const isJackpot = Math.random() < 0.005;
@@ -18411,9 +18428,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         // The render snapshot lags a same-tick shop/heal
                         // debit; persistAbsoluteProgress then records spend
                         // 0 and idle hydrate refunds the earlier cut.
-                        const nextDoka = nextDokaAfterJackpotHeal(
-                          dokaBalanceRef.current,
-                        );
+                        const nextDoka = nextDokaAfterJackpotHeal(liveDoka);
                         setCharacterStats((prev) => ({ ...prev, hp: maxHp }));
                         persistAbsoluteProgress(maxHp, nextDoka);
                         dokaBalanceRef.current = nextDoka;
@@ -18437,9 +18452,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         return;
                       }
 
-                      // Normal heal path
-                      const hpToAdd = healHp;
-                      const dokaCost = actualCost;
+                      // Persist the pre-setState HP + paid delta. The
+                      // wrapped setter eagerly writes characterStatsRef, so
+                      // `ref.hp + hpToAdd` after setState persisted the
+                      // heal twice (50+30 → ref 80 → write 110).
+                      const { hpToAdd, dokaCost } = dokaHealAmounts(
+                        liveHp,
+                        maxHp,
+                        liveDoka,
+                      );
+                      if (hpToAdd <= 0 || dokaCost <= 0) return;
+                      const healedHp = nextHpAfterDokaHeal(
+                        liveHp,
+                        maxHp,
+                        hpToAdd,
+                      );
+                      const nextDoka = nextDokaAfterShopSpend(
+                        liveDoka,
+                        dokaCost,
+                      );
                       setCharacterStats((prev) => ({
                         ...prev,
                         hp: Math.min(maxHp, prev.hp + hpToAdd),
@@ -18452,18 +18483,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           inBattleRef.current,
                           challengeHealUsedRef.current,
                         );
-                      const nextDoka = Math.max(
-                        0,
-                        dokaBalanceRef.current - dokaCost,
-                      );
-                      persistAbsoluteProgress(
-                        Math.min(
-                          maxHp,
-                          (characterStatsRef.current.hp ?? characterStats.hp) +
-                            hpToAdd,
-                        ),
-                        nextDoka,
-                      );
+                      persistAbsoluteProgress(healedHp, nextDoka);
                       dokaBalanceRef.current = nextDoka;
                       onDokaBalanceChange(nextDoka);
                       // Toast
@@ -19524,6 +19544,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       toast.error("Please upload a proof of address document");
                       return;
                     }
+                    if (
+                      !shouldStartShopPurchase(shopPurchaseInFlightRef.current)
+                    ) {
+                      return;
+                    }
+                    shopPurchaseInFlightRef.current = true;
+                    setIsShopPurchasing(true);
                     try {
                       if (!actor) {
                         toast.error(
@@ -19558,48 +19585,55 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         toast.error(parsed.err);
                         return;
                       }
+                      // Open payment link if available
+                      if (selectedPkg.paymentLink) {
+                        window.open(selectedPkg.paymentLink, "_blank");
+                      }
+                      // After 60s the canister auto-completes pending purchases.
+                      // Keep this timer off pendingTimeoutsRef / cleanupRanRef —
+                      // those exist to cancel battle AI, and wiping them here
+                      // leaves a recorded payment uncredited.
+                      const autoCreditTimer = setTimeout(() => {
+                        shopCreditTimersRef.current.delete(autoCreditTimer);
+                        void applyPendingPurchaseCredit(selectedPkg.dokaAmount);
+                      }, PENDING_PURCHASE_CREDIT_DELAY_MS);
+                      shopCreditTimersRef.current.add(autoCreditTimer);
+                      setShowShop(false);
+                      setShopStep("packages");
+                      setShopProofFile(null);
+                      toast.success("Purchase initiated! Payment link opened.");
                     } catch {
                       toast.error(
                         "Purchase could not be recorded. Payment was not opened.",
                       );
-                      return;
+                    } finally {
+                      shopPurchaseInFlightRef.current = false;
+                      setIsShopPurchasing(false);
                     }
-                    // Open payment link if available
-                    if (selectedPkg.paymentLink) {
-                      window.open(selectedPkg.paymentLink, "_blank");
-                    }
-                    // After 60s the canister auto-completes pending purchases.
-                    // Keep this timer off pendingTimeoutsRef / cleanupRanRef —
-                    // those exist to cancel battle AI, and wiping them here
-                    // leaves a recorded payment uncredited.
-                    const autoCreditTimer = setTimeout(() => {
-                      shopCreditTimersRef.current.delete(autoCreditTimer);
-                      void applyPendingPurchaseCredit(selectedPkg.dokaAmount);
-                    }, PENDING_PURCHASE_CREDIT_DELAY_MS);
-                    shopCreditTimersRef.current.add(autoCreditTimer);
-                    setShowShop(false);
-                    setShopStep("packages");
-                    setShopProofFile(null);
-                    toast.success("Purchase initiated! Payment link opened.");
                   }}
-                  disabled={!shopProofFile}
+                  disabled={!shopProofFile || isShopPurchasing}
                   style={{
                     width: "100%",
                     padding: "13px 0",
-                    background: shopProofFile
-                      ? "linear-gradient(135deg,#6a0a0a,#c0392b)"
-                      : "#2a1a1a",
-                    border: `1px solid ${shopProofFile ? "#c0392b" : "#5a2a2a"}`,
+                    background:
+                      shopProofFile && !isShopPurchasing
+                        ? "linear-gradient(135deg,#6a0a0a,#c0392b)"
+                        : "#2a1a1a",
+                    border: `1px solid ${shopProofFile && !isShopPurchasing ? "#c0392b" : "#5a2a2a"}`,
                     borderRadius: 8,
-                    color: shopProofFile ? "#fff" : "#6a3a3a",
+                    color:
+                      shopProofFile && !isShopPurchasing ? "#fff" : "#6a3a3a",
                     fontWeight: 800,
                     fontSize: 14,
-                    cursor: shopProofFile ? "pointer" : "not-allowed",
+                    cursor:
+                      shopProofFile && !isShopPurchasing
+                        ? "pointer"
+                        : "not-allowed",
                     marginTop: 8,
                     letterSpacing: "0.04em",
                   }}
                 >
-                  Confirm Purchase
+                  {isShopPurchasing ? "Recording…" : "Confirm Purchase"}
                 </button>
                 <p
                   style={{

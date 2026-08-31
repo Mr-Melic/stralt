@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   adoptPersistedResumeRoom,
   parseBossRushStateTuple,
+  persistBossRushRoomAdvance,
   persistBossRushRoomClear,
   resolveBossRushQueryPrincipalText,
   resumeRoomFromPersisted,
@@ -304,14 +305,13 @@ export function useBossRush(
   );
 
   const advanceBossRushRoom = useCallback(async () => {
+    const epoch = persistEpochRef.current;
     let nextRoomSnapshot = 0;
-    let completedSnapshot = false;
 
     setBossRushState((prev) => {
       const nextRoom = prev.currentRoom + 1;
       const complete = nextRoom >= BOSS_RUSH_ROOMS.length;
       nextRoomSnapshot = complete ? prev.currentRoom : nextRoom;
-      completedSnapshot = complete;
       return {
         ...prev,
         currentRoom: nextRoomSnapshot,
@@ -322,16 +322,16 @@ export function useBossRush(
 
     if (actor) {
       try {
-        const slot = BigInt(characterSlot ?? 0);
-        const roomIdx = BigInt(
-          completedSnapshot ? nextRoomSnapshot : nextRoomSnapshot - 1,
+        // persistRoomClear already recorded the cleared room. This write is
+        // the portal-step currentRoom so a tab close mid-walk can resume.
+        // abortBossRush bumps persistEpoch; a late setBossRushProgress
+        // after resetBossRush used to restore the next room on reload.
+        await persistBossRushRoomAdvance(
+          actor,
+          characterSlot ?? 0,
+          nextRoomSnapshot,
+          { wasSuperseded: () => persistEpochRef.current !== epoch },
         );
-
-        // M1 — Persist current room entry so progress survives tab close mid-run
-        await actor.setBossRushProgress?.(slot, nextRoomSnapshot);
-
-        // Complete the room with scaled rewards (no BigInt wrapping — backend takes plain Nat)
-        await actor.completeBossRushRoom?.(slot, roomIdx, 0, 0);
       } catch (e) {
         console.error("[BossRush] Failed to save room progress:", e);
       }

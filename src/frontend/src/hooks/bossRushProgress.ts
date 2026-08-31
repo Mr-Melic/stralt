@@ -208,3 +208,42 @@ export async function persistBossRushRoomClear(
     }
   }
 }
+
+/**
+ * Portal-step currentRoom write. persistRoomClear already advanced
+ * currentRoom on the canister; this re-writes the room the player just
+ * entered so a tab close mid-walk still resumes.
+ *
+ * abortBossRush bumps persistEpoch and resetBossRush. A late
+ * setBossRushProgress from this call used to restore currentRoom after
+ * that reset so the next portal entry resumed mid-tree.
+ */
+export async function persistBossRushRoomAdvance(
+  actor: BossRushProgressActor,
+  slot: number,
+  nextCurrentRoom: number,
+  options?: PersistBossRushRoomClearOptions,
+): Promise<void> {
+  const slotId = BigInt(slot);
+  if (options?.wasSuperseded?.()) {
+    try {
+      await actor.resetBossRush?.(slotId);
+    } catch {
+      // Death/flee already reset locally.
+    }
+    return;
+  }
+  if (typeof actor.setBossRushProgress !== "function") {
+    throw new Error(
+      "setBossRushProgress is required to persist a room advance",
+    );
+  }
+  await actor.setBossRushProgress(slotId, BigInt(nextCurrentRoom));
+  if (options?.wasSuperseded?.()) {
+    try {
+      await actor.resetBossRush?.(slotId);
+    } catch {
+      // Death/flee already reset locally. A late reset must win.
+    }
+  }
+}

@@ -92,6 +92,15 @@ export function shopCreditUsesBattleTimeoutSet(): boolean {
   return false;
 }
 
+/**
+ * Confirm Purchase awaits FileReader then initiatePurchase. A second click
+ * before the first #ok creates two pending records; both 60s timers then
+ * credit the package twice through processPendingPurchases.
+ */
+export function shouldStartShopPurchase(inFlight: boolean): boolean {
+  return inFlight !== true;
+}
+
 export function creditedDokaDelta(
   previous: number | null,
   credited: number | null,
