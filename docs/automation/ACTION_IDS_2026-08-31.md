@@ -3423,3 +3423,16 @@ DEPENDENCIES: None
 REGRESSION_RISK: MEDIUM if the guard is lifted for players  
 VALIDATION_REQUIRED: Non-admin still blocked under 768.  
 STATUS: NEW
+
+ACTION_ID: WDD-2026-08-31-001  
+SOURCE_AUTOMATION: World Dynamics Designer (62dfc3fc-a494-11f1-a7d1-d6b4613131ce)  
+TITLE: World feature catalog for indefinite variation  
+CATEGORY: design  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Live world already has lava/ice/spikes, 22 map modifiers, Doka coins, and run portals. Long sessions re-roll the same three hazard tints and the same two-roll modifier pair. No rarity-weighted tile/encounter/event overlay exists.  
+RECOMMENDED_ACTION: Keep `docs/WORLD_DYNAMICS.md` + `engine/worldFeatures.ts` as the contract. A later implementer may add a post-`finalizePlayableLayout` overlay that calls `pickWeightedFeatures`, then re-runs `evaluateSolvability`. Credits stay on `applyRewards`. Do not add level cutoffs.  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW while unwired. HIGH if placed inside `mapGen.ts` or `WorldExploration.tsx` without a solvability re-check.  
+VALIDATION_REQUIRED: Catalog tests in `worldFeatures.test.ts` stay green. No feature id collides with `EXISTING_MAP_MODIFIER_IDS`. Death Realm rolls stay empty.  
+STATUS: DESIGNED
