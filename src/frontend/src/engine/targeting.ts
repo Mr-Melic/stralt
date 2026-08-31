@@ -76,6 +76,17 @@ export function applyHealBuffSideEffect(
 /** Tile cell kind used by the world grid. */
 export type TileType = "floor" | "wall" | "portal";
 
+/** Barrier occupancy — same key space as `computeTargetableTiles`. */
+export type BarrierTiles = ReadonlyMap<string, unknown> | ReadonlySet<string>;
+
+function hasBarrierTile(
+  barriers: BarrierTiles | undefined,
+  x: number,
+  y: number,
+): boolean {
+  return barriers?.has(`${x},${y}`) === true;
+}
+
 /**
  * Base range the highlight wrapper feeds into `getEffectiveSpellRange`.
  * Attack Nearest used `Number(spell.range)` alone and silently dropped
@@ -508,7 +519,7 @@ export function isTileCastableLive(
     if (occupied) {
       return { ok: false, reason: "ground_occupied" };
     }
-    if (barrierTiles.has(`${tx},${ty}`)) {
+    if (hasBarrierTile(barrierTiles, tx, ty)) {
       return { ok: false, reason: "ground_barrier" };
     }
     if (playerSpellRequiresLos(spell) && !hasLoS(tx, ty)) {
@@ -546,7 +557,7 @@ export function isTileCastableLive(
       if (mapTiles[cy]?.[cx] === "wall") {
         return { ok: false, reason: "line_blocked_wall" };
       }
-      if (barrierTiles.has(`${cx},${cy}`)) {
+      if (hasBarrierTile(barrierTiles, cx, cy)) {
         return { ok: false, reason: "line_blocked_barrier" };
       }
       if (playerSpellRequiresLos(spell) && !hasLoS(cx, cy)) {
@@ -621,7 +632,9 @@ export function isTileCastableLive(
       if (targetType !== "area") {
         return { ok: false, reason: "los_blocked" };
       }
-    } else {
+    } else if (destBarrier && targetType !== "area") {
+      return { ok: false, reason: "barrier_tile" };
+    } else if (!destBarrier) {
       return {
         ok: true,
         reason: targetType === "area" ? "area_anchor" : targetType,
@@ -649,7 +662,7 @@ export function isTileCastableLive(
         if (axN < 0 || ayN < 0 || axN >= worldGridSize || ayN >= worldGridSize)
           continue;
         if (mapTiles[ayN]?.[axN] === "wall") continue;
-        if (barrierTiles.has(`${axN},${ayN}`)) continue;
+        if (hasBarrierTile(barrierTiles, axN, ayN)) continue;
         if (spell.linear && ax !== 0 && ay !== 0) continue;
         if (spell.diagonal && Math.abs(ax) !== Math.abs(ay)) continue;
         if (spell.freeCells) {
