@@ -148,6 +148,33 @@ export function recordChallengeDamageTaken(
 }
 
 /**
+ * Sacrifice (`loseSelfHp`) floors the player at 1 HP and never entered
+ * `playerTakesDamage`. Untouchable / under-N-damage therefore stayed at
+ * `totalDamage === 0` after a starter-spell 20% self-hit and still
+ * persisted 500 Doka / 1000 XP.
+ *
+ * Record the HP actually lost (floor-at-1), not the requested amount.
+ * Do not apply RES / shields — that would change Sacrifice damage math.
+ */
+export function recordChallengeSelfHpLoss(
+  current: number,
+  hpBefore: number,
+  requestedLoss: number,
+  hpFloor = 1,
+): { nextTotal: number; hpAfter: number; lost: number } {
+  const before = Math.max(0, Math.floor(Number(hpBefore) || 0));
+  const want = Math.max(0, Math.floor(Number(requestedLoss) || 0));
+  const floor = Math.max(0, Math.floor(Number(hpFloor) || 0));
+  const hpAfter = Math.max(floor, before - want);
+  const lost = Math.max(0, before - hpAfter);
+  return {
+    nextTotal: recordChallengeDamageTaken(current, lost),
+    hpAfter,
+    lost,
+  };
+}
+
+/**
  * Battle-walk Thorned Ground / Void Rift HP loss.
  *
  * Mouse and touch both call this after `battleWalkHazardDamages`.

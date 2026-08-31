@@ -16,6 +16,7 @@ import {
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
   recordChallengePlayerTurnStart,
+  recordChallengeSelfHpLoss,
   recordChallengeWalkHazardDamage,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
@@ -262,6 +263,39 @@ describe("recordChallengeDamageTaken", () => {
       ),
       [],
     );
+  });
+
+  it("counts Sacrifice HP actually lost so Untouchable cannot persist after a self-hit", () => {
+    const hpBefore = 100;
+    const requested = Math.floor(hpBefore * 0.2);
+    const recorded = recordChallengeSelfHpLoss(0, hpBefore, requested);
+    assert.equal(recorded.lost, 20);
+    assert.equal(recorded.hpAfter, 80);
+    assert.equal(recorded.nextTotal, 20);
+    assert.equal(
+      isChallengeCompleted(
+        byId("legendary_1"),
+        progress({ totalDamage: recorded.nextTotal }),
+      ),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        byId("legendary_1"),
+        isChallengeCompleted(
+          byId("legendary_1"),
+          progress({ totalDamage: recorded.nextTotal }),
+        ),
+      ),
+      [],
+    );
+    const floored = recordChallengeSelfHpLoss(0, 5, 20);
+    assert.equal(floored.hpAfter, 1, "Sacrifice combat floor stays at 1");
+    assert.equal(floored.lost, 4, "only the HP that left the bar is counted");
+    assert.equal(floored.nextTotal, 4);
+    assert.equal(recordChallengeSelfHpLoss(0, 100, 0).lost, 0);
+    assert.equal(recordChallengeSelfHpLoss(0, 100, Number.NaN).lost, 0);
   });
 
   it("ignores absorbed / invalid hits so a full-shield block stays at 0", () => {

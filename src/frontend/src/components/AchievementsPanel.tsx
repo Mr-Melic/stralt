@@ -143,8 +143,8 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
 
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
-      // #107 added a second in-flight set (`claimInFlightRef`) that was never
-      // declared. Use beginAchievementClaim so persist and mutate share one set.
+      // #107 referenced claimInFlightRef without declaring it. Use
+      // beginAchievementClaim so persist and mutate share one in-flight set.
       if (!beginAchievementClaim(claimingIdsRef.current, achievement.id)) {
         return;
       }
