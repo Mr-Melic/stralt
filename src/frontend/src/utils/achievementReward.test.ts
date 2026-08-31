@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  beginAchievementClaim,
   committedDokaAfterAchievementCredit,
   creditAchievementRewardThroughPersist,
   readClaimAchievementReward,
@@ -126,6 +127,16 @@ void (async () => {
     shouldBeginAchievementClaim(new Set(["first_blood"]), "first_blood"),
     false,
   );
+  {
+    const inFlight = new Set<string>();
+    assert.equal(beginAchievementClaim(inFlight, "first_blood"), true);
+    assert.equal(inFlight.has("first_blood"), true);
+    assert.equal(
+      beginAchievementClaim(inFlight, "first_blood"),
+      false,
+      "double-click must not enqueue a second persistClaim",
+    );
+  }
   assert.equal(
     shouldRollbackClaimFailure("Reward already claimed", false),
     false,

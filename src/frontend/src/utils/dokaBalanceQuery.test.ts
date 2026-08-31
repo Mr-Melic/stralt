@@ -3,6 +3,7 @@ import {
   normalizeCallerDokaBalance,
   shouldApplyCallerDokaHydrate,
   shouldMarkCallerDokaWalletReady,
+  syncLiveDokaFromProp,
 } from "./dokaBalanceQuery.ts";
 
 assert.equal(normalizeCallerDokaBalance(0), 0);
@@ -103,5 +104,26 @@ assert.equal(
   }),
   false,
 );
+
+{
+  // Chronology: heal debits the live ref, then a child-only setCharacterStats
+  // re-render still sees the stale-high prop. Copying the prop every render
+  // restored 100 and a later shop spend / idle hydrate refunded the heal.
+  const lastSeen = { current: 100 };
+  const live = { current: 100 };
+  syncLiveDokaFromProp(lastSeen, live, 100);
+  assert.equal(live.current, 100);
+  live.current = 90;
+  syncLiveDokaFromProp(lastSeen, live, 100);
+  assert.equal(
+    live.current,
+    90,
+    "unchanged stale-high prop must not overwrite a live debit",
+  );
+  syncLiveDokaFromProp(lastSeen, live, 90);
+  assert.equal(live.current, 90, "GameFlow committing the debit is a no-op");
+  syncLiveDokaFromProp(lastSeen, live, 140);
+  assert.equal(live.current, 140, "a real parent credit must still land");
+}
 
 console.log("dokaBalanceQuery.test: ok");

@@ -309,11 +309,10 @@ import {
   tryClaimPickupId,
 } from "../utils/dokaPersist";
 import {
+  applyHealHpToLiveStats,
   canSpendLiveDoka,
-  dokaHealAmounts,
-  nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
-  nextHpAfterDokaHeal,
+  resolveAbsoluteWriteHp,
   resolveOverworldHealSpend,
   shouldRollbackFailedHeal,
   shouldStartDokaHeal,
@@ -2046,6 +2045,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [shopProofFile, setShopProofFile] = useState<File | null>(null);
   const [isShopPurchasing, setIsShopPurchasing] = useState(false);
   const shopPurchaseInFlightRef = useRef(false);
+  const dokaHealInFlightRef = useRef(false);
 
   // Boost toggle state
   const [boostMode, _setBoostMode] = useState<"xp" | "rewards">("xp");
@@ -13519,7 +13519,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           await persistAbsoluteStats(actor, {
             slot: characterSlot,
             level: committed.level,
-            hp: newHp,
+            hp: resolveAbsoluteWriteHp(characterStatsRef.current.hp, newHp),
             maxHp: characterStatsRef.current.maxHp ?? 0,
             ap: characterStatsRef.current.ap ?? 0,
             maxAp: characterStatsRef.current.maxAp ?? 0,
@@ -17589,7 +17589,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     getEffectiveSpellRange,
     getActiveCasterPos,
     combatantStoreCtx,
-    playerSpellContext,
     markFirstAction,
     executeCastAttempt,
     tileCenter,
@@ -18580,10 +18579,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }}
             >
               {(() => {
-                const hpNeeded = maxHp - characterStats.hp;
+                const liveHp = characterStatsRef.current.hp;
+                const liveDoka = dokaBalanceRef.current;
+                const hpNeeded = maxHp - liveHp;
                 const cost = Math.ceil(hpNeeded / 3);
-                const canAfford = dokaBalance >= 1;
-                const healHp = Math.min(hpNeeded, Math.floor(dokaBalance * 3));
+                const canAfford = shouldStartDokaHeal({
+                  currentHp: liveHp,
+                  maxHp,
+                  liveDoka,
+                });
+                const healHp = Math.min(hpNeeded, Math.floor(liveDoka * 3));
                 const actualCost = Math.ceil(healHp / 3);
                 return (
                   <button
@@ -18601,11 +18606,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           currentHp: characterStatsRef.current.hp,
                           maxHp,
                           liveDoka: dokaBalanceRef.current,
+                          inFlight: dokaHealInFlightRef.current,
                         })
                       ) {
                         return;
                       }
-
                       const resolved = resolveOverworldHealSpend({
                         currentHp: characterStatsRef.current.hp,
                         maxHp,
@@ -18614,8 +18619,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       });
                       if (!resolved) return;
 
+                      dokaHealInFlightRef.current = true;
                       const hpBefore = characterStatsRef.current.hp;
                       const dokaBefore = dokaBalanceRef.current;
+                      applyHealHpToLiveStats(
+                        characterStatsRef,
+                        resolved.nextHp,
+                      );
                       setCharacterStats((prev) => ({
                         ...prev,
                         hp: resolved.nextHp,
@@ -18652,6 +18662,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       dokaBalanceRef.current = resolved.nextDoka;
                       onDokaBalanceChange(resolved.nextDoka);
                       void persist.then((ok) => {
+                        dokaHealInFlightRef.current = false;
                         if (ok) return;
                         if (
                           !shouldRollbackFailedHeal({
@@ -18663,6 +18674,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         ) {
                           return;
                         }
+                        applyHealHpToLiveStats(characterStatsRef, hpBefore);
                         setCharacterStats((prev) => ({
                           ...prev,
                           hp: hpBefore,

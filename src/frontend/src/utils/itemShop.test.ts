@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import {
   JACKPOT_HEAL_DOKA_COST,
+  applyHealHpToLiveStats,
   dokaHealAmounts,
   isBuffShopOpen,
+  liveDokaForShopSpend,
   nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
   nextHpAfterDokaHeal,
+  resolveAbsoluteWriteHp,
   resolveOverworldHealSpend,
   shouldAllowShopSpend,
   shouldRollbackFailedHeal,
@@ -248,6 +251,60 @@ assert.equal(
     }),
     true,
     "same-click reject still rolls back when nothing superseded it",
+  );
+}
+
+assert.equal(
+  shouldStartDokaHeal({
+    currentHp: 50,
+    maxHp: 200,
+    liveDoka: 10,
+    inFlight: true,
+  }),
+  false,
+  "a second click while the first saveBattleStats is in flight must no-op",
+);
+
+{
+  // Chronology: paid heal writes ref to 80, then lava ticks to 65 before
+  // saveBattleStats runs. Persisting the click snapshot (80) resurrects
+  // the hazard on reload.
+  const stats = { current: { hp: 50, maxHp: 200 } };
+  applyHealHpToLiveStats(stats, 80);
+  assert.equal(stats.current.hp, 80);
+  stats.current = { ...stats.current, hp: 65 };
+  assert.equal(resolveAbsoluteWriteHp(stats.current.hp, 80), 65);
+  assert.equal(
+    resolveAbsoluteWriteHp(110, 80),
+    80,
+    "a later heal must not ride this write's spend",
+  );
+  assert.equal(resolveAbsoluteWriteHp(80, 80), 80);
+}
+
+{
+  let hostLive = 90;
+  assert.equal(
+    liveDokaForShopSpend(() => hostLive, 100),
+    90,
+  );
+  assert.equal(
+    liveDokaForShopSpend(undefined, 100),
+    100,
+    "no host getter falls back to the shop's own live ref",
+  );
+  hostLive = 40;
+  const purchase = tryPurchaseBuffItem({
+    wallet: liveDokaForShopSpend(() => hostLive, 100),
+    cost: 50,
+    owned: 0,
+    maxStack: 5,
+    inBattle: false,
+  });
+  assert.equal(
+    purchase,
+    null,
+    "heal-then-buy must read the host ref, not the stale-high shop fallback",
   );
 }
 
