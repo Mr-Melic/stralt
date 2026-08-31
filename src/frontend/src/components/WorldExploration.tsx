@@ -263,6 +263,7 @@ import {
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
   recordChallengePlayerTurnStart,
+  recordChallengeSelfHpLoss,
   recordChallengeWalkHazardDamage,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
@@ -9922,6 +9923,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setCurrentBattleMp(maxMpRestore);
       },
       loseSelfHp: (amount: number) => {
+        // Sacrifice never went through playerTakesDamage, so Untouchable
+        // / under-N-damage stayed at 0 after a starter-spell 20% self-hit.
+        const recorded = recordChallengeSelfHpLoss(
+          challengeTotalDamageRef.current,
+          characterStatsRef.current.hp,
+          amount,
+        );
+        challengeTotalDamageRef.current = recorded.nextTotal;
         setCharacterStats((prev: any) => ({
           ...prev,
           hp: Math.max(1, prev.hp - amount),
