@@ -86,6 +86,8 @@ const newSpell = (): SpellConfig => ({
   freeCells: false,
   aoe: false,
   hitTiles: [],
+  hitsMultiple: false,
+  cooldown: 0,
   minRange: 1,
   maxRange: 3,
   cooldown: 0,
@@ -218,6 +220,7 @@ function Btn({
   ocid,
   small,
   type = "button",
+  disabled,
 }: {
   variant: "gold" | "red" | "ghost" | "blue";
   children: React.ReactNode;
@@ -225,6 +228,7 @@ function Btn({
   ocid?: string;
   small?: boolean;
   type?: "button" | "submit";
+  disabled?: boolean;
 }) {
   const base =
     "inline-flex items-center justify-center gap-1.5 border-none cursor-pointer transition-all duration-150 ease-in-out font-bold uppercase tracking-wider";
@@ -238,7 +242,14 @@ function Btn({
         ? `${base} ${size} stone-btn-slate text-[#86c4ff]`
         : `${base} ${size} bg-transparent text-[#5a6a7a] border border-[rgba(192,57,43,0.27)] hover:text-[#cdbfd2]`;
   return (
-    <button type={type} onClick={onClick} data-ocid={ocid} className={cls}>
+    <button
+      type={type}
+      onClick={onClick}
+      data-ocid={ocid}
+      className={cls}
+      disabled={disabled}
+      style={disabled ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+    >
       {children}
     </button>
   );
@@ -821,6 +832,7 @@ const EnemyEditor: React.FC<{
             onSave(cfg);
           }}
           ocid="admin.enemy.save_button"
+          disabled={saving}
         >
           {saving ? "Saving…" : "Save Enemy"}
         </Btn>
@@ -1122,6 +1134,7 @@ const RegionEditor: React.FC<{
             onSave(cfg);
           }}
           ocid="admin.region.save_button"
+          disabled={saving}
         >
           {saving ? "Saving…" : "Save Region"}
         </Btn>
@@ -1540,6 +1553,7 @@ const SpriteEditorForm: React.FC<{
           variant="gold"
           onClick={() => onSave(cfg)}
           ocid="admin.sprite.save_button"
+          disabled={saving}
         >
           {saving ? "Saving…" : "Save Character"}
         </Btn>
@@ -3331,6 +3345,7 @@ const SpellEditor: React.FC<{
             onSave(cfg);
           }}
           ocid="admin.spell.save_button"
+          disabled={saving}
         >
           {saving ? "Saving…" : "Save Spell"}
         </Btn>
@@ -3999,6 +4014,7 @@ const SettingsTab: React.FC = () => {
           variant="red"
           onClick={handleTransfer}
           ocid="admin.settings.transfer_button"
+          disabled={assignRole.isPending}
         >
           {assignRole.isPending ? "Transferring…" : "🛡️ Transfer Admin Role"}
         </Btn>
@@ -4847,6 +4863,7 @@ const AchievementEditor: React.FC<{
             onSave(cfg);
           }}
           ocid="admin.achievement.save_button"
+          disabled={saving}
         >
           {saving ? "Saving…" : "Save Achievement"}
         </Btn>
@@ -5856,15 +5873,22 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                               : "—"}
                           </td>
                           <td style={{ padding: "8px 10px" }}>
-                            {rec.proofOfAddressBase64 ||
+                            {rec.proofFileUrl ||
+                            rec.proofOfAddressBase64 ||
                             rec.proofOfAddressName?.startsWith("http") ? (
                               <button
                                 type="button"
                                 data-ocid={`admin.purchases.view_proof_button.${i + 1}`}
                                 onClick={() => {
-                                  if (
-                                    rec.proofOfAddressName?.startsWith("http")
-                                  ) {
+                                  if (rec.proofFileUrl) {
+                                    window.open(
+                                      rec.proofFileUrl,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    );
+                                    return;
+                                  }
+                                  if (rec.proofOfAddressName?.startsWith("http")) {
                                     window.open(
                                       rec.proofOfAddressName,
                                       "_blank",
@@ -6031,6 +6055,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       });
                     }}
                     ocid="admin.doka.save_config_button"
+                    disabled={setGameConfigMut.isPending}
                   >
                     {setGameConfigMut.isPending ? "Saving…" : "Save Config"}
                   </Btn>

@@ -6,6 +6,7 @@ import type {
   AdminGameConfig,
   MapModifierConfig,
 } from "../types/gameTypes";
+import { assertAdminCmdOk } from "../utils/adminContract";
 import { validateAssignRole } from "../utils/adminSafety";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
@@ -88,22 +89,13 @@ export function useAssignUserRole() {
       const { Principal } = await import("@icp-sdk/core/principal");
       const roleErr = validateAssignRole(role);
       if (roleErr) throw new Error(roleErr);
+      // Canonical canister method is assignUserRole(target, role: Text).
+      // assignCallerUserRole exists only on stale Candid / the mock.
       const result = await (actor as ActorAny).assignUserRole(
         Principal.fromText(principalId),
         role,
       );
-      if (result && typeof result === "object") {
-        const err =
-          (result as { err?: string; _err?: string }).err ??
-          (result as { err?: string; _err?: string })._err;
-        if (typeof err === "string") throw new Error(err);
-        if (
-          "__kind__" in result &&
-          (result as { __kind__: string }).__kind__ === "err"
-        ) {
-          throw new Error(String((result as { err?: string }).err ?? "err"));
-        }
-      }
+      assertAdminCmdOk(result, "assignUserRole");
       return result;
     },
     onSuccess: () => {
@@ -166,7 +158,9 @@ export function useAdminSetMapModifier() {
   return useMutation({
     mutationFn: async (config: MapModifierConfig) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetMapModifier(config);
+      const result = await (actor as ActorAny).adminSetMapModifier(config);
+      assertAdminCmdOk(result, "adminSetMapModifier");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mapModifiers"] });
@@ -181,7 +175,9 @@ export function useAdminDeleteMapModifier() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminDeleteMapModifier(id);
+      const result = await (actor as ActorAny).adminDeleteMapModifier(id);
+      assertAdminCmdOk(result, "adminDeleteMapModifier");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mapModifiers"] });
@@ -196,10 +192,12 @@ export function useAdminSetMapModifierChance() {
   return useMutation({
     mutationFn: async ({ id, chance }: { id: string; chance: number }) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetMapModifierChance(
+      const result = await (actor as ActorAny).adminSetMapModifierChance(
         id,
         BigInt(Math.round(chance)),
       );
+      assertAdminCmdOk(result, "adminSetMapModifierChance");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mapModifiers"] });
@@ -252,11 +250,13 @@ export function useAdminSetGameConfig() {
   return useMutation({
     mutationFn: async (config: AdminGameConfig) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetGameConfig({
+      const result = await (actor as ActorAny).adminSetGameConfig({
         leaderBoostPercent: BigInt(Math.round(config.leaderBoostPercent)),
         dokaSpawnChance: BigInt(Math.round(config.dokaSpawnChance)),
         dokaSpawnBaseValue: BigInt(Math.round(config.dokaSpawnBaseValue)),
       });
+      assertAdminCmdOk(result, "adminSetGameConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["gameConfig"] });
@@ -389,10 +389,12 @@ export function useAdminSetAchievementConfig() {
   return useMutation({
     mutationFn: async (config: AchievementConfig) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetAchievementConfig({
+      const result = await (actor as ActorAny).adminSetAchievementConfig({
         ...config,
         dokaReward: BigInt(Math.round(config.dokaReward)),
       });
+      assertAdminCmdOk(result, "adminSetAchievementConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["achievementConfigs"] });
@@ -407,7 +409,9 @@ export function useAdminDeleteAchievementConfig() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminDeleteAchievementConfig(id);
+      const result = await (actor as ActorAny).adminDeleteAchievementConfig(id);
+      assertAdminCmdOk(result, "adminDeleteAchievementConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["achievementConfigs"] });

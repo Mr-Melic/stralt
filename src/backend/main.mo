@@ -2215,7 +2215,9 @@ actor {
         "Itzcoatl", "Tlacaelel", "Moctezuma", "Cuauhtemoc", "Chimalli"
     ];
 
-    /// Seed the names list on first call if it is empty.
+    /// Seed the names list on first call if it is empty. Admin-only — same
+    /// privilege as addEnemyName / deleteEnemyName so a non-admin client
+    /// cannot mutate the pool by calling this directly.
     public shared ({ caller }) func initDefaultNames() : async () {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             Runtime.trap("Unauthorized: admin only");
