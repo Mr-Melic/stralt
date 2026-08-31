@@ -232,3 +232,17 @@ export function paidHealFromLiveWallet(
     nextDoka: doka - cost,
   };
 }
+
+export function syncLiveDokaFromProp(args: {
+  propDoka: number;
+  prevPropDoka: number;
+  liveDoka: number;
+}): { liveDoka: number; prevPropDoka: number } {
+  const prop = Math.max(0, Math.floor(Number(args.propDoka) || 0));
+  const prev = Math.max(0, Math.floor(Number(args.prevPropDoka) || 0));
+  const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
+  if (prev !== prop) {
+    return { liveDoka: prop, prevPropDoka: prop };
+  }
+  return { liveDoka: live, prevPropDoka: prev };
+}

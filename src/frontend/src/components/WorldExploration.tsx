@@ -315,6 +315,7 @@ import {
   nextHpAfterDokaHeal,
   resolveOverworldHealSpend,
   shouldStartDokaHeal,
+  syncLiveDokaFromProp,
 } from "../utils/itemShop";
 import {
   activatePlayerMirror,
@@ -1338,7 +1339,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     new Set(),
   );
   const dokaBalanceRef = useRef(dokaBalance);
-  dokaBalanceRef.current = dokaBalance;
+  const prevDokaPropRef = useRef(dokaBalance);
+  {
+    const synced = syncLiveDokaFromProp({
+      propDoka: dokaBalance,
+      prevPropDoka: prevDokaPropRef.current,
+      liveDoka: dokaBalanceRef.current,
+    });
+    dokaBalanceRef.current = synced.liveDoka;
+    prevDokaPropRef.current = synced.prevPropDoka;
+  }
   // Created here so shop-credit timers can enqueue onto the same lock as
   // applyRewards / saveBattleStats. Hydrate-when-idle still lives next to
   // characterStats because that effect depends on those values.
