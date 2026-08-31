@@ -4,6 +4,8 @@ import type { CombatantEntry } from "../components/InitiativeStrip";
 import type { Enemy } from "../types/gameTypes";
 import {
   activeHostilesRemaining,
+  hpAfterBossPhase2,
+  hpAfterHeal,
   shouldAdvanceAfterEnemyTurn,
   shouldAwardVictory,
 } from "./battleSetup.ts";
@@ -235,6 +237,36 @@ describe("removeCombatant preserves the battle-start snapshot", () => {
     assert.equal(
       Math.max(0, (ctx.combatantsRef.current[0]?.hp ?? 0) - 250),
       150,
+    );
+  });
+
+  it("store-commits hpAfterHeal so the next hit uses the healed HP", () => {
+    const ctx = store([{ ...enemy("healer-1", 100), maxHp: 200 }]);
+    const healed = hpAfterHeal(100, 200, 50);
+    updateCombatant(ctx, "healer-1", { hp: healed });
+    assert.equal(healed, 150);
+    assert.equal(ctx.combatantsRef.current[0]?.hp, 150);
+    assert.equal(
+      ctx.turnOrderRef.current.find((c) => c.id === "healer-1")?.hp,
+      150,
+    );
+    assert.equal(
+      Math.max(0, (ctx.combatantsRef.current[0]?.hp ?? 0) - 120),
+      30,
+      "a 120 hit must survive after the store-committed heal",
+    );
+  });
+
+  it("store-commits hpAfterBossPhase2 so a phase-1 hit cannot one-shot the boss", () => {
+    const ctx = store([{ ...enemy("boss-1", 200), maxHp: 200, isBoss: true }]);
+    const phase = hpAfterBossPhase2(200, 200, 2, false);
+    updateCombatant(ctx, "boss-1", phase);
+    assert.equal(ctx.combatantsRef.current[0]?.hp, 400);
+    assert.equal(ctx.combatantsRef.current[0]?.maxHp, 400);
+    assert.equal(
+      Math.max(0, (ctx.combatantsRef.current[0]?.hp ?? 0) - 250),
+      150,
+      "phase-2 store HP must absorb a hit that would kill phase-1 200",
     );
   });
 

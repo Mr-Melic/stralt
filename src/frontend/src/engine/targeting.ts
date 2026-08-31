@@ -26,6 +26,7 @@
  */
 
 import type { Enemy, SpellConfig } from "../types/gameTypes";
+import { isActiveHostile } from "./battleSetup.ts";
 
 /**
  * #19 Pacifist Run side-effect: flip the `battleOnlyHealBuffSpellsRef` flag to
@@ -731,5 +732,64 @@ export function canAttackNearestLive(
       mapTiles,
       effectiveRange,
     ) != null
+  );
+}
+
+/**
+ * Attack Nearest must search the live store, then drop dead / allied /
+ * leftover-wolf rows before the live gate. Passing React `enemies` or the
+ * raw combatant list used to snipe a corpse or a player summon.
+ */
+export function liveHostilesForAttackNearest<
+  T extends {
+    x: number;
+    y: number;
+    hp?: number;
+    side?: "player" | "enemy";
+    isSummon?: boolean;
+  },
+>(combatants: readonly T[]): T[] {
+  return combatants.filter((c) =>
+    isActiveHostile({
+      hp: c.hp ?? 0,
+      side: c.side,
+      isSummon: c.isSummon,
+    }),
+  );
+}
+
+/** Execute path: live store + hostility filter + highlight live gate. */
+export function pickNearestAttackableHostile(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+  effectiveRange: number,
+): { x: number; y: number } | null {
+  return pickNearestLiveHostileTile(
+    spell,
+    caster,
+    liveHostilesForAttackNearest(liveCombatants),
+    liveCombatants,
+    mapTiles,
+    effectiveRange,
+  );
+}
+
+/** Button enable: same filter + gate as {@link pickNearestAttackableHostile}. */
+export function canAttackNearestAgainstLive(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+  effectiveRange: number,
+): boolean {
+  return canAttackNearestLive(
+    spell,
+    caster,
+    liveHostilesForAttackNearest(liveCombatants),
+    liveCombatants,
+    mapTiles,
+    effectiveRange,
   );
 }
