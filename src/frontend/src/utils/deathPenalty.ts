@@ -286,7 +286,6 @@ export async function persistDeathPenalty(
   }
 }
 
-
 export type DeathPenaltyStorage = Pick<
   Storage,
   "getItem" | "setItem" | "removeItem"
@@ -397,6 +396,33 @@ export async function readDeathReplayBackendSnapshot(args: {
   return { xp, doka };
 }
 
+/**
+ * Unpaid 20/40 cut still sitting in pending storage. A heal/shop
+ * saveBattleStats after a failed death persist writes unpenalized XP and a
+ * spent Doka — the pair no longer matches `pre`, so a naive replay cleared
+ * the marker and the canister stayed whole.
+ *
+ * If the drop from `pre` is already at least the death loss, that axis
+ * absorbed the cut (or a larger spend). Otherwise subtract the unpaid loss.
+ * A later earn on both axes is handled by resolvePendingDeathReplay (clear).
+ */
+export function applyUnpaidDeathPenaltyToWrite(
+  pending: PendingDeathPenalty,
+  writeXp: number,
+  writeDoka: number,
+): { xp: number; doka: number } {
+  const xpLost = Math.max(0, pending.preXp - pending.afterXp);
+  const dokaLost = Math.max(0, pending.preDoka - pending.afterDoka);
+  const xp = Math.max(0, Math.floor(Number(writeXp) || 0));
+  const doka = Math.max(0, Math.floor(Number(writeDoka) || 0));
+  const xpDrop = pending.preXp - xp;
+  const dokaDrop = pending.preDoka - doka;
+  return {
+    xp: xpDrop >= xpLost ? xp : Math.max(0, xp - xpLost),
+    doka: dokaDrop >= dokaLost ? doka : Math.max(0, doka - dokaLost),
+  };
+}
+
 export function resolvePendingDeathReplay(
   backendXp: number,
   backendDoka: number,
@@ -414,7 +440,117 @@ export function resolvePendingDeathReplay(
       newDoka: pending.afterDoka,
     };
   }
+  // Heal/shop after a failed persist: XP still pre, Doka already spent.
+  // Do not treat a later earn (both axes above pre) as an unpaid cut.
+  if (xp === pending.preXp && doka < pending.preDoka) {
+    const next = applyUnpaidDeathPenaltyToWrite(pending, xp, doka);
+    return { action: "write", newXp: next.xp, newDoka: next.doka };
+  }
   return { action: "clear" };
+}
+
+/**
+ * sessionStorage dies with the tab. Closing after a lava death used to
+ * drop the pending marker so reload never replayed the 20/40 cut.
+ * Prefer localStorage; fall back to sessionStorage for an in-flight
+ * same-tab marker from an older build.
+ */
+export function defaultDeathPenaltyStorage(): DeathPenaltyStorage {
+  try {
+    if (typeof localStorage !== "undefined") return localStorage;
+  } catch {
+    // private mode
+  }
+  try {
+    if (typeof sessionStorage !== "undefined") return sessionStorage;
+  } catch {
+    // ignore
+  }
+  const mem = new Map<string, string>();
+  return {
+    getItem: (k) => mem.get(k) ?? null,
+    setItem: (k, v) => {
+      mem.set(k, v);
+    },
+    removeItem: (k) => {
+      mem.delete(k);
+    },
+  };
+}
+
+export function readPendingDeathPenaltyAnywhere(
+  slot: number,
+  primary: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
+  fallback?: DeathPenaltyStorage,
+): PendingDeathPenalty | null {
+  const first = readPendingDeathPenalty(primary, slot);
+  if (first) return first;
+  if (!fallback) {
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        return readPendingDeathPenalty(sessionStorage, slot);
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  return readPendingDeathPenalty(fallback, slot);
+}
+
+export function clearPendingDeathPenaltyAnywhere(
+  slot: number,
+  primary: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
+  fallback?: DeathPenaltyStorage,
+): void {
+  clearPendingDeathPenalty(primary, slot);
+  if (fallback) {
+    clearPendingDeathPenalty(fallback, slot);
+    return;
+  }
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      clearPendingDeathPenalty(sessionStorage, slot);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export type FlushPendingDeathArgs = {
+  storage: DeathPenaltyStorage;
+  slot: number;
+  persist: {
+    commit: (next: { doka?: number; xp?: number }) => void;
+  };
+  fetchSnapshot: () => Promise<{ xp: number; doka: number } | null>;
+  writePenalty: (newXp: number, newDoka: number) => Promise<void>;
+};
+
+/**
+ * Run ahead of heal / shop / applyRewards / upgrade. A failed death persist
+ * leaves the canister uncut; the next absolute or additive write then
+ * commits the unpenalized snapshot (or adds onto it) and the pending
+ * marker no longer matches `pre`.
+ */
+export async function flushPendingDeathPenalty(
+  args: FlushPendingDeathArgs,
+): Promise<boolean> {
+  const pending = readPendingDeathPenalty(args.storage, args.slot);
+  if (!pending) return false;
+  const snap = await args.fetchSnapshot();
+  if (!snap) return false;
+  const decision = resolvePendingDeathReplay(snap.xp, snap.doka, pending);
+  if (decision.action !== "write") {
+    clearPendingDeathPenalty(args.storage, args.slot);
+    return false;
+  }
+  await persistWithRetry(() =>
+    args.writePenalty(decision.newXp, decision.newDoka),
+  );
+  args.persist.commit({ doka: decision.newDoka, xp: decision.newXp });
+  clearPendingDeathPenalty(args.storage, args.slot);
+  return true;
 }
 
 export const DEATH_PERSIST_RETRY_COUNT = DEATH_PENALTY_PERSIST_ATTEMPTS;

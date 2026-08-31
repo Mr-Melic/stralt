@@ -87,7 +87,9 @@ import {
   isActiveHostile,
   isAliveCombatant,
   liveCombatantHp,
+  persistBattleEndGuardAfterCleanup,
   playerTurnStartModifierTarget,
+  resetBattleEndGuardForNewBattle,
   shouldAdvanceAfterEnemyTurn,
   shouldAllowBattleTrigger,
   shouldAwardVictory,
@@ -281,14 +283,17 @@ import {
   shouldBlockPortalDuringPendingDeathRealm,
 } from "../utils/deathGuards";
 import {
-  clearPendingDeathPenalty,
+  applyUnpaidDeathPenaltyToWrite,
+  clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
+  defaultDeathPenaltyStorage,
+  flushPendingDeathPenalty,
   mergeVictoryRewardLiveStats,
   persistDeathPenalty as persistAbsoluteStats,
   persistWithRetry,
   raiseUiAfterDeathPersist,
   readDeathReplayBackendSnapshot,
-  readPendingDeathPenalty,
+  readPendingDeathPenaltyAnywhere,
   resolvePendingDeathReplay,
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
@@ -401,6 +406,10 @@ import ChallengePanel, {
 import type { ChallengePanelProgress } from "./ChallengePanel";
 import SpellbookModal from "./SpellbookModal";
 import StatusEffectBadge from "./StatusEffectBadge";
+
+/** Survives tab close. sessionStorage dropped the 20/40 cut on reload. */
+const DEATH_PENALTY_STORAGE = defaultDeathPenaltyStorage();
+
 let _fbNameIdx = 0;
 // Module-level divergence flag — warns ONCE per page load when persisted
 // character ap/mp diverge from the canonical progression formula at battle
@@ -1361,6 +1370,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Created here so shop-credit timers can enqueue onto the same lock as
   // applyRewards / saveBattleStats. Hydrate-when-idle still lives next to
   // characterStats because that effect depends on those values.
+  const persistActorRef = useRef(actor);
+  persistActorRef.current = actor;
+  const persistSlotRef = useRef(characterSlot);
+  persistSlotRef.current = characterSlot;
   const progressPersistRef = useRef(
     createProgressPersist({
       doka: dokaBalance,
@@ -1368,6 +1381,47 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       level: character?.level != null ? Number(character.level) : 1,
     }),
   );
+  progressPersistRef.current.setBeforeEach(async () => {
+    const liveActor = persistActorRef.current;
+    if (!liveActor?.saveBattleStats) return;
+    const slot = persistSlotRef.current;
+    await flushPendingDeathPenalty({
+      storage: DEATH_PENALTY_STORAGE,
+      slot,
+      persist: progressPersistRef.current,
+      fetchSnapshot: () =>
+        readDeathReplayBackendSnapshot({
+          fetchDoka: () =>
+            (
+              liveActor as { getCallerDokaBalance?: () => Promise<unknown> }
+            ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+          fetchCharacter: () =>
+            (
+              liveActor as { getCharacter?: (s: bigint) => Promise<unknown> }
+            ).getCharacter?.(BigInt(slot)) ?? Promise.resolve(null),
+        }),
+      writePenalty: (newXp, newDoka) => {
+        const committed = progressPersistRef.current.snapshot();
+        const stats = characterStatsRef.current;
+        return persistAbsoluteStats(liveActor, {
+          slot,
+          level: committed.level,
+          hp: stats.hp ?? 0,
+          maxHp: stats.maxHp ?? 0,
+          ap: stats.ap ?? 0,
+          maxAp: stats.maxAp ?? 0,
+          mp: stats.mp ?? 0,
+          maxMp: stats.maxMp ?? 0,
+          attack: Number(character?.stats?.atk ?? 0),
+          defense: stats.res ?? 0,
+          initiative: stats.init ?? 0,
+          newXp,
+          newDoka,
+          spellLevels: spellLevelsRef.current,
+        });
+      },
+    });
+  });
   const applyPendingPurchaseCredit = useCallback(
     async (announceAmount?: number) => {
       if (!actor) return;
@@ -12151,8 +12205,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     setCurrentBossId(null);
     // 9. Reset watchdog counter
     idleTurnCountRef.current = 0;
-    // M3 FIX: Reset battleEndedRef so the NEXT battle can call handleBattleEnd
-    battleEndedRef.current = false;
+    // Do not reset battleEndedRef here. cleanupBattle runs inside
+    // handleBattleEnd / handleBossRushRoomClear; clearing the guard let a
+    // second victory-gate fire applyRewards twice. Reset at battle start.
+    battleEndedRef.current = persistBattleEndGuardAfterCleanup(
+      battleEndedRef.current,
+    );
     // H2 FIX: Clear active effects state and ref so status icons don't linger after victory
     activeEffectsRef.current = [];
     setActiveEffects([]);
@@ -12670,6 +12728,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       deathTriggeredRef.current = false;
       deathPenaltyAppliedRef.current = false;
+      battleEndedRef.current = resetBattleEndGuardForNewBattle();
       // Overworld fights do not call syncCombatants({ resetBattle: true }).
       // Leaving this list intact credits fight-1 kills again on fight 2.
       battleDefeatedRef.current = [];
@@ -13379,7 +13438,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       newDoka: dokaAfter,
     } = computeDeathPenalty(currentXp, currentDoka);
     const respawnHp = respawnHpAfterDeath(characterStatsRef.current.level);
-    writePendingDeathPenalty(sessionStorage, {
+    writePendingDeathPenalty(DEATH_PENALTY_STORAGE, {
       slot: characterSlot,
       preXp: currentXp,
       preDoka: currentDoka,
@@ -13388,98 +13447,116 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     });
     if (actor) {
       void progressPersistRef.current
-        .enqueue(async () => {
-          const committed = progressPersistRef.current.snapshot();
-          const dokaBase = await resolveCommittedDokaForAbsoluteWrite(
-            progressPersistRef.current,
-            () =>
-              (
-                actor as {
-                  getCallerDokaBalance?: () => Promise<unknown>;
-                }
-              ).getCallerDokaBalance?.() ?? Promise.resolve(null),
-          );
-          if (
-            dokaBase == null &&
-            !progressPersistRef.current.isWalletSeeded()
-          ) {
-            throw new Error("death-save skipped: wallet not seeded");
-          }
-          const after = computeDeathPenalty(
-            committed.xp,
-            dokaBase ?? committed.doka,
-          );
-          writePendingDeathPenalty(sessionStorage, {
-            slot: characterSlot,
-            preXp: committed.xp,
-            preDoka: dokaBase ?? committed.doka,
-            afterXp: after.newXp,
-            afterDoka: after.newDoka,
-          });
-          await persistWithRetry(() =>
-            persistAbsoluteStats(actor, {
+        .enqueue(
+          async () => {
+            const committed = progressPersistRef.current.snapshot();
+            const dokaBase = await resolveCommittedDokaForAbsoluteWrite(
+              progressPersistRef.current,
+              () =>
+                (
+                  actor as {
+                    getCallerDokaBalance?: () => Promise<unknown>;
+                  }
+                ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+            );
+            if (
+              dokaBase == null &&
+              !progressPersistRef.current.isWalletSeeded()
+            ) {
+              throw new Error("death-save skipped: wallet not seeded");
+            }
+            const after = computeDeathPenalty(
+              committed.xp,
+              dokaBase ?? committed.doka,
+            );
+            writePendingDeathPenalty(DEATH_PENALTY_STORAGE, {
               slot: characterSlot,
-              level: committed.level,
-              hp: respawnHp,
-              maxHp: characterStatsRef.current.maxHp ?? 0,
-              ap: characterStatsRef.current.ap ?? 0,
-              maxAp: characterStatsRef.current.maxAp ?? 0,
-              mp: characterStatsRef.current.mp ?? 0,
-              maxMp: characterStatsRef.current.maxMp ?? 0,
-              attack: Number(character?.stats?.atk ?? 0),
-              defense: characterStatsRef.current.res ?? 0,
-              initiative: characterStatsRef.current.init ?? 0,
-              newXp: after.newXp,
-              newDoka: after.newDoka,
-              spellLevels: spellLevelsRef.current,
-            }),
-          );
-          clearPendingDeathPenalty(sessionStorage, characterSlot);
-          progressPersistRef.current.commit({
-            doka: after.newDoka,
-            xp: after.newXp,
-            level: committed.level,
-          });
-          // A claim/applyRewards ahead of this write is in committed, not
-          // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
-          // the pre-credit snapshot over the persisted penalty. Level is
-          // the same class: victory persist can bump committed.level while
-          // the live hydrate is skipped, so raise UI level too.
-          const nextDoka = raiseUiAfterDeathPersist(
-            dokaBalanceRef.current,
-            after.newDoka,
-          );
-          const uiLevelBefore = characterStatsRef.current.level ?? 1;
-          const nextXp = xpAfterDeathPersist({
-            uiXp: characterStatsRef.current.exp ?? 0,
-            uiLevel: uiLevelBefore,
-            persistedXp: after.newXp,
-            persistedLevel: committed.level,
-          });
-          const nextLevel = raiseUiAfterDeathPersist(
-            uiLevelBefore,
-            committed.level,
-          );
-          if (nextDoka !== dokaBalanceRef.current) {
-            onDokaBalanceChange(nextDoka);
-          }
-          if (
-            nextXp !== (characterStatsRef.current.exp ?? 0) ||
-            nextLevel !== (characterStatsRef.current.level ?? 1)
-          ) {
-            setCharacterStats((prev) => ({
-              ...prev,
-              exp: nextXp,
-              level: nextLevel,
-            }));
-          }
-          if (nextDoka !== dokaAfter || nextXp !== xpAfter) {
-            setDeathPenalty({
-              xpLost: after.xpLost,
-              dokaLost: after.dokaLost,
+              preXp: committed.xp,
+              preDoka: dokaBase ?? committed.doka,
+              afterXp: after.newXp,
+              afterDoka: after.newDoka,
             });
-          }
-        })
+            try {
+              await persistWithRetry(() =>
+                persistAbsoluteStats(actor, {
+                  slot: characterSlot,
+                  level: committed.level,
+                  hp: respawnHp,
+                  maxHp: characterStatsRef.current.maxHp ?? 0,
+                  ap: characterStatsRef.current.ap ?? 0,
+                  maxAp: characterStatsRef.current.maxAp ?? 0,
+                  mp: characterStatsRef.current.mp ?? 0,
+                  maxMp: characterStatsRef.current.maxMp ?? 0,
+                  attack: Number(character?.stats?.atk ?? 0),
+                  defense: characterStatsRef.current.res ?? 0,
+                  initiative: characterStatsRef.current.init ?? 0,
+                  newXp: after.newXp,
+                  newDoka: after.newDoka,
+                  spellLevels: spellLevelsRef.current,
+                }),
+              );
+              clearPendingDeathPenaltyAnywhere(
+                characterSlot,
+                DEATH_PENALTY_STORAGE,
+              );
+            } catch (err) {
+              // Canister missed. Cut the lock anyway so a later heal/shop/
+              // applyRewards cannot persist the unpenalized snapshot. Leave
+              // pending so beforeEach / reload can retry the replica write.
+              progressPersistRef.current.commit({
+                doka: after.newDoka,
+                xp: after.newXp,
+                level: committed.level,
+              });
+              throw err;
+            }
+            progressPersistRef.current.commit({
+              doka: after.newDoka,
+              xp: after.newXp,
+              level: committed.level,
+            });
+            // A claim/applyRewards ahead of this write is in committed, not
+            // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
+            // the pre-credit snapshot over the persisted penalty. Level is
+            // the same class: victory persist can bump committed.level while
+            // the live hydrate is skipped, so raise UI level too.
+            const nextDoka = raiseUiAfterDeathPersist(
+              dokaBalanceRef.current,
+              after.newDoka,
+            );
+            const uiLevelBefore = characterStatsRef.current.level ?? 1;
+            const nextXp = xpAfterDeathPersist({
+              uiXp: characterStatsRef.current.exp ?? 0,
+              uiLevel: uiLevelBefore,
+              persistedXp: after.newXp,
+              persistedLevel: committed.level,
+            });
+            const nextLevel = raiseUiAfterDeathPersist(
+              uiLevelBefore,
+              committed.level,
+            );
+            if (nextDoka !== dokaBalanceRef.current) {
+              onDokaBalanceChange(nextDoka);
+            }
+            if (
+              nextXp !== (characterStatsRef.current.exp ?? 0) ||
+              nextLevel !== (characterStatsRef.current.level ?? 1)
+            ) {
+              setCharacterStats((prev) => ({
+                ...prev,
+                exp: nextXp,
+                level: nextLevel,
+              }));
+            }
+            if (nextDoka !== dokaAfter || nextXp !== xpAfter) {
+              setDeathPenalty({
+                xpLost: after.xpLost,
+                dokaLost: after.dokaLost,
+              });
+            }
+          },
+          { skipBeforeEach: true },
+        )
         .catch((err) => console.error("[death-save] failed:", err));
     }
     setCharacterStats((prev) => ({
@@ -13521,10 +13598,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ) {
             throw new Error("doka-spend save skipped: wallet not seeded");
           }
+          const pendingDeath = readPendingDeathPenaltyAnywhere(
+            characterSlot,
+            DEATH_PENALTY_STORAGE,
+          );
+          const honoured = pendingDeath
+            ? applyUnpaidDeathPenaltyToWrite(
+                pendingDeath,
+                committed.xp,
+                applySpendToCommitted(dokaBase ?? committed.doka, spend),
+              )
+            : {
+                xp: committed.xp,
+                doka: applySpendToCommitted(dokaBase ?? committed.doka, spend),
+              };
           const writeDoka = clampAbsoluteProgressWrite(
-            applySpendToCommitted(dokaBase ?? committed.doka, spend),
+            honoured.doka,
             dokaBase ?? committed.doka,
           );
+          const writeXp = honoured.xp;
           await persistAbsoluteStats(actor, {
             slot: characterSlot,
             level: committed.level,
@@ -13537,11 +13629,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             attack: Number(character?.stats?.atk ?? 0),
             defense: characterStatsRef.current.res ?? 0,
             initiative: characterStatsRef.current.init ?? 0,
-            newXp: committed.xp,
+            newXp: writeXp,
             newDoka: writeDoka,
             spellLevels: spellLevelsRef.current,
           });
-          progressPersistRef.current.commit({ doka: writeDoka });
+          progressPersistRef.current.commit({ doka: writeDoka, xp: writeXp });
           // Death persist raiseUi can restore a pre-spend wallet while this
           // write is queued. Sync UI down so idle hydrate cannot refund.
           if (dokaBalanceRef.current > writeDoka) {
@@ -13561,7 +13653,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Replay only when the backend still matches the pre-penalty snapshot.
   useEffect(() => {
     if (!actor) return;
-    const pending = readPendingDeathPenalty(sessionStorage, characterSlot);
+    const pending = readPendingDeathPenaltyAnywhere(
+      characterSlot,
+      DEATH_PENALTY_STORAGE,
+    );
     if (!pending) return;
     let cancelled = false;
     void (async () => {
@@ -13578,38 +13673,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (cancelled || !snap) return;
       const decision = resolvePendingDeathReplay(snap.xp, snap.doka, pending);
       if (decision.action !== "write") {
-        clearPendingDeathPenalty(sessionStorage, characterSlot);
+        clearPendingDeathPenaltyAnywhere(characterSlot, DEATH_PENALTY_STORAGE);
         return;
       }
       try {
-        await progressPersistRef.current.enqueue(async () => {
-          const committed = progressPersistRef.current.snapshot();
-          await persistWithRetry(() =>
-            persistAbsoluteStats(actor, {
-              slot: characterSlot,
+        await progressPersistRef.current.enqueue(
+          async () => {
+            const committed = progressPersistRef.current.snapshot();
+            await persistWithRetry(() =>
+              persistAbsoluteStats(actor, {
+                slot: characterSlot,
+                level: committed.level,
+                hp: respawnHpAfterDeath(committed.level),
+                maxHp: characterStatsRef.current.maxHp ?? 0,
+                ap: characterStatsRef.current.ap ?? 0,
+                maxAp: characterStatsRef.current.maxAp ?? 0,
+                mp: characterStatsRef.current.mp ?? 0,
+                maxMp: characterStatsRef.current.maxMp ?? 0,
+                attack: Number(character?.stats?.atk ?? 0),
+                defense: characterStatsRef.current.res ?? 0,
+                initiative: characterStatsRef.current.init ?? 0,
+                newXp: decision.newXp,
+                newDoka: decision.newDoka,
+                spellLevels: spellLevelsRef.current,
+              }),
+            );
+            progressPersistRef.current.commit({
+              doka: decision.newDoka,
+              xp: decision.newXp,
               level: committed.level,
-              hp: respawnHpAfterDeath(committed.level),
-              maxHp: characterStatsRef.current.maxHp ?? 0,
-              ap: characterStatsRef.current.ap ?? 0,
-              maxAp: characterStatsRef.current.maxAp ?? 0,
-              mp: characterStatsRef.current.mp ?? 0,
-              maxMp: characterStatsRef.current.maxMp ?? 0,
-              attack: Number(character?.stats?.atk ?? 0),
-              defense: characterStatsRef.current.res ?? 0,
-              initiative: characterStatsRef.current.init ?? 0,
-              newXp: decision.newXp,
-              newDoka: decision.newDoka,
-              spellLevels: spellLevelsRef.current,
-            }),
-          );
-          progressPersistRef.current.commit({
-            doka: decision.newDoka,
-            xp: decision.newXp,
-            level: committed.level,
-          });
-        });
+            });
+          },
+          { skipBeforeEach: true },
+        );
         if (cancelled) return;
-        clearPendingDeathPenalty(sessionStorage, characterSlot);
+        clearPendingDeathPenaltyAnywhere(characterSlot, DEATH_PENALTY_STORAGE);
         onDokaBalanceChange(decision.newDoka);
         setCharacterStats((prev) => ({ ...prev, exp: decision.newXp }));
       } catch (err) {
@@ -18639,6 +18737,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         ...prev,
                         hp: resolved.nextHp,
                       }));
+                      challengeHealUsedRef.current =
+                        recordInBattleChallengeHealUsed(
+                          inBattleRef.current,
+                          challengeHealUsedRef.current,
+                        );
                       if (resolved.jackpot) {
                         setJackpotHealVisible(true);
                         if (jackpotHealTimerRef.current)
@@ -18655,11 +18758,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           duration: 4000,
                         });
                       } else {
-                        challengeHealUsedRef.current =
-                          recordInBattleChallengeHealUsed(
-                            inBattleRef.current,
-                            challengeHealUsedRef.current,
-                          );
                         toast.success(
                           `Healed +${resolved.hpGained} HP (-${resolved.dokaCost} Doka)`,
                         );

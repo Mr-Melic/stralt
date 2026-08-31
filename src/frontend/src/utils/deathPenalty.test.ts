@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress.ts";
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
+  applyUnpaidDeathPenaltyToWrite,
   clearPendingDeathPenalty,
   computeDeathPenalty,
   experienceFromCharacterRecord,
+  flushPendingDeathPenalty,
   mergeVictoryRewardLiveStats,
   persistDeathPenalty,
   persistWithRetry,
@@ -549,6 +551,134 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     fetchCharacter: async () => null,
   });
   assert.equal(incomplete, null, "do not clear pending when XP fetch misses");
+}
+
+{
+  const pending = {
+    slot: 1,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  };
+  assert.deepEqual(
+    applyUnpaidDeathPenaltyToWrite(pending, 100, 200),
+    { xp: 80, doka: 120 },
+    "unpenalized snapshot still takes the 20/40 cut",
+  );
+  assert.deepEqual(
+    applyUnpaidDeathPenaltyToWrite(pending, 100, 190),
+    { xp: 80, doka: 110 },
+    "heal spend after a failed persist must not wipe the unpaid cut",
+  );
+  assert.deepEqual(
+    applyUnpaidDeathPenaltyToWrite(pending, 80, 120),
+    { xp: 80, doka: 120 },
+    "already-penalized write must not be cut twice",
+  );
+  assert.deepEqual(
+    resolvePendingDeathReplay(100, 190, pending),
+    { action: "write", newXp: 80, newDoka: 110 },
+    "reload after a recap heal must still land the 20/40 cut",
+  );
+}
+
+{
+  const storage = new Map<string, string>();
+  const mem: import("./deathPenalty.ts").DeathPenaltyStorage = {
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => {
+      storage.set(k, v);
+    },
+    removeItem: (k) => {
+      storage.delete(k);
+    },
+  };
+  const pending = {
+    slot: 2,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  };
+  writePendingDeathPenalty(mem, pending);
+  const lock = createProgressPersist({ doka: 200, xp: 100, level: 4 });
+  let backendXp = 100;
+  let backendDoka = 200;
+  const flushed = await flushPendingDeathPenalty({
+    storage: mem,
+    slot: 2,
+    persist: lock,
+    fetchSnapshot: async () => ({ xp: backendXp, doka: backendDoka }),
+    writePenalty: async (newXp, newDoka) => {
+      backendXp = newXp;
+      backendDoka = newDoka;
+    },
+  });
+  assert.equal(flushed, true);
+  assert.equal(backendXp, 80);
+  assert.equal(backendDoka, 120);
+  assert.equal(lock.snapshot().xp, 80);
+  assert.equal(lock.snapshot().doka, 120);
+  assert.equal(readPendingDeathPenalty(mem, 2), null);
+
+  // Next applyRewards must add onto the cut canister, not the pre-death wallet.
+  backendDoka += 50;
+  lock.commit({ doka: backendDoka, xp: backendXp + 40 });
+  assert.equal(lock.snapshot().doka, 170);
+  assert.equal(backendDoka, 170);
+}
+
+{
+  const storage = new Map<string, string>();
+  const mem: import("./deathPenalty.ts").DeathPenaltyStorage = {
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => {
+      storage.set(k, v);
+    },
+    removeItem: (k) => {
+      storage.delete(k);
+    },
+  };
+  writePendingDeathPenalty(mem, {
+    slot: 1,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  });
+  const lock = createProgressPersist({ doka: 200, xp: 100, level: 4 });
+  let backendXp = 100;
+  let backendDoka = 200;
+
+  // Death persist fails after 3 retries. Lock is still cut so a heal
+  // cannot write the unpenalized snapshot.
+  let writes = 0;
+  await assert.rejects(
+    persistWithRetry(async () => {
+      writes += 1;
+      throw new Error("replica reject");
+    }, 3),
+    /replica reject/,
+  );
+  assert.equal(writes, 3);
+  const after = computeDeathPenalty(100, 200);
+  lock.commit({ doka: after.newDoka, xp: after.newXp });
+  const healSpend = 10;
+  const honoured = applyUnpaidDeathPenaltyToWrite(
+    readPendingDeathPenalty(mem, 1)!,
+    lock.snapshot().xp,
+    lock.snapshot().doka - healSpend,
+  );
+  backendXp = honoured.xp;
+  backendDoka = honoured.doka;
+  assert.equal(backendXp, 80);
+  assert.equal(backendDoka, 110);
+  assert.notEqual(
+    backendDoka,
+    190,
+    "heal must not persist unpenalized 200-10 and drop the pending marker",
+  );
 }
 
 console.log("deathPenalty.test: ok");

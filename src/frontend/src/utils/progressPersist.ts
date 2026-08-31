@@ -68,7 +68,6 @@ export function shouldPersistAbsoluteDokaSpend(spend: number): boolean {
 
 /** Never mint Doka through saveBattleStats. */
 
-
 /** Alias: never-raise clamp for Doka absolute writes (same as clampAbsoluteProgressWrite). */
 export function clampAbsoluteDokaWrite(
   committedDoka: number,
@@ -177,7 +176,28 @@ export function shouldCopyIdleWalletDoka(args: {
   return args.walletReady === true;
 }
 
-export function createProgressPersist(initial?: Partial<CommittedProgress>) {
+export type ProgressPersistEnqueueOptions = {
+  /**
+   * Death persist writes the pending marker then the 20/40 cut. Running
+   * beforeEach (flush of that same marker) first would persist after, then
+   * computeDeathPenalty on the already-cut lock — a second 20/40.
+   */
+  skipBeforeEach?: boolean;
+};
+
+export type ProgressPersistOptions = {
+  /**
+   * Runs at the head of every enqueue except skipBeforeEach. Used to flush
+   * an unpaid death penalty before heal / shop / applyRewards / upgrade
+   * can persist the unpenalized snapshot.
+   */
+  beforeEach?: () => Promise<void>;
+};
+
+export function createProgressPersist(
+  initial?: Partial<CommittedProgress>,
+  options?: ProgressPersistOptions,
+) {
   let committed: CommittedProgress = {
     doka: Math.max(0, toNat(initial?.doka, 0)),
     xp: Math.max(0, toNat(initial?.xp, 0)),
@@ -188,6 +208,7 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
   let walletSeeded = initial?.doka != null && toNat(initial.doka, 0) > 0;
   let pending = 0;
   let chain: Promise<void> = Promise.resolve();
+  let beforeEach = options?.beforeEach;
 
   const persist = {
     snapshot(): CommittedProgress {
@@ -242,9 +263,21 @@ export function createProgressPersist(initial?: Partial<CommittedProgress>) {
       });
       return true;
     },
-    enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    setBeforeEach(fn: (() => Promise<void>) | undefined) {
+      beforeEach = fn;
+    },
+    enqueue<T>(
+      fn: () => Promise<T>,
+      enqueueOptions?: ProgressPersistEnqueueOptions,
+    ): Promise<T> {
       pending += 1;
-      const run = chain.then(fn, fn);
+      const runJob = async () => {
+        if (!enqueueOptions?.skipBeforeEach && beforeEach) {
+          await beforeEach();
+        }
+        return fn();
+      };
+      const run = chain.then(runJob, runJob);
       chain = run.then(
         () => {
           pending -= 1;

@@ -116,6 +116,22 @@ export function shouldAwardVictory(opts: {
 }
 
 /**
+ * handleBattleEnd / handleBossRushRoomClear set battleEndedRef then call
+ * cleanupBattle. Resetting the guard there let a second victory-gate fire
+ * (enemies update / Strict Mode) re-enter applyRewards for the same fight.
+ * The guard stays true through cleanup and is cleared only at the next
+ * battle start.
+ */
+export function persistBattleEndGuardAfterCleanup(ended: boolean): boolean {
+  return ended === true;
+}
+
+/** Next fight may persist rewards. Call at battle start, not in cleanup. */
+export function resetBattleEndGuardForNewBattle(): boolean {
+  return false;
+}
+
+/**
  * World / next-room encounters may start only when React `inBattle` AND the
  * sync `inBattleRef` are both false. `cleanupBattle()` only clears the ref;
  * `handleBattleEnd` / `handleBossRushRoomClear` / death must also

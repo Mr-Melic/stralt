@@ -330,7 +330,11 @@ describe("recordInBattleChallengeHealUsed", () => {
 
   it("does not clear an in-battle heal that already failed the objective", () => {
     assert.equal(recordInBattleChallengeHealUsed(false, true), true);
-    assert.equal(recordInBattleChallengeHealUsed(true, false), true);
+    assert.equal(
+      recordInBattleChallengeHealUsed(true, false),
+      true,
+      "jackpot and paid Doka heals in battle must fail no_healing",
+    );
     assert.equal(
       isChallengeCompleted(
         byId("easy_1"),
