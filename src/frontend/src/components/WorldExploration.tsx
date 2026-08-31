@@ -318,6 +318,11 @@ import {
   shouldIgnoreClickAfterTouch,
 } from "../utils/pointerGesture";
 import {
+  isAttackNearestHotkey,
+  shouldBlockWorldMoveOntoPortal,
+  shouldIgnoreSyntheticClickAfterTouch,
+} from "../utils/pointerParity";
+import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
   clampAbsoluteProgressWrite,
@@ -902,6 +907,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     y: number;
     ts: number;
   } | null>(null);
+  // Stamped on canvas touchend so the synthetic click that follows does not
+  // re-run handleCanvasClick (double-cast / double-walk).
+  const lastCanvasTouchEndAtRef = useRef(0);
   // Prop-driven inspect target for BattleUIPanel. Set by the sprite-hit
   // inspect branch in handleCanvasClick/handleCanvasTouch when a hostile
   // sprite is clicked with no spell selected. BattleUIPanel opens its inspect
@@ -10373,6 +10381,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable callbacks are intentionally omitted
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
+      if (shouldIgnoreSyntheticClickAfterTouch(lastCanvasTouchEndAtRef.current))
+        return;
       if (!currentMap || transitionInProgressRef.current) return;
       if (
         (inBattleRef.current &&
@@ -10768,7 +10778,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 effectsManagerRef.current?.spawnFloatText(
                   _screen.x,
                   _screen.y,
-                  "invalid target",
+                  _liveMouse.reason,
                 );
                 try {
                   recordClickOutcome(
@@ -11011,6 +11021,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         currentMap.tiles[gridPos.y][gridPos.x] !== "wall" &&
         !currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
       ) {
+        if (
+          shouldBlockWorldMoveOntoPortal(
+            inBattleRef.current,
+            currentMap.portals,
+            gridPos,
+          )
+        )
+          return;
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
         const path = findPath(playerPositionRef.current, gridPos);
         if (path.length > 0) {
@@ -11119,6 +11137,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, applyBattleWalkHazards, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
   const handleCanvasTouch = useCallback(
     (event: React.TouchEvent<HTMLCanvasElement>) => {
+      lastCanvasTouchEndAtRef.current = Date.now();
       if (!currentMap || transitionInProgressRef.current) return;
       if (
         inBattleRef.current &&
@@ -11616,10 +11635,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         currentMap.tiles[gridPos.y][gridPos.x] !== "wall" &&
         !currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
       ) {
-        // Block click-to-move onto portal tiles during battle
         if (
-          inBattleRef.current &&
-          currentMap.portals.some((p) => p.x === gridPos.x && p.y === gridPos.y)
+          shouldBlockWorldMoveOntoPortal(
+            inBattleRef.current,
+            currentMap.portals,
+            gridPos,
+          )
         )
           return;
         setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
@@ -17578,6 +17599,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     executeCastAttempt,
     tileCenter,
   ]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isAttackNearestHotkey(e)) return;
+      attackNearestEnemy();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [attackNearestEnemy]);
   const [noTargetFlash, setNoTargetFlash] = useState(false);
   // Show game over modal
   if (showGameOver) {
@@ -17766,6 +17795,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 borderRadius: "20px",
                 cursor: "pointer",
                 fontSize: "12px",
+                minHeight: 44,
                 fontFamily: "monospace",
                 boxShadow: "0 0 8px rgba(180,0,0,0.4)",
                 userSelect: "none",
@@ -17977,6 +18007,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               void applyPendingPurchaseCredit();
             }}
             title="Buy Doka"
+            aria-label="Buy Doka"
             style={{
               background: "linear-gradient(135deg,#6a0a0a,#c0392b)",
               border: "1px solid #e74c3c",
@@ -17987,8 +18018,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
+              justifyContent: "center",
               gap: 3,
               boxShadow: "0 0 6px rgba(192,57,43,0.3)",
+              minWidth: 44,
+              minHeight: 44,
             }}
           >
             <ShoppingCart style={{ width: 10, height: 10 }} />
@@ -18014,7 +18048,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             cameraVelocityRef.current = { x: 0, y: 0 };
             updateCameraToFollowPlayer();
           }}
-          className="flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors"
+          className="flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors stone-touch-target"
           style={{
             background: "rgba(200,150,42,0.1)",
             border: "1px solid var(--dofus-border-gold-dim)",
@@ -18028,7 +18062,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           type="button"
           data-ocid="enemy_register.open_modal_button"
           onClick={() => setShowEnemyRegister(true)}
-          className="flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors"
+          className="flex items-center space-x-1 px-2 py-1 text-xs rounded transition-colors stone-touch-target"
           style={{
             background: "rgba(200,50,50,0.1)",
             border: "1px solid var(--dofus-border-gold-dim)",
@@ -18067,7 +18101,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           onKeyDown={undefined}
           tabIndex={0}
           aria-label="World exploration canvas"
-          className="cursor-pointer"
+          className="cursor-pointer touch-none"
           style={{
             position: "absolute",
             top: 0,
@@ -18077,6 +18111,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             imageRendering: "pixelated",
             background: "transparent",
             outline: "none",
+            touchAction: "none",
           }}
           onTouchEnd={handleCanvasTouch}
         />
@@ -19207,7 +19242,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 9000,
+            zIndex: 9600,
             background: "rgba(0,0,0,0.75)",
             display: "flex",
             alignItems: "center",
@@ -19312,7 +19347,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 9000,
+            zIndex: 9600,
             background: "rgba(0,0,0,0.88)",
             display: "flex",
             alignItems: "center",
@@ -19341,6 +19376,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setShopStep("packages");
                 setSelectedPkg(null);
               }}
+              aria-label="Close shop"
               style={{
                 position: "absolute",
                 top: 12,
@@ -19350,6 +19386,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 color: "#e74c3c",
                 fontSize: 20,
                 cursor: "pointer",
+                minWidth: 44,
+                minHeight: 44,
               }}
             >
               ×
