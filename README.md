@@ -58,6 +58,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
 | [docs/automation/QUALITY_AUDIT_2026-08-30.md](docs/automation/QUALITY_AUDIT_2026-08-30.md) | Weekly automation quality audit (process only) |
+| [docs/automation/EXPANSION_PROPOSALS_2026-08-31.md](docs/automation/EXPANSION_PROPOSALS_2026-08-31.md) | Expansion Director catalog (proposals only; no gameplay code) |
 
 ## Hard rules (product)
 
