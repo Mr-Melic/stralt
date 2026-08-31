@@ -65,8 +65,9 @@ describe("progress persist lock", () => {
     release();
     return pending.then(() => {
       assert.equal(lock.pendingCount(), 0);
+      // Seeded wallets ignore idle Doka. A higher HUD must not mint.
       assert.equal(lock.hydrateWhenIdle({ doka: 500, xp: 80, level: 5 }), true);
-      assert.deepEqual(lock.snapshot(), { doka: 500, xp: 80, level: 5 });
+      assert.deepEqual(lock.snapshot(), { doka: 200, xp: 80, level: 5 });
     });
   });
 
@@ -250,6 +251,16 @@ describe("progress persist lock", () => {
       }),
       false,
     );
+    assert.equal(
+      shouldCopyIdleWalletDoka({
+        walletSeeded: true,
+        walletReady: true,
+        incomingDoka: 900,
+        committedDoka: 200,
+      }),
+      false,
+      "ghost high HUD must not seed a mint onto committed",
+    );
     lock.hydrateWhenIdle({ doka: 50, xp: 80, level: 4 }, { walletReady: true });
     assert.equal(lock.snapshot().doka, 550);
 
@@ -275,6 +286,11 @@ describe("progress persist lock", () => {
     assert.equal(resolveHydratedXp(30, 5, 80, 4), 30);
     assert.equal(resolveHydratedXp(24, 5, 64, 4), 24);
     assert.equal(resolveHydratedXp(80, 4, 80, 4), 80);
+    assert.equal(
+      resolveHydratedXp(90, 4, 100, 4),
+      90,
+      "ghost HUD must not mint unpaid portal XP onto committed",
+    );
 
     const lock = createProgressPersist({ doka: 1000, xp: 80, level: 4 });
     lock.commit({ doka: 720, xp: 24, level: 5 });
@@ -307,8 +323,8 @@ describe("progress persist lock", () => {
     );
     assert.equal(
       lock.snapshot().xp,
-      100,
-      "ghost HUD + idle hydrate mints unpaid portal XP onto committed",
+      90,
+      "ghost HUD must not mint unpaid portal XP onto committed",
     );
 
     const safe = createProgressPersist({ doka: 200, xp: 90, level: 4 });
@@ -348,8 +364,8 @@ describe("progress persist lock", () => {
     );
     assert.equal(
       lock.snapshot().doka,
-      700,
-      "ghost HUD + idle hydrate mints unpaid Doka onto committed",
+      200,
+      "ghost HUD must not mint unpaid Doka onto committed",
     );
     assert.equal(
       applySpendToCommitted(200, spendFromUiBalance(ghostUi, ghostUi - 200)),
@@ -391,15 +407,15 @@ describe("progress persist lock", () => {
       /applyRewards failed/,
     );
     assert.equal(lock.pendingCount(), 0);
-    // Seeded wallets refuse a lower idle copy (#55/#56). A higher
-    // post-reject hydrate must still land so the lock is not stuck.
+    // Seeded wallets ignore idle Doka (ghost HUD must not mint). XP/level
+    // can still advance so the lock is not stuck after a reject.
     assert.equal(lock.hydrateWhenIdle({ doka: 250, xp: 80, level: 5 }), true);
-    assert.deepEqual(lock.snapshot(), { doka: 250, xp: 80, level: 5 });
+    assert.deepEqual(lock.snapshot(), { doka: 200, xp: 80, level: 5 });
 
     lock.commit({ doka: Number.NaN });
     assert.equal(
       lock.snapshot().doka,
-      250,
+      200,
       "NaN commit must keep the last wallet",
     );
   });
@@ -409,7 +425,7 @@ describe("progress persist lock", () => {
     // absolute 250 and hydrating copies the refund into committed.
     const replaced = createProgressPersist({ doka: 220, xp: 50, level: 4 });
     replaced.hydrateWhenIdle({ doka: 250, xp: 50, level: 4 });
-    assert.equal(replaced.snapshot().doka, 250);
+    assert.equal(replaced.snapshot().doka, 220);
 
     // Adding the +50 reward onto the already-healed 170 keeps 220, so
     // hydrateWhenIdle cannot restore the spent Doka.

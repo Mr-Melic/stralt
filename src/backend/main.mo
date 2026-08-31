@@ -1596,6 +1596,8 @@ actor {
     ///     Character record no longer carries a wallet field). This write may
     ///     decrease Doka/XP (heal, shop, death) but must not mint — credits
     ///     go through applyRewards / claim / shop-complete / upgradeSpell.
+    /// Incoming Doka/XP above the stored values are ignored. Level is owned
+    /// by applyRewards — the client level argument is ignored.
     public shared ({ caller }) func saveBattleStats(
         slot             : Nat,
         _level           : Nat, // applyRewards is the sole level writer
@@ -1655,11 +1657,6 @@ actor {
             init = _minNat(initiative, character.stats.init);
         };
 
-        // Absolute snapshots may lower XP/Doka (death, spend) but must not
-        // raise them — applyRewards is the only additive credit path.
-        let storedLevel = _minNat(level, character.level);
-        let storedXp = _minNat(xp, character.experience);
-
         // upgradeSpell is the sole writer of spell levels. Heal / death / shop
         // snapshots are often captured before an in-flight upgrade commits in
         // React, and replacing the arrays here would wipe a paid level.
@@ -1673,11 +1670,11 @@ actor {
         };
         let writeDoka : Nat = if (dokaBalance > currentDoka) { currentDoka } else { dokaBalance };
         let writeXp : Nat = if (xp > character.experience) { character.experience } else { xp };
-        let writeLevel : Nat = if (level > character.level) { character.level } else { level };
+        let writeLevel : Nat = if (_level > character.level) { character.level } else { _level };
         let updatedCharacter : Character = {
             character with
-            level            = storedLevel;
-            experience       = storedXp;
+            level            = writeLevel;
+            experience       = writeXp;
             stats            = updatedStats;
         };
 
@@ -1695,7 +1692,7 @@ actor {
             case null { 0 };
             case (?b) { b };
         };
-        dokaBalances.add(caller, _minNat(dokaBalance, currentDoka));
+        dokaBalances.add(caller, writeDoka);
         #ok;
     };
 
