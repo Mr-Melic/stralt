@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   isBuiltInSpellId,
+  safeExternalHref,
   shouldIncludeBackendSpellInLibrary,
   shouldWipeAchievementsOnBan,
   unsafeUrl,
@@ -130,8 +131,17 @@ assert.equal(wouldSelfDemote("aaaa", "bbbb", "user"), false);
 assert.equal(shouldWipeAchievementsOnBan(), false);
 
 assert.equal(unsafeUrl("javascript:alert(1)"), true);
+assert.equal(unsafeUrl("JavaScript:alert(1)"), true);
+assert.equal(unsafeUrl(" javascript:alert(1)"), true);
 assert.ok(validateOptionalUrl("linkUrl", "javascript:alert(1)"));
+assert.ok(validateOptionalUrl("linkUrl", "  DATA:text/html,x"));
 assert.equal(validateOptionalUrl("linkUrl", "https://example.com"), null);
+assert.equal(
+  safeExternalHref("https://example.com/ad"),
+  "https://example.com/ad",
+);
+assert.equal(safeExternalHref("javascript:alert(1)"), "#");
+assert.equal(safeExternalHref("  JavaScript:alert(1)"), "#");
 assert.ok(validateJsonBlob("bossRushConfig", "not-json"));
 assert.equal(
   validateJsonBlob("bossRushConfig", '{"rewardMultiplier":1}'),
