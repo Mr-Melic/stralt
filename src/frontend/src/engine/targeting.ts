@@ -111,7 +111,9 @@ export function hasBresenhamLoS(
   x1: number,
   y1: number,
   tiles: TileType[][],
-  barrierTiles: ReadonlyMap<string, number> = new Map(),
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = new Map(),
 ): boolean {
   let cx = x0;
   let cy = y0;
@@ -803,6 +805,9 @@ export function pickNearestAttackableHostile(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
 ): { x: number; y: number } | null {
   return pickNearestLiveHostileTile(
     spell,
@@ -811,6 +816,7 @@ export function pickNearestAttackableHostile(
     liveCombatants,
     mapTiles,
     effectiveRange,
+    barrierTiles,
   );
 }
 
@@ -821,6 +827,9 @@ export function canAttackNearestAgainstLive(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
 ): boolean {
   return canAttackNearestLive(
     spell,
@@ -829,5 +838,6 @@ export function canAttackNearestAgainstLive(
     liveCombatants,
     mapTiles,
     effectiveRange,
+    barrierTiles,
   );
 }

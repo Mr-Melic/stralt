@@ -210,11 +210,11 @@ import {
   applyHealBuffSideEffect,
   canAttackNearestAgainstLive,
   computeTargetableTiles,
-  findAttackNearestTarget,
   isTileCastableLive,
   pickNearestAttackableHostile,
   shouldExecuteLiveCast,
   spellHighlightRangeBase,
+  spellRangeBase,
 } from "../engine/targeting";
 import {
   liveTurnOrder,
