@@ -541,7 +541,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 300,
+        zIndex: 9600,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -560,7 +560,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
       <div
         style={{
           width: "min(780px, 97vw)",
-          maxHeight: "90vh",
+          maxHeight: "min(90vh, 90dvh)",
           background: "linear-gradient(180deg, #120810 0%, #0d060e 100%)",
           border: "2px solid rgba(180,20,20,0.7)",
           borderRadius: 10,

@@ -266,6 +266,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                         <button
                           type="button"
                           title={`${c.name} Lv.${c.level} — INIT ${c.initiative}`}
+                          aria-label={`${c.name} level ${c.level}, initiative ${c.initiative}`}
                           ref={(el) => {
                             if (el) chipRefs.current.set(c.id, el);
                           }}
@@ -484,6 +485,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                       : "Walk — spend MP to move onto a highlighted tile"
                   }
                   className={`
+                    stone-battle-action
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "walk" ? "stone-btn-emerald" : "stone-btn-slate opacity-55"}
                     ${currentBattleMp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
@@ -501,6 +503,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                       : "Attack — select a spell, then click a target in range"
                   }
                   className={`
+                    stone-battle-action
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
                     ${currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
@@ -522,6 +525,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                     }
                   }}
                   className="
+                    stone-battle-action
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     stone-btn-slate
                     cursor-pointer
@@ -547,6 +551,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                         : "End your turn — leftover AP and MP are lost"
                   }
                   className={`
+                    stone-battle-action
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${
                       isSummonControlled || !isPlayerTurn

@@ -589,6 +589,29 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
     [],
   );
 
+  useEffect(() => {
+    const onResize = () => {
+      const next = clampPosition(
+        currentPosRef.current.x,
+        currentPosRef.current.y,
+      );
+      if (
+        next.x === currentPosRef.current.x &&
+        next.y === currentPosRef.current.y
+      ) {
+        return;
+      }
+      currentPosRef.current = next;
+      setPosition(next);
+    };
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, [clampPosition]);
+
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     dragState.current.startMouseX = e.clientX;
@@ -849,7 +872,7 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
             e.stopPropagation();
             handleFoldToggle();
           }}
-          className="stone-btn-slate"
+          className="stone-btn-slate stone-touch-target"
           style={{
             fontSize: 12,
             lineHeight: 1,
