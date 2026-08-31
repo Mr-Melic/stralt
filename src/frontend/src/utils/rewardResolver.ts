@@ -5,6 +5,7 @@ import {
   type CompletedChallengeReward,
   addChallengeRewardDeltas,
 } from "./challengeRewards.ts";
+import { xpForNextLevel } from "./xpCurve.ts";
 
 export type { ApplyRewardsOk } from "./applyRewardsResult.ts";
 export {
@@ -205,7 +206,7 @@ export async function resolveBattleRewards(
     currentXP: Number(newXp),
     newDoka: Number(newDoka),
     newXp: Number(newXp),
-    xpForNextLevel: 0,
+    xpForNextLevel: xpForNextLevel(Number(newLevel)),
     mapTitle: "",
     hitsDealt: 0,
     dokaBreakdown: [],

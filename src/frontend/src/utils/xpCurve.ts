@@ -32,3 +32,35 @@ export function applyXpDelta(
   }
   return { newXp, newLevel };
 }
+
+/**
+ * HUD progress for leftover XP in the current level (the applyRewards store).
+ * Do not subtract a cumulative total — experience is already the remainder.
+ */
+export function xpHudProgress(
+  leftoverXp: number,
+  level: number,
+): { leftover: number; needed: number; percent: number } {
+  const needed = xpForNextLevel(level);
+  const leftover = Math.max(0, Math.floor(Number(leftoverXp) || 0));
+  return {
+    leftover,
+    needed,
+    percent:
+      needed > 0 ? Math.min(100, Math.max(0, (leftover / needed) * 100)) : 0,
+  };
+}
+
+/** Predicted leftover / level / threshold after a grant, for recap display. */
+export function recapXpAfterGrant(
+  leftoverXp: number,
+  level: number,
+  xpDelta: number,
+): { leftover: number; level: number; needed: number } {
+  const after = applyXpDelta(leftoverXp, level, xpDelta);
+  return {
+    leftover: after.newXp,
+    level: after.newLevel,
+    needed: xpForNextLevel(after.newLevel),
+  };
+}

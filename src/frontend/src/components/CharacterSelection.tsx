@@ -26,6 +26,7 @@ import {
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useDeleteCharacter, useGetCharacterSlots } from "../hooks/useQueries";
 import type { Character, UserProfile } from "../types/gameTypes";
+import { xpHudProgress } from "../utils/xpCurve";
 import BloodParticles from "./BloodParticles";
 
 /* ── Stone-style helpers removed — using .stone-* utility classes ───────── */
@@ -39,16 +40,6 @@ interface CharacterSelectionProps {
 
 type ViewDirection = "front" | "back" | "left" | "right";
 type ChessPieceType = "king" | "queen" | "pawn" | "rook" | "bishop" | "knight";
-
-// XP formula: level N→N+1 requires 100 * 2^(N-1)
-function xpForLevel(level: number): number {
-  return 100 * 2 ** (level - 1);
-}
-function cumulativeXpAtLevel(level: number): number {
-  let total = 0;
-  for (let l = 1; l < level; l++) total += xpForLevel(l);
-  return total;
-}
 
 const CHESS_PIECE_PATTERNS: Record<
   ChessPieceType,
@@ -394,11 +385,11 @@ const XpBar: React.FC<{ experience: bigint; level: bigint }> = ({
   level,
 }) => {
   const lvl = Number(level);
-  const xp = Number(experience);
-  const cumulativeStart = cumulativeXpAtLevel(lvl);
-  const needed = xpForLevel(lvl);
-  const progressXp = Math.max(0, xp - cumulativeStart);
-  const pct = Math.min(100, Math.max(0, (progressXp / needed) * 100));
+  const {
+    leftover: progressXp,
+    needed,
+    percent: pct,
+  } = xpHudProgress(Number(experience), lvl);
 
   return (
     <div className="py-1.5">

@@ -48,11 +48,12 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
     data.newlyUnlockedAchievements,
     newlyUnlockedAchievements,
   );
+  const xpNeeded = data.xpForNextLevel > 0 ? data.xpForNextLevel : 1;
   const xpPercent = Math.min(
     100,
-    Math.floor((data.currentXP / data.xpForNextLevel) * 100),
+    Math.floor((data.currentXP / xpNeeded) * 100),
   );
-  const xpUntilNext = data.xpForNextLevel - data.currentXP;
+  const xpUntilNext = xpNeeded - data.currentXP;
 
   const panelRef = useRef<HTMLDivElement>(null);
 
