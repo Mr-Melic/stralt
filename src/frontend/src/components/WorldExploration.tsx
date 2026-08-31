@@ -312,12 +312,15 @@ import {
 import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
+  creditLiveDoka,
   nextDokaAfterShopSpend,
   resolveAbsoluteWriteHp,
   resolveOverworldHealSpend,
   shouldRollbackFailedHeal,
+  shouldRollbackFailedShopSpend,
   shouldStartDokaHeal,
   syncLiveDokaFromProp,
+  writeLiveDoka,
 } from "../utils/itemShop";
 import {
   activatePlayerMirror,
@@ -333,7 +336,6 @@ import {
   shouldIgnoreSyntheticClickAfterTouch,
 } from "../utils/pointerParity";
 import {
-  applyShopCreditDeltaToUi,
   applySpendToCommitted,
   clampAbsoluteProgressWrite,
   createProgressPersist,
@@ -345,12 +347,12 @@ import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import { shouldIgnoreWorldInputDuringRecap } from "../utils/recapWorldInput";
 import {
   RENAME_DOKA_COST,
+  beginRename,
   committedDokaAfterRename,
   liveDokaAfterRename,
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
-  shouldStartRename,
 } from "../utils/renameCharacter";
 import {
   PORTAL_TRANSITION_XP,
@@ -1383,9 +1385,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (credited == null) return;
         const gained = creditedDokaDelta(previous, credited);
         if (gained > 0) {
-          onDokaBalanceChange(
-            applyShopCreditDeltaToUi(dokaBalanceRef.current, gained),
-          );
+          onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, gained));
           toast.success(
             `${(announceAmount ?? gained).toLocaleString()} Doka credited!`,
           );
@@ -1411,9 +1411,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         achievementId,
       );
       if ("ok" in result && result.ok > 0) {
-        onDokaBalanceChange(
-          applyShopCreditDeltaToUi(dokaBalanceRef.current, result.ok),
-        );
+        onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, result.ok));
       }
       return result;
     },
@@ -2030,6 +2028,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameInput, setRenameInput] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
+  const renameInFlightRef = useRef(false);
 
   // Shop modal state
   const [showShop, setShowShop] = useState(false);
@@ -2059,7 +2058,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (!shouldStartRename(isRenaming, dokaBalanceRef.current)) {
+    if (!beginRename(renameInFlightRef, dokaBalanceRef.current)) {
       if (dokaBalanceRef.current < RENAME_DOKA_COST) {
         toast.error("Insufficient Doka (need 100)");
       }
@@ -2093,7 +2092,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           toast.error(parsed.err);
           return;
         }
-        onDokaBalanceChange(liveDokaAfterRename(dokaBalanceRef.current));
+        onDokaBalanceChange(
+          writeLiveDoka(
+            dokaBalanceRef,
+            liveDokaAfterRename(dokaBalanceRef.current),
+          ),
+        );
         toast.success(`Name changed to "${newName}"`);
         setShowRenameModal(false);
         setRenameInput("");
@@ -2101,6 +2105,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     } catch {
       toast.error("Rename failed. Please try again.");
     } finally {
+      renameInFlightRef.current = false;
       setIsRenaming(false);
     }
   };
@@ -3142,8 +3147,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // otherwise hydrateWhenIdle copies the short UI over committed
           // and the next heal/shop saveBattleStats wipes the difference.
           const nextUi = Math.max(0, dokaBalanceRef.current - spent);
-          dokaBalanceRef.current = nextUi;
-          onDokaBalanceChange(nextUi);
+          onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, nextUi));
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
@@ -6955,9 +6959,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             if (newDoka > 0) {
               progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(
-                applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
-              );
+              onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
             } else {
               releaseFlag(dungeonCompletionSavedRef);
             }
@@ -11813,9 +11815,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 if (newDoka > 0) {
                   progressPersistRef.current.commit({ doka: newDoka });
-                  onDokaBalanceChange(
-                    applyShopCreditDeltaToUi(dokaBalanceRef.current, 300),
-                  );
+                  onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
                 } else {
                   releaseFlag(shrineRewardClaimedRef);
                 }
@@ -11868,9 +11868,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             if (newDoka > 0) {
               progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(
-                applyShopCreditDeltaToUi(dokaBalanceRef.current, hit.value),
-              );
+              onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
               setDokaLoot((prev) =>
                 prev.map((l) =>
                   l.id === hit.id ? { ...l, collected: true } : l,
@@ -13059,8 +13057,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // copies that inflated UI into committed and the next persist
               // writes the pre-spend wallet back to the canister.
               onDokaBalanceChange(
-                applyShopCreditDeltaToUi(
-                  dokaBalanceRef.current,
+                creditLiveDoka(
+                  dokaBalanceRef,
                   _rewardRecap.dokaEarned ?? totalDoka,
                 ),
               );
@@ -13298,8 +13296,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // applyRewards' absolute newDoka refunds a recap heal/shop spend
             // the player already applied locally while this persist ran.
             onDokaBalanceChange(
-              applyShopCreditDeltaToUi(
-                dokaBalanceRef.current,
+              creditLiveDoka(
+                dokaBalanceRef,
                 persisted.dokaEarned ?? roomClearDoka,
               ),
             );
@@ -13440,15 +13438,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             xp: after.newXp,
             level: committed.level,
           });
-          // A claim/applyRewards ahead of this write is in committed, not
-          // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
-          // the pre-credit snapshot over the persisted penalty. Level is
-          // the same class: victory persist can bump committed.level while
-          // the live hydrate is skipped, so raise UI level too.
-          const nextDoka = raiseUiAfterDeathPersist(
-            dokaBalanceRef.current,
-            after.newDoka,
-          );
+          // Snap the live wallet to the persisted penalty. raiseUi(ref, after)
+          // used the uncut ref (optimistic onDokaBalanceChange never wrote it)
+          // and kept the pre-death ghost; a later heal then spent from that.
+          // Level still raises: victory persist can bump committed.level while
+          // the live hydrate is skipped.
+          const nextDoka = after.newDoka;
           const uiLevelBefore = characterStatsRef.current.level ?? 1;
           const nextXp = xpAfterDeathPersist({
             uiXp: characterStatsRef.current.exp ?? 0,
@@ -13461,7 +13456,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             committed.level,
           );
           if (nextDoka !== dokaBalanceRef.current) {
-            onDokaBalanceChange(nextDoka);
+            onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, nextDoka));
           }
           if (
             nextXp !== (characterStatsRef.current.exp ?? 0) ||
@@ -13487,7 +13482,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       exp: xpAfter,
       hp: respawnHp,
     }));
-    onDokaBalanceChange(dokaAfter);
+    onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, dokaAfter));
     setDeathPenalty({ xpLost, dokaLost });
     return { xpLost, dokaLost, xpAfter, dokaAfter };
   }, [actor, character, characterSlot, onDokaBalanceChange, setCharacterStats]);
@@ -13545,7 +13540,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Death persist raiseUi can restore a pre-spend wallet while this
           // write is queued. Sync UI down so idle hydrate cannot refund.
           if (dokaBalanceRef.current > writeDoka) {
-            onDokaBalanceChange(writeDoka);
+            onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, writeDoka));
           }
           return true;
         })
@@ -13610,7 +13605,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         });
         if (cancelled) return;
         clearPendingDeathPenalty(sessionStorage, characterSlot);
-        onDokaBalanceChange(decision.newDoka);
+        onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, decision.newDoka));
         setCharacterStats((prev) => ({ ...prev, exp: decision.newXp }));
       } catch (err) {
         console.error("[death-save] replay failed:", err);
@@ -18141,13 +18136,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               characterStatsRef.current.hp,
               next,
             );
-            dokaBalanceRef.current = next;
-            onDokaBalanceChange(next);
+            onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, next));
             return persist.then((ok) => {
-              if (!ok) {
-                const restored = dokaBalanceRef.current + amount;
-                dokaBalanceRef.current = restored;
-                onDokaBalanceChange(restored);
+              if (
+                !ok &&
+                shouldRollbackFailedShopSpend({
+                  liveDoka: dokaBalanceRef.current,
+                  expectedDoka: next,
+                })
+              ) {
+                onDokaBalanceChange(
+                  writeLiveDoka(
+                    dokaBalanceRef,
+                    dokaBalanceRef.current + amount,
+                  ),
+                );
               }
               return ok;
             });
@@ -18668,8 +18671,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         resolved.nextHp,
                         resolved.nextDoka,
                       );
-                      dokaBalanceRef.current = resolved.nextDoka;
-                      onDokaBalanceChange(resolved.nextDoka);
+                      onDokaBalanceChange(
+                        writeLiveDoka(dokaBalanceRef, resolved.nextDoka),
+                      );
                       void persist.then((ok) => {
                         dokaHealInFlightRef.current = false;
                         if (ok) return;
@@ -18688,8 +18692,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           ...prev,
                           hp: hpBefore,
                         }));
-                        dokaBalanceRef.current = dokaBefore;
-                        onDokaBalanceChange(dokaBefore);
+                        onDokaBalanceChange(
+                          writeLiveDoka(dokaBalanceRef, dokaBefore),
+                        );
                       });
                     }}
                     style={{
