@@ -6,6 +6,7 @@ import type {
   AdminGameConfig,
   MapModifierConfig,
 } from "../types/gameTypes";
+import { validateAssignRole } from "../utils/adminSafety";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
@@ -85,10 +86,25 @@ export function useAssignUserRole() {
     }: { principalId: string; role: string }) => {
       if (!actor) throw new Error("Actor not available");
       const { Principal } = await import("@icp-sdk/core/principal");
-      return (actor as ActorAny).assignCallerUserRole(
+      const roleErr = validateAssignRole(role);
+      if (roleErr) throw new Error(roleErr);
+      const result = await (actor as ActorAny).assignUserRole(
         Principal.fromText(principalId),
         role,
       );
+      if (result && typeof result === "object") {
+        const err =
+          (result as { err?: string; _err?: string }).err ??
+          (result as { err?: string; _err?: string })._err;
+        if (typeof err === "string") throw new Error(err);
+        if (
+          "__kind__" in result &&
+          (result as { __kind__: string }).__kind__ === "err"
+        ) {
+          throw new Error(String((result as { err?: string }).err ?? "err"));
+        }
+      }
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["userRole"] });
