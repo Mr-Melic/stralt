@@ -3728,3 +3728,253 @@ DEPENDENCIES: AQA-2026-08-30-012
 REGRESSION_RISK: MEDIUM if counters leave the persist lock.  
 VALIDATION_REQUIRED: Next LHIPS run either cites live max/median level or repeats “still no telemetry.”  
 STATUS: NEW
+
+ACTION_ID: MAA-2026-08-31-001  
+TITLE: Small-screen overlay hard-locks phones with no continue path  
+CATEGORY: mobile-blocker  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/App.tsx  
+CURRENT_BEHAVIOUR: Width < 768 unmounted the entire game. Landscape→portrait also tore down live battle state.  
+DESIRED_BEHAVIOUR: Warn, then Continue. Once a session has rendered at a supported width or the player continues, do not unmount on rotate.  
+EVIDENCE: App.tsx SmallScreenGuard had no dismiss; `if (isSmallScreen) return` replaced the game tree.  
+RECOMMENDED_ACTION: Keep the Continue + session bypass shipped this run. Do not restore a hard lock.  
+AUTONOMY:  
+- SAFE_TO_AUTO_IMPLEMENT  
+REGRESSION_RISK: LOW — warning still shows on first narrow load.  
+VALIDATION_REQUIRED: Phone portrait shows Continue; after Continue the world loads; landscape→portrait does not remount.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: MAA-2026-08-31-002  
+TITLE: Canvas touchend plus click can double-cast or double-walk  
+CATEGORY: combat-parity  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/utils/pointerParity.ts  
+CURRENT_BEHAVIOUR: Canvas had onClick and onTouchEnd. preventDefault ran after an early return, so a synthetic click could repeat the same cast/walk.  
+DESIRED_BEHAVIOUR: Stamp touchend, ignore the following synthetic click for 500ms, preventDefault first.  
+EVIDENCE: handleCanvasClick + handleCanvasTouch both called executeCastAttempt / applyBattleWalkHazards.  
+RECOMMENDED_ACTION: Keep shouldIgnoreSyntheticClickAfterTouch at the click gate.  
+AUTONOMY:  
+- SAFE_TO_AUTO_IMPLEMENT  
+REGRESSION_RISK: MEDIUM — a real mouse click within 500ms of a touch is ignored; expected on hybrid devices.  
+VALIDATION_REQUIRED: One finger tap walks/casts once; mouse click still works after 500ms.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: MAA-2026-08-31-003  
+TITLE: World-mode portal walk legality differed between mouse and touch  
+CATEGORY: combat-parity  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/utils/pointerParity.ts  
+CURRENT_BEHAVIOUR: Touch blocked portal tiles while inBattleRef was true in the world branch; mouse did not.  
+DESIRED_BEHAVIOUR: Identical shouldBlockWorldMoveOntoPortal helper on both paths.  
+EVIDENCE: Touch world branch used inBattleRef + portals.some; mouse world branch had no portal check.  
+RECOMMENDED_ACTION: Keep the shared helper.  
+AUTONOMY:  
+- SAFE_TO_AUTO_IMPLEMENT  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: pointerParity tests; in-battle stale-ref portal tile is blocked for both inputs.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: MAA-2026-08-31-004  
+TITLE: Canvas allowed browser pan/zoom on mobile  
+CATEGORY: gestures  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/index.css; src/frontend/index.html  
+CURRENT_BEHAVIOUR: Canvas lacked touch-none. Media query set touch-action: pan-x pan-y. Viewport had no viewport-fit=cover.  
+DESIRED_BEHAVIOUR: Game canvas touch-action none; buttons manipulation; viewport-fit=cover.  
+EVIDENCE: index.html viewport; index.css mobile canvas rule; canvas className was only cursor-pointer.  
+RECOMMENDED_ACTION: Keep touch-none + inline touchAction none.  
+AUTONOMY:  
+- SAFE_TO_AUTO_IMPLEMENT  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Finger drag on canvas does not scroll/zoom the page.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: MAA-2026-08-31-005  
+TITLE: Interactive chrome below 44px  
+CATEGORY: touch-targets  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/index.css; BattleUIPanel; ChallengePanel; CharacterSelection; PostBattleRecap; GameFlow; DraggablePanel  
+CURRENT_BEHAVIOUR: stone-nav-btn 36px; Walk/Attack/Flee/End Turn py-1; challenge Accept 4px padding; recap close 28px; edit/delete 40px.  
+DESIRED_BEHAVIOUR: DESIGN.md — interactive targets ≥44px on mobile, without a visual redesign.  
+EVIDENCE: DESIGN.md line 74; measured class heights.  
+RECOMMENDED_ACTION: Keep mobile min 44px utilities. Do not enlarge desktop chrome further.  
+AUTONOMY:  
+- SAFE_TO_AUTO_IMPLEMENT  
+REGRESSION_RISK: LOW — mobile-only min size.  
+VALIDATION_REQUIRED: At 390px width, battle actions and nav buttons measure ≥44px.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: MAA-2026-08-31-006  
+TITLE: Dual top bars hide Center, Enemies, region, and dungeon chain  
+CATEGORY: hud-overlap  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/components/GameFlow.tsx; src/frontend/src/components/WorldExploration.tsx  
+CURRENT_BEHAVIOUR: GameFlow stone-top-bar is z-index 9000 and 48px. WorldExploration has its own 44px bar at z-index 100. Unique WX controls sit under the GameFlow bar. Canvas top is 44px so the GameFlow bar overlaps 4px of the map (more with safe-area).  
+DESIRED_BEHAVIOUR: One top bar that includes camera-center, enemy register, region, and dungeon-chain, with canvas inset matching the live bar height.  
+EVIDENCE: GameFlow.tsx game-mode header; WX top bar at top:0 height 44px and canvas top:44px.  
+RECOMMENDED_ACTION: Human-approved merge of the two bars. Do not auto-redesign.  
+AUTONOMY:  
+- HUMAN_APPROVAL_REQUIRED  
+REGRESSION_RISK: HIGH — layout + shop/doka chrome.  
+VALIDATION_REQUIRED: Portrait and landscape; Center and Enemies reachable; canvas not under the bar.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-007  
+TITLE: Battle footer is a saved DraggablePanel, not a sticky viewport dock  
+CATEGORY: sticky-battle-controls  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/components/BattleUIPanel.tsx; src/frontend/src/components/DraggablePanel.tsx  
+CURRENT_BEHAVIOUR: Battle UI default y is innerHeight-220 and persists. On a short landscape viewport it can cover the map or sit off-screen until this run’s resize clamp. DESIGN.md wants the bottom menu stuck to the viewport.  
+DESIRED_BEHAVIOUR: On narrow viewports, pin battle spells/actions to the bottom safe-area and disable drag, or offer a docked mobile layout.  
+EVIDENCE: DESIGN.md line 74; BattleUIPanel defaultPosition; no mobile dock branch.  
+RECOMMENDED_ACTION: Design a docked mobile battle chrome. Resize clamp from this run is only a stopgap.  
+AUTONOMY:  
+- HUMAN_APPROVAL_REQUIRED  
+REGRESSION_RISK: HIGH — persisted uiLayout.  
+VALIDATION_REQUIRED: Portrait and landscape battle; controls remain visible after rotate.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-008  
+TITLE: Spell and status details are hover-only title tooltips  
+CATEGORY: hover-only  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: BattleUIPanel.tsx; StatusEffectBadge.tsx; SpellbookModal.tsx; InitiativeStrip.tsx  
+CURRENT_BEHAVIOUR: Spell slots, leader crown, AP/MP, and effect descriptions live in title= / native hover. Touch has no hover; long-press OS tooltip is unreliable.  
+DESIRED_BEHAVIOUR: Tap-to-inspect or a persistent detail sheet that works with touch and keyboard.  
+EVIDENCE: BattleUIPanel spellTitle title=; StatusEffectBadge title= for description.  
+RECOMMENDED_ACTION: Reuse StatPopup / inspect for spells and effects on tap. Do not rely on CSS :hover.  
+AUTONOMY:  
+- HUMAN_APPROVAL_REQUIRED  
+REGRESSION_RISK: MEDIUM  
+VALIDATION_REQUIRED: Touch tap shows spell text; keyboard focus shows the same.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-009  
+TITLE: Forced inspect via long-press / right-click is documented but missing  
+CATEGORY: combat-ux  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: BattleUIPanel.tsx comments; WorldExploration.tsx  
+CURRENT_BEHAVIOUR: Comments say chip inspect is suppressed when a spell is selected and forced inspect is right-click / long-press. No contextmenu or long-press handler exists.  
+DESIRED_BEHAVIOUR: Implement the documented path, or update the comments and provide another inspect path while a spell is selected.  
+EVIDENCE: Grep found no onContextMenu / long-press in WorldExploration.  
+RECOMMENDED_ACTION: Add pointer-type-aware long-press (≥500ms) and contextmenu inspect that does not cast.  
+AUTONOMY:  
+- HUMAN_APPROVAL_REQUIRED  
+REGRESSION_RISK: MEDIUM — must not steal casts.  
+VALIDATION_REQUIRED: Spell selected + long-press opens inspect; tap still casts.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-010  
+TITLE: Sprite hit padding is 10px mouse vs 14px touch  
+CATEGORY: combat-parity  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx  
+CURRENT_BEHAVIOUR: hitTestSprite uses 10px on click and 14px on touch. Live cast gates match after a target is chosen, but the chosen entity can differ at the same client point.  
+DESIRED_BEHAVIOUR: Same padding, or a documented finger-slop policy that still prefers the front-most legal target.  
+EVIDENCE: handleCanvasClick hitTestSprite(..., 10); handleCanvasTouch hitTestSprite(..., 14).  
+RECOMMENDED_ACTION: Report-only until a targeting owner picks one padding.  
+AUTONOMY:  
+- REPORT_ONLY  
+REGRESSION_RISK: MEDIUM if unified blindly.  
+VALIDATION_REQUIRED: Overlapping sprites at the same client point resolve to the same combatant.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-011  
+TITLE: useIsMobile is width-only so landscape phones lose MOBILE_ZOOM  
+CATEGORY: viewport-scaling  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: src/frontend/src/hooks/use-mobile.tsx; WorldExploration.tsx MOBILE_ZOOM 1.75  
+CURRENT_BEHAVIOUR: isMobile is innerWidth < 768. A phone in landscape often becomes “desktop” tiles.  
+DESIRED_BEHAVIOUR: Treat coarse pointers / hover:none as mobile for zoom, or use a min(width,height) breakpoint.  
+EVIDENCE: use-mobile.tsx; WX effectiveTileW = TILE_WIDTH * MOBILE_ZOOM when isMobile.  
+RECOMMENDED_ACTION: Human-approved input-mode heuristic. Do not change tile math in this audit.  
+AUTONOMY:  
+- HUMAN_APPROVAL_REQUIRED  
+REGRESSION_RISK: HIGH — camera / tile size.  
+VALIDATION_REQUIRED: Same phone portrait and landscape keep readable tiles.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-012  
+TITLE: Hover tile / enemy preview has no touch equivalent  
+CATEGORY: hover-only  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+FILES_OR_SYSTEMS: WorldExploration handleCanvasMouseMove  
+CURRENT_BEHAVIOUR: hoveredTile and hoveredEnemyId update only on mousemove.  
+DESIRED_BEHAVIOUR: Touch-and-hold preview, or rely solely on range highlights (already computed).  
+EVIDENCE: handleCanvasMouseMove; no touchmove hover path.  
+RECOMMENDED_ACTION: Report-only; range highlights already cover legality.  
+AUTONOMY:  
+- REPORT_ONLY  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Touch players can see legal tiles without hover.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-013  
+TITLE: Initiative HP is color-only; muted gold/dim text may miss 4.5:1  
+CATEGORY: contrast-status  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+FILES_OR_SYSTEMS: BattleUIPanel stone-battle-hp-bar; index.css --dofus-text-dim; GameFlow #8a8090  
+CURRENT_BEHAVIOUR: Chip HP is a red bar with no numeric text. Dim labels use ~0.45 lightness / #8a8090 on navy. DESIGN.md requires color + text and 4.5:1 gold-on-navy.  
+DESIRED_BEHAVIOUR: HP number or percent on chips; raise dim text to a passing pair.  
+EVIDENCE: DESIGN.md lines 75–76; chip bar has no text node.  
+RECOMMENDED_ACTION: Add compact HP text; audit OKLCH pairs. Not a redesign of the bar.  
+AUTONOMY:  
+- HUMAN_APPROVAL_REQUIRED  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Contrast checker + screen reader name includes HP.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MAA-2026-08-31-014  
+TITLE: Landing and profile still use 100vh  
+CATEGORY: viewport-scaling  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+FILES_OR_SYSTEMS: LandingPage.tsx; ProfileSetup.tsx  
+CURRENT_BEHAVIOUR: minHeight 100vh clips under iOS URL bars.  
+DESIRED_BEHAVIOUR: 100dvh / 100% of #root.  
+EVIDENCE: LandingPage and ProfileSetup style minHeight: 100vh.  
+RECOMMENDED_ACTION: Swap to 100dvh with 100vh fallback.  
+AUTONOMY:  
+- SAFE_TO_AUTO_IMPLEMENT  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: iOS Safari login and profile screens fill the visible viewport.  
+STATUS: NEW
