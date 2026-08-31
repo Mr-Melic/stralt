@@ -1,5 +1,9 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
+import {
+  isStarfieldPaused,
+  subscribeStarfieldPaused,
+} from "../engine/starfieldActivity";
 
 interface Star {
   x: number;
@@ -117,7 +121,14 @@ const StarfieldBackground: React.FC = () => {
       starsRef.current = stars;
     };
 
+    const myGen = ++starGenRef.current;
+
     const animate = () => {
+      if (starGenRef.current !== myGen) return;
+      if (isStarfieldPaused() || document.hidden) {
+        animationFrameRef.current = null;
+        return;
+      }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const currentTime = Date.now();
@@ -195,16 +206,30 @@ const StarfieldBackground: React.FC = () => {
     });
     resizeObserver.observe(starfieldCanvas!);
 
-    // LEAK-17: Capture current generation so this loop can self-terminate if
+    // LEAK-17: myGen is captured above so this loop self-terminates if
     // the component unmounts and remounts before the loop finishes.
-    const myGen = ++starGenRef.current;
-    const guardedAnimate = () => {
-      if (starGenRef.current !== myGen) return;
-      animate();
+
+    const stopLoop = () => {
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
     };
-    requestAnimationFrame(guardedAnimate);
-    // Overwrite the simple animate() call so the loop uses the guarded version
-    animationFrameRef.current = null;
+
+    const startLoop = () => {
+      if (starGenRef.current !== myGen) return;
+      if (isStarfieldPaused() || document.hidden) return;
+      if (animationFrameRef.current !== null) return;
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+
+    const syncLoop = () => {
+      if (isStarfieldPaused() || document.hidden) {
+        stopLoop();
+        return;
+      }
+      startLoop();
+    };
 
     const handleResize = () => {
       resizeCanvas();
@@ -212,16 +237,19 @@ const StarfieldBackground: React.FC = () => {
     };
 
     window.addEventListener("resize", handleResize);
+    document.addEventListener("visibilitychange", syncLoop);
+    const unsubPause = subscribeStarfieldPaused(syncLoop);
+    syncLoop();
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      document.removeEventListener("visibilitychange", syncLoop);
+      unsubPause();
       // M-6: Disconnect ResizeObserver on unmount
       resizeObserver.disconnect();
       // LEAK-17: Increment generation so any in-flight RAF frame self-terminates
       starGenRef.current += 1;
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      stopLoop();
     };
   }, []);
 

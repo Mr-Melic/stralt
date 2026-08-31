@@ -1,7 +1,7 @@
 import { Pencil, RotateCcw, ShoppingCart } from "lucide-react";
 import { Component } from "react";
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
@@ -189,6 +189,7 @@ import {
   resolvePlayerCast,
   resolveSpellCast,
 } from "../engine/spellEngine";
+import { setStarfieldPaused } from "../engine/starfieldActivity";
 import {
   type SummonExecutorHelpers,
   executeSummonAction,
@@ -1011,7 +1012,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     y: number;
     timestamp: number;
   } | null>(null);
-  const [hoveredTile, setHoveredTile] = useState<{
+  // Hover is RAF-only: writing React state here re-rendered the entire
+  // WorldExploration tree on every mousemove (input latency).
+  const hoveredTileRef = useRef<{
     x: number;
     y: number;
   } | null>(null);
@@ -1899,12 +1902,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [battleTurn, setBattleTurn] = useState(0);
   // 30-second turn timer
   const [turnTimeLeft, setTurnTimeLeft] = useState(30);
-  // Spell damage preview: track hovered enemy id during attack mode
-  const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null);
+  // Spell damage preview: RAF reads this ref; do not mirror into React state.
   const hoveredEnemyIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    hoveredEnemyIdRef.current = hoveredEnemyId;
-  }, [hoveredEnemyId]);
   // Battle hits tracking
   const battleHitsRef = useRef<number>(0);
   // SECTION 1c: Per-kill defeated roster, appended once per enemy death.
@@ -7785,7 +7784,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const tileType = currentMap.tiles[y][x];
         if (tileType !== "wall") {
           const screenPos = gridToScreen(x, y);
-          const isHovered = hoveredTile?.x === x && hoveredTile?.y === y;
+          const isHovered =
+            hoveredTileRef.current?.x === x && hoveredTileRef.current?.y === y;
           const isClicked = clickedTile?.x === x && clickedTile?.y === y;
 
           drawIsometricTile(
@@ -8405,8 +8405,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             "wall",
             renderItem.wx,
             renderItem.wy,
-            hoveredTile?.x === renderItem.wx &&
-              hoveredTile?.y === renderItem.wy,
+            hoveredTileRef.current?.x === renderItem.wx &&
+              hoveredTileRef.current?.y === renderItem.wy,
             clickedTile?.x === renderItem.wx &&
               clickedTile?.y === renderItem.wy,
             effectiveTileW,
@@ -8905,6 +8905,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // (The row loop handles player drawing per-row; this vignette block follows)
 
     // Tile hover movement cost (player turn, walk mode, in battle)
+    const hoveredTile = hoveredTileRef.current;
     if (
       inBattleRef.current &&
       battleActionModeRef.current === "walk" &&
@@ -9084,7 +9085,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ctx.restore();
   }, [
     currentMap,
-    hoveredTile,
     clickedTile,
     enemies,
     playerPosition,
@@ -10911,12 +10911,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
   // Handle canvas mouse move
+  const clearCanvasHover = useCallback(() => {
+    hoveredTileRef.current = null;
+    hoveredEnemyIdRef.current = null;
+  }, []);
+
   const handleCanvasMouseMove = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       const gridPos = clientToGrid(event.clientX, event.clientY);
       if (!gridPos) {
-        setHoveredTile(null);
-        setHoveredEnemyId(null);
+        clearCanvasHover();
         return;
       }
       if (
@@ -10925,7 +10929,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         gridPos.y >= 0 &&
         gridPos.y < WORLD_GRID_SIZE
       ) {
-        setHoveredTile(gridPos);
+        const prev = hoveredTileRef.current;
+        if (!prev || prev.x !== gridPos.x || prev.y !== gridPos.y) {
+          hoveredTileRef.current = { x: gridPos.x, y: gridPos.y };
+        }
         if (
           inBattle &&
           battleActionMode === "attack" &&
@@ -10934,16 +10941,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const hovEnemy = getLiveCombatants(combatantStoreCtx).find(
             (e) => e.x === gridPos.x && e.y === gridPos.y,
           );
-          setHoveredEnemyId(hovEnemy?.id ?? null);
+          hoveredEnemyIdRef.current = hovEnemy?.id ?? null;
         } else {
-          setHoveredEnemyId(null);
+          hoveredEnemyIdRef.current = null;
         }
       } else {
-        setHoveredTile(null);
-        setHoveredEnemyId(null);
+        clearCanvasHover();
       }
     },
-    [clientToGrid, inBattle, battleActionMode, combatantStoreCtx],
+    [
+      clientToGrid,
+      inBattle,
+      battleActionMode,
+      combatantStoreCtx,
+      clearCanvasHover,
+    ],
   );
   // Touch handler — delegates to same grid logic as mouse click
   // Touch handler — delegates to same grid logic as mouse click
@@ -13824,6 +13836,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     lastFrameTimeRef.current = performance.now();
     animationFrameRef.current = requestAnimationFrame(animate);
+    setStarfieldPaused(true);
 
     // RC FIX: Watchdog simplified — only restarts if no frame for >2s.
     // The loop runs forever; this is a safety net for genuine hangs.
@@ -13844,6 +13857,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }, 1000);
 
     return () => {
+      setStarfieldPaused(false);
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -17872,6 +17886,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ref={canvasRef}
           onClick={handleCanvasClick}
           onMouseMove={handleCanvasMouseMove}
+          onMouseLeave={clearCanvasHover}
           onKeyDown={undefined}
           tabIndex={0}
           aria-label="World exploration canvas"
@@ -19610,10 +19625,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 };
 
 // O10: Wrap with error boundary so render-loop crashes show a recovery UI.
-const WorldExploration = (props: WorldExplorationProps) => (
+const WorldExploration = memo((props: WorldExplorationProps) => (
   <CanvasErrorBoundary onDebugLog={props.onDebugLog}>
     <WorldExplorationInner {...props} />
   </CanvasErrorBoundary>
-);
+));
+WorldExploration.displayName = "WorldExploration";
 
 export default WorldExploration;
