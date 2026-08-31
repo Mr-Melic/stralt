@@ -2052,3 +2052,362 @@ DEPENDENCIES: AEE-2026-08-31-002 for apply
 REGRESSION_RISK: MEDIUM  
 VALIDATION_REQUIRED: TS-QUEEN, TS-DOT.  
 STATUS: OPEN
+
+ACTION_ID: AFDA-2026-08-31-001  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Spell admin writes used frontend `hitsMultiple` and omitted Candid `cooldown` / `multiTarget`  
+CATEGORY: BROKEN  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Bindgen `SpellConfig` (`src/frontend/src/backend.ts` 115–145) requires `multiTarget`, `hitsAllies`, `cooldown` as bigint. Combat reads `hitsMultiple` (`engine/spellEngine.ts`, `engine/castHelpers.ts`). Admin `newSpell()` previously omitted those Candid fields; the checkbox wrote only `hitsMultiple`. This run added defaults at `AdminDashboard.tsx` 84–87, a Cooldown StatRow, checkbox dual-write, and `toBackendSpellConfig` in `useSpellQueries.ts`.  
+SYSTEMS_AFFECTED: Admin Spells tab; `adminSetSpellConfig`; player/enemy cast targeting  
+CURRENT_BEHAVIOUR: New/edit spell saves now serialize the canister record, including cooldown and multi-target. Runtime still keys off `hitsMultiple` after hydrate.  
+AUTHORITATIVE_BEHAVIOUR: One field name on the wire (`multiTarget`); hydrate maps it to `hitsMultiple` for combat.  
+RECOMMENDED_ACTION: Keep the adapter. Next: persist frontend-only flags (`isSwap`, `isBarrier`, `targetType`, summon kit) or stop editing them in admin (see AFDA-2026-08-31-018).  
+AUTONOMY: HUMAN — remaining work is a schema decision  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM if a later change drops the adapter without updating combat  
+VALIDATION_REQUIRED: Admin create a new multi-target spell with cooldown 2; confirm Candid save succeeds and combat applies cooldown + multi-hit.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-002  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Boss admin and world load `pbv_boss_configs` while the canister already has boss CRUD  
+CATEGORY: LEGACY  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `main.mo` 2062–2126: `setBossConfig`, `deleteBossConfig`, `getAllBossConfigs`, portal assignments. Bindgen matches. `useBossQueries.ts` and `useAdminQueries.ts` still read/write `localStorage.pbv_boss_configs`. `WorldExploration.tsx` 6939–6945 loads the same key. Frontend `BossConfig` has `iconEmoji`, `loreText`, `chc`; Motoko has `defeated`, `adminNotes`, no `chc`.  
+SYSTEMS_AFFECTED: Admin Bosses tab; boss portals; Boss Rush kits  
+CURRENT_BEHAVIOUR: Admin edits are browser-local. Canister boss maps stay empty unless written elsewhere.  
+AUTHORITATIVE_BEHAVIOUR: Backend-authoritative configs; localStorage cache only.  
+RECOMMENDED_ACTION: Unify schemas, then wire hooks to `getAllBossConfigs` / `setBossConfig`. Do not delete the local fallback until a live canister read succeeds.  
+AUTONOMY: HUMAN — schema merge  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if wired without mapping `iconEmoji`/`loreText`  
+VALIDATION_REQUIRED: Save a boss in admin on machine A; load on machine B against the same canister.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-003  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Level-up admin still omits canister fields the game and `upgradeSpell` use  
+CATEGORY: PARTIAL  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Motoko `LevelUpConfig` (`types/admin.mo` 114–133) has `statGrowthPercent`, `apMpLevelThreshold`, `spellLevelingBaseCost`, `spellLevelingCostMultiplier`, `spellDmgGrowthPercent`, plus the four fail/range fields. Admin Settings only edits the four fail/range fields and seeds localStorage `pbv_levelup_config`. `WorldExploration.tsx` 2158–2166 reads that key, never `getLevelUpConfig()`. `upgradeSpell` uses canister `spellLevelingBaseCost`. This run stopped sending a 4-field `as any` payload (`AdminDashboard.tsx` 3880–3890) and now writes the full Candid record with hardcoded defaults for the five omitted fields.  
+SYSTEMS_AFFECTED: Settings tab; spell upgrade cost; HP/AP growth  
+CURRENT_BEHAVIOUR: Backend write is complete. Admin cannot edit spell-leveling cost or stat growth. Live combat still hydrates from localStorage.  
+AUTHORITATIVE_BEHAVIOUR: Admin edits all nine fields; world hydrates `getLevelUpConfig()`.  
+RECOMMENDED_ACTION: Add the five missing inputs; hydrate Settings and WorldExploration from `getLevelUpConfig`.  
+AUTONOMY: IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM — wrong defaults would change upgrade prices  
+VALIDATION_REQUIRED: Change `spellLevelingBaseCost` on canister; confirm summon upgrade UI and debit match.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-004  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Shop packages are hardcoded in the player shop; admin Shop tab cannot CRUD them  
+CATEGORY: MISSING  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `adminSetShopPackage` / `adminDeleteShopPackage` / `getShopPackages` exist (`main.mo` 782–800). Admin Shop tab (`AdminDashboard.tsx` ~6180–6307) is grant-Doka + ban only; “Configure payment links below” has no form. Player shop (`WorldExploration.tsx` 19179–19198) hardcodes 15 packages. `useGetShopPackages` exists and is unused by AdminDashboard.  
+SYSTEMS_AFFECTED: Economy; Doka shop; admin Shop tab  
+CURRENT_BEHAVIOUR: Players buy a fixed catalog. Canister packages are unused by the UI.  
+AUTHORITATIVE_BEHAVIOUR: Player shop lists `getShopPackages`; admin CRUD writes that catalog and payment links.  
+RECOMMENDED_ACTION: Add package CRUD to the Shop tab; drive the player shop from `getShopPackages` with the hardcoded list as fallback only.  
+AUTONOMY: HUMAN — pricing / payment-link policy  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if the live catalog is emptied  
+VALIDATION_REQUIRED: Admin add/edit a package; player shop shows it; `initiatePurchase` still uses nine positional args.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-005  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Purchases tab called non-existent `getPurchaseRecords`  
+CATEGORY: BROKEN  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Hook `useGetPurchaseRecords` (`useShopQueries.ts`) called `getPurchaseRecords()`. Bindgen and `main.mo` expose `getPurchases` and `adminGetPurchaseRecords`. Table expected `customerData` / `priceEur` / base64 proof; canister `PurchaseRecord` is flattened names + `proofFileUrl` + ns timestamp. This run maps `getPurchases` `#ok` rows onto the table and opens `http` proof URLs.  
+SYSTEMS_AFFECTED: Admin Purchases tab  
+CURRENT_BEHAVIOUR: Query hits a live method and maps customer fields. Price column stays empty (no cents on the record).  
+AUTHORITATIVE_BEHAVIOUR: Admin list uses `adminGetPurchaseRecords`; display matches canister fields; join package price if needed.  
+RECOMMENDED_ACTION: Switch the hook to `adminGetPurchaseRecords(null)` for the filter API; show `priceEuroCents` via package join.  
+AUTONOMY: IMPLEMENT  
+DEPENDENCIES: AFDA-2026-08-31-004  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: After a real purchase, admin Purchases shows name, email, status `pending`/`completed`, and proof URL.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-006  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Admin enemy records are not consumed by encounter spawn  
+CATEGORY: MISLEADING  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `useGetEnemyConfigs` is only imported by AdminDashboard. Spawn uses `pickEnemyLevelFromTiers` + `getEnemyBaseStats` (`engine/combatMath.ts` 54–107, `engine/progression.ts`). Admin `EnemyConfig` is hp/ap/mp/initStat/levelMin/levelMax/regions/spriteUrl — not the runtime combat template (`types/common.mo`). `spriteUrl` has no WorldExploration reader.  
+SYSTEMS_AFFECTED: Enemies tab; encounters; player-relative tiers  
+CURRENT_BEHAVIOUR: Saving an enemy does not change overworld packs. Tiers tab *does* affect spawn.  
+AUTHORITATIVE_BEHAVIOUR: Either wire spawn to admin enemy templates (optional visual, default pixel) or label the tab as unused catalog. Do not delete until a caller exists.  
+RECOMMENDED_ACTION: Prove whether any map/region path still filters `getEnemyConfigs`. If none, keep CRUD and document; do not delete.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: AFDA-2026-08-31-013  
+REGRESSION_RISK: HIGH if spawn is rewritten  
+VALIDATION_REQUIRED: Grep-confirmed no game caller; optional spawn integration playtest.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-007  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Battle challenges have no admin surface  
+CATEGORY: MISSING  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Catalog is `DEFAULT_CHALLENGES` in `utils/challengeCompletion.ts` (easy/hard/legendary, 50–500 Doka / 0–1000 XP). AdminDashboard has zero `challenge` matches. Backend has no challenge config map.  
+SYSTEMS_AFFECTED: Challenges; recap rewards  
+CURRENT_BEHAVIOUR: Operators cannot change conditions or rewards without a code change.  
+AUTHORITATIVE_BEHAVIOUR: If challenges stay code-owned, say so in admin. If editable, add a gated catalog that `handleBattleEnd` reads.  
+RECOMMENDED_ACTION: Report-only unless product wants operator-tunable rewards.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if rewards move off the persist lock  
+VALIDATION_REQUIRED: N/A until a design exists  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-008  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Boss Rush admin enable/reward JSON is ignored by the live 10-room table  
+CATEGORY: MISLEADING  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Admin tab writes `room_N_enabled` / `room_N_reward` to localStorage + `adminSetBossRushConfig` (opaque Text). `useBossRush.ts` 233–247 only applies `parsed.rewardMultiplier`. Rooms come from `BOSS_RUSH_ROOMS` (indexes 0–9, jackpot 5000/2000). Admin room 10 lists “Weeping Pawn” again; live room 9 uses `weeping_pawn_2`.  
+SYSTEMS_AFFECTED: Boss Rush; admin Boss Rush tab  
+CURRENT_BEHAVIOUR: Toggling a room off does not skip it. Reward `x` does not change `dokaReward`/`xpReward`.  
+AUTHORITATIVE_BEHAVIOUR: Either consume the JSON (enable + multiplier) or replace the tab with a read-only view of `BOSS_RUSH_ROOMS`.  
+RECOMMENDED_ACTION: Do not invent a second room table. Wire or relabel.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: AFDA-2026-08-31-002  
+REGRESSION_RISK: HIGH if rooms are duplicated  
+VALIDATION_REQUIRED: Disable room 3 in admin; start a rush; confirm skip or confirm the control is labeled display-only.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-009  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Player sprite walk-frame field names drifted (`walkFramesFront` vs `frontWalkFrames`)  
+CATEGORY: BROKEN  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Motoko / bindgen use `frontWalkFrames` etc. Admin `PlayerSpriteConfig` uses `walkFramesFront`. This run maps both directions in `useSpellQueries.ts` get/set. WorldExploration still never reads `getPlayerSpriteConfigs` (AFDA-2026-08-31-017).  
+SYSTEMS_AFFECTED: Admin Player Sprites tab  
+CURRENT_BEHAVIOUR: Walk-frame arrays can now round-trip the canister. Game still draws built-in pixel pieces.  
+AUTHORITATIVE_BEHAVIOUR: Same field names on admin type and Candid; optional custom URL with pixel fallback.  
+RECOMMENDED_ACTION: Rename the frontend type to match bindgen; keep the adapter until callers migrate.  
+AUTONOMY: IMPLEMENT  
+DEPENDENCIES: AFDA-2026-08-31-017  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Save walk frames; refetch; arrays still populated.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-010  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Visuals tab and world hydrate used different palette cache keys  
+CATEGORY: BROKEN  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Admin wrote `paperVertexPalette`. `WorldExploration.tsx` 798–802 hydrates `getColorPalette` into `pbv_color_palette`. This run reads/writes both keys.  
+SYSTEMS_AFFECTED: Visuals tab; paper-vertex landscape  
+CURRENT_BEHAVIOUR: Admin save updates both caches and the canister.  
+AUTHORITATIVE_BEHAVIOUR: Single cache key matching world hydrate.  
+RECOMMENDED_ACTION: Drop `paperVertexPalette` after one version-gate cycle.  
+AUTONOMY: IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Save palette in admin; reload world; vertex colors match.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-011  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Finite-level defaults and copy contradict “no player level cap”  
+CATEGORY: MISLEADING  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `newEnemy` / `newRegion` default `levelMax: 5` (`AdminDashboard.tsx` 109, 118). Region effects only apply when `level <= region.levelMax` (`WorldExploration.tsx` 3519–3521). Settings copy says fail chance “reaches 0% at level 200” (line ~3993). Death Realm `levelZone.maxLevel` is 5 at 13567 and 13699 vs 9999 at 5818. `pickEnemyLevelFromTiers` caps tier index at `floor(999 / tierSize)` (`combatMath.ts` 58).  
+SYSTEMS_AFFECTED: Regions; enemies; spell fail; Death Realm; player-relative spawn  
+CURRENT_BEHAVIOUR: A level-6+ player can match no region. Fail % copy implies a cap. Spawn math stops climbing after level 999.  
+AUTHORITATIVE_BEHAVIOUR: No player level cap. `levelMax` on templates is a band, not a career ceiling. Death Realm must not use maxLevel 5.  
+RECOMMENDED_ACTION: Default new region/enemy `levelMax` high or optional; fix Death Realm zone to 9999; reword fail-chance help; lift or document the 999 spawn band.  
+AUTONOMY: IMPLEMENT for defaults/copy/Death Realm zone only. Do not touch mapGen.  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM if region matching becomes unbounded without a fallback  
+VALIDATION_REQUIRED: Level 20 character still gets a region (or an explicit “no region” state). Death Realm HUD does not show 1–5.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-012  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Backend/game systems with no admin management  
+CATEGORY: MISSING  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Present in actor or live game, absent from AdminDashboard tabs: dungeon records (`getDungeonRecord` / `updateDungeonProgress`); buff catalog (`getBuffCatalog`); `setAppVersion` / `setChangelog`; `getBannedPrincipals` list; `setBossPortalAssignment`; `getAllCharacters`; enemy AI (`engine/enemyAI.ts`); enemy variants; telemetry (only a comment at WorldExploration 16457).  
+SYSTEMS_AFFECTED: Dungeons; economy/buffs; ops; portals; AI; telemetry  
+CURRENT_BEHAVIOUR: Operators cannot tune these from the dashboard.  
+AUTHORITATIVE_BEHAVIOUR: Admin covers every persisted config map. Code-owned systems (AI, challenges) should be labeled as such.  
+RECOMMENDED_ACTION: Add only configs that already have canister CRUD (version, changelog, ban list, portal assignments, shop packages). Do not invent telemetry.  
+AUTONOMY: HUMAN — pick which surfaces  
+DEPENDENCIES: AFDA-2026-08-31-004  
+REGRESSION_RISK: LOW for read-only ops panels  
+VALIDATION_REQUIRED: Per surface  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-013  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Custom enemy artwork is optional; admin `spriteUrl` is unused  
+CATEGORY: VISUAL_FALLBACK  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `getEnemyFamilyPixelPattern` has a `default` family (`WorldExploration.tsx` 4208–4214). No `spriteUrl` reader in WorldExploration. New enemies/bosses render from piece/family pixel patterns. Admin enemy form still shows Sprite URL as if it were live. Custom art is not mandatory.  
+SYSTEMS_AFFECTED: Enemies; bosses; visuals  
+CURRENT_BEHAVIOUR: Default pixel visual always works. Admin URL does not appear in combat.  
+AUTHORITATIVE_BEHAVIOUR: valid custom visual → custom; otherwise built-in pixel.  
+RECOMMENDED_ACTION: Keep pixel fallback. Either hook `spriteUrl` as optional overlay or label the field unused. Do not require artwork for new enemies.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: AFDA-2026-08-31-006  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Spawn an enemy with empty `spriteUrl`; confirm default pixels draw.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-014  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Spell `minLevel` / discovery is not enforced; every backend spell becomes owned  
+CATEGORY: PARTIAL  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Admin edits `minLevel` and usable-by flags. `ownedSpells` (`WorldExploration.tsx` 2259–2272) unions all `filteredBackendSpells` with no `minLevel` check. `spellPool` is the full backend list (2520–2526).  
+SYSTEMS_AFFECTED: Spells; spell discovery  
+CURRENT_BEHAVIOUR: Saving a player-usable spell grants it to everyone regardless of `minLevel`.  
+AUTHORITATIVE_BEHAVIOUR: `minLevel` gates discovery/equip if that field stays in admin.  
+RECOMMENDED_ACTION: Enforce `minLevel` at hydrate, or hide the field.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: AFDA-2026-08-31-001  
+REGRESSION_RISK: MEDIUM — locking existing bars  
+VALIDATION_REQUIRED: Spell with minLevel 10 hidden from a level-3 character.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-015  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Shop, Ads, and Boss Rush tabs use gray Tailwind instead of carved-stone admin chrome  
+CATEGORY: UX-DEGRADED  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: Enemies/Spells/Settings use stone tokens (`C.gold`, carved panels). Shop (`bg-gray-800`), Ads (`#ff4444` / `#aaa`), Boss Rush (`bg-gray-800`) do not.  
+SYSTEMS_AFFECTED: Admin Shop / Ads / Boss Rush  
+CURRENT_BEHAVIOUR: Three tabs look like a different product.  
+AUTHORITATIVE_BEHAVIOUR: Ankama/Dofus carved-stone, dark slate, crimson accents.  
+RECOMMENDED_ACTION: Restyle those tabs to match `sectionHeadStyle` / `C` tokens.  
+AUTONOMY: IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Visual compare against Enemies tab.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-016  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Admin modifier type list drifted from the live engine registry  
+CATEGORY: OUTDATED  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Admin `MODIFIER_TYPES` (`AdminDashboard.tsx` 4241–4265) includes `lava_fields`, `ice_fields`, `spike_pit`, `custom`. Engine registry (`engine/mapModifiers.ts`) has `titans_vigor`, `arcane_overflow`, `glass_realm`, `mending_mist`, `swift_winds`, `iron_curse`, `vampiric_ground`, `null_field`, `chaos_initiative`, `doka_fever` — none of those hazard-admin ids.  
+SYSTEMS_AFFECTED: Map Modifiers tab; portal modifier rolls  
+CURRENT_BEHAVIOUR: Admin can save types the registry never applies. Live modifiers cannot be selected.  
+AUTHORITATIVE_BEHAVIOUR: Dropdown equals `mapModifierRegistry` ids.  
+RECOMMENDED_ACTION: Replace the list from the registry. Keep existing saved rows; do not delete configs.  
+AUTONOMY: IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM if a live modifier id is dropped from the dropdown  
+VALIDATION_REQUIRED: Every registry id selectable; a `doka_fever` row triggers in-game.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-017  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Player sprite configs persist but the world never draws them  
+CATEGORY: MISLEADING  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `getPlayerSpriteConfigs` is admin-only. WorldExploration has no `playerSprite` / `frontUrl` usage; player draw uses `chessPiecePatterns` / `drawPixelPattern`.  
+SYSTEMS_AFFECTED: Player Sprites tab; character visuals  
+CURRENT_BEHAVIOUR: Operators can upload URLs that never appear in play. Pixel pieces still work (custom art not mandatory).  
+AUTHORITATIVE_BEHAVIOUR: Optional custom sprite with pixel fallback.  
+RECOMMENDED_ACTION: Prove no other renderer reads these configs. Then wire optional overlay or mark the tab catalog-only. Do not delete.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: AFDA-2026-08-31-009  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Grep-confirmed no game caller.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-018  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Admin special-mechanic flags are not on the canister SpellConfig  
+CATEGORY: IGNORED_FIELDS  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Editor writes `isSwap`, `isMirror`, `isTimestep`, `isSacrifice`, `isBarrier`, `isTrap`, `isMark`, buff/debuff/DoT numbers, `targetType`. Motoko `SpellConfig` has none of those (`types/admin.mo` 79–110). `toBackendSpellConfig` correctly drops them on save. Combat still uses the frontend flags from `spellData.ts` / in-memory objects.  
+SYSTEMS_AFFECTED: Spells  
+CURRENT_BEHAVIOUR: Toggling Barrier on an admin spell does not persist. Reloading loses the flag.  
+AUTHORITATIVE_BEHAVIOUR: Either extend Motoko SpellConfig / `effectParams` JSON, or remove the toggles.  
+RECOMMENDED_ACTION: Persist via `effectParams` (already optional Text) without a Motoko schema break.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: AFDA-2026-08-31-001  
+REGRESSION_RISK: MEDIUM  
+VALIDATION_REQUIRED: Save Barrier; reload admin; combat still treats the spell as a barrier.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AFDA-2026-08-31-019  
+SOURCE_AUTOMATION: Admin Feature & Drift Auditor  
+TITLE: Settings admin-role transfer calls caffeine `assignCallerUserRole`, not `assignUserRole`  
+CATEGORY: UNSAFE  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: `useAssignUserRole` (`useAdminQueries.ts` 88) calls `assignCallerUserRole(principal, role)` with a string `"admin"`. `main.mo` 1700 implements `assignUserRole(target, role: Text)` with a 30s rate limit. Bindgen also lists `assignCallerUserRole(user, UserRole)` from the caffeine mixin (not in `src/backend/main.mo` source).  
+SYSTEMS_AFFECTED: Settings tab; auth  
+CURRENT_BEHAVIOUR: Transfer may hit the mixin or fail Candid if the live actor only has `assignUserRole`.  
+AUTHORITATIVE_BEHAVIOUR: Admin transfer uses the rate-limited `assignUserRole` in `main.mo`.  
+RECOMMENDED_ACTION: Call `assignUserRole` with Text `"admin"`; keep mixin as fallback only after a live probe.  
+AUTONOMY: HUMAN — confirm deployed DID  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if the mixin is the only live grant path  
+VALIDATION_REQUIRED: Transfer admin on a deployed canister; both principals can open admin.  
+STATUS: NEW

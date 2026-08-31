@@ -88,6 +88,10 @@ const newSpell = (): SpellConfig => ({
   hitTiles: [],
   minRange: 1,
   maxRange: 3,
+  cooldown: 0,
+  multiTarget: false,
+  hitsMultiple: false,
+  hitsAllies: false,
   buffStat: undefined,
   buffModifier: undefined,
   buffDuration: undefined,
@@ -2287,6 +2291,12 @@ const SpellEditor: React.FC<{
           onChange={(v) => set("range", v)}
           ocid="admin.spell.range_input"
         />
+        <StatRow
+          label="Cooldown"
+          value={BigInt(cfg.cooldown ?? 0)}
+          onChange={(v) => set("cooldown", Number(v))}
+          ocid="admin.spell.cooldown_input"
+        />
       </div>
 
       {/* Spell Type + Heal Amount + Physical */}
@@ -2464,8 +2474,11 @@ const SpellEditor: React.FC<{
           <input
             id="admin.spell.hitsmultiple_checkbox"
             type="checkbox"
-            checked={cfg.hitsMultiple ?? false}
-            onChange={(e) => set("hitsMultiple", e.target.checked)}
+            checked={cfg.hitsMultiple ?? cfg.multiTarget ?? false}
+            onChange={(e) => {
+              set("hitsMultiple", e.target.checked);
+              set("multiTarget", e.target.checked);
+            }}
             data-ocid="admin.spell.hitsmultiple_checkbox"
             style={{ accentColor: C.gold, width: 14, height: 14 }}
           />
@@ -2482,7 +2495,7 @@ const SpellEditor: React.FC<{
           </label>
         </div>
         {/* Hits Allies Too — only shown when hitsMultiple is checked */}
-        {cfg.hitsMultiple && (
+        {(cfg.hitsMultiple ?? cfg.multiTarget) && (
           <div
             style={{
               marginBottom: 10,
@@ -3897,9 +3910,17 @@ const LevelUpConfigPanel: React.FC = () => {
     localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
     try {
       if (actor) {
-        await (actor as unknown as backendInterface).adminSetLevelUpConfig(
-          cfg as any,
-        );
+        await (actor as unknown as backendInterface).adminSetLevelUpConfig({
+          maxSpellRange: BigInt(cfg.maxSpellRange),
+          spellRangeGrowthLevels: BigInt(cfg.spellRangeGrowthLevels),
+          spellFailBaseChance: cfg.spellFailBaseChance,
+          spellFailReductionPerLevel: cfg.spellFailReductionPerLevel,
+          statGrowthPercent: BigInt(5),
+          apMpLevelThreshold: BigInt(25),
+          spellLevelingBaseCost: BigInt(10),
+          spellLevelingCostMultiplier: 2,
+          spellDmgGrowthPercent: BigInt(3),
+        });
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -4039,7 +4060,9 @@ const VisualsTab: React.FC = () => {
   const { actor } = useActor();
   const stored = (() => {
     try {
-      const v = localStorage.getItem("paperVertexPalette");
+      const v =
+        localStorage.getItem("pbv_color_palette") ??
+        localStorage.getItem("paperVertexPalette");
       if (v) {
         const arr = JSON.parse(v) as string[];
         if (Array.isArray(arr)) return arr;
@@ -4064,6 +4087,7 @@ const VisualsTab: React.FC = () => {
   const handleSave = async () => {
     const palette = slots.filter((s) => s.enabled).map((s) => s.color);
     localStorage.setItem("paperVertexPalette", JSON.stringify(palette));
+    localStorage.setItem("pbv_color_palette", JSON.stringify(palette));
     try {
       await (actor as unknown as backendInterface).adminSetColorPalette(
         JSON.stringify(palette),
@@ -4080,6 +4104,7 @@ const VisualsTab: React.FC = () => {
 
   const handleReset = () => {
     localStorage.removeItem("paperVertexPalette");
+    localStorage.removeItem("pbv_color_palette");
     setSlots(DEFAULT_PALETTE.map((c) => ({ color: c, enabled: true })));
   };
 
@@ -5481,13 +5506,21 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                             <span
                               style={{
                                 background:
-                                  rec.status === "paid"
+                                  rec.status === "paid" ||
+                                  rec.status === "completed"
                                     ? `${C.green}22`
                                     : `${C.gold}22`,
                                 border: `1px solid ${
-                                  rec.status === "paid" ? C.green : C.gold
+                                  rec.status === "paid" ||
+                                  rec.status === "completed"
+                                    ? C.green
+                                    : C.gold
                                 }44`,
-                                color: rec.status === "paid" ? C.green : C.gold,
+                                color:
+                                  rec.status === "paid" ||
+                                  rec.status === "completed"
+                                    ? C.green
+                                    : C.gold,
                                 fontSize: 9,
                                 padding: "2px 7px",
                                 borderRadius: 20,
@@ -5512,11 +5545,22 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                               : "—"}
                           </td>
                           <td style={{ padding: "8px 10px" }}>
-                            {rec.proofOfAddressBase64 ? (
+                            {rec.proofOfAddressBase64 ||
+                            rec.proofOfAddressName?.startsWith("http") ? (
                               <button
                                 type="button"
                                 data-ocid={`admin.purchases.view_proof_button.${i + 1}`}
                                 onClick={() => {
+                                  if (
+                                    rec.proofOfAddressName?.startsWith("http")
+                                  ) {
+                                    window.open(
+                                      rec.proofOfAddressName,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    );
+                                    return;
+                                  }
                                   const mime = rec.proofOfAddressName?.endsWith(
                                     ".pdf",
                                   )
