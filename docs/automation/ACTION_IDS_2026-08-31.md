@@ -3978,3 +3978,256 @@ AUTONOMY:
 REGRESSION_RISK: LOW  
 VALIDATION_REQUIRED: iOS Safari login and profile screens fill the visible viewport.  
 STATUS: NEW
+
+ACTION_ID: GFCF-2026-08-31-001  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Anchor damage numbers and death shatter in screen space  
+CATEGORY: combat-feedback  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `enemyTakesDamage` and both heal callbacks called `spawnDamageNumber(0, 0, …)` (pre-fix ~3352, ~9570, ~15007). `deathPipeline.triggerShatter` passed board `pos.x/y` straight into `EffectsManager.triggerDeath`. Leader death particles used `tileCenter` but shatter used raw `tileX, tileY`. `EffectsManager.draw()` plots in canvas/CSS space. Post-fix wiring: `spawnDamageAtTile` at WX 3305 / 3371 / 9604 / 15065; `triggerDeathAtTile` at 9449 / 17152.  
+SYSTEMS_AFFECTED: `engine/combatJuice.ts`; `engine/effects.ts` (unchanged API); `WorldExploration.tsx` call sites only  
+RECOMMENDED_ACTION: IMPLEMENT. Helper `spawnDamageAtTile` / `triggerDeathAtTile` + `tileCenterRef`. Also spawn a player damage number from `playerTakesDamage` when `dmg > 0` (same helper).  
+AUTONOMY: IMPLEMENTED_THIS_PR  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW — presentation coordinates only. Residual: numbers are screen-space at spawn time and will not track camera mid-float (same as existing float text).  
+VALIDATION_REQUIRED: Hit an enemy via DoT/`enemyTakesDamage` and a heal; confirm the floater rises from the sprite. Kill a regular enemy; shatter on the corpse tile, not the HUD corner. `node --test src/frontend/src/engine/combatJuice.test.ts`.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-002  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Show player-facing reject copy instead of engine tokens  
+CATEGORY: combat-feedback  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Sprite-click and live-cast rejects floated `_live.reason` verbatim (`ground_los_blocked`, `line_below_min_range`, …). Entity-first mouse reject used generic `"invalid target"` while the reason was already known. Empty-tile miss (`!spellTiles.has`) returned with **no** float. Post-fix: `playerFacingRejectReason` at WX 10427 / 10505 / 10666 / 11108 / 11162 / 11280; `"Out of range"` at 10727 / 11293.  
+SYSTEMS_AFFECTED: `engine/rejectCopy.ts`; float-text call sites in `WorldExploration.tsx`  
+RECOMMENDED_ACTION: IMPLEMENT. `playerFacingRejectReason` map; float `"Out of range"` on spell-tile miss. Leave `recordClickOutcome` tokens raw (DEV). Walk-unreachable / no-MP silence is a separate ID.  
+AUTONOMY: IMPLEMENTED_THIS_PR  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW — copy only. Unknown future tokens fall back to “Invalid target”.  
+VALIDATION_REQUIRED: Cast a line spell off-axis and a blocked LoS tile; floats must be English. Click a blue-range-adjacent empty tile; “Out of range”. `node --test src/frontend/src/engine/rejectCopy.test.ts`.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-003  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Delegate player-spell IMPACT juice from applyDamageToEnemy  
+CATEGORY: combat-feedback  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `resolvePlayerCast` → `applyDamageToEnemy` (`castHelpers.ts` ~265–478) applies HP, log, `critical_hit` / `spell_hit` sounds, bounce via `enemyTakesDamage`. It never calls `spawnDamageNumber`, `triggerHitFlash`, `triggerShake`, or `triggerHitStop`. The fallback `enemyTakesDamage` path *does*. Primary player hits therefore feel quieter than bounces and DoT ticks. Hover preview (`WorldExploration.tsx` ~8570–8611) already shows `-dmg` using non-crit `computeDamage`.  
+SYSTEMS_AFFECTED: `engine/castHelpers.ts`; optional juice callback on the existing deps bundle; `EffectsManager`  
+RECOMMENDED_ACTION: Add an optional `onDamageJuice({ tileX, tileY, amount, isCrit, targetId })` to `applyDamageToEnemy` deps. WorldExploration implements it with `spawnDamageAtTile` + flash/shake/hitstop. Do not change `calculatePlayerDamage`. Do not add a second HP write.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: GFCF-2026-08-31-001 (screen-space helper now exists)  
+REGRESSION_RISK: MEDIUM if the callback re-applies damage or double-spawns on the bounce path (bounces already juice via `enemyTakesDamage`).  
+VALIDATION_REQUIRED: Cast a damaging spell and a crit; number + flash on the target. Bounce must not double-number. Playtest vs #105 if still open (do not fork targeting).  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-004  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Draw armed hit-flash on combatant sprites  
+CATEGORY: combat-feedback  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `triggerHitFlash` is called for player (~3304) and enemy (~3369). `getHitFlashAlpha` (`effects.ts` ~331–337) has **zero** call sites outside `effects.ts`. 120ms flash is computed and discarded. IMPACT is shake (if wired) without a readable hit on the body.  
+SYSTEMS_AFFECTED: entity draw pass in `WorldExploration.tsx`; `EffectsManager.getHitFlashAlpha`  
+RECOMMENDED_ACTION: In the existing combatant/player draw (not the RAF scheduler), multiply overlay alpha by `getHitFlashAlpha(id)`. White/crimson tint only. No new particles.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: GFCF-2026-08-31-003 so player spells actually arm flash  
+REGRESSION_RISK: LOW–MEDIUM — must not change `requestAnimationFrame` timing (`AGENTS.md` RAF freeze). Overlay only inside the current draw pass.  
+VALIDATION_REQUIRED: Hit player and enemy; brief tint, 120ms, no linger.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-005  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Do not consume hit-stop timeScale in this director  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `triggerHitStop` sets `timeScaleRef.current = 0` for 75ms (`effects.ts` ~340–343). RAF uses `effectsManagerRef.current.tick(16)` with no scale (`WorldExploration.tsx` ~9157–9159). Hit-stop is inert. Wiring it requires the RAF loop.  
+SYSTEMS_AFFECTED: RAF tick; `EffectsManager.timeScaleRef`  
+RECOMMENDED_ACTION: DEFER. Human-only. If ever done: multiply `dt` by `timeScaleRef.current` only; keep 75ms; do not lengthen. Preserve gameplay speed.  
+AUTONOMY: DEFER  
+DEPENDENCIES: Human exemption from `AGENTS.md` RAF freeze  
+REGRESSION_RISK: HIGH — RAF is shared by movement, particles, camera.  
+VALIDATION_REQUIRED: Crit feels a single frame of pause, movement duration unchanged after restore.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-006  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Float walk rejects (no MP / unreachable)  
+CATEGORY: combat-feedback  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Walk branch (`WorldExploration.tsx` ~10805+ mouse, touch mirror): `currentBattleMp <= 0`, wall/void, `!reachable.has`, empty path, `cost > currentBattleMp` all `return` with no float. Occupied already says `"Occupied"`. Player cannot tell *why* the click died or *whether* a nearer tile would work. Hover MP (`~8907–8946`) uses Manhattan `dist`, not `findPath.length`, so anticipation can disagree with the reject.  
+SYSTEMS_AFFECTED: walk click/touch handlers; hover MP label  
+RECOMMENDED_ACTION: Float `"No MP"` / `"Can't reach"` / `"Not enough MP"` using existing `spawnFloatText` + `tileCenter`. Optionally compute hover cost from the same path helper **outside** the inner render hot path (cache on hover tile id). Do not change `findPath` or `MOVEMENT_DURATION`.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW for floats. MEDIUM if hover pathfinding is run every RAF frame.  
+VALIDATION_REQUIRED: 0 MP click → “No MP”. Distant tile → “Can't reach”. Hover label matches spend.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-007  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Pass in-battle achievement unlocks into the root recap  
+CATEGORY: reward-feedback  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `checkAndFireAchievement(..., true)` queues `_newlyUnlockedInBattle` (`WorldExploration.tsx` ~2087–2091). `PostBattleRecap` already renders `newlyUnlockedAchievements` (~520–582). `App.tsx` ~448–454 mounts recap with `data` + `onClose` only. World-mode toast is gated `!inBattle` (~17920). Unlocks during victory checks never appear.  
+SYSTEMS_AFFECTED: `App.tsx` / GameFlow recap props; `WorldExploration` onShowBattleSummary payload  
+RECOMMENDED_ACTION: Thread the queued list into `BattleRecapData` or a sibling prop. Clear the queue on recap dismiss. Do not toast under the recap.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: None. #116 is admin-design only — not a substitute.  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Unlock `first_battle_win` on a victory; recap lists it. World toast still works out of battle.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-008  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Play the existing level_up sound and banner when recap level increases  
+CATEGORY: reward-feedback  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `level_up` exists in `useSoundHooks.ts` ~16 and `soundEngine.ts` ~312 and is never played. Recap shows `Level {currentLevel}` with no “LEVEL UP” state. `main` recap still uses `xpForNextLevel: (level || 1) * 100` at `WorldExploration.tsx` ~12719, ~12891, ~13110, ~13407 despite importing `xpForNextLevel` from `xpCurve.ts`. Open **#108** already replaces those sites with `recapXpAfterGrant` / `xpHudProgress`.  
+SYSTEMS_AFFECTED: `PostBattleRecap.tsx`; persist result `newLevel`; `playSound("level_up")`  
+RECOMMENDED_ACTION: After #108 merges, if `newLevel > oldLevel`, play `level_up` once and show a one-line gold “Level N” on the existing recap header. Do not add confetti. Do not reopen the curve math.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: #108 (do not duplicate the threshold fix)  
+REGRESSION_RISK: LOW if #108 is the sole curve writer. HIGH if a second PR also edits those four recap literals.  
+VALIDATION_REQUIRED: Grant enough XP to cross a level; sound once; bar uses `100 * 2^(N-1)`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-009  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Reuse the boss-encounter banner for phase 2  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Phase transition applies HP/stats and logs `⚡ {name} PHASE 2!` or Weeping Pawn promote (`WorldExploration.tsx` ~15759–15798). Encounter banner exists (~17984–18013, 1.5s). Phase change has no canvas banner and no dedicated SFX. Easy to miss while watching the board.  
+SYSTEMS_AFFECTED: boss AI flush; existing banner component  
+RECOMMENDED_ACTION: Fire the same banner pattern with “PHASE 2” / promote copy. 1.5s max. No gameplay pause.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW — do not extend the 1.5s Death Realm timer or block input.  
+VALIDATION_REQUIRED: Weeping Pawn promote and a generic phase2 boss each show one banner; combat clicks still work.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-010  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Draw a dashed walk-path overlay (no pathfinder change)  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: Movement is 600ms / path length (`MOVEMENT_DURATION`). Only destination gold tint + hover MP. No polyline. Long paths feel delayed because the first step waits `600/n` with no ANTICIPATION trail.  
+SYSTEMS_AFFECTED: render pass after MP-reachable fill  
+RECOMMENDED_ACTION: Stroke `movementPath` (and optionally hover path if cached) as a dashed stone/gold line. Presentation only.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: GFCF-2026-08-31-006 if hover path is cached  
+REGRESSION_RISK: LOW if draw-only. Do not touch mapGen or `findPath`.  
+VALIDATION_REQUIRED: Click a 3-step walk; line appears then consumes per step.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-011  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Label non-weapon damage sources (lava, spikes, reflect, shield, DoT)  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `DamageKind` is `"damage" | "heal" | "drain" | "crit"` only (`effects.ts` ~7). Lava/spikes debit HP and log (`WorldExploration.tsx` ~11632–11686) with **no** canvas juice. Void Mirror / Reflect Shield (`castHelpers.ts` ~325–364) log + HP only. Shield absorb logs purple, no float. DoT ticks log `[DOT]` and reuse untyped damage numbers. Player cannot see *why* HP moved when several sources overlap.  
+SYSTEMS_AFFECTED: `EffectsManager` kinds or `spawnFloatText`; lava/reflect/DoT call sites  
+RECOMMENDED_ACTION: Reuse `spawnFloatText` / existing kinds — e.g. `"Lava"`, `"Spikes"`, `"Reflect"`, `"Shield"`. Do **not** add a `"reflect"` combat formula. Optional typed kind later if stacking gets noisy. Cap still `MAX_LIVE_EFFECTS = 100`.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: GFCF-2026-08-31-001  
+REGRESSION_RISK: LOW if float-only. MEDIUM if a new kind changes `spawnDamageNumber` signatures without updating all call sites.  
+VALIDATION_REQUIRED: Step on lava; number + “Lava” on the player. Reflect shows on the player, not the boss.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-012  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Show remaining duration on status pills  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: Canvas pills (`WorldExploration.tsx` ~8634–8676, ~8750–8791) draw emoji only. `StatPopup` inspect exists. Effects store `duration`; popup may key `turnsRemaining`. Player cannot see *what changed* after a buff lands or how long Burning has left without opening inspect.  
+SYSTEMS_AFFECTED: status pill draw; `StatPopup.tsx`  
+RECOMMENDED_ACTION: Tiny turn digit on the pill from the live effect duration field. Align inspect with the same field. No apply-pulse spectacle.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Apply a 3-turn DoT; pill shows 3→2→1 then drops. Inspect matches.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-013  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Visible Death Realm wait (do not change the 1.5s timer)  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: In-battle death: recap then `setTimeout(..., 1500)` (`WorldExploration.tsx` ~13421). Exploration death: cleanup + 1.5s + toast after teleport (~13494–13540). `persistDeathPenalty` restores HP immediately. `armDeathGuards` blocks portals/encounters. The wait is invisible; the body can look alive.  
+SYSTEMS_AFFECTED: defeat recap; overlay  
+RECOMMENDED_ACTION: Countdown or “Entering the Death Realm…” on the existing defeat recap for 1.5s. No extra delay. Do not change `armDeathGuards` or penalty math.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Die; recap explains the wait; portal still blocked until the timer fires.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-014  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Wire triggerVfx heal (stop the no-op)  
+CATEGORY: combat-feedback  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `spellEngine.ts` ~670 calls `ctx.triggerVfx("player", "heal")`. WorldExploration implements `triggerVfx: () => { /* no-op */ }` (~9697). Drain heal is log-only (`castHelpers.ts` ~470–476). This PR already places heal numbers on the player tile when `heal()` runs; VFX is still unused.  
+SYSTEMS_AFFECTED: playerSpellContext `triggerVfx`; `EffectsManager`  
+RECOMMENDED_ACTION: Map `"heal"` to `triggerHitFlash("player")` plus the existing green number (already in `heal()`). Drain should call the same juice once.  
+AUTONOMY: RECOMMEND  
+DEPENDENCIES: GFCF-2026-08-31-001; GFCF-2026-08-31-004 for a visible flash  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Cast a heal; green `+N` on the player. Drain shows purple number on enemy and green on player.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GFCF-2026-08-31-015  
+SOURCE_AUTOMATION: Game Feel & Combat Feedback Director  
+TITLE: Do not add production feel-telemetry in this director  
+CATEGORY: telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: AQA-2026-08-30-012 already requested persist-ok/fail, death-penalty, victory-paid, recap open/dismiss, shop credit. This director’s asked signals (cancel, flee, illegal, boss-phase abandon, unused discovered spells) have **no producer**. `recordClickOutcome` is DEV-only. Inventing gameplay counters on the persist lock this week would collide with #107/#111 economy drafts.  
+SYSTEMS_AFFECTED: none this PR  
+RECOMMENDED_ACTION: DEFER to AQA-2026-08-30-012 / the telemetry-architecture automation. If counters are added later: query-only or enqueue on `createProgressPersist`. Do not tune spells from empty series.  
+AUTONOMY: DEFER  
+DEPENDENCIES: AQA-2026-08-30-012  
+REGRESSION_RISK: MEDIUM if a second wallet path is invented  
+VALIDATION_REQUIRED: Next director run either cites real counters or repeats “still no telemetry.”  
+STATUS: NEW
