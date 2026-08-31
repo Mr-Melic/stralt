@@ -446,22 +446,8 @@ describe("Attack Nearest live gate", () => {
       effectType: "heal",
       targetType: "self",
     } as SpellConfig;
-    const liveAtSummon = isTileCastableLive(
-      heal,
-      summon,
-      summon,
-      [],
-      tiles,
-      1,
-    );
-    const liveAtPlayer = isTileCastableLive(
-      heal,
-      origin,
-      origin,
-      [],
-      tiles,
-      1,
-    );
+    const liveAtSummon = isTileCastableLive(heal, summon, summon, [], tiles, 1);
+    const liveAtPlayer = isTileCastableLive(heal, origin, origin, [], tiles, 1);
     assert.equal(shouldExecuteLiveCast(liveAtSummon), true);
     assert.equal(shouldExecuteLiveCast(liveAtPlayer), true);
     assert.equal(
