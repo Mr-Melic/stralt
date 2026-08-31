@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
+  attackNearestLiveCasterPos,
   canAttackNearestLive,
   computeTargetableTiles,
   isTileCastableLive,
@@ -422,6 +423,95 @@ describe("Attack Nearest live gate", () => {
     assert.equal(
       canAttackNearestLive(spell, caster, hostiles, hostiles, tiles, 5),
       true,
+    );
+  });
+
+  it("keeps Attack Nearest on the player tile while a summon is the active caster", () => {
+    const player = { x: 2, y: 2 };
+    const summon = { x: 8, y: 7 };
+    const origin = attackNearestLiveCasterPos(player, summon);
+    assert.deepEqual(origin, player);
+    assert.notDeepEqual(origin, summon);
+
+    const tiles = floorGrid(16);
+    const heal = {
+      id: "starter-heal",
+      name: "Blood Mend",
+      description: "",
+      iconEmoji: "",
+      apCost: 3n,
+      mpCost: 0n,
+      damage: 0n,
+      range: 0n,
+      effectType: "heal",
+      targetType: "self",
+    } as SpellConfig;
+    const liveAtSummon = isTileCastableLive(
+      heal,
+      summon,
+      summon,
+      [],
+      tiles,
+      1,
+    );
+    const liveAtPlayer = isTileCastableLive(
+      heal,
+      origin,
+      origin,
+      [],
+      tiles,
+      1,
+    );
+    assert.equal(shouldExecuteLiveCast(liveAtSummon), true);
+    assert.equal(shouldExecuteLiveCast(liveAtPlayer), true);
+    assert.equal(
+      origin.x === player.x && origin.y === player.y,
+      true,
+      "heal Attack Nearest must land on the player tile resolvePlayerCast heals",
+    );
+
+    const adjacentToSummon = {
+      id: "rat-summon-adj",
+      x: 8,
+      y: 8,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const strike = strikeSpell();
+    const fromSummon = pickNearestLiveHostileTile(
+      strike,
+      summon,
+      [adjacentToSummon],
+      [adjacentToSummon],
+      tiles,
+      1,
+    );
+    const fromPlayer = pickNearestLiveHostileTile(
+      strike,
+      origin,
+      [adjacentToSummon],
+      [adjacentToSummon],
+      tiles,
+      1,
+    );
+    assert.deepEqual(fromSummon, { x: 8, y: 8 });
+    assert.equal(
+      fromPlayer,
+      null,
+      "player-origin Strike must not reach a summon-adjacent hostile",
+    );
+    assert.equal(
+      canAttackNearestLive(
+        strike,
+        origin,
+        [adjacentToSummon],
+        [adjacentToSummon],
+        tiles,
+        1,
+      ),
+      false,
     );
   });
 });
