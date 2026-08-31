@@ -2625,3 +2625,123 @@ MIGRATION_REQUIREMENT: None for the clamp
 REGRESSION_RISK: HIGH if clamp ships without death 20/40 still able to decrease XP/Doka  
 VALIDATION_REQUIRED: Death cut still persists; applyRewards then heal snapshot cannot raise Doka.  
 STATUS: NEW
+
+ACTION_ID: RAO-2026-08-31-001  
+SOURCE_AUTOMATION: Report Action Orchestrator  
+TITLE: Leftover XP HUD on select / top bar / recap  
+CATEGORY: display  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Independently confirmed on `22503b5`. `applyRewards` stores leftover XP (`100 * 2^(N-1)`). Character select subtracted `cumulativeXpAtLevel` (`CharacterSelection.tsx`). GameFlow top bar read App `selectedCharacter.xp` never written (`_setSelectedCharacter` unused). Recap used `(level * 100)` and `rewardResolver` set `xpForNextLevel: 0`. In-world XP chip already used leftover curve. Stale draft #108 (base `e4abb4c`) covered the same theme before #103–#111 landed.  
+RECOMMENDED_ACTION: IMPLEMENT on current main. Supersedes stale #108.  
+STATUS: IMPLEMENTED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW — display only; persist / RAF / damage / turn logic unchanged.
+
+---
+
+ACTION_ID: RAO-2026-08-31-002  
+SOURCE_AUTOMATION: Find Critical Gameplay Bugs  
+TITLE: Plague Zone player death deferred until post-paint HP-watch  
+CATEGORY: combat-correctness  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Verified on `22503b5` `WorldExploration.tsx` ~14353: player plague is `setCharacterStats` HP-2 only. Enemy plague already commits store HP + `processCombatantDeath`. Open draft #114 is clean against current main.  
+RECOMMENDED_ACTION: Human merge #114. Do not re-implement.  
+STATUS: OPEN  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM if a second agent restacks WX turn-start.
+
+---
+
+ACTION_ID: RAO-2026-08-31-003  
+SOURCE_AUTOMATION: Find Critical Gameplay Bugs / Combat Parity  
+TITLE: Live cast / Attack Nearest ignore barrier LoS  
+CATEGORY: combat-correctness  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `isTileCastableLive` comment still says barrierTiles are not passed (`targeting.ts` ~476). #114 adds the live-gate map. #105 rewrites targeting more broadly (stale/dirty vs #102/#104). Combat Parity cron is running this hour.  
+RECOMMENDED_ACTION: Keep #114 barrier hunk. Do not merge stale #105 as-is.  
+STATUS: OPEN  
+DEPENDENCIES: RAO-2026-08-31-002  
+REGRESSION_RISK: HIGH if #105 and #114 both land.
+
+---
+
+ACTION_ID: RAO-2026-08-31-004  
+SOURCE_AUTOMATION: Economy & Exploit Hunter / Security Review  
+TITLE: Official-client economy clamp and double-submit races  
+CATEGORY: economy  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: #107 still open, **dirty** vs main after #111. Backend `saveBattleStats` / `applyRewards` remain unbounded client writes (`main.mo` 1285–1388). Shop 60s auto-complete unchanged. Economy hunter cron running this hour.  
+RECOMMENDED_ACTION: Human. Rebase #107 clamp only, or wait for the new economy run. Do not autonmerge dirty #107.  
+STATUS: NEEDS_HUMAN_DECISION  
+DEPENDENCIES: AQA-2026-08-30-008  
+REGRESSION_RISK: HIGH if canister APIs tighten without a frontend roll.
+
+---
+
+ACTION_ID: RAO-2026-08-31-005  
+SOURCE_AUTOMATION: Weekly Changelog / prior orchestrator  
+TITLE: GameFlow boost toggle does not change WX payouts  
+CATEGORY: economy  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: App/GameFlow pill flips `boostMode`. WX uses a local `_setBoostMode` unused setter; victory XP always `* 1.5` when mode is default `"xp"`. Wiring it changes payouts.  
+RECOMMENDED_ACTION: Human: wire App toggle into WX math, or remove the dead pill. Do not silently change rewards.  
+STATUS: NEEDS_HUMAN_DECISION  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH — economy.
+
+---
+
+ACTION_ID: RAO-2026-08-31-006  
+SOURCE_AUTOMATION: Application Security Review  
+TITLE: Nine client-trusted canister sinks  
+CATEGORY: security-architecture  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Unchanged set: shop 60s credit; unbounded `applyRewards` / `saveBattleStats`; `createCharacter` / `updateCharacter` caps; chat impersonation; achievement client unlock; `calculateAndAwardDoka`; `completeBossRushRoom`. Finding 3 (“must not write Doka from saveBattleStats”) is stale vs architecture.  
+RECOMMENDED_ACTION: Architecture decision, not an autonomous PR.  
+STATUS: NEEDS_HUMAN_DECISION  
+DEPENDENCIES: AQA-2026-08-30-008  
+REGRESSION_RISK: HIGH
+
+---
+
+ACTION_ID: RAO-2026-08-31-007  
+SOURCE_AUTOMATION: prior orchestrator  
+TITLE: AdminDashboard.newSpell omits targeting metadata  
+CATEGORY: admin  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: `newSpell()` (`AdminDashboard.tsx` 57–99) has no `cooldown`, `hitsAllies`, `hitsMultiple`, `targetType`. Admin visual-management cron running this hour.  
+RECOMMENDED_ACTION: Defer. Admin-only; another agent is on that surface.  
+STATUS: DEFERRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW
+
+---
+
+## Closed this window (do not re-open)
+
+| Theme | Closed by |
+| :--- | :--- |
+| Enemy heal / phase HP + dungeon white portal | #103 merged |
+| Touch Thorned Ground / Void Rift | #109 merged |
+| Portal XP persist + Attack Nearest live gate | #104 / #113 merged |
+| Persist races (shop / portal XP / spends) | #111 merged |
+| Map solvability punches | #110 merged (AGENTS.md map-gen conflict; human landed it) |
+| Quality audit docs | #112 merged |
+| Attack Nearest live store | #102 merged (prior run) |
+
+## Open drafts to leave alone
+
+| PR | Note |
+| :--- | :--- |
+| #114 | Unique P0/P1; merge first |
+| #108 | Stale leftover-XP; superseded by RAO-2026-08-31-001 |
+| #107 | Dirty; economy |
+| #105 | Dirty targeting rewrite; overlaps #114 |
+| #100 #101 #106 | Test-coverage clone mill (AQA-2026-08-30-005) |
