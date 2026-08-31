@@ -475,7 +475,7 @@ export function useAdminDeleteEnemyName() {
 }
 
 // ── Achievement tracker hook (M2/M4/M11) ─────────────────────────────────────
-// ── Boss config hooks (localStorage-backed until backend endpoints land) ────
+// ── Boss config hooks (localStorage; canister endpoints exist, schemas differ) ─
 
 import { deepNormalizeBigInts } from "../lib/normalizeBigInts";
 import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";

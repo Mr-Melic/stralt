@@ -82,10 +82,58 @@ export function useGetPurchaseRecords() {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        const result = (await withTimeout(
-          (actor as ActorAny).getPurchaseRecords(),
-        )) as PurchaseRecord[] | null | undefined;
-        return (result ?? []) as PurchaseRecord[];
+        const raw = (await withTimeout((actor as ActorAny).getPurchases())) as
+          | { __kind__?: string; ok?: unknown[]; err?: string }
+          | { ok?: unknown[] }
+          | unknown[]
+          | null
+          | undefined;
+        const rows = Array.isArray(raw)
+          ? raw
+          : raw &&
+              typeof raw === "object" &&
+              "ok" in raw &&
+              Array.isArray(raw.ok)
+            ? raw.ok
+            : [];
+        return rows.map((row) => {
+          const r = row as Record<string, unknown>;
+          const timestampRaw = r.timestamp;
+          const timestampNs =
+            typeof timestampRaw === "bigint"
+              ? Number(timestampRaw)
+              : Number(timestampRaw ?? 0);
+          return {
+            id: String(r.id ?? ""),
+            packageId: String(r.packageId ?? ""),
+            dokaAmount: Number(r.dokaAmount ?? 0),
+            priceEur: Number(r.priceEur ?? 0),
+            timestamp:
+              timestampNs > 1e15
+                ? new Date(timestampNs / 1_000_000).toISOString()
+                : timestampNs
+                  ? new Date(timestampNs).toISOString()
+                  : "",
+            status: String(r.status ?? "pending"),
+            customerData: {
+              firstName: String(r.customerName ?? ""),
+              lastName: String(r.customerSurname ?? ""),
+              email: String(r.customerEmail ?? ""),
+              address: String(r.customerAddress ?? ""),
+              city: String(r.customerCity ?? ""),
+              postalCode: String(r.customerPostal ?? ""),
+              country: String(r.customerCountry ?? ""),
+            },
+            proofOfAddressBase64: undefined,
+            proofOfAddressName: String(r.proofFileUrl ?? ""),
+            userId:
+              r.userPrincipal &&
+              typeof r.userPrincipal === "object" &&
+              "toText" in r.userPrincipal
+                ? String((r.userPrincipal as { toText: () => string }).toText())
+                : String(r.userPrincipal ?? ""),
+          } as PurchaseRecord;
+        });
       } catch {
         return [];
       }

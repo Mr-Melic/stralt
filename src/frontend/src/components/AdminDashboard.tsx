@@ -88,6 +88,10 @@ const newSpell = (): SpellConfig => ({
   hitTiles: [],
   minRange: 1,
   maxRange: 3,
+  cooldown: 0,
+  multiTarget: false,
+  hitsMultiple: false,
+  hitsAllies: false,
   buffStat: undefined,
   buffModifier: undefined,
   buffDuration: undefined,
@@ -240,6 +244,92 @@ function Btn({
   );
 }
 
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel = "Delete",
+  ocidPrefix,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel?: string;
+  ocidPrefix: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      data-ocid={`${ocidPrefix}.dialog`}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(5,6,14,0.85)",
+        zIndex: 400,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          background: "linear-gradient(180deg,#13141c,#0e0f16)",
+          border: `1px solid ${C.red}`,
+          borderRadius: 10,
+          padding: "28px 32px",
+          minWidth: 320,
+          maxWidth: 420,
+          boxShadow: "0 0 40px rgba(192,57,43,0.25)",
+          fontFamily: "'Space Grotesk', system-ui, sans-serif",
+        }}
+      >
+        <div style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}>
+          ⚠️
+        </div>
+        <h3
+          style={{
+            color: "#f0c44a",
+            textAlign: "center",
+            margin: "0 0 10px",
+            fontSize: 15,
+            fontWeight: 800,
+          }}
+        >
+          {title}
+        </h3>
+        <p
+          style={{
+            color: "#8a8090",
+            fontSize: 12,
+            textAlign: "center",
+            marginBottom: 20,
+            lineHeight: 1.5,
+          }}
+        >
+          {body}
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <Btn
+            variant="ghost"
+            onClick={onCancel}
+            ocid={`${ocidPrefix}.cancel_button`}
+          >
+            Cancel
+          </Btn>
+          <Btn
+            variant="red"
+            onClick={onConfirm}
+            ocid={`${ocidPrefix}.confirm_button`}
+          >
+            {confirmLabel}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Field({
   label,
   value,
@@ -248,6 +338,8 @@ function Field({
   placeholder,
   ocid,
   err,
+  disabled,
+  hint,
 }: {
   label: string;
   value: string;
@@ -256,6 +348,8 @@ function Field({
   placeholder?: string;
   ocid?: string;
   err?: boolean;
+  disabled?: boolean;
+  hint?: string;
 }) {
   const id = ocid ?? label.toLowerCase().replace(/\s+/g, "-");
   return (
@@ -270,11 +364,19 @@ function Field({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         data-ocid={ocid}
+        disabled={disabled}
         className="stone-inset w-full px-2.5 py-1.5 text-xs text-[#c0ccd8] font-['Saira',system-ui,sans-serif]"
         style={{
           border: `1px solid ${err ? "#c0392b" : "transparent"}`,
+          opacity: disabled ? 0.55 : 1,
+          cursor: disabled ? "not-allowed" : undefined,
         }}
       />
+      {hint && (
+        <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
+          {hint}
+        </p>
+      )}
     </div>
   );
 }
@@ -527,7 +629,8 @@ const EnemyEditor: React.FC<{
   onSave: (c: EnemyConfig) => void;
   onCancel: () => void;
   saving: boolean;
-}> = ({ initial, regions, onSave, onCancel, saving }) => {
+  idLocked?: boolean;
+}> = ({ initial, regions, onSave, onCancel, saving, idLocked }) => {
   const [cfg, setCfg] = useState<EnemyConfig>(initial);
   const set = <K extends keyof EnemyConfig>(k: K, v: EnemyConfig[K]) =>
     setCfg((p) => ({ ...p, [k]: v }));
@@ -550,6 +653,12 @@ const EnemyEditor: React.FC<{
           onChange={(v) => set("id", v)}
           ocid="admin.enemy.id_input"
           placeholder="unique-id"
+          disabled={idLocked}
+          hint={
+            idLocked
+              ? "ID is locked after create — changing it would orphan the live record."
+              : undefined
+          }
         />
         <Field
           label="Name"
@@ -608,8 +717,13 @@ const EnemyEditor: React.FC<{
 
       <div style={{ marginBottom: 10 }}>
         <label htmlFor="admin.enemy.sprite_input" style={labelStyle}>
-          Sprite URL (optional)
+          Custom Visual Override
         </label>
+        <p style={{ color: "#6a6070", fontSize: 10, margin: "0 0 6px" }}>
+          Default Pixel Visual — Active fallback when this field is empty. Leave
+          blank to keep the chess-piece sprite. PNG or WebP, square, pixel art
+          recommended (no upload yet — paste a hosted URL).
+        </p>
         <input
           id="admin.enemy.sprite_input"
           type="text"
@@ -617,10 +731,23 @@ const EnemyEditor: React.FC<{
           onChange={(e) =>
             set("spriteUrl", e.target.value ? [e.target.value] : [])
           }
-          placeholder="https://example.com/sprite.png"
+          placeholder="https://… (optional custom override)"
           data-ocid="admin.enemy.sprite_input"
           style={inputStyle()}
         />
+        <p
+          data-ocid="admin.enemy.visual_status"
+          style={{
+            color: cfg.spriteUrl[0] ? C.gold : C.green,
+            fontSize: 10,
+            margin: "4px 0 0",
+            fontWeight: 700,
+          }}
+        >
+          {cfg.spriteUrl[0]
+            ? "Custom Visual — 1 override URL"
+            : "Default Pixel Visual — Active fallback"}
+        </p>
       </div>
 
       <p style={{ ...sectionHeadStyle, marginTop: 8 }}>
@@ -686,7 +813,13 @@ const EnemyEditor: React.FC<{
       <div style={{ display: "flex", gap: 10 }}>
         <Btn
           variant="gold"
-          onClick={() => onSave(cfg)}
+          onClick={() => {
+            if (!cfg.id.trim() || !cfg.name.trim()) {
+              toast.error("Enemy ID and name are required");
+              return;
+            }
+            onSave(cfg);
+          }}
           ocid="admin.enemy.save_button"
         >
           {saving ? "Saving…" : "Save Enemy"}
@@ -710,7 +843,8 @@ const RegionEditor: React.FC<{
   onSave: (c: RegionConfig) => void;
   onCancel: () => void;
   saving: boolean;
-}> = ({ initial, onSave, onCancel, saving }) => {
+  idLocked?: boolean;
+}> = ({ initial, onSave, onCancel, saving, idLocked }) => {
   const [cfg, setCfg] = useState<RegionConfig>(initial);
   const [newFx, setNewFx] = useState<BattleEffect>(newBattleEffect());
   const set = <K extends keyof RegionConfig>(k: K, v: RegionConfig[K]) =>
@@ -742,6 +876,12 @@ const RegionEditor: React.FC<{
           onChange={(v) => set("id", v)}
           ocid="admin.region.id_input"
           placeholder="frozen-wastes"
+          disabled={idLocked}
+          hint={
+            idLocked
+              ? "ID is locked after create — changing it would orphan the live record."
+              : undefined
+          }
         />
         <Field
           label="Name"
@@ -974,7 +1114,13 @@ const RegionEditor: React.FC<{
       <div style={{ display: "flex", gap: 10 }}>
         <Btn
           variant="gold"
-          onClick={() => onSave(cfg)}
+          onClick={() => {
+            if (!cfg.id.trim() || !cfg.name.trim()) {
+              toast.error("Region ID and name are required");
+              return;
+            }
+            onSave(cfg);
+          }}
           ocid="admin.region.save_button"
         >
           {saving ? "Saving…" : "Save Region"}
@@ -1257,9 +1403,15 @@ const SpriteEditorForm: React.FC<{
               />
             ) : (
               <span
-                style={{ color: "#6a6070", fontSize: 10, textAlign: "center" }}
+                data-ocid="admin.sprite.default_visual_status"
+                style={{
+                  color: C.green,
+                  fontSize: 9,
+                  textAlign: "center",
+                  padding: 4,
+                }}
               >
-                No preview
+                Default Pixel Visual — Active fallback
               </span>
             )}
           </div>
@@ -1283,6 +1435,18 @@ const SpriteEditorForm: React.FC<{
 
         {/* Direction URLs */}
         <p style={{ ...sectionHeadStyle, marginTop: 4 }}>Direction Sprites</p>
+        <p
+          style={{
+            color: "#6a6070",
+            fontSize: 10,
+            margin: "0 0 8px",
+            lineHeight: 1.45,
+          }}
+        >
+          Custom Visual Override — paste hosted PNG/WebP URLs (square pixel art,
+          one frame per facing). Empty URLs are valid: the chess-piece Default
+          Pixel Visual stays the active fallback. No file upload yet.
+        </p>
         <div
           style={{
             display: "grid",
@@ -1370,14 +1534,14 @@ const SpriteEditorForm: React.FC<{
           onClick={onCancel}
           ocid="admin.sprite.cancel_button"
         >
-          ANNULER
+          Cancel
         </Btn>
         <Btn
           variant="gold"
           onClick={() => onSave(cfg)}
           ocid="admin.sprite.save_button"
         >
-          {saving ? "Saving…" : "UTILISER"}
+          {saving ? "Saving…" : "Save Character"}
         </Btn>
       </div>
     </div>
@@ -1740,75 +1904,14 @@ const SpriteList: React.FC<{
         )}
       </div>
 
-      {/* ── Delete confirmation dialog ─────────────────────────────────────── */}
       {confirmDeleteId && (
-        <div
-          data-ocid="admin.sprites.delete_dialog"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(5,6,14,0.85)",
-            zIndex: 400,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            style={{
-              background: "linear-gradient(180deg,#13141c,#0e0f16)",
-              border: `1px solid ${C.red}`,
-              borderRadius: 10,
-              padding: "28px 32px",
-              minWidth: 320,
-              boxShadow: "0 0 40px rgba(192,57,43,0.25)",
-              fontFamily: "'Space Grotesk', system-ui, sans-serif",
-            }}
-          >
-            <div
-              style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}
-            >
-              ⚠️
-            </div>
-            <h3
-              style={{
-                color: "#f0c44a",
-                textAlign: "center",
-                margin: "0 0 10px",
-                fontSize: 15,
-                fontWeight: 800,
-              }}
-            >
-              Delete Character?
-            </h3>
-            <p
-              style={{
-                color: "#8a8090",
-                fontSize: 12,
-                textAlign: "center",
-                marginBottom: 20,
-              }}
-            >
-              This action cannot be undone.
-            </p>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-              <Btn
-                variant="ghost"
-                onClick={() => setConfirmDeleteId(null)}
-                ocid="admin.sprites.delete_cancel_button"
-              >
-                ANNULER
-              </Btn>
-              <Btn
-                variant="red"
-                onClick={() => handleDeleteConfirm(confirmDeleteId)}
-                ocid="admin.sprites.delete_confirm_button"
-              >
-                Delete
-              </Btn>
-            </div>
-          </div>
-        </div>
+        <ConfirmDialog
+          title="Delete Character?"
+          body="This removes the sprite override. Characters without a custom visual keep the Default Pixel Visual. This cannot be undone."
+          ocidPrefix="admin.sprites.delete"
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={() => handleDeleteConfirm(confirmDeleteId)}
+        />
       )}
     </div>
   );
@@ -1820,167 +1923,187 @@ const EnemyList: React.FC<{
   onAdd: () => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
-}> = ({ enemies, loading, onAdd, onEdit, onDelete }) => (
-  <div style={{ padding: 20 }}>
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 16,
-      }}
-    >
-      <div>
-        <h3
-          style={{
-            color: "#f0c44a",
-            margin: 0,
-            fontSize: 14,
-            fontWeight: 800,
-            letterSpacing: "0.06em",
-          }}
-        >
-          Enemy Configurations
-        </h3>
-        <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
-          {enemies.length} enemi{enemies.length === 1 ? "y" : "es"} configured
-        </p>
-      </div>
-      <Btn variant="gold" onClick={onAdd} ocid="admin.enemies.add_button">
-        + Add Enemy
-      </Btn>
-    </div>
-
-    {loading && (
+}> = ({ enemies, loading, onAdd, onEdit, onDelete }) => {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const pending = enemies.find((e) => e.id === confirmId);
+  return (
+    <div style={{ padding: 20 }}>
       <div
-        data-ocid="admin.enemies.loading_state"
         style={{
-          color: "#8a8090",
-          fontSize: 12,
-          textAlign: "center",
-          padding: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
         }}
       >
-        Loading enemies…
-      </div>
-    )}
-
-    {!loading && enemies.length === 0 && (
-      <div
-        data-ocid="admin.enemies.empty_state"
-        style={{
-          textAlign: "center",
-          padding: "40px 0",
-          color: "#6a6070",
-          fontSize: 13,
-          border: `1px dashed ${C.dimmer}`,
-          borderRadius: 8,
-        }}
-      >
-        <div style={{ fontSize: 28, marginBottom: 8 }}>⚔️</div>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>No enemies yet</div>
-        <div style={{ fontSize: 11 }}>
-          Add your first enemy configuration above
-        </div>
-      </div>
-    )}
-
-    {enemies.map((e, i) => (
-      <PanelCard key={e.id}>
-        <div
-          data-ocid={`admin.enemies.item.${i + 1}`}
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            padding: "10px 14px",
-          }}
-        >
-          <div
+        <div>
+          <h3
             style={{
-              width: 36,
-              height: 36,
-              background: `linear-gradient(135deg, ${C.bg0}, ${C.bg3})`,
-              border: `1px solid ${C.goldDim}`,
-              borderRadius: 6,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 18,
-              flexShrink: 0,
+              color: "#f0c44a",
+              margin: 0,
+              fontSize: 14,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
             }}
           >
-            👾
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                color: "#c0ccd8",
-                fontWeight: 700,
-                fontSize: 13,
-                marginBottom: 2,
-              }}
-            >
-              {e.name || e.id}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              {[
-                [
-                  `Lv ${String(e.levelMin)}–${String(e.levelMax)}`,
-                  C.goldBright,
-                ],
-                [`HP ${String(e.hp)}`, C.red],
-                [`AP ${String(e.ap)}`, C.blue],
-                [`MP ${String(e.mp)}`, C.green],
-                [`Init ${String(e.initStat)}`, C.dim],
-              ].map(([label, color]) => (
-                <span
-                  key={label}
-                  style={{
-                    background: `${color}18`,
-                    border: `1px solid ${color}44`,
-                    borderRadius: 20,
-                    padding: "1px 7px",
-                    fontSize: 10,
-                    color,
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  {label}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn
-              variant="ghost"
-              small
-              onClick={() => onEdit(e.id)}
-              ocid={`admin.enemies.edit_button.${i + 1}`}
-            >
-              Edit
-            </Btn>
-            <Btn
-              variant="red"
-              small
-              onClick={() => onDelete(e.id)}
-              ocid={`admin.enemies.delete_button.${i + 1}`}
-            >
-              ×
-            </Btn>
+            Enemy Configurations
+          </h3>
+          <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
+            {enemies.length} enemi{enemies.length === 1 ? "y" : "es"} configured
+          </p>
+        </div>
+        <Btn variant="gold" onClick={onAdd} ocid="admin.enemies.add_button">
+          + Add Enemy
+        </Btn>
+      </div>
+
+      {loading && (
+        <div
+          data-ocid="admin.enemies.loading_state"
+          style={{
+            color: "#8a8090",
+            fontSize: 12,
+            textAlign: "center",
+            padding: 24,
+          }}
+        >
+          Loading enemies…
+        </div>
+      )}
+
+      {!loading && enemies.length === 0 && (
+        <div
+          data-ocid="admin.enemies.empty_state"
+          style={{
+            textAlign: "center",
+            padding: "40px 0",
+            color: "#6a6070",
+            fontSize: 13,
+            border: `1px dashed ${C.dimmer}`,
+            borderRadius: 8,
+          }}
+        >
+          <div style={{ fontSize: 28, marginBottom: 8 }}>⚔️</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>No enemies yet</div>
+          <div style={{ fontSize: 11 }}>
+            Add your first enemy configuration above
           </div>
         </div>
-      </PanelCard>
-    ))}
-  </div>
-);
+      )}
+
+      {enemies.map((e, i) => (
+        <PanelCard key={e.id}>
+          <div
+            data-ocid={`admin.enemies.item.${i + 1}`}
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              padding: "10px 14px",
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                background: `linear-gradient(135deg, ${C.bg0}, ${C.bg3})`,
+                border: `1px solid ${C.goldDim}`,
+                borderRadius: 6,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+                flexShrink: 0,
+              }}
+            >
+              👾
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  color: "#c0ccd8",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  marginBottom: 2,
+                }}
+              >
+                {e.name || e.id}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                {[
+                  [
+                    `Lv ${String(e.levelMin)}–${String(e.levelMax)}`,
+                    C.goldBright,
+                  ],
+                  [`HP ${String(e.hp)}`, C.red],
+                  [`AP ${String(e.ap)}`, C.blue],
+                  [`MP ${String(e.mp)}`, C.green],
+                  [`Init ${String(e.initStat)}`, C.dim],
+                  [
+                    e.spriteUrl[0] ? "Custom visual" : "Default pixel visual",
+                    e.spriteUrl[0] ? C.gold : C.green,
+                  ],
+                ].map(([label, color]) => (
+                  <span
+                    key={label}
+                    style={{
+                      background: `${color}18`,
+                      border: `1px solid ${color}44`,
+                      borderRadius: 20,
+                      padding: "1px 7px",
+                      fontSize: 10,
+                      color,
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn
+                variant="ghost"
+                small
+                onClick={() => onEdit(e.id)}
+                ocid={`admin.enemies.edit_button.${i + 1}`}
+              >
+                Edit
+              </Btn>
+              <Btn
+                variant="red"
+                small
+                onClick={() => setConfirmId(e.id)}
+                ocid={`admin.enemies.delete_button.${i + 1}`}
+              >
+                ×
+              </Btn>
+            </div>
+          </div>
+        </PanelCard>
+      ))}
+      {confirmId && (
+        <ConfirmDialog
+          title={`Delete ${pending?.name || pending?.id || "enemy"}?`}
+          body="This removes the live enemy template immediately. Players can encounter it until you recreate it. This cannot be undone."
+          ocidPrefix="admin.enemies.delete"
+          onCancel={() => setConfirmId(null)}
+          onConfirm={() => {
+            onDelete(confirmId);
+            setConfirmId(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
 
 // ── RegionList ────────────────────────────────────────────────────────────────
 
@@ -1990,165 +2113,181 @@ const RegionList: React.FC<{
   onAdd: () => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
-}> = ({ regions, loading, onAdd, onEdit, onDelete }) => (
-  <div style={{ padding: 20 }}>
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 16,
-      }}
-    >
-      <div>
-        <h3
-          style={{
-            color: "#f0c44a",
-            margin: 0,
-            fontSize: 14,
-            fontWeight: 800,
-            letterSpacing: "0.06em",
-          }}
-        >
-          Region Configurations
-        </h3>
-        <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
-          {regions.length} region{regions.length === 1 ? "" : "s"} defined
-        </p>
-      </div>
-      <Btn variant="gold" onClick={onAdd} ocid="admin.regions.add_button">
-        + Add Region
-      </Btn>
-    </div>
-
-    {loading && (
+}> = ({ regions, loading, onAdd, onEdit, onDelete }) => {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const pending = regions.find((r) => r.id === confirmId);
+  return (
+    <div style={{ padding: 20 }}>
       <div
-        data-ocid="admin.regions.loading_state"
         style={{
-          color: "#8a8090",
-          fontSize: 12,
-          textAlign: "center",
-          padding: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
         }}
       >
-        Loading regions…
-      </div>
-    )}
-
-    {!loading && regions.length === 0 && (
-      <div
-        data-ocid="admin.regions.empty_state"
-        style={{
-          textAlign: "center",
-          padding: "40px 0",
-          color: "#6a6070",
-          fontSize: 13,
-          border: `1px dashed ${C.dimmer}`,
-          borderRadius: 8,
-        }}
-      >
-        <div style={{ fontSize: 28, marginBottom: 8 }}>🗺️</div>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>No regions yet</div>
-        <div style={{ fontSize: 11 }}>Create your first battle region</div>
-      </div>
-    )}
-
-    {regions.map((r, i) => (
-      <PanelCard key={r.id}>
-        <div
-          data-ocid={`admin.regions.item.${i + 1}`}
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            padding: "10px 14px",
-          }}
-        >
-          <div
+        <div>
+          <h3
             style={{
-              width: 36,
-              height: 36,
-              background: r.backgroundColor,
-              border: `2px solid ${C.goldDim}`,
-              borderRadius: 6,
-              flexShrink: 0,
-              boxShadow: `0 0 8px ${r.backgroundColor}88`,
+              color: "#f0c44a",
+              margin: 0,
+              fontSize: 14,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
             }}
-          />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                color: "#c0ccd8",
-                fontWeight: 700,
-                fontSize: 13,
-                marginBottom: 2,
-              }}
-            >
-              {r.name || r.id}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              <span
-                style={{
-                  background: `${C.gold}18`,
-                  border: `1px solid ${C.goldDim}`,
-                  borderRadius: 20,
-                  padding: "1px 7px",
-                  fontSize: 10,
-                  color: "#f0c44a",
-                }}
-              >
-                Lv {String(r.levelMin)}–{String(r.levelMax)}
-              </span>
-              <span
-                style={{
-                  background: `${C.blue}18`,
-                  border: `1px solid ${C.blue}44`,
-                  borderRadius: 20,
-                  padding: "1px 7px",
-                  fontSize: 10,
-                  color: C.blue,
-                }}
-              >
-                {r.battleEffects.length} effect
-                {r.battleEffects.length === 1 ? "" : "s"}
-              </span>
-              {r.battleEffects.slice(0, 2).map((fx) => (
-                <span key={fx.id} style={{ color: "#8a8090", fontSize: 10 }}>
-                  {fx.name}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn
-              variant="ghost"
-              small
-              onClick={() => onEdit(r.id)}
-              ocid={`admin.regions.edit_button.${i + 1}`}
-            >
-              Edit
-            </Btn>
-            <Btn
-              variant="red"
-              small
-              onClick={() => onDelete(r.id)}
-              ocid={`admin.regions.delete_button.${i + 1}`}
-            >
-              ×
-            </Btn>
-          </div>
+          >
+            Region Configurations
+          </h3>
+          <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
+            {regions.length} region{regions.length === 1 ? "" : "s"} defined
+          </p>
         </div>
-      </PanelCard>
-    ))}
-  </div>
-);
+        <Btn variant="gold" onClick={onAdd} ocid="admin.regions.add_button">
+          + Add Region
+        </Btn>
+      </div>
+
+      {loading && (
+        <div
+          data-ocid="admin.regions.loading_state"
+          style={{
+            color: "#8a8090",
+            fontSize: 12,
+            textAlign: "center",
+            padding: 24,
+          }}
+        >
+          Loading regions…
+        </div>
+      )}
+
+      {!loading && regions.length === 0 && (
+        <div
+          data-ocid="admin.regions.empty_state"
+          style={{
+            textAlign: "center",
+            padding: "40px 0",
+            color: "#6a6070",
+            fontSize: 13,
+            border: `1px dashed ${C.dimmer}`,
+            borderRadius: 8,
+          }}
+        >
+          <div style={{ fontSize: 28, marginBottom: 8 }}>🗺️</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>No regions yet</div>
+          <div style={{ fontSize: 11 }}>Create your first battle region</div>
+        </div>
+      )}
+
+      {regions.map((r, i) => (
+        <PanelCard key={r.id}>
+          <div
+            data-ocid={`admin.regions.item.${i + 1}`}
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              padding: "10px 14px",
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                background: r.backgroundColor,
+                border: `2px solid ${C.goldDim}`,
+                borderRadius: 6,
+                flexShrink: 0,
+                boxShadow: `0 0 8px ${r.backgroundColor}88`,
+              }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  color: "#c0ccd8",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  marginBottom: 2,
+                }}
+              >
+                {r.name || r.id}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                <span
+                  style={{
+                    background: `${C.gold}18`,
+                    border: `1px solid ${C.goldDim}`,
+                    borderRadius: 20,
+                    padding: "1px 7px",
+                    fontSize: 10,
+                    color: "#f0c44a",
+                  }}
+                >
+                  Lv {String(r.levelMin)}–{String(r.levelMax)}
+                </span>
+                <span
+                  style={{
+                    background: `${C.blue}18`,
+                    border: `1px solid ${C.blue}44`,
+                    borderRadius: 20,
+                    padding: "1px 7px",
+                    fontSize: 10,
+                    color: C.blue,
+                  }}
+                >
+                  {r.battleEffects.length} effect
+                  {r.battleEffects.length === 1 ? "" : "s"}
+                </span>
+                {r.battleEffects.slice(0, 2).map((fx) => (
+                  <span key={fx.id} style={{ color: "#8a8090", fontSize: 10 }}>
+                    {fx.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn
+                variant="ghost"
+                small
+                onClick={() => onEdit(r.id)}
+                ocid={`admin.regions.edit_button.${i + 1}`}
+              >
+                Edit
+              </Btn>
+              <Btn
+                variant="red"
+                small
+                onClick={() => setConfirmId(r.id)}
+                ocid={`admin.regions.delete_button.${i + 1}`}
+              >
+                ×
+              </Btn>
+            </div>
+          </div>
+        </PanelCard>
+      ))}
+      {confirmId && (
+        <ConfirmDialog
+          title={`Delete ${pending?.name || pending?.id || "region"}?`}
+          body="This removes the live region template immediately. Enemies assigned to it lose that spawn region. This cannot be undone."
+          ocidPrefix="admin.regions.delete"
+          onCancel={() => setConfirmId(null)}
+          onConfirm={() => {
+            onDelete(confirmId);
+            setConfirmId(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
 
 // ── SpellEditor ──────────────────────────────────────────────────────────────────
 
@@ -2173,7 +2312,8 @@ const SpellEditor: React.FC<{
   onSave: (c: SpellConfig) => void;
   onCancel: () => void;
   saving: boolean;
-}> = ({ initial, onSave, onCancel, saving }) => {
+  idLocked?: boolean;
+}> = ({ initial, onSave, onCancel, saving, idLocked }) => {
   const [cfg, setCfg] = useState<SpellConfig>(initial);
   const set = <K extends keyof SpellConfig>(k: K, v: SpellConfig[K]) =>
     setCfg((p) => ({ ...p, [k]: v }));
@@ -2195,6 +2335,12 @@ const SpellEditor: React.FC<{
           onChange={(v) => set("id", v)}
           ocid="admin.spell.id_input"
           placeholder="fireball"
+          disabled={idLocked}
+          hint={
+            idLocked
+              ? "ID is locked after create — changing it would orphan the live record."
+              : undefined
+          }
         />
         <Field
           label="Name"
@@ -2286,6 +2432,12 @@ const SpellEditor: React.FC<{
           value={cfg.range}
           onChange={(v) => set("range", v)}
           ocid="admin.spell.range_input"
+        />
+        <StatRow
+          label="Cooldown"
+          value={BigInt(cfg.cooldown ?? 0)}
+          onChange={(v) => set("cooldown", Number(v))}
+          ocid="admin.spell.cooldown_input"
         />
       </div>
 
@@ -2464,8 +2616,11 @@ const SpellEditor: React.FC<{
           <input
             id="admin.spell.hitsmultiple_checkbox"
             type="checkbox"
-            checked={cfg.hitsMultiple ?? false}
-            onChange={(e) => set("hitsMultiple", e.target.checked)}
+            checked={cfg.hitsMultiple ?? cfg.multiTarget ?? false}
+            onChange={(e) => {
+              set("hitsMultiple", e.target.checked);
+              set("multiTarget", e.target.checked);
+            }}
             data-ocid="admin.spell.hitsmultiple_checkbox"
             style={{ accentColor: C.gold, width: 14, height: 14 }}
           />
@@ -2482,7 +2637,7 @@ const SpellEditor: React.FC<{
           </label>
         </div>
         {/* Hits Allies Too — only shown when hitsMultiple is checked */}
-        {cfg.hitsMultiple && (
+        {(cfg.hitsMultiple ?? cfg.multiTarget) && (
           <div
             style={{
               marginBottom: 10,
@@ -3168,7 +3323,13 @@ const SpellEditor: React.FC<{
       <div style={{ display: "flex", gap: 10 }}>
         <Btn
           variant="gold"
-          onClick={() => onSave(cfg)}
+          onClick={() => {
+            if (!cfg.id.trim() || !cfg.name.trim()) {
+              toast.error("Spell ID and name are required");
+              return;
+            }
+            onSave(cfg);
+          }}
           ocid="admin.spell.save_button"
         >
           {saving ? "Saving…" : "Save Spell"}
@@ -3193,169 +3354,185 @@ const SpellList: React.FC<{
   onAdd: () => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
-}> = ({ spells, loading, onAdd, onEdit, onDelete }) => (
-  <div style={{ padding: 20 }}>
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 16,
-      }}
-    >
-      <div>
-        <h3
-          style={{
-            color: "#f0c44a",
-            margin: 0,
-            fontSize: 14,
-            fontWeight: 800,
-            letterSpacing: "0.06em",
-          }}
-        >
-          Spell Configurations
-        </h3>
-        <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
-          {spells.length} spell{spells.length === 1 ? "" : "s"} configured
-        </p>
-      </div>
-      <Btn variant="gold" onClick={onAdd} ocid="admin.spells.add_button">
-        + Add Spell
-      </Btn>
-    </div>
-
-    {loading && (
+}> = ({ spells, loading, onAdd, onEdit, onDelete }) => {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const pending = spells.find((s) => s.id === confirmId);
+  return (
+    <div style={{ padding: 20 }}>
       <div
-        data-ocid="admin.spells.loading_state"
         style={{
-          color: "#8a8090",
-          fontSize: 12,
-          textAlign: "center",
-          padding: 24,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
         }}
       >
-        Loading spells…
-      </div>
-    )}
-
-    {!loading && spells.length === 0 && (
-      <div
-        data-ocid="admin.spells.empty_state"
-        style={{
-          textAlign: "center",
-          padding: "40px 0",
-          color: "#6a6070",
-          fontSize: 13,
-          border: `1px dashed ${C.dimmer}`,
-          borderRadius: 8,
-        }}
-      >
-        <div style={{ fontSize: 28, marginBottom: 8 }}>⚡</div>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>No spells yet</div>
-        <div style={{ fontSize: 11 }}>
-          Add default spells for your characters
-        </div>
-      </div>
-    )}
-
-    {spells.map((s, i) => (
-      <PanelCard key={s.id}>
-        <div
-          data-ocid={`admin.spells.item.${i + 1}`}
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            padding: "10px 14px",
-          }}
-        >
-          <div
+        <div>
+          <h3
             style={{
-              width: 40,
-              height: 40,
-              background: `linear-gradient(135deg, ${C.bg3}, #2a0a1a)`,
-              border: `2px solid ${C.goldDim}`,
-              borderRadius: 8,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 20,
-              flexShrink: 0,
+              color: "#f0c44a",
+              margin: 0,
+              fontSize: 14,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
             }}
           >
-            {s.iconEmoji || "⚡"}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                color: "#c0ccd8",
-                fontWeight: 700,
-                fontSize: 13,
-                marginBottom: 2,
-              }}
-            >
-              {s.name || s.id}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                flexWrap: "wrap",
-                alignItems: "center",
-              }}
-            >
-              {[
-                [s.effectType, C.gold],
-                [`AP ${String(s.apCost)}`, C.blue],
-                [`DMG ${String(s.damage)}`, C.red],
-                [`RNG ${String(s.range)}`, C.green],
-              ].map(([label, color]) => (
-                <span
-                  key={label as string}
-                  style={{
-                    background: `${color as string}18`,
-                    border: `1px solid ${color as string}44`,
-                    borderRadius: 20,
-                    padding: "1px 7px",
-                    fontSize: 10,
-                    color: color as string,
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  {label}
-                </span>
-              ))}
-              {s.description && (
-                <span style={{ color: "#6a6070", fontSize: 10 }}>
-                  {s.description.slice(0, 40)}
-                  {s.description.length > 40 ? "…" : ""}
-                </span>
-              )}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Btn
-              variant="ghost"
-              small
-              onClick={() => onEdit(s.id)}
-              ocid={`admin.spells.edit_button.${i + 1}`}
-            >
-              Edit
-            </Btn>
-            <Btn
-              variant="red"
-              small
-              onClick={() => onDelete(s.id)}
-              ocid={`admin.spells.delete_button.${i + 1}`}
-            >
-              ×
-            </Btn>
+            Spell Configurations
+          </h3>
+          <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
+            {spells.length} spell{spells.length === 1 ? "" : "s"} configured
+          </p>
+        </div>
+        <Btn variant="gold" onClick={onAdd} ocid="admin.spells.add_button">
+          + Add Spell
+        </Btn>
+      </div>
+
+      {loading && (
+        <div
+          data-ocid="admin.spells.loading_state"
+          style={{
+            color: "#8a8090",
+            fontSize: 12,
+            textAlign: "center",
+            padding: 24,
+          }}
+        >
+          Loading spells…
+        </div>
+      )}
+
+      {!loading && spells.length === 0 && (
+        <div
+          data-ocid="admin.spells.empty_state"
+          style={{
+            textAlign: "center",
+            padding: "40px 0",
+            color: "#6a6070",
+            fontSize: 13,
+            border: `1px dashed ${C.dimmer}`,
+            borderRadius: 8,
+          }}
+        >
+          <div style={{ fontSize: 28, marginBottom: 8 }}>⚡</div>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>No spells yet</div>
+          <div style={{ fontSize: 11 }}>
+            Add default spells for your characters
           </div>
         </div>
-      </PanelCard>
-    ))}
-  </div>
-);
+      )}
+
+      {spells.map((s, i) => (
+        <PanelCard key={s.id}>
+          <div
+            data-ocid={`admin.spells.item.${i + 1}`}
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              padding: "10px 14px",
+            }}
+          >
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                background: `linear-gradient(135deg, ${C.bg3}, #2a0a1a)`,
+                border: `2px solid ${C.goldDim}`,
+                borderRadius: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 20,
+                flexShrink: 0,
+              }}
+            >
+              {s.iconEmoji || "⚡"}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                style={{
+                  color: "#c0ccd8",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  marginBottom: 2,
+                }}
+              >
+                {s.name || s.id}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                {[
+                  [s.effectType, C.gold],
+                  [`AP ${String(s.apCost)}`, C.blue],
+                  [`DMG ${String(s.damage)}`, C.red],
+                  [`RNG ${String(s.range)}`, C.green],
+                ].map(([label, color]) => (
+                  <span
+                    key={label as string}
+                    style={{
+                      background: `${color as string}18`,
+                      border: `1px solid ${color as string}44`,
+                      borderRadius: 20,
+                      padding: "1px 7px",
+                      fontSize: 10,
+                      color: color as string,
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {label}
+                  </span>
+                ))}
+                {s.description && (
+                  <span style={{ color: "#6a6070", fontSize: 10 }}>
+                    {s.description.slice(0, 40)}
+                    {s.description.length > 40 ? "…" : ""}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn
+                variant="ghost"
+                small
+                onClick={() => onEdit(s.id)}
+                ocid={`admin.spells.edit_button.${i + 1}`}
+              >
+                Edit
+              </Btn>
+              <Btn
+                variant="red"
+                small
+                onClick={() => setConfirmId(s.id)}
+                ocid={`admin.spells.delete_button.${i + 1}`}
+              >
+                ×
+              </Btn>
+            </div>
+          </div>
+        </PanelCard>
+      ))}
+      {confirmId && (
+        <ConfirmDialog
+          title={`Delete ${pending?.name || pending?.id || "spell"}?`}
+          body="This removes the live spell immediately. Boss pools and player unlocks that reference it will break until you recreate it. This cannot be undone."
+          ocidPrefix="admin.spells.delete"
+          onCancel={() => setConfirmId(null)}
+          onConfirm={() => {
+            onDelete(confirmId);
+            setConfirmId(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
 
 // ── TierConfigTab ─────────────────────────────────────────────────────────────────────────────
 
@@ -3795,9 +3972,9 @@ const SettingsTab: React.FC = () => {
             lineHeight: 1.6,
           }}
         >
-          ⚠️ This action grants another Internet Identity full admin control. You
-          will lose admin access if you do not retain it yourself. Enter the
-          Principal ID of the new admin and type{" "}
+          ⚠️ This grants another Internet Identity full admin control. It does
+          not automatically remove your own admin role. Enter the Principal ID
+          of the new admin and type{" "}
           <strong style={{ color: C.red }}>TRANSFER</strong> to confirm.
         </p>
 
@@ -3897,9 +4074,17 @@ const LevelUpConfigPanel: React.FC = () => {
     localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
     try {
       if (actor) {
-        await (actor as unknown as backendInterface).adminSetLevelUpConfig(
-          cfg as any,
-        );
+        await (actor as unknown as backendInterface).adminSetLevelUpConfig({
+          maxSpellRange: BigInt(cfg.maxSpellRange),
+          spellRangeGrowthLevels: BigInt(cfg.spellRangeGrowthLevels),
+          spellFailBaseChance: cfg.spellFailBaseChance,
+          spellFailReductionPerLevel: cfg.spellFailReductionPerLevel,
+          statGrowthPercent: BigInt(5),
+          apMpLevelThreshold: BigInt(25),
+          spellLevelingBaseCost: BigInt(10),
+          spellLevelingCostMultiplier: 2,
+          spellDmgGrowthPercent: BigInt(3),
+        });
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -4039,7 +4224,9 @@ const VisualsTab: React.FC = () => {
   const { actor } = useActor();
   const stored = (() => {
     try {
-      const v = localStorage.getItem("paperVertexPalette");
+      const v =
+        localStorage.getItem("pbv_color_palette") ??
+        localStorage.getItem("paperVertexPalette");
       if (v) {
         const arr = JSON.parse(v) as string[];
         if (Array.isArray(arr)) return arr;
@@ -4064,6 +4251,7 @@ const VisualsTab: React.FC = () => {
   const handleSave = async () => {
     const palette = slots.filter((s) => s.enabled).map((s) => s.color);
     localStorage.setItem("paperVertexPalette", JSON.stringify(palette));
+    localStorage.setItem("pbv_color_palette", JSON.stringify(palette));
     try {
       await (actor as unknown as backendInterface).adminSetColorPalette(
         JSON.stringify(palette),
@@ -4080,6 +4268,7 @@ const VisualsTab: React.FC = () => {
 
   const handleReset = () => {
     localStorage.removeItem("paperVertexPalette");
+    localStorage.removeItem("pbv_color_palette");
     setSlots(DEFAULT_PALETTE.map((c) => ({ color: c, enabled: true })));
   };
 
@@ -4650,7 +4839,13 @@ const AchievementEditor: React.FC<{
         </Btn>
         <Btn
           variant="gold"
-          onClick={() => onSave(cfg)}
+          onClick={() => {
+            if (!cfg.id.trim() || !cfg.name.trim()) {
+              toast.error("Achievement ID and name are required");
+              return;
+            }
+            onSave(cfg);
+          }}
           ocid="admin.achievement.save_button"
         >
           {saving ? "Saving…" : "Save Achievement"}
@@ -4726,6 +4921,15 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   const [bossRushSaved, setBossRushSaved] = useState(false);
   const [shopPrincipalId, setShopPrincipalId] = useState("");
   const [shopDokaAmount, setShopDokaAmount] = useState<number>(0);
+  const [shopConfirm, setShopConfirm] = useState<null | "grant" | "ban">(null);
+  const [pendingTab, setPendingTab] = useState<
+    AdminDashboardState["tab"] | "close" | null
+  >(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    kind: "modifier" | "achievement" | "name";
+    id: string;
+    label: string;
+  } | null>(null);
 
   const { actor: adminActor } = useActor();
 
@@ -4759,7 +4963,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
     if (gameConfigQ.data) setGameConfigDraft(gameConfigQ.data);
   }, [gameConfigQ.data]);
 
-  const setTab = (tab: AdminDashboardState["tab"]) =>
+  const hasOpenEditor =
+    dashState.editingEnemyId != null ||
+    dashState.editingRegionId != null ||
+    dashState.editingSpellId != null ||
+    dashState.editingModifierId != null ||
+    dashState.editingAchievementId != null;
+
+  const applyTab = (tab: AdminDashboardState["tab"]) =>
     setDashState((p) => ({
       ...p,
       tab,
@@ -4770,6 +4981,22 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       editingModifierId: null,
       editingAchievementId: null,
     }));
+
+  const setTab = (tab: AdminDashboardState["tab"]) => {
+    if (hasOpenEditor && tab !== dashState.tab) {
+      setPendingTab(tab);
+      return;
+    }
+    applyTab(tab);
+  };
+
+  const requestClose = () => {
+    if (hasOpenEditor) {
+      setPendingTab("close");
+      return;
+    }
+    onBack();
+  };
 
   const enemies = enemyQ.data ?? [];
   const regions = regionQ.data ?? [];
@@ -4917,6 +5144,111 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           {saveStatus}
         </div>
       )}
+      {pendingTab && (
+        <ConfirmDialog
+          title="Leave this editor?"
+          body="Unsaved edits in the open form will be discarded. Save first if you want to keep them."
+          confirmLabel={
+            pendingTab === "close" ? "Leave dashboard" : "Leave editor"
+          }
+          ocidPrefix="admin.unsaved"
+          onCancel={() => setPendingTab(null)}
+          onConfirm={() => {
+            const next = pendingTab;
+            setPendingTab(null);
+            if (next === "close") onBack();
+            else applyTab(next);
+          }}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete ${pendingDelete.label}?`}
+          body={
+            pendingDelete.kind === "name"
+              ? "This removes the name from the live enemy-name pool immediately."
+              : "This removes the live configuration immediately. This cannot be undone."
+          }
+          ocidPrefix={`admin.${pendingDelete.kind}s.delete`}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const { kind, id } = pendingDelete;
+            setPendingDelete(null);
+            if (kind === "modifier") {
+              delModifierMut.mutate(id, {
+                onSuccess: () => toast.success("Modifier deleted"),
+                onError: () => toast.error("Failed to delete modifier"),
+              });
+            } else if (kind === "achievement") {
+              delAchievementMut.mutate(id, {
+                onSuccess: () => toast.success("Achievement deleted"),
+                onError: () => toast.error("Failed to delete"),
+              });
+            } else {
+              delEnemyNameMut.mutate(id, {
+                onSuccess: () => toast.success(`Removed "${id}"`),
+                onError: () => toast.error("Failed to remove name"),
+              });
+            }
+          }}
+        />
+      )}
+      {shopConfirm === "grant" && (
+        <ConfirmDialog
+          title={`Grant ${shopDokaAmount} Doka?`}
+          body={`This credits ${shopDokaAmount} Doka to ${shopPrincipalId} immediately. There is no undo.`}
+          confirmLabel="Grant Doka"
+          ocidPrefix="admin.shop.grant"
+          onCancel={() => setShopConfirm(null)}
+          onConfirm={() => {
+            setShopConfirm(null);
+            void (async () => {
+              try {
+                await (
+                  adminActor as unknown as backendInterface
+                ).adminAddDokaToUser(
+                  Principal.fromText(shopPrincipalId),
+                  BigInt(Number(shopDokaAmount) || 0),
+                  null,
+                );
+                toast.success(
+                  `Granted ${shopDokaAmount} Doka to ${shopPrincipalId}`,
+                );
+                setSaveStatus("Saved");
+                setTimeout(() => setSaveStatus(null), 3000);
+              } catch (err) {
+                toast.error(`Failed to grant Doka: ${String(err)}`);
+                setSaveStatus(`Save failed: ${String(err)}`);
+              }
+            })();
+          }}
+        />
+      )}
+      {shopConfirm === "ban" && (
+        <ConfirmDialog
+          title={`Ban ${shopPrincipalId}?`}
+          body="Banned principals fail purchases, buffs, achievement claims, boss rush, and Doka awards. Achievement progress for this principal is cleared."
+          confirmLabel="Ban player"
+          ocidPrefix="admin.shop.ban"
+          onCancel={() => setShopConfirm(null)}
+          onConfirm={() => {
+            setShopConfirm(null);
+            void (async () => {
+              try {
+                await (
+                  adminActor as unknown as backendInterface
+                ).adminBanAccount(Principal.fromText(shopPrincipalId));
+                toast.success(`Banned ${shopPrincipalId}`);
+                setSaveStatus("Saved");
+                setTimeout(() => setSaveStatus(null), 3000);
+              } catch (err) {
+                toast.error(`Failed to ban player: ${String(err)}`);
+                setSaveStatus(`Save failed: ${String(err)}`);
+              }
+            })();
+          }}
+        />
+      )}
       {/* Top bar */}
       <div
         style={{
@@ -4978,7 +5310,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               ● Saving…
             </span>
           )}
-          <Btn variant="ghost" onClick={onBack} ocid="admin.close_button">
+          <Btn variant="ghost" onClick={requestClose} ocid="admin.close_button">
             ← Back to Game
           </Btn>
         </div>
@@ -4997,6 +5329,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             display: "flex",
             flexDirection: "column",
             gap: 4,
+            overflowY: "auto",
           }}
         >
           {TABS.map((t) => (
@@ -5092,6 +5425,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               <EnemyEditor
                 initial={editingEnemy}
                 regions={regions}
+                idLocked={dashState.editingEnemyId !== "__new__"}
                 saving={setEnemyMut.isPending}
                 onSave={(cfg) => {
                   setEnemyMut.mutate(cfg, {
@@ -5138,6 +5472,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             ) : editingRegion ? (
               <RegionEditor
                 initial={editingRegion}
+                idLocked={dashState.editingRegionId !== "__new__"}
                 saving={setRegionMut.isPending}
                 onSave={(cfg) => {
                   setRegionMut.mutate(cfg, {
@@ -5223,6 +5558,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             ) : editingSpell ? (
               <SpellEditor
                 initial={editingSpell}
+                idLocked={dashState.editingSpellId !== "__new__"}
                 saving={setSpellMut.isPending}
                 onSave={(cfg) => {
                   setSpellMut.mutate(cfg, {
@@ -5481,13 +5817,21 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                             <span
                               style={{
                                 background:
-                                  rec.status === "paid"
+                                  rec.status === "paid" ||
+                                  rec.status === "completed"
                                     ? `${C.green}22`
                                     : `${C.gold}22`,
                                 border: `1px solid ${
-                                  rec.status === "paid" ? C.green : C.gold
+                                  rec.status === "paid" ||
+                                  rec.status === "completed"
+                                    ? C.green
+                                    : C.gold
                                 }44`,
-                                color: rec.status === "paid" ? C.green : C.gold,
+                                color:
+                                  rec.status === "paid" ||
+                                  rec.status === "completed"
+                                    ? C.green
+                                    : C.gold,
                                 fontSize: 9,
                                 padding: "2px 7px",
                                 borderRadius: 20,
@@ -5512,11 +5856,22 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                               : "—"}
                           </td>
                           <td style={{ padding: "8px 10px" }}>
-                            {rec.proofOfAddressBase64 ? (
+                            {rec.proofOfAddressBase64 ||
+                            rec.proofOfAddressName?.startsWith("http") ? (
                               <button
                                 type="button"
                                 data-ocid={`admin.purchases.view_proof_button.${i + 1}`}
                                 onClick={() => {
+                                  if (
+                                    rec.proofOfAddressName?.startsWith("http")
+                                  ) {
+                                    window.open(
+                                      rec.proofOfAddressName,
+                                      "_blank",
+                                      "noopener,noreferrer",
+                                    );
+                                    return;
+                                  }
                                   const mime = rec.proofOfAddressName?.endsWith(
                                     ".pdf",
                                   )
@@ -5935,14 +6290,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           <Btn
                             variant="red"
                             small
-                            onClick={() => {
-                              delModifierMut.mutate(mod.id, {
-                                onSuccess: () =>
-                                  toast.success("Modifier deleted"),
-                                onError: () =>
-                                  toast.error("Failed to delete modifier"),
-                              });
-                            }}
+                            onClick={() =>
+                              setPendingDelete({
+                                kind: "modifier",
+                                id: mod.id,
+                                label: mod.name || mod.id,
+                              })
+                            }
                             ocid={`admin.modifiers.delete_button.${i + 1}`}
                           >
                             \u00D7
@@ -6165,10 +6519,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                             variant="red"
                             small
                             onClick={() =>
-                              delAchievementMut.mutate(ach.id, {
-                                onSuccess: () =>
-                                  toast.success("Achievement deleted"),
-                                onError: () => toast.error("Failed to delete"),
+                              setPendingDelete({
+                                kind: "achievement",
+                                id: ach.id,
+                                label: ach.name || ach.id,
                               })
                             }
                             ocid={`admin.achievements.delete_button.${i + 1}`}
@@ -6257,25 +6611,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         toast.error("Grant amount exceeds maximum");
                         return;
                       }
-                      (async () => {
-                        try {
-                          await (
-                            adminActor as unknown as backendInterface
-                          ).adminAddDokaToUser(
-                            Principal.fromText(shopPrincipalId),
-                            BigInt(Number(shopDokaAmount) || 0),
-                            null,
-                          );
-                          toast.success(
-                            `Granted ${shopDokaAmount} Doka to ${shopPrincipalId}`,
-                          );
-                          setSaveStatus("Saved");
-                          setTimeout(() => setSaveStatus(null), 3000);
-                        } catch (err) {
-                          toast.error(`Failed to grant Doka: ${String(err)}`);
-                          setSaveStatus(`Save failed: ${String(err)}`);
-                        }
-                      })();
+                      setShopConfirm("grant");
                     }}
                   >
                     Grant
@@ -6299,21 +6635,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         toast.error("Enter a principal ID");
                         return;
                       }
-                      (async () => {
-                        try {
-                          await (
-                            adminActor as unknown as backendInterface
-                          ).adminBanAccount(
-                            Principal.fromText(shopPrincipalId),
-                          );
-                          toast.success(`Banned ${shopPrincipalId}`);
-                          setSaveStatus("Saved");
-                          setTimeout(() => setSaveStatus(null), 3000);
-                        } catch (err) {
-                          toast.error(`Failed to ban player: ${String(err)}`);
-                          setSaveStatus(`Save failed: ${String(err)}`);
-                        }
-                      })();
+                      setShopConfirm("ban");
                     }}
                   >
                     Ban
@@ -6631,9 +6953,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         type="button"
                         data-ocid={`admin.names.delete_button.${i + 1}`}
                         onClick={() =>
-                          delEnemyNameMut.mutate(name, {
-                            onSuccess: () => toast.success(`Removed "${name}"`),
-                            onError: () => toast.error("Failed to remove name"),
+                          setPendingDelete({
+                            kind: "name",
+                            id: name,
+                            label: name,
                           })
                         }
                         style={{
@@ -6965,8 +7288,9 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
             Boss Editor
           </h2>
           <p style={{ color: "#8a8090", margin: 0, fontSize: 11 }}>
-            Configure all 19 bosses. Changes save to localStorage and take
-            effect on the next boss encounter.
+            Browser-local drafts only (pbv_boss_configs). Not canister-live. A
+            saved draft is not the live encounter until a backend writer exists.
+            Changes apply on this browser's next boss encounter.
           </p>
         </div>
       </div>

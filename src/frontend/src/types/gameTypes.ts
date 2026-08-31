@@ -179,6 +179,8 @@ export interface SpellConfig {
   effectParams?: string | null;
   // Multi-target spell fields
   hitsMultiple?: boolean;
+  /** Bindgen / canister field. Runtime combat still reads `hitsMultiple`. */
+  multiTarget?: boolean;
   hitsAllies?: boolean;
   bounces?: number; // for chain lightning type spells
   // Spell property system (DOFUS-inspired)

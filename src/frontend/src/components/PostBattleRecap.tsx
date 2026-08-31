@@ -628,7 +628,9 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
                 "0 0 12px oklch(var(--dofus-border-gold) / 0.2)";
             }}
           >
-            {data.isDefeat ? "Respawn →" : "Continue Exploring →"}
+            {data.isDefeat
+              ? "Continue — next you enter the Death Realm →"
+              : "Continue Exploring →"}
           </button>
         </div>
       </div>

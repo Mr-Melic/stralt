@@ -478,6 +478,11 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.walk_button"
                   onClick={onSetWalk}
+                  title={
+                    currentBattleMp <= 0
+                      ? "No Movement Points left this turn"
+                      : "Walk — spend MP to move onto a highlighted tile"
+                  }
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "walk" ? "stone-btn-emerald" : "stone-btn-slate opacity-55"}
@@ -490,6 +495,11 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.attack_button"
                   onClick={onSetAttack}
+                  title={
+                    currentBattleAp <= 0
+                      ? "No Action Points left this turn"
+                      : "Attack — select a spell, then click a target in range"
+                  }
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
@@ -501,8 +511,13 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                 <button
                   type="button"
                   data-ocid="battle_ui.end_battle_button"
+                  title="Flee — you die, lose 20% XP and 40% Doka, then enter the Death Realm"
                   onClick={() => {
-                    if (window.confirm("Leave battle? You will die.")) {
+                    if (
+                      window.confirm(
+                        "Flee this fight? You will die, lose 20% XP and 40% Doka, and wake in the Death Realm.",
+                      )
+                    ) {
                       onEndBattle?.();
                     }
                   }}
@@ -523,6 +538,13 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                     battlePhase !== "player" ||
                     isSummonControlled ||
                     !isPlayerTurn
+                  }
+                  title={
+                    isSummonControlled
+                      ? "A summon is acting — wait for your turn"
+                      : !isPlayerTurn || battlePhase !== "player"
+                        ? "Wait for your turn to end it"
+                        : "End your turn — leftover AP and MP are lost"
                   }
                   className={`
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
@@ -793,7 +815,13 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
               data-ocid="battle_ui.attack_nearest_button"
               onClick={onAttackNearest}
               disabled={!canAttackNearest}
-              title={isMobile ? "Attack nearest" : "Attack nearest [S]"}
+              title={
+                canAttackNearest
+                  ? isMobile
+                    ? "Attack the nearest valid target"
+                    : "Attack the nearest valid target [S]"
+                  : "Select a spell in Attack mode with enough AP and a target in range"
+              }
               style={{
                 minWidth: 58,
                 height: 52,

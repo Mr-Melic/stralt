@@ -65,6 +65,13 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
 | [docs/automation/MASTER_ROADMAP.md](docs/automation/MASTER_ROADMAP.md) | Master Technical Director roadmap (no gameplay changes) |
 | [docs/automation/ACTION_IDS_2026-08-31.md](docs/automation/ACTION_IDS_2026-08-31.md) | Current ACTION_ID ledger (reuses 2026-08-30 IDs) |
+| [docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md](docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md) | Player-experience coherence audit (systems, not process) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Owner-facing aggregate telemetry design (no production instrumentation) |
+| [docs/design/ENEMY_FORMATIONS_2026-08-31.md](docs/design/ENEMY_FORMATIONS_2026-08-31.md) | Proposed enemy synergy packs (design only) |
+| [docs/ENEMY_AI_EVOLUTION.md](docs/ENEMY_AI_EVOLUTION.md) | Proposed unbounded enemy AI modules (design only; no production AI in that doc) |
+| [docs/design/BOSS_AND_SPELL_DISCOVERY.md](docs/design/BOSS_AND_SPELL_DISCOVERY.md) | Proposed boss sheets, no-cap scaling, and boss-spell discovery classes (design only) |
+| [docs/WORLD_DYNAMICS.md](docs/WORLD_DYNAMICS.md) | World-feature catalog (rarity + relative difficulty). Not wired into map gen |
+| `src/frontend/src/engine/battleStartPlacement.ts` | Battle-start cell spacing (player ≥3 / enemies ≥2, occupancy fallback) |
 
 ## Hard rules (product)
 

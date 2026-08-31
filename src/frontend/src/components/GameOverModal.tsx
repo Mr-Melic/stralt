@@ -30,54 +30,66 @@ const GameOverModal: React.FC<GameOverModalProps> = ({
         if (!open) onRespawn();
       }}
     >
-      <AlertDialogContent className="bg-gray-800 border-red-500">
-        <AlertDialogHeader>
-          <div className="flex items-center justify-center mb-4">
-            <Skull className="w-16 h-16 text-red-500" />
-          </div>
-          <AlertDialogTitle className="text-center text-2xl text-red-400">
-            Game Over
-          </AlertDialogTitle>
-          <AlertDialogDescription className="text-center text-gray-300 space-y-2">
-            <span className="block">
-              You have been defeated in battle! You respawn on a new map — but
-              at a cost.
-            </span>
-            {(xpLost !== undefined && xpLost > 0) ||
-            (dokaLost !== undefined && dokaLost > 0) ? (
-              <span
-                className="block mt-2 rounded px-3 py-2 text-sm font-bold"
-                style={{
-                  background: "rgba(139,0,0,0.35)",
-                  border: "1px solid rgba(220,38,38,0.5)",
-                  color: "#fca5a5",
-                }}
-              >
-                {xpLost !== undefined && xpLost > 0 && (
-                  <span className="block">
-                    📉 −{xpLost} XP lost (20% penalty)
-                  </span>
-                )}
-                {dokaLost !== undefined && dokaLost > 0 && (
-                  <span className="block">
-                    💸 −{dokaLost} Doka lost (40% penalty)
-                  </span>
-                )}
+      <AlertDialogContent className="stone-frame border-[oklch(var(--dofus-border-gold))] p-0 sm:max-w-md">
+        <div className="stone-well p-6">
+          <AlertDialogHeader>
+            <div className="flex items-center justify-center mb-3">
+              <Skull
+                className="w-14 h-14"
+                style={{ color: "oklch(var(--dofus-hp-color))" }}
+              />
+            </div>
+            <AlertDialogTitle
+              className="text-center text-2xl font-display"
+              style={{ color: "oklch(var(--dofus-text-gold))" }}
+            >
+              You Have Fallen
+            </AlertDialogTitle>
+            <AlertDialogDescription
+              className="text-center space-y-2"
+              style={{ color: "oklch(var(--dofus-text-silver))" }}
+            >
+              <span className="block">
+                Your champion is sent to the Death Realm — a quiet map with no
+                enemies. Walk onto a portal to return to the world.
               </span>
-            ) : null}
-            <span className="block text-xs text-gray-400 mt-1">
-              Your level is preserved. Keep fighting!
-            </span>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter className="flex justify-center">
-          <AlertDialogAction
-            onClick={onRespawn}
-            className="bg-purple-600 hover:bg-purple-700 text-white px-8 py-2"
-          >
-            Respawn on New Map
-          </AlertDialogAction>
-        </AlertDialogFooter>
+              {(xpLost !== undefined && xpLost > 0) ||
+              (dokaLost !== undefined && dokaLost > 0) ? (
+                <span
+                  className="block mt-2 rounded px-3 py-2 text-sm font-bold"
+                  style={{
+                    background: "oklch(0.18 0.08 25 / 0.55)",
+                    border: "1px solid oklch(var(--dofus-border-gold-dim))",
+                    color: "oklch(0.78 0.16 25)",
+                  }}
+                >
+                  {xpLost !== undefined && xpLost > 0 && (
+                    <span className="block">−{xpLost} XP (20% penalty)</span>
+                  )}
+                  {dokaLost !== undefined && dokaLost > 0 && (
+                    <span className="block">
+                      −{dokaLost} Doka (40% penalty)
+                    </span>
+                  )}
+                </span>
+              ) : null}
+              <span
+                className="block text-xs mt-1"
+                style={{ color: "oklch(var(--dofus-text-dim))" }}
+              >
+                Your level is kept. You revive at half health.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex justify-center mt-4">
+            <AlertDialogAction
+              onClick={onRespawn}
+              className="stone-btn-crimson px-8 py-2"
+            >
+              Enter the Death Realm
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </div>
       </AlertDialogContent>
     </AlertDialog>
   );

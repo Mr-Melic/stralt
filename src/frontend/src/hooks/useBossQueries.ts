@@ -1,7 +1,8 @@
 /**
  * useBossQueries.ts — React Query hooks for the boss system.
- * Configs are localStorage-backed (no backend endpoint yet).
- * Do NOT import from useQueries.ts here (circular dependency rule E4).
+ * Still localStorage-backed: canister getAllBossConfigs / setBossConfig exist,
+ * but frontend BossConfig (iconEmoji, loreText, chc) does not match the
+ * Motoko record (defeated, adminNotes). Do not import from useQueries.ts (E4).
  */
 
 import { useQuery } from "@tanstack/react-query";
