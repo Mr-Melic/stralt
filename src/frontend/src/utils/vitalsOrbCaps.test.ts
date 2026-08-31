@@ -19,11 +19,14 @@ describe("vitalsOrbCaps", () => {
     assert.equal(toVitalsCap(0), 1);
     assert.equal(toVitalsCap(-4), 1);
     assert.equal(toVitalsCap(Number.NaN), 1);
-    assert.deepEqual(vitalsOrbCaps({ maxHp: 0, maxAp: -1, maxMp: Number.NaN }), {
-      hp: 1,
-      ap: 1,
-      mp: 1,
-    });
+    assert.deepEqual(
+      vitalsOrbCaps({ maxHp: 0, maxAp: -1, maxMp: Number.NaN }),
+      {
+        hp: 1,
+        ap: 1,
+        mp: 1,
+      },
+    );
   });
 });
 

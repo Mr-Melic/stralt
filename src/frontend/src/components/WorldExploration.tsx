@@ -343,7 +343,6 @@ import {
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import { shouldIgnoreWorldInputDuringRecap } from "../utils/recapWorldInput";
-import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
   RENAME_DOKA_COST,
   committedDokaAfterRename,
@@ -387,6 +386,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
   applyXpDelta,
   recapXpAfterGrant,
