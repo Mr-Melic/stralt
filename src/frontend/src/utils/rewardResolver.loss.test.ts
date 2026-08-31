@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { persistIncrementalRewards } from "./applyRewardsResult.ts";
+import {
+  APPLY_REWARDS_MAX_DOKA_DELTA,
+  APPLY_REWARDS_MAX_XP_DELTA,
+  clampApplyRewardsDeltas,
+  persistIncrementalRewards,
+} from "./applyRewardsResult.ts";
 import { computeRewardDeltas } from "./rewardResolver.ts";
 
 describe("computeRewardDeltas on a loss", () => {
@@ -81,5 +86,57 @@ describe("persistIncrementalRewards flooring", () => {
     assert.deepEqual(calls, [[1n, 0n, 3n]]);
     await persistIncrementalRewards(actor, 1, 2.2, -9);
     assert.deepEqual(calls[1], [1n, 2n, 0n]);
+  });
+
+  it("clamps a jackpot-sized credit so the canister cannot reject the call", async () => {
+    const calls: Array<[bigint, bigint, bigint]> = [];
+    const actor = {
+      applyRewards: async (slot: bigint, doka: bigint, xp: bigint) => {
+        calls.push([slot, doka, xp]);
+        return { ok: { newDoka: 100_000, newXp: 0, newLevel: 1 } };
+      },
+    };
+    await persistIncrementalRewards(actor, 1, 1_000_000_000, 10);
+    assert.deepEqual(calls, [[1n, BigInt(APPLY_REWARDS_MAX_DOKA_DELTA), 10n]]);
+  });
+});
+
+describe("clampApplyRewardsDeltas", () => {
+  it("keeps official payouts at or under the canister per-call maxima", () => {
+    assert.deepEqual(clampApplyRewardsDeltas(80, 40), {
+      dokaDelta: 80,
+      xpDelta: 40,
+    });
+    assert.deepEqual(
+      clampApplyRewardsDeltas(
+        APPLY_REWARDS_MAX_DOKA_DELTA,
+        APPLY_REWARDS_MAX_XP_DELTA,
+      ),
+      {
+        dokaDelta: APPLY_REWARDS_MAX_DOKA_DELTA,
+        xpDelta: APPLY_REWARDS_MAX_XP_DELTA,
+      },
+    );
+    // Victory 0.01% band is level * [1, 1e9]. That product (and a 0.5%
+    // band under dungeon 4× + Doka Fever) used to #err the whole persist.
+    assert.deepEqual(clampApplyRewardsDeltas(1_000_000_000, 600_000), {
+      dokaDelta: APPLY_REWARDS_MAX_DOKA_DELTA,
+      xpDelta: APPLY_REWARDS_MAX_XP_DELTA,
+    });
+  });
+
+  it("clamps computeRewardDeltas so applyRewards cannot reject a jackpot roll", () => {
+    const deltas = computeRewardDeltas({
+      victory: true,
+      enemiesDefeated: [{ name: "rat", level: 4 }],
+      completedChallenges: [
+        { name: "Untouchable", dokaReward: 500, xpReward: 1000 },
+      ],
+      dungeonMultiplier: 1,
+      baseDoka: 20_000_000,
+      baseXp: 80,
+    });
+    assert.equal(deltas.dokaDelta, APPLY_REWARDS_MAX_DOKA_DELTA);
+    assert.equal(deltas.xpDelta, 1080);
   });
 });

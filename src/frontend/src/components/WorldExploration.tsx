@@ -356,6 +356,7 @@ import {
   PORTAL_TRANSITION_XP,
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
+  clampApplyRewardsDeltas,
   computeVictoryExp,
   persistIncrementalRewards,
   resolveBattleRewards,
@@ -12922,15 +12923,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Do NOT call updateCharacter here — rewards must ONLY persist via applyRewards.
 
           // Build and show recap IMMEDIATELY — never block on persistence
+          const recapGrant = clampApplyRewardsDeltas(
+            totalDoka,
+            finalExp + challengeXpReward,
+          );
           const recapXp = recapXpAfterGrant(
             characterStats.exp,
             characterStats.level,
-            finalExp + challengeXpReward,
+            recapGrant.xpDelta,
           );
           const finalRecapData: BattleRecapData = {
             mapTitle: currentMapRef.current?.id || "Unknown",
-            xpEarned: finalExp + challengeXpReward,
-            dokaEarned: totalDoka,
+            xpEarned: recapGrant.xpDelta,
+            dokaEarned: recapGrant.dokaDelta,
             hitsDealt: battleHitsRef.current,
             enemiesDefeated: defeated,
             currentLevel: recapXp.level,
