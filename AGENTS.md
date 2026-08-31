@@ -15,8 +15,15 @@
 ## Verified Commands
 
 - **typecheck**: `pnpm typecheck`
-- **fix**: `pnpm fix`
+- **check**: `pnpm check` (Biome: unused locals and exhaustive hook deps are **errors**. Same as Caffeine frontend `[check]`. Do not skip.)
+- **fix**: `pnpm fix` (then re-run `pnpm check`)
 - **build**: `pnpm build`
+- **motoko**: `mops check` or `caffeine check` (syntax, types, migrations, check-stable vs `.old`). Required when Motoko, migrations, mocks, or `mops.toml` change. Missing toolchain is a failure, not a skip. Do not require `caffeine build` / PocketIC unless deploying.
+- **import gate**: `bash scripts/caffeine-import-gate.sh all` — `pnpm typecheck && pnpm check` then `mops check`. Treating unused-vars, hook-deps, mock TS2740, Motoko compile, or empty-canister M0263 as “pre-existing, skip” is forbidden.
+
+## Mandatory finish gate
+
+Before opening a PR or declaring work done: run the import gate. Frontend always. Backend when Motoko / migrations / `.old` / mocks change. See `docs/automation/CAFFEINE_IMPORT_GATES.md` and `.cursor/rules/caffeine-import-gate.mdc`.
 
 ## Learnings
 

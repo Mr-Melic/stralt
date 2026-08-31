@@ -1,12 +1,20 @@
-# Mirrors the Caffeine GitHub → import frontend gate in src/frontend/caffeine.toml [check]:
-#   pnpm typecheck && pnpm check   # biome check src
-# Backend Motoko is `caffeine check` / `mops check` (not duplicated here).
+# Same commands Caffeine GitHub → import uses.
+# Frontend: src/frontend/caffeine.toml [check] = pnpm typecheck && pnpm check
+# Backend:  src/backend/caffeine.toml [check] = mops check
+# Do not run caffeine build / mops build (PocketIC / dfx). Do not skip.
 name: Caffeine import gate
 
 on:
   pull_request:
   push:
     branches: [main]
+
+concurrency:
+  group: caffeine-import-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   frontend:
@@ -22,4 +30,24 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Typecheck and Biome (Caffeine frontend [check])
-        run: pnpm typecheck && pnpm check
+        run: bash scripts/caffeine-import-gate.sh frontend
+
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/mops
+            .mops
+          key: ${{ runner.os }}-mops-${{ hashFiles('mops.lock', 'mops.toml') }}
+      - name: Install ic-mops
+        run: npm install -g ic-mops@3.2.0
+      - name: Install Motoko packages (locked)
+        run: mops install --locked
+      - name: Motoko check (Caffeine backend [check])
+        run: bash scripts/caffeine-import-gate.sh backend -- --locked

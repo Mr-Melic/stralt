@@ -11,6 +11,8 @@ check-deploy = true
 [canisters.backend]
 main = "src/backend/main.mo"
 
+# Caffeine import / CI (`mops check`) compares this empty-canister baseline.
+# Do not delete. Directory `.old/` is gitignored; this file is tracked.
 [canisters.backend.check-stable]
 path = ".old/src/backend/dist/backend.most"
 
