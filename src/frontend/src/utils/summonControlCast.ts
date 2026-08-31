@@ -136,9 +136,8 @@ export function planSummonControlCast<T extends SummonKitCatalogSpell>(args: {
   const range = Math.max(
     1,
     Math.floor(
-      Number(
-        args.liveGate?.effectiveRange ?? spell.maxRange ?? spell.range,
-      ) || 0,
+      Number(args.liveGate?.effectiveRange ?? spell.maxRange ?? spell.range) ||
+        0,
     ),
   );
   const dist = chebyshevDistance(args.caster, args.target);

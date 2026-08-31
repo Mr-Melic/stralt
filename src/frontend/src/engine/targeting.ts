@@ -214,7 +214,6 @@ export function hasBresenhamLoS(
   return true;
 }
 
-
 /**
  * Grid state snapshot passed into the pure targeting function.
  *
@@ -506,7 +505,6 @@ export function isTileCastableLive(
   const worldGridSize = mapTiles.length;
   const range = effectiveRange ?? spellRangeBase(spell);
   const minR = spell.minRange ?? 1;
-  const needsLos = playerSpellRequiresLos(spell);
   const barriers = barrierTiles;
   const destKey = `${tile.x},${tile.y}`;
   const tx = tile.x;
@@ -812,7 +810,6 @@ export function playerSpellEffectiveRange(
     spell.modifiableRange ? spell.id : undefined,
   );
 }
-
 
 export function pickNearestLiveHostileTile(
   spell: SpellConfig,

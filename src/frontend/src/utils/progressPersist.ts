@@ -68,7 +68,6 @@ export function shouldPersistAbsoluteDokaSpend(spend: number): boolean {
 
 /** Never mint Doka through saveBattleStats. */
 
-
 /** Alias: never-raise clamp for Doka absolute writes (same as clampAbsoluteProgressWrite). */
 export function clampAbsoluteDokaWrite(
   committedDoka: number,

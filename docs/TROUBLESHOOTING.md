@@ -20,6 +20,8 @@ pnpm bindgen    # after Candid / Motoko public-type changes
 
 Frontend scripts (`src/frontend/package.json`): `dev` (Vite), `build`, `typecheck`, `check` / `fix` (Biome).
 
+Caffeine GitHub → import frontend gate is exactly `src/frontend/caffeine.toml` `[check]`: `pnpm typecheck` then `pnpm check` (`biome check src`). `pnpm fix` is the same Biome run with `--write`. Unused locals and React hook deps are errors in `src/frontend/biome.json` so local `pnpm check` fails the same way as the import.
+
 Local UI without a canister:
 
 ```bash

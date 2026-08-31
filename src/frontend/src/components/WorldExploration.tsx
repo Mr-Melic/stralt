@@ -17601,6 +17601,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     markFirstAction,
     executeCastAttempt,
     tileCenter,
+    probeLiveCast,
   ]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

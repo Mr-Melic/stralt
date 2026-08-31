@@ -172,7 +172,6 @@ describe("addCombatant battleParticipant", () => {
   });
 });
 
-
 describe("syncCombatants resetBattle: false", () => {
   it("drops unflagged units from the battle view and queue", () => {
     const { ctx } = emptyStore();

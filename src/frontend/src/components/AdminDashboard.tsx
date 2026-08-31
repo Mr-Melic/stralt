@@ -5903,7 +5903,9 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                                     );
                                     return;
                                   }
-                                  if (rec.proofOfAddressName?.startsWith("http")) {
+                                  if (
+                                    rec.proofOfAddressName?.startsWith("http")
+                                  ) {
                                     window.open(
                                       rec.proofOfAddressName,
                                       "_blank",

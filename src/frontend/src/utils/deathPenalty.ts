@@ -286,7 +286,6 @@ export async function persistDeathPenalty(
   }
 }
 
-
 export type DeathPenaltyStorage = Pick<
   Storage,
   "getItem" | "setItem" | "removeItem"
