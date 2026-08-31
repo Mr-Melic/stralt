@@ -1052,3 +1052,256 @@ DEPENDENCIES: AQA-2026-08-30-012
 REGRESSION_RISK: MEDIUM if events write Doka/XP off `createProgressPersist` or invent a second wallet path. LOW if query-only increment counters that never call `saveBattleStats` / `applyRewards`.  
 VALIDATION_REQUIRED: A later TBC run can query ≥1 UTC day of `battle_end` and `spell_cast` (and state sample size). Until then this analyst stays WAITING_FOR_TELEMETRY.  
 STATUS: NEW
+
+ACTION_ID: WDEAD-2026-08-31-001  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Remove hard level ceilings from spawn, regions, dungeons, and AI  
+CATEGORY: indefinite-progression  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `src/frontend/src/engine/combatMath.ts` lines 54–58 set `maxTier = Math.floor(999 / ts)` so `pickEnemyLevelFromTiers` cannot emit levels above ~999. `computeAITier` (lines 36–51) buckets stop at 900 then hard-tier 10; 30% of rolls are uniform `1..10`. Admin `newEnemy` / `newRegion` default `levelMax: 5` (`AdminDashboard.tsx` 108–118). Region effects apply only when `level <= Number(r.levelMax)` (`WorldExploration.tsx` 3517–3524). Map `levelZone.maxLevel` is the current tier top (WX 5057–5068). Dungeon extra-enemy / tier-boost / Doka tables all `Math.min(depth, 5)` (WX 6082–6083, 1201–1203; `useDungeonState.ts` 10–21; `portalRules.ts` 148–161). Chain length is `3 + floor(random*3)` (WX 6693, 6785). Death Realm rebuilds still stamp `maxLevel: 5` (WX 13567, 13699).  
+SYSTEMS_AFFECTED: `combatMath.ts` spawn picker; region matching; dungeon depth curves; admin Enemy/Region forms; Death Realm zone stamps. Not RAF, not damage math.  
+RECOMMENDED_ACTION: Replace every required `levelMax` / `999` / `min(depth, 5)` / AI-tier-10 stop with relative offsets and open tails. Regions use `levelMin` + optional preferred band with overflow fade, never reject. Dungeon curves stay defined for depth 6+. AI sophistication becomes a probability, not a 10-bucket ceiling. Keep player XP curve `100 * 2^(N-1)` unchanged.  
+AUTONOMY: HUMAN_APPROVE — extract pickers to `engine/spawnPolicy.ts`; do not patch formulas inside WX generate.  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if the 999 cap is deleted without a relative tail — early maps could spawn absurd offsets. Mitigate by porting current 60/20/10/5 weights to equal/adjacent/tail first, then removing the cap.  
+VALIDATION_REQUIRED: Unit tests at player levels 1, 100, 1_000, 10_000, 50_000: enemy level is defined, finite, and can exceed 999. Region effects still apply at level 10_000. Dungeon depth 8 still has a multiplier. `pnpm typecheck` clean.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-002  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Relative spawn owner surface — equal-level, above-level, open tail, no max  
+CATEGORY: spawn-admin  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Tiers tab (`AdminDashboard.tsx` 3353–3703) exposes `sameTierPercent` / `adjacentTierPercent` / `twoAwayPercent` / `threeOrMorePercent` and requires sum 100. Adjacent and ±2 are split evenly above/below (`combatMath.ts` 82–89). There is no equal-level or above-level knob. `levelVarianceChance` exists on the engine type (`combatMath.ts` 11, 60–69) but not on frontend `TierSpawnConfig` (`gameTypes.ts` 418–424) and is not on the tab. Preview samples only `[1, 10, 25, 50, 100, 200, 500]` (3407). Tier-size input is `max={100}` (3488–3489). Save writes `localStorage` then backend (3393–3398).  
+SYSTEMS_AFFECTED: Admin Tiers/Spawn tab; `TierSpawnConfig` Candid; `loadTierConfig` / `pickEnemyLevelFromTiers`.  
+RECOMMENDED_ACTION: Owner fields: `equalLevelProbability`, `aboveLevelProbability`, `belowLevelProbability` (or remainder), `aboveOffsetWeights`, `belowOffsetWeights`, `openTail`. Forbid a max-level field on the form. Preview accepts an arbitrary hypothetical level including 50_000. Keep backend-authoritative; localStorage cache only.  
+AUTONOMY: HUMAN_APPROVE then implementer. Draft-only until WDEAD-2026-08-31-004 exists.  
+DEPENDENCIES: WDEAD-2026-08-31-001 (cap removal); WDEAD-2026-08-31-004 (do not live-save)  
+REGRESSION_RISK: MEDIUM — mis-normalized percents can flood above-level packs. Validate-gate must normalize and show the histogram before activate.  
+VALIDATION_REQUIRED: Admin preview at level 50_000 shows a defined distribution. Sim (003) reports below/equal/above within 2pp of configured weights at N=5000. No `levelMax` in the spawn payload.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-003  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Non-persistent Simulation Laboratory for hypothetical levels and many encounters  
+CATEGORY: simulation-lab  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `engine/mapGen.simulate.ts` is a seeded solvability replica (file header lines 1–5) and does not report families, elites, AI, rare spells, or difficulty. Tiers tab preview is a static percentage table, not a Monte Carlo. No admin tab exists for N-encounter rolls. Live `generateEnemies` (`WorldExploration.tsx` 6073–6330) is a React callback closed over `characterStats` — running it “for science” would use the real character and can be followed by real battles / `applyRewards`. Quality audit AQA-2026-08-30-012 already notes zero encounter telemetry.  
+SYSTEMS_AFFECTED: new `engine/encounterSim.ts` (proposed); Admin Simulation tab (dev-only). Must not touch persist lock, `rewardResolver.ts`, `saveBattleStats`, character queries.  
+RECOMMENDED_ACTION: Dev-only lab: inputs = hypothetical player level (unbounded), draft pack, N, seed, mode filter. Reports = relative-level histogram, below/equal/above, families, variants, elites, AI bands, rare spells, discovery opportunities, formations, estimated difficulty (display only). Isolation: zero actor updates, zero persist enqueue, zero player `localStorage` writes, zero real map install. Support level 50_000 without clamping to 999.  
+AUTONOMY: HUMAN_APPROVE. Lab may be implemented before live spawn cutover if it calls extracted pure pickers only.  
+DEPENDENCIES: WDEAD-2026-08-31-001 and 002 for meaningful extreme-level reports; 004 to bind results to a draft.  
+REGRESSION_RISK: HIGH if the lab reuses WX `generateEnemies` / portal entry — a single missed branch writes economy. Require an allow-list test that spies actor methods and fails on any `applyRewards` / `saveBattleStats`.  
+VALIDATION_REQUIRED: 10_000 simulated encounters at levels 1 and 50_000; wallet, XP, spell levels, dungeonRecords, boss-rush state unchanged. `pnpm typecheck`. Dev-only gate: normal `user` role cannot open the pane.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-004  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Install DRAFT → SIMULATE → VALIDATE → ACTIVATE for world-content packs  
+CATEGORY: admin-lifecycle  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Tiers save writes live immediately (`AdminDashboard.tsx` 3387–3403). Boss Rush save writes `localStorage` then `adminSetBossRushConfig(JSON.stringify)` (6383–6393). Enemy/region/spell/modifier CRUD is `adminSet*` with no draft. Architecture (`docs/ARCHITECTURE.md` 206–214) documents live `adminSet*` as the operator path. There is no validate step beyond “percents sum to 100” (Tiers 3375–3380).  
+SYSTEMS_AFFECTED: new pack record (backend `#admin`); Admin Drafts tab; hydrate path that currently reads `pbv_tier_spawn_config` / `bossRushConfig`.  
+RECOMMENDED_ACTION: Store packs with `status: draft | simulating | validated | active | archived`. Edits land on draft. Simulate attaches a report. Validate runs the gate list in the 2026-08-31 brief §6 (no hard max, normalized probabilities, open tail, id integrity, relative reward curves, no `min(depth,5)`, sim isolation, single reward funnel, `#admin` activate). Activate swaps the pointer; players hydrate **active** only.  
+AUTONOMY: HUMAN_APPROVE — canister schema change; do not deploy `backend_extended`.  
+DEPENDENCIES: WDEAD-2026-08-31-003 for the simulate stage  
+REGRESSION_RISK: MEDIUM — a botched activate could wipe live tier weights. Keep the current `TierSpawnConfig` as the v0 active pack during migrate.  
+VALIDATION_REQUIRED: Saving a draft does not change overworld spawn. Activate after failed validate is rejected. After activate, a new session hydrates the new pack from backend (localStorage is cache).  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-005  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Encounter catalog — pools, formations, rarity, objectives, rewards, hazards, rules  
+CATEGORY: encounters  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `generateEnemies` (WX 6084–6330) rolls size `1 + rand*8` (+ dungeon table), random chess piece, quadrant scatter, Chebyshev ≥ 4, then 30% family. No formation catalog. No encounter rarity. Objectives are a separate hardcoded `DEFAULT_CHALLENGES` list (`challengeCompletion.ts` 38–103), not bound to a pack. Hazards are map tiles (`HazardTileType` lava/ice/spikes) plus modifiers, not encounter-scoped. No encounter rule metadata (flee, leader-last, timer).  
+SYSTEMS_AFFECTED: new `EncounterTemplate` catalog; `engine/encounterFormations.ts` (proposed); challenge bind; hazard/rule ids. WX should only consume a built roster.  
+RECOMMENDED_ACTION: Owner CRUD for encounter templates with explicit ids: `enemyPoolIds`, `formationId` (cell dx/dy + role), `rarity` weight, `relativeDifficulty`, `objectiveIds`, `rewardCurve`, `hazardIds`, `ruleIds`. Formations are metadata, never name heuristics. Do not add this as a WX branch.  
+AUTONOMY: HUMAN_APPROVE after 001–004. Extract helpers; one-line WX wiring.  
+DEPENDENCIES: WDEAD-2026-08-31-006 (pools must be live archetypes); 010 (relative rewards); 004 (draft lifecycle)  
+REGRESSION_RISK: MEDIUM — a formation that cannot place on CA maps softlocks a fight. Validate must fall back to current quadrant scatter when a formation is infeasible, and sim must report infeasible rate.  
+VALIDATION_REQUIRED: Sim reports formation histogram and infeasible %. Existing challenge predicates still compile. No mapGen edits.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-006  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Replace dead EnemyConfig spawn CRUD with archetypes the roster actually samples  
+CATEGORY: encounters  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Backend `EnemyConfig` (`src/backend/types/admin.mo` 15–26) and admin Enemies tab persist `hp/ap/mp/initStat/levelMin/levelMax/regions`. `WorldExploration.tsx` has **zero** `enemyConfigs` / `useGetEnemyConfigs` reads. Roster stats come from `pickEnemyLevelFromTiers` + `computeEnemyStats` / `getEnemyBaseStats` (`progression.ts`). Architecture already warns of two EnemyConfig types (`docs/ARCHITECTURE.md` 29). Admin absolute HP fights the level formula.  
+SYSTEMS_AFFECTED: `admin.mo` EnemyConfig; Admin Enemies tab; future spawn sampler.  
+RECOMMENDED_ACTION: Stop presenting EnemyConfig as a combat-stat source. Introduce `EnemyArchetype { id, familyId, pieceWeights, statMults, spellPoolIds, eliteCapable }` that `generateEnemies` / sim actually sample. Keep sprite/name fields. Reject absolute combat stats on the owner form (formulas stay in `progression.ts`).  
+AUTONOMY: HUMAN_APPROVE — Candid change; carry killCount/12-field stats discipline on any character payload left untouched.  
+DEPENDENCIES: WDEAD-2026-08-31-001 (no levelMax on the replacement type); 005  
+REGRESSION_RISK: LOW for live play (config is already unused). MEDIUM if a migrate writes absolute HP onto combatants and bypasses `getEnemyBaseStats`.  
+VALIDATION_REQUIRED: After cutover, toggling an archetype weight changes sim family histogram. Live spawn no longer ignores the admin pool. Existing 12-field `CharacterStats` path unchanged.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-007  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Dungeon owner policy — room pools, sequencing, rest, branching, bosses, unbounded rewards  
+CATEGORY: dungeons  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Dungeon entry is a hardcoded 20% world portal (WX 5229–5257). Chain length is 3–5 (WX 6785). Floors reuse `generateRandomMap` + extra enemies / tier boost clamped at 5 (WX 6080–6085). Rest is a 10% **world** portal (WX 5295–5316), not a dungeon room; rest-exit may arm a chain (WX 6688–6695). Bosses are a separate 15% world portal (WX 5261–5292), not dungeon bosses. No branch graph. Completion bonus is `maxDepth * 50` (`portalRules.ts` 195–197). `dungeonRecords` is Principal-keyed progress only (`ARCHITECTURE.md` 122, 314), not content.  
+SYSTEMS_AFFECTED: dungeon entry/length/reward policy; rest-room policy; portalRules snapshot/decide (must keep `snapshotDungeonChain` before `cleanupMap`).  
+RECOMMENDED_ACTION: Owner `DungeonPolicy`: entry chance, length or continue-weights (no hidden 5), room-pool ids (archetypes the existing generator may draw — **do not fork mapGen**), sequence / branch graph, special-room weights, rest-room policy, boss-from-depth + relative scale, dungeon-scoped modifiers, unbounded reward + completion curves. Unify multiplier tables first (013).  
+AUTONOMY: HUMAN_APPROVE. AGENTS.md forbids map-generation implementation; this ID is policy + call-site wiring only.  
+DEPENDENCIES: WDEAD-2026-08-31-013; 001; 004; 010  
+REGRESSION_RISK: HIGH if portal snapshot/cleanup order is revisited. Do not touch `cleanupMap` zeroing semantics.  
+VALIDATION_REQUIRED: `portalRules.test.ts` still passes. Depth 8 has a defined multiplier. Rest rooms inside a chain do not spawn overworld colored portals (`filterRunPortals`). No `mapGen.ts` hunk.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-008  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Boss Rush — configurable pools, relative scaling, progression, multipliers, sequencing  
+CATEGORY: boss-rush  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Runtime rooms are a 10-element const (`useBossRush.ts` 23–134) with flat 500–5000 Doka / 200–2000 XP and hardcoded pairs. Admin tab (WX dashboard 6310–6412) only toggles `room_N_enabled` and a multiplier; pairs are labels, not editors. Entry chance is magic 0.08 (WX 5318–5323). Boss combat HP is absolute (`defaultBossConfigs` in `admin.mo`; battle start uses `bossConf.baseStats.hp` at WX 12235–12240). Config JSON is a string blob (`adminSetBossRushConfig`). Security audit still flags `completeBossRushRoom` as a client-trusted reward write.  
+SYSTEMS_AFFECTED: `useBossRush.ts`; Admin Boss Rush tab; boss stat init; persist via `bossRushProgress.ts` / `rewardResolver.ts`.  
+RECOMMENDED_ACTION: Owner policy: `bossPoolIds`, pairing, draftable `roomSequence`, `relativeScale = f(playerLevel) * roomCurve`, progression as policy (not a hardcoded 10), `rewardMultiplierCurve`. Pay still goes through the existing persist lock + `applyRewards`. Do not add a second wallet write. Relative scale bosses so a level-5000 player does not one-shot 800 HP.  
+AUTONOMY: HUMAN_APPROVE. Do not “fix” canister trust in the same PR.  
+DEPENDENCIES: WDEAD-2026-08-31-014 (backend bosses); 004; 010; 001  
+REGRESSION_RISK: HIGH on room-0 farm / jackpot resume (`bossRushProgress.ts` already resets after the final room). Sequence edits must keep that guard.  
+VALIDATION_REQUIRED: Existing `bossRushProgress.test.ts` stays green. Sim can roll rush rooms at hypothetical level 10_000 without writing `getBossRushState`. Enabled-room disable still shortens a run without leaving a resumable jackpot.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-009  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: World-event catalog — eligibility, rarity, hazards, elites, rare-spell-bearers, rewards, modifiers  
+CATEGORY: world-events  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: No event type exists. Closest scraps: map-modifier two-roll (`gameConstants.ts` 306–308; admin Modifiers tab); jackpot heal banner (WX 930–931, 17928+); betrayal gated at AI tier 10 (`gameConstants.ts` 204, `ENEMY_AI_TIER_GATES.betrayal`); leader boost (`AdminGameConfig.leaderBoostPercent`); family 30% including `void_mirror`. Elites are not a flag. Rare spell-bearers are not a flag. Eligibility cannot be expressed without `levelMax` today.  
+SYSTEMS_AFFECTED: new `WorldEvent` catalog; modifier roll; elite/rare-spell spawn flags; eligibility vs region/runMode.  
+RECOMMENDED_ACTION: Owner events with open-ended eligibility (runMode, region ids, relative band — overflow allowed), rarity weight, hazard ids, `elitePolicy`, `rareSpellBearerPolicy` (explicit `spellPoolIds`, never name heuristics), `rewardCurve`, `modifierIds`. Elite ≠ leader. Jackpot / betrayal can later become event ids; do not reimplement them inside WX while designing the catalog.  
+AUTONOMY: HUMAN_APPROVE. Catalog + sim first; live wiring after 004.  
+DEPENDENCIES: WDEAD-2026-08-31-011; 012; 010; 004  
+REGRESSION_RISK: MEDIUM if jackpot is moved off the persist-safe spend path (AQA jackpot cluster). Keep jackpot on the existing wallet lock until a dedicated migrate.  
+VALIDATION_REQUIRED: Sim at level 50_000 still emits elites/rare-spells at configured rates. Event eligibility never uses `levelMax` reject. Modifier roll remains behind `#admin` draft until activate.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-010  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Relative reward curves for challenges, dungeons, rush rooms, and events  
+CATEGORY: economy  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `DEFAULT_CHALLENGES` pays flat 50–500 Doka and 400–1000 XP (`challengeCompletion.ts` 38–103). Dungeon Doka is a 6-slot table that freezes at 4.0× (`useDungeonState.ts` 10–21). Completion bonus is `maxDepth * 50` (`portalRules.ts` 195–197). Boss Rush rooms pay flat 500–5000 / 200–2000 (`useBossRush.ts`). `applyRewards` is Nat-only and cannot subtract (death penalty stays on `saveBattleStats`). Architecture requires a single atomic funnel + root recap.  
+SYSTEMS_AFFECTED: `challengeCompletion.ts` advertised rewards; dungeon multiplier module; rush room rewards; future event rewards; `rewardResolver.ts` (read-only consumer).  
+RECOMMENDED_ACTION: Owner `RewardCurve` `{ base, perPlayerLevel, perRelativeDifficulty, perRarity }` (exact shape negotiable) for challenges / dungeon floors / rush rooms / events. Advertise the evaluated amount; persist only through `applyRewards` (credits) or `saveBattleStats` (absolute heals/spends/death). Never call the resolver per kill. Never invent a second wallet write.  
+AUTONOMY: HUMAN_APPROVE — economy. Implementer must enqueue on `createProgressPersist`.  
+DEPENDENCIES: WDEAD-2026-08-31-004; 007; 008; 005  
+REGRESSION_RISK: HIGH if curves are evaluated on the canister from client-supplied level (security findings 2/5/6). Evaluate on the official client from authoritative character level, then persist the delta through the lock; or clamp like the open economy PR. Do not silently raise shop auto-complete.  
+VALIDATION_REQUIRED: Recap popup still shows one atomic reward. Death penalty 20% XP / 40% Doka unchanged. Challenge helper tests still pass with curve-evaluated numbers. Sim must not credit.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-011  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Owner knobs for elite, variant, encounter size, family weights, AI sophistication  
+CATEGORY: spawn-admin  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Family variant is `if (Math.random() < 0.3)` over seven equal families (WX 6236–6326). Encounter size is `Math.floor(Math.random() * 8) + 1` plus `[0,2,3,4,4,5][min(depth,5)]` (WX 6082–6085). `MAX_ENEMIES = 20` (`gameConstants.ts` 10). No elite flag on `Enemy` (`gameTypes.ts` 259–331 has `isLeader` but not `isElite`). AI uses `computeAITier` 10-bucket + 30% chaos (`combatMath.ts` 34–51) and gates in `ENEMY_AI_TIER_GATES` (`gameConstants.ts` 200–209).  
+SYSTEMS_AFFECTED: `generateEnemies` extract; `Enemy` metadata (`isElite`, `isVariant` as explicit flags); admin Spawn tab.  
+RECOMMENDED_ACTION: First-class probabilities: elite, variant, family weights, encounter `{min,max,depthCurve}`, AI-sophistication probability (gates stay named constants; the *chance* an enemy is allowed to roll high gates is owner-owned). Size curve must work at dungeon depth 8+. Do not use family name substrings (`family.includes("berserk")` in `enemyAI.ts` 441–442) for new content — add `aiStrategy` metadata.  
+AUTONOMY: HUMAN_APPROVE. Extract from WX; do not add another inline roll block.  
+DEPENDENCIES: WDEAD-2026-08-31-002; 001; 006  
+REGRESSION_RISK: MEDIUM — raising `MAX_ENEMIES` without occupancy tests can break initiative / victory leftover-roster. Cap is a *board* limit, not a player-level cap; keep a safety board cap but do not encode it as a progression ceiling.  
+VALIDATION_REQUIRED: Sim family histogram matches weights ±2pp. Elite rate matches. Existing summon hostility / leftover-roster tests still pass at size 8.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-012  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Asymptotic summoner chance and explicit advanced-spell pool (fix NaN levelZone)  
+CATEGORY: spawn-admin  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Battle start assigns kits via `buildEnemyKit(enemy.pieceType, currentMap.levelZone)` (WX 12186). `buildEnemyKit` types `levelZone: number` (`enemyAI.ts` 187–192) and `ENEMY_KITS` only branch `z >= 1` / `z >= 2` (156–178). `currentMap.levelZone` is a `LevelZone` object (`{ name, minLevel, maxLevel }`, WX 465–470, 5064–5068). `Math.floor(object)` is `NaN`, so kits stay on the early branch — “advanced” spells barely appear. Separately, `ENEMY_SUMMONER_CHANCE = 0.12 + characterStats.level * 0.02` (WX 12198–12200, constants 298–299) is linear and unclamped: by level ~44 every non-summon is a summoner, which is a variety ceiling.  
+SYSTEMS_AFFECTED: WX battle-start spell assign; `ENEMY_KITS`; summoner roll; future advanced-spell probability.  
+RECOMMENDED_ACTION: Pass an explicit numeric band or, better, an `advancedSpellProbability` + `advancedSpellPoolIds` (usableByEnemy, metadata — no name heuristics). Summoner chance becomes an asymptotic curve `base + (1-base)*(1-exp(-k*level))` or owner-defined, never a linear climb to 100%. Do not expand kit bands as a hidden level cap.  
+AUTONOMY: HUMAN_APPROVE. One-line WX fix for the object/number mismatch is in scope for an implementer; do not retune damage.  
+DEPENDENCIES: WDEAD-2026-08-31-011; 009 (rare-spell-bearers use the same pool)  
+REGRESSION_RISK: MEDIUM — suddenly passing `minLevel` as the number would jump many kits from band 0 to band 2. Ship behind draft/sim so owners see the advanced-spell rate before activate.  
+VALIDATION_REQUIRED: Unit test: `buildEnemyKit("queen", { name: "Tier 1", minLevel: 1, maxLevel: 10 })` must not silently NaN (implementer decides the adapter). Sim advanced-spell rate at level 50_000 is not 100% unless the owner set it there. Summoner rate at level 10_000 is < 1.0 for default curve.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-013  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Unify the triplicated dungeon Doka multiplier tables before owner editing  
+CATEGORY: dungeons  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Identical clamp-5 tables live in `WorldExploration.tsx` 1201–1203, `useDungeonState.ts` 10–21 (`DUNGEON_DOKA_MULTIPLIERS` + `getDungeonMultiplier`), and `portalRules.ts` 148–161 (`dungeonDokaMultiplierFor`). Comments in `portalRules.ts` 151–154 already warn React state can inflate overworld kills after reset. Owner curves cannot be added three times.  
+SYSTEMS_AFFECTED: those three files; reward-time multiplier reads.  
+RECOMMENDED_ACTION: One module, one function, depth-unbounded curve (after 001). WX and portalRules call it. Owner later edits that module’s config via the pack (007), not a fourth copy.  
+AUTONOMY: IMPLEMENT_WHEN_PICKED — mechanical extract, no gameplay intent change until 007.  
+DEPENDENCIES: None to extract; 001/007 to unclamp  
+REGRESSION_RISK: MEDIUM if the extract reads stale React depth instead of refs (the bug `dungeonDokaMultiplierFor` was written to prevent). Tests must drive refs, not state.  
+VALIDATION_REQUIRED: `portalRules.test.ts` + a helper test that resetRunState returns multiplier 1. `pnpm typecheck`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-014  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Backend-authoritative boss configs — stop writing `pbv_boss_configs` as source of truth  
+CATEGORY: bosses  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `useAdminQueries.ts` 462–517 documents “localStorage-backed until backend endpoints land” and reads/writes `pbv_boss_configs`. Architecture (`docs/ARCHITECTURE.md` 59) lists that key as a known exception. Backend already has `BossConfig` / `defaultBossConfigs` (`admin.mo` 349+) and architecture CRUD table includes boss (`ARCHITECTURE.md` 214). Admin Bosses tab uses `useSetBossConfig` / `useDeleteBossConfig` / `useGetAllBossConfigs` — the set/delete hooks shown are the localStorage pair.  
+SYSTEMS_AFFECTED: `useAdminQueries.ts` boss hooks; Admin Bosses tab; rush pool (008).  
+RECOMMENDED_ACTION: Point set/get/delete at backend `adminSet*` / `getAllBossConfigs`. `localStorage` becomes cache only, matching AGENTS.md. Required for a trustworthy rush pool and relative scale.  
+AUTONOMY: HUMAN_APPROVE — confirm live canister actually exposes the boss admin methods before cutover (deployed canister can lag source).  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM if the live actor lacks the methods — saves would fail closed. Feature-detect and keep cache fallback until upgrade, but mark cache stale.  
+VALIDATION_REQUIRED: Admin save + reload (cleared localStorage) still shows the boss. No 15-field stats payload. Canonical actor remains `src/backend/main.mo`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: WDEAD-2026-08-31-015  
+SOURCE_AUTOMATION: World, Dungeon & Encounter Admin Designer  
+TITLE: Keep admin, drafts, and the simulation lab dev-gated — never a normal-player surface  
+CATEGORY: gating  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: AGENTS.md: “All admin and debug features must be dev-only/gated and never ship to normal players.” Architecture (`docs/ARCHITECTURE.md` 206–219): UI lazy-loads when `isAdmin && onOpenAdmin`; first non-anonymous `getUserRole` caller becomes `#admin`. `App.tsx` 361–372 mounts `AdminDashboard` from a LandingPage hidden login as well as the in-game button (427–428). Simulation lab (003) would be a new mint-adjacent surface if visible to that first player in production.  
+SYSTEMS_AFFECTED: `App.tsx` admin entry; Admin dashboard; proposed Simulation / Drafts tabs.  
+RECOMMENDED_ACTION: Gate Simulation, Drafts, Activate, and spawn inspection behind dev/admin AND a build flag (or equivalent) so a production first-login admin cannot casually activate a draft or run 10_000 sims on a player build. Backend already requires `#admin` on writes — keep that. Do not add player-facing “create encounter” UI.  
+AUTONOMY: HUMAN_APPROVE  
+DEPENDENCIES: WDEAD-2026-08-31-003; 004  
+REGRESSION_RISK: LOW for combat. MEDIUM for operators if the flag hides the only admin entry — keep existing CRUD reachable for the true operator, hide lab/activate on player builds.  
+VALIDATION_REQUIRED: A `user` role session cannot open Simulation or Activate. Player recap / reward funnel unchanged. Debug overlay remains reachable during load/crash (existing rule).  
+STATUS: NEW
