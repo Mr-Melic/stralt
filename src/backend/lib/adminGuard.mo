@@ -21,25 +21,25 @@ module {
 
     func nan(x : Float) : Bool { x != x };
 
-    func finiteInRange(label : Text, x : Float, lo : Float, hi : Float) : ?Text {
+    func finiteInRange(lbl : Text, x : Float, lo : Float, hi : Float) : ?Text {
         if (nan(x)) {
-            return ?(label # " must be a finite number");
+            return ?(lbl # " must be a finite number");
         };
         if (x < lo or x > hi) {
-            return ?(label # " is out of range");
+            return ?(lbl # " is out of range");
         };
         null
     };
 
-    func requireId(id : Text, label : Text) : ?Text {
-        if (id == "") { return ?(label # " id cannot be empty") };
-        if (id.size() > MAX_ID) { return ?(label # " id exceeds maximum length") };
+    func requireId(id : Text, lbl : Text) : ?Text {
+        if (id == "") { return ?(lbl # " id cannot be empty") };
+        if (id.size() > MAX_ID) { return ?(lbl # " id exceeds maximum length") };
         null
     };
 
-    func requireName(name : Text, label : Text) : ?Text {
-        if (name == "") { return ?(label # " name cannot be empty") };
-        if (name.size() > MAX_NAME) { return ?(label # " name exceeds maximum length") };
+    func requireName(name : Text, lbl : Text) : ?Text {
+        if (name == "") { return ?(lbl # " name cannot be empty") };
+        if (name.size() > MAX_NAME) { return ?(lbl # " name exceeds maximum length") };
         null
     };
 
@@ -91,25 +91,25 @@ module {
         null
     };
 
-    public func validateOptionalUrl(label : Text, url : Text) : ?Text {
+    public func validateOptionalUrl(lbl : Text, url : Text) : ?Text {
         if (url == "") { return null };
-        if (url.size() > MAX_URL) { return ?(label # " exceeds maximum URL length") };
-        if (unsafeUrl(url)) { return ?(label # " uses a forbidden URL scheme") };
+        if (url.size() > MAX_URL) { return ?(lbl # " exceeds maximum URL length") };
+        if (unsafeUrl(url)) { return ?(lbl # " uses a forbidden URL scheme") };
         null
     };
 
-    public func validateRequiredUrl(label : Text, url : Text) : ?Text {
-        if (url == "") { return ?(label # " cannot be empty") };
-        validateOptionalUrl(label, url)
+    public func validateRequiredUrl(lbl : Text, url : Text) : ?Text {
+        if (url == "") { return ?(lbl # " cannot be empty") };
+        validateOptionalUrl(lbl, url)
     };
 
-    public func validateJsonBlob(label : Text, blob : Text) : ?Text {
+    public func validateJsonBlob(lbl : Text, blob : Text) : ?Text {
         if (blob.size() > MAX_JSON_BLOB) {
-            return ?(label # " exceeds maximum size");
+            return ?(lbl # " exceeds maximum size");
         };
         if (blob.size() == 0) { return null };
         if (not (blob.startsWith(#text "{") or blob.startsWith(#text "["))) {
-            return ?(label # " must be empty or a JSON object/array");
+            return ?(lbl # " must be empty or a JSON object/array");
         };
         null
     };
@@ -262,19 +262,19 @@ module {
             or config.leftWalkFrames.size() > 16 or config.backWalkFrames.size() > 16) {
             return ?"Walk-frame arrays cannot exceed 16 entries";
         };
-        func checkOpt(label : Text, url : ?Text) : ?Text {
+        func checkOpt(lbl : Text, url : ?Text) : ?Text {
             switch (url) {
                 case null { null };
-                case (?u) { validateOptionalUrl(label, u) };
+                case (?u) { validateOptionalUrl(lbl, u) };
             }
         };
         switch (checkOpt("frontUrl", config.frontUrl)) { case (?e) { return ?e }; case null {} };
         switch (checkOpt("rightUrl", config.rightUrl)) { case (?e) { return ?e }; case null {} };
         switch (checkOpt("leftUrl", config.leftUrl)) { case (?e) { return ?e }; case null {} };
         switch (checkOpt("backUrl", config.backUrl)) { case (?e) { return ?e }; case null {} };
-        func checkFrames(label : Text, frames : [Text]) : ?Text {
+        func checkFrames(lbl : Text, frames : [Text]) : ?Text {
             for (u in frames.values()) {
-                switch (validateOptionalUrl(label, u)) {
+                switch (validateOptionalUrl(lbl, u)) {
                     case (?e) { return ?e };
                     case null {};
                 };
@@ -406,23 +406,23 @@ module {
             case (?e) { return ?e };
             case null {};
         };
-        func phaseOk(label : Text, phase : Types.BossPhaseConfig) : ?Text {
-            switch (finiteInRange(label # ".hpThreshold", phase.hpThreshold, 0.0, 1.0)) {
+        func phaseOk(lbl : Text, phase : Types.BossPhaseConfig) : ?Text {
+            switch (finiteInRange(lbl # ".hpThreshold", phase.hpThreshold, 0.0, 1.0)) {
                 case (?e) { return ?e };
                 case null {};
             };
-            switch (finiteInRange(label # ".statMultiplier", phase.statMultiplier, 0.0, 10.0)) {
+            switch (finiteInRange(lbl # ".statMultiplier", phase.statMultiplier, 0.0, 10.0)) {
                 case (?e) { return ?e };
                 case null {};
             };
             if (phase.summonCount > 20) {
-                return ?(label # ".summonCount cannot exceed 20");
+                return ?(lbl # ".summonCount cannot exceed 20");
             };
             if (phase.spellPoolIds.size() > 16) {
-                return ?(label # ".spellPoolIds exceeds maximum of 16");
+                return ?(lbl # ".spellPoolIds exceeds maximum of 16");
             };
             for (sid in phase.spellPoolIds.values()) {
-                if (sid == "") { return ?(label # " spell pool contains an empty id") };
+                if (sid == "") { return ?(lbl # " spell pool contains an empty id") };
             };
             null
         };
