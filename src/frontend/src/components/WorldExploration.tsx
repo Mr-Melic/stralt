@@ -9862,6 +9862,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             portals: new Set(
               (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
             ),
+            reserved: collectMandatoryProgressionCells(
+              (currentMap?.tiles ?? []).map((row: any) =>
+                (row ?? []).map((t: any) => t !== "wall"),
+              ),
+              toVoidSet(currentMap?.voidTiles),
+              new Set(
+                (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+              ),
+              playerPositionRef.current,
+            ),
+            progressStart: playerPositionRef.current,
             isOccupied: (c: { x: number; y: number }) =>
               getLiveCombatants(combatantStoreCtx).some(
                 (e: any) => e.x === c.x && e.y === c.y,
@@ -10194,6 +10205,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             portals: new Set(
               (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
             ),
+            reserved: collectMandatoryProgressionCells(
+              (currentMap?.tiles ?? []).map((row: any) =>
+                (row ?? []).map((t: any) => t !== "wall"),
+              ),
+              toVoidSet(currentMap?.voidTiles),
+              new Set(
+                (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+              ),
+              playerPositionRef.current,
+            ),
+            progressStart: playerPositionRef.current,
             isOccupied: (c: { x: number; y: number }) =>
               getLiveCombatants(combatantStoreCtx).some(
                 (e: any) => e.x === c.x && e.y === c.y,
@@ -15382,6 +15404,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               ),
               playerPositionRef.current,
             ),
+            progressStart: playerPositionRef.current,
             isOccupied: (oc: { x: number; y: number }) =>
               enemiesRef.current.some(
                 (e: any) => e.x === oc.x && e.y === oc.y,
@@ -15500,6 +15523,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   ),
                   playerPositionRef.current,
                 ),
+                progressStart: playerPositionRef.current,
                 isOccupied: (c: { x: number; y: number }) =>
                   enemiesRef.current.some(
                     (e: any) => e.x === c.x && e.y === c.y,
@@ -15629,6 +15653,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             aiPortals,
             playerPositionRef.current,
           ),
+          progressStart: playerPositionRef.current,
           isOccupied: (c: { x: number; y: number }) =>
             enemiesRef.current.some((e: any) => e.x === c.x && e.y === c.y) ||
             (playerPositionRef.current.x === c.x &&

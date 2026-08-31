@@ -8,6 +8,7 @@ import {
   resumeRoomFromPersisted,
 } from "../hooks/bossRushProgress.ts";
 import {
+  generateSeededBossPortalEncounter,
   generateSeededBossRushRoom,
   generateSeededDeathRealm,
   generateSeededRestMap,
@@ -465,6 +466,46 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
       ),
     );
   });
+
+  it("seed-destack-keeps-first-portal-tile: destack must not floor the kept exit", () => {
+    const tiles = [
+      [F, F, F],
+      [F, F, F],
+      [F, F, F],
+    ];
+    tiles[0][1] = "portal";
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 0, y: 0 },
+      portals: [
+        { x: 1, y: 0 },
+        { x: 1, y: 0 },
+      ],
+      spawns: [],
+      w: 3,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      3,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(after.stackedPortals, 0);
+    assert.equal(after.portalTileMismatch, 0);
+    for (const p of finalized.portals) {
+      assert.equal(
+        finalized.tiles[p.y][p.x],
+        "portal",
+        `portal at ${p.x},${p.y} must keep a portal tile`,
+      );
+    }
+  });
 });
 
 describe("seeded world property suite", () => {
@@ -620,6 +661,30 @@ describe("seeded world property suite", () => {
       const realm = generateSeededDeathRealm(seed);
       const report = reportWorld(realm);
       if (!report.ok) {
+        failures.push(`seed ${seed}: ${report.failures.join(",")}`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("portal objects keep portal tiles after finalize", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const report = reportWorld(world);
+      if (report.portalTileMismatch > 0) {
+        failures.push(`seed ${seed}: ${report.failures.join(",")}`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("Boss portal entry cell (11,5) stays walk-reachable across seeds", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededBossPortalEncounter(seed);
+      const report = reportWorld(world);
+      if (!report.ok || report.stackedEnemies > 0) {
         failures.push(`seed ${seed}: ${report.failures.join(",")}`);
       }
     }

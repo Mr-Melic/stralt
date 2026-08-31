@@ -667,6 +667,43 @@ export function generateSeededSanctuary(seed: number): SimWorld {
   };
 }
 
+/** Boss-portal entry used to drop the boss at (11, 5) with no punch. */
+export function generateSeededBossPortalEncounter(seed: number): SimWorld {
+  const world = generateSeededWorld({
+    seed,
+    runMode: "none",
+    enemyCount: 0,
+  });
+  const mid = Math.floor(WORLD_GRID_SIZE / 2);
+  const bossCell = { x: mid + 3, y: mid - 3 };
+  const punched = punchRosterReachability(
+    world.tiles,
+    world.voidTiles,
+    [bossCell],
+    world.playerSpawn,
+    world.portals[0],
+    WORLD_GRID_SIZE,
+    WORLD_GRID_SIZE,
+  );
+  const finalized = finalizePlayableLayout({
+    tiles: punched.tiles,
+    voidTiles: world.voidTiles,
+    playerSpawn: punched.playerSpawn,
+    portals: world.portals,
+    spawns: punched.roster,
+    w: WORLD_GRID_SIZE,
+    h: WORLD_GRID_SIZE,
+    requireExit: true,
+  });
+  return {
+    ...world,
+    tiles: finalized.tiles,
+    portals: finalized.portals,
+    playerSpawn: finalized.playerSpawn,
+    spawns: finalized.spawns,
+  };
+}
+
 export function generateSeededDeathRealm(seed = 0): SimWorld {
   const rng = createSeededRng(seed);
   const size = WORLD_GRID_SIZE;
