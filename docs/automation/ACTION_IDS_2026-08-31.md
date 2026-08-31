@@ -1305,3 +1305,16 @@ DEPENDENCIES: WDEAD-2026-08-31-003; 004
 REGRESSION_RISK: LOW for combat. MEDIUM for operators if the flag hides the only admin entry — keep existing CRUD reachable for the true operator, hide lab/activate on player builds.  
 VALIDATION_REQUIRED: A `user` role session cannot open Simulation or Activate. Player recap / reward funnel unchanged. Debug overlay remains reachable during load/crash (existing rule).  
 STATUS: NEW
+
+ACTION_ID: EED-2026-08-31-001  
+SOURCE_AUTOMATION: Dungeon and Encounter Evolution Designer (`73740435-a493-11f1-a7d1-d6b4613131ce`)  
+TITLE: Progression-proof encounter catalog (design only)  
+CATEGORY: design  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Cron run 2026-08-31. No prior `ENCOUNTER_ID` catalog in-repo. Live systems already have archetypes, kits-by-zone, hazards, rest exits, dungeon-chain depth, 19 bosses, 10-room Boss Rush, and optional challenges — but overworld fights still scale mostly by pack level.  
+RECOMMENDED_ACTION: Human or orchestrator picks IDs from `docs/encounters/ENCOUNTER_EVOLUTION_2026-08-31.md`. Do not implement production code from this ACTION_ID. First implementer slice if approved: ENC-TEACH-01, ENC-HAZ-01, ENC-WAVE-01.  
+DEPENDENCIES: None  
+REGRESSION_RISK: NONE — docs only  
+VALIDATION_REQUIRED: Catalog contains all requested types (waves, survival, elite, ambush, reinforcements, protection, priority, movement, hazard, rare elite, treasure/risk, rest, branch, mini-boss, rush variants, spell-discovery) and every entry is STATUS: PROPOSED.  
+STATUS: OPEN
