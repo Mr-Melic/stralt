@@ -198,6 +198,8 @@ export default function ChallengePanel({
         <button
           type="button"
           onClick={toggleFold}
+          aria-label={folded ? "Expand challenge" : "Fold challenge"}
+          className="stone-touch-target"
           style={{
             background: "none",
             border: "none",
@@ -319,6 +321,7 @@ export default function ChallengePanel({
                   fontSize: 10,
                   cursor: "pointer",
                   fontWeight: "bold",
+                  minHeight: 44,
                 }}
               >
                 Accept
@@ -335,6 +338,7 @@ export default function ChallengePanel({
                   padding: "4px 0",
                   fontSize: 10,
                   cursor: "pointer",
+                  minHeight: 44,
                 }}
               >
                 Decline

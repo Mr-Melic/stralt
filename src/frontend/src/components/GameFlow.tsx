@@ -279,16 +279,18 @@ const GameFlow: React.FC<GameFlowProps> = ({
         <div
           ref={topBarRef}
           className="fixed top-0 left-0 right-0 z-[9000] pointer-events-none"
-          style={{ height: 44 }}
+          style={{ height: "calc(44px + env(safe-area-inset-top, 0px))" }}
           aria-hidden
         />
         {/* Realm tools sit just under the world HUD so they stay reachable
-            without hiding map name, leftover XP, or the Doka chip. */}
+            without hiding map name, leftover XP, or the Doka chip. 44px
+            min height + safe-area insets keep phone chrome tappable. */}
         <div
           className="fixed z-[9001] pointer-events-auto flex items-center gap-2 px-2 py-1"
           style={{
-            top: 46,
-            right: 8,
+            top: "calc(46px + env(safe-area-inset-top, 0px))",
+            right: "max(8px, env(safe-area-inset-right, 0px))",
+            minHeight: 44,
             background:
               "linear-gradient(180deg, oklch(0.10 0.01 260 / 0.92), oklch(0.07 0.01 260 / 0.88))",
             border: "1px solid oklch(var(--dofus-border-gold-dim))",
@@ -397,7 +399,16 @@ const GameFlow: React.FC<GameFlowProps> = ({
       style={{ zIndex: 10, background: "#0d0f1a" }}
     >
       {/* Carved-stone top bar */}
-      <header className="stone-top-bar flex items-center justify-between gap-2 px-4 h-12 shrink-0 z-30">
+      <header
+        className="stone-top-bar flex items-center justify-between gap-2 px-4 shrink-0 z-30"
+        style={{
+          minHeight: 48,
+          height: "calc(48px + env(safe-area-inset-top, 0px))",
+          paddingTop: "env(safe-area-inset-top, 0px)",
+          paddingLeft: "max(16px, env(safe-area-inset-left, 0px))",
+          paddingRight: "max(16px, env(safe-area-inset-right, 0px))",
+        }}
+      >
         <div className="flex items-center gap-3">
           {showBackButton && (
             <button

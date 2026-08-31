@@ -730,7 +730,8 @@ const FilledSlot: React.FC<{
         data-ocid="character_selection.edit_button"
         onClick={onEdit}
         title="Edit character"
-        className="stone-btn-slate w-10 h-10 p-0 flex items-center justify-center"
+        aria-label="Edit character"
+        className="stone-btn-slate w-11 h-11 p-0 flex items-center justify-center"
       >
         <Edit className="w-4 h-4" />
       </button>
@@ -741,7 +742,8 @@ const FilledSlot: React.FC<{
             data-ocid="character_selection.delete_button"
             disabled={isDeleting}
             title="Delete character"
-            className="stone-btn-slate w-10 h-10 p-0 flex items-center justify-center disabled:opacity-50"
+            aria-label="Delete character"
+            className="stone-btn-slate w-11 h-11 p-0 flex items-center justify-center disabled:opacity-50"
             style={{
               background: "rgba(231,76,60,0.08)",
               color: "#e74c3c",

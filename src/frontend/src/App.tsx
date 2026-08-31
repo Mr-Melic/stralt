@@ -22,27 +22,48 @@ const CHANGELOG_ITEMS = [
 
 const AdminDashboard = lazy(() => import("./components/AdminDashboard"));
 
-/** Blocks rendering on small screens (< 768px) */
-function SmallScreenGuard() {
-  const [isSmall, setIsSmall] = useState(() => window.innerWidth < 768);
-  useEffect(() => {
-    const check = () => setIsSmall(window.innerWidth < 768);
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-  if (!isSmall) return null;
+const SMALL_SCREEN_CONTINUE_KEY = "pbv_small_screen_continue";
+
+function readSmallScreenContinue(): boolean {
+  try {
+    return sessionStorage.getItem(SMALL_SCREEN_CONTINUE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistSmallScreenContinue(): void {
+  try {
+    sessionStorage.setItem(SMALL_SCREEN_CONTINUE_KEY, "1");
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
+
+/** Warns on small screens; Continue lets the player enter anyway. */
+function SmallScreenGuard({ onContinue }: { onContinue: () => void }) {
   return (
-    <div
+    <dialog
+      open
       data-ocid="small_screen.overlay"
+      aria-labelledby="small-screen-title"
+      aria-describedby="small-screen-body"
       style={{
         position: "fixed",
         inset: 0,
+        width: "100%",
+        height: "100%",
+        maxWidth: "none",
+        maxHeight: "none",
+        margin: 0,
+        border: "none",
         background: "rgba(0,0,0,0.97)",
         zIndex: 99999,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        padding:
+          "max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px))",
       }}
     >
       <div
@@ -59,6 +80,7 @@ function SmallScreenGuard() {
       >
         <div style={{ fontSize: 56, lineHeight: 1, marginBottom: 16 }}>♔</div>
         <h2
+          id="small-screen-title"
           style={{
             color: "#ffffff",
             fontWeight: 800,
@@ -71,6 +93,7 @@ function SmallScreenGuard() {
           Best on Larger Screens
         </h2>
         <p
+          id="small-screen-body"
           style={{
             color: "#aaaaaa",
             fontSize: 14,
@@ -81,6 +104,19 @@ function SmallScreenGuard() {
           ÆSTRALTØ is designed for desktop and tablet play. For the best
           experience, use a device with a larger screen (768px or wider).
         </p>
+        <button
+          type="button"
+          data-ocid="small_screen.continue_button"
+          onClick={onContinue}
+          className="stone-btn-crimson"
+          style={{
+            width: "100%",
+            minHeight: 44,
+            marginBottom: 12,
+          }}
+        >
+          Continue anyway
+        </button>
         <p
           style={{
             color: "rgba(150,80,80,0.75)",
@@ -93,7 +129,7 @@ function SmallScreenGuard() {
           Tablets (768px+) and desktops are fully supported.
         </p>
       </div>
-    </div>
+    </dialog>
   );
 }
 
@@ -192,6 +228,7 @@ function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
           style={{
             width: "100%",
             padding: "10px 16px",
+            minHeight: 44,
             borderRadius: 7,
             border: "1px solid #c0392b",
             background: "linear-gradient(135deg,#6a0a0a,#c0392b)",
@@ -266,15 +303,25 @@ function App() {
     localStorage.setItem("pbv_show_changelog", "false");
   };
 
-  // Small screen guard state
+  // Small screen guard state. Bypass once the player continues or the
+  // session has already rendered at a supported width so a landscape→portrait
+  // rotate cannot unmount the live game tree.
   const [isSmallScreen, setIsSmallScreen] = useState(
     () => window.innerWidth < 768,
+  );
+  const [smallScreenBypass, setSmallScreenBypass] = useState(
+    readSmallScreenContinue,
   );
   useEffect(() => {
     const check = () => setIsSmallScreen(window.innerWidth < 768);
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+  useEffect(() => {
+    if (isSmallScreen) return;
+    persistSmallScreenContinue();
+    setSmallScreenBypass(true);
+  }, [isSmallScreen]);
 
   // Admin dashboard state
   const [showAdmin, setShowAdmin] = useState(false);
@@ -316,8 +363,7 @@ function App() {
   const showProfileSetup = isAuthenticated && profileResolved && !userProfile;
   const showGame = isAuthenticated && profileResolved && !!userProfile;
 
-  // If small screen: show warning only, don't load the game at all
-  if (isSmallScreen) {
+  if (isSmallScreen && !smallScreenBypass) {
     return (
       <div
         style={{
@@ -328,7 +374,12 @@ function App() {
         }}
       >
         <StarfieldBackground />
-        <SmallScreenGuard />
+        <SmallScreenGuard
+          onContinue={() => {
+            persistSmallScreenContinue();
+            setSmallScreenBypass(true);
+          }}
+        />
       </div>
     );
   }

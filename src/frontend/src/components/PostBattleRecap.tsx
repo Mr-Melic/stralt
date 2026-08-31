@@ -82,7 +82,7 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
       data-ocid="post_battle_recap.dialog"
       className="fixed inset-0 flex items-center justify-center"
       style={{
-        zIndex: 500,
+        zIndex: 9600,
         background: "rgba(0,0,0,0.75)",
         backdropFilter: "blur(3px)",
         animation: "fadeIn 0.3s ease",
@@ -112,7 +112,8 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
           boxShadow:
             "0 0 40px oklch(var(--dofus-border-gold) / 0.35), inset 0 1px 0 oklch(var(--dofus-border-gold) / 0.15)",
           width: "min(480px, 94vw)",
-          maxHeight: "90vh",
+          maxHeight: "min(90vh, 90dvh)",
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
           overflowY: "auto",
           padding: 0,
           animation: "slideUpFadeIn 0.35s cubic-bezier(0.34,1.56,0.64,1)",
@@ -202,8 +203,8 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
               border: "1px solid oklch(var(--dofus-border-gold-dim))",
               color: "oklch(var(--dofus-text-gold))",
               borderRadius: 5,
-              width: 28,
-              height: 28,
+              width: 44,
+              height: 44,
               cursor: "pointer",
               fontSize: 16,
               display: "flex",
