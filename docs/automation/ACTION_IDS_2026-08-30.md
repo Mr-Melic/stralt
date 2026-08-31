@@ -4,6 +4,8 @@ Durable ledger for the Report Action Orchestrator and next week’s audit.
 Source of every record: Automation Quality Auditor.  
 Do not implement gameplay from this file unless a later human or orchestrator explicitly picks an ID and the item is still unique.
 
+**2026-08-31 director note:** Status of these IDs was re-evaluated in [`ACTION_IDS_2026-08-31.md`](./ACTION_IDS_2026-08-31.md) and [`MASTER_ROADMAP.md`](./MASTER_ROADMAP.md). AQA-004 is SUPERSEDED (stack merged). AQA-006 is BROKEN (#110 on `main`). AQA-003 is PARTIAL. All others remain OPEN. New work uses MTD-2026-08-31-* or the reused ID — do not open a second PR for the same theme.
+
 ---
 
 ACTION_ID: AQA-2026-08-30-001  
