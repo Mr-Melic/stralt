@@ -6,10 +6,40 @@
  *
  * applyRewards must use the same threshold. Using 100 * 2^N (off by one)
  * silently blocks intended level-ups and reverts portal/victory local math.
+ *
+ * Number is not a level cap. Thresholds and leftover XP use bigint so a
+ * player at level 48+ (where 100*2^(N-1) exceeds MAX_SAFE_INTEGER) still
+ * levels instead of freezing on Infinity or a rounded comparison.
+ */
+
+function toNatLevel(level: number): number {
+  return Math.max(1, Math.floor(Number(level) || 1));
+}
+
+function toNatXp(n: number): bigint {
+  return BigInt(Math.max(0, Math.floor(Number(n) || 0)));
+}
+
+/** Exact threshold for level N→N+1 as 100 * 2^(N-1). */
+export function xpThresholdBigInt(level: number): bigint {
+  return 100n * (1n << BigInt(toNatLevel(level) - 1));
+}
+
+/**
+ * HUD / number callers. Values above MAX_SAFE_INTEGER saturate so bars
+ * never become Infinity/NaN. Persist math must use xpThresholdBigInt.
  */
 export function xpForNextLevel(level: number): number {
-  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
-  return 100 * 2 ** (safeLevel - 1);
+  const t = xpThresholdBigInt(level);
+  if (t > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER;
+  return Number(t);
+}
+
+/** Total XP consumed to reach `level` from level 1: 100 * (2^(L-1) - 1). */
+export function cumulativeXpToReachLevel(level: number): number {
+  const total = 100n * ((1n << BigInt(toNatLevel(level) - 1)) - 1n);
+  if (total > BigInt(Number.MAX_SAFE_INTEGER)) return Number.MAX_SAFE_INTEGER;
+  return Number(total);
 }
 
 /**
@@ -22,15 +52,21 @@ export function applyXpDelta(
   currentLevel: number,
   xpDelta: number,
 ): { newXp: number; newLevel: number } {
-  let newXp =
-    Math.max(0, Math.floor(Number(currentXp) || 0)) +
-    Math.max(0, Math.floor(Number(xpDelta) || 0));
-  let newLevel = Math.max(1, Math.floor(Number(currentLevel) || 1));
-  while (newXp >= xpForNextLevel(newLevel)) {
-    newXp -= xpForNextLevel(newLevel);
+  let newXp = toNatXp(currentXp) + toNatXp(xpDelta);
+  let newLevel = toNatLevel(currentLevel);
+  // Huge minted deltas must not spin forever; Motoko Nat is the authority.
+  let steps = 0;
+  const maxSteps = 100_000;
+  while (newXp >= xpThresholdBigInt(newLevel) && steps < maxSteps) {
+    newXp -= xpThresholdBigInt(newLevel);
     newLevel += 1;
+    steps += 1;
   }
-  return { newXp, newLevel };
+  const xpNum =
+    newXp > BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number.MAX_SAFE_INTEGER
+      : Number(newXp);
+  return { newXp: xpNum, newLevel };
 }
 
 /**

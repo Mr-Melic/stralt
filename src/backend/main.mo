@@ -244,6 +244,47 @@ actor {
         false
     };
 
+    /// Paid spell levels live in parallel arrays. A stale appearance edit or
+    /// older client must not drop or downgrade an id that upgradeSpell wrote.
+    /// Union keys; keep max(existing, incoming) per id. Empty incoming keeps
+    /// the store. Mismatched incoming lengths are ignored (keep store).
+    func _spellLevelAt(keys : [Text], vals : [Nat], id : Text) : Nat {
+        var idx : Nat = 0;
+        for (k in keys.values()) {
+            if (k == id and idx < vals.size()) { return vals[idx] };
+            idx += 1;
+        };
+        0
+    };
+
+    func _mergeSpellLevels(
+        existingKeys : [Text],
+        existingVals : [Nat],
+        incomingKeys : [Text],
+        incomingVals : [Nat],
+    ) : ([Text], [Nat]) {
+        if (incomingKeys.size() == 0) {
+            return (existingKeys, existingVals);
+        };
+        if (incomingKeys.size() != incomingVals.size()) {
+            return (existingKeys, existingVals);
+        };
+        var outKeys : [Text] = [];
+        var outVals : [Nat] = [];
+        let consider = func(id : Text) {
+            if (outKeys.contains(id)) { return };
+            let lvl = Nat.max(
+                _spellLevelAt(existingKeys, existingVals, id),
+                _spellLevelAt(incomingKeys, incomingVals, id),
+            );
+            outKeys := outKeys.concat([id]);
+            outVals := outVals.concat([lvl]);
+        };
+        for (k in existingKeys.values()) { consider(k) };
+        for (k in incomingKeys.values()) { consider(k) };
+        (outKeys, outVals)
+    };
+
     public shared ({ caller }) func createCharacter(slot : Nat, character : Character) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: Only users can create characters");
@@ -360,13 +401,22 @@ actor {
         // Merge optional session fields: when the incoming value is null, keep
         // the existing stored value so incremental saves cannot clobber the
         // saved loadout (spell bar order, boss-rush master completion, etc.).
+        // Spell levels: upgradeSpell is the sole paid writer. Union + max so a
+        // stale CharacterCreation payload (empty or older keys) cannot wipe
+        // upgrades a newer client already persisted.
+        let (mergedSpellKeys, mergedSpellValues) = _mergeSpellLevels(
+            ec.spellLevelKeys,
+            ec.spellLevelValues,
+            character.spellLevelKeys,
+            character.spellLevelValues,
+        );
         let mergedCharacter : Character = {
             character with
             level = ec.level;
             experience = ec.experience;
             stats = ec.stats;
-            spellLevelKeys = ec.spellLevelKeys;
-            spellLevelValues = ec.spellLevelValues;
+            spellLevelKeys = mergedSpellKeys;
+            spellLevelValues = mergedSpellValues;
             bloodBalance = switch (character.bloodBalance) {
                 case null { ec.bloodBalance };
                 case (?v) { ?v };

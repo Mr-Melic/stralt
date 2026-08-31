@@ -1,3 +1,5 @@
+import { xpForNextLevel } from "./xpCurve.ts";
+
 /**
  * Death penalty: 20% XP and 40% Doka, floored, never below 0.
  *
@@ -162,7 +164,7 @@ export function mergeVictoryRewardLiveStats<T extends VictoryLiveHydratePrev>(
     hp: Math.max(prev.hp, floor.hp),
     mp: Math.max(prev.mp, floor.mp),
     ap: Math.max(prev.ap, floor.ap),
-    expToNext: Math.floor(100 * 2 ** (level - 1)),
+    expToNext: xpForNextLevel(level),
   };
 }
 

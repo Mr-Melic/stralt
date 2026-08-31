@@ -2411,3 +2411,217 @@ DEPENDENCIES: None
 REGRESSION_RISK: HIGH if the mixin is the only live grant path  
 VALIDATION_REQUIRED: Transfer admin on a deployed canister; both principals can open admin.  
 STATUS: NEW
+
+ACTION_ID: SDEG-2026-08-31-001  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Wire the live actor to the migration chain before any required-field add  
+CATEGORY: persist-schema  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"` and `20260827_000000.mo` exist, but `src/backend/main.mo` line 40 is a plain `actor {` with no `(with migration = Migration.run)`. AGENTS.md / ARCHITECTURE.md already record this. Adding a required Character/stats field (or changing a stable Map value type) will fail the canister upgrade for every yesterday / six-month account. The current module is a pass-through that only drops transients (`BUFF_CATALOG`, `chatMessages`, …).  
+SYSTEMS_AFFECTED: `src/backend/main.mo`; `src/backend/migrations/20260827_000000.mo`; `mops.toml`  
+RECOMMENDED_ACTION: Before the next required persist field: (1) refresh inlined OldActor/NewActor to the live stable shape (see SDEG-2026-08-31-002); (2) attach `(with migration = Migration.run)` on canonical `main.mo` only; (3) add a one-shot `var migrationGeneration` so a replay cannot re-run a destructive remap. Do not deploy `backend_extended`.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: SDEG-2026-08-31-002  
+MIGRATION_REQUIREMENT: YES — attaching the annotation is itself an upgrade; the first wired module must be a no-op copy of player maps.  
+REGRESSION_RISK: HIGH if the inlined types do not match the live canister.  
+VALIDATION_REQUIRED: `caffeine check` stable-compat against `.old/src/backend/dist/backend.most`; a fixture principal with 12-field Character, Doka, spellLevelKeys, achievements, dungeon, boss rush still loads after upgrade.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-002  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Refresh inlined migration SpellConfig before the chain can be attached  
+CATEGORY: persist-schema  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `20260827_000000.mo` inlined `SpellConfig` (lines 117–147) has no `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef`. `src/backend/lib/admin.mo` `defaultSpells()` (lines 172–190) writes those fields. `src/backend/types/admin.mo` `SpellConfig` (lines 79–110) also omits them. Attaching today’s chain as-is will fail the compatibility check or drop summon metadata.  
+SYSTEMS_AFFECTED: `src/backend/migrations/20260827_000000.mo`; `src/backend/types/admin.mo`; `src/backend/lib/admin.mo`  
+RECOMMENDED_ACTION: Diff every live `let`/`var` in `main.mo` against OldActor/NewActor and AdminTypes. Add missing fields as optional or with defaults. Do not attach the chain until the inlined types match.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: SDEG-2026-08-31-001  
+MIGRATION_REQUIREMENT: YES  
+REGRESSION_RISK: HIGH  
+VALIDATION_REQUIRED: Migration module compiles against the live stable dump; summon spells still round-trip.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-003  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Stop the every-upgrade OLD_SPELL_IDS purge; remap ownership instead  
+CATEGORY: content-id-stability  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `src/backend/main.mo` lines 530–537 run `spellConfigs.remove` for `blood_nova`, `fireball`, `heal`, `physical_attack`, … on **every** canister start/upgrade. Frontend `WorldExploration.tsx` lines 2203–2240 also hide the same ids/names from `ownedSpells`. `upgradeSpell` (line 738) errors `Spell not found` if the id is gone. Player `spellLevelKeys` are **not** remapped. A player from before the rename keeps paid levels on orphan ids; a later admin re-add is deleted again on the next deploy. `physical_attack` is a live starter id **and** a purged backend id.  
+SYSTEMS_AFFECTED: `src/backend/main.mo`; `src/frontend/src/components/WorldExploration.tsx`; `upgradeSpell`; `spellLevelKeys`  
+RECOMMENDED_ACTION: Replace the boot purge with a one-shot `var oldSpellIdsPurged : Bool` (or `migrationGeneration`). Persist an alias table `oldId → newId` and remap `spellLevelKeys` once (max level if both exist). Keep retired ids in configs as `usableByPlayer = false` so `upgradeSpell` still resolves. Never delete `physical_attack` from the backend catalog while it is a starter.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: SDEG-2026-08-31-001  
+MIGRATION_REQUIREMENT: YES — must be idempotent; replaying must not double-map or zero levels.  
+REGRESSION_RISK: HIGH if aliases are wrong.  
+VALIDATION_REQUIRED: Fixture character with `spellLevelKeys = ["fireball","physical_attack"]` and levels 3/2 still owns equivalent ids after two upgrades.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-004  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Persist owned spell ids (and discovery) separately from the live catalog  
+CATEGORY: spell-discovery  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Official ownership is `starterSpells` UNION `getSpellConfigs()` minus `OLD_SPELL_NAMES_SET` (`WorldExploration.tsx` 2242–2271). `createCharacter` seeds `spellLevelKeys = []` (`CharacterCreation.tsx` 286–289). `setSpellBarOrder` (`main.mo` 1292–1294) **drops** any bar id not in `spellLevelKeys`, so starters never survive the save; load then appends them to the end. There is no discovery history, no achievement→spell grant table, and `minLevel` is not an ownership gate. A player created yesterday instantly “owns” every current catalog spell; a player from before a rename loses the old id in the UI while paid levels remain; a player who owned a now-retired spell cannot upgrade or see it.  
+SYSTEMS_AFFECTED: Character `spellLevelKeys`; `setSpellBarOrder`; `starterSpells`; achievement unlocks  
+RECOMMENDED_ACTION: Treat `spellLevelKeys` as the ownership set (level 0 = owned/unupgraded). On create, seed starter ids at 0. Filter the bar against that set UNION current starters (not catalog-all). Add optional `discoveredSpellIds` only with a default `[]` and a migration. Achievement unlocks must write a spell id, not a name.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: SDEG-2026-08-31-003  
+MIGRATION_REQUIREMENT: YES — empty keys on old characters must mean “starters + any upgraded ids”, not “owns nothing”.  
+REGRESSION_RISK: MEDIUM — seeding must not grant the full admin catalog to old accounts.  
+VALIDATION_REQUIRED: Old empty-keys character still has starters; bar order of starters persists; retired id with level > 0 remains visible as unusable-or-aliased.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-005  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Hydrate BuffShop from canister inventory; stop paid items living only in localStorage  
+CATEGORY: inventory  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Backend `buffInventories` is keyed `"principal#slot"` with `purchaseBuff` / `useBuffItem` / `getBuffInventory`. Official `BuffShop.tsx` lines 77–93 read/write `${principalId}_inventory` only. Version gate (`versionGate.ts` 7–12, `App.tsx` 231–247) preserves those keys across `APP_VERSION` wipes — that is a cache exception, not authority. Cross-device / cleared-except-gate / six-month-old clients lose paid potions while Doka spend already hit `saveBattleStats`. #107 still writes localStorage after a successful debit.  
+SYSTEMS_AFFECTED: `BuffShop.tsx`; `buffInventories`; `versionGate.ts`; persist lock  
+RECOMMENDED_ACTION: Buy/use through `purchaseBuff` / `useBuffItem` on `createProgressPersist`. Hydrate from `getBuffInventory(slot)`. Keep localStorage as cache only (same rule as spell bar). Slot-scope the cache key (`principal#slot`) so three characters do not share stacks.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: None  
+MIGRATION_REQUIREMENT: YES — copy localStorage stacks into empty canister slots once; never overwrite a non-empty canister stack with cache.  
+REGRESSION_RISK: MEDIUM if a stale cache wins.  
+VALIDATION_REQUIRED: Buy on device A, login on device B, stacks match; version bump does not duplicate or wipe canister stacks.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-006  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Add a Character write generation so stale clients cannot clobber newer XP/Doka  
+CATEGORY: stale-client  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `saveBattleStats` (`main.mo` 1337–1406 on this HEAD) writes absolute XP/Doka/level with no etag. Death **must** lower XP/Doka, so a monotonic-up clamp is wrong. Draft #107 clamps **upward** mint (`writeDoka/Xp/Level = min(incoming, stored)`) — review that as SDEG-2026-08-31-012; it does not stop a stale heal/death snapshot from writing a **lower** leftover after a later `applyRewards`. `updateCharacter` rejects decreasing level/killCount but still replaced `spellLevelKeys` until SDEG-2026-08-31-009. No `schemaVersion` / `writeGeneration` field exists (grep empty).  
+SYSTEMS_AFFECTED: `saveBattleStats`; `applyRewards`; persist lock; Character record  
+RECOMMENDED_ACTION: Add optional `writeGeneration : ?Nat` (default 0 for old rows). Each successful persist increments it. Reject absolute writes whose generation is older than stored, except a signed death-penalty path. Do not land this in a second PR if #107 is still the clamp vehicle — extend #107 or wait.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: SDEG-2026-08-31-001; open #107  
+MIGRATION_REQUIREMENT: YES — new field must be optional or defaulted; attaching requires SDEG-001.  
+REGRESSION_RISK: HIGH if death/heal retries use a stale generation.  
+VALIDATION_REQUIRED: applyRewards then stale saveBattleStats does not cut leftover; death 20/40 still lands; replay of #107 death sessionStorage still works.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-007  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Make dungeon and Boss Rush progress writes idempotent and slot-scoped  
+CATEGORY: progress-idempotency  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `dungeonRecords` is Principal-keyed (`main.mo` 2038–2078). `updateDungeonProgress` always does `totalMapsCompleted + 1` — a retried portal write inflates the counter. Three slots on one account share one chain. `completeBossRushRoom` (`main.mo` 2542) increments `totalBossRushRuns` whenever `roomIndex == 9` with no “already counted this run” guard. `highestRoomCompleted` is max (safe). `create`/`delete` clear rush per slot (good). A player from before 3-slot / before rush just has missing map entries (defaults 0) — safe — but retries and shared-dungeon are not.  
+SYSTEMS_AFFECTED: `dungeonRecords`; `bossRushStates`; `completeBossRushRoom`; `updateDungeonProgress`  
+RECOMMENDED_ACTION: Key dungeon by `principal#slot` (migrate Principal-only rows onto slot 1). Increment `totalMapsCompleted` only when `depth` increases vs stored `chainDepth`. Increment `totalBossRushRuns` only when `highestRoomCompleted` first reaches 10. Keep `resetDungeonChain` as chainDepth=0 without touching totals/best.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: SDEG-2026-08-31-001  
+MIGRATION_REQUIREMENT: YES — copy Principal record to slot1; do not duplicate on replay.  
+REGRESSION_RISK: MEDIUM  
+VALIDATION_REQUIRED: Double-call updateDungeonProgress(depth=2) → +1 map; two characters on one principal keep separate chains; double complete room 9 → +1 run.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-008  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Keep achievement progress when a config is retired; never key unlocks by display name  
+CATEGORY: achievements  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `adminDeleteAchievementConfig` (`main.mo` 1644–1649) removes the config. `claimAchievementReward` then returns `Unknown achievement` even if `achievementProgress` is unlocked/unclaimed. `active = false` already exists to hide without delete (`admin.mo` 205–212) but delete is also exposed. Conditions are frontend strings (`first_battle_win`, `level_10`). `getPlayerAchievements` requires the caller Principal (good). A player who unlocked yesterday and an admin who deletes/renames the id today loses the claim.  
+SYSTEMS_AFFECTED: `achievementConfigs`; `achievementProgress`; `AchievementsPanel`  
+RECOMMENDED_ACTION: Soft-delete only (`active = false`). Keep progress rows forever. Claim must succeed on a deactivated config using the stored reward snapshot (add optional `dokaRewardAtUnlock : ?Nat`, default config.dokaReward). Renames keep `id`; names are UI.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: None  
+MIGRATION_REQUIREMENT: Optional field only; old rows default to current config reward.  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Unlock, deactivate, claim still pays once; second claim still `#err`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-009  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: updateCharacter merges spell levels (max/union) so stale appearance edits cannot wipe upgrades  
+CATEGORY: spell-levels  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Implemented this run. `updateCharacter` used to full-replace `spellLevelKeys`/`spellLevelValues`. `CharacterCreation.tsx` 286–289 sends `existingCharacter?.spellLevelKeys ?? []` — a partial/stale edit payload wrote `[]` and erased paid levels.  
+SYSTEMS_AFFECTED: `src/backend/main.mo` `_mergeSpellLevels` 148–187, `updateCharacter` 295–304  
+RECOMMENDED_ACTION: Landed. Keep `upgradeSpell` as the only increment path. Do not let `saveBattleStats` write the arrays (already ignored).  
+AUTONOMY: IMPLEMENT  
+DEPENDENCIES: None  
+MIGRATION_REQUIREMENT: None (behavior-only; idempotent union/max).  
+REGRESSION_RISK: LOW — cannot drop keys; cannot downgrade a level.  
+VALIDATION_REQUIRED: Edit appearance with empty keys → stored keys unchanged; incoming lower level for `shadow_strike` → keep higher store; incoming new id → append.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-010  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: XP helpers must not use JS Number as a silent max level  
+CATEGORY: unbounded-progression  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Implemented this run in `utils/xpCurve.ts` (`xpThresholdBigInt`). `100 * 2 ** (N-1)` exceeds `MAX_SAFE_INTEGER` at level 48 and is `Infinity` at level 1024+. `CharacterSelection.tsx` and `deathPenalty.ts` now call the shared helper. Motoko `applyRewards` (`main.mo` 1408+) already uses unbounded `Nat`. Remaining Number leaks: `WorldExploration.tsx` ~3064 (`100 * 2 ** (savedLevel - 1)`), recap `xpForNextLevel: (level || 1) * 100` (wrong curve, overlaps #108), enemy HP `getEnemyHPForLevel` Float (`main.mo` 2087–2093), `spellFailReductionPerLevel` comment “reaches 0 at level 200” (floors, not a cap).  
+SYSTEMS_AFFECTED: `xpCurve.ts`; `deathPenalty.ts`; `CharacterSelection.tsx`; leftover WX/recap; `getEnemyHPForLevel`  
+RECOMMENDED_ACTION: Landed for the shared helper. Orchestrator: one-line WX call sites to `xpForNextLevel` (do not rewrite WX). Do not change `getEnemyHPForLevel` without a human (adjacent to combat math). Keep leftover XP on the wire as `bigint`; stop `Number(experience)` in persist paths (follow-up).  
+AUTONOMY: IMPLEMENT (helper); HUMAN (WX / Float HP)  
+DEPENDENCIES: #108 for recap leftover display  
+MIGRATION_REQUIREMENT: None  
+REGRESSION_RISK: LOW for helper; MEDIUM if WX recap formula is changed while #108 is open.  
+VALIDATION_REQUIRED: `node --experimental-strip-types src/frontend/src/utils/xpCurve.test.ts`; deathPenalty expToNext still 100/200 at levels 1–2.  
+STATUS: IMPLEMENTED  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-011  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Do not deploy dfx.json backend_extended (15-field stats) over the 12-field live actor  
+CATEGORY: deploy-hazard  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Live CharacterStats is 12 fields (`main.mo` 123–136). `dfx.json` still points at `src/backend_extended/main.mo` (15-field / wp-wr-scp). Root `declarations/` still have `wp`/`wr`/`scp`. A six-month canister on 15 fields rejects 12-field saves until upgraded; the reverse deploy bricks 12-field clients. Documented in AGENTS.md; still present.  
+SYSTEMS_AFFECTED: `dfx.json`; `backend_extended/`; bindgen; live canister  
+RECOMMENDED_ACTION: Point dfx at `src/backend/main.mo` only after a planned upgrade. Never “fix” bindgen to 15 fields. Contract Guardian should keep treating this as documented, not a drive-by edit.  
+AUTONOMY: HUMAN  
+DEPENDENCIES: Live canister upgrade plan  
+MIGRATION_REQUIREMENT: YES if the deployed actor is still 15-field  
+REGRESSION_RISK: HIGH  
+VALIDATION_REQUIRED: After any deploy, `getCharacter` + `updateCharacter` with 12-field payload including `killCount` succeeds.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-08-31-012  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Review #107 absolute-write clamp; do not open a second saveBattleStats PR  
+CATEGORY: stale-client  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Draft #107 adds `writeDoka/Xp/Level = min(incoming, stored)` on `saveBattleStats`. That blocks stale-UI **mints** and matches architecture (absolute writes may cut for death/shop; credits stay on `applyRewards`). It does **not** replace SDEG-2026-08-31-006 (generation). Quality Auditor AQA-2026-08-30-008/010 already asked to keep the clamp as its own review.  
+SYSTEMS_AFFECTED: `saveBattleStats`; #107  
+RECOMMENDED_ACTION: Human-review #107 clamp only. Do not clone it. After merge, add generation (006).  
+AUTONOMY: HUMAN  
+DEPENDENCIES: #107  
+MIGRATION_REQUIREMENT: None for the clamp  
+REGRESSION_RISK: HIGH if clamp ships without death 20/40 still able to decrease XP/Doka  
+VALIDATION_REQUIRED: Death cut still persists; applyRewards then heal snapshot cannot raise Doka.  
+STATUS: NEW
