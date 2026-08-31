@@ -1020,3 +1020,35 @@ DEPENDENCIES: VAL-2026-08-31-004, VAL-2026-08-31-006, VAL-2026-08-31-008
 REGRESSION_RISK: MEDIUM if scale 1.4 is treated as elite gameplay.  
 VALIDATION_REQUIRED: `ELITE_ONLY` asset never appears on a default-family pawn while no elite flag exists.  
 STATUS: NEW
+
+ACTION_ID: TBC-2026-08-31-001  
+SOURCE_AUTOMATION: Telemetry-Driven Balance & Content Analyst  
+TITLE: Keep balance/content analysis gated until real telemetry exists  
+CATEGORY: telemetry  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: 2026-08-31 cron run (`bc-9825c839`) found no telemetry files, no analytics SDK, no event export, and 0 rows in every analysis domain. Quality Auditor 2026-08-30 already recorded “Player telemetry: None.” Inventing win rates or inferring difficulty from combat source would violate this analyst’s activation guard.  
+SYSTEMS_AFFECTED: Telemetry-Driven Balance & Content Analyst (`2786666f-a4a0-11f1-a7d1-d6b4613131ce`); Master Technical Director; any Game Balance specialist  
+RECOMMENDED_ACTION: Next TBC cron must re-check collectors first. If still empty, emit WAITING_FOR_TELEMETRY only. Master Technical Director must not open balance PRs from a WAITING_FOR_TELEMETRY packet.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Next TBC report is either still WAITING_FOR_TELEMETRY with a fresh search, or cites real event counts with sample sizes.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: TBC-2026-08-31-002  
+SOURCE_AUTOMATION: Telemetry-Driven Balance & Content Analyst  
+TITLE: Human-design backend-authoritative gameplay events for balance analysis  
+CATEGORY: telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Required domains (enemy win/loss, relative difficulty, battle duration, death causes, spell usage/discovery/sources/combinations, boss and challenge completion, Doka earned/spent, dungeon performance, content usage) all have collector=no and rows=0. Wallet Nat, killCount, leaderboard, spell-bar snapshots, and achievement flags are progress state, not an event series. `AQA-2026-08-30-012` covers persist/victory/recap/shop counters only.  
+SYSTEMS_AFFECTED: `src/backend/main.mo` (new query-only or persist-lock-safe counters); optional export; this analyst as consumer  
+RECOMMENDED_ACTION: Human-designed event schema matching `docs/automation/TELEMETRY_BALANCE_2026-08-31.md` “Required measurements.” Include playerLevel and content id on every row (no level cap — relative bands only). Do not change damage math, RAF, map gen, or turn logic. Do not start from client-only logs. Extend `AQA-2026-08-30-012`; do not open a second persist-counter PR.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AQA-2026-08-30-012  
+REGRESSION_RISK: MEDIUM if events write Doka/XP off `createProgressPersist` or invent a second wallet path. LOW if query-only increment counters that never call `saveBattleStats` / `applyRewards`.  
+VALIDATION_REQUIRED: A later TBC run can query ≥1 UTC day of `battle_end` and `spell_cast` (and state sample size). Until then this analyst stays WAITING_FOR_TELEMETRY.  
+STATUS: NEW
