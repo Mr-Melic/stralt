@@ -61,6 +61,10 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
 | [docs/automation/QUALITY_AUDIT_2026-08-30.md](docs/automation/QUALITY_AUDIT_2026-08-30.md) | Weekly automation quality audit (process only) |
 | [docs/automation/EXPANSION_PROPOSALS_2026-08-31.md](docs/automation/EXPANSION_PROPOSALS_2026-08-31.md) | Expansion Director catalog (proposals only; no gameplay code) |
+| `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP accumulators |
+| `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
+| [docs/automation/MASTER_ROADMAP.md](docs/automation/MASTER_ROADMAP.md) | Master Technical Director roadmap (no gameplay changes) |
+| [docs/automation/ACTION_IDS_2026-08-31.md](docs/automation/ACTION_IDS_2026-08-31.md) | Current ACTION_ID ledger (reuses 2026-08-30 IDs) |
 
 ## Hard rules (product)
 

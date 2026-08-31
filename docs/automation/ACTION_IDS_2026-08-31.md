@@ -227,3 +227,358 @@ VALIDATION_REQUIRED: New character saves a bar of eight never-upgraded starters;
 STATUS: NEW  
 
 ---
+
+ACTION_ID: MTD-2026-08-31-001  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Halt same-hour P2/P3 implementer flock after the 2026-08-30 merge burst  
+CATEGORY: automation-coherence  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: 25+ automations launched 00:00–00:02 UTC 2026-08-31, including first runs of expansion (`3f31b18f`), enemy AI (`67b03c2f`), spell mechanics (`1330956a`), game feel (`078e61d4`), balance (`3c083a4a`), content diversity (`5acab6fe`), admin visuals (`3089f18d`), spell-discovery admin (`4efa22ec`), telemetry dashboard (`4b026695`), economy hunter (`1e548d83`), invariants (`72eb90fe`), and orchestrator (`68f2958f`). AQA-2026-08-30-001/004/009 already warned that same-hour implementers duplicate persist/combat themes. P0 leftovers (#114, unbounded canister writes, no ADR) are still open.  
+SYSTEMS_AFFECTED: all implementer automations; merge queue  
+RECOMMENDED_ACTION: First-run and expansion specialists emit ACTION_IDs only. Do not open gameplay PRs this cycle unless the item is unique, display-only, and not already drafted. Pause or stagger crons so they do not share a 2-minute window after a merge burst.  
+AUTONOMY: HUMAN_CONFIG — automation schedules / prompts  
+DEPENDENCIES: AQA-2026-08-30-001; AQA-2026-08-30-009  
+REGRESSION_RISK: LOW — slowing first-run implementers does not remove #114. Residual risk is delayed P2 ideas.  
+VALIDATION_REQUIRED: Next director run sees ≤3 new gameplay PRs from this wave, and those PRs do not retouch persist / targeting / mapGen / WX.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AQA-2026-08-30-001  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Throttle the critical / high-severity bug hunter  
+CATEGORY: automation-ops  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. Hunter `996df6df` still accounted for 61 of the first 100 listed runs on 2026-08-30. GetAutomation is not visible to this principal. WX still 19,619 lines / 96 recent commits.  
+SYSTEMS_AFFECTED: `996df6df-9d7a-11f1-a7d1-d6b4613131ce`; `WorldExploration.tsx`  
+RECOMMENDED_ACTION: REDUCE_FREQUENCY to at most once per 12–24 hours; pause 6 hours after a `main` merge that touches `WorldExploration.tsx` or `progressPersist.ts`. Uniqueness check vs last 24h PR titles. Extract helpers instead of WX branches.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: AQA-2026-08-30-002  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: ≤14 hunter runs/week; falling no-PR rate, not zero PRs.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AQA-2026-08-30-002  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Keep a single critical-bug automation  
+CATEGORY: automation-ops  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. `1aa41c6c` remains enabled and correctly opened unique #114 after the evening merges. A second high-frequency hunter is still the volume problem.  
+SYSTEMS_AFFECTED: `1aa41c6c-a483-11f1-a7d1-d6b4613131ce`; `996df6df-9d7a-11f1-a7d1-d6b4613131ce`  
+RECOMMENDED_ACTION: MERGE. Keep one hunter at AQA-001 cadence. Fold #114 into the human merge queue as the surviving critical PR.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: AQA-2026-08-30-001  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Only one critical-bug automation ID fires per day.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: MTD-2026-08-31-002  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Human merge queue — #114 then #107 clamp-only rebase  
+CATEGORY: merge-hygiene  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: #114 is unique post-merge P0/P1 (plague death vs victory; barrier LoS), +242/−9, 5 files, clean on `22503b5`, 234 engine tests claimed. #107 is still based on `e4abb4c` (pre-#103/#104/#109/#111/#110) and overlaps official-client races already merged in #111. Its unique remaining value is the backend upper clamp on `saveBattleStats` (`main.mo` 1285–1353 still writes unbounded client Doka/XP/level).  
+SYSTEMS_AFFECTED: `WorldExploration.tsx`; `targeting.ts`; `battleSetup.ts`; `main.mo`; persist callers  
+RECOMMENDED_ACTION: Review/merge #114. Rebase #107 on current `main`; keep clamp + tests; drop shop/heal/jackpot/portal hunks already on `main`; treat `sessionStorage` death replay as optional/high-risk. Close #105. Hold #100/#101/#106.  
+AUTONOMY: HUMAN_REVIEW  
+DEPENDENCIES: AQA-2026-08-30-004 (superseded merge advice); AQA-2026-08-30-008  
+REGRESSION_RISK: HIGH if #107 merges un-rebased; MEDIUM for #114 WX plague wiring (tests cover the helper).  
+VALIDATION_REQUIRED: After merge, `pnpm typecheck` / targeted engine tests; plague 1 HP + last hostile does not pay; Attack Nearest cannot snipe through a barrier; `saveBattleStats` cannot raise Doka/XP/level above current store.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AQA-2026-08-30-008  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Convert the security 9-finding set into an architecture decision  
+CATEGORY: security-architecture  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused and escalated P1→P0 for the unbounded-write subset. `applyRewards` (`main.mo` 1356–1389) and `saveBattleStats` Doka write (`main.mo` 1352) remain unbounded. Finding 3 (“must not write Doka from saveBattleStats”) still contradicts `docs/ARCHITECTURE.md` persist table (heals/spends/death must use that write). `calculateAndAwardDoka` has no official frontend caller. `markAchievementUnlocked` is still client-asserted. `completeBossRushRoom` now ignores client reward amounts. No human ADR. Security automation was not in the 00:00 wave (GetAutomation not visible).  
+SYSTEMS_AFFECTED: `src/backend/main.mo`; official persist funnel  
+RECOMMENDED_ACTION: Write the ADR in `docs/ARCHITECTURE.md`: (a) official-client trust + store-relative clamps, or (b) canister proofs. Rewrite finding 3 to “absolute Doka/XP/level must be bounded by current store.” Do not reconfirm finding 3 as “Doka write is a bug.” Land clamp via MTD-2026-08-31-002.  
+AUTONOMY: HUMAN_DECISION + reviewed PR  
+DEPENDENCIES: MTD-2026-08-31-002  
+REGRESSION_RISK: HIGH if APIs tighten without a frontend roll.  
+VALIDATION_REQUIRED: ADR merged; security findings marked decided; clamp on `main` or explicitly deferred.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AQA-2026-08-30-004  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: 2026-08-30 overlapping draft stack — post-merge residual  
+CATEGORY: merge-hygiene  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. Against AQA advice, #103 #109 #112 #113 #104 #111 #110 merged 20:16–20:48 UTC. Residual open drafts: #100 #101 #105 #106 #107 #108 #114.  
+SYSTEMS_AFFECTED: merge queue  
+RECOMMENDED_ACTION: Follow MTD-2026-08-31-002. Do not re-open merged themes (portal XP, jackpot, white portal, Attack Nearest live hostiles, mapGen solvability).  
+AUTONOMY: HUMAN_REVIEW  
+DEPENDENCIES: MTD-2026-08-31-002  
+REGRESSION_RISK: HIGH if leftovers merge in parallel on stale bases.  
+VALIDATION_REQUIRED: At most one open PR per theme.  
+STATUS: SUPERSEDED  
+
+---
+
+ACTION_ID: AQA-2026-08-30-006  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Freeze mapGen after #110 merged against AGENTS.md  
+CATEGORY: sensitive-code  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. #110 (`22503b5`) legalizes spawn, relocates exits, punches isolated hostiles, adds seed fixtures. `AGENTS.md` line 5 still forbids map generation edits. Further punches will fight CA/void aesthetics and dungeon-chain portals.  
+SYSTEMS_AFFECTED: `src/frontend/src/engine/mapGen.ts`; Solvability Guardian `9dcfd122`  
+RECOMMENDED_ACTION: UPDATE_PROMPT to report-only (ACTION_IDs + failing seed fixtures) unless a human authorizes a playtested mapGen change. No new mapGen PRs this week.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW if frozen. HIGH if another punch lands without playtest.  
+VALIDATION_REQUIRED: Next solvability run opens 0 mapGen PRs.  
+STATUS: BROKEN  
+
+---
+
+ACTION_ID: AQA-2026-08-30-007  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Freeze drive-by WorldExploration edits after #114  
+CATEGORY: sensitive-code  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. File is 19,619 lines; 96 commits since 2026-08-24. Persist helper had 8. #114 is the last justified WX combat patch in the plague/barrier cluster. Tonight’s feel / AI / expansion / invariant agents are set up to add more WX branches.  
+SYSTEMS_AFFECTED: `WorldExploration.tsx`; every implementer  
+RECOMMENDED_ACTION: New behavior goes in `engine/*` or `utils/*` with tests; WX-only one-line wiring. Reject PRs whose primary hunk is another WX branch.  
+AUTONOMY: HUMAN_CONFIG + review  
+DEPENDENCIES: MTD-2026-08-31-002 (#114)  
+REGRESSION_RISK: MEDIUM — some remaining defects are still WX closures.  
+VALIDATION_REQUIRED: Next week WX commit count under 20.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: MTD-2026-08-31-003  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Controlled extraction of HP and death authority out of WorldExploration  
+CATEGORY: architecture  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Recurring cluster: #78 last-kill set, #81/#83/#84/#86 store HP, #87/#88/#89 skip-advance, #98 live DoT, #103 heal/phase HP, #114 plague death. Root cause is dual authority (React maps / `characterStats` / post-paint HP-watch vs `combatantsRef`). Local patches keep leaking the next lethal source.  
+SYSTEMS_AFFECTED: `combatantStore.ts`; `deathPipeline.ts`; `battleSetup.ts`; `WorldExploration.tsx`  
+RECOMMENDED_ACTION: Controlled intervention — not a big-bang rewrite. One PR: every lethal path calls the same helper (store HP + `deathTriggered` + refuse victory) already sketched by `shouldContinuePlayerTurnAfterHazard` / `hpAfterIncomingDamage`. No RAF, mapGen, turn-order, or damage-formula changes.  
+AUTONOMY: IMPLEMENT_AFTER_#114 — single scoped PR  
+DEPENDENCIES: MTD-2026-08-31-002; AQA-2026-08-30-007  
+REGRESSION_RISK: HIGH if bundled with targeting or persist. MEDIUM if extracted with tests only.  
+VALIDATION_REQUIRED: Engine tests for plague / DoT / lava / reflect / phase-2; last-hostile + player-lethal same tick never pays.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MTD-2026-08-31-004  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Freeze content / AI / feel / admin implementation until P0/P1 settle  
+CATEGORY: expansion-gating  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Core rules require observed-spell discovery, dynamic enemy pools, and Draft→Validate→Activate. None are implemented. First-run specialists for those themes launched tonight. `enemyAI.ts` is already 2,582 lines; AdminDashboard 7,322; 32 static spells; `buildEnemyKit` is piece+zone, not observation. Implementing expansion on a dual-HP / unbounded-reward base repeats the persist-patch mill.  
+SYSTEMS_AFFECTED: spell discovery; enemy AI; admin dashboard; game feel; balance numbers  
+RECOMMENDED_ACTION: Those automations write ACTION_IDs and reports only. No new spells, AI behaviors, admin chrome, or VFX that touch WX / `main.mo` / `enemyAI.ts` this cycle.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: MTD-2026-08-31-001; MTD-2026-08-31-003; AQA-2026-08-30-008  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Next director run: 0 merged expansion PRs that touch combat persist or WX.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AQA-2026-08-30-005  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Stop the test-coverage clone mill  
+CATEGORY: automation-ops  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. #100 #101 #106 still open. Coverage automation `81c2e934` running again at 00:00 UTC.  
+SYSTEMS_AFFECTED: `4a5a5880`; `81c2e934`  
+RECOMMENDED_ACTION: Close or hold #100/#101/#106. Only add cases for *merged* fixes that still lack a helper test. REDUCE_FREQUENCY to 2–3×/week after merge bursts.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: MTD-2026-08-31-002  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Next week ≤3 coverage PRs; no occupancy/loss-path reopen.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AQA-2026-08-30-003  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Adopt an in-repo ACTION_ID ledger all producers write to  
+CATEGORY: process  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. Ledger now exists (`docs/automation/ACTION_IDS_*.md`) via #112 and this run. GitHub issues still 0. Most implementers still do not write IDs. Orchestrator is running again and previously implemented leftover XP (#108) instead of a ledger.  
+SYSTEMS_AFFECTED: orchestrator `68f2958f`; all hunters  
+RECOMMENDED_ACTION: UPDATE_PROMPT: append to `docs/automation/ACTION_IDS_*.md`. Refuse a second PR for an ID that is OPEN or matches an open PR theme. Digest also writes `docs/automation/digests/YYYY-MM-DD.md`.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Next week’s `docs/automation/` contains IDs from orchestrator, security, and at least one hunter.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AQA-2026-08-30-009  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Stop the orchestrator from implementing gameplay  
+CATEGORY: automation-ops  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. Orchestrator `68f2958f` is running again (`bc-027328c5`). Yesterday it opened #108 (unique HUD, acceptable) but wrote zero IDs and waited on specialists that “did not exist.” Those specialists exist now and are implementing in parallel.  
+SYSTEMS_AFFECTED: `68f2958f-a489-11f1-a7d1-d6b4613131ce`  
+RECOMMENDED_ACTION: Primary output = ACTION_ID ledger + merge-order note. Implement only unique display-only items. Point at this roadmap instead of inventing missing reports.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: AQA-2026-08-30-003; MTD-2026-08-31-001  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: This cycle’s orchestrator run produces a ledger file and 0 combat/persist PRs.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AQA-2026-08-30-010  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Dedup persist-race and economy specialists  
+CATEGORY: automation-ops  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. #111 merged. Economy hunter `1e548d83` launched again at 00:02 (`bc-1d1fb1c5`) while #107 is still an un-rebased draft.  
+SYSTEMS_AFFECTED: `607e0304`; `1e548d83`; `72eb90fe`  
+RECOMMENDED_ACTION: If an open PR already names the race, emit ACTION_ID only. Do not open a second clamp or portal-XP PR.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: MTD-2026-08-31-002  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: No new PR that mentions portal XP, jackpot, or saveBattleStats clamp besides the #107 rebase.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AQA-2026-08-30-011  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Point implementer prompts at live architecture  
+CATEGORY: prompt-architecture  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. Live truth: 12-field `CharacterStats`; canonical `src/backend/main.mo`; `saveBattleStats` Doka writes are required; `backend_extended` is stale; targeting gate is on `main` (#95/#102/#104) and #114 extends it.  
+SYSTEMS_AFFECTED: combat parity; invariants; security; solvability  
+RECOMMENDED_ACTION: Cite `docs/ARCHITECTURE.md` + `AGENTS.md` + this roadmap. Do not rediscover `backend_extended` as a live bug. Do not fork the live-cast gate.  
+AUTONOMY: HUMAN_CONFIG  
+DEPENDENCIES: AQA-2026-08-30-008  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Next combat/invariant run no-ops or rebases on #114 without a second Attack Nearest stack.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AQA-2026-08-30-012  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Smallest outcome-telemetry hooks — counters before any dashboard  
+CATEGORY: telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Reused. Still no series. Telemetry *admin dashboard* automation `4b026695` launched 00:01 UTC (`bc-67c06778`) with nothing to plot.  
+SYSTEMS_AFFECTED: persist funnel; future admin telemetry UI  
+RECOMMENDED_ACTION: Human-designed, backend-authoritative counters only: persist-fail vs persist-ok, death-penalty applied, victory paid, recap opened/dismissed, shop credit committed. Query-only or enqueued on `createProgressPersist`. Dashboard UI waits. Automations must not claim CLEAR_POSITIVE_SIGNAL until then.  
+AUTONOMY: DESIGN_THEN_TINY_PR  
+DEPENDENCIES: AQA-2026-08-30-008 (do not invent a second wallet path)  
+REGRESSION_RISK: MEDIUM if counters write off the persist lock.  
+VALIDATION_REQUIRED: Next Quality Auditor can cite persist-ok/fail and victory-paid, or repeat “still no telemetry.” Zero telemetry-dashboard merges before counters.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: MTD-2026-08-31-005  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Wire saveKillCount or drop kill totals from the leaderboard  
+CATEGORY: neglected-system  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `useSaveKillCount` (`useLeaderboardQueries.ts` 43–50) has no UI caller. `TROUBLESHOOTING.md` already records this. `CharacterStats.killCount` is required on every Candid payload and cannot decrease, but world saves only preserve the current value.  
+SYSTEMS_AFFECTED: leaderboard; `saveKillCount`; battle victory  
+RECOMMENDED_ACTION: After persist freeze, one isolated caller on attributed enemy kills through the existing hook — or remove killCount from the public leaderboard until then. Do not piggyback on a WX combat PR.  
+AUTONOMY: IMPLEMENT_LATER  
+DEPENDENCIES: MTD-2026-08-31-003; AQA-2026-08-30-007  
+REGRESSION_RISK: LOW if isolated; MEDIUM if stuffed into victory persist.  
+VALIDATION_REQUIRED: Leaderboard kill totals move after a real victory, once, and survive reload.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MTD-2026-08-31-006  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Do not grow AdminDashboard until Draft → Validate → Activate exists  
+CATEGORY: content-pipeline  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: `AdminDashboard.tsx` is 7,322 lines. Boss editor uses local React `drafts` state only. No canister Draft → Validate → Activate. Admin visual + feature-drift + spell-discovery-admin automations launched tonight. Core rule requires that pipeline “where appropriate.”  
+SYSTEMS_AFFECTED: `AdminDashboard.tsx`; admin mixins; config maps in `main.mo`  
+RECOMMENDED_ACTION: Report-only on admin chrome. Design the publish pipeline as ACTION_IDs. Do not add more visual managers on the 7.3k-line file first.  
+AUTONOMY: DESIGN_ONLY this cycle  
+DEPENDENCIES: MTD-2026-08-31-004; AQA-2026-08-30-008  
+REGRESSION_RISK: LOW if frozen. HIGH if live config writes ship without validate.  
+VALIDATION_REQUIRED: Next admin PR is either zero or a documented pipeline, not another panel.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MTD-2026-08-31-007  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Spell discovery and unlocks wait on persist + metadata infrastructure  
+CATEGORY: expansion-gating  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: DESIGN/core rules require enemy-observed discovery and achievement/challenge/boss spell unlocks. ENGINEERING: 32 static `spellData.ts` ids; `buildEnemyKit(pieceType, levelZone)`; no observe/unlock persist; `markAchievementUnlocked` is client-trusted; challenges pay Doka/XP only.  
+SYSTEMS_AFFECTED: spell catalog; achievements; challenges; bosses; enemy kits  
+RECOMMENDED_ACTION: Design unlock records (explicit spell ids, not name heuristics) and a backend-authoritative grant on the persist lock. Do not add spells or discovery UI this cycle.  
+AUTONOMY: DESIGN_ONLY this cycle  
+DEPENDENCIES: MTD-2026-08-31-004; AQA-2026-08-30-008; AQA-2026-08-30-012  
+REGRESSION_RISK: HIGH if discovery writes spell levels through `saveBattleStats` (`upgradeSpell` is the sole writer today).  
+VALIDATION_REQUIRED: A written persist shape before any discovery PR.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MTD-2026-08-31-008  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: AI-tier 30% random roll contradicts progressive sophistication  
+CATEGORY: design-contradiction  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `computeAITier` (`combatMath.ts` 36–51) uses level bands then a 30% chance to return `random(1..10)`. Core rule: progressively sophisticated, player-relative enemies. This is DESIGN vs ENGINEERING, not measured play.  
+SYSTEMS_AFFECTED: `combatMath.ts`; enemy generation; `enemyAI.ts`  
+RECOMMENDED_ACTION: Human design decision. Until then, do not rewrite `enemyAI.ts`. A later one-line variance change is enough if the decision is “remove the flat random.”  
+AUTONOMY: HUMAN_DECISION  
+DEPENDENCIES: MTD-2026-08-31-004  
+REGRESSION_RISK: MEDIUM if variance is removed without a playtest of high-level maps.  
+VALIDATION_REQUIRED: Written decision in DESIGN or ARCHITECTURE; no first-run AI PR.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MTD-2026-08-31-009  
+SOURCE_AUTOMATION: Stralt Master Technical Director  
+TITLE: Leftover XP HUD (#108) is the only safe display merge after #114  
+CATEGORY: player-experience  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: #108 leftover XP on selection / top bar / recap is unique among open PRs and does not retouch persist writers. Orchestrator already drafted it.  
+SYSTEMS_AFFECTED: character selection; top bar; `PostBattleRecap`  
+RECOMMENDED_ACTION: Rebase on post-#114 `main` if needed and merge as display-only. Do not expand into persist.  
+AUTONOMY: HUMAN_REVIEW  
+DEPENDENCIES: MTD-2026-08-31-002  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Leftover XP matches `xpCurve` after a level-up; numbers agree on the three surfaces.  
+STATUS: NEW
