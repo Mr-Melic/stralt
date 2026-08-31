@@ -3436,3 +3436,295 @@ DEPENDENCIES: None
 REGRESSION_RISK: LOW while unwired. HIGH if placed inside `mapGen.ts` or `WorldExploration.tsx` without a solvability re-check.  
 VALIDATION_REQUIRED: Catalog tests in `worldFeatures.test.ts` stay green. No feature id collides with `EXISTING_MAP_MODIFIER_IDS`. Death Realm rolls stay empty.  
 STATUS: DESIGNED
+
+ACTION_ID: LHIPS-2026-08-31-001  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Exponential XP thresholds vs linear kill XP create a practical progression wall  
+CATEGORY: xp  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `xpForNextLevel` is `100 * 2^(N-1)` (`src/frontend/src/utils/xpCurve.ts` lines 10–13; Motoko twin `src/backend/main.mo` lines 1364–1371). Victory XP is `sum(enemy.level * 20)` (`src/frontend/src/utils/rewardResolver.ts` lines 82–94). Portal grant is 10 (`applyRewardsResult.ts` line 35). Legendary challenges are a flat 400–1000 XP (`challengeCompletion.ts` lines 60–101). 4000-sample sim: level 10 → ~78 three-enemy fights; level 25 → ~1.04e6 fights; level 50 → ~2.0e13 fights. Cumulative XP to reach 25 is 1.677e9.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 15–22 (synthetic; wall is obvious by 25)  
+CAUSE: Thresholds double every level while kill XP is linear in enemy level (and enemy level itself later caps near 1000).  
+PLAYER_EFFECT: After the mid-teens, intended combat/portal/challenge income cannot fund another level in any realistic session count. The game advertises no level cap but playable leveling ends.  
+TECHNICAL_EFFECT: Leftover XP stays finite; `applyRewards` still accepts deltas that never wrap.  
+SYSTEMS_AFFECTED: xpCurve, applyRewards, rewardResolver, challenge rewards, HUD leftover bar  
+RECOMMENDED_ACTION: Do not retune the curve in this run. If a human wants infinite playable leveling, pick a sub-exponential threshold or level-relative kill XP and keep frontend/backend twins identical.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if the curve is changed without a paired Motoko + leftover-HUD update (off-by-one already blocked level-ups once).  
+VALIDATION_REQUIRED: Re-run `longHorizonSim` fights-to-next at 10/15/25/50; leftover wrap tests in `xpCurve.test.ts`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-002  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: IEEE-754 XP threshold becomes Infinity at level 1019 — implicit hard cap  
+CATEGORY: technical  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `xpForNextLevel(1018)` is finite (~1.404e308). `xpForNextLevel(1019)` is `Infinity` (`100 * 2**1018`). `applyXpDelta(0, 1018, 1)` stays `{ newXp: 1, newLevel: 1018 }` because `1 >= Infinity` is false. Recap/HUD coerce canister `Nat` through `Number()` (`rewardResolver.ts` lines 204–207; `applyRewardsResult.ts` lines 27–31). Motoko `Nat` + `pow2` stay unbounded (`main.mo` 1367–1377) and can instruction-trap on a huge client `xpDelta`.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 1018 (hard stop); Number precision on leftover is exact for `100*2^n` until overflow  
+CAUSE: Frontend curve is a JavaScript Number. Canister curve is unbounded Nat. Serialization is Number.  
+PLAYER_EFFECT: Even a debug-or-admin level-1018 character can never wrap leftover on the client path. Displayed XP/Doka/level become rounded or `null` once values exceed `Number.MAX_SAFE_INTEGER` / `MAX_VALUE`.  
+TECHNICAL_EFFECT: Frontend/backend level disagreement; `JSON.stringify(Infinity)` is `null`; `saveBattleStats` / `applyRewards` payloads can no longer round-trip.  
+SYSTEMS_AFFECTED: xpCurve, applyRewards, readApplyRewardsOk, deathPenalty `Number()`, UI leftover bar  
+RECOMMENDED_ACTION: Keep BigInt (or decimal text) on the persist/HUD path for XP/level/Doka; add an iteration/size guard on Motoko `applyRewards` without changing the published curve.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: LHIPS-2026-08-31-001  
+REGRESSION_RISK: HIGH — persist funnel.  
+VALIDATION_REQUIRED: `applyXpDelta` at 1018/1019; Candid round-trip of values `> 2^53`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-003  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Enemy levels hard-stop near 1000 while the player does not  
+CATEGORY: enemy-generation  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `pickEnemyLevelFromTiers` sets `maxTier = Math.floor(999 / tierSize)` (`combatMath.ts` lines 54–98). Default `tierSize` 10 → max same-tier band 991–1000. Adjacent / two-away do **not** clamp `maxTier` (lines 85–89), so samples at player 1000 reached 1020. Three-or-more **does** clamp (lines 94–97). At player 2500 and 5000, 100% of 4000 samples were below the player's tier; max stayed 1020. Config field `threeOrMorePercent` (default 5) is unused; leftover weight is 10% (`100-60-20-10`). Level-1 samples reached enemy level 80 (mean ~10.8).  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 1 (up-spike to 80); 991+ (player outscales the cap)  
+CAUSE: Hard-coded 999 ceiling plus asymmetric clamps and an ignored weight field.  
+PLAYER_EFFECT: New characters can meet packs dozens of levels above them. Past ~1000 the overworld is exclusively under-level and no longer tracks the player.  
+TECHNICAL_EFFECT: Relative-level stats, AI tier, and kill XP all freeze around the 1000 band.  
+SYSTEMS_AFFECTED: combatMath.pickEnemyLevelFromTiers, WorldExploration generateEnemies (~6083–6215), dungeon `+ boost * tierSize`  
+RECOMMENDED_ACTION: Do not retune weights here. If a human wants infinite relative encounters, replace the 999 ceiling with a player-relative window and honor `threeOrMorePercent`; clamp every branch the same way.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM — spawn distribution is globally visible.  
+VALIDATION_REQUIRED: Monte Carlo at levels 1 / 1000 / 2500 (min/max/pBelow).  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-004  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Enemy RES/SR scale into 100% reduction while player offense stays flat  
+CATEGORY: enemy-stats  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Live combat HP is `floor(50 * (1 + (L-1)*0.05))` (`WorldExploration.tsx` 3424–3431). Derived stats are `roll(min, max+k*level) * pieceMult` (`progression.ts` 175–186). Damage applies `max(0, 1 - RES/100)` and the same for SR (`spellEngine.ts` 393–407; player path `WorldExploration.tsx` 3266–3271) then `Math.max(1, round(dmg))`. First level a max roll can hit RES 100: rook 78, knight 84, king 107, pawn 126, queen 143, bishop 154. SR 100: rook 79. Player `getPlayerBaseStats` only grows AP/MP/HP — not SP. Spell upgrades are +3%/level (`combatMath.calcScaledDamage`). Spawn placeholder damage `L*2+3` (6207) is overwritten for HP at battle start (12236–12240) but still describes the linear melee slope.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 78 (rook can roll immunity); chip-to-1 is guaranteed after that  
+CAUSE: Percent-as-absolute RES/SR grow linearly with level; player SP does not. Floor of 1 prevents true zero but TTK becomes “chip forever.”  
+PLAYER_EFFECT: Mid-high tanks become sponges. Player kits do not grow into them. One-shot risk from scaled enemy melee/SP rises on the same schedule.  
+TECHNICAL_EFFECT: Degenerate `resFactor=0` / `srFactor=0`. Family spawn writes (0.05–0.75) are overwritten at battle start (12127–12168) so they do not save this.  
+SYSTEMS_AFFECTED: progression.getEnemyBaseStats, spellEngine, WorldExploration playerTakesDamage / calcEnemyMaxHp  
+RECOMMENDED_ACTION: Report only. A later design pass must decide whether RES is a 0–100% budget or a flat stat — not both.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: LHIPS-2026-08-31-006  
+REGRESSION_RISK: HIGH — this is live damage math; do not patch it from this automation.  
+VALIDATION_REQUIRED: Rook RES max at 78; frost TTK vs linear enemy HP at 50/100/250.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-005  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Three player-HP formulas diverge; victory floor exceeds max HP at level 10  
+CATEGORY: enemy-stats  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Live `maxHp` is linear `floor(100 * (1 + (L-1)*g))` (`WorldExploration.tsx` 3255–3261). Canonical `getPlayerBaseStats` is compounding `round(100 * (1+g)^(L-1))` (`progression.ts` 74–80) and is used for battle AP/MP (12367–12382) but **not** HP. `respawnHpAfterDeath` is 50% of the linear curve (`deathPenalty.ts` 103–113). `victoryResourceFloor.hp` is `50 + level*10` (`deathPenalty.ts` 116–127). Sim: level 10 linear 145 vs victory floor 150; level 100 linear 595 vs exponential 12,524 vs floor 1,050. `updateCharacter` HP cap is `level*200+100` (`main.mo` 216) — linear stays under it; exponential would not.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 10 (floor > maxHp); 100 (formulas already 21× apart)  
+CAUSE: “Source of truth” HP was never wired; leftover post-battle floor is a third linear.  
+PLAYER_EFFECT: Victory/respawn can write current HP above the HUD max. Debug logs already warn on AP/MP divergence (12384–12398); HP is silently split.  
+TECHNICAL_EFFECT: Persist vs battle init disagree; exponential HP at 500 is 3.7e12 and would fail `updateCharacter` if ever used.  
+SYSTEMS_AFFECTED: progression.getPlayerBaseStats, WorldExploration maxHp, deathPenalty, saveBattleStats  
+RECOMMENDED_ACTION: Pick one HP curve and delete the others. Do not do that in this run.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH — HP persist / Death Realm / recap hydrate.  
+VALIDATION_REQUIRED: maxHp vs victory floor vs getPlayerBaseStats.hp at 1/10/50/100.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-006  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: AI tier randomizes 30% into 1–10 at every level and saturates by 900  
+CATEGORY: ai  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `computeAITier` (`combatMath.ts` 34–51) maps level → tier 1..10 then with probability 0.3 replaces it with `floor(random()*10)+1`. WX uses `aiTier >= 5` for post-leader erratic (15505–15517) and `>= 10` for 5% betrayal (15592–15596). `ENEMY_AI_TIER_GATES.instantKill` (9) and most other gates in `gameConstants.ts` 200–209 are unused by `enemyAI.ts`. 4000-sample sim: enemy level 1 is already ~3% betrayal-eligible and ~19% erratic-eligible; level 901+ is ~73% tier 10.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 1 (leak); 151 (erratic majority); 901 (betrayal majority)  
+CAUSE: Variance is a uniform 1–10 draw, not a ±1 band. Tier table stops at 10.  
+PLAYER_EFFECT: Early packs can betray / go erratic. Late packs almost all run max sophistication; 30% still roll down to tier 1. Advanced AI does not keep unlocking after 900.  
+TECHNICAL_EFFECT: Extra WX branches on a large fraction of turns; `Math.random` is unseeded (not deterministic).  
+SYSTEMS_AFFECTED: computeAITier, WorldExploration enemy-turn erratic/betrayal, unused ENEMY_AI_TIER_GATES  
+RECOMMENDED_ACTION: Report only. If tuned later, variance should be a small offset and unused gates should be deleted or wired — not both left live.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM  
+VALIDATION_REQUIRED: P(tier=10) at enemy levels 1 and 901.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-007  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Enemy kits never leave zone 0 because the call site passes a LevelZone object  
+CATEGORY: spell-pools  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `buildEnemyKit(piece, levelZone: number)` (`enemyAI.ts` 156–193) uses `z >= 1` / `z >= 2`. Battle start calls `buildEnemyKit(enemy.pieceType, currentMap.levelZone)` (`WorldExploration.tsx` 12186). `GameMap.levelZone` is `any` (line 456) and is assigned `{ name, minLevel, maxLevel }` (5064–5068). `Math.floor(object)` is `NaN`; every `z >= n` is false. Live-call-site sim at a Tier 25 object returns only the zone-0 kit (queen/king = `starter-frost`, no Inferno). If the object were a number, kits would saturate at zone 2 (player level 21+): every queen/king would hold the same Inferno pair. Comment at 12181 (“10 random spells”) is stale.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 1 (bug is current); intended saturate 21  
+CAUSE: Object passed where a zone index is required; `any` hides it from tsc.  
+PLAYER_EFFECT: High-level enemies never receive the documented advanced kit. Role identity is the zone-0 stub (knight = Strike only) at every progression depth. Rarity cannot collapse because upgrades never fire.  
+TECHNICAL_EFFECT: Dead kit branches; Inferno/iron-skin/venom exist in data but are not assigned by the kit path.  
+SYSTEMS_AFFECTED: enemyAI.buildEnemyKit, WorldExploration assignEnemySpells  
+RECOMMENDED_ACTION: Pass `currentZoneTier` or `playerTier` (a number). Do not implement in this run.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM — fixing it suddenly upgrades every late pack.  
+VALIDATION_REQUIRED: `buildEnemyKit("queen", currentMap.levelZone)` vs `buildEnemyKit("queen", 2)`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-008  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Entire frontend spell catalog is owned at character create — no discovery pacing  
+CATEGORY: spell-discovery  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `starterSpells` in `data/spellData.ts` is the full 32-id catalog (Strike through summon-wisp). WX marks every starter as `isBaseSpell` and unions **all** backend spells into `ownedSpells` (2238–2271). There is no drop table, rarity roll, duplicate-discovery handler, or `minLevel` gate on these defs. Admin-authored backend spells become globally owned on the next fetch.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 1  
+CAUSE: Discovery was never implemented; the catalog is the starter set.  
+PLAYER_EFFECT: Nothing left to discover. Rare/advanced identity cannot exist on the player path. Exhaustion is immediate, not a late-game event.  
+TECHNICAL_EFFECT: Spell bar init writes the first 8 owned ids (2447). Duplicate ids collapse in the Map.  
+SYSTEMS_AFFECTED: spellData, ownedSpells, spellBarOrder  
+RECOMMENDED_ACTION: Report only. A discovery system would be a new feature, not a hotfix.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW for a report; HIGH if starters are stripped without a drop path.  
+VALIDATION_REQUIRED: `ownedSpells.length` on a fresh character vs `starterSpells.length`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-009  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Summoner chance hits 100% at player level 44  
+CATEGORY: ai  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `summonerChance = 0.12 + characterStats.level * 0.02` (`WorldExploration.tsx` 12198–12208; constants `gameConstants.ts` 298–301). `0.12 + 44*0.02 = 1`. Sim: level 25 = 62%; level 50+ = 100%. Cap is 2 live summons, cooldown 2 turns. Dungeon depth adds up to +5 extras on a 1–8 base pack.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 44  
+CAUSE: Linear chance with no clamp and a per-level (not per-zone) term.  
+PLAYER_EFFECT: Every late overworld enemy is a summoner. Board complexity and AI work saturate and stay there forever.  
+TECHNICAL_EFFECT: Extra combatants every fight; turn AI + occupancy pressure on a 16×16 grid.  
+SYSTEMS_AFFECTED: battle-start summoner roll, summonSpawn, enemyAI summoner archetype  
+RECOMMENDED_ACTION: Clamp the chance. Do not implement here.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: LHIPS-2026-08-31-006  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: chance at 1 / 44 / 100.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-010  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Boss HP/ATK are static; +5 level and Guide 1.08^diff are not combat  
+CATEGORY: bosses  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Boss spawn uses `bossConf.baseStats.hp` (typically 350–400) and `atk` (~35), `res/sp` clamped to 50, `level = playerLevel + 5` (`WorldExploration.tsx` 6990–7018). Battle start re-applies `bossConf.baseStats.hp` (12235–12240). `getBossEffectiveStats` (`progression.ts` 290–338, `1.08^diff`) is Guide-only and at diff +5 shows 514 HP vs combat 350. Dungeon depth extras/tier boosts saturate at depth 5 (`6082–6083`; multipliers `[1,1.5,2,2.5,3,4]`). Reward 3× XP / 5× Doka on a static ~350 HP sponge.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: ~50 (player linear HP ≈ boss HP); trivial as a threat by ~100; still a long chip fight if RES 50%  
+CAUSE: Absolute boss stats; relative-level curve never applied in the spawn/combat path.  
+PLAYER_EFFECT: Early bosses are lethal. Late bosses are long, low-threat, and pay a flat multiplier that still cannot beat the XP wall (001).  
+TECHNICAL_EFFECT: Guide table disagrees with the fight. `setBossConfig` rejects AP > 20 (`main.mo` 2072–2074) while player formula AP exceeds 20 at 325 (013).  
+SYSTEMS_AFFECTED: boss spawn, BossGuideModal, portalRules dungeon multipliers  
+RECOMMENDED_ACTION: Report only. Do not scale bosses from this automation.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: LHIPS-2026-08-31-001, LHIPS-2026-08-31-005  
+REGRESSION_RISK: HIGH if Guide and combat are “fixed” independently.  
+VALIDATION_REQUIRED: Pale Archbishop HP at player 1 vs 100 vs Guide row +5.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-011  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Flat challenge damage caps become impossible once a single hit exceeds them  
+CATEGORY: bosses  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `under_50_damage` / `no_healing_under_30_damage` (`challengeCompletion.ts` 54–65, 114–117). Spawn/melee placeholder `round(L*2+3)` exceeds 30 at level 14 and 50 at level 24. Legendary 1000 XP is already rounding error vs the level-15 threshold (1.64e6).  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 14 (30-damage); 24 (50-damage)  
+CAUSE: Absolute damage budgets vs linearly growing hits.  
+PLAYER_EFFECT: Hard/legendary “don’t get hit much” objectives disappear for anyone who takes one hit. Easy under-15-turns remains skill-based.  
+TECHNICAL_EFFECT: Challenge XP/Doka stop being a progression valve exactly when the XP wall (001) would need them.  
+SYSTEMS_AFFECTED: challengeCompletion, handleBattleEnd persist entries  
+RECOMMENDED_ACTION: If revisited, scale the cap with `linearPlayerMaxHp` or `% of maxHp`. Not in this run.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: LHIPS-2026-08-31-001  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: `spawnPlaceholderDamage(14)` and `(24)` vs challenge predicates.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-012  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Jackpot Doka EV dominates the wallet; recap leftover uses the wrong XP curve  
+CATEGORY: economy  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Victory Doka (`WorldExploration.tsx` 12649–12678): `roll < 0.0001` is a **0.01%** band (comment says 0.0001%) granting `1..1e9 * enemy.level` with no level clamp. Expected jackpot term ≈ `0.0001 * 5e8 * L ≈ 5e4 * L` Doka/enemy — orders of magnitude above the 90% `1–3` band. Backend `calculateAndAwardDoka` clamps level at 200 (`main.mo` 2203) but live persist uses the frontend roll + `applyRewards`. Recap sets `xpForNextLevel: (characterStats.level || 1) * 100` (12719, 12891, 13110, 13407) while the HUD leftover uses `100 * 2^(L-1)`. Death penalty goes through `Number()` (`deathPenalty.ts` 23–26). Dungeon ×4 and Doka Fever ×2 compose on the same roll.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 1 (jackpot exists); display lie is visible by 4+  
+CAUSE: A near-billion multiplier on a mislabeled 0.01% band; recap still has the pre-curve leftover formula.  
+PLAYER_EFFECT: Economy is lottery-driven. Recap bar is wrong (PR #108 is leftover HUD, not these recap literals). Death/UI precision will fail at extreme Nat values (002).  
+TECHNICAL_EFFECT: One jackpot can exceed shop/upgrade sinks (`upgradeSpell` doubles from base 10). `Number(newDoka)` loses integers above 2^53.  
+SYSTEMS_AFFECTED: handleBattleEnd Doka roll, PostBattleRecap, applyRewards, deathPenalty  
+RECOMMENDED_ACTION: Report only. Do not retune jackpot here. Recap leftover literals are a display-only candidate if a human picks this ID.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: LHIPS-2026-08-31-002  
+REGRESSION_RISK: HIGH for jackpot retune (wallet); LOW for recap leftover text.  
+VALIDATION_REQUIRED: EV of the frontend Doka table; recap `xpForNextLevel` vs `xpForNextLevel(level)`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-013  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: Formula AP/MP exceed persist caps; saveBattleStats will write any level  
+CATEGORY: technical  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Battle AP/MP = `8 + floor(L/25)` / `4 + floor(L/25)` (`progression.ts` 66–72). `updateCharacter` rejects AP/MP > 20 and HP > `L*200+100` (`main.mo` 216–225). First AP > 20 at level 325. `saveBattleStats` writes client `level` / `xp` / `maxAp` with no curve check and no AP cap (1285–1342). Spell fail hits 0 at 201 (`WorldExploration.tsx` 3464–3468). Spell range is `min(base + floor(L/10), maxSpellRange=5)` (3471–3479) — saturated by the teens.  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: 201 (fail=0); 325 (AP persist reject); any (unconstrained saveBattleStats.level)  
+CAUSE: Persist validators and the live formula were not updated together. Absolute level write bypasses the XP curve, so synthetic extreme levels are a supported persist shape.  
+PLAYER_EFFECT: A 325+ character can fight with AP 21+ and fail to save that budget. Fail chance and range stop being progression knobs much earlier.  
+TECHNICAL_EFFECT: Official-client trust on `saveBattleStats.level` means the 1000-enemy cap / Infinity XP failures are reachable without grinding 001.  
+SYSTEMS_AFFECTED: updateCharacter, saveBattleStats, getPlayerBaseStats, spell fail/range  
+RECOMMENDED_ACTION: Architecture decision, not a silent clamp. Do not implement here.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: LHIPS-2026-08-31-002  
+REGRESSION_RISK: HIGH  
+VALIDATION_REQUIRED: formula AP at 300/325; saveBattleStats with a mismatched level (test-only).  
+STATUS: NEW  
+
+---
+
+ACTION_ID: LHIPS-2026-08-31-014  
+SOURCE_AUTOMATION: Long-Horizon Infinite Progression Simulator  
+TITLE: No player telemetry — model cannot be calibrated  
+CATEGORY: telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Same gap as AQA-2026-08-30-012. Leaderboard exposes `level` / `killCount` / `achievementsCompleted` (`main.mo` 2527) but this environment has no populated series, no encounter-relative-level log, no battle-duration, death-rate, discovery, elite, or advanced-AI counters. Elite flags do not exist. Family 30% (`WorldExploration.tsx` 6236–6326) is cosmetic after battle-start overwrite (12127).  
+FIRST_APPROXIMATE_PROBLEM_LEVEL: n/a (process)  
+CAUSE: No backend-authoritative outcome counters.  
+PLAYER_EFFECT: None directly. Future runs will keep treating the synthetic wall at 15–22 as unconfirmed vs live play.  
+TECHNICAL_EFFECT: This file must not claim CLEAR_POSITIVE_SIGNAL about real pacing.  
+SYSTEMS_AFFECTED: leaderboard query, OQL (no progression events), automations  
+RECOMMENDED_ACTION: Human-designed counters only (persist-ok, victory-paid, death-penalty, max/median level). Do not invent gameplay math.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: AQA-2026-08-30-012  
+REGRESSION_RISK: MEDIUM if counters leave the persist lock.  
+VALIDATION_REQUIRED: Next LHIPS run either cites live max/median level or repeats “still no telemetry.”  
+STATUS: NEW
