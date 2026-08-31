@@ -802,6 +802,18 @@ export function spellHighlightRangeBase(
  * minRange / linear) used to pick a closer blocked tile — or miss a
  * farther highlighted one — so Attack Nearest and the blue ring disagreed.
  */
+
+export function playerSpellEffectiveRange(
+  spell: SpellConfig,
+  getEffectiveSpellRange: (baseRange: number, spellId?: string) => number,
+): number {
+  return getEffectiveSpellRange(
+    spellHighlightRangeBase(spell),
+    spell.modifiableRange ? spell.id : undefined,
+  );
+}
+
+
 export function pickNearestLiveHostileTile(
   spell: SpellConfig,
   caster: CasterPosition,
