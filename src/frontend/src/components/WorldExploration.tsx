@@ -208,7 +208,9 @@ import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   type TileCastableResult,
   applyHealBuffSideEffect,
+  attackNearestLiveCasterPos,
   canAttackNearestAgainstLive,
+  canAttackNearestLive,
   computeTargetableTiles,
   isTileCastableLive,
   pickNearestAttackableHostile,
@@ -17530,12 +17532,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!(currentBattleApRef.current >= apCost)) return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
-    // Same caster + range + live gate as the highlight / sprite-click paths.
+    // Same range + live gate as the highlight / sprite-click paths.
     // Chebyshev-only nearest search used raw `spell.range` and skipped LoS,
     // so Attack Nearest could fire on a tile the preview never offered.
+    // Caster origin stays the player tile — see attackNearestLiveCasterPos.
     const mapTiles = currentMapRef.current?.tiles;
     if (!mapTiles) return;
-    const casterPos = getActiveCasterPos();
+    // Player tile, not getActiveCasterPos(): resolvePlayerCast heals only
+    // on isPlayerTile and does not re-check range. Summon-turn origin
+    // spent AP without healing and let Strike reach summon-adjacent tiles.
+    const casterPos = attackNearestLiveCasterPos(
+      playerPositionRef.current,
+      getActiveCasterPos(),
+    );
     const liveCombatants = getLiveCombatants(combatantStoreCtx);
     const effectiveRange = getEffectiveSpellRange(
       spellHighlightRangeBase(spell),
@@ -19050,7 +19059,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
               const tiles = currentMapRef.current?.tiles;
               if (!spell || !tiles) return false;
-              const casterPos = getActiveCasterPos();
+              const casterPos = attackNearestLiveCasterPos(
+                playerPositionRef.current,
+                getActiveCasterPos(),
+              );
               const liveCombatants = getLiveCombatants(combatantStoreCtx);
               return canAttackNearestAgainstLive(
                 spell,

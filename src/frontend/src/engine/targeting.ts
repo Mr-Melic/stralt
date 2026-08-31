@@ -684,6 +684,28 @@ export function shouldExecuteLiveCast(live: TileCastableResult): boolean {
 }
 
 /**
+ * Caster origin Attack Nearest must pass to the live gate.
+ *
+ * `getActiveCasterPos()` follows a controlled summon so movement and
+ * spell-range *previews* render from that tile. Attack Nearest still
+ * casts player spells through `resolvePlayerCast`, which:
+ *   - heals only when `gridPos === playerPosition`
+ *   - does not re-check range from the player
+ *
+ * Using the summon tile (7f14ece) therefore (1) spent player AP on a
+ * self-heal that never applied and marked `challengeHealUsed`, and
+ * (2) let Strike pick a hostile only the summon could reach.
+ * Canvas already routes summon-turn clicks to kit casts. Keep LoS /
+ * minRange / maxRange / isActiveHostile; do not change origin.
+ */
+export function attackNearestLiveCasterPos(
+  playerPos: CasterPosition,
+  _activeCasterPos: CasterPosition,
+): CasterPosition {
+  return { x: playerPos.x, y: playerPos.y };
+}
+
+/**
  * Range base shared by `getSpellRangeTiles` and Attack Nearest.
  * `maxRange` overrides `range` when set — using raw `spell.range` alone
  * lets Attack Nearest miss a tile the highlight already painted.
