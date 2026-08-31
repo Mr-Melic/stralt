@@ -194,6 +194,35 @@ actor {
         found
     };
 
+    func _colorsRejected(colors : [Text]) : ?Text {
+        if (colors.size() > 16) {
+            return ?"colors array exceeds maximum of 16 entries";
+        };
+        for (color in colors.values()) {
+            if (color.size() > 32) {
+                return ?"color value exceeds maximum length";
+            };
+        };
+        null
+    };
+
+    /// Official CharacterCreation only writes cosmetics. Drop client-supplied
+    /// progression / completion / session fields so a raw create cannot mint
+    /// Boss Rush master-complete or a pre-filled spell bar.
+    func _starterCharacter(character : Character) : Character {
+        {
+            character with
+            spellLevelKeys = [];
+            spellLevelValues = [];
+            bloodBalance = null;
+            covenantBuff = null;
+            shrineCount = null;
+            activeSpells = null;
+            spellBarOrder = null;
+            bossRushMasterComplete = null;
+        }
+    };
+
     func _isHexDigit(c : Char) : Bool {
         (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F')
     };
@@ -289,13 +318,16 @@ actor {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: Only users can create characters");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
 
         if (slot < 1 or slot > 3) {
             return #err("Invalid slot number");
         };
-        // L1: cap colors array at 16 entries.
-        if (character.colors.size() > 16) {
-            return #err("colors array exceeds maximum of 16 entries");
+        switch (_colorsRejected(character.colors)) {
+            case (?msg) { return #err(msg) };
+            case null {};
         };
         if (character.name.size() == 0 or character.name.size() > 20) {
             return #err("Name must be 1-20 characters");
@@ -316,6 +348,7 @@ actor {
         if (_anySpellLevelAboveZero(character.spellLevelValues)) {
             return #err("New characters cannot start with upgraded spells");
         };
+        let storedCharacter = _starterCharacter(character);
 
         let existingSlots = switch (characterSlots.get(caller)) {
             case null {
@@ -333,19 +366,19 @@ actor {
                 if (existingSlots.slot1 != null) {
                     return #err("Slot 1 is already occupied");
                 };
-                { existingSlots with slot1 = ?character };
+                { existingSlots with slot1 = ?storedCharacter };
             };
             case 2 {
                 if (existingSlots.slot2 != null) {
                     return #err("Slot 2 is already occupied");
                 };
-                { existingSlots with slot2 = ?character };
+                { existingSlots with slot2 = ?storedCharacter };
             };
             case 3 {
                 if (existingSlots.slot3 != null) {
                     return #err("Slot 3 is already occupied");
                 };
-                { existingSlots with slot3 = ?character };
+                { existingSlots with slot3 = ?storedCharacter };
             };
             case _ { return #err("Invalid slot number") };
         };
@@ -361,13 +394,16 @@ actor {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: Only users can update characters");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
 
         if (slot < 1 or slot > 3) {
             return #err("Invalid slot number");
         };
-        // L1: cap colors array at 16 entries.
-        if (character.colors.size() > 16) {
-            return #err("colors array exceeds maximum of 16 entries");
+        switch (_colorsRejected(character.colors)) {
+            case (?msg) { return #err(msg) };
+            case null {};
         };
         if (character.name.size() == 0 or character.name.size() > 20) {
             return #err("Name must be 1-20 characters");
@@ -398,9 +434,9 @@ actor {
             case (?c) { c };
         };
 
-        // Merge optional session fields: when the incoming value is null, keep
-        // the existing stored value so incremental saves cannot clobber the
-        // saved loadout (spell bar order, boss-rush master completion, etc.).
+        // Official editor only changes cosmetics (name, piece, colors, pattern).
+        // Session / completion / loadout have dedicated writers. Do not accept
+        // a client-supplied bossRushMasterComplete or shrineCount here.
         // Spell levels: upgradeSpell is the sole paid writer. Union + max so a
         // stale CharacterCreation payload (empty or older keys) cannot wipe
         // upgrades a newer client already persisted.
@@ -417,30 +453,12 @@ actor {
             stats = ec.stats;
             spellLevelKeys = mergedSpellKeys;
             spellLevelValues = mergedSpellValues;
-            bloodBalance = switch (character.bloodBalance) {
-                case null { ec.bloodBalance };
-                case (?v) { ?v };
-            };
-            covenantBuff = switch (character.covenantBuff) {
-                case null { ec.covenantBuff };
-                case (?v) { ?v };
-            };
-            shrineCount = switch (character.shrineCount) {
-                case null { ec.shrineCount };
-                case (?v) { ?v };
-            };
-            activeSpells = switch (character.activeSpells) {
-                case null { ec.activeSpells };
-                case (?v) { ?v };
-            };
-            spellBarOrder = switch (character.spellBarOrder) {
-                case null { ec.spellBarOrder };
-                case (?v) { ?v };
-            };
-            bossRushMasterComplete = switch (character.bossRushMasterComplete) {
-                case null { ec.bossRushMasterComplete };
-                case (?v) { ?v };
-            };
+            bloodBalance = ec.bloodBalance;
+            covenantBuff = ec.covenantBuff;
+            shrineCount = ec.shrineCount;
+            activeSpells = ec.activeSpells;
+            spellBarOrder = ec.spellBarOrder;
+            bossRushMasterComplete = ec.bossRushMasterComplete;
         };
 
         let updatedSlots = switch (slot) {
@@ -911,6 +929,9 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return #err("Unauthorized: must be logged in");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
         if (spellId == "") {
             return #err("spellId cannot be empty");
         };
@@ -1099,8 +1120,9 @@ actor {
         ) {
             return #err("Customer field exceeds maximum length");
         };
-        if (proofFileUrl.size() > 524_288) {
-            return #err("proofFileUrl exceeds maximum size");
+        switch (AdminGuard.validateProofFileUrl(proofFileUrl)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         // B4: rollover guard — wrap counter at 999_999_999 to prevent integer overflow
         //     on long-running canisters.
@@ -1456,6 +1478,9 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return #err("Unauthorized: must be logged in");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
         if (slot < 1 or slot > 3) {
             return #err("Invalid slot number");
         };
@@ -1523,6 +1548,9 @@ actor {
     public shared ({ caller }) func setSpellBarOrder(slot : Nat, spellIds : [Text]) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: must be logged in");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
         };
         if (slot < 1 or slot > 3) {
             return #err("Invalid slot number");
@@ -1688,10 +1716,6 @@ actor {
         // C1: persist dokaBalance to per-principal store (single source of truth).
         // Never raise the wallet above the current store (heals/spends/death
         // only write the same or a lower balance).
-        let currentDoka = switch (dokaBalances.get(caller)) {
-            case null { 0 };
-            case (?b) { b };
-        };
         dokaBalances.add(caller, writeDoka);
         #ok;
     };
@@ -1932,6 +1956,9 @@ actor {
     /// Called by the frontend after the player dismisses the changelog popup.
     /// Records that the caller has seen the changelog for the given version.
     public shared ({ caller }) func markChangelogShown(version : Text) : async () {
+        if (version.size() > 32) {
+            return;
+        };
         changelogShownVersions.add(caller, version);
     };
 
@@ -2419,6 +2446,13 @@ actor {
         if (caller != principal and not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             Runtime.trap("Unauthorized");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            Runtime.trap("Account banned for non-payment");
+        };
+        // Official chains are 3–5 floors. Reject a raw Nat-max depth write.
+        if (depth > 8) {
+            Runtime.trap("depth exceeds maximum dungeon chain");
+        };
         let existing = switch (dungeonRecords.get(principal)) {
             case null { { chainDepth = 0; totalMapsCompleted = 0; bestRewardMultiplier = 1.0 } };
             case (?r) { r };
@@ -2613,11 +2647,20 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return #err("Unauthorized: must be logged in");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
         if (slot < 1 or slot > 3) {
             return #err("Invalid slot number");
         };
         if (bloodBalance > 100) {
             return #err("bloodBalance must be 0-100");
+        };
+        if (covenantBuff.size() > 64) {
+            return #err("covenantBuff exceeds maximum length");
+        };
+        if (shrineCount > 100) {
+            return #err("shrineCount exceeds maximum");
         };
         let existingSlots = switch (characterSlots.get(caller)) {
             case null { return #err("No characters found for user") };
@@ -2653,6 +2696,9 @@ actor {
     ) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return #err("Unauthorized: must be logged in");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
         };
         if (slot < 1 or slot > 3) {
             return #err("Invalid slot number");
@@ -2751,6 +2797,9 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             Runtime.trap("Unauthorized: must be logged in");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            Runtime.trap("Account banned for non-payment");
+        };
         if (slot < 1 or slot > 3) { Runtime.trap("Invalid slot number") };
         if (currentRoom > 9) { Runtime.trap("currentRoom must be 0-9") };
         let key = _bossRushKey(caller, slot);
@@ -2762,6 +2811,11 @@ actor {
         // raw client cannot jump to room 9 for master-complete.
         if (currentRoom > existing.currentRoom + 1) {
             Runtime.trap("currentRoom can only advance by 1");
+        };
+        // Decreasing here skipped resetBossRush and let a client walk 9→0→9
+        // to re-fire completeBossRushRoom without a real abort.
+        if (currentRoom < existing.currentRoom) {
+            Runtime.trap("currentRoom cannot decrease; use resetBossRush");
         };
         bossRushStates.add(key, { existing with currentRoom });
     };
@@ -2838,6 +2892,9 @@ actor {
     public shared ({ caller }) func resetBossRush(slot : Nat) : async () {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             Runtime.trap("Unauthorized: must be logged in");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            Runtime.trap("Account banned for non-payment");
         };
         if (slot < 1 or slot > 3) { Runtime.trap("Invalid slot number") };
         let key = _bossRushKey(caller, slot);

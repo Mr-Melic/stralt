@@ -59,12 +59,22 @@ function requireId(id: string, label: string): string | null {
 }
 
 export function unsafeUrl(url: string): boolean {
-  const lower = url.toLowerCase();
+  const lower = url.trimStart().toLowerCase();
   return (
     lower.startsWith("javascript:") ||
     lower.startsWith("data:") ||
     lower.startsWith("vbscript:")
   );
+}
+
+/** Player-facing hrefs: only http(s) after trim. Rejects javascript: ads. */
+export function safeExternalHref(url: string): string {
+  const trimmed = url.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("https://") || lower.startsWith("http://")) {
+    return trimmed;
+  }
+  return "#";
 }
 
 export function validateOptionalUrl(label: string, url: string): string | null {

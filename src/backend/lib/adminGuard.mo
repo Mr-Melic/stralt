@@ -1,3 +1,5 @@
+import Char "mo:core/Char";
+import Text "mo:core/Text";
 import Types "../types/admin";
 
 /// Pure admin input / lifecycle guards.
@@ -40,13 +42,52 @@ module {
         null
     };
 
+    func asciiLowerPrefix(t : Text, maxChars : Nat) : Text {
+        var out = "";
+        var n = 0;
+        label scan for (c in t.chars()) {
+            if (n >= maxChars) { break scan };
+            if (c >= 'A' and c <= 'Z') {
+                out #= Char.toText(Char.fromNat32(Char.toNat32(c) + (32 : Nat32)));
+            } else {
+                out #= Char.toText(c);
+            };
+            n += 1;
+        };
+        out
+    };
+
+    func trimLeadingWs(url : Text) : Text {
+        Text.trimStart(url, #predicate(func(c : Char) : Bool {
+            c == ' ' or c == '\t' or c == '\n' or c == '\r'
+        }))
+    };
+
+    func schemePrefix(url : Text) : Text {
+        asciiLowerPrefix(trimLeadingWs(url), 16)
+    };
+
+    /// Case-insensitive, leading-whitespace-tolerant scheme check.
+    /// `JavaScript:` and ` javascript:` must not reach player-facing hrefs.
     public func unsafeUrl(url : Text) : Bool {
-        url.startsWith(#text "javascript:")
-            or url.startsWith(#text "JAVASCRIPT:")
-            or url.startsWith(#text "data:")
-            or url.startsWith(#text "DATA:")
-            or url.startsWith(#text "vbscript:")
-            or url.startsWith(#text "VBSCRIPT:")
+        let lower = schemePrefix(url);
+        lower.startsWith(#text "javascript:")
+            or lower.startsWith(#text "data:")
+            or lower.startsWith(#text "vbscript:")
+    };
+
+    /// Shop proof blobs are data: URLs from the official client. Reject only
+    /// script schemes; do not treat data: as unsafe here.
+    public func validateProofFileUrl(url : Text) : ?Text {
+        if (url == "") { return null };
+        if (url.size() > 524_288) {
+            return ?"proofFileUrl exceeds maximum size";
+        };
+        let lower = schemePrefix(url);
+        if (lower.startsWith(#text "javascript:") or lower.startsWith(#text "vbscript:")) {
+            return ?"proofFileUrl uses a forbidden URL scheme";
+        };
+        null
     };
 
     public func validateOptionalUrl(label : Text, url : Text) : ?Text {
