@@ -1,6 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isBuffShopOpen } from "../utils/itemShop";
+import { isBuffShopOpen, shouldAllowShopSpend } from "../utils/itemShop";
 
 // ── Item Definitions ──────────────────────────────────────────────────────────
 export type BuffItemType =
@@ -96,6 +96,8 @@ export function saveInventory(principalId: string, inv: Inventory): void {
 export interface BuffShopProps {
   dokaBalance: number;
   onDeductDoka: (amount: number) => void;
+  /** Live wallet. The render `dokaBalance` lags a same-tick heal debit. */
+  getLiveDoka?: () => number;
   onUseItem: (itemType: BuffItemType) => void;
   isPlayerTurn: boolean;
   inBattle: boolean;
@@ -154,6 +156,7 @@ const getBtnStyle = (canUse: boolean): React.CSSProperties => ({
 const BuffShop: React.FC<BuffShopProps> = ({
   dokaBalance,
   onDeductDoka,
+  getLiveDoka,
   onUseItem,
   isPlayerTurn,
   inBattle,
@@ -184,7 +187,8 @@ const BuffShop: React.FC<BuffShopProps> = ({
 
   const handleBuy = useCallback(
     (item: BuffItem) => {
-      if (dokaBalance < item.cost) return;
+      const liveDoka = getLiveDoka?.() ?? dokaBalance;
+      if (!shouldAllowShopSpend(liveDoka, item.cost)) return;
       if (inBattle) return; // buying disabled in battle
       const current = inventory[item.id] ?? 0;
       if (current >= item.maxStack) return;
@@ -194,7 +198,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
         [item.id]: (prev[item.id] ?? 0) + 1,
       }));
     },
-    [dokaBalance, inventory, inBattle, onDeductDoka],
+    [dokaBalance, getLiveDoka, inventory, inBattle, onDeductDoka],
   );
 
   const handleUse = useCallback(

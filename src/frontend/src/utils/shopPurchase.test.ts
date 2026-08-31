@@ -14,6 +14,7 @@ import {
   readInitiatePurchaseResult,
   shopCreditUsesBattleTimeoutSet,
   shouldCommitShopCredit,
+  shouldStartShopPurchase,
 } from "./shopPurchase.ts";
 
 const args = buildInitiatePurchaseArgs(
@@ -80,6 +81,12 @@ assert.equal(
   shopCreditUsesBattleTimeoutSet(),
   false,
   "cleanupBattle wipes pendingTimeoutsRef; shop credit must not live there",
+);
+assert.equal(shouldStartShopPurchase(false), true);
+assert.equal(
+  shouldStartShopPurchase(true),
+  false,
+  "double-click must not enqueue a second initiatePurchase",
 );
 assert.equal(creditedDokaDelta(100, 600), 500);
 assert.equal(creditedDokaDelta(600, 600), 0);

@@ -10,6 +10,7 @@ import {
   isPrincipalText,
   parseBossRushStateTuple,
   persistBossRushRewardsThroughLock,
+  persistBossRushRoomAdvance,
   persistBossRushRoomClear,
   progressAfterRoomClear,
   resolveBossRushQueryPrincipalText,
@@ -255,6 +256,75 @@ describe("persistBossRushRoomClear", () => {
       { wasSuperseded: () => false },
     );
     assert.deepEqual(calls, ["progress:2:1", "complete:2:0"]);
+  });
+});
+
+describe("persistBossRushRoomAdvance", () => {
+  it("writes currentRoom so a tab close mid-walk can resume", async () => {
+    const calls: string[] = [];
+    await persistBossRushRoomAdvance(
+      {
+        setBossRushProgress: async (slot, room) => {
+          calls.push(`progress:${slot}:${room}`);
+        },
+        resetBossRush: async (slot) => {
+          calls.push(`reset:${slot}`);
+        },
+      },
+      2,
+      1,
+    );
+    assert.deepEqual(calls, ["progress:2:1"]);
+  });
+
+  it("skips setBossRushProgress when death already aborted the run", async () => {
+    const calls: string[] = [];
+    await persistBossRushRoomAdvance(
+      {
+        setBossRushProgress: async (slot, room) => {
+          calls.push(`progress:${slot}:${room}`);
+        },
+        resetBossRush: async (slot) => {
+          calls.push(`reset:${slot}`);
+        },
+      },
+      2,
+      1,
+      { wasSuperseded: () => true },
+    );
+    assert.deepEqual(calls, ["reset:2"]);
+  });
+
+  it("re-resets currentRoom when death aborts during the portal write", async () => {
+    const calls: string[] = [];
+    let aborted = false;
+    await persistBossRushRoomAdvance(
+      {
+        setBossRushProgress: async (slot, room) => {
+          calls.push(`progress:${slot}:${room}`);
+          aborted = true;
+        },
+        resetBossRush: async (slot) => {
+          calls.push(`reset:${slot}`);
+        },
+      },
+      2,
+      1,
+      { wasSuperseded: () => aborted },
+    );
+    assert.deepEqual(calls, ["progress:2:1", "reset:2"]);
+  });
+
+  it("throws when setBossRushProgress is missing so a silent skip cannot look persisted", async () => {
+    await assert.rejects(
+      () =>
+        persistBossRushRoomAdvance(
+          { resetBossRush: async () => undefined },
+          2,
+          1,
+        ),
+      /setBossRushProgress is required/,
+    );
   });
 });
 
