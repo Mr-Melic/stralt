@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isBuffShopOpen,
   liveDokaForShopSpend,
+  liveShopWallet,
   shouldAllowShopSpend,
   tryPurchaseBuffItem,
 } from "../utils/itemShop";
@@ -205,8 +206,12 @@ const BuffShop: React.FC<BuffShopProps> = ({
 
   const handleBuy = useCallback(
     (item: BuffItem) => {
+      const wallet = liveDokaForShopSpend(
+        getLiveDoka,
+        liveShopWallet(liveWalletRef.current, getLiveDoka),
+      );
       const purchase = tryPurchaseBuffItem({
-        wallet: liveDokaForShopSpend(getLiveDoka, liveWalletRef.current),
+        wallet,
         cost: item.cost,
         owned: inventoryRef.current[item.id] ?? 0,
         maxStack: item.maxStack,
@@ -406,7 +411,10 @@ const BuffShop: React.FC<BuffShopProps> = ({
                 const owned = inventory[item.id] ?? 0;
                 const canAfford =
                   shouldAllowShopSpend(
-                    liveDokaForShopSpend(getLiveDoka, liveWalletRef.current),
+                    liveDokaForShopSpend(
+                      getLiveDoka,
+                      liveShopWallet(dokaBalance, getLiveDoka),
+                    ),
                     item.cost,
                   ) && !inBattle;
                 const atMax = owned >= item.maxStack;

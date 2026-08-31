@@ -1746,6 +1746,10 @@ actor {
             init = _minNat(initiative, character.stats.init);
         };
 
+        // Absolute snapshots may lower XP/Doka (death, spend) but must not
+        // raise them — applyRewards is the only additive credit path.
+        //
+
         // upgradeSpell is the sole writer of spell levels. Heal / death / shop
         // snapshots are often captured before an in-flight upgrade commits in
         // React, and replacing the arrays here would wipe a paid level.
@@ -1753,6 +1757,9 @@ actor {
         // Credits (applyRewards / claim / shop-complete) are additive. An
         // absolute snapshot must never mint Doka, XP, or level — that is how
         // a stale optimistic UI survived reload as permanent progress.
+        //
+        // One currentDoka read — a second `let currentDoka` in this block
+        // is a Motoko redefinition (#107 + #144 merge).
         let currentDoka : Nat = switch (dokaBalances.get(caller)) {
             case (?d) { d };
             case null { 0 };

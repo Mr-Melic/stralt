@@ -5,6 +5,7 @@ import {
   dokaHealAmounts,
   isBuffShopOpen,
   liveDokaForShopSpend,
+  liveShopWallet,
   nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
   nextHpAfterDokaHeal,
@@ -23,6 +24,21 @@ assert.equal(
 );
 assert.equal(isBuffShopOpen(false), false);
 assert.equal(isBuffShopOpen(true), true);
+
+assert.equal(
+  liveShopWallet(50, () => 47),
+  47,
+  "same-tick heal debit must win over the render snapshot",
+);
+assert.equal(liveShopWallet(50), 50);
+assert.equal(
+  shouldAllowShopSpend(
+    liveShopWallet(50, () => 47),
+    50,
+  ),
+  false,
+  "shop Buy after a same-tick heal must not treat the stale 50 as affordable",
+);
 
 assert.equal(nextDokaAfterShopSpend(200, 50), 150);
 assert.equal(nextDokaAfterShopSpend(30, 50), 0);

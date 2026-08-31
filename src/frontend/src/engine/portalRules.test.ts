@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { activeHostilesRemaining } from "./battleSetup.ts";
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
+import { activeHostilesRemaining } from "./battleSetup.ts";
 import { isCellFree } from "./occupancy.ts";
 import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
   filterRunPortals,
-  shouldSuppressPortal,
   getRunMode,
   isProgressionLocked,
   isProgressionPortalUnlocked,
@@ -19,6 +18,7 @@ import {
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
   shouldSpawnWhitePortal,
+  shouldSuppressPortal,
   snapshotDungeonChain,
 } from "./portalRules.ts";
 

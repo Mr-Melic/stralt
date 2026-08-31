@@ -482,6 +482,30 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     { action: "clear" },
     "a later earn must not be penalized again",
   );
+  const sessionPending = {
+    slot: 1,
+    preXp: 80,
+    preDoka: 200,
+    afterXp: 64,
+    afterDoka: 120,
+  };
+  assert.equal(experienceFromCharacterRecord({ experience: 80n }), 80);
+  assert.equal(experienceFromCharacterRecord({ experience: 80 }), 80);
+  assert.equal(experienceFromCharacterRecord(null), null);
+  assert.deepEqual(
+    resolvePendingDeathReplay(50, 200, sessionPending),
+    { action: "clear" },
+    "stale Play-entry XP matches neither snapshot and drops the replay",
+  );
+  assert.deepEqual(
+    resolvePendingDeathReplay(
+      experienceFromCharacterRecord({ experience: 80n }) ?? -1,
+      200,
+      sessionPending,
+    ),
+    { action: "write", newXp: 64, newDoka: 120 },
+    "getCharacter XP must replay the 20/40 cut",
+  );
   clearPendingDeathPenalty(mem, 1);
   assert.equal(readPendingDeathPenalty(mem, 1), null);
 }
