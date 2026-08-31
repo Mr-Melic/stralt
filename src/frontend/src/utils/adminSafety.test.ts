@@ -1,18 +1,26 @@
 import assert from "node:assert/strict";
 import {
+  clampDungeonDepth,
+  isBanReasonKey,
   isBuiltInSpellId,
   safeExternalHref,
   shouldIncludeBackendSpellInLibrary,
+  shouldRejectInactiveAchievementUnlock,
+  shouldRejectRetiredSpellUpgrade,
   shouldWipeAchievementsOnBan,
   unsafeUrl,
+  validateAdBox,
   validateAssignRole,
+  validateChangelog,
   validateDokaGrant,
+  validateEnemyName,
   validateGameConfig,
   validateJsonBlob,
   validateLevelUpConfig,
   validateOptionalUrl,
   validateSpellConfig,
   validateTierSpawnConfig,
+  validateWalkFrameUrls,
   wouldSelfDemote,
 } from "./adminSafety.ts";
 
@@ -133,15 +141,59 @@ assert.equal(shouldWipeAchievementsOnBan(), false);
 assert.equal(unsafeUrl("javascript:alert(1)"), true);
 assert.equal(unsafeUrl("JavaScript:alert(1)"), true);
 assert.equal(unsafeUrl(" javascript:alert(1)"), true);
+assert.equal(unsafeUrl("  DATA:text/html,x"), true);
 assert.ok(validateOptionalUrl("linkUrl", "javascript:alert(1)"));
+assert.ok(validateOptionalUrl("linkUrl", "JavaScript:alert(1)"));
 assert.ok(validateOptionalUrl("linkUrl", "  DATA:text/html,x"));
 assert.equal(validateOptionalUrl("linkUrl", "https://example.com"), null);
 assert.equal(
   safeExternalHref("https://example.com/ad"),
   "https://example.com/ad",
 );
+assert.equal(safeExternalHref("https://example.com"), "https://example.com");
 assert.equal(safeExternalHref("javascript:alert(1)"), "#");
 assert.equal(safeExternalHref("  JavaScript:alert(1)"), "#");
+assert.ok(validateWalkFrameUrls(["javascript:alert(1)"]));
+assert.equal(validateWalkFrameUrls(["https://cdn.example/f.png"]), null);
+assert.ok(validateAdBox(0, "javascript:x", "https://ok.example"));
+assert.equal(
+  validateAdBox(0, "https://cdn.example/a.png", "https://ok.example"),
+  null,
+);
+
+// Failure: banPlayer wrote reasons to public getChangelog("ban#<principal>").
+assert.equal(isBanReasonKey("ban#aaaaa-aa"), true);
+assert.equal(isBanReasonKey("v163"), false);
+assert.ok(validateChangelog("ban#aaaaa-aa", "non-payment"));
+assert.equal(validateChangelog("v164", "notes"), null);
+
+assert.ok(validateEnemyName(""));
+assert.ok(validateEnemyName("x".repeat(101)));
+assert.equal(validateEnemyName("Malachar"), null);
+
+// Failure: upgradeSpell appended a retired catalog id the player never owned.
+assert.equal(
+  shouldRejectRetiredSpellUpgrade({
+    usableByPlayer: false,
+    alreadyOwned: false,
+  }),
+  true,
+);
+assert.equal(
+  shouldRejectRetiredSpellUpgrade({
+    usableByPlayer: false,
+    alreadyOwned: true,
+  }),
+  false,
+);
+
+// Failure: markAchievementUnlocked ignored active=false, so a retired
+// achievement could still be unlocked and then claimed.
+assert.equal(shouldRejectInactiveAchievementUnlock(false), true);
+assert.equal(shouldRejectInactiveAchievementUnlock(true), false);
+
+assert.equal(clampDungeonDepth(100), 16);
+assert.equal(clampDungeonDepth(4), 4);
 assert.ok(validateJsonBlob("bossRushConfig", "not-json"));
 assert.equal(
   validateJsonBlob("bossRushConfig", '{"rewardMultiplier":1}'),

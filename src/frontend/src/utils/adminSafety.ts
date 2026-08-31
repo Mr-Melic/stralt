@@ -77,6 +77,76 @@ export function safeExternalHref(url: string): string {
   return "#";
 }
 
+export function validateWalkFrameUrls(
+  frames: readonly string[],
+): string | null {
+  if (frames.length > 16) return "Walk-frame arrays cannot exceed 16 entries";
+  for (const url of frames) {
+    const err = validateOptionalUrl("walkFrame", url);
+    if (err) return err;
+  }
+  return null;
+}
+
+export function isBanReasonKey(version: string): boolean {
+  return version.startsWith("ban#");
+}
+
+export function validateChangelog(
+  version: string,
+  text: string,
+): string | null {
+  if (!version) return "version cannot be empty";
+  if (version.length > 32) return "version exceeds maximum length";
+  if (isBanReasonKey(version)) {
+    return "version cannot use the ban-reason namespace";
+  }
+  if (text.length > MAX_JSON_BLOB) return "changelog exceeds maximum size";
+  return null;
+}
+
+export function validateEnemyName(name: string): string | null {
+  if (!name) return "Name cannot be empty";
+  if (name.length > 100) return "Name exceeds maximum length";
+  return null;
+}
+
+export function validateAdBox(
+  index: number,
+  imageUrl: string,
+  linkUrl: string,
+): string | null {
+  if (index < 0 || index > 2) return "index out of range: must be 0, 1, or 2";
+  if (!imageUrl) return "imageUrl cannot be empty";
+  if (!linkUrl) return "linkUrl cannot be empty";
+  return (
+    validateOptionalUrl("imageUrl", imageUrl) ??
+    validateOptionalUrl("linkUrl", linkUrl)
+  );
+}
+
+/** Retired catalog spells must not become owned via upgradeSpell. */
+export function shouldRejectRetiredSpellUpgrade(args: {
+  usableByPlayer: boolean;
+  alreadyOwned: boolean;
+}): boolean {
+  return args.usableByPlayer === false && !args.alreadyOwned;
+}
+
+/** Deactivated achievements must not accept new unlocks. Existing claims stay. */
+export function shouldRejectInactiveAchievementUnlock(
+  active: boolean,
+): boolean {
+  return active === false;
+}
+
+export const MAX_DUNGEON_DEPTH = 16;
+
+export function clampDungeonDepth(depth: number): number {
+  if (!Number.isFinite(depth) || depth < 0) return 0;
+  return Math.min(Math.floor(depth), MAX_DUNGEON_DEPTH);
+}
+
 export function validateOptionalUrl(label: string, url: string): string | null {
   if (!url) return null;
   if (url.length > 2048) return `${label} exceeds maximum URL length`;

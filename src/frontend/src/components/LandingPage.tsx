@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useMemo, useRef } from "react";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { safeExternalHref } from "../utils/adminSafety";
+import { safeExternalHref, unsafeUrl } from "../utils/adminSafety";
 
 // ─── Animated skate-style title ──────────────────────────────────────────────
 const SkateStyleTitle: React.FC = () => {
@@ -689,7 +689,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
             }}
           >
             {adBoxes.map(([imageUrl, linkUrl], index) =>
-              imageUrl ? (
+              imageUrl && !unsafeUrl(imageUrl) ? (
                 <a
                   key={`ad-box-${index}-${imageUrl.slice(0, 10)}`}
                   href={safeExternalHref(linkUrl || "")}

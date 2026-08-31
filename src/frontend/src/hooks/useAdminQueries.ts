@@ -7,7 +7,7 @@ import type {
   MapModifierConfig,
 } from "../types/gameTypes";
 import { assertAdminCmdOk } from "../utils/adminContract";
-import { validateAssignRole } from "../utils/adminSafety";
+import { validateAssignRole, validateEnemyName } from "../utils/adminSafety";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
@@ -456,6 +456,8 @@ export function useAdminAddEnemyName() {
   return useMutation({
     mutationFn: async (name: string) => {
       if (!actor) throw new Error("Actor not available");
+      const nameErr = validateEnemyName(name);
+      if (nameErr) throw new Error(nameErr);
       return (actor as ActorAny).addEnemyName(name);
     },
     onSuccess: () => {

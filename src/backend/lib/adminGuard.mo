@@ -12,6 +12,7 @@ module {
     public let MAX_URL : Nat = 2_048;
     public let MAX_ID : Nat = 64;
     public let MAX_NAME : Nat = 100;
+    public let MAX_DUNGEON_DEPTH : Nat = 16;
 
     public func isBuiltInSpellId(id : Text) : Bool {
         id == "shadow_strike" or id == "soul_rend" or id == "vampire_bite"
@@ -271,6 +272,19 @@ module {
         switch (checkOpt("rightUrl", config.rightUrl)) { case (?e) { return ?e }; case null {} };
         switch (checkOpt("leftUrl", config.leftUrl)) { case (?e) { return ?e }; case null {} };
         switch (checkOpt("backUrl", config.backUrl)) { case (?e) { return ?e }; case null {} };
+        func checkFrames(label : Text, frames : [Text]) : ?Text {
+            for (u in frames.values()) {
+                switch (validateOptionalUrl(label, u)) {
+                    case (?e) { return ?e };
+                    case null {};
+                };
+            };
+            null
+        };
+        switch (checkFrames("frontWalkFrames", config.frontWalkFrames)) { case (?e) { return ?e }; case null {} };
+        switch (checkFrames("rightWalkFrames", config.rightWalkFrames)) { case (?e) { return ?e }; case null {} };
+        switch (checkFrames("leftWalkFrames", config.leftWalkFrames)) { case (?e) { return ?e }; case null {} };
+        switch (checkFrames("backWalkFrames", config.backWalkFrames)) { case (?e) { return ?e }; case null {} };
         null
     };
 
@@ -424,6 +438,36 @@ module {
         if (version == "") { return ?"version cannot be empty" };
         if (version.size() > 32) { return ?"version exceeds maximum length" };
         null
+    };
+
+    /// Ban reasons were previously written to the public changelog map under
+    /// "ban#<principal>". getChangelog is an unauthenticated query.
+    public func isBanReasonKey(version : Text) : Bool {
+        version.startsWith(#text "ban#")
+    };
+
+    public func validateChangelog(version : Text, text : Text) : ?Text {
+        switch (validateAppVersion(version)) {
+            case (?e) { return ?e };
+            case null {};
+        };
+        if (isBanReasonKey(version)) {
+            return ?"version cannot use the ban-reason namespace";
+        };
+        if (text.size() > MAX_JSON_BLOB) {
+            return ?"changelog exceeds maximum size";
+        };
+        null
+    };
+
+    public func validateEnemyName(name : Text) : ?Text {
+        if (name == "") { return ?"Name cannot be empty" };
+        if (name.size() > MAX_NAME) { return ?"Name exceeds maximum length" };
+        null
+    };
+
+    public func clampDungeonDepth(depth : Nat) : Nat {
+        if (depth > MAX_DUNGEON_DEPTH) { MAX_DUNGEON_DEPTH } else { depth }
     };
 
     public func validateAdBox(index : Nat, imageUrl : Text, linkUrl : Text) : ?Text {

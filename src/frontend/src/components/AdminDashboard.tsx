@@ -52,10 +52,14 @@ import type {
 } from "../types/gameTypes";
 import {
   MAX_DOKA_GRANT,
+  unsafeUrl,
+  validateAdBox,
   validateDokaGrant,
   validateGameConfig,
   validateLevelUpConfig,
+  validateOptionalUrl,
   validateTierSpawnConfig,
+  validateWalkFrameUrls,
 } from "../utils/adminSafety";
 import { logDebugWarn } from "../utils/debugLogger";
 
@@ -5545,6 +5549,19 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   loading={spriteQ.isLoading}
                   saving={setSpriteMut.isPending || delSpriteMut.isPending}
                   onSave={(cfg) => {
+                    const walkErr =
+                      validateWalkFrameUrls(cfg.walkFramesFront) ??
+                      validateWalkFrameUrls(cfg.walkFramesRight) ??
+                      validateWalkFrameUrls(cfg.walkFramesLeft) ??
+                      validateWalkFrameUrls(cfg.walkFramesBack) ??
+                      validateOptionalUrl("frontUrl", cfg.frontUrl[0] ?? "") ??
+                      validateOptionalUrl("rightUrl", cfg.rightUrl[0] ?? "") ??
+                      validateOptionalUrl("leftUrl", cfg.leftUrl[0] ?? "") ??
+                      validateOptionalUrl("backUrl", cfg.backUrl[0] ?? "");
+                    if (walkErr) {
+                      toast.error(walkErr);
+                      return;
+                    }
                     setSpriteMut.mutate(cfg, {
                       onSuccess: () =>
                         toast.success(
@@ -7579,6 +7596,12 @@ function AdBoxEditor({ index }: { index: number }) {
     }
   }, [actor, index]);
   const save = async () => {
+    const adErr = validateAdBox(index, imageUrl, linkUrl);
+    if (adErr) {
+      setStatus("Error");
+      toast.error(adErr);
+      return;
+    }
     try {
       await (
         actor as unknown as {
@@ -7621,7 +7644,7 @@ function AdBoxEditor({ index }: { index: number }) {
       <h3 style={{ color: "#ff6666", marginBottom: "12px" }}>
         Ad Box {index + 1}
       </h3>
-      {imageUrl && (
+      {imageUrl && !unsafeUrl(imageUrl) && (
         <img
           src={imageUrl}
           alt="preview"
