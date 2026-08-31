@@ -16,6 +16,39 @@ export interface DokaCreditActor {
 }
 
 /**
+ * Ground Doka / shrine credits must claim a pickup id synchronously before
+ * enqueueing applyRewards. The movement RAF can re-enter the same tile
+ * (stale step index, Strict Mode updater) and used to call persistDokaCredit
+ * twice for one coin — a reload-surviving double mint.
+ */
+export function tryClaimPickupId(claimed: Set<string>, id: string): boolean {
+  if (!id || claimed.has(id)) return false;
+  claimed.add(id);
+  return true;
+}
+
+export function releasePickupId(claimed: Set<string>, id: string): void {
+  claimed.delete(id);
+}
+
+export function tryClaimFlag(flag: { current: boolean }): boolean {
+  if (flag.current) return false;
+  flag.current = true;
+  return true;
+}
+
+export function releaseFlag(flag: { current: boolean }): void {
+  flag.current = false;
+}
+
+/** One-shot dungeon-chain completion bonus after cleanupMap zeros the refs. */
+export function tryClaimDungeonChainBonus(claimed: {
+  current: boolean;
+}): boolean {
+  return tryClaimFlag(claimed);
+}
+
+/**
  * Credits Doka to a character slot via the single atomic backend funnel
  * applyRewards(slot, doka, 0) and returns the new absolute Doka balance.
  * On backend error the failure is logged and 0 is returned so the caller can

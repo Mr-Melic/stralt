@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
+  clampAbsoluteProgressWrite,
   committedDokaAfterShopCredit,
   createProgressPersist,
   floorHydratedLevel,
@@ -35,6 +36,13 @@ describe("spend math", () => {
   it("applies the spend to the last committed wallet", () => {
     assert.equal(applySpendToCommitted(250, 30), 220);
     assert.equal(applySpendToCommitted(10, 30), 0);
+  });
+
+  it("refuses absolute snapshot mints above the canister wallet/XP", () => {
+    assert.equal(clampAbsoluteProgressWrite(50, 200), 50);
+    assert.equal(clampAbsoluteProgressWrite(250, 200), 200);
+    assert.equal(clampAbsoluteProgressWrite(0, 0), 0);
+    assert.equal(clampAbsoluteProgressWrite(80, 100), 80);
   });
 });
 

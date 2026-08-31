@@ -1,6 +1,10 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isBuffShopOpen, shouldAllowShopSpend } from "../utils/itemShop";
+import {
+  isBuffShopOpen,
+  shouldAllowShopSpend,
+  tryPurchaseBuffItem,
+} from "../utils/itemShop";
 
 // ── Item Definitions ──────────────────────────────────────────────────────────
 export type BuffItemType =
@@ -95,7 +99,8 @@ export function saveInventory(principalId: string, inv: Inventory): void {
 // ── Props ──────────────────────────────────────────────────────────────────────
 export interface BuffShopProps {
   dokaBalance: number;
-  onDeductDoka: (amount: number) => void;
+  /** Return false when the persist debit failed so inventory is not granted. */
+  onDeductDoka: (amount: number) => boolean | Promise<boolean> | void;
   /** Live wallet. The render `dokaBalance` lags a same-tick heal debit. */
   getLiveDoka?: () => number;
   onUseItem: (itemType: BuffItemType) => void;
@@ -172,6 +177,14 @@ const BuffShop: React.FC<BuffShopProps> = ({
   const [activeTab, setActiveTab] = useState<"shop" | "inventory">("shop");
   // Track storageKey to reload when it changes (login)
   const prevKeyRef = useRef(storageKey);
+  const liveWalletRef = useRef(dokaBalance);
+  const inventoryRef = useRef(inventory);
+  useEffect(() => {
+    liveWalletRef.current = dokaBalance;
+  }, [dokaBalance]);
+  useEffect(() => {
+    inventoryRef.current = inventory;
+  }, [inventory]);
 
   useEffect(() => {
     if (prevKeyRef.current !== storageKey) {
@@ -187,18 +200,35 @@ const BuffShop: React.FC<BuffShopProps> = ({
 
   const handleBuy = useCallback(
     (item: BuffItem) => {
-      const liveDoka = getLiveDoka?.() ?? dokaBalance;
-      if (!shouldAllowShopSpend(liveDoka, item.cost)) return;
-      if (inBattle) return; // buying disabled in battle
-      const current = inventory[item.id] ?? 0;
-      if (current >= item.maxStack) return;
-      onDeductDoka(item.cost);
-      setInventory((prev) => ({
-        ...prev,
-        [item.id]: (prev[item.id] ?? 0) + 1,
-      }));
+      const purchase = tryPurchaseBuffItem({
+        wallet: liveWalletRef.current,
+        cost: item.cost,
+        owned: inventoryRef.current[item.id] ?? 0,
+        maxStack: item.maxStack,
+        inBattle,
+      });
+      if (!purchase) return;
+      liveWalletRef.current = purchase.nextWallet;
+      inventoryRef.current = {
+        ...inventoryRef.current,
+        [item.id]: purchase.nextOwned,
+      };
+      void Promise.resolve(onDeductDoka(item.cost)).then((ok) => {
+        if (ok === false) {
+          liveWalletRef.current += item.cost;
+          inventoryRef.current = {
+            ...inventoryRef.current,
+            [item.id]: Math.max(0, purchase.nextOwned - 1),
+          };
+          return;
+        }
+        setInventory((prev) => ({
+          ...prev,
+          [item.id]: (prev[item.id] ?? 0) + 1,
+        }));
+      });
     },
-    [dokaBalance, getLiveDoka, inventory, inBattle, onDeductDoka],
+    [inBattle, onDeductDoka],
   );
 
   const handleUse = useCallback(

@@ -1446,6 +1446,17 @@ actor {
         // upgradeSpell is the sole writer of spell levels. Heal / death / shop
         // snapshots are often captured before an in-flight upgrade commits in
         // React, and replacing the arrays here would wipe a paid level.
+        //
+        // Credits (applyRewards / claim / shop-complete) are additive. An
+        // absolute snapshot must never mint Doka, XP, or level — that is how
+        // a stale optimistic UI survived reload as permanent progress.
+        let currentDoka : Nat = switch (dokaBalances.get(caller)) {
+            case (?d) { d };
+            case null { 0 };
+        };
+        let writeDoka : Nat = if (dokaBalance > currentDoka) { currentDoka } else { dokaBalance };
+        let writeXp : Nat = if (xp > character.experience) { character.experience } else { xp };
+        let writeLevel : Nat = if (level > character.level) { character.level } else { level };
         let updatedCharacter : Character = {
             character with
             level            = storedLevel;
