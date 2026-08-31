@@ -206,6 +206,7 @@ import {
 import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
+  type TileCastableResult,
   applyHealBuffSideEffect,
   canAttackNearestAgainstLive,
   computeTargetableTiles,
@@ -213,6 +214,7 @@ import {
   pickNearestAttackableHostile,
   shouldExecuteLiveCast,
   spellHighlightRangeBase,
+  spellRangeBase,
 } from "../engine/targeting";
 import {
   liveTurnOrder,
@@ -7597,6 +7599,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     combatantStoreCtx,
   ]);
 
+  const probeLiveCast = useCallback(
+    (
+      spell: SpellConfig,
+      tile: { x: number; y: number },
+    ): TileCastableResult => {
+      return isTileCastableLive(
+        spell,
+        getActiveCasterPos(),
+        tile,
+        getLiveCombatants(combatantStoreCtx),
+        currentMap?.tiles ?? [],
+        getEffectiveSpellRange(
+          spellRangeBase(spell),
+          spell.modifiableRange ? spell.id : undefined,
+        ),
+        barrierTilesRef.current,
+      );
+    },
+    [combatantStoreCtx, currentMap, getActiveCasterPos, getEffectiveSpellRange],
+  );
+
   // Main render function — DPR-aware, DOFUS-style aesthetics
   // biome-ignore lint/correctness/useExhaustiveDependencies: getBossPixelPattern is a pure function defined in component scope with no external dependencies
   const render = useCallback(() => {
@@ -10173,6 +10196,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         currentAp: Number(summon.currentAp ?? 0),
         caster: { x: summon.x, y: summon.y },
         target: { x: targetEnemy.x, y: targetEnemy.y },
+        liveGate: currentMap
+          ? {
+              tiles: currentMap.tiles,
+              combatants: getLiveCombatants(combatantStoreCtx),
+              barrierTiles: barrierTilesRef.current,
+            }
+          : undefined,
       });
       if (!plan.ok) {
         logBattleEntry(summonControlCastFailMessage(plan.reason), "#ef4444");
@@ -10225,6 +10255,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       playerSpellContext,
       getStatModifier,
       combatantStoreCtx,
+      currentMap,
       logBattleEntry,
     ],
   );
@@ -10518,6 +10549,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
+                const _liveSelf = probeLiveCast(_spell, {
+                  x: _hit.logicalX,
+                  y: _hit.logicalY,
+                });
+                if (!shouldExecuteLiveCast(_liveSelf)) {
+                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _liveSelf.reason,
+                  );
+                  return;
+                }
                 const { castResult: _castResult, apCost: _apCost } =
                   executeCastAttempt(
                     _spell,
@@ -10740,6 +10784,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             return;
           }
+          const _liveBeforeCast = probeLiveCast(spell, gridPos);
+          if (!shouldExecuteLiveCast(_liveBeforeCast)) {
+            const _screenLive = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screenLive.x,
+              _screenLive.y,
+              "invalid target",
+            );
+            return;
+          }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
           const { castResult, apCost } = executeCastAttempt(
             spell,
@@ -10926,6 +10980,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentBattleMp,
       getMpReachableTiles,
       getSpellRangeTiles,
+      probeLiveCast,
       activeSpells,
       logBattleEntry,
       applyBattleWalkHazards,
@@ -11174,6 +11229,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
+                const _liveSelf = probeLiveCast(_spell, {
+                  x: _hit.logicalX,
+                  y: _hit.logicalY,
+                });
+                if (!shouldExecuteLiveCast(_liveSelf)) {
+                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                  effectsManagerRef.current?.spawnFloatText(
+                    _screen.x,
+                    _screen.y,
+                    _liveSelf.reason,
+                  );
+                  return;
+                }
                 const { castResult: _castResult, apCost: _apCost } =
                   executeCastAttempt(
                     _spell,
@@ -11324,6 +11392,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 false,
               );
             } catch {}
+            return;
+          }
+          const _liveBeforeCastTouch = probeLiveCast(spell, gridPos);
+          if (!shouldExecuteLiveCast(_liveBeforeCastTouch)) {
+            const _screenLive = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screenLive.x,
+              _screenLive.y,
+              "invalid target",
+            );
             return;
           }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
@@ -11512,6 +11590,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       currentBattleMp,
       getMpReachableTiles,
       getSpellRangeTiles,
+      probeLiveCast,
       pointerToRenderSpace,
       setCurrentBattleApSynced,
       recordClickOutcome,
@@ -17273,9 +17352,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     markFirstAction();
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
-    // This path never goes through executeCastAttempt. The spell bar only
-    // disables re-selection, so a still-selected Inferno used to recast
-    // via Attack Nearest on every click while leftover AP remained.
+    // Spell bar only disables re-selection. Inferno used to recast via
+    // Attack Nearest on every click while leftover AP remained. Gate CD
+    // here, then executeCastAttempt so AP / cooldown / Striker match clicks.
     if (isSpellOnCooldown(spellCooldownsRef.current.get(spell.id))) {
       const _screen = tileCenter(
         playerPositionRef.current.x,
@@ -17344,43 +17423,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       gridPos = nearest;
     }
-    castRuntimeRef.current.apCost = apCost;
-    castRuntimeRef.current.spell = spell;
     if (spell.isSummon) {
       logDebugInfo("SUMMON", "cast handler received summon spell", {
         spellId: spell.id,
         gridPos,
       });
     }
-    const castResult = resolvePlayerCast(spell, gridPos, playerSpellContext());
-    if (castResult === "cast") {
-      // This path calls resolvePlayerCast directly — it does NOT go
-      // through executeCastAttempt. Skipping the debit here made
-      // Attack Nearest a free cast.
-      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-      {
-        const nextAp = recordChallengeApSpend(
-          challengeMaxApThisTurnRef.current,
-          challengeApThisTurnRef.current,
-          apCost,
-        );
-        challengeMaxApThisTurnRef.current = nextAp.peak;
-        challengeApThisTurnRef.current = nextAp.spentThisTurn;
-      }
-      if (
-        Math.max(
-          Math.abs(gridPos.x - playerPositionRef.current.x),
-          Math.abs(gridPos.y - playerPositionRef.current.y),
-        ) > 2
-      )
-        challengeDirectHitRef.current = false;
-      if (spell.targetType === "self" && spell.effectType === "heal") {
-        challengeHealUsedRef.current = true;
-      }
-      if (spell.cooldown && spell.cooldown > 0) {
-        spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
-        setSpellCooldownVersion((v) => v + 1);
-      }
+    const { castResult } = executeCastAttempt(spell, gridPos, "attack-nearest");
+    if (castResult === "cast" || castResult === "summon") {
       if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
@@ -17388,17 +17438,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setBattleActionMode("walk");
       }
     } else if (castResult === "fizzled") {
-      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-      markFirstAction();
-      {
-        const nextAp = recordChallengeApSpend(
-          challengeMaxApThisTurnRef.current,
-          challengeApThisTurnRef.current,
-          apCost,
-        );
-        challengeMaxApThisTurnRef.current = nextAp.peak;
-        challengeApThisTurnRef.current = nextAp.spentThisTurn;
-      }
       {
         const _screen = tileCenter(gridPos.x, gridPos.y);
         effectsManagerRef.current?.spawnFloatText(
@@ -17409,43 +17448,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
       }
       playSound("spell_cast", "fizzle");
-      if (
-        Math.max(
-          Math.abs(gridPos.x - playerPositionRef.current.x),
-          Math.abs(gridPos.y - playerPositionRef.current.y),
-        ) > 2
-      )
-        challengeDirectHitRef.current = false;
-      if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
-        selectedSpellIdRef.current = null;
-        setSpellSelectionVersion((v) => v + 1);
-        spellRangeCacheRef.current.clear();
-        setBattleActionMode("walk");
-      }
-    } else if (castResult === "summon") {
-      // FIX #3 (summon AP cost): deduct apCost + markFirstAction + set
-      // cooldown, mirroring the "cast" branch. Record Striker distance
-      // here — this path does not go through executeCastAttempt.
-      setCurrentBattleApSynced((prev) => Math.max(0, prev - apCost));
-      markFirstAction();
-      {
-        const nextAp = recordChallengeApSpend(
-          challengeMaxApThisTurnRef.current,
-          challengeApThisTurnRef.current,
-          apCost,
-        );
-        challengeMaxApThisTurnRef.current = nextAp.peak;
-        challengeApThisTurnRef.current = nextAp.spentThisTurn;
-      }
-      challengeDirectHitRef.current = recordChallengeDirectHit(
-        challengeDirectHitRef.current,
-        playerPositionRef.current,
-        gridPos,
-      );
-      if (spell.cooldown && spell.cooldown > 0) {
-        spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
-        setSpellCooldownVersion((v) => v + 1);
-      }
       if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
         selectedSpellIdRef.current = null;
         setSpellSelectionVersion((v) => v + 1);
@@ -17453,7 +17455,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setBattleActionMode("walk");
       }
     }
-    // "no_ap" | "abort" → no further action
+    // "no_ap" | "abort" | "on_cooldown" → already gated above / in executeCastAttempt
   }, [
     inBattle,
     battleActionMode,
@@ -17464,7 +17466,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     combatantStoreCtx,
     playerSpellContext,
     markFirstAction,
-    setCurrentBattleApSynced,
+    executeCastAttempt,
     tileCenter,
   ]);
   const [noTargetFlash, setNoTargetFlash] = useState(false);

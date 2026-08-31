@@ -7,9 +7,18 @@
  * silently no-ops — the panel buttons do nothing.
  *
  * Resolve the kit the same way the panel does, then gate on AP and
- * Chebyshev range before resolveSpellCast. Debit AP after the attempt
+ * Chebyshev range before resolveSpellCast. When a live world snapshot is
+ * supplied, the same isTileCastableLive gate as player clicks also runs
+ * so LoS / walls / target-type cannot drift. Debit AP after the attempt
  * (including fizzle) so a 2-AP Archer cannot wipe the room in one turn.
  */
+
+import {
+  type TileType,
+  isTileCastableLive,
+  shouldExecuteLiveCast,
+} from "../engine/targeting.ts";
+import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 
 export interface SummonKitCatalogSpell {
   id: string;
@@ -22,7 +31,11 @@ export interface SummonKitCatalogSpell {
   };
 }
 
-export type SummonControlCastFail = "no_spell" | "no_ap" | "out_of_range";
+export type SummonControlCastFail =
+  | "no_spell"
+  | "no_ap"
+  | "out_of_range"
+  | "illegal_target";
 
 export type SummonControlCastPlan<T extends SummonKitCatalogSpell> =
   | { ok: false; reason: SummonControlCastFail }
@@ -70,6 +83,12 @@ export function planSummonControlCast<T extends SummonKitCatalogSpell>(args: {
   currentAp: number;
   caster: { x: number; y: number };
   target: { x: number; y: number };
+  liveGate?: {
+    tiles: TileType[][];
+    combatants: Enemy[];
+    effectiveRange?: number;
+    barrierTiles?: Map<string, number>;
+  };
 }): SummonControlCastPlan<T> {
   const spell = resolveSummonControlSpell(
     args.pieceType,
@@ -83,9 +102,27 @@ export function planSummonControlCast<T extends SummonKitCatalogSpell>(args: {
   const ap = Math.max(0, Math.floor(Number(args.currentAp) || 0));
   if (ap < cost) return { ok: false, reason: "no_ap" };
 
-  const range = Math.max(1, Math.floor(Number(spell.range) || 0));
+  const range = Math.max(
+    1,
+    Math.floor(Number(args.liveGate?.effectiveRange ?? spell.range) || 0),
+  );
   const dist = chebyshevDistance(args.caster, args.target);
   if (dist > range) return { ok: false, reason: "out_of_range" };
+
+  if (args.liveGate) {
+    const live = isTileCastableLive(
+      spell as unknown as SpellConfig,
+      args.caster,
+      args.target,
+      args.liveGate.combatants,
+      args.liveGate.tiles,
+      args.liveGate.effectiveRange ?? range,
+      args.liveGate.barrierTiles ?? new Map(),
+    );
+    if (!shouldExecuteLiveCast(live)) {
+      return { ok: false, reason: "illegal_target" };
+    }
+  }
 
   return {
     ok: true,
@@ -105,6 +142,8 @@ export function summonControlCastFailMessage(
       return "Not enough AP";
     case "out_of_range":
       return "Out of range";
+    case "illegal_target":
+      return "Invalid target";
     default:
       return "Unknown spell";
   }

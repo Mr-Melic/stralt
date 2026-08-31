@@ -127,7 +127,46 @@ describe("planSummonControlCast", () => {
   it("maps fail reasons to battle-log copy", () => {
     assert.equal(summonControlCastFailMessage("no_ap"), "Not enough AP");
     assert.equal(summonControlCastFailMessage("out_of_range"), "Out of range");
+    assert.equal(
+      summonControlCastFailMessage("illegal_target"),
+      "Invalid target",
+    );
     assert.equal(summonControlCastFailMessage("no_spell"), "Unknown spell");
+  });
+
+  it("rejects a LoS-blocked kit shot when the live gate is supplied", () => {
+    const tiles = Array.from({ length: 9 }, () =>
+      Array.from({ length: 9 }, () => "floor" as const),
+    );
+    tiles[4][5] = "wall";
+    const catalog = starterSpells.map((s) =>
+      s.id === "starter-poison" ? { ...s, lineOfSight: true } : s,
+    );
+    const blocked = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog,
+      fallbackSpells: [],
+      currentAp: 2,
+      caster: { x: 4, y: 4 },
+      target: { x: 7, y: 4 },
+      liveGate: {
+        tiles,
+        combatants: [
+          {
+            id: "rat",
+            x: 7,
+            y: 4,
+            hp: 10,
+            maxHp: 10,
+            name: "Rat",
+            pieceType: "pawn",
+            side: "enemy",
+          } as import("../types/gameTypes.ts").Enemy,
+        ],
+      },
+    });
+    assert.deepEqual(blocked, { ok: false, reason: "illegal_target" });
   });
 });
 
