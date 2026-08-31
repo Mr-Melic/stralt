@@ -2009,3 +2009,46 @@ AUTONOMY: SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: LOW
 VALIDATION_REQUIRED: Left and right cycle front → left → back → right.
 STATUS: IMPLEMENTED_THIS_RUN
+
+ACTION_ID: AEE-2026-08-31-001  
+SOURCE_AUTOMATION: Advanced Enemy AI Evolution Designer (`67b03c2f-a492-11f1-a7d1-d6b4613131ce`)  
+TITLE: Replace `computeAITier` level bands with relative module eligibility  
+CATEGORY: combat-ai  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `src/frontend/src/engine/combatMath.ts` lines 36–52 map `enemyLevel` to tiers 1–10 and scramble 30% of rolls. `WorldExploration.tsx` 6197 / 6325 assign `aiTier`. Brief forbids “Level X always equals AI tier Y.”  
+RECOMMENDED_ACTION: Implement AI-SYS-01 from `docs/ENEMY_AI_EVOLUTION.md`. Delete behaviour gates on `aiTier >= 5` / `>= 10`.  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM — spawn + WX leader-death / betrayal branches  
+VALIDATION_REQUIRED: Same absolute enemy level, different player levels, produce different attach distributions; seeded RNG deterministic.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AEE-2026-08-31-002  
+SOURCE_AUTOMATION: Advanced Enemy AI Evolution Designer  
+TITLE: Apply-layer honesty (Fire Bolt, AP/MP, ally heal)  
+CATEGORY: combat-ai  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: WX 16724–16729 fallback Fire Bolt not in kit; `decideEnemyAction` never reads AP/MP; WX 16662 heals only when `spellRange === 0`.  
+RECOMMENDED_ACTION: Implement AI-SYS-05 before new roles. Mirror `summonExecutor.ts` spend rules.  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if WX apply is edited without tests  
+VALIDATION_REQUIRED: TS-LEGAL, TS-AP, TS-MP, TS-HEAL, TS-BOLT in the design catalog.  
+STATUS: OPEN  
+
+---
+
+ACTION_ID: AEE-2026-08-31-003  
+SOURCE_AUTOMATION: Advanced Enemy AI Evolution Designer  
+TITLE: Explicit roles + spell score profiles (stop heal-first inference)  
+CATEGORY: combat-ai  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `inferArchetype` 420–425 returns healer if any heal; queen/king kits include `starter-heal` at `levelZone >= 1`. Many enemy-usable spells have no scorer (`damage: 0` DoTs lose `pickBestDamageSpell`).  
+RECOMMENDED_ACTION: AI-SYS-02, AI-SYS-04, AI-ROL-08. Do not set `usableByEnemy` without a profile and apply branch.  
+DEPENDENCIES: AEE-2026-08-31-002 for apply  
+REGRESSION_RISK: MEDIUM  
+VALIDATION_REQUIRED: TS-QUEEN, TS-DOT.  
+STATUS: OPEN
