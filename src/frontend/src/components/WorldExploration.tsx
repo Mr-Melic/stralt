@@ -99,6 +99,7 @@ import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
   getAoETargets as getAoETargetsHelper,
 } from "../engine/castHelpers";
+import { spawnDamageAtTile, triggerDeathAtTile } from "../engine/combatJuice";
 import {
   calcScaledDamage,
   computeAITier,
@@ -179,6 +180,7 @@ import {
   snapshotDungeonChain,
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
+import { playerFacingRejectReason } from "../engine/rejectCopy";
 import {
   type PlayerSpellContextDeps,
   createPlayerSpellContext,
@@ -3344,6 +3346,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     );
   }, [characterStats?.level, levelUpConfig.statGrowthPercent]);
 
+  // Filled after tileCenter is defined. Damage callbacks are declared
+  // earlier, so they read this ref instead of closing over tileCenter.
+  const tileCenterRef = useRef<
+    (gridX: number, gridY: number) => { x: number; y: number }
+  >((gridX, gridY) => ({ x: gridX, y: gridY }));
+
   const playerTakesDamage = useCallback(
     (incomingDamage: number, source: string): number => {
       let dmg = incomingDamage;
@@ -3376,6 +3384,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const _em = effectsManagerRef.current;
       _em.triggerHitFlash("player");
       _em.triggerShake(4);
+      if (dmg > 0) {
+        const pos = playerPositionRef.current;
+        spawnDamageAtTile(
+          _em,
+          tileCenterRef.current,
+          pos.x,
+          pos.y,
+          dmg,
+          "damage",
+        );
+      }
       return dmg;
     },
     [getStatModifier, logBattleEntry, setCharacterStats],
@@ -3433,7 +3452,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // enemy out atomically, so a separate setEnemies filter is redundant.
       updateCombatant(combatantStoreCtx, enemyId, { hp: newHp });
       const _em = effectsManagerRef.current;
-      _em.spawnDamageNumber(0, 0, dmg, isCrit ? "crit" : "damage");
+      spawnDamageAtTile(
+        _em,
+        tileCenterRef.current,
+        enemy.x ?? 0,
+        enemy.y ?? 0,
+        dmg,
+        isCrit ? "crit" : "damage",
+      );
       _em.triggerHitFlash(String(enemyId));
       _em.triggerShake(isCrit ? 8 : 4);
       if (isCrit) _em.triggerHitStop();
@@ -3712,6 +3738,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     },
     [gridToScreen, effectiveTileH],
   );
+  tileCenterRef.current = tileCenter;
 
   // Convert screen coordinates to grid coordinates
   // gridToScreen returns the TOP VERTEX of the tile diamond (x, y).
@@ -9536,7 +9563,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       removeFromInitiativeStrip: (id) =>
         setTurnOrder((prev) => prev.filter((c) => c.id !== id)),
       triggerShatter: (id, x, y) =>
-        effectsManagerRef.current?.triggerDeath(String(id), x, y),
+        triggerDeathAtTile(
+          effectsManagerRef.current,
+          tileCenterRef.current,
+          String(id),
+          x,
+          y,
+        ),
       logDefeated: (name) => logBattleEntry(`${name} is defeated`, "#ef4444"),
       applyLeaderDeathBoost: (deadId) => {
         leaderDiedRef.current = true;
@@ -9684,7 +9717,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ...prev,
             hp: Math.min(maxHp, prev.hp + amount),
           }));
-          effectsManagerRef.current.spawnDamageNumber(0, 0, amount, "heal");
+          const pos = playerPositionRef.current;
+          spawnDamageAtTile(
+            effectsManagerRef.current,
+            tileCenterRef.current,
+            pos.x,
+            pos.y,
+            amount,
+            "heal",
+          );
         }
       },
       applyEffect: (effect: ActiveEffectLike) => {
@@ -10524,7 +10565,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _live.reason,
+                    playerFacingRejectReason(_live.reason),
                   );
                 }
                 try {
@@ -10603,7 +10644,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _live.reason,
+                    playerFacingRejectReason(_live.reason),
                   );
                   setInspectCombatantId(_hit.id);
                 }
@@ -10778,7 +10819,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 effectsManagerRef.current?.spawnFloatText(
                   _screen.x,
                   _screen.y,
-                  _liveMouse.reason,
+                  playerFacingRejectReason(_liveMouse.reason),
                 );
                 try {
                   recordClickOutcome(
@@ -10833,6 +10874,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   .map((e) => ({ id: e.id, x: e.x, y: e.y })),
                 liveCombatantCount: _liveNow.length,
               });
+            }
+            {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                "Out of range",
+              );
             }
             return;
           }
@@ -11252,7 +11301,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _live.reason,
+                    playerFacingRejectReason(_live.reason),
                   );
                 }
                 return;
@@ -11307,7 +11356,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _live.reason,
+                    playerFacingRejectReason(_live.reason),
                   );
                   setInspectCombatantId(_hit.id);
                 }
@@ -11439,7 +11488,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _liveTouch.reason,
+                    playerFacingRejectReason(_liveTouch.reason),
                   );
                 }
                 return;
@@ -11447,6 +11496,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
           }
           if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+            {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                "Out of range",
+              );
+            }
             return;
           }
           const spell = activeSpells.find(
@@ -15284,7 +15341,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 ...prev,
                 hp: Math.min(maxHp, prev.hp + amount),
               }));
-              effectsManagerRef.current.spawnDamageNumber(0, 0, amount, "heal");
+              const pos = playerPositionRef.current;
+              spawnDamageAtTile(
+                effectsManagerRef.current,
+                tileCenterRef.current,
+                pos.x,
+                pos.y,
+                amount,
+                "heal",
+              );
             }
           },
           applyEffect: (effect: ActiveEffectLike) => {
@@ -17364,7 +17429,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         y: screen.y - 20,
         born: now3,
       };
-      effectsManagerRef.current.triggerDeath(
+      triggerDeathAtTile(
+        effectsManagerRef.current,
+        tileCenter,
         `leader-${tileX}-${tileY}`,
         tileX,
         tileY,
