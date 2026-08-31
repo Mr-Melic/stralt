@@ -255,6 +255,116 @@ describe("sprite-basic live gate", () => {
   });
 });
 
+describe("barrier LoS preview vs live", () => {
+  it("rejects a LoS-blocked hostile so sprite-click and Attack Nearest match the ring", () => {
+    const tiles = floorGrid(20);
+    const caster = { x: 10, y: 10 };
+    const blocked = {
+      id: "blocked",
+      x: 12,
+      y: 10,
+      hp: 20,
+      maxHp: 20,
+      name: "Wraith",
+      pieceType: "pawn",
+    } as Enemy;
+    const open = {
+      id: "open",
+      x: 10,
+      y: 13,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const spell = {
+      ...enemySpell(5),
+      lineOfSight: true,
+    } as SpellConfig;
+    const barriers = new Map<string, number>([["11,10", 2]]);
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [blocked, open],
+      worldGridSize: 20,
+      effectiveRange: 5,
+      barrierTiles: barriers,
+    });
+    assert.equal(highlighted.has("12,10"), false);
+    assert.equal(highlighted.has("10,13"), true);
+
+    const liveBlocked = isTileCastableLive(
+      spell,
+      caster,
+      { x: 12, y: 10 },
+      [blocked, open],
+      tiles,
+      5,
+      barriers,
+    );
+    const liveOpen = isTileCastableLive(
+      spell,
+      caster,
+      { x: 10, y: 13 },
+      [blocked, open],
+      tiles,
+      5,
+      barriers,
+    );
+    assert.equal(liveBlocked.ok, false, "mid-ray barrier must block live LoS");
+    assert.equal(liveOpen.ok, true);
+
+    const picked = pickNearestLiveHostileTile(
+      spell,
+      caster,
+      [blocked, open],
+      [blocked, open],
+      tiles,
+      5,
+      barriers,
+    );
+    assert.deepEqual(picked, { x: 10, y: 13 });
+  });
+
+  it("stops a line spell at an active barrier the same way the preview does", () => {
+    const tiles = floorGrid(20);
+    const caster = { x: 10, y: 10 };
+    const enemyOnFarSide = {
+      id: "far",
+      x: 13,
+      y: 10,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+    } as Enemy;
+    const spell = {
+      ...enemySpell(5),
+      targetType: "line",
+      lineOfSight: true,
+    } as SpellConfig;
+    const barriers = new Map<string, number>([["12,10", 2]]);
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [enemyOnFarSide],
+      worldGridSize: 20,
+      effectiveRange: 5,
+      barrierTiles: barriers,
+    });
+    assert.equal(highlighted.has("13,10"), false);
+    const live = isTileCastableLive(
+      spell,
+      caster,
+      { x: 13, y: 10 },
+      [enemyOnFarSide],
+      tiles,
+      5,
+      barriers,
+    );
+    assert.equal(live.ok, false);
+    assert.equal(live.reason, "line_blocked_barrier");
+  });
+});
+
 describe("Attack Nearest live gate", () => {
   it("uses maxRange as the highlight base so grown rings stay searchable", () => {
     const spell = enemySpell(3);

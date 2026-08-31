@@ -310,6 +310,19 @@ export function shouldDispatchEnemyAiAfterTurnStart(opts: {
 }
 
 /**
+ * Player plague / DoT at turn start must stop the rest of player-turn
+ * setup. Plague used to `setCharacterStats` only and rely on the async
+ * HP-watch effect, so `deathTriggered` stayed false while AP restored
+ * and the canvas accepted a last-hostile kill → `shouldAwardVictory`.
+ */
+export function shouldContinuePlayerTurnAfterHazard(opts: {
+  deathTriggered: boolean;
+  liveHp: number;
+}): boolean {
+  return !opts.deathTriggered && opts.liveHp > 0;
+}
+
+/**
  * Player lives outside `combatantsRef`. Falling back to `[0]` mutates the
  * first enemy's store HP (plague −1 / void −3) every player turn without
  * `processCombatantDeath`.
