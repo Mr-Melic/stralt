@@ -2745,3 +2745,681 @@ REGRESSION_RISK: LOW
 | #107 | Dirty; economy |
 | #105 | Dirty targeting rewrite; overlaps #114 |
 | #100 #101 #106 | Test-coverage clone mill (AQA-2026-08-30-005) |
+
+ACTION_ID: AUX-DEL-NO-CONFIRM  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Confirm before deleting live config entities  
+CATEGORY: safety  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Pre-fix, EnemyList/RegionList/SpellList and inline modifier/achievement/name `×` buttons called delete mutations immediately. Sprites already used a confirm dialog. Save on those entities is canister-live. ConfirmDialog now at AdminDashboard.tsx:236; list confirms at EnemyList/RegionList/SpellList; pendingDelete at ~5096.  
+SYSTEMS_AFFECTED: AdminDashboard lists; adminDelete* canister writes  
+RECOMMENDED_ACTION: Keep the shared ConfirmDialog. Do not add a second delete path.  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW — extra click only  
+VALIDATION_REQUIRED: Delete enemy/spell/region/modifier/achievement/name requires Cancel/Confirm; Confirm still toasts success.  
+STATUS: AUTO_FIXED  
+
+---
+
+ACTION_ID: AUX-SHOP-NO-CONFIRM  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Confirm Doka grant and player ban  
+CATEGORY: safety  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Shop tab (AdminDashboard.tsx ~6481) called adminAddDokaToUser / adminBanAccount with no second step. Ban clears achievement progress (main.mo ~950–963). Confirms now at 5126–5178.  
+SYSTEMS_AFFECTED: Shop tab; dokaBalances; bannedPrincipals; achievementProgress  
+RECOMMENDED_ACTION: Keep confirms. Separate grant vs ban principal fields (see AUX-SHOP-SHARED-PRINCIPAL).  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: AUX-SHOP-SHARED-PRINCIPAL  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Grant/Ban open ConfirmDialog; Cancel does not write.  
+STATUS: AUTO_FIXED  
+
+---
+
+ACTION_ID: AUX-BOSS-LOCALSTORAGE-AS-LIVE  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Boss editor must not look canister-live  
+CATEGORY: content-lifecycle  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: useBossQueries.ts:1–29 and useAdminQueries.ts:462–502 persist pbv_boss_configs in localStorage. Subtitle previously said changes take effect on the next encounter. Copy at AdminDashboard.tsx:7192 now says browser-local draft.  
+SYSTEMS_AFFECTED: Bosses tab; boss encounter load path  
+RECOMMENDED_ACTION: HUMAN — add canister adminSetBossConfig, draft vs ACTIVE badge, preview-before-activate. Do not treat localStorage as source of truth.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-LIFE-NO-STATES  
+REGRESSION_RISK: HIGH if live encounters switch storage without a migrate  
+VALIDATION_REQUIRED: Badge shows DRAFT (this browser) vs ACTIVE (canister); two browsers do not silently diverge.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AUX-DIRTY-UNUSED  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Warn before discarding an open editor  
+CATEGORY: safety  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: isDirty is always false (AdminDashboard.tsx:4805; gameTypes.ts AdminDashboardState). This run gates tab/Back on hasOpenEditor (ConfirmDialog 5081). Field-level dirty and beforeunload still missing.  
+SYSTEMS_AFFECTED: AdminDashboard navigation  
+RECOMMENDED_ACTION: Optionally wire isDirty on form change; keep leave-editor confirm.  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Switching tabs with EnemyEditor open shows Leave this editor?; Cancel stays on the form.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AUX-TRANSFER-COPY-MISLEAD  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Transfer-admin copy must match assignUserRole  
+CATEGORY: safety  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Settings said the operator would lose admin access. ARCHITECTURE.md Role row: assignUserRole grants admin only. Copy updated in SettingsTab.  
+SYSTEMS_AFFECTED: Settings tab; assignCallerUserRole  
+RECOMMENDED_ACTION: Keep honest copy. If product wants a real transfer, that is a separate backend change.  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Warning text does not claim self-demotion.  
+STATUS: AUTO_FIXED  
+
+---
+
+ACTION_ID: AUX-NAV-FLAT-15  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Group 15 flat tabs; keep sidebar scrollable  
+CATEGORY: navigation  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: TABS at AdminDashboard.tsx:5017–5030. Sidebar overflowY auto added at 5262. No groups, no search.  
+SYSTEMS_AFFECTED: Admin sidebar  
+RECOMMENDED_ACTION: HUMAN — group Content / World / Presentation / Economy / Health. Keep overflow. Do not add player-facing chrome.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM — operators bookmark mental tab order  
+VALIDATION_REQUIRED: All 15 destinations still reachable; Shop/Boss Rush visible without clipping.  
+STATUS: PARTIAL  
+
+---
+
+ACTION_ID: AUX-VIS-NO-DEFAULT-DISTINCTION  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Distinguish Default Pixel Visual vs Custom Override  
+CATEGORY: visual-assets  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Empty spriteUrl is valid. Pre-fix: “No preview” / “Sprite URL (optional)”. Now: enemy status 712–738, list badge, sprite fallback 1398.  
+SYSTEMS_AFFECTED: Enemy editor/list; Player Sprites  
+RECOMMENDED_ACTION: Keep copy. Later add pools, weights, activate/deactivate, revert-to-default (AUX-ASSET-NO-POOL).  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: AUX-ASSET-NO-POOL  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Empty enemy sprite shows Default Pixel Visual — Active fallback, not an error.  
+STATUS: AUTO_FIXED  
+
+---
+
+ACTION_ID: AUX-LIFE-NO-STATES  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Introduce draft vs live content states  
+CATEGORY: content-lifecycle  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Achievement/modifier `active` checkboxes only. Other Saves publish live. Boss Save is a local draft that still looks like publish.  
+SYSTEMS_AFFECTED: All admin CRUD  
+RECOMMENDED_ACTION: HUMAN — DRAFT / VALIDATION FAILED / READY TO ACTIVATE / ACTIVE / INACTIVE / LEGACY. Never show a saved draft as live.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-BOSS-LOCALSTORAGE-AS-LIVE  
+REGRESSION_RISK: HIGH — persist model change  
+VALIDATION_REQUIRED: Saved draft stays invisible to players until Activate.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-ID-MUTABLE  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Lock entity IDs after create  
+CATEGORY: safety  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: adminSet* keys by id. Pre-fix ID fields stayed editable. idLocked wired for enemy/region/spell when editing*Id !== "__new__".  
+SYSTEMS_AFFECTED: Enemy/Region/Spell editors  
+RECOMMENDED_ACTION: Keep lock. Add the same lock to achievements/modifiers.  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Existing enemy ID input is disabled; new enemy ID is editable.  
+STATUS: AUTO_FIXED  
+
+---
+
+ACTION_ID: AUX-THEME-SPLIT  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Restyle Shop, Boss Rush, and Ads to stone tokens  
+CATEGORY: visual-identity  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Shop ~6481 uses bg-gray-800 / text-red-400. Ads use #ff4444 / #1a0505. Rest of console uses C.gold / carved stone. DESIGN.md identity.  
+SYSTEMS_AFFECTED: Shop, Boss Rush, Ads tabs  
+RECOMMENDED_ACTION: HUMAN — restyle with existing PanelCard/Btn/Field; do not invent a second admin theme.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Those tabs match Enemies/Spells chrome; ocids unchanged.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-SPELL-FORM-MONOLITH  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Section the spell editor; add validation summary  
+CATEGORY: edit-forms  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: SpellEditor ~2294–3300 is one scroll: identity, stats, type, targeting, AoE, specials, preview.  
+SYSTEMS_AFFECTED: Spells tab  
+RECOMMENDED_ACTION: HUMAN — in-editor sections (Identity / Cost / Targeting / Effects / Acquisition). Validation summary at top. No name-based effect heuristics.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-NO-DEPENDENCY-VIEWS  
+REGRESSION_RISK: MEDIUM — easy to drop a hidden flag  
+VALIDATION_REQUIRED: Every SpellConfig field still editable; existing spells round-trip.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-ENEMY-STATS-INCOMPLETE  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Surface that admin EnemyConfig is a spawn template  
+CATEGORY: terminology  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: gameTypes.ts:108–119 vs runtime combat EnemyConfig (ARCHITECTURE.md). Editor only hp/ap/mp/init/level/regions/sprite.  
+SYSTEMS_AFFECTED: Enemies tab; combat spawn  
+RECOMMENDED_ACTION: HUMAN — banner: “Spawn template — combat ATK/RES/SP/SR/CHC are not edited here.” Later, explicit combat fields if product wants them.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if fields are added without bindgen/canister upgrade  
+VALIDATION_REQUIRED: Operators cannot think they set ATK here.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-VALIDATION-EMPTY-SAVE  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Block save when ID or name is empty  
+CATEGORY: validation  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Save buttons now toast and return on empty id/name for enemy/region/spell/achievement.  
+SYSTEMS_AFFECTED: Entity editors  
+RECOMMENDED_ACTION: Keep. Add a validation summary for numeric ranges (levelMin ≤ levelMax).  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Empty-name Save does not call mutate.  
+STATUS: AUTO_FIXED  
+
+---
+
+ACTION_ID: AUX-PII-PURCHASES  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Filterable purchase table; confirm proof download  
+CATEGORY: privacy-ops  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Purchases tab ~5561 lists name, email, address, proof download with no filter. Owner-only, still high error/leak surface.  
+SYSTEMS_AFFECTED: Purchases tab  
+RECOMMENDED_ACTION: HUMAN — status filter, search by principal/email, confirm before proof download. Do not export PII off-box.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Proof download requires confirm; status filter works.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NAV-NO-OVERVIEW  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Add an Overview home for operators  
+CATEGORY: navigation  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Default tab is enemies (4805). No last-write, draft count, or failed-query strip.  
+SYSTEMS_AFFECTED: AdminDashboard  
+RECOMMENDED_ACTION: HUMAN — Overview with entity counts, last saves, validation failures, shortcuts.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-NAV-FLAT-15  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Overview does not mutate.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-DOMAIN-GAPS  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Do not invent tabs for unimplemented domains  
+CATEGORY: information-architecture  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Challenges are DEFAULT_CHALLENGES (challengeCompletion.ts:38–103). AI knobs live in gameConstants.ts. No formations/encounters/dungeons/spell-discovery/simulation/telemetry/audit admin APIs.  
+SYSTEMS_AFFECTED: Future admin IA  
+RECOMMENDED_ACTION: HUMAN — add a domain only with a real config API. Until then, Overview can list “hardcoded — not adminable.”  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if empty tabs are shipped  
+VALIDATION_REQUIRED: No placeholder tabs.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-DEPENDENCY-VIEWS  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Add relationship rails on entity editors  
+CATEGORY: dependency-ux  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Boss phase spell chips are the only cross-link. Enemy regions are checkboxes. No spell→boss/achievement/challenge; no asset→usage.  
+SYSTEMS_AFFECTED: All editors  
+RECOMMENDED_ACTION: HUMAN — read-only dependency badges (SPELL→boss pools; ENEMY→regions/formations; ASSET→enemy/boss).  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-DOMAIN-GAPS  
+REGRESSION_RISK: LOW if read-only  
+VALIDATION_REQUIRED: Clicking a badge opens that entity; does not mutate.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-GLOBAL-SEARCH  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Add owner-only entity search  
+CATEGORY: search  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: No search input in AdminDashboard. Lists are full stacks.  
+SYSTEMS_AFFECTED: Admin chrome  
+RECOMMENDED_ACTION: HUMAN — quick search over loaded configs (id/name). Not a player feature.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-NAV-FLAT-15  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Jump to Enemies/Spells/Bosses by name.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-BULK-OPS  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Bulk activate/deactivate when lifecycle exists  
+CATEGORY: bulk-operations  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: One-at-a-time Edit/× only.  
+SYSTEMS_AFFECTED: Entity lists  
+RECOMMENDED_ACTION: HUMAN — after AUX-LIFE-NO-STATES. Confirm on any bulk delete.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-LIFE-NO-STATES; AUX-DEL-NO-CONFIRM  
+REGRESSION_RISK: HIGH for bulk delete  
+VALIDATION_REQUIRED: Bulk delete uses ConfirmDialog and lists count.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-LIST-NO-FILTER-SORT  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Filter and sort entity lists  
+CATEGORY: lists  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: EnemyList/SpellList/RegionList map arrays in store order with no controls.  
+SYSTEMS_AFFECTED: Entity lists  
+RECOMMENDED_ACTION: HUMAN — sort by name/level; filter spells by effectType / usableBy*.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Filter is client-side on already-loaded data.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-SPRITE-FR-LABELS  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Use English owner-tool labels  
+CATEGORY: terminology  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Sprite editor/delete used ANNULER / UTILISER. Now Cancel / Save Character / ConfirmDialog Cancel.  
+SYSTEMS_AFFECTED: Player Sprites  
+RECOMMENDED_ACTION: Keep English.  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: No FR verbs on sprite actions.  
+STATUS: AUTO_FIXED  
+
+---
+
+ACTION_ID: AUX-SETTINGS-KITCHEN-SINK  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Split Settings into System Config vs Access  
+CATEGORY: information-architecture  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: SettingsTab is transfer + dead “use Spells tab” card + partial LevelUpConfigPanel.  
+SYSTEMS_AFFECTED: Settings  
+RECOMMENDED_ACTION: HUMAN — Access (transfer) vs System Config (full LevelUpConfig). Remove the dead preset card.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-LEVELUP-PARTIAL  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Transfer still requires typing TRANSFER.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-LEVELUP-PARTIAL  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Edit the full LevelUpConfig type  
+CATEGORY: system-config  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Backend type includes statGrowthPercent, apMpLevelThreshold, spellLevelingBaseCost, multiplier, spellDmgGrowthPercent. UI saves four fields (max range, range growth, fail base, fail reduction) via localStorage then adminSetLevelUpConfig.  
+SYSTEMS_AFFECTED: Settings; spell upgrade economy  
+RECOMMENDED_ACTION: HUMAN — full field set; backend-authoritative read on mount.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-SETTINGS-KITCHEN-SINK  
+REGRESSION_RISK: MEDIUM — costs/fail chance  
+VALIDATION_REQUIRED: Loaded values match canister; missing fields do not default-overwrite.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-VISUALS-PALETTE-ONLY  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Do not treat Visuals as the asset studio  
+CATEGORY: visual-assets  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: VisualsTab is paper vertex colors only.  
+SYSTEMS_AFFECTED: Visuals tab  
+RECOMMENDED_ACTION: Rename to “Map palette” or move under World. Put pools in a Visual Assets domain (AUX-ASSET-NO-POOL).  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-NAV-FLAT-15; AUX-ASSET-NO-POOL  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Palette save still works.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-BOSS-ABILITY-WALL  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Searchable ability picker on bosses  
+CATEGORY: edit-forms  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: PhaseEditor maps ALL_ABILITIES as chips (AdminDashboard ~6780+). Easy mis-toggle.  
+SYSTEMS_AFFECTED: Bosses tab  
+RECOMMENDED_ACTION: HUMAN — filterable picker; selected abilities listed first.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Existing ability arrays round-trip.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-MODIFIER-DOKA-MISPLACED  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Move ground Doka / leader boost out of Map Modifiers  
+CATEGORY: information-architecture  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: gameConfigDraft editor sits at the top of the modifiers tab.  
+SYSTEMS_AFFECTED: Modifiers; economy  
+RECOMMENDED_ACTION: HUMAN — move to System Config or Economy.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-NAV-FLAT-15  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Save Config still writes AdminGameConfig.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-LANDING-EASTER-EGG  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Prefer the in-game Admin button over landing triple-click  
+CATEGORY: discoverability  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: LandingPage.tsx ~714–728 triple-click v1.0; GameFlow.tsx 379–388 gated Admin button. Unauthenticated trigger shows Access Denied.  
+SYSTEMS_AFFECTED: LandingPage; GameFlow  
+RECOMMENDED_ACTION: REPORT_ONLY unless product wants the easter egg removed. Do not advertise admin on the player landing page.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Non-admin still cannot write.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-SHOP-SHARED-PRINCIPAL  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Separate Grant and Ban principal fields  
+CATEGORY: safety  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: shopPrincipalId is shared by Manual Doka Grant and Ban/Unban (~6488–6560).  
+SYSTEMS_AFFECTED: Shop tab  
+RECOMMENDED_ACTION: Two fields or an explicit mode toggle. Keep confirms.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-SHOP-NO-CONFIRM  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Granting does not leave Ban pointed at the same principal without a re-type.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-SAVE-FEEDBACK-SPLIT  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: One save-feedback language  
+CATEGORY: save-feedback  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: toast.success, saveStatus hex toast (top-right), “Saved!”, localStorage-only paths.  
+SYSTEMS_AFFECTED: All admin writes  
+RECOMMENDED_ACTION: HUMAN — toast + inline ● Saving… only. Drop raw #006400/#8B0000 toast.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Failed save is always an error toast with reason.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-SIMULATION  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Do not add a wallet-writing simulator  
+CATEGORY: simulation  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: No sim surface. applyRewards / saveBattleStats are live persist funnels.  
+SYSTEMS_AFFECTED: Future sim  
+RECOMMENDED_ACTION: REPORT_ONLY — if built, read-only combat math preview; never call applyRewards.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: None  
+REGRESSION_RISK: HIGH if wired to persist  
+VALIDATION_REQUIRED: Sim cannot change Doka/XP.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-TELEMETRY  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Owner telemetry is absent  
+CATEGORY: telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Quality Auditor AQA-2026-08-30-012. No admin Health tab.  
+SYSTEMS_AFFECTED: Future Health tab  
+RECOMMENDED_ACTION: HUMAN — backend-authoritative counters only, persist-lock safe. Not a player HUD.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AQA-2026-08-30-012  
+REGRESSION_RISK: MEDIUM if counters invent a second wallet path  
+VALIDATION_REQUIRED: Counters are query-only or enqueue on createProgressPersist.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-HEALTH-AUDIT  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Config linter for orphan references  
+CATEGORY: health-audit  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Boss spellPoolIds can name missing spells. Enemies can list deleted regions. No audit view.  
+SYSTEMS_AFFECTED: Future Health tab  
+RECOMMENDED_ACTION: HUMAN — read-only orphan report.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-NO-DEPENDENCY-VIEWS  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Report does not mutate.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-CHALLENGES-HARDCODED  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Challenges are not an admin domain yet  
+CATEGORY: content-lifecycle  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: DEFAULT_CHALLENGES in challengeCompletion.ts:38–103. WorldExploration picks at random.  
+SYSTEMS_AFFECTED: ChallengePanel; reward persist  
+RECOMMENDED_ACTION: REPORT_ONLY until a canister ChallengeConfig exists. Do not add a fake tab.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: AUX-DOMAIN-GAPS  
+REGRESSION_RISK: HIGH if UI writes challenges the combat predicates do not understand  
+VALIDATION_REQUIRED: Any future admin challenge uses explicit condition metadata, not name heuristics.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-SPELL-DISCOVERY-MISSING  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Show acquisition routes on spells  
+CATEGORY: dependency-ux  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: usableByPlayer / minLevel exist on SpellConfig; starterSpells is code. No discovery graph.  
+SYSTEMS_AFFECTED: Spells  
+RECOMMENDED_ACTION: HUMAN — read-only “Acquisition: starter / minLevel / enemy-usable” until a real discovery table exists.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-SPELL-FORM-MONOLITH  
+REGRESSION_RISK: LOW if read-only  
+VALIDATION_REQUIRED: Does not invent drops.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-ASSET-NO-POOL  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Visual pools with weights and revert-to-default  
+CATEGORY: visual-assets  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Enemy spriteUrl is [] | [string]. No weights, no activate/deactivate, no pool.  
+SYSTEMS_AFFECTED: Enemies; bosses; sprites  
+RECOMMENDED_ACTION: HUMAN — after a backend visual-pool type. Empty pool = Default Pixel Visual (valid).  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-VIS-NO-DEFAULT-DISTINCTION  
+REGRESSION_RISK: MEDIUM — spawn/render  
+VALIDATION_REQUIRED: Empty pool never shows as an error.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-HEX-VS-OKLCH  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Admin tokens are hex, not DESIGN.md OKLCH  
+CATEGORY: visual-identity  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: C token object in AdminDashboard.tsx uses #13161f / #f0c44a. DESIGN.md forbids raw hex in components.  
+SYSTEMS_AFFECTED: AdminDashboard  
+RECOMMENDED_ACTION: REPORT_ONLY unless a shared admin token sheet is approved. Do not restyle the player HUD.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: AUX-THEME-SPLIT  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Player UI tokens unchanged.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-BTN-SMALL-TARGETS  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Small delete hits are dense by design  
+CATEGORY: responsive  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: Btn small is px-2.5 py-1 text-[10px]. App.tsx blocks width < 768.  
+SYSTEMS_AFFECTED: Lists  
+RECOMMENDED_ACTION: Keep density on desktop owner tool. Do not shrink player HUD targets.  
+AUTONOMY: REPORT_ONLY  
+DEPENDENCIES: AUX-NO-MOBILE-ADMIN  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: None  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-BREADCRUMBS  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Editor replaces the list with no crumb  
+CATEGORY: navigation  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: editingEnemy swaps the whole pane to EnemyEditor.  
+SYSTEMS_AFFECTED: Editors  
+RECOMMENDED_ACTION: HUMAN — `Enemies / {name}` + Cancel.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Crumb returns to the list without save.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-SIDEBAR-COUNTS-INCOMPLETE  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Sidebar counts omit most domains  
+CATEGORY: information-density  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: Footer counts Enemies/Regions/Sprites/Spells only.  
+SYSTEMS_AFFECTED: Sidebar  
+RECOMMENDED_ACTION: HUMAN — after grouping, counts per group.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: AUX-NAV-FLAT-15  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Counts match loaded query lengths.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: AUX-NO-MOBILE-ADMIN  
+SOURCE_AUTOMATION: Admin UX & Information Architecture Auditor  
+TITLE: Viewport guard blocks owner laptops under 768  
+CATEGORY: responsive  
+PRIORITY: P3  
+CONFIDENCE: HIGH  
+EVIDENCE: App.tsx:323–336 SmallScreenGuard before any admin overlay.  
+SYSTEMS_AFFECTED: App shell  
+RECOMMENDED_ACTION: HUMAN — allow admin overlay above the guard for isAdmin, or raise the copy to “owner console needs ≥768.” Do not ship a player mobile HUD.  
+AUTONOMY: HUMAN_APPROVAL_REQUIRED  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM if the guard is lifted for players  
+VALIDATION_REQUIRED: Non-admin still blocked under 768.  
+STATUS: NEW
