@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { starterSpells } from "../data/spellData.ts";
+import { isActiveHostile } from "../engine/battleSetup.ts";
 import {
+  canStartSummonControlCast,
   chebyshevDistance,
   planSummonControlCast,
+  resolveLiveSummonAp,
   resolveSummonControlSpell,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
@@ -50,6 +53,64 @@ describe("resolveSummonControlSpell", () => {
       fallback,
     );
     assert.equal(found?.id, "custom-bolt");
+  });
+});
+
+describe("canStartSummonControlCast / resolveLiveSummonAp", () => {
+  it("rejects a second event after the first kit cast committed", () => {
+    assert.equal(canStartSummonControlCast("starter-poison", false), true);
+    assert.equal(
+      canStartSummonControlCast("starter-poison", true),
+      false,
+      "synthetic click must not recast the same selection",
+    );
+    assert.equal(canStartSummonControlCast(null, false), false);
+  });
+
+  it("plans the second tap from live store AP, not the captured object", () => {
+    const captured = { currentAp: 4 };
+    const afterFirstCast = { currentAp: 2 };
+    assert.equal(resolveLiveSummonAp(afterFirstCast, captured), 2);
+    const leftover = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog: starterSpells,
+      fallbackSpells: [],
+      currentAp: resolveLiveSummonAp(afterFirstCast, captured),
+      caster: { x: 8, y: 8 },
+      target: { x: 10, y: 8 },
+    });
+    assert.equal(leftover.ok, true);
+    if (leftover.ok) assert.equal(leftover.remainingAp, 0);
+
+    const spent = { currentAp: 0 };
+    const noAp = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog: starterSpells,
+      fallbackSpells: [],
+      currentAp: resolveLiveSummonAp(spent, captured),
+      caster: { x: 8, y: 8 },
+      target: { x: 10, y: 8 },
+    });
+    assert.deepEqual(noAp, { ok: false, reason: "no_ap" });
+  });
+
+  it("does not treat a leftover player summon as a kit target", () => {
+    const allyMissingSide = {
+      hp: 20,
+      isSummon: true,
+      side: undefined as undefined,
+    };
+    assert.equal(
+      isActiveHostile(allyMissingSide),
+      false,
+      "side !== player would have accepted this row",
+    );
+    assert.equal(
+      isActiveHostile({ hp: 20, isSummon: true, side: "enemy" }),
+      true,
+    );
   });
 });
 
