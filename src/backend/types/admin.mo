@@ -365,4 +365,14 @@ module {
         linkUrl  : Text;
         isActive : Bool;
     };
+
+    /// Append-only admin change record. Never store secrets, payment PII, or tokens.
+    public type AdminAuditEntry = {
+        adminPrincipal  : Text;
+        timestampNs     : Int;
+        action          : Text;
+        objectId        : Text;
+        previousSummary : Text;
+        newSummary      : Text;
+    };
 };

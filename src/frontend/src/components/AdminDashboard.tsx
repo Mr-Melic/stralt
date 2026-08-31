@@ -50,6 +50,13 @@ import type {
   SpellConfig,
   TierSpawnConfig,
 } from "../types/gameTypes";
+import {
+  MAX_DOKA_GRANT,
+  validateDokaGrant,
+  validateGameConfig,
+  validateLevelUpConfig,
+  validateTierSpawnConfig,
+} from "../utils/adminSafety";
 import { logDebugWarn } from "../utils/debugLogger";
 
 // ── defaults ─────────────────────────────────────────────────────────────────
@@ -3389,6 +3396,17 @@ const TierConfigTab: React.FC = () => {
       toast.error("Percentages must sum to exactly 100%");
       return;
     }
+    const tierErr = validateTierSpawnConfig({
+      tierSize: Number(cfg.tierSize),
+      sameTierPercent: Number(cfg.sameTierPercent),
+      adjacentTierPercent: Number(cfg.adjacentTierPercent),
+      twoAwayPercent: Number(cfg.twoAwayPercent),
+      threeOrMorePercent: Number(cfg.threeOrMorePercent),
+    });
+    if (tierErr) {
+      toast.error(tierErr);
+      return;
+    }
     try {
       localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(cfg));
       if (actor) {
@@ -3861,6 +3879,21 @@ const LevelUpConfigPanel: React.FC = () => {
   const [saved, setSaved] = React.useState(false);
 
   const handleSave = async () => {
+    const err = validateLevelUpConfig({
+      statGrowthPercent: Number(cfg.statGrowthPercent ?? 5),
+      apMpLevelThreshold: Number(cfg.apMpLevelThreshold ?? 25),
+      spellLevelingBaseCost: Number(cfg.spellLevelingBaseCost ?? 10),
+      spellLevelingCostMultiplier: Number(cfg.spellLevelingCostMultiplier ?? 2),
+      spellDmgGrowthPercent: Number(cfg.spellDmgGrowthPercent ?? 3),
+      maxSpellRange: Number(cfg.maxSpellRange ?? 5),
+      spellRangeGrowthLevels: Number(cfg.spellRangeGrowthLevels ?? 10),
+      spellFailBaseChance: Number(cfg.spellFailBaseChance ?? 20),
+      spellFailReductionPerLevel: Number(cfg.spellFailReductionPerLevel ?? 0.1),
+    });
+    if (err) {
+      toast.error(err);
+      return;
+    }
     localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
     try {
       if (actor) {
@@ -5593,7 +5626,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           ...p,
                           dokaSpawnBaseValue: Math.max(
                             1,
-                            Number(e.target.value) || 1,
+                            Math.min(10000, Number(e.target.value) || 1),
                           ),
                         }))
                       }
@@ -5615,7 +5648,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           ...p,
                           leaderBoostPercent: Math.max(
                             0,
-                            Number(e.target.value) || 0,
+                            Math.min(100, Number(e.target.value) || 0),
                           ),
                         }))
                       }
@@ -5628,6 +5661,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   <Btn
                     variant="gold"
                     onClick={() => {
+                      const gameErr = validateGameConfig(gameConfigDraft);
+                      if (gameErr) {
+                        toast.error(gameErr);
+                        return;
+                      }
                       setGameConfigMut.mutate(gameConfigDraft, {
                         onSuccess: () => {
                           setGameConfigSaved(true);
@@ -6210,8 +6248,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                     type="button"
                     className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm"
                     onClick={() => {
-                      if (!shopPrincipalId || shopDokaAmount <= 0) {
-                        toast.error("Enter a principal and amount");
+                      const grantErr = validateDokaGrant(shopDokaAmount);
+                      if (!shopPrincipalId || grantErr) {
+                        toast.error(grantErr ?? "Enter a principal and amount");
+                        return;
+                      }
+                      if (shopDokaAmount > MAX_DOKA_GRANT) {
+                        toast.error("Grant amount exceeds maximum");
                         return;
                       }
                       (async () => {

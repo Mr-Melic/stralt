@@ -244,6 +244,7 @@ import {
   type AchievementCreditActor,
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
+import { shouldIncludeBackendSpellInLibrary } from "../utils/adminSafety";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
   castFollowUpShouldDebitAp,
@@ -2322,13 +2323,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       map.set(s.id, s);
     }
     // Acquired spells from backend — only add if not already a base spell
+    const persistedKeys = (character?.spellLevelKeys ?? []) as string[];
+    const persistedBar = (character?.spellBarOrder ?? []) as string[];
+    const ownedIds = new Set<string>([
+      ...baseSpells.map((s) => s.id),
+      ...persistedKeys,
+      ...persistedBar,
+    ]);
     for (const s of filteredBackendSpells) {
-      if (!map.has(s.id)) {
-        map.set(s.id, s);
+      if (map.has(s.id)) continue;
+      if (
+        !shouldIncludeBackendSpellInLibrary({
+          usableByPlayer: s.usableByPlayer,
+          spellId: s.id,
+          ownedSpellIds: ownedIds,
+        })
+      ) {
+        continue;
       }
+      map.set(s.id, s);
     }
     return Array.from(map.values());
-  }, [baseSpells, filteredBackendSpells]);
+  }, [baseSpells, character, filteredBackendSpells]);
 
   // FIX 2 (TS): Type guard for the setSpellBarOrder Motoko variant result.
   // The backend returns variant{#ok,#err:Text}, which the JS binding serializes

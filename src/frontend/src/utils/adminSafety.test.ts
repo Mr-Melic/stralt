@@ -1,0 +1,169 @@
+import assert from "node:assert/strict";
+import {
+  isBuiltInSpellId,
+  shouldIncludeBackendSpellInLibrary,
+  shouldWipeAchievementsOnBan,
+  unsafeUrl,
+  validateAssignRole,
+  validateDokaGrant,
+  validateGameConfig,
+  validateJsonBlob,
+  validateLevelUpConfig,
+  validateOptionalUrl,
+  validateSpellConfig,
+  validateTierSpawnConfig,
+  wouldSelfDemote,
+} from "./adminSafety.ts";
+
+const validLevelUp = {
+  statGrowthPercent: 5,
+  apMpLevelThreshold: 25,
+  spellLevelingBaseCost: 10,
+  spellLevelingCostMultiplier: 2,
+  spellDmgGrowthPercent: 3,
+  maxSpellRange: 5,
+  spellRangeGrowthLevels: 10,
+  spellFailBaseChance: 20,
+  spellFailReductionPerLevel: 0.1,
+};
+
+// Failure: statGrowthPercent=0 is the seed sentinel and would look uninitialized.
+assert.equal(
+  validateLevelUpConfig({ ...validLevelUp, statGrowthPercent: 0 }),
+  "statGrowthPercent must be between 1 and 50",
+);
+// Failure: apMpLevelThreshold=0 is used as a divisor on clients.
+assert.equal(
+  validateLevelUpConfig({ ...validLevelUp, apMpLevelThreshold: 0 }),
+  "apMpLevelThreshold must be between 1 and 100",
+);
+// Failure: base cost 0 makes every spell upgrade free.
+assert.equal(
+  validateLevelUpConfig({ ...validLevelUp, spellLevelingBaseCost: 0 }),
+  "spellLevelingBaseCost must be between 1 and 1000000",
+);
+assert.equal(validateLevelUpConfig(validLevelUp), null);
+
+// Failure: NaN / negative spawn weights invert or break tier rolls.
+assert.ok(
+  validateTierSpawnConfig({
+    tierSize: 0,
+    sameTierPercent: 60,
+    adjacentTierPercent: 20,
+    twoAwayPercent: 10,
+    threeOrMorePercent: 5,
+  }),
+);
+assert.ok(
+  validateTierSpawnConfig({
+    tierSize: 10,
+    sameTierPercent: -1,
+    adjacentTierPercent: 20,
+    twoAwayPercent: 10,
+    threeOrMorePercent: 5,
+  }),
+);
+assert.equal(
+  validateTierSpawnConfig({
+    tierSize: 10,
+    sameTierPercent: 60,
+    adjacentTierPercent: 20,
+    twoAwayPercent: 10,
+    threeOrMorePercent: 5,
+  }),
+  null,
+);
+
+assert.ok(
+  validateGameConfig({
+    dokaSpawnChance: 40,
+    leaderBoostPercent: 250,
+    dokaSpawnBaseValue: 5,
+  }),
+);
+assert.equal(
+  validateGameConfig({
+    dokaSpawnChance: 0,
+    leaderBoostPercent: 10,
+    dokaSpawnBaseValue: 5,
+  }),
+  null,
+);
+
+// Failure: minRange > maxRange is a stale targeting payload.
+assert.equal(
+  validateSpellConfig({
+    id: "void_bolt",
+    name: "Void Bolt",
+    apCost: 3,
+    minRange: 5,
+    maxRange: 2,
+    spellType: "damage",
+    effectType: "damage",
+    effectCategory: "damage",
+  }),
+  "minRange cannot exceed maxRange",
+);
+assert.ok(
+  validateSpellConfig({
+    id: "void_bolt",
+    name: "Void Bolt",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 3,
+    spellType: "explode",
+    effectType: "damage",
+    effectCategory: "damage",
+  }),
+);
+
+assert.equal(validateDokaGrant(0), "Grant amount must be greater than 0");
+assert.ok(validateDokaGrant(10_000_001));
+assert.equal(validateDokaGrant(100), null);
+
+assert.equal(validateAssignRole("admn"), 'role must be "admin" or "user"');
+assert.equal(validateAssignRole("guest"), 'role must be "admin" or "user"');
+assert.equal(validateAssignRole("admin"), null);
+assert.equal(wouldSelfDemote("aaaa", "aaaa", "user"), true);
+assert.equal(wouldSelfDemote("aaaa", "bbbb", "user"), false);
+
+assert.equal(shouldWipeAchievementsOnBan(), false);
+
+assert.equal(unsafeUrl("javascript:alert(1)"), true);
+assert.ok(validateOptionalUrl("linkUrl", "javascript:alert(1)"));
+assert.equal(validateOptionalUrl("linkUrl", "https://example.com"), null);
+assert.ok(validateJsonBlob("bossRushConfig", "not-json"));
+assert.equal(
+  validateJsonBlob("bossRushConfig", '{"rewardMultiplier":1}'),
+  null,
+);
+assert.equal(validateJsonBlob("colorPalette", ""), null);
+
+assert.equal(isBuiltInSpellId("void_collapse"), true);
+assert.equal(isBuiltInSpellId("custom_bolt"), false);
+
+const owned = new Set(["void_collapse"]);
+assert.equal(
+  shouldIncludeBackendSpellInLibrary({
+    usableByPlayer: false,
+    spellId: "void_collapse",
+    ownedSpellIds: owned,
+  }),
+  true,
+);
+assert.equal(
+  shouldIncludeBackendSpellInLibrary({
+    usableByPlayer: false,
+    spellId: "new_bolt",
+    ownedSpellIds: owned,
+  }),
+  false,
+);
+assert.equal(
+  shouldIncludeBackendSpellInLibrary({
+    usableByPlayer: true,
+    spellId: "new_bolt",
+    ownedSpellIds: owned,
+  }),
+  true,
+);

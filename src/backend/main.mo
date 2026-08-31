@@ -7,6 +7,7 @@ import List "mo:core/List";
 import Time "mo:core/Time";
 import AdminTypes "types/admin";
 import AdminLib "lib/admin";
+import AdminGuard "lib/adminGuard";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";
 import Float "mo:core/Float";
@@ -208,6 +209,39 @@ actor {
             if (not _isHexDigit(c)) { return false };
         };
         true
+    };
+
+    func _characterHasSpell(slot : ?Character, spellId : Text) : Bool {
+        switch (slot) {
+            case null { false };
+            case (?c) {
+                for (k in c.spellLevelKeys.values()) {
+                    if (k == spellId) { return true };
+                };
+                switch (c.spellBarOrder) {
+                    case null {};
+                    case (?bar) {
+                        for (k in bar.values()) {
+                            if (k == spellId) { return true };
+                        };
+                    };
+                };
+                false
+            };
+        };
+    };
+
+    func _spellReferencedByPlayers(spellId : Text) : Bool {
+        for ((_, slots) in characterSlots.entries()) {
+            if (
+                _characterHasSpell(slots.slot1, spellId)
+                or _characterHasSpell(slots.slot2, spellId)
+                or _characterHasSpell(slots.slot3, spellId)
+            ) {
+                return true;
+            };
+        };
+        false
     };
 
     public shared ({ caller }) func createCharacter(slot : Nat, character : Character) : async { #ok; #err : Text } {
@@ -508,6 +542,30 @@ actor {
     let regionConfigs       : Map.Map<Text, RegionConfig>;
     let playerSpriteConfigs : Map.Map<Text, PlayerSpriteConfig>;
 
+    // ─── Admin audit (no secrets / PII) + last-good singleton snapshots ─
+    var adminAuditLog : List.List<AdminTypes.AdminAuditEntry>;
+
+    func _recordAdminAudit(
+        caller : Principal,
+        action : Text,
+        objectId : Text,
+        previousSummary : Text,
+        newSummary : Text,
+    ) {
+        adminAuditLog.add({
+            adminPrincipal = caller.toText();
+            timestampNs = Time.now();
+            action;
+            objectId;
+            previousSummary = AdminGuard.truncateSummary(previousSummary);
+            newSummary = AdminGuard.truncateSummary(newSummary);
+        });
+        let sz = adminAuditLog.size();
+        if (sz > 100) {
+            adminAuditLog := List.fromArray(adminAuditLog.sliceToArray(sz - 100, sz));
+        };
+    };
+
     // ─── Level-up config (singleton, admin-editable) ────────────────────
 
     var levelUpConfig : AdminTypes.LevelUpConfig;
@@ -529,11 +587,35 @@ actor {
         };
     };
 
+    var levelUpConfigPrev : AdminTypes.LevelUpConfig;
+    var hasLevelUpConfigPrev : Bool;
+
     public shared ({ caller }) func adminSetLevelUpConfig(config : AdminTypes.LevelUpConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateLevelUpConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        levelUpConfigPrev := levelUpConfig;
+        hasLevelUpConfigPrev := true;
         levelUpConfig := config;
+        _recordAdminAudit(caller, "setLevelUpConfig", "levelUpConfig", "previous", "updated");
+        #ok;
+    };
+
+    public shared ({ caller }) func adminRollbackLevelUpConfig() : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        if (not hasLevelUpConfigPrev) {
+            return #err("No previous level-up config to restore");
+        };
+        let current = levelUpConfig;
+        levelUpConfig := levelUpConfigPrev;
+        levelUpConfigPrev := current;
+        _recordAdminAudit(caller, "rollbackLevelUpConfig", "levelUpConfig", "updated", "previous");
         #ok;
     };
 
@@ -607,7 +689,16 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateEnemyConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        let prev = switch (enemyConfigs.get(config.id)) {
+            case null { "none" };
+            case (?c) { c.name };
+        };
         enemyConfigs.add(config.id, config);
+        _recordAdminAudit(caller, "setEnemyConfig", config.id, prev, config.name);
         #ok;
     };
 
@@ -616,6 +707,7 @@ actor {
             return #err("Unauthorized: admin only");
         };
         enemyConfigs.remove(id);
+        _recordAdminAudit(caller, "deleteEnemyConfig", id, "present", "removed");
         #ok;
     };
 
@@ -629,7 +721,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateRegionConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         regionConfigs.add(config.id, config);
+        _recordAdminAudit(caller, "setRegionConfig", config.id, "previous", config.name);
         #ok;
     };
 
@@ -638,6 +735,7 @@ actor {
             return #err("Unauthorized: admin only");
         };
         regionConfigs.remove(id);
+        _recordAdminAudit(caller, "deleteRegionConfig", id, "present", "removed");
         #ok;
     };
 
@@ -651,7 +749,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validatePlayerSpriteConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         playerSpriteConfigs.add(config.id, config);
+        _recordAdminAudit(caller, "setPlayerSpriteConfig", config.id, "previous", config.name);
         #ok;
     };
 
@@ -660,6 +763,7 @@ actor {
             return #err("Unauthorized: admin only");
         };
         playerSpriteConfigs.remove(id);
+        _recordAdminAudit(caller, "deletePlayerSpriteConfig", id, "custom", "pixel-fallback");
         #ok;
     };
 
@@ -673,32 +777,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        // B3 / C6 / L2: validate spell config fields before saving.
-        if (config.id == "") {
-            return #err("Spell id cannot be empty");
-        };
-        if (config.name == "") {
-            return #err("Spell name cannot be empty");
-        };
-        if (config.name.size() > 100) {
-            return #err("Spell name exceeds maximum of 100 characters");
-        };
-        if (config.apCost < 1 or config.apCost > 12) {
-            return #err("apCost must be between 1 and 12");
-        };
-        if (config.cooldown > 10) {
-            return #err("cooldown must be between 0 and 10");
-        };
-        if (config.minRange > 20 or config.maxRange > 20) {
-            return #err("minRange and maxRange must be at most 20 (never negative)");
-        };
-        if (config.damage > 9999) {
-            return #err("damage must be at most 9999");
-        };
-        if (config.healAmount > 1000) {
-            return #err("healAmount must be at most 1000");
+        switch (AdminGuard.validateSpellConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         spellConfigs.add(config.id, config);
+        _recordAdminAudit(caller, "setSpellConfig", config.id, "previous", config.name);
         #ok;
     };
 
@@ -706,7 +790,21 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        if (AdminGuard.isBuiltInSpellId(id)) {
+            return #err("Cannot delete a built-in spell; set usableByPlayer=false to retire it");
+        };
+        if (_spellReferencedByPlayers(id)) {
+            switch (spellConfigs.get(id)) {
+                case null { return #err("Spell not found: " # id) };
+                case (?existing) {
+                    spellConfigs.add(id, { existing with usableByPlayer = false });
+                    _recordAdminAudit(caller, "retireSpellConfig", id, "active", "usableByPlayer=false");
+                };
+            };
+            return #ok;
+        };
         spellConfigs.remove(id);
+        _recordAdminAudit(caller, "deleteSpellConfig", id, "present", "removed");
         #ok;
     };
 
@@ -720,11 +818,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        // B4: Validate triggerChance BEFORE storing — reject invalid values upfront.
-        if (config.triggerChance > 100) {
-            return #err("Invalid chance value: triggerChance must be between 0 and 100");
+        switch (AdminGuard.validateMapModifier(config)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         mapModifierConfigs.add(config.id, config);
+        _recordAdminAudit(caller, "setMapModifier", config.id, "previous", config.name);
         #ok;
     };
 
@@ -733,6 +832,7 @@ actor {
             return #err("Unauthorized: admin only");
         };
         mapModifierConfigs.remove(id);
+        _recordAdminAudit(caller, "deleteMapModifier", id, "present", "removed");
         #ok;
     };
 
@@ -866,7 +966,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateShopPackage(pkg)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         shopPackages.add(pkg.id, pkg);
+        _recordAdminAudit(caller, "setShopPackage", pkg.id, "previous", pkg.dokaAmount.toText());
         #ok;
     };
 
@@ -1019,11 +1124,16 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateDokaGrant(dokaAmount)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         let current = switch (dokaBalances.get(userPrincipal)) {
             case null { 0 };
             case (?b) { b };
         };
         dokaBalances.add(userPrincipal, current + dokaAmount);
+        _recordAdminAudit(caller, "addDokaToUser", userPrincipal.toText(), current.toText(), (current + dokaAmount).toText());
         switch (purchaseId) {
             case null {};
             case (?pid) {
@@ -1045,15 +1155,10 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        // Keep achievement progress. Wiping claimed flags lets a player
+        // re-unlock and claim the same Doka reward after unban.
         bannedPrincipals.add(userPrincipal.toText(), true);
-        // Clear achievement progress to prevent double-claiming on unban.
-        let prefix = userPrincipal.toText() # "#";
-        let toRemove = achievementProgress.keys().filter(func(k : Text) : Bool {
-            k.startsWith(#text prefix)
-        }).toArray();
-        for (k in toRemove.values()) {
-            achievementProgress.remove(k);
-        };
+        _recordAdminAudit(caller, "banAccount", userPrincipal.toText(), "active", "banned");
         #ok;
     };
 
@@ -1063,11 +1168,16 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateDokaGrant(amount)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         let current = switch (dokaBalances.get(targetPrincipal)) {
             case null { 0 };
             case (?b) { b };
         };
         dokaBalances.add(targetPrincipal, current + amount);
+        _recordAdminAudit(caller, "grantDoka", targetPrincipal.toText(), current.toText(), (current + amount).toText());
         #ok;
     };
 
@@ -1077,6 +1187,7 @@ actor {
             return #err("Unauthorized: admin only");
         };
         bannedPrincipals.add(targetPrincipal.toText(), true);
+        _recordAdminAudit(caller, "banPrincipal", targetPrincipal.toText(), "active", "banned");
         #ok;
     };
 
@@ -1155,14 +1266,35 @@ actor {
         };
     };
 
+    var gameConfigPrev : AdminTypes.AdminGameConfig;
+    var hasGameConfigPrev : Bool;
+
     public shared ({ caller }) func adminSetGameConfig(config : AdminTypes.AdminGameConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        if (config.dokaSpawnChance > 100) {
-            return #err("dokaSpawnChance must be between 0 and 100");
+        switch (AdminGuard.validateGameConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
+        gameConfigPrev := gameConfig;
+        hasGameConfigPrev := true;
         gameConfig := config;
+        _recordAdminAudit(caller, "setGameConfig", "gameConfig", "previous", "updated");
+        #ok;
+    };
+
+    public shared ({ caller }) func adminRollbackGameConfig() : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        if (not hasGameConfigPrev) {
+            return #err("No previous game config to restore");
+        };
+        let current = gameConfig;
+        gameConfig := gameConfigPrev;
+        gameConfigPrev := current;
+        _recordAdminAudit(caller, "rollbackGameConfig", "gameConfig", "updated", "previous");
         #ok;
     };
 
@@ -1187,11 +1319,35 @@ actor {
         };
     };
 
+    var tierSpawnConfigPrev : AdminTypes.TierSpawnConfig;
+    var hasTierSpawnConfigPrev : Bool;
+
     public shared ({ caller }) func adminSetTierSpawnConfig(config : AdminTypes.TierSpawnConfig) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateTierSpawnConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        tierSpawnConfigPrev := tierSpawnConfig;
+        hasTierSpawnConfigPrev := true;
         tierSpawnConfig := config;
+        _recordAdminAudit(caller, "setTierSpawnConfig", "tierSpawnConfig", "previous", "updated");
+        #ok;
+    };
+
+    public shared ({ caller }) func adminRollbackTierSpawnConfig() : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        if (not hasTierSpawnConfigPrev) {
+            return #err("No previous tier-spawn config to restore");
+        };
+        let current = tierSpawnConfig;
+        tierSpawnConfig := tierSpawnConfigPrev;
+        tierSpawnConfigPrev := current;
+        _recordAdminAudit(caller, "rollbackTierSpawnConfig", "tierSpawnConfig", "updated", "previous");
         #ok;
     };
 
@@ -1209,7 +1365,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateJsonBlob("colorPalette", palettes)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         colorPaletteStore := palettes;
+        _recordAdminAudit(caller, "setColorPalette", "colorPalette", "previous", "updated");
         #ok;
     };
 
@@ -1227,7 +1388,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateJsonBlob("bossRushConfig", config)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         bossRushConfigStore := config;
+        _recordAdminAudit(caller, "setBossRushConfig", "bossRushConfig", "previous", "updated");
         #ok;
     };
 
@@ -1587,6 +1753,10 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateOptionalUrl("paymentLink", url)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         var found = false;
         for ((id, pkg) in shopPackages.entries()) {
             if (pkg.dokaAmount == dokaAmount) {
@@ -1610,7 +1780,7 @@ actor {
     // ─── Ban / unban player ───────────────────────────────────────────────────
 
     /// Admin: ban a player with a reason (convenience alias for adminBanAccount with reason).
-    /// M2: also clears achievement progress so banned players cannot double-claim on unban.
+    /// Achievement progress is preserved; claimed flags block a second payout.
     public shared ({ caller }) func banPlayer(userPrincipal : Principal, reason : Text) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
@@ -1618,14 +1788,8 @@ actor {
         bannedPrincipals.add(userPrincipal.toText(), true);
         // Store the ban reason in the changelogs map reusing as a reason store.
         changelogs.add("ban#" # userPrincipal.toText(), reason);
-        // Clear achievement progress to prevent double-claiming on unban.
-        let prefix2 = userPrincipal.toText() # "#";
-        let toRemove2 = achievementProgress.keys().filter(func(k : Text) : Bool {
-            k.startsWith(#text prefix2)
-        }).toArray();
-        for (k in toRemove2.values()) {
-            achievementProgress.remove(k);
-        };
+        // Do not wipe achievement progress — claimed flags are the anti-replay lock.
+        _recordAdminAudit(caller, "banPlayer", userPrincipal.toText(), "active", "banned");
         #ok;
     };
 
@@ -1649,11 +1813,16 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateDokaGrant(amount)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         let current = switch (dokaBalances.get(userPrincipal)) {
             case null { 0 };
             case (?b) { b };
         };
         dokaBalances.add(userPrincipal, current + amount);
+        _recordAdminAudit(caller, "addDoka", userPrincipal.toText(), current.toText(), (current + amount).toText());
         #ok;
     };
     /// Admin: get the Doka balance of any account.
@@ -1679,7 +1848,13 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateAppVersion(version)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        let previous = appVersion;
         appVersion := version;
+        _recordAdminAudit(caller, "setAppVersion", version, previous, version);
         #ok;
     };
 
@@ -1719,7 +1894,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateAchievementConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         achievementConfigs.add(config.id, config);
+        _recordAdminAudit(caller, "setAchievementConfig", config.id, "previous", config.name);
         #ok;
     };
 
@@ -1728,7 +1908,22 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        var hasProgress = false;
+        for (p in achievementProgress.values()) {
+            if (p.achievementId == id) { hasProgress := true };
+        };
+        if (hasProgress) {
+            switch (achievementConfigs.get(id)) {
+                case null { return #err("Achievement not found: " # id) };
+                case (?existing) {
+                    achievementConfigs.add(id, { existing with active = false });
+                    _recordAdminAudit(caller, "retireAchievementConfig", id, "active", "inactive");
+                };
+            };
+            return #ok;
+        };
         achievementConfigs.remove(id);
+        _recordAdminAudit(caller, "deleteAchievementConfig", id, "present", "removed");
         #ok;
     };
 
@@ -1837,6 +2032,18 @@ actor {
         if (not AccessControl.isAdmin(accessControlState, caller)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateAssignRole(role)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        if (target.isAnonymous()) {
+            return #err("Cannot assign a role to the anonymous principal");
+        };
+        // Last-admin lockout: adminAssigned stays true forever, so self-demotion
+        // of the only admin cannot be repaired by first-login initialize().
+        if (target == caller and role != "admin") {
+            return #err("Refusing self-demotion: another admin must change your role");
+        };
         // M1: rate limit
         let callerKey = caller.toText();
         let now = Time.now();
@@ -1851,6 +2058,7 @@ actor {
         roleChangeTimestamps.add(callerKey, now);
         let resolvedRole : AccessControl.UserRole = if (role == "admin") { #admin } else { #user };
         AccessControl.assignRole(accessControlState, caller, target, resolvedRole);
+        _recordAdminAudit(caller, "assignUserRole", target.toText(), "previous", role);
         #ok;
     };
 
@@ -1960,7 +2168,7 @@ actor {
     /// Seed the names list on first call if it is empty.
     public shared ({ caller }) func initDefaultNames() : async () {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
-            return;
+            Runtime.trap("Unauthorized: admin only");
         };
         // Upsert: add each default name only if not already present.
         // Does NOT use the flag guard so new names are always seeded on upgraded canisters.
@@ -2225,16 +2433,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        if (config.id == "") {
-            return #err("Boss id cannot be empty");
-        };
-        if (config.name == "") {
-            return #err("Boss name cannot be empty");
-        };
-        if (config.baseStats.ap > 20) {
-            return #err("baseStats.ap cannot exceed 20");
+        switch (AdminGuard.validateBossConfig(config)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         bossConfigs.add(config.id, config);
+        _recordAdminAudit(caller, "setBossConfig", config.id, "previous", config.name);
         #ok;
     };
 
@@ -2661,13 +2865,15 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        if (index >= 3) {
-            return #err("index out of range: must be 0, 1, or 2");
+        switch (AdminGuard.validateAdBox(index, imageUrl, linkUrl)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         adBoxes := Array.tabulate(3, func i {
             if (i == index) { (imageUrl, linkUrl, true) }
             else { adBoxes[i] }
         });
+        _recordAdminAudit(caller, "setAdBox", index.toText(), "previous", "active");
         #ok
     };
 
@@ -2685,7 +2891,15 @@ actor {
             if (i == index) { ("", "", false) }
             else { adBoxes[i] }
         });
+        _recordAdminAudit(caller, "clearAdBox", index.toText(), "active", "cleared");
         #ok
+    };
+
+    public query ({ caller }) func getAdminAuditLog() : async { #ok : [AdminTypes.AdminAuditEntry]; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        #ok(adminAuditLog.toArray())
     };
 
     // ─── OQL (Data Intelligence) ─────────────────────────────────────────
