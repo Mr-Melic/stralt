@@ -41,7 +41,6 @@ import EnemyRegister from "./EnemyRegister";
 import GameOverModal from "./GameOverModal";
 import type { CombatantEntry } from "./InitiativeStrip";
 import MapModifiersPanel from "./MapModifiersPanel";
-import PostBattleRecap from "./PostBattleRecap";
 import type { BattleRecapData } from "./PostBattleRecap";
 import SettingsPanel from "./SettingsPanel";
 import SummonControlPanel from "./SummonControlPanel";
