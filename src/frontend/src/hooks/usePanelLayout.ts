@@ -24,11 +24,31 @@ type LayoutMap = Record<string, PanelState>;
  * (no `any`) and the cast is sound once bindgen catches up — at which point this
  * extension becomes a no-op superset.
  */
+type AdminCmdResult =
+  | { __kind__: "ok"; ok: null }
+  | { __kind__: "err"; err: string };
+
+export interface AdminAuditEntry {
+  adminPrincipal: string;
+  timestampNs: bigint;
+  action: string;
+  objectId: string;
+  previousSummary: string;
+  newSummary: string;
+}
+
 export interface UiLayoutActor extends backendInterface {
   getUserUiLayout(): Promise<string>;
-  saveUserUiLayout(
-    layout: string,
-  ): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }>;
+  saveUserUiLayout(layout: string): Promise<AdminCmdResult>;
+  adminRollbackLevelUpConfig(): Promise<AdminCmdResult>;
+  adminRollbackGameConfig(): Promise<AdminCmdResult>;
+  adminRollbackTierSpawnConfig(): Promise<AdminCmdResult>;
+  adminRollbackColorPalette(): Promise<AdminCmdResult>;
+  adminRollbackBossRushConfig(): Promise<AdminCmdResult>;
+  getAdminAuditLog(): Promise<
+    | { __kind__: "ok"; ok: Array<AdminAuditEntry> }
+    | { __kind__: "err"; err: string }
+  >;
 }
 
 function getStorageKey(userId: string): string {
