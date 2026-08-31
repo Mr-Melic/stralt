@@ -469,4 +469,29 @@ describe("progress persist lock", () => {
     assert.equal(lock.isWalletSeeded(), false);
     assert.equal(lock.snapshot().doka, 0);
   });
+
+  it("runs beforeEach ahead of heal/applyRewards but not death persist", async () => {
+    const order: string[] = [];
+    const lock = createProgressPersist(
+      { doka: 200, xp: 100, level: 4 },
+      {
+        beforeEach: async () => {
+          order.push("flush");
+        },
+      },
+    );
+    await lock.enqueue(async () => {
+      order.push("heal");
+    });
+    await lock.enqueue(
+      async () => {
+        order.push("death");
+      },
+      { skipBeforeEach: true },
+    );
+    await lock.enqueue(async () => {
+      order.push("victory");
+    });
+    assert.deepEqual(order, ["flush", "heal", "death", "flush", "victory"]);
+  });
 });
