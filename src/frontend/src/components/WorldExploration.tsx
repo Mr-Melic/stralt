@@ -215,8 +215,12 @@ import {
   canAttackNearestAgainstLive,
   canAttackNearestLive,
   computeTargetableTiles,
+  hasBresenhamLoS,
   isTileCastableLive,
   pickNearestAttackableHostile,
+  pickNearestLiveHostileTile,
+  probeLiveCast,
+  shouldBypassHighlightForLiveHostile,
   shouldExecuteLiveCast,
   spellHighlightRangeBase,
   spellRangeBase,
@@ -10502,19 +10506,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (s) => s.id === selectedSpellIdRef.current,
               );
               if (_spell) {
-                const _liveCombatants = getLiveCombatants(combatantStoreCtx);
-                const _live = isTileCastableLive(
-                  _spell,
-                  getActiveCasterPos(),
-                  { x: _hit.logicalX, y: _hit.logicalY },
-                  _liveCombatants,
-                  currentMap.tiles,
-                  getEffectiveSpellRange(
-                    spellHighlightRangeBase(_spell),
-                    _spell.modifiableRange ? _spell.id : undefined,
-                  ),
-                  barrierTilesRef.current,
-                );
+                const _live = probeLiveCast(_spell, {
+                  x: _hit.logicalX,
+                  y: _hit.logicalY,
+                });
                 if (_live.ok) {
                   // eslint-disable-next-line no-console
                   console.log("[CLICK-ENEMY]", {
@@ -10607,20 +10602,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               let _spriteBasicCastResult: string | null = null;
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                const _liveCombatantsBasic =
-                  getLiveCombatants(combatantStoreCtx);
-                const _live = isTileCastableLive(
-                  _basicAttack,
-                  getActiveCasterPos(),
-                  _tile,
-                  _liveCombatantsBasic,
-                  currentMap.tiles,
-                  getEffectiveSpellRange(
-                    spellHighlightRangeBase(_basicAttack),
-                    _basicAttack.modifiableRange ? _basicAttack.id : undefined,
-                  ),
-                  barrierTilesRef.current,
-                );
+                const _live = probeLiveCast(_basicAttack, _tile);
                 if (shouldExecuteLiveCast(_live)) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
                     executeCastAttempt(_basicAttack, _tile, "sprite-basic");
@@ -10780,6 +10762,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _occupantMouse = _liveCombatantsMouse.find(
             (e) => e.x === gridPos.x && e.y === gridPos.y,
           );
+          let _skipHighlightMouse = false;
           if (
             _occupantMouse &&
             isActiveHostile(_occupantMouse) &&
@@ -10789,19 +10772,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               (s) => s.id === selectedSpellIdRef.current,
             );
             if (_spellMouse) {
-              const _liveMouse = isTileCastableLive(
-                _spellMouse,
-                getActiveCasterPos(),
-                gridPos,
-                _liveCombatantsMouse,
-                currentMap.tiles,
-                getEffectiveSpellRange(
-                  spellHighlightRangeBase(_spellMouse),
-                  _spellMouse.modifiableRange ? _spellMouse.id : undefined,
-                ),
-                barrierTilesRef.current,
-              );
-              if (_liveMouse.ok) {
+              const _liveMouse = probeLiveCast(_spellMouse, gridPos);
+              if (shouldBypassHighlightForLiveHostile(true, _liveMouse)) {
+                _skipHighlightMouse = true;
                 // eslint-disable-next-line no-console
                 console.log("[CLICK-ENEMY]", {
                   branchTaken: "cast-live",
@@ -10847,7 +10820,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
             }
           }
-          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+          if (
+            !_skipHighlightMouse &&
+            !spellTiles.has(`${gridPos.x},${gridPos.y}`)
+          ) {
             // [TARGET-BISECT] click-miss: when setSize > 0 the computation
             // produced a non-empty set yet the clicked tile is absent — log
             // the tiles the computation saw vs the live combatant positions
@@ -11262,19 +11238,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (s) => s.id === selectedSpellIdRef.current,
               );
               if (_spell) {
-                const _liveCombatants = getLiveCombatants(combatantStoreCtx);
-                const _live = isTileCastableLive(
-                  _spell,
-                  getActiveCasterPos(),
-                  { x: _hit.logicalX, y: _hit.logicalY },
-                  _liveCombatants,
-                  currentMap.tiles,
-                  getEffectiveSpellRange(
-                    spellHighlightRangeBase(_spell),
-                    _spell.modifiableRange ? _spell.id : undefined,
-                  ),
-                  barrierTilesRef.current,
-                );
+                const _live = probeLiveCast(_spell, {
+                  x: _hit.logicalX,
+                  y: _hit.logicalY,
+                });
                 if (_live.ok) {
                   const { castResult: _castResult, apCost: _apCost } =
                     executeCastAttempt(
@@ -11320,20 +11287,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                const _liveCombatantsBasic =
-                  getLiveCombatants(combatantStoreCtx);
-                const _live = isTileCastableLive(
-                  _basicAttack,
-                  getActiveCasterPos(),
-                  _tile,
-                  _liveCombatantsBasic,
-                  currentMap.tiles,
-                  getEffectiveSpellRange(
-                    spellHighlightRangeBase(_basicAttack),
-                    _basicAttack.modifiableRange ? _basicAttack.id : undefined,
-                  ),
-                  barrierTilesRef.current,
-                );
+                const _live = probeLiveCast(_basicAttack, _tile);
                 if (shouldExecuteLiveCast(_live)) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
                     executeCastAttempt(_basicAttack, _tile, "sprite-basic");
@@ -11457,6 +11411,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _occupantTouch = _liveCombatantsTouch.find(
             (e) => e.x === gridPos.x && e.y === gridPos.y,
           );
+          let _skipHighlightTouch = false;
           if (
             _occupantTouch &&
             isActiveHostile(_occupantTouch) &&
@@ -11466,19 +11421,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               (s) => s.id === selectedSpellIdRef.current,
             );
             if (_spellTouch) {
-              const _liveTouch = isTileCastableLive(
-                _spellTouch,
-                getActiveCasterPos(),
-                gridPos,
-                _liveCombatantsTouch,
-                currentMap.tiles,
-                getEffectiveSpellRange(
-                  spellHighlightRangeBase(_spellTouch),
-                  _spellTouch.modifiableRange ? _spellTouch.id : undefined,
-                ),
-                barrierTilesRef.current,
-              );
-              if (_liveTouch.ok) {
+              const _liveTouch = probeLiveCast(_spellTouch, gridPos);
+              if (shouldBypassHighlightForLiveHostile(true, _liveTouch)) {
+                _skipHighlightTouch = true;
                 // Cast at the entity's current tile BYPASSING the
                 // precomputed spellTiles set entirely — fall through to
                 // the existing cast body below by skipping the gate.
@@ -11495,7 +11440,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               }
             }
           }
-          if (!spellTiles.has(`${gridPos.x},${gridPos.y}`)) {
+          if (
+            !_skipHighlightTouch &&
+            !spellTiles.has(`${gridPos.x},${gridPos.y}`)
+          ) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
               effectsManagerRef.current?.spawnFloatText(
@@ -15507,32 +15455,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           getEffectiveStat: (cid: string, stat: string) =>
             getStatModifier(cid, stat, activeEffectsRef.current) as number,
           calcScaledDamage,
-          hasLineOfSight: (from: AICell, to: AICell) => {
-            const dx = Math.abs(to.x - from.x);
-            const dy = Math.abs(to.y - from.y);
-            const sx = from.x < to.x ? 1 : -1;
-            const sy = from.y < to.y ? 1 : -1;
-            let err = dx - dy;
-            let cx = from.x;
-            let cy = from.y;
-            while (!(cx === to.x && cy === to.y)) {
-              if (
-                !(cx === from.x && cy === from.y) &&
-                aiBarriers.has(`${cx},${cy}`)
-              )
-                return false;
-              const e2 = 2 * err;
-              if (e2 > -dy) {
-                err -= dy;
-                cx += sx;
-              }
-              if (e2 < dx) {
-                err += dx;
-                cy += sy;
-              }
-            }
-            return true;
-          },
+          hasLineOfSight: (from: AICell, to: AICell) =>
+            hasBresenhamLoS(currentMap?.tiles ?? [], from, to, aiBarriers),
           log: (msg: string, color?: string) =>
             summonCtx.log(msg, color ?? "#a78bfa", true),
           focusTargetId: focusTargetRef.current,
@@ -16663,38 +16587,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const aiVoid = currentMap?.voidTiles ?? new Set<string>();
         const aiHazards = currentMap?.hazardTiles ?? new Map<string, string>();
 
-        // Local Bresenham LoS (targeting.ts does not export one).
-        const aiHasLineOfSight = (from: AICell, to: AICell): boolean => {
-          let x0 = from.x;
-          let y0 = from.y;
-          const x1 = to.x;
-          const y1 = to.y;
-          const dx = Math.abs(x1 - x0);
-          const dy = Math.abs(y1 - y0);
-          const sx = x0 < x1 ? 1 : -1;
-          const sy = y0 < y1 ? 1 : -1;
-          let err = dx - dy;
-          let guard = 0;
-          while (guard++ < 256) {
-            if (x0 === x1 && y0 === y1) return true;
-            const k = `${x0},${y0}`;
-            if (!(x0 === from.x && y0 === from.y)) {
-              if (aiBarriers.has(k)) return false;
-              const t = currentMap?.tiles?.[y0]?.[x0];
-              if (t === "wall") return false;
-            }
-            const e2 = 2 * err;
-            if (e2 > -dy) {
-              err -= dy;
-              x0 += sx;
-            }
-            if (e2 < dx) {
-              err += dx;
-              y0 += sy;
-            }
-          }
-          return false;
-        };
+        const aiHasLineOfSight = (from: AICell, to: AICell): boolean =>
+          hasBresenhamLoS(currentMap?.tiles ?? [], from, to, aiBarriers);
 
         const aiCtx: DecideEnemyContext = {
           enemy,
@@ -17587,15 +17481,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     let gridPos: { x: number; y: number };
     if (isHealSpell) {
       gridPos = { x: casterPos.x, y: casterPos.y };
-      const liveHeal = isTileCastableLive(
-        spell,
-        casterPos,
-        gridPos,
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTilesRef.current,
-      );
+      const liveHeal = probeLiveCast(spell, gridPos);
       if (!shouldExecuteLiveCast(liveHeal)) {
         setNoTargetFlash(true);
         setTimeout(() => setNoTargetFlash(false), 1200);
@@ -19093,20 +18979,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             inBattle &&
             battleActionMode === "attack" &&
             !!selectedSpellIdRef.current &&
-            currentBattleAp >=
-              (activeSpells.find((s) => s.id === selectedSpellIdRef.current)
-                ? Number(
-                    activeSpells.find(
-                      (s) => s.id === selectedSpellIdRef.current,
-                    )!.apCost,
-                  )
-                : 999) &&
+            !isSpellOnCooldown(
+              spellCooldownsRef.current.get(selectedSpellIdRef.current),
+            ) &&
             (() => {
               const spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
               const tiles = currentMapRef.current?.tiles;
               if (!spell || !tiles) return false;
+              const apCost = mapModifierRegistry.applyApCost(
+                Number(spell.apCost),
+                activeMapModifierTypes,
+                {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                },
+              );
+              if (currentBattleAp < apCost) return false;
               const casterPos = attackNearestLiveCasterPos(
                 playerPositionRef.current,
                 getActiveCasterPos(),

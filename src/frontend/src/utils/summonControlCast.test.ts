@@ -185,6 +185,32 @@ describe("planSummonControlCast", () => {
     assert.equal(chebyshevDistance({ x: 0, y: 0 }, { x: 4, y: 0 }), 4);
   });
 
+  it("rejects when the shared live gate says the tile is illegal", () => {
+    const blocked = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog: starterSpells,
+      fallbackSpells: [],
+      currentAp: 2,
+      caster: { x: 8, y: 8 },
+      target: { x: 10, y: 8 },
+      liveGate: () => false,
+    });
+    assert.deepEqual(blocked, { ok: false, reason: "out_of_range" });
+
+    const open = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog: starterSpells,
+      fallbackSpells: [],
+      currentAp: 2,
+      caster: { x: 8, y: 8 },
+      target: { x: 10, y: 8 },
+      liveGate: () => true,
+    });
+    assert.equal(open.ok, true);
+  });
+
   it("maps fail reasons to battle-log copy", () => {
     assert.equal(summonControlCastFailMessage("no_ap"), "Not enough AP");
     assert.equal(summonControlCastFailMessage("out_of_range"), "Out of range");
