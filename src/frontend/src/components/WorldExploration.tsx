@@ -169,6 +169,7 @@ import {
   isProgressionPortalUnlocked,
   isRunProgressionPortal,
   placeWhitePortalAtSpawn,
+  publishCurrentMap,
   resetRunState,
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
@@ -309,6 +310,10 @@ import {
   consumePlayerMirror,
 } from "../utils/playerMirror";
 import {
+  rememberTouchEnd,
+  shouldIgnoreClickAfterTouch,
+} from "../utils/pointerGesture";
+import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
   clampAbsoluteProgressWrite,
@@ -353,7 +358,9 @@ import {
   spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
 import {
+  canStartSummonControlCast,
   planSummonControlCast,
+  resolveLiveSummonAp,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
   summonTurnBudget,
@@ -1078,6 +1085,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [selectedSummonSpellId, setSelectedSummonSpellId] = useState<
     string | null
   >(null);
+  // setSelectedSummonSpellId(null) is async. A synthetic click after touchend
+  // still sees the old id and can spend leftover AP a second time.
+  const summonCastCommittedRef = useRef(false);
+  const lastCanvasTouchEndRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (selectedSummonSpellId) {
+      summonCastCommittedRef.current = false;
+    }
+  }, [selectedSummonSpellId]);
   // Battle system states
   const [inBattle, setInBattle] = useState(false);
   const [tierConfigLoaded, setTierConfigLoaded] = useState(false);
@@ -1214,6 +1230,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             animationOffset: Math.random() * Math.PI * 2,
           },
         );
+        publishCurrentMap(currentMapRef, whiteMap);
         setCurrentMap(whiteMap);
         setPlayerPositionSynced({ ...applied.spawn });
         resetCombatantStore(combatantStoreCtx);
@@ -10212,15 +10229,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         level?: number;
       },
     ) => {
-      if (!selectedSummonSpellId) return;
+      const spellId = selectedSummonSpellId;
+      if (
+        !canStartSummonControlCast(spellId, summonCastCommittedRef.current) ||
+        !spellId
+      ) {
+        return;
+      }
+      const liveSummon = getLiveCombatants(combatantStoreCtx).find(
+        (e) => e.id === summon.id,
+      );
       const plan = planSummonControlCast({
         pieceType: summon.pieceType,
-        spellId: selectedSummonSpellId,
+        spellId,
         catalog: starterSpells,
         fallbackSpells: Array.isArray(summon.spells)
           ? (summon.spells as typeof starterSpells)
           : [],
-        currentAp: Number(summon.currentAp ?? 0),
+        currentAp: resolveLiveSummonAp(liveSummon, summon),
         caster: { x: summon.x, y: summon.y },
         target: { x: targetEnemy.x, y: targetEnemy.y },
         liveGate: currentMap
@@ -10235,6 +10261,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         logBattleEntry(summonControlCastFailMessage(plan.reason), "#ef4444");
         return;
       }
+      summonCastCommittedRef.current = true;
       try {
         resolveSpellCast(
           plan.spell as any,
@@ -10329,8 +10356,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (!currentMap || transitionInProgressRef.current) return;
       if (
-        inBattleRef.current &&
-        (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)
+        (inBattleRef.current &&
+          (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)) ||
+        shouldIgnoreClickAfterTouch(Date.now(), lastCanvasTouchEndRef.current)
       ) {
         return;
       }
@@ -10347,7 +10375,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (selectedSummonSpellId) {
             const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
               (e: any) =>
-                e.x === gridPos.x && e.y === gridPos.y && e.side !== "player",
+                e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
             );
             if (targetEnemy) {
               castControlledSummonSpell(summon as any, targetEnemy);
@@ -11081,6 +11109,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       // Prevent default scroll/zoom on canvas touch
       event.preventDefault();
+      lastCanvasTouchEndRef.current = rememberTouchEnd(Date.now());
       const touch = event.changedTouches[0];
       if (!touch) return;
       // ── SUMMON CONTROL ROUTING (touch) ──────────────────────────────
@@ -11096,7 +11125,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (selectedSummonSpellId) {
             const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
               (e: any) =>
-                e.x === gridPos.x && e.y === gridPos.y && e.side !== "player",
+                e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
             );
             if (targetEnemy) {
               castControlledSummonSpell(summon as any, targetEnemy);
@@ -13114,6 +13143,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             animationOffset: Math.random() * Math.PI * 2,
           },
         );
+        publishCurrentMap(currentMapRef, whiteMap);
         setCurrentMap(whiteMap);
         setPlayerPositionSynced({ ...applied.spawn });
         resetCombatantStore(combatantStoreCtx);

@@ -37,6 +37,34 @@ export type SummonControlCastFail =
   | "out_of_range"
   | "illegal_target";
 
+/**
+ * One kit-button selection produces one cast. setSelectedSummonSpellId(null)
+ * is async, so a synthetic click (or a double-click before re-render) still
+ * sees the old id and can spend leftover AP a second time.
+ */
+export function canStartSummonControlCast(
+  selectedSpellId: string | null | undefined,
+  alreadyCommitted: boolean,
+): boolean {
+  return Boolean(selectedSpellId) && alreadyCommitted !== true;
+}
+
+/**
+ * Prefer the live combatant-store AP. A captured summon object from the
+ * first click of a double-tap is stale after updateCombatant.
+ */
+export function resolveLiveSummonAp(
+  liveSummon: unknown,
+  fallback: unknown,
+): number {
+  const readAp = (row: unknown): unknown =>
+    row && typeof row === "object" && "currentAp" in row
+      ? (row as { currentAp?: unknown }).currentAp
+      : undefined;
+  const raw = readAp(liveSummon) ?? readAp(fallback);
+  return Math.max(0, Math.floor(Number(raw) || 0));
+}
+
 export type SummonControlCastPlan<T extends SummonKitCatalogSpell> =
   | { ok: false; reason: SummonControlCastFail }
   | {

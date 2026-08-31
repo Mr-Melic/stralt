@@ -290,6 +290,16 @@ export function placeWhitePortalAtSpawn<T extends { x: number; y: number }>(
 }
 
 /**
+ * Publish a generated map to the RAF ref before React state.
+ * Final Boss Rush / run-complete white maps used to call only setCurrentMap,
+ * so the canvas kept drawing the pre-victory room.
+ */
+export function publishCurrentMap<T>(mapRef: { current: T | null }, map: T): T {
+  mapRef.current = map;
+  return map;
+}
+
+/**
  * Rest-exit `cleanupMap` zeroes dungeon refs, then this path re-arms them.
  * Depth must be written on the ref (not only React state) so
  * `generateEnemies(..., depth)` and later progression snapshots see floor 1.

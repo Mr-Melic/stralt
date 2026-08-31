@@ -14,6 +14,7 @@ import {
   isProgressionPortalUnlocked,
   isRunProgressionPortal,
   placeWhitePortalAtSpawn,
+  publishCurrentMap,
   resetRunState,
   restExitSpawnDepth,
   shouldArmDungeonChainOnRestExit,
@@ -142,6 +143,18 @@ describe("resetRunState", () => {
     assert.equal(depth, 0);
     assert.equal(maxDepth, 0);
     assert.equal(dungeonDokaMultiplierFor(active, depth), 1);
+  });
+});
+
+describe("publishCurrentMap", () => {
+  it("binds the white sanctuary map on the RAF ref before setState", () => {
+    const mapRef: { current: { id: string } | null } = {
+      current: { id: "boss-room-9" },
+    };
+    const whiteMap = { id: "sanctuary" };
+    assert.equal(publishCurrentMap(mapRef, whiteMap), whiteMap);
+    assert.equal(mapRef.current, whiteMap);
+    assert.notEqual(mapRef.current?.id, "boss-room-9");
   });
 });
 
