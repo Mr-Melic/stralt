@@ -69,6 +69,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Owner-facing aggregate telemetry design (no production instrumentation) |
 | [docs/design/ENEMY_FORMATIONS_2026-08-31.md](docs/design/ENEMY_FORMATIONS_2026-08-31.md) | Proposed enemy synergy packs (design only) |
 | [docs/ENEMY_AI_EVOLUTION.md](docs/ENEMY_AI_EVOLUTION.md) | Proposed unbounded enemy AI modules (design only; no production AI in that doc) |
+| [docs/design/BOSS_AND_SPELL_DISCOVERY.md](docs/design/BOSS_AND_SPELL_DISCOVERY.md) | Proposed boss sheets, no-cap scaling, and boss-spell discovery classes (design only) |
 
 ## Hard rules (product)
 
