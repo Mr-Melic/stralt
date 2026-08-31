@@ -1571,3 +1571,188 @@ DEPENDENCIES: PXA-2026-08-31-005
 REGRESSION_RISK: MEDIUM — existing admin rows may fail the new validator; quarantine rather than crash combat.  
 VALIDATION_REQUIRED: Saving a spell without `targetType` returns an error. A valid admin spell previews and casts like a `spellData` row.  
 STATUS: NEW
+
+ACTION_ID: GTAD-2026-08-31-001  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Privacy fence — aggregates only; never chat, purchase PII, or principals on Intelligence  
+CATEGORY: privacy  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Mandate forbids individual surveillance. `getLeaderboard` already returns `principalId` (`main.mo` ~2527). OQL `characterSlots` / `userProfiles` are `ownedBy("owner")` (`main.mo` ~2626–2702). `PurchaseRecord` stores email/address (`types/admin.mo` ~185). `chatMessages` is in-memory and must stay out of analytics. Quality audit found zero telemetry and warned against claiming CLEAR_POSITIVE_SIGNAL.  
+SYSTEMS_AFFECTED: future telemetry maps; Admin Intelligence tab; OQL (do not add owner-keyed event entities)  
+RECOMMENDED_ACTION: Any implementation must allow-list counter key prefixes; strip principals in snapshot queries; never persist chat text, `uiLayout`, pixel patterns, click traces, or purchase customer fields; never reuse `getLeaderboard` as an analytics API.  
+AUTONOMY: human-gated (policy)  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW if followed; HIGH if someone “just charts OQL rows.”  
+VALIDATION_REQUIRED: Intelligence responses contain no principal, display name, email, or message body.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-002  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Fail-open sidecar — never on the persist lock, never authoritative  
+CATEGORY: architecture  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `createProgressPersist` serializes `applyRewards` and `saveBattleStats`. AQA-2026-08-30-012 already warned: counters on that lock or a second wallet path are a regression. `handleBattleEnd` already shows recap then persist in a separate `try/catch` (~12736–12802) that logs “non-blocking.” AGENTS.md: telemetry must not block combat, persistence, map load, or rewards.  
+SYSTEMS_AFFECTED: `utils/progressPersist.ts`; future `recordTelemetryIncrements`; WorldExploration outcome paths  
+RECOMMENDED_ACTION: Implement increments as fire-and-forget after persist functions return. Swallow all sidecar errors. Do not enqueue telemetry on `progressPersistRef`. Do not write HP/XP/Doka/spell levels from telemetry. Missing method on the mock actor = no-op.  
+AUTONOMY: implementer (when picked)  
+DEPENDENCIES: GTAD-2026-08-31-001  
+REGRESSION_RISK: HIGH if ignored (wallet races, unpaid victories).  
+VALIDATION_REQUIRED: Existing persist unit tests still pass with a throwing/missing increment API; a sidecar throw does not skip `applyRewards`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-003  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Phase 0 — admin-only snapshot aggregates from existing stores  
+CATEGORY: telemetry  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `characterSlots`, `dokaBalances`, `achievementProgress`, `dungeonRecords`, `bossRushStates` already persist population signals. No combat write required. Admin dashboard sidebar only shows catalog counts (enemies/regions/sprites/spells). Quality Auditor could not estimate player population.  
+SYSTEMS_AFFECTED: `src/backend/main.mo` (new `#admin` query); `AdminDashboard.tsx` (Intelligence tab, read-only)  
+RECOMMENDED_ACTION: Add `adminGetProgressionSnapshot` (name flexible) that returns **buckets only**: level histogram, pieceType mix, Doka-size histogram, achievement unlock/claim counts by id, dungeon depth/maps histograms, boss-rush `bestRoom` histogram. Scan maps server-side; never return a principal. Do not use OQL execute from the player client for this.  
+AUTONOMY: implementer (when picked)  
+DEPENDENCIES: GTAD-2026-08-31-001  
+REGRESSION_RISK: LOW (query-only). Residual: expensive scan on a large principal map — keep admin-gated and not on the game loop.  
+VALIDATION_REQUIRED: Response JSON has no principal-shaped strings; `#user` callers are rejected; `pnpm typecheck` clean after bindgen.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-004  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Phase 1 — smallest outcome + quality increment hooks  
+CATEGORY: telemetry  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Directly implements the architecture for `AQA-2026-08-30-012`. Existing fail-open sites: reward persist `catch` ~12797; `persistDeathPenalty`; `onShowBattleSummary` ~12731; `creditPendingPurchasesThroughPersist`; battle start ~12363; `_handlePlayerDeath` ~13321.  
+SYSTEMS_AFFECTED: new sidecar module; `main.mo` increment map + `recordTelemetryIncrements`; outcome helpers (`rewardResolver`, `deathPenalty`, `shopPurchase`) after they return  
+RECOMMENDED_ACTION: Ship lifetime+28-day counters only for: persist ok/fail (`applyRewards`, `saveBattleStats`), victory paid, death-penalty ok/fail, recap opened, shop credit committed, battles started, victories. Fire-and-forget batches of `(Text, Nat)`. Allow-list prefixes. No WorldExploration RAF / damage / mapGen edits.  
+AUTONOMY: implementer (when picked)  
+DEPENDENCIES: GTAD-2026-08-31-001; GTAD-2026-08-31-002  
+REGRESSION_RISK: MEDIUM if increments are placed inside persist `enqueue`. LOW if after-return only.  
+VALIDATION_REQUIRED: Next Quality Auditor can cite persist-ok/fail and victory-paid counts, or still say “Phase 1 not merged.”  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-005  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Tag flee vs combat death vs lava/spike without changing the penalty  
+CATEGORY: telemetry  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Flee (`onEndBattle` ~18871) calls `_handlePlayerDeath` — persist and Death Realm are identical to combat death. Lava/spike use the HP-watch path (~13380) and explicitly do **not** call `_handlePlayerDeath`. Death-cause intelligence is impossible until the entry point is tagged. Mandate: do not change death math.  
+SYSTEMS_AFFECTED: `_handlePlayerDeath` call sites; HP-watch; future C-003/C-004/C-007 increments  
+RECOMMENDED_ACTION: Thread a closed `DeathCause` enum (`combat_melee|combat_spell|dot|lava|spikes|flee|other`) into the two entry points for telemetry only. Keep `persistDeathPenalty` / `resetRunState` / Death Realm timer unchanged.  
+AUTONOMY: implementer (when picked)  
+DEPENDENCIES: GTAD-2026-08-31-002; GTAD-2026-08-31-004 (or same PR)  
+REGRESSION_RISK: MEDIUM if someone forks persist or skips the flee→death penalty.  
+VALIDATION_REQUIRED: Existing `deathGuards` / `deathPenalty` tests still pass; flee in a dungeon still aborts the run.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-006  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Phase 2 — combat / spell / content aggregate dimensions  
+CATEGORY: telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Battle length (`challengeTurnCountRef`), remain HP, roster `pieceType`, `TierSpawnConfig` level gap, `decideDungeonChainPortal`, Boss Rush rooms 0–9, challenge ids, map modifiers, rare refs (jackpot/betrayal/leader) already exist as gameplay signals. Spell usage should flush a **per-battle unique-set** of `SpellConfig.id`, not a cast stream.  
+SYSTEMS_AFFECTED: sidecar flush at battle end / portal; Admin Intelligence sections  
+RECOMMENDED_ACTION: After Phase 1 is proven fail-open, add bucket increments for turns, remain-HP, death cause, family W/L, level-delta, dungeon/rush/challenge/modifier/rare, spell unique-set + fizzle + enemy unique-set + upgrade. Cap key cardinality to catalog ids and enums.  
+AUTONOMY: implementer (when picked)  
+DEPENDENCIES: GTAD-2026-08-31-004; GTAD-2026-08-31-005  
+REGRESSION_RISK: MEDIUM if unique-set flush is done per RAF frame or per targeting preview.  
+VALIDATION_REQUIRED: One battle produces a bounded batch (≤32 keys); no increment from `mapGen` / `combatMath` / RAF.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-007  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Admin Intelligence tab — aggregates, carved-stone, `#admin` only  
+CATEGORY: admin-ui  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `AdminDashboard.tsx` tabs (~4825) are config CRUD only. Sidebar counts are catalog sizes. Admin is lazy-loaded and must stay gated (`isAdmin && onOpenAdmin`; canister `#admin`). DESIGN.md / AGENTS.md UI language.  
+SYSTEMS_AFFECTED: `AdminDashboard.tsx`; `useAdminQueries.ts`  
+RECOMMENDED_ACTION: Add an Intelligence tab that charts Phase 0 snapshots and Phase 1+ counters. Empty state if maps are empty. No principal search. Dev raw-key dump only under `import.meta.env.DEV`. Match existing stone/slate/crimson chrome.  
+AUTONOMY: implementer (when picked)  
+DEPENDENCIES: GTAD-2026-08-31-003 (minimum); GTAD-2026-08-31-004 for live counters  
+REGRESSION_RISK: LOW. Do not ship the tab to normal players.  
+VALIDATION_REQUIRED: Non-admin build path unchanged; `#user` query rejected; browser check of the tab on an admin session when implemented.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-008  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Do not invent a spell-discovery persist path for analytics  
+CATEGORY: content-scope  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `ownedSpells` is starters ∪ all backend configs minus retired names (`WorldExploration.tsx` ~2257–2271). There is no drop / first-seen canister field. `minLevel` is catalog metadata only. Building a discovery system “so we can measure discovery” would be new gameplay.  
+SYSTEMS_AFFECTED: spell catalog; Intelligence “reach” panel  
+RECOMMENDED_ACTION: Measure reach via Phase 0 (characters with `level >= minLevel`) and Phase 2 first-equip / unique-set use. Do not add a discovery inventory to `Character` for telemetry.  
+AUTONOMY: human-gated (product)  
+DEPENDENCIES: GTAD-2026-08-31-003; GTAD-2026-08-31-006  
+REGRESSION_RISK: HIGH if a fake unlock store desyncs the spell bar.  
+VALIDATION_REQUIRED: No new `Character` fields in the Phase 1/2 telemetry PR.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-009  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Defer spell sequences, AI intent text, and visual URL logging  
+CATEGORY: privacy  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Pairwise unique-set co-occurrence is enough for combo balance (S-006) and is Phase 3 with a key cap. `decideEnemyAction.intent` is free text for the battle log. Sprite `onerror` URLs may be private. `logPatternLookupFailed` is already throttled — increment on that throttle only (Q-010).  
+SYSTEMS_AFFECTED: enemy AI logging; pieceArt; Intelligence  
+RECOMMENDED_ACTION: Refuse PRs that upload debug buffers, ordered n-grams, intent strings, or raw image URLs. Allow throttled `pattern_fallback` counters and `quality.visual.load_fail.{kind}` without URLs.  
+AUTONOMY: human-gated (review bar)  
+DEPENDENCIES: GTAD-2026-08-31-001  
+REGRESSION_RISK: LOW (deferral).  
+VALIDATION_REQUIRED: Phase 3 design re-read before any pair-key implementation.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-010  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Point the Quality Auditor at Phase 0/1 counters instead of inventing outcomes  
+CATEGORY: prompt-architecture  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: `QUALITY_AUDIT_2026-08-30.md` classified every gameplay outcome INCONCLUSIVE because no series existed. `AQA-2026-08-30-012` asked for the smallest hooks. This director catalog is the producer spec.  
+SYSTEMS_AFFECTED: Automation Quality Auditor prompt (`976261d8-a49f-11f1-a7d1-d6b4613131ce`)  
+RECOMMENDED_ACTION: UPDATE_PROMPT: read `docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md`; if increment/snapshot APIs are absent, repeat INCONCLUSIVE; if present, cite persist-ok/fail, victory-paid, death-penalty, recap-opened, and snapshot level histogram. Never treat a missing increment as a player regression.  
+AUTONOMY: human (prompt edit)  
+DEPENDENCIES: GTAD-2026-08-31-003 or GTAD-2026-08-31-004 merged before the next Sunday audit to have numbers  
+REGRESSION_RISK: LOW.  
+VALIDATION_REQUIRED: Next auditor report either cites real counters or explicitly says “still no telemetry.”  
+STATUS: NEW  
+
+---
+
+ACTION_ID: GTAD-2026-08-31-011  
+SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
+TITLE: Keep increment maps off OQL owner-scoped entities  
+CATEGORY: architecture  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: OQL `Expose` at end of `main.mo` is `controllerOrScoped` for player collections. A `telemetryEvents` entity with `owner` would create a per-player log the controller can dump — the surveillance shape this design forbids. Config entities are controller-only and are the wrong place for runtime counters.  
+SYSTEMS_AFFECTED: `main.mo` OQL block  
+RECOMMENDED_ACTION: Store counters in dedicated `Map<Text, Nat>` queried only via `adminGetTelemetrySnapshot`. Do not `include Expose` those maps as owned entities.  
+AUTONOMY: implementer (when picked)  
+DEPENDENCIES: GTAD-2026-08-31-001; GTAD-2026-08-31-004  
+REGRESSION_RISK: LOW.  
+VALIDATION_REQUIRED: `schema()` / `execute` do not list a player-owned telemetry event collection.  
+STATUS: NEW
