@@ -291,6 +291,7 @@ import {
   resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
 } from "../utils/progressPersist";
+import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import {
   RENAME_DOKA_COST,
   committedDokaAfterRename,
@@ -2029,6 +2030,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [_newlyUnlockedInBattle, setNewlyUnlockedInBattle] = useState<
     AchievementConfig[]
   >([]);
+  const newlyUnlockedInBattleRef = useRef<AchievementConfig[]>([]);
   // Guard: track which achievement IDs have already been toasted this session
   // to prevent double-firing from the outside-battle useEffect AND the battle-victory path
   const achievementsShownRef = useRef<Set<string>>(new Set());
@@ -2084,11 +2086,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // Mark in backend
         markAchievementUnlocked.mutate(cfg.id);
         if (inBattle) {
-          // Collect for post-battle recap
-          setNewlyUnlockedInBattle((prev) => {
-            if (prev.find((a) => a.id === cfg.id)) return prev;
-            return [...prev, cfg];
-          });
+          // Collect for the app-root recap. State alone never leaves this
+          // tree — snapshot the ref onto BattleRecapData at show time.
+          newlyUnlockedInBattleRef.current = appendRecapUnlock(
+            newlyUnlockedInBattleRef.current,
+            cfg,
+          );
+          setNewlyUnlockedInBattle(newlyUnlockedInBattleRef.current);
         } else {
           // Show top-centre toast in world mode
           setPendingAchievementToast(cfg);
@@ -12469,6 +12473,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Keeping pendingTimeoutsRef.current.clear() here is still correct — it ensures
       // any timeouts that somehow registered between flushSync close and here are cleared.
       pendingTimeoutsRef.current.clear();
+      newlyUnlockedInBattleRef.current = [];
       setNewlyUnlockedInBattle([]);
       battleTriggerCooldownRef.current = false;
       const _randChallenge =
@@ -12723,13 +12728,65 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             bossDefeated: currentBossConfigRef.current?.name || undefined,
           };
 
+          // Fire victory feats before the recap so first_battle_win / boss
+          // kills land on the same payload as mid-fight unlocks.
+          const newLevel = finalRecapData.currentLevel;
+          const newDoka = dokaBalance + totalDoka;
+          checkAndFireAchievement("first_battle_win", true);
+          if (characterStats.hp === 1) {
+            checkAndFireAchievement("survive_1hp", true);
+          }
+          if (newLevel >= 10) {
+            checkAndFireAchievement("level_10", true);
+          }
+          if (newDoka >= 1000) checkAndFireAchievement("doka_1000", true);
+          if (newDoka >= 10000) checkAndFireAchievement("doka_10000", true);
+          if (mapsVisitedCountRef.current >= 25) {
+            checkAndFireAchievement("explore_25_maps", true);
+          }
+          if (groundDokaPickupCountRef.current >= 10) {
+            checkAndFireAchievement("loot_10_doka", true);
+          }
+          if (activeSpells.length >= 8) {
+            checkAndFireAchievement("spell_master_8", true);
+          }
+          if (Object.values(spellLevels).some((l) => l >= 5)) {
+            checkAndFireAchievement("spell_level_5", true);
+          }
+          if (battleCritHitsRef.current >= 5) {
+            checkAndFireAchievement("critical_5_in_battle", true);
+          }
+          if (battleOnlyHealBuffSpellsRef.current) {
+            checkAndFireAchievement("pacifist_run", true);
+          }
+          if (battleBetrayalOccurredRef.current) {
+            checkAndFireAchievement("betrayal_witness", true);
+          }
+          if (battleDoubleBetrayelOccurredRef.current) {
+            checkAndFireAchievement("double_betrayal", true);
+          }
+          if (battleLeaderSlainRef.current) {
+            checkAndFireAchievement("leader_slayer", true);
+          }
+          if (activeBossConf) {
+            checkAndFireAchievement(`boss_defeated_${activeBossConf.id}`, true);
+            logBattleEntry(
+              `☠️ BOSS DEFEATED: ${activeBossConf.name}!`,
+              "#c084fc",
+            );
+          }
+
+          const recapWithUnlocks = attachRecapUnlocks(
+            finalRecapData,
+            newlyUnlockedInBattleRef.current,
+          );
           logDebugInfo(
             "BATTLE",
             "Victory recap built",
-            JSON.stringify(finalRecapData),
+            JSON.stringify(recapWithUnlocks),
           );
           if (onShowBattleSummary) {
-            onShowBattleSummary(finalRecapData);
+            onShowBattleSummary(recapWithUnlocks);
             logDebugInfo("BATTLE", "onShowBattleSummary fired for victory");
           }
 
@@ -12801,74 +12858,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               String(persistErr),
             );
           }
-
-          // ── Achievement checks after victory ──────────────────────────────────
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-          const recap = finalRecapData as BattleRecapData | null;
-          if (recap) {
-            const newLevel = recap.currentLevel;
-            const newDoka = dokaBalance + totalDoka;
-            // first_battle_win — any victory
-            checkAndFireAchievement("first_battle_win", true);
-            // survive_1hp — end with exactly 1 HP
-            if (characterStats.hp === 1) {
-              checkAndFireAchievement("survive_1hp", true);
-            }
-            // level_10 — reached level 10+
-            if (newLevel >= 10) {
-              checkAndFireAchievement("level_10", true);
-            }
-            // doka_1000 / doka_10000
-            if (newDoka >= 1000) checkAndFireAchievement("doka_1000", true);
-            if (newDoka >= 10000) checkAndFireAchievement("doka_10000", true);
-            // explore_25_maps
-            if (mapsVisitedCountRef.current >= 25) {
-              checkAndFireAchievement("explore_25_maps", true);
-            }
-            // loot_10_doka
-            if (groundDokaPickupCountRef.current >= 10) {
-              checkAndFireAchievement("loot_10_doka", true);
-            }
-            // spell_master_8 — 8 spells equipped
-            if (activeSpells.length >= 8) {
-              checkAndFireAchievement("spell_master_8", true);
-            }
-            // spell_level_5 — any spell upgraded to level 5+
-            if (Object.values(spellLevels).some((l) => l >= 5)) {
-              checkAndFireAchievement("spell_level_5", true);
-            }
-            // critical_5_in_battle
-            if (battleCritHitsRef.current >= 5) {
-              checkAndFireAchievement("critical_5_in_battle", true);
-            }
-            // pacifist_run — won using only heal/buff spells
-            if (battleOnlyHealBuffSpellsRef.current) {
-              checkAndFireAchievement("pacifist_run", true);
-            }
-            // betrayal_witness
-            if (battleBetrayalOccurredRef.current) {
-              checkAndFireAchievement("betrayal_witness", true);
-            }
-            // double_betrayal
-            if (battleDoubleBetrayelOccurredRef.current) {
-              checkAndFireAchievement("double_betrayal", true);
-            }
-            // leader_slayer
-            if (battleLeaderSlainRef.current) {
-              checkAndFireAchievement("leader_slayer", true);
-            }
-            // BOSS: fire per-boss achievement
-            if (activeBossConf) {
-              checkAndFireAchievement(
-                `boss_defeated_${activeBossConf.id}`,
-                true,
-              );
-              logBattleEntry(
-                `☠️ BOSS DEFEATED: ${activeBossConf.name}!`,
-                "#c084fc",
-              );
-            }
-          }
         } else {
           // On defeat, keep enemies but reset player stats
           setCharacterStats((prev) => ({
@@ -12881,17 +12870,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       } catch (err) {
         logDebugError("BATTLE", "Reward computation error", String(err));
         if (onShowBattleSummary) {
-          onShowBattleSummary({
-            mapTitle: currentMapRef.current?.id || "Unknown",
-            xpEarned: 0,
-            dokaEarned: 0,
-            hitsDealt: 0,
-            enemiesDefeated: [],
-            currentXP: characterStats.exp,
-            xpForNextLevel: (characterStats.level || 1) * 100,
-            currentLevel: characterStats.level,
-            dokaBreakdown: [],
-          });
+          onShowBattleSummary(
+            attachRecapUnlocks(
+              {
+                mapTitle: currentMapRef.current?.id || "Unknown",
+                xpEarned: 0,
+                dokaEarned: 0,
+                hitsDealt: 0,
+                enemiesDefeated: [],
+                currentXP: characterStats.exp,
+                xpForNextLevel: (characterStats.level || 1) * 100,
+                currentLevel: characterStats.level,
+                dokaBreakdown: [],
+              },
+              newlyUnlockedInBattleRef.current,
+            ),
+          );
         }
       }
     },
@@ -13123,7 +13117,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       };
 
       // Set popup state (non-blocking overlay)
-      if (onShowBattleSummary) onShowBattleSummary(finalRecapData);
+      if (onShowBattleSummary) {
+        onShowBattleSummary(
+          attachRecapUnlocks(finalRecapData, newlyUnlockedInBattleRef.current),
+        );
+      }
     } catch (err) {
       logDebugError("BOSS", "BossRush reward/popup error", String(err));
     }
@@ -13409,7 +13407,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           hitsDealt: 0,
           mapTitle: currentMapRef.current?.id || "Unknown",
         };
-        if (onShowBattleSummary) onShowBattleSummary(defeatRecap);
+        if (onShowBattleSummary) {
+          onShowBattleSummary(
+            attachRecapUnlocks(defeatRecap, newlyUnlockedInBattleRef.current),
+          );
+        }
         // Drop the live path so a dismissed recap cannot queue another walk
         // onto an enemy during the 1.5s Death Realm wait. checkBattleTrigger
         // also blocks while the timer is pending.

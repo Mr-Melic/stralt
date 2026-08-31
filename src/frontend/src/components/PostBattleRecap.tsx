@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
 import type { AchievementConfig } from "../types/gameTypes";
+import { recapUnlocksFromData } from "../utils/recapUnlocks";
 
 export interface BattleRecapData {
   mapTitle: string;
@@ -28,6 +29,8 @@ export interface BattleRecapData {
   isDefeat?: boolean;
   xpLost?: number;
   dokaLost?: number;
+  /** Feats unlocked this fight — collected in-world, shown at app-root recap */
+  newlyUnlockedAchievements?: AchievementConfig[];
 }
 
 interface PostBattleRecapProps {
@@ -41,6 +44,10 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
   onClose,
   newlyUnlockedAchievements = [],
 }) => {
+  const unlockedAchievements = recapUnlocksFromData(
+    data.newlyUnlockedAchievements,
+    newlyUnlockedAchievements,
+  );
   const xpPercent = Math.min(
     100,
     Math.floor((data.currentXP / data.xpForNextLevel) * 100),
@@ -518,13 +525,13 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
           </RecapSection>
 
           {/* Newly Unlocked Achievements */}
-          {newlyUnlockedAchievements.length > 0 && (
+          {unlockedAchievements.length > 0 && (
             <RecapSection icon="🏆" title="Achievements Unlocked">
               <div
                 className="dofus-scrollbar"
                 style={{ maxHeight: 120, overflowY: "auto" }}
               >
-                {newlyUnlockedAchievements.map((ach, i) => (
+                {unlockedAchievements.map((ach, i) => (
                   <div
                     key={ach.id}
                     data-ocid={`post_battle_recap.achievement.${i + 1}`}
