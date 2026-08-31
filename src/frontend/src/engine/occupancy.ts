@@ -266,7 +266,14 @@ export function applyPushback(
     }
     if (!moved) break; // collision: stop before the blocked tile
   }
-  return cur;
+  return slideOffReserved(cur, ctx);
+}
+
+function slideOffReserved(cell: OccCell, ctx: OccupancyContext): OccCell {
+  const reserved = ctx.reserved;
+  if (!reserved?.has(occKey(cell.x, cell.y))) return cell;
+  const [slid] = relocateOffMandatoryCells([cell], reserved, ctx);
+  return slid;
 }
 
 /**
@@ -311,5 +318,5 @@ export function applyAttract(
     }
     if (!moved) break; // collision: stop before the blocked tile
   }
-  return cur;
+  return slideOffReserved(cur, ctx);
 }

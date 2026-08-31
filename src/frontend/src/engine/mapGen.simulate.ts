@@ -247,6 +247,25 @@ function placeSimPortals(
       tiles[2][2] = "portal";
       portals.push({ x: 2, y: 2, color: "blue" });
     }
+    const tryExtra = (color: string, flags: Partial<SimPortal>, minSep = 4) => {
+      const used = new Set(portals.map((p) => `${p.x},${p.y}`));
+      const cand = borderCandidates.find(
+        (c) =>
+          tiles[c.y][c.x] === "floor" &&
+          !used.has(`${c.x},${c.y}`) &&
+          portals.every(
+            (p) => Math.max(Math.abs(p.x - c.x), Math.abs(p.y - c.y)) >= minSep,
+          ),
+      );
+      if (!cand) return;
+      tiles[cand.y][cand.x] = "portal";
+      portals.push({ x: cand.x, y: cand.y, color, ...flags });
+    };
+    // Mirror WX overworld extras so punch-all / destack is exercised.
+    if (rng() < 0.2) tryExtra("dungeon", { isDungeonEntry: true });
+    if (rng() < 0.15) tryExtra("boss", { isBossRushPortal: true });
+    if (rng() < 0.1) tryExtra("rest", { isRestPortal: true });
+    if (rng() < 0.08) tryExtra("bossRush", { isBossRushPortal: true });
   } else {
     const used = new Set(portals.map((p) => `${p.x},${p.y}`));
     const cand = borderCandidates.find((c) => !used.has(`${c.x},${c.y}`));
@@ -648,21 +667,44 @@ export function generateSeededSanctuary(seed: number): SimWorld {
   };
 }
 
-export function generateSeededDeathRealm(): SimWorld {
+export function generateSeededDeathRealm(seed = 0): SimWorld {
+  const rng = createSeededRng(seed);
   const size = WORLD_GRID_SIZE;
   const tiles: string[][] = Array.from({ length: size }, () =>
     Array.from({ length: size }, () => "floor"),
   );
-  const portals: SimPortal[] = [
-    { x: 2, y: 1, color: "black" },
-    { x: 14, y: 1, color: "blue" },
-    { x: 1, y: 8, color: "red" },
-  ];
+  const edgePositions: { x: number; y: number }[] = [];
+  for (let i = 2; i <= 13; i += 4) {
+    edgePositions.push({ x: i, y: 1 });
+    edgePositions.push({ x: i, y: 14 });
+    edgePositions.push({ x: 1, y: i });
+    edgePositions.push({ x: 14, y: i });
+  }
+  for (let i = edgePositions.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [edgePositions[i], edgePositions[j]] = [edgePositions[j], edgePositions[i]];
+  }
+  const portalCount = 2 + Math.floor(rng() * 2);
+  const colors = ["black", "blue", "red"] as const;
+  const portals: SimPortal[] = [];
+  for (let i = 0; i < Math.min(portalCount, edgePositions.length); i++) {
+    const pos = edgePositions[i];
+    portals.push({ x: pos.x, y: pos.y, color: colors[i % colors.length] });
+  }
   stampPortalTiles(tiles, portals);
+  let spawnPos = { x: 1, y: 1 };
+  outer: for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (tiles[y][x] === "floor") {
+        spawnPos = { x, y };
+        break outer;
+      }
+    }
+  }
   const finalized = finalizePlayableLayout({
     tiles,
     voidTiles: new Set(),
-    playerSpawn: { x: 1, y: 1 },
+    playerSpawn: spawnPos,
     portals,
     spawns: [],
     w: size,
@@ -677,7 +719,7 @@ export function generateSeededDeathRealm(): SimWorld {
     spawns: [],
     runMode: "none",
     archetype: "openField",
-    seed: 0,
+    seed,
   };
 }
 

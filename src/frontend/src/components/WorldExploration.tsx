@@ -5962,7 +5962,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
       }
     }
-    return { map, spawnPosition: spawnPos };
+    const appliedDeath = applyFinalizedLayout(
+      map,
+      [],
+      spawnPos,
+      WORLD_GRID_SIZE,
+    );
+    return { map, spawnPosition: appliedDeath.spawn };
   }, []);
 
   const generateRestMap = useCallback((): {
