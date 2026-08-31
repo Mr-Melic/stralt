@@ -76,6 +76,19 @@ module {
     ///   hitTiles        — relative (dx, dy) tile offsets that are hit for AoE patterns.
     ///   minRange        — minimum tile distance for valid targeting (0 = self/adjacent).
     ///   maxRange        — maximum tile distance for valid targeting.
+    ///
+    /// Summon metadata (explicit; never inferred from spell name):
+    ///   isSummon        — true if this spell spawns a unit rather than dealing direct damage.
+    ///   summonAI        — archetype key (e.g. "hunter", "guardian"); empty when not a summon.
+    ///   summonLifespan  — turns the summoned unit lasts; 0 when not a summon.
+    ///   summonUnitDef   — piece/stat scales for the spawned unit (not CharacterStats).
+    public type SummonUnitDef = {
+        pieceType   : Text;
+        level       : Nat;
+        hpScale     : Float;
+        damageScale : Float;
+    };
+
     public type SpellConfig = {
         id              : Text;
         name            : Text;
@@ -105,6 +118,10 @@ module {
         usableByEnemy   : Bool;     // whether enemies can use this spell in battle
         minLevel        : Nat;      // minimum player level required to unlock
         effectParams    : ?Text;    // optional JSON-like string for pushback/attract/teleport params
+        isSummon        : Bool;
+        summonAI        : Text;
+        summonLifespan  : Nat;
+        summonUnitDef   : SummonUnitDef;
         /// Number of turns the spell is unavailable after casting. 0 = no cooldown.
         cooldown        : Nat;
     };
