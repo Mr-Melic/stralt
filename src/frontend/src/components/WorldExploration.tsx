@@ -19578,7 +19578,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         : "#2a1a1a",
                     border: `1px solid ${shopProofFile && !isShopPurchasing ? "#c0392b" : "#5a2a2a"}`,
                     borderRadius: 8,
-                    color: shopProofFile && !isShopPurchasing ? "#fff" : "#6a3a3a",
+                    color:
+                      shopProofFile && !isShopPurchasing ? "#fff" : "#6a3a3a",
                     fontWeight: 800,
                     fontSize: 14,
                     cursor:
