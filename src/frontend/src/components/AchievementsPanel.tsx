@@ -13,7 +13,7 @@ import type {
   AchievementProgress,
 } from "../types/gameTypes";
 import {
-  shouldBeginAchievementClaim,
+  beginAchievementClaim,
   shouldInvalidateCallerDokaAfterClaim,
   shouldRollbackClaimFailure,
 } from "../utils/achievementReward";
@@ -143,14 +143,12 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
 
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
-      // claimInFlightRef was never declared — every Claim threw before
-      // persistClaim / claimMut ran. Use the existing in-flight set.
-      if (
-        !shouldBeginAchievementClaim(claimingIdsRef.current, achievement.id)
-      ) {
+      // claimInFlightRef was never declared. Every Claim click threw
+      // before persistClaim / claimMut ran, so the grant never reached
+      // the persist lock. Use the same in-flight set as shouldBegin.
+      if (!beginAchievementClaim(claimingIdsRef.current, achievement.id)) {
         return;
       }
-      claimingIdsRef.current.add(achievement.id);
       if (persistClaim) {
         setPersistClaimPending(true);
         void persistClaim(achievement.id)

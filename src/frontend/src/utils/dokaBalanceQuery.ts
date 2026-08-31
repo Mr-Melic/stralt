@@ -47,3 +47,31 @@ export function shouldMarkCallerDokaWalletReady(args: {
 }): boolean {
   return args.queryResolved && args.sessionCacheApplied;
 }
+
+/**
+ * WorldExploration used to assign `dokaBalanceRef.current = dokaBalance`
+ * on every render. A child-only `setCharacterStats` then restored the
+ * stale-high GameFlow prop after a heal/shop had already debited the ref.
+ *
+ * Chronology:
+ * 1. Click heal: ref=90, onDokaBalanceChange(90), setCharacterStats(hp).
+ * 2. WorldExploration re-renders from the HP update before GameFlow
+ *    commits. Prop is still 100.
+ * 3. `ref.current = prop` writes 100 back.
+ * 4. Shop buy / second heal spends from 100. persistAbsoluteProgress
+ *    captures a second spend (or spend=0 after the wallet is already 0).
+ * 5. hydrateWhenIdle sees incoming 100 >= committed 90 and refunds the
+ *    first spend onto the lock. The next saveBattleStats writes it.
+ *
+ * Copy the prop only when GameFlow actually changed it.
+ */
+export function syncLiveDokaFromProp(
+  lastSeenProp: { current: number },
+  live: { current: number },
+  prop: number,
+): void {
+  const next = Math.max(0, Math.floor(Number(prop) || 0));
+  if (lastSeenProp.current === next) return;
+  lastSeenProp.current = next;
+  live.current = next;
+}

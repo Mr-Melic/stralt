@@ -77,6 +77,16 @@ export function shouldBeginAchievementClaim(
   return Boolean(achievementId) && !inFlightIds.has(achievementId);
 }
 
+/** Mark a feat in-flight. Callers must delete the id in `finally`. */
+export function beginAchievementClaim(
+  inFlightIds: Set<string>,
+  achievementId: string,
+): boolean {
+  if (!shouldBeginAchievementClaim(inFlightIds, achievementId)) return false;
+  inFlightIds.add(achievementId);
+  return true;
+}
+
 /**
  * The second click of a double-claim hits "Reward already claimed" after
  * the first write succeeded. Rolling that back flips claimed=false and

@@ -2,6 +2,7 @@ import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   isBuffShopOpen,
+  liveDokaForShopSpend,
   shouldAllowShopSpend,
   tryPurchaseBuffItem,
 } from "../utils/itemShop";
@@ -100,7 +101,7 @@ export function saveInventory(principalId: string, inv: Inventory): void {
 export interface BuffShopProps {
   dokaBalance: number;
   /** Return false when the persist debit failed so inventory is not granted. */
-  onDeductDoka: (amount: number) => boolean | Promise<boolean> | void;
+  onDeductDoka: (amount: number) => boolean | Promise<boolean> | undefined;
   /** Live wallet. The render `dokaBalance` lags a same-tick heal debit. */
   getLiveDoka?: () => number;
   onUseItem: (itemType: BuffItemType) => void;
@@ -180,8 +181,12 @@ const BuffShop: React.FC<BuffShopProps> = ({
   const liveWalletRef = useRef(dokaBalance);
   const inventoryRef = useRef(inventory);
   useEffect(() => {
+    // Host live wallet is authoritative. Copying the render prop here
+    // restored a stale-high balance after a same-tick heal/buy debit
+    // (prop 90 landing after this shop already spent to 40).
+    if (getLiveDoka) return;
     liveWalletRef.current = dokaBalance;
-  }, [dokaBalance]);
+  }, [dokaBalance, getLiveDoka]);
   useEffect(() => {
     inventoryRef.current = inventory;
   }, [inventory]);
@@ -201,7 +206,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
   const handleBuy = useCallback(
     (item: BuffItem) => {
       const purchase = tryPurchaseBuffItem({
-        wallet: liveWalletRef.current,
+        wallet: liveDokaForShopSpend(getLiveDoka, liveWalletRef.current),
         cost: item.cost,
         owned: inventoryRef.current[item.id] ?? 0,
         maxStack: item.maxStack,
@@ -228,7 +233,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
         }));
       });
     },
-    [inBattle, onDeductDoka],
+    [getLiveDoka, inBattle, onDeductDoka],
   );
 
   const handleUse = useCallback(
@@ -329,7 +334,11 @@ const BuffShop: React.FC<BuffShopProps> = ({
                 padding: "2px 8px",
               }}
             >
-              {dokaBalance.toLocaleString()} Doka
+              {liveDokaForShopSpend(
+                getLiveDoka,
+                liveWalletRef.current,
+              ).toLocaleString()}{" "}
+              Doka
               {inBattle && (
                 <span style={{ color: "#e74c3c", fontSize: 9, marginLeft: 4 }}>
                   (buy outside battle)
@@ -395,7 +404,11 @@ const BuffShop: React.FC<BuffShopProps> = ({
             >
               {BUFF_ITEMS.map((item) => {
                 const owned = inventory[item.id] ?? 0;
-                const canAfford = dokaBalance >= item.cost && !inBattle;
+                const canAfford =
+                  shouldAllowShopSpend(
+                    liveDokaForShopSpend(getLiveDoka, liveWalletRef.current),
+                    item.cost,
+                  ) && !inBattle;
                 const atMax = owned >= item.maxStack;
                 return (
                   <div

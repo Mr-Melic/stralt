@@ -36,7 +36,9 @@ export function shouldStartDokaHeal(args: {
   currentHp: number;
   maxHp: number;
   liveDoka: number;
+  inFlight?: boolean;
 }): boolean {
+  if (args.inFlight === true) return false;
   const hp = Math.max(0, Math.floor(Number(args.currentHp) || 0));
   const max = Math.max(0, Math.floor(Number(args.maxHp) || 0));
   const doka = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
@@ -293,4 +295,50 @@ export function shouldGrantDokaHeal(
 
 export function shouldWriteAbsoluteSpend(spend: number): boolean {
   return Math.max(0, Math.floor(Number(spend) || 0)) > 0;
+}
+
+/**
+ * BuffShop must debit WorldExploration's live wallet, not the render
+ * `dokaBalance` / a useEffect-synced copy. A heal updates the host ref
+ * and calls setCharacterStats; BuffShop can still be showing the
+ * pre-heal prop until GameFlow commits.
+ */
+export function liveDokaForShopSpend(
+  getLiveDoka: (() => number) | undefined,
+  fallback: number,
+): number {
+  if (typeof getLiveDoka === "function") {
+    return Math.max(0, Math.floor(Number(getLiveDoka()) || 0));
+  }
+  return Math.max(0, Math.floor(Number(fallback) || 0));
+}
+
+/**
+ * saveBattleStats HP must be the live ref at write time, not the
+ * click-time snapshot. A lava/spike tick after a paid heal used to
+ * persist the pre-hazard HP; a reload then resurrected the damage.
+ *
+ * The heal path writes characterStatsRef synchronously before enqueue
+ * so `liveHp` already includes the paid heal when no later damage
+ * landed. `fallbackHp` is the click snapshot used only when the eager
+ * ref has not caught up yet (updater still queued).
+ */
+export function resolveAbsoluteWriteHp(
+  liveHp: number,
+  fallbackHp: number,
+): number {
+  const live = Math.max(0, Math.floor(Number(liveHp) || 0));
+  const fallback = Math.max(0, Math.floor(Number(fallbackHp) || 0));
+  return Math.min(live, fallback);
+}
+
+/** Apply a paid heal to the live stats ref before React commits setState. */
+export function applyHealHpToLiveStats<T extends { hp: number }>(
+  stats: { current: T },
+  nextHp: number,
+): T {
+  const hp = Math.max(0, Math.floor(Number(nextHp) || 0));
+  const next = { ...stats.current, hp };
+  stats.current = next;
+  return next;
 }
