@@ -71,6 +71,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/ENEMY_AI_EVOLUTION.md](docs/ENEMY_AI_EVOLUTION.md) | Proposed unbounded enemy AI modules (design only; no production AI in that doc) |
 | [docs/design/BOSS_AND_SPELL_DISCOVERY.md](docs/design/BOSS_AND_SPELL_DISCOVERY.md) | Proposed boss sheets, no-cap scaling, and boss-spell discovery classes (design only) |
 | [docs/WORLD_DYNAMICS.md](docs/WORLD_DYNAMICS.md) | World-feature catalog (rarity + relative difficulty). Not wired into map gen |
+| `src/frontend/src/engine/battleStartPlacement.ts` | Battle-start cell spacing (player ≥3 / enemies ≥2, occupancy fallback) |
 
 ## Hard rules (product)
 

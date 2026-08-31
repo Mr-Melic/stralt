@@ -94,6 +94,7 @@ import {
   shouldContinuePlayerTurnAfterHazard,
   shouldDispatchEnemyAiAfterTurnStart,
 } from "../engine/battleSetup";
+import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
   getAoETargets as getAoETargetsHelper,
@@ -11948,76 +11949,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       checkPortalInteractionRef.current();
     }
   }, [isMoving]);
-  // Check for battle trigger
-  // Check for battle trigger — fires when player is exactly 1 Chebyshev step from any enemy
-  // ── S3 FIX: battle-start placement now routes through the SHARED occupancy
-  //    engine (engine/occupancy.ts isCellFree) so every placed combatant is
-  //    guaranteed a UNIQUE, passable cell (no wall/void/barrier/portal, no
-  //    overlap with already-placed combatants). Chebyshev spacing is enforced
-  //    where the map allows and falls back to findNearestFreeCell (ring scan)
-  //    when cramped — NEVER overlaps, NEVER on an impassable tile.
-  //    This replaces the old findFreeCellFarFrom which (a) did not check
-  //    combatant occupancy at all and (b) always picked the single farthest
-  //    corner cell, causing multiple enemies to be assigned the same cell.
-  const findBattleStartCell = useCallback(
-    (
-      origin: { x: number; y: number },
-      avoid: { x: number; y: number; minDist: number }[],
-      minDistFallback: number,
-      ctx: OccupancyContext,
-    ): { x: number; y: number } | null => {
-      // Pass 1: collect every cell that is free AND meets EVERY per-position
-      // spacing target. A cell qualifies iff for each avoided position p,
-      // Chebyshev(cell, p) >= p.minDist. This lets the caller demand, e.g.,
-      // >= 3 from the player AND >= 2 from each already-placed enemy in one pass.
-      const spaced: {
-        x: number;
-        y: number;
-        minD: number;
-        dFromOrigin: number;
-      }[] = [];
-      for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-        for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-          const cell = { x: gx, y: gy };
-          if (!isCellFree(cell, ctx)) continue;
-          let ok = true;
-          let minD = Number.POSITIVE_INFINITY;
-          for (const p of avoid) {
-            const d = Math.max(Math.abs(gx - p.x), Math.abs(gy - p.y));
-            if (d < minD) minD = d;
-            if (d < p.minDist) {
-              ok = false;
-              break;
-            }
-          }
-          if (ok) {
-            const dFromOrigin = Math.max(
-              Math.abs(gx - origin.x),
-              Math.abs(gy - origin.y),
-            );
-            spaced.push({ x: gx, y: gy, minD, dFromOrigin });
-          }
-        }
-      }
-      if (spaced.length > 0) {
-        // Pick the best-spaced cell; break ties by NEAREST to origin so
-        // multiple enemies spread around the player instead of piling on one
-        // far corner. Stable sort: highest minD first, then lowest dFromOrigin.
-        spaced.sort((a, b) =>
-          a.minD !== b.minD ? b.minD - a.minD : a.dFromOrigin - b.dFromOrigin,
-        );
-        return { x: spaced[0].x, y: spaced[0].y };
-      }
-      // Pass 2 (cramped map): fall back to the nearest free cell to origin.
-      // findNearestFreeCell uses isCellFree under the hood, so the result is
-      // guaranteed unique + passable (it cannot overlap any combatant that
-      // ctx.isOccupied already knows about, including the ones we just placed).
-      // minDistFallback is the ring-scan radius used here (typically the
-      // loosest spacing target so the fallback still tries to respect spacing).
-      return findNearestFreeCell(origin, ctx, minDistFallback);
-    },
-    [],
-  );
   // ── Unified cleanup functions ──────────────────────────────────────────────
   // cleanupBattle: terminates every timer/interval/flag from an active battle.
   // Must be defined BEFORE handleBattleEnd and checkPortalInteraction use it.
@@ -12318,9 +12249,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }));
       for (const ep of enemyPositions) placed.add(`${ep.x},${ep.y}`);
 
-      // Player: >= 3 Chebyshev from every enemy. findBattleStartCell picks the
-      // best-spaced cell (ties broken NEAREST to origin) and falls back to a
-      // ring scan when the map is too cramped to honour the spacing.
+      // Player: >= 3 Chebyshev from every enemy. engine/battleStartPlacement
+      // findBattleStartCell picks the best-spaced cell (ties broken NEAREST
+      // to origin) and falls back to a ring scan when the map is cramped.
       const newPlayerPos = findBattleStartCell(
         playerPosition,
         enemyPositions.map((p) => ({ ...p, minDist: 3 })),
@@ -12727,7 +12658,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     characterStats,
     characterName,
     logBattleEntry,
-    findBattleStartCell,
     normalizedSpellPool,
     maxHp,
   ]);
