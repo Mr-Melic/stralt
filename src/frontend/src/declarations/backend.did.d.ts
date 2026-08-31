@@ -25,6 +25,14 @@ export interface AchievementProgress {
   'claimed' : boolean,
   'principalId' : string,
 }
+export interface AdminAuditEntry {
+  'action' : string,
+  'adminPrincipal' : string,
+  'previousSummary' : string,
+  'objectId' : string,
+  'newSummary' : string,
+  'timestampNs' : bigint,
+}
 export interface AdminGameConfig {
   'leaderBoostPercent' : bigint,
   'dokaSpawnBaseValue' : bigint,
@@ -353,6 +361,31 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
+  'adminRollbackBossRushConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackColorPalette' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackGameConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackLevelUpConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackTierSpawnConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
   /**
    * / Admin: create or update an achievement configuration.
    */
@@ -559,6 +592,11 @@ export interface _SERVICE {
    * / Returns all three ad box slots.  Empty/inactive slots have isActive=false.
    */
   'getAdBoxes' : ActorMethod<[], Array<[string, string, boolean]>>,
+  'getAdminAuditLog' : ActorMethod<
+    [],
+    { 'ok' : Array<AdminAuditEntry> } |
+      { 'err' : string }
+  >,
   /**
    * / Public: returns all boss configs.
    */

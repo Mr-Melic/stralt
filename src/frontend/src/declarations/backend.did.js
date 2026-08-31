@@ -195,6 +195,14 @@ export const Result = IDL.Record({
   'hasMore' : IDL.Bool,
   'rows' : IDL.Vec(IDL.Vec(Cell)),
 });
+export const AdminAuditEntry = IDL.Record({
+  'action' : IDL.Text,
+  'adminPrincipal' : IDL.Text,
+  'previousSummary' : IDL.Text,
+  'objectId' : IDL.Text,
+  'newSummary' : IDL.Text,
+  'timestampNs' : IDL.Int,
+});
 export const BossStats = IDL.Record({
   'ap' : IDL.Nat,
   'hp' : IDL.Nat,
@@ -331,6 +339,31 @@ export const idlService = IDL.Service({
     ),
   'adminGrantDoka' : IDL.Func(
       [IDL.Principal, IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackBossRushConfig' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackColorPalette' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackGameConfig' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackLevelUpConfig' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackTierSpawnConfig' : IDL.Func(
+      [],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
@@ -490,6 +523,11 @@ export const idlService = IDL.Service({
   'getAdBoxes' : IDL.Func(
       [],
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text, IDL.Bool))],
+      ['query'],
+    ),
+  'getAdminAuditLog' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Vec(AdminAuditEntry), 'err' : IDL.Text })],
       ['query'],
     ),
   'getAllBossConfigs' : IDL.Func([], [IDL.Vec(BossConfig)], ['query']),
@@ -949,6 +987,14 @@ export const idlFactory = ({ IDL }) => {
     'hasMore' : IDL.Bool,
     'rows' : IDL.Vec(IDL.Vec(Cell)),
   });
+  const AdminAuditEntry = IDL.Record({
+    'action' : IDL.Text,
+    'adminPrincipal' : IDL.Text,
+    'previousSummary' : IDL.Text,
+    'objectId' : IDL.Text,
+    'newSummary' : IDL.Text,
+    'timestampNs' : IDL.Int,
+  });
   const BossStats = IDL.Record({
     'ap' : IDL.Nat,
     'hp' : IDL.Nat,
@@ -1082,6 +1128,31 @@ export const idlFactory = ({ IDL }) => {
       ),
     'adminGrantDoka' : IDL.Func(
         [IDL.Principal, IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackBossRushConfig' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackColorPalette' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackGameConfig' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackLevelUpConfig' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackTierSpawnConfig' : IDL.Func(
+        [],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
@@ -1241,6 +1312,11 @@ export const idlFactory = ({ IDL }) => {
     'getAdBoxes' : IDL.Func(
         [],
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text, IDL.Bool))],
+        ['query'],
+      ),
+    'getAdminAuditLog' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Vec(AdminAuditEntry), 'err' : IDL.Text })],
         ['query'],
       ),
     'getAllBossConfigs' : IDL.Func([], [IDL.Vec(BossConfig)], ['query']),
