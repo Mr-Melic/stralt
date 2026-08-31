@@ -11,6 +11,8 @@
  * supplied, the same isTileCastableLive gate as player clicks also runs
  * so LoS / walls / target-type cannot drift. Debit AP after the attempt
  * (including fizzle) so a 2-AP Archer cannot wipe the room in one turn.
+ * Optional `liveGate` applies the same highlight/live geometry as the
+ * player (LoS, barriers, minRange) without changing the AP debit.
  */
 
 import {
@@ -25,6 +27,7 @@ export interface SummonKitCatalogSpell {
   name?: string;
   apCost?: unknown;
   range?: unknown;
+  maxRange?: number;
   summonUnitDef?: {
     pieceType?: string;
     summonKit?: string[];
@@ -132,7 +135,11 @@ export function planSummonControlCast<T extends SummonKitCatalogSpell>(args: {
 
   const range = Math.max(
     1,
-    Math.floor(Number(args.liveGate?.effectiveRange ?? spell.range) || 0),
+    Math.floor(
+      Number(
+        args.liveGate?.effectiveRange ?? spell.maxRange ?? spell.range,
+      ) || 0,
+    ),
   );
   const dist = chebyshevDistance(args.caster, args.target);
   if (dist > range) return { ok: false, reason: "out_of_range" };

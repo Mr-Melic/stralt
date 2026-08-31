@@ -169,7 +169,7 @@ export interface TargetGridState {
   /** Precomputed effective range for THIS spell (level + mod bonuses applied). */
   effectiveRange: number;
   /** Active barrier tiles → turns remaining (impassable, treated as walls). */
-  barrierTiles: Map<string, number>;
+  barrierTiles: TileKeySet;
 }
 
 /** Caster position on the grid. */
@@ -445,6 +445,9 @@ export function isTileCastableLive(
   const worldGridSize = mapTiles.length;
   const range = effectiveRange ?? spellRangeBase(spell);
   const minR = spell.minRange ?? 1;
+  const needsLos = playerSpellRequiresLos(spell);
+  const barriers = barrierTiles;
+  const destKey = `${tile.x},${tile.y}`;
   const tx = tile.x;
   const ty = tile.y;
 
@@ -511,6 +514,9 @@ export function isTileCastableLive(
     const dy = Math.abs(ty - casterPos.y);
     if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) {
       return { ok: false, reason: "ground_out_of_range" };
+    }
+    if (barriers?.has(destKey)) {
+      return { ok: false, reason: "ground_barrier" };
     }
     // Occupied tiles (by a combatant or the caster) are not castable ground.
     const occupied =

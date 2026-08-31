@@ -10,7 +10,11 @@ import {
   SUMMON_MP_PER_LEVELS,
   SUMMON_UPGRADE_COST_MULTIPLIER,
 } from "../data/gameConstants";
-import { type TileType, computeTargetableTiles } from "../engine/targeting";
+import {
+  type TileType,
+  computeTargetableTiles,
+  spellHighlightRangeBase,
+} from "../engine/targeting";
 import type { Enemy, SpellConfig } from "../types/gameTypes";
 
 interface SpellbookModalProps {
@@ -77,7 +81,7 @@ function getSpellPreviewColor(spell: SpellConfig): string {
 function computePreviewCells(spell: SpellConfig): Set<string> {
   const GRID = 9;
   const center = Math.floor(GRID / 2); // 4
-  const effectiveRange = Number(spell.range ?? 0);
+  const effectiveRange = spellHighlightRangeBase(spell);
 
   // Synthetic 9x9 grid: every tile is floor, no enemies, no barriers.
   const tiles: TileType[][] = Array.from({ length: GRID }, () =>
