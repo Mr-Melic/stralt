@@ -62,6 +62,29 @@ export function clampAbsoluteProgressWrite(
  * processPendingPurchases writes an absolute wallet. Commit that balance so a
  * later saveBattleStats spend cannot reconstruct from a pre-credit snapshot.
  */
+export function shouldPersistAbsoluteDokaSpend(spend: number): boolean {
+  return Math.max(0, toNat(spend, 0)) > 0;
+}
+
+/** Never mint Doka through saveBattleStats. */
+
+
+/** Alias: never-raise clamp for Doka absolute writes (same as clampAbsoluteProgressWrite). */
+export function clampAbsoluteDokaWrite(
+  committedDoka: number,
+  requestedDoka: number,
+): number {
+  return clampAbsoluteProgressWrite(requestedDoka, committedDoka);
+}
+
+/** Alias: never-raise clamp for XP absolute writes (same as clampAbsoluteProgressWrite). */
+export function clampAbsoluteXpWrite(
+  committedXp: number,
+  requestedXp: number,
+): number {
+  return clampAbsoluteProgressWrite(requestedXp, committedXp);
+}
+
 export function committedDokaAfterShopCredit(
   credited: number | null,
 ): number | null {

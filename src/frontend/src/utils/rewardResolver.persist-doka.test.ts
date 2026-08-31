@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type DokaCreditActor, persistDokaCredit } from "./dokaPersist.ts";
+import {
+  DUNGEON_CHAIN_COMPLETE_CREDIT_ID,
+  type DokaCreditActor,
+  SHRINE_ALTAR_CREDIT_ID,
+  beginOneShotCredit,
+  findGroundDokaOnTile,
+  markGroundDokaCollected,
+  persistDokaCredit,
+} from "./dokaPersist.ts";
 
 describe("persistDokaCredit", () => {
   it("credits world Doka through applyRewards(slot, doka, 0)", async () => {
@@ -48,6 +56,44 @@ describe("persistDokaCredit", () => {
     assert.equal(
       await persistDokaCredit(underscored as unknown as DokaCreditActor, 1, 40),
       340,
+    );
+  });
+});
+
+describe("one-shot world credits", () => {
+  it("credits a ground coin once even if the setState updater re-runs", () => {
+    const claimed = new Set<string>();
+    const loot = [
+      {
+        id: "doka-1",
+        tileX: 3,
+        tileY: 4,
+        collected: false,
+        value: 12,
+      },
+    ];
+    const hit = findGroundDokaOnTile(loot, 3, 4);
+    assert.ok(hit);
+    assert.equal(beginOneShotCredit(claimed, hit.id), true);
+    assert.equal(beginOneShotCredit(claimed, hit.id), false);
+    const after = markGroundDokaCollected(loot, hit.id);
+    assert.equal(findGroundDokaOnTile(after, 3, 4), undefined);
+    let applyRewards = 0;
+    if (beginOneShotCredit(claimed, hit.id)) applyRewards += hit.value;
+    assert.equal(applyRewards, 0);
+  });
+
+  it("credits the shrine altar and dungeon-chain bonus once per room/run", () => {
+    const claimed = new Set<string>();
+    assert.equal(beginOneShotCredit(claimed, SHRINE_ALTAR_CREDIT_ID), true);
+    assert.equal(beginOneShotCredit(claimed, SHRINE_ALTAR_CREDIT_ID), false);
+    assert.equal(
+      beginOneShotCredit(claimed, DUNGEON_CHAIN_COMPLETE_CREDIT_ID),
+      true,
+    );
+    assert.equal(
+      beginOneShotCredit(claimed, DUNGEON_CHAIN_COMPLETE_CREDIT_ID),
+      false,
     );
   });
 });

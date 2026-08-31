@@ -11,6 +11,33 @@ import { xpForNextLevel } from "./xpCurve.ts";
 export const DEATH_XP_PENALTY_RATE = 0.2;
 export const DEATH_DOKA_PENALTY_RATE = 0.4;
 
+/** Replica rejects used to leave deathPenaltyApplied=true and the canister uncut. */
+export const DEATH_PENALTY_PERSIST_ATTEMPTS = 3;
+
+export function shouldRetryDeathPenaltyPersist(
+  attempt: number,
+  maxAttempts = DEATH_PENALTY_PERSIST_ATTEMPTS,
+): boolean {
+  return attempt >= 1 && attempt < maxAttempts;
+}
+
+export async function persistWithRetry(
+  persistOnce: () => Promise<void>,
+  maxAttempts = DEATH_PENALTY_PERSIST_ATTEMPTS,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await persistOnce();
+      return;
+    } catch (err) {
+      lastError = err;
+      if (!shouldRetryDeathPenaltyPersist(attempt, maxAttempts)) break;
+    }
+  }
+  throw lastError;
+}
+
 export type DeathPenaltyAmounts = {
   xpLost: number;
   dokaLost: number;
