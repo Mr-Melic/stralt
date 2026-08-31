@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { activeHostilesRemaining } from "./battleSetup.ts";
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import { isCellFree } from "./occupancy.ts";
 import {
@@ -7,6 +8,8 @@ import {
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
   filterRunPortals,
+  shouldSuppressPortal,
+  getRunMode,
   isProgressionLocked,
   isProgressionPortalUnlocked,
   isRunProgressionPortal,
@@ -241,5 +244,105 @@ describe("progression lock and unlock", () => {
     assert.equal(isProgressionPortalUnlocked("dungeon", true), true);
     assert.equal(shouldSpawnWhitePortal(true, false), true);
     assert.equal(shouldSpawnWhitePortal(false, false), false);
+  });
+});
+
+describe("run-mode portal suppression", () => {
+  it("derives bossRush over dungeon, else free exploration", () => {
+    assert.equal(getRunMode(true, true), "bossRush");
+    assert.equal(getRunMode(false, true), "dungeon");
+    assert.equal(getRunMode(false, false), "none");
+  });
+
+  it("keeps side portals off during an uncleared run so the player cannot flee", () => {
+    const uncleared = [
+      "regular",
+      "dungeonEntry",
+      "bossRushEntry",
+      "deathRealm",
+      "white",
+    ] as const;
+    for (const kind of uncleared) {
+      assert.equal(
+        shouldSuppressPortal(kind, "bossRush", false),
+        true,
+        `${kind} mid-Boss-Rush would leak the player off the sealed room`,
+      );
+      assert.equal(shouldSuppressPortal(kind, "dungeon", false), true);
+    }
+    assert.equal(
+      shouldSuppressPortal("progression", "bossRush", false),
+      true,
+      "uncleared progression stays unusable; WX still shows the locked visual",
+    );
+    assert.equal(isProgressionLocked("bossRush", false), true);
+    assert.equal(isProgressionPortalUnlocked("bossRush", false), false);
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "bossRush",
+        mapCleared: false,
+        candidates: ["regular", "progression", "deathRealm"],
+      }),
+      [],
+    );
+  });
+
+  it("unlocks only the progression portal after the last hostile dies", () => {
+    assert.equal(shouldSuppressPortal("progression", "dungeon", true), false);
+    assert.equal(shouldSuppressPortal("regular", "dungeon", true), true);
+    assert.equal(shouldSuppressPortal("deathRealm", "dungeon", true), true);
+    assert.equal(isProgressionLocked("dungeon", true), false);
+    assert.equal(isProgressionPortalUnlocked("dungeon", true), true);
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "dungeon",
+        mapCleared: true,
+        candidates: ["regular", "progression", "deathRealm"],
+      }),
+      ["progression"],
+    );
+  });
+
+  it("does not invent a progression portal when the generator never proposed one", () => {
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "bossRush",
+        mapCleared: true,
+        candidates: ["regular", "deathRealm"],
+      }),
+      [],
+    );
+  });
+
+  it("passes free-exploration candidates through unchanged", () => {
+    const candidates = ["regular", "dungeonEntry", "deathRealm"] as const;
+    assert.deepEqual(
+      filterRunPortals({
+        runMode: "none",
+        mapCleared: false,
+        candidates: [...candidates],
+      }),
+      [...candidates],
+    );
+    for (const kind of candidates) {
+      assert.equal(shouldSuppressPortal(kind, "none", false), false);
+    }
+    assert.equal(isProgressionPortalUnlocked("none", true), false);
+    assert.equal(isProgressionLocked("none", false), false);
+  });
+
+  it("unlocks the run portal when only a leftover player summon remains", () => {
+    const leftovers = [
+      { id: "wolf", hp: 40, isSummon: true, side: "player" as const },
+    ];
+    const cleared = activeHostilesRemaining(leftovers) === 0;
+    assert.equal(cleared, true);
+    assert.equal(
+      leftovers.length === 0,
+      false,
+      "enemies.length used to stay > 0 and keep the portal sealed",
+    );
+    assert.equal(isProgressionLocked("dungeon", cleared), false);
+    assert.equal(isProgressionPortalUnlocked("dungeon", cleared), true);
   });
 });

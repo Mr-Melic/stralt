@@ -98,4 +98,40 @@ describe("getAoETargets hostility filter", () => {
     });
     assert.deepEqual(targets, []);
   });
+
+  it("still hits an enemy minion in range so Frost Nova cannot skip the last hostile", () => {
+    const rat = unit("rat", 4, 4, { side: "enemy" });
+    const wolf = unit("wolf", 5, 4, {
+      isSummon: true,
+      side: "player",
+    });
+    const larva = unit("larva", 4, 5, {
+      isSummon: true,
+      side: "enemy",
+    });
+    const targets = getAoETargets({
+      spell: {
+        hitsMultiple: true,
+        maxRange: 2,
+        range: 2,
+        modifiableRange: false,
+      },
+      gridPos: { x: 4, y: 4 },
+      targetEnemy: rat,
+      enemies: [rat, wolf, larva],
+      playerPosition: { x: 3, y: 4 },
+      characterName: "Hero",
+      characterStats: {
+        level: 1,
+        res: 0,
+        sp: 0,
+        chc: 0,
+        hp: 50,
+        maxHp: 50,
+      },
+      getEffectiveSpellRange: (base) => base,
+      logBattleEntry: () => {},
+    });
+    assert.deepEqual(targets.map((t) => t.id).sort(), ["larva", "rat"]);
+  });
 });

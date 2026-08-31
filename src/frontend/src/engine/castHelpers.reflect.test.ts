@@ -258,6 +258,33 @@ describe("applyDamageToEnemy store HP commit", () => {
     assert.equal(committed, 8);
   });
 
+  it("commits hp 0 before processCombatantDeath so the last spell kill can award", () => {
+    const events: string[] = [];
+    applyDamageToEnemy({
+      hitTarget: enemy({ hp: 40 }),
+      isFirstTarget: true,
+      deps: stubDeps({
+        preCritDmgBM: 40,
+        calculatePlayerDamage: () => ({
+          finalDamage: 40,
+          breakdown: "",
+        }),
+        commitEnemyHp: (id, hp) => {
+          events.push(`commit:${id}:${hp}`);
+        },
+        processCombatantDeath: (id) => {
+          events.push(`death:${id}`);
+          return true;
+        },
+      }),
+    });
+    assert.deepEqual(
+      events,
+      ["commit:e1:0", "death:e1"],
+      "React-only 0 HP left store hp > 0 so isActiveHostile blocked applyRewards",
+    );
+  });
+
   it("does not commit store HP for the player sentinel", () => {
     let committedId: string | null = null;
     applyDamageToEnemy({
