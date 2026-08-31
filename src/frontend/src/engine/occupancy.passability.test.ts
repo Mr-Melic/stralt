@@ -144,7 +144,6 @@ describe("isCellFree", () => {
   });
 });
 
-
 describe("findNearestFreeCell", () => {
   it("visits the left neighbor first, then the +y cell, on ring 1", () => {
     const origin = { x: 8, y: 8 };
@@ -159,7 +158,6 @@ describe("findNearestFreeCell", () => {
     assert.deepEqual(found, { x: 8, y: 9 });
   });
 });
-
 
 describe("applyPushback / applyAttract", () => {
   it("stops pushback before a blocked tile and attract one tile short of the magnet", () => {
