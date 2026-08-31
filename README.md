@@ -65,6 +65,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
 | [docs/automation/MASTER_ROADMAP.md](docs/automation/MASTER_ROADMAP.md) | Master Technical Director roadmap (no gameplay changes) |
 | [docs/automation/ACTION_IDS_2026-08-31.md](docs/automation/ACTION_IDS_2026-08-31.md) | Current ACTION_ID ledger (reuses 2026-08-30 IDs) |
+| [docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md](docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md) | Player-experience coherence audit (systems, not process) |
 
 ## Hard rules (product)
 

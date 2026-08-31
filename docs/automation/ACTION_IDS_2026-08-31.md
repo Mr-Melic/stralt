@@ -1318,3 +1318,256 @@ DEPENDENCIES: None
 REGRESSION_RISK: NONE — docs only  
 VALIDATION_REQUIRED: Catalog contains all requested types (waves, survival, elite, ambush, reinforcements, protection, priority, movement, hazard, rare elite, treasure/risk, rest, branch, mini-boss, rush variants, spell-discovery) and every entry is STATUS: PROPOSED.  
 STATUS: OPEN
+
+ACTION_ID: PXA-2026-08-31-001  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Restore spell discovery — stop granting the full catalog as innate  
+CATEGORY: spell-discovery  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `WorldExploration.tsx` 2242–2243 marks every `starterSpells` entry `isBaseSpell` (“always shown, never removable”). `data/spellData.ts` 27–691 is 32 identities (Strike through five summons). The 8-slot bar (`SpellbookModal` / `setSpellBarOrder` max 8) therefore filters a gifted library; it does not unlock one. Backend spells not in `OLD_SPELL_NAMES_SET` (2203–2236) merge into the same owned pool (2257–2271), including `admin.mo` `defaultSpells()` 168–191 (`vampire_bite`, `void_collapse` at minLevel 30, `reflect_barrier`, …). No `discoverSpell` / loot / unlock path exists in `src/frontend`. This is the opposite of the protected “spell-discovery excitement.” A no-cap game can drip tools forever; a gifted 32-spell book cannot.  
+SYSTEMS_AFFECTED: spells, spell discovery, spellbook, admin spells, progression  
+RECOMMENDED_ACTION: REWORK. Innate set = Strike + at most 2–3 starters (one defend, one reach, one sustain). All other current starters become findable (portal, named enemy, dungeon depth, boss, admin-authored drop) with explicit `SpellConfig` ids. Backend `defaultSpells()` must enter the same unlock table, not the create-time union. Keep the 8-slot bar as the loadout commitment.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-002 (merge clones before locking the unlock table); PXA-2026-08-31-005; PXA-2026-08-31-015  
+REGRESSION_RISK: HIGH — existing characters already own the full innate set via `spellBarOrder`. Need a one-time migrate: preserve equipped 8, mark the rest as unlocked-in-book so veterans are not stripped.  
+VALIDATION_REQUIRED: New profile owns ≤4 spells. A distinct find event adds exactly one id to owned, not to innate. `pnpm typecheck`. Play: first three maps do not open a 30-row book.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-002  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Merge overlapping spell identities into one tool each  
+CATEGORY: spells  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Near-duplicates in `spellData.ts`: Shield (`starter-shield` 30–47) and Iron Skin (`spell-iron-skin` 293–312) are both +30% RES / 3 turns. Poison Arrow (48–67) and Venom Strike (394–415) are both 4 DoT × 3, no upfront. Blood Mend (84–102) and Rallying Cry (416–436) are both self-heal +15% CHC / 2 turns. Expose (373–393) and Shadow Veil (480–500) are both damage + RES+SP shred. Life Drain (103–122), Drain Courage (437–458), and canister `vampire_bite` (`admin.mo` 178–179) are three drains. Mirror (198–214) and `reflect_barrier` (`admin.mo` 181–182) are two reflects. Enrage (273–292) vs Fury Potion (`BuffShop.tsx` 63–71); Haste (313–332) vs Swift Boots (48–55). Summon guardian kit even lists both Shield and Iron Skin (`spellData.ts` 593; `enemyAI.ts` 136).  
+SYSTEMS_AFFECTED: spells, summons, enemy kits, boss kits, buff shop  
+RECOMMENDED_ACTION: MERGE. One RES shield, one poison DoT, one mend+crit, one expose, one drain family, one reflect. Keep Swap, Mark, Barrier, Mirror, Timestep, Sacrifice, Inferno, Frost Nova, Lifesteal Nova, Cursed Wound, Weaken, Chain Lightning, and the five summons. Retarget `BOSS_KITS` / `ENEMY_KITS` / summon kits onto the survivors. Shop items must not clone the survivors (see PXA-011).  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-001 (unlock table should list survivors only)  
+REGRESSION_RISK: MEDIUM — boss kits and summon kits reference the clone ids. `validateBossKits()` will fail until kits are rewritten.  
+VALIDATION_REQUIRED: Each remaining spell answers a distinct question (range, timing, positioning, or resource). No two book spells share effect+duration+stat within 10%. Boss rush kits still resolve.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-003  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Honor or delete Boss Rush combined-mechanic copy  
+CATEGORY: bosses  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `BOSS_RUSH_ROOMS` (`hooks/useBossRush.ts` 23–134) attaches a unique `combinedMechanic` to each of 10 rooms (“Archbishop heals Pawn every 2 turns…”, “Final Pawn death reveals it was the real Pawn King…”, “Starved Pawn feeds on HP that Weeping Pawn regenerates…”). Repository search: the field is declared on `BossRushRoom` (18) and populated in that table only — no combat, AI, or `useBossSystem` reader. Pair fights therefore run as two independent `BossAbility` scripts. This violates “comprehensible encounter rules”: the UI (if shown) or the table (as design intent) teaches a rule the engine does not run. Solo boss kits remain honest (`bossKits.ts` + `BossAbility` in `bossTypes.ts` 10–58).  
+SYSTEMS_AFFECTED: bosses, boss rush, encounter rules, visual feedback  
+RECOMMENDED_ACTION: REWORK. Either (a) implement each advertised pair rule as explicit metadata on the room (not name heuristics) and surface it in the pre-fight banner, or (b) delete `combinedMechanic` and describe only abilities the engine already runs. Do not leave flavor that reads as a rule. Room 9 jackpot (5000/2000) stays a reward row, not a fake feed loop, until (a) exists.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-005 if pair spells must exist in the live catalog  
+REGRESSION_RISK: HIGH if (a) is bolted into `WorldExploration.tsx` instead of `engine/` + `useBossSystem`. LOW if (b) is copy-only.  
+VALIDATION_REQUIRED: For each room, a designer can point at the code path that implements the sentence on screen. Spectate room 0: heal-every-2 either happens or is not claimed.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-004  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Scale challenge, rush, dungeon, and feat grants with encounter threat  
+CATEGORY: rewards  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: No level cap. Level N→N+1 is `100 * 2^(N-1)` (`utils/xpCurve.ts` 10–12). Victory XP is `sum(enemy.level * 20)` (`rewardResolver.ts` 82–94). Challenges pay fixed 50–500 Doka and 0–1000 XP (`challengeCompletion.ts` 38–103). Feats pay fixed 50–1000 Doka (`admin.mo` 311–325). Rush rooms pay a fixed table (`useBossRush.ts` 32–132). Dungeon complete is `maxDepth * 50` Doka (ARCHITECTURE dungeon table). Boss *stat* scaling `1.08^diff` (`progression.ts` 290–324) already stays relevant at any level. Flat grants do not: they are a tutorial jackpot, then a rounding error. This is not an endgame-content complaint; the funnels stop answering “what progression fantasy does this support?”  
+SYSTEMS_AFFECTED: challenges, achievements, bosses, dungeons, rewards, progression  
+RECOMMENDED_ACTION: EXPAND. Express secondary grants as a function of the same threat the combatants already use (enemy/boss level, pack size, dungeon depth, modifier). Example shape: `round(baseTier * threatFactor)` with `threatFactor` from live encounter level, not player vanity level alone. Keep percentage death (`deathPenalty.ts` 9–10) and `2^n` spell upgrades as the unbounded sinks. Do not add a new currency.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-009 (which faucets remain)  
+REGRESSION_RISK: MEDIUM — persist path stays `applyRewards`; only the numbers fed in change. Recap copy must show the scaled figure that was advertised.  
+VALIDATION_REQUIRED: At player/enemy level 3 and level 30, a completed legendary-tier challenge is still a noticeable leftover-XP slice, not 1000 vs a 2^29 threshold. Death 40% Doka still dwarfs a single feat claim.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-005  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: One live catalog for admin spells and bosses  
+CATEGORY: admin-content  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Three truths: (1) live player/enemy book = `data/spellData.ts` + `SPELL_ID_CATALOG` (`bossKits.ts` 29–62); (2) client strips retired names `fireball` / `blood_nova` / `obliterate` / … (`WorldExploration.tsx` 2203–2236); (3) canister `defaultBossConfigs()` (`admin.mo` 350–368+) still seeds `spellPoolIds` like `fireball`, `cursed_gust`, `blood_nova`, and `defaultSpells()` is a different six-id set (`admin.mo` 168–191). Frontend `DEFAULT_BOSS_CONFIGS` (`bossDefaults.ts`) uses `getBossPhase1SpellIds`. Admin CRUD can publish a spell the engine will filter or cast without `targetType`. This is how identity dies without a code review.  
+SYSTEMS_AFFECTED: admin-enabled content, spells, bosses, enemies  
+RECOMMENDED_ACTION: REWORK. Canister seed + admin forms must offer only ids in the live catalog (or require the full targeting metadata before save). Boss phase pools must be the `bossKits.ts` ids. Delete or migrate retired names in `defaultBossConfigs`. Admin preview should use the same `targeting.ts` gate as a live cast.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-002; PXA-2026-08-31-015  
+REGRESSION_RISK: HIGH on a live canister that already stored old boss rows — need a seed repair, not a silent filter.  
+VALIDATION_REQUIRED: `getSpellConfigs` ∩ `SPELL_ID_CATALOG` is the combat set. An admin-only id cannot appear in a player book unless it passed the metadata schema.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-006  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Remove Blood from the player HUD until it spends  
+CATEGORY: resources  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Top bar always renders BLOOD (`GameFlow.tsx` 307–321) from `selectedCharacterProp?.blood` / `maxBlood` (defaults 0/100). `WorldExploration.tsx` 1118–1130 holds `bloodBalance` / `_bloodBalanceRef` and an unused `_setBloodBalance`. `updateSessionState` persists `bloodBalance` 0–100 (`main.mo` 2290–2305) with `covenantBuff` and `shrineCount`. No combat, shop, or death path spends Blood. DESIGN.md orbs are AP/MP/HP — Blood is a fourth bar with no decision. Unnecessary currency / information overload.  
+SYSTEMS_AFFECTED: visual feedback, progression, death (session fields)  
+RECOMMENDED_ACTION: DEPRECATE the HUD and the create-time Blood story. Keep the canister fields inert until a designed sink exists (do not invent one in this ID). Hide the bar for normal players.  
+AUTONOMY: ORCHESTRATOR_MAY_DRAFT (display-only hide)  
+DEPENDENCIES: None for hide; PXA-014 if shrine is later wired to Blood  
+REGRESSION_RISK: LOW if only the bar is hidden. MEDIUM if session writes are removed without a migrate.  
+VALIDATION_REQUIRED: World top bar shows XP + Doka + HP/AP/MP orbs only. No “BLOOD” label in player chrome. Typecheck clean.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-007  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: One enemy poster — piece kit or family, not both  
+CATEGORY: enemies  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Kits key on `ChessPieceType` (`enemyAI.ts` 156–178). Spawn also rolls `EnemyFamily` at 30% (`WorldExploration.tsx` 6236–6298): `wraith_bishop`, `iron_golem`, `plague_rat`, `ember_knight`, `tide_shade`, `bone_scribe`, `void_mirror` — HP/dmg/RES mults and pixels (`4150–4222`, `6257+`). Families do not change `buildEnemyKit`. `aiTier` is a fourth number (`gameConstants.ts` 200–208). Player must read chess role, monster name, and erratic/betrayal tier for one unit. Progressive sophistication should be “this bishop now poisons” (`levelZone`), not three taxonomies.  
+SYSTEMS_AFFECTED: enemies, AI, visual feedback  
+RECOMMENDED_ACTION: SIMPLIFY. Pick piece+kit as the public identity (families become palette aliases of the same kit) *or* replace pieces with families that own kits. Keep `aiTier` as a hidden gate, not a player-facing type. Extend kits past `levelZone` 2 (knight is melee-only forever — line 161).  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-013  
+REGRESSION_RISK: MEDIUM — pixel helpers and `EnemyRegister.tsx` copy mention families.  
+VALIDATION_REQUIRED: A new player can name what a unit does from one word + one kit. Zone 0 vs zone 2+ kits differ for every piece including knight.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-008  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Slim world-event modifiers to a learnable set  
+CATEGORY: world-events  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: 22 modifiers (`engine/mapModifiers.ts` 4, 152+). Slime Flood (154–162) and Frozen Terrain (164–172) are the same `onMpCost * 2`. Gravity Well (280–286) and Fog of War (288–296) are empty (“Mechanism not located. Placeholder.”) but still announce. Titan’s Vigor (299–316) adds **1000** HP and multiplies damage by a 1–5 roll — arbitrary, unscaled, no counterplay. Glass Realm ×2 and Doka Fever ×2 rewards are stat/reward inflation. Thorned Ground, Void Rift, Mirror Field, Arcane Overflow, Time Warp *do* add decisions. Two-roll trigger (20% then 50%) can stack two languages on one map.  
+SYSTEMS_AFFECTED: world events, challenges, visual feedback, rewards  
+RECOMMENDED_ACTION: MERGE Slime+Frozen into one “heavy ground.” DEPRECATE or implement Gravity Well / Fog of War (no announce until a hook exists). REWORK Titan’s Vigor into a rule (e.g. first strike each turn is amplified) with numbers that scale, not +1000. Cap simultaneous player-facing modifiers at one unless the second is a named dungeon rule.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-010 if dungeon uses a reserved modifier table  
+REGRESSION_RISK: MEDIUM — WX still branches on some ids (`isTimeWarp`, `isVoidRift` at 2183–2184). Empty ids can be removed from the roll table first.  
+VALIDATION_REQUIRED: Announce text always matches a live hook. No two active names mean the same MP rule. Titan no longer adds a flat 1000 HP at level 1 or level 50.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-009  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Separate feat stamps from in-battle challenges  
+CATEGORY: challenges  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Every fight randomly assigns one of 9 challenges, including legendary Untouchable 1000 XP (`WorldExploration.tsx` 12474–12482; `challengeCompletion.ts` 81–86). `easy_1` / `hard_1` and feat `pacifist_run` (`admin.mo` 324) all tax healing. Feat `critical_striker` and challenge `direct_hit` both ask for a combat style. Jackpot/betrayal feats fire from world RNG (`WorldExploration.tsx` 2139–2142, 12848–12854), not a choice. Two UIs (ChallengePanel + Feats) pay the same wallet.  
+SYSTEMS_AFFECTED: challenges, achievements, rewards, visual feedback  
+RECOMMENDED_ACTION: SIMPLIFY. Challenges = optional, encounter-shaped contracts offered when the room can actually fail them (not Untouchable on a lava-modifier map). Feats = durable stamps, not a second random Doka faucet. Drop or hide spectator feats (betrayal, jackpot) as player-facing mastery. One panel language: “Challenge” in battle, “Feats” in the menu — never both words for the same row.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-004  
+REGRESSION_RISK: MEDIUM — persist of challenge deltas is finally correct (`liveBattleChallengePersistEntries`); changing offer rules must not drop that path.  
+VALIDATION_REQUIRED: A lava+thorns map does not offer Untouchable. Pacifist exists in one system, not two. Recap still pays only completed, accepted challenges.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-010  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Give the dungeon chain a rule the overworld does not have  
+CATEGORY: dungeons  
+PRIORITY: P1  
+CONFIDENCE: MEDIUM  
+EVIDENCE: Chain is depth 3–5, `1.0 + depth * 0.25` Doka, completion `maxDepth * 50` (`docs/ARCHITECTURE.md` 312–334). `filterRunPortals` keeps only `"progression"` when cleared. After `cleanupMap` the flags zero — snapshot is mandatory. Tactically the maps are the same generator + same AI + same modifiers as free roam. A second “dungeon” is the admin room editor (`types/dungeon.ts`, `DungeonCreator.tsx`). Players cannot tell a chain from a lucky overworld path except the HUD depth and a white portal.  
+SYSTEMS_AFFECTED: dungeons, world events, bosses, rewards  
+RECOMMENDED_ACTION: EXPAND. Reserve a small modifier table and/or a guaranteed boss at final depth. Keep flee/death abort (already true). Rename the editor so “dungeon” means the run. Completion grant must follow PXA-004 (not `* 50`).  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-004; PXA-2026-08-31-008  
+REGRESSION_RISK: HIGH if `mapGen.ts` is rewritten (AGENTS.md forbids casual mapGen). Prefer portal + encounter rules, not a new generator.  
+VALIDATION_REQUIRED: A player who enters an entry portal can state the extra rule before the first fight. White portal still appears only on successful final depth.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-011  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: One shop authority — align buff catalog and stop cloning spells  
+CATEGORY: shops  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Player shop is `BUFF_ITEMS` in `BuffShop.tsx` 23–71 with `localStorage` `${principal}_inventory` (77–91). Canister `BUFF_CATALOG` (`main.mo` 1867–1874) uses `greater_potion` not `greater_health_potion`, elixir 200 vs 80, shield 150 vs 100, fury 100 vs 150. `purchaseBuff` / `useBuffItem` have no callers under `src/frontend/src/components`. IAP list is 15 euro SKUs to 1.6M Doka (`admin.mo` 265–282). Fury/Swift/Shield clone Enrage/Haste/Shield. AGENTS.md: backend-authoritative, localStorage cache only.  
+SYSTEMS_AFFECTED: shops, spells, rewards, progression  
+RECOMMENDED_ACTION: SIMPLIFY. Either wire the modal to `getBuffCatalog` / `purchaseBuff` / `useBuffItem` on the persist lock, or drop the canister catalog. Items that exist as spells should be consumable *timing* (this turn) not permanent clones — or be removed. Treat the 1.6M SKU as an explicit economy decision, not an unnoticed default.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-002  
+REGRESSION_RISK: HIGH if inventories exist only in localStorage — a cutover can wipe bought stacks. Migrate or grant a one-time refund.  
+VALIDATION_REQUIRED: Buy + use + reload + other device: stack matches canister. UI cost equals `getBuffCatalog`. No item restates a book buff for the rest of the fight without a shorter duration.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-012  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: One word per concept (Feats, resists, spell roles)  
+CATEGORY: terminology  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Menu title “Feats” (`AchievementsPanel.tsx` 231) vs `aria-label="Achievements"` (214) vs admin tab `achievements` vs canister `achievementConfigs`. Boss Guide splits SR and RES from one `res` field (`progression.ts` 281–288). `spellType: "damage"` on Shield, Swap, Timestep, Enrage (`spellData.ts` 40, 152, 225, 283). Blood vs Doka vs XP on one top bar. Challenge vs Feat for the same Doka.  
+SYSTEMS_AFFECTED: achievements, spells, visual feedback, admin  
+RECOMMENDED_ACTION: SIMPLIFY. Player-facing: Feats, Doka, XP, HP, AP, MP, RES (one resist unless combat actually splits). Admin may keep internal ids. `spellType` should match `effectType` for book/admin.  
+AUTONOMY: ORCHESTRATOR_MAY_DRAFT (copy-only)  
+DEPENDENCIES: PXA-2026-08-31-006 (Blood label); PXA-2026-08-31-009  
+REGRESSION_RISK: LOW for UI copy. Do not rename Candid fields in the same change.  
+VALIDATION_REQUIRED: A new player glossary of ≤12 terms covers the HUD. No screen says Achievement and Feat for the same row.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-013  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Keep teaching new enemy reads after level-zone 2  
+CATEGORY: AI  
+PRIORITY: P2  
+CONFIDENCE: MEDIUM  
+EVIDENCE: `ENEMY_KITS` (`enemyAI.ts` 156–178): pawn adds venom at zone≥1; knight is `["physical_attack"]` forever; bishop frost then +poison; rook +iron-skin; queen/king swap frost→inferno at zone≥2 and add a heal/rally. `levelZone` is a coarse 0/1/2 band, not character level. The AI *engine* can already sacrifice, summon, camp, betray (`ENEMY_AI_TIER_GATES` 200–208). Kits do not unlock those verbs. With no cap, zone 2 is “the rest of the game.”  
+SYSTEMS_AFFECTED: enemies, AI, progression  
+RECOMMENDED_ACTION: EXPAND kits along the existing engine verbs (summoner flag, healer, flanker, kamikaze) as named piece upgrades at further bands — still explicit ids, not name heuristics. Knight must gain at least one non-Strike tool. Do not add new AI toggles.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-007  
+REGRESSION_RISK: MEDIUM — kit size vs AP budgets can stall turns if every pawn gets Inferno.  
+VALIDATION_REQUIRED: At three documented bands, a player can name a new thing the enemy might do. Knight is not Strike-only at the highest band.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-014  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Shrine is a Doka tile, not a covenant  
+CATEGORY: world-events  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Stepping the altar credits 300 Doka through the persist lock (`WorldExploration.tsx` 11530–11543). If the path was “pure,” `covenantBuffMapsRef.current = 3` is written (11544–11557) and mirrored to `localStorage` `pbv_covenant_buff_*`. Grep of that ref: **init + that write only** — never decremented, never read for damage, AP, or resist. `covenantBuff` on the character (`main.mo` 114, 2295) is unused by the client shop/combat. Feature bloat: a named fantasy with no effect.  
+SYSTEMS_AFFECTED: world events, shops, progression, death (session)  
+RECOMMENDED_ACTION: SIMPLIFY now — treat shrine as a 300 Doka pickup (or scale via PXA-004) and stop storing a fake 3-map buff. EXPAND later only with a real, announced combat hook and a backend write, not localStorage.  
+AUTONOMY: ORCHESTRATOR_MAY_DRAFT (remove write-only buff; keep Doka credit)  
+DEPENDENCIES: PXA-2026-08-31-004 if 300 stays as a grant  
+REGRESSION_RISK: LOW — nothing reads the buff.  
+VALIDATION_REQUIRED: Altar still pays Doka once. No covenant string in battle log or HUD.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: PXA-2026-08-31-015  
+SOURCE_AUTOMATION: Player Experience Coherence Auditor  
+TITLE: Admin spells must carry targeting metadata or they do not save  
+CATEGORY: admin-content  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Live cast/preview require `SpellConfig.targetType`, min/max range, LoS, linear/diagonal, `freeCells`, `areaRadius`, `isBarrier` (`docs/ARCHITECTURE.md` 356; `engine/targeting.ts`). Admin `newSpell()` (`AdminDashboard.tsx` 57+) and Motoko `SpellConfig` (`admin.mo` default rows) can omit or mismatch those fields. `effectType` / `spellType` / `effectCategory` already disagree on seeded rows (`vampire_bite` is `effectType = "heal"` and `spellType = "drain"`). A published admin spell is public (`getSpellConfigs`) and merges into `ownedSpells` if not in `OLD_SPELL_NAMES_SET`.  
+SYSTEMS_AFFECTED: admin-enabled content, spells, spell discovery  
+RECOMMENDED_ACTION: REWORK the admin save path: reject spells missing the live targeting schema; preview with the same gate as the canvas. Do not allow name-based fallbacks. Pair with PXA-005 so the dropdown is the live catalog.  
+AUTONOMY: HUMAN_DESIGN_REQUIRED  
+DEPENDENCIES: PXA-2026-08-31-005  
+REGRESSION_RISK: MEDIUM — existing admin rows may fail the new validator; quarantine rather than crash combat.  
+VALIDATION_REQUIRED: Saving a spell without `targetType` returns an error. A valid admin spell previews and casts like a `spellData` row.  
+STATUS: NEW
