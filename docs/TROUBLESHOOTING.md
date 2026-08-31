@@ -217,7 +217,7 @@ Double-click: `shouldBeginAchievementClaim` (in-flight set). The second click hi
 
 ### Lava death after victory / portal refunds the penalty
 
-The recap wrapper in `App.tsx` is `pointer-events: none` (world tiles still receive input); a portal swap has no overlay. `applyRewards` can still be in flight when lava/spikes fire. The death write already penalized the post-credit committed snapshot. Applying the post-await live hydrate (`shouldApplyVictoryLiveHydrate`, including death-epoch mismatch) restores HP and unpenalized XP; `hydrateWhenIdle` then copies that into committed and the next persist refunds the death.
+The recap wrapper in `App.tsx` is `pointer-events: none` so HUD heal/shop stay live. Canvas mouse/touch must still ignore the world while `battleRecapOpen` is true (`shouldIgnoreWorldInputDuringRecap`). A portal swap has no overlay. If lava/spikes still fire during `applyRewards`, the death write already penalized the post-credit committed snapshot. Applying the post-await live hydrate (`shouldApplyVictoryLiveHydrate`, including death-epoch mismatch) restores HP and unpenalized XP; `hydrateWhenIdle` then copies that into committed and the next persist refunds the death.
 
 ### Boss rush resume / farm / stuck between rooms
 

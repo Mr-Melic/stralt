@@ -342,6 +342,7 @@ import {
   spendFromUiBalance,
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
+import { shouldIgnoreWorldInputDuringRecap } from "../utils/recapWorldInput";
 import {
   RENAME_DOKA_COST,
   committedDokaAfterRename,
@@ -470,6 +471,11 @@ interface WorldExplorationProps {
   userId?: string;
   onDebugLog?: (event: string, detail: string) => void;
   onShowBattleSummary?: (data: BattleRecapData) => void;
+  /**
+   * App-root recap is pointer-events: none so HUD heal/shop stay live.
+   * When true, canvas walk / hazard clicks must be ignored.
+   */
+  battleRecapOpen?: boolean;
   /** Top-bar item shop open flag. BuffShop is a modal and returns null when this is not true. */
   itemShopOpen?: boolean;
   onItemShopClose?: () => void;
@@ -772,6 +778,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   userId,
   onDebugLog,
   onShowBattleSummary,
+  battleRecapOpen = false,
   itemShopOpen = false,
   onItemShopClose,
   achievementsOpen = false,
@@ -10457,6 +10464,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (shouldIgnoreSyntheticClickAfterTouch(lastCanvasTouchEndAtRef.current))
         return;
       if (!currentMap || transitionInProgressRef.current) return;
+      if (shouldIgnoreWorldInputDuringRecap(battleRecapOpen)) return;
       if (
         (inBattleRef.current &&
           (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)) ||
@@ -11121,6 +11129,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       clientToGrid,
       findPath,
       inBattle,
+      battleRecapOpen,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
@@ -11192,6 +11201,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       lastCanvasTouchEndAtRef.current = Date.now();
       if (!currentMap || transitionInProgressRef.current) return;
+      if (shouldIgnoreWorldInputDuringRecap(battleRecapOpen)) return;
       if (
         inBattleRef.current &&
         (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)
@@ -11715,6 +11725,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       clientToGrid,
       findPath,
       inBattle,
+      battleRecapOpen,
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,

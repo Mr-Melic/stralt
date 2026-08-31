@@ -75,6 +75,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md](docs/automation/ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md) | Owner enemy/boss studio design (docs only) |
 | [docs/automation/ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md](docs/automation/ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md) | EBA-2026-08-31 ACTION_ID ledger |
 | [docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md](docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md) | Observe→win discovery, pool generations, Wave-1 spell cards (design only) |
+| [docs/automation/ACTION_IDS_2026-08-31-1200.md](docs/automation/ACTION_IDS_2026-08-31-1200.md) | 12:00 orchestrator ledger (post-merge-burst) |
 
 ## Hard rules (product)
 

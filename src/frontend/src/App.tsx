@@ -474,6 +474,7 @@ function App() {
               isAdmin={isAdmin}
               onOpenAdmin={() => setShowAdmin(true)}
               onShowBattleSummary={setBattleSummary}
+              battleRecapOpen={battleSummary != null}
             />
             <Toaster />
 

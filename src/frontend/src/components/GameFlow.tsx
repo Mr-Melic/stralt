@@ -32,6 +32,8 @@ interface GameFlowProps {
   isAdmin?: boolean;
   onOpenAdmin?: () => void;
   onShowBattleSummary?: (data: BattleRecapData) => void;
+  /** True while App.tsx is showing the root PostBattleRecap overlay. */
+  battleRecapOpen?: boolean;
   boostMode?: "xp" | "rewards";
   onBoostToggle?: () => void;
   // onShopToggle removed — shop is now handled internally via showShop state
@@ -42,6 +44,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
   isAdmin,
   onOpenAdmin,
   onShowBattleSummary,
+  battleRecapOpen = false,
   boostMode: _boostMode = "xp",
   onBoostToggle: _onBoostToggle,
   // onShopToggle removed — shop is now handled internally via showShop state
@@ -251,6 +254,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
           onDebugLog={handleDebugLog}
           onShowBattleSummary={onShowBattleSummary}
+          battleRecapOpen={battleRecapOpen}
           dokaBalance={dokaBalance}
           dokaWalletReady={shouldMarkCallerDokaWalletReady({
             queryResolved: backendDokaBalance !== undefined,
