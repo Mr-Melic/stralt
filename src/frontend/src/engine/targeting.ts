@@ -114,6 +114,26 @@ export function playerSpellRequiresLos(spell: {
   return !!spell.lineOfSight;
 }
 
+/**
+ * Ground / barrier range metric shared by highlight and live.
+ *
+ * Non-diagonal: Manhattan (|dx|+|dy| <= range).
+ * Diagonal: Chebyshev (max(|dx|,|dy|) <= range) — the highlight loop
+ * already walked a Chebyshev box; live used to skip the Manhattan
+ * check and then apply no cap, so a far tile could execute.
+ */
+export function groundTileInRange(
+  dx: number,
+  dy: number,
+  range: number,
+  diagonal?: boolean,
+): boolean {
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  if (diagonal) return Math.max(adx, ady) <= range;
+  return adx + ady <= range;
+}
+
 type LoSCell = { x: number; y: number };
 
 /**
@@ -310,7 +330,7 @@ export function computeTargetableTiles(
         const ny = casterPos.y + dy;
         if (nx < 0 || ny < 0 || nx >= worldGridSize || ny >= worldGridSize)
           continue;
-        if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) continue;
+        if (!groundTileInRange(dx, dy, range, spell.diagonal)) continue;
         if (barrierTiles.has(`${nx},${ny}`)) continue;
         const key = `${nx},${ny}`;
         if (!occupied.has(key) && tiles[ny]?.[nx] !== "wall") {
@@ -571,7 +591,7 @@ export function isTileCastableLive(
   if (targetType === "ground" || spell.isBarrier) {
     const dx = Math.abs(tx - casterPos.x);
     const dy = Math.abs(ty - casterPos.y);
-    if (Math.abs(dx) + Math.abs(dy) > range && !spell.diagonal) {
+    if (!groundTileInRange(dx, dy, range, spell.diagonal)) {
       return { ok: false, reason: "ground_out_of_range" };
     }
     if (barriers?.has(destKey)) {
@@ -791,7 +811,7 @@ export function attackNearestLiveCasterPos(
 export function spellHighlightRangeBase(
   spell: Pick<SpellConfig, "maxRange" | "range">,
 ): number {
-  return spell.maxRange ?? Math.max(1, Number(spell.range));
+  return spellRangeBase(spell);
 }
 
 /**
@@ -800,7 +820,6 @@ export function spellHighlightRangeBase(
  * minRange / linear) used to pick a closer blocked tile — or miss a
  * farther highlighted one — so Attack Nearest and the blue ring disagreed.
  */
-
 export function playerSpellEffectiveRange(
   spell: SpellConfig,
   getEffectiveSpellRange: (baseRange: number, spellId?: string) => number,
@@ -979,4 +998,123 @@ export function canAttackNearestAgainstLive(
     effectiveRange,
     barrierTiles,
   );
+}
+
+/**
+ * Attack Nearest / execute AP preview. Arcane Surge and other
+ * `applyApCost` modifiers must run here — raw `spell.apCost` let the
+ * button light up when executeCastAttempt still rejected.
+ */
+export function canAffordCastAp(
+  currentAp: number,
+  baseCost: number,
+  applyApCost: (base: number) => number = (base) => base,
+): boolean {
+  const have = Math.max(0, Math.floor(Number(currentAp) || 0));
+  const need = applyApCost(Math.max(0, Math.floor(Number(baseCost) || 0)));
+  return have >= need;
+}
+
+/**
+ * Attack Nearest pick used by tests and the execute path.
+ * Self / heal lands on the caster tile (the player tile Attack Nearest
+ * already resolved via {@link attackNearestLiveCasterPos}).
+ */
+export function findAttackNearestTarget(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  hostiles: ReadonlyArray<{ x: number; y: number }>,
+  mapTiles: TileType[][],
+  effectiveRange: number,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+): { x: number; y: number } | null {
+  if (spell.targetType === "self" && spell.effectType === "heal") {
+    return shouldExecuteLiveCast(
+      isTileCastableLive(
+        spell,
+        caster,
+        { x: caster.x, y: caster.y },
+        hostiles as Enemy[],
+        mapTiles,
+        effectiveRange,
+        barrierTiles,
+      ),
+    )
+      ? { x: caster.x, y: caster.y }
+      : null;
+  }
+  return pickNearestLiveHostileTile(
+    spell,
+    caster,
+    hostiles,
+    hostiles as Enemy[],
+    mapTiles,
+    effectiveRange,
+    barrierTiles,
+  );
+}
+
+export interface HighlightLiveMismatch {
+  highlightOnly: string[];
+  liveOnly: string[];
+}
+
+/**
+ * Full-board scan: every highlighted tile must be live-ok, and every
+ * live-ok tile must be highlighted. Used by parity tests so a painted
+ * legal target is executable and an illegal target cannot execute.
+ */
+export function collectHighlightLiveMismatches(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  grid: TargetGridState,
+): HighlightLiveMismatch;
+export function collectHighlightLiveMismatches(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  enemies: Enemy[],
+  tiles: TileType[][],
+  effectiveRange: number,
+  barrierTiles?: BarrierTiles,
+): HighlightLiveMismatch;
+export function collectHighlightLiveMismatches(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  gridOrEnemies: TargetGridState | Enemy[],
+  tiles?: TileType[][],
+  effectiveRange?: number,
+  barrierTiles?: BarrierTiles,
+): HighlightLiveMismatch {
+  const grid: TargetGridState = Array.isArray(gridOrEnemies)
+    ? {
+        tiles: tiles ?? [],
+        enemies: gridOrEnemies,
+        worldGridSize: tiles?.length ?? 0,
+        effectiveRange: effectiveRange ?? spellRangeBase(spell),
+        barrierTiles: barrierTiles ?? EMPTY_BARRIER_TILES,
+      }
+    : gridOrEnemies;
+  const highlighted = computeTargetableTiles(spell, caster, grid);
+  const highlightOnly: string[] = [];
+  const liveOnly: string[] = [];
+  const size = grid.worldGridSize;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const key = `${x},${y}`;
+      const live = isTileCastableLive(
+        spell,
+        caster,
+        { x, y },
+        grid.enemies,
+        grid.tiles,
+        grid.effectiveRange,
+        grid.barrierTiles,
+      );
+      const hi = highlighted.has(key);
+      const ok = shouldExecuteLiveCast(live);
+      if (hi && !ok) highlightOnly.push(key);
+      if (ok && !hi) liveOnly.push(key);
+    }
+  }
+  return { highlightOnly, liveOnly };
 }

@@ -212,18 +212,16 @@ import {
   type TileCastableResult,
   applyHealBuffSideEffect,
   attackNearestLiveCasterPos,
+  canAffordCastAp,
   canAttackNearestAgainstLive,
-  canAttackNearestLive,
   computeTargetableTiles,
   hasBresenhamLoS,
   isTileCastableLive,
   pickNearestAttackableHostile,
-  pickNearestLiveHostileTile,
-  probeLiveCast,
+  playerSpellEffectiveRange,
+  probeLiveCast as probeLiveCastAt,
   shouldBypassHighlightForLiveHostile,
   shouldExecuteLiveCast,
-  spellHighlightRangeBase,
-  spellRangeBase,
 } from "../engine/targeting";
 import {
   liveTurnOrder,
@@ -7721,10 +7719,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       tiles: currentMap.tiles,
       enemies: liveEnemies,
       worldGridSize: WORLD_GRID_SIZE,
-      effectiveRange: getEffectiveSpellRange(
-        spellHighlightRangeBase(spell),
-        spell.modifiableRange ? spell.id : undefined,
-      ),
+      effectiveRange: playerSpellEffectiveRange(spell, getEffectiveSpellRange),
       barrierTiles: barrierTilesRef.current,
     });
     // M5: store computed result in cache
@@ -7749,10 +7744,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         tile,
         getLiveCombatants(combatantStoreCtx),
         currentMap?.tiles ?? [],
-        getEffectiveSpellRange(
-          spellRangeBase(spell),
-          spell.modifiableRange ? spell.id : undefined,
-        ),
+        playerSpellEffectiveRange(spell, getEffectiveSpellRange),
         barrierTilesRef.current,
       );
     },
@@ -17508,12 +17500,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       return;
     }
     // Arcane Surge: spells cost 1 less AP (minimum 1) — matches handleCanvasClick
-    const apCost = mapModifierRegistry.applyApCost(
-      Number(spell.apCost),
-      activeMapModifierTypes,
-      { log: (msg: string) => logDebugInfo("MODIFIER", msg), rng: Math.random },
-    );
-    if (!(currentBattleApRef.current >= apCost)) return;
+    if (
+      !canAffordCastAp(
+        currentBattleApRef.current,
+        Number(spell.apCost),
+        (base) =>
+          mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+            log: (msg: string) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random,
+          }),
+      )
+    )
+      return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
     // Same range + live gate as the highlight / sprite-click paths.
@@ -17530,14 +17528,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       getActiveCasterPos(),
     );
     const liveCombatants = getLiveCombatants(combatantStoreCtx);
-    const effectiveRange = getEffectiveSpellRange(
-      spellHighlightRangeBase(spell),
-      spell.modifiableRange ? spell.id : undefined,
+    const effectiveRange = playerSpellEffectiveRange(
+      spell,
+      getEffectiveSpellRange,
     );
     let gridPos: { x: number; y: number };
     if (isHealSpell) {
       gridPos = { x: casterPos.x, y: casterPos.y };
-      const liveHeal = probeLiveCast(spell, gridPos);
+      // Local probeLiveCast uses getActiveCasterPos() (summon tile).
+      // Attack Nearest heals only on the player tile — probe from casterPos.
+      const liveHeal = probeLiveCastAt(
+        spell,
+        casterPos,
+        gridPos,
+        liveCombatants,
+        mapTiles,
+        effectiveRange,
+        barrierTilesRef.current,
+      );
       if (!shouldExecuteLiveCast(liveHeal)) {
         setNoTargetFlash(true);
         setTimeout(() => setNoTargetFlash(false), 1200);
@@ -19077,15 +19085,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
               const tiles = currentMapRef.current?.tiles;
               if (!spell || !tiles) return false;
-              const apCost = mapModifierRegistry.applyApCost(
-                Number(spell.apCost),
-                activeMapModifierTypes,
-                {
-                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                  rng: Math.random,
-                },
-              );
-              if (currentBattleAp < apCost) return false;
+              if (
+                !canAffordCastAp(
+                  currentBattleAp,
+                  Number(spell.apCost),
+                  (base) =>
+                    mapModifierRegistry.applyApCost(
+                      base,
+                      activeMapModifierTypes,
+                      {
+                        log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                        rng: Math.random,
+                      },
+                    ),
+                )
+              )
+                return false;
               const casterPos = attackNearestLiveCasterPos(
                 playerPositionRef.current,
                 getActiveCasterPos(),
@@ -19096,10 +19111,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 casterPos,
                 liveCombatants,
                 tiles,
-                getEffectiveSpellRange(
-                  spellHighlightRangeBase(spell),
-                  spell.modifiableRange ? spell.id : undefined,
-                ),
+                playerSpellEffectiveRange(spell, getEffectiveSpellRange),
                 barrierTilesRef.current,
               );
             })()

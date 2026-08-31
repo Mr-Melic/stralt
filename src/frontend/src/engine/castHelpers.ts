@@ -31,6 +31,7 @@ import {
   processCombatantDeath,
 } from "./deathPipeline.ts";
 import type { PlayerCastEnemy, PlayerCastTarget } from "./spellEngine";
+import { spellRangeBase } from "./targeting.ts";
 import { removeCombatantFromTurnQueue } from "./turnQueue.ts";
 
 /**
@@ -94,7 +95,7 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
 
   // FEATURE 4: Multi-target + AoE — build list of targets
   const effectiveRange = getEffectiveSpellRange(
-    Math.max(1, Number(spell.maxRange ?? spell.range)),
+    Math.max(1, spellRangeBase(spell)),
     spell.modifiableRange ? spell.id : undefined,
   );
   // AoE hit tiles: collect enemies at each tile in the hitTiles pattern around the clicked target.
