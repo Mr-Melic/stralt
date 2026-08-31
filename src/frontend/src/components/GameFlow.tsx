@@ -216,11 +216,6 @@ const GameFlow: React.FC<GameFlowProps> = ({
     handleBackToSelection();
   };
 
-  const _handleDungeonComplete = (dungeon: Record<string, unknown>) => {
-    setDungeonData(dungeon);
-    setCurrentStage("world");
-  };
-
   const handleBackToSelection = () => {
     setCurrentStage("selection");
     setSelectedCharacter(null);
