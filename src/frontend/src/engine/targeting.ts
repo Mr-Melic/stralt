@@ -811,6 +811,9 @@ export function pickNearestAttackableHostile(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
 ): { x: number; y: number } | null {
   return pickNearestLiveHostileTile(
     spell,
@@ -819,6 +822,7 @@ export function pickNearestAttackableHostile(
     liveCombatants,
     mapTiles,
     effectiveRange,
+    barrierTiles,
   );
 }
 
@@ -829,6 +833,9 @@ export function canAttackNearestAgainstLive(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
 ): boolean {
   return canAttackNearestLive(
     spell,
@@ -837,5 +844,6 @@ export function canAttackNearestAgainstLive(
     liveCombatants,
     mapTiles,
     effectiveRange,
+    barrierTiles,
   );
 }
