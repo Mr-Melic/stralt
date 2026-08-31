@@ -390,6 +390,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
   applyXpDelta,
   recapXpAfterGrant,
@@ -3424,6 +3425,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       100 * (1 + ((characterStats?.level ?? 1) - 1) * growthRate),
     );
   }, [characterStats?.level, levelUpConfig.statGrowthPercent]);
+
+  const sidePanelVitalsCaps = useMemo(
+    () =>
+      vitalsOrbCaps({
+        maxHp,
+        maxAp: characterStats.maxAp,
+        maxMp: characterStats.maxMp,
+      }),
+    [maxHp, characterStats.maxAp, characterStats.maxMp],
+  );
 
   // Filled after tileCenter is defined. Damage callbacks are declared
   // earlier, so they read this ref instead of closing over tileCenter.
@@ -18606,23 +18617,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   cls: "dofus-hp-orb",
                   label: "HP",
                   value: characterStats.hp,
-                  max: 100,
+                  max: sidePanelVitalsCaps.hp,
                 },
                 {
                   cls: "dofus-ap-orb",
                   label: "AP",
                   value: inBattle ? currentBattleAp : characterStats.ap,
-                  max: 6,
+                  max: sidePanelVitalsCaps.ap,
                 },
                 {
                   cls: "dofus-mp-orb",
                   label: "MP",
                   value: inBattle ? currentBattleMp : characterStats.mp,
-                  max: 4,
+                  max: sidePanelVitalsCaps.mp,
                 },
               ].map((orb) => (
                 <div
                   key={orb.label}
+                  title={`${orb.label} ${orb.value} / ${orb.max}`}
+                  aria-label={`${orb.label} ${orb.value} of ${orb.max}`}
                   style={{
                     display: "flex",
                     flexDirection: "column",
@@ -18644,7 +18657,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         marginTop: 1,
                       }}
                     >
-                      {orb.label}
+                      {orb.value}/{orb.max}
                     </span>
                   </div>
                   {/* Mini bar below orb */}
@@ -18660,7 +18673,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     <div
                       style={{
                         height: "100%",
-                        width: `${Math.min(100, (orb.value / orb.max) * 100)}%`,
+                        width: `${vitalsOrbFillPct(orb.value, orb.max)}%`,
                         background:
                           orb.label === "HP"
                             ? "#e74c3c"
@@ -19280,6 +19293,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }}
           currentBattleAp={currentBattleAp}
           currentBattleMp={currentBattleMp}
+          maxBattleAp={characterStats.maxAp}
+          maxBattleMp={characterStats.maxMp}
           onEndBattle={() => {
             // ── S2: RUN-THEMED FLEE CONFIRM ────────────────────────────────
             // Fleeing a battle inside an active dungeon or boss-rush run ends
