@@ -839,6 +839,44 @@ export function liveHostilesForAttackNearest<
   );
 }
 
+/**
+ * Mouse / sprite / touch / Attack Nearest share this probe so a highlighted
+ * tile and a live click cannot disagree on geometry.
+ */
+export function probeLiveCast(
+  spell: SpellConfig,
+  casterPos: CasterPosition,
+  tile: { x: number; y: number },
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+  effectiveRange: number,
+  barrierTiles:
+    | ReadonlyMap<string, number>
+    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
+): TileCastableResult {
+  return isTileCastableLive(
+    spell,
+    casterPos,
+    tile,
+    liveCombatants,
+    mapTiles,
+    effectiveRange,
+    barrierTiles,
+  );
+}
+
+/**
+ * Entity-first hostile clicks already passed the live gate. Skip the
+ * cached highlight membership check so a just-moved enemy is still
+ * clickable when geometry says yes (the documented WX bypass).
+ */
+export function shouldBypassHighlightForLiveHostile(
+  occupantIsLiveHostile: boolean,
+  live: TileCastableResult,
+): boolean {
+  return occupantIsLiveHostile && shouldExecuteLiveCast(live);
+}
+
 /** Execute path: live store + hostility filter + highlight live gate. */
 export function pickNearestAttackableHostile(
   spell: SpellConfig,
