@@ -39,16 +39,15 @@ export interface AdminAuditEntry {
 
 export interface UiLayoutActor extends backendInterface {
   getUserUiLayout(): Promise<string>;
-  saveUserUiLayout(
-    layout: string,
-  ): Promise<AdminCmdResult>;
+  saveUserUiLayout(layout: string): Promise<AdminCmdResult>;
   adminRollbackLevelUpConfig(): Promise<AdminCmdResult>;
   adminRollbackGameConfig(): Promise<AdminCmdResult>;
   adminRollbackTierSpawnConfig(): Promise<AdminCmdResult>;
   adminRollbackColorPalette(): Promise<AdminCmdResult>;
   adminRollbackBossRushConfig(): Promise<AdminCmdResult>;
   getAdminAuditLog(): Promise<
-    { __kind__: "ok"; ok: Array<AdminAuditEntry> } | { __kind__: "err"; err: string }
+    | { __kind__: "ok"; ok: Array<AdminAuditEntry> }
+    | { __kind__: "err"; err: string }
   >;
 }
 
