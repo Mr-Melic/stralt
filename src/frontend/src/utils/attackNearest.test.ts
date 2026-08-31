@@ -1,68 +1,136 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { isActiveHostile } from "../engine/battleSetup.ts";
-import type { Enemy } from "../types/gameTypes.ts";
+import {
+  canAttackNearestAgainstLive,
+  liveHostilesForAttackNearest,
+  pickNearestAttackableHostile,
+} from "../engine/targeting.ts";
+import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 
-function findNearestHostile(
-  casterPos: { x: number; y: number },
-  effectiveRange: number,
-  liveCombatants: Array<
-    Partial<Enemy> & {
-      id: string;
-      x: number;
-      y: number;
-      hp?: number;
-      side?: "player" | "enemy";
-      isSummon?: boolean;
-    }
-  >,
-): (typeof liveCombatants)[0] | null {
-  const liveHostiles = liveCombatants.filter((e) =>
-    isActiveHostile({
-      hp: e.hp ?? 0,
-      side: e.side,
-      isSummon: e.isSummon,
-    }),
+function floorGrid(size: number): Array<Array<"floor" | "wall" | "portal">> {
+  return Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => "floor" as const),
   );
-  let nearest: (typeof liveHostiles)[0] | null = null;
-  let nearestDist = Number.POSITIVE_INFINITY;
-  for (const e of liveHostiles) {
-    const dx = Math.abs(e.x - casterPos.x);
-    const dy = Math.abs(e.y - casterPos.y);
-    const dist = Math.max(dx, dy);
-    if (dist <= effectiveRange && dist < nearestDist) {
-      nearest = e;
-      nearestDist = dist;
-    }
-  }
-  return nearest;
 }
 
-describe("findNearestHostile", () => {
-  it("targets enemy-side summons that are only in the live combatant store", () => {
-    const liveCombatants = [
-      { id: "player-summon-wolf", x: 2, y: 2, side: "player" as const, hp: 20 },
-      { id: "enemy-minion-rat", x: 3, y: 3, side: "enemy" as const, hp: 15 },
+function unit(
+  id: string,
+  x: number,
+  y: number,
+  extra: Partial<Enemy> = {},
+): Enemy {
+  return {
+    id,
+    x,
+    y,
+    hp: 20,
+    maxHp: 20,
+    name: id,
+    pieceType: "pawn",
+    ...extra,
+  } as Enemy;
+}
+
+function poison(range: number): SpellConfig {
+  return {
+    id: "starter-poison",
+    name: "Poison",
+    description: "",
+    iconEmoji: "",
+    apCost: 2n,
+    mpCost: 0n,
+    damage: 8n,
+    range: BigInt(range),
+    effectType: "damage",
+    targetType: "enemy",
+    maxRange: range,
+    minRange: 1,
+  } as SpellConfig;
+}
+
+describe("liveHostilesForAttackNearest", () => {
+  it("keeps an enemy-side minion that exists only in the live store", () => {
+    const live = [
+      unit("wolf", 2, 2, { isSummon: true, side: "player" }),
+      unit("larva", 3, 3, { isSummon: true, side: "enemy" }),
     ];
-    const target = findNearestHostile({ x: 1, y: 1 }, 3, liveCombatants);
-    assert.ok(target);
-    assert.equal(target?.id, "enemy-minion-rat");
+    assert.deepEqual(
+      liveHostilesForAttackNearest(live).map((e) => e.id),
+      ["larva"],
+    );
+    assert.equal(isActiveHostile(live[0]), false);
+    assert.equal(isActiveHostile(live[1]), true);
   });
 
-  it("ignores dead enemies and player-side allies", () => {
-    const liveCombatants = [
-      { id: "dead-enemy", x: 2, y: 2, side: "enemy" as const, hp: 0 },
-      { id: "player-ally", x: 2, y: 2, side: "player" as const, hp: 50 },
+  it("drops corpses and player-side allies so Attack Nearest cannot snipe them", () => {
+    const live = [
+      unit("dead-rat", 2, 2, { hp: 0, side: "enemy" }),
+      unit("wolf", 2, 3, { isSummon: true, side: "player", hp: 40 }),
     ];
-    const target = findNearestHostile({ x: 1, y: 1 }, 3, liveCombatants);
-    assert.equal(target, null);
+    assert.deepEqual(liveHostilesForAttackNearest(live), []);
   });
 
-  it("ignores leftover player summons that lack an explicit side", () => {
-    const liveCombatants = [
-      { id: "leftover-wolf", x: 2, y: 2, isSummon: true, hp: 40 },
+  it("drops a leftover player summon that never received an explicit side", () => {
+    const live = [unit("leftover-wolf", 2, 2, { isSummon: true, hp: 40 })];
+    assert.deepEqual(liveHostilesForAttackNearest(live), []);
+  });
+});
+
+describe("pickNearestAttackableHostile production path", () => {
+  it("skips a closer corpse and a leftover wolf so the living hostile is chosen", () => {
+    const tiles = floorGrid(20);
+    const caster = { x: 10, y: 10 };
+    const corpse = unit("corpse", 11, 10, { hp: 0, side: "enemy" });
+    const wolf = unit("wolf", 11, 11, { isSummon: true, side: "player" });
+    const rat = unit("rat", 13, 10, { side: "enemy" });
+    const live = [corpse, wolf, rat];
+    const picked = pickNearestAttackableHostile(
+      poison(5),
+      caster,
+      live,
+      tiles,
+      5,
+    );
+    assert.deepEqual(picked, { x: 13, y: 10 });
+    assert.equal(
+      canAttackNearestAgainstLive(poison(5), caster, live, tiles, 5),
+      true,
+    );
+  });
+
+  it("disables Attack Nearest when only dead or allied units remain", () => {
+    const tiles = floorGrid(20);
+    const caster = { x: 10, y: 10 };
+    const live = [
+      unit("dead", 11, 10, { hp: 0, side: "enemy" }),
+      unit("wolf", 12, 10, { isSummon: true, side: "player" }),
     ];
-    const target = findNearestHostile({ x: 1, y: 1 }, 3, liveCombatants);
-    assert.equal(target, null);
+    assert.equal(
+      pickNearestAttackableHostile(poison(5), caster, live, tiles, 5),
+      null,
+    );
+    assert.equal(
+      canAttackNearestAgainstLive(poison(5), caster, live, tiles, 5),
+      false,
+    );
+  });
+
+  it("still skips a nearer LoS-blocked hostile after the live-store filter", () => {
+    const tiles = floorGrid(20);
+    tiles[10][11] = "wall";
+    const caster = { x: 10, y: 10 };
+    const blocked = unit("blocked", 12, 10, { side: "enemy" });
+    const open = unit("open", 10, 13, { side: "enemy" });
+    const wolf = unit("wolf", 11, 10, { isSummon: true, side: "player" });
+    const spell = { ...poison(5), lineOfSight: true } as SpellConfig;
+    const picked = pickNearestAttackableHostile(
+      spell,
+      caster,
+      [blocked, open, wolf],
+      tiles,
+      5,
+    );
+    assert.deepEqual(picked, { x: 10, y: 13 });
   });
 });

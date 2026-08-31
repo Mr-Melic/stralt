@@ -148,6 +148,27 @@ export function recordChallengeDamageTaken(
 }
 
 /**
+ * Battle-walk Thorned Ground / Void Rift HP loss.
+ *
+ * Mouse and touch both call this after `battleWalkHazardDamages`.
+ * Touch used to skip the debit, so tablet walks kept Untouchable / under-
+ * damage challenges the mouse path already failed.
+ */
+export function recordChallengeWalkHazardDamage(
+  current: number,
+  damages: { thornDmg: number; riftDmg: number },
+): number {
+  let next = current;
+  if (damages.thornDmg > 0) {
+    next = recordChallengeDamageTaken(next, damages.thornDmg);
+  }
+  if (damages.riftDmg > 0) {
+    next = recordChallengeDamageTaken(next, damages.riftDmg);
+  }
+  return next;
+}
+
+/**
  * Mark heal-used for `no_healing` / `no_healing_under_30_damage`.
  *
  * handleBattleEnd persists easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP)

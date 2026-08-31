@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { battleWalkHazardDamages } from "../engine/battleSetup.ts";
 import {
   type Challenge,
   type ChallengePanelProgress,
@@ -15,6 +16,7 @@ import {
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
   recordChallengePlayerTurnStart,
+  recordChallengeWalkHazardDamage,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
   shouldClearSpellAfterApSpend,
@@ -303,6 +305,64 @@ describe("recordInBattleChallengeHealUsed", () => {
         }),
       ),
       false,
+    );
+  });
+});
+
+describe("battle-walk hazards fail Untouchable (mouse and touch share this path)", () => {
+  it("debits Thorned Ground extra tiles so tablet walk cannot keep Untouchable", () => {
+    const damages = battleWalkHazardDamages({
+      thornedActive: true,
+      pathLength: 3,
+      voidRiftActive: false,
+      dest: { x: 2, y: 2 },
+      riftTile: null,
+    });
+    const total = recordChallengeWalkHazardDamage(0, damages);
+    assert.equal(damages.thornDmg, 10);
+    assert.equal(total, 10);
+    const untouchable = byId("legendary_1");
+    assert.equal(
+      isChallengeCompleted(untouchable, progress({ totalDamage: total })),
+      false,
+    );
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(true, untouchable, false),
+      [],
+    );
+  });
+
+  it("debits Void Rift destination so stepping the rift fails Untouchable", () => {
+    const damages = battleWalkHazardDamages({
+      thornedActive: false,
+      pathLength: 1,
+      voidRiftActive: true,
+      dest: { x: 8, y: 3 },
+      riftTile: { x: 8, y: 3 },
+    });
+    const total = recordChallengeWalkHazardDamage(0, damages);
+    assert.equal(damages.riftDmg, 3);
+    assert.equal(
+      isChallengeCompleted(
+        byId("legendary_1"),
+        progress({ totalDamage: total }),
+      ),
+      false,
+    );
+  });
+
+  it("does not debit when both hazards are inactive", () => {
+    const damages = battleWalkHazardDamages({
+      thornedActive: false,
+      pathLength: 4,
+      voidRiftActive: false,
+      dest: { x: 1, y: 1 },
+      riftTile: { x: 1, y: 1 },
+    });
+    assert.equal(recordChallengeWalkHazardDamage(7, damages), 7);
+    assert.equal(
+      isChallengeCompleted(byId("legendary_1"), progress({ totalDamage: 0 })),
+      true,
     );
   });
 });

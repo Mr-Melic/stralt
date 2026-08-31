@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
+import { isCellFree } from "./occupancy.ts";
 import {
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
@@ -157,6 +159,35 @@ describe("placeWhitePortalAtSpawn", () => {
     });
     assert.notEqual(atSpawn.x, 0);
     assert.notEqual(atSpawn.y, 0);
+  });
+
+  it("keeps the sanctuary portal off a walled fortress (0,0)", () => {
+    const tiles = Array.from({ length: WORLD_GRID_SIZE }, (_, y) =>
+      Array.from({ length: WORLD_GRID_SIZE }, (_, x) => !(x === 0 && y === 0)),
+    );
+    const occupancy = {
+      tiles,
+      barriers: new Set<string>(),
+      voidTiles: new Set<string>(),
+      portals: new Set<string>(),
+      isOccupied: () => false,
+    };
+    const pending = {
+      x: 0,
+      y: 0,
+      color: "white" as const,
+      isWhitePortal: true,
+    };
+    const spawn = { x: 8, y: 8 };
+    assert.equal(
+      isCellFree(pending, occupancy),
+      false,
+      "fortress/chessboard walls (0,0); entry is coordinate-based",
+    );
+    assert.equal(isCellFree(spawn, occupancy), true);
+    const placed = placeWhitePortalAtSpawn(pending, spawn);
+    assert.equal(isCellFree(placed, occupancy), true);
+    assert.deepEqual({ x: placed.x, y: placed.y }, spawn);
   });
 });
 

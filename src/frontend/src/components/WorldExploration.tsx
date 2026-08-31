@@ -203,10 +203,10 @@ import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   applyHealBuffSideEffect,
-  canAttackNearestLive,
+  canAttackNearestAgainstLive,
   computeTargetableTiles,
   isTileCastableLive,
-  pickNearestLiveHostileTile,
+  pickNearestAttackableHostile,
   shouldExecuteLiveCast,
   spellHighlightRangeBase,
 } from "../engine/targeting";
@@ -247,6 +247,7 @@ import {
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
   recordChallengePlayerTurnStart,
+  recordChallengeWalkHazardDamage,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
   shouldClearSpellAfterApSpend,
@@ -10221,10 +10222,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ...prev,
           hp: Math.max(0, prev.hp - thornDmg),
         }));
-        challengeTotalDamageRef.current = recordChallengeDamageTaken(
-          challengeTotalDamageRef.current,
-          thornDmg,
-        );
         logBattleEntry(`🌿 Thorned ground! -${thornDmg} HP`, "#7a3a8a");
       }
       if (riftDmg > 0) {
@@ -10232,12 +10229,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ...prev,
           hp: Math.max(0, prev.hp - riftDmg),
         }));
-        challengeTotalDamageRef.current = recordChallengeDamageTaken(
-          challengeTotalDamageRef.current,
-          riftDmg,
-        );
         logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
       }
+      challengeTotalDamageRef.current = recordChallengeWalkHazardDamage(
+        challengeTotalDamageRef.current,
+        { thornDmg, riftDmg },
+      );
     },
     [
       isThornedGround,
@@ -17295,10 +17292,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Live store includes enemy summons that are not in React `enemies`.
       // isActiveHostile is the canonical filter (enemy-side summons after #79).
       // isTileCastableLive is the same gate as getSpellRangeTiles / sprite-click.
-      const nearest = pickNearestLiveHostileTile(
+      const nearest = pickNearestAttackableHostile(
         spell,
         casterPos,
-        liveCombatants.filter(isActiveHostile),
         liveCombatants,
         mapTiles,
         effectiveRange,
@@ -18861,10 +18857,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (!spell || !tiles) return false;
               const casterPos = getActiveCasterPos();
               const liveCombatants = getLiveCombatants(combatantStoreCtx);
-              return canAttackNearestLive(
+              return canAttackNearestAgainstLive(
                 spell,
                 casterPos,
-                liveCombatants.filter(isActiveHostile),
                 liveCombatants,
                 tiles,
                 getEffectiveSpellRange(
