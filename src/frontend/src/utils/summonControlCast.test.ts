@@ -186,27 +186,53 @@ describe("planSummonControlCast", () => {
   });
 
   it("rejects when the shared live gate says the tile is illegal", () => {
+    const tiles = Array.from({ length: 16 }, () =>
+      Array.from({ length: 16 }, () => "floor" as const),
+    );
+    tiles[8][9] = "wall";
+    const catalog = starterSpells.map((s) =>
+      s.id === "starter-poison" ? { ...s, lineOfSight: true } : s,
+    );
+    const rat = {
+      id: "rat",
+      x: 10,
+      y: 8,
+      hp: 10,
+      maxHp: 10,
+      name: "Rat",
+      pieceType: "pawn",
+      side: "enemy" as const,
+    };
     const blocked = planSummonControlCast({
       pieceType: "archer",
       spellId: "starter-poison",
-      catalog: starterSpells,
+      catalog,
       fallbackSpells: [],
       currentAp: 2,
       caster: { x: 8, y: 8 },
       target: { x: 10, y: 8 },
-      liveGate: () => false,
+      liveGate: {
+        tiles,
+        combatants: [rat as import("../types/gameTypes.ts").Enemy],
+      },
     });
-    assert.deepEqual(blocked, { ok: false, reason: "out_of_range" });
+    assert.deepEqual(blocked, { ok: false, reason: "illegal_target" });
 
+    const openTiles = Array.from({ length: 16 }, () =>
+      Array.from({ length: 16 }, () => "floor" as const),
+    );
     const open = planSummonControlCast({
       pieceType: "archer",
       spellId: "starter-poison",
-      catalog: starterSpells,
+      catalog,
       fallbackSpells: [],
       currentAp: 2,
       caster: { x: 8, y: 8 },
       target: { x: 10, y: 8 },
-      liveGate: () => true,
+      liveGate: {
+        tiles: openTiles,
+        combatants: [rat as import("../types/gameTypes.ts").Enemy],
+      },
     });
     assert.equal(open.ok, true);
   });

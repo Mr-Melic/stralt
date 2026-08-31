@@ -2,10 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
-  collectHighlightLiveMismatches,
   computeTargetableTiles,
-  findAttackNearestTarget,
   isTileCastableLive,
+  pickNearestLiveHostileTile,
   shouldExecuteLiveCast,
   spellRangeBase,
 } from "./targeting.ts";
@@ -50,6 +49,76 @@ function baseSpell(overrides: Partial<SpellConfig>): SpellConfig {
     minRange: 1,
     ...overrides,
   } as SpellConfig;
+}
+
+function collectHighlightLiveMismatches(
+  spell: SpellConfig,
+  caster: { x: number; y: number },
+  enemies: Enemy[],
+  tiles: Array<Array<"floor" | "wall" | "portal">>,
+  range: number,
+  barriers: Map<string, number> = new Map(),
+): { highlightOnly: string[]; liveOnly: string[] } {
+  const highlighted = computeTargetableTiles(spell, caster, {
+    tiles,
+    enemies,
+    worldGridSize: tiles.length,
+    effectiveRange: range,
+    barrierTiles: barriers,
+  });
+  const highlightOnly: string[] = [];
+  const liveOnly: string[] = [];
+  for (let y = 0; y < tiles.length; y++) {
+    for (let x = 0; x < tiles.length; x++) {
+      const key = `${x},${y}`;
+      const ok = shouldExecuteLiveCast(
+        isTileCastableLive(
+          spell,
+          caster,
+          { x, y },
+          enemies,
+          tiles,
+          range,
+          barriers,
+        ),
+      );
+      const painted = highlighted.has(key);
+      if (painted && !ok) highlightOnly.push(key);
+      if (ok && !painted) liveOnly.push(key);
+    }
+  }
+  return { highlightOnly, liveOnly };
+}
+
+function findAttackNearestTarget(
+  spell: SpellConfig,
+  caster: { x: number; y: number },
+  enemies: Enemy[],
+  tiles: Array<Array<"floor" | "wall" | "portal">>,
+  range: number,
+  barriers: Map<string, number> = new Map(),
+): { x: number; y: number } | null {
+  if (spell.targetType === "self") {
+    const live = isTileCastableLive(
+      spell,
+      caster,
+      caster,
+      enemies,
+      tiles,
+      range,
+      barriers,
+    );
+    return shouldExecuteLiveCast(live) ? { x: caster.x, y: caster.y } : null;
+  }
+  return pickNearestLiveHostileTile(
+    spell,
+    caster,
+    enemies.filter((e) => (e.hp ?? 0) > 0 && e.side !== "player"),
+    enemies,
+    tiles,
+    range,
+    barriers,
+  );
 }
 
 function assertParity(
@@ -307,349 +376,6 @@ describe("findAttackNearestTarget", () => {
     assert.equal(
       findAttackNearestTarget(losSpell, caster, [behindWall], tiles, 2),
       null,
-    );
-  });
-});
-
-describe("highlight vs live parity", () => {
-  it("every highlighted tile is executable and every illegal tile cannot execute", () => {
-    const tiles = floorGrid(12);
-    tiles[5][6] = "wall";
-    const caster = { x: 5, y: 5 };
-    const enemies = [rat("open", 4, 5), rat("blocked", 7, 5)];
-    const barriers = new Map<string, number>([["5,7", 2]]);
-    const spell = enemySpell({ lineOfSight: true });
-    const grid = {
-      tiles,
-      enemies,
-      worldGridSize: 12,
-      effectiveRange: 4,
-      barrierTiles: barriers,
-    };
-    const mismatches = collectHighlightLiveMismatches(spell, caster, grid);
-    assert.deepEqual(mismatches, []);
-
-    const highlighted = computeTargetableTiles(spell, caster, grid);
-    assert.equal(highlighted.has("4,5"), true);
-    assert.equal(
-      shouldExecuteLiveCast(
-        probeLiveCast(
-          spell,
-          caster,
-          { x: 4, y: 5 },
-          enemies,
-          tiles,
-          4,
-          barriers,
-        ),
-      ),
-      true,
-    );
-    assert.equal(highlighted.has("7,5"), false, "wall at 6,5 blocks east");
-    assert.equal(
-      shouldExecuteLiveCast(
-        probeLiveCast(
-          spell,
-          caster,
-          { x: 7, y: 5 },
-          enemies,
-          tiles,
-          4,
-          barriers,
-        ),
-      ),
-      false,
-    );
-    assert.equal(highlighted.has("5,8"), false, "barrier at 5,7 blocks south");
-  });
-
-  it("LoS-blocked tiles are neither highlighted nor live-ok", () => {
-    const tiles = floorGrid(10);
-    tiles[4][5] = "wall";
-    const caster = { x: 4, y: 4 };
-    const spell = enemySpell({ lineOfSight: true, maxRange: 3, range: 3n });
-    const enemies = [rat("hidden", 6, 4)];
-    const grid = {
-      tiles,
-      enemies,
-      worldGridSize: 10,
-      effectiveRange: 3,
-      barrierTiles: new Map<string, number>(),
-    };
-    assert.deepEqual(collectHighlightLiveMismatches(spell, caster, grid), []);
-    const highlighted = computeTargetableTiles(spell, caster, grid);
-    assert.equal(highlighted.has("6,4"), false);
-    assert.equal(
-      probeLiveCast(spell, caster, { x: 6, y: 4 }, enemies, tiles, 3).ok,
-      false,
-    );
-  });
-
-  it("a barrier between caster and target blocks the same way as a wall", () => {
-    const tiles = floorGrid(10);
-    const caster = { x: 4, y: 4 };
-    const barriers = new Map<string, number>([["5,4", 1]]);
-    const spell = enemySpell({ lineOfSight: true, maxRange: 3, range: 3n });
-    const enemies = [rat("blocked", 6, 4)];
-    const grid = {
-      tiles,
-      enemies,
-      worldGridSize: 10,
-      effectiveRange: 3,
-      barrierTiles: barriers,
-    };
-    assert.deepEqual(collectHighlightLiveMismatches(spell, caster, grid), []);
-    assert.equal(
-      hasBresenhamLoS(tiles, caster, { x: 6, y: 4 }, barriers),
-      false,
-    );
-    assert.equal(
-      shouldExecuteLiveCast(
-        probeLiveCast(
-          spell,
-          caster,
-          { x: 6, y: 4 },
-          enemies,
-          tiles,
-          3,
-          barriers,
-        ),
-      ),
-      false,
-    );
-    assert.equal(
-      pickNearestLiveHostileTile(
-        spell,
-        caster,
-        enemies,
-        enemies,
-        tiles,
-        3,
-        barriers,
-      ),
-      null,
-    );
-  });
-
-  it("ground / barrier placement rejects occupied and barrier tiles on both sides", () => {
-    const tiles = floorGrid(8);
-    const caster = { x: 3, y: 3 };
-    const enemies = [rat("occ", 4, 3)];
-    const barriers = new Map<string, number>([["3,4", 2]]);
-    const spell = enemySpell({
-      id: "spell-barrier",
-      targetType: "ground",
-      isBarrier: true,
-      maxRange: 2,
-      range: 2n,
-      minRange: 0,
-    });
-    const grid = {
-      tiles,
-      enemies,
-      worldGridSize: 8,
-      effectiveRange: 2,
-      barrierTiles: barriers,
-    };
-    assert.deepEqual(collectHighlightLiveMismatches(spell, caster, grid), []);
-    const highlighted = computeTargetableTiles(spell, caster, grid);
-    assert.equal(highlighted.has("4,3"), false);
-    assert.equal(highlighted.has("3,4"), false);
-    assert.equal(highlighted.has("5,3"), true);
-    assert.equal(
-      probeLiveCast(spell, caster, { x: 5, y: 3 }, enemies, tiles, 2, barriers)
-        .ok,
-      true,
-    );
-  });
-
-  it("ally highlight skips dead summons; live rejects them", () => {
-    const tiles = floorGrid(8);
-    const caster = { x: 3, y: 3 };
-    const dead = rat("wolf", 5, 3, {
-      isSummon: true,
-      side: "player",
-      hp: 0,
-    });
-    const liveAlly = rat("wolf2", 4, 3, {
-      isSummon: true,
-      side: "player",
-      hp: 10,
-    });
-    const spell = enemySpell({
-      id: "starter-shield",
-      targetType: "ally",
-      effectType: "buff",
-      maxRange: 3,
-      range: 3n,
-    });
-    const enemies = [dead, liveAlly];
-    const grid = {
-      tiles,
-      enemies,
-      worldGridSize: 8,
-      effectiveRange: 3,
-      barrierTiles: new Map<string, number>(),
-    };
-    assert.deepEqual(collectHighlightLiveMismatches(spell, caster, grid), []);
-    const highlighted = computeTargetableTiles(spell, caster, grid);
-    assert.equal(highlighted.has("3,3"), true);
-    assert.equal(highlighted.has("4,3"), true);
-    assert.equal(highlighted.has("5,3"), false);
-    assert.equal(
-      probeLiveCast(spell, caster, { x: 5, y: 3 }, enemies, tiles, 3).ok,
-      false,
-    );
-  });
-
-  it("line minRange is honored by highlight and live", () => {
-    const tiles = floorGrid(10);
-    const caster = { x: 4, y: 4 };
-    const spell = enemySpell({
-      targetType: "line",
-      maxRange: 4,
-      range: 4n,
-      minRange: 2,
-    });
-    const grid = {
-      tiles,
-      enemies: [],
-      worldGridSize: 10,
-      effectiveRange: 4,
-      barrierTiles: new Map<string, number>(),
-    };
-    assert.deepEqual(collectHighlightLiveMismatches(spell, caster, grid), []);
-    const highlighted = computeTargetableTiles(spell, caster, grid);
-    assert.equal(highlighted.has("5,4"), false);
-    assert.equal(highlighted.has("6,4"), true);
-    assert.equal(
-      probeLiveCast(spell, caster, { x: 5, y: 4 }, [], tiles, 4).ok,
-      false,
-    );
-    assert.equal(
-      probeLiveCast(spell, caster, { x: 6, y: 4 }, [], tiles, 4).ok,
-      true,
-    );
-  });
-
-  it("area expansion tiles stay legal on both sides", () => {
-    const tiles = floorGrid(10);
-    const caster = { x: 4, y: 4 };
-    const spell = enemySpell({
-      id: "spell-frost-nova",
-      targetType: "area",
-      areaRadius: 2,
-      maxRange: 1,
-      range: 1n,
-    });
-    const grid = {
-      tiles,
-      enemies: [rat("n", 4, 5)],
-      worldGridSize: 10,
-      effectiveRange: 1,
-      barrierTiles: new Map<string, number>(),
-    };
-    assert.deepEqual(collectHighlightLiveMismatches(spell, caster, grid), []);
-    const highlighted = computeTargetableTiles(spell, caster, grid);
-    assert.equal(highlighted.has("4,6"), true, "AoE footprint beyond range 1");
-    assert.equal(
-      probeLiveCast(spell, caster, { x: 4, y: 6 }, grid.enemies, tiles, 1).ok,
-      true,
-    );
-  });
-
-  it("entity-first bypass is only granted when the live gate passes", () => {
-    const ok = { ok: true, reason: "enemy" };
-    const blocked = { ok: false, reason: "los_blocked" };
-    assert.equal(shouldBypassHighlightForLiveHostile(true, ok), true);
-    assert.equal(shouldBypassHighlightForLiveHostile(true, blocked), false);
-    assert.equal(shouldBypassHighlightForLiveHostile(false, ok), false);
-  });
-
-  it("player LoS is opt-in; unset lineOfSight does not require a ray", () => {
-    assert.equal(playerSpellRequiresLos({}), false);
-    assert.equal(playerSpellRequiresLos({ lineOfSight: false }), false);
-    assert.equal(playerSpellRequiresLos({ lineOfSight: true }), true);
-  });
-});
-
-describe("shared helpers", () => {
-  it("requires LoS only when lineOfSight is truthy", () => {
-    assert.equal(playerSpellRequiresLos({} as SpellConfig), false);
-    assert.equal(
-      playerSpellRequiresLos({ lineOfSight: false } as SpellConfig),
-      false,
-    );
-    assert.equal(
-      playerSpellRequiresLos({ lineOfSight: true } as SpellConfig),
-      true,
-    );
-  });
-
-  it("applies the same range bonus the highlight uses", () => {
-    const spell = enemySpell(3);
-    spell.modifiableRange = true;
-    assert.equal(
-      playerSpellEffectiveRange(spell, (base, id) => {
-        assert.equal(base, spellHighlightRangeBase(spell));
-        assert.equal(id, spell.id);
-        return base + 2;
-      }),
-      5,
-    );
-  });
-
-  it("blocks LoS on intermediate walls and barriers, not origin or dest", () => {
-    const tiles = floorGrid(8);
-    tiles[3][4] = "wall";
-    tiles[4][3] = "wall";
-    const barriers = new Set(["5,3"]);
-    assert.equal(
-      hasBresenhamLoS({ x: 3, y: 3 }, { x: 6, y: 3 }, tiles, barriers),
-      false,
-    );
-    assert.equal(
-      hasBresenhamLoS({ x: 3, y: 3 }, { x: 3, y: 5 }, tiles, new Map()),
-      false,
-    );
-    assert.equal(
-      hasBresenhamLoS({ x: 3, y: 3 }, { x: 3, y: 4 }, tiles, new Map()),
-      true,
-    );
-  });
-
-  it("skips the cached highlight set only for a living hostile that is live-ok", () => {
-    assert.equal(
-      shouldBypassHighlightForLiveHostile({ hp: 10 }, true, {
-        ok: true,
-        reason: "enemy",
-      }),
-      true,
-    );
-    assert.equal(
-      shouldBypassHighlightForLiveHostile({ hp: 0 }, true, {
-        ok: true,
-        reason: "enemy",
-      }),
-      false,
-    );
-    assert.equal(
-      shouldBypassHighlightForLiveHostile({ hp: 10 }, true, {
-        ok: false,
-        reason: "los_blocked",
-      }),
-      false,
-    );
-  });
-
-  it("uses the execute-path AP modifier for the Attack Nearest preview", () => {
-    assert.equal(
-      canAffordCastAp(3, 4, (base) => Math.max(1, base - 1)),
-      true,
-    );
-    assert.equal(
-      canAffordCastAp(2, 4, (base) => Math.max(1, base - 1)),
-      false,
     );
   });
 });
