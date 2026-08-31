@@ -1592,12 +1592,13 @@ actor {
 
     /// Save all battle-relevant stats back to a character slot after a battle.
     /// hp may arrive as negative (character was knocked out); it is clamped to 0 before storage.
-    /// C1: dokaBalance parameter is intentionally ignored — Doka is tracked in the
-    ///     per-principal dokaBalances Map only. The dokaBalance field no longer exists
-    ///     on the Character type.
+    /// C1: dokaBalance is stored on the per-principal dokaBalances map (the
+    ///     Character record no longer carries a wallet field). This write may
+    ///     decrease Doka/XP (heal, shop, death) but must not mint — credits
+    ///     go through applyRewards / claim / shop-complete / upgradeSpell.
     public shared ({ caller }) func saveBattleStats(
         slot             : Nat,
-        level            : Nat,
+        _level           : Nat, // applyRewards is the sole level writer
         xp               : Nat,
         hp               : Int,
         _maxHp           : Nat,

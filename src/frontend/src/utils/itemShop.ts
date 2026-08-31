@@ -178,3 +178,57 @@ export function resolveOverworldHealSpend(
     jackpot: false,
   };
 }
+
+export function canSpendLiveDoka(liveDoka: number, cost: number): boolean {
+  const live = toNat(liveDoka);
+  const need = toNat(cost);
+  return need > 0 && live >= need;
+}
+
+/** Jackpot heal spends 1 Doka from the live wallet, not the render snapshot. */
+
+export function canAffordJackpotHeal(
+  liveDoka: number,
+  liveHp: number,
+  maxHp: number,
+): boolean {
+  return toNat(liveDoka) >= JACKPOT_HEAL_DOKA_COST && liveHp < maxHp;
+}
+
+export type PaidHealGrant = {
+  healHp: number;
+  cost: number;
+  nextHp: number;
+  nextDoka: number;
+};
+
+/**
+ * Price a Doka-to-HP heal from the live wallet and live HP.
+ *
+ * The button used the render snapshot for `healHp` / `actualCost` and the
+ * wrapped `setCharacterStats` already wrote the new HP into the ref. Persist
+ * then added `healHp` again (`ref.hp + healHp`), so a partial heal wrote
+ * more HP than was paid. A same-tick second click with a stale `canAfford`
+ * granted another heal at spend 0.
+ */
+
+export function paidHealFromLiveWallet(
+  liveDoka: number,
+  liveHp: number,
+  maxHp: number,
+): PaidHealGrant | null {
+  const doka = toNat(liveDoka);
+  const hp = Math.max(0, Math.floor(Number(liveHp) || 0));
+  const max = Math.max(0, Math.floor(Number(maxHp) || 0));
+  const hpNeeded = max - hp;
+  if (doka < 1 || hpNeeded <= 0) return null;
+  const healHp = Math.min(hpNeeded, Math.floor(doka * 3));
+  const cost = Math.ceil(healHp / 3);
+  if (!canSpendLiveDoka(doka, cost)) return null;
+  return {
+    healHp,
+    cost,
+    nextHp: hp + healHp,
+    nextDoka: doka - cost,
+  };
+}

@@ -11,6 +11,32 @@ import { xpForNextLevel } from "./xpCurve.ts";
 export const DEATH_XP_PENALTY_RATE = 0.2;
 export const DEATH_DOKA_PENALTY_RATE = 0.4;
 
+/** Replica rejects used to leave deathPenaltyApplied=true and the canister uncut. */
+export const DEATH_PENALTY_PERSIST_ATTEMPTS = 3;
+
+export function shouldRetryDeathPenaltyPersist(
+  attempt: number,
+  maxAttempts = DEATH_PENALTY_PERSIST_ATTEMPTS,
+): boolean {
+  return attempt >= 1 && attempt < maxAttempts;
+}
+
+export async function persistWithRetry<T>(
+  persistOnce: () => Promise<T>,
+  maxAttempts = DEATH_PENALTY_PERSIST_ATTEMPTS,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await persistOnce();
+    } catch (err) {
+      lastError = err;
+      if (!shouldRetryDeathPenaltyPersist(attempt, maxAttempts)) break;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 export type DeathPenaltyAmounts = {
   xpLost: number;
   dokaLost: number;
@@ -260,24 +286,6 @@ export async function persistDeathPenalty(
   }
 }
 
-export const DEATH_PENALTY_PERSIST_ATTEMPTS = 3;
-
-/** Retry a failed death write so a single replica reject cannot skip the 20/40 cut. */
-export async function persistWithRetry<T>(
-  write: () => Promise<T>,
-  attempts = DEATH_PENALTY_PERSIST_ATTEMPTS,
-): Promise<T> {
-  const max = Math.max(1, Math.floor(Number(attempts) || 1));
-  let lastErr: unknown;
-  for (let i = 0; i < max; i++) {
-    try {
-      return await write();
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
-}
 
 export type DeathPenaltyStorage = Pick<
   Storage,

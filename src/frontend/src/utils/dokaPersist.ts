@@ -1,5 +1,52 @@
 import { readApplyRewardsOk } from "./applyRewardsResult.ts";
 
+/** One shrine altar credit per room. Stepping the tile twice must not applyRewards 300 twice. */
+export const SHRINE_ALTAR_CREDIT_ID = "shrine-altar";
+
+/** One dungeon-chain completion bonus per run. */
+export const DUNGEON_CHAIN_COMPLETE_CREDIT_ID = "dungeon-chain-complete";
+
+/**
+ * Claim a credit id before enqueueing applyRewards. Ground Doka used to
+ * credit inside `setDokaLoot` — React may replay that updater, and a second
+ * movement step can see the same uncollected coin before the collected flag
+ * lands.
+ */
+export function beginOneShotCredit(
+  claimedIds: Set<string>,
+  id: string,
+): boolean {
+  if (!id || claimedIds.has(id)) return false;
+  claimedIds.add(id);
+  return true;
+}
+
+export type GroundDokaLoot = {
+  id: string;
+  tileX: number;
+  tileY: number;
+  collected: boolean;
+  value: number;
+};
+
+export function findGroundDokaOnTile(
+  loot: readonly GroundDokaLoot[],
+  tileX: number,
+  tileY: number,
+): GroundDokaLoot | undefined {
+  return loot.find(
+    (item) => !item.collected && item.tileX === tileX && item.tileY === tileY,
+  );
+}
+
+export function markGroundDokaCollected<
+  T extends { id: string; collected: boolean },
+>(loot: readonly T[], id: string): T[] {
+  return loot.map((item) =>
+    item.id === id ? { ...item, collected: true } : item,
+  );
+}
+
 /**
  * Minimal actor surface used by persistDokaCredit. Matches the backend
  * applyRewards(slot : Nat, dokaDelta : Nat, xpDelta : Nat) signature.

@@ -308,6 +308,7 @@ import {
   tryClaimPickupId,
 } from "../utils/dokaPersist";
 import {
+  canSpendLiveDoka,
   dokaHealAmounts,
   nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
@@ -334,6 +335,7 @@ import {
   clampAbsoluteProgressWrite,
   createProgressPersist,
   resolveCommittedDokaForAbsoluteWrite,
+  shouldPersistAbsoluteDokaSpend,
   spendFromUiBalance,
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
@@ -13452,6 +13454,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     (newHp: number, newDoka: number): Promise<boolean> => {
       if (!actor) return Promise.resolve(false);
       const spend = spendFromUiBalance(dokaBalanceRef.current, newDoka);
+      // A stale-prop double-click computes spend 0. Writing anyway persists
+      // the unpaid HP / leaves the extra shop item on a 0-debit snapshot.
+      if (!shouldPersistAbsoluteDokaSpend(spend)) return Promise.resolve(false);
       return progressPersistRef.current
         .enqueue(async () => {
           const committed = progressPersistRef.current.snapshot();
@@ -18083,7 +18088,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           dokaBalance={dokaBalance}
           getLiveDoka={() => dokaBalanceRef.current}
           onDeductDoka={(amount) => {
-            if (dokaBalanceRef.current < amount) return false;
+            if (!canSpendLiveDoka(dokaBalanceRef.current, amount)) {
+              return false;
+            }
             const next = nextDokaAfterShopSpend(dokaBalanceRef.current, amount);
             const persist = persistAbsoluteProgress(
               characterStatsRef.current.hp,
