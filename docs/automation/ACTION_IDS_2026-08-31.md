@@ -582,3 +582,120 @@ DEPENDENCIES: MTD-2026-08-31-002
 REGRESSION_RISK: LOW  
 VALIDATION_REQUIRED: Leftover XP matches `xpCurve` after a level-up; numbers agree on the three surfaces.  
 STATUS: NEW
+
+ACTION_ID: TADD-2026-08-31-001  
+SOURCE_AUTOMATION: Telemetry Admin Dashboard Designer  
+TITLE: Ship AQA-012 backend-authoritative outcome counters  
+CATEGORY: telemetry  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Quality audit 2026-08-30 found no player telemetry (one WX comment). Official client logs persist failures with `logDebugInfo` only (`WorldExploration.tsx` ~12797–12802, ~13097). Debug ring buffer is local (`debug/debugLogger.ts` 105–124). No canister battle/death/recap/persist counters exist. AQA-2026-08-30-012 already approved: persist-ok/fail, death-penalty applied, victory paid, recap opened/dismissed, shop credit committed.  
+SYSTEMS_AFFECTED: `utils/progressPersist.ts`; `utils/applyRewardsResult.ts`; `utils/deathPenalty.ts`; `utils/shopPurchase.ts`; `components/PostBattleRecap.tsx`; `src/backend/main.mo` (query-only Nat map or increment on existing writers).  
+RECOMMENDED_ACTION: Implement those seven counters only. Backend-authoritative. No gameplay math. Enqueue increments on `createProgressPersist` or store as canister Nats incremented inside the same successful/failed write path. Prefer UTC-day buckets (90-day ring) with no principal. Admin query returns aggregates. Do not add battle-start, flee, turn, or Doka-amount ledgers in this ID.  
+AUTONOMY: HUMAN_THEN_IMPLEMENT — AQA-012 already approved the set; persist-lock placement still needs a careful implementer.  
+DEPENDENCIES: AQA-2026-08-30-012 (same work; do not open a second counter design).  
+REGRESSION_RISK: MEDIUM if counters write off the persist lock or invent a second wallet path.  
+VALIDATION_REQUIRED: Admin can read persist-ok, persist-fail, death-penalty applied, victory paid, recap opened, recap dismissed, shop credit committed. Next Quality Auditor can cite weekly persist-ok/fail and victory-paid, or still say “not shipped.”  
+STATUS: NEW  
+
+---
+
+ACTION_ID: TADD-2026-08-31-002  
+SOURCE_AUTOMATION: Telemetry Admin Dashboard Designer  
+TITLE: Add owner-only Health tab for snapshot views H1–H11 and H13  
+CATEGORY: admin-ui  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `AdminDashboardState.tab` (`gameTypes.ts` 473–488) is config CRUD only. `getAllCharacters` (`main.mo` 369–374) is admin-gated and unused by the dashboard. OQL already exposes `characterSlots`, `dokaBalances`, `dungeonRecords`, `achievementProgress`, `purchaseRecords`, `bossRushStates`, `changelogShownVersions`. Purchases tab already lists IAP rows (with PII). No Health surface.  
+SYSTEMS_AFFECTED: `components/AdminDashboard.tsx`; `types/gameTypes.ts` (add `tab: "health"`); read-only hooks.  
+RECOMMENDED_ACTION: New Health tab, same admin gate and carved-stone tokens. Implement only views classified LIVE_SNAPSHOT in `TELEMETRY_DASHBOARD_2026-08-31.md` (H1–H11, H13). H12 widgets stay “not shipped” until TADD-001. Every card states data class, n, and the owner decision. Grey out date filters on snapshots. No production gameplay changes.  
+AUTONOMY: IMPLEMENT_AFTER_DESIGN — read-only UI; follow the support matrix.  
+DEPENDENCIES: TADD-2026-08-31-003 for spell/Boss Rush master fields; TADD-2026-08-31-005 for PII rules.  
+REGRESSION_RISK: LOW if read-only and admin-gated. MEDIUM if `getAllCharacters` payloads are stored in React state and rendered as rows (PII leak).  
+VALIDATION_REQUIRED: `pnpm typecheck` / `pnpm fix` / `pnpm build` clean. Health hidden when not admin. No principal/email/name on Health. Empty states say “not measured,” not “0 battles.”  
+STATUS: NEW  
+
+---
+
+ACTION_ID: TADD-2026-08-31-003  
+SOURCE_AUTOMATION: Telemetry Admin Dashboard Designer  
+TITLE: Expose spell loadout and Boss Rush master on owner aggregates without PII  
+CATEGORY: telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: OQL `characterSlots` (`main.mo` 2632–2678) payloads stop at name, pieceType, level, experience, hp, killCount. Spell upgrade keys, `spellBarOrder`, `activeSpells`, and `bossRushMasterComplete` exist on `Character` (`main.mo` 98–121) and on `getAllCharacters` but not on OQL. H3/H4/H9 master-complete cannot be built from OQL today.  
+SYSTEMS_AFFECTED: `src/backend/main.mo` OQL entity and/or a new admin aggregate query; Health tab consumers.  
+RECOMMENDED_ACTION: Prefer a new `#admin` query that returns **aggregates only** (level histogram, per-spell upgrade counts, bar pair counts, master-complete count). Alternative: extend OQL payloads then aggregate in the client **before** setState, dropping owner/name. Do not add a player-row table to Health.  
+AUTONOMY: HUMAN_THEN_IMPLEMENT — schema/OQL change.  
+DEPENDENCIES: TADD-2026-08-31-002.  
+REGRESSION_RISK: LOW if additive payloads / new query. Do not change `Character` persist shape.  
+VALIDATION_REQUIRED: Health H3/H9 can show upgrade coverage and master-complete count with n, and the network/response inspector shows no principal list in the Health render path.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: TADD-2026-08-31-004  
+SOURCE_AUTOMATION: Telemetry Admin Dashboard Designer  
+TITLE: Treat requested combat/economy/enemy series as out of scope until new approval  
+CATEGORY: process  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: No encounter, turn, flee, duration, elite, AI-archetype, or enemy-spell persist. `saveKillCount` has no UI caller (`useSaveKillCount` unused). Wallet is a current Nat (`dokaBalances`); `applyRewards` / `saveBattleStats` are not a ledger. WorldExploration does not read `spriteUrl`. Pattern fallback is local (`pieceArt.ts` 809–811).  
+SYSTEMS_AFFECTED: Future hunters / dashboard implementers; do not touch RAF, map gen, turn logic, or damage math to “add telemetry.”  
+RECOMMENDED_ACTION: Refuse charts for battle count, victory/defeat/flee, average turns, encounter frequency, relative enemy level, win/loss, battle duration, elite frequency, advanced AI usage, enemy spell usage, spell cast usage, discovery, acquisition source, combat combinations, Doka earned/spent totals, boss attempts/average attempts/flee, invalid-config events, failed asset loads, and custom-fallback events. Do not wire `saveKillCount` as a battle proxy. Any expansion beyond AQA-012 needs a new human-approved ACTION_ID.  
+AUTONOMY: POLICY — no code.  
+DEPENDENCIES: None.  
+REGRESSION_RISK: LOW. Residual risk is continued blindness on those questions (already true).  
+VALIDATION_REQUIRED: Next dashboard PR does not add those series. Next Quality Auditor still marks them INCONCLUSIVE unless TADD-001 shipped.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: TADD-2026-08-31-005  
+SOURCE_AUTOMATION: Telemetry Admin Dashboard Designer  
+TITLE: Keep identifiable data off Health; do not reuse the public leaderboard  
+CATEGORY: privacy  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `getLeaderboard` (`main.mo` 2527–2571) is public and returns `principalId` + `playerName`. Purchases tab advertises “customer data & proof-of-address” (`AdminDashboard.tsx` 5271–5272) with Email/Address columns (5338–5346). OQL `purchaseRecords` and `achievementProgress` include principal and customer fields. Health must answer owner questions from aggregates.  
+SYSTEMS_AFFECTED: Health tab; optional later redaction of exports. Purchases fulfillment tab may keep PII.  
+RECOMMENDED_ACTION: Health queries aggregate then render. Forbidden on Health: principal, character name, email, address, proof URL. Do not call `getLeaderboard` for Health. `n < 5` hides rates. Purchases fulfillment stays a separate tab.  
+AUTONOMY: IMPLEMENT_WITH_TADD-002.  
+DEPENDENCIES: TADD-2026-08-31-002.  
+REGRESSION_RISK: LOW.  
+VALIDATION_REQUIRED: Code review + DOM/ocid pass: no principal/email/name nodes under `data-ocid` health.*.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: TADD-2026-08-31-006  
+SOURCE_AUTOMATION: Telemetry Admin Dashboard Designer  
+TITLE: Distinguish NORMAL_DEFAULT pixel use from CUSTOM_FALLBACK; do not chart either as errors today  
+CATEGORY: visuals-telemetry  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Enemy `spriteUrl` and player `*Url` are admin config (OQL + AdminDashboard). `WorldExploration.tsx` has no `spriteUrl` load path; combatants draw via `pieceArt.ts` patterns. Missing pieceType/palette logs `pattern lookup failed` locally and draws `king.front` (`pieceArt.ts` 809–811). Admin preview `onError` only hides the `<img>`. Empty URL means intentional default, not failure.  
+SYSTEMS_AFFECTED: Future custom-URL loader only; Health H10 captions.  
+RECOMMENDED_ACTION: H10 may count configs with empty vs non-empty custom URLs. Label empty as NORMAL_DEFAULT. Do not increment an error for empty URL or for pattern-lookup-failed. If a custom URL loader is ever added, emit CUSTOM_FALLBACK only when a non-empty URL fails load/decode and pixels are used instead. That event is **not** approved yet (would need a human ID).  
+AUTONOMY: POLICY for now; implement captions with TADD-002.  
+DEPENDENCIES: TADD-2026-08-31-002; TADD-2026-08-31-004.  
+REGRESSION_RISK: LOW.  
+VALIDATION_REQUIRED: Health has no “pixel fallback errors” series. H10 caption states world does not load custom URLs.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: TADD-2026-08-31-007  
+SOURCE_AUTOMATION: Telemetry Admin Dashboard Designer  
+TITLE: Do not design a level-cap or endgame dashboard  
+CATEGORY: progression  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: There is no level cap. XP threshold is `100 * 2^(N-1)` with an unbounded while-loop (`docs/ARCHITECTURE.md` Rewards). `Character.level` is Nat. Leaderboard sorts by level with no max.  
+SYSTEMS_AFFECTED: Health H1.  
+RECOMMENDED_ACTION: Open-ended level histogram. Bands 1–4, 5–9, 10–19, 20–39, 40–79, 80+ with the last edge raised when `max(level)` exceeds 80. Show leftover XP vs next threshold. No “max level reached,” prestige, or endgame completion panel.  
+AUTONOMY: IMPLEMENT_WITH_TADD-002.  
+DEPENDENCIES: TADD-2026-08-31-002.  
+REGRESSION_RISK: LOW.  
+VALIDATION_REQUIRED: H1 has no cap chrome; leftover XP uses `xpForNextLevel`, not `level * 100`.  
+STATUS: NEW
