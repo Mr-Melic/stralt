@@ -143,6 +143,8 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
 
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
+      // claimInFlightRef was never declared — every Claim threw before
+      // persistClaim / claimMut ran. Use the existing in-flight set.
       if (
         !shouldBeginAchievementClaim(claimingIdsRef.current, achievement.id)
       ) {

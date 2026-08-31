@@ -361,6 +361,10 @@ actor {
             case (?slots) { slots };
         };
 
+        // Failure: a raw client could seed spellLevelKeys with a retired
+        // catalog id at level 0. Frontend then treats that id as owned.
+        // _starterCharacter already clears spell levels plus session/completion.
+
         let updatedSlots = switch (slot) {
             case 1 {
                 if (existingSlots.slot1 != null) {
@@ -967,6 +971,17 @@ actor {
             idx += 1;
         };
 
+        // Failure: upgradeSpell added any catalog id to spellLevelKeys.
+        // A player who never owned a retired spell could acquire it by paying.
+        switch (spellConfigs.get(spellId)) {
+            case null { return #err("Spell not found: " # spellId) };
+            case (?cfg) {
+                if (not cfg.usableByPlayer and not found) {
+                    return #err("Spell is retired");
+                };
+            };
+        };
+
         let baseCost = levelUpConfig.spellLevelingBaseCost;
         var cost = baseCost;
         var expCount = currentLevel;
@@ -1051,7 +1066,15 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (shopPackages.get(id)) {
+            case null { return #err("Shop package not found: " # id) };
+            case (?_) {};
+        };
+        if (shopPackages.size() <= 1) {
+            return #err("Cannot delete the last shop package");
+        };
         shopPackages.remove(id);
+        _recordAdminAudit(caller, "deleteShopPackage", id, "present", "removed");
         #ok;
     };
 
@@ -1269,6 +1292,7 @@ actor {
             return #err("Unauthorized: admin only");
         };
         bannedPrincipals.remove(targetPrincipal.toText());
+        _recordAdminAudit(caller, "unbanPrincipal", targetPrincipal.toText(), "banned", "active");
         #ok;
     };
 
@@ -1290,6 +1314,7 @@ actor {
             return #err("Unauthorized: admin only");
         };
         bannedPrincipals.remove(userPrincipal.toText());
+        _recordAdminAudit(caller, "unbanAccount", userPrincipal.toText(), "banned", "active");
         #ok;
     };
 
@@ -1432,6 +1457,8 @@ actor {
     // deserialises the palette object. Empty string = no admin override.
 
     var colorPaletteStore : Text;
+    var colorPalettePrev : Text;
+    var hasColorPalettePrev : Bool;
 
     public shared ({ caller }) func adminSetColorPalette(palettes : Text) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -1441,8 +1468,24 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
+        colorPalettePrev := colorPaletteStore;
+        hasColorPalettePrev := true;
         colorPaletteStore := palettes;
         _recordAdminAudit(caller, "setColorPalette", "colorPalette", "previous", "updated");
+        #ok;
+    };
+
+    public shared ({ caller }) func adminRollbackColorPalette() : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        if (not hasColorPalettePrev) {
+            return #err("No previous color palette to restore");
+        };
+        let current = colorPaletteStore;
+        colorPaletteStore := colorPalettePrev;
+        colorPalettePrev := current;
+        _recordAdminAudit(caller, "rollbackColorPalette", "colorPalette", "updated", "previous");
         #ok;
     };
 
@@ -1455,6 +1498,8 @@ actor {
     // Empty string = use frontend defaults.
 
     var bossRushConfigStore : Text;
+    var bossRushConfigPrev : Text;
+    var hasBossRushConfigPrev : Bool;
 
     public shared ({ caller }) func adminSetBossRushConfig(config : Text) : async { #ok; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
@@ -1464,8 +1509,24 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
+        bossRushConfigPrev := bossRushConfigStore;
+        hasBossRushConfigPrev := true;
         bossRushConfigStore := config;
         _recordAdminAudit(caller, "setBossRushConfig", "bossRushConfig", "previous", "updated");
+        #ok;
+    };
+
+    public shared ({ caller }) func adminRollbackBossRushConfig() : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        if (not hasBossRushConfigPrev) {
+            return #err("No previous boss-rush config to restore");
+        };
+        let current = bossRushConfigStore;
+        bossRushConfigStore := bossRushConfigPrev;
+        bossRushConfigPrev := current;
+        _recordAdminAudit(caller, "rollbackBossRushConfig", "bossRushConfig", "updated", "previous");
         #ok;
     };
 
@@ -1858,10 +1919,11 @@ actor {
             return #err("Unauthorized: admin only");
         };
         bannedPrincipals.add(userPrincipal.toText(), true);
-        // Store the ban reason in the changelogs map reusing as a reason store.
-        changelogs.add("ban#" # userPrincipal.toText(), reason);
+        // Do not write reasons into the public changelog map. getChangelog is
+        // an unauthenticated query — "ban#<principal>" leaked admin notes.
+        changelogs.remove("ban#" # userPrincipal.toText());
         // Do not wipe achievement progress — claimed flags are the anti-replay lock.
-        _recordAdminAudit(caller, "banPlayer", userPrincipal.toText(), "active", "banned");
+        _recordAdminAudit(caller, "banPlayer", userPrincipal.toText(), "active", AdminGuard.truncateSummary(reason));
         #ok;
     };
 
@@ -1872,6 +1934,7 @@ actor {
         };
         bannedPrincipals.remove(userPrincipal.toText());
         changelogs.remove("ban#" # userPrincipal.toText());
+        _recordAdminAudit(caller, "unbanPlayer", userPrincipal.toText(), "banned", "active");
         #ok;
     };
 
@@ -1932,6 +1995,9 @@ actor {
 
     /// Returns the changelog text for a given version (null if not set).
     public query func getChangelog(version : Text) : async ?Text {
+        if (AdminGuard.isBanReasonKey(version)) {
+            return null;
+        };
         changelogs.get(version);
     };
 
@@ -1940,7 +2006,16 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.validateChangelog(version, text)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        let previous = switch (changelogs.get(version)) {
+            case null { "none" };
+            case (?_) { "present" };
+        };
         changelogs.add(version, text);
+        _recordAdminAudit(caller, "setChangelog", version, previous, "updated");
         #ok;
     };
 
@@ -2029,7 +2104,11 @@ actor {
         };
         switch (achievementConfigs.get(achievementId)) {
             case null { return #err("Unknown achievement: " # achievementId) };
-            case (?_) {};
+            case (?cfg) {
+                if (not cfg.active) {
+                    return #err("Achievement is retired");
+                };
+            };
         };
         let key = caller.toText() # "#" # achievementId;
         switch (achievementProgress.get(key)) {
@@ -2287,7 +2366,10 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             Runtime.trap("Unauthorized: admin only");
         };
-        if (name == "") { Runtime.trap("Name cannot be empty") };
+        switch (AdminGuard.validateEnemyName(name)) {
+            case (?e) { Runtime.trap(e) };
+            case null {};
+        };
         enemyNames.add(name);
     };
 
@@ -2449,18 +2531,15 @@ actor {
         if (bannedPrincipals.containsKey(caller.toText())) {
             Runtime.trap("Account banned for non-payment");
         };
-        // Official chains are 3–5 floors. Reject a raw Nat-max depth write.
-        if (depth > 8) {
-            Runtime.trap("depth exceeds maximum dungeon chain");
-        };
+        let safeDepth = AdminGuard.clampDungeonDepth(depth);
         let existing = switch (dungeonRecords.get(principal)) {
             case null { { chainDepth = 0; totalMapsCompleted = 0; bestRewardMultiplier = 1.0 } };
             case (?r) { r };
         };
-        let multiplier : Float = 1.0 + (depth.toFloat() * 0.25);
+        let multiplier : Float = 1.0 + (safeDepth.toFloat() * 0.25);
         let best = if (multiplier > existing.bestRewardMultiplier) { multiplier } else { existing.bestRewardMultiplier };
         dungeonRecords.add(principal, {
-            chainDepth           = depth;
+            chainDepth           = safeDepth;
             totalMapsCompleted   = existing.totalMapsCompleted + 1;
             bestRewardMultiplier = best;
         });
@@ -2531,7 +2610,17 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        for ((_, bid) in bossPortalAssignments.entries()) {
+            if (bid == id) {
+                return #err("Boss is assigned to a portal; remove the assignment first");
+            };
+        };
+        switch (bossConfigs.get(id)) {
+            case null { return #err("Boss not found: " # id) };
+            case (?_) {};
+        };
         bossConfigs.remove(id);
+        _recordAdminAudit(caller, "deleteBossConfig", id, "present", "removed");
         #ok;
     };
 
