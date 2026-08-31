@@ -1,5 +1,3 @@
-import Char "mo:core/Char";
-import Text "mo:core/Text";
 import Types "../types/admin";
 
 /// Pure admin input / lifecycle guards.
@@ -49,9 +47,9 @@ module {
         label scan for (c in t.chars()) {
             if (n >= maxChars) { break scan };
             if (c >= 'A' and c <= 'Z') {
-                out #= Char.toText(Char.fromNat32(Char.toNat32(c) + (32 : Nat32)));
+                out #= (c.toNat32() + (32 : Nat32)).toChar().toText();
             } else {
-                out #= Char.toText(c);
+                out #= c.toText();
             };
             n += 1;
         };
@@ -59,7 +57,7 @@ module {
     };
 
     func trimLeadingWs(url : Text) : Text {
-        Text.trimStart(url, #predicate(func(c : Char) : Bool {
+        url.trimStart(#predicate(func(c : Char) : Bool {
             c == ' ' or c == '\t' or c == '\n' or c == '\r'
         }))
     };
