@@ -9,6 +9,7 @@ import {
   BOSS_RUSH_PREFERRED_CELLS,
   MAP_ARCHETYPES,
   type Rng,
+  applySanctuaryLayout,
   applyVoidTiles,
   createSeededRng,
   evaluateSolvability,
@@ -16,6 +17,8 @@ import {
   pickMapArchetype,
   placeBossRushSpawns,
   punchRosterReachability,
+  resetFailedGenerationVoids,
+  stampPortalTiles,
 } from "./mapGen.ts";
 import {
   type DungeonChainSnapshot,
@@ -424,7 +427,7 @@ export function generateSeededWorld(opts: GenerateSeededWorldOpts): SimWorld {
       },
     ];
     tiles[4][4] = "portal";
-    voidTiles.clear();
+    resetFailedGenerationVoids(voidTiles);
   }
 
   const playerSpawn = pickSpawn(tiles, voidTiles, size);
@@ -528,11 +531,22 @@ export function generateSeededRestMap(): SimWorld {
     { x: Math.floor(size / 2), y: size - 3, color: "boss", isRestExit: true },
   ];
   const center = Math.floor(size / 2);
-  return {
+  stampPortalTiles(tiles, portals);
+  const finalized = finalizePlayableLayout({
     tiles,
     voidTiles: new Set(),
-    portals,
     playerSpawn: { x: center, y: center },
+    portals,
+    spawns: [],
+    w: size,
+    h: size,
+    requireExit: true,
+  });
+  return {
+    tiles: finalized.tiles,
+    voidTiles: new Set(),
+    portals: finalized.portals,
+    playerSpawn: finalized.playerSpawn,
     spawns: [],
     runMode: "none",
     archetype: "openField",
@@ -608,7 +622,69 @@ export function simulateClearUnlocksPortal(
   };
 }
 
-export function reportWorld(world: SimWorld) {
+export function generateSeededSanctuary(seed: number): SimWorld {
+  const world = generateSeededWorld({ seed, runMode: "none" });
+  const map = {
+    tiles: world.tiles,
+    portals: world.portals,
+    voidTiles: world.voidTiles,
+  };
+  const applied = applySanctuaryLayout(
+    map,
+    world.playerSpawn,
+    WORLD_GRID_SIZE,
+    {
+      x: world.playerSpawn.x,
+      y: world.playerSpawn.y,
+      color: "white",
+      isWhitePortal: true,
+    },
+  );
+  return {
+    ...world,
+    tiles: map.tiles,
+    portals: map.portals,
+    playerSpawn: applied.spawn,
+  };
+}
+
+export function generateSeededDeathRealm(): SimWorld {
+  const size = WORLD_GRID_SIZE;
+  const tiles: string[][] = Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => "floor"),
+  );
+  const portals: SimPortal[] = [
+    { x: 2, y: 1, color: "black" },
+    { x: 14, y: 1, color: "blue" },
+    { x: 1, y: 8, color: "red" },
+  ];
+  stampPortalTiles(tiles, portals);
+  const finalized = finalizePlayableLayout({
+    tiles,
+    voidTiles: new Set(),
+    playerSpawn: { x: 1, y: 1 },
+    portals,
+    spawns: [],
+    w: size,
+    h: size,
+    requireExit: true,
+  });
+  return {
+    tiles: finalized.tiles,
+    voidTiles: new Set(),
+    portals: finalized.portals,
+    playerSpawn: finalized.playerSpawn,
+    spawns: [],
+    runMode: "none",
+    archetype: "openField",
+    seed: 0,
+  };
+}
+
+export function reportWorld(
+  world: SimWorld,
+  opts?: { allowSpawnOnPortal?: boolean },
+) {
   return evaluateSolvability(
     world.tiles,
     world.voidTiles,
@@ -617,5 +693,6 @@ export function reportWorld(world: SimWorld) {
     world.spawns,
     world.tiles[0]?.length ?? WORLD_GRID_SIZE,
     world.tiles.length,
+    opts,
   );
 }

@@ -362,21 +362,29 @@ function nearestReachableCell(
   reachable: Set<string>,
   w: number,
   h: number,
+  exclude?: Set<string>,
 ): { x: number; y: number } | null {
   let best: { x: number; y: number } | null = null;
   let bestDist = Number.POSITIVE_INFINITY;
+  let fallback: { x: number; y: number } | null = null;
+  let fallbackDist = Number.POSITIVE_INFINITY;
   for (const k of reachable) {
     const p = k.split(",");
     const rx = Number(p[0]);
     const ry = Number(p[1]);
     if (rx < 0 || ry < 0 || rx >= w || ry >= h) continue;
     const dist = Math.max(Math.abs(rx - target.x), Math.abs(ry - target.y));
+    if (dist < fallbackDist) {
+      fallbackDist = dist;
+      fallback = { x: rx, y: ry };
+    }
+    if (exclude?.has(k)) continue;
     if (dist < bestDist) {
       bestDist = dist;
       best = { x: rx, y: ry };
     }
   }
-  return best;
+  return best ?? fallback;
 }
 
 export function legalizePlayerSpawn(
@@ -448,8 +456,11 @@ function relocatePortalOntoReachable(
   playerSpawn: { x: number; y: number },
   w: number,
   h: number,
+  exclude?: Set<string>,
 ): { x: number; y: number } {
-  const near = nearestReachableCell(portal, reachable, w, h);
+  const reserved = new Set<string>(exclude);
+  reserved.add(`${playerSpawn.x},${playerSpawn.y}`);
+  const near = nearestReachableCell(portal, reachable, w, h, reserved);
   const dest =
     near && `${near.x},${near.y}` !== `${playerSpawn.x},${playerSpawn.y}`
       ? near
@@ -458,7 +469,12 @@ function relocatePortalOntoReachable(
             const p = k.split(",");
             return { x: Number(p[0]), y: Number(p[1]) };
           })
-          .find((c) => c.x !== playerSpawn.x || c.y !== playerSpawn.y) ??
+          .find(
+            (c) =>
+              (c.x !== playerSpawn.x || c.y !== playerSpawn.y) &&
+              !reserved.has(`${c.x},${c.y}`),
+          ) ??
+        near ??
         playerSpawn);
   if (tiles[portal.y]?.[portal.x] === "portal") {
     tiles[portal.y][portal.x] = "floor";
@@ -477,6 +493,7 @@ export function ensureReachability(
   portal: { x: number; y: number },
   w: number,
   h: number,
+  portalExclude?: Set<string>,
 ): {
   tiles: string[][];
   spawns: { x: number; y: number }[];
@@ -510,7 +527,16 @@ export function ensureReachability(
     reachable = floodFillReachable(out, vt, liveSpawn, w, h);
   }
 
-  // 2. For each enemy spawn not reachable, carve or relocate.
+  // 2. For each enemy spawn not reachable, carve or relocate. Occupied
+  // cells (player, portal, already-placed hostiles) are avoided so two
+  // isolated pockets do not collapse onto one tile.
+  const occupied = new Set<string>([
+    `${liveSpawn.x},${liveSpawn.y}`,
+    `${portal.x},${portal.y}`,
+  ]);
+  for (const s of outSpawns) {
+    if (reachable.has(`${s.x},${s.y}`)) occupied.add(`${s.x},${s.y}`);
+  }
   for (let i = 0; i < outSpawns.length; i++) {
     const sp = outSpawns[i];
     const key = `${sp.x},${sp.y}`;
@@ -529,14 +555,48 @@ export function ensureReachability(
       reachable = floodFillReachable(out, vt, liveSpawn, w, h);
       if (!reachable.has(`${sp.x},${sp.y}`)) {
         // Carving didn't connect (e.g. spawn sits in a void pocket). Relocate.
-        const near = nearestReachableCell(sp, reachable, w, h);
-        if (near) outSpawns[i] = near;
+        const near = nearestReachableCell(sp, reachable, w, h, occupied);
+        if (near) {
+          occupied.delete(key);
+          outSpawns[i] = near;
+          occupied.add(`${near.x},${near.y}`);
+        }
+      } else {
+        occupied.add(`${sp.x},${sp.y}`);
       }
     } else {
       // Carving impractical (too long or no path). Relocate to nearest
-      // reachable cell.
-      const near = nearestReachableCell(sp, reachable, w, h);
-      if (near) outSpawns[i] = near;
+      // reachable cell that is not already taken.
+      const near = nearestReachableCell(sp, reachable, w, h, occupied);
+      if (near) {
+        occupied.delete(key);
+        outSpawns[i] = near;
+        occupied.add(`${near.x},${near.y}`);
+      }
+    }
+  }
+
+  // Destack any remaining shared cells (two isolated pockets used to
+  // collapse onto the same nearest floor).
+  const seen = new Set<string>();
+  for (let i = 0; i < outSpawns.length; i++) {
+    const k = `${outSpawns[i].x},${outSpawns[i].y}`;
+    if (!seen.has(k)) {
+      seen.add(k);
+      continue;
+    }
+    const near = nearestReachableCell(
+      outSpawns[i],
+      reachable,
+      w,
+      h,
+      new Set([...occupied, k]),
+    );
+    if (near && `${near.x},${near.y}` !== k) {
+      occupied.delete(k);
+      outSpawns[i] = near;
+      occupied.add(`${near.x},${near.y}`);
+      seen.add(`${near.x},${near.y}`);
     }
   }
 
@@ -587,6 +647,7 @@ export function ensureReachability(
         liveSpawn,
         w,
         h,
+        portalExclude,
       );
       reachable = floodFillReachable(out, vt, liveSpawn, w, h);
     }
@@ -792,18 +853,53 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     }
   }
 
+  let liveTiles = punched.tiles;
   let playerSpawn = punched.playerSpawn;
+  let spawns = punched.spawns;
+
+  // Punch every remaining exit — overworld dungeon/boss/rest portals used
+  // to stay isolated because only portals[0] went through ensureReachability.
+  for (let i = 1; i < portals.length; i++) {
+    const extra = ensureReachability(
+      liveTiles,
+      vt,
+      spawns,
+      playerSpawn,
+      portals[i],
+      input.w,
+      input.h,
+      new Set(portals.filter((_, j) => j !== i).map((p) => `${p.x},${p.y}`)),
+    );
+    liveTiles = extra.tiles;
+    playerSpawn = extra.playerSpawn;
+    spawns = extra.spawns;
+    if (
+      extra.portal &&
+      (portals[i].x !== extra.portal.x || portals[i].y !== extra.portal.y)
+    ) {
+      if (liveTiles[portals[i].y]?.[portals[i].x] === "portal") {
+        liveTiles[portals[i].y][portals[i].x] = "floor";
+      }
+      portals[i].x = extra.portal.x;
+      portals[i].y = extra.portal.y;
+    }
+    if (liveTiles[portals[i].y]) {
+      liveTiles[portals[i].y][portals[i].x] = "portal";
+    }
+  }
+
+  const takenPortals = new Set(portals.map((p) => `${p.x},${p.y}`));
   const exit = portals[0];
   if (exit && playerSpawn.x === exit.x && playerSpawn.y === exit.y) {
     const reachable = floodFillReachable(
-      punched.tiles,
+      liveTiles,
       vt,
       playerSpawn,
       input.w,
       input.h,
     );
     for (const k of reachable) {
-      if (k === `${exit.x},${exit.y}`) continue;
+      if (takenPortals.has(k)) continue;
       const p = k.split(",");
       playerSpawn = { x: Number(p[0]), y: Number(p[1]) };
       break;
@@ -811,11 +907,11 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
   }
 
   return {
-    tiles: punched.tiles,
+    tiles: liveTiles,
     playerSpawn,
     portals,
     portal: portals[0] ?? null,
-    spawns: punched.spawns,
+    spawns,
   };
 }
 
@@ -868,6 +964,8 @@ export interface SolvabilityReport {
   enemiesReachable: boolean;
   portalReachable: boolean;
   isolatedEnemies: number;
+  isolatedPortals: number;
+  stackedEnemies: number;
   failures: string[];
 }
 
@@ -889,6 +987,7 @@ export function evaluateSolvability(
   spawns: { x: number; y: number }[],
   w: number,
   h: number,
+  opts?: { allowSpawnOnPortal?: boolean },
 ): SolvabilityReport {
   const vt = toVoidSet(voidTiles);
   const failures: string[] = [];
@@ -910,15 +1009,26 @@ export function evaluateSolvability(
   if (!enemiesReachable) {
     failures.push(`isolated-enemies:${isolatedEnemies}`);
   }
-  const portalReachable =
-    portals.length === 0
-      ? false
-      : portals.some((p) => reachable.has(`${p.x},${p.y}`));
-  if (portals.length > 0 && !portalReachable) {
-    failures.push("no-reachable-portal");
+  let isolatedPortals = 0;
+  for (const p of portals) {
+    if (!reachable.has(`${p.x},${p.y}`)) isolatedPortals += 1;
+  }
+  const portalReachable = portals.length > 0 && isolatedPortals === 0;
+  if (portals.length > 0 && isolatedPortals > 0) {
+    failures.push(`isolated-portals:${isolatedPortals}`);
   }
   if (portals.length === 0) failures.push("missing-exit-portal");
+  const occupancy = new Map<string, number>();
+  for (const s of spawns) {
+    const k = `${s.x},${s.y}`;
+    occupancy.set(k, (occupancy.get(k) ?? 0) + 1);
+  }
+  let stackedEnemies = 0;
+  for (const n of occupancy.values()) {
+    if (n > 1) stackedEnemies += n - 1;
+  }
   if (
+    !opts?.allowSpawnOnPortal &&
     playerSpawnLegal &&
     portals.some((p) => p.x === playerSpawn.x && p.y === playerSpawn.y) &&
     reachable.size > 1
@@ -934,8 +1044,51 @@ export function evaluateSolvability(
     enemiesReachable,
     portalReachable,
     isolatedEnemies,
+    isolatedPortals,
+    stackedEnemies,
     failures,
   };
+}
+
+/**
+ * Drop leftover CA voids after generation exhausts attempts. An all-floor
+ * fallback that keeps the last attempt's voids can isolate spawn / exits.
+ */
+export function resetFailedGenerationVoids(
+  voidTiles: Set<string> | Map<string, unknown>,
+): void {
+  voidTiles.clear();
+}
+
+/** Mark portal coordinates on the tile grid so pathing and occupancy agree. */
+export function stampPortalTiles<P extends { x: number; y: number }>(
+  tiles: string[][],
+  portals: P[],
+): void {
+  for (const p of portals) {
+    if (tiles[p.y]) tiles[p.y][p.x] = "portal";
+  }
+}
+
+/**
+ * Sanctuary / white-portal maps skipped finalize. Legalize the overworld
+ * first, then colocate the white gateway with the (legal) spawn.
+ */
+export function applySanctuaryLayout<P extends { x: number; y: number }>(
+  map: { tiles: string[][]; portals: P[]; voidTiles?: unknown },
+  spawn: { x: number; y: number },
+  size: number,
+  whitePortal: P,
+): { spawn: { x: number; y: number } } {
+  const applied = applyFinalizedLayout(map, [], spawn, size);
+  const placed: P = { ...whitePortal, x: applied.spawn.x, y: applied.spawn.y };
+  const existing = map.portals.findIndex(
+    (p) => (p as { isWhitePortal?: boolean }).isWhitePortal,
+  );
+  if (existing >= 0) map.portals[existing] = placed;
+  else map.portals.push(placed);
+  stampPortalTiles(map.tiles as string[][], map.portals);
+  return { spawn: applied.spawn };
 }
 
 /**

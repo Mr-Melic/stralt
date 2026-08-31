@@ -140,6 +140,7 @@ import {
 } from "../engine/enemyAI";
 import {
   applyFinalizedLayout,
+  applySanctuaryLayout,
   applyVoidTiles,
   checkVoidConnectivity,
   countWalkableVoid,
@@ -147,6 +148,8 @@ import {
   pickProgressionPortalCell,
   placeBossRushSpawns,
   punchRosterReachability,
+  resetFailedGenerationVoids,
+  stampPortalTiles,
   toVoidSet,
 } from "../engine/mapGen";
 import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
@@ -1178,16 +1181,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       });
       const { map: whiteMap, spawnPosition: whiteSpawn } = generateRandomMap();
       if (whiteMap) {
-        const whitePortal = {
-          x: whiteSpawn.x,
-          y: whiteSpawn.y,
-          color: "white" as const,
-          isWhitePortal: true,
-          animationOffset: Math.random() * Math.PI * 2,
-        };
-        whiteMap.portals = [...(whiteMap.portals || []), whitePortal];
+        const applied = applySanctuaryLayout(
+          whiteMap,
+          whiteSpawn,
+          WORLD_GRID_SIZE,
+          {
+            x: whiteSpawn.x,
+            y: whiteSpawn.y,
+            color: "white" as const,
+            isWhitePortal: true,
+            animationOffset: Math.random() * Math.PI * 2,
+          },
+        );
         setCurrentMap(whiteMap);
-        if (whiteSpawn) setPlayerPositionSynced({ ...whiteSpawn });
+        setPlayerPositionSynced({ ...applied.spawn });
         resetCombatantStore(combatantStoreCtx);
       }
       logBattleEntry("A white gateway to sanctuary opens…", "white");
@@ -5533,6 +5540,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         },
       ];
       tiles[4][4] = "portal";
+      resetFailedGenerationVoids(voidTiles);
     }
 
     // Pick a random color family for this map's tiles
@@ -5889,6 +5897,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         animationOffset: 2,
       },
     ];
+    stampPortalTiles(tiles as unknown as string[][], restPortals);
     const restMap: GameMap = {
       id: `rest-${Date.now()}`,
       tiles,
@@ -5917,9 +5926,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (spawnPos.x !== center || spawnPos.y !== center) break;
       }
     }
+    const appliedRest = applyFinalizedLayout(restMap, [], spawnPos, size);
     return {
       map: restMap,
-      spawnPosition: spawnPos,
+      spawnPosition: appliedRest.spawn,
     };
   }, []);
 
@@ -6571,6 +6581,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
         if (nextRoomDef) {
           void advanceBossRushRoom();
+          cleanupMap();
           spawnBossRushRoom(nextRoomIndex);
         }
         setTransitionInProgress(false);
@@ -12979,16 +12990,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       });
       const { map: whiteMap, spawnPosition: whiteSpawn } = generateRandomMap();
       if (whiteMap) {
-        const whitePortal = {
-          x: whiteSpawn.x,
-          y: whiteSpawn.y,
-          color: "white" as const,
-          isWhitePortal: true,
-          animationOffset: Math.random() * Math.PI * 2,
-        };
-        whiteMap.portals = [...(whiteMap.portals || []), whitePortal];
+        const applied = applySanctuaryLayout(
+          whiteMap,
+          whiteSpawn,
+          WORLD_GRID_SIZE,
+          {
+            x: whiteSpawn.x,
+            y: whiteSpawn.y,
+            color: "white" as const,
+            isWhitePortal: true,
+            animationOffset: Math.random() * Math.PI * 2,
+          },
+        );
         setCurrentMap(whiteMap);
-        if (whiteSpawn) setPlayerPositionSynced({ ...whiteSpawn });
+        setPlayerPositionSynced({ ...applied.spawn });
         resetCombatantStore(combatantStoreCtx);
       }
       logBattleEntry("A white gateway to sanctuary opens…", "white");
