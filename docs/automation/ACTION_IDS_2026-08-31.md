@@ -699,3 +699,324 @@ DEPENDENCIES: TADD-2026-08-31-002.
 REGRESSION_RISK: LOW.  
 VALIDATION_REQUIRED: H1 has no cap chrome; leftover XP uses `xpForNextLevel`, not `level * 100`.  
 STATUS: NEW
+
+ACTION_ID: VAL-2026-08-31-001  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Empty-library fallback — custom visuals never required  
+CATEGORY: invariant  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Combatants paint via `drawPixelPattern` (`WorldExploration.tsx` 3658–3701, `pixelSize = 3`) and `drawCombatant` (`pieceArt.ts` 825–1011). Zero `ctx.drawImage` in the world renderer. `EnemyConfig.spriteUrl` and `PlayerSpriteConfig` URLs are stored but never consumed by `WorldExploration`. New bosses already fall back to `P.boss_12` (`WorldExploration.tsx` 4146).  
+SYSTEMS_AFFECTED: `engine/visualAssets.ts` (new), `data/pieceArt.ts` `drawCombatant`, spawn sites  
+RECOMMENDED_ACTION: Implement `resolveRuntimeVisual` so a missing, inactive, invalid, or empty library returns `{ kind: "builtin" }` and the existing pixel path runs unchanged. New enemies/bosses/summons must work with no uploads. Never make artwork upload mandatory.  
+AUTONOMY: IMPLEMENT_WITH_TESTS — helper + unit tests only; no RAF / mapGen / combat math.  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW if the helper is identity on empty input. HIGH if anyone wires raw `spriteUrl` into draw.  
+VALIDATION_REQUIRED: Tests: library `[]`, inactive id, corrupt id → builtin. Manual: new boss portal with empty library matches current pixels.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-002  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Owner-only library metadata on the canonical canister  
+CATEGORY: backend-admin  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Admin writes already require `#admin` (`main.mo` 567–579). UI deny at `AdminDashboard.tsx` 4760–4761. `App.tsx` 224 `isAdmin = userRole === "admin"`. `AGENTS.md` forbids shipping admin to players. Canonical actor is `src/backend/main.mo`, not `backend_extended/`.  
+SYSTEMS_AFFECTED: `src/backend/main.mo`, bindgen `src/frontend/src/backend.ts`, `AdminDashboard.tsx`  
+RECOMMENDED_ACTION: Add a `VisualAsset` / assignment / pool store with the metadata fields in the design doc (`ASSET_ID` … `VALIDATION_STATUS`, plus blob ref and direction refs). CRUD is `#admin` only. Public gameplay must not depend on the store being populated. Do not deploy `backend_extended`.  
+AUTONOMY: HUMAN_REVIEW — Candid / migration.  
+DEPENDENCIES: VAL-2026-08-31-001  
+REGRESSION_RISK: MEDIUM — new persistent maps need a migration module if the live actor cannot add fields silently.  
+VALIDATION_REQUIRED: Non-admin caller gets `#err("Unauthorized")`. Empty store does not change `getCharacter` / combat.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-003  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Show derived upload specs before file selection and never silently distort  
+CATEGORY: admin-ui  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: Recommended 24×24 is 8×8 cells × `pixelSize = 3` (`WorldExploration.tsx` 3672–3674; `pieceArt.ts` 749–751). Boss recommended 34×50 is 8×12 × 3 × spawn scale 1.4 (`getBossPixelPattern` 3728–3740; spawn 6988–6989). Max 80×60 is `TILE_WIDTH` × sprite `drawSize.h` (8479–8497). JPEG/SVG unused; pixel path skips `cell === 0` (transparency).  
+SYSTEMS_AFFECTED: `AdminDashboard.tsx` (new library panel), `engine/visualAssets.ts` validation  
+RECOMMENDED_ACTION: Before `<input type="file">`, display per-category `RECOMMENDED_*`, `MAX_*`, formats, transparency, anchor, default scale, max safe footprint, animation (4 stills). Validate MIME, decode, width/height, aspect, pixel count, file size, alpha, category, render-safe bounds. Reject corrupt/undecodable. Warn aspect/padding; never auto-stretch/crop.  
+AUTONOMY: IMPLEMENT_AFTER 002  
+DEPENDENCIES: VAL-2026-08-31-002, VAL-2026-08-31-004  
+REGRESSION_RISK: LOW — admin-only.  
+VALIDATION_REQUIRED: PNG 24×24 player accepts; JPEG rejects; 200×200 rejects or warns without being drawn stretched; 0-alpha-all-opaque warns.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-004  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Freeze entity-aware render profiles from the live renderer  
+CATEGORY: render-contract  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: See design §3. `TILE_WIDTH/HEIGHT` 80×40 (`gameConstants.ts` 6–7). `CHARACTER_Y_OFFSET = -9` (line 17). Draw point = tile top + 9 (`pieceArt.ts` 838–840). Pattern centered (`WorldExploration.tsx` 3677–3678). Mobile zoom 1.75 scales **tiles only** (818–821), not pixel cells. Phones &lt;768 blocked (`App.tsx` 26–28).  
+SYSTEMS_AFFECTED: `engine/visualAssets.ts` profile constants, admin spec UI, preview  
+RECOMMENDED_ACTION: Check in a typed `RENDER_PROFILES` map (`player_standard`, `enemy_standard`, `enemy_elite`, `boss_large`, `summon_standard`) using only measured numbers from the design doc. Custom default scale = 1. Do not apply `MOBILE_ZOOM` to bitmaps unless a later profile opts in. Do not invent 64×64 / 128×128 as the recommended size.  
+AUTONOMY: IMPLEMENT_WITH_TESTS  
+DEPENDENCIES: None  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Unit test: each profile’s recommended box equals the derived cell math (8×3, 12×3×1.4).  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-005  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Bind artwork at spawn — never during React render or rAF  
+CATEGORY: assignment-stability  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: No encounter seed exists. Enemy ids are `enemy-${n}-${Date.now()}` (`WorldExploration.tsx` 6183). Boss ids `boss_${id}_${Date.now()}` (6977). Summon ids `summon-${Math.random()…}` (`summonSpawn.ts` 137). Stats already use `seededRng` (`combatMath.ts` 122–128). Instance `scaleX/Y` is stored at spawn (6194–6195) and is the existing “stable random” pattern.  
+SYSTEMS_AFFECTED: enemy generate / boss portal / `spawnSummonUnit`, `Enemy` type, `drawCombatant`  
+RECOMMENDED_ACTION: Add `visualAssetId` (optional) on the instance. Introduce presentation-only `encounterVisualSeed` on the map ref when the map is committed — do **not** edit `mapGen.ts`. Pick with `seededRng(hash(seed, instanceId, poolId))` once. rAF only reads the stored id. Empty/invalid id → builtin.  
+AUTONOMY: IMPLEMENT_AFTER 001 — WX call-site must stay one-line; logic in `engine/`.  
+DEPENDENCIES: VAL-2026-08-31-001, VAL-2026-08-31-006  
+REGRESSION_RISK: MEDIUM if seed is accidentally used for AI/stats. Keep visual seed isolated.  
+VALIDATION_REQUIRED: 100 simulated renders + one React state update keep the same `visualAssetId`. Changing pool after spawn does not reshuffle live instances.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-006  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Weighted pools — active eligible only, else builtin  
+CATEGORY: assignment  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Family already rolls 30% at spawn and stores `en.family` (`WorldExploration.tsx` 6236–6326) — that is the template for “pick once, store, never in render.” No pool type exists.  
+SYSTEMS_AFFECTED: new pool store, spawn resolver  
+RECOMMENDED_ACTION: Pools list `{ assetId, weight }`. Eligible = ACTIVE ∧ VALIDATION_STATUS ok ∧ category ∧ family/tags ∧ elite/boss flags. Weight 0 = direct-assign only. Zero eligible → unset id → pixel default. Do not re-roll when an asset is later deactivated; fall back to builtin for that instance.  
+AUTONOMY: IMPLEMENT_WITH_TESTS  
+DEPENDENCIES: VAL-2026-08-31-001, VAL-2026-08-31-002  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Tests: empty pool; all inactive; weights 1/3/6 deterministic under fixed seed; deactivated winner → builtin not a new roll.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-007  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Boss render profile is not a stretched enemy  
+CATEGORY: boss-visual  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Bosses use dedicated 8×12 patterns (`getBossPixelPattern`, e.g. `boss_1` 3728–3740) and a **fixed** `scaleX/Y = 1.4` (6988–6989), not `generateEnemyScaleFactors`. `drawCombatant` branch 1 is `isBoss && bossId` (`pieceArt.ts` 843–882). Battle flags `isBoss` only when `id.startsWith("boss_")` (12224–12250).  
+SYSTEMS_AFFECTED: `boss_large` profile, boss spawn bind, `drawCombatant`  
+RECOMMENDED_ACTION: Assign only `BOSS_ONLY` / `#boss` assets to bosses. Draw at `boss_large` recommended 34×50 with scale 1 (or 24×36 × 1.4 if the owner uploaded a pixel-match sheet). Never take an `enemy_standard` bitmap and scale it to fill the boss box.  
+AUTONOMY: IMPLEMENT_AFTER 004  
+DEPENDENCIES: VAL-2026-08-31-004, VAL-2026-08-31-005  
+REGRESSION_RISK: MEDIUM — double-applying 1.4 on a 34×50 upload.  
+VALIDATION_REQUIRED: Preview: enemy 24×24 assigned to a boss is rejected or shown as ineligible. Boss 34×50 does not also multiply by 1.4.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-008  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Visual size must not drive occupancy, movement, range, or hitbox  
+CATEGORY: invariant  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: `occupancy.ts` 6–15 and 78–89: one combatant per logical tile; no pixel size. Targeting is tile Chebyshev/Manhattan. Sprite rects are a **fixed** `effectiveTileW × effectiveTileH*1.5` box (8479–8498), already decoupled from pattern 24×24.  
+SYSTEMS_AFFECTED: `occupancy.ts`, `targeting.ts`, sprite rect registration  
+RECOMMENDED_ACTION: Forbid reading image width/height in occupancy, pathing, spell range, or combat hitboxes. Keep sprite-hit rects tile-derived (or document a later change as hit-test-only). Preview should warn when art exceeds the 80×60 rect (missed clicks), not expand the tile.  
+AUTONOMY: GUARDRAIL — add a comment + a test that resolver output is unused by occupancy.  
+DEPENDENCIES: VAL-2026-08-31-001  
+REGRESSION_RISK: HIGH if a later hunter “fixes” click-miss by growing occupancy.  
+VALIDATION_REQUIRED: 64×72 boss image still occupies one cell; neighbors remain legal targets.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-009  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Admin preview on a real iso tile at intended scale  
+CATEGORY: admin-ui  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Anchor is pattern center at tile top + 9, not tile center (`tileCenter` is top + th/2, 3622–3628). Labels at `screenPos.y − 34` (8516). Current admin sprite preview is a 72×72 `<img object-fit:contain>` (`AdminDashboard.tsx` 1223–1246) — wrong space, wrong anchor, no player/enemy comparison.  
+SYSTEMS_AFFECTED: new `engine/visualPreview.ts`, AdminDashboard library panel  
+RECOMMENDED_ACTION: Preview canvas: 80×40 diamond, draw point, player pixel dummy, enemy dummy, optional boss dummy, nearest-neighbor. Warn clip (y−34 / summon y−48), padding, scale mismatch, neighbor overlap, tablet 140×70 relative shrink, hit-rect overflow. Do not use the live RAF loop.  
+AUTONOMY: IMPLEMENT_AFTER 003  
+DEPENDENCIES: VAL-2026-08-31-003, VAL-2026-08-31-004  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: A 24×24 PNG sits visually comparable to the chess dummy; a 80×80 PNG triggers overlap/clip warnings.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-010  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Admin library CRUD — upload, activate, assign, revert, inspect  
+CATEGORY: admin-ui  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Sprite panel already lists/edits URL configs but cannot activate, pool, version, or inspect dependents. Enemy form is a single optional URL (`AdminDashboard.tsx` 602–616). Access already gated (4760).  
+SYSTEMS_AFFECTED: `AdminDashboard.tsx`, admin queries/mutations  
+RECOMMENDED_ACTION: New carved-stone / crimson admin panel (existing Ankama/Dofus styling) for the operations in design §5. Revert-to-default clears binds. Dependency inspect lists assignments, pools, and best-effort live instance ids. Safe remove = inspect → deactivate → delete when zero dependents.  
+AUTONOMY: HUMAN_REVIEW for UX; implement after 002–003.  
+DEPENDENCIES: VAL-2026-08-31-002, VAL-2026-08-31-003, VAL-2026-08-31-015  
+REGRESSION_RISK: LOW if kept admin-only.  
+VALIDATION_REQUIRED: Non-admin cannot open. Activate/deactivate changes resolver without reload. Delete blocked while assigned.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-011  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Optional drawImage branch in drawCombatant with instant builtin fallback  
+CATEGORY: renderer  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `drawCombatant` already injects resolvers and falls back to `king.front` on any miss (`pieceArt.ts` 809–811, 852–877). Player is still a separate `drawPixelPattern` call (8709–8720), not `drawCombatant`.  
+SYSTEMS_AFFECTED: `data/pieceArt.ts`, player draw call site, image bitmap cache  
+RECOMMENDED_ACTION: Add optional `getCustomVisual`. If it returns a decoded bitmap + profile, `drawImage` centered on the same draw point with `imageSmoothingEnabled = false`. On any failure, run existing branches. Cache bitmaps by assetId+version. Do not put decode or pool RNG in the rAF callback. Do not edit RAF loop structure.  
+AUTONOMY: IMPLEMENT_AFTER 001+005; WX/player site is wiring only.  
+DEPENDENCIES: VAL-2026-08-31-001, VAL-2026-08-31-005, VAL-2026-08-31-004  
+REGRESSION_RISK: MEDIUM — wrong anchor or smoothing would shift hit-test perception. Sprite rects stay tile-sized (008).  
+VALIDATION_REQUIRED: Custom on, then blob revoked → next frame builtin. Player + enemy + boss + summon each fallback independently.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-012  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Do not treat spriteUrl / PlayerSpriteConfig as the library  
+CATEGORY: migration  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `getPlayerSpriteConfigs` / `frontUrl` have **zero** references in `WorldExploration.tsx`. `spriteUrl` is admin text only. `Character.pixelPattern` is saved (`CharacterCreation.tsx` 283) but the world player uses `chessPiecePatterns[pieceType]` (8683). Caffeine `ExternalBlob` is bindgen plumbing, not a sprite pipeline.  
+SYSTEMS_AFFECTED: `EnemyConfig`, `PlayerSpriteConfig`, future import  
+RECOMMENDED_ACTION: Leave stubs unused for combat. Optionally import existing URL rows as **inactive** library records. Do not `drawImage(spriteUrl)` as a shortcut. Decide later whether to deprecate the old types.  
+AUTONOMY: DOCUMENT_THEN_HUMAN — no silent runtime bind.  
+DEPENDENCIES: VAL-2026-08-31-002  
+REGRESSION_RISK: HIGH if a hunter “completes” the unused URL fields.  
+VALIDATION_REQUIRED: Filling `spriteUrl` in today’s admin still does not change world pixels (current behavior preserved until an explicit import).  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-013  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Family pixel patterns are ghost/minion-only — do not assume they are on-screen  
+CATEGORY: renderer-gap  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `drawCombatant` branch 3 runs only when `assignedName === "Ghost" || isBossMinion` (`pieceArt.ts` 920–946). Regular enemies with `family: "iron_golem"` still hit branch 4 chess art (977–1010). Family grids exist at `WorldExploration.tsx` 4148–4214 but are unused for those units.  
+SYSTEMS_AFFECTED: `drawCombatant` branch 3 vs 4, family assignment  
+RECOMMENDED_ACTION: Custom family assignment is a **new** presentation bind, not a repair of this gap. If a later change also paints family pixels for standard enemies, do it as its own ID — do not fold it into custom-upload work. Document this in the admin family-assign UI so owners are not surprised.  
+AUTONOMY: DOCUMENT_ONLY unless a human wants family pixels on standard enemies.  
+DEPENDENCIES: None  
+REGRESSION_RISK: MEDIUM if someone “fixes” family draw as part of the library PR — changes default look for 30% of spawns.  
+VALIDATION_REQUIRED: Empty library + family iron_golem still looks like a chess piece (today).  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-014  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Store bytes in object storage, not Motoko Text  
+CATEGORY: storage  
+PRIORITY: P1  
+CONFIDENCE: MEDIUM  
+EVIDENCE: Ad boxes and sprite configs store **URL strings** (`main.mo` 2585–2598, `PlayerSpriteConfig` 408–419). `ExternalBlob` is imported in `backend.ts` 54–55 but no visual blob API exists. No in-repo file-size cap. IC ingress / Caffeine limits were not measured in this run.  
+SYSTEMS_AFFECTED: canister, Caffeine object storage, admin upload  
+RECOMMENDED_ACTION: Metadata on canister; bytes via `ExternalBlob` (or measured equivalent). Record `SOURCE_METADATA.hash`. Starting reject **256 KiB/still** until ingress is measured, then replace the constant. Do not base64-dump into Motoko `Text`. URL-only v1 is acceptable if admin-only and validated at load.  
+AUTONOMY: HUMAN_REVIEW — infra.  
+DEPENDENCIES: VAL-2026-08-31-002  
+REGRESSION_RISK: HIGH if large blobs land in actor stable memory.  
+VALIDATION_REQUIRED: Over-cap upload rejected. Hash mismatch → `#invalid` → builtin.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-015  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Versioned replace and safe removal with dependency inspection  
+CATEGORY: lifecycle  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `adminDeletePlayerSpriteConfig` is a hard `remove` (`main.mo` 575–579) with no dependency check. Live combatants hold only `pieceType` / `family` / `id`, not an asset id (today).  
+SYSTEMS_AFFECTED: admin delete/replace, resolver  
+RECOMMENDED_ACTION: Replace increments `VERSION`, keeps `ASSET_ID`, retains previous bytes until prune. Delete is blocked while assignments or known live binds exist; owner can deactivate instead. Deactivated / deleted ids resolve to builtin the next frame (001), no pool re-roll (006).  
+AUTONOMY: IMPLEMENT_AFTER 002+010  
+DEPENDENCIES: VAL-2026-08-31-002, VAL-2026-08-31-006, VAL-2026-08-31-010  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Delete assigned asset fails; deactivate → builtin; replace keeps binds, new bytes show after reload.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-016  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Future categories stay ineligible until they have a measured profile  
+CATEGORY: extensibility  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Portals are procedural whirlpools (`drawPortalWhirlpool` 4234+). Walls use `wallHeight = 28` (4430). Loot/hazards are separate passes. `AGENTS.md` requires explicit metadata, never name heuristics.  
+SYSTEMS_AFFECTED: category enum, resolver  
+RECOMMENDED_ACTION: `#future(Text)` may be stored. Resolver treats unknown categories as ineligible → current art. Adding a category requires a new render profile derived from that renderer (same method as §3). No matching on display names.  
+AUTONOMY: DOCUMENT_THEN_IMPLEMENT when a category is actually needed.  
+DEPENDENCIES: VAL-2026-08-31-004  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Asset tagged `#future("portal")` never replaces the whirlpool.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-017  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Extract visual logic to engine/ — do not grow WorldExploration  
+CATEGORY: sensitive-code  
+PRIORITY: P0  
+CONFIDENCE: HIGH  
+EVIDENCE: AQA-2026-08-30-007 / `AGENTS.md`: no drive-by WX / RAF / mapGen / turn / damage edits. `WorldExploration.tsx` already hosts `drawPixelPattern`, boss patterns, family patterns, and spawn. Quality audit: 19k+ lines, heavy automation churn.  
+SYSTEMS_AFFECTED: `engine/visualAssets.ts`, `engine/visualPreview.ts`, WX call sites  
+RECOMMENDED_ACTION: New behavior lives in `src/frontend/src/engine/*` with tests. WX/admin get wiring only. Reject implementer PRs whose primary hunk is another WX branch for this feature.  
+AUTONOMY: PROCESS — apply to every VAL implementer PR.  
+DEPENDENCIES: AQA-2026-08-30-007  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Implementer diff: WX line delta small; tests sit beside the helper.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-018  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Defer walk-frame animation — four stills only in v1  
+CATEGORY: scope  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: `PlayerSpriteConfig` walk-frame arrays (`admin.mo` 47–50, `AdminDashboard.tsx` 1311–1345) are never drawn. Facing is four stills via `currentView` / `playerView` (11690–11697).  
+SYSTEMS_AFFECTED: upload UI, `DIRECTION_REFS`  
+RECOMMENDED_ACTION: v1 accepts front/right/left/back stills. Missing side → front → builtin. Do not implement walk cycles, sprite sheets, or RAF frame indexes.  
+AUTONOMY: SCOPE_GUARD  
+DEPENDENCIES: VAL-2026-08-31-003  
+REGRESSION_RISK: LOW  
+VALIDATION_REQUIRED: Upload UI does not require walk frames. One-still player works.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: VAL-2026-08-31-019  
+SOURCE_AUTOMATION: Visual Asset Library & Assignment Designer  
+TITLE: Elite/large is metadata-only until a real elite type exists  
+CATEGORY: category-model  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: No `isElite` field. `generateEnemyScaleFactors` (4928–4954) is random visual squash stored on the instance. `iron_golem` is a family HP multiplier (6265–6271), not elite. Occupancy is always one tile.  
+SYSTEMS_AFFECTED: `ELITE_ONLY`, `enemy_elite` profile  
+RECOMMENDED_ACTION: Keep `ELITE_ONLY` on the record. Until an explicit elite flag exists, elite-only assets are ineligible for random pools (builtin). Do not infer elite from `scaleY` or HP. Do not grow collision for “large” art.  
+AUTONOMY: DOCUMENT_THEN_IMPLEMENT  
+DEPENDENCIES: VAL-2026-08-31-004, VAL-2026-08-31-006, VAL-2026-08-31-008  
+REGRESSION_RISK: MEDIUM if scale 1.4 is treated as elite gameplay.  
+VALIDATION_REQUIRED: `ELITE_ONLY` asset never appears on a default-family pawn while no elite flag exists.  
+STATUS: NEW
