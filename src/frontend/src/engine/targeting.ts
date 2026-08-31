@@ -77,7 +77,11 @@ export function applyHealBuffSideEffect(
 export type TileType = "floor" | "wall" | "portal";
 
 /** Barrier occupancy — same key space as `computeTargetableTiles`. */
-export type BarrierTiles = ReadonlyMap<string, unknown> | ReadonlySet<string>;
+export type TileKeySet = { has(key: string): boolean };
+export type BarrierTiles =
+  | ReadonlyMap<string, unknown>
+  | ReadonlySet<string>
+  | TileKeySet;
 
 function hasBarrierTile(
   barriers: BarrierTiles | undefined,
@@ -110,11 +114,19 @@ export function playerSpellRequiresLos(spell: {
   return !!spell.lineOfSight;
 }
 
+type LoSCell = { x: number; y: number };
+
 /**
  * Bresenham LoS shared by {@link computeTargetableTiles} and
  * {@link isTileCastableLive}. Intermediate walls and active barrier tiles
  * block; the origin and destination cells do not. Void is not a TileType
  * and does not block.
+ *
+ * Three call shapes are supported so preview, live-cast, AI, and tests
+ * can share one helper:
+ *   hasBresenhamLoS(x0, y0, x1, y1, tiles, barriers?)
+ *   hasBresenhamLoS(tiles, from, to, barriers?)
+ *   hasBresenhamLoS(from, to, tiles, barriers?)
  */
 export function hasBresenhamLoS(
   x0: number,
@@ -122,10 +134,60 @@ export function hasBresenhamLoS(
   x1: number,
   y1: number,
   tiles: TileType[][],
-  barrierTiles:
-    | ReadonlyMap<string, number>
-    | ReadonlySet<string> = new Map(),
+  barrierTiles?: BarrierTiles,
+): boolean;
+export function hasBresenhamLoS(
+  tiles: TileType[][],
+  from: LoSCell,
+  to: LoSCell,
+  barriers?: BarrierTiles,
+): boolean;
+export function hasBresenhamLoS(
+  from: LoSCell,
+  to: LoSCell,
+  tiles: TileType[][],
+  barriers?: BarrierTiles,
+): boolean;
+export function hasBresenhamLoS(
+  a: number | TileType[][] | LoSCell,
+  b: number | LoSCell,
+  c: number | LoSCell | TileType[][],
+  d?: number | LoSCell | BarrierTiles,
+  e?: TileType[][],
+  f?: BarrierTiles,
 ): boolean {
+  let x0: number;
+  let y0: number;
+  let x1: number;
+  let y1: number;
+  let tiles: TileType[][];
+  let barrierTiles: BarrierTiles;
+  if (typeof a === "number") {
+    x0 = a;
+    y0 = b as number;
+    x1 = c as number;
+    y1 = d as number;
+    tiles = e ?? [];
+    barrierTiles = f ?? new Map();
+  } else if (Array.isArray(a)) {
+    const from = b as LoSCell;
+    const to = c as LoSCell;
+    x0 = from.x;
+    y0 = from.y;
+    x1 = to.x;
+    y1 = to.y;
+    tiles = a;
+    barrierTiles = (d as BarrierTiles | undefined) ?? new Map();
+  } else {
+    const from = a;
+    const to = b as LoSCell;
+    x0 = from.x;
+    y0 = from.y;
+    x1 = to.x;
+    y1 = to.y;
+    tiles = c as TileType[][];
+    barrierTiles = (d as BarrierTiles | undefined) ?? new Map();
+  }
   let cx = x0;
   let cy = y0;
   const ddx = Math.abs(x1 - cx);
@@ -151,6 +213,7 @@ export function hasBresenhamLoS(
   }
   return true;
 }
+
 
 /**
  * Grid state snapshot passed into the pure targeting function.
@@ -437,9 +500,7 @@ export function isTileCastableLive(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange?: number,
-  barrierTiles:
-    | ReadonlyMap<string, number>
-    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): TileCastableResult {
   const targetType = (spell.targetType ?? "enemy") as string;
   const worldGridSize = mapTiles.length;
@@ -748,9 +809,7 @@ export function pickNearestLiveHostileTile(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
-  barrierTiles:
-    | ReadonlyMap<string, number>
-    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): { x: number; y: number } | null {
   let nearest: { x: number; y: number } | null = null;
   let nearestDist = Number.POSITIVE_INFINITY;
@@ -786,9 +845,7 @@ export function canAttackNearestLive(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
-  barrierTiles:
-    | ReadonlyMap<string, number>
-    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): boolean {
   if (spell.targetType === "self" && spell.effectType === "heal") {
     return shouldExecuteLiveCast(
@@ -850,9 +907,7 @@ export function probeLiveCast(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
-  barrierTiles:
-    | ReadonlyMap<string, number>
-    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): TileCastableResult {
   return isTileCastableLive(
     spell,
@@ -884,9 +939,7 @@ export function pickNearestAttackableHostile(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
-  barrierTiles:
-    | ReadonlyMap<string, number>
-    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): { x: number; y: number } | null {
   return pickNearestLiveHostileTile(
     spell,
@@ -906,9 +959,7 @@ export function canAttackNearestAgainstLive(
   liveCombatants: Enemy[],
   mapTiles: TileType[][],
   effectiveRange: number,
-  barrierTiles:
-    | ReadonlyMap<string, number>
-    | ReadonlySet<string> = EMPTY_BARRIER_TILES,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): boolean {
   return canAttackNearestLive(
     spell,
