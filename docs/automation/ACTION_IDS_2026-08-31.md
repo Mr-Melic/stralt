@@ -1756,3 +1756,256 @@ DEPENDENCIES: GTAD-2026-08-31-001; GTAD-2026-08-31-004
 REGRESSION_RISK: LOW.  
 VALIDATION_REQUIRED: `schema()` / `execute` do not list a player-owned telemetry event collection.  
 STATUS: NEW
+
+ACTION_ID: UX-HUD-DUPLICATE-TOPBAR
+TITLE: GameFlow overlay hid the live world HUD and showed 0/100 XP
+CATEGORY: visual-hierarchy
+PRIORITY: P0
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/GameFlow.tsx; src/frontend/src/App.tsx; src/frontend/src/components/WorldExploration.tsx
+CURRENT_BEHAVIOUR: GameFlow painted a full-width z-9000 stone bar over WorldExploration’s real HUD. XP/Blood read `selectedCharacterProp` from App.tsx, which is never set, so the bar always showed 0/100. Dummy Map/Zone pills and an XP/RWD toggle that never reached WorldExploration sat in the same strip.
+DESIRED_BEHAVIOUR: One carved-stone HUD. Live leftover XP, Map #, region, and Doka stay visible. Realm tools (Items, Board, Feats, Bosses) stay reachable without covering that strip.
+EVIDENCE: GameFlow.tsx previously lines 278–348; App.tsx selectedCharacter stays null (`_setSelectedCharacter` unused); WorldExploration.tsx ~17461–17819 is the live bar.
+RECOMMENDED_ACTION: Keep the under-HUD Items/Board/Feats/Bosses cluster shipped this run. Later, fold those buttons into the WorldExploration header so there is a single bar.
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: LOW — display chrome only; persist and combat untouched. Panel snap still uses a 44px top spacer.
+VALIDATION_REQUIRED: Enter the world; confirm leftover XP and region are visible; Items still opens BuffShop; Board/Feats/Bosses still open.
+STATUS: IMPLEMENTED_THIS_RUN
+
+---
+
+ACTION_ID: UX-DEATH-DUAL-MODAL
+TITLE: Defeat recap and Game Over both claim to be the next step
+CATEGORY: modal-conflicts
+PRIORITY: P0
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/components/GameOverModal.tsx; src/frontend/src/components/PostBattleRecap.tsx; src/frontend/src/App.tsx
+CURRENT_BEHAVIOUR: Battle death sets showGameOver (unmounts the world, z-200) and onShowBattleSummary (defeat recap at app root, z-9999). Recap CTA said “Respawn →” but only dismissed the overlay. Game Over said “Respawn on New Map” and used gray/purple SaaS chrome. handleRespawn actually loads the Death Realm at half HP.
+DESIRED_BEHAVIOUR: One death beat: what you lost, where you are going (Death Realm), what to do next (walk to a portal). Do not unmount the world under a second dialog.
+EVIDENCE: _handlePlayerDeath ~13370; lava path recap ~13399–13412; showGameOver early return ~17392; App.tsx recap z-9999; handleRespawn ~13640.
+RECOMMENDED_ACTION: Human-approved flow: keep the root recap as the only death UI, then fade into Death Realm without GameOverModal, or keep Game Over and skip the defeat recap. This run only corrected Game Over copy/style and the recap CTA label.
+AUTONOMY: HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: HIGH if the unmount / 1.5s Death Realm timer is rewired without deathGuards tests.
+VALIDATION_REQUIRED: Battle death and lava death each show one explanation; penalty numbers match persistDeathPenalty; portal exit still works.
+STATUS: PARTIAL — copy/style shipped; stack remains
+
+---
+
+ACTION_ID: UX-RECAP-XP-CURVE
+TITLE: Recap XP bar uses level×100 instead of 100×2^(N-1)
+CATEGORY: reward-clarity
+PRIORITY: P0
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/components/PostBattleRecap.tsx; src/frontend/src/utils/xpCurve.ts; draft PR #108
+CURRENT_BEHAVIOUR: Victory, leftover-roster, Boss Rush, and defeat recaps pass `xpForNextLevel: (level || 1) * 100`. From level 2 the bar and “XP until next” are wrong. CharacterSelection also subtracts cumulative XP from leftover `experience` (`#108`).
+DESIRED_BEHAVIOUR: Every XP bar uses leftover `experience` over `xpForNextLevel(level)` from `utils/xpCurve.ts`.
+EVIDENCE: WorldExploration.tsx 12719, 12891, 13110, 13407; CharacterSelection.tsx 43–51, 392–411; open draft https://github.com/Mr-Melic/stralt/pull/108
+RECOMMENDED_ACTION: Let `#108` land, then delete any leftover `level * 100` recap fields. Do not open a second leftover-XP PR.
+AUTONOMY: REPORT_ONLY
+REGRESSION_RISK: MEDIUM if two PRs rewrite the same recap payload.
+VALIDATION_REQUIRED: Level 3 character with 50 leftover shows 50/400, not 50/300 or 0/400.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-ONBOARD-FIRST-MAP
+TITLE: First realm visit has no teaching beat
+CATEGORY: action-discoverability
+PRIORITY: P1
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/components/LandingPage.tsx; src/frontend/src/components/CharacterCreation.tsx
+CURRENT_BEHAVIOUR: After Play the player is on an isometric map with unlabeled whirlpools, no “click a tile to walk,” and no mention of AP/MP until a fight starts. Launch and create screens did not say what comes next (a next-step line and Play toast shipped this run).
+DESIRED_BEHAVIOUR: One dismissible carved-stone coach on first world enter: walk, portals, Doka, stepping onto enemies starts a fight. Never a SaaS tooltip tour.
+EVIDENCE: No tutorial/onboarding/firstVisit strings in WorldExploration.tsx.
+RECOMMENDED_ACTION: Human-written 3-line coach, shown once per slot (`localStorage` cache only; backend may store a seen flag later).
+AUTONOMY: HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: LOW if it is overlay copy only.
+VALIDATION_REQUIRED: First Play shows the coach; second Play does not; it never blocks portals or combat.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-PORTAL-LEGEND
+TITLE: Only dungeon portals explain themselves
+CATEGORY: portal-clarity
+PRIORITY: P1
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/engine/portalRules.ts
+CURRENT_BEHAVIOUR: Nearby dungeon / chain portals draw “Enter Dungeon Chain” / “Continue Chain (d/max)”. Rest, boss (all `#9333ea`), colored exits, and white sanctuary have no label. GameFlow’s “Map” / “Zone” pills were empty (removed this run).
+DESIRED_BEHAVIOUR: When the player is within 3 tiles, each portal kind shows a short carved label: Explore / Rest / Boss / Dungeon / Sanctuary / Death Realm exit.
+EVIDENCE: Label block ~8305–8331 is gated on `p.color === "dungeon" || dungeonChainActive`; bossDefaults portalColor is `#9333ea` for every boss.
+RECOMMENDED_ACTION: Extend the existing nearby-label path. Do not change map generation or portal spawn rules.
+AUTONOMY: HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: LOW if labels are canvas text only.
+VALIDATION_REQUIRED: Each kind in a playtest seed shows a distinct label; dungeon chain copy still shows depth.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-CAST-FAIL-FEEDBACK
+TITLE: Illegal casts only write the battle log
+CATEGORY: invalid-action-explanation
+PRIORITY: P1
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx; src/frontend/src/components/BattleUIPanel.tsx; src/frontend/src/components/ChatPanel.tsx
+CURRENT_BEHAVIOUR: “Not enough AP/MP” and “invalid target” call `logBattleEntry`. The player who never opens chat gets no reason. This run added button titles; tile clicks still fail silently on the canvas.
+DESIRED_BEHAVIOUR: A 1.5s stone whisper on the clicked tile or a toast: Not enough AP, out of range, not your turn, summon is acting.
+EVIDENCE: logBattleEntry sites ~10290, 10362, 10559, 10625, 10994, 11175.
+RECOMMENDED_ACTION: One shared `explainRejectedCast(reason)` used by click and touch. Do not change targeting math.
+AUTONOMY: HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: LOW if it is overlay-only.
+VALIDATION_REQUIRED: AP-starved click, out-of-range click, and enemy-turn click each show a reason once.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-VITALS-ORB-MAX
+TITLE: Stats-panel jewels use hardcoded HP/AP/MP caps
+CATEGORY: ap-mp-clarity
+PRIORITY: P1
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx
+CURRENT_BEHAVIOUR: Jewel fill uses max 100 / 6 / 4 while `characterStats.maxHp/maxAp/maxMp` and battle AP/MP grow. A 10 AP champion reads as overflowing the jewel.
+DESIRED_BEHAVIOUR: Jewel fill uses the live max; label shows `current / max`.
+EVIDENCE: WorldExploration.tsx ~18222–18240 vs BattleUIPanel.tsx ~413–468 which already uses maxBattleAp/Mp.
+RECOMMENDED_ACTION: Three-line bind to characterStats.max*. Do not change combat caps.
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Level 1 jewels fill correctly; after AP growth the fill is current/max ≤ 100%.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-SHOP-TWO-STORES
+TITLE: “Shop” means items in one place and IAP Doka in another
+CATEGORY: action-discoverability
+PRIORITY: P1
+CONFIDENCE: MEDIUM
+FILES_OR_SYSTEMS: src/frontend/src/components/GameFlow.tsx; src/frontend/src/components/WorldExploration.tsx; src/frontend/src/components/BuffShop.tsx
+CURRENT_BEHAVIOUR: Top cluster **Items** opens BuffShop. World HUD cart opens a 15-package EUR shop that then asks for identity documents. Players cannot tell which door spends Doka vs real money.
+DESIRED_BEHAVIOUR: “Items” (Doka potions) vs “Buy Doka” (IAP), never both labeled Shop. IAP should state it is real-money credit.
+EVIDENCE: GameFlow Items → itemShopOpen; WorldExploration ~17780–17804 `title="Buy Doka"` then `Doka Shop` modal ~19112.
+RECOMMENDED_ACTION: Keep the Items label. Rename the IAP cart to Buy Doka in the HUD and modal title. Do not change purchase APIs.
+AUTONOMY: HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: LOW for copy; HIGH if IAP form/KYC is redesigned.
+VALIDATION_REQUIRED: Items still buys buffs; cart still opens packages.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-BLOOD-DEAD-BAR
+TITLE: Blood bar never changes
+CATEGORY: hud-crowding
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx
+CURRENT_BEHAVIOUR: `bloodBalance` is initialized from localStorage; `_setBloodBalance` is unused, so the bar stays at 100. GameFlow’s second Blood bar (always 0) was removed this run.
+DESIRED_BEHAVIOUR: Hide Blood until a live Blood system exists, or drive it from `bloodBalance` on the character.
+EVIDENCE: WorldExploration.tsx 1118–1130, 17732–17773.
+RECOMMENDED_ACTION: Hide the WX Blood chip. Do not invent a Blood spend path.
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: World HUD still shows leftover XP and Doka.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-CREATE-NO-STATS
+TITLE: Champion forge never shows starting combat stats
+CATEGORY: action-discoverability
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/CharacterCreation.tsx
+CURRENT_BEHAVIOUR: Piece Details lists Type / Pixel Art / 4 Views. Starting 100 HP, 10 AP, 5 MP are applied only on save (`generateDefaultStats`).
+DESIRED_BEHAVIOUR: A compact stone row of starting HP/AP/MP/INIT so Play is not a surprise.
+EVIDENCE: CharacterCreation.tsx 210–223, 850–893.
+RECOMMENDED_ACTION: Display-only stat row using generateDefaultStats. Do not let the player edit persisted stats here.
+AUTONOMY: HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Create still writes the 12-field CharacterStats payload including killCount.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-VERSION-FORCE-RELOGIN
+TITLE: App version bump wipes local cache and forces re-login
+CATEGORY: feedback
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/App.tsx
+CURRENT_BEHAVIOUR: `APP_VERSION` mismatch clears localStorage (with a preserve list), reloads, then shows a changelog. The player is kicked to login without being told why until after they sign in again.
+DESIRED_BEHAVIOUR: Show the changelog on the landing screen, then ask to sign in. Do not imply a ban or a wipe of canister progress.
+EVIDENCE: App.tsx 14–22, 229–267, CHANGELOG_ITEMS still mention “15 milestones” / “AI fully rebuilt.”
+RECOMMENDED_ACTION: Human: either stop forcing II re-auth or add landing copy “Game updated to vN — sign in to continue.” Refresh changelog to the real persist/combat week.
+AUTONOMY: HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: MEDIUM — version gate also protects stale clients.
+VALIDATION_REQUIRED: Bump APP_VERSION in a staging build; canister characters still load.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-SMALL-SCREEN-HARD-BLOCK
+TITLE: Viewports under 768px cannot play
+CATEGORY: responsive-behaviour
+PRIORITY: P2
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/App.tsx; src/frontend/src/components/SmallScreenWarning.tsx; DESIGN.md
+CURRENT_BEHAVIOUR: `isSmallScreen` returns only the warning. DESIGN.md requires ≥44px targets and a sticky bottom menu.
+DESIRED_BEHAVIOUR: Product call: keep the tablet floor, or ship a stacked HUD (orbs + spell dock) for 768-wide tablets in landscape first.
+EVIDENCE: App.tsx 26–99, 322–337; DESIGN.md Constraints.
+RECOMMENDED_ACTION: Report-only until a human picks a mobile scope. Do not delete the guard in an unattended run.
+AUTONOMY: REPORT_ONLY
+REGRESSION_RISK: HIGH if the guard is removed without a HUD reflow.
+VALIDATION_REQUIRED: 768 and 390-wide viewports after any policy change.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-IDENTITY-FONT-DRIFT
+TITLE: Live type and color tokens drift from DESIGN.md
+CATEGORY: visual-hierarchy
+PRIORITY: P3
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: DESIGN.md; src/frontend/src/index.css; src/frontend/src/components/LandingPage.tsx
+CURRENT_BEHAVIOUR: Brief specifies Space Grotesk / Inter / OKLCH-only. CSS uses Baloo 2 / Saira; launch title measures Arial; Game Over was gray-800 / purple-600 (stone-framed this run).
+DESIRED_BEHAVIOUR: New chrome uses DESIGN.md tokens. Do not run a repo-wide hex rewrite.
+EVIDENCE: DESIGN.md Typography + Constraints; index.css --font-display; LandingPage.tsx font `Arial`.
+RECOMMENDED_ACTION: Next new screen only. Forbid shadcn gray/purple on player-facing dialogs.
+AUTONOMY: REPORT_ONLY
+REGRESSION_RISK: HIGH for a global color sweep.
+VALIDATION_REQUIRED: Side-by-side with DESIGN.md palette; gold-on-navy contrast ≥ 4.5:1.
+STATUS: NEW
+
+---
+
+ACTION_ID: UX-BOOST-DEAD-CONTROL
+TITLE: XP / RWD pill never reached combat rewards
+CATEGORY: action-discoverability
+PRIORITY: P3
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/App.tsx; src/frontend/src/components/GameFlow.tsx; src/frontend/src/components/WorldExploration.tsx
+CURRENT_BEHAVIOUR: App toggled boostMode locally. GameFlow showed the pill. WorldExploration keeps its own `_setBoostMode` at `"xp"`. A 1.5× Doka branch exists but the pill could not reach it. Pill removed from the overlay this run.
+DESIRED_BEHAVIOUR: Either wire one boost source into `resolveBattleRewards` with on-HUD copy, or keep it gone.
+EVIDENCE: App.tsx 287; WorldExploration.tsx 1958, 12703.
+RECOMMENDED_ACTION: Leave hidden until a human wants a boost product.
+AUTONOMY: REPORT_ONLY
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: If re-enabled, recap Doka matches the advertised multiplier.
+STATUS: IMPLEMENTED_THIS_RUN
+
+---
+
+ACTION_ID: UX-SELECT-ROTATE-LEFT
+TITLE: Selection “turn left” advanced the same way as turn right
+CATEGORY: action-discoverability
+PRIORITY: P3
+CONFIDENCE: HIGH
+FILES_OR_SYSTEMS: src/frontend/src/components/CharacterSelection.tsx
+CURRENT_BEHAVIOUR: Both chevrons called `rotatePreview(+1)`.
+DESIRED_BEHAVIOUR: Left decrements the view ring.
+EVIDENCE: CharacterSelection.tsx SlotCard arrows (now `onRotate(-1)` / `onRotate(1)`).
+RECOMMENDED_ACTION: Shipped this run.
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: LOW
+VALIDATION_REQUIRED: Left and right cycle front → left → back → right.
+STATUS: IMPLEMENTED_THIS_RUN

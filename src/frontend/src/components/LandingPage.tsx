@@ -246,6 +246,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
   const { actor } = useActor();
   const queryClient = useQueryClient();
   const [hovered, setHovered] = React.useState(false);
+  const [loginError, setLoginError] = React.useState("");
   const [adBoxes, setAdBoxes] = React.useState<
     Array<[string, string, boolean]>
   >([]);
@@ -270,6 +271,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
   }, [actor]);
 
   const handleLogin = async () => {
+    setLoginError("");
     if (onLogin) {
       await onLogin();
       return;
@@ -282,7 +284,11 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
       if (err.message === "User is already authenticated") {
         queryClient.clear();
         setTimeout(() => login(), 300);
+        return;
       }
+      setLoginError(
+        "Could not open Internet Identity. Allow the popup, then try Sign In again.",
+      );
     }
   };
 
@@ -516,11 +522,23 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
                 textAlign: "center",
                 fontSize: 13,
                 color: "#8a9aaa",
-                marginBottom: 28,
+                marginBottom: 12,
                 letterSpacing: "0.04em",
               }}
             >
               Connect with Internet Identity
+            </p>
+            <p
+              style={{
+                textAlign: "center",
+                fontSize: 12,
+                color: "#6a7a8a",
+                marginBottom: 28,
+                lineHeight: 1.45,
+              }}
+            >
+              After you sign in, you will name your account, forge a chess-piece
+              champion, then choose Play to enter the realm.
             </p>
 
             {/* Divider */}
@@ -610,6 +628,25 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
                 </>
               )}
             </button>
+            {loginError && (
+              <p
+                data-ocid="landing.login_error"
+                role="alert"
+                style={{
+                  margin: 0,
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  border: "1px solid rgba(231,76,60,0.45)",
+                  background: "rgba(231,76,60,0.12)",
+                  color: "#e74c3c",
+                  fontSize: 12,
+                  lineHeight: 1.45,
+                  textAlign: "center",
+                }}
+              >
+                {loginError}
+              </p>
+            )}
           </div>
         </div>
         {/* end shared 420px column */}

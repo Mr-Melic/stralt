@@ -16,7 +16,6 @@ import {
   shouldApplyCallerDokaHydrate,
   shouldMarkCallerDokaWalletReady,
 } from "../utils/dokaBalanceQuery";
-import { xpHudProgress } from "../utils/xpCurve";
 import BossGuideModal from "./BossGuideModal";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
@@ -43,8 +42,8 @@ const GameFlow: React.FC<GameFlowProps> = ({
   isAdmin,
   onOpenAdmin,
   onShowBattleSummary,
-  boostMode = "xp",
-  onBoostToggle,
+  boostMode: _boostMode = "xp",
+  onBoostToggle: _onBoostToggle,
   // onShopToggle removed — shop is now handled internally via showShop state
 }) => {
   const [currentStage, setCurrentStage] = useState<GameStage>("selection");
@@ -238,14 +237,6 @@ const GameFlow: React.FC<GameFlowProps> = ({
 
   // Game mode: pass through to WorldExploration directly (it handles its own layout)
   if (isGameMode && selectedCharacter !== null) {
-    const xpHud = xpHudProgress(
-      Number(selectedCharacter.experience ?? 0),
-      Number(selectedCharacter.level ?? 1),
-    );
-    const blood = Number(
-      selectedCharacter.bloodBalance ?? selectedCharacter.blood ?? 0,
-    );
-    const bloodMax = Number(selectedCharacter.maxBlood ?? 100);
     return (
       <>
         <WorldExploration
@@ -282,118 +273,81 @@ const GameFlow: React.FC<GameFlowProps> = ({
           debugContext={debugContext}
           // debugLogs removed — ChatPanel now sources from structured debugLogger buffer
         />
-        {/* Unified top bar in game mode */}
+        {/* Snap spacer only — the live XP / zone / Doka HUD lives in
+            WorldExploration. A second opaque bar here used to cover that HUD
+            and show 0/100 XP from an unused App.tsx prop. */}
         <div
           ref={topBarRef}
-          className="fixed top-0 left-0 right-0 z-[9000] stone-top-bar flex items-center justify-between gap-2 px-4 h-12"
+          className="fixed top-0 left-0 right-0 z-[9000] pointer-events-none"
+          style={{ height: 44 }}
+          aria-hidden
+        />
+        {/* Realm tools sit just under the world HUD so they stay reachable
+            without hiding map name, leftover XP, or the Doka chip. */}
+        <div
+          className="fixed z-[9001] pointer-events-auto flex items-center gap-2 px-2 py-1"
+          style={{
+            top: 46,
+            right: 8,
+            background:
+              "linear-gradient(180deg, oklch(0.10 0.01 260 / 0.92), oklch(0.07 0.01 260 / 0.88))",
+            border: "1px solid oklch(var(--dofus-border-gold-dim))",
+            borderRadius: 6,
+            boxShadow: "0 0 12px oklch(var(--dofus-border-gold) / 0.18)",
+          }}
         >
-          {/* Left side: player chip, map pill, XP bar, Blood bar, Doka coin, shop icon, Zone tag */}
-          <div className="flex items-center gap-2">
-            <span
-              className="text-xs font-bold"
-              style={{ color: "#f0c44a", fontFamily: "var(--font-display)" }}
-            >
-              🧛 {userProfile.name}
-            </span>
-            <span className="stone-pill stone-pill-blue text-[10px]">Map</span>
-            <div className="flex flex-col gap-1 min-w-[140px]">
-              <div className="flex items-center justify-between">
-                <span className="stone-bar-label">XP</span>
-                <span className="stone-bar-value">
-                  {xpHud.leftover} / {xpHud.needed}
-                </span>
-              </div>
-              <div className="stone-bar-track">
-                <div
-                  className="stone-bar-fill stone-bar-fill-xp"
-                  style={{
-                    width: `${xpHud.percent}%`,
-                  }}
-                />
-              </div>
-              <div className="flex items-center justify-between mt-0.5">
-                <span className="stone-bar-label">BLOOD</span>
-                <span className="stone-bar-value">
-                  {blood} / {bloodMax}
-                </span>
-              </div>
-              <div className="stone-bar-track">
-                <div
-                  className="stone-bar-fill stone-bar-fill-blood"
-                  style={{
-                    width: `${Math.min(100, (blood / (bloodMax || 1)) * 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="stone-coin w-5 h-5 text-[9px]" />
-              <span className="text-xs font-bold" style={{ color: "#f0c44a" }}>
-                {dokaBalance}
-              </span>
-            </div>
+          <button
+            type="button"
+            data-ocid="game.shop_button"
+            onClick={() => setShowShop((v) => !v)}
+            title="Open the item shop (buffs and potions)"
+            className={`${showShop ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
+          >
+            <ShoppingCart size={13} />
+            <span>Items</span>
+          </button>
+          <button
+            type="button"
+            data-ocid="game.leaderboard_button"
+            onClick={() => setShowLeaderboard((v) => !v)}
+            title="Leaderboard"
+            className={`${showLeaderboard ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
+          >
+            <Trophy size={13} />
+            <span>Board</span>
+          </button>
+          <button
+            type="button"
+            data-ocid="game.achievements_button"
+            onClick={() => setShowAchievements((v) => !v)}
+            title="Achievements"
+            className={`${showAchievements ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
+          >
+            <span className="text-[13px]">🏆</span>
+            <span>Feats</span>
+          </button>
+          <button
+            type="button"
+            data-ocid="game.boss_guide_button"
+            onClick={() => setShowBossGuide((v) => !v)}
+            title="Boss guide"
+            className={`${showBossGuide ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
+          >
+            <Crown size={13} />
+            <span>Bosses</span>
+          </button>
+          {isAdmin && onOpenAdmin && (
             <button
               type="button"
-              data-ocid="game.shop_button"
-              onClick={() => setShowShop((v) => !v)}
-              className="stone-btn-slate stone-nav-btn flex items-center gap-1.5 px-3 py-1.5 text-xs"
+              data-ocid="game.admin_button"
+              onClick={onOpenAdmin}
+              title="Admin dashboard"
+              className="stone-btn-crimson stone-nav-btn"
             >
-              <ShoppingCart size={14} />
-              <span>SHOP</span>
+              <span className="text-[13px]">🛡️</span>
+              <span>Admin</span>
             </button>
-            <button
-              type="button"
-              onClick={onBoostToggle}
-              className={`stone-pill ${boostMode === "xp" ? "stone-pill-purple" : "stone-pill-gold"} text-xs px-2 py-1`}
-            >
-              {boostMode === "xp" ? "⚡ XP" : "💰 RWD"}
-            </button>
-            <span className="stone-pill stone-pill-crimson text-[10px]">
-              Zone
-            </span>
-          </div>
-
-          {/* Right side: nav buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-ocid="game.leaderboard_button"
-              onClick={() => setShowLeaderboard((v) => !v)}
-              className={`${showLeaderboard ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
-            >
-              <Trophy size={13} />
-              <span>Board</span>
-            </button>
-            <button
-              type="button"
-              data-ocid="game.achievements_button"
-              onClick={() => setShowAchievements((v) => !v)}
-              className={`${showAchievements ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
-            >
-              <span className="text-[13px]">🏆</span>
-              <span>Feats</span>
-            </button>
-            <button
-              type="button"
-              data-ocid="game.boss_guide_button"
-              onClick={() => setShowBossGuide((v) => !v)}
-              className={`${showBossGuide ? "stone-btn-crimson" : "stone-btn-slate"} stone-nav-btn`}
-            >
-              <Crown size={13} />
-              <span>Bosses</span>
-            </button>
-            {isAdmin && onOpenAdmin && (
-              <button
-                type="button"
-                data-ocid="game.admin_button"
-                onClick={onOpenAdmin}
-                className="stone-btn-crimson stone-nav-btn"
-              >
-                <span className="text-[13px]">🛡️</span>
-                <span>Admin</span>
-              </button>
-            )}
-          </div>
+          )}
         </div>
 
         {/* Boss Guide modal */}

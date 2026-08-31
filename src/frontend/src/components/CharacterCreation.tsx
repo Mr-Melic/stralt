@@ -316,8 +316,8 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
 
         toast.success(
           isEditing
-            ? "Character updated successfully!"
-            : "Character created successfully!",
+            ? "Champion updated. Choose Play on a slot to return to the realm."
+            : "Champion forged. Choose Play on a slot to enter the realm.",
         );
         isSavingRef.current = false;
         setSaveAttempt(0);
@@ -939,6 +939,17 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                 type="button"
                 onClick={handleSave}
                 disabled={!isReady || !characterName.trim() || isSaving}
+                title={
+                  isSaving
+                    ? "Saving champion…"
+                    : !characterName.trim()
+                      ? "Enter a champion name to continue"
+                      : !isReady
+                        ? "Preview is still drawing"
+                        : isEditing
+                          ? "Save appearance and name, then Play from your slots"
+                          : "Save this champion, then Play from your slots"
+                }
                 data-ocid="character_creation.save_button"
                 style={{
                   flex: 2,

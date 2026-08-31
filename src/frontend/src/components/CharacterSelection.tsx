@@ -431,7 +431,7 @@ interface SlotCardProps {
   slotNumber: number;
   character: Character | null;
   viewIndex: number;
-  onRotate: () => void;
+  onRotate: (direction: 1 | -1) => void;
   onPlay: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -525,7 +525,7 @@ const SlotCard: React.FC<SlotCardProps> = React.memo(
 const FilledSlot: React.FC<{
   character: Character;
   view: ViewDirection;
-  onRotate: () => void;
+  onRotate: (direction: 1 | -1) => void;
   onPlay: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -548,7 +548,7 @@ const FilledSlot: React.FC<{
           <button
             type="button"
             data-ocid="character_selection.turn_left"
-            onClick={onRotate}
+            onClick={() => onRotate(-1)}
             title="Turn left"
             className="w-6 h-6 rounded flex items-center justify-center"
             style={{
@@ -564,7 +564,7 @@ const FilledSlot: React.FC<{
           <button
             type="button"
             data-ocid="character_selection.turn_right"
-            onClick={onRotate}
+            onClick={() => onRotate(1)}
             title="Turn right"
             className="w-6 h-6 rounded flex items-center justify-center"
             style={{
@@ -856,10 +856,10 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
   });
 
   const rotatePreview = useCallback(
-    (slot: number) =>
+    (slot: number, direction: 1 | -1 = 1) =>
       setPreviewViews((prev) => ({
         ...prev,
-        [slot]: (prev[slot] + 1) % VIEWS.length,
+        [slot]: (prev[slot] + direction + VIEWS.length) % VIEWS.length,
       })),
     [],
   );
@@ -979,7 +979,7 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
               slotNumber={number}
               character={slotChar}
               viewIndex={previewViews[number]}
-              onRotate={() => rotatePreview(number)}
+              onRotate={(direction) => rotatePreview(number, direction)}
               onPlay={() => slotChar && onPlayCharacter(slotChar, number)}
               onEdit={() => slotChar && onEditCharacter(number, slotChar)}
               onDelete={() => handleDeleteCharacter(number)}
