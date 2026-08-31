@@ -9,7 +9,9 @@ import {
 } from "../hooks/bossRushProgress.ts";
 import {
   generateSeededBossRushRoom,
+  generateSeededDeathRealm,
   generateSeededRestMap,
+  generateSeededSanctuary,
   generateSeededWorld,
   reportWorld,
   simulateCleanupSnapshotProgression,
@@ -20,6 +22,7 @@ import {
   MAP_ARCHETYPES,
   evaluateSolvability,
   finalizePlayableLayout,
+  resetFailedGenerationVoids,
 } from "./mapGen.ts";
 
 const W = "wall";
@@ -202,10 +205,123 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     assert.equal(after.enemiesReachable, true, after.failures.join(","));
     assert.equal(after.portalReachable, true);
   });
+
+  it("seed-stacked-hostiles: destacks two isolated pockets onto unique cells", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, F, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, W, F, W],
+    ];
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals: [{ x: 2, y: 1 }],
+      spawns: [
+        { x: 5, y: 5 },
+        { x: 6, y: 7 },
+      ],
+      w: 8,
+      h: 8,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      8,
+    );
+    assert.equal(after.enemiesReachable, true, after.failures.join(","));
+    assert.equal(
+      after.stackedEnemies,
+      0,
+      "isolated hostiles must not share a cell",
+    );
+    const keys = finalized.spawns.map((s) => `${s.x},${s.y}`);
+    assert.equal(new Set(keys).size, 2);
+  });
+
+  it("seed-second-portal: punches an isolated overworld exit, not just portals[0]", () => {
+    const tiles = [
+      [F, F, F, W, W],
+      [F, F, F, W, W],
+      [F, F, F, W, W],
+      [W, W, W, W, W],
+      [W, W, W, W, F],
+    ];
+    const voidTiles = new Set(["4,4"]);
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles,
+      playerSpawn: { x: 0, y: 0 },
+      portals: [
+        { x: 1, y: 0 },
+        { x: 4, y: 4 },
+      ],
+      spawns: [],
+      w: 5,
+      h: 5,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      voidTiles,
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      5,
+      5,
+    );
+    assert.equal(after.isolatedPortals, 0, after.failures.join(","));
+    assert.equal(after.portalReachable, true);
+  });
+
+  it("seed-fallback-leftover-voids: dropping last-attempt voids keeps the fallback open", () => {
+    const tiles = Array.from({ length: 8 }, () => Array(8).fill(F));
+    const leftover = new Set<string>();
+    for (let x = 0; x < 8; x++) leftover.add(`${x},3`);
+    leftover.add("4,4");
+    const before = evaluateSolvability(
+      tiles,
+      leftover,
+      { x: 1, y: 1 },
+      [{ x: 4, y: 4 }],
+      [{ x: 6, y: 6 }],
+      8,
+      8,
+    );
+    assert.equal(before.portalReachable, false, "leftover voids must isolate");
+    resetFailedGenerationVoids(leftover);
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: leftover,
+      playerSpawn: { x: 1, y: 1 },
+      portals: [{ x: 4, y: 4 }],
+      spawns: [{ x: 6, y: 6 }],
+      w: 8,
+      h: 8,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      leftover,
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      8,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+  });
 });
 
 describe("seeded world property suite", () => {
-  const seeds = Array.from({ length: 128 }, (_, i) => 1000 + i * 17);
+  const seeds = Array.from({ length: 256 }, (_, i) => 1000 + i * 17);
   const archetypes = MAP_ARCHETYPES.map((a) => a.type);
   const modes = ["none", "dungeon", "bossRush"] as const;
 
@@ -219,9 +335,9 @@ describe("seeded world property suite", () => {
           archetype: archetypes[seed % archetypes.length],
         });
         const report = reportWorld(world);
-        if (!report.ok) {
+        if (!report.ok || report.stackedEnemies > 0) {
           failures.push(
-            `seed ${seed} ${world.archetype}: ${report.failures.join(",")}`,
+            `seed ${seed} ${world.archetype}: ${report.failures.join(",") || `stacked:${report.stackedEnemies}`}`,
           );
         }
         if (mode !== "none") {
@@ -240,8 +356,24 @@ describe("seeded world property suite", () => {
     for (const seed of seeds) {
       const world = generateSeededBossRushRoom(seed);
       const report = reportWorld(world);
-      if (!report.ok) {
+      if (!report.ok || report.stackedEnemies > 0) {
         failures.push(`seed ${seed}: ${report.failures.join(",")}`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("Boss Rush 10-room sequences stay solvable", () => {
+    const failures: string[] = [];
+    for (let seq = 0; seq < 32; seq++) {
+      for (let room = 0; room < 10; room++) {
+        const world = generateSeededBossRushRoom(9000 + seq * 97 + room);
+        const report = reportWorld(world);
+        if (!report.ok) {
+          failures.push(
+            `seq ${seq} room ${room}: ${report.failures.join(",")}`,
+          );
+        }
       }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
@@ -251,6 +383,7 @@ describe("seeded world property suite", () => {
     const rest = generateSeededRestMap();
     const restReport = reportWorld(rest);
     assert.equal(restReport.ok, true, restReport.failures.join(","));
+    assert.equal(rest.portals.length, 3);
     const failures: string[] = [];
     for (const seed of seeds) {
       const world = simulateRestExitEncounter(seed);
@@ -260,6 +393,28 @@ describe("seeded world property suite", () => {
       }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("sanctuary white-portal maps keep a legal route", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededSanctuary(seed);
+      const report = reportWorld(world, { allowSpawnOnPortal: true });
+      if (!report.ok) {
+        failures.push(`seed ${seed}: ${report.failures.join(",")}`);
+      }
+      const white = world.portals.find((p) => p.isWhitePortal);
+      assert.ok(white, `seed ${seed} missing white portal`);
+      assert.equal(white?.x, world.playerSpawn.x);
+      assert.equal(white?.y, world.playerSpawn.y);
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("Death Realm exits stay reachable", () => {
+    const realm = generateSeededDeathRealm();
+    const report = reportWorld(realm);
+    assert.equal(report.ok, true, report.failures.join(","));
   });
 });
 

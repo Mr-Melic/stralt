@@ -23,10 +23,14 @@
  */
 
 import type { Enemy, SpellConfig } from "../types/gameTypes";
-import { logDebugError } from "../utils/debugLogger";
+import { logDebugError } from "../utils/debugLogger.ts";
 import type { EnemyAction } from "./enemyAI";
-import { type OccupancyContext, isCellFree } from "./occupancy";
-import type { SpellContext } from "./spellEngine";
+import {
+  type OccupancyContext,
+  isCellFree,
+  relocateOffMandatoryCells,
+} from "./occupancy.ts";
+import type { SpellContext } from "./spellEngine.ts";
 
 export interface SummonExecutorResult {
   /** New grid position after movement (clamped to grid bounds). */
@@ -128,6 +132,21 @@ export function executeSummonAction(
     x = clamped.x;
     y = clamped.y;
     currentMp -= mpCost;
+    const reserved = helpers.occupancyCtx.reserved;
+    if (reserved && reserved.size > 0) {
+      const [slid] = relocateOffMandatoryCells(
+        [{ x, y }],
+        reserved,
+        helpers.occupancyCtx,
+      );
+      if (slid.x !== x || slid.y !== y) {
+        logLines.push(
+          `[move] ${summonLabel} slid off unique bridge (${x},${y}) → (${slid.x},${slid.y})`,
+        );
+        x = slid.x;
+        y = slid.y;
+      }
+    }
     logLines.push(`[move] ${summonLabel} → (${x},${y}) spent ${mpCost}MP`);
   };
 
