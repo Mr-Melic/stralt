@@ -634,7 +634,7 @@ actor {
         });
         let sz = adminAuditLog.size();
         if (sz > 100) {
-            adminAuditLog := List.fromArray(adminAuditLog.sliceToArray(sz - 100, sz));
+            adminAuditLog := List.fromArray(adminAuditLog.sliceToArray(Nat.sub(sz, 100), sz));
         };
     };
 
@@ -1031,7 +1031,7 @@ actor {
         };
         characterSlots.add(caller, updatedSlots);
         // Deduct from per-principal Doka balance.
-        dokaBalances.add(caller, callerDokaUpgrade - cost);
+        dokaBalances.add(caller, Nat.sub(callerDokaUpgrade, cost));
         #ok(newLevel);
     };
 
@@ -1596,7 +1596,7 @@ actor {
         };
         characterSlots.add(caller, updatedSlots);
         // Deduct from per-principal Doka balance.
-        dokaBalances.add(caller, callerDokaRename - renameCost);
+        dokaBalances.add(caller, Nat.sub(callerDokaRename, renameCost));
         #ok;
     };
 
@@ -2280,7 +2280,7 @@ actor {
         // Trim to the newest 200 messages when over the cap.
         let sz = chatMessages.size();
         if (sz > 200) {
-            let kept = chatMessages.sliceToArray(sz - 200, sz);
+            let kept = chatMessages.sliceToArray(Nat.sub(sz, 200), sz);
             chatMessages := List.fromArray(kept);
         };
     };
@@ -2459,7 +2459,7 @@ actor {
         };
 
         // Deduct Doka.
-        dokaBalances.add(caller, callerDoka - cost);
+        dokaBalances.add(caller, Nat.sub(callerDoka, cost));
 
         // Update inventory.
         let key = _buffKey(caller, slot);
@@ -2510,7 +2510,7 @@ actor {
         // Decrement quantity; remove entry if it reaches 0.
         let newInv : AdminTypes.BuffInventory = existing.filterMap(func(item) {
             if (item.itemId == itemId) {
-                if (item.quantity <= 1) { null } else { ?{ item with quantity = item.quantity - 1 } }
+                if (item.quantity <= 1) { null } else { ?{ item with quantity = Nat.sub(item.quantity, 1) } }
             } else { ?item }
         });
         buffInventories.add(key, newInv);
