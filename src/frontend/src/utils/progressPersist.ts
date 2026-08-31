@@ -136,7 +136,13 @@ export function resolveHydratedXp(
   if (committedLvl > incomingLvl) {
     return Math.max(0, toNat(committedXp, 0));
   }
-  return Math.max(0, toNat(uiXp, 0));
+  if (incomingLvl > committedLvl) {
+    return Math.max(0, toNat(uiXp, 0));
+  }
+  // Same level: the lock is authoritative. Copying a higher ghost HUD
+  // minted unpaid portal XP; copying a lower stale HUD refunded a
+  // just-committed applyRewards leftover.
+  return Math.max(0, toNat(committedXp, 0));
 }
 
 export type HydrateWhenIdleOptions = {
@@ -156,12 +162,10 @@ export type HydrateWhenIdleOptions = {
  * the React Query data exists. A positive UI value can also be a feat-claim
  * or rename delta stacked on the placeholder; that must not seed.
  *
- * Once the lock is seeded, idle UI must not cut the committed wallet.
- * GameFlow's first hydrate can apply a stale pre-credit query (not only
- * placeholder 0). Mount shop-credit recovery / persistDokaCredit already
- * committed the live canister; copying 50 over 550 lets the next
- * death/heal saveBattleStats wipe the grant. Real spends commit through
- * the lock, so committed is already the post-spend value.
+ * Once the lock is seeded, idle UI must not change the committed wallet.
+ * A ghost HUD (failed applyRewards still credited locally, or a stale
+ * high query) used to copy incoming >= committed and let the next
+ * saveBattleStats mint. Credits and spends already commit on the lock.
  */
 export function shouldCopyIdleWalletDoka(args: {
   walletSeeded: boolean;
@@ -169,11 +173,7 @@ export function shouldCopyIdleWalletDoka(args: {
   incomingDoka: number;
   committedDoka: number;
 }): boolean {
-  const incoming = Math.max(0, toNat(args.incomingDoka, 0));
-  const committed = Math.max(0, toNat(args.committedDoka, 0));
-  if (args.walletSeeded) {
-    return incoming >= committed;
-  }
+  if (args.walletSeeded) return false;
   return args.walletReady === true;
 }
 

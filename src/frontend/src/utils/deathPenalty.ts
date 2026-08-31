@@ -386,3 +386,10 @@ export function resolvePendingDeathReplay(
   }
   return { action: "clear" };
 }
+
+export const DEATH_PERSIST_RETRY_COUNT = DEATH_PENALTY_PERSIST_ATTEMPTS;
+
+/**
+ * A single replica reject used to leave deathPenaltyApplied true and the
+ * canister uncut. Reload then hydrates the unpenalized wallet.
+ */

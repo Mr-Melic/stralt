@@ -164,7 +164,11 @@ void (async () => {
     xp: 50,
     level: 4,
   });
-  assert.equal(afterClaimAndHeal.snapshot().doka, 750);
+  assert.equal(
+    afterClaimAndHeal.snapshot().doka,
+    720,
+    "stale high refetch must not mint the pre-heal wallet onto committed",
+  );
 
   console.log("achievementReward.test: ok");
 })();

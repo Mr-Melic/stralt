@@ -246,3 +246,32 @@ export function syncLiveDokaFromProp(args: {
   }
   return { liveDoka: live, prevPropDoka: prev };
 }
+
+export function shouldGrantBuffPurchase(
+  liveDoka: number,
+  cost: number,
+  currentStack: number,
+  maxStack: number,
+  inBattle: boolean,
+): boolean {
+  if (inBattle) return false;
+  if (cost <= 0) return false;
+  if (currentStack >= maxStack) return false;
+  return liveDoka >= cost;
+}
+
+/** Live wallet + missing HP, not the stale render snapshot. */
+
+export function shouldGrantDokaHeal(
+  liveDoka: number,
+  currentHp: number,
+  maxHp: number,
+): boolean {
+  return liveDoka >= 1 && currentHp < maxHp;
+}
+
+/** saveBattleStats must not run a 0-spend snapshot (second click / stale prop). */
+
+export function shouldWriteAbsoluteSpend(spend: number): boolean {
+  return Math.max(0, Math.floor(Number(spend) || 0)) > 0;
+}
