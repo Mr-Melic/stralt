@@ -13,14 +13,17 @@ Verified from repo root:
 
 ```bash
 pnpm typecheck
+pnpm check      # required — same Biome run Caffeine import uses
 pnpm fix
 pnpm build
+mops check      # or caffeine check; required when Motoko / mocks / migrations change
 pnpm bindgen    # after Candid / Motoko public-type changes
+bash scripts/caffeine-import-gate.sh all
 ```
 
 Frontend scripts (`src/frontend/package.json`): `dev` (Vite), `build`, `typecheck`, `check` / `fix` (Biome).
 
-Caffeine GitHub → import frontend gate is exactly `src/frontend/caffeine.toml` `[check]`: `pnpm typecheck` then `pnpm check` (`biome check src`). `pnpm fix` is the same Biome run with `--write`. Unused locals and React hook deps are errors in `src/frontend/biome.json` so local `pnpm check` fails the same way as the import.
+Caffeine GitHub → import frontend gate is exactly `src/frontend/caffeine.toml` `[check]`: `pnpm typecheck` then `pnpm check` (`biome check src`). Backend `[check]` is `mops check`. `pnpm fix` is the same Biome run with `--write`. Unused locals and React hook deps are errors in `src/frontend/biome.json` so local `pnpm check` fails the same way as the import. Do not treat those diagnostics as pre-existing. Full inventory: [CAFFEINE_IMPORT_GATES.md](automation/CAFFEINE_IMPORT_GATES.md). CI: `.github/workflows/caffeine-import-gate.yml` (frontend + Motoko jobs; no `caffeine build`).
 
 Local UI without a canister:
 

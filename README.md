@@ -33,9 +33,13 @@ Canonical build entry: root `mops.toml` → `src/backend/main.mo`.
 ```bash
 pnpm install
 pnpm typecheck    # tsc --noEmit in each package
+pnpm check        # Biome (unused vars + hook deps are errors)
 pnpm fix          # biome --write on frontend
 pnpm build        # frontend Vite build + env.json copy
+mops check        # Motoko + check-stable vs .old (or: caffeine check)
 ```
+
+Caffeine GitHub → import is exactly those check commands. Run `bash scripts/caffeine-import-gate.sh all` (or `pnpm gate`) before a PR. See [docs/automation/CAFFEINE_IMPORT_GATES.md](docs/automation/CAFFEINE_IMPORT_GATES.md).
 
 Regenerate the frontend actor after Motoko/Candid changes:
 
@@ -59,6 +63,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid/wallet pitfalls, challenges, shop, boss rush, maps, deploy, debug overlay |
 | [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
+| [docs/automation/CAFFEINE_IMPORT_GATES.md](docs/automation/CAFFEINE_IMPORT_GATES.md) | Caffeine import CI + agent gates; Cursor automation inventory |
 | [docs/automation/QUALITY_AUDIT_2026-08-30.md](docs/automation/QUALITY_AUDIT_2026-08-30.md) | Weekly automation quality audit (process only) |
 | [docs/automation/EXPANSION_PROPOSALS_2026-08-31.md](docs/automation/EXPANSION_PROPOSALS_2026-08-31.md) | Expansion Director catalog (proposals only; no gameplay code) |
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP accumulators |
