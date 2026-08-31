@@ -133,7 +133,7 @@ export function executeSummonAction(
     y = clamped.y;
     currentMp -= mpCost;
     const reserved = helpers.occupancyCtx.reserved;
-    if (reserved && reserved.size > 0) {
+    if (reserved?.has(`${x},${y}`)) {
       const [slid] = relocateOffMandatoryCells(
         [{ x, y }],
         reserved,
