@@ -149,6 +149,25 @@ export type OverworldHealSpend = {
  * the extra HP survived the next saveBattleStats. Jackpot used the
  * stale `dokaBalance` closure and could skip the 1 Doka debit entirely.
  */
+/**
+ * A failed persist must not roll the UI back to this click's before-snapshot
+ * if a later heal already moved HP/Doka. Double-click with leftover Doka
+ * starts two persists; the first reject used to restore hpBefore/dokaBefore
+ * and wipe the second click's optimistic (and possibly committed) write.
+ */
+export function shouldRollbackFailedHeal(args: {
+  liveHp: number;
+  liveDoka: number;
+  expectedHp: number;
+  expectedDoka: number;
+}): boolean {
+  const liveHp = Math.floor(Number(args.liveHp) || 0);
+  const liveDoka = Math.floor(Number(args.liveDoka) || 0);
+  const expectedHp = Math.floor(Number(args.expectedHp) || 0);
+  const expectedDoka = Math.floor(Number(args.expectedDoka) || 0);
+  return liveHp === expectedHp && liveDoka === expectedDoka;
+}
+
 export function resolveOverworldHealSpend(
   input: OverworldHealSpendInput,
 ): OverworldHealSpend | null {

@@ -20,10 +20,13 @@ import {
 } from "./mapGen.simulate.ts";
 import {
   MAP_ARCHETYPES,
+  applyFinalizedLayout,
+  attachWhitePortalAfterLegalize,
   evaluateSolvability,
   finalizePlayableLayout,
   resetFailedGenerationVoids,
 } from "./mapGen.ts";
+import { placeWhitePortalAtSpawn } from "./portalRules.ts";
 
 const W = "wall";
 const F = "floor";
@@ -409,6 +412,62 @@ describe("seeded world property suite", () => {
       assert.equal(white?.y, world.playerSpawn.y);
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("dungeon-complete white portal follows the legalized spawn, not the pre-finalize tile", () => {
+    const size = WORLD_GRID_SIZE;
+    const tiles = Array.from({ length: size }, () =>
+      Array.from({ length: size }, () => "floor"),
+    );
+    const spawn = { x: 8, y: 8 };
+    tiles[8][8] = "portal";
+    const white = {
+      x: 0,
+      y: 0,
+      color: "white" as const,
+      isWhitePortal: true,
+    };
+
+    const wrongMap = {
+      tiles: tiles.map((row) => [...row]),
+      portals: [
+        { x: 8, y: 8, color: "black" as const },
+        placeWhitePortalAtSpawn(white, spawn),
+      ],
+    };
+    const wrongApplied = applyFinalizedLayout(
+      wrongMap,
+      [{ x: 3, y: 3, id: "rat" }],
+      spawn,
+      size,
+    );
+    const wrongWhite = wrongMap.portals.find((p) => p.isWhitePortal);
+    assert.ok(wrongWhite);
+    assert.notEqual(
+      `${wrongApplied.spawn.x},${wrongApplied.spawn.y}`,
+      `${wrongWhite?.x},${wrongWhite?.y}`,
+      "pre-finalize attach must diverge when legalize moves spawn off portals[0]",
+    );
+
+    const rightMap = {
+      tiles: tiles.map((row) => [...row]),
+      portals: [{ x: 8, y: 8, color: "black" as const }],
+    };
+    const rightApplied = attachWhitePortalAfterLegalize(
+      rightMap,
+      [{ x: 3, y: 3, id: "rat" }],
+      spawn,
+      size,
+      white,
+    );
+    const rightWhite = rightMap.portals.find((p) => p.isWhitePortal);
+    assert.ok(rightWhite);
+    assert.equal(rightWhite?.x, rightApplied.spawn.x);
+    assert.equal(rightWhite?.y, rightApplied.spawn.y);
+    assert.equal(
+      rightMap.tiles[rightApplied.spawn.y]?.[rightApplied.spawn.x],
+      "portal",
+    );
   });
 
   it("Death Realm exits stay reachable", () => {

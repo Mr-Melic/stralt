@@ -141,6 +141,7 @@ import {
   applyFinalizedLayout,
   applySanctuaryLayout,
   applyVoidTiles,
+  attachWhitePortalAfterLegalize,
   checkVoidConnectivity,
   countWalkableVoid,
   pickMapArchetype,
@@ -168,7 +169,6 @@ import {
   isProgressionLocked,
   isProgressionPortalUnlocked,
   isRunProgressionPortal,
-  placeWhitePortalAtSpawn,
   publishCurrentMap,
   resetRunState,
   restExitSpawnDepth,
@@ -279,6 +279,7 @@ import {
   persistDeathPenalty as persistAbsoluteStats,
   persistWithRetry,
   raiseUiAfterDeathPersist,
+  readDeathReplayBackendSnapshot,
   readPendingDeathPenalty,
   resolvePendingDeathReplay,
   respawnHpAfterDeath,
@@ -306,6 +307,7 @@ import {
   nextDokaAfterShopSpend,
   nextHpAfterDokaHeal,
   resolveOverworldHealSpend,
+  shouldRollbackFailedHeal,
   shouldStartDokaHeal,
 } from "../utils/itemShop";
 import {
@@ -6936,14 +6938,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Generate new map — dungeon chain maps never get dungeon entry portals
       // (dungeonChainActiveRef is already updated above before this call)
       const { map: newMap, spawnPosition } = generateRandomMap();
-      // Attach any pending white portal (run-complete portal) to the new map
-      if (pendingWhitePortalRef.current && newMap) {
-        newMap.portals = [
-          ...(newMap.portals || []),
-          placeWhitePortalAtSpawn(pendingWhitePortalRef.current, spawnPosition),
-        ];
-        pendingWhitePortalRef.current = null;
-      }
+      // White sanctuary portal is attached AFTER generateEnemies +
+      // applyFinalizedLayout (see attachWhitePortalAfterLegalize below).
+      // Pinning it to the pre-finalize spawn left the gateway on
+      // portals[0] when legalize moved the player off that tile.
       // Update all states for the new map
       currentMapRef.current = newMap;
       setCurrentMap(newMap);
@@ -7119,13 +7117,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               newMap.voidTiles,
             );
       }
-      // Section 6: ensure all spawns + player + portal are mutually reachable
-      const appliedLayout = applyFinalizedLayout(
-        newMap,
-        newEnemies,
-        spawnPosition,
-        WORLD_GRID_SIZE,
-      );
+      // Section 6: ensure all spawns + player + portal are mutually reachable.
+      // Dungeon-chain completion colocates the white gateway with the
+      // *legalized* spawn — attaching it before finalize left it behind.
+      const pendingWhite = pendingWhitePortalRef.current;
+      const appliedLayout = pendingWhite
+        ? attachWhitePortalAfterLegalize(
+            newMap,
+            newEnemies,
+            spawnPosition,
+            WORLD_GRID_SIZE,
+            pendingWhite,
+          )
+        : applyFinalizedLayout(
+            newMap,
+            newEnemies,
+            spawnPosition,
+            WORLD_GRID_SIZE,
+          );
+      if (pendingWhite) pendingWhitePortalRef.current = null;
       newEnemies = appliedLayout.roster;
       if (
         appliedLayout.spawn.x !== spawnPosition.x ||
@@ -13558,18 +13568,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!pending) return;
     let cancelled = false;
     void (async () => {
-      const raw = await (
-        actor as { getCallerDokaBalance?: () => Promise<unknown> }
-      ).getCallerDokaBalance?.();
-      if (cancelled || raw == null) return;
-      const backendDoka = Number(raw);
-      const backendXp = Number(character?.experience ?? Number.NaN);
-      if (!Number.isFinite(backendDoka) || !Number.isFinite(backendXp)) return;
-      const decision = resolvePendingDeathReplay(
-        backendXp,
-        backendDoka,
-        pending,
-      );
+      const snap = await readDeathReplayBackendSnapshot({
+        fetchDoka: () =>
+          (
+            actor as { getCallerDokaBalance?: () => Promise<unknown> }
+          ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+        fetchCharacter: () =>
+          (
+            actor as { getCharacter?: (slot: bigint) => Promise<unknown> }
+          ).getCharacter?.(BigInt(characterSlot)) ?? Promise.resolve(null),
+      });
+      if (cancelled || !snap) return;
+      const decision = resolvePendingDeathReplay(snap.xp, snap.doka, pending);
       if (decision.action !== "write") {
         clearPendingDeathPenalty(sessionStorage, characterSlot);
         return;
@@ -18634,6 +18644,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         : "Not enough Doka"
                     }
                     onClick={() => {
+                      if (
+                        !shouldStartDokaHeal({
+                          currentHp: characterStatsRef.current.hp,
+                          maxHp,
+                          liveDoka: dokaBalanceRef.current,
+                        })
+                      ) {
+                        return;
+                      }
 
                       const resolved = resolveOverworldHealSpend({
                         currentHp: characterStatsRef.current.hp,
@@ -18664,7 +18683,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         toast.success("🎰 JACKPOT HEAL! Full HP restored!", {
                           duration: 4000,
                         });
-
                       } else {
                         challengeHealUsedRef.current =
                           recordInBattleChallengeHealUsed(
@@ -18683,6 +18701,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       onDokaBalanceChange(resolved.nextDoka);
                       void persist.then((ok) => {
                         if (ok) return;
+                        if (
+                          !shouldRollbackFailedHeal({
+                            liveHp: characterStatsRef.current.hp,
+                            liveDoka: dokaBalanceRef.current,
+                            expectedHp: resolved.nextHp,
+                            expectedDoka: resolved.nextDoka,
+                          })
+                        ) {
+                          return;
+                        }
                         setCharacterStats((prev) => ({
                           ...prev,
                           hp: hpBefore,

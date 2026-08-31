@@ -4,10 +4,12 @@ import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
   clearPendingDeathPenalty,
   computeDeathPenalty,
+  experienceFromCharacterRecord,
   mergeVictoryRewardLiveStats,
   persistDeathPenalty,
   persistWithRetry,
   raiseUiAfterDeathPersist,
+  readDeathReplayBackendSnapshot,
   readPendingDeathPenalty,
   resolvePendingDeathReplay,
   respawnHpAfterDeath,
@@ -482,6 +484,47 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   );
   clearPendingDeathPenalty(mem, 1);
   assert.equal(readPendingDeathPenalty(mem, 1), null);
+}
+
+{
+  assert.equal(experienceFromCharacterRecord({ experience: 100 }), 100);
+  assert.equal(experienceFromCharacterRecord({ experience: 80n }), 80);
+  assert.equal(
+    Number.isFinite(experienceFromCharacterRecord(null)),
+    false,
+    "missing character must not look like a persisted leftover",
+  );
+  assert.equal(Number.isFinite(experienceFromCharacterRecord({})), false);
+
+  const pending = {
+    slot: 1,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  };
+  // Stale React/cache XP already shows the 20% cut; canister Doka is still
+  // pre-penalty. Using the prop would miss both snapshot arms and clear.
+  assert.deepEqual(
+    resolvePendingDeathReplay(80, 200, pending),
+    { action: "clear" },
+    "asymmetric stale XP + fresh Doka must not be the replay input",
+  );
+  const snap = await readDeathReplayBackendSnapshot({
+    fetchDoka: async () => 200,
+    fetchCharacter: async () => ({ experience: 100 }),
+  });
+  assert.deepEqual(snap, { xp: 100, doka: 200 });
+  assert.deepEqual(
+    resolvePendingDeathReplay(snap!.xp, snap!.doka, pending),
+    { action: "write", newXp: 80, newDoka: 120 },
+    "canister XP+Doka still at the pre-penalty snapshot must replay",
+  );
+  const incomplete = await readDeathReplayBackendSnapshot({
+    fetchDoka: async () => 200,
+    fetchCharacter: async () => null,
+  });
+  assert.equal(incomplete, null, "do not clear pending when XP fetch misses");
 }
 
 console.log("deathPenalty.test: ok");

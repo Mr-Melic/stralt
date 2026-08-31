@@ -6,11 +6,10 @@ import {
   nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
   nextHpAfterDokaHeal,
-  shouldAllowShopSpend,
-  shouldStartDokaHeal,
-  isBuffShopOpen,
-  nextDokaAfterShopSpend,
   resolveOverworldHealSpend,
+  shouldAllowShopSpend,
+  shouldRollbackFailedHeal,
+  shouldStartDokaHeal,
   tryPurchaseBuffItem,
 } from "./itemShop.ts";
 
@@ -202,5 +201,54 @@ assert.equal(
   }),
   null,
 );
+
+{
+  // One heal click spends the wallet (or fills HP). A later persist reject
+  // must not restore hpBefore/dokaBefore if a reward, potion, or shop
+  // write already moved the live refs.
+  const first = resolveOverworldHealSpend({
+    currentHp: 50,
+    maxHp: 200,
+    liveDoka: 10,
+    jackpot: false,
+  });
+  assert.deepEqual(first, {
+    nextHp: 80,
+    nextDoka: 0,
+    hpGained: 30,
+    dokaCost: 10,
+    jackpot: false,
+  });
+  assert.equal(
+    shouldRollbackFailedHeal({
+      liveHp: 80,
+      liveDoka: 50,
+      expectedHp: first!.nextHp,
+      expectedDoka: first!.nextDoka,
+    }),
+    false,
+    "in-flight applyRewards credit must not be wiped by a failed heal persist",
+  );
+  assert.equal(
+    shouldRollbackFailedHeal({
+      liveHp: 110,
+      liveDoka: 0,
+      expectedHp: first!.nextHp,
+      expectedDoka: first!.nextDoka,
+    }),
+    false,
+    "a potion used while heal persist is in flight must keep its HP",
+  );
+  assert.equal(
+    shouldRollbackFailedHeal({
+      liveHp: first!.nextHp,
+      liveDoka: first!.nextDoka,
+      expectedHp: first!.nextHp,
+      expectedDoka: first!.nextDoka,
+    }),
+    true,
+    "same-click reject still rolls back when nothing superseded it",
+  );
+}
 
 console.log("itemShop.test: ok");
