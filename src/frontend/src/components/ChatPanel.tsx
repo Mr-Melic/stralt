@@ -549,6 +549,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const lastSeenSummonsCount = useRef<number>(0);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeChannelRef = useRef(activeChannel);
+  useEffect(() => {
+    activeChannelRef.current = activeChannel;
+  }, [activeChannel]);
   const { actor } = useActor();
 
   // Unread count lookup keyed by channel — drives the badge in the tab row.
@@ -693,10 +697,13 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     };
   }, [channelMenuOpen]);
 
-  // Subscribe to structured debug logs
+  // Subscribe to structured debug logs. Mirror into React only while the
+  // Debug tab is open — battle/AI/spell logs otherwise re-rendered ChatPanel
+  // on every line (array copy of up to 2000 entries).
   useEffect(() => {
     setDebugEntries([...getDebugLogBuffer()]);
     const unsub = subscribeDebugLogs((entry) => {
+      if (activeChannelRef.current !== "debug") return;
       setDebugEntries((prev) => {
         const next = [...prev, entry];
         if (next.length > 2000) return next.slice(-2000);
@@ -705,6 +712,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     });
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (activeChannel !== "debug") return;
+    setDebugEntries([...getDebugLogBuffer()]);
+  }, [activeChannel]);
 
   // SECTION 5 (build #325): subscribe to debug-pause state so the toolbar
   // toggle reflects the global pause flag maintained by debugLogger.
@@ -879,7 +891,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       ]);
       clearTimeout(timeoutId);
       if (!Array.isArray(raw)) return;
-      setMessages(raw as ChatMessage[]);
+      const next = raw as ChatMessage[];
+      setMessages((prev) => {
+        if (
+          prev.length === next.length &&
+          prev.length > 0 &&
+          prev[prev.length - 1]?.id === next[next.length - 1]?.id
+        ) {
+          return prev;
+        }
+        if (prev.length === 0 && next.length === 0) return prev;
+        return next;
+      });
       if (isFolded || activeChannel !== "general") {
         const newMsgs = (raw as ChatMessage[]).filter(
           (m) => m.id > lastSeenIdRef.current,

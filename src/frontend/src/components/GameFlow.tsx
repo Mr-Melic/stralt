@@ -229,6 +229,15 @@ const GameFlow: React.FC<GameFlowProps> = ({
     setDungeonData(null);
   };
 
+  const handleDebugLog = useCallback((event: string, detail: string) => {
+    logDebugInfo("GENERAL", event, detail);
+  }, []);
+  const handleItemShopClose = useCallback(() => setShowShop(false), []);
+  const handleAchievementsClose = useCallback(
+    () => setShowAchievements(false),
+    [],
+  );
+
   const showBackButton =
     currentStage !== "selection" && currentStage !== "world";
   const isGameMode = currentStage === "world";
@@ -244,13 +253,10 @@ const GameFlow: React.FC<GameFlowProps> = ({
           addBattleLogEntry={addBattleLogEntry}
           // onBattleEnd removed — battle log is cleared on battle ENTRY (false→true)
           onActiveEffectsChange={setActiveEffects}
-          onInBattleChange={(inBattle) => {
-            prevIsInBattleRef.current = isInBattle;
-            setIsInBattle(inBattle);
-          }}
+          onInBattleChange={setIsInBattle}
           onTransitionChange={setIsTransitioning}
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
-          onDebugLog={(event, detail) => logDebugInfo("GENERAL", event, detail)}
+          onDebugLog={handleDebugLog}
           onShowBattleSummary={onShowBattleSummary}
           dokaBalance={dokaBalance}
           dokaWalletReady={shouldMarkCallerDokaWalletReady({
@@ -260,9 +266,9 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onDokaBalanceChange={setDokaBalance}
           onDebugContextChange={setDebugContext}
           itemShopOpen={showShop}
-          onItemShopClose={() => setShowShop(false)}
+          onItemShopClose={handleItemShopClose}
           achievementsOpen={showAchievements}
-          onAchievementsClose={() => setShowAchievements(false)}
+          onAchievementsClose={handleAchievementsClose}
         />
         <ChatPanel
           playerName={userProfile.name}
