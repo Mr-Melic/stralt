@@ -6,6 +6,14 @@ import type {
   RegionConfig,
   SpellConfig,
 } from "../types/gameTypes";
+import {
+  assertAdminCmdOk,
+  fromBackendPlayerSpriteConfig,
+  fromBackendSpellConfig,
+  toBackendEnemySpriteUrl,
+  toBackendPlayerSpriteConfig,
+  toBackendSpellConfig,
+} from "../utils/adminContract";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,11 +40,9 @@ export function useGetSpellConfigs() {
         const raw: SpellConfig[] = await withTimeout(
           (actor as ActorAny).getSpellConfigs(),
         );
-        return deepNormalizeBigInts(raw).map((s) => ({
-          ...s,
-          hitsMultiple: s.hitsMultiple ?? s.multiTarget ?? false,
-          multiTarget: s.multiTarget ?? s.hitsMultiple ?? false,
-        }));
+        return deepNormalizeBigInts(raw).map((spell) =>
+          fromBackendSpellConfig(spell),
+        );
       } catch {
         return [];
       }
@@ -47,46 +53,6 @@ export function useGetSpellConfigs() {
   });
 }
 
-/** Map admin/runtime SpellConfig onto the bindgen Candid record. */
-function toBackendSpellConfig(config: SpellConfig) {
-  const multiTarget = Boolean(config.multiTarget ?? config.hitsMultiple);
-  const hitTiles = (config.hitTiles ?? []).map(([dx, dy]) => [
-    BigInt(dx),
-    BigInt(dy),
-  ]);
-  return {
-    id: config.id,
-    name: config.name,
-    description: config.description,
-    iconEmoji: config.iconEmoji,
-    apCost: BigInt(config.apCost ?? 0),
-    mpCost: BigInt(config.mpCost ?? 0),
-    damage: BigInt(config.damage ?? 0),
-    healAmount: BigInt(config.healAmount ?? 0),
-    effectType: config.effectType,
-    spellType: config.spellType ?? "damage",
-    isPhysical: Boolean(config.isPhysical),
-    range: BigInt(config.range ?? 0),
-    minRange: BigInt(config.minRange ?? 0),
-    maxRange: BigInt(config.maxRange ?? config.range ?? 0),
-    modifiableRange: Boolean(config.modifiableRange),
-    lineOfSight: config.lineOfSight !== false,
-    linear: Boolean(config.linear),
-    diagonal: Boolean(config.diagonal),
-    freeCells: Boolean(config.freeCells),
-    aoe: Boolean(config.aoe),
-    multiTarget,
-    hitsAllies: Boolean(config.hitsAllies),
-    hitTiles,
-    effectCategory: config.effectCategory ?? "damage",
-    usableByPlayer: config.usableByPlayer !== false,
-    usableByEnemy: Boolean(config.usableByEnemy),
-    minLevel: BigInt(config.minLevel ?? 1),
-    effectParams: config.effectParams ?? null,
-    cooldown: BigInt(config.cooldown ?? 0),
-  };
-}
-
 export function useAdminSetSpellConfig() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
@@ -94,9 +60,11 @@ export function useAdminSetSpellConfig() {
   return useMutation({
     mutationFn: async (config: SpellConfig) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetSpellConfig(
+      const result = await (actor as ActorAny).adminSetSpellConfig(
         toBackendSpellConfig(config),
       );
+      assertAdminCmdOk(result, "adminSetSpellConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["spellConfigs"] });
@@ -111,7 +79,9 @@ export function useAdminDeleteSpellConfig() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminDeleteSpellConfig(id);
+      const result = await (actor as ActorAny).adminDeleteSpellConfig(id);
+      assertAdminCmdOk(result, "adminDeleteSpellConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["spellConfigs"] });
@@ -130,7 +100,14 @@ export function useGetEnemyConfigs() {
         const raw: EnemyConfig[] = await withTimeout(
           (actor as ActorAny).getEnemyConfigs(),
         );
-        return deepNormalizeBigInts(raw);
+        return deepNormalizeBigInts(raw).map((enemy) => ({
+          ...enemy,
+          spriteUrl: Array.isArray(enemy.spriteUrl)
+            ? enemy.spriteUrl
+            : enemy.spriteUrl
+              ? [enemy.spriteUrl]
+              : [],
+        }));
       } catch {
         return [];
       }
@@ -148,7 +125,12 @@ export function useAdminSetEnemyConfig() {
   return useMutation({
     mutationFn: async (config: EnemyConfig) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetEnemyConfig(config);
+      const result = await (actor as ActorAny).adminSetEnemyConfig({
+        ...config,
+        spriteUrl: toBackendEnemySpriteUrl(config.spriteUrl),
+      });
+      assertAdminCmdOk(result, "adminSetEnemyConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["enemyConfigs"] });
@@ -163,7 +145,9 @@ export function useAdminDeleteEnemyConfig() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminDeleteEnemyConfig(id);
+      const result = await (actor as ActorAny).adminDeleteEnemyConfig(id);
+      assertAdminCmdOk(result, "adminDeleteEnemyConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["enemyConfigs"] });
@@ -200,7 +184,9 @@ export function useAdminSetRegionConfig() {
   return useMutation({
     mutationFn: async (config: RegionConfig) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetRegionConfig(config);
+      const result = await (actor as ActorAny).adminSetRegionConfig(config);
+      assertAdminCmdOk(result, "adminSetRegionConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["regionConfigs"] });
@@ -215,7 +201,9 @@ export function useAdminDeleteRegionConfig() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminDeleteRegionConfig(id);
+      const result = await (actor as ActorAny).adminDeleteRegionConfig(id);
+      assertAdminCmdOk(result, "adminDeleteRegionConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["regionConfigs"] });
@@ -234,32 +222,9 @@ export function useGetPlayerSpriteConfigs() {
         const raw: PlayerSpriteConfig[] = await withTimeout(
           (actor as ActorAny).getPlayerSpriteConfigs(),
         );
-        return deepNormalizeBigInts(raw).map((s) => {
-          const row = s as PlayerSpriteConfig & {
-            frontWalkFrames?: string[];
-            rightWalkFrames?: string[];
-            leftWalkFrames?: string[];
-            backWalkFrames?: string[];
-            frontUrl?: string | [] | [string];
-            rightUrl?: string | [] | [string];
-            leftUrl?: string | [] | [string];
-            backUrl?: string | [] | [string];
-          };
-          const asOpt = (
-            v: string | [] | [string] | undefined,
-          ): [] | [string] => (Array.isArray(v) ? v : v ? [v] : []);
-          return {
-            ...row,
-            frontUrl: asOpt(row.frontUrl),
-            rightUrl: asOpt(row.rightUrl),
-            leftUrl: asOpt(row.leftUrl),
-            backUrl: asOpt(row.backUrl),
-            walkFramesFront: row.walkFramesFront ?? row.frontWalkFrames ?? [],
-            walkFramesRight: row.walkFramesRight ?? row.rightWalkFrames ?? [],
-            walkFramesLeft: row.walkFramesLeft ?? row.leftWalkFrames ?? [],
-            walkFramesBack: row.walkFramesBack ?? row.backWalkFrames ?? [],
-          };
-        });
+        return deepNormalizeBigInts(raw).map((sprite) =>
+          fromBackendPlayerSpriteConfig(sprite),
+        );
       } catch {
         return [];
       }
@@ -277,37 +242,11 @@ export function useAdminSetPlayerSpriteConfig() {
   return useMutation({
     mutationFn: async (config: PlayerSpriteConfig) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminSetPlayerSpriteConfig({
-        ...config,
-        frontUrl: Array.isArray(config.frontUrl)
-          ? config.frontUrl[0]
-          : config.frontUrl,
-        rightUrl: Array.isArray(config.rightUrl)
-          ? config.rightUrl[0]
-          : config.rightUrl,
-        leftUrl: Array.isArray(config.leftUrl)
-          ? config.leftUrl[0]
-          : config.leftUrl,
-        backUrl: Array.isArray(config.backUrl)
-          ? config.backUrl[0]
-          : config.backUrl,
-        frontWalkFrames:
-          (config as { frontWalkFrames?: string[] }).frontWalkFrames ??
-          config.walkFramesFront ??
-          [],
-        rightWalkFrames:
-          (config as { rightWalkFrames?: string[] }).rightWalkFrames ??
-          config.walkFramesRight ??
-          [],
-        leftWalkFrames:
-          (config as { leftWalkFrames?: string[] }).leftWalkFrames ??
-          config.walkFramesLeft ??
-          [],
-        backWalkFrames:
-          (config as { backWalkFrames?: string[] }).backWalkFrames ??
-          config.walkFramesBack ??
-          [],
-      });
+      const result = await (actor as ActorAny).adminSetPlayerSpriteConfig(
+        toBackendPlayerSpriteConfig(config),
+      );
+      assertAdminCmdOk(result, "adminSetPlayerSpriteConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["playerSpriteConfigs"] });
@@ -322,7 +261,11 @@ export function useAdminDeletePlayerSpriteConfig() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
-      return (actor as ActorAny).adminDeletePlayerSpriteConfig(id);
+      const result = await (actor as ActorAny).adminDeletePlayerSpriteConfig(
+        id,
+      );
+      assertAdminCmdOk(result, "adminDeletePlayerSpriteConfig");
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["playerSpriteConfigs"] });
