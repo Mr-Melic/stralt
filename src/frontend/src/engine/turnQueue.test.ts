@@ -104,6 +104,27 @@ describe("nextTurnIndex after removeCombatantFromTurnQueue", () => {
     );
   });
 
+  it("leaves the index on the predecessor so own-turn death does not skip the next unit", () => {
+    // [Player, Wolf, Rat], Wolf is acting and fades. Advance must land on Rat.
+    const q = queue(["player", "wolf", "rat"], 1);
+    removeCombatantFromTurnQueue(
+      q.turnOrderRef.current,
+      q.turnOrderRef,
+      q.currentTurnIndexRef,
+      "wolf",
+      q.setTurnOrder,
+    );
+    assert.deepEqual(
+      q.turnOrderRef.current.map((c) => c.id),
+      ["player", "rat"],
+    );
+    assert.equal(q.currentTurnIndexRef.current, 0);
+    assert.equal(
+      liveAdvance(q.reactOrder(), q.turnOrderRef, q.currentTurnIndexRef),
+      "rat",
+    );
+  });
+
   it("advances player → next summon when nothing was removed", () => {
     const q = queue(["player", "wolf", "rat"], 0);
     assert.equal(
