@@ -78,6 +78,19 @@ export function nextHpAfterDokaHeal(
   return Math.min(max, hp + add);
 }
 
+/**
+ * WorldExploration passes getLiveDoka so a same-tick heal debit is visible
+ * before React re-renders dokaBalance. Falling back to the render prop
+ * re-opens the free-item window #107 closed.
+ */
+export function liveShopWallet(
+  renderDoka: number,
+  getLiveDoka?: () => number,
+): number {
+  const raw = getLiveDoka ? getLiveDoka() : renderDoka;
+  return Math.max(0, Math.floor(Number(raw) || 0));
+}
+
 /** Buff shop must gate on the live wallet, not a stale-high render snapshot. */
 export function shouldAllowShopSpend(
   liveDoka: number,

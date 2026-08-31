@@ -143,9 +143,8 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
 
   const handleClaim = useCallback(
     (achievement: AchievementConfig) => {
-      // claimInFlightRef was never declared. Every Claim click threw
-      // before persistClaim / claimMut ran, so the grant never reached
-      // the persist lock. Use the same in-flight set as shouldBegin.
+      // #107 added a second in-flight set (`claimInFlightRef`) that was never
+      // declared. Use beginAchievementClaim so persist and mutate share one set.
       if (!beginAchievementClaim(claimingIdsRef.current, achievement.id)) {
         return;
       }

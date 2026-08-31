@@ -368,14 +368,19 @@ export type PendingDeathReplay =
  * later legitimate earn cannot be cut a second time.
  */
 /**
- * Reload replay must compare canister XP, not the React/cache
- * `character.experience` prop. A stale leftover (UI already applied the
- * 20% cut) plus a fresh getCallerDokaBalance (still pre-penalty) used to
- * miss both snapshot arms and clear the pending write.
+ * Death-replay must compare the canister XP, not GameFlow's Play-entry
+ * `character.experience`. That prop is never updated after applyRewards, so
+ * a remount / actor reconnect after an in-session earn reads the stale
+ * select-screen value, fails both pre/after matches, and clears the pending
+ * marker — the 20/40 cut never retries.
  */
-export function experienceFromCharacterRecord(character: unknown): number {
-  if (character == null || typeof character !== "object") return Number.NaN;
-  return Number((character as { experience?: unknown }).experience);
+export function experienceFromCharacterRecord(
+  record: { experience?: unknown } | null | undefined | unknown,
+): number | null {
+  if (record == null || typeof record !== "object") return null;
+  const xp = Number((record as { experience?: unknown }).experience);
+  if (!Number.isFinite(xp)) return null;
+  return Math.max(0, Math.floor(xp));
 }
 
 export async function readDeathReplayBackendSnapshot(args: {
@@ -388,7 +393,7 @@ export async function readDeathReplayBackendSnapshot(args: {
   ]);
   const doka = Number(rawDoka);
   const xp = experienceFromCharacterRecord(rawChar);
-  if (!Number.isFinite(doka) || !Number.isFinite(xp)) return null;
+  if (!Number.isFinite(doka) || xp == null || !Number.isFinite(xp)) return null;
   return { xp, doka };
 }
 
