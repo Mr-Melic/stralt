@@ -430,11 +430,11 @@ export function applyUnpaidDeathPenaltyToWrite(
 /**
  * Reload / flush before saveBattleStats lands leaves the canister uncut.
  *
- * Portal +10 and ground Doka are applyRewards credits on one axis. The
- * previous resolver treated any snapshot that was not exactly `pre` or
- * `pre`+heal-spend as a later earn and cleared — so a remount race
- * (pending death + portal or coin) dropped the 20/40 cut and kept the
- * credit. Apply the unpaid cut to the live canister snapshot instead.
+ * Apply the original unpaid 20/40 to the live snapshot unless that cut
+ * already landed or `cutConfirmed` is set. A later earn (portal +10,
+ * ground Doka, or a dual-axis victory credit) must not clear the marker
+ * and keep the uncut wallet. Recutting 20/40 of the credited snapshot
+ * would tax the earn; subtract the pending loss instead.
  *
  * `cutConfirmed` means saveBattleStats already accepted the cut. A later
  * earn on that wallet must not be penalized again.
@@ -456,24 +456,7 @@ export function resolvePendingDeathReplay(
   if (next.xp === xp && next.doka === doka) {
     return { action: "clear" };
   }
-  // Heal/shop after a failed persist: XP still pre, Doka already spent.
-  // Do not treat a later earn (both axes above pre) as an unpaid cut.
-  if (xp === pending.preXp && doka < pending.preDoka) {
-    return { action: "write", newXp: next.xp, newDoka: next.doka };
-  }
-  // Portal +10 XP, or a Doka-only credit (ground loot / shrine / feat), can
-  // commit after the optimistic pending snapshot and before saveBattleStats.
-  // Reload then matched neither `pre` nor `after` and cleared the marker —
-  // the 20/40 cut never retried. Both axes above `pre` stay a clear (later
-  // fight earn, or a dual-axis victory credit); do not recut those here.
-  if (
-    (xp > pending.preXp && doka === pending.preDoka) ||
-    (doka > pending.preDoka && xp === pending.preXp)
-  ) {
-    const after = computeDeathPenalty(xp, doka);
-    return { action: "write", newXp: after.newXp, newDoka: after.newDoka };
-  }
-  return { action: "clear" };
+  return { action: "write", newXp: next.xp, newDoka: next.doka };
 }
 
 /**

@@ -532,17 +532,15 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     { action: "clear" },
     "a later earn after the replica accepted the cut must not be penalized again",
   );
-  const portalRaced = computeDeathPenalty(110, 200);
   assert.deepEqual(
     resolvePendingDeathReplay(110, 200, pending),
-    { action: "write", newXp: portalRaced.newXp, newDoka: portalRaced.newDoka },
-    "portal +10 landing before death persist must still replay the 20/40 cut",
+    { action: "write", newXp: 90, newDoka: 120 },
+    "portal +10 landing before death persist must apply the original unpaid cut",
   );
-  const lootRaced = computeDeathPenalty(100, 250);
   assert.deepEqual(
     resolvePendingDeathReplay(100, 250, pending),
-    { action: "write", newXp: lootRaced.newXp, newDoka: lootRaced.newDoka },
-    "Doka-only credit landing before death persist must still replay the 20/40 cut",
+    { action: "write", newXp: 80, newDoka: 170 },
+    "Doka-only credit landing before death persist must apply the original unpaid cut",
   );
   const sessionPending = {
     slot: 1,
