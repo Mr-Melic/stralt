@@ -266,6 +266,15 @@ type AdminGameConfig =
    dokaSpawnChance: nat;
    leaderBoostPercent: nat;
  };
+type AdminAuditEntry = 
+ record {
+   action: text;
+   adminPrincipal: text;
+   newSummary: text;
+   objectId: text;
+   previousSummary: text;
+   timestampNs: int;
+ };
 type AchievementProgress = 
  record {
    achievementId: text;
@@ -360,6 +369,26 @@ service : {
       err: text;
       ok;
     });
+  adminRollbackBossRushConfig: () -> (variant {
+                                        err: text;
+                                        ok;
+                                      });
+  adminRollbackColorPalette: () -> (variant {
+                                      err: text;
+                                      ok;
+                                    });
+  adminRollbackGameConfig: () -> (variant {
+                                    err: text;
+                                    ok;
+                                  });
+  adminRollbackLevelUpConfig: () -> (variant {
+                                       err: text;
+                                       ok;
+                                     });
+  adminRollbackTierSpawnConfig: () -> (variant {
+                                         err: text;
+                                         ok;
+                                       });
   /// Admin: create or update an achievement configuration.
   adminSetAchievementConfig: (config: AchievementConfig) ->
    (variant {
@@ -525,6 +554,11 @@ service : {
                            text;
                            bool;
                          }) query;
+  getAdminAuditLog: () ->
+   (variant {
+      err: text;
+      ok: vec AdminAuditEntry;
+    }) query;
   /// Public: returns all boss configs.
   getAllBossConfigs: () -> (vec BossConfig) query;
   getAllCharacters: () ->

@@ -252,14 +252,14 @@ export const mockBackend: UiLayoutActor = {
   completeBossRushRoom: async (_slot: bigint, _room: bigint, _doka: bigint, _xp: bigint) => ({ __kind__: "ok" as const, ok: null as null }),
   resetBossRush: async (_slot: bigint): Promise<void> => undefined,
   adminSetColorPalette: async (_palettes: string): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }> => ({ __kind__: "ok" as const, ok: null }),
+  adminRollbackColorPalette: async () => okResult,
   getColorPalette: async (): Promise<string> => "",
   adminSetBossRushConfig: async (_config: string): Promise<{ __kind__: "ok"; ok: null } | { __kind__: "err"; err: string }> => ({ __kind__: "ok" as const, ok: null }),
+  adminRollbackBossRushConfig: async () => okResult,
   getBossRushConfig: async (): Promise<string> => "",
   adminRollbackLevelUpConfig: async () => notAdmin,
   adminRollbackGameConfig: async () => notAdmin,
   adminRollbackTierSpawnConfig: async () => notAdmin,
-  adminRollbackColorPalette: async () => notAdmin,
-  adminRollbackBossRushConfig: async () => notAdmin,
   getAdminAuditLog: async () => notAdmin,
 
   applyRewards: async (_slot: bigint, _dokaDelta: bigint, _xpDelta: bigint) =>

@@ -7,9 +7,12 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
-export interface UserProfile {
-    name: string;
-    uiLayout: string;
+export interface AchievementProgress {
+    achievementId: string;
+    unlockedAt: bigint;
+    unlocked: boolean;
+    claimed: boolean;
+    principalId: string;
 }
 export interface MapModifierConfig {
     id: string;
@@ -163,12 +166,20 @@ export type Value = {
     __kind__: "text";
     text: string;
 };
-export type CharacterSlot = Character | null;
+export interface AdminAuditEntry {
+    action: string;
+    adminPrincipal: string;
+    previousSummary: string;
+    objectId: string;
+    newSummary: string;
+    timestampNs: bigint;
+}
 export interface CharacterSlots {
     slot1: CharacterSlot;
     slot2: CharacterSlot;
     slot3: CharacterSlot;
 }
+export type CharacterSlot = Character | null;
 export interface CharacterStats {
     ap: bigint;
     hp: bigint;
@@ -252,17 +263,14 @@ export interface PurchaseRecord {
     packageId: string;
     customerCity: string;
 }
-export interface AchievementProgress {
-    achievementId: string;
-    unlockedAt: bigint;
-    unlocked: boolean;
-    claimed: boolean;
-    principalId: string;
-}
 export interface DungeonRecord {
     chainDepth: bigint;
     totalMapsCompleted: bigint;
     bestRewardMultiplier: number;
+}
+export interface UserProfile {
+    name: string;
+    uiLayout: string;
 }
 export enum UserRole {
     admin = "admin",
@@ -401,6 +409,41 @@ export interface backendInterface {
      * / Alias for adminAddDoka; named adminGrantDoka to match the frontend's expected method name.
      */
     adminGrantDoka(targetPrincipal: Principal, amount: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminRollbackBossRushConfig(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminRollbackColorPalette(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminRollbackGameConfig(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminRollbackLevelUpConfig(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminRollbackTierSpawnConfig(): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
@@ -671,6 +714,13 @@ export interface backendInterface {
      * / Returns all three ad box slots.  Empty/inactive slots have isActive=false.
      */
     getAdBoxes(): Promise<Array<[string, string, boolean]>>;
+    getAdminAuditLog(): Promise<{
+        __kind__: "ok";
+        ok: Array<AdminAuditEntry>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     /**
      * / Public: returns all boss configs.
      */
