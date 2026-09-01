@@ -355,3 +355,45 @@ export function applyHealHpToLiveStats<T extends { hp: number }>(
   stats.current = next;
   return next;
 }
+
+/**
+ * Credits, spends, and death cuts must write the live ref in the same
+ * tick as onDokaBalanceChange. GameFlow's setState is deferred; a later
+ * heal/shop/rename still reads dokaBalanceRef.
+ *
+ * Chronology when a victory then() only called onDokaBalanceChange(100+50)
+ * and left the ref at 100:
+ * 1. Heal click spends from 100 → ref=90.
+ * 2. GameFlow later commits the stale 150 credit.
+ * 3. syncLiveDokaFromProp sees prop 100→150 and copies 150 over 90.
+ * 4. The next heal prices from the ghost 10 Doka and persistAbsoluteProgress
+ *    applies that spend against the already-debited lock (free HP).
+ */
+export function writeLiveDoka(live: { current: number }, next: number): number {
+  const value = Math.max(0, Math.floor(Number(next) || 0));
+  live.current = value;
+  return value;
+}
+
+/** Add a persist-lock credit onto the live wallet, not a click-time snapshot. */
+export function creditLiveDoka(
+  live: { current: number },
+  gained: number,
+): number {
+  const add = Math.max(0, Math.floor(Number(gained) || 0));
+  return writeLiveDoka(live, live.current + add);
+}
+
+/**
+ * A failed shop persist must not add `amount` back if a later buy/heal
+ * already moved the live wallet. Double-buy: first reject after the second
+ * commit used to restore +50 onto 0 and mint a ghost 50 for the next heal.
+ */
+export function shouldRollbackFailedShopSpend(args: {
+  liveDoka: number;
+  expectedDoka: number;
+}): boolean {
+  const live = Math.floor(Number(args.liveDoka) || 0);
+  const expected = Math.floor(Number(args.expectedDoka) || 0);
+  return live === expected;
+}

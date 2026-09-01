@@ -224,6 +224,17 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   assert.equal(lock.snapshot().xp, 144);
 }
 
+{
+  // Optimistic death used to call onDokaBalanceChange(120) and leave
+  // dokaBalanceRef at 200. raiseUi(200, 180) then kept the pre-death ghost
+  // and the next heal spent from 200. Snap the live wallet to the written
+  // penalty instead of raising an uncut ref.
+  const uncutRef = 200;
+  const persisted = 180;
+  assert.equal(raiseUiAfterDeathPersist(uncutRef, persisted), uncutRef);
+  assert.equal(persisted, 180);
+}
+
 // Portal applyRewards hydrates absolute XP after await. Lava on the new
 // map can land while that persist is in flight. Restoring the pre-penalty
 // snapshot lets raiseUi keep the unpenalized UI; an idle hydrate then
