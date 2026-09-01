@@ -247,6 +247,54 @@ export function toBackendSpellConfig<T extends SpellBridgeFields>(
   };
 }
 
+/** Motoko / bindgen LevelUpConfig. Frontend drafts also use apMpGrowthEveryNLevels. */
+export type LevelUpConfigWrite = {
+  statGrowthPercent?: number | bigint;
+  apMpLevelThreshold?: number | bigint;
+  apMpGrowthEveryNLevels?: number | bigint;
+  spellLevelingBaseCost?: number | bigint;
+  spellLevelingCostMultiplier?: number;
+  spellDmgGrowthPercent?: number | bigint;
+  maxSpellRange?: number | bigint;
+  spellRangeGrowthLevels?: number | bigint;
+  spellFailBaseChance?: number;
+  spellFailReductionPerLevel?: number;
+};
+
+function natField(
+  value: number | bigint | undefined,
+  fallback: number,
+): bigint {
+  const n = value == null ? fallback : Number(value);
+  return BigInt(Math.max(0, Math.round(Number.isFinite(n) ? n : fallback)));
+}
+
+/** Full 9-field Candid payload. Never omit growth/cost fields (Candid rejects partials). */
+export function toBackendLevelUpConfig(cfg: LevelUpConfigWrite): {
+  statGrowthPercent: bigint;
+  apMpLevelThreshold: bigint;
+  spellLevelingBaseCost: bigint;
+  spellLevelingCostMultiplier: number;
+  spellDmgGrowthPercent: bigint;
+  maxSpellRange: bigint;
+  spellRangeGrowthLevels: bigint;
+  spellFailBaseChance: number;
+  spellFailReductionPerLevel: number;
+} {
+  const apMp = cfg.apMpLevelThreshold ?? cfg.apMpGrowthEveryNLevels;
+  return {
+    statGrowthPercent: natField(cfg.statGrowthPercent, 5),
+    apMpLevelThreshold: natField(apMp, 25),
+    spellLevelingBaseCost: natField(cfg.spellLevelingBaseCost, 10),
+    spellLevelingCostMultiplier: Number(cfg.spellLevelingCostMultiplier ?? 2),
+    spellDmgGrowthPercent: natField(cfg.spellDmgGrowthPercent, 3),
+    maxSpellRange: natField(cfg.maxSpellRange, 5),
+    spellRangeGrowthLevels: natField(cfg.spellRangeGrowthLevels, 10),
+    spellFailBaseChance: Number(cfg.spellFailBaseChance ?? 20),
+    spellFailReductionPerLevel: Number(cfg.spellFailReductionPerLevel ?? 0.1),
+  };
+}
+
 export function fromBackendSpellConfig<T extends SpellBridgeFields>(
   raw: T,
 ): T & { hitsMultiple: boolean; cooldown: number } {
