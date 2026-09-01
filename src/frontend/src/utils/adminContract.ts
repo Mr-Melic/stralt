@@ -230,20 +230,67 @@ type SpellBridgeFields = {
   hitsMultiple?: boolean;
   multiTarget?: boolean;
   cooldown?: number | bigint;
+  isSummon?: boolean;
+  summonAI?: string;
+  summonLifespan?: number | bigint;
+  summonUnitDef?: {
+    pieceType?: string;
+    level?: number | bigint;
+    hpScale?: number;
+    damageScale?: number;
+  };
+};
+
+const EMPTY_SUMMON_UNIT_DEF = {
+  pieceType: "",
+  level: 0,
+  hpScale: 0,
+  damageScale: 0,
 };
 
 export function toBackendSpellConfig<T extends SpellBridgeFields>(
   config: T,
-): T & { multiTarget: boolean; cooldown: bigint } {
+): T & {
+  multiTarget: boolean;
+  cooldown: bigint;
+  isSummon: boolean;
+  summonAI: string;
+  summonLifespan: number;
+  summonUnitDef: {
+    pieceType: string;
+    level: number;
+    hpScale: number;
+    damageScale: number;
+  };
+} {
   const cooldownRaw = config.cooldown ?? 0;
   const cooldown =
     typeof cooldownRaw === "bigint"
       ? cooldownRaw
       : BigInt(Math.max(0, Math.round(Number(cooldownRaw) || 0)));
+  const lifespanRaw = config.summonLifespan ?? 0;
+  const summonLifespan = Math.max(0, Math.round(Number(lifespanRaw) || 0));
+  const unit = config.summonUnitDef;
   return {
     ...config,
     multiTarget: config.multiTarget ?? config.hitsMultiple ?? false,
     cooldown,
+    isSummon: config.isSummon ?? false,
+    summonAI: config.summonAI ?? "",
+    summonLifespan,
+    summonUnitDef: {
+      pieceType: unit?.pieceType ?? EMPTY_SUMMON_UNIT_DEF.pieceType,
+      level: Math.max(
+        0,
+        Math.round(
+          typeof unit?.level === "bigint"
+            ? Number(unit.level)
+            : Number(unit?.level) || 0,
+        ),
+      ),
+      hpScale: Number(unit?.hpScale) || 0,
+      damageScale: Number(unit?.damageScale) || 0,
+    },
   };
 }
 

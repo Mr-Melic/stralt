@@ -127,6 +127,15 @@ describe("sprite / spell / enemy field bridges", () => {
     });
     assert.equal(wire.multiTarget, true);
     assert.equal(wire.cooldown, 0n);
+    assert.equal(wire.isSummon, false);
+    assert.equal(wire.summonAI, "");
+    assert.equal(wire.summonLifespan, 0);
+    assert.deepEqual(wire.summonUnitDef, {
+      pieceType: "",
+      level: 0,
+      hpScale: 0,
+      damageScale: 0,
+    });
     const ui = fromBackendSpellConfig({
       id: "bolt",
       multiTarget: true,

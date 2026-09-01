@@ -50,6 +50,7 @@ import type {
   SpellConfig,
   TierSpawnConfig,
 } from "../types/gameTypes";
+import { assertAdminCmdOk } from "../utils/adminContract";
 import {
   MAX_DOKA_GRANT,
   unsafeUrl,
@@ -58,6 +59,7 @@ import {
   validateGameConfig,
   validateLevelUpConfig,
   validateOptionalUrl,
+  validateSpellConfig,
   validateTierSpawnConfig,
   validateWalkFrameUrls,
 } from "../utils/adminSafety";
@@ -111,6 +113,15 @@ const newSpell = (): SpellConfig => ({
   isBarrier: false,
   isTrap: false,
   isMark: false,
+  isSummon: false,
+  summonAI: "",
+  summonLifespan: 0,
+  summonUnitDef: {
+    pieceType: "",
+    level: 0,
+    hpScale: 0,
+    damageScale: 0,
+  },
 });
 
 const newEnemy = (): EnemyConfig => ({
@@ -829,6 +840,14 @@ const EnemyEditor: React.FC<{
           onClick={() => {
             if (!cfg.id.trim() || !cfg.name.trim()) {
               toast.error("Enemy ID and name are required");
+              return;
+            }
+            const spriteErr = validateOptionalUrl(
+              "spriteUrl",
+              cfg.spriteUrl[0] ?? "",
+            );
+            if (spriteErr) {
+              toast.error(spriteErr);
               return;
             }
             onSave(cfg);
@@ -3344,6 +3363,20 @@ const SpellEditor: React.FC<{
               toast.error("Spell ID and name are required");
               return;
             }
+            const spellErr = validateSpellConfig({
+              id: cfg.id,
+              name: cfg.name,
+              apCost: Number(cfg.apCost),
+              minRange: Number(cfg.minRange ?? 0),
+              maxRange: Number(cfg.maxRange ?? cfg.range ?? 0),
+              spellType: cfg.spellType ?? "damage",
+              effectType: cfg.effectType,
+              effectCategory: cfg.effectCategory ?? "damage",
+            });
+            if (spellErr) {
+              toast.error(spellErr);
+              return;
+            }
             onSave(cfg);
           }}
           ocid="admin.spell.save_button"
@@ -3601,14 +3634,19 @@ const TierConfigTab: React.FC = () => {
       toast.error(tierErr);
       return;
     }
+    if (!actor) {
+      toast.error("Backend actor not available");
+      return;
+    }
     try {
+      const result = await (
+        actor as unknown as backendInterface
+      ).adminSetTierSpawnConfig({
+        ...cfg,
+        tierSize: BigInt(cfg.tierSize),
+      } as never);
+      assertAdminCmdOk(result, "adminSetTierSpawnConfig");
       localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(cfg));
-      if (actor) {
-        await (actor as unknown as backendInterface).adminSetTierSpawnConfig({
-          ...cfg,
-          tierSize: BigInt(cfg.tierSize),
-        } as any);
-      }
       toast.success("Tier spawn config saved!");
     } catch (err) {
       toast.error(`Failed to save config: ${String(err)}`);
@@ -4051,25 +4089,24 @@ const SettingsTab: React.FC = () => {
 const LevelUpConfigPanel: React.FC = () => {
   const { actor } = useActor();
   const [cfg, setCfg] = React.useState(() => {
-    try {
-      const raw = localStorage.getItem("pbv_levelup_config");
-      if (raw)
-        return {
-          maxSpellRange: 5,
-          spellRangeGrowthLevels: 10,
-          spellFailBaseChance: 20,
-          spellFailReductionPerLevel: 0.1,
-          ...JSON.parse(raw),
-        };
-    } catch {
-      /* ignore */
-    }
-    return {
+    const defaults = {
+      statGrowthPercent: 5,
+      apMpLevelThreshold: 25,
+      spellLevelingBaseCost: 10,
+      spellLevelingCostMultiplier: 2,
+      spellDmgGrowthPercent: 3,
       maxSpellRange: 5,
       spellRangeGrowthLevels: 10,
       spellFailBaseChance: 20,
       spellFailReductionPerLevel: 0.1,
     };
+    try {
+      const raw = localStorage.getItem("pbv_levelup_config");
+      if (raw) return { ...defaults, ...JSON.parse(raw) };
+    } catch {
+      /* ignore */
+    }
+    return defaults;
   });
   const [saved, setSaved] = React.useState(false);
 
@@ -4089,21 +4126,28 @@ const LevelUpConfigPanel: React.FC = () => {
       toast.error(err);
       return;
     }
-    localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
+    if (!actor) {
+      toast.error("Backend actor not available");
+      return;
+    }
     try {
-      if (actor) {
-        await (actor as unknown as backendInterface).adminSetLevelUpConfig({
-          maxSpellRange: BigInt(cfg.maxSpellRange),
-          spellRangeGrowthLevels: BigInt(cfg.spellRangeGrowthLevels),
-          spellFailBaseChance: cfg.spellFailBaseChance,
-          spellFailReductionPerLevel: cfg.spellFailReductionPerLevel,
-          statGrowthPercent: BigInt(5),
-          apMpLevelThreshold: BigInt(25),
-          spellLevelingBaseCost: BigInt(10),
-          spellLevelingCostMultiplier: 2,
-          spellDmgGrowthPercent: BigInt(3),
-        });
-      }
+      const result = await (
+        actor as unknown as backendInterface
+      ).adminSetLevelUpConfig({
+        maxSpellRange: BigInt(cfg.maxSpellRange),
+        spellRangeGrowthLevels: BigInt(cfg.spellRangeGrowthLevels),
+        spellFailBaseChance: cfg.spellFailBaseChance,
+        spellFailReductionPerLevel: cfg.spellFailReductionPerLevel,
+        statGrowthPercent: BigInt(Number(cfg.statGrowthPercent ?? 5)),
+        apMpLevelThreshold: BigInt(Number(cfg.apMpLevelThreshold ?? 25)),
+        spellLevelingBaseCost: BigInt(Number(cfg.spellLevelingBaseCost ?? 10)),
+        spellLevelingCostMultiplier: Number(
+          cfg.spellLevelingCostMultiplier ?? 2,
+        ),
+        spellDmgGrowthPercent: BigInt(Number(cfg.spellDmgGrowthPercent ?? 3)),
+      });
+      assertAdminCmdOk(result, "adminSetLevelUpConfig");
+      localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (_e) {
@@ -4268,12 +4312,14 @@ const VisualsTab: React.FC = () => {
 
   const handleSave = async () => {
     const palette = slots.filter((s) => s.enabled).map((s) => s.color);
-    localStorage.setItem("paperVertexPalette", JSON.stringify(palette));
-    localStorage.setItem("pbv_color_palette", JSON.stringify(palette));
+    const blob = JSON.stringify(palette);
     try {
-      await (actor as unknown as backendInterface).adminSetColorPalette(
-        JSON.stringify(palette),
-      );
+      const result = await (
+        actor as unknown as backendInterface
+      ).adminSetColorPalette(blob);
+      assertAdminCmdOk(result, "adminSetColorPalette");
+      localStorage.setItem("paperVertexPalette", blob);
+      localStorage.setItem("pbv_color_palette", blob);
       setSaved(true);
       setSaveError(null);
       setTimeout(() => setSaved(false), 2000);
@@ -5223,13 +5269,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             setShopConfirm(null);
             void (async () => {
               try {
-                await (
+                const result = await (
                   adminActor as unknown as backendInterface
                 ).adminAddDokaToUser(
                   Principal.fromText(shopPrincipalId),
                   BigInt(Number(shopDokaAmount) || 0),
                   null,
                 );
+                assertAdminCmdOk(result, "adminAddDokaToUser");
                 toast.success(
                   `Granted ${shopDokaAmount} Doka to ${shopPrincipalId}`,
                 );
@@ -5246,7 +5293,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       {shopConfirm === "ban" && (
         <ConfirmDialog
           title={`Ban ${shopPrincipalId}?`}
-          body="Banned principals fail purchases, buffs, achievement claims, boss rush, and Doka awards. Achievement progress for this principal is cleared."
+          body="Banned principals fail purchases, buffs, achievement claims, boss rush, and Doka awards. Existing achievement progress is kept so claimed rewards cannot be claimed again after unban."
           confirmLabel="Ban player"
           ocidPrefix="admin.shop.ban"
           onCancel={() => setShopConfirm(null)}
@@ -5254,9 +5301,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             setShopConfirm(null);
             void (async () => {
               try {
-                await (
+                const result = await (
                   adminActor as unknown as backendInterface
                 ).adminBanAccount(Principal.fromText(shopPrincipalId));
+                assertAdminCmdOk(result, "adminBanAccount");
                 toast.success(`Banned ${shopPrincipalId}`);
                 setSaveStatus("Saved");
                 setTimeout(() => setSaveStatus(null), 3000);
@@ -6692,11 +6740,12 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       }
                       (async () => {
                         try {
-                          await (
+                          const result = await (
                             adminActor as unknown as backendInterface
                           ).adminUnbanAccount(
                             Principal.fromText(shopPrincipalId),
                           );
+                          assertAdminCmdOk(result, "adminUnbanAccount");
                           toast.success(`Unbanned ${shopPrincipalId}`);
                           setSaveStatus("Saved");
                           setTimeout(() => setSaveStatus(null), 3000);
@@ -6787,17 +6836,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   data-ocid="admin.boss_rush_save_button"
                   className="bg-red-700 hover:bg-red-800 px-4 py-2 rounded text-sm font-semibold"
                   onClick={() => {
-                    localStorage.setItem(
-                      "bossRushConfig",
-                      JSON.stringify(bossRushConfig),
-                    );
                     (async () => {
                       try {
-                        await (
+                        const blob = JSON.stringify(bossRushConfig);
+                        const result = await (
                           adminActor as unknown as backendInterface
-                        ).adminSetBossRushConfig(
-                          JSON.stringify(bossRushConfig),
-                        );
+                        ).adminSetBossRushConfig(blob);
+                        assertAdminCmdOk(result, "adminSetBossRushConfig");
+                        localStorage.setItem("bossRushConfig", blob);
                         setSaveStatus("Saved");
                         setTimeout(() => setSaveStatus(null), 3000);
                         setBossRushSaved(true);
@@ -7605,15 +7651,12 @@ function AdBoxEditor({ index }: { index: number }) {
       return;
     }
     try {
-      await (
-        actor as unknown as {
-          adminSetAdBox: (
-            i: bigint,
-            img: string,
-            link: string,
-          ) => Promise<void>;
-        }
-      ).adminSetAdBox(BigInt(index), imageUrl, linkUrl);
+      const result = await (actor as unknown as backendInterface).adminSetAdBox(
+        BigInt(index),
+        imageUrl,
+        linkUrl,
+      );
+      assertAdminCmdOk(result, "adminSetAdBox");
       setStatus("Saved!");
       setTimeout(() => setStatus(""), 2000);
     } catch {
@@ -7622,9 +7665,10 @@ function AdBoxEditor({ index }: { index: number }) {
   };
   const clear = async () => {
     try {
-      await (
-        actor as unknown as { adminClearAdBox: (i: bigint) => Promise<void> }
+      const result = await (
+        actor as unknown as backendInterface
       ).adminClearAdBox(BigInt(index));
+      assertAdminCmdOk(result, "adminClearAdBox");
       setImageUrl("");
       setLinkUrl("");
       setStatus("Cleared!");
