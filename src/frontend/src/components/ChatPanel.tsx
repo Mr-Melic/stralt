@@ -13,7 +13,7 @@ import {
   Swords,
 } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "../backend.d";
 import {
   type ClickTraceRecord,
@@ -234,6 +234,11 @@ interface ChatPanelProps {
    * existing callers.
    */
   debugContext?: DebugContext;
+  /**
+   * Live debug snapshot written by WorldExploration without React state.
+   * Read at export time so turn/combatant updates do not re-render ChatPanel.
+   */
+  debugContextRef?: React.RefObject<DebugContext | undefined>;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -486,6 +491,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   activeEffects = [],
   isPaused = false,
   debugContext,
+  debugContextRef,
 }) => {
   const [isFolded, setIsFolded] = useState(false);
   const [activeChannel, setActiveChannel] = useState<Channel>("general");
@@ -774,32 +780,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       .reverse();
   }, [debugEntries, activeCategories, searchQuery]);
 
-  // SECTION 4 (build #329): construct an ExportContext from the debugContext
-  // prop plus live getters for the debug log buffer, click trace buffer, and
-  // geometry snapshot. The getters are invoked at export time, so the snapshot
-  // reflects state at the moment the user clicks Export.
-  //
-  // getGeometrySnapshot requires inputs (combatants, spriteRects, camera, dpr,
-  // canvas sizes) that ChatPanel does not have. WorldExploration owns those
-  // inputs, so it is responsible for providing a getGeometrySnapshot getter on
-  // the debugContext prop (DebugContext = ExportContext already declares the
-  // field as optional). We forward debugContext.getGeometrySnapshot when
-  // present and fall back to () => undefined otherwise — debugExport handles
-  // the null case gracefully (the GEOMETRY SNAPSHOT section degrades to
-  // "(snapshot unavailable)").
-  const exportContext = useMemo<ExportContext | undefined>(
-    () =>
-      debugContext
-        ? {
-            ...debugContext,
-            getDebugLogBuffer: () => getDebugLogBuffer(),
-            getClickTraceBuffer: () => getClickTraceBuffer(),
-            getGeometrySnapshot:
-              debugContext.getGeometrySnapshot ?? (() => undefined),
-          }
-        : undefined,
-    [debugContext],
-  );
+  // SECTION 4 (build #329): build ExportContext at click time from the live
+  // ref (preferred) or the optional debugContext prop. Getters for the debug
+  // log, click trace, and geometry snapshot are invoked at export time.
+  const resolveExportContext = useCallback((): ExportContext | undefined => {
+    const ctx = debugContextRef?.current ?? debugContext;
+    if (!ctx) return undefined;
+    return {
+      ...ctx,
+      getDebugLogBuffer: () => getDebugLogBuffer(),
+      getClickTraceBuffer: () => getClickTraceBuffer(),
+      getGeometrySnapshot: ctx.getGeometrySnapshot ?? (() => undefined),
+    };
+  }, [debugContext, debugContextRef]);
 
   // Shift+D → open debug tab and unfold
   useEffect(() => {
@@ -1718,7 +1711,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       onClick={() => {
                         const w = window.open("", "_blank");
                         if (w) {
-                          w.document.write(buildDebugReportHtml(exportContext));
+                          w.document.write(
+                            buildDebugReportHtml(resolveExportContext()),
+                          );
                           w.document.close();
                           setTimeout(() => w.print(), 250);
                         }
@@ -1749,7 +1744,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                       data-ocid="chat.debug.export_txt_button"
                       onClick={() => {
                         const blob = new Blob(
-                          [buildDebugReportText(exportContext)],
+                          [buildDebugReportText(resolveExportContext())],
                           { type: "text/plain" },
                         );
                         const a = document.createElement("a");
@@ -2107,4 +2102,4 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   );
 };
 
-export default ChatPanel;
+export default memo(ChatPanel);
