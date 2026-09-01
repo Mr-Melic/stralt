@@ -8,6 +8,7 @@ import {
   computeTargetableTiles,
   isTileCastableLive,
   pickNearestLiveHostileTile,
+  shouldApplyHealBuffSideEffectOnRangePreview,
   shouldExecuteLiveCast,
   spellHighlightRangeBase,
 } from "./targeting.ts";
@@ -553,5 +554,26 @@ describe("pacifist flag stays off the range-preview path", () => {
     const afterStrike = { current: true };
     applyHealBuffSideEffect(strikeSpell(), afterStrike);
     assert.equal(afterStrike.current, false);
+  });
+});
+
+describe("Pacifist Run highlight vs cast", () => {
+  it("does not flip Pacifist when the player only paints spell range", () => {
+    assert.equal(shouldApplyHealBuffSideEffectOnRangePreview(), false);
+    const ref = { current: true };
+    if (shouldApplyHealBuffSideEffectOnRangePreview()) {
+      applyHealBuffSideEffect(strikeSpell(), ref);
+    }
+    assert.equal(
+      ref.current,
+      true,
+      "getSpellRangeTiles used to call applyHealBuffSideEffect and fail Pacifist on preview",
+    );
+  });
+
+  it("still flips Pacifist on an offensive cast", () => {
+    const ref = { current: true };
+    applyHealBuffSideEffect(strikeSpell(), ref);
+    assert.equal(ref.current, false);
   });
 });

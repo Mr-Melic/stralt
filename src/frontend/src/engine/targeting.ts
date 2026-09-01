@@ -73,6 +73,17 @@ export function applyHealBuffSideEffect(
   }
 }
 
+/**
+ * `getSpellRangeTiles` used to call {@link applyHealBuffSideEffect} on
+ * every highlight recompute. Selecting Strike to see the blue ring then
+ * failed Pacifist Run even when the player never cast.
+ *
+ * The cast path (`recordPlayerSpellType` / execute) stays the only flip.
+ */
+export function shouldApplyHealBuffSideEffectOnRangePreview(): boolean {
+  return false;
+}
+
 /** Tile cell kind used by the world grid. */
 export type TileType = "floor" | "wall" | "portal";
 
