@@ -329,7 +329,6 @@ function App() {
   // Boost toggle lives here so the GameFlow top-bar pill can flip it.
   // WorldExploration still owns its own boostMode for reward math.
   const [boostMode, setBoostMode] = useState<"xp" | "rewards">("xp");
-  const [_showShop, _setShowShop] = useState(false);
 
   // Root-level battle summary popup state — survives battle→exploration transition
   const [battleSummary, setBattleSummary] = useState<BattleRecapData | null>(

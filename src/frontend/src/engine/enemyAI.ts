@@ -218,8 +218,9 @@ function inferSummonArchetype(summon: AICombatant): SummonArchetype {
 }
 
 /**
- * Context handed to `decideEnemyAction`. Mirrors the SpellContext shape used
- * by `handleSummonTurn` in engine/summonAI.ts: pure callbacks, no React.
+ * Context handed to `decideEnemyAction`. Mirrors the SpellContext shape
+ * used by the live summon path in enemyAI / summonExecutor: pure callbacks,
+ * no React. `engine/summonAI.ts` `runSummonAI` is unused.
  *
  * The WX call site is responsible for wiring every field to live state/refs.
  * `decideEnemyAction` only reads; it never mutates `enemy` or `ctx`.

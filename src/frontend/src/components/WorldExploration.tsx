@@ -34,7 +34,6 @@ import type {
 import AchievementToast from "./AchievementToast";
 import AchievementsPanel from "./AchievementsPanel";
 import BattleUIPanel from "./BattleUIPanel";
-import BoostToggle from "./BoostToggle";
 import type { DebugContext } from "./ChatPanel";
 import DraggablePanel from "./DraggablePanel";
 import EnemyRegister from "./EnemyRegister";
