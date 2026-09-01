@@ -5,6 +5,7 @@
 # Do not treat unused-vars, hook-deps, mock TS, Motoko syntax, or
 # empty-canister stable-compat as "pre-existing, skip".
 # Do not run caffeine build / mops build here (PocketIC / dfx).
+# Before opening a PR also run: bash scripts/open-pr-stack-compat.sh --self
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
