@@ -74,7 +74,7 @@ function getSpellPreviewColor(spell: SpellConfig): string {
  * geometry that gates castability in WorldExploration, so "what the spellbook
  * shows" === "what the player can actually target". We build a synthetic 9x9
  * grid (all floor, no enemies, no barriers) with the caster at the center
- * (4,4) and `effectiveRange = Number(spell.range)`. The pure function returns
+ * (4,4) and `effectiveRange = spellHighlightRangeBase(spell)`. The pure function returns
  * `"x,y"` keys; the preview grid is indexed as `"row,col"` (row=y, col=x), so
  * we translate each key into the preview's row/col space.
  */

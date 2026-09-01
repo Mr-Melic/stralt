@@ -31,7 +31,11 @@ import {
   processCombatantDeath,
 } from "./deathPipeline.ts";
 import type { PlayerCastEnemy, PlayerCastTarget } from "./spellEngine";
-import { playerSpellEffectiveRange } from "./targeting.ts";
+import {
+  hitsAlliesIncludesPlayer,
+  hitsMultipleIncludesOccupant,
+  playerSpellEffectiveRange,
+} from "./targeting.ts";
 import { removeCombatantFromTurnQueue } from "./turnQueue.ts";
 
 /**
@@ -127,26 +131,24 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
   // assembly time. This prevents post-mortem hits when a multi-hit/AoE spell
   // is cast after a prior hit in the same loop already killed a target.
   const baseEnemyTargets = spell.hitsMultiple
-    ? enemies.filter((e) => {
-        const dx = Math.abs(e.x - gridPos.x);
-        const dy = Math.abs(e.y - gridPos.y);
-        return Math.max(dx, dy) <= effectiveRange && isActiveHostile(e);
-      })
+    ? enemies.filter(
+        (e) =>
+          hitsMultipleIncludesOccupant(e, gridPos, effectiveRange) &&
+          isActiveHostile(e),
+      )
     : targetEnemy && isActiveHostile(targetEnemy)
       ? [targetEnemy, ...aoeEnemies]
       : [];
   const enemiesInRange = Array.from(
     new Map(baseEnemyTargets.map((e) => [e.id, e])).values(),
   );
-  // hitsAllies: if the spell also hits allies (player's own position is in range), include a sentinel
-  const playerInAoeRange =
-    spell.hitsAllies === true &&
-    spell.hitsMultiple === true &&
-    (() => {
-      const dx = Math.abs(playerPosition.x - gridPos.x);
-      const dy = Math.abs(playerPosition.y - gridPos.y);
-      return Math.max(dx, dy) <= effectiveRange;
-    })();
+  // hitsAllies: Chebyshev from the clicked tile (not player-to-self).
+  const playerInAoeRange = hitsAlliesIncludesPlayer(
+    spell,
+    playerPosition,
+    gridPos,
+    effectiveRange,
+  );
   const targetsToHit: HitTarget[] = [
     ...enemiesInRange,
     ...(playerInAoeRange

@@ -3,11 +3,14 @@ import { describe, it } from "node:test";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
   canAffordCastAp,
+  chebyshevOnBoard,
   collectHighlightLiveMismatches,
   computeTargetableTiles,
   findAttackNearestTarget,
   groundTileInRange,
   hasBresenhamLoS,
+  hitsAlliesIncludesPlayer,
+  hitsMultipleIncludesOccupant,
   isCasterTile,
   isTileCastableLive,
   pickNearestLiveHostileTile,
@@ -391,6 +394,95 @@ describe("highlight vs live parity", () => {
     );
   });
 
+  it("linear and diagonal shapes stay in lockstep, including illegal off-axis tiles", () => {
+    const tiles = floorGrid(11);
+    const enemies = [unit("rat", 7, 6, { side: "enemy" })];
+    const linear = baseSpell({
+      targetType: "enemy",
+      linear: true,
+      maxRange: 3,
+    });
+    const diagonal = baseSpell({
+      targetType: "enemy",
+      diagonal: true,
+      maxRange: 3,
+    });
+    assertParity(linear, caster, tiles, enemies, 3);
+    assertParity(diagonal, caster, tiles, enemies, 3);
+    const highlightedLinear = computeTargetableTiles(linear, caster, {
+      tiles,
+      enemies,
+      worldGridSize: 11,
+      effectiveRange: 3,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlightedLinear.has("8,5"), true);
+    assert.equal(highlightedLinear.has("7,6"), false);
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(linear, caster, { x: 8, y: 5 }, enemies, tiles, 3),
+      ),
+      true,
+    );
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(linear, caster, { x: 7, y: 6 }, enemies, tiles, 3),
+      ),
+      false,
+    );
+  });
+
+  it("treats portal tiles as floor for both highlight and live", () => {
+    const tiles = floorGrid(11);
+    tiles[5][8] = "portal";
+    const spell = baseSpell({ targetType: "enemy", maxRange: 4 });
+    assertParity(spell, caster, tiles, [], 4);
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [],
+      worldGridSize: 11,
+      effectiveRange: 4,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlighted.has("8,5"), true);
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(spell, caster, { x: 8, y: 5 }, [], tiles, 4),
+      ),
+      true,
+    );
+  });
+
+  it("keeps a living ally highlighted and executable, and a far ally illegal", () => {
+    const tiles = floorGrid(11);
+    const near = unit("wolf", 7, 5, { isSummon: true, side: "player" });
+    const far = unit("wolf-far", 10, 10, { isSummon: true, side: "player" });
+    const spell = baseSpell({ targetType: "ally", maxRange: 3 });
+    assertParity(spell, caster, tiles, [near, far], 3);
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [near, far],
+      worldGridSize: 11,
+      effectiveRange: 3,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlighted.has("5,5"), true);
+    assert.equal(highlighted.has("7,5"), true);
+    assert.equal(highlighted.has("10,10"), false);
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(spell, caster, { x: 7, y: 5 }, [near, far], tiles, 3),
+      ),
+      true,
+    );
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(spell, caster, { x: 10, y: 10 }, [near, far], tiles, 3),
+      ),
+      false,
+    );
+  });
+
   it("area expansion tiles stay legal on both sides", () => {
     const tiles = floorGrid(10);
     const origin = { x: 4, y: 4 };
@@ -579,6 +671,45 @@ describe("shared helpers", () => {
     assert.equal(shouldBypassHighlightForLiveHostile(true, ok), true);
     assert.equal(shouldBypassHighlightForLiveHostile(true, blocked), false);
     assert.equal(shouldBypassHighlightForLiveHostile(false, ok), false);
+  });
+
+  it("measures hitsAllies from the click, same Chebyshev as hitsMultiple", () => {
+    assert.equal(chebyshevOnBoard({ x: 4, y: 4 }, { x: 4, y: 5 }), 1);
+    assert.equal(
+      hitsMultipleIncludesOccupant({ x: 4, y: 5 }, { x: 4, y: 4 }, 1),
+      true,
+    );
+    assert.equal(
+      hitsMultipleIncludesOccupant({ x: 0, y: 0 }, { x: 4, y: 4 }, 1),
+      false,
+    );
+    assert.equal(
+      hitsAlliesIncludesPlayer(
+        { hitsAllies: true, hitsMultiple: true },
+        { x: 4, y: 5 },
+        { x: 4, y: 4 },
+        1,
+      ),
+      true,
+    );
+    assert.equal(
+      hitsAlliesIncludesPlayer(
+        { hitsAllies: true, hitsMultiple: true },
+        { x: 0, y: 0 },
+        { x: 4, y: 4 },
+        1,
+      ),
+      false,
+    );
+    assert.equal(
+      hitsAlliesIncludesPlayer(
+        { hitsAllies: true, hitsMultiple: false },
+        { x: 4, y: 5 },
+        { x: 4, y: 4 },
+        1,
+      ),
+      false,
+    );
   });
 
   it("uses the execute-path AP modifier for the Attack Nearest preview", () => {

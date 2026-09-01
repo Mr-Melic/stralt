@@ -5,6 +5,7 @@ import { isActiveHostile } from "../engine/battleSetup.ts";
 import {
   canStartSummonControlCast,
   chebyshevDistance,
+  pickSummonControlClickTarget,
   planSummonControlCast,
   resolveLiveSummonAp,
   resolveSummonControlSpell,
@@ -338,6 +339,102 @@ describe("planSummonControlCast", () => {
       },
     });
     assert.deepEqual(blocked, { ok: false, reason: "illegal_target" });
+  });
+});
+
+describe("pickSummonControlClickTarget", () => {
+  it("lets a Wisp self-heal execute on the caster tile the live gate paints", () => {
+    const tiles = Array.from({ length: 8 }, () =>
+      Array.from({ length: 8 }, () => "floor" as const),
+    );
+    const wisp = {
+      id: "wisp-1",
+      x: 3,
+      y: 3,
+      hp: 20,
+      maxHp: 20,
+      name: "Wisp",
+      pieceType: "wisp",
+      isSummon: true,
+      side: "player" as const,
+    };
+    const heal = starterSpells.find((s) => s.id === "starter-heal");
+    assert.ok(heal);
+    const self = pickSummonControlClickTarget({
+      spell: heal,
+      caster: wisp,
+      tile: { x: 3, y: 3 },
+      combatants: [wisp],
+      tiles,
+    });
+    assert.equal(self?.id, "wisp-1");
+    const empty = pickSummonControlClickTarget({
+      spell: heal,
+      caster: wisp,
+      tile: { x: 5, y: 3 },
+      combatants: [wisp],
+      tiles,
+    });
+    assert.equal(empty, null);
+  });
+
+  it("refuses a LoS-blocked hostile and accepts a highlighted legal one", () => {
+    const tiles = Array.from({ length: 10 }, () =>
+      Array.from({ length: 10 }, () => "floor" as const),
+    );
+    tiles[4][5] = "wall";
+    const archer = {
+      id: "archer-1",
+      x: 4,
+      y: 4,
+      hp: 20,
+      name: "Archer",
+      pieceType: "archer",
+      isSummon: true,
+      side: "player" as const,
+    };
+    const blocked = {
+      id: "blocked",
+      x: 7,
+      y: 4,
+      hp: 10,
+      name: "Rat",
+      pieceType: "pawn",
+      side: "enemy" as const,
+    };
+    const open = {
+      id: "open",
+      x: 4,
+      y: 7,
+      hp: 10,
+      name: "Rat",
+      pieceType: "pawn",
+      side: "enemy" as const,
+    };
+    const poison = {
+      ...starterSpells.find((s) => s.id === "starter-poison")!,
+      lineOfSight: true,
+    };
+    assert.equal(
+      pickSummonControlClickTarget({
+        spell: poison,
+        caster: archer,
+        tile: { x: 7, y: 4 },
+        combatants: [archer, blocked, open],
+        tiles,
+      })?.id,
+      undefined,
+    );
+    assert.equal(
+      pickSummonControlClickTarget({
+        spell: poison,
+        caster: archer,
+        tile: { x: 4, y: 7 },
+        combatants: [archer, blocked, open],
+        tiles,
+      })?.id,
+      "open",
+    );
   });
 });
 
