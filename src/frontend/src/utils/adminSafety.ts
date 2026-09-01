@@ -147,6 +147,44 @@ export function clampDungeonDepth(depth: number): number {
   return Math.min(Math.floor(depth), MAX_DUNGEON_DEPTH);
 }
 
+/** Official overworld / heal max HP. Mirrors adminGuard.maxPersistedHp. */
+export function maxPersistedHp(level: number, growthPercent: number): number {
+  const lvl = Math.max(1, Math.floor(level));
+  const growth = Math.max(1, Math.floor(growthPercent));
+  return 100 + (lvl - 1) * growth;
+}
+
+/**
+ * Server-checkable achievement conditions. Combat feats stay client-trusted.
+ * Mirrors adminGuard.achievementUnlockRejected.
+ */
+export function achievementUnlockRejected(
+  condition: string,
+  bestLevel: number,
+  doka: number,
+  bestSpellLevel: number,
+): string | null {
+  if (condition === "level_10" && bestLevel < 10) return "Level below 10";
+  if (condition === "doka_1000" && doka < 1000) {
+    return "Doka balance below 1000";
+  }
+  if (condition === "doka_10000" && doka < 10000) {
+    return "Doka balance below 10000";
+  }
+  if (condition === "spell_level_5" && bestSpellLevel < 5) {
+    return "No spell at level 5";
+  }
+  return null;
+}
+
+/** Count a Boss Rush master run only while still occupying room 9. */
+export function shouldCountBossRushRun(
+  currentRoom: number,
+  roomIndex: number,
+): boolean {
+  return roomIndex === 9 && currentRoom === 9;
+}
+
 export function validateOptionalUrl(label: string, url: string): string | null {
   if (!url) return null;
   if (url.length > 2048) return `${label} exceeds maximum URL length`;

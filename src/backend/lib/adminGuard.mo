@@ -468,6 +468,40 @@ module {
         if (depth > MAX_DUNGEON_DEPTH) { MAX_DUNGEON_DEPTH } else { depth }
     };
 
+    /// Official overworld / heal max HP: floor(100 * (1 + (level-1) * growth/100)).
+    /// For integer percents this is 100 + (level-1) * growthPercent.
+    /// saveBattleStats used level*200+100, so a raw client persisted 300 HP at level 1.
+    public func maxPersistedHp(level : Nat, growthPercent : Nat) : Nat {
+        let lvl = if (level < 1) { 1 } else { level };
+        let growth = if (growthPercent < 1) { 1 } else { growthPercent };
+        100 + (lvl - 1) * growth
+    };
+
+    /// Server-checkable achievement conditions. Combat feats stay client-trusted.
+    public func achievementUnlockRejected(
+        condition : Text,
+        bestLevel : Nat,
+        doka : Nat,
+        bestSpellLevel : Nat,
+    ) : ?Text {
+        if (condition == "level_10" and bestLevel < 10) {
+            ?"Level below 10"
+        } else if (condition == "doka_1000" and doka < 1000) {
+            ?"Doka balance below 1000"
+        } else if (condition == "doka_10000" and doka < 10000) {
+            ?"Doka balance below 10000"
+        } else if (condition == "spell_level_5" and bestSpellLevel < 5) {
+            ?"No spell at level 5"
+        } else { null }
+    };
+
+    /// completeBossRushRoom used to increment totalBossRushRuns on every
+    /// roomIndex=9 while currentRoom stayed 9. Official final-room persist
+    /// resets currentRoom first, then complete(9) (already a no-op).
+    public func shouldCountBossRushRun(currentRoom : Nat, roomIndex : Nat) : Bool {
+        roomIndex == 9 and currentRoom == 9
+    };
+
     public func validateAdBox(index : Nat, imageUrl : Text, linkUrl : Text) : ?Text {
         if (index >= 3) { return ?"index out of range: must be 0, 1, or 2" };
         switch (validateRequiredUrl("imageUrl", imageUrl)) { case (?e) { return ?e }; case null {} };

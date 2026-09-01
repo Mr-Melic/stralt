@@ -125,8 +125,13 @@ export function formulaMp(level: number): number {
   );
 }
 
-export function updateCharacterMaxHpAllowed(level: number): number {
-  return level * 200 + 100;
+export function updateCharacterMaxHpAllowed(
+  level: number,
+  growthPercent = DEFAULT_LEVELUP_CONFIG.statGrowthPercent ?? 5,
+): number {
+  const lvl = Math.max(1, Math.floor(level));
+  const growth = Math.max(1, Math.floor(Number(growthPercent) || 5));
+  return 100 + (lvl - 1) * growth;
 }
 
 export function spellFailChance(level: number): number {

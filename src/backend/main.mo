@@ -273,47 +273,6 @@ actor {
         false
     };
 
-    /// Paid spell levels live in parallel arrays. A stale appearance edit or
-    /// older client must not drop or downgrade an id that upgradeSpell wrote.
-    /// Union keys; keep max(existing, incoming) per id. Empty incoming keeps
-    /// the store. Mismatched incoming lengths are ignored (keep store).
-    func _spellLevelAt(keys : [Text], vals : [Nat], id : Text) : Nat {
-        var idx : Nat = 0;
-        for (k in keys.values()) {
-            if (k == id and idx < vals.size()) { return vals[idx] };
-            idx += 1;
-        };
-        0
-    };
-
-    func _mergeSpellLevels(
-        existingKeys : [Text],
-        existingVals : [Nat],
-        incomingKeys : [Text],
-        incomingVals : [Nat],
-    ) : ([Text], [Nat]) {
-        if (incomingKeys.size() == 0) {
-            return (existingKeys, existingVals);
-        };
-        if (incomingKeys.size() != incomingVals.size()) {
-            return (existingKeys, existingVals);
-        };
-        var outKeys : [Text] = [];
-        var outVals : [Nat] = [];
-        let consider = func(id : Text) {
-            if (outKeys.contains(id)) { return };
-            let lvl = Nat.max(
-                _spellLevelAt(existingKeys, existingVals, id),
-                _spellLevelAt(incomingKeys, incomingVals, id),
-            );
-            outKeys := outKeys.concat([id]);
-            outVals := outVals.concat([lvl]);
-        };
-        for (k in existingKeys.values()) { consider(k) };
-        for (k in incomingKeys.values()) { consider(k) };
-        (outKeys, outVals)
-    };
-
     public shared ({ caller }) func createCharacter(slot : Nat, character : Character) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: Only users can create characters");
@@ -441,22 +400,16 @@ actor {
         // Official editor only changes cosmetics (name, piece, colors, pattern).
         // Session / completion / loadout have dedicated writers. Do not accept
         // a client-supplied bossRushMasterComplete or shrineCount here.
-        // Spell levels: upgradeSpell is the sole paid writer. Union + max so a
-        // stale CharacterCreation payload (empty or older keys) cannot wipe
-        // upgrades a newer client already persisted.
-        let (mergedSpellKeys, mergedSpellValues) = _mergeSpellLevels(
-            ec.spellLevelKeys,
-            ec.spellLevelValues,
-            character.spellLevelKeys,
-            character.spellLevelValues,
-        );
+        // Spell levels: upgradeSpell is the sole paid writer. Keep the store
+        // verbatim — max(existing, incoming) minted free levels; unioning
+        // incoming keys minted unpaid catalog ids.
         let mergedCharacter : Character = {
             character with
             level = ec.level;
             experience = ec.experience;
             stats = ec.stats;
-            spellLevelKeys = mergedSpellKeys;
-            spellLevelValues = mergedSpellValues;
+            spellLevelKeys = ec.spellLevelKeys;
+            spellLevelValues = ec.spellLevelValues;
             bloodBalance = ec.bloodBalance;
             covenantBuff = ec.covenantBuff;
             shrineCount = ec.shrineCount;
@@ -1726,9 +1679,10 @@ actor {
             case _ { return #err("Invalid slot") };
         };
 
-        // Clamp hp to 0 — CharacterStats.hp is Nat. Cap at the same formula
-        // updateCharacter used so a heal snapshot cannot mint unbounded HP.
-        let maxHpAllowed : Nat = character.level * 200 + 100;
+        // Clamp hp to 0 — CharacterStats.hp is Nat. Cap at the official
+        // overworld / heal formula (not level*200+100, which allowed 300 HP
+        // on a level-1 raw client).
+        let maxHpAllowed : Nat = AdminGuard.maxPersistedHp(character.level, levelUpConfig.statGrowthPercent);
         let rawHp : Nat = if (hp <= 0) { 0 } else { hp.toNat() };
         let safeHp : Nat = _minNat(rawHp, maxHpAllowed);
         let safeAp : Nat = _minNat(maxAp, 20);
@@ -1766,10 +1720,11 @@ actor {
         };
         let writeDoka : Nat = if (dokaBalance > currentDoka) { currentDoka } else { dokaBalance };
         let writeXp : Nat = if (xp > character.experience) { character.experience } else { xp };
-        let writeLevel : Nat = if (_level > character.level) { character.level } else { _level };
+        // applyRewards is the sole level writer. min(client, stored) let a
+        // raw client de-level while keeping atk/res/init for easier content.
         let updatedCharacter : Character = {
             character with
-            level            = writeLevel;
+            level            = character.level;
             experience       = writeXp;
             stats            = updatedStats;
         };
@@ -2100,6 +2055,38 @@ actor {
           .toArray();
     };
 
+    func _slotBestLevel(slots : CharacterSlots) : Nat {
+        var best : Nat = 0;
+        let consider = func(cOpt : ?Character) {
+            switch (cOpt) {
+                case null {};
+                case (?c) { if (c.level > best) { best := c.level } };
+            };
+        };
+        consider(slots.slot1);
+        consider(slots.slot2);
+        consider(slots.slot3);
+        best
+    };
+
+    func _slotBestSpellLevel(slots : CharacterSlots) : Nat {
+        var best : Nat = 0;
+        let consider = func(cOpt : ?Character) {
+            switch (cOpt) {
+                case null {};
+                case (?c) {
+                    for (v in c.spellLevelValues.values()) {
+                        if (v > best) { best := v };
+                    };
+                };
+            };
+        };
+        consider(slots.slot1);
+        consider(slots.slot2);
+        consider(slots.slot3);
+        best
+    };
+
     /// Player: mark an achievement as unlocked (called by the frontend when the condition is met).
     /// Idempotent — calling again on an already-unlocked achievement is a no-op.
     public shared ({ caller }) func markAchievementUnlocked(achievementId : Text) : async { #ok; #err : Text } {
@@ -2109,13 +2096,31 @@ actor {
         if (bannedPrincipals.containsKey(caller.toText())) {
             return #err("Account banned for non-payment");
         };
-        switch (achievementConfigs.get(achievementId)) {
+        let unlockCfg = switch (achievementConfigs.get(achievementId)) {
             case null { return #err("Unknown achievement: " # achievementId) };
             case (?cfg) {
                 if (not cfg.active) {
                     return #err("Achievement is retired");
                 };
+                cfg
             };
+        };
+        let slotsForUnlock = characterSlots.get(caller);
+        let bestLevel = switch (slotsForUnlock) {
+            case null { 0 };
+            case (?s) { _slotBestLevel(s) };
+        };
+        let bestSpellLevel = switch (slotsForUnlock) {
+            case null { 0 };
+            case (?s) { _slotBestSpellLevel(s) };
+        };
+        let unlockDoka = switch (dokaBalances.get(caller)) {
+            case null { 0 };
+            case (?b) { b };
+        };
+        switch (AdminGuard.achievementUnlockRejected(unlockCfg.condition, bestLevel, unlockDoka, bestSpellLevel)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         let key = caller.toText() # "#" # achievementId;
         switch (achievementProgress.get(key)) {
@@ -2961,18 +2966,20 @@ actor {
         };
         let completedRoom = roomIndex + 1; // 1-indexed room completed
         let newHighest = if (completedRoom > existing.highestRoomCompleted) { completedRoom } else { existing.highestRoomCompleted };
-        // A full run = all 10 rooms completed (roomIndex 9 = room 10).
-        let newTotalRuns = if (roomIndex == 9) { existing.totalBossRushRuns + 1 } else { existing.totalBossRushRuns };
+        // Count a master run only while still occupying room 9. Repeat
+        // complete(9) after that used to increment totalBossRushRuns forever.
+        let countRun = AdminGuard.shouldCountBossRushRun(existing.currentRoom, roomIndex);
+        let newTotalRuns = if (countRun) { existing.totalBossRushRuns + 1 } else { existing.totalBossRushRuns };
+        let newCurrent = if (countRun) { 0 } else { existing.currentRoom };
         bossRushStates.add(key, {
-            currentRoom            = existing.currentRoom;
+            currentRoom            = newCurrent;
             highestRoomCompleted   = newHighest;
             totalBossRushRuns      = newTotalRuns;
         });
 
-        let isMasterRun = roomIndex == 9;
         let updatedCharacter : Character = {
             character with
-            bossRushMasterComplete = if (isMasterRun) { ?true } else { character.bossRushMasterComplete };
+            bossRushMasterComplete = if (countRun) { ?true } else { character.bossRushMasterComplete };
         };
         let updatedSlots = switch (slot) {
             case 1 { { existingSlots with slot1 = ?updatedCharacter } };
