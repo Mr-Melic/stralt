@@ -13011,15 +13011,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               xp: after.newXp,
               level: committed.level,
             });
-            // A claim/applyRewards ahead of this write is in committed, not
-            // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
-            // the pre-credit snapshot over the persisted penalty. Level is
-            // the same class: victory persist can bump committed.level while
-            // the live hydrate is skipped, so raise UI level too.
-            const nextDoka = raiseUiAfterDeathPersist(
-              dokaBalanceRef.current,
-              after.newDoka,
-            );
+            // Snap the live wallet to the persisted penalty. raiseUi(ref, after)
+            // used the uncut ref (optimistic onDokaBalanceChange never wrote it)
+            // and kept the pre-death ghost; a later heal then spent from that.
+            // Level still raises: victory persist can bump committed.level while
+            // the live hydrate is skipped.
+            const nextDoka = after.newDoka;
             const uiLevelBefore = characterStatsRef.current.level ?? 1;
             const nextXp = xpAfterDeathPersist({
               uiXp: characterStatsRef.current.exp ?? 0,
