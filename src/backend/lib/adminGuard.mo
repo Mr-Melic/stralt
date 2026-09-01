@@ -301,6 +301,16 @@ module {
             or t == "aoe" or t == "dot" or t == "debuff" or t == "buff" or t == "cc"
     };
 
+    func knownSummonAI(t : Text) : Bool {
+        t == "hunter" or t == "guardian" or t == "archer"
+            or t == "bomber" or t == "healer"
+    };
+
+    func knownPieceType(t : Text) : Bool {
+        t == "king" or t == "queen" or t == "pawn"
+            or t == "rook" or t == "bishop" or t == "knight"
+    };
+
     /// Extends the existing apCost/range/damage caps with enum and relationship checks.
     /// minRange > maxRange is a stale/malformed targeting payload.
     public func validateSpellConfig(config : Types.SpellConfig) : ?Text {
@@ -339,6 +349,29 @@ module {
                     return ?"effectParams exceeds maximum length";
                 };
             };
+        };
+        // Summon metadata is optional on non-summons (empty AI, 0 scales).
+        // When present, reject unknown archetypes and non-finite / huge scales
+        // that would mint Inf-HP units in getSummonBaseStats.
+        if (config.summonAI != "" and not knownSummonAI(config.summonAI)) {
+            return ?"summonAI is not a recognized archetype";
+        };
+        if (config.summonLifespan > 20) {
+            return ?"summonLifespan cannot exceed 20";
+        };
+        if (config.summonUnitDef.level > 99) {
+            return ?"summonUnitDef.level cannot exceed 99";
+        };
+        if (config.summonUnitDef.pieceType != "" and not knownPieceType(config.summonUnitDef.pieceType)) {
+            return ?"summonUnitDef.pieceType is not a recognized piece type";
+        };
+        switch (finiteInRange("summonUnitDef.hpScale", config.summonUnitDef.hpScale, 0.0, 10.0)) {
+            case (?e) { return ?e };
+            case null {};
+        };
+        switch (finiteInRange("summonUnitDef.damageScale", config.summonUnitDef.damageScale, 0.0, 10.0)) {
+            case (?e) { return ?e };
+            case null {};
         };
         null
     };
