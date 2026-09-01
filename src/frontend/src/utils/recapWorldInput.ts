@@ -24,3 +24,34 @@ export function shouldBlockPortalDuringVictoryPersist(
 ): boolean {
   return victoryPersistPending === true;
 }
+
+/**
+ * #211 gated new canvas walks, not the leftover movement RAF. An in-battle
+ * MP walk that is still animating when the last hostile dies keeps stepping
+ * after cleanupBattle / recap, so lava/spikes can fire exploration death
+ * and replace the victory recap while applyRewards is queued.
+ */
+export function shouldHaltInFlightMoveDuringRecap(
+  recapVisible: boolean,
+  victoryPersistPending = false,
+): boolean {
+  return shouldIgnoreWorldInputDuringRecap(recapVisible, victoryPersistPending);
+}
+
+/**
+ * In-flight rAF closures survive `setIsMoving(false)`. Bump a generation
+ * (or honor an abort flag) so the leftover loop cannot apply another
+ * hazard / loot / shrine step.
+ */
+export function shouldAbortMovementRaf(opts: {
+  recapVisible: boolean;
+  victoryPersistPending: boolean;
+  movementGen: number;
+  loopGen: number;
+}): boolean {
+  if (opts.movementGen !== opts.loopGen) return true;
+  return shouldHaltInFlightMoveDuringRecap(
+    opts.recapVisible,
+    opts.victoryPersistPending,
+  );
+}

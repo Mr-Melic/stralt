@@ -348,6 +348,7 @@ import {
   syncLiveDokaFromProp,
   writeLiveDoka,
 } from "../utils/itemShop";
+import { shouldAllowPlayerCastEntry } from "../utils/playerCastGate";
 import {
   activatePlayerMirror,
   consumePlayerMirror,
@@ -371,6 +372,7 @@ import {
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import {
+  shouldAbortMovementRaf,
   shouldBlockPortalDuringVictoryPersist,
   shouldIgnoreWorldInputDuringRecap,
 } from "../utils/recapWorldInput";
@@ -977,6 +979,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const _containerRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const movementStartTimeRef = useRef<number>(0);
+  // Leftover movement rAF closures survive setIsMoving(false). Bump this
+  // in cleanupBattle / recap halt so a mid-fight walk cannot apply another
+  // lava/spike step after victory.
+  const movementGenRef = useRef(0);
   const _enemyAnimationRef = useRef<number | undefined>(undefined);
   const cameraVelocityRef = useRef({ x: 0, y: 0 });
   const isInitializedRef = useRef(false);
@@ -1199,6 +1205,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Recap is shown before applyRewards. Dismissing it used to leave canvas
   // walk / portal / encounter live while the credit was still queued.
   const victoryPersistPendingRef = useRef(false);
+  const battleRecapOpenRef = useRef(battleRecapOpen);
+  battleRecapOpenRef.current = battleRecapOpen;
   const battleStartSkipRef = useRef(0);
   // Weather suppress: pause new particle spawns for ~60 frames at battle start
   const _weatherSuppressRef = useRef(false); // Weather effects removed, ref kept to avoid larger refactor
@@ -10110,7 +10118,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 10);
           if (_hit) {
-            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+            const _playerCastOk = shouldAllowPlayerCastEntry({
+              inBattle: inBattleRef.current,
+              turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
+              deathTriggered: deathTriggeredRef.current,
+              hp: characterStatsRef.current.hp,
+            });
+            if (
+              selectedSpellIdRef.current &&
+              _hit.kind === "enemy" &&
+              _playerCastOk
+            ) {
               const _spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
@@ -10185,6 +10203,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 } catch {}
                 return;
               }
+            } else if (
+              selectedSpellIdRef.current &&
+              _hit.kind === "enemy" &&
+              inBattleRef.current
+            ) {
+              return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
               setInspectCombatantId(_hit.id);
               try {
@@ -10212,7 +10236,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
                 const _live = probeLiveCast(_basicAttack, _tile);
-                if (shouldExecuteLiveCast(_live)) {
+                if (shouldExecuteLiveCast(_live) && _playerCastOk) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
                     executeCastAttempt(_basicAttack, _tile, "sprite-basic");
                   void _apCostBasic;
@@ -10265,39 +10289,43 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
-                const _liveSelf = probeLiveCast(_spell, {
-                  x: _hit.logicalX,
-                  y: _hit.logicalY,
-                });
-                if (!shouldExecuteLiveCast(_liveSelf)) {
-                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                  effectsManagerRef.current?.spawnFloatText(
-                    _screen.x,
-                    _screen.y,
-                    playerFacingRejectReason(_liveSelf.reason),
-                  );
+                if (!_playerCastOk) {
+                  if (inBattleRef.current) return;
+                } else {
+                  const _liveSelf = probeLiveCast(_spell, {
+                    x: _hit.logicalX,
+                    y: _hit.logicalY,
+                  });
+                  if (!shouldExecuteLiveCast(_liveSelf)) {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      playerFacingRejectReason(_liveSelf.reason),
+                    );
+                    return;
+                  }
+                  const { castResult: _castResult, apCost: _apCost } =
+                    executeCastAttempt(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      "sprite-player",
+                    );
+                  void _castResult;
+                  void _apCost;
+                  try {
+                    recordClickOutcome(
+                      event.clientX,
+                      event.clientY,
+                      "sprite-player",
+                      _castResult,
+                      null,
+                      null,
+                      null,
+                    );
+                  } catch {}
                   return;
                 }
-                const { castResult: _castResult, apCost: _apCost } =
-                  executeCastAttempt(
-                    _spell,
-                    { x: _hit.logicalX, y: _hit.logicalY },
-                    "sprite-player",
-                  );
-                void _castResult;
-                void _apCost;
-                try {
-                  recordClickOutcome(
-                    event.clientX,
-                    event.clientY,
-                    "sprite-player",
-                    _castResult,
-                    null,
-                    null,
-                    null,
-                  );
-                } catch {}
-                return;
               }
               // Not self/ally-targetable → fall through to tile logic.
             }
@@ -10830,7 +10858,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _canvasY = _ptr.y;
           const _hit = hitTestSprite(_canvasX, _canvasY, 14);
           if (_hit) {
-            if (selectedSpellIdRef.current && _hit.kind === "enemy") {
+            const _playerCastOk = shouldAllowPlayerCastEntry({
+              inBattle: inBattleRef.current,
+              turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
+              deathTriggered: deathTriggeredRef.current,
+              hp: characterStatsRef.current.hp,
+            });
+            if (
+              selectedSpellIdRef.current &&
+              _hit.kind === "enemy" &&
+              _playerCastOk
+            ) {
               const _spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
@@ -10870,6 +10908,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }
                 return;
               }
+            } else if (
+              selectedSpellIdRef.current &&
+              _hit.kind === "enemy" &&
+              inBattleRef.current
+            ) {
+              return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
               setInspectCombatantId(_hit.id);
               return;
@@ -10885,7 +10929,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               if (_basicAttack && _hit.id) {
                 const _tile = { x: _hit.logicalX, y: _hit.logicalY };
                 const _live = probeLiveCast(_basicAttack, _tile);
-                if (shouldExecuteLiveCast(_live)) {
+                if (shouldExecuteLiveCast(_live) && _playerCastOk) {
                   const { castResult: _castResult, apCost: _apCostBasic } =
                     executeCastAttempt(_basicAttack, _tile, "sprite-basic");
                   void _apCostBasic;
@@ -10923,28 +10967,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 _spell &&
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
-                const _liveSelf = probeLiveCast(_spell, {
-                  x: _hit.logicalX,
-                  y: _hit.logicalY,
-                });
-                if (!shouldExecuteLiveCast(_liveSelf)) {
-                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                  effectsManagerRef.current?.spawnFloatText(
-                    _screen.x,
-                    _screen.y,
-                    playerFacingRejectReason(_liveSelf.reason),
-                  );
+                if (!_playerCastOk) {
+                  if (inBattleRef.current) return;
+                } else {
+                  const _liveSelf = probeLiveCast(_spell, {
+                    x: _hit.logicalX,
+                    y: _hit.logicalY,
+                  });
+                  if (!shouldExecuteLiveCast(_liveSelf)) {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      playerFacingRejectReason(_liveSelf.reason),
+                    );
+                    return;
+                  }
+                  const { castResult: _castResult, apCost: _apCost } =
+                    executeCastAttempt(
+                      _spell,
+                      { x: _hit.logicalX, y: _hit.logicalY },
+                      "sprite-player",
+                    );
+                  void _castResult;
+                  void _apCost;
                   return;
                 }
-                const { castResult: _castResult, apCost: _apCost } =
-                  executeCastAttempt(
-                    _spell,
-                    { x: _hit.logicalX, y: _hit.logicalY },
-                    "sprite-player",
-                  );
-                void _castResult;
-                void _apCost;
-                return;
               }
               // Not self/ally-targetable → fall through to tile logic.
             }
@@ -11282,7 +11330,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: setCharacterStats is a stable useCallback (empty deps)
   useEffect(() => {
     if (!isMoving || movementPath.length === 0) return;
+    const loopGen = movementGenRef.current;
     const movePlayer = () => {
+      if (
+        shouldAbortMovementRaf({
+          recapVisible: battleRecapOpenRef.current,
+          victoryPersistPending: victoryPersistPendingRef.current,
+          movementGen: movementGenRef.current,
+          loopGen,
+        })
+      ) {
+        movementGenRef.current += 1;
+        setIsMoving(false);
+        setMovementPath([]);
+        setCurrentStepIndex(0);
+        return;
+      }
       const currentTime = Date.now();
       const elapsed = currentTime - movementStartTimeRef.current;
       const stepDuration = MOVEMENT_DURATION / movementPath.length;
@@ -11688,6 +11751,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     activeEffectsRef.current = [];
     setActiveEffects([]);
     // enemy effects are stored in activeEffects with targetId === enemy.id, already cleared above
+    // Drop leftover MP/overworld walks. The rAF stepper is not in the
+    // #211 canvas gate, so a mid-fight path could still land on lava
+    // after cleanupBattle and overwrite the victory recap.
+    movementGenRef.current += 1;
+    setIsMoving(false);
+    setMovementPath([]);
+    setCurrentStepIndex(0);
   }, [onDebugLog]);
 
   // cleanupMap: runs cleanupBattle then also clears map-level particle/effect state.
@@ -12678,6 +12748,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // Idempotency guard
     if (battleEndedRef.current) return;
     battleEndedRef.current = true;
+    // Stop leftover MP walks before persist/recap so a scheduled rAF
+    // cannot land on lava during the room-clear credit.
+    movementGenRef.current += 1;
+    setIsMoving(false);
+    setMovementPath([]);
+    setCurrentStepIndex(0);
 
     // ── 1. ROOM CLEAR — NO AUTO-ADVANCE ──
     // The progression portal (spawned by the map generator) now drives room
@@ -17054,6 +17130,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       targetTile: { x: number; y: number },
       source: string,
     ): { castResult: string; apCost: number } => {
+      if (
+        !shouldAllowPlayerCastEntry({
+          inBattle: inBattleRef.current,
+          turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
+          deathTriggered: deathTriggeredRef.current,
+          hp: characterStatsRef.current.hp,
+        })
+      ) {
+        return { castResult: "abort", apCost: 0 };
+      }
       const _apCost = mapModifierRegistry.applyApCost(
         Number(spell.apCost),
         activeMapModifierTypes,
@@ -17136,6 +17222,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     )
       return;
     if (deathTriggeredRef.current || characterStatsRef.current.hp <= 0) return;
+    if (
+      !shouldAllowPlayerCastEntry({
+        inBattle,
+        turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
+        deathTriggered: deathTriggeredRef.current,
+        hp: characterStatsRef.current.hp,
+      })
+    )
+      return;
     markFirstAction();
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
@@ -18714,6 +18809,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           onAttackNearest={attackNearestEnemy}
           canAttackNearest={
             inBattle &&
+            shouldAllowPlayerCastEntry({
+              inBattle,
+              turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
+              deathTriggered: deathTriggeredRef.current,
+              hp: characterStatsRef.current.hp,
+            }) &&
             battleActionMode === "attack" &&
             !!selectedSpellIdRef.current &&
             !isSpellOnCooldown(
