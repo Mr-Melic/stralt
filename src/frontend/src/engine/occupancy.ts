@@ -203,6 +203,29 @@ export function collectMandatoryProgressionCells(
   return mandatory;
 }
 
+/**
+ * Unique player→exit bridges, treating `ctx.barriers` as impassable.
+ * Callers that omit the 5th `collectMandatoryProgressionCells` argument
+ * miss a wall/barrier that already removed one corridor (min-cut drops
+ * to 1). Always derive reserved from the live occupancy context.
+ */
+export function progressionReserved(
+  ctx: OccupancyContext,
+  start?: OccCell,
+): Set<string> {
+  const from = ctx.progressStart ?? start;
+  if (!from || ctx.portals.size === 0) {
+    return ctx.reserved ?? new Set();
+  }
+  return collectMandatoryProgressionCells(
+    ctx.tiles,
+    ctx.voidTiles,
+    ctx.portals,
+    from,
+    ctx.barriers,
+  );
+}
+
 /** True when living occupants jointly cut every player→exit route. */
 export function occupantsSealProgression(
   tiles: boolean[][],
@@ -328,9 +351,21 @@ export function resolveControlledSummonMoveDest(
   });
   if (!destFree) return null;
   let next = dest;
-  const reserved = occupancyCtx.reserved;
-  if (reserved?.has(occKey(next.x, next.y))) {
-    const [slid] = relocateOffMandatoryCells([next], reserved, occupancyCtx);
+  // The mover is leaving `from` — occupancy must not keep that tile as a
+  // joint-cut so unseal can reopen a player→exit route.
+  const movingCtx: OccupancyContext = {
+    ...occupancyCtx,
+    isOccupied: (c) => {
+      if (c.x === from.x && c.y === from.y) return false;
+      return occupancyCtx.isOccupied(c);
+    },
+  };
+  const reserved =
+    occupancyCtx.progressStart && occupancyCtx.portals.size > 0
+      ? progressionReserved(movingCtx, occupancyCtx.progressStart)
+      : (occupancyCtx.reserved ?? new Set());
+  if (reserved.has(occKey(next.x, next.y))) {
+    const [slid] = relocateOffMandatoryCells([next], reserved, movingCtx);
     next = slid;
   }
   const start = occupancyCtx.progressStart;
@@ -341,7 +376,7 @@ export function resolveControlledSummonMoveDest(
       occupancyCtx.voidTiles,
       occupancyCtx.portals,
       start,
-      occupancyCtx,
+      movingCtx,
     );
     next = cut;
   }
@@ -456,8 +491,11 @@ export function applyPushback(
 }
 
 function slideOffReserved(cell: OccCell, ctx: OccupancyContext): OccCell {
-  const reserved = ctx.reserved;
-  if (!reserved?.has(occKey(cell.x, cell.y))) return cell;
+  const reserved =
+    ctx.progressStart && ctx.portals.size > 0
+      ? progressionReserved(ctx)
+      : (ctx.reserved ?? new Set());
+  if (!reserved.has(occKey(cell.x, cell.y))) return cell;
   const [slid] = relocateOffMandatoryCells([cell], reserved, ctx);
   return slid;
 }

@@ -5,12 +5,14 @@
  */
 
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
+import { findBattleStartCell } from "./battleStartPlacement.ts";
 import {
   BOSS_RUSH_PREFERRED_CELLS,
   MAP_ARCHETYPES,
   type Rng,
   applySanctuaryLayout,
   applyVoidTiles,
+  canPlaceWalkBlocker,
   createSeededRng,
   evaluateSolvability,
   finalizePlayableLayout,
@@ -21,8 +23,13 @@ import {
   stampPortalTiles,
 } from "./mapGen.ts";
 import {
+  type OccCell,
+  type OccupancyContext,
   collectMandatoryProgressionCells,
+  occKey,
   occupantsSealProgression,
+  progressionReserved,
+  relocateOffMandatoryCells,
 } from "./occupancy.ts";
 import {
   type DungeonChainSnapshot,
@@ -819,6 +826,7 @@ export function simulateSummonsOnWorld(
       world.voidTiles,
       portals,
       world.playerSpawn,
+      new Set(),
     );
     const spawned = spawnSummonUnit(
       cell,
@@ -867,4 +875,173 @@ export function reportWorld(
     world.tiles.length,
     opts,
   );
+}
+
+/**
+ * Place a corpse/summon on every unique player→exit bridge, then relocate.
+ * Living leftovers on those cells permanently seal the unlocked portal.
+ */
+export function simulateCorpsesOnWorld(world: SimWorld): {
+  sealed: boolean;
+  cells: OccCell[];
+} {
+  const tiles = world.tiles.map((row) => row.map((t) => t !== "wall"));
+  const portals = new Set(world.portals.map((p) => `${p.x},${p.y}`));
+  const occupied = new Set<string>([
+    `${world.playerSpawn.x},${world.playerSpawn.y}`,
+  ]);
+  const ctx: OccupancyContext = {
+    tiles,
+    barriers: new Set(),
+    voidTiles: world.voidTiles,
+    portals,
+    progressStart: world.playerSpawn,
+    isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+  };
+  const mandatory = progressionReserved(ctx, world.playerSpawn);
+  if (mandatory.size === 0) {
+    return { sealed: false, cells: [] };
+  }
+  let offPath = false;
+  const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  for (let y = 0; y < world.tiles.length; y++) {
+    for (let x = 0; x < size; x++) {
+      const k = occKey(x, y);
+      if (mandatory.has(k) || portals.has(k)) continue;
+      if (k === `${world.playerSpawn.x},${world.playerSpawn.y}`) continue;
+      if (world.tiles[y][x] === "wall") continue;
+      if (world.voidTiles.has(k)) continue;
+      offPath = true;
+      break;
+    }
+    if (offPath) break;
+  }
+  if (!offPath) {
+    return { sealed: false, cells: [] };
+  }
+  const first = [...mandatory][0].split(",");
+  const corpses: OccCell[] = [{ x: Number(first[0]), y: Number(first[1]) }];
+  const moved = relocateOffMandatoryCells(corpses, mandatory, ctx);
+  return {
+    sealed: occupantsSealProgression(
+      tiles,
+      world.voidTiles,
+      portals,
+      world.playerSpawn,
+      moved,
+    ),
+    cells: moved,
+  };
+}
+
+/**
+ * Try to drop `count` walk-blockers (pillars/gates) on legal side cells.
+ * Cut-vertex candidates must be rejected so a corridor cannot seal the exit.
+ */
+export function simulateWalkBlockersOnWorld(
+  world: SimWorld,
+  count: number,
+): { placed: OccCell[]; rejectedCutVertices: number; ok: boolean } {
+  const w = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const h = world.tiles.length;
+  const placed: OccCell[] = [];
+  let rejectedCutVertices = 0;
+  const tiles = world.tiles.map((row) => row.slice());
+  const used = new Set<string>([
+    `${world.playerSpawn.x},${world.playerSpawn.y}`,
+    ...world.portals.map((p) => `${p.x},${p.y}`),
+    ...world.spawns.map((s) => `${s.x},${s.y}`),
+  ]);
+  for (let y = 0; y < h && placed.length < count; y++) {
+    for (let x = 0; x < w && placed.length < count; x++) {
+      const k = `${x},${y}`;
+      if (used.has(k)) continue;
+      if (tiles[y][x] === "wall") continue;
+      if (world.voidTiles.has(k)) continue;
+      const legal = canPlaceWalkBlocker(
+        tiles,
+        world.voidTiles,
+        world.playerSpawn,
+        world.portals,
+        world.spawns,
+        w,
+        h,
+        { x, y },
+      );
+      if (!legal) {
+        rejectedCutVertices += 1;
+        continue;
+      }
+      tiles[y][x] = "wall";
+      used.add(k);
+      placed.push({ x, y });
+    }
+  }
+  const report = evaluateSolvability(
+    tiles,
+    world.voidTiles,
+    world.playerSpawn,
+    world.portals,
+    world.spawns,
+    w,
+    h,
+  );
+  return { placed, rejectedCutVertices, ok: report.ok };
+}
+
+/**
+ * Replay WX battle-start destack (player ≥3, enemies ≥2) on a finalized
+ * world. Spacing used to scatter units onto a far island when the graph
+ * was still one component — still must stay solvable.
+ */
+export function simulateBattleStartOnWorld(world: SimWorld): {
+  playerSpawn: OccCell;
+  spawns: OccCell[];
+  ok: boolean;
+} {
+  const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const tiles = world.tiles.map((row) => row.map((t) => t !== "wall"));
+  const placed = new Set<string>();
+  for (const s of world.spawns) placed.add(`${s.x},${s.y}`);
+  const ctx: OccupancyContext = {
+    tiles,
+    barriers: new Set(),
+    voidTiles: world.voidTiles,
+    portals: new Set(world.portals.map((p) => `${p.x},${p.y}`)),
+    isOccupied: (c) => placed.has(occKey(c.x, c.y)),
+  };
+  const player =
+    findBattleStartCell(
+      world.playerSpawn,
+      world.spawns.map((s) => ({ x: s.x, y: s.y, minDist: 3 })),
+      3,
+      ctx,
+    ) ?? world.playerSpawn;
+  placed.add(`${player.x},${player.y}`);
+  const nextSpawns: OccCell[] = [];
+  for (const s of world.spawns) {
+    const avoid: { x: number; y: number; minDist: number }[] = [
+      { x: player.x, y: player.y, minDist: 3 },
+    ];
+    for (const key of placed) {
+      const p = key.split(",");
+      avoid.push({ x: Number(p[0]), y: Number(p[1]), minDist: 2 });
+    }
+    const cell = findBattleStartCell({ x: s.x, y: s.y }, avoid, 2, ctx) ?? {
+      x: s.x,
+      y: s.y,
+    };
+    placed.add(`${cell.x},${cell.y}`);
+    nextSpawns.push(cell);
+  }
+  const report = evaluateSolvability(
+    world.tiles,
+    world.voidTiles,
+    player,
+    world.portals,
+    nextSpawns,
+    size,
+    world.tiles.length,
+  );
+  return { playerSpawn: player, spawns: nextSpawns, ok: report.ok };
 }

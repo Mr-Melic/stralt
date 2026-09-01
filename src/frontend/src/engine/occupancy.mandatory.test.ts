@@ -8,6 +8,7 @@ import {
   findNearestFreeCell,
   occKey,
   occupantsSealProgression,
+  progressionReserved,
   relocateOffMandatoryCells,
   resolveControlledSummonMoveDest,
   resolveProgressionSafeOccupantCell,
@@ -296,6 +297,40 @@ describe("dual-path occupants cannot jointly seal the exit", () => {
       false,
     );
     assert.notEqual(occKey(moved.x, moved.y), "2,2");
+  });
+
+  it("seed-barrier-controlled-move: reserved must include barrier-aware unique bridges", () => {
+    const { tiles, voidTiles, portals, ctx } = dualCorridor();
+    ctx.barriers = new Set(["2,0"]);
+    ctx.progressStart = { x: 0, y: 1 };
+    ctx.reserved = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 1 },
+      // Caller used to omit barriers — progressionReserved must still see them.
+    );
+    assert.equal(ctx.reserved.size, 0, "barrier-blind reserved misses the cut");
+    const live = progressionReserved(ctx, { x: 0, y: 1 });
+    assert.equal(live.has("2,2"), true);
+    const dest = resolveControlledSummonMoveDest(
+      { x: 1, y: 2 },
+      { x: 2, y: 2 },
+      ctx,
+    );
+    assert.ok(dest);
+    assert.notEqual(occKey(dest.x, dest.y), "2,2");
+    assert.equal(
+      occupantsSealProgression(
+        tiles,
+        voidTiles,
+        portals,
+        { x: 0, y: 1 },
+        [dest],
+        ctx.barriers,
+      ),
+      false,
+    );
   });
 
   it("seed-barrier-joint-cut: a barrier on one corridor makes the other mandatory", () => {
