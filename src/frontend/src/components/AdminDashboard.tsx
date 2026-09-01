@@ -57,6 +57,7 @@ import {
 } from "../utils/adminContract";
 import {
   MAX_DOKA_GRANT,
+  safeProofHref,
   unsafeUrl,
   validateAdBox,
   validateDokaGrant,
@@ -67,6 +68,14 @@ import {
   validateTierSpawnConfig,
   validateWalkFrameUrls,
 } from "../utils/adminSafety";
+import {
+  ENEMY_SPRITE_URL_FIELD_LABEL,
+  ENEMY_SPRITE_URL_HELP,
+  ENEMY_SPRITE_URL_PLACEHOLDER,
+  PLAYER_SPRITE_URL_HONESTY,
+  enemyVisualStatusCopy,
+  spriteUrlIsStored,
+} from "../utils/adminVisualStatus";
 import { logDebugWarn } from "../utils/debugLogger";
 
 // ── defaults ─────────────────────────────────────────────────────────────────
@@ -712,6 +721,7 @@ const EnemyEditor: React.FC<{
   const [cfg, setCfg] = useState<EnemyConfig>(initial);
   const set = <K extends keyof EnemyConfig>(k: K, v: EnemyConfig[K]) =>
     setCfg((p) => ({ ...p, [k]: v }));
+  const visualCopy = enemyVisualStatusCopy(spriteUrlIsStored(cfg.spriteUrl));
 
   return (
     <div data-ocid="admin.enemy_editor" style={{ padding: 20 }}>
@@ -798,12 +808,10 @@ const EnemyEditor: React.FC<{
 
       <div style={{ marginBottom: 10 }}>
         <label htmlFor="admin.enemy.sprite_input" style={labelStyle}>
-          Custom Visual Override
+          {ENEMY_SPRITE_URL_FIELD_LABEL}
         </label>
         <p style={{ color: "#6a6070", fontSize: 10, margin: "0 0 6px" }}>
-          Default Pixel Visual — Active fallback when this field is empty. Leave
-          blank to keep the chess-piece sprite. PNG or WebP, square, pixel art
-          recommended (no upload yet — paste a hosted URL).
+          {ENEMY_SPRITE_URL_HELP}
         </p>
         <input
           id="admin.enemy.sprite_input"
@@ -812,22 +820,20 @@ const EnemyEditor: React.FC<{
           onChange={(e) =>
             set("spriteUrl", e.target.value ? [e.target.value] : [])
           }
-          placeholder="https://… (optional custom override)"
+          placeholder={ENEMY_SPRITE_URL_PLACEHOLDER}
           data-ocid="admin.enemy.sprite_input"
           style={inputStyle()}
         />
         <p
           data-ocid="admin.enemy.visual_status"
           style={{
-            color: cfg.spriteUrl[0] ? C.gold : C.green,
+            color: visualCopy.storedNotRendered ? C.dim : C.green,
             fontSize: 10,
             margin: "4px 0 0",
             fontWeight: 700,
           }}
         >
-          {cfg.spriteUrl[0]
-            ? "Custom Visual — 1 override URL"
-            : "Default Pixel Visual — Active fallback"}
+          {visualCopy.status}
         </p>
       </div>
 
@@ -1482,7 +1488,7 @@ const SpriteEditorForm: React.FC<{
               flexShrink: 0,
             }}
           >
-            {previewUrl ? (
+            {previewUrl && !unsafeUrl(previewUrl) ? (
               <img
                 src={previewUrl}
                 alt="preview"
@@ -1538,9 +1544,7 @@ const SpriteEditorForm: React.FC<{
             lineHeight: 1.45,
           }}
         >
-          Custom Visual Override — paste hosted PNG/WebP URLs (square pixel art,
-          one frame per facing). Empty URLs are valid: the chess-piece Default
-          Pixel Visual stays the active fallback. No file upload yet.
+          {PLAYER_SPRITE_URL_HONESTY}
         </p>
         <div
           style={{
@@ -2134,104 +2138,109 @@ const EnemyList: React.FC<{
         </div>
       )}
 
-      {visible.map((e, i) => (
-        <PanelCard key={e.id}>
-          <div
-            data-ocid={`admin.enemies.item.${i + 1}`}
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              padding: "10px 14px",
-            }}
-          >
+      {visible.map((e, i) => {
+        const visualCopy = enemyVisualStatusCopy(
+          spriteUrlIsStored(e.spriteUrl),
+        );
+        return (
+          <PanelCard key={e.id}>
             <div
+              data-ocid={`admin.enemies.item.${i + 1}`}
               style={{
-                width: 36,
-                height: 36,
-                background: `linear-gradient(135deg, ${C.bg0}, ${C.bg3})`,
-                border: `1px solid ${C.goldDim}`,
-                borderRadius: 6,
                 display: "flex",
+                gap: 12,
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: 18,
-                flexShrink: 0,
+                padding: "10px 14px",
               }}
             >
-              👾
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
-                  color: "#c0ccd8",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  marginBottom: 2,
-                }}
-              >
-                {e.name || e.id}
-              </div>
-              <div
-                style={{
+                  width: 36,
+                  height: 36,
+                  background: `linear-gradient(135deg, ${C.bg0}, ${C.bg3})`,
+                  border: `1px solid ${C.goldDim}`,
+                  borderRadius: 6,
                   display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
                   alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 18,
+                  flexShrink: 0,
                 }}
               >
-                {[
-                  [
-                    `Lv ${String(e.levelMin)}–${String(e.levelMax)}`,
-                    C.goldBright,
-                  ],
-                  [`HP ${String(e.hp)}`, C.red],
-                  [`AP ${String(e.ap)}`, C.blue],
-                  [`MP ${String(e.mp)}`, C.green],
-                  [`Init ${String(e.initStat)}`, C.dim],
-                  [
-                    e.spriteUrl[0] ? "Custom visual" : "Default pixel visual",
-                    e.spriteUrl[0] ? C.gold : C.green,
-                  ],
-                ].map(([label, color]) => (
-                  <span
-                    key={label}
-                    style={{
-                      background: `${color}18`,
-                      border: `1px solid ${color}44`,
-                      borderRadius: 20,
-                      padding: "1px 7px",
-                      fontSize: 10,
-                      color,
-                      letterSpacing: "0.04em",
-                    }}
-                  >
-                    {label}
-                  </span>
-                ))}
+                👾
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    color: "#c0ccd8",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    marginBottom: 2,
+                  }}
+                >
+                  {e.name || e.id}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  {[
+                    [
+                      `Lv ${String(e.levelMin)}–${String(e.levelMax)}`,
+                      C.goldBright,
+                    ],
+                    [`HP ${String(e.hp)}`, C.red],
+                    [`AP ${String(e.ap)}`, C.blue],
+                    [`MP ${String(e.mp)}`, C.green],
+                    [`Init ${String(e.initStat)}`, C.dim],
+                    [
+                      visualCopy.chip,
+                      visualCopy.storedNotRendered ? C.dim : C.green,
+                    ],
+                  ].map(([label, color]) => (
+                    <span
+                      key={label}
+                      style={{
+                        background: `${color}18`,
+                        border: `1px solid ${color}44`,
+                        borderRadius: 20,
+                        padding: "1px 7px",
+                        fontSize: 10,
+                        color,
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn
+                  variant="ghost"
+                  small
+                  onClick={() => onEdit(e.id)}
+                  ocid={`admin.enemies.edit_button.${i + 1}`}
+                >
+                  Edit
+                </Btn>
+                <Btn
+                  variant="red"
+                  small
+                  onClick={() => setConfirmId(e.id)}
+                  ocid={`admin.enemies.delete_button.${i + 1}`}
+                >
+                  ×
+                </Btn>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn
-                variant="ghost"
-                small
-                onClick={() => onEdit(e.id)}
-                ocid={`admin.enemies.edit_button.${i + 1}`}
-              >
-                Edit
-              </Btn>
-              <Btn
-                variant="red"
-                small
-                onClick={() => setConfirmId(e.id)}
-                ocid={`admin.enemies.delete_button.${i + 1}`}
-              >
-                ×
-              </Btn>
-            </div>
-          </div>
-        </PanelCard>
-      ))}
+          </PanelCard>
+        );
+      })}
       {confirmId && (
         <ConfirmDialog
           title={`Delete ${pending?.name || pending?.id || "enemy"}?`}
@@ -3507,6 +3516,10 @@ const SpellEditor: React.FC<{
               spellType: cfg.spellType ?? "damage",
               effectType: cfg.effectType,
               effectCategory: cfg.effectCategory ?? "damage",
+              isSummon: cfg.isSummon,
+              summonAI: cfg.summonAI,
+              summonLifespan: cfg.summonLifespan,
+              summonUnitDef: cfg.summonUnitDef,
             });
             if (spellErr) {
               toast.error(spellErr);
@@ -6437,11 +6450,16 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                                     label,
                                     open: () => {
                                       if (rec.proofFileUrl) {
-                                        window.open(
+                                        const proofHref = safeProofHref(
                                           rec.proofFileUrl,
-                                          "_blank",
-                                          "noopener,noreferrer",
                                         );
+                                        if (proofHref !== "#") {
+                                          window.open(
+                                            proofHref,
+                                            "_blank",
+                                            "noopener,noreferrer",
+                                          );
+                                        }
                                         return;
                                       }
                                       if (

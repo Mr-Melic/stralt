@@ -223,7 +223,6 @@ import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   type TileCastableResult,
-  applyHealBuffSideEffect,
   attackNearestLiveCasterPos,
   canAffordCastAp,
   canAttackNearestAgainstLive,
@@ -267,6 +266,7 @@ import {
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
 import {
+  safeExternalHref,
   shouldIncludeBackendSpellInLibrary,
   thresholdAchievementConditionsFromPersist,
 } from "../utils/adminSafety";
@@ -280,6 +280,7 @@ import {
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
+  recordChallengeItemHealUsed,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
   recordChallengeWalkHazardDamage,
@@ -324,9 +325,11 @@ import {
 } from "../utils/debugLogger";
 import {
   type DokaCreditActor,
-  persistDokaCredit,
+  persistDokaCreditAmount,
+  persistDokaCreditResult,
   releaseFlag,
   releasePickupId,
+  settleOneShotAfterCredit,
   tryClaimDungeonChainBonus,
   tryClaimFlag,
   tryClaimPickupId,
@@ -342,6 +345,7 @@ import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
   creditLiveDoka,
+  isBuffShopHealItem,
   nextDokaAfterShopSpend,
   resolveAbsoluteWriteHp,
   resolveOverworldHealSpend,
@@ -3571,6 +3575,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         default:
           break;
       }
+      // Potions restore HP without executeCastAttempt / Doka-heal, so
+      // healUsed used to stay false and no-heal challenges still paid out.
+      if (isBuffShopHealItem(itemType)) {
+        challengeHealUsedRef.current = recordChallengeItemHealUsed(
+          inBattleRef.current,
+          challengeHealUsedRef.current,
+        );
+      }
     },
     [addBattleLogEntry, maxHp, setCurrentBattleApSynced],
   );
@@ -6443,15 +6455,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const chainBonus = dungeonChainAction.bonus;
         if (tryClaimDungeonChainBonus(dungeonCompletionSavedRef)) {
           void progressPersistRef.current.enqueue(async () => {
-            const newDoka = await persistDokaCredit(
+            const credited = await persistDokaCreditResult(
               actor as DokaCreditActor,
               characterSlot,
               chainBonus,
             );
-            if (newDoka > 0) {
+            const newDoka = persistDokaCreditAmount(credited);
+            const settle = settleOneShotAfterCredit(credited);
+            if (settle === "commit") {
               progressPersistRef.current.commit({ doka: newDoka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
-            } else {
+            } else if (settle === "release") {
               releaseFlag(dungeonCompletionSavedRef);
             }
             return newDoka;
@@ -7204,8 +7218,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
-    // ── #19 Pacifist Run: flip flag for ANY offensive spell usage ──────────────
-    applyHealBuffSideEffect(spell, battleOnlyHealBuffSpellsRef);
+    // Pacifist Run flips in recordPlayerSpellType on a resolved offensive
+    // cast. Do not flip here — this callback paints range every RAF frame.
     // LIVE truth: read combatants from the synchronous ref, matching the click
     // gate's source. SECTION 2c — origin is the active caster's tile (controlled
     // summon or player) so spell-range previews render from the summon's tile.
@@ -11438,15 +11452,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             const _purePath = !shrinePathViolatedRef.current;
             if (tryClaimFlag(shrineRewardClaimedRef)) {
               void progressPersistRef.current.enqueue(async () => {
-                const newDoka = await persistDokaCredit(
+                const credited = await persistDokaCreditResult(
                   actor as DokaCreditActor,
                   characterSlot,
                   300,
                 );
-                if (newDoka > 0) {
+                const newDoka = persistDokaCreditAmount(credited);
+                const settle = settleOneShotAfterCredit(credited);
+                if (settle === "commit") {
                   progressPersistRef.current.commit({ doka: newDoka });
                   onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
-                } else {
+                } else if (settle === "release") {
                   releaseFlag(shrineRewardClaimedRef);
                 }
                 return newDoka;
@@ -11491,12 +11507,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
         if (hit && tryClaimPickupId(claimedGroundLootIdsRef.current, hit.id)) {
           void progressPersistRef.current.enqueue(async () => {
-            const newDoka = await persistDokaCredit(
+            const credited = await persistDokaCreditResult(
               actor as DokaCreditActor,
               characterSlot,
               hit.value,
             );
-            if (newDoka > 0) {
+            const newDoka = persistDokaCreditAmount(credited);
+            const settle = settleOneShotAfterCredit(credited);
+            if (settle === "commit") {
               progressPersistRef.current.commit({ doka: newDoka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
               setDokaLoot((prev) =>
@@ -11504,7 +11522,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   l.id === hit.id ? { ...l, collected: true } : l,
                 ),
               );
-            } else {
+            } else if (settle === "release") {
               releasePickupId(claimedGroundLootIdsRef.current, hit.id);
             }
             return newDoka;
@@ -19638,7 +19656,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       }
                       // Open payment link if available
                       if (selectedPkg.paymentLink) {
-                        window.open(selectedPkg.paymentLink, "_blank");
+                        const paymentHref = safeExternalHref(
+                          selectedPkg.paymentLink,
+                        );
+                        if (paymentHref !== "#") {
+                          window.open(paymentHref, "_blank");
+                        }
                       }
                       // After 60s the canister auto-completes pending purchases.
                       // Keep this timer off pendingTimeoutsRef / cleanupRanRef —

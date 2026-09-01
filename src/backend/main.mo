@@ -66,6 +66,9 @@ actor {
         if (caller.isAnonymous()) {
             return;
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return;
+        };
         // ProfileSetup allows 2–50 chars; empty name is rejected there. Cap
         // here so a raw client cannot store an unbounded display name.
         if (profile.name.size() > 50) {
@@ -440,6 +443,9 @@ actor {
     public shared ({ caller }) func deleteCharacter(slot : Nat) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: Only users can delete characters");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
         };
 
         if (slot < 1 or slot > 3) {
@@ -1152,6 +1158,16 @@ actor {
             return #err("Customer field exceeds maximum length");
         };
         switch (AdminGuard.validateProofFileUrl(proofFileUrl)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        var alreadyPending = false;
+        for (r in purchaseRecords.values()) {
+            if (r.userPrincipal == caller and r.status == "pending") {
+                alreadyPending := true;
+            };
+        };
+        switch (AdminGuard.rejectSecondPendingPurchase(alreadyPending)) {
             case (?e) { return #err(e) };
             case null {};
         };
@@ -2038,7 +2054,10 @@ actor {
 
     /// Returns the version string of the changelog the given user has already seen.
     /// Empty string means the user has not seen any changelog yet.
-    public query func getChangelogShownVersion(user : Principal) : async Text {
+    public query ({ caller }) func getChangelogShownVersion(user : Principal) : async Text {
+        if (caller != user) {
+            return "";
+        };
         switch (changelogShownVersions.get(user)) {
             case null { "" };
             case (?v) { v };
@@ -2285,6 +2304,8 @@ actor {
     /// In-memory only — intentionally clears on canister upgrade.
     transient var chatMessages : List.List<ChatMessage> = List.empty();
     transient var nextChatId   : Nat = 0;
+    transient let chatLastSent : Map.Map<Text, Int> = Map.empty();
+    transient let CHAT_COOLDOWN_NS : Int = 2_000_000_000;
 
     /// Append a new message; trims list to at most 200 entries (oldest dropped).
     public shared ({ caller }) func sendMessage(_playerName : Text, text : Text, colorHex : Text) : async () {
@@ -2297,6 +2318,17 @@ actor {
         if (text.size() == 0 or text.size() > 200) {
             return;
         };
+        let nowChat = Time.now();
+        let chatKey = caller.toText();
+        switch (chatLastSent.get(chatKey)) {
+            case (?last) {
+                if (AdminGuard.chatCooldownActive(last, nowChat, CHAT_COOLDOWN_NS)) {
+                    return;
+                };
+            };
+            case null {};
+        };
+        chatLastSent.add(chatKey, nowChat);
         // Official ChatPanel sends userProfile.name. Bind the displayed name
         // to the caller's stored profile so a raw client cannot impersonate.
         let displayName = switch (userProfiles.get(caller)) {
@@ -2692,14 +2724,20 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        if (portalId == "") {
-            return #err("portalId cannot be empty");
+        switch (AdminGuard.validateBossPortalAssignment(portalId, bossId)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         switch (bossConfigs.get(bossId)) {
             case null { return #err("Boss not found: " # bossId) };
             case (?_) {};
         };
+        let prev = switch (bossPortalAssignments.get(portalId)) {
+            case null { "none" };
+            case (?bid) { bid };
+        };
         bossPortalAssignments.add(portalId, bossId);
+        _recordAdminAudit(caller, "setBossPortalAssignment", portalId, prev, bossId);
         #ok;
     };
 
@@ -2708,7 +2746,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        let prev = switch (bossPortalAssignments.get(portalId)) {
+            case null { "none" };
+            case (?bid) { bid };
+        };
         bossPortalAssignments.remove(portalId);
+        _recordAdminAudit(caller, "deleteBossPortalAssignment", portalId, prev, "removed");
         #ok;
     };
 

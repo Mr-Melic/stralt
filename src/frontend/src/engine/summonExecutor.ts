@@ -28,6 +28,7 @@ import type { EnemyAction } from "./enemyAI";
 import {
   type OccupancyContext,
   isCellFree,
+  occupancyVacating,
   resolveProgressionSafeOccupantCell,
 } from "./occupancy.ts";
 import type { SpellContext } from "./spellEngine.ts";
@@ -129,13 +130,14 @@ export function executeSummonAction(
       );
       return;
     }
+    const origin = { x, y };
     x = clamped.x;
     y = clamped.y;
     currentMp -= mpCost;
-    const landed = resolveProgressionSafeOccupantCell(
-      { x, y },
-      helpers.occupancyCtx,
-    );
+    // Live WX occupancy still reports the pre-move tile until the store
+    // commits. Unseal must not keep that ghost or a dual-path cut never opens.
+    const vacated = occupancyVacating(helpers.occupancyCtx, origin);
+    const landed = resolveProgressionSafeOccupantCell({ x, y }, vacated);
     if (landed.x !== x || landed.y !== y) {
       logLines.push(
         `[move] ${summonLabel} slid off sealed cut (${x},${y}) → (${landed.x},${landed.y})`,

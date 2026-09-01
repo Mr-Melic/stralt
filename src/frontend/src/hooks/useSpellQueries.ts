@@ -70,6 +70,7 @@ export function useAdminSetSpellConfig() {
         spellType: String(config.spellType ?? "damage"),
         effectType: config.effectType,
         effectCategory: String(config.effectCategory ?? "damage"),
+        isSummon: config.isSummon,
         summonAI: config.summonAI,
         summonLifespan: config.summonLifespan,
         summonPieceType: config.summonUnitDef?.pieceType,

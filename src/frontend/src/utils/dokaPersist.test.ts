@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import {
   persistDokaCredit,
+  persistDokaCreditAmount,
+  persistDokaCreditResult,
   releaseFlag,
   releasePickupId,
+  settleOneShotAfterCredit,
+  shouldReleaseOneShotAfterPersist,
+  shouldReleaseOneShotDokaCredit,
   tryClaimDungeonChainBonus,
   tryClaimFlag,
   tryClaimPickupId,
@@ -49,6 +54,37 @@ import {
   assert.equal(tryClaimPickupId(claimed, "coin"), false);
   await first;
   assert.equal(calls, 1);
+}
+
+assert.equal(shouldReleaseOneShotAfterPersist(false), true);
+assert.equal(shouldReleaseOneShotAfterPersist(true), false);
+
+{
+  const rejected = await persistDokaCreditResult(
+    {
+      applyRewards: async () => {
+        throw new Error("applyRewards failed: Account banned");
+      },
+    },
+    1,
+    30,
+  );
+  assert.equal(shouldReleaseOneShotDokaCredit(rejected), true);
+  assert.equal(settleOneShotAfterCredit(rejected), "release");
+  assert.equal(persistDokaCreditAmount(rejected), 0);
+
+  const transport = await persistDokaCreditResult(
+    {
+      applyRewards: async () => {
+        throw new Error("replica reject after add");
+      },
+    },
+    1,
+    30,
+  );
+  assert.equal(shouldReleaseOneShotDokaCredit(transport), false);
+  assert.equal(settleOneShotAfterCredit(transport), "keep");
+  assert.equal(persistDokaCreditAmount(transport), 0);
 }
 
 console.log("dokaPersist.test: ok");

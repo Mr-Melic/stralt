@@ -4,6 +4,7 @@ import {
   applyHealHpToLiveStats,
   creditLiveDoka,
   dokaHealAmounts,
+  isBuffShopHealItem,
   isBuffShopOpen,
   liveDokaForShopSpend,
   liveShopWallet,
@@ -16,6 +17,8 @@ import {
   shouldRollbackFailedHeal,
   shouldRollbackFailedShopSpend,
   shouldStartDokaHeal,
+  syncLiveDokaFromProp,
+  tryConsumeBuffItem,
   tryPurchaseBuffItem,
   writeLiveDoka,
 } from "./itemShop.ts";
@@ -27,6 +30,13 @@ assert.equal(
 );
 assert.equal(isBuffShopOpen(false), false);
 assert.equal(isBuffShopOpen(true), true);
+assert.equal(isBuffShopHealItem("health_potion"), true);
+assert.equal(isBuffShopHealItem("greater_health_potion"), true);
+assert.equal(
+  isBuffShopHealItem("battle_elixir"),
+  false,
+  "AP items must not flip no_healing",
+);
 
 assert.equal(
   liveShopWallet(50, () => 47),
@@ -163,6 +173,18 @@ assert.equal(
   }),
   null,
 );
+
+{
+  const afterFirst = tryConsumeBuffItem(1);
+  assert.equal(afterFirst, 0);
+  assert.equal(
+    tryConsumeBuffItem(afterFirst ?? 0),
+    null,
+    "double-click must not consume the same stack twice",
+  );
+  assert.equal(tryConsumeBuffItem(0), null);
+  assert.equal(tryConsumeBuffItem(-1), null);
+}
 
 {
   const first = resolveOverworldHealSpend({
@@ -351,6 +373,23 @@ assert.equal(
     shouldRollbackFailedShopSpend({ liveDoka: 50, expectedDoka: 50 }),
     true,
     "same-click reject still refunds when nothing superseded it",
+  );
+}
+
+{
+  // Credit scheduled setDokaBalance(150); heal spent live to 140; GameFlow
+  // then flushed 150. Copying the new prop over a local mutation minted a
+  // ghost 10 Doka for the next heal persist.
+  const afterHeal = syncLiveDokaFromProp({
+    propDoka: 150,
+    prevPropDoka: 100,
+    liveDoka: 140,
+  });
+  assert.deepEqual(afterHeal, { liveDoka: 140, prevPropDoka: 150 });
+  assert.deepEqual(
+    syncLiveDokaFromProp({ propDoka: 150, prevPropDoka: 100, liveDoka: 100 }),
+    { liveDoka: 150, prevPropDoka: 150 },
+    "unmutated live still adopts the new authoritative prop",
   );
 }
 

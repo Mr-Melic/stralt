@@ -213,6 +213,23 @@ export function recordInBattleChallengeHealUsed(
 }
 
 /**
+ * BuffShop `health_potion` / `greater_health_potion` restore HP on the
+ * player turn (`handleUse` requires inBattle). handleUseItem used to skip
+ * `challengeHealUsedRef`, so easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP)
+ * still persisted after a mid-fight potion. Spell heals and in-battle
+ * Doka-to-HP already flip the flag.
+ *
+ * Pass the live in-battle flag — the same overworld-must-not-stick rule as
+ * {@link recordInBattleChallengeHealUsed}.
+ */
+export function recordChallengeItemHealUsed(
+  inBattle: boolean,
+  alreadyUsed: boolean,
+): boolean {
+  return recordInBattleChallengeHealUsed(inBattle, alreadyUsed);
+}
+
+/**
  * Lava / spike tiles live on the overworld map and also deal HP during
  * combat walks. The challenge counter is zeroed in cleanupBattle, not at
  * battle start, so an out-of-combat hazard step must not increment it —

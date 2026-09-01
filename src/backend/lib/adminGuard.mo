@@ -75,10 +75,20 @@ module {
             or lower.startsWith(#text "vbscript:")
     };
 
-    /// Shop proof blobs are data: URLs from the official client. Reject only
-    /// script schemes; do not treat data: as unsafe here.
+    /// Official shop proof is `data:<image|pdf|octet-stream>;base64,...`.
+    /// Empty / https / `data:text/html` let a raw client skip the file picker
+    /// or store an admin-viewable XSS payload (`window.open` of the proof).
+    public func proofDataMimeAllowed(url : Text) : Bool {
+        let mime = asciiLowerPrefix(trimLeadingWs(url), 40);
+        mime.startsWith(#text "data:image/jpeg")
+            or mime.startsWith(#text "data:image/jpg")
+            or mime.startsWith(#text "data:image/png")
+            or mime.startsWith(#text "data:application/pdf")
+            or mime.startsWith(#text "data:application/octet-stream")
+    };
+
     public func validateProofFileUrl(url : Text) : ?Text {
-        if (url == "") { return null };
+        if (url == "") { return ?"proofFileUrl is required" };
         if (url.size() > 524_288) {
             return ?"proofFileUrl exceeds maximum size";
         };
@@ -86,7 +96,20 @@ module {
         if (lower.startsWith(#text "javascript:") or lower.startsWith(#text "vbscript:")) {
             return ?"proofFileUrl uses a forbidden URL scheme";
         };
+        if (not proofDataMimeAllowed(url)) {
+            return ?"proofFileUrl must be a data: image, PDF, or octet-stream";
+        };
         null
+    };
+
+    /// Official checkout is one in-flight purchase. A second pending record
+    /// is the double-click / raw-client path that auto-completes twice.
+    public func rejectSecondPendingPurchase(alreadyPending : Bool) : ?Text {
+        if (alreadyPending) { ?"A purchase is already pending" } else { null }
+    };
+
+    public func chatCooldownActive(lastSent : Int, now : Int, minNs : Int) : Bool {
+        now - lastSent < minNs
     };
 
     public func validateOptionalUrl(lbl : Text, url : Text) : ?Text {
@@ -287,12 +310,12 @@ module {
     };
 
     func knownSpellType(t : Text) : Bool {
-        t == "damage" or t == "heal" or t == "drain"
+        t == "damage" or t == "heal" or t == "drain" or t == "summon"
     };
 
     func knownEffectType(t : Text) : Bool {
         t == "damage" or t == "heal" or t == "drain" or t == "dot" or t == "aoe"
-            or t == "debuff" or t == "buff" or t == "attract_multi"
+            or t == "debuff" or t == "buff" or t == "attract_multi" or t == "summon"
     };
 
     func knownEffectCategory(t : Text) : Bool {
@@ -302,13 +325,15 @@ module {
     };
 
     func knownSummonAI(t : Text) : Bool {
-        t == "hunter" or t == "guardian" or t == "archer"
-            or t == "bomber" or t == "healer"
+        t == "hunter" or t == "guardian" or t == "archer" or t == "kiter"
+            or t == "bomber" or t == "kamikaze" or t == "healer"
     };
 
     func knownPieceType(t : Text) : Bool {
         t == "king" or t == "queen" or t == "pawn"
             or t == "rook" or t == "bishop" or t == "knight"
+            or t == "wolf" or t == "golem" or t == "archer"
+            or t == "bomber" or t == "wisp"
     };
 
     /// Extends the existing apCost/range/damage caps with enum and relationship checks.
@@ -330,13 +355,19 @@ module {
         if (config.damage > 9999) { return ?"damage must be at most 9999" };
         if (config.healAmount > 1000) { return ?"healAmount must be at most 1000" };
         if (not knownSpellType(config.spellType)) {
-            return ?"spellType must be damage, heal, or drain";
+            return ?"spellType must be damage, heal, drain, or summon";
         };
         if (not knownEffectType(config.effectType)) {
             return ?"effectType is not a recognized value";
         };
         if (not knownEffectCategory(config.effectCategory)) {
             return ?"effectCategory is not a recognized value";
+        };
+        if (config.spellType == "summon" and not config.isSummon) {
+            return ?"spellType summon requires isSummon";
+        };
+        if (config.effectType == "summon" and not config.isSummon) {
+            return ?"effectType summon requires isSummon";
         };
         if (config.hitTiles.size() > 64) {
             return ?"hitTiles exceeds maximum of 64";
@@ -373,6 +404,12 @@ module {
             case (?e) { return ?e };
             case null {};
         };
+        null
+    };
+
+    public func validateBossPortalAssignment(portalId : Text, bossId : Text) : ?Text {
+        switch (requireId(portalId, "Portal")) { case (?e) { return ?e }; case null {} };
+        switch (requireId(bossId, "Boss")) { case (?e) { return ?e }; case null {} };
         null
     };
 

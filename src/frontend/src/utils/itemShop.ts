@@ -12,6 +12,11 @@ export function isBuffShopOpen(isOpen: boolean | undefined): boolean {
   return isOpen === true;
 }
 
+/** HP potions are the only BuffShop items that count as challenge healing. */
+export function isBuffShopHealItem(itemType: string): boolean {
+  return itemType === "health_potion" || itemType === "greater_health_potion";
+}
+
 export function nextDokaAfterShopSpend(
   currentDoka: number,
   amount: number,
@@ -140,6 +145,13 @@ export function tryPurchaseBuffItem(
     nextWallet: wallet - cost,
     nextOwned: owned + 1,
   };
+}
+
+/** Consume from inventoryRef so a double-click cannot spend one stack twice. */
+export function tryConsumeBuffItem(owned: number): number | null {
+  const count = toNat(owned);
+  if (count <= 0) return null;
+  return count - 1;
 }
 
 export type OverworldHealSpendInput = {
@@ -276,7 +288,10 @@ export function syncLiveDokaFromProp(args: {
   const prev = Math.max(0, Math.floor(Number(args.prevPropDoka) || 0));
   const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
   if (prev !== prop) {
-    return { liveDoka: prop, prevPropDoka: prop };
+    if (live === prev) {
+      return { liveDoka: prop, prevPropDoka: prop };
+    }
+    return { liveDoka: live, prevPropDoka: prop };
   }
   return { liveDoka: live, prevPropDoka: prev };
 }

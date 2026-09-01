@@ -244,6 +244,25 @@ export function occupantsSealProgression(
   return ![...portals].some((p) => open.has(p));
 }
 
+/**
+ * Treat `cell` as empty — the mover has already left, even if the live
+ * occupancy callback still reports the old tile. Dest-free and unseal
+ * must share this view; a ghost on the origin plus a second summon can
+ * jointly seal every route so relocate never finds an opening.
+ */
+export function occupancyVacating(
+  ctx: OccupancyContext,
+  cell: OccCell,
+): OccupancyContext {
+  return {
+    ...ctx,
+    isOccupied: (c) => {
+      if (c.x === cell.x && c.y === cell.y) return false;
+      return ctx.isOccupied(c);
+    },
+  };
+}
+
 export function collectOccupiedCells(ctx: OccupancyContext): OccCell[] {
   const h = ctx.tiles.length;
   const w = ctx.tiles[0]?.length ?? 0;
@@ -342,24 +361,10 @@ export function resolveControlledSummonMoveDest(
   occupancyCtx: OccupancyContext,
 ): OccCell | null {
   if (from.x === dest.x && from.y === dest.y) return dest;
-  const destFree = isCellFree(dest, {
-    ...occupancyCtx,
-    isOccupied: (c) => {
-      if (c.x === from.x && c.y === from.y) return false;
-      return occupancyCtx.isOccupied(c);
-    },
-  });
+  const movingCtx = occupancyVacating(occupancyCtx, from);
+  const destFree = isCellFree(dest, movingCtx);
   if (!destFree) return null;
   let next = dest;
-  // The mover is leaving `from` — occupancy must not keep that tile as a
-  // joint-cut so unseal can reopen a player→exit route.
-  const movingCtx: OccupancyContext = {
-    ...occupancyCtx,
-    isOccupied: (c) => {
-      if (c.x === from.x && c.y === from.y) return false;
-      return occupancyCtx.isOccupied(c);
-    },
-  };
   const reserved =
     occupancyCtx.progressStart && occupancyCtx.portals.size > 0
       ? progressionReserved(movingCtx, occupancyCtx.progressStart)

@@ -95,6 +95,87 @@ export function tryClaimDungeonChainBonus(claimed: {
   return tryClaimFlag(claimed);
 }
 
+export type PersistDokaCreditResult =
+  | { ok: number }
+  | { err: "rejected" | "transport" };
+
+/**
+ * After applyRewards is invoked, do not release the one-shot id.
+ * Returning 0 / throwing used to look like "not credited" so shrine /
+ * ground Doka / dungeon-complete retried and minted twice.
+ */
+export function shouldReleaseOneShotAfterPersist(
+  applyRewardsInvoked: boolean,
+): boolean {
+  return applyRewardsInvoked !== true;
+}
+
+/** Only an explicit applyRewards #err is safe to retry (canister did not add). */
+export function shouldReleaseOneShotDokaCredit(
+  result: PersistDokaCreditResult,
+): boolean {
+  return "err" in result && result.err === "rejected";
+}
+
+export function persistDokaCreditAmount(
+  result: PersistDokaCreditResult,
+): number {
+  return "ok" in result ? result.ok : 0;
+}
+
+export type DokaCreditPersistResult = {
+  newDoka: number;
+  applyRewardsInvoked: boolean;
+  canisterRejected: boolean;
+};
+
+/**
+ * Transport / parse failures after invoke still mean the canister may have
+ * the credit. Releasing the one-shot id then lets the next RAF step mint again.
+ */
+export function shouldReleaseOneShotAfterCredit(
+  result: DokaCreditPersistResult,
+): boolean {
+  if (result.canisterRejected) return true;
+  return !result.applyRewardsInvoked;
+}
+
+/** Production shrine / ground / dungeon-complete settle after persist. */
+export function settleOneShotAfterCredit(
+  result: PersistDokaCreditResult,
+): "commit" | "release" | "keep" {
+  if ("ok" in result && Number.isFinite(result.ok) && result.ok > 0) {
+    return "commit";
+  }
+  if (shouldReleaseOneShotDokaCredit(result)) return "release";
+  return "keep";
+}
+
+function classifyPersistDokaCreditError(
+  error: unknown,
+): "rejected" | "transport" {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes("applyRewards failed") ? "rejected" : "transport";
+}
+
+export async function persistDokaCreditResult(
+  actor: DokaCreditActor,
+  slot: number,
+  doka: number,
+): Promise<PersistDokaCreditResult> {
+  try {
+    const result = await actor.applyRewards(
+      BigInt(slot),
+      BigInt(doka),
+      BigInt(0),
+    );
+    return { ok: readApplyRewardsOk(result).newDoka };
+  } catch (error) {
+    console.error("persistDokaCredit failed", error);
+    return { err: classifyPersistDokaCreditError(error) };
+  }
+}
+
 /**
  * Credits Doka to a character slot via the single atomic backend funnel
  * applyRewards(slot, doka, 0) and returns the new absolute Doka balance.
@@ -104,21 +185,16 @@ export function tryClaimDungeonChainBonus(claimed: {
  * Parse through readApplyRewardsOk. A `{ _ok }` / `{ __kind__: "ok" }`
  * success that used to yield NaN left the canister credited and the persist
  * lock unchanged, so the next saveBattleStats wiped the pickup.
+ *
+ * Prefer {@link persistDokaCreditResult} + {@link settleOneShotAfterCredit}
+ * at one-shot call sites so a transport miss after invoke cannot remint.
  */
 export async function persistDokaCredit(
   actor: DokaCreditActor,
   slot: number,
   doka: number,
 ): Promise<number> {
-  try {
-    const result = await actor.applyRewards(
-      BigInt(slot),
-      BigInt(doka),
-      BigInt(0),
-    );
-    return readApplyRewardsOk(result).newDoka;
-  } catch (error) {
-    console.error("persistDokaCredit failed", error);
-    return 0;
-  }
+  return persistDokaCreditAmount(
+    await persistDokaCreditResult(actor, slot, doka),
+  );
 }
