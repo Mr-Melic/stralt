@@ -129,6 +129,25 @@ assert.equal(threw, true);
 assert.equal(raiseUiAfterDeathPersist(600, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(900, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(610, 582), 610);
+
+{
+  // Optimistic death UI called onDokaBalanceChange(cut) and left the live
+  // ref uncut. raiseUi(uncut, persisted) then refunds the 40% penalty.
+  const uncutRef = 1000;
+  const optimistic = computeDeathPenalty(100, uncutRef);
+  assert.equal(optimistic.newDoka, 600);
+  const persistedAfterCredit = 900;
+  assert.equal(
+    raiseUiAfterDeathPersist(uncutRef, persistedAfterCredit),
+    1000,
+    "uncut ref + raiseUi restores the pre-penalty wallet",
+  );
+  assert.equal(
+    raiseUiAfterDeathPersist(optimistic.newDoka, persistedAfterCredit),
+    900,
+    "optimistic cut on the live ref lets raiseUi keep the persisted penalty",
+  );
+}
 assert.equal(
   xpAfterDeathPersist({
     uiXp: 64,

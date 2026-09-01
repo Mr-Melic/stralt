@@ -355,3 +355,45 @@ export function applyHealHpToLiveStats<T extends { hp: number }>(
   stats.current = next;
   return next;
 }
+
+/**
+ * Write the live wallet ref. Do not also bump `prevDokaPropRef`: a child
+ * re-render still sees the stale-high GameFlow prop, and treating that as
+ * a new parent write copies it over this debit.
+ *
+ * Chronology without this write on credits:
+ * 1. Shop/feat/victory: onDokaBalanceChange(ref + gained), ref stays old.
+ * 2. Same-tick heal debits the old ref and setCharacterStats.
+ * 3. GameFlow flushes the credit first (queued first) → prop = old + gained
+ *    (no heal). syncLiveDokaFromProp copies that over the heal debit.
+ * 4. Next heal/shop spends from the inflated ref. persistAbsoluteProgress
+ *    writes extra HP / an extra item against a 0-spend snapshot.
+ */
+export function writeLiveDoka(live: { current: number }, next: number): number {
+  const n = Math.max(0, Math.floor(Number(next) || 0));
+  live.current = n;
+  return n;
+}
+
+/** Add a persist-lock credit onto the live wallet before GameFlow commits. */
+export function creditLiveDoka(
+  live: { current: number },
+  gained: number,
+): number {
+  const add = Math.max(0, Math.floor(Number(gained) || 0));
+  return writeLiveDoka(live, live.current + add);
+}
+
+/**
+ * Failed BuffShop persist must not add `amount` back if a later buy already
+ * moved the live wallet. First reject after a second successful buy used
+ * to mint a ghost +cost that persistAbsoluteProgress then spent.
+ */
+export function shouldRollbackFailedShopSpend(args: {
+  liveDoka: number;
+  expectedDoka: number;
+}): boolean {
+  const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
+  const expected = Math.max(0, Math.floor(Number(args.expectedDoka) || 0));
+  return live === expected;
+}
