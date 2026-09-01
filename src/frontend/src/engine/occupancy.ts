@@ -111,9 +111,12 @@ export function findNearestFreeCell(
   ctx: OccupancyContext,
   maxRadius: number,
   avoid?: Set<string>,
+  accept?: (cell: OccCell) => boolean,
 ): OccCell | null {
   const ok = (cell: OccCell) =>
-    isCellFree(cell, ctx) && !avoid?.has(occKey(cell.x, cell.y));
+    isCellFree(cell, ctx) &&
+    !avoid?.has(occKey(cell.x, cell.y)) &&
+    (accept?.(cell) ?? true) === true;
   if (ok(origin)) return { x: origin.x, y: origin.y };
   for (let r = 1; r <= maxRadius; r++) {
     // Walk the perimeter of the Manhattan ring of radius r.
@@ -180,69 +183,24 @@ export function collectMandatoryProgressionCells(
   voidTiles: Set<string>,
   portals: Set<string>,
   start: OccCell,
+  impassable?: Set<string>,
 ): Set<string> {
   const mandatory = new Set<string>();
   if (portals.size === 0) return mandatory;
-  const open = floodPassable(tiles, voidTiles, new Set(), start);
+  const base = new Set(impassable ?? []);
+  const open = floodPassable(tiles, voidTiles, base, start);
   const portalReachable = [...portals].some((p) => open.has(p));
   if (!portalReachable) return mandatory;
   const startKey = occKey(start.x, start.y);
   for (const k of open) {
     if (k === startKey || portals.has(k)) continue;
-    const blocked = new Set<string>([k]);
+    const blocked = new Set<string>(base);
+    blocked.add(k);
     const next = floodPassable(tiles, voidTiles, blocked, start);
     const still = [...portals].some((p) => next.has(p));
     if (!still) mandatory.add(k);
   }
   return mandatory;
-}
-
-function shortestProgressionPath(
-  tiles: boolean[][],
-  voidTiles: Set<string>,
-  start: OccCell,
-  goal: OccCell,
-): OccCell[] | null {
-  const h = tiles.length;
-  const w = tiles[0]?.length ?? 0;
-  const walk = (x: number, y: number) => {
-    if (x < 0 || y < 0 || x >= w || y >= h) return false;
-    if (!tiles[y]?.[x]) return false;
-    if (voidTiles.has(occKey(x, y))) return false;
-    return true;
-  };
-  if (!walk(start.x, start.y) || !walk(goal.x, goal.y)) return null;
-  const parent = new Map<string, OccCell | null>();
-  const goalK = occKey(goal.x, goal.y);
-  parent.set(occKey(start.x, start.y), null);
-  const q: OccCell[] = [start];
-  while (q.length > 0) {
-    const cur = q.shift()!;
-    if (occKey(cur.x, cur.y) === goalK) {
-      const path: OccCell[] = [];
-      let step: OccCell | null = cur;
-      while (step) {
-        path.push(step);
-        const prev = parent.get(occKey(step.x, step.y));
-        step = prev ?? null;
-      }
-      return path.reverse();
-    }
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ] as const) {
-      const nx = cur.x + dx;
-      const ny = cur.y + dy;
-      const nk = occKey(nx, ny);
-      if (parent.has(nk) || !walk(nx, ny)) continue;
-      parent.set(nk, cur);
-      q.push({ x: nx, y: ny });
-    }
-  }
-  return null;
 }
 
 /** True when living occupants jointly cut every player→exit route. */
@@ -252,9 +210,11 @@ export function occupantsSealProgression(
   portals: Set<string>,
   start: OccCell,
   occupants: OccCell[],
+  impassable?: Set<string>,
 ): boolean {
   if (portals.size === 0) return false;
-  const blocked = new Set(occupants.map((o) => occKey(o.x, o.y)));
+  const blocked = new Set(impassable ?? []);
+  for (const o of occupants) blocked.add(occKey(o.x, o.y));
   blocked.delete(occKey(start.x, start.y));
   for (const p of portals) blocked.delete(p);
   const open = floodPassable(tiles, voidTiles, blocked, start);
@@ -286,27 +246,64 @@ export function unsealProgressionOccupants(
   start: OccCell,
   ctx: OccupancyContext,
 ): OccCell[] {
+  const impassable = ctx.barriers;
   const occupants = [...collectOccupiedCells(ctx)];
   for (const m of movers) {
     const k = occKey(m.x, m.y);
     if (!occupants.some((o) => occKey(o.x, o.y) === k)) occupants.push(m);
   }
-  if (!occupantsSealProgression(tiles, voidTiles, portals, start, occupants)) {
+  if (
+    !occupantsSealProgression(
+      tiles,
+      voidTiles,
+      portals,
+      start,
+      occupants,
+      impassable,
+    )
+  ) {
     return movers;
   }
-  const open = floodPassable(tiles, voidTiles, new Set(), start);
-  const goalKey = [...portals].find((p) => open.has(p));
-  if (!goalKey) return movers;
-  const parts = goalKey.split(",");
-  const route = shortestProgressionPath(tiles, voidTiles, start, {
-    x: Number(parts[0]),
-    y: Number(parts[1]),
-  });
-  if (!route) return movers;
-  const routeSet = new Set(route.map((c) => occKey(c.x, c.y)));
-  routeSet.delete(occKey(start.x, start.y));
-  for (const p of portals) routeSet.delete(p);
-  return relocateOffMandatoryCells(movers, routeSet, ctx);
+  // Relocate each mover onto a cell that restores some player→exit route.
+  // Sliding only off the shortest path missed a summon sitting on the
+  // longer of two corridors (min-cut=2) and ignored spell barriers that
+  // had already removed the short route.
+  const result = movers.map((m) => ({ x: m.x, y: m.y }));
+  const moverKeys = () => new Set(result.map((m) => occKey(m.x, m.y)));
+  const staticOccupants = occupants.filter(
+    (o) => !moverKeys().has(occKey(o.x, o.y)),
+  );
+  for (let i = 0; i < result.length; i++) {
+    const others = [...staticOccupants, ...result.filter((_, j) => j !== i)];
+    const trial = (cell: OccCell) => [...others, cell];
+    if (
+      !occupantsSealProgression(
+        tiles,
+        voidTiles,
+        portals,
+        start,
+        trial(result[i]),
+        impassable,
+      )
+    ) {
+      continue;
+    }
+    const avoid = new Set(
+      result.filter((_, j) => j !== i).map((m) => occKey(m.x, m.y)),
+    );
+    const found = findNearestFreeCell(result[i], ctx, 8, avoid, (cell) => {
+      return !occupantsSealProgression(
+        tiles,
+        voidTiles,
+        portals,
+        start,
+        trial(cell),
+        impassable,
+      );
+    });
+    if (found) result[i] = found;
+  }
+  return result;
 }
 
 export function relocateOffMandatoryCells(

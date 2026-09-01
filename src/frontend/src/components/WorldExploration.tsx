@@ -9887,6 +9887,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
               ),
               playerPositionRef.current,
+              new Set(barrierTilesRef.current.keys()),
             ),
             progressStart: playerPositionRef.current,
             isOccupied: (c: { x: number; y: number }) =>
@@ -10230,6 +10231,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
               ),
               playerPositionRef.current,
+              new Set(barrierTilesRef.current.keys()),
             ),
             progressStart: playerPositionRef.current,
             isOccupied: (c: { x: number; y: number }) =>
@@ -15386,6 +15388,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (currentMap?.portals ?? []).map((p: any) => `${p.x},${p.y}`),
               ),
               playerPositionRef.current,
+              new Set(barrierTilesRef.current.keys()),
             ),
             progressStart: playerPositionRef.current,
             isOccupied: (oc: { x: number; y: number }) =>
@@ -15505,6 +15508,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     ),
                   ),
                   playerPositionRef.current,
+                  new Set(barrierTilesRef.current.keys()),
                 ),
                 progressStart: playerPositionRef.current,
                 isOccupied: (c: { x: number; y: number }) =>
@@ -15635,6 +15639,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             toVoidSet(aiVoid),
             aiPortals,
             playerPositionRef.current,
+            aiBarriers,
           ),
           progressStart: playerPositionRef.current,
           isOccupied: (c: { x: number; y: number }) =>
