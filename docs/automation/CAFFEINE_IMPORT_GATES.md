@@ -146,7 +146,9 @@ Dashboard URL for any readable id: `https://cursor.com/automations/<id>`.
 
 | What | Status | Change in this work |
 | :--- | :--- | :--- |
-| `.github/workflows/caffeine-import-gate.yml` | Existed on #181 (frontend only) | Added Motoko `mops check --locked` job; both jobs always run; sibling `open-pr-stack` job (`pull-requests: read`, no PocketIC/dfx) |
+| `.github/workflows/caffeine-import-gate.yml` | Existed on #181 (frontend only) | Added Motoko `mops check --locked` job; both jobs always run |
+| `open-pr-stack` job + `scripts/open-pr-stack-compat.sh` | Missing | Oldest-first open-PR sequential `merge-tree` on PRs/`main`; `pull-requests: read`; no PocketIC/dfx |
+| `.cursor/rules/open-pr-stack-compat.mdc` | Missing | `alwaysApply` restack/union rule before opening a PR |
 | `AGENTS.md` Verified Commands | typecheck / fix / build only | Added `pnpm check`, `mops check` / `caffeine check`, finish gate |
 | `.cursor/rules/` | Missing | Added `caffeine-import-gate.mdc` (`alwaysApply`) |
 | `scripts/caffeine-import-gate.sh` | Missing | Shared frontend + backend runner |
