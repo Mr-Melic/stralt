@@ -324,6 +324,13 @@ import {
   tryClaimPickupId,
 } from "../utils/dokaPersist";
 import {
+  IAP_SHOP_CLOSE_LABEL,
+  IAP_SHOP_KYC_PREAMBLE,
+  IAP_SHOP_PACKAGES_DETAIL,
+  IAP_SHOP_PACKAGES_LEAD,
+  IAP_SHOP_TITLE,
+} from "../utils/iapShopCopy";
+import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
   nextDokaAfterShopSpend,
@@ -19088,7 +19095,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         </div>
       )}
 
-      {/* ── Doka Shop Modal ───────────────────────────────────────────────────── */}
+      {/* ── Buy Doka (IAP) modal — not the Items potion shop ─────────────────── */}
       {showShop && (
         <div
           data-ocid="shop.dialog"
@@ -19124,7 +19131,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 setShopStep("packages");
                 setSelectedPkg(null);
               }}
-              aria-label="Close shop"
+              aria-label={IAP_SHOP_CLOSE_LABEL}
               style={{
                 position: "absolute",
                 top: 12,
@@ -19149,10 +19156,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 fontSize: 20,
               }}
             >
-              Doka Shop
+              {IAP_SHOP_TITLE}
             </h2>
+            <p style={{ color: "#e0d6c8", fontSize: 12, marginBottom: 6 }}>
+              {IAP_SHOP_PACKAGES_LEAD}
+            </p>
             <p style={{ color: "#6a7a8a", fontSize: 12, marginBottom: 20 }}>
-              Purchase Doka to level up spells and exchange for healing.
+              {IAP_SHOP_PACKAGES_DETAIL}
             </p>
 
             {shopStep === "packages" && (
@@ -19296,6 +19306,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     ← Back
                   </button>
                 </div>
+
+                <p
+                  data-ocid="shop.kyc_preamble"
+                  style={{
+                    color: "#e0d6c8",
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                    margin: "0 0 16px",
+                  }}
+                >
+                  {IAP_SHOP_KYC_PREAMBLE}
+                </p>
 
                 <div
                   style={{

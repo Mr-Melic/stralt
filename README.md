@@ -90,6 +90,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/ACTION_IDS_2026-08-31-1200.md](docs/automation/ACTION_IDS_2026-08-31-1200.md) | 12:00 orchestrator ledger (post-merge-burst) |
 | [docs/automation/ACTION_IDS_2026-08-31-1800.md](docs/automation/ACTION_IDS_2026-08-31-1800.md) | 18:00 orchestrator ledger (vitals jewels) |
 | [docs/automation/ACTION_IDS_2026-09-01-0000.md](docs/automation/ACTION_IDS_2026-09-01-0000.md) | 00:00 orchestrator ledger (walk reject floats) |
+| [docs/automation/ACTION_IDS_2026-09-01-1200.md](docs/automation/ACTION_IDS_2026-09-01-1200.md) | 12:00 orchestrator ledger (Buy Doka IAP copy) |
 
 ## Hard rules (product)
 
