@@ -311,6 +311,20 @@ export interface PurchaseRecord {
     packageId: string;
     customerCity: string;
 }
+export interface GameKeyRequest {
+    id: string;
+    userPrincipal: Principal;
+    email: string;
+    emailConsent: boolean;
+    hintedEuroCents: bigint;
+    timestamp: bigint;
+    status: string;
+    dokaAmount: bigint;
+    emailed: boolean;
+    approvedAt: bigint;
+    redeemedAt: bigint;
+    redeemedBy: string;
+}
 export interface BossPhaseConfig {
     hpThreshold: number;
     statMultiplier: number;
@@ -360,6 +374,13 @@ export interface backendInterface {
     adminAddDokaToUser(userPrincipal: Principal, dokaAmount: bigint, purchaseId: string | null): Promise<{
         __kind__: "ok";
         ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminApproveGameKeyPurchase(requestId: string, dokaAmount: bigint): Promise<{
+        __kind__: "ok";
+        ok: string;
     } | {
         __kind__: "err";
         err: string;
@@ -461,11 +482,39 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    adminGetGameKeyReveal(requestId: string): Promise<{
+        __kind__: "ok";
+        ok: string;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     /**
      * / Admin: grant Doka to a principal by text ID (used by shop admin panel).
      * / Alias for adminAddDoka; named adminGrantDoka to match the frontend's expected method name.
      */
     adminGrantDoka(targetPrincipal: Principal, amount: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminListGameKeyRequests(): Promise<{
+        __kind__: "ok";
+        ok: Array<GameKeyRequest>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminMarkGameKeyEmailed(requestId: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminRejectGameKeyPurchase(requestId: string): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
@@ -959,6 +1008,7 @@ export interface backendInterface {
      * / Returns the caller's purchase history.
      */
     getMyPurchaseHistory(): Promise<Array<PurchaseRecord>>;
+    getMyGameKeyPurchaseStatus(): Promise<GameKeyRequest | null>;
     /**
      * / Public: return the achievement progress records for the given principal.
      */
@@ -1054,6 +1104,20 @@ export interface backendInterface {
      * / Player calls this to trigger auto-completion of their pending purchases.
      */
     processPendingPurchases(): Promise<bigint>;
+    redeemGameKey(code: string): Promise<{
+        __kind__: "ok";
+        ok: bigint;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    requestGameKeyPurchase(email: string, emailConsent: boolean, hintedEuroCents: bigint): Promise<{
+        __kind__: "ok";
+        ok: string;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     /**
      * / Purchase a buff item. Deducts Doka from caller's per-principal balance.
      */
@@ -1338,6 +1402,26 @@ export class Backend implements backendInterface {
             return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
         }
     }
+    async adminApproveGameKeyPurchase(arg0: string, arg1: bigint): Promise<{
+        __kind__: "ok";
+        ok: string;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminApproveGameKeyPurchase(arg0, arg1);
+                return from_candid_variant_n70(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminApproveGameKeyPurchase(arg0, arg1);
+            return from_candid_variant_n70(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async adminBanAccount(arg0: Principal): Promise<{
         __kind__: "ok";
         ok: null;
@@ -1575,6 +1659,86 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.adminGrantDoka(arg0, arg1);
+            return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async adminGetGameKeyReveal(arg0: string): Promise<{
+        __kind__: "ok";
+        ok: string;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminGetGameKeyReveal(arg0);
+                return from_candid_variant_n70(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminGetGameKeyReveal(arg0);
+            return from_candid_variant_n70(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async adminListGameKeyRequests(): Promise<{
+        __kind__: "ok";
+        ok: Array<GameKeyRequest>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminListGameKeyRequests();
+                return "ok" in result ? { __kind__: "ok", ok: result.ok } : { __kind__: "err", err: result.err };
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminListGameKeyRequests();
+            return "ok" in result ? { __kind__: "ok", ok: result.ok } : { __kind__: "err", err: result.err };
+        }
+    }
+    async adminMarkGameKeyEmailed(arg0: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminMarkGameKeyEmailed(arg0);
+                return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminMarkGameKeyEmailed(arg0);
+            return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async adminRejectGameKeyPurchase(arg0: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.adminRejectGameKeyPurchase(arg0);
+                return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.adminRejectGameKeyPurchase(arg0);
             return from_candid_variant_n1(this._uploadFile, this._downloadFile, result);
         }
     }
@@ -2776,6 +2940,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getMyGameKeyPurchaseStatus(): Promise<GameKeyRequest | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getMyGameKeyPurchaseStatus();
+                return Array.isArray(result) ? (result[0] ?? null) : (result ?? null);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getMyGameKeyPurchaseStatus();
+            return Array.isArray(result) ? (result[0] ?? null) : (result ?? null);
+        }
+    }
     async getPlayerAchievements(arg0: Principal): Promise<Array<AchievementProgress>> {
         if (this.processError) {
             try {
@@ -3069,6 +3247,46 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.processPendingPurchases();
             return result;
+        }
+    }
+    async redeemGameKey(arg0: string): Promise<{
+        __kind__: "ok";
+        ok: bigint;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.redeemGameKey(arg0);
+                return from_candid_variant_n3(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.redeemGameKey(arg0);
+            return from_candid_variant_n3(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async requestGameKeyPurchase(arg0: string, arg1: boolean, arg2: bigint): Promise<{
+        __kind__: "ok";
+        ok: string;
+    } | {
+        __kind__: "err";
+        err: string;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.requestGameKeyPurchase(arg0, arg1, arg2);
+                return from_candid_variant_n70(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.requestGameKeyPurchase(arg0, arg1, arg2);
+            return from_candid_variant_n70(this._uploadFile, this._downloadFile, result);
         }
     }
     async purchaseBuff(arg0: bigint, arg1: string): Promise<{

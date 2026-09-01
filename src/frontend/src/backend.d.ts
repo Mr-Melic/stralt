@@ -265,6 +265,20 @@ export interface PurchaseRecord {
     packageId: string;
     customerCity: string;
 }
+export interface GameKeyRequest {
+    id: string;
+    userPrincipal: Principal;
+    email: string;
+    emailConsent: boolean;
+    hintedEuroCents: bigint;
+    timestamp: bigint;
+    status: string;
+    dokaAmount: bigint;
+    emailed: boolean;
+    approvedAt: bigint;
+    redeemedAt: bigint;
+    redeemedBy: string;
+}
 export interface BossPhaseConfig {
     hpThreshold: number;
     statMultiplier: number;
@@ -313,6 +327,13 @@ export interface backendInterface {
     adminAddDokaToUser(userPrincipal: Principal, dokaAmount: bigint, purchaseId: string | null): Promise<{
         __kind__: "ok";
         ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminApproveGameKeyPurchase(requestId: string, dokaAmount: bigint): Promise<{
+        __kind__: "ok";
+        ok: string;
     } | {
         __kind__: "err";
         err: string;
@@ -419,6 +440,34 @@ export interface backendInterface {
      * / Alias for adminAddDoka; named adminGrantDoka to match the frontend's expected method name.
      */
     adminGrantDoka(targetPrincipal: Principal, amount: bigint): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminGetGameKeyReveal(requestId: string): Promise<{
+        __kind__: "ok";
+        ok: string;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminListGameKeyRequests(): Promise<{
+        __kind__: "ok";
+        ok: Array<GameKeyRequest>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminMarkGameKeyEmailed(requestId: string): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    adminRejectGameKeyPurchase(requestId: string): Promise<{
         __kind__: "ok";
         ok: null;
     } | {
@@ -870,6 +919,7 @@ export interface backendInterface {
      * / Returns the caller's purchase history.
      */
     getMyPurchaseHistory(): Promise<Array<PurchaseRecord>>;
+    getMyGameKeyPurchaseStatus(): Promise<GameKeyRequest | null>;
     /**
      * / Public: return the achievement progress records for the given principal.
      */
@@ -965,6 +1015,20 @@ export interface backendInterface {
      * / Player calls this to trigger auto-completion of their pending purchases.
      */
     processPendingPurchases(): Promise<bigint>;
+    redeemGameKey(code: string): Promise<{
+        __kind__: "ok";
+        ok: bigint;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    requestGameKeyPurchase(email: string, emailConsent: boolean, hintedEuroCents: bigint): Promise<{
+        __kind__: "ok";
+        ok: string;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
     /**
      * / Purchase a buff item. Deducts Doka from caller's per-principal balance.
      */

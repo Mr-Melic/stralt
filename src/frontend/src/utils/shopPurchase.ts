@@ -176,3 +176,66 @@ export async function creditPendingPurchasesThroughPersist(
     return result;
   });
 }
+
+export type GameKeyRedeemActor = {
+  redeemGameKey?: (code: string) => Promise<unknown>;
+  getCallerDokaBalance?: () => Promise<unknown>;
+};
+
+export function readRedeemGameKeyResult(
+  result: unknown,
+): { ok: number } | { err: string } {
+  if (result == null || typeof result !== "object") {
+    return { err: "redeemGameKey returned an empty result" };
+  }
+  const r = result as Record<string, unknown>;
+  if (
+    r.__kind__ === "err" ||
+    (r.err != null && r.ok == null && r._ok == null)
+  ) {
+    return { err: String(r.err ?? r._err ?? "redeemGameKey failed") };
+  }
+  const ok = r.ok ?? r._ok;
+  const n = Number(ok);
+  if (!Number.isFinite(n) || n < 0) {
+    return { err: "redeemGameKey missing Doka amount" };
+  }
+  return { ok: n };
+}
+
+/**
+ * redeemGameKey is a credit. Same persist-lock rules as processPendingPurchases:
+ * enqueue, commit only when this pair observed a gain, never cut a higher snapshot.
+ */
+export async function redeemGameKeyThroughPersist(
+  actor: GameKeyRedeemActor,
+  persist: ShopCreditPersistLock,
+  code: string,
+): Promise<{
+  previous: number | null;
+  credited: number | null;
+  result: { ok: number } | { err: string };
+}> {
+  return persist.enqueue(async () => {
+    if (!actor.getCallerDokaBalance || !actor.redeemGameKey) {
+      return {
+        previous: null,
+        credited: null,
+        result: { err: "Actor not available" },
+      };
+    }
+    const previous = readCallerDokaBalance(await actor.getCallerDokaBalance());
+    const parsed = readRedeemGameKeyResult(await actor.redeemGameKey(code));
+    const credited = readCallerDokaBalance(await actor.getCallerDokaBalance());
+    const gained = creditedDokaDelta(previous, credited);
+    if (credited != null && shouldCommitShopCredit(gained)) {
+      persist.commit({
+        doka: committedDokaAfterShopCreditOnLock(
+          persist.snapshot().doka,
+          credited,
+        ),
+      });
+    }
+    return { previous, credited, result: parsed };
+  });
+}

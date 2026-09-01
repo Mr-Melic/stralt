@@ -266,7 +266,6 @@ import {
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
 import {
-  safeExternalHref,
   shouldIncludeBackendSpellInLibrary,
   thresholdAchievementConditionsFromPersist,
 } from "../utils/adminSafety";
@@ -335,13 +334,6 @@ import {
   tryClaimPickupId,
 } from "../utils/dokaPersist";
 import {
-  IAP_SHOP_CLOSE_LABEL,
-  IAP_SHOP_KYC_PREAMBLE,
-  IAP_SHOP_PACKAGES_DETAIL,
-  IAP_SHOP_PACKAGES_LEAD,
-  IAP_SHOP_TITLE,
-} from "../utils/iapShopCopy";
-import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
   creditLiveDoka,
@@ -405,11 +397,8 @@ import {
 import {
   PENDING_PURCHASE_CREDIT_DELAY_MS,
   type PurchaseCreditActor,
-  buildInitiatePurchaseArgs,
   creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
-  readInitiatePurchaseResult,
-  shouldStartShopPurchase,
 } from "../utils/shopPurchase";
 import {
   type SpellUpgradeActor,
@@ -443,6 +432,7 @@ import ChallengePanel, {
   isChallengeCompleted,
 } from "./ChallengePanel";
 import type { ChallengePanelProgress } from "./ChallengePanel";
+import DokaGameKeyShop from "./DokaGameKeyShop";
 import SpellbookModal from "./SpellbookModal";
 import StatusEffectBadge from "./StatusEffectBadge";
 
@@ -2067,19 +2057,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // Shop modal state
   const [showShop, setShowShop] = useState(false);
-  const [shopStep, setShopStep] = useState<"packages" | "form">("packages");
-  const [selectedPkg, setSelectedPkg] = useState<{
-    dokaAmount: number;
-    priceEur: number;
-    id: string;
-    paymentLink?: string;
-  } | null>(null);
-  const [shopCustomerData, setShopCustomerData] = useState<
-    Record<string, string>
-  >({});
-  const [shopProofFile, setShopProofFile] = useState<File | null>(null);
-  const [isShopPurchasing, setIsShopPurchasing] = useState(false);
-  const shopPurchaseInFlightRef = useRef(false);
   const dokaHealInFlightRef = useRef(false);
 
   // Boost toggle state
@@ -17820,7 +17797,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             data-ocid="shop.open_modal_button"
             onClick={() => {
               setShowShop(true);
-              setShopStep("packages");
               void applyPendingPurchaseCredit();
             }}
             title="Buy Doka"
@@ -19223,509 +19199,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         </div>
       )}
 
-      {/* ── Buy Doka (IAP) modal — not the Items potion shop ─────────────────── */}
       {showShop && (
-        <div
-          data-ocid="shop.dialog"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9600,
-            background: "rgba(0,0,0,0.88)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "auto",
+        <DokaGameKeyShop
+          actor={actor}
+          persist={progressPersistRef.current}
+          onClose={() => setShowShop(false)}
+          onDokaCredited={(gained) => {
+            onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, gained));
           }}
-        >
-          <div
-            style={{
-              background: "#141726",
-              border: "2px solid #c0392b",
-              borderRadius: 14,
-              padding: 28,
-              width: "min(860px, 95vw)",
-              maxHeight: "90vh",
-              overflowY: "auto",
-              boxShadow: "0 0 60px rgba(192,57,43,0.5)",
-              position: "relative",
-            }}
-          >
-            <button
-              type="button"
-              data-ocid="shop.close_button"
-              onClick={() => {
-                setShowShop(false);
-                setShopStep("packages");
-                setSelectedPkg(null);
-              }}
-              aria-label={IAP_SHOP_CLOSE_LABEL}
-              style={{
-                position: "absolute",
-                top: 12,
-                right: 16,
-                background: "transparent",
-                border: "none",
-                color: "#e74c3c",
-                fontSize: 20,
-                cursor: "pointer",
-                minWidth: 44,
-                minHeight: 44,
-              }}
-            >
-              ×
-            </button>
-
-            <h2
-              style={{
-                color: "#e74c3c",
-                fontFamily: "serif",
-                marginBottom: 4,
-                fontSize: 20,
-              }}
-            >
-              {IAP_SHOP_TITLE}
-            </h2>
-            <p style={{ color: "#e0d6c8", fontSize: 12, marginBottom: 6 }}>
-              {IAP_SHOP_PACKAGES_LEAD}
-            </p>
-            <p style={{ color: "#6a7a8a", fontSize: 12, marginBottom: 20 }}>
-              {IAP_SHOP_PACKAGES_DETAIL}
-            </p>
-
-            {shopStep === "packages" && (
-              <div>
-                {[
-                  [
-                    { id: "pkg_10", dokaAmount: 10, priceEur: 1 },
-                    { id: "pkg_100", dokaAmount: 100, priceEur: 3 },
-                    { id: "pkg_250", dokaAmount: 250, priceEur: 5 },
-                    { id: "pkg_500", dokaAmount: 500, priceEur: 8 },
-                    { id: "pkg_1000", dokaAmount: 1000, priceEur: 15 },
-                  ],
-                  [
-                    { id: "pkg_2500", dokaAmount: 2500, priceEur: 20 },
-                    { id: "pkg_5000", dokaAmount: 5000, priceEur: 40 },
-                    { id: "pkg_10000", dokaAmount: 10000, priceEur: 75 },
-                    { id: "pkg_25000", dokaAmount: 25000, priceEur: 130 },
-                    { id: "pkg_50000", dokaAmount: 50000, priceEur: 250 },
-                  ],
-                  [
-                    { id: "pkg_100000", dokaAmount: 100000, priceEur: 400 },
-                    { id: "pkg_200000", dokaAmount: 200000, priceEur: 700 },
-                    { id: "pkg_400000", dokaAmount: 400000, priceEur: 1200 },
-                    { id: "pkg_800000", dokaAmount: 800000, priceEur: 2000 },
-                    { id: "pkg_1600000", dokaAmount: 1600000, priceEur: 3500 },
-                  ],
-                ].map((row) => (
-                  <div
-                    key={row[0].id}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(5,1fr)",
-                      gap: 10,
-                      marginBottom: 12,
-                    }}
-                  >
-                    {row.map((pkg) => (
-                      <div
-                        key={pkg.id}
-                        style={{
-                          background: "#0d0f1a",
-                          border: "1px solid #8b1a1a",
-                          borderRadius: 8,
-                          padding: "12px 6px",
-                          textAlign: "center",
-                        }}
-                      >
-                        <div
-                          style={{
-                            color: "#f1c40f",
-                            fontWeight: 800,
-                            fontSize: 14,
-                            marginBottom: 4,
-                          }}
-                        >
-                          💰 {pkg.dokaAmount.toLocaleString()}
-                        </div>
-                        <div
-                          style={{
-                            color: "#6a7a8a",
-                            fontSize: 11,
-                            marginBottom: 8,
-                          }}
-                        >
-                          €{pkg.priceEur}
-                        </div>
-                        <button
-                          type="button"
-                          data-ocid={`shop.buy_button.${pkg.id}`}
-                          onClick={() => {
-                            setSelectedPkg(pkg);
-                            setShopStep("form");
-                            setShopCustomerData({});
-                            setShopProofFile(null);
-                          }}
-                          style={{
-                            width: "100%",
-                            padding: "6px 0",
-                            background:
-                              "linear-gradient(135deg,#6a0a0a,#c0392b)",
-                            border: "1px solid #c0392b",
-                            borderRadius: 5,
-                            color: "#fff",
-                            cursor: "pointer",
-                            fontSize: 11,
-                            fontWeight: 700,
-                          }}
-                        >
-                          Buy
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {shopStep === "form" && selectedPkg && (
-              <div style={{ maxWidth: 480, margin: "0 auto" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    marginBottom: 20,
-                    background: "#0d0f1a",
-                    border: "1px solid #8b1a1a",
-                    borderRadius: 8,
-                    padding: "12px 16px",
-                  }}
-                >
-                  <span style={{ color: "#f1c40f", fontSize: 22 }}>💰</span>
-                  <div>
-                    <div
-                      style={{
-                        color: "#e74c3c",
-                        fontWeight: 800,
-                        fontSize: 15,
-                      }}
-                    >
-                      {selectedPkg.dokaAmount.toLocaleString()} Doka
-                    </div>
-                    <div style={{ color: "#6a7a8a", fontSize: 12 }}>
-                      €{selectedPkg.priceEur}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShopStep("packages")}
-                    style={{
-                      marginLeft: "auto",
-                      background: "transparent",
-                      border: "1px solid #2a3040",
-                      borderRadius: 4,
-                      color: "#6a7a8a",
-                      padding: "4px 10px",
-                      cursor: "pointer",
-                      fontSize: 11,
-                    }}
-                  >
-                    ← Back
-                  </button>
-                </div>
-
-                <p
-                  data-ocid="shop.kyc_preamble"
-                  style={{
-                    color: "#e0d6c8",
-                    fontSize: 12,
-                    lineHeight: 1.45,
-                    margin: "0 0 16px",
-                  }}
-                >
-                  {IAP_SHOP_KYC_PREAMBLE}
-                </p>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: "0 16px",
-                  }}
-                >
-                  {[
-                    { key: "firstName", label: "First Name" },
-                    { key: "lastName", label: "Last Name" },
-                    { key: "email", label: "Email" },
-                    { key: "address", label: "Address" },
-                    { key: "city", label: "City" },
-                    { key: "postalCode", label: "Postal Code" },
-                    { key: "country", label: "Country" },
-                  ].map(({ key, label }) => (
-                    <div
-                      key={key}
-                      style={{
-                        marginBottom: 12,
-                        gridColumn: key === "address" ? "1 / -1" : undefined,
-                      }}
-                    >
-                      <label
-                        htmlFor={`shop-field-${key}`}
-                        style={{
-                          display: "block",
-                          color: "#6a7a8a",
-                          fontSize: 10,
-                          textTransform: "uppercase",
-                          marginBottom: 4,
-                        }}
-                      >
-                        {label}
-                      </label>
-                      <input
-                        id={`shop-field-${key}`}
-                        type="text"
-                        data-ocid={`shop.form.${key}_input`}
-                        value={shopCustomerData[key] ?? ""}
-                        onChange={(e) =>
-                          setShopCustomerData((p) => ({
-                            ...p,
-                            [key]: e.target.value,
-                          }))
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "8px 10px",
-                          background: "#0d0f1a",
-                          border: "1px solid #8b1a1a",
-                          borderRadius: 5,
-                          color: "#e0e6f0",
-                          fontSize: 16,
-                          outline: "none",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Proof of Address upload */}
-                <div style={{ marginBottom: 14 }}>
-                  <label
-                    htmlFor="shop-proof-upload"
-                    style={{
-                      display: "block",
-                      color: "#6a7a8a",
-                      fontSize: 10,
-                      textTransform: "uppercase",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Proof of Address (phone bill, utility bill, etc.){" "}
-                    <span style={{ color: "#e74c3c" }}>— Required</span>
-                  </label>
-                  <label
-                    htmlFor="shop-proof-upload"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      width: "100%",
-                      padding: "8px 12px",
-                      background: "#0d0f1a",
-                      border: `1px solid ${shopProofFile ? "#2ecc71" : "#8b1a1a"}`,
-                      borderRadius: 5,
-                      cursor: "pointer",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <span style={{ fontSize: 16 }}>📎</span>
-                    <span
-                      style={{
-                        color: shopProofFile ? "#2ecc71" : "#e74c3c",
-                        fontSize: 12,
-                        flex: 1,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {shopProofFile
-                        ? shopProofFile.name
-                        : "Click to upload document…"}
-                    </span>
-                    {shopProofFile && (
-                      <span
-                        style={{
-                          color: "#2ecc71",
-                          fontSize: 10,
-                          fontWeight: 700,
-                          flexShrink: 0,
-                        }}
-                      >
-                        ✓ Selected
-                      </span>
-                    )}
-                  </label>
-                  <input
-                    id="shop-proof-upload"
-                    data-ocid="shop.form.proof_upload"
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    style={{ display: "none" }}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] ?? null;
-                      setShopProofFile(file);
-                    }}
-                  />
-                  {!shopProofFile && (
-                    <p
-                      style={{
-                        color: "#6a7a8a",
-                        fontSize: 10,
-                        marginTop: 4,
-                        marginBottom: 0,
-                      }}
-                    >
-                      Accepted formats: PDF, JPG, PNG
-                    </p>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  data-ocid="shop.confirm_button"
-                  onClick={async () => {
-                    const required = [
-                      "firstName",
-                      "lastName",
-                      "email",
-                      "address",
-                      "city",
-                      "postalCode",
-                      "country",
-                    ];
-                    if (required.some((k) => !shopCustomerData[k]?.trim())) {
-                      toast.error("Please fill in all fields");
-                      return;
-                    }
-                    if (!shopProofFile) {
-                      toast.error("Please upload a proof of address document");
-                      return;
-                    }
-                    if (
-                      !shouldStartShopPurchase(shopPurchaseInFlightRef.current)
-                    ) {
-                      return;
-                    }
-                    shopPurchaseInFlightRef.current = true;
-                    setIsShopPurchasing(true);
-                    try {
-                      if (!actor) {
-                        toast.error(
-                          "Not connected — please log in before purchasing",
-                        );
-                        return;
-                      }
-                      // Convert proof-of-address file to base64 for submission
-                      const proofBase64 = await new Promise<string>(
-                        (resolve) => {
-                          const reader = new FileReader();
-                          reader.onload = () =>
-                            resolve(
-                              (reader.result as string).split(",")[1] ?? "",
-                            );
-                          reader.readAsDataURL(shopProofFile);
-                        },
-                      );
-                      const proofFileUrl = `data:${shopProofFile.type || "application/octet-stream"};base64,${proofBase64}`;
-                      // initiatePurchase takes nine positional Text args. Passing
-                      // a customer-data object is rejected by Candid, so the
-                      // purchase record never lands and paid Doka cannot be credited.
-                      const result = await actor.initiatePurchase(
-                        ...buildInitiatePurchaseArgs(
-                          selectedPkg.id,
-                          shopCustomerData,
-                          proofFileUrl,
-                        ),
-                      );
-                      const parsed = readInitiatePurchaseResult(result);
-                      if ("err" in parsed) {
-                        toast.error(parsed.err);
-                        return;
-                      }
-                      // Open payment link if available
-                      if (selectedPkg.paymentLink) {
-                        const paymentHref = safeExternalHref(
-                          selectedPkg.paymentLink,
-                        );
-                        if (paymentHref !== "#") {
-                          window.open(paymentHref, "_blank");
-                        }
-                      }
-                      // After 60s the canister auto-completes pending purchases.
-                      // Keep this timer off pendingTimeoutsRef / cleanupRanRef —
-                      // those exist to cancel battle AI, and wiping them here
-                      // leaves a recorded payment uncredited.
-                      const autoCreditTimer = setTimeout(() => {
-                        shopCreditTimersRef.current.delete(autoCreditTimer);
-                        void applyPendingPurchaseCredit(selectedPkg.dokaAmount);
-                      }, PENDING_PURCHASE_CREDIT_DELAY_MS);
-                      shopCreditTimersRef.current.add(autoCreditTimer);
-                      setShowShop(false);
-                      setShopStep("packages");
-                      setShopProofFile(null);
-                      toast.success("Purchase initiated! Payment link opened.");
-                    } catch {
-                      toast.error(
-                        "Purchase could not be recorded. Payment was not opened.",
-                      );
-                    } finally {
-                      shopPurchaseInFlightRef.current = false;
-                      setIsShopPurchasing(false);
-                    }
-                  }}
-                  disabled={!shopProofFile || isShopPurchasing}
-                  style={{
-                    width: "100%",
-                    padding: "13px 0",
-                    background:
-                      shopProofFile && !isShopPurchasing
-                        ? "linear-gradient(135deg,#6a0a0a,#c0392b)"
-                        : "#2a1a1a",
-                    border: `1px solid ${shopProofFile && !isShopPurchasing ? "#c0392b" : "#5a2a2a"}`,
-                    borderRadius: 8,
-                    color:
-                      shopProofFile && !isShopPurchasing ? "#fff" : "#6a3a3a",
-                    fontWeight: 800,
-                    fontSize: 14,
-                    cursor:
-                      shopProofFile && !isShopPurchasing
-                        ? "pointer"
-                        : "not-allowed",
-                    marginTop: 8,
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  {isShopPurchasing ? "Recording…" : "Confirm Purchase"}
-                </button>
-                <p
-                  style={{
-                    color: "#6a7a8a",
-                    fontSize: 10,
-                    textAlign: "center",
-                    marginTop: 8,
-                    lineHeight: 1.5,
-                  }}
-                >
-                  By confirming you are obligated to complete this payment.
-                  Non-payment will result in account suspension and referral to
-                  a debt collection agency until the balance is settled.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
+        />
       )}
       {showEnemyRegister && (
         <EnemyRegister
