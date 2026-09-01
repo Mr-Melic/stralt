@@ -68,6 +68,14 @@ import {
   validateTierSpawnConfig,
   validateWalkFrameUrls,
 } from "../utils/adminSafety";
+import {
+  ENEMY_SPRITE_URL_FIELD_LABEL,
+  ENEMY_SPRITE_URL_HELP,
+  ENEMY_SPRITE_URL_PLACEHOLDER,
+  PLAYER_SPRITE_URL_HONESTY,
+  enemyVisualStatusCopy,
+  spriteUrlIsStored,
+} from "../utils/adminVisualStatus";
 import { logDebugWarn } from "../utils/debugLogger";
 
 // ── defaults ─────────────────────────────────────────────────────────────────
@@ -713,6 +721,7 @@ const EnemyEditor: React.FC<{
   const [cfg, setCfg] = useState<EnemyConfig>(initial);
   const set = <K extends keyof EnemyConfig>(k: K, v: EnemyConfig[K]) =>
     setCfg((p) => ({ ...p, [k]: v }));
+  const visualCopy = enemyVisualStatusCopy(spriteUrlIsStored(cfg.spriteUrl));
 
   return (
     <div data-ocid="admin.enemy_editor" style={{ padding: 20 }}>
@@ -799,12 +808,10 @@ const EnemyEditor: React.FC<{
 
       <div style={{ marginBottom: 10 }}>
         <label htmlFor="admin.enemy.sprite_input" style={labelStyle}>
-          Custom Visual Override
+          {ENEMY_SPRITE_URL_FIELD_LABEL}
         </label>
         <p style={{ color: "#6a6070", fontSize: 10, margin: "0 0 6px" }}>
-          Default Pixel Visual — Active fallback when this field is empty. Leave
-          blank to keep the chess-piece sprite. PNG or WebP, square, pixel art
-          recommended (no upload yet — paste a hosted URL).
+          {ENEMY_SPRITE_URL_HELP}
         </p>
         <input
           id="admin.enemy.sprite_input"
@@ -813,22 +820,20 @@ const EnemyEditor: React.FC<{
           onChange={(e) =>
             set("spriteUrl", e.target.value ? [e.target.value] : [])
           }
-          placeholder="https://… (optional custom override)"
+          placeholder={ENEMY_SPRITE_URL_PLACEHOLDER}
           data-ocid="admin.enemy.sprite_input"
           style={inputStyle()}
         />
         <p
           data-ocid="admin.enemy.visual_status"
           style={{
-            color: cfg.spriteUrl[0] ? C.gold : C.green,
+            color: visualCopy.storedNotRendered ? C.dim : C.green,
             fontSize: 10,
             margin: "4px 0 0",
             fontWeight: 700,
           }}
         >
-          {cfg.spriteUrl[0]
-            ? "Custom Visual — 1 override URL"
-            : "Default Pixel Visual — Active fallback"}
+          {visualCopy.status}
         </p>
       </div>
 
@@ -1539,9 +1544,7 @@ const SpriteEditorForm: React.FC<{
             lineHeight: 1.45,
           }}
         >
-          Custom Visual Override — paste hosted PNG/WebP URLs (square pixel art,
-          one frame per facing). Empty URLs are valid: the chess-piece Default
-          Pixel Visual stays the active fallback. No file upload yet.
+          {PLAYER_SPRITE_URL_HONESTY}
         </p>
         <div
           style={{
@@ -2191,8 +2194,11 @@ const EnemyList: React.FC<{
                   [`MP ${String(e.mp)}`, C.green],
                   [`Init ${String(e.initStat)}`, C.dim],
                   [
-                    e.spriteUrl[0] ? "Custom visual" : "Default pixel visual",
-                    e.spriteUrl[0] ? C.gold : C.green,
+                    enemyVisualStatusCopy(spriteUrlIsStored(e.spriteUrl)).chip,
+                    enemyVisualStatusCopy(spriteUrlIsStored(e.spriteUrl))
+                      .storedNotRendered
+                      ? C.dim
+                      : C.green,
                   ],
                 ].map(([label, color]) => (
                   <span

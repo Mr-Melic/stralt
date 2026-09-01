@@ -48,7 +48,7 @@ AUTONOMY: IMPLEMENT_WITH_COPY_ONLY — docs/admin strings; no combat wiring.
 DEPENDENCIES: VAL-2026-08-31-012  
 REGRESSION_RISK: LOW for copy. HIGH if a hunter “fixes” the lie by binding the raw URL.  
 VALIDATION_REQUIRED: Paste a URL, save, enter world: pixels unchanged. Chip/status no longer imply a live override.  
-STATUS: NEW  
+STATUS: IMPLEMENTED (copy only, 2026-09-01 18:00 orchestrator — `adminVisualStatus.ts`; no combat wiring)  
 
 ---
 
