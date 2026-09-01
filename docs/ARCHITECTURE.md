@@ -387,7 +387,7 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `progression.ts` | Level-derived base stats (player / enemy / summon) |
 | `mapGen.ts` | Archetypes + solvability finalize (do not casually rewrite) |
 | `portalRules.ts` | Run-mode portal filter + dungeon-chain snapshot / `decideDungeonChainPortal` |
-| `summonSpawn.ts` / `summonAI.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle. Hostile minions: `spawnEnemySummonUnit`. Kit casts: `utils/summonControlCast.ts` (catalog `summonKit`, not `summon.spells`) |
+| `summonSpawn.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle. Hostile minions: `spawnEnemySummonUnit`. Kit casts: `utils/summonControlCast.ts` (catalog `summonKit`, not `summon.spells`). `summonAI.ts` exists but `runSummonAI` is unused; live summon turns use `enemyAI.ts` |
 | `summonLifespan.ts` | Lifespan tick against the **live** combatant store; drop expired ids through `removeCombatant` |
 
 Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRange`, `lineOfSight`, `linear`, `diagonal`, `freeCells`, `areaRadius`, `isBarrier`. `spell.name` is UI/log only. Sprite-click Strike and Attack Nearest must use the same live gate (`isTileCastableLive` / `isActiveHostile` on `getLiveCombatants`) — a React `enemies` snapshot misses enemy minions and leftover corpses. Attack Nearest range/LoS uses the **player** tile (`attackNearestLiveCasterPos`), not a controlled summon.

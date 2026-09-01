@@ -304,7 +304,7 @@ export function castResultAppliesCooldown(result: string): boolean {
 }
 
 /**
- * BattleUIPanel / SpellFooter only disable re-selection. Sprite-click,
+ * BattleUIPanel only disables re-selection. Sprite-click,
  * tile-click, and Attack Nearest keep the spell selected when leftover
  * AP remains, so Inferno (5 AP / 3-turn CD) could be recast every click
  * until AP ran out, then every later turn, without ever consulting the
