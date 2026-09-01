@@ -195,6 +195,40 @@ describe("getAoETargets hostility filter", () => {
     );
   });
 
+  it("hitsMultiple uses spell range from the click, not preview areaRadius", () => {
+    const rat = unit("rat", 4, 4, { side: "enemy" });
+    const far = unit("far", 4, 6, { side: "enemy" });
+    const targets = getAoETargets({
+      spell: {
+        hitsMultiple: true,
+        maxRange: 1,
+        range: 1,
+        areaRadius: 2,
+        targetType: "area",
+      },
+      gridPos: { x: 4, y: 4 },
+      targetEnemy: rat,
+      enemies: [rat, far],
+      playerPosition: { x: 2, y: 4 },
+      characterName: "Hero",
+      characterStats: {
+        level: 1,
+        res: 0,
+        sp: 0,
+        chc: 0,
+        hp: 50,
+        maxHp: 50,
+      },
+      getEffectiveSpellRange: (base) => base,
+      logBattleEntry: () => {},
+    });
+    assert.deepEqual(
+      targets.map((t) => t.id),
+      ["rat"],
+      "Chebyshev 2 from the click is outside hitsMultiple radius 1",
+    );
+  });
+
   it("still hits an enemy minion in range so Frost Nova cannot skip the last hostile", () => {
     const rat = unit("rat", 4, 4, { side: "enemy" });
     const wolf = unit("wolf", 5, 4, {

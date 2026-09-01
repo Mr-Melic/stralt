@@ -398,8 +398,10 @@ import {
 } from "../utils/spellUpgrade";
 import {
   canStartSummonControlCast,
+  pickSummonControlClickTarget,
   planSummonControlCast,
   resolveLiveSummonAp,
+  resolveSummonControlSpell,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
   summonTurnBudget,
@@ -10136,10 +10138,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const gridPos = clientToGrid(event.clientX, event.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
-            const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
-              (e: any) =>
-                e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
+            const liveCombatants = getLiveCombatants(combatantStoreCtx);
+            const kitSpell = resolveSummonControlSpell(
+              String((summon as { pieceType?: string }).pieceType ?? ""),
+              selectedSummonSpellId,
+              starterSpells,
+              Array.isArray((summon as { spells?: unknown }).spells)
+                ? (summon as { spells: typeof starterSpells }).spells
+                : [],
             );
+            const targetEnemy = kitSpell
+              ? pickSummonControlClickTarget({
+                  spell: kitSpell,
+                  caster: summon as (typeof liveCombatants)[number],
+                  tile: gridPos,
+                  combatants: liveCombatants,
+                  tiles: currentMap.tiles,
+                  barrierTiles: barrierTilesRef.current,
+                })
+              : liveCombatants.find(
+                  (e) =>
+                    e.x === gridPos.x &&
+                    e.y === gridPos.y &&
+                    isActiveHostile(e),
+                );
             if (targetEnemy) {
               castControlledSummonSpell(summon as any, targetEnemy);
             }
@@ -10577,10 +10599,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (spell.targetType === "self" && spell.effectType === "heal") {
               challengeHealUsedRef.current = true;
             }
-            if (spell.cooldown && spell.cooldown > 0) {
-              spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
-              setSpellCooldownVersion((v) => v + 1);
-            }
+            // Cooldown is written only inside executeCastAttempt
+            // (nextSpellCooldownTurns + castResultAppliesCooldown).
             if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
@@ -10620,10 +10640,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           } else if (castResult === "summon") {
             // AP / Striker / first-action already recorded in executeCastAttempt.
             // Only cooldown and empty-AP mode switch belong here.
-            if (spell.cooldown && spell.cooldown > 0) {
-              spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
-              setSpellCooldownVersion((v) => v + 1);
-            }
+            // Cooldown is written only inside executeCastAttempt
+            // (nextSpellCooldownTurns + castResultAppliesCooldown).
             if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
@@ -10863,10 +10881,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const gridPos = clientToGrid(touch.clientX, touch.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
-            const targetEnemy = getLiveCombatants(combatantStoreCtx).find(
-              (e: any) =>
-                e.x === gridPos.x && e.y === gridPos.y && isActiveHostile(e),
+            const liveCombatants = getLiveCombatants(combatantStoreCtx);
+            const kitSpell = resolveSummonControlSpell(
+              String((summon as { pieceType?: string }).pieceType ?? ""),
+              selectedSummonSpellId,
+              starterSpells,
+              Array.isArray((summon as { spells?: unknown }).spells)
+                ? (summon as { spells: typeof starterSpells }).spells
+                : [],
             );
+            const targetEnemy = kitSpell
+              ? pickSummonControlClickTarget({
+                  spell: kitSpell,
+                  caster: summon as (typeof liveCombatants)[number],
+                  tile: gridPos,
+                  combatants: liveCombatants,
+                  tiles: currentMap.tiles,
+                  barrierTiles: barrierTilesRef.current,
+                })
+              : liveCombatants.find(
+                  (e) =>
+                    e.x === gridPos.x &&
+                    e.y === gridPos.y &&
+                    isActiveHostile(e),
+                );
             if (targetEnemy) {
               castControlledSummonSpell(summon as any, targetEnemy);
             }
@@ -11159,10 +11197,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (spell.targetType === "self" && spell.effectType === "heal") {
               challengeHealUsedRef.current = true;
             }
-            if (spell.cooldown && spell.cooldown > 0) {
-              spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
-              setSpellCooldownVersion((v) => v + 1);
-            }
+            // Cooldown is written only inside executeCastAttempt
+            // (nextSpellCooldownTurns + castResultAppliesCooldown).
             if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
@@ -11202,10 +11238,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           } else if (castResult === "summon") {
             // AP / Striker / first-action already recorded in executeCastAttempt.
             // Only cooldown and empty-AP mode switch belong here.
-            if (spell.cooldown && spell.cooldown > 0) {
-              spellCooldownsRef.current.set(spell.id, spell.cooldown as number);
-              setSpellCooldownVersion((v) => v + 1);
-            }
+            // Cooldown is written only inside executeCastAttempt
+            // (nextSpellCooldownTurns + castResultAppliesCooldown).
             if (shouldClearSpellAfterApSpend(currentBattleApRef.current)) {
               selectedSpellIdRef.current = null;
               setSpellSelectionVersion((v) => v + 1);
