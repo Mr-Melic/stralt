@@ -281,6 +281,7 @@ import {
   recordChallengeDirectHit,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
+  recordChallengeItemHealUsed,
   recordChallengeWalkHazardDamage,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
@@ -341,6 +342,7 @@ import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
   creditLiveDoka,
+  isBuffShopHealItem,
   nextDokaAfterShopSpend,
   resolveAbsoluteWriteHp,
   resolveOverworldHealSpend,
@@ -3569,6 +3571,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           break;
         default:
           break;
+      }
+      // Potions restore HP without executeCastAttempt / Doka-heal, so
+      // healUsed used to stay false and no-heal challenges still paid out.
+      if (isBuffShopHealItem(itemType)) {
+        challengeHealUsedRef.current = recordChallengeItemHealUsed(
+          inBattleRef.current,
+          challengeHealUsedRef.current,
+        );
       }
     },
     [addBattleLogEntry, maxHp, setCurrentBattleApSynced],

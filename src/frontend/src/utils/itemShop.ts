@@ -12,6 +12,11 @@ export function isBuffShopOpen(isOpen: boolean | undefined): boolean {
   return isOpen === true;
 }
 
+/** HP potions are the only BuffShop items that count as challenge healing. */
+export function isBuffShopHealItem(itemType: string): boolean {
+  return itemType === "health_potion" || itemType === "greater_health_potion";
+}
+
 export function nextDokaAfterShopSpend(
   currentDoka: number,
   amount: number,

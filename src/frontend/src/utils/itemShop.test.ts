@@ -4,6 +4,7 @@ import {
   applyHealHpToLiveStats,
   creditLiveDoka,
   dokaHealAmounts,
+  isBuffShopHealItem,
   isBuffShopOpen,
   liveDokaForShopSpend,
   liveShopWallet,
@@ -27,6 +28,13 @@ assert.equal(
 );
 assert.equal(isBuffShopOpen(false), false);
 assert.equal(isBuffShopOpen(true), true);
+assert.equal(isBuffShopHealItem("health_potion"), true);
+assert.equal(isBuffShopHealItem("greater_health_potion"), true);
+assert.equal(
+  isBuffShopHealItem("battle_elixir"),
+  false,
+  "AP items must not flip no_healing",
+);
 
 assert.equal(
   liveShopWallet(50, () => 47),

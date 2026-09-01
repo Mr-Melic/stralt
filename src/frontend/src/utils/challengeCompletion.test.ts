@@ -17,6 +17,7 @@ import {
   recordChallengeDirectHit,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
+  recordChallengeItemHealUsed,
   recordChallengeWalkHazardDamage,
   recordInBattleChallengeDamage,
   recordInBattleChallengeHealUsed,
@@ -343,6 +344,24 @@ describe("recordInBattleChallengeHealUsed", () => {
         }),
       ),
       false,
+    );
+  });
+
+  it("in-battle BuffShop potion heal fails easy_1 / hard_1", () => {
+    const healUsed = recordChallengeItemHealUsed(true, false);
+    assert.equal(healUsed, true);
+    assert.equal(
+      isChallengeCompleted(byId("easy_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      isChallengeCompleted(byId("hard_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      recordChallengeItemHealUsed(false, false),
+      false,
+      "overworld item use must not stick healUsed into the next fight",
     );
   });
 });
