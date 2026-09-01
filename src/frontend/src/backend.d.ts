@@ -81,10 +81,12 @@ export interface SpellConfig {
     isPhysical: boolean;
     name: string;
     hitTiles: Array<[bigint, bigint]>;
+    summonAI: string;
     description: string;
     minLevel: bigint;
     apCost: bigint;
     multiTarget: boolean;
+    summonLifespan: bigint;
     modifiableRange: boolean;
     usableByEnemy: boolean;
     maxRange: bigint;
@@ -92,6 +94,7 @@ export interface SpellConfig {
     iconEmoji: string;
     hitsAllies: boolean;
     effectType: string;
+    summonUnitDef: SummonUnitDef;
     usableByPlayer: boolean;
     spellType: string;
     diagonal: boolean;
@@ -99,6 +102,7 @@ export interface SpellConfig {
     range: bigint;
     linear: boolean;
     cooldown: bigint;
+    isSummon: boolean;
 }
 export interface AdminGameConfig {
     leaderBoostPercent: bigint;
@@ -166,6 +170,12 @@ export type Value = {
     __kind__: "text";
     text: string;
 };
+export type CharacterSlot = Character | null;
+export interface CharacterSlots {
+    slot1: CharacterSlot;
+    slot2: CharacterSlot;
+    slot3: CharacterSlot;
+}
 export interface AdminAuditEntry {
     action: string;
     adminPrincipal: string;
@@ -174,12 +184,6 @@ export interface AdminAuditEntry {
     newSummary: string;
     timestampNs: bigint;
 }
-export interface CharacterSlots {
-    slot1: CharacterSlot;
-    slot2: CharacterSlot;
-    slot3: CharacterSlot;
-}
-export type CharacterSlot = Character | null;
 export interface CharacterStats {
     ap: bigint;
     hp: bigint;
@@ -206,13 +210,6 @@ export interface EnemyConfig {
     spriteUrl?: string;
     regions: Array<string>;
 }
-export interface BattleEffect {
-    id: string;
-    value: bigint;
-    name: string;
-    description: string;
-    effectType: Variant_damage_buff_debuff;
-}
 export interface BossConfig {
     id: string;
     pieceType: string;
@@ -227,6 +224,19 @@ export interface BossConfig {
     phase2: BossPhaseConfig;
     defeated: boolean;
 }
+export interface BattleEffect {
+    id: string;
+    value: bigint;
+    name: string;
+    description: string;
+    effectType: Variant_damage_buff_debuff;
+}
+export interface SummonUnitDef {
+    pieceType: string;
+    level: bigint;
+    hpScale: number;
+    damageScale: number;
+}
 export interface Result {
     hasMore: boolean;
     rows: Array<Array<Cell>>;
@@ -238,14 +248,6 @@ export interface RegionConfig {
     levelMin: bigint;
     name: string;
     battleEffects: Array<BattleEffect>;
-}
-export interface BossPhaseConfig {
-    hpThreshold: number;
-    statMultiplier: number;
-    phaseNumber: bigint;
-    spellPoolIds: Array<string>;
-    specialAbilities: Array<string>;
-    summonCount: bigint;
 }
 export interface PurchaseRecord {
     id: string;
@@ -263,14 +265,22 @@ export interface PurchaseRecord {
     packageId: string;
     customerCity: string;
 }
-export interface DungeonRecord {
-    chainDepth: bigint;
-    totalMapsCompleted: bigint;
-    bestRewardMultiplier: number;
+export interface BossPhaseConfig {
+    hpThreshold: number;
+    statMultiplier: number;
+    phaseNumber: bigint;
+    spellPoolIds: Array<string>;
+    specialAbilities: Array<string>;
+    summonCount: bigint;
 }
 export interface UserProfile {
     name: string;
     uiLayout: string;
+}
+export interface DungeonRecord {
+    chainDepth: bigint;
+    totalMapsCompleted: bigint;
+    bestRewardMultiplier: number;
 }
 export enum UserRole {
     admin = "admin",
@@ -415,6 +425,9 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    /**
+     * / Admin: restore the previous boss-rush config snapshot.
+     */
     adminRollbackBossRushConfig(): Promise<{
         __kind__: "ok";
         ok: null;
@@ -422,6 +435,9 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    /**
+     * / Admin: restore the previous color palette snapshot.
+     */
     adminRollbackColorPalette(): Promise<{
         __kind__: "ok";
         ok: null;
@@ -429,6 +445,9 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    /**
+     * / Admin: restore the previous game config snapshot.
+     */
     adminRollbackGameConfig(): Promise<{
         __kind__: "ok";
         ok: null;
@@ -436,6 +455,9 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    /**
+     * / Admin: restore the previous level-up config snapshot.
+     */
     adminRollbackLevelUpConfig(): Promise<{
         __kind__: "ok";
         ok: null;
@@ -443,6 +465,9 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    /**
+     * / Admin: restore the previous tier-spawn config snapshot.
+     */
     adminRollbackTierSpawnConfig(): Promise<{
         __kind__: "ok";
         ok: null;
@@ -714,6 +739,9 @@ export interface backendInterface {
      * / Returns all three ad box slots.  Empty/inactive slots have isActive=false.
      */
     getAdBoxes(): Promise<Array<[string, string, boolean]>>;
+    /**
+     * / Admin: append-only change log. Never contains secrets or payment PII.
+     */
     getAdminAuditLog(): Promise<{
         __kind__: "ok";
         ok: Array<AdminAuditEntry>;

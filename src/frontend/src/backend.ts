@@ -127,10 +127,12 @@ export interface SpellConfig {
     isPhysical: boolean;
     name: string;
     hitTiles: Array<[bigint, bigint]>;
+    summonAI: string;
     description: string;
     minLevel: bigint;
     apCost: bigint;
     multiTarget: boolean;
+    summonLifespan: bigint;
     modifiableRange: boolean;
     usableByEnemy: boolean;
     maxRange: bigint;
@@ -138,6 +140,7 @@ export interface SpellConfig {
     iconEmoji: string;
     hitsAllies: boolean;
     effectType: string;
+    summonUnitDef: SummonUnitDef;
     usableByPlayer: boolean;
     spellType: string;
     diagonal: boolean;
@@ -145,6 +148,7 @@ export interface SpellConfig {
     range: bigint;
     linear: boolean;
     cooldown: bigint;
+    isSummon: boolean;
 }
 export interface AdminGameConfig {
     leaderBoostPercent: bigint;
@@ -252,13 +256,6 @@ export interface EnemyConfig {
     spriteUrl?: string;
     regions: Array<string>;
 }
-export interface BattleEffect {
-    id: string;
-    value: bigint;
-    name: string;
-    description: string;
-    effectType: Variant_damage_buff_debuff;
-}
 export interface BossConfig {
     id: string;
     pieceType: string;
@@ -273,6 +270,19 @@ export interface BossConfig {
     phase2: BossPhaseConfig;
     defeated: boolean;
 }
+export interface BattleEffect {
+    id: string;
+    value: bigint;
+    name: string;
+    description: string;
+    effectType: Variant_damage_buff_debuff;
+}
+export interface SummonUnitDef {
+    pieceType: string;
+    level: bigint;
+    hpScale: number;
+    damageScale: number;
+}
 export interface Result {
     hasMore: boolean;
     rows: Array<Array<Cell>>;
@@ -284,14 +294,6 @@ export interface RegionConfig {
     levelMin: bigint;
     name: string;
     battleEffects: Array<BattleEffect>;
-}
-export interface BossPhaseConfig {
-    hpThreshold: number;
-    statMultiplier: number;
-    phaseNumber: bigint;
-    spellPoolIds: Array<string>;
-    specialAbilities: Array<string>;
-    summonCount: bigint;
 }
 export interface PurchaseRecord {
     id: string;
@@ -308,6 +310,14 @@ export interface PurchaseRecord {
     customerEmail: string;
     packageId: string;
     customerCity: string;
+}
+export interface BossPhaseConfig {
+    hpThreshold: number;
+    statMultiplier: number;
+    phaseNumber: bigint;
+    spellPoolIds: Array<string>;
+    specialAbilities: Array<string>;
+    summonCount: bigint;
 }
 export interface DungeonRecord {
     chainDepth: bigint;
@@ -490,6 +500,56 @@ export interface backendInterface {
         __kind__: "err";
         err: string;
     }>;
+    adminRollbackTierSpawnConfig(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Admin: restore the previous boss-rush config snapshot.
+     */
+    adminRollbackBossRushConfig(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Admin: restore the previous color palette snapshot.
+     */
+    adminRollbackColorPalette(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Admin: restore the previous game config snapshot.
+     */
+    adminRollbackGameConfig(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Admin: restore the previous level-up config snapshot.
+     */
+    adminRollbackLevelUpConfig(): Promise<{
+        __kind__: "ok";
+        ok: null;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Admin: restore the previous tier-spawn config snapshot.
+     */
     adminRollbackTierSpawnConfig(): Promise<{
         __kind__: "ok";
         ok: null;
@@ -761,6 +821,16 @@ export interface backendInterface {
      * / Returns all three ad box slots.  Empty/inactive slots have isActive=false.
      */
     getAdBoxes(): Promise<Array<[string, string, boolean]>>;
+    getAdminAuditLog(): Promise<{
+        __kind__: "ok";
+        ok: Array<AdminAuditEntry>;
+    } | {
+        __kind__: "err";
+        err: string;
+    }>;
+    /**
+     * / Admin: append-only change log. Never contains secrets or payment PII.
+     */
     getAdminAuditLog(): Promise<{
         __kind__: "ok";
         ok: Array<AdminAuditEntry>;
@@ -1197,7 +1267,7 @@ export interface backendInterface {
         err: string;
     }>;
 }
-import type { AdminAuditEntry as _AdminAuditEntry, BattleEffect as _BattleEffect, BossConfig as _BossConfig, BuffInventory as _BuffInventory, Cell as _Cell, Character as _Character, CharacterSlot as _CharacterSlot, CharacterSlots as _CharacterSlots, CharacterStats as _CharacterStats, DungeonRecord as _DungeonRecord, EnemyConfig as _EnemyConfig, PlayerSpriteConfig as _PlayerSpriteConfig, PurchaseRecord as _PurchaseRecord, RegionConfig as _RegionConfig, Result as _Result, SpellConfig as _SpellConfig, UserProfile as _UserProfile, UserRole as _UserRole, Value as _Value } from "./declarations/backend.did.d.ts";
+import type { AdminAuditEntry as _AdminAuditEntry, BattleEffect as _BattleEffect, BossConfig as _BossConfig, BuffInventory as _BuffInventory, Cell as _Cell, Character as _Character, CharacterSlot as _CharacterSlot, CharacterSlots as _CharacterSlots, CharacterStats as _CharacterStats, DungeonRecord as _DungeonRecord, EnemyConfig as _EnemyConfig, PlayerSpriteConfig as _PlayerSpriteConfig, PurchaseRecord as _PurchaseRecord, RegionConfig as _RegionConfig, Result as _Result, SpellConfig as _SpellConfig, SummonUnitDef as _SummonUnitDef, UserProfile as _UserProfile, UserRole as _UserRole, Value as _Value } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControl(): Promise<void> {
@@ -3754,10 +3824,12 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
     isPhysical: boolean;
     name: string;
     hitTiles: Array<[bigint, bigint]>;
+    summonAI: string;
     description: string;
     minLevel: bigint;
     apCost: bigint;
     multiTarget: boolean;
+    summonLifespan: bigint;
     modifiableRange: boolean;
     usableByEnemy: boolean;
     maxRange: bigint;
@@ -3765,6 +3837,7 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
     iconEmoji: string;
     hitsAllies: boolean;
     effectType: string;
+    summonUnitDef: _SummonUnitDef;
     usableByPlayer: boolean;
     spellType: string;
     diagonal: boolean;
@@ -3772,6 +3845,7 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
     range: bigint;
     linear: boolean;
     cooldown: bigint;
+    isSummon: boolean;
 }): {
     id: string;
     aoe: boolean;
@@ -3784,10 +3858,12 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
     isPhysical: boolean;
     name: string;
     hitTiles: Array<[bigint, bigint]>;
+    summonAI: string;
     description: string;
     minLevel: bigint;
     apCost: bigint;
     multiTarget: boolean;
+    summonLifespan: bigint;
     modifiableRange: boolean;
     usableByEnemy: boolean;
     maxRange: bigint;
@@ -3795,6 +3871,7 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
     iconEmoji: string;
     hitsAllies: boolean;
     effectType: string;
+    summonUnitDef: SummonUnitDef;
     usableByPlayer: boolean;
     spellType: string;
     diagonal: boolean;
@@ -3802,6 +3879,7 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
     range: bigint;
     linear: boolean;
     cooldown: bigint;
+    isSummon: boolean;
 } {
     return {
         id: value.id,
@@ -3815,10 +3893,12 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
         isPhysical: value.isPhysical,
         name: value.name,
         hitTiles: value.hitTiles,
+        summonAI: value.summonAI,
         description: value.description,
         minLevel: value.minLevel,
         apCost: value.apCost,
         multiTarget: value.multiTarget,
+        summonLifespan: value.summonLifespan,
         modifiableRange: value.modifiableRange,
         usableByEnemy: value.usableByEnemy,
         maxRange: value.maxRange,
@@ -3826,13 +3906,15 @@ function from_candid_record_n69(_uploadFile: (file: ExternalBlob) => Promise<Uin
         iconEmoji: value.iconEmoji,
         hitsAllies: value.hitsAllies,
         effectType: value.effectType,
+        summonUnitDef: value.summonUnitDef,
         usableByPlayer: value.usableByPlayer,
         spellType: value.spellType,
         diagonal: value.diagonal,
         minRange: value.minRange,
         range: value.range,
         linear: value.linear,
-        cooldown: value.cooldown
+        cooldown: value.cooldown,
+        isSummon: value.isSummon
     };
 }
 function from_candid_tuple_n33(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [Principal, _CharacterSlots]): [Principal, CharacterSlots] {
@@ -4248,10 +4330,12 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     isPhysical: boolean;
     name: string;
     hitTiles: Array<[bigint, bigint]>;
+    summonAI: string;
     description: string;
     minLevel: bigint;
     apCost: bigint;
     multiTarget: boolean;
+    summonLifespan: bigint;
     modifiableRange: boolean;
     usableByEnemy: boolean;
     maxRange: bigint;
@@ -4259,6 +4343,7 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     iconEmoji: string;
     hitsAllies: boolean;
     effectType: string;
+    summonUnitDef: SummonUnitDef;
     usableByPlayer: boolean;
     spellType: string;
     diagonal: boolean;
@@ -4266,6 +4351,7 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     range: bigint;
     linear: boolean;
     cooldown: bigint;
+    isSummon: boolean;
 }): {
     id: string;
     aoe: boolean;
@@ -4278,10 +4364,12 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     isPhysical: boolean;
     name: string;
     hitTiles: Array<[bigint, bigint]>;
+    summonAI: string;
     description: string;
     minLevel: bigint;
     apCost: bigint;
     multiTarget: boolean;
+    summonLifespan: bigint;
     modifiableRange: boolean;
     usableByEnemy: boolean;
     maxRange: bigint;
@@ -4289,6 +4377,7 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     iconEmoji: string;
     hitsAllies: boolean;
     effectType: string;
+    summonUnitDef: _SummonUnitDef;
     usableByPlayer: boolean;
     spellType: string;
     diagonal: boolean;
@@ -4296,6 +4385,7 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     range: bigint;
     linear: boolean;
     cooldown: bigint;
+    isSummon: boolean;
 } {
     return {
         id: value.id,
@@ -4309,10 +4399,12 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
         isPhysical: value.isPhysical,
         name: value.name,
         hitTiles: value.hitTiles,
+        summonAI: value.summonAI,
         description: value.description,
         minLevel: value.minLevel,
         apCost: value.apCost,
         multiTarget: value.multiTarget,
+        summonLifespan: value.summonLifespan,
         modifiableRange: value.modifiableRange,
         usableByEnemy: value.usableByEnemy,
         maxRange: value.maxRange,
@@ -4320,13 +4412,15 @@ function to_candid_record_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8
         iconEmoji: value.iconEmoji,
         hitsAllies: value.hitsAllies,
         effectType: value.effectType,
+        summonUnitDef: value.summonUnitDef,
         usableByPlayer: value.usableByPlayer,
         spellType: value.spellType,
         diagonal: value.diagonal,
         minRange: value.minRange,
         range: value.range,
         linear: value.linear,
-        cooldown: value.cooldown
+        cooldown: value.cooldown,
+        isSummon: value.isSummon
     };
 }
 function to_candid_record_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {

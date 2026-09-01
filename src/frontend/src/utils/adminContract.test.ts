@@ -128,6 +128,15 @@ describe("sprite / spell / enemy field bridges", () => {
     });
     assert.equal(wire.multiTarget, true);
     assert.equal(wire.cooldown, 0n);
+    assert.equal(wire.isSummon, false);
+    assert.equal(wire.summonAI, "");
+    assert.equal(wire.summonLifespan, 0n);
+    assert.deepEqual(wire.summonUnitDef, {
+      pieceType: "",
+      level: 0n,
+      hpScale: 0,
+      damageScale: 0,
+    });
     const ui = fromBackendSpellConfig({
       id: "bolt",
       multiTarget: true,
@@ -135,6 +144,48 @@ describe("sprite / spell / enemy field bridges", () => {
     });
     assert.equal(ui.hitsMultiple, true);
     assert.equal(ui.cooldown, 3);
+    assert.equal(ui.isSummon, false);
+    assert.equal(ui.summonLifespan, 0);
+  });
+
+  it("keeps explicit summon metadata and drops extra unit-def keys", () => {
+    const wire = toBackendSpellConfig({
+      id: "summon-wolf",
+      isSummon: true,
+      summonAI: "hunter",
+      summonLifespan: 4,
+      summonUnitDef: {
+        pieceType: "pawn",
+        level: 2,
+        hpScale: 1.2,
+        damageScale: 0.8,
+        summonKit: ["bite"],
+        ap: 3,
+      },
+    });
+    assert.equal(wire.isSummon, true);
+    assert.equal(wire.summonAI, "hunter");
+    assert.equal(wire.summonLifespan, 4n);
+    assert.deepEqual(wire.summonUnitDef, {
+      pieceType: "pawn",
+      level: 2n,
+      hpScale: 1.2,
+      damageScale: 0.8,
+    });
+    const ui = fromBackendSpellConfig({
+      id: "summon-wolf",
+      isSummon: true,
+      summonAI: "hunter",
+      summonLifespan: 4n,
+      summonUnitDef: {
+        pieceType: "pawn",
+        level: 2n,
+        hpScale: 1.2,
+        damageScale: 0.8,
+      },
+    });
+    assert.equal(ui.summonLifespan, 4);
+    assert.equal(ui.summonUnitDef?.level, 2);
   });
 
   it("does not treat an empty spriteUrl tuple as a custom asset", () => {
