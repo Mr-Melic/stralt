@@ -14961,6 +14961,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     );
                   }
                 }
+                // Void Rift: same store commit as enemy / enemy-summon turns.
+                // applyTurnStart only mutates the turn-order entry; without
+                // updateCombatant a Wolf stayed at full store HP (and at
+                // ≤3 HP never died) while the log still claimed the tick.
+                if (isVoidRift) {
+                  const live = getLiveCombatants(combatantStoreCtx).find(
+                    (e) => e.id === nextCombatant.id,
+                  );
+                  if (live && live.hp > 0) {
+                    const { newHp, lethal } = enemyHpAfterHazardDamage(
+                      live.hp,
+                      VOID_RIFT_TICK,
+                    );
+                    setEnemyHpMap((prev) => ({
+                      ...prev,
+                      [nextCombatant.id]: newHp,
+                    }));
+                    updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                      hp: newHp,
+                    });
+                    if (lethal) {
+                      processCombatantDeathCb(nextCombatant.id);
+                    }
+                    logBattleEntry(
+                      `Void Rift deals 3 damage to ${nextCombatant.name}!`,
+                      "#bc8cff",
+                    );
+                  }
+                }
                 const afterTicks = getLiveCombatants(combatantStoreCtx).find(
                   (e) => e.id === nextCombatant.id,
                 );
