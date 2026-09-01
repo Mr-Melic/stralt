@@ -531,16 +531,14 @@ self_test() {
     fi
     echo "OK  fixture: independent files sequential-merge"
 
-    # Same-line edit must conflict vs main and vs older prefix.
-    if run_merge_tree "$main_oid" "$newer_conflict"; then
-      echo "self-test FAIL: expected conflict vs main on conflict.txt" >&2
+    # Same-line sibling edit is still merge-clean vs main (GitHub button) but
+    # conflicts after the older PR lands first.
+    if ! run_merge_tree "$main_oid" "$newer_conflict"; then
+      echo "self-test FAIL: newer same-line edit should still merge onto bare main" >&2
+      echo "  files: $CONFLICT_FILES" >&2
       exit 1
     fi
-    if [[ "$CONFLICT_FILES" != *conflict.txt* ]]; then
-      echo "self-test FAIL: expected conflict.txt in conflict list, got: $CONFLICT_FILES" >&2
-      exit 1
-    fi
-    echo "OK  fixture: named file on vs-main conflict ($CONFLICT_FILES)"
+    echo "OK  fixture: sibling same-line edit is clean vs main"
 
     if run_merge_tree "$stack" "$newer_conflict"; then
       echo "self-test FAIL: expected conflict vs older prefix on conflict.txt" >&2
