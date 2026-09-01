@@ -81,7 +81,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | TBC 2026-09-01 ACTION_ID ledger (`TBC-2026-09-01-001`; prior TBC/AQA IDs still NEW) |
 | [docs/design/ENEMY_FORMATIONS_2026-08-31.md](docs/design/ENEMY_FORMATIONS_2026-08-31.md) | Proposed enemy synergy packs (design only) |
 | [docs/ENEMY_AI_EVOLUTION.md](docs/ENEMY_AI_EVOLUTION.md) | Proposed unbounded enemy AI modules (design only; no production AI in that doc) |
-| [docs/design/BOSS_AND_SPELL_DISCOVERY.md](docs/design/BOSS_AND_SPELL_DISCOVERY.md) | Proposed boss sheets, no-cap scaling, and boss-spell discovery classes (design only) |
+| [docs/design/BOSS_AND_SPELL_DISCOVERY.md](docs/design/BOSS_AND_SPELL_DISCOVERY.md) | Proposed boss sheets (19 shipped + Wave 2 + Wave 3), no-cap scaling, and boss-spell discovery classes (design only) |
 | [docs/WORLD_DYNAMICS.md](docs/WORLD_DYNAMICS.md) | World-feature catalog (rarity + relative difficulty). Not wired into map gen |
 | `src/frontend/src/engine/battleStartPlacement.ts` | Battle-start cell spacing (player ≥3 / enemies ≥2, occupancy fallback) |
 | [docs/automation/ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md](docs/automation/ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md) | Owner enemy/boss studio design (docs only) |

@@ -1,11 +1,38 @@
 # Stralt Boss & Boss-Spell Discovery Design
 
 **Author:** Boss and Boss-Spell Designer (automation)  
-**Date:** 2026-08-31  
+**Date:** 2026-09-01 (iterates 2026-08-31 / #137)  
 **Status:** PROPOSED (design only — no production code in this change)  
-**Scope:** All 19 shipped bosses plus four Wave-2 proposals. Every special ability classified. Indefinite progression, no level cap.
+**Scope:** All 19 shipped bosses, Wave-2 quartet, and Wave-3 quartet. Every special ability classified. Indefinite progression, no level cap.
 
 This document is the design contract for later implementation. It does **not** change combat math, the RAF loop, map generation, turn order, or any runtime module. Implementers must follow the constraints in §2 and the per-boss `STATUS: PROPOSED` sheets.
+
+---
+
+## 0. Changelog — 2026-09-01 cron
+
+`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **unchanged** since #137. This run does **not** duplicate shipped or Wave-2 sheets. It reconciles the bible with sibling contracts that landed the same day and fills four remaining **primary-mechanic** holes.
+
+Live audit against `dd275aa` (`main`):
+
+| Fact | Still true |
+| :--- | :--- |
+| `getBossEffectiveStats` multiplies catalog HP by `1.08^diff` only | Slice A not implemented. Even-match HP is still 60–600. |
+| Final Pawn `phase2.statMultiplier: 999`, `summonCount: 11` | `bossDefaults.ts` 475–481 |
+| Rush room 9 `boss2Id: "weeping_pawn_2"` | Still not a `BossId`. Wave 3 names the remap. |
+| `pickBossKitSpell` first-off-cooldown | `useBossAI.ts` unchanged |
+| Backend `defaultBossConfigs()` stale 12-boss seed | Unchanged |
+| Long-horizon report (#143) | Combat HP stays static; Guide table is not the fight |
+
+**This pass adds:**
+
+1. Sibling alignment with #156 (use → observe → win) and #120 (tactical ids). Count-gates stay on #137 adaptations only.
+2. Id-collision table so implementers do not ship two burn-tiles or two snare glyphs.
+3. #120 `BOSS` grants wired onto the four sheets that already own those fantasies (`alabaster_fortress`, `pale_archivist`, `starved_vampire_pawn`, `void_grandmaster`).
+4. Wave 3: `second_lament`, `hook_regent`, `ivory_palisade`, `cord_familiar`. Not in `BOSS_IDS`. `weeping_pawn_2` remaps to `second_lament`.
+5. No new `BossAbility` enum members and **no new #137 spell ids**. Wave 3 learnables reuse #120 ids.
+
+Shipped + Wave-2 sheets remain `STATUS: PROPOSED` with the four grant-line edits in §7.
 
 ---
 
@@ -222,7 +249,16 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `AP_DRAIN_PASSIVE` | `BOSS_ONLY` | Aura. Would brick the 20 AP cap on the player bar. | — |
 | `DAMAGE_IMMUNE` | `BOSS_ONLY` | Fight-structure. | — |
 
-**Count:** 46 specials. Player-facing adaptations: **8** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). Most spectacular mechanics stay boss-only on purpose.
+**Count:** 46 shipped specials. Player-facing **#137 adaptations: 8** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum:
+
+| Proposed special | Class | Player adaptation |
+| :--- | :--- | :--- |
+| `GRIEF_SIPHON` | `BOSS_ONLY` | — |
+| `HOOK_REEL` (full-file / enrage) | `BOSS_ONLY` | Bounded #120 `spell-hook-line` |
+| `PALISADE_COVER` (LOS through own stakes) | `BOSS_ONLY` | Bounded #120 `spell-stone-turret` |
+| `TETHER_GATE` | `BOSS_ONLY` | — |
+
+Most spectacular mechanics stay boss-only on purpose.
 
 ### 5.2 Discoverable spell catalog (adaptations only)
 
@@ -343,6 +379,47 @@ These are names for a later achievement PR. They are **not** in `defaultAchievem
 | `ghost_warden` | `final_pawn_no_ghost_wipe` | Optional mastery for Final Pawn. |
 
 Do not mint Doka from these until `claimAchievementReward` is wired. Suggested feat Doka: 150–300, in line with `leader_slayer` / `critical_striker`.
+
+### 5.4 Sibling contracts (2026-09-01)
+
+Same-day design PRs own adjacent surfaces. This bible does not rewrite them.
+
+| Sibling | Owns | How this bible attaches |
+| :--- | :--- | :--- |
+| #156 `SPELL_DISCOVERY_ECOSYSTEM` | Default pipeline: hostile **uses** an eligible id → OBSERVED → player **wins that battle** → unlock. Encounter start is not observation. Being hit is not required. | Kit-spell observation (when starters stop being innate) uses that default. **Boss-adaptation count-gates in §5.2 stay** (`see lava 3×`). #156 §3.3 allows count-gates on boss adaptations only. |
+| #120 `SPELL_PROPOSALS` | 16 tactical ids (`spell-shoulder-bash` … `spell-void-anchor`) with acquisition models. | Do **not** invent a second id for the same fantasy. Wave 3 observation sources point at #120 ids. |
+| #116 Spell Admin | Persist `ownedSpellIds` / `observedSpellIds`, soft-retire | Observation counters in §5.2 belong next to `achievementProgress`, not `localStorage`. |
+| #143 Long Horizon | Live formulas explode XP and leave boss HP static | Confirms §3.1 is still the unbuilt no-cap fix. Do not “fix” XP curve from this doc. |
+
+**Default vs boss-adaptation observation**
+
+| Route | What “observed” means | Victory |
+| :--- | :--- | :--- |
+| #156 `ENEMY_DISCOVERY` | Hostile spent AP on that **spell id** (`kind: "cast"`). One use. | Same encounter (unless `allowLaterVictory`) |
+| #137 `PLAYER_LEARNABLE` adaptations in §5.2 | Named count-gate on a **boss special** (trail, spike land, shock tile, …), not necessarily a kit-spell cast | Defeat that boss after the count |
+| #120 `BOSS` (`observation` default **false**) | First victory vs listed `bossIds` | That boss defeat. No count-gate. |
+| #137 `ACHIEVEMENT_UNLOCK` / `CHALLENGE_UNLOCK` | Feat condition or live `DEFAULT_CHALLENGES` id on that fight | Feat claim / challenge persist |
+
+A boss may grant **both** a #137 adaptation and a #120 `BOSS` id. They are separate grants. First victory can award the #120 id while the #137 count-gate is still incomplete.
+
+**Id collision — do not ship aliases**
+
+| #137 (this bible) | #120 | Verdict |
+| :--- | :--- | :--- |
+| `spell-ember-step` | `spell-cinder-tile` | **Keep both.** Cinder Tile = one painted burn cell. Ember Step = 2-tile walk trail. Different verbs. |
+| `spell-caltrop` | `spell-tripwire` | **Keep both.** Caltrop = visible one-tile spike. Tripwire = hidden enter-trap + root. |
+| `spell-glyph-snare` | `spell-glyph-tax` / `spell-root-snare` | **Keep all three.** Snare = enter-slow one tile. Tax = 3×3 AP zone + Mark. Root = unit MP lock. |
+| `spell-shock-glyph` | — | No #120 twin. Keep. |
+| `spell-exsanguinate` | — | No #120 twin. Keep. |
+| `spell-vault` | `spell-mist-step` | **Keep both.** Vault = once/battle knight-shaped blink through walls. Mist Step = 3-tile self-teleport, CD 2, no walls. |
+| `spell-brood-ward` / `spell-aftershock` / `spell-rot-brand` / `spell-echo-cast` | — | No #120 twin. Keep. |
+| — | `spell-pain-link` | First victory vs `alabaster_fortress` (#120 `BOSS`). Aftershock remains the #137 feat. |
+| — | `spell-glyph-tax` | First victory vs `pale_archivist`. Glyph-snare remains the #137 count-gate. |
+| — | `spell-blood-familiar` | First victory vs `starved_vampire_pawn`. Exsanguinate remains the #137 count-gate. |
+| — | `spell-void-anchor` | `NOT_PLAYER_LEARNABLE`. Witness on `void_grandmaster` only. |
+| — | `spell-hook-line` / `spell-stone-turret` | Wave 3 adds `bossIds` as extra `MULTI_SOURCE` doors. First grant wins. |
+
+#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. Do not reuse them here.
 
 ---
 
@@ -470,7 +547,7 @@ RELATIVE_DIFFICULTY is the even-match rating from §3.2.
 | Enrage | turn 21 | Illusions also teleport; fakes no longer die in one hit (they take 1, then fade). |
 
 **SPELLS:** `starter-blast`, `spell-swap`, `spell-mirror`, `spell-timestep` (P2), `spell-frost-nova` (P2).  
-**DISCOVERABLE_SPELLS:** none. Split and adjacent-teleport are `BOSS_ONLY`.
+**DISCOVERABLE_SPELLS:** none player-owned. #120 `spell-void-anchor` is `NOT_PLAYER_LEARNABLE` / `BOSS_ONLY` — witness-only on this fight so the player learns to combo Hook + Root later, never the group-pull signature. Split and adjacent-teleport stay `BOSS_ONLY`.
 
 **AI:** Swap when the player is set up on a file for a nova. Split as soon as Phase 2 starts, not every turn.  
 **ARENA_RULES:** Dimensional palette. Illusions occupy tiles (block walk).  
@@ -780,7 +857,7 @@ RELATIVE_DIFFICULTY is the even-match rating from §3.2.
 | Enrage | turn 21 | Shrink ticks every turn. |
 
 **SPELLS:** `physical_attack`, `spell-iron-skin`, `starter-shield`, `spell-barrier` (P2), `spell-frost-nova` (P2).  
-**DISCOVERABLE_SPELLS:** `spell-aftershock` (`ACHIEVEMENT_UNLOCK`).
+**DISCOVERABLE_SPELLS:** `spell-aftershock` (`ACHIEVEMENT_UNLOCK`, §5.2). #120 `spell-pain-link` (`BOSS` route — first victory, no count-gate). Two grants, different verbs.
 
 **AI:** Does not chase. Pulses from center.  
 **ARENA_RULES:** Shrink leaves a walkable core; never seals the player in a 1-tile pocket (Boss Rush already punched wall/void seals — keep that promise).  
@@ -873,7 +950,7 @@ RELATIVE_DIFFICULTY is the even-match rating from §3.2.
 | Enrage | turn 17 | Drain heals no longer diminished by the Font. |
 
 **SPELLS:** `starter-drain`, `spell-drain-courage`, `spell-lifesteal-nova` (P2), `spell-haste` (P2).  
-**DISCOVERABLE_SPELLS:** `spell-exsanguinate` (`PLAYER_LEARNABLE`).
+**DISCOVERABLE_SPELLS:** `spell-exsanguinate` (`PLAYER_LEARNABLE`, §5.2). #120 `spell-blood-familiar` (`BOSS` route — first victory, intended P2 chump-block).
 
 **AI:** Stay at range 2 (drain range). Only step in for Nova.  
 **ARENA_RULES:** Font opposite the player spawn.  
@@ -904,7 +981,7 @@ RELATIVE_DIFFICULTY is the even-match rating from §3.2.
 | Enrage | turn 22 | Pages lose gaps between waves. |
 
 **SPELLS:** `spell-cursed-wound`, `spell-mark`, `spell-barrier`, `summon-archer`, `spell-shadow-veil` (P2).  
-**DISCOVERABLE_SPELLS:** `spell-glyph-snare` (`PLAYER_LEARNABLE`).
+**DISCOVERABLE_SPELLS:** `spell-glyph-snare` (`PLAYER_LEARNABLE`, §5.2). #120 `spell-glyph-tax` (`BOSS` route — first victory, intended P2 3×3 AP zone). Not the same spell.
 
 **AI:** Glyph the tile you just left. Scrolls kite. Pages aim at last player tile + adjacent.  
 **ARENA_RULES:** Ivory stacks. Glyphs visible as faint ink after 1 turn (fairness).  
@@ -1113,6 +1190,144 @@ They are **not** in Boss Rush until a later pairing pass. Do not add ids to `BOS
 
 ---
 
+## 8.1 Encounter sheets — Wave 3 (not in `BOSS_IDS`)
+
+Primary-mechanic holes after Wave 2: **heal-from-allied-pain** (honest Rush room 9), **forced pull**, **cover / LOS**, **player-summon as a damage key**.
+
+Do **not** add these ids to `BOSS_IDS` in this change. Proposed specials below are **design names**, not `BossAbility` enum members until an implementation PR adds them with explicit metadata.
+
+Wave-3 learnables reuse **#120 ids only**. No new #137 spell ids.
+
+They stay out of the 10-room Rush table except `second_lament`, which is the **remap target** for the live invalid id `weeping_pawn_2`.
+
+---
+
+### BOSS_ID: `second_lament`
+
+**NAME:** The Second Lament  
+**RELATIVE_DIFFICULTY:** 4  
+**THEME:** The sob left on the tile after Weeping Pawn promotes. A pawn that drinks allied pain and the player’s mistakes.  
+**CORE_MECHANIC:** Destructible **Grief Well**. Incoming HP loss on the **player** (combat / reflect / lava) charges the well. On his turn he siphons the well into a heal (`LIFE_DRAIN` family, **capped at 150% start HP**). In Rush room 9, Starved’s drain quota **also** fills this well — that is the live “feeds on HP that Weeping regenerates” line made honest. Destroy the well to stop the loop.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | One Grief Well opposite spawn. Kit heals are flat (Blood Mend / no % HP). Siphon once per his turn if well charge ≥ `0.08 * playerMaxHp`. |
+| 2 | ≤ 45% | Well, if still up, **cracks**: 2 echo tiles (hazard, mark the tile). `spell-enrage` + `spell-sacrifice`. If the well is already down, he only gains the kit — no free well rebuild. |
+| Enrage | turn 18 | Siphon ignores the well (heals `0.04 * playerMaxHp` from the air). Still capped at 150% start HP. |
+
+**SPELLS (proposed kit):** `starter-heal`, `spell-barrier`, `spell-weaken`, `spell-enrage` (P2), `spell-sacrifice` (P2). Unique vs Weeping (`physical` / slow / weaken / iron-skin / rally) and Starved (drain kit).  
+**DISCOVERABLE_SPELLS:** none. Siphon / well are `BOSS_ONLY`. `spell-cleanse-rite` and `spell-blood-familiar` stay on their #120 sources. Do not teach a third leech.
+
+**AI:** Stand adjacent to the well. Siphon before kit casts. Sacrifice only if HP > 25% after siphon.  
+**ARENA_RULES:** Well is a 1-tile object, HP = `0.15 * playerMaxHp`, not an enemy. Echo tiles count toward the 50-hazard cap.  
+**SUMMONS:** none.  
+**PLAYER_COUNTERPLAY:** Break the well first; anti-heal is weak here (heals are object-fed, not `healRecv` on him — **explicit: siphon is not reduced by Cursed Wound**). In rush, burst Starved’s Font **and** this well or the jackpot loops.  
+**MASTERY_OBJECTIVE:** Destroy the well before he siphons **twice**, then win.  
+**REWARDS:** 5 / 3. Rush room 9 keeps its flat 5000 / 2000 through `applyRewards` only — do not also multiply.  
+**SCALING_BEHAVIOUR:** hpRatio 1.45, atkRatio 0.95, offset +0, Phase-2 mult **1.20**. Growth cap 1.50× start (tighter than Starved’s 2.00× so the pair cannot double-stack into a sponge).  
+**BALANCE_RISKS:** Room 9 + Starved 200% + this 150% is still two growth loops. Wells/Fonts must both be destructible. Rally-style heals stay **flat**. Enrage siphon must not become a third uncapped drain.  
+**QA:** `weeping_pawn_2` string remaps to this id. Well 0 XP. Charge from `recordChallengeDamageTaken` / `recordInBattleChallengeDamage` only (same events that already debit challenges). Killing him with the well up is a normal win.  
+**STATUS:** PROPOSED
+
+**Legacy alias:** live `BOSS_RUSH_ROOMS[9].boss2Id` is `"weeping_pawn_2"`. Implementation slice: replace that string with `"second_lament"` (or accept `weeping_pawn_2` as a deprecated alias of this id). Do **not** spawn a second `weeping_pawn`.
+
+---
+
+### BOSS_ID: `hook_regent`
+
+**NAME:** The Hook Regent  
+**RELATIVE_DIFFICULTY:** 6  
+**THEME:** A knight who refuses to close. The board comes to him.  
+**CORE_MECHANIC:** Telegraphed **linear hook** (3 tiles, LoS). Resolve pulls the player 2 tiles toward him (`applyAttract` — engine already exists, unused). He pre-paints a **landing ring** of spikes. Movement check: do not end the wind-up turn on the glowing ray. One destructible **Winch**; breaking it **skips the next hook**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Hook every 3 turns, 1-turn telegraph. Kit: Frost / Strike / Haste. |
+| 2 | ≤ 45% | After a successful pull he is **off-balance** for 1 turn (rotating vuln: +40% `isPhysical`). Mark + Lifesteal Nova enter. Hook ray extends to 4 tiles. |
+| Enrage | turn 20 | Hook resolves same turn as telegraph (overlay rule). Winch, if alive, breaks itself (no soft-lock). |
+
+**SPELLS (proposed kit):** `starter-frost`, `physical_attack`, `spell-haste`, `spell-mark` (P2), `spell-lifesteal-nova` (P2). Unique vs Cavalier (physical / haste / enrage / expose) and Hexed (mark / slow / barrier).  
+**DISCOVERABLE_SPELLS:** #120 `spell-hook-line` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: add `bossIds: ["hook_regent"]`). Observation = he **casts** the hook (`kind: "cast"`, #156 default — one use, same-encounter win). The **full-file / 4-tile enrage reel** is `BOSS_ONLY`.
+
+**AI:** Telegraph the ray through the player’s current tile at wind-up; do not track. Prefer hook when Chebyshev > 2 and LoS is clear.  
+**ARENA_RULES:** Ray is linear + LoS. Barrier on the ray blocks the pull (existing occupancy). Spikes on the landing ring use the spike hazard type. Winch HP = `0.15 * playerMaxHp`.  
+**SUMMONS:** none.  
+**PLAYER_COUNTERPLAY:** Step off the glow; Barrier the ray; break the Winch if you must stand still; punish the off-balance turn with Strike.  
+**MASTERY_OBJECTIVE:** Never get pulled (0 successful attracts).  
+**REWARDS:** 6 / 4 when shipped. Hook Line is the prize (first grant wins if a bishop already taught it).  
+**SCALING_BEHAVIOUR:** hpRatio 1.80, atkRatio 1.05, offset +0, Phase-2 1.25. Pull distance **fixed at 2**. Landing-ring spike tick = 3% player max HP guideline.  
+**BALANCE_RISKS:** Pull + lava (Countess rush pairing later) is a delete. Do not pair him with Countess or Static until a dedicated pass. Player Hook Line stays 2-tile attract, minRange 2.  
+**QA:** Telegraph tiles computed at wind-up. Attract uses `applyAttract`, not a name check. Observation counts his cast, not player Hook Line. Winch 0 XP.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `ivory_palisade`
+
+**NAME:** The Ivory Palisade  
+**RELATIVE_DIFFICULTY:** 7  
+**THEME:** A rook that is a wall. You do not siege HP; you open a lane.  
+**CORE_MECHANIC:** Three destructible **Palisade stakes**. He has line of sight **through his own stakes**; the player does not. He rebuilds **one** missing stake every 3 turns (never above 3). Phase 2 **closes two files** (lane shrink — not Alabaster’s full-board shrink).
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 40% | 3 stakes on the approach. Barrier / Expose / Weaken. He peeks through stakes and Strikes / Frosts along the open file. |
+| 2 | ≤ 40% | Lane shrink (2 files become unwalkable walls, punched so a path remains). `summon-sentinel` (proposed `usableByEnemy: true` **for this kit only**) + Frost. Sentinel sits behind a stake. |
+| Enrage | turn 21 | Rebuilds 1 stake per turn. Lane shrink does **not** tick further (Alabaster owns repeating shrink). |
+
+**SPELLS (proposed kit):** `spell-barrier`, `spell-expose`, `spell-weaken`, `summon-sentinel` (P2), `starter-frost` (P2). Unique vs Fortress (physical / iron-skin / shield / barrier / frost-nova).  
+**DISCOVERABLE_SPELLS:** #120 `spell-stone-turret` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: `bossIds: ["ivory_palisade"]`). Observation = the sentinel **or** a turret-shaped stake rebuild is used (`kind: "cast"` on `summon-sentinel` / future turret id). His **LOS-through-own-stakes** is `BOSS_ONLY`. `spell-ward-plate` stays rook-zone #120 discovery, not a second palisade grant.
+
+**AI:** Never walk through a stake (he peeks). Rebuild only when a stake is down and the 3-turn cadence is up. Sentinel summoned behind cover, not on the player.  
+**ARENA_RULES:** Stakes block walk and player LoS. `finalizePlayableLayout` still required after lane shrink — never seal spawn or the only approach. Stake HP = `0.15 * playerMaxHp`. Cap 3 stakes + 1 sentinel (4-body extras: sentinel only; stakes are objects).  
+**SUMMONS:** 1 sentinel in P2, cap 4. 0 XP.  
+**PLAYER_COUNTERPLAY:** Break a stake to open LoS; fight from the punched path in P2; kill the sentinel before it body-blocks the last lane; DoTs around cover.  
+**MASTERY_OBJECTIVE:** Win with **all 3 stakes destroyed at once** (no rebuild between the last break and the killing blow).  
+**REWARDS:** 6 / 4 when shipped.  
+**SCALING_BEHAVIOUR:** hpRatio 2.00, atkRatio 1.10, offset +1, Phase-2 1.20. Cover is the difficulty, not HP.  
+**BALANCE_RISKS:** Fortress + Palisade in one rush room would be two shrinks. Do not pair them. Sentinel is player-only in live `spellData.ts` — flipping `usableByEnemy` is a **flag**, not a new asset (formations doc already allows this).  
+**QA:** Lane shrink leaves a walkable path. Stakes 0 XP. Player LoS checks treat stakes as walls; boss LoS does not. Observation of Stone Turret does not fire from player Barrier.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `cord_familiar`
+
+**NAME:** The Cord Familiar  
+**RELATIVE_DIFFICULTY:** 5  
+**THEME:** A bishop whose soul is a leash. The flock is the only blade that can reach him.  
+**CORE_MECHANIC:** **Tether gate.** He takes **25% damage** from the player unless a **player-side** summon is alive (any id). He prefers to kill that summon. Phase 2 he hatches a **false familiar** (enemy wisp) that heals him; the 4-cap and the gate stay. This is “pets as a key,” not Brood’s “larvae as armor.”
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 40% | Gate on. Mirror / Heal / Wisp. He walks to the player summon, not the player. |
+| 2 | ≤ 40% | False familiar (wisp) + Dire Wolf + Sacrifice. Gate still requires a **player** summon — his wisp does not unlock you. |
+| Enrage | turn 19 | Gate becomes **50%** damage taken if no player summon (was 25%). Still not immune. |
+
+**SPELLS (proposed kit):** `summon-wisp`, `starter-heal`, `spell-mirror`, `summon-dire-wolf` (P2), `spell-sacrifice` (P2). Unique vs Conductor (rally / wisp / weaken / bomber / drain-courage) and Brood (archer / venom / iron-skin / nova).  
+**DISCOVERABLE_SPELLS:** none. Gate / false familiar are `BOSS_ONLY`. `spell-brood-ward` stays Brood. `spell-blood-familiar` stays Starved. `spell-pain-link` stays Fortress. Do not mint a fourth pet card.
+
+**AI:** Priority: kill player summons → recast his wisp if under cap → Mirror when the player is about to dump. Sacrifice only if a player summon is already dead and he is above 30% HP.  
+**ARENA_RULES:** If the player brings no summon, the fight is still winnable (25% incoming is slow, not a brick) — that **is** the teach. Enrage at 50% still ends.  
+**SUMMONS:** His wisp + wolf, cap 4. 0 XP.  
+**PLAYER_COUNTERPLAY:** Keep one cheap summon up (Wisp / Bomber); do not let the wolf eat it for free; Mirror-bait with a utility cast; burst when the gate is open.  
+**MASTERY_OBJECTIVE:** Keep a player summon alive the entire fight **and** never kill his false familiar (restraint).  
+**REWARDS:** 5 / 3.  
+**SCALING_BEHAVIOUR:** hpRatio 1.60, atkRatio 1.00, offset +0, Phase-2 1.15. The gate is the clock, not a sponge — 25% incoming on ratio 1.60 is an 8–12 turn fight if you refuse to summon.  
+**BALANCE_RISKS:** Players with no summon equipped (post-#156 innate four) must still be able to win. Gate is a reduction, never `DAMAGE_IMMUNE`. His heal is flat Blood Mend, not % HP.  
+**QA:** Gate reads `side: "player"` on summons, not name. Killing his wisp does not open the gate. Mastery fails if the player summon’s HP hits 0 at any time.  
+**STATUS:** PROPOSED
+
+---
+
 ## 9. Roster map
 
 | Id | Diff | Core | Learnable? | Rush room (live) |
@@ -1140,8 +1355,12 @@ They are **not** in Boss Rush until a later pairing pass. Do not add ids to `BOS
 | `hexed_marker` | 5 | Hex movement | — | — (Wave 2) |
 | `unbound_pendulum` | 8 | Metronome clock | — | — (Wave 2) |
 | `silent_conductor` | 7 | Silence lanes | — | — (Wave 2) |
+| `second_lament` | 4 | Grief Well siphon | — | **9** (remap `weeping_pawn_2`) |
+| `hook_regent` | 6 | Linear hook + winch | Hook Line (#120) | — (Wave 3) |
+| `ivory_palisade` | 7 | Stakes / LOS cover | Stone Turret (#120) | — (Wave 3) |
+| `cord_familiar` | 5 | Player-summon gate | — | — (Wave 3) |
 
-Live rush room 9 references `weeping_pawn_2`, which is **not** a `BossId`. Treat as `weeping_pawn` until a real second-weeping config exists.
+Live rush room 9 still stores `weeping_pawn_2`. Implementation remaps that string to `second_lament`. Do **not** spawn a second `weeping_pawn`.
 
 ---
 
@@ -1160,11 +1379,11 @@ Existing `BOSS_RUSH_ROOMS` combined mechanics stay. This spec changes how **each
 | 6 Eternal + Final | Two pawn kings. Combined “decoy” story. | Final Pawn ghosts **exclude** a second Eternal. Cap 6 extras for the room. |
 | 7 Midnight + Twins | Four+ bodies. | Shared-HP twins + two monarchs = 4 bodies, 0 extra summons (skip wisp). |
 | 8 Fortress + Brood | Shrink + larvae. | Larvae spawned on walls still count toward cap 4. Shrink cannot seal larvae inside isolated pockets. |
-| 9 Starved + Weeping | Dual growth. | Starved 200% cap still applies. Weeping Rally heal stays **flat 20**, not % of Starved. |
+| 9 Starved + Weeping | Dual growth. | **Remap partner to `second_lament`.** Starved 200% cap + Lament 150% cap. Both Font and Grief Well must be destructible. Rally/Mend heals stay **flat**. Combined “feeds on HP the other regenerates” = Starved drain quota charges the well. |
 
 Rush Doka/XP in `BOSS_RUSH_ROOMS` are already large flat numbers (500–5000). Do **not** also multiply by `rewardDokaMultiplier` or by player level. Persist through `buildBossRushPersistInput` → `applyRewards` only.
 
-Wave-2 bosses stay out of the 10-room table until a dedicated pairing pass.
+Wave-2 bosses stay out of the 10-room table until a dedicated pairing pass. Wave 3: only `second_lament` enters, as the room-9 remap. Do not pair `hook_regent` with Countess or Static, or `ivory_palisade` with Fortress, without a later pass.
 
 ---
 
@@ -1182,6 +1401,8 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | F. Discoverable spells | New `SpellConfig` rows + persist counters | Name heuristics; `localStorage`-only unlocks |
 | G. Backend seed sync | `defaultBossConfigs()` vs frontend kits | `backend_extended/`; 15-field stats |
 | H. Phase-3 type | Only if a sheet truly needs `phaseNumber: 3` | Do not widen the type “just in case” |
+| I. Rush room 9 remap | `useBossRush.ts` `weeping_pawn_2` → `second_lament` | Do not add Wave 3 ids to `BOSS_IDS` in the same PR as the string fix unless kits ship |
+| J. #120 BOSS grants | Persist first-victory ids for Pain Link / Glyph Tax / Blood Familiar | Do not also fire #137 count-gates from that same flag |
 
 **Spell metadata checklist** for every new discoverable:
 
@@ -1212,7 +1433,7 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | 8 | Discovery | Blind kill does not unlock. Observation + victory (+ feat/challenge where required). |
 | 9 | Challenges | Hazard / reflect / lava / spike still hit `recordChallenge*` helpers. Fizzle spends AP. |
 | 10 | Kits | Every shipped id still 3–5 catalog spells; Phase 2 adds one; sets unique. |
-| 11 | Rush room 9 | `weeping_pawn_2` resolved or remapped. |
+| 11 | Rush room 9 | `weeping_pawn_2` remaps to `second_lament`. Two growth caps. Both objects destructible. |
 | 12 | Actor | No 15-field stats. Canonical `main.mo`. Rewards via `applyRewards`. |
 | 13 | Admin | Config editors stay gated. Unlock is not an admin checkbox for normal players. |
 | 14 | Typecheck | `pnpm typecheck` / `pnpm fix` / `pnpm build` clean when code lands. |
@@ -1224,8 +1445,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 - Production TypeScript / Motoko for any of the above.
 - New CharacterStats fields.
 - Changing `xpForNextLevel`.
-- Rewriting Boss Rush room order.
+- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I).
 - Making every spectacular mechanic player-usable.
+- New #137 spell ids (Wave 3 reuses #120).
 - Deploying or “fixing” `backend_extended/`.
 
 ---
@@ -1246,7 +1468,10 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | Backend boss seed | `src/backend/lib/admin.mo` `defaultBossConfigs()` | Stale 12-boss / old spell ids |
 | Rush pairings | `src/frontend/src/hooks/useBossRush.ts` | 10 rooms; room 9 `weeping_pawn_2` |
 | Guide copy | `src/frontend/src/components/BossGuideModal.tsx` | Ability blurbs for players |
+| Discovery pipeline | `docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md` | Use → observe → win default |
+| Tactical ids | `docs/automation/SPELL_PROPOSALS_2026-08-31.md` | 16 #120 spells; Wave 3 observation sources |
+| Long horizon | `docs/automation/LONG_HORIZON_2026-08-31.md` | Live boss HP still static |
 
 ---
 
-**Document status:** PROPOSED. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
+**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 sheets. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
