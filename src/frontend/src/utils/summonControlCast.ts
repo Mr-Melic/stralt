@@ -28,10 +28,29 @@ export interface SummonKitCatalogSpell {
   apCost?: unknown;
   range?: unknown;
   maxRange?: number;
+  targetType?: string;
+  areaRadius?: number;
   summonUnitDef?: {
     pieceType?: string;
     summonKit?: string[];
   };
+}
+
+/**
+ * Chebyshev fast-fail used before the live gate. Area expansion tiles
+ * sit beyond caster range (range + areaRadius); `all` has no cap.
+ * Must never reject a tile `isTileCastableLive` would accept.
+ */
+export function summonControlRangeCap(
+  spell: Pick<SummonKitCatalogSpell, "targetType" | "areaRadius">,
+  range: number,
+): number {
+  const t = (spell.targetType ?? "enemy") as string;
+  if (t === "all") return Number.POSITIVE_INFINITY;
+  if (t === "area") {
+    return range + Math.max(0, Math.floor(Number(spell.areaRadius) || 0));
+  }
+  return range;
 }
 
 export type SummonControlCastFail =
@@ -141,7 +160,9 @@ export function planSummonControlCast<T extends SummonKitCatalogSpell>(args: {
     ),
   );
   const dist = chebyshevDistance(args.caster, args.target);
-  if (dist > range) return { ok: false, reason: "out_of_range" };
+  if (dist > summonControlRangeCap(spell, range)) {
+    return { ok: false, reason: "out_of_range" };
+  }
 
   if (args.liveGate) {
     const live = isTileCastableLive(

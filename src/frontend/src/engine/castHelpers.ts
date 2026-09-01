@@ -31,7 +31,7 @@ import {
   processCombatantDeath,
 } from "./deathPipeline.ts";
 import type { PlayerCastEnemy, PlayerCastTarget } from "./spellEngine";
-import { spellRangeBase } from "./targeting.ts";
+import { playerSpellEffectiveRange } from "./targeting.ts";
 import { removeCombatantFromTurnQueue } from "./turnQueue.ts";
 
 /**
@@ -94,9 +94,9 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
   } = args;
 
   // FEATURE 4: Multi-target + AoE — build list of targets
-  const effectiveRange = getEffectiveSpellRange(
-    Math.max(1, spellRangeBase(spell)),
-    spell.modifiableRange ? spell.id : undefined,
+  const effectiveRange = playerSpellEffectiveRange(
+    spell,
+    getEffectiveSpellRange,
   );
   // AoE hit tiles: collect enemies at each tile in the hitTiles pattern around the clicked target.
   // Liveness filter (#DEATH-DEREGISTER): exclude already-dead enemies (hp <= 0) at
@@ -143,9 +143,9 @@ export function getAoETargets(args: GetAoETargetsArgs): HitTarget[] {
     spell.hitsAllies === true &&
     spell.hitsMultiple === true &&
     (() => {
-      const dx = Math.abs(playerPosition.x - playerPosition.x);
-      const dy = Math.abs(playerPosition.y - playerPosition.y);
-      return Math.max(dx, dy) <= effectiveRange; // player is always at range 0 from self
+      const dx = Math.abs(playerPosition.x - gridPos.x);
+      const dy = Math.abs(playerPosition.y - gridPos.y);
+      return Math.max(dx, dy) <= effectiveRange;
     })();
   const targetsToHit: HitTarget[] = [
     ...enemiesInRange,

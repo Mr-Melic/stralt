@@ -10635,7 +10635,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   x: _hit.logicalX,
                   y: _hit.logicalY,
                 });
-                if (_live.ok) {
+                if (shouldExecuteLiveCast(_live)) {
                   // eslint-disable-next-line no-console
                   console.log("[CLICK-ENEMY]", {
                     branchTaken: "cast-sprite",
@@ -10790,7 +10790,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _liveSelf.reason,
+                    playerFacingRejectReason(_liveSelf.reason),
                   );
                   return;
                 }
@@ -10992,39 +10992,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (!spell) {
             return;
           }
-          // FIX 2a (mouse self-tile hostile guard): if a hostile-target spell
-          // click resolves to targetTile === casterPos (the player's own tile),
-          // reject with "invalid target" BEFORE the AP gate. This catches the
-          // Pattern C case (casterPos={9,15}, targetTile={9,15}) where the
-          // player's own rect was hit and routed to a hostile branch. Self/
-          // ally-targeted spells (targetType "self"/"ally", or effectType
-          // "buff") are exempt — they legitimately target the caster's tile.
-          // Uses EXPLICIT spell metadata only (no name heuristics), per
-          // project rules. Mirrors the touch handler's guard below.
-          const _isSelfOrAllySpellMouse =
-            spell.targetType === "self" ||
-            spell.targetType === "ally" ||
-            spell.effectType === "buff";
-          if (
-            !_isSelfOrAllySpellMouse &&
-            gridPos.x === playerPositionRef.current.x &&
-            gridPos.y === playerPositionRef.current.y
-          ) {
-            const _screen = tileCenter(gridPos.x, gridPos.y);
-            effectsManagerRef.current?.spawnFloatText(
-              _screen.x,
-              _screen.y,
-              "invalid target",
-            );
-            return;
-          }
           const _liveBeforeCast = probeLiveCast(spell, gridPos);
           if (!shouldExecuteLiveCast(_liveBeforeCast)) {
             const _screenLive = tileCenter(gridPos.x, gridPos.y);
             effectsManagerRef.current?.spawnFloatText(
               _screenLive.x,
               _screenLive.y,
-              "invalid target",
+              playerFacingRejectReason(_liveBeforeCast.reason),
             );
             return;
           }
@@ -11369,7 +11343,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   x: _hit.logicalX,
                   y: _hit.logicalY,
                 });
-                if (_live.ok) {
+                if (shouldExecuteLiveCast(_live)) {
                   const { castResult: _castResult, apCost: _apCost } =
                     executeCastAttempt(
                       _spell,
@@ -11462,7 +11436,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _liveSelf.reason,
+                    playerFacingRejectReason(_liveSelf.reason),
                   );
                   return;
                 }
@@ -11587,46 +11561,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (!spell) {
             return;
           }
-          // FIX 2b (touch self-tile hostile guard): mirror of the mouse
-          // handler's guard. If a hostile-target spell click resolves to
-          // targetTile === casterPos, reject with "invalid target" BEFORE the
-          // AP gate. Self/ally-targeted spells (targetType "self"/"ally", or
-          // effectType "buff") are exempt. Uses EXPLICIT spell metadata only.
-          const _isSelfOrAllySpellTouch =
-            spell.targetType === "self" ||
-            spell.targetType === "ally" ||
-            spell.effectType === "buff";
-          if (
-            !_isSelfOrAllySpellTouch &&
-            gridPos.x === playerPositionRef.current.x &&
-            gridPos.y === playerPositionRef.current.y
-          ) {
-            const _screen = tileCenter(gridPos.x, gridPos.y);
-            effectsManagerRef.current?.spawnFloatText(
-              _screen.x,
-              _screen.y,
-              "invalid target",
-            );
-            try {
-              recordClickOutcome(
-                touch.clientX,
-                touch.clientY,
-                "tile-invalid-target",
-                null,
-                null,
-                spellTiles.size,
-                false,
-              );
-            } catch {}
-            return;
-          }
           const _liveBeforeCastTouch = probeLiveCast(spell, gridPos);
           if (!shouldExecuteLiveCast(_liveBeforeCastTouch)) {
             const _screenLive = tileCenter(gridPos.x, gridPos.y);
             effectsManagerRef.current?.spawnFloatText(
               _screenLive.x,
               _screenLive.y,
-              "invalid target",
+              playerFacingRejectReason(_liveBeforeCastTouch.reason),
             );
             return;
           }
