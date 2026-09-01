@@ -223,7 +223,6 @@ import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   type TileCastableResult,
-  applyHealBuffSideEffect,
   attackNearestLiveCasterPos,
   canAffordCastAp,
   canAttackNearestAgainstLive,
@@ -7204,8 +7203,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
-    // ── #19 Pacifist Run: flip flag for ANY offensive spell usage ──────────────
-    applyHealBuffSideEffect(spell, battleOnlyHealBuffSpellsRef);
+    // Pacifist Run flips in recordPlayerSpellType on a resolved offensive
+    // cast. Do not flip here — this callback paints range every RAF frame.
     // LIVE truth: read combatants from the synchronous ref, matching the click
     // gate's source. SECTION 2c — origin is the active caster's tile (controlled
     // summon or player) so spell-range previews render from the summon's tile.

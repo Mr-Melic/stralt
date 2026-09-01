@@ -4,9 +4,11 @@
  * `computeTargetableTiles` is the body of `getSpellRangeTiles` (formerly lines
  * 5998-6172 of WorldExploration.tsx) lifted into a React-free, DOM-free pure
  * function. The wrapper in WorldExploration.tsx retains:
- *   - the `useCallback` shell,
- *   - the `spellRangeCacheRef` cache check + set, and
- *   - the `battleOnlyHealBuffSpellsRef.current = false` side-effect (#19 Pacifist Run).
+ *   - the `useCallback` shell, and
+ *   - the `spellRangeCacheRef` cache check + set.
+ * Pacifist Run flips only on a resolved offensive cast
+ * (`recordPlayerSpellType`). Range preview must not call
+ * `applyHealBuffSideEffect` — `getSpellRangeTiles` runs every RAF frame.
  *
  * What moves here:
  *   - the live-ok tile scan (`computeTargetableTiles` === `isTileCastableLive`),
@@ -28,16 +30,15 @@ import type { Enemy, SpellConfig } from "../types/gameTypes";
 import { isActiveHostile } from "./battleSetup.ts";
 
 /**
- * #19 Pacifist Run side-effect: flip the `battleOnlyHealBuffSpellsRef` flag to
- * false the moment the player selects ANY offensive spell. Kept here (next to
- * the targeting geometry it relates to) so the wrapper in WorldExploration.tsx
- * is a single one-line call instead of an inline ~25-line block.
+ * #19 Pacifist Run: flip `battleOnlyHealBuffSpellsRef` false when an
+ * offensive spell is actually resolved. Call from the cast path only.
+ * Range highlight / `getSpellRangeTiles` must not call this.
  *
  * The ref is a React ref owned by the component, so it is passed in as a
- * parameter rather than imported — this keeps the helper pure-ish and
- * testable in isolation.
+ * parameter rather than imported — this keeps the helper testable.
  *
- * Offensive categories mirror the original inline list verbatim.
+ * Offensive categories mirror `recordPlayerSpellType` plus target-type
+ * and physical flags from the original inline list.
  */
 const OFFENSIVE_SPELL_CATEGORIES = [
   "damage",
@@ -323,8 +324,8 @@ export function isCasterTile(
  * execute. Geometry (Manhattan ground, Chebyshev enemy/area, line rays,
  * LoS, minRange, freeCells) lives only in the live helper.
  *
- * The caller (wrapper) is responsible for cache + the pacifist-flag
- * side-effect; this function only does the geometric work.
+ * The caller (wrapper) is responsible for cache only;
+ * this function does geometric work and must not touch Pacifist state.
  */
 export function computeTargetableTiles(
   spell: SpellConfig,
