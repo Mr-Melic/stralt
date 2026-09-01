@@ -4,6 +4,7 @@ import {
   activeHostilesRemaining,
   countsTowardKillRewards,
   despawnSummons,
+  enemyDestToCommit,
   enemyHpAfterHazardDamage,
   isActiveHostile,
   liveCombatantHp,
@@ -266,6 +267,27 @@ describe("shouldAdvanceAfterEnemyTurn", () => {
       }),
       false,
       "advanceTurn must not require an expire list — player End Turn and the 30s timer still fire after a last-hit",
+    );
+  });
+});
+
+describe("enemyDestToCommit", () => {
+  it("returns a clamped patch when the AI dest leaves the origin tile", () => {
+    assert.deepEqual(
+      enemyDestToCommit({ x: 4, y: 4 }, { x: 6, y: 3 }, 12),
+      { x: 6, y: 3 },
+    );
+  });
+
+  it("returns null when dest equals origin so stay-put skips stay no-ops", () => {
+    assert.equal(enemyDestToCommit({ x: 2, y: 2 }, { x: 2, y: 2 }, 12), null);
+    assert.equal(enemyDestToCommit({ x: 2, y: 2 }, null, 12), null);
+  });
+
+  it("clamps dest onto the grid instead of writing out-of-bounds tiles", () => {
+    assert.deepEqual(
+      enemyDestToCommit({ x: 0, y: 0 }, { x: -3, y: 99 }, 12),
+      { x: 0, y: 11 },
     );
   });
 });

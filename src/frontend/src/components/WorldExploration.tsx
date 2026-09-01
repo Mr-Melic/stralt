@@ -80,6 +80,7 @@ import {
   battleWalkHazardDamages,
   countsTowardKillRewards,
   despawnSummons,
+  enemyDestToCommit,
   enemyHpAfterHazardDamage,
   hpAfterBossPhase2,
   hpAfterHeal,
@@ -16385,11 +16386,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             advanced = true;
             return;
           }
+          const originX = enemy.x;
+          const originY = enemy.y;
           let newX = action.destination.x;
           let newY = action.destination.y;
           // Clamp to grid (defensive — decideEnemyAction should already do this).
           newX = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newX));
           newY = Math.max(0, Math.min(WORLD_GRID_SIZE - 1, newY));
+          // Regular enemies used dest only for range / hazard. Boss and
+          // erratic branches already updateCombatant({ x, y }); without
+          // this patch the sprite stays on the spawn tile for the fight.
+          const destPatch = enemyDestToCommit(
+            { x: originX, y: originY },
+            { x: newX, y: newY },
+            WORLD_GRID_SIZE,
+          );
+          if (destPatch) {
+            updateCombatant(combatantStoreCtx, enemyId, destPatch);
+          }
           const chosenSpell = action.spell;
 
           // ── Resolve attack target (player or player-side summon) ──────────
@@ -16839,7 +16853,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           logBattleEntry(`${enemy.pieceType} ends turn`, "#ef4444");
           // ── Enemy hazard tile landing ────────────────────────────────────
-          if (currentMap && (newX !== enemy.x || newY !== enemy.y)) {
+          // Compare against origin: dest is already committed above.
+          if (currentMap && (newX !== originX || newY !== originY)) {
             const enemyHazard = currentMap.hazardTiles?.get(`${newX},${newY}`);
             if (enemyHazard) {
               if (enemyHazard === "lava") {

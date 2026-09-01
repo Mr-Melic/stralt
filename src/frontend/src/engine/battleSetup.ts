@@ -373,3 +373,23 @@ export function shouldAdvanceAfterEnemyTurn(opts: {
 }): boolean {
   return !opts.deathTriggered && opts.hostilesRemaining > 0;
 }
+
+/**
+ * Clamp the AI destination and return a store patch when the unit actually
+ * leaves its origin tile. The WX apply layer used dest only for range /
+ * hazard math and never called updateCombatant({ x, y }), so regular
+ * enemies stayed frozen while boss / erratic paths already committed.
+ */
+export function enemyDestToCommit(
+  origin: { x: number; y: number },
+  dest: { x: number; y: number } | null | undefined,
+  gridSize: number,
+): { x: number; y: number } | null {
+  if (!dest) return null;
+  const size = Math.max(1, Math.floor(Number(gridSize) || 0));
+  const x = Math.max(0, Math.min(size - 1, Math.floor(Number(dest.x))));
+  const y = Math.max(0, Math.min(size - 1, Math.floor(Number(dest.y))));
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (x === origin.x && y === origin.y) return null;
+  return { x, y };
+}
