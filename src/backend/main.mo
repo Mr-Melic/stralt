@@ -273,6 +273,14 @@ actor {
         false
     };
 
+    /// Appearance edits used to union incoming spell arrays and take
+    /// max(existing, incoming) per id. A custom client could then:
+    ///   1. inject a retired catalog id the player never owned, after which
+    ///      upgradeSpell treats `found=true` and skips the retirement check;
+    ///   2. raise paid levels without going through upgradeSpell.
+    /// Official CharacterCreation only rewrites cosmetics and already sends
+    /// the stored keys (or []). Keep the store. upgradeSpell is the sole writer.
+
     public shared ({ caller }) func createCharacter(slot : Nat, character : Character) : async { #ok; #err : Text } {
         if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
             return #err("Unauthorized: Only users can create characters");
@@ -400,9 +408,9 @@ actor {
         // Official editor only changes cosmetics (name, piece, colors, pattern).
         // Session / completion / loadout have dedicated writers. Do not accept
         // a client-supplied bossRushMasterComplete or shrineCount here.
-        // Spell levels: upgradeSpell is the sole paid writer. Keep the store
-        // verbatim — max(existing, incoming) minted free levels; unioning
-        // incoming keys minted unpaid catalog ids.
+        // Spell levels: upgradeSpell is the sole writer. Keep the store
+        // verbatim — ignore incoming arrays so a stale or malicious appearance
+        // payload cannot add ids, raise levels, or wipe paid upgrades.
         let mergedCharacter : Character = {
             character with
             level = ec.level;
@@ -706,6 +714,53 @@ actor {
         if (not caller.isAnonymous()) {
             AccessControl.initialize(accessControlState, caller);
         };
+    };
+
+    /// Package isAdmin traps when the caller is unregistered. Admin queries
+    /// must not trap — the official client treats a miss as "not admin".
+    func _isAdminPrincipal(caller : Principal) : Bool {
+        if (caller.isAnonymous()) { return false };
+        switch (accessControlState.userRoles.get(caller)) {
+            case (?#admin) { true };
+            case _ { false };
+        };
+    };
+
+    /// Shared guards for assignUserRole and the Candid-compatible
+    /// assignCallerUserRole replacement. Failure: MixinAuthorization.assignRole
+    /// allowed self-demotion and #guest, which permanently locks out the
+    /// last admin because adminAssigned stays true.
+    func _roleAssignRejected(
+        caller : Principal,
+        target : Principal,
+        role : AccessControl.UserRole,
+    ) : ?Text {
+        if (not _isAdminPrincipal(caller)) {
+            return ?"Unauthorized: admin only";
+        };
+        if (target.isAnonymous()) {
+            return ?"Cannot assign a role to the anonymous principal";
+        };
+        if (target == caller and role != #admin) {
+            return ?"Refusing self-demotion: another admin must change your role";
+        };
+        switch (role) {
+            case (#guest) { return ?"role must be \"admin\" or \"user\"" };
+            case (#admin) {};
+            case (#user) {};
+        };
+        let callerKey = caller.toText();
+        let now = Time.now();
+        switch (roleChangeTimestamps.get(callerKey)) {
+            case (?last) {
+                if (now - last < ROLE_CHANGE_MIN_NS) {
+                    return ?"Rate limit: wait 30 seconds between role changes";
+                };
+            };
+            case null {};
+        };
+        roleChangeTimestamps.add(callerKey, now);
+        null
     };
 
     // ─── Enemy config API ────────────────────────────────────────────────
@@ -1720,8 +1775,8 @@ actor {
         };
         let writeDoka : Nat = if (dokaBalance > currentDoka) { currentDoka } else { dokaBalance };
         let writeXp : Nat = if (xp > character.experience) { character.experience } else { xp };
-        // applyRewards is the sole level writer. min(client, stored) let a
-        // raw client de-level while keeping atk/res/init for easier content.
+        // applyRewards is the sole level writer. A lower client _level used
+        // to demote the character (death/heal snapshots must not rewrite level).
         let updatedCharacter : Character = {
             character with
             level            = character.level;
@@ -2195,34 +2250,15 @@ actor {
     /// M1: rate-limited — the same caller cannot change roles more than once per 30 s.
     public shared ({ caller }) func assignUserRole(target : Principal, role : Text) : async { #ok; #err : Text } {
         _ensureRegistered(caller);
-        if (not AccessControl.isAdmin(accessControlState, caller)) {
-            return #err("Unauthorized: admin only");
-        };
         switch (AdminGuard.validateAssignRole(role)) {
             case (?e) { return #err(e) };
             case null {};
         };
-        if (target.isAnonymous()) {
-            return #err("Cannot assign a role to the anonymous principal");
-        };
-        // Last-admin lockout: adminAssigned stays true forever, so self-demotion
-        // of the only admin cannot be repaired by first-login initialize().
-        if (target == caller and role != "admin") {
-            return #err("Refusing self-demotion: another admin must change your role");
-        };
-        // M1: rate limit
-        let callerKey = caller.toText();
-        let now = Time.now();
-        switch (roleChangeTimestamps.get(callerKey)) {
-            case (?last) {
-                if (now - last < ROLE_CHANGE_MIN_NS) {
-                    return #err("Rate limit: wait 30 seconds between role changes");
-                };
-            };
+        let resolvedRole : AccessControl.UserRole = if (role == "admin") { #admin } else { #user };
+        switch (_roleAssignRejected(caller, target, resolvedRole)) {
+            case (?e) { return #err(e) };
             case null {};
         };
-        roleChangeTimestamps.add(callerKey, now);
-        let resolvedRole : AccessControl.UserRole = if (role == "admin") { #admin } else { #user };
         AccessControl.assignRole(accessControlState, caller, target, resolvedRole);
         _recordAdminAudit(caller, "assignUserRole", target.toText(), "previous", role);
         #ok;
