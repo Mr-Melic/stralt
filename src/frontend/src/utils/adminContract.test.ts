@@ -134,6 +134,8 @@ describe("sprite / spell / enemy field bridges", () => {
     assert.deepEqual(wire.summonUnitDef, {
       pieceType: "",
       level: 0n,
+    assert.equal(wire.summonLifespan, 0);
+      level: 0,
       hpScale: 0,
       damageScale: 0,
     });

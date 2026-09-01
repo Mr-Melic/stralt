@@ -51,7 +51,10 @@ import type {
   SpellConfig,
   TierSpawnConfig,
 } from "../types/gameTypes";
-import { toBackendLevelUpConfig } from "../utils/adminContract";
+import {
+  assertAdminCmdOk,
+  toBackendLevelUpConfig,
+} from "../utils/adminContract";
 import {
   MAX_DOKA_GRANT,
   unsafeUrl,
@@ -60,6 +63,7 @@ import {
   validateGameConfig,
   validateLevelUpConfig,
   validateOptionalUrl,
+  validateSpellConfig,
   validateTierSpawnConfig,
   validateWalkFrameUrls,
 } from "../utils/adminSafety";
@@ -893,6 +897,14 @@ const EnemyEditor: React.FC<{
           onClick={() => {
             if (!cfg.id.trim() || !cfg.name.trim()) {
               toast.error("Enemy ID and name are required");
+              return;
+            }
+            const spriteErr = validateOptionalUrl(
+              "spriteUrl",
+              cfg.spriteUrl[0] ?? "",
+            );
+            if (spriteErr) {
+              toast.error(spriteErr);
               return;
             }
             onSave(cfg);
@@ -3486,6 +3498,20 @@ const SpellEditor: React.FC<{
               toast.error("Spell ID and name are required");
               return;
             }
+            const spellErr = validateSpellConfig({
+              id: cfg.id,
+              name: cfg.name,
+              apCost: Number(cfg.apCost),
+              minRange: Number(cfg.minRange ?? 0),
+              maxRange: Number(cfg.maxRange ?? cfg.range ?? 0),
+              spellType: cfg.spellType ?? "damage",
+              effectType: cfg.effectType,
+              effectCategory: cfg.effectCategory ?? "damage",
+            });
+            if (spellErr) {
+              toast.error(spellErr);
+              return;
+            }
             onSave(cfg);
           }}
           ocid="admin.spell.save_button"
@@ -3772,14 +3798,19 @@ const TierConfigTab: React.FC = () => {
       toast.error(tierErr);
       return;
     }
+    if (!actor) {
+      toast.error("Backend actor not available");
+      return;
+    }
     try {
+      const result = await (
+        actor as unknown as backendInterface
+      ).adminSetTierSpawnConfig({
+        ...cfg,
+        tierSize: BigInt(cfg.tierSize),
+      } as never);
+      assertAdminCmdOk(result, "adminSetTierSpawnConfig");
       localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(cfg));
-      if (actor) {
-        await (actor as unknown as backendInterface).adminSetTierSpawnConfig({
-          ...cfg,
-          tierSize: BigInt(cfg.tierSize),
-        } as any);
-      }
       toast.success("Tier spawn config saved!");
     } catch (err) {
       toast.error(`Failed to save config: ${String(err)}`);
@@ -4321,13 +4352,16 @@ const LevelUpConfigPanel: React.FC = () => {
       toast.error(err);
       return;
     }
-    localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
+    if (!actor) {
+      toast.error("Backend actor not available");
+      return;
+    }
     try {
-      if (actor) {
-        await (actor as unknown as backendInterface).adminSetLevelUpConfig(
-          payload,
-        );
-      }
+      const result = await (
+        actor as unknown as backendInterface
+      ).adminSetLevelUpConfig(payload);
+      assertAdminCmdOk(result, "adminSetLevelUpConfig");
+      localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (_e) {
@@ -4627,12 +4661,14 @@ const VisualsTab: React.FC = () => {
 
   const handleSave = async () => {
     const palette = slots.filter((s) => s.enabled).map((s) => s.color);
-    localStorage.setItem("paperVertexPalette", JSON.stringify(palette));
-    localStorage.setItem("pbv_color_palette", JSON.stringify(palette));
+    const blob = JSON.stringify(palette);
     try {
-      await (actor as unknown as backendInterface).adminSetColorPalette(
-        JSON.stringify(palette),
-      );
+      const result = await (
+        actor as unknown as backendInterface
+      ).adminSetColorPalette(blob);
+      assertAdminCmdOk(result, "adminSetColorPalette");
+      localStorage.setItem("paperVertexPalette", blob);
+      localStorage.setItem("pbv_color_palette", blob);
       setSaved(true);
       setSaveError(null);
       setTimeout(() => setSaved(false), 2000);
@@ -5628,13 +5664,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             setShopConfirm(null);
             void (async () => {
               try {
-                await (
+                const result = await (
                   adminActor as unknown as backendInterface
                 ).adminAddDokaToUser(
                   Principal.fromText(shopGrantPrincipalId),
                   BigInt(Number(shopDokaAmount) || 0),
                   null,
                 );
+                assertAdminCmdOk(result, "adminAddDokaToUser");
                 toast.success(
                   `Granted ${shopDokaAmount} Doka to ${shopGrantPrincipalId}`,
                 );
@@ -5651,7 +5688,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       {shopConfirm === "ban" && (
         <ConfirmDialog
           title={`Ban ${shopBanPrincipalId}?`}
-          body="Banned principals fail purchases, buffs, achievement claims, boss rush, and Doka awards. Achievement progress for this principal is cleared."
+          body="Banned principals fail purchases, buffs, achievement claims, boss rush, and Doka awards. Existing achievement progress is kept so claimed rewards cannot be claimed again after unban."
           confirmLabel="Ban player"
           ocidPrefix="admin.shop.ban"
           onCancel={() => setShopConfirm(null)}
@@ -5659,9 +5696,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             setShopConfirm(null);
             void (async () => {
               try {
-                await (
+                const result = await (
                   adminActor as unknown as backendInterface
                 ).adminBanAccount(Principal.fromText(shopBanPrincipalId));
+                assertAdminCmdOk(result, "adminBanAccount");
                 toast.success(`Banned ${shopBanPrincipalId}`);
                 setSaveStatus("Saved");
                 setTimeout(() => setSaveStatus(null), 3000);
@@ -7408,17 +7446,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   variant="gold"
                   ocid="admin.boss_rush_save_button"
                   onClick={() => {
-                    localStorage.setItem(
-                      "bossRushConfig",
-                      JSON.stringify(bossRushConfig),
-                    );
                     void (async () => {
                       try {
-                        await (
+                        const blob = JSON.stringify(bossRushConfig);
+                        const result = await (
                           adminActor as unknown as backendInterface
-                        ).adminSetBossRushConfig(
-                          JSON.stringify(bossRushConfig),
-                        );
+                        ).adminSetBossRushConfig(blob);
+                        assertAdminCmdOk(result, "adminSetBossRushConfig");
+                        localStorage.setItem("bossRushConfig", blob);
                         toast.success("Boss Rush config published (live)");
                         setSaveStatus("Saved");
                         setTimeout(() => setSaveStatus(null), 3000);
@@ -8265,15 +8300,12 @@ function AdBoxEditor({ index }: { index: number }) {
       return;
     }
     try {
-      await (
-        actor as unknown as {
-          adminSetAdBox: (
-            i: bigint,
-            img: string,
-            link: string,
-          ) => Promise<void>;
-        }
-      ).adminSetAdBox(BigInt(index), imageUrl, linkUrl);
+      const result = await (actor as unknown as backendInterface).adminSetAdBox(
+        BigInt(index),
+        imageUrl,
+        linkUrl,
+      );
+      assertAdminCmdOk(result, "adminSetAdBox");
       setStatus("Saved");
       setTimeout(() => setStatus(""), 2000);
     } catch {
@@ -8282,9 +8314,10 @@ function AdBoxEditor({ index }: { index: number }) {
   };
   const clear = async () => {
     try {
-      await (
-        actor as unknown as { adminClearAdBox: (i: bigint) => Promise<void> }
+      const result = await (
+        actor as unknown as backendInterface
       ).adminClearAdBox(BigInt(index));
+      assertAdminCmdOk(result, "adminClearAdBox");
       setImageUrl("");
       setLinkUrl("");
       setStatus("Hidden default");
