@@ -191,6 +191,20 @@ export interface PurchaseRecord {
   'packageId' : string,
   'customerCity' : string,
 }
+export interface GameKeyRequest {
+  'id' : string,
+  'userPrincipal' : Principal,
+  'email' : string,
+  'emailConsent' : boolean,
+  'hintedEuroCents' : bigint,
+  'timestamp' : bigint,
+  'status' : string,
+  'dokaAmount' : bigint,
+  'emailed' : boolean,
+  'approvedAt' : bigint,
+  'redeemedAt' : bigint,
+  'redeemedBy' : string,
+}
 export interface RegionConfig {
   'id' : string,
   'backgroundColor' : string,
@@ -287,6 +301,11 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
+  'adminApproveGameKeyPurchase' : ActorMethod<
+    [string, bigint],
+    { 'ok' : string } |
+      { 'err' : string }
+  >,
   /**
    * / Admin: ban a principal for non-payment.
    * / M2: also clears achievement progress so banned players cannot double-claim
@@ -368,6 +387,26 @@ export interface _SERVICE {
    */
   'adminGrantDoka' : ActorMethod<
     [Principal, bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminGetGameKeyReveal' : ActorMethod<
+    [string],
+    { 'ok' : string } |
+      { 'err' : string }
+  >,
+  'adminListGameKeyRequests' : ActorMethod<
+    [],
+    { 'ok' : Array<GameKeyRequest> } |
+      { 'err' : string }
+  >,
+  'adminMarkGameKeyEmailed' : ActorMethod<
+    [string],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRejectGameKeyPurchase' : ActorMethod<
+    [string],
     { 'ok' : null } |
       { 'err' : string }
   >,
@@ -776,6 +815,7 @@ export interface _SERVICE {
    * / Returns the caller's purchase history.
    */
   'getMyPurchaseHistory' : ActorMethod<[], Array<PurchaseRecord>>,
+  'getMyGameKeyPurchaseStatus' : ActorMethod<[], [] | [GameKeyRequest]>,
   /**
    * / Public: return the achievement progress records for the given principal.
    */
@@ -868,6 +908,16 @@ export interface _SERVICE {
    * / Player calls this to trigger auto-completion of their pending purchases.
    */
   'processPendingPurchases' : ActorMethod<[], bigint>,
+  'redeemGameKey' : ActorMethod<
+    [string],
+    { 'ok' : bigint } |
+      { 'err' : string }
+  >,
+  'requestGameKeyPurchase' : ActorMethod<
+    [string, boolean, bigint],
+    { 'ok' : string } |
+      { 'err' : string }
+  >,
   /**
    * / Purchase a buff item. Deducts Doka from caller's per-principal balance.
    */

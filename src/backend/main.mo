@@ -10,7 +10,11 @@ import AdminLib "lib/admin";
 import AdminGuard "lib/adminGuard";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";
+import Int "mo:core/Int";
 import Float "mo:core/Float";
+import Blob "mo:core/Blob";
+import { ic } "mo:ic";
+import GameKey "lib/gameKey";
 
 import OQL "mo:caffeineai-oql";
 import Expose "mo:caffeineai-oql/Expose";
@@ -1122,80 +1126,32 @@ actor {
     let purchaseRecords : Map.Map<Text, AdminTypes.PurchaseRecord>;
     var nextPurchaseId  : Nat;
 
+    let gameKeyRequests : Map.Map<Text, AdminTypes.GameKeyRequest>;
+    let gameKeyLedger : Map.Map<Text, AdminTypes.GameKeyLedgerEntry>;
+    let gameKeyReveals : Map.Map<Text, Text>;
+    let lastGameKeyRequestAt : Map.Map<Principal, Int>;
+    var nextGameKeyRequestId : Nat;
+
     /// Banned principals cannot play until unbanned.
     let bannedPrincipals : Map.Map<Text, Bool>;
 
-    /// Player initiates a purchase — creates a pending record.
-    /// Returns the purchase id so the frontend can track it.
-    /// H5: Accepts all customer fields including proofFileUrl.
+    /// Legacy nine-arg KYC checkout. Replaced by requestGameKeyPurchase.
+    /// Signature kept so older clients fail with a clear #err instead of minting.
     public shared ({ caller }) func initiatePurchase(
-        packageId       : Text,
-        customerName    : Text,
-        customerSurname : Text,
-        customerEmail   : Text,
-        customerAddress : Text,
-        customerCity    : Text,
-        customerCountry : Text,
-        customerPostal  : Text,
-        proofFileUrl    : Text,
+        _packageId       : Text,
+        _customerName    : Text,
+        _customerSurname : Text,
+        _customerEmail   : Text,
+        _customerAddress : Text,
+        _customerCity    : Text,
+        _customerCountry : Text,
+        _customerPostal  : Text,
+        _proofFileUrl    : Text,
     ) : async { #ok : Text; #err : Text } {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return #err("Unauthorized: must be logged in");
         };
-        if (bannedPrincipals.containsKey(caller.toText())) {
-            return #err("Account banned for non-payment");
-        };
-        let pkg = switch (shopPackages.get(packageId)) {
-            case null { return #err("Unknown package: " # packageId) };
-            case (?p) { p };
-        };
-        if (
-            customerName.size() > 200 or customerSurname.size() > 200
-            or customerEmail.size() > 200 or customerAddress.size() > 200
-            or customerCity.size() > 200 or customerCountry.size() > 200
-            or customerPostal.size() > 200
-        ) {
-            return #err("Customer field exceeds maximum length");
-        };
-        switch (AdminGuard.validateProofFileUrl(proofFileUrl)) {
-            case (?e) { return #err(e) };
-            case null {};
-        };
-        var alreadyPending = false;
-        for (r in purchaseRecords.values()) {
-            if (r.userPrincipal == caller and r.status == "pending") {
-                alreadyPending := true;
-            };
-        };
-        switch (AdminGuard.rejectSecondPendingPurchase(alreadyPending)) {
-            case (?e) { return #err(e) };
-            case null {};
-        };
-        // B4: rollover guard — wrap counter at 999_999_999 to prevent integer overflow
-        //     on long-running canisters.
-        nextPurchaseId += 1;
-        if (nextPurchaseId > 999_999_999) {
-            nextPurchaseId := 1;
-        };
-        let id = "pur_" # nextPurchaseId.toText();
-        let record : AdminTypes.PurchaseRecord = {
-            id;
-            userPrincipal   = caller;
-            dokaAmount      = pkg.dokaAmount;
-            packageId;
-            customerName;
-            customerSurname;
-            customerEmail;
-            customerAddress;
-            customerCity;
-            customerCountry;
-            customerPostal;
-            proofFileUrl;
-            timestamp       = Time.now();
-            status          = "pending";
-        };
-        purchaseRecords.add(id, record);
-        #ok(id);
+        #err("Doka purchases now use GameKey requests. Call requestGameKeyPurchase after paying via Mollie.");
     };
 
     /// Returns the caller's purchase history.
@@ -1342,26 +1298,11 @@ actor {
         #ok;
     };
 
-    /// Auto-complete any pending purchases older than 60 seconds and credit Doka.
-    func _autoCompletePendingPurchases(forPrincipal : Principal) {
-        let sixtySecondsNs : Int = 60_000_000_000;
-        let now = Time.now();
-        let pending = purchaseRecords.values().filter(func(r : AdminTypes.PurchaseRecord) : Bool {
-            r.userPrincipal == forPrincipal and
-            r.status == "pending" and
-            (now - r.timestamp) >= sixtySecondsNs
-        }).toArray();
-        for (rec in pending.values()) {
-            purchaseRecords.add(rec.id, { rec with status = "completed" });
-            let current = switch (dokaBalances.get(rec.userPrincipal)) {
-                case null { 0 };
-                case (?b) { b };
-            };
-            dokaBalances.add(rec.userPrincipal, current + rec.dokaAmount);
-        };
-    };
+    /// Legacy 60s auto-complete. Paid Doka now credits only via redeemGameKey.
+    func _autoCompletePendingPurchases(_forPrincipal : Principal) {};
 
-    /// Player calls this to trigger auto-completion of their pending purchases.
+    /// Kept so shop remount still calls a no-op credit that honors
+    /// shouldCommitShopCredit (commit only when the wallet actually gained).
     public shared ({ caller }) func processPendingPurchases() : async Nat {
         if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
             return 0;
@@ -1370,9 +1311,302 @@ actor {
             return 0;
         };
         _autoCompletePendingPurchases(caller);
-        purchaseRecords.values().filter(func(r : AdminTypes.PurchaseRecord) : Bool {
-            r.userPrincipal == caller and r.status == "completed"
-        }).toArray().size()
+        ignore nextPurchaseId;
+        0
+    };
+
+    func _hasOpenGameKeyRequest(who : Principal) : Bool {
+        for (r in gameKeyRequests.values()) {
+            if (r.userPrincipal == who and (r.status == "pending" or r.status == "approved")) {
+                return true;
+            };
+        };
+        false
+    };
+
+    func _latestGameKeyRequest(who : Principal) : ?AdminTypes.GameKeyRequest {
+        var best : ?AdminTypes.GameKeyRequest = null;
+        for (r in gameKeyRequests.values()) {
+            if (r.userPrincipal == who) {
+                switch (best) {
+                    case null { best := ?r };
+                    case (?b) {
+                        if (r.timestamp > b.timestamp) { best := ?r };
+                    };
+                };
+            };
+        };
+        best
+    };
+
+    func _generateGameKey() : async Text {
+        var out = "";
+        var guard = 0;
+        while (out.size() < GameKey.CODE_LENGTH and guard < 32) {
+            guard += 1;
+            let entropy = await ic.raw_rand();
+            out := GameKey.appendFromEntropy(out, entropy.toArray());
+        };
+        out
+    };
+
+    func _newUniqueGameKey() : async { #ok : Text; #err : Text } {
+        var attempts = 0;
+        while (attempts < 8) {
+            attempts += 1;
+            let code = await _generateGameKey();
+            switch (GameKey.validateCodeFormat(code)) {
+                case (?e) { return #err(e) };
+                case null {};
+            };
+            if (not gameKeyLedger.containsKey(code)) {
+                return #ok(code);
+            };
+        };
+        #err("Could not generate a unique GameKey from IC randomness")
+    };
+
+    /// Player: submit a GameKey purchase request (email + consent, optional euro hint).
+    public shared ({ caller }) func requestGameKeyPurchase(
+        email : Text,
+        emailConsent : Bool,
+        hintedEuroCents : Nat,
+    ) : async { #ok : Text; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+            return #err("Unauthorized: must be logged in");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
+        let trimmedEmail = email.trim(#char ' ');
+        switch (GameKey.validateEmail(trimmedEmail)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        switch (GameKey.validateConsent(emailConsent)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        switch (GameKey.validateHintEuroCents(hintedEuroCents)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        switch (GameKey.rejectOpenRequest(_hasOpenGameKeyRequest(caller))) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        let now = Time.now();
+        switch (lastGameKeyRequestAt.get(caller)) {
+            case (?last) {
+                if (GameKey.requestCooldownActive(last, now)) {
+                    return #err("Please wait before submitting another request");
+                };
+            };
+            case null {};
+        };
+        nextGameKeyRequestId += 1;
+        if (nextGameKeyRequestId > 999_999_999) {
+            nextGameKeyRequestId := 1;
+        };
+        let id = "gk_" # nextGameKeyRequestId.toText();
+        let record : AdminTypes.GameKeyRequest = {
+            id;
+            userPrincipal = caller;
+            email = trimmedEmail;
+            emailConsent;
+            hintedEuroCents;
+            timestamp = now;
+            status = "pending";
+            dokaAmount = 0;
+            emailed = false;
+            approvedAt = 0;
+            redeemedAt = 0;
+            redeemedBy = "";
+        };
+        gameKeyRequests.add(id, record);
+        lastGameKeyRequestAt.add(caller, now);
+        #ok(id);
+    };
+
+    /// Player-visible status for the latest request. Never includes a GameKey.
+    public query ({ caller }) func getMyGameKeyPurchaseStatus() : async ?AdminTypes.GameKeyRequest {
+        _latestGameKeyRequest(caller)
+    };
+
+    /// Player: redeem a 120-char GameKey. Credits the caller, not the requester.
+    public shared ({ caller }) func redeemGameKey(code : Text) : async { #ok : Nat; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
+            return #err("Unauthorized: must be logged in");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
+        let trimmed = code.trim(#char ' ');
+        switch (GameKey.validateCodeFormat(trimmed)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        var ledgerHit : ?AdminTypes.GameKeyLedgerEntry = null;
+        for ((stored, entry) in gameKeyLedger.entries()) {
+            if (GameKey.constantTimeEqual(stored, trimmed)) {
+                ledgerHit := ?entry;
+            };
+        };
+        switch (ledgerHit) {
+            case null { return #err("Invalid GameKey") };
+            case (?entry) {
+                if (entry.redeemed) {
+                    return #err("GameKey already used");
+                };
+                switch (gameKeyRequests.get(entry.requestId)) {
+                    case null { return #err("Invalid GameKey") };
+                    case (?rec) {
+                        if (rec.status == "pending") {
+                            return #err("GameKey is not yet approved");
+                        };
+                        if (rec.status == "rejected") {
+                            return #err("Invalid GameKey");
+                        };
+                        if (rec.status == "redeemed") {
+                            return #err("GameKey already used");
+                        };
+                        if (rec.status != "approved") {
+                            return #err("Invalid GameKey");
+                        };
+                        switch (AdminGuard.validateDokaGrant(entry.dokaAmount)) {
+                            case (?e) { return #err(e) };
+                            case null {};
+                        };
+                        let current = switch (dokaBalances.get(caller)) {
+                            case null { 0 };
+                            case (?b) { b };
+                        };
+                        dokaBalances.add(caller, current + entry.dokaAmount);
+                        let now = Time.now();
+                        let redeemedBy = caller.toText();
+                        gameKeyLedger.add(trimmed, {
+                            entry with
+                            redeemed = true;
+                            redeemedBy;
+                        });
+                        gameKeyRequests.add(rec.id, {
+                            rec with
+                            status = "redeemed";
+                            redeemedAt = now;
+                            redeemedBy;
+                        });
+                        gameKeyReveals.remove(rec.id);
+                        #ok(entry.dokaAmount)
+                    };
+                };
+            };
+        };
+    };
+
+    /// Admin: incoming GameKey purchase requests. No plaintext codes.
+    public query ({ caller }) func adminListGameKeyRequests() : async { #ok : [AdminTypes.GameKeyRequest]; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        let arr = gameKeyRequests.values().toArray();
+        #ok(
+            arr.sort(func(a : AdminTypes.GameKeyRequest, b : AdminTypes.GameKeyRequest) : { #less; #equal; #greater } {
+                Int.compare(b.timestamp, a.timestamp)
+            })
+        )
+    };
+
+    /// Admin: after Mollie payment, set Doka worth and mint a 120-char GameKey
+    /// from IC `raw_rand`. Returns the code once; store it only in the reveal map.
+    public shared ({ caller }) func adminApproveGameKeyPurchase(
+        requestId : Text,
+        dokaAmount : Nat,
+    ) : async { #ok : Text; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        switch (AdminGuard.validateDokaGrant(dokaAmount)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        switch (gameKeyRequests.get(requestId)) {
+            case null { return #err("Purchase request not found") };
+            case (?rec) {
+                if (rec.status != "pending") {
+                    return #err("Request is not pending");
+                };
+                switch (await _newUniqueGameKey()) {
+                    case (#err e) { return #err(e) };
+                    case (#ok code) {
+                        let now = Time.now();
+                        gameKeyLedger.add(code, {
+                            requestId = rec.id;
+                            dokaAmount;
+                            redeemed = false;
+                            redeemedBy = "";
+                        });
+                        gameKeyReveals.add(rec.id, code);
+                        gameKeyRequests.add(rec.id, {
+                            rec with
+                            status = "approved";
+                            dokaAmount;
+                            approvedAt = now;
+                        });
+                        _recordAdminAudit(caller, "approveGameKey", rec.userPrincipal.toText(), "pending", dokaAmount.toText());
+                        #ok(code)
+                    };
+                };
+            };
+        };
+    };
+
+    /// Admin: payment never arrived.
+    public shared ({ caller }) func adminRejectGameKeyPurchase(requestId : Text) : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        switch (gameKeyRequests.get(requestId)) {
+            case null { return #err("Purchase request not found") };
+            case (?rec) {
+                if (rec.status != "pending") {
+                    return #err("Only pending requests can be rejected");
+                };
+                gameKeyRequests.add(rec.id, { rec with status = "rejected" });
+                _recordAdminAudit(caller, "rejectGameKey", rec.userPrincipal.toText(), "pending", "rejected");
+                #ok
+            };
+        };
+    };
+
+    /// Admin: one-time reveal until marked emailed. Empty #err if already wiped.
+    public query ({ caller }) func adminGetGameKeyReveal(requestId : Text) : async { #ok : Text; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        switch (gameKeyReveals.get(requestId)) {
+            case null { #err("GameKey is no longer available to copy") };
+            case (?code) { #ok(code) };
+        };
+    };
+
+    /// Admin: confirm the code was copied/mailed. Wipes the plaintext reveal.
+    /// The canister cannot send email; this is the honest hand-off.
+    public shared ({ caller }) func adminMarkGameKeyEmailed(requestId : Text) : async { #ok; #err : Text } {
+        if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
+            return #err("Unauthorized: admin only");
+        };
+        switch (gameKeyRequests.get(requestId)) {
+            case null { return #err("Purchase request not found") };
+            case (?rec) {
+                if (rec.status != "approved" and rec.status != "redeemed") {
+                    return #err("Request has no GameKey to mark emailed");
+                };
+                gameKeyReveals.remove(rec.id);
+                gameKeyRequests.add(rec.id, { rec with emailed = true });
+                _recordAdminAudit(caller, "markGameKeyEmailed", rec.userPrincipal.toText(), "reveal", "wiped");
+                #ok
+            };
+        };
     };
 
 
@@ -3475,6 +3709,23 @@ actor {
                 .payload("customerCountry", func ((_, r)) = r.customerCountry)
                 .payload("timestamp",       func ((_, r)) = r.timestamp)
                 .payload("status",          func ((_, r)) = r.status)
+                .ownedBy("userPrincipal")
+                .controllerOrScoped()
+                .build(),
+            OQL.Entity.manual<(Text, AdminTypes.GameKeyRequest)>(
+                "gameKeyRequests",
+                func () = gameKeyRequests.entries(),
+                "GameKeyRequest",
+                "id",
+            )
+                .payload("id", func ((k, _)) = k)
+                .payload("userPrincipal", func ((_, r)) = r.userPrincipal.toText())
+                .payload("email", func ((_, r)) = r.email)
+                .payload("hintedEuroCents", func ((_, r)) = r.hintedEuroCents)
+                .payload("timestamp", func ((_, r)) = r.timestamp)
+                .payload("status", func ((_, r)) = r.status)
+                .payload("dokaAmount", func ((_, r)) = r.dokaAmount)
+                .payload("emailed", func ((_, r)) = r.emailed)
                 .ownedBy("userPrincipal")
                 .controllerOrScoped()
                 .build(),

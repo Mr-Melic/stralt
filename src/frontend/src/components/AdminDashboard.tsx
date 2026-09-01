@@ -29,7 +29,6 @@ import {
   useGetGameConfig,
   useGetMapModifiers,
   useGetPlayerSpriteConfigs,
-  useGetPurchaseRecords,
   useGetRegionConfigs,
   useGetSpellConfigs,
   useInitDefaultNames,
@@ -57,7 +56,6 @@ import {
 } from "../utils/adminContract";
 import {
   MAX_DOKA_GRANT,
-  safeProofHref,
   unsafeUrl,
   validateAdBox,
   validateDokaGrant,
@@ -77,6 +75,7 @@ import {
   spriteUrlIsStored,
 } from "../utils/adminVisualStatus";
 import { logDebugWarn } from "../utils/debugLogger";
+import AdminGameKeyPurchases from "./AdminGameKeyPurchases";
 
 // ── defaults ─────────────────────────────────────────────────────────────────
 
@@ -5336,7 +5335,6 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   const delSpellMut = useAdminDeleteSpellConfig();
   const setModifierMut = useAdminSetMapModifier();
   const delModifierMut = useAdminDeleteMapModifier();
-  const purchaseQ = useGetPurchaseRecords();
   const setGameConfigMut = useAdminSetGameConfig();
   const achievementQ = useGetAchievementConfigs();
   const setAchievementMut = useAdminSetAchievementConfig();
@@ -5371,14 +5369,6 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   const [shopConfirm, setShopConfirm] = useState<
     null | "grant" | "ban" | "unban"
   >(null);
-  const [purchaseQuery, setPurchaseQuery] = useState("");
-  const [purchaseStatus, setPurchaseStatus] = useState<
-    "all" | "paid" | "pending"
-  >("all");
-  const [pendingProof, setPendingProof] = useState<{
-    label: string;
-    open: () => void;
-  } | null>(null);
   const [pendingTab, setPendingTab] = useState<
     AdminDashboardState["tab"] | "close" | null
   >(null);
@@ -5461,20 +5451,6 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   const sprites = spriteQ.data ?? [];
   const spells = spellQ.data ?? [];
   const modifiers = modifierQ.data ?? [];
-  const purchaseRows = (purchaseQ.data ?? []).filter((rec) => {
-    const status = rec.status ?? "pending";
-    const paid = status === "paid" || status === "completed";
-    if (purchaseStatus === "paid" && !paid) return false;
-    if (purchaseStatus === "pending" && paid) return false;
-    return matchesQuery(
-      purchaseQuery,
-      rec.id,
-      rec.customerData?.firstName,
-      rec.customerData?.lastName,
-      rec.customerData?.email,
-      rec.status,
-    );
-  });
 
   const editingEnemy =
     dashState.editingEnemyId === "__new__"
@@ -5746,20 +5722,6 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 setSaveStatus(`Save failed: ${String(err)}`);
               }
             })();
-          }}
-        />
-      )}
-      {pendingProof && (
-        <ConfirmDialog
-          title={`Open proof for ${pendingProof.label}?`}
-          body="Proof-of-address files are personal documents. This opens or downloads them in a new window."
-          confirmLabel="Open proof"
-          ocidPrefix="admin.purchases.proof"
-          onCancel={() => setPendingProof(null)}
-          onConfirm={() => {
-            const open = pendingProof.open;
-            setPendingProof(null);
-            open();
           }}
         />
       )}
@@ -6138,384 +6100,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           {dashState.tab === "tiers" && <TierConfigTab />}
 
           {/* PURCHASES */}
-          {dashState.tab === "purchases" && (
-            <div data-ocid="admin.purchases_tab" style={{ padding: 20 }}>
-              {purchaseQ.isError && (
-                <TabErrorBanner
-                  tabName="Purchases"
-                  onRetry={() => purchaseQ.refetch()}
-                />
-              )}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 20,
-                }}
-              >
-                <div>
-                  <h3
-                    style={{
-                      color: "#f0c44a",
-                      margin: 0,
-                      fontSize: 16,
-                      fontWeight: 800,
-                      letterSpacing: "0.06em",
-                    }}
-                  >
-                    Purchase Records
-                  </h3>
-                  <p
-                    style={{
-                      color: "#8a8090",
-                      fontSize: 11,
-                      margin: "4px 0 0",
-                    }}
-                  >
-                    Owner-only PII. Filter before opening proof documents.
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <ListSearch
-                    value={purchaseQuery}
-                    onChange={setPurchaseQuery}
-                    placeholder="Filter name, email, id…"
-                    ocid="admin.purchases.search_input"
-                  />
-                  <select
-                    aria-label="Purchase status"
-                    data-ocid="admin.purchases.status_filter"
-                    value={purchaseStatus}
-                    onChange={(e) =>
-                      setPurchaseStatus(
-                        e.target.value as "all" | "paid" | "pending",
-                      )
-                    }
-                    style={{ ...inputStyle(), width: "auto", margin: 0 }}
-                  >
-                    <option value="all">All statuses</option>
-                    <option value="paid">Paid / completed</option>
-                    <option value="pending">Pending / other</option>
-                  </select>
-                  <div
-                    style={{
-                      background: `${C.gold}18`,
-                      border: `1px solid ${C.goldDim}`,
-                      borderRadius: 20,
-                      padding: "4px 12px",
-                      fontSize: 11,
-                      color: "#f0c44a",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {purchaseRows.length}/{purchaseQ.data?.length ?? 0}
-                  </div>
-                </div>
-              </div>
-
-              {purchaseQ.isLoading && (
-                <div
-                  data-ocid="admin.purchases.loading_state"
-                  style={{
-                    textAlign: "center",
-                    padding: 40,
-                    color: "#8a8090",
-                    fontSize: 13,
-                  }}
-                >
-                  Loading purchase records…
-                </div>
-              )}
-
-              {!purchaseQ.isLoading && (purchaseQ.data?.length ?? 0) === 0 && (
-                <div
-                  data-ocid="admin.purchases.empty_state"
-                  style={{
-                    textAlign: "center",
-                    padding: "40px 0",
-                    color: "#6a6070",
-                    fontSize: 13,
-                    border: `1px dashed ${C.dimmer}`,
-                    borderRadius: 8,
-                  }}
-                >
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>🧾</div>
-                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                    No purchase records yet
-                  </div>
-                  <div style={{ fontSize: 11 }}>
-                    Records appear here once players make purchases
-                  </div>
-                </div>
-              )}
-
-              {!purchaseQ.isLoading &&
-                (purchaseQ.data?.length ?? 0) > 0 &&
-                purchaseRows.length === 0 && (
-                  <div
-                    data-ocid="admin.purchases.no_match"
-                    style={{
-                      textAlign: "center",
-                      padding: "24px 0",
-                      color: "#6a6070",
-                      fontSize: 12,
-                    }}
-                  >
-                    No records match the current filter.
-                  </div>
-                )}
-
-              {purchaseRows.length > 0 && (
-                <div style={{ overflowX: "auto" }}>
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      fontSize: 11,
-                    }}
-                  >
-                    <thead>
-                      <tr style={{ borderBottom: `1px solid ${C.goldDim}` }}>
-                        {[
-                          "#",
-                          "Customer",
-                          "Email",
-                          "Address",
-                          "Amount",
-                          "Price",
-                          "Status",
-                          "Date",
-                          "Proof",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            style={{
-                              color: "#f0c44a",
-                              fontWeight: 800,
-                              textAlign: "left",
-                              padding: "8px 10px",
-                              letterSpacing: "0.08em",
-                              fontSize: 9,
-                              textTransform: "uppercase",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {purchaseRows.map((rec, i) => (
-                        <tr
-                          key={rec.id ?? i}
-                          data-ocid={`admin.purchases.item.${i + 1}`}
-                          style={{
-                            borderBottom: `1px solid ${C.goldDim}22`,
-                            background: i % 2 === 0 ? C.bg0 : C.bg1,
-                          }}
-                        >
-                          <td
-                            style={{
-                              padding: "8px 10px",
-                              color: "#8a8090",
-                              fontWeight: 700,
-                            }}
-                          >
-                            {i + 1}
-                          </td>
-                          <td
-                            style={{
-                              padding: "8px 10px",
-                              color: "#c0ccd8",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {[
-                              rec.customerData?.firstName,
-                              rec.customerData?.lastName,
-                            ]
-                              .filter(Boolean)
-                              .join(" ") || "—"}
-                          </td>
-                          <td style={{ padding: "8px 10px", color: C.dim }}>
-                            {rec.customerData?.email || "—"}
-                          </td>
-                          <td
-                            style={{
-                              padding: "8px 10px",
-                              color: "#8a8090",
-                              maxWidth: 160,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {[
-                              rec.customerData?.address,
-                              rec.customerData?.city,
-                              rec.customerData?.postalCode,
-                              rec.customerData?.country,
-                            ]
-                              .filter(Boolean)
-                              .join(", ") || "—"}
-                          </td>
-                          <td
-                            style={{
-                              padding: "8px 10px",
-                              color: "#f0c44a",
-                              fontWeight: 700,
-                              textAlign: "right",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {rec.dokaAmount?.toLocaleString() ?? "—"} 💰
-                          </td>
-                          <td
-                            style={{
-                              padding: "8px 10px",
-                              color: "#c0ccd8",
-                              textAlign: "right",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            €{rec.priceEur ?? "—"}
-                          </td>
-                          <td
-                            style={{
-                              padding: "8px 10px",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            <span
-                              style={{
-                                background:
-                                  rec.status === "paid" ||
-                                  rec.status === "completed"
-                                    ? `${C.green}22`
-                                    : `${C.gold}22`,
-                                border: `1px solid ${
-                                  rec.status === "paid" ||
-                                  rec.status === "completed"
-                                    ? C.green
-                                    : C.gold
-                                }44`,
-                                color:
-                                  rec.status === "paid" ||
-                                  rec.status === "completed"
-                                    ? C.green
-                                    : C.gold,
-                                fontSize: 9,
-                                padding: "2px 7px",
-                                borderRadius: 20,
-                                fontWeight: 700,
-                              }}
-                            >
-                              {rec.status ?? "pending"}
-                            </span>
-                          </td>
-                          <td
-                            style={{
-                              padding: "8px 10px",
-                              color: "#8a8090",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {rec.timestamp
-                              ? new Date(rec.timestamp).toLocaleString(
-                                  "en-GB",
-                                  { dateStyle: "short", timeStyle: "short" },
-                                )
-                              : "—"}
-                          </td>
-                          <td style={{ padding: "8px 10px" }}>
-                            {rec.proofFileUrl ||
-                            rec.proofOfAddressBase64 ||
-                            rec.proofOfAddressName?.startsWith("http") ? (
-                              <button
-                                type="button"
-                                data-ocid={`admin.purchases.view_proof_button.${i + 1}`}
-                                onClick={() => {
-                                  const label =
-                                    [
-                                      rec.customerData?.firstName,
-                                      rec.customerData?.lastName,
-                                    ]
-                                      .filter(Boolean)
-                                      .join(" ") ||
-                                    rec.id ||
-                                    "record";
-                                  setPendingProof({
-                                    label,
-                                    open: () => {
-                                      if (rec.proofFileUrl) {
-                                        const proofHref = safeProofHref(
-                                          rec.proofFileUrl,
-                                        );
-                                        if (proofHref !== "#") {
-                                          window.open(
-                                            proofHref,
-                                            "_blank",
-                                            "noopener,noreferrer",
-                                          );
-                                        }
-                                        return;
-                                      }
-                                      if (
-                                        rec.proofOfAddressName?.startsWith(
-                                          "http",
-                                        )
-                                      ) {
-                                        window.open(
-                                          rec.proofOfAddressName,
-                                          "_blank",
-                                          "noopener,noreferrer",
-                                        );
-                                        return;
-                                      }
-                                      const mime =
-                                        rec.proofOfAddressName?.endsWith(".pdf")
-                                          ? "application/pdf"
-                                          : "image/jpeg";
-                                      const url = `data:${mime};base64,${rec.proofOfAddressBase64}`;
-                                      const a = document.createElement("a");
-                                      a.href = url;
-                                      a.download =
-                                        rec.proofOfAddressName ??
-                                        `proof_${rec.id ?? i}.jpg`;
-                                      a.click();
-                                    },
-                                  });
-                                }}
-                                style={{
-                                  background: `${C.blue}22`,
-                                  border: `1px solid ${C.blue}55`,
-                                  borderRadius: 4,
-                                  color: C.blue,
-                                  fontSize: 10,
-                                  padding: "3px 8px",
-                                  cursor: "pointer",
-                                  fontWeight: 700,
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                📄 View
-                              </button>
-                            ) : (
-                              <span style={{ color: "#6a6070", fontSize: 10 }}>
-                                None
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
+          {dashState.tab === "purchases" && <AdminGameKeyPurchases />}
 
           {/* MAP MODIFIERS */}
           {dashState.tab === "modifiers" && (
@@ -7193,10 +6778,9 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 Shop / Wallet Ops
               </h3>
               <CatalogNote>
-                Player shop still lists 15 hardcoded packages. Canister
-                getShopPackages / adminSetShopPackage exist but this tab has no
-                package CRUD yet. Grant and ban use separate principal fields
-                and write live — there is no undo.
+                Players buy Doka with a Mollie payment + GameKey request.
+                Incoming requests live on the Purchases tab. Grant and ban use
+                separate principal fields and write live — there is no undo.
               </CatalogNote>
               <div
                 style={{
@@ -7208,11 +6792,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   marginBottom: 16,
                 }}
               >
-                <p style={sectionHeadStyle}>Shop packages</p>
+                <p style={sectionHeadStyle}>GameKey / Mollie</p>
                 <p style={{ color: C.dim, fontSize: 11, margin: 0 }}>
-                  Doka packages persist via adminSetShopPackage. This panel does
-                  not list or edit packages yet — do not treat this card as a
-                  payment-link editor.
+                  Multi-tier Doka packages are retired. Players pay any euro
+                  amount on Mollie, submit a request, and redeem a 120-character
+                  GameKey after you approve it on Purchases (1000 Doka = 10€).
                 </p>
               </div>
               <div

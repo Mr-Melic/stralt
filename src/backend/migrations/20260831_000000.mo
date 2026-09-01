@@ -1,5 +1,6 @@
 import Map "mo:core/Map";
 import List "mo:core/List";
+import Principal "mo:core/Principal";
 
 module {
 
@@ -116,6 +117,28 @@ module {
     newSummary : Text;
   };
 
+  type GameKeyRequest = {
+    id : Text;
+    userPrincipal : Principal;
+    email : Text;
+    emailConsent : Bool;
+    hintedEuroCents : Nat;
+    timestamp : Int;
+    status : Text;
+    dokaAmount : Nat;
+    emailed : Bool;
+    approvedAt : Int;
+    redeemedAt : Int;
+    redeemedBy : Text;
+  };
+
+  type GameKeyLedgerEntry = {
+    requestId : Text;
+    dokaAmount : Nat;
+    redeemed : Bool;
+    redeemedBy : Text;
+  };
+
   type OldActor = {
     spellConfigs : Map.Map<Text, OldSpellConfig>;
   };
@@ -136,6 +159,11 @@ module {
     var hasColorPalettePrev : Bool;
     var bossRushConfigPrev : Text;
     var hasBossRushConfigPrev : Bool;
+    gameKeyRequests : Map.Map<Text, GameKeyRequest>;
+    gameKeyLedger : Map.Map<Text, GameKeyLedgerEntry>;
+    gameKeyReveals : Map.Map<Text, Text>;
+    lastGameKeyRequestAt : Map.Map<Principal, Int>;
+    var nextGameKeyRequestId : Nat;
   };
 
   public func migration(old : OldActor) : NewActor {
@@ -187,6 +215,11 @@ module {
       var hasColorPalettePrev = false;
       var bossRushConfigPrev = "";
       var hasBossRushConfigPrev = false;
+      gameKeyRequests = Map.empty();
+      gameKeyLedger = Map.empty();
+      gameKeyReveals = Map.empty();
+      lastGameKeyRequestAt = Map.empty();
+      var nextGameKeyRequestId = 0;
     };
   };
 };
