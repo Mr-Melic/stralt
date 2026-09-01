@@ -78,10 +78,18 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
   }, [onClose]);
 
   return (
-    <div
+    <dialog
+      open
       data-ocid="post_battle_recap.dialog"
+      aria-label={data.isDefeat ? "Defeat recap" : "Battle complete"}
       className="fixed inset-0 flex items-center justify-center"
       style={{
+        width: "100%",
+        height: "100%",
+        maxWidth: "none",
+        maxHeight: "none",
+        margin: 0,
+        border: "none",
         zIndex: 9600,
         background: "rgba(0,0,0,0.75)",
         backdropFilter: "blur(3px)",
@@ -94,10 +102,20 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
         }
       }}
       onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          console.log("BattleSummary DISMISSED", "enter-or-space-key");
-          onClose();
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const target = e.target;
+        if (
+          target instanceof HTMLElement &&
+          (target.tagName === "BUTTON" ||
+            target.tagName === "A" ||
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable)
+        ) {
+          return;
         }
+        console.log("BattleSummary DISMISSED", "enter-or-space-key");
+        onClose();
       }}
     >
       <div
@@ -635,7 +653,7 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 };
 

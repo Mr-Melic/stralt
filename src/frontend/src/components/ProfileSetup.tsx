@@ -62,14 +62,15 @@ const ProfileSetup: React.FC = () => {
 
   return (
     <div
+      className="min-h-app-viewport"
       style={{
-        minHeight: "100vh",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         position: "relative",
         zIndex: 20,
-        padding: "24px",
+        padding:
+          "max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) max(24px, env(safe-area-inset-left, 0px))",
       }}
     >
       {/* Decorative outer ring */}
@@ -221,7 +222,7 @@ const ProfileSetup: React.FC = () => {
                       border: "1px solid #2a3040",
                       borderRadius: 8,
                       color: "#c0ccd8",
-                      fontSize: 15,
+                      fontSize: 16,
                       outline: "none",
                       boxSizing: "border-box",
                       transition: "border-color 0.2s, box-shadow 0.2s",
@@ -270,6 +271,7 @@ const ProfileSetup: React.FC = () => {
                   color: "#f0e0e0",
                   fontWeight: 800,
                   fontSize: 15,
+                  minHeight: 44,
                   letterSpacing: "0.06em",
                   textTransform: "uppercase",
                   cursor: saveProfileMutation.isPending
@@ -344,6 +346,7 @@ const ProfileSetup: React.FC = () => {
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
                   padding: "8px 18px",
+                  minHeight: 44,
                   cursor:
                     isLoggingOut || saveProfileMutation.isPending
                       ? "not-allowed"

@@ -368,7 +368,7 @@ const EnemyRegister: React.FC<EnemyRegisterProps> = ({ isOpen, onClose }) => {
               border: "1px solid #551111",
               borderRadius: 4,
               color: "#ffcccc",
-              fontSize: 13,
+              fontSize: 16,
               padding: "7px 12px",
               outline: "none",
             }}

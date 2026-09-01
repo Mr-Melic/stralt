@@ -1988,7 +1988,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   className="stone-inset"
                   style={{
                     flex: 1,
-                    fontSize: 12,
+                    fontSize: 16,
                     padding: "5px 8px",
                     fontFamily: "var(--font-body)",
                   }}
