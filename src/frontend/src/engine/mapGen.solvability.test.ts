@@ -18,14 +18,17 @@ import {
   simulateCleanupSnapshotProgression,
   simulateClearUnlocksPortal,
   simulateRestExitEncounter,
+  simulateSummonsOnWorld,
 } from "./mapGen.simulate.ts";
 import {
   MAP_ARCHETYPES,
   applyFinalizedLayout,
+  applyVoidTiles,
   attachWhitePortalAfterLegalize,
   evaluateSolvability,
   finalizePlayableLayout,
   resetFailedGenerationVoids,
+  sequentialClearUnlocks,
 } from "./mapGen.ts";
 import { placeWhitePortalAtSpawn } from "./portalRules.ts";
 
@@ -208,6 +211,24 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
     assert.equal(after.enemiesReachable, true, after.failures.join(","));
     assert.equal(after.portalReachable, true);
+    assert.equal(
+      after.clearingUnlocks,
+      true,
+      "isolated hostile must be engageable after punch",
+    );
+    assert.equal(
+      sequentialClearUnlocks(
+        tiles,
+        new Set(),
+        { x: 1, y: 1 },
+        [{ x: 2, y: 1 }],
+        [{ x: 5, y: 5 }],
+        8,
+        8,
+      ),
+      false,
+      "fixture must start as an unengageable pocket",
+    );
   });
 
   it("seed-stacked-hostiles: destacks two isolated pockets onto unique cells", () => {
@@ -677,6 +698,40 @@ describe("seeded world property suite", () => {
       }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("summons on seeded dungeons cannot jointly seal the exit", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const occ = simulateSummonsOnWorld(world, 4);
+      if (occ.sealed) {
+        failures.push(
+          `seed ${seed}: summons at ${occ.cells.map((c) => `${c.x},${c.y}`).join("/")}`,
+        );
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("corridorMaze edge voids that split the graph are dropped", () => {
+    const size = 8;
+    const tiles = Array.from({ length: size }, () => Array(size).fill(F));
+    const leftover = new Set<string>();
+    applyVoidTiles(
+      tiles,
+      "corridorMaze",
+      leftover,
+      new Set(["1,1"]),
+      size,
+      size,
+      () => 0,
+    );
+    assert.equal(
+      leftover.size,
+      0,
+      "disconnecting edge voids must clear like cluster voids",
+    );
   });
 
   it("Boss portal entry cell (11,5) stays walk-reachable across seeds", () => {

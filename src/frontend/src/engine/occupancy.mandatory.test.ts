@@ -210,6 +210,69 @@ describe("dual-path occupants cannot jointly seal the exit", () => {
     assert.notEqual(occKey(moved.x, moved.y), "2,0");
   });
 
+  it("seed-dual-corridor-long-path: unseals a summon on the longer route", () => {
+    // Existing occupant sits on the shortest (0,1)→(4,0) corridor.
+    // Spawning on the longer bottom corridor used to stay put because
+    // unseal only slid movers that sat on the shortest path.
+    const { tiles, voidTiles, portals, ctx } = dualCorridor(["2,0"]);
+    const [moved] = unsealProgressionOccupants(
+      [{ x: 2, y: 2 }],
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 1 },
+      ctx,
+    );
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 1 }, [
+        { x: 2, y: 0 },
+        moved,
+      ]),
+      false,
+    );
+    assert.notEqual(occKey(moved.x, moved.y), "2,2");
+  });
+
+  it("seed-barrier-joint-cut: a barrier on one corridor makes the other mandatory", () => {
+    const { tiles, voidTiles, portals, ctx } = dualCorridor();
+    ctx.barriers = new Set(["2,0"]);
+    const unique = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 1 },
+      ctx.barriers,
+    );
+    assert.equal(unique.has("2,2"), true, "remaining corridor is now unique");
+    const spawned = spawnSummonUnit(
+      { x: 2, y: 2 },
+      {
+        id: "summon-wolf",
+        name: "Summon Wolf",
+        summonUnitDef: { pieceType: "pawn", level: 1 },
+        summonAI: "hunter",
+      },
+      "player",
+      1,
+      () => {},
+      () => ({ init: 4 }),
+      0,
+      { ...ctx, reserved: unique },
+    );
+    assert.equal(
+      occupantsSealProgression(
+        tiles,
+        voidTiles,
+        portals,
+        { x: 0, y: 1 },
+        [{ x: spawned.summon.x, y: spawned.summon.y }],
+        ctx.barriers,
+      ),
+      false,
+    );
+    assert.notEqual(`${spawned.summon.x},${spawned.summon.y}`, "2,2");
+  });
+
   it("spawns off a dual-path cut when progressStart is set", () => {
     const { tiles, voidTiles, portals, ctx } = dualCorridor(["2,2"]);
     const spawned = spawnSummonUnit(

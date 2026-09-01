@@ -21,6 +21,10 @@ import {
   stampPortalTiles,
 } from "./mapGen.ts";
 import {
+  collectMandatoryProgressionCells,
+  occupantsSealProgression,
+} from "./occupancy.ts";
+import {
   type DungeonChainSnapshot,
   type RunMode,
   decideDungeonChainPortal,
@@ -31,6 +35,7 @@ import {
   shouldArmDungeonChainOnRestExit,
   snapshotDungeonChain,
 } from "./portalRules.ts";
+import { spawnSummonUnit } from "./summonSpawn.ts";
 
 export type SimArchetype = (typeof MAP_ARCHETYPES)[number]["type"];
 
@@ -757,6 +762,94 @@ export function generateSeededDeathRealm(seed = 0): SimWorld {
     runMode: "none",
     archetype: "openField",
     seed,
+  };
+}
+
+const SIM_SUMMON_SPELL = {
+  id: "summon-wolf",
+  name: "Summon Wolf",
+  summonUnitDef: { pieceType: "pawn" as const, level: 1 },
+  summonAI: "hunter",
+};
+
+/**
+ * Drop `count` summons onto a finalized world (enemy cells, then
+ * portal-adjacent floors). Spawn/unseal must leave a player→exit route.
+ */
+export function simulateSummonsOnWorld(
+  world: SimWorld,
+  count: number,
+): { sealed: boolean; cells: { x: number; y: number }[] } {
+  const tiles = world.tiles.map((row) => row.map((t) => t !== "wall"));
+  const portals = new Set(world.portals.map((p) => `${p.x},${p.y}`));
+  const occupied = new Set<string>([
+    `${world.playerSpawn.x},${world.playerSpawn.y}`,
+  ]);
+  const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const candidates: { x: number; y: number }[] = [];
+  for (const s of world.spawns) candidates.push({ x: s.x, y: s.y });
+  for (const p of world.portals) {
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const x = p.x + dx;
+      const y = p.y + dy;
+      if (x < 0 || y < 0 || x >= size || y >= size) continue;
+      if (world.tiles[y][x] === "wall") continue;
+      if (world.voidTiles.has(`${x},${y}`)) continue;
+      candidates.push({ x, y });
+    }
+  }
+  candidates.push({
+    x: Math.min(size - 1, world.playerSpawn.x + 1),
+    y: world.playerSpawn.y,
+  });
+  const cells: { x: number; y: number }[] = [];
+  const n = Math.max(0, Math.min(count, Math.max(candidates.length, 1)));
+  for (let i = 0; i < n; i++) {
+    const cell = candidates[i % Math.max(candidates.length, 1)] ?? {
+      x: world.playerSpawn.x,
+      y: world.playerSpawn.y,
+    };
+    const reserved = collectMandatoryProgressionCells(
+      tiles,
+      world.voidTiles,
+      portals,
+      world.playerSpawn,
+    );
+    const spawned = spawnSummonUnit(
+      cell,
+      SIM_SUMMON_SPELL,
+      "player",
+      1,
+      () => {},
+      () => ({ init: 4 }),
+      0,
+      {
+        tiles,
+        barriers: new Set(),
+        voidTiles: world.voidTiles,
+        portals,
+        reserved,
+        progressStart: world.playerSpawn,
+        isOccupied: (c) => occupied.has(`${c.x},${c.y}`),
+      },
+    );
+    occupied.add(`${spawned.summon.x},${spawned.summon.y}`);
+    cells.push({ x: spawned.summon.x, y: spawned.summon.y });
+  }
+  return {
+    sealed: occupantsSealProgression(
+      tiles,
+      world.voidTiles,
+      portals,
+      world.playerSpawn,
+      cells,
+    ),
+    cells,
   };
 }
 

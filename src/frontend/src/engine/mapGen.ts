@@ -165,7 +165,15 @@ export function applyVoidTiles(
       if ((x <= 1 || y <= 1 || x >= mw - 2 || y >= mh - 2) && rng() < ec)
         vt.add(`${x},${y}`);
     }
-  if (arch === "corridorMaze" || arch === "arena") return;
+  if (arch === "corridorMaze" || arch === "arena") {
+    // Edge voids used to skip the connectivity pass. A 2-tile void ring
+    // can isolate a border portal from the center spawn; clear them like
+    // the cluster-void archetypes already do.
+    if (!checkVoidConnectivity(tilesArr, vt, mw, mh)) {
+      vt.clear();
+    }
+    return;
+  }
   const cc =
     arch === "ruinsIslands"
       ? 5 + Math.floor(rng() * 3)
@@ -1113,6 +1121,7 @@ export interface SolvabilityReport {
   stackedPortals: number;
   enemiesOnPortal: number;
   portalTileMismatch: number;
+  clearingUnlocks: boolean;
   failures: string[];
 }
 
@@ -1124,6 +1133,79 @@ export function floodWalkable(
   h: number,
 ): Set<string> {
   return floodFillReachable(tiles, voidTiles, start, w, h);
+}
+
+/**
+ * Living hostiles block walk. The player must be able to engage (Chebyshev
+ * 1) every blocking wave until every exit is walkable — otherwise a
+ * corridor of un-attackable rats can keep the progression portal sealed.
+ */
+export function sequentialClearUnlocks(
+  tiles: string[][],
+  voidTiles: Set<string>,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  spawns: { x: number; y: number }[],
+  w: number,
+  h: number,
+): boolean {
+  if (portals.length === 0) return false;
+  const portalKeys = portals.map((p) => `${p.x},${p.y}`);
+  const blocked = new Set(spawns.map((s) => `${s.x},${s.y}`));
+  blocked.delete(`${playerSpawn.x},${playerSpawn.y}`);
+
+  const flood = (walls: Set<string>): Set<string> => {
+    const visited = new Set<string>();
+    if (!isWalkable(tiles, voidTiles, playerSpawn.x, playerSpawn.y, w, h)) {
+      return visited;
+    }
+    const q: { x: number; y: number }[] = [playerSpawn];
+    visited.add(`${playerSpawn.x},${playerSpawn.y}`);
+    while (q.length > 0) {
+      const cur = q.shift()!;
+      for (const d of REACH_DIRS) {
+        const nx = cur.x + d[0];
+        const ny = cur.y + d[1];
+        const k = `${nx},${ny}`;
+        if (visited.has(k)) continue;
+        if (!isWalkable(tiles, voidTiles, nx, ny, w, h)) continue;
+        if (walls.has(k)) continue;
+        visited.add(k);
+        q.push({ x: nx, y: ny });
+      }
+    }
+    return visited;
+  };
+
+  // Portal walkability is not enough — leftover hostiles keep
+  // isProgressionLocked true. Every spawn must be engageable in waves.
+  while (blocked.size > 0) {
+    const reach = flood(blocked);
+    let progressed = false;
+    for (const ek of [...blocked]) {
+      const parts = ek.split(",");
+      const x = Number(parts[0]);
+      const y = Number(parts[1]);
+      let engageable = reach.has(ek);
+      if (!engageable) {
+        for (let dy = -1; dy <= 1 && !engageable; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            if (reach.has(`${x + dx},${y + dy}`)) {
+              engageable = true;
+              break;
+            }
+          }
+        }
+      }
+      if (engageable) {
+        blocked.delete(ek);
+        progressed = true;
+      }
+    }
+    if (!progressed) return false;
+  }
+  return portalKeys.every((k) => flood(blocked).has(k));
 }
 
 export function evaluateSolvability(
@@ -1210,6 +1292,13 @@ export function evaluateSolvability(
     // with spawn are intentional.
     failures.push("spawn-on-portal");
   }
+  const clearingUnlocks =
+    portals.length === 0
+      ? false
+      : sequentialClearUnlocks(tiles, vt, playerSpawn, portals, spawns, w, h);
+  if (portals.length > 0 && !clearingUnlocks) {
+    failures.push("clearing-locked");
+  }
   return {
     ok: failures.length === 0,
     playerSpawnLegal,
@@ -1221,6 +1310,7 @@ export function evaluateSolvability(
     stackedPortals,
     enemiesOnPortal,
     portalTileMismatch,
+    clearingUnlocks,
     failures,
   };
 }
