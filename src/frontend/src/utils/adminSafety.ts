@@ -177,6 +177,37 @@ export function achievementUnlockRejected(
   return null;
 }
 
+/**
+ * Wallet / level feats are checked against canister state. Victory used to
+ * call markAchievementUnlocked with projected recap totals before
+ * applyRewards, so the unlock #err'd and achievementsShownRef blocked the
+ * post-credit retry. Fire these only after applyRewards commits.
+ * spell_level_5 is already on the canister via upgradeSpell.
+ */
+export function shouldDeferAchievementUnlockUntilRewardsPersist(
+  condition: string,
+): boolean {
+  return (
+    condition === "level_10" ||
+    condition === "doka_1000" ||
+    condition === "doka_10000"
+  );
+}
+
+/** Conditions that become legal only after applyRewards writes level / Doka. */
+export function thresholdAchievementConditionsFromPersist(args: {
+  level: number;
+  doka: number;
+}): string[] {
+  const level = Math.max(0, Math.floor(Number(args.level) || 0));
+  const doka = Math.max(0, Math.floor(Number(args.doka) || 0));
+  const out: string[] = [];
+  if (level >= 10) out.push("level_10");
+  if (doka >= 1000) out.push("doka_1000");
+  if (doka >= 10000) out.push("doka_10000");
+  return out;
+}
+
 /** Count a Boss Rush master run only while still occupying room 9. */
 export function shouldCountBossRushRun(
   currentRoom: number,
