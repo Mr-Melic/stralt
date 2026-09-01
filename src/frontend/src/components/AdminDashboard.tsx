@@ -57,6 +57,7 @@ import {
 } from "../utils/adminContract";
 import {
   MAX_DOKA_GRANT,
+  safeProofHref,
   unsafeUrl,
   validateAdBox,
   validateDokaGrant,
@@ -1482,7 +1483,7 @@ const SpriteEditorForm: React.FC<{
               flexShrink: 0,
             }}
           >
-            {previewUrl ? (
+            {previewUrl && !unsafeUrl(previewUrl) ? (
               <img
                 src={previewUrl}
                 alt="preview"
@@ -6441,11 +6442,16 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                                     label,
                                     open: () => {
                                       if (rec.proofFileUrl) {
-                                        window.open(
+                                        const proofHref = safeProofHref(
                                           rec.proofFileUrl,
-                                          "_blank",
-                                          "noopener,noreferrer",
                                         );
+                                        if (proofHref !== "#") {
+                                          window.open(
+                                            proofHref,
+                                            "_blank",
+                                            "noopener,noreferrer",
+                                          );
+                                        }
                                         return;
                                       }
                                       if (

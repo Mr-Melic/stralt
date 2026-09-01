@@ -100,6 +100,64 @@ export function safeExternalHref(url: string): string {
   return "#";
 }
 
+/** Official shop proof MIME list. Rejects data:text/html admin XSS. */
+export function proofDataMimeAllowed(url: string): boolean {
+  const mime = url.trimStart().toLowerCase();
+  return (
+    mime.startsWith("data:image/jpeg") ||
+    mime.startsWith("data:image/jpg") ||
+    mime.startsWith("data:image/png") ||
+    mime.startsWith("data:application/pdf") ||
+    mime.startsWith("data:application/octet-stream")
+  );
+}
+
+/**
+ * Admin proof viewer: images/PDF data: URLs or http(s).
+ * `window.open("data:text/html,<script>")` is stored XSS.
+ */
+export function safeProofHref(url: string): string {
+  const trimmed = url.trim();
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
+    return "#";
+  }
+  if (lower.startsWith("https://") || lower.startsWith("http://")) {
+    return trimmed;
+  }
+  if (proofDataMimeAllowed(trimmed)) {
+    return trimmed;
+  }
+  return "#";
+}
+
+export function validateProofFileUrl(url: string): string | null {
+  if (!url) return "proofFileUrl is required";
+  if (url.length > 524_288) return "proofFileUrl exceeds maximum size";
+  const lower = url.trimStart().toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
+    return "proofFileUrl uses a forbidden URL scheme";
+  }
+  if (!proofDataMimeAllowed(url)) {
+    return "proofFileUrl must be a data: image, PDF, or octet-stream";
+  }
+  return null;
+}
+
+export function rejectSecondPendingPurchase(
+  alreadyPending: boolean,
+): string | null {
+  return alreadyPending ? "A purchase is already pending" : null;
+}
+
+export function chatCooldownActive(
+  lastSent: number,
+  now: number,
+  minNs: number,
+): boolean {
+  return now - lastSent < minNs;
+}
+
 export function validateWalkFrameUrls(
   frames: readonly string[],
 ): string | null {

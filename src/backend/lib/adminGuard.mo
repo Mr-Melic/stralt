@@ -75,10 +75,20 @@ module {
             or lower.startsWith(#text "vbscript:")
     };
 
-    /// Shop proof blobs are data: URLs from the official client. Reject only
-    /// script schemes; do not treat data: as unsafe here.
+    /// Official shop proof is `data:<image|pdf|octet-stream>;base64,...`.
+    /// Empty / https / `data:text/html` let a raw client skip the file picker
+    /// or store an admin-viewable XSS payload (`window.open` of the proof).
+    public func proofDataMimeAllowed(url : Text) : Bool {
+        let mime = asciiLowerPrefix(trimLeadingWs(url), 40);
+        mime.startsWith(#text "data:image/jpeg")
+            or mime.startsWith(#text "data:image/jpg")
+            or mime.startsWith(#text "data:image/png")
+            or mime.startsWith(#text "data:application/pdf")
+            or mime.startsWith(#text "data:application/octet-stream")
+    };
+
     public func validateProofFileUrl(url : Text) : ?Text {
-        if (url == "") { return null };
+        if (url == "") { return ?"proofFileUrl is required" };
         if (url.size() > 524_288) {
             return ?"proofFileUrl exceeds maximum size";
         };
@@ -86,7 +96,20 @@ module {
         if (lower.startsWith(#text "javascript:") or lower.startsWith(#text "vbscript:")) {
             return ?"proofFileUrl uses a forbidden URL scheme";
         };
+        if (not proofDataMimeAllowed(url)) {
+            return ?"proofFileUrl must be a data: image, PDF, or octet-stream";
+        };
         null
+    };
+
+    /// Official checkout is one in-flight purchase. A second pending record
+    /// is the double-click / raw-client path that auto-completes twice.
+    public func rejectSecondPendingPurchase(alreadyPending : Bool) : ?Text {
+        if (alreadyPending) { ?"A purchase is already pending" } else { null }
+    };
+
+    public func chatCooldownActive(lastSent : Int, now : Int, minNs : Int) : Bool {
+        now - lastSent < minNs
     };
 
     public func validateOptionalUrl(lbl : Text, url : Text) : ?Text {

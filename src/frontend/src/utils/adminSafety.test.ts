@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import {
   achievementUnlockRejected,
+  chatCooldownActive,
   clampDungeonDepth,
   incomingSpellLevelsWouldMint,
   isBanReasonKey,
   isBuiltInSpellId,
   maxPersistedHp,
+  proofDataMimeAllowed,
+  rejectSecondPendingPurchase,
   resolveAppearanceSpellLevels,
   safeExternalHref,
+  safeProofHref,
   shouldCountBossRushRun,
   shouldDeferAchievementUnlockUntilRewardsPersist,
   shouldIncludeBackendSpellInLibrary,
@@ -26,6 +30,7 @@ import {
   validateJsonBlob,
   validateLevelUpConfig,
   validateOptionalUrl,
+  validateProofFileUrl,
   validateSpellConfig,
   validateTierSpawnConfig,
   validateWalkFrameUrls,
@@ -238,6 +243,28 @@ assert.equal(
 assert.equal(safeExternalHref("https://example.com"), "https://example.com");
 assert.equal(safeExternalHref("javascript:alert(1)"), "#");
 assert.equal(safeExternalHref("  JavaScript:alert(1)"), "#");
+
+assert.equal(validateProofFileUrl(""), "proofFileUrl is required");
+assert.ok(validateProofFileUrl("https://evil.example/proof.jpg"));
+assert.ok(validateProofFileUrl("data:text/html,<script>alert(1)</script>"));
+assert.ok(validateProofFileUrl("javascript:alert(1)"));
+assert.equal(validateProofFileUrl("data:image/png;base64,abc"), null);
+assert.equal(validateProofFileUrl("data:application/pdf;base64,abc"), null);
+assert.equal(proofDataMimeAllowed("data:image/jpeg;base64,xx"), true);
+assert.equal(proofDataMimeAllowed("data:text/html,x"), false);
+assert.equal(safeProofHref("data:text/html,<script>x</script>"), "#");
+assert.equal(safeProofHref("javascript:alert(1)"), "#");
+assert.equal(
+  safeProofHref("data:image/png;base64,abc"),
+  "data:image/png;base64,abc",
+);
+assert.equal(
+  rejectSecondPendingPurchase(true),
+  "A purchase is already pending",
+);
+assert.equal(rejectSecondPendingPurchase(false), null);
+assert.equal(chatCooldownActive(0, 1_000_000_000, 2_000_000_000), true);
+assert.equal(chatCooldownActive(0, 3_000_000_000, 2_000_000_000), false);
 assert.ok(validateWalkFrameUrls(["javascript:alert(1)"]));
 assert.equal(validateWalkFrameUrls(["https://cdn.example/f.png"]), null);
 assert.ok(validateAdBox(0, "javascript:x", "https://ok.example"));

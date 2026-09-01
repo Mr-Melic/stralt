@@ -266,6 +266,7 @@ import {
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
 import {
+  safeExternalHref,
   shouldIncludeBackendSpellInLibrary,
   thresholdAchievementConditionsFromPersist,
 } from "../utils/adminSafety";
@@ -19655,7 +19656,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       }
                       // Open payment link if available
                       if (selectedPkg.paymentLink) {
-                        window.open(selectedPkg.paymentLink, "_blank");
+                        const paymentHref = safeExternalHref(
+                          selectedPkg.paymentLink,
+                        );
+                        if (paymentHref !== "#") {
+                          window.open(paymentHref, "_blank");
+                        }
                       }
                       // After 60s the canister auto-completes pending purchases.
                       // Keep this timer off pendingTimeoutsRef / cleanupRanRef —
