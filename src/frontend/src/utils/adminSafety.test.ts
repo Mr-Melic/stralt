@@ -9,10 +9,12 @@ import {
   resolveAppearanceSpellLevels,
   safeExternalHref,
   shouldCountBossRushRun,
+  shouldDeferAchievementUnlockUntilRewardsPersist,
   shouldIncludeBackendSpellInLibrary,
   shouldRejectInactiveAchievementUnlock,
   shouldRejectRetiredSpellUpgrade,
   shouldWipeAchievementsOnBan,
+  thresholdAchievementConditionsFromPersist,
   unsafeUrl,
   validateAdBox,
   validateAssignRole,
@@ -227,6 +229,54 @@ assert.equal(
 );
 assert.equal(achievementUnlockRejected("spell_level_5", 20, 0, 5), null);
 assert.equal(achievementUnlockRejected("first_battle_win", 1, 0, 0), null);
+
+// Failure: victory fired doka_1000 / level_10 from projected recap totals
+// (900 + 150, level 9 + XP) before applyRewards. Canister still had the
+// pre-credit snapshot, so markAchievementUnlocked #err'd and the shown-set
+// blocked the overworld retry after the credit landed.
+assert.equal(
+  shouldDeferAchievementUnlockUntilRewardsPersist("doka_1000"),
+  true,
+);
+assert.equal(
+  shouldDeferAchievementUnlockUntilRewardsPersist("doka_10000"),
+  true,
+);
+assert.equal(shouldDeferAchievementUnlockUntilRewardsPersist("level_10"), true);
+assert.equal(
+  shouldDeferAchievementUnlockUntilRewardsPersist("first_battle_win"),
+  false,
+);
+assert.equal(
+  shouldDeferAchievementUnlockUntilRewardsPersist("spell_level_5"),
+  false,
+);
+assert.deepEqual(
+  thresholdAchievementConditionsFromPersist({ level: 9, doka: 900 }),
+  [],
+);
+assert.deepEqual(
+  thresholdAchievementConditionsFromPersist({ level: 9, doka: 1050 }),
+  ["doka_1000"],
+);
+assert.deepEqual(
+  thresholdAchievementConditionsFromPersist({ level: 10, doka: 1050 }),
+  ["level_10", "doka_1000"],
+);
+assert.deepEqual(
+  thresholdAchievementConditionsFromPersist({ level: 10, doka: 10000 }),
+  ["level_10", "doka_1000", "doka_10000"],
+);
+assert.equal(
+  achievementUnlockRejected("doka_1000", 1, 900, 0),
+  "Doka balance below 1000",
+);
+assert.equal(achievementUnlockRejected("doka_1000", 1, 1050, 0), null);
+assert.equal(
+  achievementUnlockRejected("level_10", 9, 1050, 0),
+  "Level below 10",
+);
+assert.equal(achievementUnlockRejected("level_10", 10, 1050, 0), null);
 
 // Failure: completeBossRushRoom(9) while currentRoom stayed 9 incremented runs.
 assert.equal(shouldCountBossRushRun(9, 9), true);

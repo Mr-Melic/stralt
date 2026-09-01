@@ -266,7 +266,10 @@ import {
   type AchievementCreditActor,
   creditAchievementRewardThroughPersist,
 } from "../utils/achievementReward";
-import { shouldIncludeBackendSpellInLibrary } from "../utils/adminSafety";
+import {
+  shouldIncludeBackendSpellInLibrary,
+  thresholdAchievementConditionsFromPersist,
+} from "../utils/adminSafety";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
   castFollowUpShouldDebitAp,
@@ -12553,19 +12556,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             bossDefeated: currentBossConfigRef.current?.name || undefined,
           };
 
-          // Fire victory feats before the recap so first_battle_win / boss
-          // kills land on the same payload as mid-fight unlocks.
-          const newLevel = finalRecapData.currentLevel;
-          const newDoka = dokaBalance + totalDoka;
+          // Fire client-trusted victory feats before the recap so
+          // first_battle_win / boss kills land on the same payload as
+          // mid-fight unlocks. Wallet / level feats wait until
+          // applyRewards commits — markAchievementUnlocked now rejects
+          // projected totals against the pre-credit canister snapshot,
+          // and achievementsShownRef would block the post-credit retry.
           checkAndFireAchievement("first_battle_win", true);
           if (characterStats.hp === 1) {
             checkAndFireAchievement("survive_1hp", true);
           }
-          if (newLevel >= 10) {
-            checkAndFireAchievement("level_10", true);
-          }
-          if (newDoka >= 1000) checkAndFireAchievement("doka_1000", true);
-          if (newDoka >= 10000) checkAndFireAchievement("doka_10000", true);
           if (mapsVisitedCountRef.current >= 25) {
             checkAndFireAchievement("explore_25_maps", true);
           }
@@ -12642,10 +12642,37 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   xp: recap.newXp ?? progressPersistRef.current.snapshot().xp,
                   level: recap.currentLevel,
                 });
+                // Unlock wallet/level feats against the post-credit
+                // snapshot. A queued death saveBattleStats can cut Doka
+                // as soon as this enqueue returns.
+                for (const condition of thresholdAchievementConditionsFromPersist(
+                  {
+                    level: recap.currentLevel,
+                    doka:
+                      recap.newDoka ??
+                      progressPersistRef.current.snapshot().doka,
+                  },
+                )) {
+                  checkAndFireAchievement(condition, true);
+                }
                 return recap;
               },
             );
             const _rewardRecap = _recapData;
+            if (
+              thresholdAchievementConditionsFromPersist({
+                level: _rewardRecap.currentLevel,
+                doka: _rewardRecap.newDoka ?? 0,
+              }).length > 0 &&
+              onShowBattleSummary
+            ) {
+              onShowBattleSummary(
+                attachRecapUnlocks(
+                  finalRecapData,
+                  newlyUnlockedInBattleRef.current,
+                ),
+              );
+            }
 
             // Recap overlay is pointer-events: none. A lava/spike death can
             // land while this applyRewards await is still in flight. The
