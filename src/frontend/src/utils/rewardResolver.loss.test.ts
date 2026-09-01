@@ -6,7 +6,7 @@ import {
   clampApplyRewardsDeltas,
   persistIncrementalRewards,
 } from "./applyRewardsResult.ts";
-import { computeRewardDeltas } from "./rewardResolver.ts";
+import { computeRewardDeltas, resolveBattleRewards } from "./rewardResolver.ts";
 
 describe("computeRewardDeltas on a loss", () => {
   it("does not persist base Doka or XP when victory is false", () => {
@@ -138,5 +138,56 @@ describe("clampApplyRewardsDeltas", () => {
     });
     assert.equal(deltas.dokaDelta, APPLY_REWARDS_MAX_DOKA_DELTA);
     assert.equal(deltas.xpDelta, 1080);
+    assert.equal(
+      deltas.dokaFromChallenges,
+      500,
+      "challenge share must still land under the persist ceiling",
+    );
+  });
+
+  it("clamps victory XP so a huge grant cannot #err the whole persist", () => {
+    const deltas = computeRewardDeltas({
+      victory: true,
+      enemiesDefeated: [{ name: "rat", level: 4 }],
+      completedChallenges: [
+        { name: "Untouchable", dokaReward: 500, xpReward: 1000 },
+      ],
+      dungeonMultiplier: 1,
+      baseDoka: 80,
+      baseXp: 600_000,
+    });
+    assert.equal(deltas.dokaDelta, 580);
+    assert.equal(deltas.xpDelta, APPLY_REWARDS_MAX_XP_DELTA);
+  });
+});
+
+describe("resolveBattleRewards advertised grant", () => {
+  it("persists and recaps the clamped jackpot so HUD credit matches the canister", async () => {
+    const calls: Array<[bigint, bigint, bigint]> = [];
+    const actor = {
+      applyRewards: async (slot: bigint, doka: bigint, xp: bigint) => {
+        calls.push([slot, doka, xp]);
+        return {
+          ok: { newDoka: 100_000, newXp: 0, newLevel: 2 },
+        };
+      },
+    };
+    const recap = await resolveBattleRewards(actor, 1, {
+      victory: true,
+      enemiesDefeated: [{ name: "rat", level: 4 }],
+      completedChallenges: [],
+      dungeonMultiplier: 1,
+      baseDoka: 1_000_000_000,
+      baseXp: 600_000,
+    });
+    assert.deepEqual(calls, [
+      [
+        1n,
+        BigInt(APPLY_REWARDS_MAX_DOKA_DELTA),
+        BigInt(APPLY_REWARDS_MAX_XP_DELTA),
+      ],
+    ]);
+    assert.equal(recap.dokaEarned, APPLY_REWARDS_MAX_DOKA_DELTA);
+    assert.equal(recap.xpEarned, APPLY_REWARDS_MAX_XP_DELTA);
   });
 });
