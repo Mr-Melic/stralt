@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { shouldIgnoreWorldInputDuringRecap } from "./recapWorldInput.ts";
+import {
+  shouldBlockPortalDuringVictoryPersist,
+  shouldIgnoreWorldInputDuringRecap,
+} from "./recapWorldInput.ts";
 
 describe("shouldIgnoreWorldInputDuringRecap", () => {
   it("allows canvas input when no recap is up and no victory credit is queued", () => {
@@ -20,5 +23,17 @@ describe("shouldIgnoreWorldInputDuringRecap", () => {
 
   it("does not treat a missing pending flag as a block", () => {
     assert.equal(shouldIgnoreWorldInputDuringRecap(false, undefined), false);
+  });
+});
+
+describe("shouldBlockPortalDuringVictoryPersist", () => {
+  it("blocks dungeon/Boss Rush portal entry while applyRewards is queued", () => {
+    assert.equal(shouldBlockPortalDuringVictoryPersist(true), true);
+    assert.equal(shouldBlockPortalDuringVictoryPersist(false), false);
+  });
+
+  it("still ignores canvas walk after recap dismiss when the credit is pending", () => {
+    assert.equal(shouldIgnoreWorldInputDuringRecap(false, true), true);
+    assert.equal(shouldBlockPortalDuringVictoryPersist(true), true);
   });
 });

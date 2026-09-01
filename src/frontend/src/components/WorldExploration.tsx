@@ -168,6 +168,7 @@ import {
   collectMandatoryProgressionCells,
   findNearestFreeCell,
   isCellFree,
+  resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
 import {
   PROGRESSION_PORTAL_KIND,
@@ -355,7 +356,10 @@ import {
   spendFromUiBalance,
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
-import { shouldIgnoreWorldInputDuringRecap } from "../utils/recapWorldInput";
+import {
+  shouldBlockPortalDuringVictoryPersist,
+  shouldIgnoreWorldInputDuringRecap,
+} from "../utils/recapWorldInput";
 import {
   RENAME_DOKA_COST,
   committedDokaAfterRename,
@@ -1178,6 +1182,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // (e.g. the useEffect that watches inBattle===false && enemies.length===0
   // can fire the same callback multiple times in rapid succession).
   const battleEndedRef = useRef(false);
+  // Recap is shown before applyRewards. Dismissing it used to leave canvas
+  // walk / portal / encounter live while the credit was still queued.
+  const victoryPersistPendingRef = useRef(false);
   const battleStartSkipRef = useRef(0);
   // Weather suppress: pause new particle spawns for ~60 frames at battle start
   const _weatherSuppressRef = useRef(false); // Weather effects removed, ref kept to avoid larger refactor
@@ -6144,6 +6151,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ) {
       return;
     }
+    if (
+      shouldBlockPortalDuringVictoryPersist(victoryPersistPendingRef.current)
+    ) {
+      return;
+    }
     // FIX #14: Check-and-set is the very first synchronous operation so there
     // is no gap between the check and the lock being claimed.
     setTransitionInProgress(true);
@@ -10029,13 +10041,83 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
 
+  // Player-control move must share AI unseal: findPath + updateCombatant
+  // used to park a wolf on the only exit after a Boss Rush leftover.
+  const applyControlledSummonWalk = useCallback(
+    (
+      summon: {
+        id: string;
+        x: number;
+        y: number;
+        currentMp?: number;
+        pieceType?: string;
+      },
+      dest: { x: number; y: number },
+      pathLength: number,
+    ): boolean => {
+      const map = currentMapRef.current;
+      if (!map) return false;
+      const tiles = (map.tiles ?? []).map((row: any) =>
+        (row ?? []).map((t: any) => t !== "wall"),
+      );
+      const portals = new Set(
+        (map.portals ?? []).map((p: any) => `${p.x},${p.y}`),
+      );
+      const voidTiles = toVoidSet(map.voidTiles);
+      const landed = resolveControlledSummonMoveDest(
+        { x: summon.x, y: summon.y },
+        dest,
+        {
+          tiles,
+          barriers: new Set(barrierTilesRef.current.keys()),
+          voidTiles,
+          portals,
+          reserved: collectMandatoryProgressionCells(
+            tiles,
+            voidTiles,
+            portals,
+            playerPositionRef.current,
+          ),
+          progressStart: playerPositionRef.current,
+          isOccupied: (c: { x: number; y: number }) =>
+            getLiveCombatants(combatantStoreCtx).some(
+              (e: { x: number; y: number }) => e.x === c.x && e.y === c.y,
+            ) ||
+            (playerPositionRef.current.x === c.x &&
+              playerPositionRef.current.y === c.y),
+        } satisfies OccupancyContext,
+      );
+      if (!landed) {
+        logBattleEntry("Cannot move there", "#ef4444");
+        return false;
+      }
+      updateCombatant(combatantStoreCtx, summon.id, {
+        x: landed.x,
+        y: landed.y,
+        currentMp: (summon.currentMp ?? 0) - pathLength,
+      });
+      logBattleEntry(
+        `${summon.pieceType ?? "Summon"} moves ${pathLength} tiles`,
+        "#22c55e",
+      );
+      return true;
+    },
+    [combatantStoreCtx, logBattleEntry],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable callbacks are intentionally omitted
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
       if (shouldIgnoreSyntheticClickAfterTouch(lastCanvasTouchEndAtRef.current))
         return;
       if (!currentMap || transitionInProgressRef.current) return;
-      if (shouldIgnoreWorldInputDuringRecap(battleRecapOpen)) return;
+      if (
+        shouldIgnoreWorldInputDuringRecap(
+          battleRecapOpen,
+          victoryPersistPendingRef.current,
+        )
+      )
+        return;
       if (
         (inBattleRef.current &&
           (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)) ||
@@ -10069,15 +10151,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
-                  currentMp: (summon.currentMp ?? 0) - moveCost,
-                });
-                logBattleEntry(
-                  `${summon.pieceType} moves ${moveCost} tiles`,
-                  "#22c55e",
-                );
+                applyControlledSummonWalk(summon, gridPos, moveCost);
               } else {
                 logBattleEntry("Not enough MP", "#ef4444");
               }
@@ -10696,6 +10770,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       activeSpells,
       logBattleEntry,
       applyBattleWalkHazards,
+      applyControlledSummonWalk,
       combatantStoreCtx,
       hitTestSprite,
       setCurrentBattleApSynced,
@@ -10759,7 +10834,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       lastCanvasTouchEndAtRef.current = Date.now();
       if (!currentMap || transitionInProgressRef.current) return;
-      if (shouldIgnoreWorldInputDuringRecap(battleRecapOpen)) return;
+      if (
+        shouldIgnoreWorldInputDuringRecap(
+          battleRecapOpen,
+          victoryPersistPendingRef.current,
+        )
+      )
+        return;
       if (
         inBattleRef.current &&
         (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)
@@ -10797,15 +10878,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
-                updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
-                  currentMp: (summon.currentMp ?? 0) - moveCost,
-                });
-                logBattleEntry(
-                  `${summon.pieceType} moves ${moveCost} tiles`,
-                  "#22c55e",
-                );
+                applyControlledSummonWalk(summon, gridPos, moveCost);
               } else {
                 logBattleEntry("Not enough MP", "#ef4444");
               }
@@ -11274,6 +11347,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       recordClickOutcome,
       castControlledSummonSpell,
       applyBattleWalkHazards,
+      applyControlledSummonWalk,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
@@ -11800,6 +11874,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           deathTriggeredRef.current,
           deathRealmTimerRef.current !== null,
         ),
+        victoryPersistPending: victoryPersistPendingRef.current,
       })
     )
       return;
@@ -12544,6 +12619,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
           // Persist rewards in a separate try/catch so failures never hide the recap
           const deathEpochAtPersistStart = deathEpochRef.current;
+          victoryPersistPendingRef.current = true;
           try {
             const _recapData = await progressPersistRef.current.enqueue(
               async () => {
@@ -12609,6 +12685,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               "Reward persistence failed (non-blocking)",
               String(persistErr),
             );
+          } finally {
+            victoryPersistPendingRef.current = false;
           }
         } else {
           // On defeat, keep enemies but reset player stats
@@ -12792,6 +12870,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // shop spend drains the real pre-reward balance.
       const deathEpochAtPersistStart = deathEpochRef.current;
       if (actor) {
+        victoryPersistPendingRef.current = true;
         void persistBossRushRewardsThroughLock(
           progressPersistRef.current,
           () => persistRoomClear(currentRoomIndex),
@@ -12848,6 +12927,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               "BossRush reward persist failed",
               String(persistErr),
             );
+          })
+          .finally(() => {
+            victoryPersistPendingRef.current = false;
           });
       }
 

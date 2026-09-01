@@ -150,12 +150,19 @@ export function shouldAllowBattleTrigger(opts: {
    * can fire if the player also dies in it).
    */
   deathRealmPending?: boolean;
+  /**
+   * Recap can be dismissed while applyRewards is still queued. A walk onto
+   * another overworld hostile then starts a second fight before the first
+   * credit commits.
+   */
+  victoryPersistPending?: boolean;
 }): boolean {
   return (
     !opts.inBattle &&
     !opts.inBattleRef &&
     !opts.transitionInProgress &&
-    !opts.deathRealmPending
+    !opts.deathRealmPending &&
+    !opts.victoryPersistPending
   );
 }
 
