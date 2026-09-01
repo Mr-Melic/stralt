@@ -135,12 +135,30 @@ function SmallScreenGuard({ onContinue }: { onContinue: () => void }) {
 
 /** Changelog popup — shown once after each update when the player re-logs in */
 function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
+  const dismissRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    dismissRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onDismiss();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onDismiss]);
+
   return (
-    <div
+    <dialog
+      open
       data-ocid="changelog.overlay"
+      aria-labelledby="changelog-title"
       style={{
         position: "fixed",
         inset: 0,
+        width: "100%",
+        height: "100%",
+        maxWidth: "none",
+        maxHeight: "none",
+        margin: 0,
+        border: "none",
         zIndex: 99000,
         display: "flex",
         alignItems: "center",
@@ -148,6 +166,8 @@ function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
         background: "rgba(0,0,0,0.65)",
         backdropFilter: "blur(2px)",
         pointerEvents: "all",
+        padding:
+          "max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px))",
       }}
     >
       <div
@@ -158,6 +178,9 @@ function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
           padding: "28px 28px 22px",
           maxWidth: 400,
           width: "calc(100% - 40px)",
+          maxHeight: "min(90vh, 90dvh)",
+          overflowY: "auto",
+          overscrollBehavior: "contain",
           boxShadow: "0 0 60px rgba(139,26,26,0.5), 0 0 20px rgba(0,0,0,0.8)",
           fontFamily: "'Space Grotesk', system-ui, sans-serif",
         }}
@@ -172,6 +195,7 @@ function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
         >
           <span style={{ fontSize: 26 }}>🧛</span>
           <h2
+            id="changelog-title"
             style={{
               color: "#e74c3c",
               fontWeight: 800,
@@ -222,6 +246,7 @@ function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
           ))}
         </ul>
         <button
+          ref={dismissRef}
           type="button"
           data-ocid="changelog.dismiss_button"
           onClick={onDismiss}
@@ -244,7 +269,7 @@ function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
           Got it — let me play!
         </button>
       </div>
-    </div>
+    </dialog>
   );
 }
 

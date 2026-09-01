@@ -283,7 +283,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
         <div
           ref={topBarRef}
           className="fixed top-0 left-0 right-0 z-[9000] pointer-events-none"
-          style={{ height: "calc(44px + env(safe-area-inset-top, 0px))" }}
+          style={{ height: "var(--app-top-hud-height)" }}
           aria-hidden
         />
         {/* Realm tools sit just under the world HUD so they stay reachable
@@ -292,7 +292,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
         <div
           className="fixed z-[9001] pointer-events-auto flex items-center gap-2 px-2 py-1"
           style={{
-            top: "calc(46px + env(safe-area-inset-top, 0px))",
+            top: "calc(var(--app-top-hud-height) + 2px)",
             right: "max(8px, env(safe-area-inset-right, 0px))",
             minHeight: 44,
             background:

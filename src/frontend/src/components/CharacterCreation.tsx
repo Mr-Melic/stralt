@@ -735,7 +735,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                     border: "1px solid #2a3040",
                     borderRadius: 8,
                     color: "#c0ccd8",
-                    fontSize: 15,
+                    fontSize: 16,
                     fontFamily: "serif",
                     outline: "none",
                     boxSizing: "border-box",

@@ -343,9 +343,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
 
   return (
     <div
+      className="min-h-app-viewport"
       style={{
         position: "relative",
-        minHeight: "100vh",
         width: "100%",
         display: "flex",
         flexDirection: "column",

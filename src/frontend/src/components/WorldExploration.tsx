@@ -5,7 +5,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SetStateAction } from "react";
 import { flushSync } from "react-dom";
 import { toast } from "sonner";
-import { useIsMobile } from "../hooks/use-mobile";
+import { readSafeAreaInsetTopPx, useIsMobile } from "../hooks/use-mobile";
 
 import { useActor } from "../hooks/useActor";
 import {
@@ -809,6 +809,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
   // Mobile detection — used only to adjust zoom & camera on mobile
   const isMobile = useIsMobile();
+  const safeAreaTopPx = useMemo(() => readSafeAreaInsetTopPx(), []);
   // Desktop detection — used for camera (static, no follow) and static tile layout
   const [isDesktop, setIsDesktop] = useState(() => window.innerWidth > 1024);
   useEffect(() => {
@@ -10790,7 +10791,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _liveSelf.reason,
+                    playerFacingRejectReason(_liveSelf.reason),
                   );
                   return;
                 }
@@ -11346,7 +11347,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
       }
       // ── SPRITE-FIRST HIT TESTING (touch) ────────────────────────────
-      // Mirrors the mouse handler exactly but uses 8px padding for finger
+      // Mirrors the mouse handler exactly but uses 14px padding for finger
       // imprecision. A sprite hit resolves the entity directly with NO
       // tile math (see the mouse handler for the full dispatch table).
       // No sprite hit → fall through to the existing clientToGrid tile
@@ -11462,7 +11463,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    _liveSelf.reason,
+                    playerFacingRejectReason(_liveSelf.reason),
                   );
                   return;
                 }
@@ -17830,13 +17831,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       {/* Game canvas fills the ENTIRE screen behind UI panels */}
       {/* DOFUS-style top bar — fixed overlay at top */}
       <div
-        className="dofus-panel-header flex items-center justify-between px-3 h-11"
+        className="dofus-panel-header flex items-center justify-between px-3"
         style={{
           position: "fixed",
           top: 0,
           left: 0,
           right: 0,
-          height: "44px",
+          height: "var(--app-top-hud-height)",
+          paddingTop: "var(--app-safe-top)",
+          paddingLeft: "max(12px, var(--app-safe-left))",
+          paddingRight: "max(12px, var(--app-safe-right))",
+          boxSizing: "border-box",
           zIndex: 100,
           pointerEvents: "auto",
         }}
@@ -17910,7 +17915,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             <div
               style={{
                 position: "absolute",
-                top: "48px",
+                top: "calc(100% + 4px)",
                 left: "50%",
                 transform: "translateX(-50%)",
                 zIndex: 200,
@@ -17956,22 +17961,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             </button>
           )}
           {showZoneLockPopup && (
-            <div
+            <dialog
+              open
+              aria-labelledby="zone-lock-title"
               style={{
                 position: "fixed",
                 top: "50%",
                 left: "50%",
                 transform: "translate(-50%,-50%)",
                 zIndex: 10000,
+                margin: 0,
                 background: "rgba(10,0,0,0.95)",
                 border: "1px solid #8b0000",
                 borderRadius: "12px",
                 padding: "24px",
                 minWidth: "280px",
+                maxWidth: "calc(100vw - 32px)",
+                maxHeight: "min(90vh, 90dvh)",
+                overflowY: "auto",
                 boxShadow: "0 0 24px rgba(180,0,0,0.6)",
               }}
             >
               <h3
+                id="zone-lock-title"
                 style={{
                   color: "#ff4444",
                   margin: "0 0 16px 0",
@@ -18012,6 +18024,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     color: "#fff",
                     border: "none",
                     padding: "8px 20px",
+                    minHeight: 44,
+                    minWidth: 44,
                     borderRadius: "20px",
                     cursor: "pointer",
                     fontSize: "14px",
@@ -18028,6 +18042,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   color: "#666",
                   border: "1px solid #333",
                   padding: "6px 16px",
+                  minHeight: 44,
                   borderRadius: "6px",
                   cursor: "pointer",
                   fontSize: "12px",
@@ -18035,7 +18050,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               >
                 Close
               </button>
-            </div>
+            </dialog>
           )}
           {transitionInProgressRef.current && (
             <span
@@ -18228,7 +18243,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ref={canvasAreaRef}
         style={{
           position: "fixed",
-          top: "44px",
+          top: "var(--app-top-hud-height)",
           left: 0,
           right: 0,
           bottom: 0,
@@ -18425,7 +18440,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         panelId="stats-panel"
         title="Stats"
         userId={userId}
-        defaultPosition={{ x: Math.max(0, window.innerWidth - 234), y: 54 }}
+        defaultPosition={{
+          x: Math.max(0, window.innerWidth - 234),
+          y: 54 + safeAreaTopPx,
+        }}
         defaultFolded={false}
         zIndex={100}
         style={{ width: 224 }}
@@ -19481,7 +19499,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 border: "1px solid #8b1a1a",
                 borderRadius: 6,
                 color: "#e0e6f0",
-                fontSize: 14,
+                fontSize: 16,
                 marginBottom: 12,
                 boxSizing: "border-box",
                 outline: "none",
@@ -19495,6 +19513,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 style={{
                   flex: 1,
                   padding: "10px 0",
+                  minHeight: 44,
                   background: "#1a1e30",
                   border: "1px solid #2a3040",
                   borderRadius: 6,
@@ -19515,6 +19534,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 style={{
                   flex: 1,
                   padding: "10px 0",
+                  minHeight: 44,
                   background:
                     dokaBalance < 100
                       ? "rgba(192,57,43,0.2)"
@@ -19797,7 +19817,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           border: "1px solid #8b1a1a",
                           borderRadius: 5,
                           color: "#e0e6f0",
-                          fontSize: 13,
+                          fontSize: 16,
                           outline: "none",
                           boxSizing: "border-box",
                         }}
