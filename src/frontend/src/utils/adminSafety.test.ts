@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import {
+  achievementUnlockRejected,
   clampDungeonDepth,
   isBanReasonKey,
   isBuiltInSpellId,
+  maxPersistedHp,
   safeExternalHref,
+  shouldCountBossRushRun,
   shouldIncludeBackendSpellInLibrary,
   shouldRejectInactiveAchievementUnlock,
   shouldRejectRetiredSpellUpgrade,
@@ -194,6 +197,35 @@ assert.equal(shouldRejectInactiveAchievementUnlock(true), false);
 
 assert.equal(clampDungeonDepth(100), 16);
 assert.equal(clampDungeonDepth(4), 4);
+
+// Failure: saveBattleStats used level*200+100 (300 HP at level 1).
+assert.equal(maxPersistedHp(1, 5), 100);
+assert.equal(maxPersistedHp(10, 5), 145);
+assert.equal(maxPersistedHp(20, 50), 1050);
+
+// Failure: markAchievementUnlocked trusted client for wallet/level/spell feats.
+assert.equal(achievementUnlockRejected("level_10", 9, 0, 0), "Level below 10");
+assert.equal(achievementUnlockRejected("level_10", 10, 0, 0), null);
+assert.equal(
+  achievementUnlockRejected("doka_1000", 1, 999, 0),
+  "Doka balance below 1000",
+);
+assert.equal(achievementUnlockRejected("doka_1000", 1, 1000, 0), null);
+assert.equal(
+  achievementUnlockRejected("doka_10000", 1, 9999, 0),
+  "Doka balance below 10000",
+);
+assert.equal(
+  achievementUnlockRejected("spell_level_5", 20, 0, 4),
+  "No spell at level 5",
+);
+assert.equal(achievementUnlockRejected("spell_level_5", 20, 0, 5), null);
+assert.equal(achievementUnlockRejected("first_battle_win", 1, 0, 0), null);
+
+// Failure: completeBossRushRoom(9) while currentRoom stayed 9 incremented runs.
+assert.equal(shouldCountBossRushRun(9, 9), true);
+assert.equal(shouldCountBossRushRun(0, 9), false);
+assert.equal(shouldCountBossRushRun(9, 8), false);
 assert.ok(validateJsonBlob("bossRushConfig", "not-json"));
 assert.equal(
   validateJsonBlob("bossRushConfig", '{"rewardMultiplier":1}'),
