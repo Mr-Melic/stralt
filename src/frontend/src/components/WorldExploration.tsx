@@ -162,6 +162,7 @@ import {
   collectMandatoryProgressionCells,
   findNearestFreeCell,
   isCellFree,
+  resolveProgressionSafeOccupantCell,
 } from "../engine/occupancy";
 import {
   PROGRESSION_PORTAL_KIND,
@@ -769,6 +770,40 @@ class CanvasErrorBoundary extends Component<
     }
     return this.props.children;
   }
+}
+
+/** Same reserved + joint-cut occupancy the AI summon walk already uses. */
+function occupancyForControlledSummonWalk(
+  currentMap: {
+    tiles?: ReadonlyArray<ReadonlyArray<unknown>>;
+    voidTiles?: Set<string> | Map<string, unknown>;
+    portals?: ReadonlyArray<{ x: number; y: number }>;
+  },
+  barrierKeys: Iterable<string>,
+  playerPos: { x: number; y: number },
+  isOccupied: (c: { x: number; y: number }) => boolean,
+): OccupancyContext {
+  const tiles = (currentMap.tiles ?? []).map((row) =>
+    (row ?? []).map((t) => t !== "wall"),
+  );
+  const portals = new Set(
+    (currentMap.portals ?? []).map((p) => `${p.x},${p.y}`),
+  );
+  const voidTiles = toVoidSet(currentMap.voidTiles);
+  return {
+    tiles,
+    barriers: new Set(barrierKeys),
+    voidTiles,
+    portals,
+    reserved: collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      playerPos,
+    ),
+    progressStart: playerPos,
+    isOccupied,
+  };
 }
 
 const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
@@ -10587,9 +10622,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
+                const dest = resolveProgressionSafeOccupantCell(
+                  { x: gridPos.x, y: gridPos.y },
+                  occupancyForControlledSummonWalk(
+                    currentMap,
+                    barrierTilesRef.current.keys(),
+                    playerPositionRef.current,
+                    (c) =>
+                      getLiveCombatants(combatantStoreCtx).some(
+                        (e) => e.id !== summon.id && e.x === c.x && e.y === c.y,
+                      ) ||
+                      (playerPositionRef.current.x === c.x &&
+                        playerPositionRef.current.y === c.y),
+                  ),
+                );
                 updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
+                  x: dest.x,
+                  y: dest.y,
                   currentMp: (summon.currentMp ?? 0) - moveCost,
                 });
                 logBattleEntry(
@@ -11328,9 +11377,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
+                const dest = resolveProgressionSafeOccupantCell(
+                  { x: gridPos.x, y: gridPos.y },
+                  occupancyForControlledSummonWalk(
+                    currentMap,
+                    barrierTilesRef.current.keys(),
+                    playerPositionRef.current,
+                    (c) =>
+                      getLiveCombatants(combatantStoreCtx).some(
+                        (e) => e.id !== summon.id && e.x === c.x && e.y === c.y,
+                      ) ||
+                      (playerPositionRef.current.x === c.x &&
+                        playerPositionRef.current.y === c.y),
+                  ),
+                );
                 updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
+                  x: dest.x,
+                  y: dest.y,
                   currentMp: (summon.currentMp ?? 0) - moveCost,
                 });
                 logBattleEntry(
