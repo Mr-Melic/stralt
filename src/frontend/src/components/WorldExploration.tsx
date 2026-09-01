@@ -1290,11 +1290,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     dungeonChainMaxDepthRef.current = dungeonChainMaxDepth;
   }, [dungeonChainMaxDepth]);
   // dokaBalance loaded by GameFlow; no local fetch needed
-  // Doka multiplier inside dungeon chain (depth 0 = normal; depth 1-5 = 1.5x..4x)
-  const DUNGEON_DOKA_MULTIPLIERS = [1, 1.5, 2.0, 2.5, 3.0, 4.0];
-  const dungeonDokaMultiplier = dungeonChainActive
-    ? (DUNGEON_DOKA_MULTIPLIERS[Math.min(dungeonChainDepth, 5)] ?? 1)
-    : 1;
+  // Same table as victory persist (`dungeonDokaMultiplierFor` in portalRules).
+  const dungeonDokaMultiplier = dungeonDokaMultiplierFor(
+    dungeonChainActive,
+    dungeonChainDepth,
+  );
   const dungeonDokaMultiplierRef = useRef(1);
   useEffect(() => {
     dungeonDokaMultiplierRef.current = dungeonDokaMultiplier;
