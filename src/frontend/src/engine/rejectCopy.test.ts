@@ -22,6 +22,13 @@ describe("playerFacingRejectReason", () => {
       playerFacingRejectReason("ally_no_summon_at_tile"),
       "No ally there",
     );
+    assert.equal(playerFacingRejectReason("ground_barrier"), "Blocked");
+    assert.equal(playerFacingRejectReason("line_blocked_barrier"), "Blocked");
+    assert.equal(playerFacingRejectReason("barrier_tile"), "Blocked");
+    assert.equal(
+      playerFacingRejectReason("line_los_blocked"),
+      "No line of sight",
+    );
   });
 
   it("passes through already-human phrases", () => {

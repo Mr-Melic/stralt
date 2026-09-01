@@ -183,6 +183,7 @@ import {
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
 import { playerFacingRejectReason } from "../engine/rejectCopy";
+import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
 import {
   type PlayerSpellContextDeps,
   createPlayerSpellContext,
@@ -230,6 +231,7 @@ import {
   nextTurnIndex,
   removeCombatantFromTurnQueue,
 } from "../engine/turnQueue";
+import { spawnWalkRejectFloat } from "../engine/walkRejectCopy";
 import {
   getCameraFollowSpeed,
   getSessionVersion,
@@ -11014,7 +11016,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screen.x,
               _screen.y,
-              "invalid target",
+              playerFacingRejectReason("self_other_tile"),
             );
             return;
           }
@@ -11024,7 +11026,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screenLive.x,
               _screenLive.y,
-              "invalid target",
+              playerFacingRejectReason(_liveBeforeCast.reason),
             );
             return;
           }
@@ -11118,12 +11120,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // handler's walk body, including Thorned Ground / Void Rift debits
         // (applyBattleWalkHazards — both input paths must charge the same HP).
         else if (battleActionMode === "walk") {
-          if (currentBattleMp <= 0) return;
+          if (currentBattleMp <= 0) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "no_mp",
+            );
+            return;
+          }
           if (
             currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
             currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
-          )
+          ) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "blocked",
+            );
             return;
+          }
           // FIX 1a (mouse walk-mode single-occupancy): reject the move if a
           // LIVING combatant occupies the target tile. Mirrors the entity-first
           // cast targeting at ~9519. Dead combatants are already dropped from
@@ -11144,11 +11159,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
           const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
+          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "cant_reach",
+            );
+            return;
+          }
           const path = findPath(playerPositionRef.current, gridPos);
-          if (path.length === 0) return;
+          if (path.length === 0) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "cant_reach",
+            );
+            return;
+          }
           const cost = path.length;
-          if (cost > currentBattleMp) return;
+          if (cost > currentBattleMp) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "not_enough_mp",
+            );
+            return;
+          }
           // Thorned Ground / Void Rift — same debit as touch walk.
           applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
@@ -11605,7 +11641,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screen.x,
               _screen.y,
-              "invalid target",
+              playerFacingRejectReason("self_other_tile"),
             );
             try {
               recordClickOutcome(
@@ -11626,7 +11662,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screenLive.x,
               _screenLive.y,
-              "invalid target",
+              playerFacingRejectReason(_liveBeforeCastTouch.reason),
             );
             return;
           }
@@ -11720,12 +11756,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // WALK branch — only runs with NO spell selected. Mirrors the mouse
         // handler's walk body, including Thorned Ground / Void Rift debits.
         else if (battleActionMode === "walk") {
-          if (currentBattleMp <= 0) return;
+          if (currentBattleMp <= 0) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "no_mp",
+            );
+            return;
+          }
           if (
             currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
             currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
-          )
+          ) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "blocked",
+            );
             return;
+          }
           // FIX 1b (touch walk-mode single-occupancy): mirror of the mouse
           // handler's occupancy check. Reject the move if a LIVING combatant
           // occupies the target tile. Dead combatants are already dropped from
@@ -11744,11 +11793,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
           const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
+          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "cant_reach",
+            );
+            return;
+          }
           const path = findPath(playerPositionRef.current, gridPos);
-          if (path.length === 0) return;
+          if (path.length === 0) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "cant_reach",
+            );
+            return;
+          }
           const cost = path.length;
-          if (cost > currentBattleMp) return;
+          if (cost > currentBattleMp) {
+            spawnWalkRejectFloat(
+              effectsManagerRef.current,
+              tileCenter(gridPos.x, gridPos.y),
+              "not_enough_mp",
+            );
+            return;
+          }
           applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
@@ -13088,6 +13158,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             "Victory recap built",
             JSON.stringify(recapWithUnlocks),
           );
+          if (shouldAnnounceLevelUp(characterStats.level, recapXp.level)) {
+            playSound("level_up");
+          }
           if (onShowBattleSummary) {
             onShowBattleSummary(recapWithUnlocks);
             logDebugInfo("BATTLE", "onShowBattleSummary fired for victory");
@@ -13425,6 +13498,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       };
 
       // Set popup state (non-blocking overlay)
+      if (shouldAnnounceLevelUp(characterStats.level, leveled.newLevel)) {
+        playSound("level_up");
+      }
       if (onShowBattleSummary) {
         onShowBattleSummary(
           attachRecapUnlocks(finalRecapData, newlyUnlockedInBattleRef.current),
