@@ -153,17 +153,43 @@ export async function persistBossRushRewardsThroughLock<T>(
 }
 
 /**
+ * Motoko Result for completeBossRushRoom. Bindings resolve `#err` as a
+ * value — awaiting alone is not enough.
+ */
+export function readCompleteBossRushRoomResult(
+  result: unknown,
+): { ok: true } | { err: string } {
+  if (result == null) return { ok: true };
+  if (typeof result !== "object") {
+    return { err: "completeBossRushRoom returned an invalid result" };
+  }
+  const r = result as Record<string, unknown>;
+  if (
+    r.__kind__ === "err" ||
+    (r.err != null && r.ok == null && r._ok == null)
+  ) {
+    return {
+      err: String(r.err ?? r._err ?? "completeBossRushRoom failed"),
+    };
+  }
+  return { ok: true };
+}
+
+/**
  * Writes currentRoom before the room-clear applyRewards so a reload cannot
- * re-enter the room that just paid out. Final-room clear resets currentRoom
- * so the jackpot room is not resumable.
+ * re-enter the room that just paid out. Final-room clear must
+ * completeBossRushRoom WHILE still occupying room 9, then reset — resetting
+ * first left currentRoom=0 so complete(9) returned #err and never set
+ * bossRushMasterComplete / totalBossRushRuns / highestRoomCompleted=10.
  *
  * The currentRoom write is required. Optional-chaining a missing method (or
  * swallowing a replica reject) used to return successfully and let
  * applyRewards pay an unadvanced room.
  *
- * completeBossRushRoom is progress-only (0, 0). A failure there after
- * currentRoom already advanced must not skip the wallet credit — reload
- * cannot re-farm that room.
+ * completeBossRushRoom is progress-only (0, 0). A failure there after a
+ * non-final currentRoom advance must not skip the wallet credit — reload
+ * cannot re-farm that room. Final-room complete failure must throw before
+ * reset so a retry can still occupy room 9.
  */
 export async function persistBossRushRoomClear(
   actor: BossRushProgressActor,
@@ -175,10 +201,28 @@ export async function persistBossRushRoomClear(
     progressAfterRoomClear(clearedRoomIndex);
   const slotId = BigInt(slot);
   if (runComplete) {
+    if (typeof actor.completeBossRushRoom !== "function") {
+      throw new Error(
+        "completeBossRushRoom is required to persist a final-room clear",
+      );
+    }
     if (typeof actor.resetBossRush !== "function") {
       throw new Error(
         "resetBossRush is required to persist a final-room clear",
       );
+    }
+    // Still occupying room 9 on the canister. complete(9) after reset
+    // was #err("roomIndex must match…") and skipped master progress.
+    const completed = readCompleteBossRushRoomResult(
+      await actor.completeBossRushRoom(
+        slotId,
+        BigInt(clearedRoomIndex),
+        BigInt(0),
+        BigInt(0),
+      ),
+    );
+    if ("err" in completed) {
+      throw new Error(completed.err);
     }
     await actor.resetBossRush(slotId);
   } else {
@@ -188,16 +232,16 @@ export async function persistBossRushRoomClear(
       );
     }
     await actor.setBossRushProgress(slotId, BigInt(nextCurrentRoom));
-  }
-  try {
-    await actor.completeBossRushRoom?.(
-      slotId,
-      BigInt(clearedRoomIndex),
-      BigInt(0),
-      BigInt(0),
-    );
-  } catch {
-    // currentRoom already advanced; do not block applyRewards.
+    try {
+      await actor.completeBossRushRoom?.(
+        slotId,
+        BigInt(clearedRoomIndex),
+        BigInt(0),
+        BigInt(0),
+      );
+    } catch {
+      // currentRoom already advanced; do not block applyRewards.
+    }
   }
   if (options?.wasSuperseded?.()) {
     try {
