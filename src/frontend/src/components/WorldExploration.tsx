@@ -10077,6 +10077,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             voidTiles,
             portals,
             playerPositionRef.current,
+            new Set(barrierTilesRef.current.keys()),
           ),
           progressStart: playerPositionRef.current,
           isOccupied: (c: { x: number; y: number }) =>
