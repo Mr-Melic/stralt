@@ -3227,7 +3227,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const savedExp =
       character?.experience != null ? Number(character.experience) : 0;
     const s = character?.stats;
-    const expToNext = Math.floor(100 * 2 ** (savedLevel - 1));
+    const expToNext = xpForNextLevel(savedLevel);
     return {
       hp: s?.hp != null ? Number(s.hp) : 100,
       maxHp: s?.hp != null ? Number(s.hp) : 100,
