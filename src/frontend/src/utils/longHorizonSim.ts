@@ -25,7 +25,12 @@ import {
 } from "../engine/progression.ts";
 import type { ChessPieceType } from "../types/gameTypes.ts";
 import { DEFAULT_LEVELUP_CONFIG } from "../types/gameTypes.ts";
-import { applyXpDelta, xpForNextLevel } from "./xpCurve.ts";
+import {
+  APPLY_REWARDS_MAX_DOKA_DELTA,
+  APPLY_REWARDS_MAX_XP_DELTA,
+  clampApplyRewardsDeltas,
+} from "./applyRewardsResult.ts";
+import { applyXpDelta, xpForNextLevel, xpThresholdBigInt } from "./xpCurve.ts";
 
 /** Mirrors rewardResolver.computeVictoryExp — kept local so Node can run this file. */
 function computeVictoryExp(input: {
@@ -72,8 +77,9 @@ function buildEnemyKit(
   return (kits[pieceType] ?? kits.pawn)(z);
 }
 
+/** Requested horizon plus HUD-sat, AP-cap, IEEE, and post-cap stress. */
 export const STRESS_LEVELS = [
-  1, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 1018, 1019,
+  1, 10, 15, 25, 48, 50, 78, 100, 250, 325, 500, 1000, 2500, 5000, 1018, 1019,
 ] as const;
 
 const GROWTH = (DEFAULT_LEVELUP_CONFIG.statGrowthPercent ?? 5) / 100;
@@ -144,12 +150,25 @@ export function summonerChance(playerLevel: number): number {
   );
 }
 
-/** Cumulative XP to *reach* `level` from 1 (leftover 0). */
+/** Exact N→N+1 need as IEEE Number, or Infinity when the bigint no longer fits. */
+export function xpNeedExactAsNumber(level: number): number {
+  const n = Number(xpThresholdBigInt(level));
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
+export function firstHudSaturationLevel(limit = 200): number {
+  for (let n = 1; n <= limit; n++) {
+    if (xpForNextLevel(n) >= Number.MAX_SAFE_INTEGER) return n;
+  }
+  return limit + 1;
+}
+
+/** Cumulative XP to *reach* `level` from 1 (leftover 0). Exact until IEEE overflow. */
 export function cumulativeXpToReach(level: number): number {
   if (level <= 1) return 0;
   let total = 0;
   for (let n = 1; n < level; n++) {
-    const need = xpForNextLevel(n);
+    const need = xpNeedExactAsNumber(n);
     if (!Number.isFinite(need)) return Number.POSITIVE_INFINITY;
     total += need;
     if (!Number.isFinite(total)) return Number.POSITIVE_INFINITY;
@@ -162,7 +181,7 @@ export function fightsToNextLevel(
   meanEnemyLevel: number,
   enemiesPerFight = 3,
 ): number {
-  const need = xpForNextLevel(level);
+  const need = xpNeedExactAsNumber(level);
   if (!Number.isFinite(need)) return Number.POSITIVE_INFINITY;
   const perFight = computeVictoryExp({
     defeatedEnemies: Array.from({ length: enemiesPerFight }, () => ({
@@ -173,6 +192,44 @@ export function fightsToNextLevel(
   });
   if (perFight <= 0) return Number.POSITIVE_INFINITY;
   return need / perFight;
+}
+
+export function officialStackedXp(
+  enemyLevel: number,
+  enemies: number,
+  bossXpMult: number,
+  xpBoost: boolean,
+): number {
+  const base = enemies * Math.max(1, enemyLevel) * 20;
+  return Math.round(base * bossXpMult * (xpBoost ? 1.5 : 1));
+}
+
+export function firstEnemyLevelXpClampHits(
+  enemies: number,
+  bossXpMult: number,
+  xpBoost: boolean,
+): number | null {
+  for (let level = 1; level <= 2000; level++) {
+    if (
+      officialStackedXp(level, enemies, bossXpMult, xpBoost) >
+      APPLY_REWARDS_MAX_XP_DELTA
+    ) {
+      return level;
+    }
+  }
+  return null;
+}
+
+/** Jackpot band is `roll < 0.0001` (0.01%) × uniform 1..1e9 × enemy.level. */
+export function jackpotUnclampedMean(enemyLevel: number): number {
+  return enemyLevel * ((1 + 1_000_000_000) / 2);
+}
+
+export function jackpotPersistIfHit(enemyLevel: number): number {
+  return Math.min(
+    APPLY_REWARDS_MAX_DOKA_DELTA,
+    jackpotUnclampedMean(enemyLevel),
+  );
 }
 
 export function enemyStatBounds(level: number, piece: ChessPieceType) {
@@ -318,14 +375,36 @@ function ensureLocalStorage(): void {
 export function runLongHorizonSim() {
   ensureLocalStorage();
 
+  const hudSatLevel = firstHudSaturationLevel();
+  const xpClampEnemyAtMaxBossBoost = firstEnemyLevelXpClampHits(3, 6, true);
+  const xpClampDungeonPack = firstEnemyLevelXpClampHits(13, 1, false);
+
   const xpRows = STRESS_LEVELS.map((level) => {
-    const need = xpForNextLevel(level);
+    const hudNeed = xpForNextLevel(level);
+    const exactNeed = xpNeedExactAsNumber(level);
     const dist = Number.isFinite(level) ? monteCarloEnemyLevels(level) : null;
     const meanEnemy = dist?.mean ?? level;
+    const typicalVictoryXp = computeVictoryExp({
+      defeatedEnemies: [
+        { name: "a", level: Math.round(meanEnemy) },
+        { name: "b", level: Math.round(meanEnemy) },
+        { name: "c", level: Math.round(meanEnemy) },
+      ],
+      characterLevel: level,
+    });
+    const stackedVoidBoost = officialStackedXp(
+      Math.round(meanEnemy),
+      3,
+      6,
+      true,
+    );
+    const clampedStacked = clampApplyRewardsDeltas(0, stackedVoidBoost);
     return {
       level,
-      xpToNext: need,
-      xpToNextIsFinite: Number.isFinite(need),
+      hudXpToNext: hudNeed,
+      hudSaturated: hudNeed >= Number.MAX_SAFE_INTEGER,
+      exactXpToNext: exactNeed,
+      exactXpToNextIsFinite: Number.isFinite(exactNeed),
       cumulativeXp: cumulativeXpToReach(level),
       linearPlayerHp: linearPlayerMaxHp(level),
       exponentialPlayerHp: getPlayerBaseStats(level, DEFAULT_LEVELUP_CONFIG).hp,
@@ -350,14 +429,12 @@ export function runLongHorizonSim() {
       pSameTier: dist?.pEqualBand ?? null,
       pAboveTier: dist?.pAbove ?? null,
       fightsToNext: dist ? fightsToNextLevel(level, dist.mean) : null,
-      typicalVictoryXp: computeVictoryExp({
-        defeatedEnemies: [
-          { name: "a", level: Math.round(meanEnemy) },
-          { name: "b", level: Math.round(meanEnemy) },
-          { name: "c", level: Math.round(meanEnemy) },
-        ],
-        characterLevel: level,
-      }),
+      typicalVictoryXp,
+      stackedVoidBoostXp: stackedVoidBoost,
+      stackedVoidBoostClampedXp: clampedStacked.xpDelta,
+      stackedXpTruncated: stackedVoidBoost > APPLY_REWARDS_MAX_XP_DELTA,
+      jackpotUnclampedMean: jackpotUnclampedMean(Math.round(meanEnemy)),
+      jackpotPersistIfHit: jackpotPersistIfHit(Math.round(meanEnemy)),
     };
   });
 
@@ -421,22 +498,33 @@ export function runLongHorizonSim() {
     },
   );
 
-  const applyXpInfinity = applyXpDelta(0, 1018, 1);
+  const applyXpAt48 = applyXpDelta(0, 48, 1);
+  const applyXpAt1018 = applyXpDelta(0, 1018, 1);
   const applyXpAt1019 = {
-    threshold: xpForNextLevel(1019),
-    canLevel: 1e308 >= xpForNextLevel(1019),
+    hudThreshold: xpForNextLevel(1019),
+    exactThresholdIsFinite: Number.isFinite(xpNeedExactAsNumber(1019)),
+    canLevelFromOneXp: applyXpDelta(0, 1019, 1).newLevel > 1019,
   };
 
   return {
-    generatedAt: "2026-08-31T00:03:15.838Z",
+    generatedAt: "2026-09-01T00:00:37.286Z",
     telemetry: {
       available: false,
       reason:
-        "No backend-authoritative player-level / encounter / discovery series exists (AQA-2026-08-30-012). Calibration skipped; synthetic only.",
+        "No backend-authoritative player-level / encounter / discovery series exists (AQA-2026-08-30-012 / LHIPS-2026-08-31-014). Calibration skipped; synthetic only. Observed max level is not a cap.",
     },
     catalog: {
       starterSpellCount: starterSpells.length,
       allSpellsAreStarter: true,
+    },
+    persistContract: {
+      applyRewardsMaxDoka: APPLY_REWARDS_MAX_DOKA_DELTA,
+      applyRewardsMaxXp: APPLY_REWARDS_MAX_XP_DELTA,
+      saveBattleStatsCannotRaiseLevel: true,
+      saveBattleStatsApCap: 20,
+      hudSaturationLevel: hudSatLevel,
+      firstEnemyLevelVoidBoostXpClamp: xpClampEnemyAtMaxBossBoost,
+      firstEnemyLevelDungeonPackXpClamp: xpClampDungeonPack,
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
@@ -447,10 +535,11 @@ export function runLongHorizonSim() {
     kitsNumeric,
     kitsLiveCallSite,
     bossGuideVsCombat,
-    applyXpInfinity,
+    applyXpAt48,
+    applyXpAt1018,
     applyXpAt1019,
     updateCharacterApCap: 20,
-    saveBattleStatsLevelUnconstrained: true,
+    saveBattleStatsLevelUnconstrained: false,
   };
 }
 
