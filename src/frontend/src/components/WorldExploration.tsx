@@ -123,6 +123,7 @@ import {
 import {
   type DeathPipelineCtx,
   processCombatantDeath,
+  shouldApplyLeaderDeathBoost,
 } from "../engine/deathPipeline";
 import { type DotTickResult, tickDotStacks } from "../engine/dotStacks";
 import { EffectsManager } from "../engine/effects";
@@ -9074,6 +9075,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ),
       logDefeated: (name) => logBattleEntry(`${name} is defeated`, "#ef4444"),
       applyLeaderDeathBoost: (deadId) => {
+        if (
+          !shouldApplyLeaderDeathBoost(
+            deadId,
+            leaderEnemyIdRef.current,
+            leaderDiedRef.current,
+          )
+        ) {
+          return;
+        }
         leaderDiedRef.current = true;
         battleLeaderSlainRef.current = true;
         const c = combatantsRef.current?.find((e) => e.id === deadId);
