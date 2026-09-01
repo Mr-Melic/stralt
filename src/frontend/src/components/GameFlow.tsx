@@ -85,11 +85,13 @@ const GameFlow: React.FC<GameFlowProps> = ({
   // backendDokaBalance !== undefined is one render too early: the session
   // cache is still 0 and idle hydrate would treat that placeholder as live.
   const [dokaSessionApplied, setDokaSessionApplied] = useState(false);
-  // SECTION 4 (build #325): debug context threaded up from WorldExploration so
-  // ChatPanel's export-report builder can include live character/map/battle state.
-  const [debugContext, setDebugContext] = useState<DebugContext | undefined>(
-    undefined,
-  );
+  // SECTION 4 (build #325): debug context written by WorldExploration into a
+  // ref so ChatPanel export can read live character/map/battle state without
+  // re-rendering the chat tree on every turn.
+  const debugContextRef = useRef<DebugContext | undefined>(undefined);
+  const handleDebugContextChange = useCallback((ctx: DebugContext) => {
+    debugContextRef.current = ctx;
+  }, []);
   const { data: backendDokaBalance } = useGetCallerDokaBalance();
   // actor removed — not used in this component
 
@@ -261,7 +263,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
             sessionCacheApplied: dokaSessionApplied,
           })}
           onDokaBalanceChange={setDokaBalance}
-          onDebugContextChange={setDebugContext}
+          onDebugContextChange={handleDebugContextChange}
           itemShopOpen={showShop}
           onItemShopClose={handleItemShopClose}
           achievementsOpen={showAchievements}
@@ -274,7 +276,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
           activeEffects={activeEffects}
           isPaused={isInBattle || isTransitioning}
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
-          debugContext={debugContext}
+          debugContextRef={debugContextRef}
           // debugLogs removed — ChatPanel now sources from structured debugLogger buffer
         />
         {/* Snap spacer only — the live XP / zone / Doka HUD lives in
