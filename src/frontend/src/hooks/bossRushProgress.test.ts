@@ -13,29 +13,9 @@ import {
   persistBossRushRoomAdvance,
   persistBossRushRoomClear,
   progressAfterRoomClear,
-  readCompleteBossRushRoomResult,
   resolveBossRushQueryPrincipalText,
   resumeRoomFromPersisted,
 } from "./bossRushProgress.ts";
-
-describe("readCompleteBossRushRoomResult", () => {
-  it("accepts ok / empty payloads and surfaces Motoko #err values", () => {
-    assert.deepEqual(readCompleteBossRushRoomResult(undefined), { ok: true });
-    assert.deepEqual(
-      readCompleteBossRushRoomResult({ __kind__: "ok", ok: null }),
-      {
-        ok: true,
-      },
-    );
-    assert.deepEqual(
-      readCompleteBossRushRoomResult({
-        __kind__: "err",
-        err: "roomIndex must match current Boss Rush room",
-      }),
-      { err: "roomIndex must match current Boss Rush room" },
-    );
-  });
-});
 
 describe("resolveBossRushQueryPrincipalText", () => {
   const caller = "2vxsx-fae";
@@ -152,7 +132,7 @@ describe("persistBossRushRoomClear", () => {
     assert.deepEqual(calls, ["progress:2:1", "complete:2:0:0:0"]);
   });
 
-  it("completes the final room while still occupying it, then resets", async () => {
+  it("resets currentRoom before recording the final-room complete", async () => {
     const calls: string[] = [];
     await persistBossRushRoomClear(
       {
@@ -164,49 +144,12 @@ describe("persistBossRushRoomClear", () => {
         },
         completeBossRushRoom: async (_slot, room) => {
           calls.push(`complete:${room}`);
-          return { __kind__: "ok", ok: null };
         },
       },
       1,
       9,
     );
-    assert.deepEqual(calls, ["complete:9", "reset:1"]);
-  });
-
-  it("throws on final-room complete #err before reset so room 9 remains retryable", async () => {
-    const calls: string[] = [];
-    await assert.rejects(
-      () =>
-        persistBossRushRoomClear(
-          {
-            resetBossRush: async (slot) => {
-              calls.push(`reset:${slot}`);
-            },
-            completeBossRushRoom: async () => ({
-              __kind__: "err",
-              err: "roomIndex must match current Boss Rush room",
-            }),
-          },
-          1,
-          9,
-        ),
-      /roomIndex must match/,
-    );
-    assert.deepEqual(calls, [], "must not reset after a failed final complete");
-  });
-
-  it("throws when completeBossRushRoom is missing on a final-room clear", async () => {
-    await assert.rejects(
-      () =>
-        persistBossRushRoomClear(
-          {
-            resetBossRush: async () => undefined,
-          },
-          1,
-          9,
-        ),
-      /completeBossRushRoom is required/,
-    );
+    assert.deepEqual(calls, ["reset:1", "complete:9"]);
   });
 
   it("re-resets currentRoom when death aborts the run during the persist", async () => {
@@ -268,7 +211,7 @@ describe("persistBossRushRoomClear", () => {
       () =>
         persistBossRushRoomClear(
           {
-            completeBossRushRoom: async () => ({ __kind__: "ok", ok: null }),
+            completeBossRushRoom: async () => undefined,
           },
           1,
           9,

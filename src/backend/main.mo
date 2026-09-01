@@ -2961,22 +2961,18 @@ actor {
         };
         let completedRoom = roomIndex + 1; // 1-indexed room completed
         let newHighest = if (completedRoom > existing.highestRoomCompleted) { completedRoom } else { existing.highestRoomCompleted };
-        // Count a master run only while still occupying room 9, then clear
-        // currentRoom. Repeat complete(9) while currentRoom stayed 9 used to
-        // increment totalBossRushRuns forever. Official final-room persist
-        // must call complete before resetBossRush or this arm never runs.
-        let countMasterRun = roomIndex == 9 and existing.currentRoom == 9;
-        let newTotalRuns = if (countMasterRun) { existing.totalBossRushRuns + 1 } else { existing.totalBossRushRuns };
-        let newCurrentRoom = if (countMasterRun) { 0 } else { existing.currentRoom };
+        // A full run = all 10 rooms completed (roomIndex 9 = room 10).
+        let newTotalRuns = if (roomIndex == 9) { existing.totalBossRushRuns + 1 } else { existing.totalBossRushRuns };
         bossRushStates.add(key, {
-            currentRoom            = newCurrentRoom;
+            currentRoom            = existing.currentRoom;
             highestRoomCompleted   = newHighest;
             totalBossRushRuns      = newTotalRuns;
         });
 
+        let isMasterRun = roomIndex == 9;
         let updatedCharacter : Character = {
             character with
-            bossRushMasterComplete = if (countMasterRun) { ?true } else { character.bossRushMasterComplete };
+            bossRushMasterComplete = if (isMasterRun) { ?true } else { character.bossRushMasterComplete };
         };
         let updatedSlots = switch (slot) {
             case 1 { { existingSlots with slot1 = ?updatedCharacter } };
