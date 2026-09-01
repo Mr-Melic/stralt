@@ -125,11 +125,7 @@ import {
   type DeathPipelineCtx,
   processCombatantDeath,
 } from "../engine/deathPipeline";
-import {
-  type DotTickResult,
-  appendDotStack,
-  tickDotStacks,
-} from "../engine/dotStacks";
+import { type DotTickResult, tickDotStacks } from "../engine/dotStacks";
 import { EffectsManager } from "../engine/effects";
 import {
   type AICell,
@@ -199,6 +195,12 @@ import {
   resolveSpellCast,
 } from "../engine/spellEngine";
 import { setStarfieldPaused } from "../engine/starfieldActivity";
+import {
+  formatBattleEffectMagnitude,
+  getStatModifier,
+  mergeIncomingEffect,
+  tickNonDotEffects,
+} from "../engine/statusEffects";
 import {
   type SummonExecutorHelpers,
   executeSummonAction,
@@ -1828,35 +1830,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       }
       setActiveEffects((prev) => {
-        // Section 4: DoTs stack additively — each application appends a new
-        // independent stack with its own duration (no replace). Non-DoT
-        // buffs/debuffs retain the existing replace-or-refresh behavior.
-        let next: ActiveEffect[];
-        if (effect.type === "dot") {
-          // Ensure the incoming DoT has a stackId so React keys stay unique
-          // across multiple stacks of the same DoT type.
-          const withStackId: ActiveEffect =
-            (effect.stackId ?? effect.id)
-              ? effect
-              : {
-                  ...effect,
-                  stackId: `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                };
-          next = appendDotStack(prev, withStackId);
-        } else {
-          // Replace existing same-name+target effect, or append
-          const existing = prev.findIndex(
-            (e) =>
-              e.targetId === effect.targetId &&
-              e.effectName === effect.effectName,
-          );
-          if (existing >= 0) {
-            next = [...prev];
-            next[existing] = effect;
-          } else {
-            next = [...prev, effect];
-          }
-        }
+        // Section 4: DoTs stack additively; non-DoT buffs/debuffs
+        // replace-or-refresh. mergeIncomingEffect owns that list math.
+        const next = mergeIncomingEffect(prev, effect);
         activeEffectsRef.current = next;
         return next;
       });
@@ -1869,14 +1845,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         effect.dotDamagePerTurn !== undefined &&
         effect.dotDamagePerTurn > 0;
       if (!isDot && stat && modifier !== undefined) {
-        const isPercentStat = stat !== "mp" && stat !== "ap";
-        const signedMag = isPercentStat
-          ? modifier > 1
-            ? `+${Math.round((modifier - 1) * 100)}%`
-            : `${Math.round((modifier - 1) * 100)}%`
-          : modifier > 0
-            ? `+${modifier}`
-            : `${modifier}`;
+        const signedMag = formatBattleEffectMagnitude(stat, modifier);
         const color = effectType === "buff" ? "#22c55e" : "#a855f7";
         const targetName =
           effect.targetId === "player" ? "you" : effect.targetId;
@@ -1973,35 +1942,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // Decrement duration for non-DoT effects on this target (buffs/debuffs).
         // DoT stacks were already handled by tickDotStacks above and are present
         // in `next` with decremented durations (or dropped if expired).
-        // We must process only the non-DoT effects that tickDotStacks passed
-        // through untouched — re-scan `next` for non-DoT effects on this target.
-        const afterNonDot: ActiveEffect[] = [];
-        for (const eff of next) {
-          if (eff.targetId !== targetId) {
-            afterNonDot.push(eff);
-            continue;
-          }
-          if (eff.type === "dot") {
-            // Already ticked by tickDotStacks — keep as-is.
-            afterNonDot.push(eff);
-            continue;
-          }
-          // Non-DoT effect: decrement duration, drop if expired.
-          const newDur = eff.duration - 1;
-          if (newDur > 0) {
-            afterNonDot.push({ ...eff, duration: newDur });
-          }
+        // tickNonDotEffects leaves type === "dot" rows untouched.
+        const nonDotTick = tickNonDotEffects(next, targetId);
+        // Current log: every decremented non-DoT with stat+modifier, not
+        // only rows that actually expired. Characterized — do not "fix" here.
+        for (const eff of nonDotTick.decremented) {
           const stat = eff.stat;
           const modifier = eff.modifier;
           if (stat && modifier !== undefined) {
-            const isPercentStat = stat !== "mp" && stat !== "ap";
-            const signedMag = isPercentStat
-              ? modifier > 1
-                ? `+${Math.round((modifier - 1) * 100)}%`
-                : `${Math.round((modifier - 1) * 100)}%`
-              : modifier > 0
-                ? `+${modifier}`
-                : `${modifier}`;
+            const signedMag = formatBattleEffectMagnitude(stat, modifier);
             logBattleEntry(
               `${eff.effectName || "Effect"} expired (${signedMag} ${stat.toUpperCase()} ended)`,
               "#94a3b8",
@@ -2009,8 +1958,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
         // M-5: also update ref immediately so subsequent reads in the same turn are fresh
-        activeEffectsRef.current = afterNonDot;
-        return afterNonDot;
+        activeEffectsRef.current = nonDotTick.remaining;
+        return nonDotTick.remaining;
       });
       // enemy effects are stored in activeEffects with targetId === enemy.id, so they are already ticked above
     },
@@ -3289,29 +3238,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // Doka balance is owned by GameFlow; no re-sync needed here.
 
-  // Get effective stat modifier for a combatant from active effects
-  const getStatModifier = useCallback(
-    (
-      targetId: string,
-      stat: string,
-      activeEffectsSnap: ActiveEffect[],
-    ): number => {
-      let multiplier = 1;
-      let additive = 0;
-      for (const eff of activeEffectsSnap) {
-        if (eff.targetId !== targetId || eff.stat !== stat) continue;
-        if (eff.type === "buff" || eff.type === "debuff") {
-          if (stat === "mp" || stat === "ap") {
-            additive += eff.modifier ?? 0;
-          } else {
-            multiplier *= eff.modifier ?? 1;
-          }
-        }
-      }
-      return stat === "mp" || stat === "ap" ? additive : multiplier;
-    },
-    [],
-  );
+  // getStatModifier is the engine/statusEffects helper (imported).
 
   const computeDamage = useCallback(
     (
@@ -3386,7 +3313,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       return { finalDamage: dmg, breakdown: breakdownParts.join(" → ") };
     },
-    [characterStats.level, characterStats.sp, getStatModifier],
+    [characterStats.level, characterStats.sp],
   );
 
   const calculatePlayerDamage = useCallback(
@@ -3487,7 +3414,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return dmg;
     },
-    [getStatModifier, logBattleEntry, setCharacterStats],
+    [logBattleEntry, setCharacterStats],
   );
 
   const enemyTakesDamage = useCallback(
@@ -3558,12 +3485,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return dmg;
     },
-    [
-      getStatModifier,
-      combatantStoreCtx,
-      activeMapModifierTypes,
-      characterStats.hp,
-    ],
+    [combatantStoreCtx, activeMapModifierTypes, characterStats.hp],
   );
 
   // EXP6: Handle item use from BuffShop
@@ -10291,7 +10213,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     isPaperWindstorm,
     enemyHpMap,
     leaderBoostPercent,
-    getStatModifier,
     calculatePlayerDamage,
     enemyTakesDamage,
     calcEnemyMaxHp,
@@ -10503,7 +10424,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [
       selectedSummonSpellId,
       playerSpellContext,
-      getStatModifier,
       combatantStoreCtx,
       currentMap,
       logBattleEntry,
@@ -15188,7 +15108,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     characterStats.level,
     logBattleEntry,
     processActiveEffects,
-    getStatModifier,
     isTimeWarp,
     isPlagueZone,
     isVoidRift,
