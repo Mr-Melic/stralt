@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Crown, LogOut, ShoppingCart, Trophy } from "lucide-react";
-import React from "react";
+import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGetCallerDokaBalance } from "../hooks/useAdminQueries";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
@@ -445,23 +445,6 @@ const GameFlow: React.FC<GameFlowProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="hidden md:flex items-center gap-2 text-xs">
-            {(["character"] as const).map((stage, i) => (
-              <React.Fragment key={stage}>
-                {i > 0 && (
-                  <div
-                    className="w-3 h-px"
-                    style={{ background: "rgba(216,70,63,.3)" }}
-                  />
-                )}
-                <span
-                  className={`px-2 py-1 rounded text-xs ${currentStage === stage ? "stone-pill-gold" : "stone-pill text-[#8a8090]"}`}
-                >
-                  {stage === "character" ? "Character" : "Dungeon"}
-                </span>
-              </React.Fragment>
-            ))}
-          </div>
           {isAdmin && onOpenAdmin && (
             <button
               type="button"

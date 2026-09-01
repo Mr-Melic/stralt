@@ -521,7 +521,6 @@ function App() {
                   <PostBattleRecap
                     data={battleSummary}
                     onClose={() => {
-                      console.log("BattleSummary DISMISSED");
                       setBattleSummary(null);
                     }}
                   />
