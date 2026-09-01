@@ -9,6 +9,7 @@ import {
   readAdminCmdResult,
   readPurchasesResult,
   toBackendEnemySpriteUrl,
+  toBackendLevelUpConfig,
   toBackendPlayerSpriteConfig,
   toBackendSpellConfig,
 } from "./adminContract.ts";
@@ -142,5 +143,45 @@ describe("sprite / spell / enemy field bridges", () => {
       toBackendEnemySpriteUrl(["https://x/e.png"]),
       "https://x/e.png",
     );
+  });
+});
+
+describe("toBackendLevelUpConfig", () => {
+  it("writes all nine canister fields and maps the frontend AP/MP alias", () => {
+    const wire = toBackendLevelUpConfig({
+      statGrowthPercent: 7,
+      apMpGrowthEveryNLevels: 30,
+      spellLevelingBaseCost: 15,
+      spellLevelingCostMultiplier: 2.5,
+      spellDmgGrowthPercent: 4,
+      maxSpellRange: 6,
+      spellRangeGrowthLevels: 12,
+      spellFailBaseChance: 18,
+      spellFailReductionPerLevel: 0.05,
+    });
+    assert.equal(wire.statGrowthPercent, 7n);
+    assert.equal(wire.apMpLevelThreshold, 30n);
+    assert.equal(wire.spellLevelingBaseCost, 15n);
+    assert.equal(wire.spellLevelingCostMultiplier, 2.5);
+    assert.equal(wire.spellDmgGrowthPercent, 4n);
+    assert.equal(wire.maxSpellRange, 6n);
+    assert.equal(wire.spellRangeGrowthLevels, 12n);
+    assert.equal(wire.spellFailBaseChance, 18);
+    assert.equal(wire.spellFailReductionPerLevel, 0.05);
+  });
+
+  it("does not clobber omitted growth/cost fields with a 4-field draft", () => {
+    const wire = toBackendLevelUpConfig({
+      maxSpellRange: 8,
+      spellRangeGrowthLevels: 9,
+      spellFailBaseChance: 10,
+      spellFailReductionPerLevel: 0.2,
+    });
+    assert.equal(wire.maxSpellRange, 8n);
+    assert.equal(wire.statGrowthPercent, 5n);
+    assert.equal(wire.apMpLevelThreshold, 25n);
+    assert.equal(wire.spellLevelingBaseCost, 10n);
+    assert.equal(wire.spellLevelingCostMultiplier, 2);
+    assert.equal(wire.spellDmgGrowthPercent, 3n);
   });
 });

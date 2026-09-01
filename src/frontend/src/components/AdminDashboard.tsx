@@ -2,6 +2,7 @@ import { Principal } from "@dfinity/principal";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { backendInterface } from "../backend";
+import { listAdminModifierTypeOptions } from "../engine/mapModifiers";
 import { useActor } from "../hooks/useActor";
 import {
   useAdminAddEnemyName,
@@ -50,6 +51,7 @@ import type {
   SpellConfig,
   TierSpawnConfig,
 } from "../types/gameTypes";
+import { toBackendLevelUpConfig } from "../utils/adminContract";
 import {
   MAX_DOKA_GRANT,
   unsafeUrl,
@@ -111,7 +113,14 @@ const newSpell = (): SpellConfig => ({
   isBarrier: false,
   isTrap: false,
   isMark: false,
+  isSummon: false,
+  summonAI: "",
+  summonLifespan: 0,
+  summonUnitDef: { pieceType: "", level: 0, hpScale: 0, damageScale: 0 },
 });
+
+/** Eligibility band only — not a player career cap. */
+const DEFAULT_ELIGIBILITY_LEVEL_MAX = BigInt(9999);
 
 const newEnemy = (): EnemyConfig => ({
   id: `enemy_${Date.now()}`,
@@ -121,7 +130,7 @@ const newEnemy = (): EnemyConfig => ({
   mp: BigInt(3),
   initStat: BigInt(8),
   levelMin: BigInt(1),
-  levelMax: BigInt(5),
+  levelMax: DEFAULT_ELIGIBILITY_LEVEL_MAX,
   regions: [],
   spriteUrl: [],
 });
@@ -130,7 +139,7 @@ const newRegion = (): RegionConfig => ({
   id: `region_${Date.now()}`,
   name: "",
   levelMin: BigInt(1),
-  levelMax: BigInt(5),
+  levelMax: DEFAULT_ELIGIBILITY_LEVEL_MAX,
   battleEffects: [],
   backgroundColor: "#0d0f1a",
 });
@@ -214,6 +223,29 @@ const sectionHeadStyle: React.CSSProperties = {
   borderBottom: "1px solid rgba(216,70,63,0.25)",
   fontFamily: "'Saira', system-ui, sans-serif",
 };
+
+const ELIGIBILITY_BAND_HINT =
+  "Level Min/Max is an eligibility band, not a player career cap. New drafts default max to 9999 so high-level play still matches.";
+
+function CatalogNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      data-ocid="admin.catalog_note"
+      style={{
+        color: C.dim,
+        fontSize: 11,
+        lineHeight: 1.5,
+        margin: "0 0 14px",
+        padding: "8px 10px",
+        border: `1px solid ${C.goldDim}`,
+        borderRadius: 6,
+        background: "linear-gradient(180deg,#13141c,#0e0f16)",
+      }}
+    >
+      {children}
+    </p>
+  );
+}
 
 function Btn({
   variant,
@@ -727,6 +759,9 @@ const EnemyEditor: React.FC<{
           ocid="admin.enemy.levelmax_input"
         />
       </div>
+      <p style={{ color: "#6a6070", fontSize: 10, margin: "0 0 10px" }}>
+        {ELIGIBILITY_BAND_HINT}
+      </p>
 
       <div style={{ marginBottom: 10 }}>
         <label htmlFor="admin.enemy.sprite_input" style={labelStyle}>
@@ -952,6 +987,10 @@ const RegionEditor: React.FC<{
           </div>
         </div>
       </div>
+      <p style={{ color: "#6a6070", fontSize: 10, margin: "0 0 10px" }}>
+        {ELIGIBILITY_BAND_HINT} Region effects apply only while the player level
+        is inside this band.
+      </p>
 
       <p style={{ ...sectionHeadStyle, marginTop: 8 }}>
         Battle Effects ({cfg.battleEffects.length})
@@ -1679,6 +1718,13 @@ const SpriteList: React.FC<{
             + New
           </Btn>
         </div>
+        <div style={{ padding: "8px 16px 0" }}>
+          <CatalogNote>
+            Catalog only. WorldExploration never reads getPlayerSpriteConfigs —
+            characters keep the Default Pixel Visual until a renderer is wired.
+            Custom URLs are optional and not mandatory for new pieces.
+          </CatalogNote>
+        </div>
 
         {/* List */}
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
@@ -1972,6 +2018,12 @@ const EnemyList: React.FC<{
           + Add Enemy
         </Btn>
       </div>
+      <CatalogNote>
+        Canister catalog only. Overworld spawn still uses player-relative tiers
+        and chess-piece pixels — saving a row here does not change encounter
+        packs. Custom visual URL is optional; empty keeps the Default Pixel
+        Visual.
+      </CatalogNote>
 
       {loading && (
         <div
@@ -4047,43 +4099,104 @@ const SettingsTab: React.FC = () => {
   );
 };
 
+const DEFAULT_LEVEL_UP_DRAFT = {
+  maxSpellRange: 5,
+  spellRangeGrowthLevels: 10,
+  spellFailBaseChance: 20,
+  spellFailReductionPerLevel: 0.1,
+  statGrowthPercent: 5,
+  apMpLevelThreshold: 25,
+  spellLevelingBaseCost: 10,
+  spellLevelingCostMultiplier: 2,
+  spellDmgGrowthPercent: 3,
+};
+
 // ── LevelUpConfigPanel (part of Settings) ─────────────────────────────────────────────
 const LevelUpConfigPanel: React.FC = () => {
   const { actor } = useActor();
   const [cfg, setCfg] = React.useState(() => {
     try {
       const raw = localStorage.getItem("pbv_levelup_config");
-      if (raw)
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const apMp = Number(
+          parsed.apMpLevelThreshold ??
+            parsed.apMpGrowthEveryNLevels ??
+            DEFAULT_LEVEL_UP_DRAFT.apMpLevelThreshold,
+        );
         return {
-          maxSpellRange: 5,
-          spellRangeGrowthLevels: 10,
-          spellFailBaseChance: 20,
-          spellFailReductionPerLevel: 0.1,
-          ...JSON.parse(raw),
+          ...DEFAULT_LEVEL_UP_DRAFT,
+          ...parsed,
+          apMpLevelThreshold: apMp,
         };
+      }
     } catch {
       /* ignore */
     }
-    return {
-      maxSpellRange: 5,
-      spellRangeGrowthLevels: 10,
-      spellFailBaseChance: 20,
-      spellFailReductionPerLevel: 0.1,
-    };
+    return { ...DEFAULT_LEVEL_UP_DRAFT };
   });
   const [saved, setSaved] = React.useState(false);
 
+  React.useEffect(() => {
+    if (!actor) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await (
+          actor as unknown as backendInterface
+        ).getLevelUpConfig();
+        if (cancelled || !remote) return;
+        setCfg((prev) => ({
+          ...prev,
+          maxSpellRange: Number(remote.maxSpellRange ?? prev.maxSpellRange),
+          spellRangeGrowthLevels: Number(
+            remote.spellRangeGrowthLevels ?? prev.spellRangeGrowthLevels,
+          ),
+          spellFailBaseChance: Number(
+            remote.spellFailBaseChance ?? prev.spellFailBaseChance,
+          ),
+          spellFailReductionPerLevel: Number(
+            remote.spellFailReductionPerLevel ??
+              prev.spellFailReductionPerLevel,
+          ),
+          statGrowthPercent: Number(
+            remote.statGrowthPercent ?? prev.statGrowthPercent,
+          ),
+          apMpLevelThreshold: Number(
+            remote.apMpLevelThreshold ?? prev.apMpLevelThreshold,
+          ),
+          spellLevelingBaseCost: Number(
+            remote.spellLevelingBaseCost ?? prev.spellLevelingBaseCost,
+          ),
+          spellLevelingCostMultiplier: Number(
+            remote.spellLevelingCostMultiplier ??
+              prev.spellLevelingCostMultiplier,
+          ),
+          spellDmgGrowthPercent: Number(
+            remote.spellDmgGrowthPercent ?? prev.spellDmgGrowthPercent,
+          ),
+        }));
+      } catch {
+        /* keep localStorage draft */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [actor]);
+
   const handleSave = async () => {
+    const payload = toBackendLevelUpConfig(cfg);
     const err = validateLevelUpConfig({
-      statGrowthPercent: Number(cfg.statGrowthPercent ?? 5),
-      apMpLevelThreshold: Number(cfg.apMpLevelThreshold ?? 25),
-      spellLevelingBaseCost: Number(cfg.spellLevelingBaseCost ?? 10),
-      spellLevelingCostMultiplier: Number(cfg.spellLevelingCostMultiplier ?? 2),
-      spellDmgGrowthPercent: Number(cfg.spellDmgGrowthPercent ?? 3),
-      maxSpellRange: Number(cfg.maxSpellRange ?? 5),
-      spellRangeGrowthLevels: Number(cfg.spellRangeGrowthLevels ?? 10),
-      spellFailBaseChance: Number(cfg.spellFailBaseChance ?? 20),
-      spellFailReductionPerLevel: Number(cfg.spellFailReductionPerLevel ?? 0.1),
+      statGrowthPercent: Number(payload.statGrowthPercent),
+      apMpLevelThreshold: Number(payload.apMpLevelThreshold),
+      spellLevelingBaseCost: Number(payload.spellLevelingBaseCost),
+      spellLevelingCostMultiplier: payload.spellLevelingCostMultiplier,
+      spellDmgGrowthPercent: Number(payload.spellDmgGrowthPercent),
+      maxSpellRange: Number(payload.maxSpellRange),
+      spellRangeGrowthLevels: Number(payload.spellRangeGrowthLevels),
+      spellFailBaseChance: payload.spellFailBaseChance,
+      spellFailReductionPerLevel: payload.spellFailReductionPerLevel,
     });
     if (err) {
       toast.error(err);
@@ -4092,17 +4205,9 @@ const LevelUpConfigPanel: React.FC = () => {
     localStorage.setItem("pbv_levelup_config", JSON.stringify(cfg));
     try {
       if (actor) {
-        await (actor as unknown as backendInterface).adminSetLevelUpConfig({
-          maxSpellRange: BigInt(cfg.maxSpellRange),
-          spellRangeGrowthLevels: BigInt(cfg.spellRangeGrowthLevels),
-          spellFailBaseChance: cfg.spellFailBaseChance,
-          spellFailReductionPerLevel: cfg.spellFailReductionPerLevel,
-          statGrowthPercent: BigInt(5),
-          apMpLevelThreshold: BigInt(25),
-          spellLevelingBaseCost: BigInt(10),
-          spellLevelingCostMultiplier: 2,
-          spellDmgGrowthPercent: BigInt(3),
-        });
+        await (actor as unknown as backendInterface).adminSetLevelUpConfig(
+          payload,
+        );
       }
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -4225,7 +4330,129 @@ const LevelUpConfigPanel: React.FC = () => {
             data-ocid="admin.levelup.failred_input"
           />
           <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
-            0.1 = reaches 0% at level 200
+            0.1 = −0.1% fail per player level. No career cap; do not treat 200
+            as a ceiling.
+          </p>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor="levelup.statgrowth" style={labelStyle}>
+            Stat Growth % / Level
+          </label>
+          <input
+            id="levelup.statgrowth"
+            type="number"
+            min={1}
+            max={50}
+            value={cfg.statGrowthPercent}
+            onChange={(e) =>
+              setCfg((p: typeof cfg) => ({
+                ...p,
+                statGrowthPercent: Math.max(1, Number(e.target.value) || 5),
+              }))
+            }
+            style={inputStyle()}
+            data-ocid="admin.levelup.statgrowth_input"
+          />
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
+            All stats grow this percent per character level (default 5)
+          </p>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor="levelup.apmp" style={labelStyle}>
+            +1 AP/MP Every N Levels
+          </label>
+          <input
+            id="levelup.apmp"
+            type="number"
+            min={1}
+            max={100}
+            value={cfg.apMpLevelThreshold}
+            onChange={(e) =>
+              setCfg((p: typeof cfg) => ({
+                ...p,
+                apMpLevelThreshold: Math.max(1, Number(e.target.value) || 25),
+              }))
+            }
+            style={inputStyle()}
+            data-ocid="admin.levelup.apmp_input"
+          />
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
+            Canister field apMpLevelThreshold (default 25)
+          </p>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor="levelup.spellbase" style={labelStyle}>
+            Spell Leveling Base Cost
+          </label>
+          <input
+            id="levelup.spellbase"
+            type="number"
+            min={1}
+            value={cfg.spellLevelingBaseCost}
+            onChange={(e) =>
+              setCfg((p: typeof cfg) => ({
+                ...p,
+                spellLevelingBaseCost: Math.max(
+                  1,
+                  Number(e.target.value) || 10,
+                ),
+              }))
+            }
+            style={inputStyle()}
+            data-ocid="admin.levelup.spellbase_input"
+          />
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
+            upgradeSpell charges base × 2^level (default 10)
+          </p>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor="levelup.spellmult" style={labelStyle}>
+            Spell Cost Multiplier
+          </label>
+          <input
+            id="levelup.spellmult"
+            type="number"
+            min={1}
+            max={10}
+            step={0.1}
+            value={cfg.spellLevelingCostMultiplier}
+            onChange={(e) =>
+              setCfg((p: typeof cfg) => ({
+                ...p,
+                spellLevelingCostMultiplier: Math.max(
+                  1,
+                  Number(e.target.value) || 2,
+                ),
+              }))
+            }
+            style={inputStyle()}
+            data-ocid="admin.levelup.spellmult_input"
+          />
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
+            Stored on canister; live debit still uses 2^level
+          </p>
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <label htmlFor="levelup.spelldmg" style={labelStyle}>
+            Spell Damage Growth %
+          </label>
+          <input
+            id="levelup.spelldmg"
+            type="number"
+            min={0}
+            max={50}
+            value={cfg.spellDmgGrowthPercent}
+            onChange={(e) =>
+              setCfg((p: typeof cfg) => ({
+                ...p,
+                spellDmgGrowthPercent: Math.max(0, Number(e.target.value) || 3),
+              }))
+            }
+            style={inputStyle()}
+            data-ocid="admin.levelup.spelldmg_input"
+          />
+          <p style={{ color: "#6a6070", fontSize: 10, margin: "3px 0 0" }}>
+            Per spell-level damage increase (default 3)
           </p>
         </div>
       </div>
@@ -4478,30 +4705,19 @@ const VisualsTab: React.FC = () => {
 
 // ── ModifierEditor ─────────────────────────────────────────────────────────────────────
 
+const LEGACY_MODIFIER_TYPES = [
+  {
+    value: "lava_fields",
+    label: "Lava Fields — legacy id (no engine hook)",
+  },
+  { value: "ice_fields", label: "Ice Fields — legacy id (no engine hook)" },
+  { value: "spike_pit", label: "Spike Pit — legacy id (no engine hook)" },
+  { value: "custom", label: "Custom — free-text id (no engine hook)" },
+];
+
 const MODIFIER_TYPES = [
-  { value: "slime_flood", label: "Slime Flood — Double MP cost movement" },
-  { value: "paper_windstorm", label: "Paper Windstorm — 50% miss on ranged" },
-  { value: "gravity_well", label: "Gravity Well — Push/pull double range" },
-  { value: "blood_moon", label: "Blood Moon — +25% dmg, -25% heal" },
-  { value: "fog_of_war", label: "Fog of War — Enemies hidden beyond 3 tiles" },
-  { value: "thorned_ground", label: "Thorned Ground — 5 dmg per extra tile" },
-  {
-    value: "arcane_surge",
-    label: "Arcane Surge — -1 AP cost, +15% fail chance",
-  },
-  { value: "mirror_field", label: "Mirror Field — 20% reflect single-target" },
-  {
-    value: "frozen_terrain",
-    label: "Frozen Terrain — Double MP cost + LoS +1 range",
-  },
-  { value: "plague_zone", label: "Plague Zone — -2 HP every turn start" },
-  { value: "time_warp", label: "Time Warp — 15s timer instead of 30s" },
-  { value: "void_rift", label: "Void Rift — Random tile teleports + -3 HP" },
-  // EXP5: Hazard tile modifiers
-  { value: "lava_fields", label: "Lava Fields — Spawn 3-8 lava hazard tiles" },
-  { value: "ice_fields", label: "Ice Fields — Spawn 3-8 ice hazard tiles" },
-  { value: "spike_pit", label: "Spike Pit — Spawn 3-8 spike hazard tiles" },
-  { value: "custom", label: "Custom" },
+  ...listAdminModifierTypeOptions(),
+  ...LEGACY_MODIFIER_TYPES,
 ];
 
 const ModifierEditor: React.FC<{
@@ -4565,6 +4781,12 @@ const ModifierEditor: React.FC<{
                 {t.label}
               </option>
             ))}
+            {!MODIFIER_TYPES.some((t) => t.value === cfg.modifierType) &&
+              cfg.modifierType && (
+                <option value={cfg.modifierType}>
+                  {cfg.modifierType} — saved id (not in registry)
+                </option>
+              )}
           </select>
         </div>
       </div>
@@ -6616,6 +6838,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               <h2 className="text-xl font-bold text-red-400">
                 Shop Administration
               </h2>
+              <CatalogNote>
+                Player shop still lists 15 hardcoded packages. Canister
+                getShopPackages / adminSetShopPackage exist but this tab has no
+                package CRUD yet. Payment-link copy below has no form.
+              </CatalogNote>
               <div className="bg-gray-800 p-4 rounded">
                 <h3 className="font-semibold mb-2">Payment Links</h3>
                 <p className="text-gray-400 text-sm">
@@ -6719,6 +6946,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               <h2 className="text-xl font-bold text-red-400">
                 Boss Rush Configuration
               </h2>
+              <CatalogNote>
+                Enable/reward toggles write opaque JSON. Live rooms come from
+                BOSS_RUSH_ROOMS; only parsed.rewardMultiplier is read. Room 10
+                lists Weeping Pawn; live room 9 uses weeping_pawn_2.
+              </CatalogNote>
               {[
                 { room: 1, a: "Pale Archbishop", b: "Weeping Pawn" },
                 { room: 2, a: "Crimson Countess", b: "Fetid Rook" },
