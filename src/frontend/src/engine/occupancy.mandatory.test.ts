@@ -9,6 +9,7 @@ import {
   occKey,
   occupantsSealProgression,
   relocateOffMandatoryCells,
+  resolveControlledSummonMoveDest,
   unsealProgressionOccupants,
 } from "./occupancy.ts";
 import { spawnSummonUnit } from "./summonSpawn.ts";
@@ -234,6 +235,86 @@ describe("dual-path occupants cannot jointly seal the exit", () => {
       ]),
       false,
     );
+  });
+});
+
+describe("resolveControlledSummonMoveDest", () => {
+  it("rejects stacking on the player or another combatant", () => {
+    const { ctx } = corridorCtx();
+    assert.equal(
+      resolveControlledSummonMoveDest({ x: 1, y: 0 }, { x: 0, y: 0 }, ctx),
+      null,
+      "findPath used to walk the controlled summon onto the player tile",
+    );
+  });
+
+  it("slides a player-controlled summon off the unique exit bridge", () => {
+    const tiles = [
+      [true, true, true, true, true, true],
+      [true, true, false, false, false, false],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["5,0"]);
+    const occupied = new Set<string>(["0,0", "1,1"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      progressStart: { x: 0, y: 0 },
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    ctx.reserved = collectMandatoryProgressionCells(tiles, voidTiles, portals, {
+      x: 0,
+      y: 0,
+    });
+    assert.equal(ctx.reserved.has("2,0"), true);
+    const dest = resolveControlledSummonMoveDest(
+      { x: 1, y: 1 },
+      { x: 2, y: 0 },
+      ctx,
+    );
+    assert.ok(dest);
+    assert.equal(ctx.reserved.has(occKey(dest.x, dest.y)), false);
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 0 }, [
+        dest,
+      ]),
+      false,
+    );
+  });
+
+  it("unseals a dual-path cut the same way AI executeSummonAction does", () => {
+    const tiles = [
+      [true, true, true, true, true],
+      [true, false, false, false, true],
+      [true, true, true, true, true],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["4,0"]);
+    const occupied = new Set<string>(["0,1", "2,2", "1,0"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      progressStart: { x: 0, y: 1 },
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const dest = resolveControlledSummonMoveDest(
+      { x: 1, y: 0 },
+      { x: 2, y: 0 },
+      ctx,
+    );
+    assert.ok(dest);
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 1 }, [
+        dest,
+        { x: 2, y: 2 },
+      ]),
+      false,
+    );
+    assert.notEqual(occKey(dest.x, dest.y), "2,0");
   });
 });
 

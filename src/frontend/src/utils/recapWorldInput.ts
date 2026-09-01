@@ -13,3 +13,14 @@ export function shouldIgnoreWorldInputDuringRecap(
 ): boolean {
   return recapVisible === true || victoryPersistPending === true;
 }
+
+/**
+ * Recap overlay is pointer-events: none. Dismissing it used to leave
+ * canvas walk live while applyRewards was still on the persist lock, so
+ * a portal step / new encounter could run cleanupMap during that credit.
+ */
+export function shouldBlockPortalDuringVictoryPersist(
+  victoryPersistPending: boolean,
+): boolean {
+  return victoryPersistPending === true;
+}

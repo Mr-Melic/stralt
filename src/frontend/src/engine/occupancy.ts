@@ -309,6 +309,48 @@ export function unsealProgressionOccupants(
   return relocateOffMandatoryCells(movers, routeSet, ctx);
 }
 
+/**
+ * Player-controlled summon move. AI `executeSummonAction` already slides
+ * off unique bridges and joint dual-path cuts. Canvas control used
+ * `findPath` + `updateCombatant` only, so a wolf on the only exit sealed
+ * the unlocked progression portal after a Boss Rush leftover (or mid-fight
+ * walk). Reject stacking on another combatant; then unseal like the AI path.
+ */
+export function resolveControlledSummonMoveDest(
+  from: OccCell,
+  dest: OccCell,
+  occupancyCtx: OccupancyContext,
+): OccCell | null {
+  if (from.x === dest.x && from.y === dest.y) return dest;
+  const destFree = isCellFree(dest, {
+    ...occupancyCtx,
+    isOccupied: (c) => {
+      if (c.x === from.x && c.y === from.y) return false;
+      return occupancyCtx.isOccupied(c);
+    },
+  });
+  if (!destFree) return null;
+  let next = dest;
+  const reserved = occupancyCtx.reserved;
+  if (reserved?.has(occKey(next.x, next.y))) {
+    const [slid] = relocateOffMandatoryCells([next], reserved, occupancyCtx);
+    next = slid;
+  }
+  const start = occupancyCtx.progressStart;
+  if (start && occupancyCtx.portals.size > 0) {
+    const [cut] = unsealProgressionOccupants(
+      [next],
+      occupancyCtx.tiles,
+      occupancyCtx.voidTiles,
+      occupancyCtx.portals,
+      start,
+      occupancyCtx,
+    );
+    next = cut;
+  }
+  return next;
+}
+
 export function relocateOffMandatoryCells(
   occupants: OccCell[],
   mandatory: Set<string>,

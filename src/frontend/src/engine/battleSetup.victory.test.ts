@@ -124,6 +124,28 @@ assert.equal(
 );
 
 assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: false,
+    inBattleRef: false,
+    transitionInProgress: false,
+    victoryPersistPending: true,
+  }),
+  false,
+  "dismissed recap must not start a new fight while applyRewards is queued",
+);
+
+assert.equal(
+  shouldAllowBattleTrigger({
+    inBattle: false,
+    inBattleRef: false,
+    transitionInProgress: false,
+    victoryPersistPending: false,
+  }),
+  true,
+  "idle overworld after the credit commits may start the next encounter",
+);
+
+assert.equal(
   persistBattleEndGuardAfterCleanup(true),
   true,
   "cleanupBattle must not clear the victory one-shot or applyRewards can run twice",
