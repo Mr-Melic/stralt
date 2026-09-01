@@ -1,141 +1,192 @@
 # Stralt Master Roadmap
 
 **Director:** Stralt Master Technical Director (`0b92479e-a49e-11f1-a7d1-d6b4613131ce`)  
-**Run:** 2026-08-31 00:01 UTC (daily cron)  
-**HEAD inspected:** `22503b5` — `fix: keep generated maps solvable across seeds (#110)`  
+**Run:** 2026-09-01 00:02 UTC (daily cron)  
+**This agent:** `bc-f016489b-053d-4218-a39b-912580b84af4`  
+**HEAD inspected:** `dd275aa` — `Merge pull request #182` (Caffeine import gates)  
+**Prior director HEAD:** `22503b5` (#110) at 2026-08-31 00:01 UTC  
 **Gameplay / production code:** not modified.
 
-This file is the living prioritized roadmap. ACTION_ID records for this run live in [`ACTION_IDS_2026-08-31.md`](./ACTION_IDS_2026-08-31.md). Prior ledger: [`ACTION_IDS_2026-08-30.md`](./ACTION_IDS_2026-08-30.md). Process audit: [`QUALITY_AUDIT_2026-08-30.md`](./QUALITY_AUDIT_2026-08-30.md).
+This file is the living prioritized roadmap. ACTION_ID records for this run live in [`ACTION_IDS_2026-09-01.md`](./ACTION_IDS_2026-09-01.md). Prior director ledger: [`ACTION_IDS_2026-08-31.md`](./ACTION_IDS_2026-08-31.md) (now a specialist dump yard — do not append more producer catalogs there). Process audit: [`QUALITY_AUDIT_2026-08-30.md`](./QUALITY_AUDIT_2026-08-30.md).
 
 ## Evidence available this run
 
 | Source | Status |
 | :--- | :--- |
-| `AGENTS.md`, `README.md`, `DESIGN.md`, `docs/ARCHITECTURE.md`, `docs/TROUBLESHOOTING.md` | Read |
-| Quality audit + ACTION_IDs (2026-08-30 19:00 UTC) | Read; first director-usable ledger |
-| Expansion / admin / balance / security / architecture / telemetry *reports* | **Not available as completed artifacts.** Matching specialists launched in the same 00:00–00:02 UTC minute as this run and have not finished. |
-| Open ACTION_IDs | AQA-2026-08-30-001 … 012 (all still `NEW` in-repo; none implemented as automation-config changes) |
-| Recent commits | `git log` + GitHub `main` since 2026-08-27 |
-| Open drafts | #100, #101, #105, #106, #107, #108, #114 |
-| Player telemetry | **None.** One comment in `WorldExploration.tsx` (~16457). No persist-ok/fail, victory-paid, recap, spell-pick, or encounter series. |
+| `AGENTS.md`, `README.md`, `DESIGN.md`, `docs/ARCHITECTURE.md` | Read |
+| Prior director roadmap (2026-08-31 00:01) | Read; most P0 merge-queue items landed; flock-halt did not |
+| Orchestrators 06:04 / 12:00 / 18:00 | Read. Display leftovers they implemented are on `main`. Persist/combat leftovers they held were later merged anyway. |
+| Specialist reports (31 Aug) | Expansion, PX, long-horizon, telemetry balance/architecture/dashboard, spell admin, spell discovery, enemy/boss admin, world-encounter admin, visual assets, mechanic matrix, game feel, UX, admin UX/drift, dead-code, data-evolution, performance, enemy AI/elites/formations, world dynamics |
+| Open ACTION_IDs | Hundreds across 10+ ledgers. Almost all still `NEW`. Reuse; do not mint twins. |
+| Recent commits | `git log` `22503b5` → `dd275aa` plus GitHub closed/open PRs |
+| Open drafts | **#183** (clean, unique death replay), **#180** (dirty persist/WX), **#174** (stale bindgen), **#173** (stale tests) |
+| Player telemetry | **Still none.** `longHorizonSim.telemetry.available === false`. Balance analyst remains `WAITING_FOR_TELEMETRY`. |
+| Same-hour flock (this minute) | **34** automations launched 00:00–00:02 UTC 2026-09-01, including implementers (map integrity, combat parity, adversarial QA, security, admin safety, test mill, orchestrator, Approved Game Design Implementer-adjacent designers). |
 
 **Evidence classes used below**
 
 | Class | Meaning |
 | :--- | :--- |
 | MEASURED PLAYER BEHAVIOUR | Live play counters. **None exist.** |
-| DESIGN INTERPRETATION | Product rules in this prompt + `AGENTS.md` / `DESIGN.md` |
-| ENGINEERING EVIDENCE | Code, tests, PR history, automation volume |
+| DESIGN INTERPRETATION | Product rules in this prompt + `AGENTS.md` / `DESIGN.md` / specialist design docs |
+| ENGINEERING EVIDENCE | Code on `dd275aa`, tests, PR history, automation volume |
 
 Telemetry is not allowed to set priority. Correlation is not causation. No CLEAR_POSITIVE_SIGNAL is claimed.
 
 ---
 
+## What changed since the 08-31 director run (do not rediscover)
+
+The 08-31 run asked: halt the flock; merge #114 then #107 clamp; write the reward-trust ADR; freeze WX / mapGen / targeting.
+
+**Integrity that landed (accept `main`; do not re-open):**
+
+| Theme | Landed as |
+| :--- | :--- |
+| Plague-death vs victory + barrier LoS | #114, then restacked as #105/#151/#157/#161/#172 |
+| Leftover XP HUD + recap curve | #108 / #138; `xpHudProgress` / `xpForNextLevel` |
+| `applyRewards` per-call ceilings | #171 — `dokaDelta > 100_000`, `xpDelta > 500_000` (`main.mo` 1798–1799) plus client `clampApplyRewardsDeltas` |
+| `saveBattleStats` no-mint | Store-relative: Doka/XP cannot rise; HP/AP/MP capped; atk/res/init cannot inflate (`main.mo` 1690–1788) |
+| Official persist races (shop / portal XP / jackpot / feat / heal / Boss Rush) | #107 #111 #142 #144 #154 #160 #162 #167 #169 #170 #175 |
+| Recap click-through / feat recap / vitals jewels | #166 #159 #178 |
+| Admin auth / retirement / Caffeine Motoko + lint gates | #152 #165 #176 #177 #181 #182 |
+| Map destack / dual-path / white portal | #110 then **#155 #158 #164 #168 #179** (freeze broken) |
+
+**08-31 leftovers that are DONE:** MTD-2026-08-31-002 (#114/#107 queue), MTD-2026-08-31-009 (#108).
+
+**08-31 leftovers that are NOT done:**
+
+| ID | Why still open |
+| :--- | :--- |
+| MTD-2026-08-31-001 / AQA-001 / AQA-002 | Flock repeated. `1aa41c6c` still enabled. `996df6df` still not visible. 34 agents this hour. |
+| AQA-008 | Clamps exist. **No written ADR.** Security is running again tonight. |
+| AQA-006 / AQA-007 | mapGen 988 → **1348** lines; WX 19,619 → **20,063**; 149 WX commits since 08-24. |
+| MTD-2026-08-31-003 | HP/death still dual-written. Swap and controlled-summon walk still skip landing (`MIMA-001/002`). |
+| MTD-2026-08-31-004 | Design catalogs shipped (correct). Gameplay from those catalogs must stay frozen. |
+| AQA-012 / TBC-* | Still no counters. Telemetry *dashboard* is running again tonight. |
+| MTD-2026-08-31-005…008 | `saveKillCount` unused; admin DVA not a canister workflow; discovery not persisted; 30% random AI tier unchanged. |
+
+---
+
 ## Seven-dimension evaluation
 
-### 1. Correctness — fragile-intact
+### 1. Correctness — improved, still leaky
 
-Official-client persist and victory integrity improved in a 72-hour burst (27th–30th). The *helper* `progressPersist.ts` is stable (8 week commits). The *caller* is not: `WorldExploration.tsx` is **19,619** lines and took **96** commits since 2026-08-24.
+ENGINEERING: Official-client wallet/XP/death is much harder to mint than 72 hours ago. The persist *helper* is still the right funnel. The *caller* is not: `WorldExploration.tsx` is **20,063** lines and absorbed another day of hunter branches.
 
-Recurring defect class: **dual HP / death authority**. Combatant-store HP, React `enemyHpMap` / `characterStats`, and the post-paint HP-watch disagree. Same-day patches (#78–#99, #103, #109) then a new leak after the evening merge: #114 (plague-zone player death still unset `deathTriggered`, so a 1–2 HP player can kill the last hostile and be paid).
+Recurring defect class: **death persist vs in-flight credit.** #175 closed double-victory / cleanup reset. #183 (clean, +24/−0, 2 files, based on current `dd275aa`) is the unique leftover: `resolvePendingDeathReplay` (`deathPenalty.ts` 426–449) still **clears** when exactly one axis rose (portal +10 or Doka-only loot/feat) and the other is still `pre`. Reload then never retries the 20/40 cut. This is P0.
 
-Recurring defect class: **preview vs live targeting**. #95, #102, #104, #113 patched Attack Nearest / Strike. #114 must still pass `barrierTiles` into the live gate. #105 remains an overlapping targeting rewrite on a stale base.
+Recurring defect class: **live Doka ref vs React setState.** #167/#169 patched several paths. `writeLiveDoka` / `creditLiveDoka` / `beginRename` are **not on `main`**. Draft #180 implements them but is **dirty**, based on `036600f`, and restacks WX. Treat as P1 rebase-or-close, not a second persist rewrite.
 
-`#110` (mapGen punch / spawn legalize) **merged** after AQA-2026-08-30-006 said hold it. `AGENTS.md` still forbids map-generation edits. Treat further mapGen work as frozen unless a human explicitly authorizes a playtested change.
+Recurring defect class: **preview vs live vs landing.** Targeting was patched #95 #102 #104 #105 #113 #114 #151 #157 #161 #172. Swap (`WX` 10009–10021) and controlled-summon walk (`WX` 10583–10594) still teleport without `isCellFree` or `applyBattleWalkHazards` (MIMA-001/002; reconfirmed 18:00 and this run). Local targeting patches are no longer the bottleneck — **landing authority** is.
 
-### 2. Player experience — integrity first, content loop incomplete
+Recurring defect class: **mapGen punch after punch.** AQA-006 said freeze after #110. Then #155 #158 #164 #179. Solvability Guardian (`9dcfd122`) is running **again this hour**. Further punches fight dungeon-chain portals and CA.
 
-ENGINEERING: recap / wallet / death / challenge credit paths are much less likely to lie than a week ago (unit-tested funnel). DESIGN: leftover XP HUD still lies on selection / top bar / recap (#108, unique, unmerged). Touch vs mouse Thorned Ground / Void Rift parity landed (#109).
+`saveBattleStats` comment says the client level argument is ignored (`main.mo` 1688–1692) but `writeLevel` still assigns `_level` when it is **≤** stored level (1769). A stale post-`applyRewards` snapshot can drop level. That is the unfinished half of AQA-008, not a new mint API.
 
-No MEASURED data on cancellation, confusion, spell use, or discovery pacing. Recap wrapper remains `pointer-events: none` (`docs/ARCHITECTURE.md`) so lava under the card can still fire while persist is in flight — a known PX/integrity interaction, not a new finding.
+### 2. Player experience — honesty up, identity still incomplete
 
-Starter catalog is 32 static spells (`spellData.ts`). Enemy kits are piece-type + zone (`buildEnemyKit`), plus a level-scaled summoner chance. **Enemy-observed spell discovery is not implemented.** Achievement unlock is client-asserted (`markAchievementUnlocked`). Challenge rewards exist; they do not grant spells.
+ENGINEERING: HUD leftover XP, vitals jewel caps, recap feats, and recap-under-lava input gate landed. Those were unique display/input bugs; do not re-implement.
 
-### 3. Technical health — hotspot + flock
+DESIGN (PXA + Expansion + Spell Admin, no player data): the player is still handed the live catalog on minute one (`ownedSpells` = starters ∪ filtered backend configs, `WX` 2354–2410). Enemy-observed discovery is **not implemented**. Achievement/challenge/boss rewards remain Doka/XP, not spells. Boss Rush rooms advertise pair kits that the engine does not always force. Four map modifiers are announce-only stubs.
 
-| Surface | Lines | Week-ish commits | Verdict |
+MEASURED: none. Do not claim spells are over/underused.
+
+### 3. Technical health — hotspot + ledger collapse
+
+| Surface | Lines now | 08-31 director | Verdict |
 | :--- | ---: | ---: | :--- |
-| `WorldExploration.tsx` | 19,619 | 96 | Over-patched orchestrator |
-| `AdminDashboard.tsx` | 7,322 | — | Over-developed UI without a content pipeline |
-| `enemyAI.ts` | 2,582 | — | Extracted and large; stop growing on first specialist run |
-| `main.mo` | 3,013 | 6 | Canonical actor; trust boundary unresolved |
-| `mapGen.ts` | 988 | 3 | Just rewritten by #110; freeze |
-| `progressPersist.ts` | 252 | 8 | Leave it |
+| `WorldExploration.tsx` | 20,063 | 19,619 | Still the over-patched orchestrator |
+| `AdminDashboard.tsx` | 7,737 | 7,322 | Grew without a publish pipeline |
+| `enemyAI.ts` | 2,582 | 2,582 | Frozen size; do not grow tonight |
+| `main.mo` | 3,501 | 3,013 | Clamps + admin safety landed; no ADR |
+| `mapGen.ts` | 1,348 | 988 | Freeze broken; freeze again |
+| `progressPersist.ts` | 323 | 252 | Leave it |
+| `targeting.ts` | 1,120 | — | Leave it after #172 |
 
-Stale paths remain documented, not fixed: `dfx.json` → `backend_extended/`; root `declarations/` 15-field snapshot; unused `src/backend/mixins/*`; two `EnemyConfig` types.
+`docs/automation/ACTION_IDS_2026-08-31.md` is **~4,200 lines** of SDA + VAL + UX + AUX + LHIPS + MAA + GFCF + … The header still says “Spell, Discovery & Achievement Admin Designer.” AQA-003 (one ledger producers write) is **PARTIAL and now harmful**: everyone appends; nobody reconciles.
 
-### 4. Content depth — bosses rich, meta-progression thin
+Caffeine import gates (#182) are the one process win that should stay: unused-vars and hook-deps are errors; empty-canister M0263 is not skippable.
 
-Present: player-relative tier spawn (`pickEnemyLevelFromTiers`), AI tiers 1–10, family variants, named boss kits with phase `spellPoolIds`, dungeon chain, Boss Rush (10 rooms), 9 challenges, feats panel.
+Stale paths remain documented, not live bugs: `dfx.json` → missing `backend_extended`; root `declarations/` 15-field snapshot; unused `src/backend/mixins/*`.
 
-Missing vs core rules: observed-spell discovery, achievement/challenge/boss *spell* unlocks, admin Draft → Validate → Activate as a real publish pipeline (boss editor has local React drafts only).
+### 4. Content depth — over-specified, under-wired
 
-`computeAITier` applies a **30% fully random 1–10** roll (`combatMath.ts` 48–50). That contradicts DESIGN “progressively sophisticated enemies.” Do not let an AI specialist “fix” this by rewriting `enemyAI.ts` tonight.
+Present on `main`: player-relative tier spawn, AI tiers 1–10, named boss kits, dungeon chain, Boss Rush (10 rooms), 9 challenges, feats, 31-id frontend catalog.
+
+Dead or contradictory vs core rules (DESIGN + ENGINEERING, Expansion PREREQ-A/B/C):
+
+- `buildEnemyKit(..., currentMap.levelZone)` still passes an **object**; `Math.floor(levelZone)` is `NaN`; overworld kits stay zone-0.
+- Summoner chance `0.12 + playerLevel * 0.02` saturates by the mid-40s.
+- `pickEnemyLevelFromTiers` `maxTier = floor(999 / tierSize)` stops climbing.
+- `computeAITier` still has a **30% fully random 1–10** roll (`combatMath.ts` 48–50).
+- Dual spell catalogs (frontend starters vs canister `shadow_strike`…`void_collapse`). `physical_attack` remains on the purge list (SDA-007).
+- Admin adding a catalog spell still grants it to every player on hydrate (SDA-002).
+
+Design specialists produced overlapping catalogs on the same day: SDA, SDE, SPELL_DISCOVERY_ECOSYSTEM, BOSS_AND_SPELL_DISCOVERY, EBA (24 IDs), ENEMY_AI_EVOLUTION, ENEMY_FORMATIONS, ENEMY_ELITE, WORLD_DYNAMICS, ENCOUNTER_EVOLUTION, WORLD_ENCOUNTER_ADMIN, VISUAL_ASSET_LIBRARY, SPELL_PROPOSALS (16 cards). That is **expansion overlap**, not a license to implement.
 
 ### 5. Long-term scalability — rules vs implementation
 
-| Core rule | Implementation |
+| Core rule | Implementation on `dd275aa` |
 | :--- | :--- |
-| No character level cap | Yes (`applyRewards` while-loop) |
-| Increasing XP | Yes `100 * 2^(N-1)` |
-| Player-relative enemies | Yes tier percents + dungeon boost |
-| Progressively sophisticated enemies | Partial (tiers + kits); undermined by 30% random AI tier |
-| Dynamic enemy spell pools | Boss phases yes; overworld = static kits + summoner coin-flip |
+| No character level cap | Yes (`applyRewards` Nat loop). Frontend `Number` dies at 1019 (`LHIPS-001`). |
+| Increasing XP | Yes `100 * 2^(N-1)`. Practical wall ~level 25 on kill XP (DESIGN, not a bug to “fix” tonight). |
+| Player-relative enemies | Yes until the 999-tier ceiling (PREREQ-B). |
+| Progressively sophisticated enemies | Partial; 30% random tier + zone-0 kits undermine it. |
+| Dynamic enemy spell pools | Boss phases yes; overworld = static piece kits (and those kits never leave zone 0). |
 | Enemy-observed spell discovery | **Absent** |
-| Achievement / challenge / boss spell unlocks | Rewards are Doka/XP, not spells |
-| Backend-authoritative persistence | Wallet/XP yes; combat client-side; achievement unlock client-trusted |
-| Optional owner-uploaded visuals + pixel fallback | `pixelPattern` / `spriteUrl` / `pieceArt.ts` fallback exist |
-| Admin Draft → Validate → Activate | **Not a canister workflow** |
+| Achievement / challenge / boss spell unlocks | Rewards are Doka/XP |
+| Backend-authoritative persistence | Wallet/XP/death yes (clamped). Combat client-side. Achievement unlock still client-asserted. BuffShop potions still `${principal}_inventory`. |
+| Optional owner-uploaded visuals + pixel fallback | Still true; do not make URLs required (SDEG visual pass). |
+| Admin Draft → Validate → Activate | **Not a canister workflow.** Local React drafts + hard delete remain. |
 
-Expansion that adds spells, AI behaviors, or admin chrome **before** HP-authority extraction and a reward-trust ADR will not scale.
+Expansion that adds spells, AI behaviors, or admin chrome **before** landing-authority extraction, #183, and a reward-trust ADR will not scale.
 
-### 6. Data / persistence safety — official client better, canister still trusting
+### 6. Data / persistence safety — official client much safer, ADR still missing
 
-`saveBattleStats` (`main.mo` 1285–1353) still writes client-supplied level / XP / Doka with **no upper bound**. Architecture *requires* this write for heals / spends / death. The defect is unbounded absolute values, not the write (AQA-2026-08-30-008; security finding 3 is stale if phrased as “must not write Doka”).
+`saveBattleStats` may still **lower** Doka/XP (required for heals/spends/death). It must not raise them — that write is on `main`. Finding 3 is still stale if phrased as “must not write Doka.”
 
-`applyRewards` (`main.mo` 1356–1389) still accepts unbounded `dokaDelta` / `xpDelta`.
+`applyRewards` is still client-trusted **within** 100k/500k. Custom clients can still drip-mint. `calculateAndAwardDoka` remains an unused public mint. Shop 60s auto-complete is still architecture. `markAchievementUnlocked` is still unproven.
 
-#107 (draft, base `e4abb4c`, **before** #103/#104/#109/#111/#110) contains the first backend clamp. #111 already landed overlapping official-client races (shop credit, portal XP, jackpot, in-flight spends). **Keep the clamp; rebase; drop hunks already on `main`.** Do not merge #107 as-is. #107’s `sessionStorage` death replay is HIGH regression risk if snapshot matching is wrong.
+#183 is the official-client death-penalty hole that survived the 19:07 burst. #180 is the official-client live-ref hole; do not merge it dirty.
 
-Other sinks (custom client, not official UI): shop 60s auto-complete, `calculateAndAwardDoka` (no frontend caller), `createCharacter` client-chosen stats, `markAchievementUnlocked` without condition proof. `completeBossRushRoom` now ignores client Doka/XP (official path passes 0,0).
+Wallet seeding / idle-hydrate rules remain load-bearing. Do not invent a second persist path for telemetry or discovery grants.
 
-`saveKillCount` hook exists (`useLeaderboardQueries.ts` 43–50) and has **no UI caller**. Leaderboard kill totals stall (documented in `TROUBLESHOOTING.md`).
+### 7. Automation coherence — P0, same failure as yesterday, larger blast radius
 
-Wallet seeding / idle-hydrate rules remain load-bearing. Do not invent a second persist path for telemetry or expansion rewards.
+AQA-001…012 were written 08-30 19:00. The 08-31 00:00 wave ignored them. Humans then merged almost every draft in three bursts (09:33, 14:44, 19:07). Orchestrators correctly said “hold dirty persist/targeting/mapGen” and were overridden.
 
-### 7. Automation coherence — P0, worse than yesterday
+This 00:00 UTC window launched **34 automations in ~2 minutes** again — including Dungeon Solvability Guardian, Combat Rules Consistency, Adversarial QA, Security & Abuse, Admin Safety, Regression Test Builder, Report Action Orchestrator, plus the full expansion/AI/feel/admin/telemetry suite.
 
-AQA-2026-08-30-001…012 were written at 19:00 UTC. By 20:48 UTC the overlapping draft stack was largely **merged anyway** (#103, #109, #112, #113, #104, #111, #110), including forbidden mapGen.
+That is exactly “P2/P3 expansion displacing unresolved P0/P1.” #183 is the P0 that should merge; everything else from this hour should be ACTION_IDs or hold.
 
-This 00:00 UTC window launched **25+ automations in ~2 minutes**, including first-ever runs of expansion, enemy AI, spell mechanics, game feel, balance, content diversity, admin visuals, spell-discovery admin, telemetry *dashboard*, mobile/a11y, adversarial QA, economy hunter, invariant guardian, orchestrator, and this director.
-
-Yesterday’s audit said those specialists had **zero** runs and must not block the orchestrator. Today they all implement in parallel **before** any of them have written reports this director can consume. That is exactly “P2/P3 expansion displacing unresolved P0/P1.”
-
-| AQA ID | Director status 2026-08-31 |
+| AQA / MTD ID | Director status 2026-09-01 |
 | :--- | :--- |
-| AQA-001 hunter throttle | **OPEN** — `996df6df` still enabled historically (61 runs on the 30th in the first 100-agent page). Not accessible to this principal’s GetAutomation. |
-| AQA-002 merge two critical hunters | **OPEN** — `1aa41c6c` still enabled; produced #114 after the evening merges (correct unique P0). |
-| AQA-003 in-repo ACTION_ID ledger | **PARTIAL** — ledger exists; most producers still do not write it. |
-| AQA-004 don’t merge the stack as-is | **BROKEN** — stack merged; leftovers listed below. |
-| AQA-005 test clone mill | **OPEN** — #100/#101/#106 still open; coverage automation running again tonight. |
-| AQA-006 no mapGen implementation | **BROKEN** — #110 on `main`. Convert to freeze. |
-| AQA-007 freeze drive-by WX | **OPEN** — #114 adds more WX branches (justified plague/barrier). Further WX PRs tonight should be rejected. |
-| AQA-008 security → ADR | **OPEN** — no written decision; #107 still the only clamp draft. |
-| AQA-009 orchestrator must not implement gameplay | **OPEN** — orchestrator running again at 00:02. |
-| AQA-010 persist/economy dedup | **PARTIAL** — #111 merged; #107 stale overlap; economy hunter running again. |
-| AQA-011 prompts vs live architecture | **OPEN** | 
-| AQA-012 outcome telemetry | **OPEN** — still no counters. Telemetry *dashboard* specialist running tonight must not ship UI without AQA-012. |
+| AQA-001 hunter throttle | **OPEN** — `996df6df` still not GetAutomation-visible. |
+| AQA-002 one critical hunter | **OPEN** — `1aa41c6c` enabled; produced unique #183 (correct). Volume problem remains the rest of the flock. |
+| AQA-003 in-repo ACTION_ID ledger | **PARTIAL / HARMFUL** — dump-yard file; split producer ledgers. Need one **index**, not one append-only blob. |
+| AQA-004 don’t merge the 08-30 stack | **SUPERSEDED** — accept `main`. |
+| AQA-005 test clone mill | **OPEN** — #173 stale; test builder running again tonight. |
+| AQA-006 no mapGen implementation | **BROKEN** — four more mapGen merges. Guardian running now. |
+| AQA-007 freeze drive-by WX | **BROKEN** — file grew; #180 wants another WX persist restack. |
+| AQA-008 security → ADR | **PARTIAL** — clamps on `main`; no ADR; `writeLevel` still client-down. |
+| AQA-009 orchestrator must not implement gameplay | **PARTIAL** — 06:04/12:00/18:00 implemented unique display only (acceptable). Orchestrator is running again this hour. |
+| AQA-010 persist/economy dedup | **PARTIAL** — theme landed; #180/#183 are leftovers, not a third clamp. |
+| AQA-011 prompts vs live architecture | **OPEN** |
+| AQA-012 outcome telemetry | **OPEN** — dashboard specialist running with nothing to display. |
+| MTD-001 flock halt | **OPEN** — failed 08-31; failing again 09-01. |
 
 ---
 
 ## Recurring hotspots — local patches no longer sufficient
 
-Do **not** automatically perform a large refactor. Recommend *controlled* extraction only:
+Do **not** automatically perform a large refactor.
 
-1. **HP / death authority** — every lethal tick (plague, DoT, lava, reflect, heal, phase-2) must commit store HP and `deathTriggered` on the same tick. Remaining writes in WX should become one-line calls into `combatantStore` / `battleSetup` / `deathPipeline`. #114 is the last allowed WX patch in this cluster until that extraction exists.
-2. **Live-cast gate** — one function, preview and execute. Land #114 barrier pass. **Close #105** rather than rewrite `targeting.ts` on a stale base.
-3. **Canister trust** — human ADR: official-client trust + clamps (#107 shape) vs proofs. Until then, no new credit APIs.
-4. **Automation flock** — one critical hunter, report-only specialists on first run, no same-hour implementer pile-on after a merge burst.
+1. **Death persist vs credit race** — #183 is the last allowed death-replay patch in this cluster. After it, death/credit belongs in `deathPenalty.ts` + persist helpers only.
+2. **Landing / occupancy authority** — Swap + controlled-summon walk need one `applyHazardLanding` helper (MIMA-001/002). Stop adding Attack Nearest / LoS twins.
+3. **HP / death authority** (MTD-2026-08-31-003) — still valid; do not start it in the same hour as #183 or #180.
+4. **Canister trust** — write the ADR (AQA-008). Then ignore-client-level (`writeLevel = character.level`). Until then, no new credit APIs and no discovery grant writer.
+5. **Automation flock** — one critical hunter, report-only specialists on cron restart, no same-hour implementer pile-on after a merge burst. **This is the binding constraint.**
 
 ---
 
@@ -143,12 +194,11 @@ Do **not** automatically perform a large refactor. Recommend *controlled* extrac
 
 | Order | PR | Action |
 | :--- | :--- | :--- |
-| 1 | **#114** | Review/merge. Unique P0 plague-death victory + P1 barrier LoS. Clean vs `22503b5`. Tests added. |
-| 2 | **#107** | Rebase on post-#111 `main`. **Keep backend clamp only** (and tests for it). Drop shop/heal/jackpot/portal hunks already landed. Treat death `sessionStorage` replay as optional / high-risk. |
-| 3 | **#108** | Unique leftover-XP HUD. Safe display-only after #114. |
-| — | #105 | **Close.** Targeting rewrite duplicates #102/#104/#114. |
-| — | #100, #101, #106 | **Close or hold.** Coverage clones; wait for merged unique contracts. |
-| — | Any new PR from the 00:00 specialist wave | Default **hold**. Report ACTION_IDs only unless the item is unique, display-only, and not already drafted. |
+| 1 | **#183** | Review/merge. Unique P0 death-replay after portal/Doka-only credit. Clean vs `dd275aa`. 2 files. |
+| 2 | **#180** | **Hold.** Rebase on post-#183 `main`. Keep `writeLiveDoka` / `creditLiveDoka` / `beginRename` / shop-rollback helpers + tests. Drop any WX hunk already on `main`. Do not merge dirty. |
+| 3 | **#174** | Rebase bindgen only after Motoko on `main` is quiet. `adminRollback*` / `getAdminAuditLog` are still missing from `src/frontend/src/backend.ts`. Stale base `bcb0721`. |
+| — | #173 | **Close or hold.** Test mill on stale `bcb0721`. AQA-005. |
+| — | Any PR from the 09-01 00:00 wave | Default **hold**. Report ACTION_IDs only unless unique, display-only, and not already drafted. Especially hold mapGen, targeting, persist, `enemyAI`, AdminDashboard, and telemetry UI. |
 
 ---
 
@@ -156,31 +206,34 @@ Do **not** automatically perform a large refactor. Recommend *controlled* extrac
 
 **P0 — do these before any expansion PR merges**
 
-1. Stop the same-hour implementer flock (MTD-2026-08-31-001). Report-only for first-run specialists.
-2. Throttle / merge critical hunters (AQA-001, AQA-002).
-3. Merge #114; rebase #107 clamp-only (MTD-2026-08-31-002).
-4. Write the reward-trust ADR (AQA-008). Finding 3 = unbounded absolute write, not “Doka write is a bug.”
+1. Halt the 09-01 same-hour implementer flock (MTD-2026-08-31-001, MTD-2026-09-01-001).
+2. Merge #183 (MTD-2026-09-01-002).
+3. Write the reward-trust ADR (AQA-008). Finding 3 = unbounded/absolute misuse, not “Doka write is a bug.” Then ignore client level in `saveBattleStats` (MTD-2026-09-01-005).
+4. Stop appending catalogs to `ACTION_IDS_2026-08-31.md` (MTD-2026-09-01-004 / AQA-003).
 
 **P1 — infrastructure / gameplay integrity**
 
-5. Freeze `mapGen.ts` and `WorldExploration.tsx` drive-bys (AQA-006, AQA-007).
-6. Extract remaining HP/death commits out of WX (MTD-2026-08-31-003). No big-bang rewrite.
-7. Freeze content/AI/feel/admin *implementation* until P0/P1 above (MTD-2026-08-31-004).
-8. Dedup persist/economy implementers; ACTION_IDs only if a race is already drafted (AQA-010).
+5. Re-freeze `mapGen.ts`, `targeting.ts`, `enemyAI.ts`, and WX drive-bys (AQA-006, AQA-007). Solvability Guardian = fixtures + ACTION_IDs only.
+6. Rebase #180 helpers only (MTD-2026-09-01-003). No third persist lock.
+7. Extract `applyHazardLanding` for Swap + controlled-summon walk (MIMA-001/002). One helper PR; one-line WX wiring.
+8. Controlled HP/death extraction (MTD-2026-08-31-003) **after** #183 and MIMA landing — not tonight.
 
-**P2 — high-value expansion (after P0/P1, not tonight)**
+**P2 — high-value expansion (after P0/P1, not this hour)**
 
-9. Outcome counters, then maybe a dashboard (AQA-012 before any telemetry UI).
-10. Enemy-observed spell discovery + achievement/challenge/boss *spell* unlocks (requires persist + metadata, not name heuristics).
-11. Admin Draft → Validate → Activate on the canister (do not grow the 7.3k-line dashboard first).
-12. Wire `saveKillCount` or drop it from the leaderboard (MTD-2026-08-31-005).
-13. Revisit `computeAITier` 30% random vs progressive sophistication (report/design, not an `enemyAI.ts` rewrite).
+9. Outcome counters, then maybe a dashboard (AQA-012 before TADD UI).
+10. Fix kit-zone call site (Expansion PREREQ-A) — pass a **number**, not `levelZone` object. This unblocks dynamic pools without a new AI rewrite.
+11. Enemy-observed spell discovery + ownership maps (SDA-002/003/004). Requires persist lock + metadata; never `spell.name`.
+12. Admin Draft → Validate → Activate on the canister (SDA-005 / MTD-006). Do not grow the 7.7k dashboard first.
+13. Seed frontend starter ids; stop purging `physical_attack` (SDA-007).
+14. Revisit `computeAITier` 30% random vs progressive sophistication (MTD-008). Report/design, not an `enemyAI.ts` rewrite.
+15. Wire `saveKillCount` or drop it from the leaderboard (MTD-005).
+16. Rebase #174 bindgen.
 
 **P3 — polish**
 
-14. #108 leftover XP HUD.
-15. Recap `pointer-events` / lava-under-card (only after persist lock is quiet).
-16. Visual / game-feel / mobile polish — DESIGN.md already specifies the look; do not let feel specialists edit combat math or WX.
+17. Recap / HUD leftovers already shipped — do not restack.
+18. Visual / game-feel / mobile — DESIGN.md already specifies the look; do not edit combat math or WX.
+19. Dead-code / maintainability — report only while hunters are hot.
 
 ---
 
@@ -188,60 +241,68 @@ Do **not** automatically perform a large refactor. Recommend *controlled* extrac
 
 | Conflict | Resolution |
 | :--- | :--- |
-| Security “don’t write Doka from `saveBattleStats`” vs ARCHITECTURE | Write stays; **clamp** the absolute values. |
-| Solvability vs `AGENTS.md` mapGen | #110 already merged; **freeze** further mapGen. |
-| AQA-004 vs human merge of the stack | Accept `main`; clean leftovers; do not re-open merged themes. |
-| #105 rewrite vs #114 incremental gate | Keep #114; close #105. |
-| #107 vs #111 | #111 won the official-client races; #107 keeps clamp only. |
-| Progressive AI vs 30% random tier | Design decision later; no first-run AI PR. |
+| Security “don’t write Doka from `saveBattleStats`” vs ARCHITECTURE | Write stays; **clamp / no-mint**. ADR still required. |
+| Solvability vs `AGENTS.md` mapGen | #110 plus four follow-ups already merged; **freeze**. |
+| AQA-004 vs human merge of the 08-30/08-31 stacks | Accept `main`; clean leftovers; do not re-open merged themes. |
+| #180 vs #167/#169/#175 | Those won official-client races; #180 keeps live-ref helpers only after rebase. |
+| #183 vs #175 death replay | #175 is on `main`; #183 is the single-axis leftover. Merge #183. |
+| Progressive AI vs 30% random tier | Design decision later; no first-hour AI PR. |
+| SDA vs SDE vs SPELL_DISCOVERY vs EBA vs BOSS docs | One discovery persist shape (SDA-002/004). Others are content cards, not parallel schemas. |
 | Expansion specialists vs “P0/P1 first” | Tonight’s wave is the violation. Hold their PRs. |
+| Telemetry dashboard vs no counters | AQA-012 first. TBC stays WAITING_FOR_TELEMETRY. |
+| `writeLevel` comment vs code | Ignore client level (stored wins). |
 
 ---
 
 ## TOP 5 CURRENT PRIORITIES
 
-1. **Halt same-hour P2/P3 implementation** (25+ automations launched 00:00–00:02 UTC). First-run specialists: ACTION_IDs only.
-2. **#114 plague-death + barrier LoS** — last justified combat P0 on current `main`.
-3. **#107 rebase → backend clamp only** — first code-shaped answer to unbounded `saveBattleStats` / `applyRewards`.
-4. **Reward-trust ADR** (AQA-008) so security review stops weekly-reconfirming a stale finding 3.
-5. **WX / mapGen / targeting freeze** after #114 so the persist lock and live gate can settle.
+1. **Halt the 09-01 00:00 implementer flock** (34 automations). First-run and expansion specialists: ACTION_IDs only. Especially hold mapGen, persist, targeting, `enemyAI`, AdminDashboard, telemetry UI.
+2. **#183 death-replay after portal / Doka-only credit** — unique official-client P0 on current `main`.
+3. **Reward-trust ADR (AQA-008) + ignore-client `writeLevel`** — clamps landed; the decision and the level-drop hole did not.
+4. **Re-freeze WX / mapGen / targeting / enemyAI** so #180 can be a helper rebase and MIMA landing can be one extraction, not another burst.
+5. **Ledger hygiene (AQA-003)** — stop treating `ACTION_IDS_2026-08-31.md` as a shared append log.
 
 ## BLOCKED WORK
 
-- Spell discovery / observed enemy kits / new unlock loops — no observation persist, no metadata pipeline, combat HP still racing.
-- Enemy AI capability expansion — `enemyAI.ts` already 2,582 lines; HP/death still dual-written.
-- Telemetry admin dashboard — no counters to display (AQA-012).
-- Merging #107 or #105 as currently based.
-- Further `mapGen.ts` punches without an explicit human playtest of #110.
-- Custom-client mint proofs until the ADR exists.
+- Spell discovery / observed enemy kits / new unlock loops — no ownership persist, combat landing still racing, ADR unwritten.
+- Enemy AI capability expansion — `enemyAI.ts` already 2,582 lines; kits never leave zone 0; HP/death still dual-written.
+- Telemetry admin dashboard — no counters to display (AQA-012). Balance analyst correctly idle.
+- Merging #180, #174, or #173 as currently based.
+- Further `mapGen.ts` punches without an explicit human playtest of #110+#179.
+- Custom-client mint proofs / new credit APIs until the ADR exists.
 - `calculateAndAwardDoka` productization (unused official path; still a sink).
+- Formula-level `BAL-*` retunes (no telemetry; orchestrators already NEEDS_HUMAN_DECISION).
 
 ## SAFE EXPANSION WORK
 
-- Close stale drafts (#100, #101, #105, #106).
-- Merge #108 leftover-XP HUD after #114 (display only).
-- Adopt ACTION_ID writes in every producer prompt (AQA-003) — process, not gameplay.
-- Design-only (no PR): Draft → Validate → Activate; observed-spell persist shape; killCount caller.
+- Merge #183 (scoped helper + tests).
+- Close or hold #173; rebase #174 only when Motoko is quiet.
+- Adopt per-producer ledgers + this director index (AQA-003) — process, not gameplay.
+- Design-only (no PR): keep SDA/SDE/EBA catalogs; do not author a fifth discovery schema.
 - Query-only / persist-lock-enqueued counters (AQA-012) — **design + tiny isolated PR**, not a dashboard.
+- Kit-zone number fix (PREREQ-A) **after** the flock is held — one call site + `enemyAI` test, no WX growth.
 
 ## AREAS TO STOP TOUCHING TEMPORARILY
 
 - `src/frontend/src/components/WorldExploration.tsx` except one-line helper wiring
 - `src/frontend/src/engine/mapGen.ts`
 - RAF loop, turn-order math, damage formulas (`AGENTS.md`)
-- `src/frontend/src/utils/progressPersist.ts` (stable)
-- `src/frontend/src/engine/targeting.ts` until #114 is merged or closed
+- `src/frontend/src/utils/progressPersist.ts` (leave the lock)
+- `src/frontend/src/engine/targeting.ts`
 - `src/frontend/src/engine/enemyAI.ts`
-- `src/frontend/src/components/AdminDashboard.tsx` (7.3k; no pipeline yet)
-- `src/backend/main.mo` reward methods except a reviewed clamp
+- `src/frontend/src/components/AdminDashboard.tsx`
+- `src/backend/main.mo` reward methods except a reviewed `writeLevel = character.level` after the ADR
+- `docs/automation/ACTION_IDS_2026-08-31.md` (do not append)
 
 ## ARCHITECTURAL HOTSPOTS
 
-1. Dual HP / death authority (React snapshot vs `combatantsRef` vs HP-watch)
-2. Preview vs live targeting (still leaking after four merges)
-3. Client-trusted `applyRewards` / `saveBattleStats`
-4. 19.6k-line world orchestrator absorbing every hunter
-5. Automation pile-on (two critical hunters + first-run expansion suite)
+1. Dual HP / death / landing authority (React snapshot vs `combatantsRef` vs Swap/summon teleport)
+2. Death persist vs single-axis credit (#183) and live Doka ref (#180)
+3. Client-trusted `applyRewards` / `saveBattleStats` without a written ADR (`writeLevel` still client-down)
+4. 20k-line world orchestrator absorbing every hunter
+5. Automation pile-on (34 same-hour agents + map/combat/security implementers)
+6. ACTION_ID dump-yard replacing a usable index
+7. Dual spell catalogs + implicit ownership (blocks discovery)
 
 ## TELEMETRY SIGNALS WORTH INVESTIGATING
 
@@ -249,10 +310,11 @@ Do **not** automatically perform a large refactor. Recommend *controlled* extrac
 
 When AQA-012 lands, investigate in this order (engineering + design, not telemetry-alone priority):
 
-1. persist-ok vs persist-fail and death-penalty-applied vs victory-paid (integrity)
-2. recap opened vs dismissed vs lava-death-during-recap (PX / known `pointer-events: none`)
-3. spell-cast counts **by acquisition path** (starter vs unlocked vs observed) — a “weak” spell may be undiscovered, not weak
+1. persist-ok vs persist-fail and death-penalty-applied vs victory-paid vs **single-axis-credit-then-death** (integrity; #183 class)
+2. recap opened vs dismissed vs lava-death-during-recap (PX; #166 may have closed the input hole — measure, do not assume)
+3. spell-cast counts **by acquisition path** (starter vs unlocked vs observed) — a “weak” spell may be undiscovered, not weak. Today every catalog id is treated as owned, so this series would be meaningless until SDA-002.
 4. Attack Nearest vs aimed-cast ratio (gate confusion vs power)
-5. challenge accept vs complete vs advertised-reward-missing (already a historical integrity bug)
+5. challenge accept vs complete vs advertised-reward-missing
+6. Swap / summon-walk onto hazards vs walk onto the same tile (MIMA-001/002 — if “Untouchable complete rate” is high, DESIGN INTERPRETATION is skip-landing, not player skill)
 
 Until those exist: automations must not claim CLEAR_POSITIVE_SIGNAL or “players don’t use X.”

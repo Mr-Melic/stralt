@@ -387,8 +387,11 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `progression.ts` | Level-derived base stats (player / enemy / summon) |
 | `mapGen.ts` | Archetypes + solvability finalize (do not casually rewrite) |
 | `portalRules.ts` | Run-mode portal filter + dungeon-chain snapshot / `decideDungeonChainPortal` |
-| `summonSpawn.ts` / `summonAI.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle. Hostile minions: `spawnEnemySummonUnit`. Kit casts: `utils/summonControlCast.ts` (catalog `summonKit`, not `summon.spells`) |
+| `summonSpawn.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle. Hostile minions: `spawnEnemySummonUnit`. Kit casts: `utils/summonControlCast.ts` (catalog `summonKit`, not `summon.spells`). `summonAI.ts` exists but `runSummonAI` is unused; live summon turns use `enemyAI.ts` |
 | `summonLifespan.ts` | Lifespan tick against the **live** combatant store; drop expired ids through `removeCombatant` |
+| `dotStacks.ts` | Same-name DoT append + independent per-stack duration tick (RES applied by damage helpers, not here) |
+| `statusEffects.ts` | Non-DoT replace-or-refresh, AP/MP additive vs multiplicative `getStatModifier`, battle-log magnitude. WX still owns map-modifier suppression, DoT damage, death, and the expire-log loop |
+| `battleStartPlacement.ts` | Battle-start cell spacing (player ≥3 / enemies ≥2, occupancy fallback) |
 
 Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRange`, `lineOfSight`, `linear`, `diagonal`, `freeCells`, `areaRadius`, `isBarrier`. `spell.name` is UI/log only. Sprite-click Strike and Attack Nearest must use the same live gate (`isTileCastableLive` / `isActiveHostile` on `getLiveCombatants`) — a React `enemies` snapshot misses enemy minions and leftover corpses. Attack Nearest range/LoS uses the **player** tile (`attackNearestLiveCasterPos`), not a controlled summon.
 

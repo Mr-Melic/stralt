@@ -4,6 +4,7 @@
  * Design-only contract for tile, encounter, and event features that keep
  * generating decisions across indefinite progression. Uses rarity weights and
  * relative difficulty versus same-tier content — never player-level cutoffs.
+ * Wave 1: WDD-2026-08-31-001. Wave 2: WDD-2026-09-01-001.
  *
  * This module does NOT generate maps, advance turns, or change combat damage
  * formulas. Placement must run after `evaluateSolvability` / finalize and
@@ -99,7 +100,15 @@ export interface WorldFeature {
   extraHazardCount?: { min: number; max: number };
   /** Spell extras must come from `SpellConfig.usableByEnemy`, never names. */
   spellSource?: "enemyUsableCatalog";
+  /**
+   * Catalog generation. Omitted features are wave 1 (2026-08-31).
+   * Later waves add seams; they do not replace earlier ids.
+   */
+  catalogWave?: 1 | 2;
 }
+
+/** Newest designed wave. Overlay wiring still requires a human ACTION_ID pick. */
+export const LATEST_CATALOG_WAVE = 2 as const;
 
 export const RARITY_WEIGHT: Record<WorldFeatureRarity, number> = {
   common: 40,
@@ -724,6 +733,485 @@ export const WORLD_FEATURES: WorldFeature[] = [
     hpTaxPctOfMax: 0.05,
     extraHazardCount: { min: 3, max: 3 },
   },
+  {
+    id: "WF-HAZ-SALT_CRUST",
+    name: "Salt Crust",
+    category: "hazard",
+    mechanic:
+      "Pale salt tiles. The first salt tile entered in a turn is free. Each extra salt tile entered that same turn costs a fraction of current max HP. Walkable. Does not replace ice or lava.",
+    playerDecision:
+      "Hop on and off after one tile, or pay to traverse a long salt path in a single turn.",
+    relativeDifficulty: "medium",
+    rarity: "common",
+    visual: visual(
+      "salt-crust",
+      "#5a5648",
+      "#e8dcc0",
+      "Salt Crust — first salt step free; extra salt steps tax % max HP",
+    ),
+    solvability:
+      "Never on spawn±3 or portals. Never the only walkable cell in a corridor — salt occupies floor but does not block.",
+    combatRules:
+      "HP via recordChallengeDamageTaken (explore) or recordInBattleChallengeDamage (in battle). Wounded AI treats a second salt step like lava. Counts toward MAX_HAZARD_TILES.",
+    counterplay:
+      "Step off after one tile, teleport (metadata targetType ground/self), or send a summon to spend the first free step.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.03,
+    extraHazardCount: { min: 4, max: 8 },
+    catalogWave: 2,
+  },
+  {
+    id: "WF-HAZ-HUNT_LANTERN",
+    name: "Hunting Lantern",
+    category: "moving_hazard",
+    mechanic:
+      "A single lantern orb on a floor cell. In battle it steps one tile at round start toward the last unit that spent MP this round (painted facing). Landing on a unit costs a max-HP tax. Out of battle it sits still; walking onto it pays the same tax.",
+    playerDecision:
+      "Stay still so it does not advance, step off its painted facing, or bait it onto an enemy.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "hunt-lantern",
+      "#4a3010",
+      "#f0c14a",
+      "Hunting Lantern — steps 1 toward the last MP spender each round",
+    ),
+    solvability:
+      "Never starts on spawn±3 or portals. A floor path around the orb always remains. The lantern is not a wall.",
+    combatRules:
+      "Advances on round start (not mid-turn). Tax uses challenge HP recorders. Does not skip turns or spend AP/MP. Occupies 1 hazard budget.",
+    counterplay:
+      "Do not spend MP, end off its facing chevron, or push/attract a foe onto its next cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.05,
+    extraHazardCount: { min: 1, max: 1 },
+    catalogWave: 2,
+  },
+  {
+    id: "WF-TRP-PRESSURE_MOSAIC",
+    name: "Pressure Mosaic",
+    category: "trap",
+    mechanic:
+      "A visible 2×2 carved mosaic. If two or more units occupy it at the end of a combatant turn, every unit on the mosaic pays a max-HP tax once, then the mosaic cracks into floor.",
+    playerDecision:
+      "Do not share the mosaic, bait a second body onto it, or detonate it with a summon.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "pressure-mosaic",
+      "#3a2418",
+      "#c4783a",
+      "Pressure Mosaic — two occupants trigger a one-shot %HP crack",
+    ),
+    solvability:
+      "Walkable before and after. Never covers spawn±3 or portals. Does not seal a path.",
+    combatRules:
+      "End-of-turn occupancy check, once. Uses challenge HP recorders. Always visible — no hidden tiles. Does not change spell damage math.",
+    counterplay:
+      "Leave before a second unit enters, send a summon to crack it, or shove a foe onto a second cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.07,
+    extraHazardCount: { min: 4, max: 4 },
+    catalogWave: 2,
+  },
+  {
+    id: "WF-TER-CINDER_BARREL",
+    name: "Cinder Barrel",
+    category: "destructible_terrain",
+    mechanic:
+      "A barrel blocks walk and LoS. Adjacent: 1 AP to roll it one tile in a chosen cardinal if that cell is empty floor; if the next cell holds a unit the barrel stops and that unit pays a max-HP tax (barrel stays). 2 AP adjacent smashes it to floor.",
+    playerDecision:
+      "Roll it as a projectile, smash it for the cell, or leave it as cover.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "cinder-barrel",
+      "#3a2218",
+      "#d4783a",
+      "Cinder Barrel — 1 AP roll, 2 AP smash; blocks walk + LoS",
+    ),
+    solvability:
+      "Must not be a cut-vertex with the barrel intact. If a candidate would fail evaluateSolvability, skip the feature. Never on spawn±3 or portals.",
+    combatRules:
+      "Roll and smash are AP occupancy actions, not spells (no name heuristics). Hit tax uses challenge HP recorders. Does not rewrite combatMath. Counts as a wall for LoS until smashed.",
+    counterplay:
+      "Ignore it if a bypass exists; smash when the cell is worth 2 AP; roll to tax a stacked foe.",
+    rewardPath: "none",
+    blocksWalk: true,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.05,
+    catalogWave: 2,
+  },
+  {
+    id: "WF-OBS-TIDE_DOOR",
+    name: "Tide Door",
+    category: "temporary_obstacle",
+    mechanic:
+      "One corridor cell is a wall on odd rounds and floor on even rounds. A painted open/shut glyph flips at round start.",
+    playerDecision:
+      "Cross on even rounds, wait a round, or spend MP on the always-open long path.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "tide-door",
+      "#2a3438",
+      "#7eb8c4",
+      "Tide Door — shut on odd rounds, open on even; long path always works",
+    ),
+    solvability:
+      "Place only when a second walkable spawn→portal route already exists. Never the only exit. Odd-round block must still leave a path. Never on spawn±3 or portals.",
+    combatRules:
+      "Wall occupancy while shut. Does not deal damage or spend AP. Flip ticks at round start for everyone. Do not place on the same cell as another blocksWalk feature.",
+    counterplay:
+      "Wait for even, take the long path, or teleport past if a spell's metadata allows freeCells/ground.",
+    rewardPath: "none",
+    blocksWalk: true,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-ZON-SECOND_WIND",
+    name: "Second Wind",
+    category: "heal_buff_zone",
+    mechanic:
+      "A copper inlay. The first unit to end a turn here this map recovers 1 AP already spent this turn (cannot exceed their max AP). Then the tile dries. Either side may use it.",
+    playerDecision:
+      "End movement here to cast more this turn, deny the enemy the tile, or ignore it.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "copper-inlay",
+      "#4a3018",
+      "#d4a06a",
+      "Second Wind — first end-turn here refunds 1 spent AP, then dries",
+    ),
+    solvability:
+      "Walkable floor. Never on spawn or portals. Does not block exits.",
+    combatRules:
+      "Refunds 1 AP already spent this turn. Not a spell and not a heal — does not call saveBattleStats or applyRewards. Does not raise max AP. Null Field does not strip it (not a buff spell).",
+    counterplay:
+      "Step on it first, shove the enemy off before their end-turn, or ignore it when you still have AP.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-TEL-SLIPSTREAM",
+    name: "Slipstream",
+    category: "teleport_tile",
+    mechanic:
+      "A one-way pair: cyan arrow A → B. Entering A for 1 MP exits at B. B does not return. If B is occupied, the travelers swap. Either side may use A.",
+    playerDecision:
+      "Spend 1 MP for a one-way skip, walk the long way, or leave A as an enemy escape toward B.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "one-way-arrow",
+      "#0e3a4a",
+      "#3dd6f0",
+      "Slipstream — 1 MP A→B only; B does not send you back",
+    ),
+    solvability:
+      "Both tiles on floor, mutually reachable, never on spawn/portals. The pair is optional — the map is solvable without using it.",
+    combatRules:
+      "Costs 1 MP from the unit's current MP. Occupancy: destination free, or swap with the unit on B. Not a teleport spell — do not key off effectCategory.",
+    counterplay:
+      "Stand on B to block or force a swap, ignore the pair, or use A to break melee one way.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-PRT-ECHO_GATE",
+    name: "Echo Gate",
+    category: "unstable_portal",
+    mechanic:
+      "An extra portal with a backward-notch rim. Entering returns you to the previous overworld map this session and pays a bonus applyRewards grant at medium multiplier. If there is no previous map, it behaves as a regular portal with no bonus. It is never the only exit.",
+    playerDecision:
+      "Retreat to the last map for a medium purse, or take the stable forward portal.",
+    relativeDifficulty: "medium",
+    rarity: "epic",
+    visual: visual(
+      "echo-portal",
+      "#1a2a4a",
+      "#7eb8ff",
+      "Echo Gate — extra exit; return to the previous map + medium bonus",
+    ),
+    solvability:
+      "Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm (portalRules filter). Never at spawn.",
+    combatRules:
+      "Entry is a portal transition, not a combat action. Bonus XP/Doka via applyRewards on the persist lock (same as portal +10). Death-realm guards still block entry while armed.",
+    counterplay:
+      "Ignore it. The stable exit always works. Do not enter while a Death Realm timer is pending.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: true,
+    allowedRunModes: EXPLORATION_ONLY,
+    slot: "event",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-INV-DUELIST_CIRCLE",
+    name: "Duelist Circle",
+    category: "rare_invasion",
+    mechanic:
+      "Two same-tier elites (hard threat) circle a painted ring. Out of battle both lose 8% max HP on each enemy-wander interval. If one hits 0 they vanish. Touching either starts a normal battle at remaining HP. Victory pays hard if both still stood at contact, medium if one already vanished.",
+    playerDecision:
+      "Wait for a wounded survivor, join early for two purses, or never enter the ring (exploration).",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "duelist-ring",
+      "#4a1818",
+      "#e06060",
+      "Duelist Circle — two elites bleed on the ring; enter or wait",
+    ),
+    solvability:
+      "Ring is floor. Exit reachable without entering the ring. Counts as 2 toward MAX_ENEMIES. Skip if the roster cannot fit 2. In dungeon / boss rush they count as hostiles for map-clear — you cannot ignore them for the progression portal.",
+    combatRules:
+      "World attrition is not a player fight and does not call applyRewards. Contact starts a normal battle (inBattleRef + death guards). Extra spells from usableByEnemy only. Victory → applyRewards. Their mutual drain does not rewrite combatMath.",
+    counterplay:
+      "Stay off the ring in exploration; join when one is low; leave the map. In a run, fight the survivor or both.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 2, max: 2 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-ELT-TOLL_KEEPER",
+    name: "Toll Keeper",
+    category: "elite_patrol",
+    mechanic:
+      "One elite (same-tier × hard threat) stands on a painted short-path cell. In exploration: touch to fight, or pay 10% max HP once adjacent to pass this map without combat (the keeper stays non-hostile). A long path bypasses them. In dungeon / boss rush the toll is disabled — they are a normal elite required for map-clear.",
+    playerDecision:
+      "Fight for the hard purse, pay the toll, or walk the long way.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "toll-keeper",
+      "#3a2010",
+      "#d4a06a",
+      "Toll Keeper — fight, pay 10% max HP to pass, or take the long path",
+    ),
+    solvability:
+      "Place only when a second spawn→portal route already exists. Exit reachable without touching the keeper. Counts as 1 toward MAX_ENEMIES.",
+    combatRules:
+      "World contact starts a normal battle (inBattleRef + death guards). Toll HP uses challenge recorders, not a spell. Elite spells from usableByEnemy only. Victory → applyRewards. Toll never writes Doka.",
+    counterplay:
+      "Take the long path, pay the toll when wounded (exploration), or fight when you want the purse.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 1, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-TRS-SEALED_URN",
+    name: "Sealed Urn",
+    category: "treasure_encounter",
+    mechanic:
+      "A sealed urn. Spending 1 AP adjacent opens it: 70% a medium applyRewards grant, 30% a 6% max-HP tax and no grant. No guardian.",
+    playerDecision: "Spend 1 AP on a biased coin, or walk past.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "sealed-urn",
+      "#3a2a18",
+      "#c4a060",
+      "Sealed Urn — 1 AP: 70% medium purse, 30% 6% max-HP tax",
+    ),
+    solvability:
+      "Urn occupies a floor cell but is walkable-adjacent, not a wall. Optional. Never on spawn/portals.",
+    combatRules:
+      "Open cost is AP, not a spell. Success credits only through applyRewards on the persist lock. Fail uses challenge HP recorders. Do not write Doka with updateCharacter.",
+    counterplay:
+      "Skip the urn, or open it after fights when a 6% miss is cheap.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    hpTaxPctOfMax: 0.06,
+    catalogWave: 2,
+  },
+  {
+    id: "WF-SPL-GRIMOIRE_STALKER",
+    name: "Grimoire Stalker",
+    category: "spell_bearing_enemy",
+    mechanic:
+      "One same-tier enemy (medium threat) carries 1 extra spell from SpellConfig rows with usableByEnemy === true. On death the player may take that spell id as a single remaining cast this map only — not a full-map attune.",
+    playerDecision:
+      "Kill the stalker for a one-shot catalog spell, or ignore them.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "grimoire",
+      "#241a38",
+      "#9b7ae0",
+      "Grimoire Stalker — kill for one remaining cast of their extra spell",
+    ),
+    solvability:
+      "Replaces one existing spawn when possible; otherwise +1 if under MAX_ENEMIES. Must remain reachable.",
+    combatRules:
+      "Spell list is metadata-only (usableByEnemy, targetType, costs). The one-cast does not call upgradeSpell and does not persist spellLevel arrays. Victory rewards still applyRewards.",
+    counterplay:
+      "Kite and ignore, burst them first, or save the one cast for a key turn.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 0, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-RSK-SCOURGE_COMPACT",
+    name: "Scourge Compact",
+    category: "risk_reward",
+    mechanic:
+      "A black inlay. Voluntarily ending a turn on it flags this map: you take +10% of already-computed incoming hits (after existing RES/SR), and the next applyRewards uses the hard multiplier. One flag, this map only. Enemies do not gain the bonus.",
+    playerDecision:
+      "Accept incoming tax for a fatter purse, or stay unflagged.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "scourge-inlay",
+      "#1a1018",
+      "#c05070",
+      "Scourge Compact — take +10% incoming this map; next rewards × hard",
+    ),
+    solvability:
+      "Optional floor tile. Map remains solvable if never used. Never on spawn/portals.",
+    combatRules:
+      "The +10% scales the post-formula number — it does not replace combatMath. Multiplier applies to the next applyRewards enqueue only. Death still uses saveBattleStats. Not a buff spell (Null Field does not strip the flag).",
+    counterplay:
+      "Skip it. Use it only when you can kite, summon a front-liner, or expect a credit worth the incoming tax.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-MOD-ECHO_HALL",
+    name: "Echoing Halls",
+    category: "map_modifier",
+    mechanic:
+      "Spells with linear === true may continue one extra empty floor cell beyond the first target along the line (metadata range +1 on that axis only). Non-linear spells unchanged. Uses SpellConfig.linear only — never the spell name.",
+    playerDecision:
+      "Line up shots through empty cells, or hide with your back to a wall so you cannot be echoed.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "echo-teeth",
+      "#2a2830",
+      "#b8a8c8",
+      "Echoing Halls — linear spells reach +1 along empty floor; others unchanged",
+    ),
+    solvability:
+      "Does not alter tiles. Exits unchanged. Melee and non-linear kits remain fully usable.",
+    combatRules:
+      "Range extension reads explicit linear / maxRange / minRange / targetType. The extra cell must be empty floor. Summons and Attack Nearest are unaffected (they are not spells). Does not rewrite damage.",
+    counterplay:
+      "Stand with a wall behind you, close to melee, or ignore linear options this map.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-EVT-PILGRIM_BANNERS",
+    name: "Pilgrim Banners",
+    category: "world_event",
+    mechanic:
+      "This map only: if you leave through a portal without starting any encounter, the portal applyRewards grant uses the medium multiplier. If you start any fight and win, victory uses the hard multiplier. Starting a fight locks the peaceful path.",
+    playerDecision:
+      "Take a peaceful medium portal purse, or fight for a hard victory purse.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "pilgrim-cloth",
+      "#2a2418",
+      "#d4c090",
+      "Pilgrim Banners — leave in peace for medium, or fight for hard rewards",
+    ),
+    solvability:
+      "No tile blocks. Portals unchanged. Leaving is always legal. Forbidden in dungeon, boss rush, and Death Realm (run maps require a clear).",
+    combatRules:
+      "Multipliers apply only to persist-lock applyRewards. inBattleRef true locks the peaceful path. Does not rewrite combatMath. Death still uses saveBattleStats.",
+    counterplay:
+      "Leave immediately, or fight if you want the hard purse. Ignore banners in either case.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: EXPLORATION_ONLY,
+    slot: "event",
+    catalogWave: 2,
+  },
+  {
+    id: "WF-ENV-GUTTER_STEAM",
+    name: "Gutter Steam",
+    category: "environmental_combat",
+    mechanic:
+      "Two painted vent tiles. On even rounds they jet (visible steam); occupying a jetting vent at end of turn costs a max-HP tax. Odd rounds they are inert floor. A painted even/odd pip sits on each vent.",
+    playerDecision:
+      "Cross vents on odd rounds, hold off them on even, or bait a foe onto a jetting vent.",
+    relativeDifficulty: "hard",
+    rarity: "uncommon",
+    visual: visual(
+      "gutter-vent",
+      "#2a2820",
+      "#c8b090",
+      "Gutter Steam — vents jet on even rounds; odd rounds are safe",
+    ),
+    solvability:
+      "Vents never include the only portal or spawn. A floor path around the vents always exists.",
+    combatRules:
+      "End-of-turn tax when the round is even. Challenge HP recorders. Counts as 2 toward MAX_HAZARD_TILES. Wounded AI avoids vents on even rounds. Does not alter spell damage.",
+    counterplay:
+      "Read the even/odd pip, stand off on even, or shove a foe onto a jetting vent.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    hpTaxPctOfMax: 0.04,
+    extraHazardCount: { min: 2, max: 2 },
+    catalogWave: 2,
+  },
 ];
 
 const FEATURE_BY_ID = new Map<string, WorldFeature>(
@@ -732,6 +1220,15 @@ const FEATURE_BY_ID = new Map<string, WorldFeature>(
 
 export function getWorldFeature(id: string): WorldFeature | undefined {
   return FEATURE_BY_ID.get(id);
+}
+
+/** Omitted `catalogWave` is wave 1. */
+export function featureCatalogWave(feature: WorldFeature): 1 | 2 {
+  return feature.catalogWave ?? 1;
+}
+
+export function featuresInCatalogWave(wave: 1 | 2): WorldFeature[] {
+  return WORLD_FEATURES.filter((f) => featureCatalogWave(f) === wave);
 }
 
 export function rarityWeight(rarity: WorldFeatureRarity): number {

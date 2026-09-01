@@ -25,6 +25,14 @@ export interface AchievementProgress {
   'claimed' : boolean,
   'principalId' : string,
 }
+export interface AdminAuditEntry {
+  'action' : string,
+  'adminPrincipal' : string,
+  'previousSummary' : string,
+  'objectId' : string,
+  'newSummary' : string,
+  'timestampNs' : bigint,
+}
 export interface AdminGameConfig {
   'leaderBoostPercent' : bigint,
   'dokaSpawnBaseValue' : bigint,
@@ -211,10 +219,12 @@ export interface SpellConfig {
   'isPhysical' : boolean,
   'name' : string,
   'hitTiles' : Array<[bigint, bigint]>,
+  'summonAI' : string,
   'description' : string,
   'minLevel' : bigint,
   'apCost' : bigint,
   'multiTarget' : boolean,
+  'summonLifespan' : bigint,
   'modifiableRange' : boolean,
   'usableByEnemy' : boolean,
   'maxRange' : bigint,
@@ -222,6 +232,7 @@ export interface SpellConfig {
   'iconEmoji' : string,
   'hitsAllies' : boolean,
   'effectType' : string,
+  'summonUnitDef' : SummonUnitDef,
   'usableByPlayer' : boolean,
   'spellType' : string,
   'diagonal' : boolean,
@@ -229,6 +240,13 @@ export interface SpellConfig {
   'range' : bigint,
   'linear' : boolean,
   'cooldown' : bigint,
+  'isSummon' : boolean,
+}
+export interface SummonUnitDef {
+  'pieceType' : string,
+  'level' : bigint,
+  'hpScale' : number,
+  'damageScale' : number,
 }
 export interface TierSpawnConfig {
   'adjacentTierPercent' : number,
@@ -350,6 +368,71 @@ export interface _SERVICE {
    */
   'adminGrantDoka' : ActorMethod<
     [Principal, bigint],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackBossRushConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackColorPalette' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackGameConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackLevelUpConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  'adminRollbackTierSpawnConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Admin: restore the previous boss-rush config snapshot.
+   */
+  'adminRollbackBossRushConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Admin: restore the previous color palette snapshot.
+   */
+  'adminRollbackColorPalette' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Admin: restore the previous game config snapshot.
+   */
+  'adminRollbackGameConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Admin: restore the previous level-up config snapshot.
+   */
+  'adminRollbackLevelUpConfig' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Admin: restore the previous tier-spawn config snapshot.
+   */
+  'adminRollbackTierSpawnConfig' : ActorMethod<
+    [],
     { 'ok' : null } |
       { 'err' : string }
   >,
@@ -559,6 +642,19 @@ export interface _SERVICE {
    * / Returns all three ad box slots.  Empty/inactive slots have isActive=false.
    */
   'getAdBoxes' : ActorMethod<[], Array<[string, string, boolean]>>,
+  'getAdminAuditLog' : ActorMethod<
+    [],
+    { 'ok' : Array<AdminAuditEntry> } |
+      { 'err' : string }
+  >,
+  /**
+   * / Admin: append-only change log. Never contains secrets or payment PII.
+   */
+  'getAdminAuditLog' : ActorMethod<
+    [],
+    { 'ok' : Array<AdminAuditEntry> } |
+      { 'err' : string }
+  >,
   /**
    * / Public: returns all boss configs.
    */

@@ -107,6 +107,12 @@ export const ShopPackage = IDL.Record({
   'priceEuroCents' : IDL.Nat,
   'paymentLink' : IDL.Text,
 });
+export const SummonUnitDef = IDL.Record({
+  'pieceType' : IDL.Text,
+  'level' : IDL.Nat,
+  'hpScale' : IDL.Float64,
+  'damageScale' : IDL.Float64,
+});
 export const SpellConfig = IDL.Record({
   'id' : IDL.Text,
   'aoe' : IDL.Bool,
@@ -119,10 +125,12 @@ export const SpellConfig = IDL.Record({
   'isPhysical' : IDL.Bool,
   'name' : IDL.Text,
   'hitTiles' : IDL.Vec(IDL.Tuple(IDL.Int, IDL.Int)),
+  'summonAI' : IDL.Text,
   'description' : IDL.Text,
   'minLevel' : IDL.Nat,
   'apCost' : IDL.Nat,
   'multiTarget' : IDL.Bool,
+  'summonLifespan' : IDL.Nat,
   'modifiableRange' : IDL.Bool,
   'usableByEnemy' : IDL.Bool,
   'maxRange' : IDL.Nat,
@@ -130,6 +138,7 @@ export const SpellConfig = IDL.Record({
   'iconEmoji' : IDL.Text,
   'hitsAllies' : IDL.Bool,
   'effectType' : IDL.Text,
+  'summonUnitDef' : SummonUnitDef,
   'usableByPlayer' : IDL.Bool,
   'spellType' : IDL.Text,
   'diagonal' : IDL.Bool,
@@ -137,6 +146,7 @@ export const SpellConfig = IDL.Record({
   'range' : IDL.Nat,
   'linear' : IDL.Bool,
   'cooldown' : IDL.Nat,
+  'isSummon' : IDL.Bool,
 });
 export const TierSpawnConfig = IDL.Record({
   'adjacentTierPercent' : IDL.Float64,
@@ -194,6 +204,14 @@ export const Cell = IDL.Record({ 'value' : Value, 'name' : IDL.Text });
 export const Result = IDL.Record({
   'hasMore' : IDL.Bool,
   'rows' : IDL.Vec(IDL.Vec(Cell)),
+});
+export const AdminAuditEntry = IDL.Record({
+  'action' : IDL.Text,
+  'adminPrincipal' : IDL.Text,
+  'previousSummary' : IDL.Text,
+  'objectId' : IDL.Text,
+  'newSummary' : IDL.Text,
+  'timestampNs' : IDL.Int,
 });
 export const BossStats = IDL.Record({
   'ap' : IDL.Nat,
@@ -331,6 +349,31 @@ export const idlService = IDL.Service({
     ),
   'adminGrantDoka' : IDL.Func(
       [IDL.Principal, IDL.Nat],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackBossRushConfig' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackColorPalette' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackGameConfig' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackLevelUpConfig' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+      [],
+    ),
+  'adminRollbackTierSpawnConfig' : IDL.Func(
+      [],
       [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
       [],
     ),
@@ -490,6 +533,11 @@ export const idlService = IDL.Service({
   'getAdBoxes' : IDL.Func(
       [],
       [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text, IDL.Bool))],
+      ['query'],
+    ),
+  'getAdminAuditLog' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Vec(AdminAuditEntry), 'err' : IDL.Text })],
       ['query'],
     ),
   'getAllBossConfigs' : IDL.Func([], [IDL.Vec(BossConfig)], ['query']),
@@ -861,6 +909,12 @@ export const idlFactory = ({ IDL }) => {
     'priceEuroCents' : IDL.Nat,
     'paymentLink' : IDL.Text,
   });
+  const SummonUnitDef = IDL.Record({
+    'pieceType' : IDL.Text,
+    'level' : IDL.Nat,
+    'hpScale' : IDL.Float64,
+    'damageScale' : IDL.Float64,
+  });
   const SpellConfig = IDL.Record({
     'id' : IDL.Text,
     'aoe' : IDL.Bool,
@@ -873,10 +927,12 @@ export const idlFactory = ({ IDL }) => {
     'isPhysical' : IDL.Bool,
     'name' : IDL.Text,
     'hitTiles' : IDL.Vec(IDL.Tuple(IDL.Int, IDL.Int)),
+    'summonAI' : IDL.Text,
     'description' : IDL.Text,
     'minLevel' : IDL.Nat,
     'apCost' : IDL.Nat,
     'multiTarget' : IDL.Bool,
+    'summonLifespan' : IDL.Nat,
     'modifiableRange' : IDL.Bool,
     'usableByEnemy' : IDL.Bool,
     'maxRange' : IDL.Nat,
@@ -884,6 +940,7 @@ export const idlFactory = ({ IDL }) => {
     'iconEmoji' : IDL.Text,
     'hitsAllies' : IDL.Bool,
     'effectType' : IDL.Text,
+    'summonUnitDef' : SummonUnitDef,
     'usableByPlayer' : IDL.Bool,
     'spellType' : IDL.Text,
     'diagonal' : IDL.Bool,
@@ -891,6 +948,7 @@ export const idlFactory = ({ IDL }) => {
     'range' : IDL.Nat,
     'linear' : IDL.Bool,
     'cooldown' : IDL.Nat,
+    'isSummon' : IDL.Bool,
   });
   const TierSpawnConfig = IDL.Record({
     'adjacentTierPercent' : IDL.Float64,
@@ -948,6 +1006,14 @@ export const idlFactory = ({ IDL }) => {
   const Result = IDL.Record({
     'hasMore' : IDL.Bool,
     'rows' : IDL.Vec(IDL.Vec(Cell)),
+  });
+  const AdminAuditEntry = IDL.Record({
+    'action' : IDL.Text,
+    'adminPrincipal' : IDL.Text,
+    'previousSummary' : IDL.Text,
+    'objectId' : IDL.Text,
+    'newSummary' : IDL.Text,
+    'timestampNs' : IDL.Int,
   });
   const BossStats = IDL.Record({
     'ap' : IDL.Nat,
@@ -1082,6 +1148,31 @@ export const idlFactory = ({ IDL }) => {
       ),
     'adminGrantDoka' : IDL.Func(
         [IDL.Principal, IDL.Nat],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackBossRushConfig' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackColorPalette' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackGameConfig' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackLevelUpConfig' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
+        [],
+      ),
+    'adminRollbackTierSpawnConfig' : IDL.Func(
+        [],
         [IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text })],
         [],
       ),
@@ -1241,6 +1332,11 @@ export const idlFactory = ({ IDL }) => {
     'getAdBoxes' : IDL.Func(
         [],
         [IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text, IDL.Bool))],
+        ['query'],
+      ),
+    'getAdminAuditLog' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Vec(AdminAuditEntry), 'err' : IDL.Text })],
         ['query'],
       ),
     'getAllBossConfigs' : IDL.Func([], [IDL.Vec(BossConfig)], ['query']),

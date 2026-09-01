@@ -6,6 +6,7 @@ import {
   clearPendingDeathPenalty,
   clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
+  confirmPendingDeathPenalty,
   experienceFromCharacterRecord,
   flushPendingDeathPenalty,
   mergeVictoryRewardLiveStats,
@@ -131,6 +132,25 @@ assert.equal(threw, true);
 assert.equal(raiseUiAfterDeathPersist(600, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(900, 900), 900);
 assert.equal(raiseUiAfterDeathPersist(610, 582), 610);
+
+{
+  // Optimistic death UI called onDokaBalanceChange(cut) and left the live
+  // ref uncut. raiseUi(uncut, persisted) then refunds the 40% penalty.
+  const uncutRef = 1000;
+  const optimistic = computeDeathPenalty(100, uncutRef);
+  assert.equal(optimistic.newDoka, 600);
+  const persistedAfterCredit = 900;
+  assert.equal(
+    raiseUiAfterDeathPersist(uncutRef, persistedAfterCredit),
+    1000,
+    "uncut ref + raiseUi restores the pre-penalty wallet",
+  );
+  assert.equal(
+    raiseUiAfterDeathPersist(optimistic.newDoka, persistedAfterCredit),
+    900,
+    "optimistic cut on the live ref lets raiseUi keep the persisted penalty",
+  );
+}
 assert.equal(
   xpAfterDeathPersist({
     uiXp: 64,
@@ -224,6 +244,17 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   lock.hydrateWhenIdle({ doka: uiDoka, xp: uiXp, level: 4 });
   assert.equal(lock.snapshot().doka, 900);
   assert.equal(lock.snapshot().xp, 144);
+}
+
+{
+  // Optimistic death used to call onDokaBalanceChange(120) and leave
+  // dokaBalanceRef at 200. raiseUi(200, 180) then kept the pre-death ghost
+  // and the next heal spent from 200. Snap the live wallet to the written
+  // penalty instead of raising an uncut ref.
+  const uncutRef = 200;
+  const persisted = 180;
+  assert.equal(raiseUiAfterDeathPersist(uncutRef, persisted), uncutRef);
+  assert.equal(persisted, 180);
 }
 
 // Portal applyRewards hydrates absolute XP after await. Lava on the new
@@ -482,9 +513,24 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     action: "clear",
   });
   assert.deepEqual(
+    resolvePendingDeathReplay(110, 200, pending),
+    { action: "write", newXp: 90, newDoka: 120 },
+    "portal +10 after a failed persist must keep the 20/40 cut",
+  );
+  assert.deepEqual(
+    resolvePendingDeathReplay(100, 250, pending),
+    { action: "write", newXp: 80, newDoka: 170 },
+    "ground Doka after a failed persist must keep the 20/40 cut",
+  );
+  assert.deepEqual(
     resolvePendingDeathReplay(150, 250, pending),
+    { action: "write", newXp: 130, newDoka: 170 },
+    "victory credit after a failed persist is unpaid, not a later earn",
+  );
+  assert.deepEqual(
+    resolvePendingDeathReplay(150, 250, { ...pending, cutConfirmed: true }),
     { action: "clear" },
-    "a later earn must not be penalized again",
+    "a later earn after the replica accepted the cut must not be penalized again",
   );
   const portalRaced = computeDeathPenalty(110, 200);
   assert.deepEqual(
@@ -510,8 +556,8 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   assert.equal(experienceFromCharacterRecord(null), null);
   assert.deepEqual(
     resolvePendingDeathReplay(50, 200, sessionPending),
-    { action: "clear" },
-    "stale Play-entry XP matches neither snapshot and drops the replay",
+    { action: "write", newXp: 50, newDoka: 120 },
+    "XP already below the cut still owes the unpaid Doka 40%",
   );
   assert.deepEqual(
     resolvePendingDeathReplay(
@@ -543,12 +589,12 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     afterXp: 80,
     afterDoka: 120,
   };
-  // Stale React/cache XP already shows the 20% cut; canister Doka is still
-  // pre-penalty. Using the prop would miss both snapshot arms and clear.
+  // Canister XP already shows the 20% cut; Doka is still pre-penalty.
+  // Clearing here used to drop the unpaid 40% Doka cut.
   assert.deepEqual(
     resolvePendingDeathReplay(80, 200, pending),
-    { action: "clear" },
-    "asymmetric stale XP + fresh Doka must not be the replay input",
+    { action: "write", newXp: 80, newDoka: 120 },
+    "asymmetric pre-Doka after an XP cut must still write the 40% Doka cut",
   );
   const snap = await readDeathReplayBackendSnapshot({
     fetchDoka: async () => 200,
@@ -589,6 +635,16 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     applyUnpaidDeathPenaltyToWrite(pending, 80, 120),
     { xp: 80, doka: 120 },
     "already-penalized write must not be cut twice",
+  );
+  assert.deepEqual(
+    applyUnpaidDeathPenaltyToWrite(pending, 110, 200),
+    { xp: 90, doka: 120 },
+    "portal +10 on an uncut wallet is after + credit, not a waived cut",
+  );
+  assert.deepEqual(
+    applyUnpaidDeathPenaltyToWrite(pending, 100, 250),
+    { xp: 80, doka: 170 },
+    "ground Doka on an uncut wallet is after + credit, not a waived cut",
   );
   assert.deepEqual(
     resolvePendingDeathReplay(100, 190, pending),
@@ -641,6 +697,56 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
   lock.commit({ doka: backendDoka, xp: backendXp + 40 });
   assert.equal(lock.snapshot().doka, 170);
   assert.equal(backendDoka, 170);
+}
+
+{
+  const storage = new Map<string, string>();
+  const mem: import("./deathPenalty.ts").DeathPenaltyStorage = {
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => {
+      storage.set(k, v);
+    },
+    removeItem: (k) => {
+      storage.delete(k);
+    },
+  };
+  const pending = {
+    slot: 1,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  };
+  writePendingDeathPenalty(mem, pending);
+  const lock = createProgressPersist({ doka: 200, xp: 100, level: 4 });
+  let backendXp = 110;
+  let backendDoka = 200;
+  const flushed = await flushPendingDeathPenalty({
+    storage: mem,
+    slot: 1,
+    persist: lock,
+    fetchSnapshot: async () => ({ xp: backendXp, doka: backendDoka }),
+    writePenalty: async (newXp, newDoka) => {
+      backendXp = newXp;
+      backendDoka = newDoka;
+    },
+  });
+  assert.equal(flushed, true, "portal +10 must not clear an unpaid death cut");
+  assert.equal(backendXp, 90);
+  assert.equal(backendDoka, 120);
+  assert.equal(lock.snapshot().xp, 90);
+  assert.equal(lock.snapshot().doka, 120);
+  assert.equal(readPendingDeathPenalty(mem, 1), null);
+
+  writePendingDeathPenalty(mem, pending);
+  confirmPendingDeathPenalty(mem, pending);
+  const confirmed = readPendingDeathPenalty(mem, 1);
+  assert.equal(confirmed?.cutConfirmed, true);
+  assert.deepEqual(
+    resolvePendingDeathReplay(110, 200, confirmed!),
+    { action: "clear" },
+    "cutConfirmed + portal credit must not apply a second 20/40",
+  );
 }
 
 {

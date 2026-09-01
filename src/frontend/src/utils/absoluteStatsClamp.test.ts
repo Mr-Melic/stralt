@@ -15,5 +15,15 @@ describe("clampSaveBattleStatsWrite", () => {
       clampSaveBattleStatsWrite(stored, { doka: 900, xp: 400, level: 99 }),
       { doka: 200, xp: 80, level: 4 },
     );
+
+    // Failure: saveBattleStats used min(stored, client) for level, so a
+    // stale/custom _level=1 demoted a post-applyRewards character.
+    // Canister saveBattleStats still writes min(stored, client) for level
+    // (SDEG-2026-09-01-001; vehicle #209 / #215). This helper must keep
+    // stored level so a stale/custom _level=1 cannot demote after applyRewards.
+    assert.deepEqual(
+      clampSaveBattleStatsWrite(stored, { doka: 200, xp: 80, level: 1 }),
+      { doka: 200, xp: 80, level: 4 },
+    );
   });
 });

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   classifyWalkReject,
   playerFacingWalkReject,
+  spawnWalkRejectFloat,
 } from "./walkRejectCopy.ts";
 
 describe("playerFacingWalkReject", () => {
@@ -81,6 +82,31 @@ describe("classifyWalkReject", () => {
         pathLength: 3,
       }),
       null,
+    );
+  });
+});
+
+describe("spawnWalkRejectFloat", () => {
+  it("spawns the mapped copy at the given screen point", () => {
+    const calls: Array<{ x: number; y: number; text: string }> = [];
+    spawnWalkRejectFloat(
+      {
+        spawnFloatText: (x, y, text) => {
+          calls.push({ x, y, text });
+        },
+      },
+      { x: 40, y: 80 },
+      "unreachable",
+    );
+    assert.deepEqual(calls, [{ x: 40, y: 80, text: "Can't reach" }]);
+  });
+
+  it("no-ops when the effects manager is missing", () => {
+    assert.doesNotThrow(() =>
+      spawnWalkRejectFloat(null, { x: 1, y: 1 }, "no_mp"),
+    );
+    assert.doesNotThrow(() =>
+      spawnWalkRejectFloat(undefined, { x: 1, y: 1 }, "blocked"),
     );
   });
 });

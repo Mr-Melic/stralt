@@ -16,6 +16,21 @@ export const BUILT_IN_SPELL_IDS = [
 ] as const;
 
 const SPELL_TYPES = new Set(["damage", "heal", "drain"]);
+const SUMMON_AIS = new Set([
+  "hunter",
+  "guardian",
+  "archer",
+  "bomber",
+  "healer",
+]);
+const PIECE_TYPES = new Set([
+  "king",
+  "queen",
+  "pawn",
+  "rook",
+  "bishop",
+  "knight",
+]);
 const EFFECT_TYPES = new Set([
   "damage",
   "heal",
@@ -323,6 +338,12 @@ export function validateSpellConfig(config: {
   spellType: string;
   effectType: string;
   effectCategory: string;
+  summonAI?: string;
+  summonLifespan?: number;
+  summonPieceType?: string;
+  summonLevel?: number;
+  hpScale?: number;
+  damageScale?: number;
 }): string | null {
   const idErr = requireId(config.id, "Spell");
   if (idErr) return idErr;
@@ -342,7 +363,63 @@ export function validateSpellConfig(config: {
   if (!EFFECT_CATEGORIES.has(config.effectCategory)) {
     return "effectCategory is not a recognized value";
   }
+  const ai = config.summonAI ?? "";
+  if (ai && !SUMMON_AIS.has(ai)) {
+    return "summonAI is not a recognized archetype";
+  }
+  if (config.summonLifespan != null && config.summonLifespan > 20) {
+    return "summonLifespan cannot exceed 20";
+  }
+  if (config.summonLevel != null && config.summonLevel > 99) {
+    return "summonUnitDef.level cannot exceed 99";
+  }
+  const piece = config.summonPieceType ?? "";
+  if (piece && !PIECE_TYPES.has(piece)) {
+    return "summonUnitDef.pieceType is not a recognized piece type";
+  }
+  if (config.hpScale != null) {
+    const hp = finiteInRange("summonUnitDef.hpScale", config.hpScale, 0, 10);
+    if (hp) return hp;
+  }
+  if (config.damageScale != null) {
+    const dmg = finiteInRange(
+      "summonUnitDef.damageScale",
+      config.damageScale,
+      0,
+      10,
+    );
+    if (dmg) return dmg;
+  }
   return null;
+}
+
+/**
+ * Appearance/editor updates must keep stored spell arrays.
+ * Failure: union+max on incoming keys minted retired ids and unpaid levels.
+ */
+export function resolveAppearanceSpellLevels(args: {
+  storedKeys: readonly string[];
+  storedValues: readonly number[];
+  incomingKeys: readonly string[];
+  incomingValues: readonly number[];
+}): { keys: string[]; values: number[] } {
+  void args.incomingKeys;
+  void args.incomingValues;
+  return {
+    keys: [...args.storedKeys],
+    values: [...args.storedValues],
+  };
+}
+
+/** Incoming appearance arrays must not add ids or raise paid levels. */
+export function incomingSpellLevelsWouldMint(args: {
+  storedKeys: readonly string[];
+  incomingKeys: readonly string[];
+  storedLevel: number;
+  incomingLevel: number;
+}): boolean {
+  const addsId = args.incomingKeys.some((id) => !args.storedKeys.includes(id));
+  return addsId || args.incomingLevel > args.storedLevel;
 }
 
 /** Retired catalog spells stay in the library only if the player already owns them. */

@@ -348,6 +348,35 @@ export function resolveControlledSummonMoveDest(
   return next;
 }
 
+/**
+ * Post-move landing used by AI summons and player-controlled walks.
+ * Player clicks used to write the raw destination and could sit on the
+ * only player→exit corridor (or jointly cut two 1-wide paths).
+ */
+export function resolveProgressionSafeOccupantCell(
+  dest: OccCell,
+  ctx: OccupancyContext,
+): OccCell {
+  let next = dest;
+  const reserved = ctx.reserved;
+  if (reserved?.has(occKey(next.x, next.y))) {
+    const [slid] = relocateOffMandatoryCells([next], reserved, ctx);
+    next = slid;
+  }
+  if (ctx.progressStart && ctx.portals.size > 0) {
+    const [cut] = unsealProgressionOccupants(
+      [next],
+      ctx.tiles,
+      ctx.voidTiles,
+      ctx.portals,
+      ctx.progressStart,
+      ctx,
+    );
+    next = cut;
+  }
+  return next;
+}
+
 export function relocateOffMandatoryCells(
   occupants: OccCell[],
   mandatory: Set<string>,

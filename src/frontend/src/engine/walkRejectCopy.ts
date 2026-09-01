@@ -36,3 +36,17 @@ export function classifyWalkReject(input: {
   if (pathLength > mp) return "not_enough_mp";
   return null;
 }
+
+export interface WalkRejectFloatSink {
+  spawnFloatText(x: number, y: number, text: string, color?: string): void;
+}
+
+/** Float walk-reject copy at a screen point. No-ops if effects are missing. */
+export function spawnWalkRejectFloat(
+  em: WalkRejectFloatSink | null | undefined,
+  screen: { x: number; y: number },
+  kind: WalkRejectReason,
+): void {
+  if (!em) return;
+  em.spawnFloatText(screen.x, screen.y, playerFacingWalkReject(kind));
+}

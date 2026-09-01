@@ -951,52 +951,6 @@ body {
   min-height: 100dvh;
 }
 
-/* ── Spell icon glow styles (static, no animation) ─────────────────────── */
-.spell-glow-fire {
-  box-shadow: 0 0 6px 1px rgba(255, 100, 20, 0.45), inset 0 0 5px
-    rgba(255, 120, 20, 0.15);
-}
-.spell-glow-ice {
-  box-shadow: 0 0 6px 1px rgba(80, 160, 255, 0.45), inset 0 0 5px
-    rgba(100, 170, 255, 0.15);
-}
-.spell-glow-drain {
-  box-shadow: 0 0 6px 1px rgba(160, 40, 220, 0.45), inset 0 0 5px
-    rgba(170, 50, 230, 0.15);
-}
-.spell-glow-heal {
-  box-shadow: 0 0 6px 1px rgba(30, 200, 100, 0.45), inset 0 0 5px
-    rgba(40, 210, 110, 0.15);
-}
-.spell-glow-lightning {
-  box-shadow: 0 0 6px 1px rgba(240, 220, 40, 0.45), inset 0 0 5px
-    rgba(250, 230, 50, 0.15);
-}
-.spell-glow-poison {
-  box-shadow: 0 0 6px 1px rgba(100, 200, 30, 0.45), inset 0 0 5px
-    rgba(110, 210, 40, 0.15);
-}
-.spell-glow-shadow {
-  box-shadow: 0 0 6px 1px rgba(90, 20, 140, 0.5), inset 0 0 5px
-    rgba(100, 25, 150, 0.18);
-}
-.spell-glow-holy {
-  box-shadow: 0 0 6px 1px rgba(240, 200, 40, 0.45), inset 0 0 5px
-    rgba(250, 210, 50, 0.15);
-}
-.spell-glow-physical {
-  box-shadow: 0 0 6px 1px rgba(240, 240, 240, 0.38), inset 0 0 5px
-    rgba(250, 250, 250, 0.12);
-}
-.spell-glow-default {
-  box-shadow: 0 0 6px 1px rgba(200, 30, 30, 0.45), inset 0 0 5px
-    rgba(210, 40, 40, 0.15);
-}
-/* Paused when on cooldown */
-.spell-glow-paused {
-  opacity: 0.5;
-}
-
 @keyframes fadeOut {
   0% {
     opacity: 1;

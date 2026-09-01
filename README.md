@@ -74,16 +74,23 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP accumulators |
 | `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
 | [docs/automation/MASTER_ROADMAP.md](docs/automation/MASTER_ROADMAP.md) | Master Technical Director roadmap (no gameplay changes) |
-| [docs/automation/ACTION_IDS_2026-08-31.md](docs/automation/ACTION_IDS_2026-08-31.md) | Current ACTION_ID ledger (reuses 2026-08-30 IDs) |
+| [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | Current director ACTION_ID ledger (reuses 08-30/08-31 IDs) |
+| [docs/automation/ACTION_IDS_2026-08-31.md](docs/automation/ACTION_IDS_2026-08-31.md) | 2026-08-31 specialist dump yard — do not append |
 | [docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md](docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md) | Player-experience coherence audit (systems, not process) |
 | [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Owner-facing aggregate telemetry design (no production instrumentation) |
 | [docs/automation/TELEMETRY_BALANCE_2026-09-01.md](docs/automation/TELEMETRY_BALANCE_2026-09-01.md) | TBC cron 2026-09-01: STATUS WAITING_FOR_TELEMETRY (no collectors, 0 rows) |
 | [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | TBC 2026-09-01 ACTION_ID ledger (`TBC-2026-09-01-001`; prior TBC/AQA IDs still NEW) |
+| [docs/automation/TELEMETRY_DASHBOARD_2026-09-01.md](docs/automation/TELEMETRY_DASHBOARD_2026-09-01.md) | Owner Health dashboard support matrix (design only; refresh of 2026-08-31) |
+| [docs/automation/ACTION_IDS_TADD_2026-09-01.md](docs/automation/ACTION_IDS_TADD_2026-09-01.md) | Telemetry dashboard designer ACTION_IDs (2026-09-01) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md) | Current owner-facing aggregate telemetry design (no production instrumentation) |
+| [docs/automation/ACTION_IDS_GTAD_2026-09-01.md](docs/automation/ACTION_IDS_GTAD_2026-09-01.md) | GTAD-2026-09-01 ACTION_ID ledger (supersedes 08-31 GTAD ids for implementers) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Prior telemetry architecture (PR #130; still valid policy, stale line numbers) |
 | [docs/design/ENEMY_FORMATIONS_2026-08-31.md](docs/design/ENEMY_FORMATIONS_2026-08-31.md) | Proposed enemy synergy packs (design only) |
 | [docs/ENEMY_AI_EVOLUTION.md](docs/ENEMY_AI_EVOLUTION.md) | Proposed unbounded enemy AI modules (design only; no production AI in that doc) |
 | [docs/design/BOSS_AND_SPELL_DISCOVERY.md](docs/design/BOSS_AND_SPELL_DISCOVERY.md) | Proposed boss sheets (19 shipped + Wave 2 + Wave 3), no-cap scaling, and boss-spell discovery classes (design only) |
 | [docs/WORLD_DYNAMICS.md](docs/WORLD_DYNAMICS.md) | World-feature catalog (rarity + relative difficulty). Not wired into map gen |
 | `src/frontend/src/engine/battleStartPlacement.ts` | Battle-start cell spacing (player ≥3 / enemies ≥2, occupancy fallback) |
+| `src/frontend/src/engine/statusEffects.ts` | Non-DoT apply/refresh + `getStatModifier` (DoT stacking stays in `dotStacks.ts`) |
 | [docs/automation/ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md](docs/automation/ENEMY_BOSS_ADMIN_DESIGN_2026-08-31.md) | Owner enemy/boss studio design (docs only) |
 | [docs/automation/ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md](docs/automation/ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md) | EBA-2026-08-31 ACTION_ID ledger |
 | [docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md](docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md) | Observe→win discovery, pool generations, Wave-1 spell cards (design only) |

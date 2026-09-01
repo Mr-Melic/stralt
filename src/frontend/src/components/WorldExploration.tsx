@@ -34,7 +34,6 @@ import type {
 import AchievementToast from "./AchievementToast";
 import AchievementsPanel from "./AchievementsPanel";
 import BattleUIPanel from "./BattleUIPanel";
-import BoostToggle from "./BoostToggle";
 import type { DebugContext } from "./ChatPanel";
 import DraggablePanel from "./DraggablePanel";
 import EnemyRegister from "./EnemyRegister";
@@ -125,12 +124,9 @@ import {
 import {
   type DeathPipelineCtx,
   processCombatantDeath,
+  shouldApplyLeaderDeathBoost,
 } from "../engine/deathPipeline";
-import {
-  type DotTickResult,
-  appendDotStack,
-  tickDotStacks,
-} from "../engine/dotStacks";
+import { type DotTickResult, tickDotStacks } from "../engine/dotStacks";
 import { EffectsManager } from "../engine/effects";
 import {
   type AICell,
@@ -191,6 +187,7 @@ import {
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
 import { playerFacingRejectReason } from "../engine/rejectCopy";
+import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
 import {
   type PlayerSpellContextDeps,
   createPlayerSpellContext,
@@ -207,6 +204,12 @@ import {
   resolveSpellCast,
 } from "../engine/spellEngine";
 import { setStarfieldPaused } from "../engine/starfieldActivity";
+import {
+  formatBattleEffectMagnitude,
+  getStatModifier,
+  mergeIncomingEffect,
+  tickNonDotEffects,
+} from "../engine/statusEffects";
 import {
   type SummonExecutorHelpers,
   executeSummonAction,
@@ -296,6 +299,7 @@ import {
   applyUnpaidDeathPenaltyToWrite,
   clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
+  confirmAndClearPendingDeathPenaltyAnywhere,
   defaultDeathPenaltyStorage,
   flushPendingDeathPenalty,
   mergeVictoryRewardLiveStats,
@@ -327,12 +331,15 @@ import {
 import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
+  creditLiveDoka,
   nextDokaAfterShopSpend,
   resolveAbsoluteWriteHp,
   resolveOverworldHealSpend,
   shouldRollbackFailedHeal,
+  shouldRollbackFailedShopSpend,
   shouldStartDokaHeal,
   syncLiveDokaFromProp,
+  writeLiveDoka,
 } from "../utils/itemShop";
 import {
   activatePlayerMirror,
@@ -348,7 +355,6 @@ import {
   shouldIgnoreSyntheticClickAfterTouch,
 } from "../utils/pointerParity";
 import {
-  applyShopCreditDeltaToUi,
   applySpendToCommitted,
   clampAbsoluteProgressWrite,
   createProgressPersist,
@@ -363,12 +369,12 @@ import {
 } from "../utils/recapWorldInput";
 import {
   RENAME_DOKA_COST,
+  beginRename,
   committedDokaAfterRename,
   liveDokaAfterRename,
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
-  shouldStartRename,
 } from "../utils/renameCharacter";
 import {
   PORTAL_TRANSITION_XP,
@@ -1222,19 +1228,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     currentChallengeRef.current = currentChallenge;
   }, [currentChallenge]);
-  const [bloodBalance, _setBloodBalance] = useState<number>(() => {
-    try {
-      const _bs = localStorage.getItem(
-        `pbv_blood_balance_${userId}_slot${characterSlot}`,
-      );
-      return _bs !== null
-        ? Math.max(0, Math.min(100, Number.parseInt(_bs, 10)))
-        : 100;
-    } catch {
-      return 100;
-    }
-  });
-  const _bloodBalanceRef = useRef<number>(100);
   const _noSpawnCounterRef = useRef<number>(0);
 
   // ── EXP8: Dungeon Chain Run state ───────────────────────────────────────────────
@@ -1456,9 +1449,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (credited == null) return;
         const gained = creditedDokaDelta(previous, credited);
         if (gained > 0) {
-          onDokaBalanceChange(
-            applyShopCreditDeltaToUi(dokaBalanceRef.current, gained),
-          );
+          onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, gained));
           toast.success(
             `${(announceAmount ?? gained).toLocaleString()} Doka credited!`,
           );
@@ -1484,9 +1475,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         achievementId,
       );
       if ("ok" in result && result.ok > 0) {
-        onDokaBalanceChange(
-          applyShopCreditDeltaToUi(dokaBalanceRef.current, result.ok),
-        );
+        onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, result.ok));
       }
       return result;
     },
@@ -1847,35 +1836,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       }
       setActiveEffects((prev) => {
-        // Section 4: DoTs stack additively — each application appends a new
-        // independent stack with its own duration (no replace). Non-DoT
-        // buffs/debuffs retain the existing replace-or-refresh behavior.
-        let next: ActiveEffect[];
-        if (effect.type === "dot") {
-          // Ensure the incoming DoT has a stackId so React keys stay unique
-          // across multiple stacks of the same DoT type.
-          const withStackId: ActiveEffect =
-            (effect.stackId ?? effect.id)
-              ? effect
-              : {
-                  ...effect,
-                  stackId: `dot-${effect.effectName}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-                };
-          next = appendDotStack(prev, withStackId);
-        } else {
-          // Replace existing same-name+target effect, or append
-          const existing = prev.findIndex(
-            (e) =>
-              e.targetId === effect.targetId &&
-              e.effectName === effect.effectName,
-          );
-          if (existing >= 0) {
-            next = [...prev];
-            next[existing] = effect;
-          } else {
-            next = [...prev, effect];
-          }
-        }
+        // Section 4: DoTs stack additively; non-DoT buffs/debuffs
+        // replace-or-refresh. mergeIncomingEffect owns that list math.
+        const next = mergeIncomingEffect(prev, effect);
         activeEffectsRef.current = next;
         return next;
       });
@@ -1888,14 +1851,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         effect.dotDamagePerTurn !== undefined &&
         effect.dotDamagePerTurn > 0;
       if (!isDot && stat && modifier !== undefined) {
-        const isPercentStat = stat !== "mp" && stat !== "ap";
-        const signedMag = isPercentStat
-          ? modifier > 1
-            ? `+${Math.round((modifier - 1) * 100)}%`
-            : `${Math.round((modifier - 1) * 100)}%`
-          : modifier > 0
-            ? `+${modifier}`
-            : `${modifier}`;
+        const signedMag = formatBattleEffectMagnitude(stat, modifier);
         const color = effectType === "buff" ? "#22c55e" : "#a855f7";
         const targetName =
           effect.targetId === "player" ? "you" : effect.targetId;
@@ -1992,35 +1948,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // Decrement duration for non-DoT effects on this target (buffs/debuffs).
         // DoT stacks were already handled by tickDotStacks above and are present
         // in `next` with decremented durations (or dropped if expired).
-        // We must process only the non-DoT effects that tickDotStacks passed
-        // through untouched — re-scan `next` for non-DoT effects on this target.
-        const afterNonDot: ActiveEffect[] = [];
-        for (const eff of next) {
-          if (eff.targetId !== targetId) {
-            afterNonDot.push(eff);
-            continue;
-          }
-          if (eff.type === "dot") {
-            // Already ticked by tickDotStacks — keep as-is.
-            afterNonDot.push(eff);
-            continue;
-          }
-          // Non-DoT effect: decrement duration, drop if expired.
-          const newDur = eff.duration - 1;
-          if (newDur > 0) {
-            afterNonDot.push({ ...eff, duration: newDur });
-          }
+        // tickNonDotEffects leaves type === "dot" rows untouched.
+        const nonDotTick = tickNonDotEffects(next, targetId);
+        // Current log: every decremented non-DoT with stat+modifier, not
+        // only rows that actually expired. Characterized — do not "fix" here.
+        for (const eff of nonDotTick.decremented) {
           const stat = eff.stat;
           const modifier = eff.modifier;
           if (stat && modifier !== undefined) {
-            const isPercentStat = stat !== "mp" && stat !== "ap";
-            const signedMag = isPercentStat
-              ? modifier > 1
-                ? `+${Math.round((modifier - 1) * 100)}%`
-                : `${Math.round((modifier - 1) * 100)}%`
-              : modifier > 0
-                ? `+${modifier}`
-                : `${modifier}`;
+            const signedMag = formatBattleEffectMagnitude(stat, modifier);
             logBattleEntry(
               `${eff.effectName || "Effect"} expired (${signedMag} ${stat.toUpperCase()} ended)`,
               "#94a3b8",
@@ -2028,8 +1964,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
         }
         // M-5: also update ref immediately so subsequent reads in the same turn are fresh
-        activeEffectsRef.current = afterNonDot;
-        return afterNonDot;
+        activeEffectsRef.current = nonDotTick.remaining;
+        return nonDotTick.remaining;
       });
       // enemy effects are stored in activeEffects with targetId === enemy.id, so they are already ticked above
     },
@@ -2103,6 +2039,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [renameInput, setRenameInput] = useState("");
   const [isRenaming, setIsRenaming] = useState(false);
+  const renameInFlightRef = useRef(false);
 
   // Shop modal state
   const [showShop, setShowShop] = useState(false);
@@ -2132,7 +2069,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
-    if (!shouldStartRename(isRenaming, dokaBalanceRef.current)) {
+    if (!beginRename(renameInFlightRef, dokaBalanceRef.current)) {
       if (dokaBalanceRef.current < RENAME_DOKA_COST) {
         toast.error("Insufficient Doka (need 100)");
       }
@@ -2166,7 +2103,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           toast.error(parsed.err);
           return;
         }
-        onDokaBalanceChange(liveDokaAfterRename(dokaBalanceRef.current));
+        onDokaBalanceChange(
+          writeLiveDoka(
+            dokaBalanceRef,
+            liveDokaAfterRename(dokaBalanceRef.current),
+          ),
+        );
         toast.success(`Name changed to "${newName}"`);
         setShowRenameModal(false);
         setRenameInput("");
@@ -2174,6 +2116,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     } catch {
       toast.error("Rename failed. Please try again.");
     } finally {
+      renameInFlightRef.current = false;
       setIsRenaming(false);
     }
   };
@@ -3215,8 +3158,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // otherwise hydrateWhenIdle copies the short UI over committed
           // and the next heal/shop saveBattleStats wipes the difference.
           const nextUi = Math.max(0, dokaBalanceRef.current - spent);
-          dokaBalanceRef.current = nextUi;
-          onDokaBalanceChange(nextUi);
+          onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, nextUi));
           setSpellLevels((prev) => {
             const next = applySpellLevel(prev, spellId, newLevel);
             try {
@@ -3246,7 +3188,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const savedExp =
       character?.experience != null ? Number(character.experience) : 0;
     const s = character?.stats;
-    const expToNext = Math.floor(100 * 2 ** (savedLevel - 1));
+    const expToNext = xpForNextLevel(savedLevel);
     return {
       hp: s?.hp != null ? Number(s.hp) : 100,
       maxHp: s?.hp != null ? Number(s.hp) : 100,
@@ -3308,29 +3250,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
   // Doka balance is owned by GameFlow; no re-sync needed here.
 
-  // Get effective stat modifier for a combatant from active effects
-  const getStatModifier = useCallback(
-    (
-      targetId: string,
-      stat: string,
-      activeEffectsSnap: ActiveEffect[],
-    ): number => {
-      let multiplier = 1;
-      let additive = 0;
-      for (const eff of activeEffectsSnap) {
-        if (eff.targetId !== targetId || eff.stat !== stat) continue;
-        if (eff.type === "buff" || eff.type === "debuff") {
-          if (stat === "mp" || stat === "ap") {
-            additive += eff.modifier ?? 0;
-          } else {
-            multiplier *= eff.modifier ?? 1;
-          }
-        }
-      }
-      return stat === "mp" || stat === "ap" ? additive : multiplier;
-    },
-    [],
-  );
+  // getStatModifier is the engine/statusEffects helper (imported).
 
   const computeDamage = useCallback(
     (
@@ -3405,7 +3325,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       return { finalDamage: dmg, breakdown: breakdownParts.join(" → ") };
     },
-    [characterStats.level, characterStats.sp, getStatModifier],
+    [characterStats.level, characterStats.sp],
   );
 
   const calculatePlayerDamage = useCallback(
@@ -3506,7 +3426,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return dmg;
     },
-    [getStatModifier, logBattleEntry, setCharacterStats],
+    [logBattleEntry, setCharacterStats],
   );
 
   const enemyTakesDamage = useCallback(
@@ -3577,12 +3497,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return dmg;
     },
-    [
-      getStatModifier,
-      combatantStoreCtx,
-      activeMapModifierTypes,
-      characterStats.hp,
-    ],
+    [combatantStoreCtx, activeMapModifierTypes, characterStats.hp],
   );
 
   // EXP6: Handle item use from BuffShop
@@ -6515,9 +6430,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             if (newDoka > 0) {
               progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(
-                applyShopCreditDeltaToUi(dokaBalanceRef.current, chainBonus),
-              );
+              onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
             } else {
               releaseFlag(dungeonCompletionSavedRef);
             }
@@ -9163,6 +9076,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         ),
       logDefeated: (name) => logBattleEntry(`${name} is defeated`, "#ef4444"),
       applyLeaderDeathBoost: (deadId) => {
+        if (
+          !shouldApplyLeaderDeathBoost(
+            deadId,
+            leaderEnemyIdRef.current,
+            leaderDiedRef.current,
+          )
+        ) {
+          return;
+        }
         leaderDiedRef.current = true;
         battleLeaderSlainRef.current = true;
         const c = combatantsRef.current?.find((e) => e.id === deadId);
@@ -9786,7 +9708,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     isPaperWindstorm,
     enemyHpMap,
     leaderBoostPercent,
-    getStatModifier,
     calculatePlayerDamage,
     enemyTakesDamage,
     calcEnemyMaxHp,
@@ -9998,7 +9919,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [
       selectedSummonSpellId,
       playerSpellContext,
-      getStatModifier,
       combatantStoreCtx,
       currentMap,
       logBattleEntry,
@@ -11417,9 +11337,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 if (newDoka > 0) {
                   progressPersistRef.current.commit({ doka: newDoka });
-                  onDokaBalanceChange(
-                    applyShopCreditDeltaToUi(dokaBalanceRef.current, 300),
-                  );
+                  onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
                 } else {
                   releaseFlag(shrineRewardClaimedRef);
                 }
@@ -11472,9 +11390,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             if (newDoka > 0) {
               progressPersistRef.current.commit({ doka: newDoka });
-              onDokaBalanceChange(
-                applyShopCreditDeltaToUi(dokaBalanceRef.current, hit.value),
-              );
+              onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
               setDokaLoot((prev) =>
                 prev.map((l) =>
                   l.id === hit.id ? { ...l, collected: true } : l,
@@ -12542,7 +12458,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             recapGrant.xpDelta,
           );
           const finalRecapData: BattleRecapData = {
-            mapTitle: currentMapRef.current?.id || "Unknown",
+            mapTitle:
+              currentMapRef.current?.levelZone?.name ||
+              currentMapRef.current?.id ||
+              "Unknown",
             xpEarned: recapGrant.xpDelta,
             dokaEarned: recapGrant.dokaDelta,
             hitsDealt: battleHitsRef.current,
@@ -12613,6 +12532,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             "Victory recap built",
             JSON.stringify(recapWithUnlocks),
           );
+          if (shouldAnnounceLevelUp(characterStats.level, recapXp.level)) {
+            playSound("level_up");
+          }
           if (onShowBattleSummary) {
             onShowBattleSummary(recapWithUnlocks);
             logDebugInfo("BATTLE", "onShowBattleSummary fired for victory");
@@ -12674,8 +12596,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // copies that inflated UI into committed and the next persist
               // writes the pre-spend wallet back to the canister.
               onDokaBalanceChange(
-                applyShopCreditDeltaToUi(
-                  dokaBalanceRef.current,
+                creditLiveDoka(
+                  dokaBalanceRef,
                   _rewardRecap.dokaEarned ?? totalDoka,
                 ),
               );
@@ -12704,7 +12626,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           onShowBattleSummary(
             attachRecapUnlocks(
               {
-                mapTitle: currentMapRef.current?.id || "Unknown",
+                mapTitle:
+                  currentMapRef.current?.levelZone?.name ||
+                  currentMapRef.current?.id ||
+                  "Unknown",
                 xpEarned: 0,
                 dokaEarned: 0,
                 hitsDealt: 0,
@@ -12916,8 +12841,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // applyRewards' absolute newDoka refunds a recap heal/shop spend
             // the player already applied locally while this persist ran.
             onDokaBalanceChange(
-              applyShopCreditDeltaToUi(
-                dokaBalanceRef.current,
+              creditLiveDoka(
+                dokaBalanceRef,
                 persisted.dokaEarned ?? roomClearDoka,
               ),
             );
@@ -12957,6 +12882,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       };
 
       // Set popup state (non-blocking overlay)
+      if (shouldAnnounceLevelUp(characterStats.level, leveled.newLevel)) {
+        playSound("level_up");
+      }
       if (onShowBattleSummary) {
         onShowBattleSummary(
           attachRecapUnlocks(finalRecapData, newlyUnlockedInBattleRef.current),
@@ -13057,8 +12985,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellLevels: spellLevelsRef.current,
                 }),
               );
-              clearPendingDeathPenaltyAnywhere(
+              confirmAndClearPendingDeathPenaltyAnywhere(
                 characterSlot,
+                {
+                  slot: characterSlot,
+                  preXp: committed.xp,
+                  preDoka: dokaBase ?? committed.doka,
+                  afterXp: after.newXp,
+                  afterDoka: after.newDoka,
+                },
                 DEATH_PENALTY_STORAGE,
               );
             } catch (err) {
@@ -13077,15 +13012,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               xp: after.newXp,
               level: committed.level,
             });
-            // A claim/applyRewards ahead of this write is in committed, not
-            // the optimistic UI cut. Raise UI so hydrateWhenIdle cannot copy
-            // the pre-credit snapshot over the persisted penalty. Level is
-            // the same class: victory persist can bump committed.level while
-            // the live hydrate is skipped, so raise UI level too.
-            const nextDoka = raiseUiAfterDeathPersist(
-              dokaBalanceRef.current,
-              after.newDoka,
-            );
+            // Snap the live wallet to the persisted penalty. raiseUi(ref, after)
+            // used the uncut ref (optimistic onDokaBalanceChange never wrote it)
+            // and kept the pre-death ghost; a later heal then spent from that.
+            // Level still raises: victory persist can bump committed.level while
+            // the live hydrate is skipped.
+            const nextDoka = after.newDoka;
             const uiLevelBefore = characterStatsRef.current.level ?? 1;
             const nextXp = xpAfterDeathPersist({
               uiXp: characterStatsRef.current.exp ?? 0,
@@ -13097,9 +13029,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               uiLevelBefore,
               committed.level,
             );
-            if (nextDoka !== dokaBalanceRef.current) {
-              onDokaBalanceChange(nextDoka);
-            }
+            onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, nextDoka));
             if (
               nextXp !== (characterStatsRef.current.exp ?? 0) ||
               nextLevel !== (characterStatsRef.current.level ?? 1)
@@ -13121,12 +13051,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         )
         .catch((err) => console.error("[death-save] failed:", err));
     }
+    onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, dokaAfter));
     setCharacterStats((prev) => ({
       ...prev,
       exp: xpAfter,
       hp: respawnHp,
     }));
-    onDokaBalanceChange(dokaAfter);
     setDeathPenalty({ xpLost, dokaLost });
     return { xpLost, dokaLost, xpAfter, dokaAfter };
   }, [actor, character, characterSlot, onDokaBalanceChange, setCharacterStats]);
@@ -13199,7 +13129,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Death persist raiseUi can restore a pre-spend wallet while this
           // write is queued. Sync UI down so idle hydrate cannot refund.
           if (dokaBalanceRef.current > writeDoka) {
-            onDokaBalanceChange(writeDoka);
+            onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, writeDoka));
           }
           return true;
         })
@@ -13269,8 +13199,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           { skipBeforeEach: true },
         );
         if (cancelled) return;
-        clearPendingDeathPenaltyAnywhere(characterSlot, DEATH_PENALTY_STORAGE);
-        onDokaBalanceChange(decision.newDoka);
+        confirmAndClearPendingDeathPenaltyAnywhere(
+          characterSlot,
+          pending,
+          DEATH_PENALTY_STORAGE,
+        );
+        onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, decision.newDoka));
         setCharacterStats((prev) => ({ ...prev, exp: decision.newXp }));
       } catch (err) {
         console.error("[death-save] replay failed:", err);
@@ -13372,7 +13306,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           xpForNextLevel: xpForNextLevel(characterStats.level),
           enemiesDefeated: [],
           hitsDealt: 0,
-          mapTitle: currentMapRef.current?.id || "Unknown",
+          mapTitle:
+            currentMapRef.current?.levelZone?.name ||
+            currentMapRef.current?.id ||
+            "Unknown",
         };
         if (onShowBattleSummary) {
           onShowBattleSummary(
@@ -14493,6 +14430,35 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     );
                   }
                 }
+                // Void Rift: same store commit as enemy / enemy-summon turns.
+                // applyTurnStart only mutates the turn-order entry; without
+                // updateCombatant a Wolf stayed at full store HP (and at
+                // ≤3 HP never died) while the log still claimed the tick.
+                if (isVoidRift) {
+                  const live = getLiveCombatants(combatantStoreCtx).find(
+                    (e) => e.id === nextCombatant.id,
+                  );
+                  if (live && live.hp > 0) {
+                    const { newHp, lethal } = enemyHpAfterHazardDamage(
+                      live.hp,
+                      VOID_RIFT_TICK,
+                    );
+                    setEnemyHpMap((prev) => ({
+                      ...prev,
+                      [nextCombatant.id]: newHp,
+                    }));
+                    updateCombatant(combatantStoreCtx, nextCombatant.id, {
+                      hp: newHp,
+                    });
+                    if (lethal) {
+                      processCombatantDeathCb(nextCombatant.id);
+                    }
+                    logBattleEntry(
+                      `Void Rift deals 3 damage to ${nextCombatant.name}!`,
+                      "#bc8cff",
+                    );
+                  }
+                }
                 const afterTicks = getLiveCombatants(combatantStoreCtx).find(
                   (e) => e.id === nextCombatant.id,
                 );
@@ -14720,7 +14686,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     characterStats.level,
     logBattleEntry,
     processActiveEffects,
-    getStatModifier,
     isTimeWarp,
     isPlagueZone,
     isVoidRift,
@@ -17663,49 +17628,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             {characterStats.exp}/{characterStats.expToNext}
           </span>
         </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            marginLeft: "8px",
-          }}
-        >
-          <span
-            style={{
-              color: "#cc0000",
-              fontSize: "10px",
-              fontWeight: "bold",
-              textShadow: "0 0 4px #8b0000",
-            }}
-          >
-            BLOOD
-          </span>
-          <div
-            style={{
-              width: "60px",
-              height: "8px",
-              background: "#1a0000",
-              border: "1px solid #8b0000",
-              borderRadius: "2px",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                width: `${bloodBalance}%`,
-                height: "100%",
-                background: "linear-gradient(90deg, #8b0000, #cc0000)",
-                transition: "width 0.3s ease",
-              }}
-            />
-          </div>
-          <span
-            style={{ color: "#cc0000", fontSize: "10px", fontWeight: "bold" }}
-          >
-            {bloodBalance}
-          </span>
-        </div>
         {/* Doka balance chip + Shop button */}
         <div className="flex items-center gap-1.5">
           <span className="stone-pill stone-pill-gold text-[10px] font-bold whitespace-nowrap min-w-[60px] justify-center">
@@ -17851,13 +17773,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               characterStatsRef.current.hp,
               next,
             );
-            dokaBalanceRef.current = next;
-            onDokaBalanceChange(next);
+            onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, next));
             return persist.then((ok) => {
-              if (!ok) {
-                const restored = dokaBalanceRef.current + amount;
-                dokaBalanceRef.current = restored;
-                onDokaBalanceChange(restored);
+              if (
+                !ok &&
+                shouldRollbackFailedShopSpend({
+                  liveDoka: dokaBalanceRef.current,
+                  expectedDoka: next,
+                })
+              ) {
+                onDokaBalanceChange(
+                  writeLiveDoka(
+                    dokaBalanceRef,
+                    dokaBalanceRef.current + amount,
+                  ),
+                );
               }
               return ok;
             });
@@ -18383,8 +18313,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         resolved.nextHp,
                         resolved.nextDoka,
                       );
-                      dokaBalanceRef.current = resolved.nextDoka;
-                      onDokaBalanceChange(resolved.nextDoka);
+                      onDokaBalanceChange(
+                        writeLiveDoka(dokaBalanceRef, resolved.nextDoka),
+                      );
                       void persist.then((ok) => {
                         dokaHealInFlightRef.current = false;
                         if (ok) return;
@@ -18403,8 +18334,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           ...prev,
                           hp: hpBefore,
                         }));
-                        dokaBalanceRef.current = dokaBefore;
-                        onDokaBalanceChange(dokaBefore);
+                        onDokaBalanceChange(
+                          writeLiveDoka(dokaBalanceRef, dokaBefore),
+                        );
                       });
                     }}
                     style={{

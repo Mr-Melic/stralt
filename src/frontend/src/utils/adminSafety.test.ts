@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import {
   achievementUnlockRejected,
   clampDungeonDepth,
+  incomingSpellLevelsWouldMint,
   isBanReasonKey,
   isBuiltInSpellId,
   maxPersistedHp,
+  resolveAppearanceSpellLevels,
   safeExternalHref,
   shouldCountBossRushRun,
   shouldIncludeBackendSpellInLibrary,
@@ -134,9 +136,13 @@ assert.ok(validateDokaGrant(10_000_001));
 assert.equal(validateDokaGrant(100), null);
 
 assert.equal(validateAssignRole("admn"), 'role must be "admin" or "user"');
+// Failure: MixinAuthorization.assignCallerUserRole accepted #guest and
+// self-demotion. adminAssigned stays true, so initialize() cannot repair
+// a last-admin lockout.
 assert.equal(validateAssignRole("guest"), 'role must be "admin" or "user"');
 assert.equal(validateAssignRole("admin"), null);
 assert.equal(wouldSelfDemote("aaaa", "aaaa", "user"), true);
+assert.equal(wouldSelfDemote("aaaa", "aaaa", "guest"), true);
 assert.equal(wouldSelfDemote("aaaa", "bbbb", "user"), false);
 
 assert.equal(shouldWipeAchievementsOnBan(), false);
@@ -260,4 +266,78 @@ assert.equal(
     ownedSpellIds: owned,
   }),
   true,
+);
+
+// Failure: updateCharacter union+max added incoming-only ids and raised
+// paid levels, so a raw appearance edit minted ownership / skipped retirement.
+assert.equal(
+  incomingSpellLevelsWouldMint({
+    storedKeys: ["shadow_strike"],
+    incomingKeys: ["shadow_strike", "void_collapse"],
+    storedLevel: 1,
+    incomingLevel: 1,
+  }),
+  true,
+);
+assert.equal(
+  incomingSpellLevelsWouldMint({
+    storedKeys: ["shadow_strike"],
+    incomingKeys: ["shadow_strike"],
+    storedLevel: 1,
+    incomingLevel: 99,
+  }),
+  true,
+);
+const kept = resolveAppearanceSpellLevels({
+  storedKeys: ["shadow_strike"],
+  storedValues: [2],
+  incomingKeys: ["shadow_strike", "retired_bolt"],
+  incomingValues: [99, 99],
+});
+assert.deepEqual(kept.keys, ["shadow_strike"]);
+assert.deepEqual(kept.values, [2]);
+
+assert.ok(
+  validateSpellConfig({
+    id: "wolf_call",
+    name: "Wolf Call",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "damage",
+    effectType: "damage",
+    effectCategory: "damage",
+    summonAI: "godmode",
+    hpScale: 1e9,
+  }),
+);
+assert.ok(
+  validateSpellConfig({
+    id: "wolf_call",
+    name: "Wolf Call",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "damage",
+    effectType: "damage",
+    effectCategory: "damage",
+    summonAI: "hunter",
+    hpScale: Number.POSITIVE_INFINITY,
+  }),
+);
+assert.equal(
+  validateSpellConfig({
+    id: "wolf_call",
+    name: "Wolf Call",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "damage",
+    effectType: "damage",
+    effectCategory: "damage",
+    summonAI: "hunter",
+    hpScale: 1,
+    damageScale: 1,
+  }),
+  null,
 );

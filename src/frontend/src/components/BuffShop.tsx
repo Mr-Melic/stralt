@@ -5,6 +5,7 @@ import {
   liveDokaForShopSpend,
   liveShopWallet,
   shouldAllowShopSpend,
+  shouldRollbackFailedShopSpend,
   tryPurchaseBuffItem,
 } from "../utils/itemShop";
 
@@ -225,7 +226,14 @@ const BuffShop: React.FC<BuffShopProps> = ({
       };
       void Promise.resolve(onDeductDoka(item.cost)).then((ok) => {
         if (ok === false) {
-          liveWalletRef.current += item.cost;
+          if (
+            shouldRollbackFailedShopSpend({
+              liveDoka: liveWalletRef.current,
+              expectedDoka: purchase.nextWallet,
+            })
+          ) {
+            liveWalletRef.current += item.cost;
+          }
           inventoryRef.current = {
             ...inventoryRef.current,
             [item.id]: Math.max(0, purchase.nextOwned - 1),
