@@ -4,6 +4,9 @@
 #   backend:  src/backend/caffeine.toml [check] = mops check
 # Do not treat unused-vars, hook-deps, mock TS, Motoko syntax, or
 # empty-canister stable-compat as "pre-existing, skip".
+# Empty `.old` check-stable is fresh-canister import only. New persistent
+# stables also need mops check-stable vs snapshots/post-20260831.most
+# (populated Caffeine tail). Do not amend a shipped NewActor.
 # Do not run caffeine build / mops build here (PocketIC / dfx).
 # Before opening a PR also run: bash scripts/open-pr-stack-compat.sh --self
 set -euo pipefail
@@ -34,10 +37,29 @@ run_frontend() {
   pnpm check
 }
 
+run_populated_stable() {
+  local populated="${ROOT}/src/backend/migrations/snapshots/post-20260831.most"
+  local stable_args=()
+  local a
+  for a in "$@"; do
+    if [[ "$a" != "--no-lint" ]]; then
+      stable_args+=("$a")
+    fi
+  done
+  if [[ ! -f "$populated" ]]; then
+    echo "caffeine-import-gate: missing populated EOP snapshot: $populated" >&2
+    echo "Empty .old check is not a populated Caffeine upgrade." >&2
+    exit 1
+  fi
+  echo "==> mops check-stable vs populated post-20260831 (Caffeine live layout, not empty .old)"
+  mops check-stable "$populated" backend "${stable_args[@]}"
+}
+
 run_backend() {
   if command -v mops >/dev/null 2>&1; then
-    echo "==> mops check (Motoko syntax/types, check-stable vs .old, migrations)"
+    echo "==> mops check (Motoko syntax/types, check-stable vs empty .old, migrations)"
     mops check "$@"
+    run_populated_stable "$@"
     return
   fi
   if command -v caffeine >/dev/null 2>&1; then
@@ -46,6 +68,9 @@ run_backend() {
     fi
     echo "==> caffeine check (workspace: frontend [check] + backend mops check)"
     caffeine check
+    echo "note: caffeine-only path skipped populated EOP check-stable (needs mops)." >&2
+    echo "note: empty-canister check is not a populated Caffeine upgrade." >&2
+    echo "note: install ic-mops and re-run: mops check-stable src/backend/migrations/snapshots/post-20260831.most backend" >&2
     return
   fi
   echo "caffeine-import-gate: mops and caffeine are not on PATH." >&2
