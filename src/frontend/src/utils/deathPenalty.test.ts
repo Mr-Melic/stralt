@@ -484,6 +484,18 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     { action: "clear" },
     "a later earn must not be penalized again",
   );
+  const portalRaced = computeDeathPenalty(110, 200);
+  assert.deepEqual(
+    resolvePendingDeathReplay(110, 200, pending),
+    { action: "write", newXp: portalRaced.newXp, newDoka: portalRaced.newDoka },
+    "portal +10 landing before death persist must still replay the 20/40 cut",
+  );
+  const lootRaced = computeDeathPenalty(100, 250);
+  assert.deepEqual(
+    resolvePendingDeathReplay(100, 250, pending),
+    { action: "write", newXp: lootRaced.newXp, newDoka: lootRaced.newDoka },
+    "Doka-only credit landing before death persist must still replay the 20/40 cut",
+  );
   const sessionPending = {
     slot: 1,
     preXp: 80,

@@ -446,6 +446,18 @@ export function resolvePendingDeathReplay(
     const next = applyUnpaidDeathPenaltyToWrite(pending, xp, doka);
     return { action: "write", newXp: next.xp, newDoka: next.doka };
   }
+  // Portal +10 XP, or a Doka-only credit (ground loot / shrine / feat), can
+  // commit after the optimistic pending snapshot and before saveBattleStats.
+  // Reload then matched neither `pre` nor `after` and cleared the marker —
+  // the 20/40 cut never retried. Both axes above `pre` stay a clear (later
+  // fight earn, or a dual-axis victory credit); do not recut those here.
+  if (
+    (xp > pending.preXp && doka === pending.preDoka) ||
+    (doka > pending.preDoka && xp === pending.preXp)
+  ) {
+    const after = computeDeathPenalty(xp, doka);
+    return { action: "write", newXp: after.newXp, newDoka: after.newDoka };
+  }
   return { action: "clear" };
 }
 
