@@ -111,6 +111,15 @@ const newSpell = (): SpellConfig => ({
   isBarrier: false,
   isTrap: false,
   isMark: false,
+  isSummon: false,
+  summonAI: "",
+  summonLifespan: 0,
+  summonUnitDef: {
+    pieceType: "",
+    level: 0,
+    hpScale: 0,
+    damageScale: 0,
+  },
 });
 
 const newEnemy = (): EnemyConfig => ({

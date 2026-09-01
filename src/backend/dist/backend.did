@@ -26,6 +26,13 @@ type TierSpawnConfig =
    tierSize: nat;
    twoAwayPercent: float64;
  };
+type SummonUnitDef = 
+ record {
+   damageScale: float64;
+   hpScale: float64;
+   level: nat;
+   pieceType: text;
+ };
 type SpellConfig = 
  record {
    aoe: bool;
@@ -47,6 +54,7 @@ type SpellConfig =
    iconEmoji: text;
    id: text;
    isPhysical: bool;
+   isSummon: bool;
    lineOfSight: bool;
    linear: bool;
    maxRange: nat;
@@ -58,6 +66,9 @@ type SpellConfig =
    name: text;
    range: nat;
    spellType: text;
+   summonAI: text;
+   summonLifespan: nat;
+   summonUnitDef: SummonUnitDef;
    usableByEnemy: bool;
    usableByPlayer: bool;
  };
@@ -266,6 +277,15 @@ type AdminGameConfig =
    dokaSpawnChance: nat;
    leaderBoostPercent: nat;
  };
+type AdminAuditEntry = 
+ record {
+   action: text;
+   adminPrincipal: text;
+   newSummary: text;
+   objectId: text;
+   previousSummary: text;
+   timestampNs: int;
+ };
 type AchievementProgress = 
  record {
    achievementId: text;
@@ -360,6 +380,31 @@ service : {
       err: text;
       ok;
     });
+  /// Admin: restore the previous boss-rush config snapshot.
+  adminRollbackBossRushConfig: () -> (variant {
+                                        err: text;
+                                        ok;
+                                      });
+  /// Admin: restore the previous color palette snapshot.
+  adminRollbackColorPalette: () -> (variant {
+                                      err: text;
+                                      ok;
+                                    });
+  /// Admin: restore the previous game config snapshot.
+  adminRollbackGameConfig: () -> (variant {
+                                    err: text;
+                                    ok;
+                                  });
+  /// Admin: restore the previous level-up config snapshot.
+  adminRollbackLevelUpConfig: () -> (variant {
+                                       err: text;
+                                       ok;
+                                     });
+  /// Admin: restore the previous tier-spawn config snapshot.
+  adminRollbackTierSpawnConfig: () -> (variant {
+                                         err: text;
+                                         ok;
+                                       });
   /// Admin: create or update an achievement configuration.
   adminSetAchievementConfig: (config: AchievementConfig) ->
    (variant {
@@ -525,6 +570,12 @@ service : {
                            text;
                            bool;
                          }) query;
+  /// Admin: append-only change log. Never contains secrets or payment PII.
+  getAdminAuditLog: () ->
+   (variant {
+      err: text;
+      ok: vec AdminAuditEntry;
+    }) query;
   /// Public: returns all boss configs.
   getAllBossConfigs: () -> (vec BossConfig) query;
   getAllCharacters: () ->

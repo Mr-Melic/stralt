@@ -226,35 +226,117 @@ export function fromBackendPlayerSpriteConfig<T extends SpriteWalkFields>(
   };
 }
 
+type SummonUnitBridge = {
+  pieceType?: string;
+  level?: number | bigint;
+  hpScale?: number;
+  damageScale?: number;
+};
+
+export type BackendSummonUnitDef = {
+  pieceType: string;
+  level: bigint;
+  hpScale: number;
+  damageScale: number;
+};
+
 type SpellBridgeFields = {
   hitsMultiple?: boolean;
   multiTarget?: boolean;
   cooldown?: number | bigint;
+  isSummon?: boolean;
+  summonAI?: string;
+  summonLifespan?: number | bigint;
+  summonUnitDef?: SummonUnitBridge | null;
 };
+
+function natOf(value: number | bigint | undefined | null): bigint {
+  if (typeof value === "bigint") return value < 0n ? 0n : value;
+  return BigInt(Math.max(0, Math.round(Number(value) || 0)));
+}
+
+/** Empty summon metadata matching Motoko admin defaults / 20260831 migration. */
+export function emptyBackendSummonUnitDef(): BackendSummonUnitDef {
+  return {
+    pieceType: "",
+    level: 0n,
+    hpScale: 0,
+    damageScale: 0,
+  };
+}
+
+export function toBackendSummonUnitDef(
+  def?: SummonUnitBridge | null,
+): BackendSummonUnitDef {
+  if (def == null) return emptyBackendSummonUnitDef();
+  return {
+    pieceType: typeof def.pieceType === "string" ? def.pieceType : "",
+    level: natOf(def.level),
+    hpScale: Number(def.hpScale) || 0,
+    damageScale: Number(def.damageScale) || 0,
+  };
+}
 
 export function toBackendSpellConfig<T extends SpellBridgeFields>(
   config: T,
-): T & { multiTarget: boolean; cooldown: bigint } {
+): T & {
+  multiTarget: boolean;
+  cooldown: bigint;
+  isSummon: boolean;
+  summonAI: string;
+  summonLifespan: bigint;
+  summonUnitDef: BackendSummonUnitDef;
+} {
   const cooldownRaw = config.cooldown ?? 0;
   const cooldown =
     typeof cooldownRaw === "bigint"
-      ? cooldownRaw
+      ? cooldownRaw < 0n
+        ? 0n
+        : cooldownRaw
       : BigInt(Math.max(0, Math.round(Number(cooldownRaw) || 0)));
   return {
     ...config,
     multiTarget: config.multiTarget ?? config.hitsMultiple ?? false,
     cooldown,
+    isSummon: config.isSummon === true,
+    summonAI: typeof config.summonAI === "string" ? config.summonAI : "",
+    summonLifespan: natOf(config.summonLifespan),
+    summonUnitDef: toBackendSummonUnitDef(config.summonUnitDef),
   };
 }
 
 export function fromBackendSpellConfig<T extends SpellBridgeFields>(
   raw: T,
-): T & { hitsMultiple: boolean; cooldown: number } {
+): T & {
+  hitsMultiple: boolean;
+  cooldown: number;
+  isSummon: boolean;
+  summonAI: string;
+  summonLifespan: number;
+} {
   const cooldownRaw = raw.cooldown ?? 0;
+  const lifespanRaw = raw.summonLifespan ?? 0;
+  const unit = raw.summonUnitDef;
   return {
     ...raw,
     hitsMultiple: raw.hitsMultiple ?? raw.multiTarget ?? false,
     cooldown: Number(cooldownRaw) || 0,
+    isSummon: raw.isSummon === true,
+    summonAI: typeof raw.summonAI === "string" ? raw.summonAI : "",
+    summonLifespan: Number(lifespanRaw) || 0,
+    summonUnitDef: unit
+      ? {
+          pieceType: typeof unit.pieceType === "string" ? unit.pieceType : "",
+          level: Number(unit.level) || 0,
+          hpScale: Number(unit.hpScale) || 0,
+          damageScale: Number(unit.damageScale) || 0,
+        }
+      : {
+          pieceType: "",
+          level: 0,
+          hpScale: 0,
+          damageScale: 0,
+        },
   };
 }
 
