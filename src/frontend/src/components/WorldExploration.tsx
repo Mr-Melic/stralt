@@ -13021,9 +13021,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               uiLevelBefore,
               committed.level,
             );
-            if (nextDoka !== dokaBalanceRef.current) {
-              onDokaBalanceChange(nextDoka);
-            }
+            onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, nextDoka));
             if (
               nextXp !== (characterStatsRef.current.exp ?? 0) ||
               nextLevel !== (characterStatsRef.current.level ?? 1)
@@ -13045,12 +13043,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         )
         .catch((err) => console.error("[death-save] failed:", err));
     }
+    onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, dokaAfter));
     setCharacterStats((prev) => ({
       ...prev,
       exp: xpAfter,
       hp: respawnHp,
     }));
-    onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, dokaAfter));
     setDeathPenalty({ xpLost, dokaLost });
     return { xpLost, dokaLost, xpAfter, dokaAfter };
   }, [actor, character, characterSlot, onDokaBalanceChange, setCharacterStats]);

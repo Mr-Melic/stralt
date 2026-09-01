@@ -354,4 +354,44 @@ assert.equal(
   );
 }
 
+  // Chronology: credit without writing the live ref, then a same-tick heal.
+  // GameFlow flushes the credit first → sync copies old+gained over the debit.
+  const live = { current: 10 };
+  const gained = 50;
+  const creditProp = live.current + gained;
+  const heal = resolveOverworldHealSpend({
+    currentHp: 50,
+    maxHp: 200,
+    liveDoka: live.current,
+    jackpot: false,
+  });
+  assert.equal(heal!.dokaCost, 10);
+  assert.equal(heal!.nextDoka, 0, "heal spent from the uncredited 10");
+  writeLiveDoka(live, heal!.nextDoka);
+  live.current = creditProp;
+  assert.equal(live.current, 60, "stale-high prop refunds the heal debit");
+{
+  const live = { current: 10 };
+  creditLiveDoka(live, 50);
+  assert.equal(live.current, 60);
+  const heal = resolveOverworldHealSpend({
+    currentHp: 50,
+    maxHp: 200,
+    liveDoka: live.current,
+    jackpot: false,
+  });
+  assert.equal(heal!.nextDoka, 10);
+  writeLiveDoka(live, heal!.nextDoka);
+  assert.equal(live.current, 10);
+  assert.equal(writeLiveDoka(live, 0), 0);
+assert.equal(
+  shouldRollbackFailedShopSpend({ liveDoka: 80, expectedDoka: 90 }),
+  false,
+  "later successful buy must keep its debit",
+);
+assert.equal(
+  shouldRollbackFailedShopSpend({ liveDoka: 90, expectedDoka: 90 }),
+  true,
+  "same-click reject still refunds when nothing superseded it",
+);
 console.log("itemShop.test: ok");

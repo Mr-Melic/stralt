@@ -36,6 +36,20 @@ describe("shouldStartRename", () => {
   });
 });
 
+describe("beginRename", () => {
+  it("blocks a same-tick double-click before React isRenaming commits", () => {
+    const inFlight = { current: false };
+    assert.equal(beginRename(inFlight, 200), true);
+    assert.equal(inFlight.current, true);
+    assert.equal(
+      beginRename(inFlight, 200),
+      false,
+      "second Confirm must not enqueue another 100 Doka rename",
+    );
+    assert.equal(beginRename({ current: false }, 99), false);
+  });
+});
+
 describe("readRenameCharacterResult", () => {
   it("accepts ok / _ok / __kind__ payloads", () => {
     assert.deepEqual(readRenameCharacterResult({ __kind__: "ok", ok: null }), {
