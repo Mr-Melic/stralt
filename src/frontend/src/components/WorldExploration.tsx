@@ -231,6 +231,10 @@ import {
   removeCombatantFromTurnQueue,
 } from "../engine/turnQueue";
 import {
+  classifyWalkReject,
+  playerFacingWalkReject,
+} from "../engine/walkRejectCopy";
+import {
   getCameraFollowSpeed,
   getSessionVersion,
   nowTimestamp,
@@ -11092,12 +11096,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // handler's walk body, including Thorned Ground / Void Rift debits
         // (applyBattleWalkHazards — both input paths must charge the same HP).
         else if (battleActionMode === "walk") {
-          if (currentBattleMp <= 0) return;
-          if (
-            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
-            currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
-          )
-            return;
           // FIX 1a (mouse walk-mode single-occupancy): reject the move if a
           // LIVING combatant occupies the target tile. Mirrors the entity-first
           // cast targeting at ~9519. Dead combatants are already dropped from
@@ -11117,12 +11115,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             return;
           }
+          const walkBlocked =
+            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
+            Boolean(currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`));
           const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          const path = findPath(playerPositionRef.current, gridPos);
-          if (path.length === 0) return;
+          const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
+          const path =
+            currentBattleMp > 0 && !walkBlocked && walkReachable
+              ? findPath(playerPositionRef.current, gridPos)
+              : [];
+          const walkReject = classifyWalkReject({
+            currentMp: currentBattleMp,
+            isBlocked: walkBlocked,
+            reachable: walkReachable,
+            pathLength: path.length,
+          });
+          if (walkReject) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              playerFacingWalkReject(walkReject),
+            );
+            return;
+          }
           const cost = path.length;
-          if (cost > currentBattleMp) return;
           // Thorned Ground / Void Rift — same debit as touch walk.
           applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
@@ -11661,12 +11678,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // WALK branch — only runs with NO spell selected. Mirrors the mouse
         // handler's walk body, including Thorned Ground / Void Rift debits.
         else if (battleActionMode === "walk") {
-          if (currentBattleMp <= 0) return;
-          if (
-            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
-            currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`)
-          )
-            return;
           // FIX 1b (touch walk-mode single-occupancy): mirror of the mouse
           // handler's occupancy check. Reject the move if a LIVING combatant
           // occupies the target tile. Dead combatants are already dropped from
@@ -11684,12 +11695,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             return;
           }
+          const walkBlocked =
+            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
+            Boolean(currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`));
           const reachable = getMpReachableTiles();
-          if (!reachable.has(`${gridPos.x},${gridPos.y}`)) return;
-          const path = findPath(playerPositionRef.current, gridPos);
-          if (path.length === 0) return;
+          const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
+          const path =
+            currentBattleMp > 0 && !walkBlocked && walkReachable
+              ? findPath(playerPositionRef.current, gridPos)
+              : [];
+          const walkReject = classifyWalkReject({
+            currentMp: currentBattleMp,
+            isBlocked: walkBlocked,
+            reachable: walkReachable,
+            pathLength: path.length,
+          });
+          if (walkReject) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              playerFacingWalkReject(walkReject),
+            );
+            return;
+          }
           const cost = path.length;
-          if (cost > currentBattleMp) return;
           applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();

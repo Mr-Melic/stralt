@@ -89,6 +89,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md](docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md) | Observe→win discovery, pool generations, Wave-1 spell cards (design only) |
 | [docs/automation/ACTION_IDS_2026-08-31-1200.md](docs/automation/ACTION_IDS_2026-08-31-1200.md) | 12:00 orchestrator ledger (post-merge-burst) |
 | [docs/automation/ACTION_IDS_2026-08-31-1800.md](docs/automation/ACTION_IDS_2026-08-31-1800.md) | 18:00 orchestrator ledger (vitals jewels) |
+| [docs/automation/ACTION_IDS_2026-09-01-0000.md](docs/automation/ACTION_IDS_2026-09-01-0000.md) | 00:00 orchestrator ledger (walk reject floats) |
 
 ## Hard rules (product)
 
