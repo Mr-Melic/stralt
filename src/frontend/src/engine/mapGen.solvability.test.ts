@@ -15,16 +15,20 @@ import {
   generateSeededSanctuary,
   generateSeededWorld,
   reportWorld,
+  simulateBattleStartOnWorld,
   simulateCleanupSnapshotProgression,
   simulateClearUnlocksPortal,
+  simulateCorpsesOnWorld,
   simulateRestExitEncounter,
   simulateSummonsOnWorld,
+  simulateWalkBlockersOnWorld,
 } from "./mapGen.simulate.ts";
 import {
   MAP_ARCHETYPES,
   applyFinalizedLayout,
   applyVoidTiles,
   attachWhitePortalAfterLegalize,
+  canPlaceWalkBlocker,
   evaluateSolvability,
   finalizePlayableLayout,
   resetFailedGenerationVoids,
@@ -488,6 +492,184 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
   });
 
+  it("seed-sequential-clear: a two-rat pocket stays unengageable until punched", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, F, F, F, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, F, F, W, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+    ];
+    assert.equal(
+      sequentialClearUnlocks(
+        tiles,
+        new Set(),
+        { x: 1, y: 1 },
+        [{ x: 2, y: 1 }],
+        [
+          { x: 3, y: 5 },
+          { x: 4, y: 5 },
+        ],
+        8,
+        8,
+      ),
+      false,
+      "pocket rats must keep the progression portal sealed",
+    );
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals: [{ x: 2, y: 1 }],
+      spawns: [
+        { x: 3, y: 5 },
+        { x: 4, y: 5 },
+      ],
+      w: 8,
+      h: 8,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      8,
+    );
+    assert.equal(after.clearingUnlocks, true, after.failures.join(","));
+    assert.equal(after.enemiesReachable, true);
+    assert.equal(after.stackedEnemies, 0);
+  });
+
+  it("seed-spawn-onto-hostile: moving off an exit must not land on a rat", () => {
+    const tiles = [
+      [F, F, F],
+      [F, F, F],
+      [F, F, F],
+    ];
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 0 },
+      portals: [{ x: 1, y: 0 }],
+      spawns: [
+        { x: 0, y: 0 },
+        { x: 2, y: 0 },
+        { x: 1, y: 1 },
+      ],
+      w: 3,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      3,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(
+      finalized.spawns.some(
+        (s) =>
+          s.x === finalized.playerSpawn.x && s.y === finalized.playerSpawn.y,
+      ),
+      false,
+    );
+  });
+
+  it("seed-cut-vertex-pillar: a walk-blocker on the only corridor is rejected", () => {
+    const tiles = [
+      [W, W, W, W, W, W],
+      [W, F, F, F, F, W],
+      [W, W, W, W, W, W],
+    ];
+    tiles[1][4] = "portal";
+    const spawn = { x: 1, y: 1 };
+    const portals = [{ x: 4, y: 1 }];
+    const spawns: { x: number; y: number }[] = [];
+    assert.equal(
+      canPlaceWalkBlocker(tiles, new Set(), spawn, portals, spawns, 6, 3, {
+        x: 2,
+        y: 1,
+      }),
+      false,
+      "cut-vertex pillar would seal the exit",
+    );
+    assert.equal(
+      canPlaceWalkBlocker(tiles, new Set(), spawn, portals, spawns, 6, 3, {
+        x: 1,
+        y: 1,
+      }),
+      false,
+      "must not overwrite player spawn",
+    );
+    const open = [
+      [F, F, F],
+      [F, F, F],
+      [F, F, F],
+    ];
+    open[2][2] = "portal";
+    assert.equal(
+      canPlaceWalkBlocker(
+        open,
+        new Set(),
+        { x: 0, y: 0 },
+        [{ x: 2, y: 2 }],
+        [],
+        3,
+        3,
+        { x: 1, y: 0 },
+      ),
+      true,
+      "side cell on an open field is a legal pillar",
+    );
+  });
+
+  it("seed-leftover-border-island: unreachable CA crumbs are walled, not playable", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [F, F, W, F, F, F, F, W],
+      [W, W, W, F, F, F, F, W],
+      [W, W, W, F, F, F, F, W],
+      [W, W, W, F, F, F, F, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+      [W, W, W, W, W, W, W, W],
+    ];
+    tiles[1][5] = "portal";
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 4, y: 2 },
+      portals: [{ x: 5, y: 1 }],
+      spawns: [{ x: 6, y: 3 }],
+      w: 8,
+      h: 8,
+    });
+    assert.equal(
+      finalized.tiles[1][0],
+      "wall",
+      "2-tile border pocket must not stay walkable for battle-start destack",
+    );
+    assert.equal(finalized.tiles[1][1], "wall");
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      8,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+  });
+
   it("seed-destack-keeps-first-portal-tile: destack must not floor the kept exit", () => {
     const tiles = [
       [F, F, F],
@@ -714,7 +896,49 @@ describe("seeded world property suite", () => {
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
   });
 
-  it("corridorMaze edge voids that split the graph are dropped", () => {
+  it("corpses on unique bridges relocate so the exit stays open", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const occ = simulateCorpsesOnWorld(world);
+      if (occ.sealed) {
+        failures.push(
+          `seed ${seed}: corpses at ${occ.cells.map((c) => `${c.x},${c.y}`).join("/")}`,
+        );
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("walk-blockers skip cut-vertices across seeded dungeon maps", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({
+        seed,
+        runMode: "dungeon",
+        archetype: "corridorMaze",
+      });
+      const placed = simulateWalkBlockersOnWorld(world, 2);
+      if (!placed.ok) {
+        failures.push(`seed ${seed}: blockers sealed the route`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("battle-start destack keeps a legal route across seeds", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const after = simulateBattleStartOnWorld(world);
+      if (!after.ok) {
+        failures.push(`seed ${seed}: battle-start destack sealed the route`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("seed-maze-void-split: corridorMaze edge voids that split the graph are dropped", () => {
     const size = 8;
     const tiles = Array.from({ length: size }, () => Array(size).fill(F));
     const leftover = new Set<string>();
