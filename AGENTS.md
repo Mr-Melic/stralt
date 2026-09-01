@@ -20,10 +20,11 @@
 - **build**: `pnpm build`
 - **motoko**: `mops check` or `caffeine check` (syntax, types, migrations, check-stable vs `.old`). Required when Motoko, migrations, mocks, or `mops.toml` change. Missing toolchain is a failure, not a skip. Do not require `caffeine build` / PocketIC unless deploying.
 - **import gate**: `bash scripts/caffeine-import-gate.sh all` — `pnpm typecheck && pnpm check` then `mops check`. Treating unused-vars, hook-deps, mock TS2740, Motoko compile, or empty-canister M0263 as “pre-existing, skip” is forbidden.
+- **stack-compat**: `bash scripts/open-pr-stack-compat.sh --self` — oldest-first open-PR merge simulation (`createdAt` ascending onto `origin/main`). Required before opening a PR. Must stay merge-clean vs `origin/main` and as the next queue item after older still-open PRs. Exit 1 on conflict is a failure, not a skip. `gh` is read-only (`pr list` / API GET). Do not rebase onto bare `main` only.
 
 ## Mandatory finish gate
 
-Before opening a PR or declaring work done: run the import gate. Frontend always. Backend when Motoko / migrations / `.old` / mocks change. See `docs/automation/CAFFEINE_IMPORT_GATES.md` and `.cursor/rules/caffeine-import-gate.mdc`.
+Before opening a PR or declaring work done: run the import gate. Frontend always. Backend when Motoko / migrations / `.old` / mocks change. Also run `bash scripts/open-pr-stack-compat.sh --self` so this PR stays mergeable after older still-open PRs land (oldest `createdAt` first). Union overlapping files; do not overwrite siblings. See `docs/automation/CAFFEINE_IMPORT_GATES.md`, `docs/automation/OPEN_PR_STACK_COMPAT.md`, and `.cursor/rules/`.
 
 ## Learnings
 

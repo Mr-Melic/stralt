@@ -56,6 +56,8 @@ Motoko compile, or empty-canister stable-compat as pre-existing.
 See AGENTS.md Verified Commands and docs/automation/CAFFEINE_IMPORT_GATES.md.
 ```
 
+Also paste the oldest-first open-PR stack addendum from `docs/automation/OPEN_PR_STACK_COMPAT.md` into those same prompts. Dashboard prompts have no write API; the in-repo rule + `scripts/open-pr-stack-compat.sh` + CI job `open-pr-stack` are the gate.
+
 ## Inventory (2026-08-31)
 
 343 automation-sourced cloud-agent runs were visible in this environment. **59** unique `automationId` values. Official names from `get-automation` unless marked.
@@ -145,6 +147,8 @@ Dashboard URL for any readable id: `https://cursor.com/automations/<id>`.
 | What | Status | Change in this work |
 | :--- | :--- | :--- |
 | `.github/workflows/caffeine-import-gate.yml` | Existed on #181 (frontend only) | Added Motoko `mops check --locked` job; both jobs always run |
+| `open-pr-stack` job + `scripts/open-pr-stack-compat.sh` | Missing | Oldest-first open-PR sequential `merge-tree` on PRs/`main`; `pull-requests: read`; no PocketIC/dfx |
+| `.cursor/rules/open-pr-stack-compat.mdc` | Missing | `alwaysApply` restack/union rule before opening a PR |
 | `AGENTS.md` Verified Commands | typecheck / fix / build only | Added `pnpm check`, `mops check` / `caffeine check`, finish gate |
 | `.cursor/rules/` | Missing | Added `caffeine-import-gate.mdc` (`alwaysApply`) |
 | `scripts/caffeine-import-gate.sh` | Missing | Shared frontend + backend runner |
