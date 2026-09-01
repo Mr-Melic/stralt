@@ -8,6 +8,8 @@
 
 ACTION_IDs: [`ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md`](./ACTION_IDS_ENEMY_BOSS_ADMIN_2026-08-31.md)
 
+**2026-09-01 re-audit (do not re-file 001–024):** [`ENEMY_BOSS_ADMIN_REAUDIT_2026-09-01.md`](./ENEMY_BOSS_ADMIN_REAUDIT_2026-09-01.md) · new IDs [`ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-01.md`](./ACTION_IDS_ENEMY_BOSS_ADMIN_2026-09-01.md)
+
 Sibling contracts (do not re-specify):
 
 | Contract | PR | Consume for |
