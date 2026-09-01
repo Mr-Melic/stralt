@@ -187,8 +187,6 @@ describe("planSummonControlCast", () => {
   });
 
   it("rejects when the shared live gate says the tile is illegal", () => {
-    const tiles = Array.from({ length: 12 }, () =>
-      Array.from({ length: 12 }, () => "floor" as const),
     const tiles = Array.from({ length: 16 }, () =>
       Array.from({ length: 16 }, () => "floor" as const),
     );
@@ -216,25 +214,11 @@ describe("planSummonControlCast", () => {
       target: { x: 10, y: 8 },
       liveGate: {
         tiles,
-        combatants: [
-          {
-            id: "rat",
-            x: 10,
-            y: 8,
-            hp: 10,
-            maxHp: 10,
-            name: "Rat",
-            pieceType: "pawn",
-            side: "enemy",
-          } as import("../types/gameTypes.ts").Enemy,
-        ],
         combatants: [rat as import("../types/gameTypes.ts").Enemy],
       },
     });
     assert.deepEqual(blocked, { ok: false, reason: "illegal_target" });
 
-    const openTiles = Array.from({ length: 12 }, () =>
-      Array.from({ length: 12 }, () => "floor" as const),
     const openTiles = Array.from({ length: 16 }, () =>
       Array.from({ length: 16 }, () => "floor" as const),
     );
@@ -248,18 +232,6 @@ describe("planSummonControlCast", () => {
       target: { x: 10, y: 8 },
       liveGate: {
         tiles: openTiles,
-        combatants: [
-          {
-            id: "rat",
-            x: 10,
-            y: 8,
-            hp: 10,
-            maxHp: 10,
-            name: "Rat",
-            pieceType: "pawn",
-            side: "enemy",
-          } as import("../types/gameTypes.ts").Enemy,
-        ],
         combatants: [rat as import("../types/gameTypes.ts").Enemy],
       },
     });

@@ -377,36 +377,6 @@ export function resolveProgressionSafeOccupantCell(
   return next;
 }
 
-/**
- * Post-move landing for any occupant that can remain after battle
- * (player-controlled summons included). Unique-bridge reserve plus
- * joint-cut unseal. MP is charged for the intended path by the caller.
- */
-export function resolveProgressionSafeOccupantCell(
-  intended: OccCell,
-  ctx: OccupancyContext,
-): OccCell {
-  let cell: OccCell = { x: intended.x, y: intended.y };
-  const reserved = ctx.reserved;
-  if (reserved?.has(occKey(cell.x, cell.y))) {
-    const [slid] = relocateOffMandatoryCells([cell], reserved, ctx);
-    cell = slid;
-  }
-  const start = ctx.progressStart;
-  if (start && ctx.portals.size > 0) {
-    const [cut] = unsealProgressionOccupants(
-      [cell],
-      ctx.tiles,
-      ctx.voidTiles,
-      ctx.portals,
-      start,
-      ctx,
-    );
-    cell = cut;
-  }
-  return cell;
-}
-
 export function relocateOffMandatoryCells(
   occupants: OccCell[],
   mandatory: Set<string>,
