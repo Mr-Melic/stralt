@@ -324,9 +324,11 @@ import {
 } from "../utils/debugLogger";
 import {
   type DokaCreditActor,
-  persistDokaCredit,
+  persistDokaCreditAmount,
+  persistDokaCreditResult,
   releaseFlag,
   releasePickupId,
+  settleOneShotAfterCredit,
   tryClaimDungeonChainBonus,
   tryClaimFlag,
   tryClaimPickupId,
@@ -6452,15 +6454,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const chainBonus = dungeonChainAction.bonus;
         if (tryClaimDungeonChainBonus(dungeonCompletionSavedRef)) {
           void progressPersistRef.current.enqueue(async () => {
-            const newDoka = await persistDokaCredit(
+            const credited = await persistDokaCreditResult(
               actor as DokaCreditActor,
               characterSlot,
               chainBonus,
             );
-            if (newDoka > 0) {
+            const newDoka = persistDokaCreditAmount(credited);
+            const settle = settleOneShotAfterCredit(credited);
+            if (settle === "commit") {
               progressPersistRef.current.commit({ doka: newDoka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
-            } else {
+            } else if (settle === "release") {
               releaseFlag(dungeonCompletionSavedRef);
             }
             return newDoka;
@@ -11447,15 +11451,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             const _purePath = !shrinePathViolatedRef.current;
             if (tryClaimFlag(shrineRewardClaimedRef)) {
               void progressPersistRef.current.enqueue(async () => {
-                const newDoka = await persistDokaCredit(
+                const credited = await persistDokaCreditResult(
                   actor as DokaCreditActor,
                   characterSlot,
                   300,
                 );
-                if (newDoka > 0) {
+                const newDoka = persistDokaCreditAmount(credited);
+                const settle = settleOneShotAfterCredit(credited);
+                if (settle === "commit") {
                   progressPersistRef.current.commit({ doka: newDoka });
                   onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
-                } else {
+                } else if (settle === "release") {
                   releaseFlag(shrineRewardClaimedRef);
                 }
                 return newDoka;
@@ -11500,12 +11506,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
         if (hit && tryClaimPickupId(claimedGroundLootIdsRef.current, hit.id)) {
           void progressPersistRef.current.enqueue(async () => {
-            const newDoka = await persistDokaCredit(
+            const credited = await persistDokaCreditResult(
               actor as DokaCreditActor,
               characterSlot,
               hit.value,
             );
-            if (newDoka > 0) {
+            const newDoka = persistDokaCreditAmount(credited);
+            const settle = settleOneShotAfterCredit(credited);
+            if (settle === "commit") {
               progressPersistRef.current.commit({ doka: newDoka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
               setDokaLoot((prev) =>
@@ -11513,7 +11521,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   l.id === hit.id ? { ...l, collected: true } : l,
                 ),
               );
-            } else {
+            } else if (settle === "release") {
               releasePickupId(claimedGroundLootIdsRef.current, hit.id);
             }
             return newDoka;
