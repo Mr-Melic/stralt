@@ -273,10 +273,10 @@ describe("shouldAdvanceAfterEnemyTurn", () => {
 
 describe("enemyDestToCommit", () => {
   it("returns a clamped patch when the AI dest leaves the origin tile", () => {
-    assert.deepEqual(
-      enemyDestToCommit({ x: 4, y: 4 }, { x: 6, y: 3 }, 12),
-      { x: 6, y: 3 },
-    );
+    assert.deepEqual(enemyDestToCommit({ x: 4, y: 4 }, { x: 6, y: 3 }, 12), {
+      x: 6,
+      y: 3,
+    });
   });
 
   it("returns null when dest equals origin so stay-put skips stay no-ops", () => {
@@ -285,9 +285,9 @@ describe("enemyDestToCommit", () => {
   });
 
   it("clamps dest onto the grid instead of writing out-of-bounds tiles", () => {
-    assert.deepEqual(
-      enemyDestToCommit({ x: 0, y: 0 }, { x: -3, y: 99 }, 12),
-      { x: 0, y: 11 },
-    );
+    assert.deepEqual(enemyDestToCommit({ x: 0, y: 0 }, { x: -3, y: 99 }, 12), {
+      x: 0,
+      y: 11,
+    });
   });
 });
