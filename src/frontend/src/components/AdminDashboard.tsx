@@ -184,6 +184,12 @@ const C = {
   dimmer: "#5a5060",
 } as const;
 
+function matchesQuery(q: string, ...parts: Array<string | undefined>): boolean {
+  const n = q.trim().toLowerCase();
+  if (!n) return true;
+  return parts.some((p) => (p ?? "").toLowerCase().includes(n));
+}
+
 // ── shared primitives ─────────────────────────────────────────────────────────
 
 const inputStyle = (err?: boolean): React.CSSProperties => ({
@@ -244,6 +250,29 @@ function CatalogNote({ children }: { children: React.ReactNode }) {
     >
       {children}
     </p>
+  );
+}
+
+function ListSearch({
+  value,
+  onChange,
+  placeholder,
+  ocid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  ocid: string;
+}) {
+  return (
+    <input
+      type="search"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      data-ocid={ocid}
+      style={{ ...inputStyle(), maxWidth: 260, margin: 0 }}
+    />
   );
 }
 
@@ -1630,10 +1659,15 @@ const SpriteList: React.FC<{
   saving: boolean;
   onSave: (c: PlayerSpriteConfig) => void;
   onDelete: (id: string) => void;
-}> = ({ sprites, loading, saving, onSave, onDelete }) => {
+  onEditorOpenChange?: (id: string | null) => void;
+}> = ({ sprites, loading, saving, onSave, onDelete, onEditorOpenChange }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCfg, setEditingCfg] = useState<PlayerSpriteConfig | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    onEditorOpenChange?.(editingCfg ? (selectedId ?? "__new__") : null);
+  }, [editingCfg, selectedId, onEditorOpenChange]);
 
   const selectSprite = (s: PlayerSpriteConfig) => {
     setSelectedId(s.id);
@@ -1987,7 +2021,11 @@ const EnemyList: React.FC<{
   onDelete: (id: string) => void;
 }> = ({ enemies, loading, onAdd, onEdit, onDelete }) => {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const pending = enemies.find((e) => e.id === confirmId);
+  const visible = enemies.filter((e) =>
+    matchesQuery(query, e.name, e.id, e.regions.join(" ")),
+  );
   return (
     <div style={{ padding: 20 }}>
       <div
@@ -1996,6 +2034,8 @@ const EnemyList: React.FC<{
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: 16,
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
         <div>
@@ -2012,11 +2052,20 @@ const EnemyList: React.FC<{
           </h3>
           <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
             {enemies.length} enemi{enemies.length === 1 ? "y" : "es"} configured
+            {query.trim() ? ` · ${visible.length} shown` : ""}
           </p>
         </div>
-        <Btn variant="gold" onClick={onAdd} ocid="admin.enemies.add_button">
-          + Add Enemy
-        </Btn>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <ListSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter by name, id, region…"
+            ocid="admin.enemies.search_input"
+          />
+          <Btn variant="gold" onClick={onAdd} ocid="admin.enemies.add_button">
+            + Add Enemy
+          </Btn>
+        </div>
       </div>
       <CatalogNote>
         Canister catalog only. Overworld spawn still uses player-relative tiers
@@ -2059,7 +2108,21 @@ const EnemyList: React.FC<{
         </div>
       )}
 
-      {enemies.map((e, i) => (
+      {!loading && enemies.length > 0 && visible.length === 0 && (
+        <div
+          data-ocid="admin.enemies.no_match"
+          style={{
+            textAlign: "center",
+            padding: "24px 0",
+            color: "#6a6070",
+            fontSize: 12,
+          }}
+        >
+          No enemies match “{query}”
+        </div>
+      )}
+
+      {visible.map((e, i) => (
         <PanelCard key={e.id}>
           <div
             data-ocid={`admin.enemies.item.${i + 1}`}
@@ -2183,7 +2246,9 @@ const RegionList: React.FC<{
   onDelete: (id: string) => void;
 }> = ({ regions, loading, onAdd, onEdit, onDelete }) => {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const pending = regions.find((r) => r.id === confirmId);
+  const visible = regions.filter((r) => matchesQuery(query, r.name, r.id));
   return (
     <div style={{ padding: 20 }}>
       <div
@@ -2192,6 +2257,8 @@ const RegionList: React.FC<{
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: 16,
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
         <div>
@@ -2208,11 +2275,20 @@ const RegionList: React.FC<{
           </h3>
           <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
             {regions.length} region{regions.length === 1 ? "" : "s"} defined
+            {query.trim() ? ` · ${visible.length} shown` : ""}
           </p>
         </div>
-        <Btn variant="gold" onClick={onAdd} ocid="admin.regions.add_button">
-          + Add Region
-        </Btn>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <ListSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter by name or id…"
+            ocid="admin.regions.search_input"
+          />
+          <Btn variant="gold" onClick={onAdd} ocid="admin.regions.add_button">
+            + Add Region
+          </Btn>
+        </div>
       </div>
 
       {loading && (
@@ -2247,7 +2323,21 @@ const RegionList: React.FC<{
         </div>
       )}
 
-      {regions.map((r, i) => (
+      {!loading && regions.length > 0 && visible.length === 0 && (
+        <div
+          data-ocid="admin.regions.no_match"
+          style={{
+            textAlign: "center",
+            padding: "24px 0",
+            color: "#6a6070",
+            fontSize: 12,
+          }}
+        >
+          No regions match “{query}”
+        </div>
+      )}
+
+      {visible.map((r, i) => (
         <PanelCard key={r.id}>
           <div
             data-ocid={`admin.regions.item.${i + 1}`}
@@ -3425,7 +3515,11 @@ const SpellList: React.FC<{
   onDelete: (id: string) => void;
 }> = ({ spells, loading, onAdd, onEdit, onDelete }) => {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const pending = spells.find((s) => s.id === confirmId);
+  const visible = spells.filter((s) =>
+    matchesQuery(query, s.name, s.id, s.effectType, s.spellType),
+  );
   return (
     <div style={{ padding: 20 }}>
       <div
@@ -3434,6 +3528,8 @@ const SpellList: React.FC<{
           justifyContent: "space-between",
           alignItems: "center",
           marginBottom: 16,
+          gap: 12,
+          flexWrap: "wrap",
         }}
       >
         <div>
@@ -3450,11 +3546,20 @@ const SpellList: React.FC<{
           </h3>
           <p style={{ color: "#8a8090", fontSize: 11, margin: "3px 0 0" }}>
             {spells.length} spell{spells.length === 1 ? "" : "s"} configured
+            {query.trim() ? ` · ${visible.length} shown` : ""}
           </p>
         </div>
-        <Btn variant="gold" onClick={onAdd} ocid="admin.spells.add_button">
-          + Add Spell
-        </Btn>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <ListSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter by name, id, type…"
+            ocid="admin.spells.search_input"
+          />
+          <Btn variant="gold" onClick={onAdd} ocid="admin.spells.add_button">
+            + Add Spell
+          </Btn>
+        </div>
       </div>
 
       {loading && (
@@ -3491,7 +3596,21 @@ const SpellList: React.FC<{
         </div>
       )}
 
-      {spells.map((s, i) => (
+      {!loading && spells.length > 0 && visible.length === 0 && (
+        <div
+          data-ocid="admin.spells.no_match"
+          style={{
+            textAlign: "center",
+            padding: "24px 0",
+            color: "#6a6070",
+            fontSize: 12,
+          }}
+        >
+          No spells match “{query}”
+        </div>
+      )}
+
+      {visible.map((s, i) => (
         <PanelCard key={s.id}>
           <div
             data-ocid={`admin.spells.item.${i + 1}`}
@@ -3988,7 +4107,7 @@ const SettingsTab: React.FC = () => {
       {
         onSuccess: () => {
           toast.success(
-            "Admin role transferred! The new admin must log in to activate.",
+            `Admin role granted to ${targetPrincipal.trim()}. Your admin access is unchanged.`,
           );
           setTargetPrincipal("");
           setConfirmText("");
@@ -4227,6 +4346,19 @@ const LevelUpConfigPanel: React.FC = () => {
       }}
     >
       <p style={sectionHeadStyle}>Spell System Config</p>
+      <p
+        style={{
+          color: "#6a6070",
+          fontSize: 11,
+          marginBottom: 12,
+          lineHeight: 1.5,
+        }}
+      >
+        This panel edits range and fail chance only. Save also writes built-in
+        defaults for stat growth (5%), AP/MP threshold (25), spell leveling cost
+        (10 × 2^level), and spell damage growth (3%). Those fields are not shown
+        here — a saved draft here is not a full LevelUpConfig review.
+      </p>
       <div
         style={{
           display: "grid",
@@ -4687,9 +4819,13 @@ const VisualsTab: React.FC = () => {
             onClick={handleReset}
             ocid="admin.visuals.reset_button"
           >
-            Reset to Random
+            Reset editor to Random
           </Btn>
         </div>
+        <p style={{ color: "#6a6070", fontSize: 10, margin: 0 }}>
+          Reset only clears this editor and local cache. Click Save Palette to
+          publish the canister-live fallback.
+        </p>
         {saveError && (
           <p
             data-ocid="admin.visuals.save_error"
@@ -4725,7 +4861,8 @@ const ModifierEditor: React.FC<{
   onSave: (c: MapModifierConfig) => void;
   onCancel: () => void;
   saving: boolean;
-}> = ({ initial, onSave, onCancel, saving }) => {
+  idLocked?: boolean;
+}> = ({ initial, onSave, onCancel, saving, idLocked }) => {
   const [cfg, setCfg] = React.useState<MapModifierConfig>(initial);
   const set = <K extends keyof MapModifierConfig>(
     k: K,
@@ -4748,6 +4885,12 @@ const ModifierEditor: React.FC<{
           onChange={(v) => set("id", v)}
           ocid="admin.modifier.id_input"
           placeholder="slime_flood"
+          disabled={idLocked}
+          hint={
+            idLocked
+              ? "ID is locked after create — changing it would orphan the live record."
+              : undefined
+          }
         />
         <Field
           label="Name"
@@ -4908,7 +5051,13 @@ const ModifierEditor: React.FC<{
       <div style={{ display: "flex", gap: 10 }}>
         <Btn
           variant="gold"
-          onClick={() => onSave(cfg)}
+          onClick={() => {
+            if (!cfg.id.trim() || !cfg.name.trim()) {
+              toast.error("Modifier ID and name are required");
+              return;
+            }
+            onSave(cfg);
+          }}
           ocid="admin.modifier.save_button"
         >
           {saving ? "Saving\u2026" : "Save Modifier"}
@@ -4957,7 +5106,8 @@ const AchievementEditor: React.FC<{
   onSave: (c: AchievementConfig) => void;
   onCancel: () => void;
   saving: boolean;
-}> = ({ initial, onSave, onCancel, saving }) => {
+  idLocked?: boolean;
+}> = ({ initial, onSave, onCancel, saving, idLocked }) => {
   const [cfg, setCfg] = React.useState<AchievementConfig>(initial);
   const set = <K extends keyof AchievementConfig>(
     k: K,
@@ -4989,6 +5139,12 @@ const AchievementEditor: React.FC<{
           onChange={(v) => set("id", v)}
           ocid="admin.achievement.id_input"
           placeholder="first_battle_win"
+          disabled={idLocked}
+          hint={
+            idLocked
+              ? "ID is locked after create — changing it would orphan the live record."
+              : undefined
+          }
         />
         <Field
           label="Name"
@@ -5160,9 +5316,20 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
     }
   });
   const [bossRushSaved, setBossRushSaved] = useState(false);
-  const [shopPrincipalId, setShopPrincipalId] = useState("");
+  const [shopGrantPrincipalId, setShopGrantPrincipalId] = useState("");
+  const [shopBanPrincipalId, setShopBanPrincipalId] = useState("");
   const [shopDokaAmount, setShopDokaAmount] = useState<number>(0);
-  const [shopConfirm, setShopConfirm] = useState<null | "grant" | "ban">(null);
+  const [shopConfirm, setShopConfirm] = useState<
+    null | "grant" | "ban" | "unban"
+  >(null);
+  const [purchaseQuery, setPurchaseQuery] = useState("");
+  const [purchaseStatus, setPurchaseStatus] = useState<
+    "all" | "paid" | "pending"
+  >("all");
+  const [pendingProof, setPendingProof] = useState<{
+    label: string;
+    open: () => void;
+  } | null>(null);
   const [pendingTab, setPendingTab] = useState<
     AdminDashboardState["tab"] | "close" | null
   >(null);
@@ -5209,7 +5376,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
     dashState.editingRegionId != null ||
     dashState.editingSpellId != null ||
     dashState.editingModifierId != null ||
-    dashState.editingAchievementId != null;
+    dashState.editingAchievementId != null ||
+    dashState.editingSpriteId != null;
 
   const applyTab = (tab: AdminDashboardState["tab"]) =>
     setDashState((p) => ({
@@ -5244,6 +5412,20 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   const sprites = spriteQ.data ?? [];
   const spells = spellQ.data ?? [];
   const modifiers = modifierQ.data ?? [];
+  const purchaseRows = (purchaseQ.data ?? []).filter((rec) => {
+    const status = rec.status ?? "pending";
+    const paid = status === "paid" || status === "completed";
+    if (purchaseStatus === "paid" && !paid) return false;
+    if (purchaseStatus === "pending" && paid) return false;
+    return matchesQuery(
+      purchaseQuery,
+      rec.id,
+      rec.customerData?.firstName,
+      rec.customerData?.lastName,
+      rec.customerData?.email,
+      rec.status,
+    );
+  });
 
   const editingEnemy =
     dashState.editingEnemyId === "__new__"
@@ -5302,8 +5484,9 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             Admin Access Required
           </h2>
           <p style={{ color: "#8a8090", fontSize: 13, marginBottom: 24 }}>
-            Only the first player who logged in has admin access. Log in with
-            the admin Internet Identity to use this dashboard.
+            Access is role-based. The first Internet Identity to call
+            getUserRole becomes admin; Settings can grant more. Log in with an
+            admin identity to continue.
           </p>
           <Btn
             variant="ghost"
@@ -5437,7 +5620,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       {shopConfirm === "grant" && (
         <ConfirmDialog
           title={`Grant ${shopDokaAmount} Doka?`}
-          body={`This credits ${shopDokaAmount} Doka to ${shopPrincipalId} immediately. There is no undo.`}
+          body={`This credits ${shopDokaAmount} Doka to ${shopGrantPrincipalId} immediately. There is no undo.`}
           confirmLabel="Grant Doka"
           ocidPrefix="admin.shop.grant"
           onCancel={() => setShopConfirm(null)}
@@ -5448,12 +5631,12 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 await (
                   adminActor as unknown as backendInterface
                 ).adminAddDokaToUser(
-                  Principal.fromText(shopPrincipalId),
+                  Principal.fromText(shopGrantPrincipalId),
                   BigInt(Number(shopDokaAmount) || 0),
                   null,
                 );
                 toast.success(
-                  `Granted ${shopDokaAmount} Doka to ${shopPrincipalId}`,
+                  `Granted ${shopDokaAmount} Doka to ${shopGrantPrincipalId}`,
                 );
                 setSaveStatus("Saved");
                 setTimeout(() => setSaveStatus(null), 3000);
@@ -5467,7 +5650,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       )}
       {shopConfirm === "ban" && (
         <ConfirmDialog
-          title={`Ban ${shopPrincipalId}?`}
+          title={`Ban ${shopBanPrincipalId}?`}
           body="Banned principals fail purchases, buffs, achievement claims, boss rush, and Doka awards. Achievement progress for this principal is cleared."
           confirmLabel="Ban player"
           ocidPrefix="admin.shop.ban"
@@ -5478,8 +5661,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               try {
                 await (
                   adminActor as unknown as backendInterface
-                ).adminBanAccount(Principal.fromText(shopPrincipalId));
-                toast.success(`Banned ${shopPrincipalId}`);
+                ).adminBanAccount(Principal.fromText(shopBanPrincipalId));
+                toast.success(`Banned ${shopBanPrincipalId}`);
                 setSaveStatus("Saved");
                 setTimeout(() => setSaveStatus(null), 3000);
               } catch (err) {
@@ -5487,6 +5670,45 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 setSaveStatus(`Save failed: ${String(err)}`);
               }
             })();
+          }}
+        />
+      )}
+      {shopConfirm === "unban" && (
+        <ConfirmDialog
+          title={`Unban ${shopBanPrincipalId}?`}
+          body="This restores purchases, buffs, achievement claims, boss rush, and Doka awards for this principal. Cleared achievement progress is not restored."
+          confirmLabel="Unban player"
+          ocidPrefix="admin.shop.unban"
+          onCancel={() => setShopConfirm(null)}
+          onConfirm={() => {
+            setShopConfirm(null);
+            void (async () => {
+              try {
+                await (
+                  adminActor as unknown as backendInterface
+                ).adminUnbanAccount(Principal.fromText(shopBanPrincipalId));
+                toast.success(`Unbanned ${shopBanPrincipalId}`);
+                setSaveStatus("Saved");
+                setTimeout(() => setSaveStatus(null), 3000);
+              } catch (err) {
+                toast.error(`Failed to unban player: ${String(err)}`);
+                setSaveStatus(`Save failed: ${String(err)}`);
+              }
+            })();
+          }}
+        />
+      )}
+      {pendingProof && (
+        <ConfirmDialog
+          title={`Open proof for ${pendingProof.label}?`}
+          body="Proof-of-address files are personal documents. This opens or downloads them in a new window."
+          confirmLabel="Open proof"
+          ocidPrefix="admin.purchases.proof"
+          onCancel={() => setPendingProof(null)}
+          onConfirm={() => {
+            const open = pendingProof.open;
+            setPendingProof(null);
+            open();
           }}
         />
       )}
@@ -5621,6 +5843,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               ["Regions", regions.length],
               ["Sprites", sprites.length],
               ["Spells", spells.length],
+              ["Achievements", (achievementQ.data ?? []).length],
+              ["Modifiers", modifiers.length],
             ].map(([label, count]) => (
               <div
                 key={label}
@@ -5770,6 +5994,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   sprites={sprites}
                   loading={spriteQ.isLoading}
                   saving={setSpriteMut.isPending || delSpriteMut.isPending}
+                  onEditorOpenChange={(id) =>
+                    setDashState((p) =>
+                      p.editingSpriteId === id
+                        ? p
+                        : { ...p, editingSpriteId: id },
+                    )
+                  }
                   onSave={(cfg) => {
                     const walkErr =
                       validateWalkFrameUrls(cfg.walkFramesFront) ??
@@ -5891,22 +6122,44 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       margin: "4px 0 0",
                     }}
                   >
-                    All Doka shop orders, customer data &amp; proof-of-address
-                    documents
+                    Owner-only PII. Filter before opening proof documents.
                   </p>
                 </div>
-                <div
-                  style={{
-                    background: `${C.gold}18`,
-                    border: `1px solid ${C.goldDim}`,
-                    borderRadius: 20,
-                    padding: "4px 12px",
-                    fontSize: 11,
-                    color: "#f0c44a",
-                    fontWeight: 700,
-                  }}
-                >
-                  {purchaseQ.data?.length ?? 0} records
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <ListSearch
+                    value={purchaseQuery}
+                    onChange={setPurchaseQuery}
+                    placeholder="Filter name, email, id…"
+                    ocid="admin.purchases.search_input"
+                  />
+                  <select
+                    aria-label="Purchase status"
+                    data-ocid="admin.purchases.status_filter"
+                    value={purchaseStatus}
+                    onChange={(e) =>
+                      setPurchaseStatus(
+                        e.target.value as "all" | "paid" | "pending",
+                      )
+                    }
+                    style={{ ...inputStyle(), width: "auto", margin: 0 }}
+                  >
+                    <option value="all">All statuses</option>
+                    <option value="paid">Paid / completed</option>
+                    <option value="pending">Pending / other</option>
+                  </select>
+                  <div
+                    style={{
+                      background: `${C.gold}18`,
+                      border: `1px solid ${C.goldDim}`,
+                      borderRadius: 20,
+                      padding: "4px 12px",
+                      fontSize: 11,
+                      color: "#f0c44a",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {purchaseRows.length}/{purchaseQ.data?.length ?? 0}
+                  </div>
                 </div>
               </div>
 
@@ -5946,7 +6199,23 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 </div>
               )}
 
-              {(purchaseQ.data ?? []).length > 0 && (
+              {!purchaseQ.isLoading &&
+                (purchaseQ.data?.length ?? 0) > 0 &&
+                purchaseRows.length === 0 && (
+                  <div
+                    data-ocid="admin.purchases.no_match"
+                    style={{
+                      textAlign: "center",
+                      padding: "24px 0",
+                      color: "#6a6070",
+                      fontSize: 12,
+                    }}
+                  >
+                    No records match the current filter.
+                  </div>
+                )}
+
+              {purchaseRows.length > 0 && (
                 <div style={{ overflowX: "auto" }}>
                   <table
                     style={{
@@ -5987,7 +6256,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       </tr>
                     </thead>
                     <tbody>
-                      {(purchaseQ.data ?? []).map((rec, i) => (
+                      {purchaseRows.map((rec, i) => (
                         <tr
                           key={rec.id ?? i}
                           data-ocid={`admin.purchases.item.${i + 1}`}
@@ -6117,36 +6386,51 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                                 type="button"
                                 data-ocid={`admin.purchases.view_proof_button.${i + 1}`}
                                 onClick={() => {
-                                  if (rec.proofFileUrl) {
-                                    window.open(
-                                      rec.proofFileUrl,
-                                      "_blank",
-                                      "noopener,noreferrer",
-                                    );
-                                    return;
-                                  }
-                                  if (
-                                    rec.proofOfAddressName?.startsWith("http")
-                                  ) {
-                                    window.open(
-                                      rec.proofOfAddressName,
-                                      "_blank",
-                                      "noopener,noreferrer",
-                                    );
-                                    return;
-                                  }
-                                  const mime = rec.proofOfAddressName?.endsWith(
-                                    ".pdf",
-                                  )
-                                    ? "application/pdf"
-                                    : "image/jpeg";
-                                  const url = `data:${mime};base64,${rec.proofOfAddressBase64}`;
-                                  const a = document.createElement("a");
-                                  a.href = url;
-                                  a.download =
-                                    rec.proofOfAddressName ??
-                                    `proof_${rec.id ?? i}.jpg`;
-                                  a.click();
+                                  const label =
+                                    [
+                                      rec.customerData?.firstName,
+                                      rec.customerData?.lastName,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ") ||
+                                    rec.id ||
+                                    "record";
+                                  setPendingProof({
+                                    label,
+                                    open: () => {
+                                      if (rec.proofFileUrl) {
+                                        window.open(
+                                          rec.proofFileUrl,
+                                          "_blank",
+                                          "noopener,noreferrer",
+                                        );
+                                        return;
+                                      }
+                                      if (
+                                        rec.proofOfAddressName?.startsWith(
+                                          "http",
+                                        )
+                                      ) {
+                                        window.open(
+                                          rec.proofOfAddressName,
+                                          "_blank",
+                                          "noopener,noreferrer",
+                                        );
+                                        return;
+                                      }
+                                      const mime =
+                                        rec.proofOfAddressName?.endsWith(".pdf")
+                                          ? "application/pdf"
+                                          : "image/jpeg";
+                                      const url = `data:${mime};base64,${rec.proofOfAddressBase64}`;
+                                      const a = document.createElement("a");
+                                      a.href = url;
+                                      a.download =
+                                        rec.proofOfAddressName ??
+                                        `proof_${rec.id ?? i}.jpg`;
+                                      a.click();
+                                    },
+                                  });
                                 }}
                                 style={{
                                   background: `${C.blue}22`,
@@ -6401,6 +6685,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   }}
                 >
                   <ModifierEditor
+                    idLocked={dashState.editingModifierId !== "__new__"}
                     initial={
                       dashState.editingModifierId === "__new__"
                         ? {
@@ -6631,6 +6916,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               {/* Editor */}
               {dashState.editingAchievementId && (
                 <AchievementEditor
+                  idLocked={dashState.editingAchievementId !== "__new__"}
                   initial={
                     dashState.editingAchievementId === "__new__"
                       ? newAchievement()
@@ -6807,25 +7093,29 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           {dashState.tab === "bosses" && <BossesTab spells={spells} />}
 
           {dashState.tab === "ads" && (
-            <div style={{ padding: "24px" }}>
-              <h2
+            <div data-ocid="admin.ads_tab" style={{ padding: 20 }}>
+              <h3
                 style={{
-                  color: "#ff4444",
-                  fontSize: "20px",
-                  marginBottom: "24px",
+                  color: C.gold,
+                  margin: "0 0 6px",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
                 }}
               >
                 Advertisement Boxes
-              </h2>
+              </h3>
               <p
                 style={{
-                  color: "#aaa",
-                  marginBottom: "24px",
-                  fontSize: "14px",
+                  color: C.dim,
+                  fontSize: 11,
+                  marginBottom: 18,
+                  lineHeight: 1.5,
                 }}
               >
-                These 3 ad boxes appear on the login page. Upload an image URL
-                and click-through link for each box you want to show.
+                Three landing-page slots. Empty image + empty link is valid: the
+                box stays hidden. Save requires both URLs; use Clear to revert
+                to the hidden default.
               </p>
               <AdBoxEditor index={0} />
               <AdBoxEditor index={1} />
@@ -6834,45 +7124,85 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
           )}
 
           {dashState.tab === "shop" && (
-            <div data-ocid="admin.shop_tab" className="p-4 space-y-6">
-              <h2 className="text-xl font-bold text-red-400">
-                Shop Administration
-              </h2>
+            <div data-ocid="admin.shop_tab" style={{ padding: 20 }}>
+              <h3
+                style={{
+                  color: C.gold,
+                  margin: "0 0 6px",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
+                }}
+              >
+                Shop / Wallet Ops
+              </h3>
               <CatalogNote>
                 Player shop still lists 15 hardcoded packages. Canister
                 getShopPackages / adminSetShopPackage exist but this tab has no
-                package CRUD yet. Payment-link copy below has no form.
+                package CRUD yet. Grant and ban use separate principal fields
+                and write live — there is no undo.
               </CatalogNote>
-              <div className="bg-gray-800 p-4 rounded">
-                <h3 className="font-semibold mb-2">Payment Links</h3>
-                <p className="text-gray-400 text-sm">
-                  Configure payment links in the shop settings below.
+              <div
+                style={{
+                  background:
+                    "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
+                  border: `1px solid ${C.goldDim}`,
+                  borderRadius: 8,
+                  padding: "14px 16px",
+                  marginBottom: 16,
+                }}
+              >
+                <p style={sectionHeadStyle}>Shop packages</p>
+                <p style={{ color: C.dim, fontSize: 11, margin: 0 }}>
+                  Doka packages persist via adminSetShopPackage. This panel does
+                  not list or edit packages yet — do not treat this card as a
+                  payment-link editor.
                 </p>
               </div>
-              <div className="bg-gray-800 p-4 rounded">
-                <h3 className="font-semibold mb-2">Manual Doka Grant</h3>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 bg-gray-700 px-3 py-2 rounded text-sm"
-                    placeholder="Principal ID"
-                    value={shopPrincipalId}
-                    onChange={(e) => setShopPrincipalId(e.target.value)}
-                  />
-                  <input
-                    className="w-24 bg-gray-700 px-3 py-2 rounded text-sm"
-                    placeholder="Amount"
-                    type="number"
-                    value={shopDokaAmount}
-                    onChange={(e) =>
-                      setShopDokaAmount(Number.parseInt(e.target.value) || 0)
-                    }
-                  />
-                  <button
-                    type="button"
-                    className="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm"
+              <div
+                style={{
+                  background:
+                    "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
+                  border: `1px solid ${C.goldDim}`,
+                  borderRadius: 8,
+                  padding: "14px 16px",
+                  marginBottom: 16,
+                }}
+              >
+                <p style={sectionHeadStyle}>Manual Doka Grant</p>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    alignItems: "flex-end",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <Field
+                      label="Grant principal"
+                      value={shopGrantPrincipalId}
+                      onChange={setShopGrantPrincipalId}
+                      ocid="admin.shop.grant_principal_input"
+                      placeholder="Principal to credit"
+                    />
+                  </div>
+                  <div style={{ width: 120 }}>
+                    <Field
+                      label="Amount"
+                      type="number"
+                      value={String(shopDokaAmount)}
+                      onChange={(v) =>
+                        setShopDokaAmount(Number.parseInt(v) || 0)
+                      }
+                      ocid="admin.shop.grant_amount_input"
+                    />
+                  </div>
+                  <Btn
+                    variant="gold"
                     onClick={() => {
                       const grantErr = validateDokaGrant(shopDokaAmount);
-                      if (!shopPrincipalId || grantErr) {
+                      if (!shopGrantPrincipalId || grantErr) {
                         toast.error(grantErr ?? "Enter a principal and amount");
                         return;
                       }
@@ -6882,74 +7212,98 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       }
                       setShopConfirm("grant");
                     }}
+                    ocid="admin.shop.grant_button"
                   >
                     Grant
-                  </button>
+                  </Btn>
                 </div>
               </div>
-              <div className="bg-gray-800 p-4 rounded">
-                <h3 className="font-semibold mb-2">Ban / Unban Player</h3>
-                <div className="flex gap-2">
-                  <input
-                    className="flex-1 bg-gray-700 px-3 py-2 rounded text-sm"
-                    placeholder="Principal ID"
-                    value={shopPrincipalId}
-                    onChange={(e) => setShopPrincipalId(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="bg-red-800 hover:bg-red-900 px-4 py-2 rounded text-sm"
+              <div
+                style={{
+                  background:
+                    "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
+                  border: `1px solid ${C.red}44`,
+                  borderRadius: 8,
+                  padding: "14px 16px",
+                }}
+              >
+                <p style={sectionHeadStyle}>Ban / Unban Player</p>
+                <p
+                  style={{
+                    color: C.dim,
+                    fontSize: 10,
+                    margin: "0 0 10px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Separate from the grant field so a credit cannot become a ban.
+                </p>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    alignItems: "flex-end",
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <Field
+                      label="Ban / unban principal"
+                      value={shopBanPrincipalId}
+                      onChange={setShopBanPrincipalId}
+                      ocid="admin.shop.ban_principal_input"
+                      placeholder="Principal to ban or unban"
+                    />
+                  </div>
+                  <Btn
+                    variant="red"
                     onClick={() => {
-                      if (!shopPrincipalId) {
+                      if (!shopBanPrincipalId) {
                         toast.error("Enter a principal ID");
                         return;
                       }
                       setShopConfirm("ban");
                     }}
+                    ocid="admin.shop.ban_button"
                   >
                     Ban
-                  </button>
-                  <button
-                    type="button"
-                    className="bg-green-800 hover:bg-green-900 px-4 py-2 rounded text-sm"
+                  </Btn>
+                  <Btn
+                    variant="blue"
                     onClick={() => {
-                      if (!shopPrincipalId) {
+                      if (!shopBanPrincipalId) {
                         toast.error("Enter a principal ID");
                         return;
                       }
-                      (async () => {
-                        try {
-                          await (
-                            adminActor as unknown as backendInterface
-                          ).adminUnbanAccount(
-                            Principal.fromText(shopPrincipalId),
-                          );
-                          toast.success(`Unbanned ${shopPrincipalId}`);
-                          setSaveStatus("Saved");
-                          setTimeout(() => setSaveStatus(null), 3000);
-                        } catch (err) {
-                          toast.error(`Failed to unban player: ${String(err)}`);
-                          setSaveStatus(`Save failed: ${String(err)}`);
-                        }
-                      })();
+                      setShopConfirm("unban");
                     }}
+                    ocid="admin.shop.unban_button"
                   >
                     Unban
-                  </button>
+                  </Btn>
                 </div>
               </div>
             </div>
           )}
 
           {dashState.tab === "bossRush" && (
-            <div data-ocid="admin.boss_rush_tab" className="p-4 space-y-4">
-              <h2 className="text-xl font-bold text-red-400">
+            <div data-ocid="admin.boss_rush_tab" style={{ padding: 20 }}>
+              <h3
+                style={{
+                  color: C.gold,
+                  margin: "0 0 6px",
+                  fontSize: 14,
+                  fontWeight: 800,
+                  letterSpacing: "0.06em",
+                }}
+              >
                 Boss Rush Configuration
-              </h2>
+              </h3>
               <CatalogNote>
                 Enable/reward toggles write opaque JSON. Live rooms come from
                 BOSS_RUSH_ROOMS; only parsed.rewardMultiplier is read. Room 10
-                lists Weeping Pawn; live room 9 uses weeping_pawn_2.
+                lists Weeping Pawn; live room 9 uses weeping_pawn_2. Canister
+                save publishes immediately — this is not a browser draft.
               </CatalogNote>
               {[
                 { room: 1, a: "Pale Archbishop", b: "Weeping Pawn" },
@@ -6973,13 +7327,33 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 return (
                   <div
                     key={room}
-                    className="bg-gray-800 p-3 rounded flex items-center gap-4"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      padding: "10px 14px",
+                      marginBottom: 8,
+                      background:
+                        "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
+                      border: `1px solid ${C.goldDim}`,
+                      borderRadius: 8,
+                    }}
                   >
-                    <span className="text-gray-400 w-8">R{room}</span>
-                    <span className="flex-1 text-sm">
+                    <span style={{ color: C.dim, width: 28, fontSize: 11 }}>
+                      R{room}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 12, color: C.silver }}>
                       {a} + {b}
                     </span>
-                    <label className="flex items-center gap-1 text-sm">
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 11,
+                        color: C.dim,
+                      }}
+                    >
                       <input
                         type="checkbox"
                         checked={isEnabled}
@@ -6989,17 +7363,26 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                             [enabledKey]: e.target.checked,
                           }))
                         }
+                        style={{ accentColor: C.gold }}
                       />
                       Enabled
                     </label>
-                    <label className="flex items-center gap-1 text-sm">
-                      Reward:{" "}
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        fontSize: 11,
+                        color: C.dim,
+                      }}
+                    >
+                      Reward
                       <input
                         type="number"
                         value={rewardVal}
                         step={0.5}
                         min={0.5}
-                        className="w-16 bg-gray-700 px-2 py-1 rounded text-sm"
+                        style={{ ...inputStyle(), width: 64, margin: 0 }}
                         onChange={(e) =>
                           setBossRushConfig((prev) => ({
                             ...prev,
@@ -7013,23 +7396,30 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   </div>
                 );
               })}
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  data-ocid="admin.boss_rush_save_button"
-                  className="bg-red-700 hover:bg-red-800 px-4 py-2 rounded text-sm font-semibold"
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  marginTop: 8,
+                }}
+              >
+                <Btn
+                  variant="gold"
+                  ocid="admin.boss_rush_save_button"
                   onClick={() => {
                     localStorage.setItem(
                       "bossRushConfig",
                       JSON.stringify(bossRushConfig),
                     );
-                    (async () => {
+                    void (async () => {
                       try {
                         await (
                           adminActor as unknown as backendInterface
                         ).adminSetBossRushConfig(
                           JSON.stringify(bossRushConfig),
                         );
+                        toast.success("Boss Rush config published (live)");
                         setSaveStatus("Saved");
                         setTimeout(() => setSaveStatus(null), 3000);
                         setBossRushSaved(true);
@@ -7042,10 +7432,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                     })();
                   }}
                 >
-                  Save Boss Rush Config
-                </button>
+                  Publish Boss Rush
+                </Btn>
                 {bossRushSaved && (
-                  <span className="text-green-400 text-sm">Saved!</span>
+                  <span
+                    style={{ color: C.green, fontSize: 11, fontWeight: 700 }}
+                  >
+                    Live save committed
+                  </span>
                 )}
               </div>
             </div>
@@ -7323,6 +7717,11 @@ function PhaseEditor({
   spells: SpellConfig[];
   label: string;
 }) {
+  const [abilityQuery, setAbilityQuery] = React.useState("");
+  const visibleAbilities = ALL_ABILITIES.filter((a) =>
+    matchesQuery(abilityQuery, a, ABILITY_LABELS[a]),
+  );
+
   const toggleAbility = (a: BossAbility) => {
     const has = phase.specialAbilities.includes(a);
     onChange({
@@ -7418,10 +7817,18 @@ function PhaseEditor({
       </div>
 
       <p style={{ ...labelStyle, marginBottom: 6 }}>Special Abilities</p>
+      <div style={{ marginBottom: 8 }}>
+        <ListSearch
+          value={abilityQuery}
+          onChange={setAbilityQuery}
+          placeholder="Filter abilities…"
+          ocid="admin.bosses.ability_search"
+        />
+      </div>
       <div
         style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}
       >
-        {ALL_ABILITIES.map((a) => {
+        {visibleAbilities.map((a) => {
           const active = phase.specialAbilities.includes(a);
           return (
             <button
@@ -7494,6 +7901,9 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
 
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
   const [drafts, setDrafts] = React.useState<Record<string, BossConfig>>({});
+  const [confirmResetId, setConfirmResetId] = React.useState<string | null>(
+    null,
+  );
 
   const getDraft = (id: string): BossConfig => {
     if (drafts[id]) return drafts[id];
@@ -7511,7 +7921,9 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
   const handleSave = (id: string) => {
     setBossConfig.mutate(getDraft(id), {
       onSuccess: () => {
-        toast.success(`Boss "${getDraft(id).name}" saved!`);
+        toast.success(
+          `Boss "${getDraft(id).name}" draft saved in this browser only — not canister-live`,
+        );
         refetch();
       },
       onError: () => toast.error("Failed to save boss config"),
@@ -7568,6 +7980,21 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
           </p>
         </div>
       </div>
+
+      {confirmResetId && (
+        <ConfirmDialog
+          title={`Reset ${getDraft(confirmResetId).name}?`}
+          body="This overwrites the browser-local draft with shipped defaults. It is still not canister-live."
+          confirmLabel="Reset draft"
+          ocidPrefix="admin.bosses.reset"
+          onCancel={() => setConfirmResetId(null)}
+          onConfirm={() => {
+            const id = confirmResetId;
+            setConfirmResetId(null);
+            handleReset(id);
+          }}
+        />
+      )}
 
       {BOSS_IDS.map((bossId, idx) => {
         const draft = getDraft(bossId);
@@ -7788,11 +8215,11 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
                     onClick={() => handleSave(bossId)}
                     ocid={`admin.bosses.save_button.${idx + 1}`}
                   >
-                    Save Boss
+                    Save browser draft
                   </Btn>
                   <Btn
                     variant="ghost"
-                    onClick={() => handleReset(bossId)}
+                    onClick={() => setConfirmResetId(bossId)}
                     ocid={`admin.bosses.reset_button.${idx + 1}`}
                   >
                     Reset to Defaults
@@ -7812,6 +8239,7 @@ function AdBoxEditor({ index }: { index: number }) {
   const [imageUrl, setImageUrl] = React.useState("");
   const [linkUrl, setLinkUrl] = React.useState("");
   const [status, setStatus] = React.useState("");
+  const [confirmClear, setConfirmClear] = React.useState(false);
   React.useEffect(() => {
     if (actor) {
       (
@@ -7846,7 +8274,7 @@ function AdBoxEditor({ index }: { index: number }) {
           ) => Promise<void>;
         }
       ).adminSetAdBox(BigInt(index), imageUrl, linkUrl);
-      setStatus("Saved!");
+      setStatus("Saved");
       setTimeout(() => setStatus(""), 2000);
     } catch {
       setStatus("Error");
@@ -7859,102 +8287,105 @@ function AdBoxEditor({ index }: { index: number }) {
       ).adminClearAdBox(BigInt(index));
       setImageUrl("");
       setLinkUrl("");
-      setStatus("Cleared!");
+      setStatus("Hidden default");
       setTimeout(() => setStatus(""), 2000);
     } catch {
       setStatus("Error");
     }
   };
+  const hasCustom = Boolean(imageUrl.trim() || linkUrl.trim());
   return (
     <div
       style={{
-        background: "#1a0505",
-        border: "1px solid #4a0a0a",
-        borderRadius: "8px",
-        padding: "16px",
-        marginBottom: "16px",
+        background:
+          "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
+        border: `1px solid ${C.goldDim}`,
+        borderRadius: 8,
+        padding: 16,
+        marginBottom: 16,
       }}
     >
-      <h3 style={{ color: "#ff6666", marginBottom: "12px" }}>
+      {confirmClear && (
+        <ConfirmDialog
+          title={`Clear ad box ${index + 1}?`}
+          body="This hides the landing-page slot immediately (valid default). The custom image and link are removed."
+          confirmLabel="Clear to hidden default"
+          ocidPrefix={`admin.ads.clear.${index + 1}`}
+          onCancel={() => setConfirmClear(false)}
+          onConfirm={() => {
+            setConfirmClear(false);
+            void clear();
+          }}
+        />
+      )}
+      <h3
+        style={{
+          color: C.gold,
+          margin: "0 0 8px",
+          fontSize: 13,
+          fontWeight: 800,
+        }}
+      >
         Ad Box {index + 1}
       </h3>
+      <p
+        data-ocid={`admin.ads.visual_status.${index + 1}`}
+        style={{
+          color: hasCustom ? C.gold : C.green,
+          fontSize: 10,
+          fontWeight: 700,
+          margin: "0 0 8px",
+        }}
+      >
+        {hasCustom
+          ? "Custom Visual — override URLs set"
+          : "No custom ad — box hidden (valid default)"}
+      </p>
+      <p style={{ color: C.dimmer, fontSize: 10, margin: "0 0 10px" }}>
+        Hosted PNG/WebP, landscape ~4:3, https only. Paste URLs before Save.
+        Empty is valid — use Clear, do not treat empty as an error.
+      </p>
       {imageUrl && !unsafeUrl(imageUrl) && (
         <img
           src={imageUrl}
           alt="preview"
           style={{
-            width: "200px",
-            height: "150px",
+            width: 200,
+            height: 150,
             objectFit: "cover",
-            borderRadius: "4px",
-            marginBottom: "8px",
+            borderRadius: 4,
+            marginBottom: 8,
             display: "block",
+            border: `1px solid ${C.goldDim}`,
           }}
         />
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <input
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
-          placeholder="Image URL (https://...)"
-          style={{
-            background: "#0d0505",
-            border: "1px solid #4a0a0a",
-            color: "#fff",
-            padding: "8px",
-            borderRadius: "4px",
-            fontSize: "13px",
-          }}
+          placeholder="Image URL (https://…) — optional"
+          style={inputStyle()}
         />
         <input
           value={linkUrl}
           onChange={(e) => setLinkUrl(e.target.value)}
-          placeholder="Click-through URL (https://...)"
-          style={{
-            background: "#0d0505",
-            border: "1px solid #4a0a0a",
-            color: "#fff",
-            padding: "8px",
-            borderRadius: "4px",
-            fontSize: "13px",
-          }}
+          placeholder="Click-through URL (https://…) — optional"
+          style={inputStyle()}
         />
-        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <button
-            type="button"
-            onClick={save}
-            style={{
-              background: "#6b0000",
-              color: "#fff",
-              border: "none",
-              padding: "8px 16px",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "13px",
-            }}
-          >
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Btn variant="gold" small onClick={() => void save()}>
             Save
-          </button>
-          <button
-            type="button"
-            onClick={clear}
-            style={{
-              background: "#333",
-              color: "#fff",
-              border: "none",
-              padding: "8px 16px",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "13px",
-            }}
-          >
-            Clear
-          </button>
+          </Btn>
+          <Btn variant="ghost" small onClick={() => setConfirmClear(true)}>
+            Clear to default
+          </Btn>
           {status && (
             <span
               style={{
-                color: status.includes("Error") ? "#ff4444" : "#44ff44",
-                fontSize: "12px",
+                color: status.includes("Error") ? C.red : C.green,
+                fontSize: 11,
+                fontWeight: 700,
               }}
             >
               {status}
