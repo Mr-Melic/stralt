@@ -297,6 +297,13 @@ export type PendingDeathPenalty = {
   preDoka: number;
   afterXp: number;
   afterDoka: number;
+  /**
+   * Set after saveBattleStats accepts the 20/40 cut, before the marker is
+   * removed. A crash in that window used to leave an unpaid-looking pending
+   * record; the next portal / ground-Doka credit then looked like a "later
+   * earn" and resolvePendingDeathReplay cleared without writing.
+   */
+  cutConfirmed?: boolean;
 };
 
 export function pendingDeathPenaltyStorageKey(slot: number): string {
@@ -334,13 +341,15 @@ export function readPendingDeathPenalty(
     ) {
       return null;
     }
-    return {
+    const pending: PendingDeathPenalty = {
       slot: Math.floor(Number(parsed.slot)),
       preXp: Math.max(0, Math.floor(Number(parsed.preXp))),
       preDoka: Math.max(0, Math.floor(Number(parsed.preDoka))),
       afterXp: Math.max(0, Math.floor(Number(parsed.afterXp))),
       afterDoka: Math.max(0, Math.floor(Number(parsed.afterDoka))),
     };
+    if (parsed.cutConfirmed === true) pending.cutConfirmed = true;
+    return pending;
   } catch {
     return null;
   }
@@ -362,16 +371,10 @@ export type PendingDeathReplay =
   | { action: "write"; newXp: number; newDoka: number };
 
 /**
- * Reload before saveBattleStats lands leaves the canister unpenalized.
- * Replay only when the backend still matches the pre-penalty snapshot so a
- * later legitimate earn cannot be cut a second time.
- */
-/**
  * Death-replay must compare the canister XP, not GameFlow's Play-entry
  * `character.experience`. That prop is never updated after applyRewards, so
  * a remount / actor reconnect after an in-session earn reads the stale
- * select-screen value, fails both pre/after matches, and clears the pending
- * marker — the 20/40 cut never retries.
+ * select-screen value and used to miss both pre/after matches.
  */
 export function experienceFromCharacterRecord(
   record: { experience?: unknown } | null | undefined | unknown,
@@ -403,8 +406,9 @@ export async function readDeathReplayBackendSnapshot(args: {
  * the marker and the canister stayed whole.
  *
  * If the drop from `pre` is already at least the death loss, that axis
- * absorbed the cut (or a larger spend). Otherwise subtract the unpaid loss.
- * A later earn on both axes is handled by resolvePendingDeathReplay (clear).
+ * absorbed the cut (or a larger spend). Otherwise subtract the unpaid loss
+ * from the live snapshot so a portal +10 or ground-Doka credit cannot
+ * erase the pending marker.
  */
 export function applyUnpaidDeathPenaltyToWrite(
   pending: PendingDeathPenalty,
@@ -423,6 +427,18 @@ export function applyUnpaidDeathPenaltyToWrite(
   };
 }
 
+/**
+ * Reload / flush before saveBattleStats lands leaves the canister uncut.
+ *
+ * Portal +10 and ground Doka are applyRewards credits on one axis. The
+ * previous resolver treated any snapshot that was not exactly `pre` or
+ * `pre`+heal-spend as a later earn and cleared — so a remount race
+ * (pending death + portal or coin) dropped the 20/40 cut and kept the
+ * credit. Apply the unpaid cut to the live canister snapshot instead.
+ *
+ * `cutConfirmed` means saveBattleStats already accepted the cut. A later
+ * earn on that wallet must not be penalized again.
+ */
 export function resolvePendingDeathReplay(
   backendXp: number,
   backendDoka: number,
@@ -430,23 +446,17 @@ export function resolvePendingDeathReplay(
 ): PendingDeathReplay {
   const xp = Math.max(0, Math.floor(Number(backendXp) || 0));
   const doka = Math.max(0, Math.floor(Number(backendDoka) || 0));
+  if (pending.cutConfirmed === true) {
+    return { action: "clear" };
+  }
   if (xp === pending.afterXp && doka === pending.afterDoka) {
     return { action: "clear" };
   }
-  if (xp === pending.preXp && doka === pending.preDoka) {
-    return {
-      action: "write",
-      newXp: pending.afterXp,
-      newDoka: pending.afterDoka,
-    };
+  const next = applyUnpaidDeathPenaltyToWrite(pending, xp, doka);
+  if (next.xp === xp && next.doka === doka) {
+    return { action: "clear" };
   }
-  // Heal/shop after a failed persist: XP still pre, Doka already spent.
-  // Do not treat a later earn (both axes above pre) as an unpaid cut.
-  if (xp === pending.preXp && doka < pending.preDoka) {
-    const next = applyUnpaidDeathPenaltyToWrite(pending, xp, doka);
-    return { action: "write", newXp: next.xp, newDoka: next.doka };
-  }
-  return { action: "clear" };
+  return { action: "write", newXp: next.xp, newDoka: next.doka };
 }
 
 /**
@@ -517,6 +527,32 @@ export function clearPendingDeathPenaltyAnywhere(
   }
 }
 
+/** Persist-success marker so a crash-before-clear cannot look unpaid. */
+export function confirmPendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  pending: PendingDeathPenalty,
+): void {
+  writePendingDeathPenalty(storage, { ...pending, cutConfirmed: true });
+}
+
+export function confirmAndClearPendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  pending: PendingDeathPenalty,
+): void {
+  confirmPendingDeathPenalty(storage, pending);
+  clearPendingDeathPenalty(storage, pending.slot);
+}
+
+export function confirmAndClearPendingDeathPenaltyAnywhere(
+  slot: number,
+  pending: PendingDeathPenalty,
+  primary: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
+  fallback?: DeathPenaltyStorage,
+): void {
+  confirmPendingDeathPenalty(primary, { ...pending, slot });
+  clearPendingDeathPenaltyAnywhere(slot, primary, fallback);
+}
+
 export type FlushPendingDeathArgs = {
   storage: DeathPenaltyStorage;
   slot: number;
@@ -549,7 +585,7 @@ export async function flushPendingDeathPenalty(
     args.writePenalty(decision.newXp, decision.newDoka),
   );
   args.persist.commit({ doka: decision.newDoka, xp: decision.newXp });
-  clearPendingDeathPenalty(args.storage, args.slot);
+  confirmAndClearPendingDeathPenalty(args.storage, pending);
   return true;
 }
 
