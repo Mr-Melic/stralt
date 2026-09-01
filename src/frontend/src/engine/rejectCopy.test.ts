@@ -28,6 +28,9 @@ describe("playerFacingRejectReason", () => {
     );
     assert.equal(playerFacingRejectReason("barrier_tile"), "Blocked");
     assert.equal(playerFacingRejectReason("line_blocked_barrier"), "Blocked");
+    assert.equal(playerFacingRejectReason("ground_barrier"), "Blocked");
+      playerFacingRejectReason("line_los_blocked"),
+      "No line of sight",
   });
 
   it("passes through already-human phrases", () => {

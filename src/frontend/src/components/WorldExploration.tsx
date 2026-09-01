@@ -190,6 +190,7 @@ import {
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
 import { playerFacingRejectReason } from "../engine/rejectCopy";
+import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
 import {
   type PlayerSpellContextDeps,
   createPlayerSpellContext,
@@ -12610,6 +12611,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             "Victory recap built",
             JSON.stringify(recapWithUnlocks),
           );
+          if (shouldAnnounceLevelUp(characterStats.level, recapXp.level)) {
+            playSound("level_up");
+          }
           if (onShowBattleSummary) {
             onShowBattleSummary(recapWithUnlocks);
             logDebugInfo("BATTLE", "onShowBattleSummary fired for victory");
@@ -12954,6 +12958,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       };
 
       // Set popup state (non-blocking overlay)
+      if (shouldAnnounceLevelUp(characterStats.level, leveled.newLevel)) {
+        playSound("level_up");
+      }
       if (onShowBattleSummary) {
         onShowBattleSummary(
           attachRecapUnlocks(finalRecapData, newlyUnlockedInBattleRef.current),

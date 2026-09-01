@@ -26,6 +26,7 @@ const REJECT_COPY: Record<string, string> = {
   diagonal_off_axis: "Must be on a diagonal",
   free_cells_occupied: "No space",
   los_blocked: "No line of sight",
+  barrier_tile: "Blocked",
   area_no_radius: "Invalid target",
   area_no_anchor: "Invalid target",
   no_matching_branch: "Invalid target",
