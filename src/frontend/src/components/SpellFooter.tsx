@@ -167,9 +167,11 @@ const SpellFooter: React.FC<SpellFooterProps> = ({
                 }}
                 disabled={isEmpty || !inBattle || isOnCooldown}
                 title={
-                  isOnCooldown
-                    ? `${spell?.name} \u2014 ${cooldownLeft} turn${cooldownLeft !== 1 ? "s" : ""} cooldown`
-                    : spellTitle
+                  !inBattle && spell
+                    ? `${spell.name} \u2014 usable once a fight starts`
+                    : isOnCooldown
+                      ? `${spell?.name} \u2014 ${cooldownLeft} turn${cooldownLeft !== 1 ? "s" : ""} cooldown`
+                      : spellTitle
                 }
                 style={{
                   width: 46,

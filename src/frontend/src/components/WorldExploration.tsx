@@ -1203,19 +1203,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     currentChallengeRef.current = currentChallenge;
   }, [currentChallenge]);
-  const [bloodBalance, _setBloodBalance] = useState<number>(() => {
-    try {
-      const _bs = localStorage.getItem(
-        `pbv_blood_balance_${userId}_slot${characterSlot}`,
-      );
-      return _bs !== null
-        ? Math.max(0, Math.min(100, Number.parseInt(_bs, 10)))
-        : 100;
-    } catch {
-      return 100;
-    }
-  });
-  const _bloodBalanceRef = useRef<number>(100);
   const _noSpawnCounterRef = useRef<number>(0);
 
   // ── EXP8: Dungeon Chain Run state ───────────────────────────────────────────────
@@ -13017,7 +13004,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             recapGrant.xpDelta,
           );
           const finalRecapData: BattleRecapData = {
-            mapTitle: currentMapRef.current?.id || "Unknown",
+            mapTitle:
+              currentMapRef.current?.levelZone?.name ||
+              currentMapRef.current?.id ||
+              "Unknown",
             xpEarned: recapGrant.xpDelta,
             dokaEarned: recapGrant.dokaDelta,
             hitsDealt: battleHitsRef.current,
@@ -13176,7 +13166,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           onShowBattleSummary(
             attachRecapUnlocks(
               {
-                mapTitle: currentMapRef.current?.id || "Unknown",
+                mapTitle:
+                  currentMapRef.current?.levelZone?.name ||
+                  currentMapRef.current?.id ||
+                  "Unknown",
                 xpEarned: 0,
                 dokaEarned: 0,
                 hitsDealt: 0,
@@ -13840,7 +13833,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           xpForNextLevel: xpForNextLevel(characterStats.level),
           enemiesDefeated: [],
           hitsDealt: 0,
-          mapTitle: currentMapRef.current?.id || "Unknown",
+          mapTitle:
+            currentMapRef.current?.levelZone?.name ||
+            currentMapRef.current?.id ||
+            "Unknown",
         };
         if (onShowBattleSummary) {
           onShowBattleSummary(
@@ -18098,49 +18094,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }}
           >
             {characterStats.exp}/{characterStats.expToNext}
-          </span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-            marginLeft: "8px",
-          }}
-        >
-          <span
-            style={{
-              color: "#cc0000",
-              fontSize: "10px",
-              fontWeight: "bold",
-              textShadow: "0 0 4px #8b0000",
-            }}
-          >
-            BLOOD
-          </span>
-          <div
-            style={{
-              width: "60px",
-              height: "8px",
-              background: "#1a0000",
-              border: "1px solid #8b0000",
-              borderRadius: "2px",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                width: `${bloodBalance}%`,
-                height: "100%",
-                background: "linear-gradient(90deg, #8b0000, #cc0000)",
-                transition: "width 0.3s ease",
-              }}
-            />
-          </div>
-          <span
-            style={{ color: "#cc0000", fontSize: "10px", fontWeight: "bold" }}
-          >
-            {bloodBalance}
           </span>
         </div>
         {/* Doka balance chip + Shop button */}
