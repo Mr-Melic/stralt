@@ -115,6 +115,18 @@ export function playerSpellRequiresLos(spell: {
 }
 
 /**
+ * Only `self` / `ally` / `all` may use the caster tile. Area expansion
+ * used to paint that tile; mouse/touch then rejected it with a second
+ * WorldExploration guard, so a highlighted cell could not execute.
+ */
+export function playerSpellAllowsCasterTile(spell: {
+  targetType?: string;
+}): boolean {
+  const t = (spell.targetType ?? "enemy") as string;
+  return t === "self" || t === "ally" || t === "all";
+}
+
+/**
  * Ground / barrier range metric shared by highlight and live.
  *
  * Non-diagonal: Manhattan (|dx|+|dy| <= range).
@@ -258,6 +270,13 @@ export interface TargetGridState {
 export interface CasterPosition {
   x: number;
   y: number;
+}
+
+export function isCasterTile(
+  caster: CasterPosition,
+  tile: { x: number; y: number },
+): boolean {
+  return tile.x === caster.x && tile.y === caster.y;
 }
 
 /**
@@ -455,6 +474,13 @@ export function computeTargetableTiles(
           if (nx < 0 || nx >= worldGridSize || ny < 0 || ny >= worldGridSize)
             continue;
           if (tiles[ny][nx] === "wall") continue;
+          // Execute rejects hostile/area clicks on the caster tile.
+          if (
+            isCasterTile(casterPos, { x: nx, y: ny }) &&
+            !playerSpellAllowsCasterTile(spell)
+          ) {
+            continue;
+          }
           out.add(`${nx},${ny}`);
         }
       }
@@ -560,6 +586,17 @@ export function isTileCastableLive(
   // ── all: any non-wall tile (wall already rejected above).
   if (targetType === "all") {
     return { ok: true, reason: "all" };
+  }
+
+  // Area footprint can include the caster cell; mouse/touch execute
+  // already refused that click. Reject here so highlight, live, and
+  // Attack Nearest share one rule (self / ally / all only).
+  if (
+    isCasterTile(casterPos, tile) &&
+    !playerSpellAllowsCasterTile(spell) &&
+    (targetType === "area" || targetType === "enemy" || targetType === "chain")
+  ) {
+    return { ok: false, reason: "caster_tile_hostile" };
   }
 
   // ── ally: caster tile OR a player-side summon within Chebyshev range.

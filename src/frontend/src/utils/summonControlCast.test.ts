@@ -10,6 +10,7 @@ import {
   resolveSummonControlSpell,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
+  summonControlRangeCap,
   summonTurnBudget,
 } from "./summonControlCast.ts";
 
@@ -257,6 +258,63 @@ describe("planSummonControlCast", () => {
       "Invalid target",
     );
     assert.equal(summonControlCastFailMessage("no_spell"), "Unknown spell");
+  });
+
+  it("does not Chebyshev-reject an area expansion tile the live gate would accept", () => {
+    assert.equal(
+      summonControlRangeCap({ targetType: "area", areaRadius: 2 }, 1),
+      3,
+    );
+    assert.equal(summonControlRangeCap({ targetType: "enemy" }, 3), 3);
+    assert.equal(
+      summonControlRangeCap({ targetType: "all" }, 1),
+      Number.POSITIVE_INFINITY,
+    );
+    const tiles = Array.from({ length: 10 }, () =>
+      Array.from({ length: 10 }, () => "floor" as const),
+    );
+    const planned = planSummonControlCast({
+      pieceType: "bomber",
+      spellId: "spell-frost-nova",
+      catalog: [
+        {
+          id: "summon-bomber",
+          summonUnitDef: {
+            pieceType: "bomber",
+            summonKit: ["spell-frost-nova"],
+          },
+        },
+        {
+          id: "spell-frost-nova",
+          apCost: 4,
+          range: 1,
+          maxRange: 1,
+          targetType: "area",
+          areaRadius: 2,
+        },
+      ],
+      fallbackSpells: [],
+      currentAp: 4,
+      caster: { x: 4, y: 4 },
+      target: { x: 4, y: 6 },
+      liveGate: {
+        tiles,
+        combatants: [
+          {
+            id: "rat",
+            x: 4,
+            y: 5,
+            hp: 10,
+            maxHp: 10,
+            name: "Rat",
+            pieceType: "pawn",
+            side: "enemy",
+          } as import("../types/gameTypes.ts").Enemy,
+        ],
+        effectiveRange: 1,
+      },
+    });
+    assert.equal(planned.ok, true);
   });
 
   it("rejects a LoS-blocked kit shot when the live gate is supplied", () => {

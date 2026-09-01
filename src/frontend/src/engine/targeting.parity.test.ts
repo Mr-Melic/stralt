@@ -8,8 +8,10 @@ import {
   findAttackNearestTarget,
   groundTileInRange,
   hasBresenhamLoS,
+  isCasterTile,
   isTileCastableLive,
   pickNearestLiveHostileTile,
+  playerSpellAllowsCasterTile,
   playerSpellEffectiveRange,
   playerSpellRequiresLos,
   probeLiveCast,
@@ -343,6 +345,52 @@ describe("highlight vs live parity", () => {
     );
   });
 
+  it("does not highlight or execute the caster tile for area spells", () => {
+    const tiles = floorGrid(10);
+    const origin = { x: 4, y: 4 };
+    const spell = baseSpell({
+      id: "spell-frost-nova",
+      targetType: "area",
+      areaRadius: 2,
+      maxRange: 1,
+      range: 1n,
+    });
+    const grid = {
+      tiles,
+      enemies: [unit("n", 4, 5, { side: "enemy" })],
+      worldGridSize: 10,
+      effectiveRange: 1,
+      barrierTiles: new Map<string, number>(),
+    };
+    assert.deepEqual(collectHighlightLiveMismatches(spell, origin, grid), {
+      highlightOnly: [],
+      liveOnly: [],
+    });
+    const highlighted = computeTargetableTiles(spell, origin, grid);
+    assert.equal(
+      highlighted.has("4,4"),
+      false,
+      "own tile must not be a highlighted area click",
+    );
+    const liveSelf = probeLiveCast(
+      spell,
+      origin,
+      origin,
+      grid.enemies,
+      tiles,
+      1,
+    );
+    assert.equal(shouldExecuteLiveCast(liveSelf), false);
+    assert.equal(liveSelf.reason, "caster_tile_hostile");
+    assert.equal(highlighted.has("4,6"), true);
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(spell, origin, { x: 4, y: 6 }, grid.enemies, tiles, 1),
+      ),
+      true,
+    );
+  });
+
   it("area expansion tiles stay legal on both sides", () => {
     const tiles = floorGrid(10);
     const origin = { x: 4, y: 4 };
@@ -470,6 +518,16 @@ describe("findAttackNearestTarget", () => {
 });
 
 describe("shared helpers", () => {
+  it("allows the caster tile only for self / ally / all", () => {
+    assert.equal(playerSpellAllowsCasterTile({ targetType: "self" }), true);
+    assert.equal(playerSpellAllowsCasterTile({ targetType: "ally" }), true);
+    assert.equal(playerSpellAllowsCasterTile({ targetType: "all" }), true);
+    assert.equal(playerSpellAllowsCasterTile({ targetType: "area" }), false);
+    assert.equal(playerSpellAllowsCasterTile({ targetType: "enemy" }), false);
+    assert.equal(isCasterTile({ x: 3, y: 3 }, { x: 3, y: 3 }), true);
+    assert.equal(isCasterTile({ x: 3, y: 3 }, { x: 4, y: 3 }), false);
+  });
+
   it("requires LoS only when lineOfSight is truthy", () => {
     assert.equal(playerSpellRequiresLos({}), false);
     assert.equal(playerSpellRequiresLos({ lineOfSight: false }), false);
