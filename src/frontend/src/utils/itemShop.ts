@@ -288,7 +288,10 @@ export function syncLiveDokaFromProp(args: {
   const prev = Math.max(0, Math.floor(Number(args.prevPropDoka) || 0));
   const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
   if (prev !== prop) {
-    return { liveDoka: prop, prevPropDoka: prop };
+    if (live === prev) {
+      return { liveDoka: prop, prevPropDoka: prop };
+    }
+    return { liveDoka: live, prevPropDoka: prop };
   }
   return { liveDoka: live, prevPropDoka: prev };
 }

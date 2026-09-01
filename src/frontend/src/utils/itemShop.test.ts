@@ -17,6 +17,7 @@ import {
   shouldRollbackFailedHeal,
   shouldRollbackFailedShopSpend,
   shouldStartDokaHeal,
+  syncLiveDokaFromProp,
   tryConsumeBuffItem,
   tryPurchaseBuffItem,
   writeLiveDoka,
@@ -372,6 +373,23 @@ assert.equal(
     shouldRollbackFailedShopSpend({ liveDoka: 50, expectedDoka: 50 }),
     true,
     "same-click reject still refunds when nothing superseded it",
+  );
+}
+
+{
+  // Credit scheduled setDokaBalance(150); heal spent live to 140; GameFlow
+  // then flushed 150. Copying the new prop over a local mutation minted a
+  // ghost 10 Doka for the next heal persist.
+  const afterHeal = syncLiveDokaFromProp({
+    propDoka: 150,
+    prevPropDoka: 100,
+    liveDoka: 140,
+  });
+  assert.deepEqual(afterHeal, { liveDoka: 140, prevPropDoka: 150 });
+  assert.deepEqual(
+    syncLiveDokaFromProp({ propDoka: 150, prevPropDoka: 100, liveDoka: 100 }),
+    { liveDoka: 150, prevPropDoka: 150 },
+    "unmutated live still adopts the new authoritative prop",
   );
 }
 
