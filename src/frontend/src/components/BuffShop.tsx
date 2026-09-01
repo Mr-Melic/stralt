@@ -6,6 +6,7 @@ import {
   liveShopWallet,
   shouldAllowShopSpend,
   shouldRollbackFailedShopSpend,
+  tryConsumeBuffItem,
   tryPurchaseBuffItem,
 } from "../utils/itemShop";
 
@@ -252,15 +253,19 @@ const BuffShop: React.FC<BuffShopProps> = ({
   const handleUse = useCallback(
     (itemId: BuffItemType) => {
       if (!inBattle || !isPlayerTurn) return;
-      const count = inventory[itemId] ?? 0;
-      if (count <= 0) return;
+      const nextOwned = tryConsumeBuffItem(inventoryRef.current[itemId] ?? 0);
+      if (nextOwned == null) return;
+      inventoryRef.current = {
+        ...inventoryRef.current,
+        [itemId]: nextOwned,
+      };
       onUseItem(itemId);
-      setInventory((prev) => {
-        const next = prev[itemId] ? prev[itemId]! - 1 : 0;
-        return { ...prev, [itemId]: Math.max(0, next) };
-      });
+      setInventory((prev) => ({
+        ...prev,
+        [itemId]: nextOwned,
+      }));
     },
-    [inventory, inBattle, isPlayerTurn, onUseItem],
+    [inBattle, isPlayerTurn, onUseItem],
   );
 
   const totalItems = BUFF_ITEMS.reduce(

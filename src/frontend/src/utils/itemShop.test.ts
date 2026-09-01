@@ -17,6 +17,7 @@ import {
   shouldRollbackFailedHeal,
   shouldRollbackFailedShopSpend,
   shouldStartDokaHeal,
+  tryConsumeBuffItem,
   tryPurchaseBuffItem,
   writeLiveDoka,
 } from "./itemShop.ts";
@@ -171,6 +172,18 @@ assert.equal(
   }),
   null,
 );
+
+{
+  const afterFirst = tryConsumeBuffItem(1);
+  assert.equal(afterFirst, 0);
+  assert.equal(
+    tryConsumeBuffItem(afterFirst ?? 0),
+    null,
+    "double-click must not consume the same stack twice",
+  );
+  assert.equal(tryConsumeBuffItem(0), null);
+  assert.equal(tryConsumeBuffItem(-1), null);
+}
 
 {
   const first = resolveOverworldHealSpend({

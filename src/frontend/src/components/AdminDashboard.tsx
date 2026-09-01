@@ -2138,107 +2138,109 @@ const EnemyList: React.FC<{
         </div>
       )}
 
-      {visible.map((e, i) => (
-        <PanelCard key={e.id}>
-          <div
-            data-ocid={`admin.enemies.item.${i + 1}`}
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              padding: "10px 14px",
-            }}
-          >
+      {visible.map((e, i) => {
+        const visualCopy = enemyVisualStatusCopy(
+          spriteUrlIsStored(e.spriteUrl),
+        );
+        return (
+          <PanelCard key={e.id}>
             <div
+              data-ocid={`admin.enemies.item.${i + 1}`}
               style={{
-                width: 36,
-                height: 36,
-                background: `linear-gradient(135deg, ${C.bg0}, ${C.bg3})`,
-                border: `1px solid ${C.goldDim}`,
-                borderRadius: 6,
                 display: "flex",
+                gap: 12,
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: 18,
-                flexShrink: 0,
+                padding: "10px 14px",
               }}
             >
-              👾
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
-                  color: "#c0ccd8",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  marginBottom: 2,
-                }}
-              >
-                {e.name || e.id}
-              </div>
-              <div
-                style={{
+                  width: 36,
+                  height: 36,
+                  background: `linear-gradient(135deg, ${C.bg0}, ${C.bg3})`,
+                  border: `1px solid ${C.goldDim}`,
+                  borderRadius: 6,
                   display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
                   alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 18,
+                  flexShrink: 0,
                 }}
               >
-                {[
-                  [
-                    `Lv ${String(e.levelMin)}–${String(e.levelMax)}`,
-                    C.goldBright,
-                  ],
-                  [`HP ${String(e.hp)}`, C.red],
-                  [`AP ${String(e.ap)}`, C.blue],
-                  [`MP ${String(e.mp)}`, C.green],
-                  [`Init ${String(e.initStat)}`, C.dim],
-                  [
-                    enemyVisualStatusCopy(spriteUrlIsStored(e.spriteUrl)).chip,
-                    enemyVisualStatusCopy(spriteUrlIsStored(e.spriteUrl))
-                      .storedNotRendered
-                      ? C.dim
-                      : C.green,
-                  ],
-                ].map(([label, color]) => (
-                  <span
-                    key={label}
-                    style={{
-                      background: `${color}18`,
-                      border: `1px solid ${color}44`,
-                      borderRadius: 20,
-                      padding: "1px 7px",
-                      fontSize: 10,
-                      color,
-                      letterSpacing: "0.04em",
-                    }}
-                  >
-                    {label}
-                  </span>
-                ))}
+                👾
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    color: "#c0ccd8",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    marginBottom: 2,
+                  }}
+                >
+                  {e.name || e.id}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  {[
+                    [
+                      `Lv ${String(e.levelMin)}–${String(e.levelMax)}`,
+                      C.goldBright,
+                    ],
+                    [`HP ${String(e.hp)}`, C.red],
+                    [`AP ${String(e.ap)}`, C.blue],
+                    [`MP ${String(e.mp)}`, C.green],
+                    [`Init ${String(e.initStat)}`, C.dim],
+                    [
+                      visualCopy.chip,
+                      visualCopy.storedNotRendered ? C.dim : C.green,
+                    ],
+                  ].map(([label, color]) => (
+                    <span
+                      key={label}
+                      style={{
+                        background: `${color}18`,
+                        border: `1px solid ${color}44`,
+                        borderRadius: 20,
+                        padding: "1px 7px",
+                        fontSize: 10,
+                        color,
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn
+                  variant="ghost"
+                  small
+                  onClick={() => onEdit(e.id)}
+                  ocid={`admin.enemies.edit_button.${i + 1}`}
+                >
+                  Edit
+                </Btn>
+                <Btn
+                  variant="red"
+                  small
+                  onClick={() => setConfirmId(e.id)}
+                  ocid={`admin.enemies.delete_button.${i + 1}`}
+                >
+                  ×
+                </Btn>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn
-                variant="ghost"
-                small
-                onClick={() => onEdit(e.id)}
-                ocid={`admin.enemies.edit_button.${i + 1}`}
-              >
-                Edit
-              </Btn>
-              <Btn
-                variant="red"
-                small
-                onClick={() => setConfirmId(e.id)}
-                ocid={`admin.enemies.delete_button.${i + 1}`}
-              >
-                ×
-              </Btn>
-            </div>
-          </div>
-        </PanelCard>
-      ))}
+          </PanelCard>
+        );
+      })}
       {confirmId && (
         <ConfirmDialog
           title={`Delete ${pending?.name || pending?.id || "enemy"}?`}

@@ -147,6 +147,13 @@ export function tryPurchaseBuffItem(
   };
 }
 
+/** Consume from inventoryRef so a double-click cannot spend one stack twice. */
+export function tryConsumeBuffItem(owned: number): number | null {
+  const count = toNat(owned);
+  if (count <= 0) return null;
+  return count - 1;
+}
+
 export type OverworldHealSpendInput = {
   currentHp: number;
   maxHp: number;
