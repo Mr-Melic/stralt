@@ -18,6 +18,7 @@ import {
   unsafeUrl,
   validateAdBox,
   validateAssignRole,
+  validateBossPortalAssignment,
   validateChangelog,
   validateDokaGrant,
   validateEnemyName,
@@ -132,6 +133,79 @@ assert.ok(
     effectCategory: "damage",
   }),
 );
+
+assert.equal(
+  validateSpellConfig({
+    id: "summon-dire-wolf",
+    name: "Summon Dire Wolf",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "summon",
+    effectType: "summon",
+    effectCategory: "damage",
+    isSummon: true,
+    summonAI: "not-an-archetype",
+    summonLifespan: 4,
+    summonUnitDef: { pieceType: "wolf", hpScale: 1, damageScale: 1 },
+  }),
+  "summonAI must be a known archetype",
+);
+assert.equal(
+  validateSpellConfig({
+    id: "summon-dire-wolf",
+    name: "Summon Dire Wolf",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "summon",
+    effectType: "summon",
+    effectCategory: "damage",
+    isSummon: true,
+    summonAI: "hunter",
+    summonLifespan: 4,
+    summonUnitDef: {
+      pieceType: "wolf",
+      hpScale: Number.POSITIVE_INFINITY,
+      damageScale: 1,
+    },
+  }),
+  "summonUnitDef.hpScale must be a finite number",
+);
+assert.equal(
+  validateSpellConfig({
+    id: "fake_summon",
+    name: "Fake Summon",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "summon",
+    effectType: "damage",
+    effectCategory: "damage",
+    isSummon: false,
+  }),
+  "spellType summon requires isSummon",
+);
+assert.equal(
+  validateSpellConfig({
+    id: "summon-dire-wolf",
+    name: "Summon Dire Wolf",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "summon",
+    effectType: "summon",
+    effectCategory: "damage",
+    isSummon: true,
+    summonAI: "hunter",
+    summonLifespan: 4,
+    summonUnitDef: { pieceType: "wolf", hpScale: 1, damageScale: 1 },
+  }),
+  null,
+);
+assert.ok(validateBossPortalAssignment("", "ashen_crown"));
+assert.ok(validateBossPortalAssignment("x".repeat(65), "ashen_crown"));
+assert.equal(validateBossPortalAssignment("portal_a", "ashen_crown"), null);
 
 assert.equal(validateDokaGrant(0), "Grant amount must be greater than 0");
 assert.ok(validateDokaGrant(10_000_001));

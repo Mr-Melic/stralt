@@ -2692,14 +2692,20 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        if (portalId == "") {
-            return #err("portalId cannot be empty");
+        switch (AdminGuard.validateBossPortalAssignment(portalId, bossId)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         switch (bossConfigs.get(bossId)) {
             case null { return #err("Boss not found: " # bossId) };
             case (?_) {};
         };
+        let prev = switch (bossPortalAssignments.get(portalId)) {
+            case null { "none" };
+            case (?bid) { bid };
+        };
         bossPortalAssignments.add(portalId, bossId);
+        _recordAdminAudit(caller, "setBossPortalAssignment", portalId, prev, bossId);
         #ok;
     };
 
@@ -2708,7 +2714,12 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        let prev = switch (bossPortalAssignments.get(portalId)) {
+            case null { "none" };
+            case (?bid) { bid };
+        };
         bossPortalAssignments.remove(portalId);
+        _recordAdminAudit(caller, "deleteBossPortalAssignment", portalId, prev, "removed");
         #ok;
     };
 

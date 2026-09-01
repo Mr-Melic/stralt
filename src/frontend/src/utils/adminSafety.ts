@@ -15,12 +15,14 @@ export const BUILT_IN_SPELL_IDS = [
   "void_collapse",
 ] as const;
 
-const SPELL_TYPES = new Set(["damage", "heal", "drain"]);
+const SPELL_TYPES = new Set(["damage", "heal", "drain", "summon"]);
 const SUMMON_AIS = new Set([
   "hunter",
   "guardian",
   "archer",
+  "kiter",
   "bomber",
+  "kamikaze",
   "healer",
 ]);
 const PIECE_TYPES = new Set([
@@ -30,6 +32,11 @@ const PIECE_TYPES = new Set([
   "rook",
   "bishop",
   "knight",
+  "wolf",
+  "golem",
+  "archer",
+  "bomber",
+  "wisp",
 ]);
 const EFFECT_TYPES = new Set([
   "damage",
@@ -40,6 +47,7 @@ const EFFECT_TYPES = new Set([
   "debuff",
   "buff",
   "attract_multi",
+  "summon",
 ]);
 const EFFECT_CATEGORIES = new Set([
   "damage",
@@ -369,12 +377,19 @@ export function validateSpellConfig(config: {
   spellType: string;
   effectType: string;
   effectCategory: string;
+  isSummon?: boolean;
   summonAI?: string;
   summonLifespan?: number;
   summonPieceType?: string;
   summonLevel?: number;
   hpScale?: number;
   damageScale?: number;
+  summonUnitDef?: {
+    pieceType?: string;
+    level?: number;
+    hpScale?: number;
+    damageScale?: number;
+  };
 }): string | null {
   const idErr = requireId(config.id, "Spell");
   if (idErr) return idErr;
@@ -386,7 +401,7 @@ export function validateSpellConfig(config: {
     return "minRange cannot exceed maxRange";
   }
   if (!SPELL_TYPES.has(config.spellType)) {
-    return "spellType must be damage, heal, or drain";
+    return "spellType must be damage, heal, drain, or summon";
   }
   if (!EFFECT_TYPES.has(config.effectType)) {
     return "effectType is not a recognized value";
@@ -394,34 +409,55 @@ export function validateSpellConfig(config: {
   if (!EFFECT_CATEGORIES.has(config.effectCategory)) {
     return "effectCategory is not a recognized value";
   }
+  if (config.spellType === "summon" && !config.isSummon) {
+    return "spellType summon requires isSummon";
+  }
+  if (config.effectType === "summon" && !config.isSummon) {
+    return "effectType summon requires isSummon";
+  }
   const ai = config.summonAI ?? "";
-  if (ai && !SUMMON_AIS.has(ai)) {
+  if (config.isSummon === true) {
+    if (!SUMMON_AIS.has(ai)) {
+      return "summonAI must be a known archetype";
+    }
+  } else if (config.isSummon === false && ai !== "") {
+    return "summonAI must be empty when isSummon is false";
+  } else if (ai && !SUMMON_AIS.has(ai)) {
     return "summonAI is not a recognized archetype";
   }
   if (config.summonLifespan != null && config.summonLifespan > 20) {
     return "summonLifespan cannot exceed 20";
   }
-  if (config.summonLevel != null && config.summonLevel > 99) {
+  const summonLevel = config.summonLevel ?? config.summonUnitDef?.level;
+  if (summonLevel != null && summonLevel > 99) {
     return "summonUnitDef.level cannot exceed 99";
   }
-  const piece = config.summonPieceType ?? "";
-  if (piece && !PIECE_TYPES.has(piece)) {
+  const piece = config.summonPieceType ?? config.summonUnitDef?.pieceType ?? "";
+  if (config.isSummon === true) {
+    if (!PIECE_TYPES.has(piece)) {
+      return "summonUnitDef.pieceType is not a recognized value";
+    }
+  } else if (piece && !PIECE_TYPES.has(piece)) {
     return "summonUnitDef.pieceType is not a recognized piece type";
   }
-  if (config.hpScale != null) {
-    const hp = finiteInRange("summonUnitDef.hpScale", config.hpScale, 0, 10);
+  const hpScale = config.hpScale ?? config.summonUnitDef?.hpScale;
+  const damageScale = config.damageScale ?? config.summonUnitDef?.damageScale;
+  if (hpScale != null) {
+    const hp = finiteInRange("summonUnitDef.hpScale", hpScale, 0, 10);
     if (hp) return hp;
   }
-  if (config.damageScale != null) {
-    const dmg = finiteInRange(
-      "summonUnitDef.damageScale",
-      config.damageScale,
-      0,
-      10,
-    );
+  if (damageScale != null) {
+    const dmg = finiteInRange("summonUnitDef.damageScale", damageScale, 0, 10);
     if (dmg) return dmg;
   }
   return null;
+}
+
+export function validateBossPortalAssignment(
+  portalId: string,
+  bossId: string,
+): string | null {
+  return requireId(portalId, "Portal") ?? requireId(bossId, "Boss");
 }
 
 /**

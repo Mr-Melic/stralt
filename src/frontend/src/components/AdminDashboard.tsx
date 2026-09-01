@@ -3507,6 +3507,10 @@ const SpellEditor: React.FC<{
               spellType: cfg.spellType ?? "damage",
               effectType: cfg.effectType,
               effectCategory: cfg.effectCategory ?? "damage",
+              isSummon: cfg.isSummon,
+              summonAI: cfg.summonAI,
+              summonLifespan: cfg.summonLifespan,
+              summonUnitDef: cfg.summonUnitDef,
             });
             if (spellErr) {
               toast.error(spellErr);

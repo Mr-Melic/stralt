@@ -287,12 +287,12 @@ module {
     };
 
     func knownSpellType(t : Text) : Bool {
-        t == "damage" or t == "heal" or t == "drain"
+        t == "damage" or t == "heal" or t == "drain" or t == "summon"
     };
 
     func knownEffectType(t : Text) : Bool {
         t == "damage" or t == "heal" or t == "drain" or t == "dot" or t == "aoe"
-            or t == "debuff" or t == "buff" or t == "attract_multi"
+            or t == "debuff" or t == "buff" or t == "attract_multi" or t == "summon"
     };
 
     func knownEffectCategory(t : Text) : Bool {
@@ -302,13 +302,15 @@ module {
     };
 
     func knownSummonAI(t : Text) : Bool {
-        t == "hunter" or t == "guardian" or t == "archer"
-            or t == "bomber" or t == "healer"
+        t == "hunter" or t == "guardian" or t == "archer" or t == "kiter"
+            or t == "bomber" or t == "kamikaze" or t == "healer"
     };
 
     func knownPieceType(t : Text) : Bool {
         t == "king" or t == "queen" or t == "pawn"
             or t == "rook" or t == "bishop" or t == "knight"
+            or t == "wolf" or t == "golem" or t == "archer"
+            or t == "bomber" or t == "wisp"
     };
 
     /// Extends the existing apCost/range/damage caps with enum and relationship checks.
@@ -330,13 +332,19 @@ module {
         if (config.damage > 9999) { return ?"damage must be at most 9999" };
         if (config.healAmount > 1000) { return ?"healAmount must be at most 1000" };
         if (not knownSpellType(config.spellType)) {
-            return ?"spellType must be damage, heal, or drain";
+            return ?"spellType must be damage, heal, drain, or summon";
         };
         if (not knownEffectType(config.effectType)) {
             return ?"effectType is not a recognized value";
         };
         if (not knownEffectCategory(config.effectCategory)) {
             return ?"effectCategory is not a recognized value";
+        };
+        if (config.spellType == "summon" and not config.isSummon) {
+            return ?"spellType summon requires isSummon";
+        };
+        if (config.effectType == "summon" and not config.isSummon) {
+            return ?"effectType summon requires isSummon";
         };
         if (config.hitTiles.size() > 64) {
             return ?"hitTiles exceeds maximum of 64";
@@ -373,6 +381,12 @@ module {
             case (?e) { return ?e };
             case null {};
         };
+        null
+    };
+
+    public func validateBossPortalAssignment(portalId : Text, bossId : Text) : ?Text {
+        switch (requireId(portalId, "Portal")) { case (?e) { return ?e }; case null {} };
+        switch (requireId(bossId, "Boss")) { case (?e) { return ?e }; case null {} };
         null
     };
 
