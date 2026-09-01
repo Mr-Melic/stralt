@@ -9,6 +9,7 @@ import {
   occKey,
   occupantsSealProgression,
   relocateOffMandatoryCells,
+  resolveProgressionSafeOccupantCell,
   unsealProgressionOccupants,
 } from "./occupancy.ts";
 import { spawnSummonUnit } from "./summonSpawn.ts";
@@ -208,6 +209,52 @@ describe("dual-path occupants cannot jointly seal the exit", () => {
       false,
     );
     assert.notEqual(occKey(moved.x, moved.y), "2,0");
+  });
+
+  it("player-controlled walk slides off a unique corridor", () => {
+    const tiles = [
+      [true, true, true, true, true, true],
+      [true, true, false, false, false, false],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["5,0"]);
+    const occupied = new Set<string>(["0,0"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      progressStart: { x: 0, y: 0 },
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const mandatory = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 0 },
+    );
+    ctx.reserved = mandatory;
+    const landed = resolveProgressionSafeOccupantCell({ x: 3, y: 0 }, ctx);
+    assert.equal(mandatory.has(occKey(landed.x, landed.y)), false);
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 0 }, [
+        landed,
+      ]),
+      false,
+    );
+  });
+
+  it("player-controlled walk unseals a dual-path joint cut", () => {
+    const { tiles, voidTiles, portals, ctx } = dualCorridor(["2,2"]);
+    const landed = resolveProgressionSafeOccupantCell({ x: 2, y: 0 }, ctx);
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 1 }, [
+        landed,
+        { x: 2, y: 2 },
+      ]),
+      false,
+    );
+    assert.notEqual(occKey(landed.x, landed.y), "2,0");
   });
 
   it("spawns off a dual-path cut when progressStart is set", () => {

@@ -162,6 +162,7 @@ import {
   collectMandatoryProgressionCells,
   findNearestFreeCell,
   isCellFree,
+  resolveProgressionSafeOccupantCell,
 } from "../engine/occupancy";
 import {
   PROGRESSION_PORTAL_KIND,
@@ -10547,6 +10548,40 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
 
+  // Player-controlled walks used to write the clicked tile. AI summons
+  // already unseal unique bridges / joint cuts; this is the same landing.
+  const resolveControlledSummonWalkCell = useCallback(
+    (dest: { x: number; y: number }) => {
+      const map = currentMapRef.current;
+      const walkable = (map?.tiles ?? []).map((row) =>
+        (row ?? []).map((t) => t !== "wall"),
+      );
+      const voidTiles = toVoidSet(map?.voidTiles);
+      const portals = new Set((map?.portals ?? []).map((p) => `${p.x},${p.y}`));
+      const ctx: OccupancyContext = {
+        tiles: walkable,
+        barriers: new Set(barrierTilesRef.current.keys()),
+        voidTiles,
+        portals,
+        reserved: collectMandatoryProgressionCells(
+          walkable,
+          voidTiles,
+          portals,
+          playerPositionRef.current,
+        ),
+        progressStart: playerPositionRef.current,
+        isOccupied: (c) =>
+          getLiveCombatants(combatantStoreCtx).some(
+            (e) => e.x === c.x && e.y === c.y,
+          ) ||
+          (playerPositionRef.current.x === c.x &&
+            playerPositionRef.current.y === c.y),
+      };
+      return resolveProgressionSafeOccupantCell(dest, ctx);
+    },
+    [combatantStoreCtx],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable callbacks are intentionally omitted
   const handleCanvasClick = useCallback(
     (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -10587,9 +10622,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
+                const landed = resolveControlledSummonWalkCell(gridPos);
                 updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
+                  x: landed.x,
+                  y: landed.y,
                   currentMp: (summon.currentMp ?? 0) - moveCost,
                 });
                 logBattleEntry(
@@ -11234,6 +11270,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       pointerToRenderSpace,
       recordClickOutcome,
       castControlledSummonSpell,
+      resolveControlledSummonWalkCell,
     ],
   );
   // Handle canvas mouse move
@@ -11328,9 +11365,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (path && path.length > 0) {
               const moveCost = path.length;
               if ((summon.currentMp ?? 0) >= moveCost) {
+                const landed = resolveControlledSummonWalkCell(gridPos);
                 updateCombatant(combatantStoreCtx, summon.id, {
-                  x: gridPos.x,
-                  y: gridPos.y,
+                  x: landed.x,
+                  y: landed.y,
                   currentMp: (summon.currentMp ?? 0) - moveCost,
                 });
                 logBattleEntry(
@@ -11825,6 +11863,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       recordClickOutcome,
       castControlledSummonSpell,
       applyBattleWalkHazards,
+      resolveControlledSummonWalkCell,
     ],
   );
   // FIXED: Player movement animation with immediate portal checking on each step
