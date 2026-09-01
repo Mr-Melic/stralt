@@ -9,18 +9,22 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | Path | Role |
 | :--- | :--- |
 | `src/backend/main.mo` | Canonical Motoko actor (characters, Doka, admin config, rewards) |
-| `src/backend/migrations/` | Stable-memory migration chain (wired via root `mops.toml`) |
-| `src/backend/types/` | Shared Motoko types (`common.mo` combat, `admin.mo` config) |
+| `src/backend/lib/adminGuard.mo` | Admin input / URL / retirement / rollback guards (authoritative) |
+| `src/backend/migrations/` | Stable-memory chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon fields + rollback stables |
+| `src/backend/types/` | Shared Motoko types (`common.mo` combat, `admin.mo` config + summon fields) |
 | `src/frontend/src/` | React + Vite client |
-| `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit |
+| `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit; can lag Motoko public types |
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
 | `src/frontend/src/engine/portalRules.ts` | Run-mode portals + dungeon-chain snapshot (before `cleanupMap`) |
 | `src/frontend/src/engine/mapGen.ts` | Archetypes + `finalizePlayableLayout` (spawn / exit / hostile reachability) |
+| `src/frontend/src/engine/worldFeatures.ts` | World-dynamics catalog (tests only — not wired into map gen) |
 | `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards` + `saveBattleStats` |
-| `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn accumulators |
+| `src/frontend/src/utils/dokaPersist.ts` | One-shot ground / shrine / dungeon-complete credits before `applyRewards` |
+| `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn / Sacrifice accumulators |
 | `src/frontend/src/utils/deathGuards.ts` | Death-realm timer + one-shot death guards |
-| `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` |
-| `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` level threshold |
+| `src/frontend/src/utils/deathPenalty.ts` | 20/40 death cut + localStorage replay (`pbv_pending_death_penalty_slotN`) |
+| `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` (clamped to canister maxima) |
+| `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` leftover-XP threshold (bigint) |
 | `src/frontend/src/utils/versionGate.ts` | Version-bump wipe: keep spawn/level-up config and `*_inventory` |
 | `backend_extended/` | Legacy actor (15-field stats). Not the caffeine/mops build |
 | `declarations/backend/` | Stale Candid snapshot (still lists `wp`/`wr`/`scp`) |
@@ -59,7 +63,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 
 | Doc | Contents |
 | :--- | :--- |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, persist lock, challenges, Death Realm, dungeon chain, map solvability, public API |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Persistence, persist lock, challenges, Death Realm, dungeon chain, map solvability, public API, migrations |
 | [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Setup, Candid/wallet pitfalls, challenges, shop, boss rush, maps, deploy, debug overlay |
 | [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
@@ -89,8 +93,8 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 ## Hard rules (product)
 
 - Backend owns persisted state. `localStorage` is a cache / UI preference only.
-- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`. Portal +10 XP must not update the HUD until that write commits.
-- Penalties and shop/heal spends persist through `saveBattleStats` on the same progress-persist lock. `applyRewards` cannot subtract.
-- Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics.
+- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`. Portal +10 XP must not update the HUD until that write commits. Official deltas clamp to `100_000` Doka / `500_000` XP (canister `#err` above that). Ground / shrine / dungeon-complete credits are one-shot (`dokaPersist.ts`).
+- Penalties and shop/heal spends persist through `saveBattleStats` on the same progress-persist lock. `applyRewards` cannot subtract. `saveBattleStats` never mints Doka/XP/level.
+- Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics. Admin catalog spells carry explicit summon fields — do not infer from the name.
 - Admin and debug tools stay gated. Do not ship them to normal players as first-class UI.
 - Recap UI mounts once, at app root (`App.tsx` → `PostBattleRecap`).

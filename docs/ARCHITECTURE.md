@@ -24,11 +24,11 @@ Internet Identity
 | Use this | Do not treat as current |
 | :--- | :--- |
 | `src/backend/main.mo` | Root `backend_extended/main.mo` (15-field stats). `dfx.json` points at missing `src/backend_extended/main.mo` |
-| `src/frontend/src/backend.ts` + `src/frontend/src/declarations/` | Root `declarations/backend/backend.did` (still has `wp`/`wr`/`scp`) |
-| Root `mops.toml` (moc 1.11.2, migrations chain) | `src/backend/mops.toml` (older moc 1.9.0, no migrations) |
+| `src/frontend/src/backend.ts` + `src/frontend/src/declarations/` | Root `declarations/backend/backend.did` (still has `wp`/`wr`/`scp`). Bindgen can also lag Motoko `SpellConfig` summon fields until `pnpm bindgen` |
+| Root `mops.toml` (moc 1.11.2, migrations chain, `check-limit = 3`, `.old` empty-canister baseline) | `src/backend/mops.toml` (older moc 1.9.0, no migrations) |
 | Frontend `EnemyConfig` in `types/gameTypes.ts` (admin spawn template) | `src/backend/types/common.mo` `EnemyConfig` (runtime combat template — different fields) |
 
-`src/backend/mixins/*` are unused scaffolds. `src/backend/lib/admin.mo` is the live helper for default configs and admin CRUD.
+`src/backend/mixins/*` are unused scaffolds. `src/backend/lib/admin.mo` is the live helper for default configs and admin CRUD. `src/backend/lib/adminGuard.mo` is the live input / URL / retirement / rollback guard.
 
 ## Persistence
 
@@ -64,7 +64,7 @@ Slots are `1 | 2 | 3`. `Character` required fields: `name`, `pieceType`, `level`
 
 ### CharacterStats (12 fields)
 
-Persisted type in `src/backend/main.mo` (lines 123–136). WP / WR / SCP are gone.
+Persisted type in `src/backend/main.mo` (lines 137–150). WP / WR / SCP are gone.
 
 | Field | Meaning |
 | :--- | :--- |
@@ -110,18 +110,18 @@ Auth: `mo:caffeineai-authorization`. Roles `#admin | #user | #guest`. First non-
 | `setSpellBarOrder(slot, spellIds)` | Drops unknown ids; keeps max 8 |
 | `saveActiveSpells` / `updateSessionState` / `getSessionState` | Session fields on `Character` |
 | `saveKillCount(slot, kills)` | Increments `stats.killCount`. Requires `#user`, not banned, `kills <= 64`. Hook exists; no UI caller yet |
-| `calculateAndAwardDoka(enemies)` | Unused public mint. Official funnel is `applyRewards`. Requires `#user`, not banned; rejects `enemies.size() > 16`; awards at most 8 rows; caps each `level` at 200 |
-| `applyRewards(slot, dokaDelta, xpDelta)` | **Atomic additive** XP + level + Doka. `Nat` only — cannot subtract |
-| `saveBattleStats(...)` | Absolute HP/AP/MP/atk/res/init + XP + Doka snapshot. **Ignores** spell-level arrays (`upgradeSpell` owns those) |
+| `calculateAndAwardDoka(enemies)` | No-op stub (returns `0`; Candid kept). Official funnel is `applyRewards` |
+| `applyRewards(slot, dokaDelta, xpDelta)` | **Atomic additive** XP + level + Doka. `Nat` only — cannot subtract. Rejects `dokaDelta > 100_000` or `xpDelta > 500_000` |
+| `saveBattleStats(...)` | Absolute HP/AP/MP/atk/res/init + XP + Doka snapshot. **Never mints** Doka/XP/level/atk/res/init (incoming above stored ignored). **Ignores** spell-level arrays (`upgradeSpell` owns those). Official client also keeps stored level (`clampSaveBattleStatsWrite`) |
+| `sendMessage` / `getMessages` | Chat; lost on upgrade. Display name is the caller's `userProfiles` name — the client `playerName` argument is ignored |
 | `getCallerDokaBalance` / `getDokaBalance` | Same per-principal map |
-| `upgradeSpell(slot, spellId)` | Spends `spellLevelingBaseCost * 2^currentLevel` (default base **10**). Spellbook summon UI advertises `10×` that — debit the **canister** spend via `spellUpgradeUiSpend` |
+| `upgradeSpell(slot, spellId)` | Spends `spellLevelingBaseCost * 2^currentLevel` (default base **10**). Spellbook summon UI advertises `10×` that — debit the **canister** spend via `spellUpgradeUiSpend`. Cannot add a retired (`usableByPlayer=false`) spell the player never owned |
 | `getBuffCatalog` / `purchaseBuff` / `useBuffItem` | |
 | `getPlayerAchievements(player)` | Empty unless `player == caller` Principal. Pass `identity.getPrincipal()`, never the display name |
 | `markAchievementUnlocked` / `claimAchievementReward` | Claim is a Doka delta — enqueue on the persist lock |
 | `initiatePurchase` / `processPendingPurchases` | Nine positional Text args; 60s auto-complete |
-| `getBossRushState` / `setBossRushProgress` / `completeBossRushRoom` / `resetBossRush` | Slot-scoped; query `userId` must be the caller principal. `completeBossRushRoom` ignores client `dokaReward`/`xpReward` (progress / master flag only) and requires the slot character to exist **before** any mutation |
+| `getBossRushState` / `setBossRushProgress` / `completeBossRushRoom` / `resetBossRush` | Slot-scoped; query `userId` must be the caller principal. `setBossRushProgress` traps if `currentRoom` decreases — use `resetBossRush`. `completeBossRushRoom` ignores client `dokaReward`/`xpReward` (progress / master flag only), requires the slot character to exist **before** any mutation, and accepts `roomIndex == currentRoom` or `currentRoom - 1` |
 | `getDungeonRecord` / `updateDungeonProgress` / `resetDungeonChain` | `dungeonRecords` keyed by Principal. Query/update require `caller == principal` (admin may update/reset) |
-| `sendMessage` / `getMessages` | Chat; lost on upgrade |
 | `getLeaderboard` | Top 50 by level |
 
 ### Rewards (`applyRewards`)
@@ -137,7 +137,7 @@ while newXp >= threshold(level):
 dokaBalances[caller] += dokaDelta
 ```
 
-`100 * 2^N` is off-by-one and silently blocks intended level-ups. Deltas are `Nat` (non-negative). Frontend `resolveBattleRewards` / `persistIncrementalRewards` clamp to `>= 0` then call this.
+`100 * 2^N` is off-by-one and silently blocks intended level-ups. Experience is leftover in the current level — HUD uses `xpHudProgress` / `recapXpAfterGrant`, not a cumulative subtract. Thresholds use bigint (`xpThresholdBigInt`) so level 48+ does not freeze on `MAX_SAFE_INTEGER`. Deltas are `Nat` (non-negative). Official client `clampApplyRewardsDeltas` also caps at `100_000` Doka / `500_000` XP so a Doka-Fever roll cannot `#err` and drop the whole grant.
 
 Victory XP: explicit grant if `> 0`, else sum of defeated `level * 20`, else `characterLevel * 20` (`computeVictoryExp`). Dungeon chain multipliers already baked into the recap must pass `PREAPPLIED_REWARD_MULTIPLIER` (`1`) so Doka is not squared.
 
@@ -147,7 +147,7 @@ Victory XP: explicit grant if `> 0`, else sum of defeated `level * 20`, else `ch
 
 | Kind | Writer | Typical callers |
 | :--- | :--- | :--- |
-| Additive credit | `applyRewards` | Victory, portal +10 XP (`PORTAL_TRANSITION_XP` — HUD only after commit), world Doka pickups, boss-rush room clear |
+| Additive credit | `applyRewards` | Victory, portal +10 XP (`PORTAL_TRANSITION_XP` — HUD only after commit), world Doka pickups, shrine altar, dungeon-complete bonus, boss-rush room clear. Ground / shrine / dungeon-complete must claim a one-shot id first (`dokaPersist.ts`) — `applyRewards` is not idempotent |
 | Paid spend | `upgradeSpell` | Spellbook. Deducts from `dokaBalances`; sole writer of spell levels |
 | Paid credit | `claimAchievementReward` | Feat claim. Returns granted Nat |
 | Paid credit | `processPendingPurchases` | Shop packages aged ≥ 60s |
@@ -164,17 +164,28 @@ Rules verified in `WorldExploration` + the persist unit tests:
 7. Idle hydrate must not copy leftover XP from a **lower UI level** over a post-`applyRewards` level-up (`resolveHydratedXp`). `max(old leftover, persisted leftover)` refunds the death XP cut on the next `saveBattleStats`.
 8. Shop remount / no-op `processPendingPurchases` commits only when that pair observed a gain (`shouldCommitShopCredit`). Never cut a higher lock snapshot (`committedDokaAfterShopCreditOnLock`).
 9. `upgradeSpell` then `getCallerDokaBalance` is a query. Commit the post-upgrade wallet only when it decreased (`committedDokaAfterSpellUpgrade`).
+10. Absolute writes clamp with `clampAbsoluteProgressWrite` / `clampSaveBattleStatsWrite` so a stale optimistic UI cannot mint. Official client keeps stored **level**; do not pass Play-entry / pre-level UI after `applyRewards`.
 
 Death penalty cannot use `applyRewards` (Nat-only add). `persistDeathPenalty` writes the already-reduced absolute XP/Doka through `saveBattleStats`, then `raiseUiAfterDeathPersist` so a short optimistic UI cannot overwrite the post-credit cut. Death persist HP is `respawnHpAfterDeath`: **50%** of `100 * (1 + (level-1) * 0.05)`. The old `(50 + level) * 10 * 0.5` inflated reload HP above max. After a victory level-up, `xpAfterDeathPersist` keeps the persisted leftover when `persistedLevel > uiLevel`.
 
 `mergeVictoryRewardLiveStats` must not replace HP with the post-battle floor when a recap heal already raised it — the recap wrapper is `pointer-events: none`, so a paid heal can land before the persist await returns.
 
+Unpaid 20/40 after a replica reject lives in `localStorage` (`pbv_pending_death_penalty_slotN`, `defaultDeathPenaltyStorage`). Replay compares **canister** XP (`experienceFromCharacterRecord` / `readDeathReplayBackendSnapshot`), not GameFlow's Play-entry `character.experience` (that prop is never updated after `applyRewards`). Heal/shop after a failed persist uses `applyUnpaidDeathPenaltyToWrite`. Retry the write up to `DEATH_PENALTY_PERSIST_ATTEMPTS` (3).
+
 | Helper | Path |
 | :--- | :--- |
-| `createProgressPersist` / `shouldCopyIdleWalletDoka` / `resolveCommittedDokaForAbsoluteWrite` / `resolveHydratedXp` | `utils/progressPersist.ts` |
+| `createProgressPersist` / `shouldCopyIdleWalletDoka` / `resolveCommittedDokaForAbsoluteWrite` / `resolveHydratedXp` / `clampAbsoluteProgressWrite` / `floorHydratedLevel` | `utils/progressPersist.ts` |
 | `resolveBattleRewards` / `computeVictoryExp` / `PREAPPLIED_REWARD_MULTIPLIER` | `utils/rewardResolver.ts` |
-| `PORTAL_TRANSITION_XP` / `persistIncrementalRewards` / `readApplyRewardsOk` | `utils/applyRewardsResult.ts` |
-| `persistDeathPenalty` / `shouldApplyVictoryLiveHydrate` / `respawnHpAfterDeath` / `xpAfterDeathPersist` / `mergeVictoryRewardLiveStats` | `utils/deathPenalty.ts` |
+| `PORTAL_TRANSITION_XP` / `persistIncrementalRewards` / `readApplyRewardsOk` / `clampApplyRewardsDeltas` | `utils/applyRewardsResult.ts` |
+| `persistDeathPenalty` / `shouldApplyVictoryLiveHydrate` / `respawnHpAfterDeath` / `xpAfterDeathPersist` / `mergeVictoryRewardLiveStats` / `resolvePendingDeathReplay` / `applyUnpaidDeathPenaltyToWrite` | `utils/deathPenalty.ts` |
+| `persistDokaCredit` / `tryClaimPickupId` / `tryClaimDungeonChainBonus` / `tryClaimFlag` | `utils/dokaPersist.ts` |
+| `clampSaveBattleStatsWrite` | `utils/absoluteStatsClamp.ts` |
+| `recordChallengeSelfHpLoss` | `utils/challengeCompletion.ts` |
+| `attachRecapUnlocks` | `utils/recapUnlocks.ts` |
+| `shouldIgnoreClickAfterTouch` | `utils/pointerGesture.ts` |
+| `attackNearestLiveCasterPos` | `engine/targeting.ts` |
+| `xpHudProgress` / `recapXpAfterGrant` / `xpThresholdBigInt` | `utils/xpCurve.ts` |
+| `shouldStartDokaHeal` / `dokaHealAmounts` / `nextHpAfterDokaHeal` | `utils/itemShop.ts` |
 | `creditPendingPurchasesThroughPersist` / `shouldCommitShopCredit` / `committedDokaAfterShopCreditOnLock` | `utils/shopPurchase.ts` |
 | `creditAchievementRewardThroughPersist` / `shouldBeginAchievementClaim` / `shouldRollbackClaimFailure` | `utils/achievementReward.ts` |
 | `persistSpellUpgrade` / `spellUpgradeUiSpend` / `committedDokaAfterSpellUpgrade` | `utils/spellUpgrade.ts` |
@@ -205,7 +216,7 @@ Death penalty cannot use `applyRewards` (Nat-only add). `persistDeathPenalty` wr
 
 Backend `_autoCompletePendingPurchases` credits packages with `status == "pending"` older than 60s (`PENDING_PURCHASE_CREDIT_DELAY_MS`). The player must call `processPendingPurchases`. That credit **and** the following `commit` go through `creditPendingPurchasesThroughPersist`. Shop-credit timers live in `shopCreditTimersRef` — `cleanupBattle` clears `pendingTimeoutsRef` on every portal/death/victory.
 
-`BuffShop` is hosted in `WorldExploration` (not `GameFlow`). A GameFlow-only local deduct + no-op `onUseItem` refunds the spend on the next wallet refetch and makes bought items unusable. Bought potions persist only in `${principal}_inventory` — not `buffInventories`. Jackpot heal spends **1 Doka from the live wallet** (`nextDokaAfterJackpotHeal`), not the render snapshot.
+`BuffShop` is hosted in `WorldExploration` (not `GameFlow`). A GameFlow-only local deduct + no-op `onUseItem` refunds the spend on the next wallet refetch and makes bought items unusable. Bought potions persist only in `${principal}_inventory` — not `buffInventories`. Jackpot heal spends **1 Doka from the live wallet** (`nextDokaAfterJackpotHeal`), not the render snapshot. Overworld Doka-to-HP uses `shouldStartDokaHeal` (live ref + in-flight) and `nextHpAfterDokaHeal` (do not re-read `characterStatsRef` after the eager updater). `initiatePurchase` proof URLs reject `javascript:` / `vbscript:` (`AdminGuard.validateProofFileUrl`); `data:` is allowed.
 
 ### Admin (gated)
 
@@ -216,11 +227,14 @@ UI is lazy-loaded (`AdminDashboard.tsx`) and shown only when `isAdmin && onOpenA
 | Ban / unban | `adminBanAccount` / `banPrincipal` / `banPlayer` + matching unban | Banned principals fail purchases, buffs, achievements, boss rush, Doka awards |
 | Grant Doka | `adminGrantDoka` / `adminAddDoka` / `adminAddDokaToUser` | Writes `dokaBalances` — not a field on `Character` |
 | Config CRUD | `adminSet*` / `adminDelete*` for enemy, region, sprite, spell, map-modifier, shop, achievement, boss, game, tier-spawn | Reads of most configs are public queries |
-| Login ads | `adminSetAdBox(index, imageUrl, linkUrl)` / `adminClearAdBox` / `getAdBoxes` | Three slots (`index` 0–2). Tuple is `(imageUrl, linkUrl, isActive)` |
+| Login ads | `adminSetAdBox(index, imageUrl, linkUrl)` / `adminClearAdBox` / `getAdBoxes` | Three slots (`index` 0–2). Tuple is `(imageUrl, linkUrl, isActive)`. URLs reject `javascript:` / `data:` / `vbscript:` (`AdminGuard.validateAdBox`) |
 | Version | `setAppVersion` / `setChangelog` | Frontend wipe still keys off `APP_VERSION` in `App.tsx` |
 | Role | `assignUserRole` | Admin-only; rate-limited once per 30s |
+| Rollback | `adminRollbackLevelUpConfig` / `GameConfig` / `TierSpawnConfig` / `ColorPalette` / `BossRushConfig` | Last-write stables from migration `20260831`. Empty previous → `#err` |
+| Audit | `getAdminAuditLog` | Capped at 100 entries |
+| Spell catalog | `adminSetSpellConfig` / `adminDeleteSpellConfig` | Full `AdminTypes.SpellConfig` including `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef`. Built-in ids cannot be deleted — retire with `usableByPlayer=false` |
 
-Password admin is removed. First non-anonymous caller of `getUserRole` becomes `#admin`.
+Password admin is removed. First non-anonymous caller of `getUserRole` becomes `#admin`. Invalid admin payloads return `#err` **before** any store write (`adminGuard.mo`).
 
 ### OQL
 
@@ -228,7 +242,7 @@ Password admin is removed. First non-anonymous caller of `getUserRole` becomes `
 
 ## Frontend flow
 
-`main.tsx` wraps TanStack Query + Internet Identity. Viewport `< 768px` is blocked (`SmallScreenGuard`).
+`main.tsx` wraps TanStack Query + Internet Identity. Viewport `< 768px` shows `SmallScreenGuard` (warn + **Continue anyway**). Continue is stored in `sessionStorage` (`pbv_small_screen_continue`) for the tab only. Primary chrome is 44px min-height.
 
 `App.tsx` (`APP_VERSION = "v163"`):
 
@@ -250,8 +264,9 @@ Password admin is removed. First non-anonymous caller of `getUserRole` becomes `
 2. Deaths go through `engine/deathPipeline.ts` (10-step, idempotent). Per-kill code **must not** call `resolveBattleRewards`. `selectDefeatedEnemiesForRewards` prefers the attributed-kill roster — `recheckVictory` used to pass `[]`.
 3. Victory: `WorldExploration` builds recap locally, calls `onShowBattleSummary` **first**, then enqueues `resolveBattleRewards` → `actor.applyRewards` on the persist lock.
 4. Challenge XP/Doka must be read from **live refs** (`liveBattleChallengePersistEntries`). `handleBattleEnd` omits `challengeAccepted` / `currentChallenge` from its deps; a stale `accepted === false` drops the 400–1000 XP the panel advertised.
-5. Recap popup is only mounted in `App.tsx` (z-index 9999) so it survives the battle → exploration transition. The full-screen wrapper is `pointer-events: none` (the card itself is `auto`) so HUD heal/shop stay clickable. Canvas walk / hazard clicks are ignored while `battleRecapOpen` is true (`shouldIgnoreWorldInputDuringRecap`).
+5. Recap popup is only mounted in `App.tsx` (z-index 9999) so it survives the battle → exploration transition. The full-screen wrapper is `pointer-events: none` (the card itself is `auto`) so HUD heal/shop stay clickable. Canvas walk / hazard clicks are ignored while `battleRecapOpen` is true (`shouldIgnoreWorldInputDuringRecap`). In-battle feat unlocks travel on `BattleRecapData.newlyUnlockedAchievements` (`attachRecapUnlocks`) — a WorldExploration-only list never reaches the dialog.
 6. Both React `inBattle` **and** `inBattleRef` must be false after `handleBattleEnd` / room clear / death. `cleanupBattle` only clears the ref; leaving React state true blocks the next fight (`shouldAllowBattleTrigger`).
+7. Canvas `onTouchEnd` + `onClick`: drop the synthetic click for 400ms (`shouldIgnoreClickAfterTouch`). One physical tap used to fire two casts.
 
 ### Battle challenges
 
@@ -274,6 +289,7 @@ Catalog and predicates live in `utils/challengeCompletion.ts`. `handleBattleEnd`
 | Source | Helper | Constraint |
 | :--- | :--- | :--- |
 | Regular melee / spell / `playerTakesDamage` | `recordChallengeDamageTaken` | Boss-ability-only increment used to leave `totalDamage` at 0 and credit a failed Untouchable |
+| Sacrifice (`loseSelfHp`, floor at 1) | `recordChallengeSelfHpLoss` | Never entered `playerTakesDamage`. Record HP actually lost, not the requested amount |
 | Void Mirror / Reflect Shield / Mirror Field | `recordChallengeDamageTaken` via `onPlayerReflectedDamage` | Reflect never went through `playerTakesDamage` |
 | Thorned Ground / Void Rift walk | `recordChallengeDamageTaken` | In-combat map modifiers |
 | Lava (8–15) / spikes (5–10) | `recordInBattleChallengeDamage(inBattleRef, …)` | **In-battle only.** Counter is zeroed in `cleanupBattle`, not at battle start — overworld hazard steps must not fail the next fight |
@@ -374,7 +390,9 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `summonSpawn.ts` / `summonAI.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle. Hostile minions: `spawnEnemySummonUnit`. Kit casts: `utils/summonControlCast.ts` (catalog `summonKit`, not `summon.spells`) |
 | `summonLifespan.ts` | Lifespan tick against the **live** combatant store; drop expired ids through `removeCombatant` |
 
-Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRange`, `lineOfSight`, `linear`, `diagonal`, `freeCells`, `areaRadius`, `isBarrier`. `spell.name` is UI/log only. Sprite-click Strike and Attack Nearest must use the same live gate (`isTileCastableLive` / `isActiveHostile` on `getLiveCombatants`) — a React `enemies` snapshot misses enemy minions and leftover corpses.
+Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRange`, `lineOfSight`, `linear`, `diagonal`, `freeCells`, `areaRadius`, `isBarrier`. `spell.name` is UI/log only. Sprite-click Strike and Attack Nearest must use the same live gate (`isTileCastableLive` / `isActiveHostile` on `getLiveCombatants`) — a React `enemies` snapshot misses enemy minions and leftover corpses. Attack Nearest range/LoS uses the **player** tile (`attackNearestLiveCasterPos`), not a controlled summon.
+
+`engine/worldFeatures.ts` is the world-dynamics catalog (rarity + relative difficulty). It is **not** wired into map gen — same status as `docs/WORLD_DYNAMICS.md`.
 
 ### Map solvability
 
@@ -382,7 +400,7 @@ Generated maps must stay player-solvable across seeds. After `generateEnemies`, 
 
 - Player spawn is a walkable, non-void cell and **not** on a non-white exit (`spawn-on-portal` skips the room when the portal is unlocked). White sanctuary gateways may colocate with spawn.
 - At least one exit exists on the player's reachable graph (`pickProgressionPortalCell` if the generator omitted one). Every placed portal is punched, not only `portals[0]`.
-- Every hostile spawn is on that graph (`ensureReachability` / `punchRosterReachability`). Wall/void Boss Rush kits used to seal the progression portal. Destack punches a neighboring wall when the walkable graph is too cramped; exits never relocate onto a hostile.
+- Every hostile spawn is on that graph (`ensureReachability` / `punchRosterReachability`). Wall/void Boss Rush kits used to seal the progression portal. Destack punches a neighboring wall when the walkable graph is too cramped; exits never relocate onto a hostile. Dual-path summons that seal both 1-wide corridors unseal via `unsealProgressionOccupants`.
 - `evaluateSolvability` is the report (`player-spawn-illegal`, `isolated-enemies`, `isolated-portals`, `missing-exit-portal`, `spawn-on-portal`, `stacked-enemies`, `stacked-portals`, `enemies-on-portal`, `portal-tile-mismatch`). Property tests live in `mapGen.solvability.test.ts`; `mapGen.simulate.ts` is test-only. Joint-cut summons (two 1-wide corridors) unseal via `unsealProgressionOccupants`.
 
 Do not change archetype fill/smooth weights to "fix" a stuck map — run the finalize pass.
@@ -408,11 +426,18 @@ Player Mirror uses the token `"player"` (`activatePlayerMirror` / `consumePlayer
 
 ## Migrations
 
-`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`. Current module: `src/backend/migrations/20260827_000000.mo`.
+`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 3`. Empty-canister baseline: `.old/src/backend/dist/backend.most` (directory gitignored; that file is force-tracked).
+
+Lex order (do not rename):
+
+| Module | Job |
+| :--- | :--- |
+| `20260826_000000.mo` | Empty-canister genesis. Caffeine import deploys onto a fresh canister (`OldActor = {}`). Must stay first so check-stable does not treat the populated 20260827 shape as the chain start (M0263). |
+| `20260827_000000.mo` | Legacy → enhanced-orthogonal: inlined types, `NewActor` drops transients that `main.mo` now marks `transient` (`BUFF_CATALOG`, `DEFAULT_ENEMY_NAMES`, `ROLE_CHANGE_MIN_NS`, `chatMessages`, `nextChatId`, `enemyNamesInitialised`). Player/config maps copy through. |
+| `20260831_000000.mo` | Seeds `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef` on persisted admin `SpellConfig` rows. Introduces rollback stables (`*Prev` / `has*Prev`) and `adminAuditLog`. |
 
 - Inlined `OldActor` / `NewActor` (no project type imports).
-- Legacy → enhanced-orthogonal upgrade: `NewActor` drops transients that `main.mo` now marks `transient` (`BUFF_CATALOG`, `DEFAULT_ENEMY_NAMES`, `ROLE_CHANGE_MIN_NS`, `chatMessages`, `nextChatId`, `enemyNamesInitialised`). Player/config maps copy through unchanged.
 - Fresh-install seeds live in `main.mo` `do { }` blocks (empty `appVersion` → `"v163"`, default game config, etc.) — not in the migration module.
 - Current `main.mo` is a plain `actor {` — it does **not** use `(with migration = Migration.run)`. That annotation exists only on the legacy `backend_extended` actor.
 
-A deployed canister still running the old 15-field `CharacterStats` will reject 12-field saves until it is upgraded so the type change actually lands on-chain.
+A deployed canister still running the old 15-field `CharacterStats` (or pre-summon `SpellConfig`) will reject the new shapes until it is upgraded so these modules actually run.
