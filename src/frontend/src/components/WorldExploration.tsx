@@ -295,6 +295,7 @@ import {
   applyUnpaidDeathPenaltyToWrite,
   clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
+  confirmAndClearPendingDeathPenaltyAnywhere,
   defaultDeathPenaltyStorage,
   flushPendingDeathPenalty,
   mergeVictoryRewardLiveStats,
@@ -13053,8 +13054,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   spellLevels: spellLevelsRef.current,
                 }),
               );
-              clearPendingDeathPenaltyAnywhere(
+              confirmAndClearPendingDeathPenaltyAnywhere(
                 characterSlot,
+                {
+                  slot: characterSlot,
+                  preXp: committed.xp,
+                  preDoka: dokaBase ?? committed.doka,
+                  afterXp: after.newXp,
+                  afterDoka: after.newDoka,
+                },
                 DEATH_PENALTY_STORAGE,
               );
             } catch (err) {
@@ -13265,7 +13273,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           { skipBeforeEach: true },
         );
         if (cancelled) return;
-        clearPendingDeathPenaltyAnywhere(characterSlot, DEATH_PENALTY_STORAGE);
+        confirmAndClearPendingDeathPenaltyAnywhere(
+          characterSlot,
+          pending,
+          DEATH_PENALTY_STORAGE,
+        );
         onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, decision.newDoka));
         setCharacterStats((prev) => ({ ...prev, exp: decision.newXp }));
       } catch (err) {
