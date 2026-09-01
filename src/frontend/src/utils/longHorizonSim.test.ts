@@ -19,7 +19,12 @@ assert.equal(xpForNextLevel(1), 100);
 assert.equal(xpForNextLevel(10), 51200);
 assert.equal(xpForNextLevel(25), 1_677_721_600);
 assert.equal(Number.isFinite(xpForNextLevel(1018)), true);
-assert.equal(Number.isFinite(xpForNextLevel(1019)), false);
+assert.equal(
+  Number.isFinite(xpForNextLevel(1019)),
+  true,
+  "HUD saturates at MAX_SAFE_INTEGER — Infinity used to freeze leftover bars",
+);
+assert.equal(xpForNextLevel(1019), Number.MAX_SAFE_INTEGER);
 assert.deepEqual(applyXpDelta(0, 1018, 1), { newXp: 1, newLevel: 1018 });
 
 assert.equal(victoryHpFloor(10) > linearPlayerMaxHp(10), true);

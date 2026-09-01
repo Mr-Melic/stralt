@@ -4,6 +4,7 @@ import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
   applyUnpaidDeathPenaltyToWrite,
   clearPendingDeathPenalty,
+  clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
   experienceFromCharacterRecord,
   flushPendingDeathPenalty,
@@ -13,6 +14,7 @@ import {
   raiseUiAfterDeathPersist,
   readDeathReplayBackendSnapshot,
   readPendingDeathPenalty,
+  readPendingDeathPenaltyAnywhere,
   resolvePendingDeathReplay,
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
@@ -679,6 +681,58 @@ assert.deepEqual(victoryResourceFloor(10), { hp: 150, mp: 6, ap: 6 });
     190,
     "heal must not persist unpenalized 200-10 and drop the pending marker",
   );
+}
+
+function memStorage(): import("./deathPenalty.ts").DeathPenaltyStorage {
+  const storage = new Map<string, string>();
+  return {
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => {
+      storage.set(k, v);
+    },
+    removeItem: (k) => {
+      storage.delete(k);
+    },
+  };
+}
+
+{
+  // Tab close used to drop sessionStorage, so reload never replayed the
+  // 20/40 cut. New writes go to localStorage (primary). An older same-tab
+  // marker still sitting in sessionStorage must still be found.
+  const local = memStorage();
+  const session = memStorage();
+  const pending = {
+    slot: 1,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  };
+
+  writePendingDeathPenalty(session, pending);
+  assert.equal(
+    readPendingDeathPenalty(local, 1),
+    null,
+    "tab close empties sessionStorage; primary localStorage starts empty",
+  );
+  assert.deepEqual(
+    readPendingDeathPenaltyAnywhere(1, local, session),
+    pending,
+    "legacy sessionStorage marker must still replay after upgrade",
+  );
+
+  writePendingDeathPenalty(local, pending);
+  assert.deepEqual(
+    readPendingDeathPenaltyAnywhere(1, local, memStorage()),
+    pending,
+    "localStorage marker must survive a closed tab (empty session)",
+  );
+
+  clearPendingDeathPenaltyAnywhere(1, local, session);
+  assert.equal(readPendingDeathPenalty(local, 1), null);
+  assert.equal(readPendingDeathPenalty(session, 1), null);
+  assert.equal(readPendingDeathPenaltyAnywhere(1, local, session), null);
 }
 
 console.log("deathPenalty.test: ok");

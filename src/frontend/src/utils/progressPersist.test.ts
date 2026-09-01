@@ -10,6 +10,7 @@ import {
   resolveCommittedDokaForAbsoluteWrite,
   resolveHydratedXp,
   shouldCopyIdleWalletDoka,
+  shouldPersistAbsoluteDokaSpend,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -43,6 +44,26 @@ describe("spend math", () => {
     assert.equal(clampAbsoluteProgressWrite(250, 200), 200);
     assert.equal(clampAbsoluteProgressWrite(0, 0), 0);
     assert.equal(clampAbsoluteProgressWrite(80, 100), 80);
+  });
+
+  it("skips a 0-spend saveBattleStats so a stale-prop double-click cannot persist free HP", () => {
+    // Click 1 empties the live wallet. Click 2 still sees the render
+    // snapshot, so spendFromUiBalance(0, 0) is 0. Writing that snapshot
+    // used to persist the extra heal / shop stack with no Doka debit.
+    let live = 10;
+    const firstNext = 0;
+    const firstSpend = spendFromUiBalance(live, firstNext);
+    live = firstNext;
+    assert.equal(firstSpend, 10);
+    assert.equal(shouldPersistAbsoluteDokaSpend(firstSpend), true);
+
+    const secondSpend = spendFromUiBalance(live, 0);
+    assert.equal(secondSpend, 0);
+    assert.equal(shouldPersistAbsoluteDokaSpend(secondSpend), false);
+    assert.equal(shouldPersistAbsoluteDokaSpend(0), false);
+    assert.equal(shouldPersistAbsoluteDokaSpend(-4), false);
+    assert.equal(shouldPersistAbsoluteDokaSpend(Number.NaN), false);
+    assert.equal(shouldPersistAbsoluteDokaSpend(1), true);
   });
 });
 
