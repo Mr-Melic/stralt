@@ -491,6 +491,9 @@ describe("resolveControlledSummonMoveDest", () => {
   });
 
   it("unseals a dual-path cut the same way AI executeSummonAction does", () => {
+    // Occupied still lists the mover at `from` (1,0) — the live store has
+    // not committed yet. Unseal must vacate that ghost or (1,0)+(2,2)
+    // keep every route sealed and relocate is a no-op.
     const tiles = [
       [true, true, true, true, true],
       [true, false, false, false, true],

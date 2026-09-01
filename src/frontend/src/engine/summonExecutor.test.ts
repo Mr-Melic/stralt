@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { OccupancyContext } from "./occupancy.ts";
+import {
+  type OccupancyContext,
+  occupantsSealProgression,
+} from "./occupancy.ts";
 import type { SpellContext } from "./spellEngine.ts";
 import { executeSummonAction } from "./summonExecutor.ts";
 
@@ -76,5 +79,69 @@ describe("executeSummonAction mandatory-bridge slide", () => {
       false,
     );
     assert.ok(tiles[result.newPosition.y][result.newPosition.x]);
+  });
+
+  it("vacates the origin tile so a dual-path cut can unseal after a move", () => {
+    const tiles = [
+      [true, true, true, true, true],
+      [true, false, false, false, true],
+      [true, true, true, true, true],
+    ];
+    const occupied = new Set<string>(["0,1", "2,2", "1,0"]);
+    const occupancyCtx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles: new Set(),
+      portals: new Set(["4,0"]),
+      progressStart: { x: 0, y: 1 },
+      isOccupied: (c) => occupied.has(`${c.x},${c.y}`),
+    };
+    const result = executeSummonAction(
+      {
+        archetype: "hunter",
+        kind: "move",
+        destination: { x: 2, y: 0 },
+        spell: null,
+        targetId: null,
+        intent: "closes in",
+        intentColor: "#a78bfa",
+        retreating: false,
+      },
+      {
+        id: "wolf",
+        x: 1,
+        y: 0,
+        hp: 10,
+        maxHp: 10,
+        currentAp: 2,
+        currentMp: 4,
+        maxAp: 2,
+        maxMp: 4,
+        level: 1,
+        pieceType: "pawn",
+        summonAI: "hunter",
+      } as any,
+      dummyCtx(),
+      {
+        calcScaledDamage: (n) => n,
+        occupancyCtx,
+        worldGridSize: 5,
+        mpCostPerTile: 1,
+        meleeApCost: 1,
+        getEnemyById: () => undefined,
+        getAoEVictims: () => [],
+      },
+    );
+    assert.equal(
+      occupantsSealProgression(
+        tiles,
+        new Set(),
+        new Set(["4,0"]),
+        { x: 0, y: 1 },
+        [result.newPosition, { x: 2, y: 2 }],
+      ),
+      false,
+    );
+    assert.notEqual(`${result.newPosition.x},${result.newPosition.y}`, "2,0");
   });
 });
