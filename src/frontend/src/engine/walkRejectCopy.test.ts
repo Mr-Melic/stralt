@@ -2,10 +2,87 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   classifyWalkReject,
+  isBattleWalkTileBlocked,
   playerFacingWalkReject,
   shouldFloatWorldUnreachable,
   spawnWalkRejectFloat,
 } from "./walkRejectCopy.ts";
+
+describe("isBattleWalkTileBlocked", () => {
+  const empty = new Set<string>();
+  const portals = new Set(["3,3"]);
+  const barriers = new Set(["2,2"]);
+  const voids = new Set(["1,1"]);
+
+  it("matches highlight and execute for wall, void, barrier, and in-battle portal", () => {
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "wall",
+        key: "0,0",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "1,1",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "2,2",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "3,3",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "3,3",
+        inBattle: false,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      false,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "4,4",
+        inBattle: true,
+        portals: empty,
+        barriers: empty,
+        voidTiles: empty,
+      }),
+      false,
+    );
+  });
+});
 
 describe("playerFacingWalkReject", () => {
   it("uses short carved-stone walk copy", () => {

@@ -478,9 +478,7 @@ export function isTileCastableLive(
     if (tx === casterPos.x && ty === casterPos.y) {
       return { ok: true, reason: "ally_self" };
     }
-    const dx = Math.abs(tx - casterPos.x);
-    const dy = Math.abs(ty - casterPos.y);
-    if (Math.max(dx, dy) > range) {
+    if (chebyshevOnBoard(casterPos, tile) > range) {
       return { ok: false, reason: "ally_out_of_range" };
     }
     const ally = liveCombatants.find(
@@ -539,7 +537,7 @@ export function isTileCastableLive(
     }
     const stepX = ddx === 0 ? 0 : ddx > 0 ? 1 : -1;
     const stepY = ddy === 0 ? 0 : ddy > 0 ? 1 : -1;
-    const cheb = Math.max(Math.abs(ddx), Math.abs(ddy));
+    const cheb = chebyshevOnBoard(casterPos, tile);
     if (cheb > range) return { ok: false, reason: "line_out_of_range" };
     if (cheb < minR) return { ok: false, reason: "line_below_min_range" };
     let cx = casterPos.x;
@@ -577,7 +575,7 @@ export function isTileCastableLive(
   }
   const dx = tx - casterPos.x;
   const dy = ty - casterPos.y;
-  const chebyshev = Math.max(Math.abs(dx), Math.abs(dy));
+  const chebyshev = chebyshevOnBoard(casterPos, tile);
 
   const destBarrier = barrierTiles.has(`${tx},${ty}`);
   const destOccupied =
@@ -649,7 +647,7 @@ export function isTileCastableLive(
     }
     for (let ay = -range; ay <= range; ay++) {
       for (let ax = -range; ax <= range; ax++) {
-        const aCheb = Math.max(Math.abs(ax), Math.abs(ay));
+        const aCheb = chebyshevOnBoard({ x: 0, y: 0 }, { x: ax, y: ay });
         if (aCheb > range) continue;
         if (aCheb < minR) continue;
         if (ax === 0 && ay === 0) continue;
@@ -669,9 +667,7 @@ export function isTileCastableLive(
         }
         if (playerSpellRequiresLos(spell) && !hasLoS(axN, ayN)) continue;
         // Is the clicked tile within areaRadius of this anchor?
-        const tdx = Math.abs(tx - axN);
-        const tdy = Math.abs(ty - ayN);
-        if (Math.max(tdx, tdy) <= areaRadius) {
+        if (chebyshevOnBoard(tile, { x: axN, y: ayN }) <= areaRadius) {
           return { ok: true, reason: "area_expansion" };
         }
       }
@@ -764,10 +760,7 @@ export function pickNearestLiveHostileTile(
       barrierTiles,
     );
     if (!shouldExecuteLiveCast(live)) continue;
-    const dist = Math.max(
-      Math.abs(tile.x - caster.x),
-      Math.abs(tile.y - caster.y),
-    );
+    const dist = chebyshevOnBoard(tile, caster);
     if (dist < nearestDist) {
       nearest = tile;
       nearestDist = dist;
@@ -869,6 +862,38 @@ export function shouldBypassHighlightForLiveHostile(
   live: TileCastableResult,
 ): boolean {
   return occupantIsLiveHostile && shouldExecuteLiveCast(live);
+}
+
+export type TileCastClickDecision =
+  | { action: "execute"; bypassHighlight: boolean }
+  | { action: "reject"; reason: string };
+
+/**
+ * Mouse and touch tile-clicks share this decision so highlight membership
+ * and the live gate cannot fork per input device.
+ *
+ * Living hostiles: live geometry only (the documented cache-bypass). Empty /
+ * ally / ground / area tiles still require the painted set, then the live
+ * re-check so a stale highlighted cell cannot execute.
+ */
+export function decideTileCastClick(args: {
+  live: TileCastableResult;
+  tileHighlighted: boolean;
+  occupantIsLiveHostile: boolean;
+}): TileCastClickDecision {
+  if (args.occupantIsLiveHostile) {
+    if (shouldExecuteLiveCast(args.live)) {
+      return { action: "execute", bypassHighlight: true };
+    }
+    return { action: "reject", reason: args.live.reason };
+  }
+  if (!args.tileHighlighted) {
+    return { action: "reject", reason: "out_of_range" };
+  }
+  if (!shouldExecuteLiveCast(args.live)) {
+    return { action: "reject", reason: args.live.reason };
+  }
+  return { action: "execute", bypassHighlight: false };
 }
 
 /** Execute path: live store + hostility filter + highlight live gate. */

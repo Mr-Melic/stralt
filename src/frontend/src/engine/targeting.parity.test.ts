@@ -6,6 +6,7 @@ import {
   chebyshevOnBoard,
   collectHighlightLiveMismatches,
   computeTargetableTiles,
+  decideTileCastClick,
   findAttackNearestTarget,
   groundTileInRange,
   hasBresenhamLoS,
@@ -671,6 +672,51 @@ describe("shared helpers", () => {
     assert.equal(shouldBypassHighlightForLiveHostile(true, ok), true);
     assert.equal(shouldBypassHighlightForLiveHostile(true, blocked), false);
     assert.equal(shouldBypassHighlightForLiveHostile(false, ok), false);
+  });
+
+  it("lets mouse and touch share one highlight-vs-live click decision", () => {
+    const liveOk = { ok: true, reason: "enemy" };
+    const liveFail = { ok: false, reason: "los_blocked" };
+    assert.deepEqual(
+      decideTileCastClick({
+        live: liveOk,
+        tileHighlighted: true,
+        occupantIsLiveHostile: false,
+      }),
+      { action: "execute", bypassHighlight: false },
+    );
+    assert.deepEqual(
+      decideTileCastClick({
+        live: liveFail,
+        tileHighlighted: true,
+        occupantIsLiveHostile: false,
+      }),
+      { action: "reject", reason: "los_blocked" },
+    );
+    assert.deepEqual(
+      decideTileCastClick({
+        live: liveOk,
+        tileHighlighted: false,
+        occupantIsLiveHostile: false,
+      }),
+      { action: "reject", reason: "out_of_range" },
+    );
+    assert.deepEqual(
+      decideTileCastClick({
+        live: liveOk,
+        tileHighlighted: false,
+        occupantIsLiveHostile: true,
+      }),
+      { action: "execute", bypassHighlight: true },
+    );
+    assert.deepEqual(
+      decideTileCastClick({
+        live: liveFail,
+        tileHighlighted: true,
+        occupantIsLiveHostile: true,
+      }),
+      { action: "reject", reason: "los_blocked" },
+    );
   });
 
   it("measures hitsAllies from the click, same Chebyshev as hitsMultiple", () => {

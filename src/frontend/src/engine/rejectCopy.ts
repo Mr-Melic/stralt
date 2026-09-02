@@ -4,6 +4,7 @@
 
 const REJECT_COPY: Record<string, string> = {
   out_of_bounds: "Out of bounds",
+  out_of_range: "Out of range",
   wall_tile: "Blocked",
   self_other_tile: "Invalid target",
   ally_out_of_range: "Out of range",

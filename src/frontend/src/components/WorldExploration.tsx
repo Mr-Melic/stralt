@@ -169,6 +169,11 @@ import {
   resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
 import {
+  planPlayerCastAttempt,
+  planPlayerCastResources,
+  playerCastAttemptResult,
+} from "../engine/playerCastPlan";
+import {
   PROGRESSION_PORTAL_KIND,
   type RunMode,
   completeRun,
@@ -239,15 +244,14 @@ import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   type TileCastableResult,
   attackNearestLiveCasterPos,
-  canAffordCastAp,
   canAttackNearestAgainstLive,
   computeTargetableTiles,
+  decideTileCastClick,
   hasBresenhamLoS,
   isTileCastableLive,
   pickNearestAttackableHostile,
   playerSpellEffectiveRange,
   probeLiveCast as probeLiveCastAt,
-  shouldBypassHighlightForLiveHostile,
   shouldExecuteLiveCast,
 } from "../engine/targeting";
 import {
@@ -257,6 +261,7 @@ import {
 } from "../engine/turnQueue";
 import {
   classifyWalkReject,
+  isBattleWalkTileBlocked,
   playerFacingWalkReject,
   shouldFloatWorldUnreachable,
 } from "../engine/walkRejectCopy";
@@ -291,7 +296,6 @@ import {
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
-  isSpellOnCooldown,
   nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
@@ -4445,6 +4449,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     (start: PlayerPosition, end: PlayerPosition): PlayerPosition[] => {
       if (!currentMap) return [];
 
+      const battlePortals = new Set(
+        currentMap.portals.map((p) => `${p.x},${p.y}`),
+      );
       const openSet: PathNode[] = [];
       const closedSet: Set<string> = new Set();
 
@@ -4497,20 +4504,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (x < 0 || x >= WORLD_GRID_SIZE || y < 0 || y >= WORLD_GRID_SIZE)
             continue;
 
-          // Check if walkable
-          if (currentMap.tiles[y][x] === "wall") continue;
-          // FIX 4 — void tiles are impassable in pathfinding
-          if (currentMap?.voidTiles?.has(`${x},${y}`)) continue;
-
-          // Block portal tiles during battle (enemies must not pathfind onto portals)
+          const neighborKey = `${x},${y}`;
           if (
-            inBattleRef.current &&
-            currentMap.portals.some((p) => p.x === x && p.y === y)
+            isBattleWalkTileBlocked({
+              tileKind: currentMap.tiles[y]?.[x],
+              key: neighborKey,
+              inBattle: inBattleRef.current,
+              portals: battlePortals,
+              barriers: barrierTilesRef.current,
+              voidTiles: currentMap.voidTiles,
+            })
           )
             continue;
 
           // Check if already processed
-          if (closedSet.has(`${x},${y}`)) continue;
+          if (closedSet.has(neighborKey)) continue;
 
           const g = current.g + 1;
           const h = Math.abs(end.x - x) + Math.abs(end.y - y);
@@ -7017,9 +7025,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const key = `${nx},${ny}`;
         if (nx < 0 || nx >= WORLD_GRID_SIZE || ny < 0 || ny >= WORLD_GRID_SIZE)
           continue;
-        if (currentMap.tiles[ny][nx] === "wall") continue;
-        if (portalKeys.has(key)) continue; // FIX 1 — portals are blocked in battle
-        if (barrierTilesRef.current.has(key)) continue; // H3 — barrier tiles are impassable
+        if (
+          isBattleWalkTileBlocked({
+            tileKind: currentMap.tiles[ny]?.[nx],
+            key,
+            inBattle: true,
+            portals: portalKeys,
+            barriers: barrierTilesRef.current,
+            voidTiles: currentMap.voidTiles,
+          })
+        )
+          continue;
         const prevBest = visited.get(key);
         if (prevBest !== undefined && prevBest <= nextSteps) continue;
         visited.set(key, nextSteps);
@@ -10320,88 +10336,50 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _preClickCacheHit =
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
-          // 1C: ENTITY-FIRST TARGETING (mouse). Before the precomputed
-          // spellTiles.has gate, check whether a LIVING HOSTILE combatant
-          // occupies the clicked tile. If so, validate the cast LIVE via
-          // isTileCastableLive (no cache) and either cast at the entity's
-          // current tile (bypassing spellTiles entirely) or reject without
-          // falling through to the spellTiles.has gate. The precomputed
-          // spellTiles set remains ONLY for highlighting and for
-          // ground/empty-tile casts (tiles with no living hostile).
+          // Mouse/touch share decideTileCastClick: living hostiles use the
+          // live gate (cache bypass); empty/ground/area tiles still require
+          // the painted set then the live re-check.
           const _liveCombatantsMouse = getLiveCombatants(combatantStoreCtx);
           const _occupantMouse = _liveCombatantsMouse.find(
             (e) => e.x === gridPos.x && e.y === gridPos.y,
           );
-          let _skipHighlightMouse = false;
-          if (
-            _occupantMouse &&
-            isActiveHostile(_occupantMouse) &&
-            isAliveCombatant(_occupantMouse)
-          ) {
-            const _spellMouse = activeSpells.find(
-              (s) => s.id === selectedSpellIdRef.current,
-            );
-            if (_spellMouse) {
-              const _liveMouse = probeLiveCast(_spellMouse, gridPos);
-              if (shouldBypassHighlightForLiveHostile(true, _liveMouse)) {
-                _skipHighlightMouse = true;
-                // eslint-disable-next-line no-console
-                console.log("[CLICK-ENEMY]", {
-                  branchTaken: "cast-live",
-                  tile: gridPos,
-                  spellId: _spellMouse.id,
-                  targetId: _occupantMouse.id,
-                  targetsCount: 1,
-                  targetIds: [_occupantMouse.id],
-                });
-                // Cast at the entity's current tile BYPASSING the
-                // precomputed spellTiles set entirely — fall through to
-                // the existing cast body below by skipping the gate.
-              } else {
-                const _screen = tileCenter(gridPos.x, gridPos.y);
-                effectsManagerRef.current?.spawnFloatText(
-                  _screen.x,
-                  _screen.y,
-                  playerFacingRejectReason(_liveMouse.reason),
-                );
-                try {
-                  recordClickOutcome(
-                    event.clientX,
-                    event.clientY,
-                    "tile-invalid-target",
-                    null,
-                    null,
-                    spellTiles.size,
-                    false,
-                  );
-                } catch {}
-                try {
-                  recordClickOutcome(
-                    event.clientX,
-                    event.clientY,
-                    "cast-live",
-                    null,
-                    _liveMouse.reason,
-                    null,
-                    null,
-                  );
-                } catch {}
-                return;
-              }
-            }
+          const spell = activeSpells.find(
+            (s) => s.id === selectedSpellIdRef.current,
+          );
+          if (!spell) {
+            return;
           }
+          const _liveBeforeCast = probeLiveCast(spell, gridPos);
+          const _occupantHostileMouse = Boolean(
+            _occupantMouse &&
+              isActiveHostile(_occupantMouse) &&
+              isAliveCombatant(_occupantMouse),
+          );
+          const _tileClickMouse = decideTileCastClick({
+            live: _liveBeforeCast,
+            tileHighlighted: spellTiles.has(`${gridPos.x},${gridPos.y}`),
+            occupantIsLiveHostile: _occupantHostileMouse,
+          });
           if (
-            !_skipHighlightMouse &&
-            !spellTiles.has(`${gridPos.x},${gridPos.y}`)
+            _tileClickMouse.action === "execute" &&
+            _tileClickMouse.bypassHighlight &&
+            _occupantMouse
           ) {
-            // [TARGET-BISECT] click-miss: when setSize > 0 the computation
-            // produced a non-empty set yet the clicked tile is absent — log
-            // the tiles the computation saw vs the live combatant positions
-            // from getLiveCombatants(combatantStoreCtx) at this instant, so
-            // the user can confirm whether the gate's enemy source diverged
-            // from the computation's. Dev-gated via logDebugInfo (console
-            // no-op in prod; overlay always gets it). Capped to avoid spam.
-            if (spellTiles.size > 0) {
+            // eslint-disable-next-line no-console
+            console.log("[CLICK-ENEMY]", {
+              branchTaken: "cast-live",
+              tile: gridPos,
+              spellId: spell.id,
+              targetId: _occupantMouse.id,
+              targetsCount: 1,
+              targetIds: [_occupantMouse.id],
+            });
+          }
+          if (_tileClickMouse.action === "reject") {
+            if (
+              _tileClickMouse.reason === "out_of_range" &&
+              spellTiles.size > 0
+            ) {
               const _liveNow = getLiveCombatants(combatantStoreCtx);
               logDebugInfo("BATTLE", "[TARGET-BISECT] click-miss", {
                 handler: "mouse",
@@ -10421,30 +10399,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 liveCombatantCount: _liveNow.length,
               });
             }
-            {
-              const _screen = tileCenter(gridPos.x, gridPos.y);
-              effectsManagerRef.current?.spawnFloatText(
-                _screen.x,
-                _screen.y,
-                "Out of range",
-              );
-            }
-            return;
-          }
-          const spell = activeSpells.find(
-            (s) => s.id === selectedSpellIdRef.current,
-          );
-          if (!spell) {
-            return;
-          }
-          const _liveBeforeCast = probeLiveCast(spell, gridPos);
-          if (!shouldExecuteLiveCast(_liveBeforeCast)) {
-            const _screenLive = tileCenter(gridPos.x, gridPos.y);
+            const _screen = tileCenter(gridPos.x, gridPos.y);
             effectsManagerRef.current?.spawnFloatText(
-              _screenLive.x,
-              _screenLive.y,
-              playerFacingRejectReason(_liveBeforeCast.reason),
+              _screen.x,
+              _screen.y,
+              playerFacingRejectReason(_tileClickMouse.reason),
             );
+            try {
+              recordClickOutcome(
+                event.clientX,
+                event.clientY,
+                "tile-invalid-target",
+                null,
+                _tileClickMouse.reason,
+                spellTiles.size,
+                false,
+              );
+            } catch {}
             return;
           }
           // [CLICK] cast-branch debug — dev-only, never ships to players.
@@ -10552,9 +10523,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             return;
           }
-          const walkBlocked =
-            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
-            Boolean(currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`));
+          const walkBlocked = isBattleWalkTileBlocked({
+            tileKind: currentMap.tiles[gridPos.y]?.[gridPos.x],
+            key: `${gridPos.x},${gridPos.y}`,
+            inBattle: true,
+            portals: new Set(currentMap.portals.map((p) => `${p.x},${p.y}`)),
+            barriers: barrierTilesRef.current,
+            voidTiles: currentMap.voidTiles,
+          });
           const reachable = getMpReachableTiles();
           const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
           const path =
@@ -11038,62 +11014,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // populate the cache, so the touch rejection log reports whether the
           // cache already held an entry for this key.
           const spellTiles = getSpellRangeTiles();
-          // 1C: ENTITY-FIRST TARGETING (touch). Mirrors the mouse handler:
-          // before the precomputed spellTiles.has gate, check whether a
-          // LIVING HOSTILE combatant occupies the touched tile. If so,
-          // validate the cast LIVE via isTileCastableLive (no cache) and
-          // either cast at the entity's current tile (bypassing spellTiles
-          // entirely) or reject without falling through to the
-          // spellTiles.has gate. The precomputed spellTiles set remains
-          // ONLY for highlighting and for ground/empty-tile casts (tiles
-          // with no living hostile).
+          // Mouse/touch share decideTileCastClick (same live + highlight
+          // rules as the mouse tile path).
           const _liveCombatantsTouch = getLiveCombatants(combatantStoreCtx);
           const _occupantTouch = _liveCombatantsTouch.find(
             (e) => e.x === gridPos.x && e.y === gridPos.y,
           );
-          let _skipHighlightTouch = false;
-          if (
-            _occupantTouch &&
-            isActiveHostile(_occupantTouch) &&
-            isAliveCombatant(_occupantTouch)
-          ) {
-            const _spellTouch = activeSpells.find(
-              (s) => s.id === selectedSpellIdRef.current,
-            );
-            if (_spellTouch) {
-              const _liveTouch = probeLiveCast(_spellTouch, gridPos);
-              if (shouldBypassHighlightForLiveHostile(true, _liveTouch)) {
-                _skipHighlightTouch = true;
-                // Cast at the entity's current tile BYPASSING the
-                // precomputed spellTiles set entirely — fall through to
-                // the existing cast body below by skipping the gate.
-              } else {
-                {
-                  const _screen = tileCenter(gridPos.x, gridPos.y);
-                  effectsManagerRef.current?.spawnFloatText(
-                    _screen.x,
-                    _screen.y,
-                    playerFacingRejectReason(_liveTouch.reason),
-                  );
-                }
-                return;
-              }
-            }
-          }
-          if (
-            !_skipHighlightTouch &&
-            !spellTiles.has(`${gridPos.x},${gridPos.y}`)
-          ) {
-            {
-              const _screen = tileCenter(gridPos.x, gridPos.y);
-              effectsManagerRef.current?.spawnFloatText(
-                _screen.x,
-                _screen.y,
-                "Out of range",
-              );
-            }
-            return;
-          }
           const spell = activeSpells.find(
             (s) => s.id === selectedSpellIdRef.current,
           );
@@ -11101,12 +11027,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return;
           }
           const _liveBeforeCastTouch = probeLiveCast(spell, gridPos);
-          if (!shouldExecuteLiveCast(_liveBeforeCastTouch)) {
-            const _screenLive = tileCenter(gridPos.x, gridPos.y);
+          const _tileClickTouch = decideTileCastClick({
+            live: _liveBeforeCastTouch,
+            tileHighlighted: spellTiles.has(`${gridPos.x},${gridPos.y}`),
+            occupantIsLiveHostile: Boolean(
+              _occupantTouch &&
+                isActiveHostile(_occupantTouch) &&
+                isAliveCombatant(_occupantTouch),
+            ),
+          });
+          if (_tileClickTouch.action === "reject") {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
             effectsManagerRef.current?.spawnFloatText(
-              _screenLive.x,
-              _screenLive.y,
-              playerFacingRejectReason(_liveBeforeCastTouch.reason),
+              _screen.x,
+              _screen.y,
+              playerFacingRejectReason(_tileClickTouch.reason),
             );
             return;
           }
@@ -11213,9 +11148,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             return;
           }
-          const walkBlocked =
-            currentMap.tiles[gridPos.y][gridPos.x] === "wall" ||
-            Boolean(currentMap.voidTiles?.has(`${gridPos.x},${gridPos.y}`));
+          const walkBlocked = isBattleWalkTileBlocked({
+            tileKind: currentMap.tiles[gridPos.y]?.[gridPos.x],
+            key: `${gridPos.x},${gridPos.y}`,
+            inBattle: true,
+            portals: new Set(currentMap.portals.map((p) => `${p.x},${p.y}`)),
+            barriers: barrierTilesRef.current,
+            voidTiles: currentMap.voidTiles,
+          });
           const reachable = getMpReachableTiles();
           const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
           const path =
@@ -17201,18 +17141,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ) {
         return { castResult: "abort", apCost: 0 };
       }
-      const _apCost = mapModifierRegistry.applyApCost(
-        Number(spell.apCost),
-        activeMapModifierTypes,
-        {
-          log: (msg: string) => logDebugInfo("MODIFIER", msg),
-          rng: Math.random,
-        },
-      );
-      if (isSpellOnCooldown(spellCooldownsRef.current.get(spell.id))) {
-        return { castResult: "on_cooldown", apCost: _apCost };
+      const plan = planPlayerCastAttempt({
+        spell,
+        caster: attackNearestLiveCasterPos(
+          playerPositionRef.current,
+          getActiveCasterPos(),
+        ),
+        tile: targetTile,
+        liveCombatants: getLiveCombatants(combatantStoreCtx),
+        mapTiles: currentMapRef.current?.tiles ?? [],
+        effectiveRange: playerSpellEffectiveRange(
+          spell,
+          getEffectiveSpellRange,
+        ),
+        barrierTiles: barrierTilesRef.current,
+        currentAp: currentBattleApRef.current,
+        baseApCost: Number(spell.apCost),
+        cooldownTurnsRemaining: spellCooldownsRef.current.get(spell.id),
+        applyApCost: (base) =>
+          mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+            log: (msg: string) => logDebugInfo("MODIFIER", msg),
+            rng: Math.random,
+          }),
+      });
+      const planned = playerCastAttemptResult(plan);
+      if (planned === "on_cooldown") {
+        return { castResult: "on_cooldown", apCost: plan.apCost };
       }
-      if (currentBattleApRef.current >= _apCost) {
+      if (planned === "no_ap") {
+        return { castResult: "no_ap", apCost: plan.apCost };
+      }
+      if (planned !== "ok") {
+        return { castResult: "abort", apCost: 0 };
+      }
+      const _apCost = plan.apCost;
+      {
         castRuntimeRef.current.apCost = _apCost;
         castRuntimeRef.current.spell = spell;
         const _castResult = resolvePlayerCast(
@@ -17273,13 +17236,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
         return { castResult: _castResult, apCost: _apCost };
       }
-      return { castResult: "no_ap", apCost: _apCost };
     },
     [
       activeMapModifierTypes,
       markFirstAction,
       playerSpellContext,
       setCurrentBattleApSynced,
+      getEffectiveSpellRange,
+      getActiveCasterPos,
+      combatantStoreCtx,
     ],
   );
   const attackNearestEnemy = useCallback(() => {
@@ -17304,32 +17269,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!spell) return;
     // Spell bar only disables re-selection. Inferno used to recast via
     // Attack Nearest on every click while leftover AP remained. Gate CD
-    // here, then executeCastAttempt so AP / cooldown / Striker match clicks.
-    if (isSpellOnCooldown(spellCooldownsRef.current.get(spell.id))) {
-      const _screen = tileCenter(
-        playerPositionRef.current.x,
-        playerPositionRef.current.y,
-      );
-      effectsManagerRef.current?.spawnFloatText(
-        _screen.x,
-        _screen.y,
-        "On cooldown",
-      );
+    // + Arcane Surge AP here with the same helper executeCastAttempt uses.
+    const _anResources = planPlayerCastResources({
+      currentAp: currentBattleApRef.current,
+      baseApCost: Number(spell.apCost),
+      cooldownTurnsRemaining: spellCooldownsRef.current.get(spell.id),
+      applyApCost: (base) =>
+        mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+          log: (msg: string) => logDebugInfo("MODIFIER", msg),
+          rng: Math.random,
+        }),
+    });
+    if (!_anResources.ok) {
+      if (_anResources.reason === "on_cooldown") {
+        const _screen = tileCenter(
+          playerPositionRef.current.x,
+          playerPositionRef.current.y,
+        );
+        effectsManagerRef.current?.spawnFloatText(
+          _screen.x,
+          _screen.y,
+          "On cooldown",
+        );
+      }
       return;
     }
-    // Arcane Surge: spells cost 1 less AP (minimum 1) — matches handleCanvasClick
-    if (
-      !canAffordCastAp(
-        currentBattleApRef.current,
-        Number(spell.apCost),
-        (base) =>
-          mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
-            log: (msg: string) => logDebugInfo("MODIFIER", msg),
-            rng: Math.random,
-          }),
-      )
-    )
-      return;
     const isHealSpell =
       spell.targetType === "self" && spell.effectType === "heal";
     // Same range + live gate as the highlight / sprite-click paths.
@@ -18927,31 +18891,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }) &&
             battleActionMode === "attack" &&
             !!selectedSpellIdRef.current &&
-            !isSpellOnCooldown(
-              spellCooldownsRef.current.get(selectedSpellIdRef.current),
-            ) &&
             (() => {
               const spell = activeSpells.find(
                 (s) => s.id === selectedSpellIdRef.current,
               );
               const tiles = currentMapRef.current?.tiles;
               if (!spell || !tiles) return false;
-              if (
-                !canAffordCastAp(
-                  currentBattleAp,
-                  Number(spell.apCost),
-                  (base) =>
-                    mapModifierRegistry.applyApCost(
-                      base,
-                      activeMapModifierTypes,
-                      {
-                        log: (msg: string) => logDebugInfo("MODIFIER", msg),
-                        rng: Math.random,
-                      },
-                    ),
-                )
-              )
-                return false;
+              const resources = planPlayerCastResources({
+                currentAp: currentBattleAp,
+                baseApCost: Number(spell.apCost),
+                cooldownTurnsRemaining: spellCooldownsRef.current.get(spell.id),
+                applyApCost: (base) =>
+                  mapModifierRegistry.applyApCost(
+                    base,
+                    activeMapModifierTypes,
+                    {
+                      log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                      rng: Math.random,
+                    },
+                  ),
+              });
+              if (!resources.ok) return false;
               const casterPos = attackNearestLiveCasterPos(
                 playerPositionRef.current,
                 getActiveCasterPos(),
