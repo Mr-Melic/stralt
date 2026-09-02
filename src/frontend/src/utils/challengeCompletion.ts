@@ -235,6 +235,30 @@ export function recordChallengeItemHealUsed(
   return recordInBattleChallengeHealUsed(inBattle, alreadyUsed);
 }
 
+/** Player combatant ids that restore the character strip, not a summon. */
+export function isPlayerHealTargetId(id: string | undefined | null): boolean {
+  return id === "player" || id === "__player__";
+}
+
+/**
+ * Life Drain (`applyDamageToEnemy`) and summon/ctx.heal restore player HP
+ * without the executeCastAttempt `self` + `heal` gate. handleBattleEnd then
+ * persisted easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP) as a clean
+ * no-heal fight. Record only when HP actually increased, and only in battle
+ * — the same overworld-must-not-stick rule as Doka-to-HP.
+ */
+export function recordChallengeHealFromHpRestore(
+  inBattle: boolean,
+  alreadyUsed: boolean,
+  restoredHp: number,
+): boolean {
+  const restored = Number(restoredHp);
+  if (!inBattle || !Number.isFinite(restored) || restored <= 0) {
+    return alreadyUsed === true;
+  }
+  return recordInBattleChallengeHealUsed(true, alreadyUsed);
+}
+
 /**
  * Lava / spike tiles live on the overworld map and also deal HP during
  * combat walks. The challenge counter is zeroed in cleanupBattle, not at
