@@ -7,8 +7,10 @@ import {
   playerCastAttemptResult,
 } from "./playerCastPlan.ts";
 import {
+  canAffordCastAp,
   collectHighlightLiveMismatches,
   computeTargetableTiles,
+  resolveCastApCost,
   shouldExecuteLiveCast,
 } from "./targeting.ts";
 
@@ -57,6 +59,7 @@ function strike(): SpellConfig {
 describe("planPlayerCastResources", () => {
   it("uses the same modified AP cost for preview and execute", () => {
     const apply = (base: number) => Math.max(1, base - 1);
+    assert.equal(resolveCastApCost(4, apply), 3);
     assert.deepEqual(
       planPlayerCastResources({
         currentAp: 3,
@@ -66,6 +69,7 @@ describe("planPlayerCastResources", () => {
       }),
       { ok: true, apCost: 3 },
     );
+    assert.equal(canAffordCastAp(3, 4, apply), true);
     const short = planPlayerCastResources({
       currentAp: 2,
       baseApCost: 4,
@@ -74,6 +78,7 @@ describe("planPlayerCastResources", () => {
     });
     assert.equal(short.ok, false);
     if (!short.ok) assert.equal(short.reason, "no_ap");
+    assert.equal(canAffordCastAp(2, 4, apply), false);
   });
 
   it("blocks cooldown before AP so a highlighted spell cannot recast", () => {

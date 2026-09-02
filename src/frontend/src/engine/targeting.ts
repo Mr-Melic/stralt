@@ -126,6 +126,48 @@ export function playerSpellRequiresLos(spell: {
 }
 
 /**
+ * Enemy / summon-AI range. Starter kits have no `maxRange` growth path;
+ * using {@link spellRangeBase} here would extend bishop frost (and similar)
+ * without a data change. Keep `Number(spell.range)` so AI is not rebalanced.
+ */
+export function enemySpellRange(
+  spell: Pick<SpellConfig, "range"> | { range?: unknown },
+): number {
+  return Number(spell.range);
+}
+
+/**
+ * Enemy / summon-AI LoS: default ON (`!== false`). Player clicks stay on
+ * {@link playerSpellRequiresLos}. Do not merge the two policies.
+ */
+export function enemySpellRequiresLos(spell: {
+  lineOfSight?: boolean;
+}): boolean {
+  return spell.lineOfSight !== false;
+}
+
+/**
+ * Shared enemy-cast geometry: Chebyshev vs {@link enemySpellRange}, then
+ * LoS only when {@link enemySpellRequiresLos}. decideCaster used to require
+ * LoS even for `lineOfSight === false` while generic / hunter / archer and
+ * `findNearestLegalCastTile` honored the flag.
+ */
+export function enemyCastGeometryOk(args: {
+  origin: CasterPosition;
+  target: CasterPosition;
+  spell: Pick<SpellConfig, "range"> & { lineOfSight?: boolean };
+  hasLoS: boolean;
+}): boolean {
+  if (
+    chebyshevOnBoard(args.origin, args.target) > enemySpellRange(args.spell)
+  ) {
+    return false;
+  }
+  if (enemySpellRequiresLos(args.spell) && !args.hasLoS) return false;
+  return true;
+}
+
+/**
  * Only `self` / `ally` / `all` may use the caster tile. Area expansion
  * used to paint that tile; mouse/touch then rejected it with a second
  * WorldExploration guard, so a highlighted cell could not execute.
@@ -896,6 +938,63 @@ export function decideTileCastClick(args: {
   return { action: "execute", bypassHighlight: false };
 }
 
+export type SpriteCastClickDecision =
+  | {
+      action: "execute";
+      source: "sprite-enemy" | "sprite-basic" | "sprite-player";
+    }
+  | { action: "reject_live" }
+  | { action: "wait_for_turn" }
+  | { action: "inspect" }
+  | { action: "fallthrough" };
+
+/**
+ * Mouse and touch sprite-first hits share this table so a highlighted
+ * (live-ok) entity is executable and an illegal one cannot execute.
+ * Tile clicks stay on {@link decideTileCastClick}.
+ */
+export function decideSpriteCastClick(args: {
+  selectedSpellId: string | null | undefined;
+  hasSelectedSpell: boolean;
+  hitKind: string;
+  playerCastOk: boolean;
+  inBattle: boolean;
+  liveOk: boolean;
+  selfOrAllySpell: boolean;
+  hasBasicAttack: boolean;
+}): SpriteCastClickDecision {
+  const selected = Boolean(args.selectedSpellId);
+  if (selected && args.hitKind === "enemy" && args.playerCastOk) {
+    if (!args.hasSelectedSpell) return { action: "fallthrough" };
+    return args.liveOk
+      ? { action: "execute", source: "sprite-enemy" }
+      : { action: "reject_live" };
+  }
+  if (selected && args.hitKind === "enemy" && args.inBattle) {
+    return { action: "wait_for_turn" };
+  }
+  if (!selected && args.hitKind === "summon") {
+    return { action: "inspect" };
+  }
+  if (!selected && args.hitKind === "enemy") {
+    if (args.hasBasicAttack && args.liveOk && args.playerCastOk) {
+      return { action: "execute", source: "sprite-basic" };
+    }
+    return { action: "inspect" };
+  }
+  if (selected && args.hitKind === "player" && args.selfOrAllySpell) {
+    if (!args.playerCastOk) {
+      return args.inBattle
+        ? { action: "wait_for_turn" }
+        : { action: "fallthrough" };
+    }
+    return args.liveOk
+      ? { action: "execute", source: "sprite-player" }
+      : { action: "reject_live" };
+  }
+  return { action: "fallthrough" };
+}
+
 /** Execute path: live store + hostility filter + highlight live gate. */
 export function pickNearestAttackableHostile(
   spell: SpellConfig,
@@ -941,14 +1040,25 @@ export function canAttackNearestAgainstLive(
  * `applyApCost` modifiers must run here — raw `spell.apCost` let the
  * button light up when executeCastAttempt still rejected.
  */
+/**
+ * Single AP debit used by Attack Nearest preview and execute.
+ * {@link planPlayerCastResources} must call this so Arcane Surge cannot
+ * light the button with a different cost than `executeCastAttempt`.
+ */
+export function resolveCastApCost(
+  baseCost: number,
+  applyApCost: (base: number) => number = (base) => base,
+): number {
+  return applyApCost(Math.max(0, Math.floor(Number(baseCost) || 0)));
+}
+
 export function canAffordCastAp(
   currentAp: number,
   baseCost: number,
   applyApCost: (base: number) => number = (base) => base,
 ): boolean {
   const have = Math.max(0, Math.floor(Number(currentAp) || 0));
-  const need = applyApCost(Math.max(0, Math.floor(Number(baseCost) || 0)));
-  return have >= need;
+  return have >= resolveCastApCost(baseCost, applyApCost);
 }
 
 /**

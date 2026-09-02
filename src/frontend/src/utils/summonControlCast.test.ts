@@ -3,6 +3,12 @@ import { describe, it } from "node:test";
 import { starterSpells } from "../data/spellData.ts";
 import { isActiveHostile } from "../engine/battleSetup.ts";
 import {
+  computeTargetableTiles,
+  isTileCastableLive,
+  shouldExecuteLiveCast,
+} from "../engine/targeting.ts";
+import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
+import {
   canStartSummonControlCast,
   chebyshevDistance,
   pickSummonControlClickTarget,
@@ -436,6 +442,90 @@ describe("pickSummonControlClickTarget", () => {
       })?.id,
       "open",
     );
+  });
+
+  it("lets a highlighted kit tile execute and refuses an illegal one", () => {
+    const tiles = Array.from({ length: 10 }, () =>
+      Array.from({ length: 10 }, () => "floor" as const),
+    );
+    tiles[4][5] = "wall";
+    const caster = { x: 4, y: 4 };
+    const open = {
+      id: "open",
+      x: 4,
+      y: 7,
+      hp: 10,
+      maxHp: 10,
+      name: "Rat",
+      pieceType: "pawn",
+      side: "enemy" as const,
+    } as Enemy;
+    const blocked = {
+      id: "blocked",
+      x: 7,
+      y: 4,
+      hp: 10,
+      maxHp: 10,
+      name: "Rat",
+      pieceType: "pawn",
+      side: "enemy" as const,
+    } as Enemy;
+    const poison = {
+      ...(starterSpells.find((s) => s.id === "starter-poison") as SpellConfig),
+      lineOfSight: true,
+    };
+    const grid = {
+      tiles,
+      enemies: [open, blocked],
+      worldGridSize: 10,
+      effectiveRange: Number(poison.range),
+      barrierTiles: new Map<string, number>(),
+    };
+    const highlighted = computeTargetableTiles(poison, caster, grid);
+    assert.equal(highlighted.has("4,7"), true);
+    assert.equal(highlighted.has("7,4"), false);
+    assert.equal(
+      shouldExecuteLiveCast(
+        isTileCastableLive(
+          poison,
+          caster,
+          { x: 4, y: 7 },
+          [open, blocked],
+          tiles,
+          Number(poison.range),
+        ),
+      ),
+      true,
+    );
+    const legal = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog: [poison, ...starterSpells],
+      currentAp: 4,
+      caster,
+      target: { x: 4, y: 7 },
+      liveGate: {
+        tiles,
+        combatants: [open, blocked],
+        effectiveRange: Number(poison.range),
+      },
+    });
+    assert.equal(legal.ok, true);
+    const illegal = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog: [poison, ...starterSpells],
+      currentAp: 4,
+      caster,
+      target: { x: 7, y: 4 },
+      liveGate: {
+        tiles,
+        combatants: [open, blocked],
+        effectiveRange: Number(poison.range),
+      },
+    });
+    assert.equal(illegal.ok, false);
+    if (!illegal.ok) assert.equal(illegal.reason, "illegal_target");
   });
 });
 
