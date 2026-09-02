@@ -178,6 +178,7 @@ import {
   planPlayerCastAttempt,
   planPlayerCastResources,
   playerCastAttemptResult,
+  shouldRejectCastForMissingAp,
 } from "../engine/playerCastPlan";
 import {
   PROGRESSION_PORTAL_KIND,
@@ -258,6 +259,7 @@ import {
   hasBresenhamLoS,
   isTileCastableLive,
   pickNearestAttackableHostile,
+  playerSpellAllowsCasterTile,
   playerSpellEffectiveRange,
   probeLiveCast as probeLiveCastAt,
   shouldExecuteLiveCast,
@@ -10119,9 +10121,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               playerCastOk: _playerCastOk,
               inBattle: inBattleRef.current,
               liveOk: shouldExecuteLiveCast(_live),
-              selfOrAllySpell:
-                _selectedSpell?.targetType === "self" ||
-                _selectedSpell?.targetType === "ally",
+              selfOrAllySpell: playerSpellAllowsCasterTile(
+                _selectedSpell ?? {},
+              ),
               hasBasicAttack: Boolean(_basicAttack),
             });
             if (_spriteDecision.action === "wait_for_turn") {
@@ -10273,21 +10275,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Attack mode: cast selected spell on clicked tile if in range.
           // Precedence: spell SELECTED (selectedSpellIdRef.current non-null) AND
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
-          if (currentBattleApRef.current <= 0) {
-            {
-              const _screen = tileCenter(gridPos.x, gridPos.y);
-              effectsManagerRef.current?.spawnFloatText(
-                _screen.x,
-                _screen.y,
-                "Not enough AP",
-              );
-            }
-            selectedSpellIdRef.current = null;
-            setSpellSelectionVersion((v) => v + 1);
-            spellRangeCacheRef.current.clear();
-            setBattleActionMode("walk");
-            return;
-          }
+          // AP is gated by shouldRejectCastForMissingAp / executeCastAttempt
+          // (0-cost Timestep is legal at 0 AP). Do not abort on wallet === 0.
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the rejection log reports whether the cache
           // already held an entry for this key.
@@ -10306,6 +10295,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) {
+            return;
+          }
+          if (
+            shouldRejectCastForMissingAp({
+              currentAp: currentBattleApRef.current,
+              baseApCost: Number(spell.apCost),
+              applyApCost: (base) =>
+                mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                }),
+            })
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Not enough AP",
+            );
             return;
           }
           const _liveBeforeCast = probeLiveCast(spell, gridPos);
@@ -10805,9 +10813,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               playerCastOk: _playerCastOk,
               inBattle: inBattleRef.current,
               liveOk: shouldExecuteLiveCast(_live),
-              selfOrAllySpell:
-                _selectedSpell?.targetType === "self" ||
-                _selectedSpell?.targetType === "ally",
+              selfOrAllySpell: playerSpellAllowsCasterTile(
+                _selectedSpell ?? {},
+              ),
               hasBasicAttack: Boolean(_basicAttack),
             });
             if (_spriteDecision.action === "wait_for_turn") {
@@ -10907,22 +10915,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // walk branch only runs with NO spell selected. Attack mode with no
         // spell selected floats SELECT_SPELL_COPY.
         if (selectedSpellIdRef.current) {
-          // Attack mode: cast selected spell on touched tile if in range
-          if (currentBattleApRef.current <= 0) {
-            {
-              const _screen = tileCenter(gridPos.x, gridPos.y);
-              effectsManagerRef.current?.spawnFloatText(
-                _screen.x,
-                _screen.y,
-                "Not enough AP",
-              );
-            }
-            selectedSpellIdRef.current = null;
-            setSpellSelectionVersion((v) => v + 1);
-            spellRangeCacheRef.current.clear();
-            setBattleActionMode("walk");
-            return;
-          }
+          // Attack mode: cast selected spell on touched tile if in range.
+          // AP is gated by shouldRejectCastForMissingAp / executeCastAttempt
+          // (0-cost Timestep is legal at 0 AP). Do not abort on wallet === 0.
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the touch rejection log reports whether the
           // cache already held an entry for this key.
@@ -10937,6 +10932,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) {
+            return;
+          }
+          if (
+            shouldRejectCastForMissingAp({
+              currentAp: currentBattleApRef.current,
+              baseApCost: Number(spell.apCost),
+              applyApCost: (base) =>
+                mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                }),
+            })
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Not enough AP",
+            );
             return;
           }
           const _liveBeforeCastTouch = probeLiveCast(spell, gridPos);
