@@ -378,6 +378,40 @@ type EnemyConfig__975897321 =
     regions : [Text];
     spriteUrl : ?Text
   };
+type GameKeyLedgerEntry__888979253 =
+  {dokaAmount : Nat; redeemed : Bool; redeemedBy : Text; requestId : Text};
+type GameKeyLedgerEntry__932378475 =
+  {dokaAmount : Nat; redeemed : Bool; redeemedBy : Text; requestId : Text};
+type GameKeyRequest__16103690 =
+  {
+    approvedAt : Int;
+    dokaAmount : Nat;
+    email : Text;
+    emailConsent : Bool;
+    emailed : Bool;
+    hintedEuroCents : Nat;
+    id : Text;
+    redeemedAt : Int;
+    redeemedBy : Text;
+    status : Text;
+    timestamp : Int;
+    userPrincipal : Principal
+  };
+type GameKeyRequest__299976468 =
+  {
+    approvedAt : Int;
+    dokaAmount : Nat;
+    email : Text;
+    emailConsent : Bool;
+    emailed : Bool;
+    hintedEuroCents : Nat;
+    id : Text;
+    redeemedAt : Int;
+    redeemedBy : Text;
+    status : Text;
+    timestamp : Int;
+    userPrincipal : Principal
+  };
 type Internal__161573640<K, V> =
   {children : [var ?Node__430031793<K, V>]; data : Data__265875254<K, V>};
 type Leaf__1045638083<K, V> = {data : Data__265875254<K, V>};
@@ -472,6 +506,14 @@ type NewActor__163002496 =
     spellConfigs : Map__386906547<Text, SpellConfig__592183512>;
     var tierSpawnConfigPrev : TierSpawnConfig__1005545496
   };
+type NewActor__311599132 =
+  {
+    gameKeyLedger : Map__386906547<Text, GameKeyLedgerEntry__888979253>;
+    gameKeyRequests : Map__386906547<Text, GameKeyRequest__299976468>;
+    gameKeyReveals : Map__386906547<Text, Text>;
+    lastGameKeyRequestAt : Map__386906547<Principal, Int>;
+    var nextGameKeyRequestId : Nat
+  };
 type NewActor__684771110 =
   {
     BUFF_CATALOG : [(Text, Text, Nat)];
@@ -554,6 +596,7 @@ type Node__430031793<K, V> =
 type OldActor__105536201 = {};
 type OldActor__1060490054 =
   {spellConfigs : Map__386906547<Text, OldSpellConfig__721271437>};
+type OldActor__355695706 = {};
 type OldActor__741741474 =
   {
     BUFF_CATALOG : [(Text, Text, Nat)];
@@ -942,7 +985,8 @@ type UserRole__1073662873 = {#admin; #guest; #user};
 {
   "20260826_000000" : (_old : OldActor__105536201) -> NewActor__684771110;
   "20260827_000000" : (old : OldActor__741741474) -> NewActor__695517033;
-  "20260831_000000" : (old : OldActor__1060490054) -> NewActor__163002496
+  "20260831_000000" : (old : OldActor__1060490054) -> NewActor__163002496;
+  "20260901_000000" : (_old : OldActor__355695706) -> NewActor__311599132
 }
 actor  {
   stable accessControlState :
@@ -1030,11 +1074,25 @@ actor  {
       dokaSpawnChance : Nat;
       leaderBoostPercent : Nat
     };
+  stable gameKeyLedger :
+    {
+      var root : Node__430031793<Text, GameKeyLedgerEntry__932378475>;
+      var size : Nat__58649523
+    };
+  stable gameKeyRequests :
+    {
+      var root : Node__430031793<Text, GameKeyRequest__16103690>;
+      var size : Nat__58649523
+    };
+  stable gameKeyReveals :
+    {var root : Node__430031793<Text, Text>; var size : Nat__58649523};
   stable var hasBossRushConfigPrev : Bool;
   stable var hasColorPalettePrev : Bool;
   stable var hasGameConfigPrev : Bool;
   stable var hasLevelUpConfigPrev : Bool;
   stable var hasTierSpawnConfigPrev : Bool;
+  stable lastGameKeyRequestAt :
+    {var root : Node__430031793<Principal, Int>; var size : Nat__58649523};
   stable var levelUpConfig :
     {
       apMpLevelThreshold : Nat;
@@ -1064,6 +1122,7 @@ actor  {
       var root : Node__430031793<Text, MapModifierConfig__998818509>;
       var size : Nat__58649523
     };
+  stable var nextGameKeyRequestId : Nat;
   stable var nextPurchaseId : Nat;
   stable playerSpriteConfigs :
     {
