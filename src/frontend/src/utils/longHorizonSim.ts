@@ -25,6 +25,7 @@ import {
 } from "../engine/progression.ts";
 import type { ChessPieceType } from "../types/gameTypes.ts";
 import { DEFAULT_LEVELUP_CONFIG } from "../types/gameTypes.ts";
+import { MAX_DOKA_GRANT } from "./adminSafety.ts";
 import {
   APPLY_REWARDS_MAX_DOKA_DELTA,
   APPLY_REWARDS_MAX_XP_DELTA,
@@ -77,9 +78,10 @@ function buildEnemyKit(
   return (kits[pieceType] ?? kits.pawn)(z);
 }
 
-/** Requested horizon plus HUD-sat, AP-cap, IEEE, and post-cap stress. */
+/** Requested horizon plus HUD-sat, AP-cap, IEEE, post-cap, and 10k/50k stress. */
 export const STRESS_LEVELS = [
   1, 10, 15, 25, 48, 50, 78, 100, 250, 325, 500, 1000, 2500, 5000, 1018, 1019,
+  10_000, 50_000,
 ] as const;
 
 const GROWTH = (DEFAULT_LEVELUP_CONFIG.statGrowthPercent ?? 5) / 100;
@@ -235,6 +237,22 @@ export function jackpotPersistIfHit(enemyLevel: number): number {
     APPLY_REWARDS_MAX_DOKA_DELTA,
     jackpotUnclampedMean(enemyLevel),
   );
+}
+
+/** upgradeSpell: `spellLevelingBaseCost * 2^currentSpellLevel` (default base 10). */
+export const SPELL_LEVELING_BASE_COST_SIM = 10;
+
+export function spellUpgradeCostBigInt(currentSpellLevel: number): bigint {
+  const lvl = Math.max(0, Math.floor(Number(currentSpellLevel) || 0));
+  return BigInt(SPELL_LEVELING_BASE_COST_SIM) * (1n << BigInt(lvl));
+}
+
+export function firstSpellLevelCostExceeds(limit: number): number | null {
+  const cap = BigInt(Math.max(0, Math.floor(Number(limit) || 0)));
+  for (let lvl = 0; lvl <= 80; lvl++) {
+    if (spellUpgradeCostBigInt(lvl) > cap) return lvl;
+  }
+  return null;
 }
 
 export function enemyStatBounds(level: number, piece: ChessPieceType) {
@@ -488,20 +506,18 @@ export function runLongHorizonSim() {
     sp: 10,
     chc: 5,
   };
-  const bossGuideVsCombat = STRESS_LEVELS.filter((l) => l <= 2500).map(
-    (playerLevel) => {
-      const bossLevel = playerLevel + 5;
-      const guide = getBossEffectiveStats(bossBase, playerLevel, bossLevel);
-      return {
-        playerLevel,
-        bossLevel,
-        combatHp: bossBase.hp,
-        combatResClamped: Math.min(50, bossBase.res),
-        guideHp: guide.hp,
-        guideMult: BOSS_LEVEL_DIFF_STEP ** 5,
-      };
-    },
-  );
+  const bossGuideVsCombat = STRESS_LEVELS.map((playerLevel) => {
+    const bossLevel = playerLevel + 5;
+    const guide = getBossEffectiveStats(bossBase, playerLevel, bossLevel);
+    return {
+      playerLevel,
+      bossLevel,
+      combatHp: bossBase.hp,
+      combatResClamped: Math.min(50, bossBase.res),
+      guideHp: guide.hp,
+      guideMult: BOSS_LEVEL_DIFF_STEP ** 5,
+    };
+  });
 
   const applyXpAt48 = applyXpDelta(0, 48, 1);
   const applyXpAt1018 = applyXpDelta(0, 1018, 1);
@@ -512,7 +528,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-01T00:00:37.286Z",
+    generatedAt: "2026-09-02T00:06:35.128Z",
     telemetry: {
       available: false,
       reason:
@@ -526,10 +542,21 @@ export function runLongHorizonSim() {
       applyRewardsMaxDoka: APPLY_REWARDS_MAX_DOKA_DELTA,
       applyRewardsMaxXp: APPLY_REWARDS_MAX_XP_DELTA,
       saveBattleStatsCannotRaiseLevel: true,
+      saveBattleStatsCannotLowerLevel: true,
       saveBattleStatsApCap: 20,
       hudSaturationLevel: hudSatLevel,
       firstEnemyLevelVoidBoostXpClamp: xpClampEnemyAtMaxBossBoost,
       firstEnemyLevelDungeonPackXpClamp: xpClampDungeonPack,
+      maxDokaGrant: MAX_DOKA_GRANT,
+      gameKeyBypassesApplyRewardsCeiling: true,
+      firstSpellLevelCombatDokaCannotBuy: firstSpellLevelCostExceeds(
+        APPLY_REWARDS_MAX_DOKA_DELTA,
+      ),
+      firstSpellLevelGameKeyCannotBuy:
+        firstSpellLevelCostExceeds(MAX_DOKA_GRANT),
+      firstSpellLevelCostExceedsMaxSafe: firstSpellLevelCostExceeds(
+        Number.MAX_SAFE_INTEGER,
+      ),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
