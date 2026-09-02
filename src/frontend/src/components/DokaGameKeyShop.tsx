@@ -19,9 +19,11 @@ import {
 import {
   IAP_SHOP_CLOSE_LABEL,
   IAP_SHOP_CONSENT_LABEL,
+  IAP_SHOP_HOW_TO_HEADING,
   IAP_SHOP_KYC_PREAMBLE,
   IAP_SHOP_PACKAGES_DETAIL,
   IAP_SHOP_PACKAGES_LEAD,
+  IAP_SHOP_STEPS,
   IAP_SHOP_TITLE,
   IAP_SHOP_WAIT_COPY,
 } from "../utils/iapShopCopy";
@@ -281,6 +283,43 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
           {IAP_SHOP_PACKAGES_DETAIL}
         </p>
 
+        <h3
+          style={{
+            color: "#6a7a8a",
+            fontSize: 10,
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            margin: "0 0 8px",
+            fontWeight: 700,
+          }}
+        >
+          {IAP_SHOP_HOW_TO_HEADING}
+        </h3>
+        <ol
+          data-ocid="shop.how_to_steps"
+          style={{
+            margin: "0 0 16px",
+            padding: "12px 14px 12px 32px",
+            background: "#0d0f1a",
+            border: "1px solid #8b1a1a",
+            borderRadius: 8,
+            color: "#e0d6c8",
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          {IAP_SHOP_STEPS.map((step, i) => (
+            <li
+              key={step}
+              style={{
+                marginBottom: i === IAP_SHOP_STEPS.length - 1 ? 0 : 8,
+              }}
+            >
+              {step}
+            </li>
+          ))}
+        </ol>
+
         {status && (
           <div
             data-ocid="shop.request_status"
@@ -308,80 +347,6 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
             </div>
           </div>
         )}
-
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 10,
-            marginBottom: 16,
-            background: "#0d0f1a",
-            border: "1px solid #8b1a1a",
-            borderRadius: 8,
-            padding: 16,
-          }}
-        >
-          <img
-            src={molliePaymentQr}
-            alt="Mollie payment QR code for Doka purchase"
-            width={220}
-            height={220}
-            style={{
-              width: 220,
-              height: 220,
-              borderRadius: 12,
-              background: "#fff",
-            }}
-          />
-          <a
-            href={paymentHref}
-            target="_blank"
-            rel="noopener noreferrer"
-            data-ocid="shop.mollie_link"
-            style={{
-              color: "#86c4ff",
-              fontSize: 12,
-              wordBreak: "break-all",
-              textAlign: "center",
-              minHeight: 44,
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            {MOLLIE_PAYMENT_LINK}
-          </a>
-          <button
-            type="button"
-            data-ocid="shop.copy_payment_link_button"
-            onClick={() => void copyPaymentLink()}
-            style={{
-              minHeight: 44,
-              minWidth: 160,
-              padding: "8px 16px",
-              background: "linear-gradient(135deg,#6a0a0a,#c0392b)",
-              border: "1px solid #c0392b",
-              borderRadius: 6,
-              color: "#fff",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            {copied ? "Copied" : "Copy payment link"}
-          </button>
-          <p
-            style={{
-              color: "#6a7a8a",
-              fontSize: 11,
-              margin: 0,
-              textAlign: "center",
-            }}
-          >
-            Scan with your phone or open the link. Choose the euro amount on
-            Mollie yourself (1000 Doka = 10€).
-          </p>
-        </div>
 
         <p
           data-ocid="shop.kyc_preamble"
@@ -504,6 +469,82 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
                 ? "Check email, then redeem"
                 : "Submit purchase request"}
         </button>
+
+        <div
+          data-ocid="shop.mollie_pay_panel"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 10,
+            marginTop: 16,
+            marginBottom: 8,
+            background: "#0d0f1a",
+            border: "1px solid #8b1a1a",
+            borderRadius: 8,
+            padding: 16,
+          }}
+        >
+          <img
+            src={molliePaymentQr}
+            alt="Mollie payment QR code for Doka purchase"
+            width={220}
+            height={220}
+            style={{
+              width: 220,
+              height: 220,
+              borderRadius: 12,
+              background: "#fff",
+            }}
+          />
+          <a
+            href={paymentHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-ocid="shop.mollie_link"
+            style={{
+              color: "#86c4ff",
+              fontSize: 12,
+              wordBreak: "break-all",
+              textAlign: "center",
+              minHeight: 44,
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            {MOLLIE_PAYMENT_LINK}
+          </a>
+          <button
+            type="button"
+            data-ocid="shop.copy_payment_link_button"
+            onClick={() => void copyPaymentLink()}
+            style={{
+              minHeight: 44,
+              minWidth: 160,
+              padding: "8px 16px",
+              background: "linear-gradient(135deg,#6a0a0a,#c0392b)",
+              border: "1px solid #c0392b",
+              borderRadius: 6,
+              color: "#fff",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontSize: 13,
+            }}
+          >
+            {copied ? "Copied" : "Copy payment link"}
+          </button>
+          <p
+            style={{
+              color: "#6a7a8a",
+              fontSize: 11,
+              margin: 0,
+              textAlign: "center",
+            }}
+          >
+            Scan with your phone or open the link. Choose the euro amount on
+            Mollie yourself (1000 Doka = 10€).
+          </p>
+        </div>
         <p
           style={{
             color: "#6a7a8a",
