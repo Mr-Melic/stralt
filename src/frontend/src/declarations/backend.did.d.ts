@@ -143,6 +143,20 @@ export interface EnemyConfig {
   'spriteUrl' : [] | [string],
   'regions' : Array<string>,
 }
+export interface GameKeyRequest {
+  'id' : string,
+  'redeemedAt' : bigint,
+  'redeemedBy' : string,
+  'status' : string,
+  'emailed' : boolean,
+  'emailConsent' : boolean,
+  'approvedAt' : bigint,
+  'dokaAmount' : bigint,
+  'email' : string,
+  'userPrincipal' : Principal,
+  'timestamp' : bigint,
+  'hintedEuroCents' : bigint,
+}
 export interface LevelUpConfig {
   'spellLevelingCostMultiplier' : number,
   'spellLevelingBaseCost' : bigint,
@@ -190,20 +204,6 @@ export interface PurchaseRecord {
   'customerEmail' : string,
   'packageId' : string,
   'customerCity' : string,
-}
-export interface GameKeyRequest {
-  'id' : string,
-  'userPrincipal' : Principal,
-  'email' : string,
-  'emailConsent' : boolean,
-  'hintedEuroCents' : bigint,
-  'timestamp' : bigint,
-  'status' : string,
-  'dokaAmount' : bigint,
-  'emailed' : boolean,
-  'approvedAt' : bigint,
-  'redeemedAt' : bigint,
-  'redeemedBy' : string,
 }
 export interface RegionConfig {
   'id' : string,
@@ -301,6 +301,10 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
+  /**
+   * / Admin: after Mollie payment, set Doka worth and mint a 120-char GameKey
+   * / from IC `raw_rand`. Returns the code once; store it only in the reveal map.
+   */
   'adminApproveGameKeyPurchase' : ActorMethod<
     [string, bigint],
     { 'ok' : string } |
@@ -374,6 +378,14 @@ export interface _SERVICE {
       { 'err' : string }
   >,
   /**
+   * / Admin: one-time reveal until marked emailed. Empty #err if already wiped.
+   */
+  'adminGetGameKeyReveal' : ActorMethod<
+    [string],
+    { 'ok' : string } |
+      { 'err' : string }
+  >,
+  /**
    * / Admin: get all purchase records, optionally filtered by principal text.
    */
   'adminGetPurchaseRecords' : ActorMethod<
@@ -390,21 +402,26 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
-  'adminGetGameKeyReveal' : ActorMethod<
-    [string],
-    { 'ok' : string } |
-      { 'err' : string }
-  >,
+  /**
+   * / Admin: incoming GameKey purchase requests. No plaintext codes.
+   */
   'adminListGameKeyRequests' : ActorMethod<
     [],
     { 'ok' : Array<GameKeyRequest> } |
       { 'err' : string }
   >,
+  /**
+   * / Admin: confirm the code was copied/mailed. Wipes the plaintext reveal.
+   * / The canister cannot send email; this is the honest hand-off.
+   */
   'adminMarkGameKeyEmailed' : ActorMethod<
     [string],
     { 'ok' : null } |
       { 'err' : string }
   >,
+  /**
+   * / Admin: payment never arrived.
+   */
   'adminRejectGameKeyPurchase' : ActorMethod<
     [string],
     { 'ok' : null } |
@@ -430,46 +447,6 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
-  'adminRollbackTierSpawnConfig' : ActorMethod<
-    [],
-    { 'ok' : null } |
-      { 'err' : string }
-  >,
-  /**
-   * / Admin: restore the previous boss-rush config snapshot.
-   */
-  'adminRollbackBossRushConfig' : ActorMethod<
-    [],
-    { 'ok' : null } |
-      { 'err' : string }
-  >,
-  /**
-   * / Admin: restore the previous color palette snapshot.
-   */
-  'adminRollbackColorPalette' : ActorMethod<
-    [],
-    { 'ok' : null } |
-      { 'err' : string }
-  >,
-  /**
-   * / Admin: restore the previous game config snapshot.
-   */
-  'adminRollbackGameConfig' : ActorMethod<
-    [],
-    { 'ok' : null } |
-      { 'err' : string }
-  >,
-  /**
-   * / Admin: restore the previous level-up config snapshot.
-   */
-  'adminRollbackLevelUpConfig' : ActorMethod<
-    [],
-    { 'ok' : null } |
-      { 'err' : string }
-  >,
-  /**
-   * / Admin: restore the previous tier-spawn config snapshot.
-   */
   'adminRollbackTierSpawnConfig' : ActorMethod<
     [],
     { 'ok' : null } |
@@ -584,7 +561,7 @@ export interface _SERVICE {
   >,
   /**
    * / Admin: ban a player with a reason (convenience alias for adminBanAccount with reason).
-   * / M2: also clears achievement progress so banned players cannot double-claim on unban.
+   * / Achievement progress is preserved; claimed flags block a second payout.
    */
   'banPlayer' : ActorMethod<
     [Principal, string],
@@ -600,19 +577,9 @@ export interface _SERVICE {
       { 'err' : string }
   >,
   /**
-   * / For each enemy in the list, computes a Doka drop using true IC randomness,
-   * / sums the drops, adds to the caller's balance, and returns the total earned.
-   * /
-   * / Tier probabilities (out of 10_000 units):
-   * /   9000 / 10000 = 90%   → 1–3
-   * /    500 / 10000 =  5%   → 1–10
-   * /    300 / 10000 =  3%   → 1–50
-   * /    100 / 10000 =  1%   → 55–100
-   * /     50 / 10000 = 0.5%  → 1–1000
-   * /     40 / 10000 = 0.4%  → 1–5000
-   * /      5 / 10000 = 0.05% → 1–1_000_000
-   * /      1 / 10000 = 0.01% (≈ 0.0001%) → 1–1_000_000_000
-   * /      4 remaining → 1–50  (lumped with 3% tier)
+   * / Unused public mint. Official Doka credits go through applyRewards.
+   * / Candid signature kept; the body does not award. A raw client previously
+   * / could request 8×200×1e9 Doka per call via the jackpot tier.
    */
   'calculateAndAwardDoka' : ActorMethod<[Array<{ 'level' : bigint }>], bigint>,
   /**
@@ -638,6 +605,15 @@ export interface _SERVICE {
     { 'ok' : null } |
       { 'err' : string }
   >,
+  /**
+   * / Appearance edits used to union incoming spell arrays and take
+   * / max(existing, incoming) per id. A custom client could then:
+   * /   1. inject a retired catalog id the player never owned, after which
+   * /      upgradeSpell treats `found=true` and skips the retirement check;
+   * /   2. raise paid levels without going through upgradeSpell.
+   * / Official CharacterCreation only rewrites cosmetics and already sends
+   * / the stored keys (or []). Keep the store. upgradeSpell is the sole writer.
+   */
   'createCharacter' : ActorMethod<
     [bigint, Character],
     { 'ok' : null } |
@@ -681,14 +657,6 @@ export interface _SERVICE {
    * / Returns all three ad box slots.  Empty/inactive slots have isActive=false.
    */
   'getAdBoxes' : ActorMethod<[], Array<[string, string, boolean]>>,
-  'getAdminAuditLog' : ActorMethod<
-    [],
-    { 'ok' : Array<AdminAuditEntry> } |
-      { 'err' : string }
-  >,
-  /**
-   * / Admin: append-only change log. Never contains secrets or payment PII.
-   */
   'getAdminAuditLog' : ActorMethod<
     [],
     { 'ok' : Array<AdminAuditEntry> } |
@@ -812,10 +780,13 @@ export interface _SERVICE {
    */
   'getMessages' : ActorMethod<[], Array<ChatMessage>>,
   /**
+   * / Player-visible status for the latest request. Never includes a GameKey.
+   */
+  'getMyGameKeyPurchaseStatus' : ActorMethod<[], [] | [GameKeyRequest]>,
+  /**
    * / Returns the caller's purchase history.
    */
   'getMyPurchaseHistory' : ActorMethod<[], Array<PurchaseRecord>>,
-  'getMyGameKeyPurchaseStatus' : ActorMethod<[], [] | [GameKeyRequest]>,
   /**
    * / Public: return the achievement progress records for the given principal.
    */
@@ -872,13 +843,14 @@ export interface _SERVICE {
    */
   'getUserUiLayout' : ActorMethod<[], string>,
   /**
-   * / Seed the names list on first call if it is empty.
+   * / Seed the names list on first call if it is empty. Admin-only — same
+   * / privilege as addEnemyName / deleteEnemyName so a non-admin client
+   * / cannot mutate the pool by calling this directly.
    */
   'initDefaultNames' : ActorMethod<[], undefined>,
   /**
-   * / Player initiates a purchase — creates a pending record.
-   * / Returns the purchase id so the frontend can track it.
-   * / H5: Accepts all customer fields including proofFileUrl.
+   * / Legacy nine-arg KYC checkout. Replaced by requestGameKeyPurchase.
+   * / Signature kept so older clients fail with a clear #err instead of minting.
    */
   'initiatePurchase' : ActorMethod<
     [string, string, string, string, string, string, string, string, string],
@@ -905,19 +877,10 @@ export interface _SERVICE {
    */
   'markChangelogShown' : ActorMethod<[string], undefined>,
   /**
-   * / Player calls this to trigger auto-completion of their pending purchases.
+   * / Kept so shop remount still calls a no-op credit that honors
+   * / shouldCommitShopCredit (commit only when the wallet actually gained).
    */
   'processPendingPurchases' : ActorMethod<[], bigint>,
-  'redeemGameKey' : ActorMethod<
-    [string],
-    { 'ok' : bigint } |
-      { 'err' : string }
-  >,
-  'requestGameKeyPurchase' : ActorMethod<
-    [string, boolean, bigint],
-    { 'ok' : string } |
-      { 'err' : string }
-  >,
   /**
    * / Purchase a buff item. Deducts Doka from caller's per-principal balance.
    */
@@ -927,11 +890,27 @@ export interface _SERVICE {
       { 'err' : string }
   >,
   /**
+   * / Player: redeem a 120-char GameKey. Credits the caller, not the requester.
+   */
+  'redeemGameKey' : ActorMethod<
+    [string],
+    { 'ok' : bigint } |
+      { 'err' : string }
+  >,
+  /**
    * / Rename a character in the given slot. Costs 100 Doka from the character's balance.
    */
   'renameCharacter' : ActorMethod<
     [bigint, string],
     { 'ok' : null } |
+      { 'err' : string }
+  >,
+  /**
+   * / Player: submit a GameKey purchase request (email + consent, optional euro hint).
+   */
+  'requestGameKeyPurchase' : ActorMethod<
+    [string, boolean, bigint],
+    { 'ok' : string } |
       { 'err' : string }
   >,
   /**
@@ -954,9 +933,12 @@ export interface _SERVICE {
   /**
    * / Save all battle-relevant stats back to a character slot after a battle.
    * / hp may arrive as negative (character was knocked out); it is clamped to 0 before storage.
-   * / C1: dokaBalance parameter is intentionally ignored — Doka is tracked in the
-   * /     per-principal dokaBalances Map only. The dokaBalance field no longer exists
-   * /     on the Character type.
+   * / C1: dokaBalance is stored on the per-principal dokaBalances map (the
+   * /     Character record no longer carries a wallet field). This write may
+   * /     decrease Doka/XP (heal, shop, death) but must not mint — credits
+   * /     go through applyRewards / claim / shop-complete / upgradeSpell.
+   * / Incoming Doka/XP above the stored values are ignored. Level is owned
+   * / by applyRewards — the client level argument is ignored.
    */
   'saveBattleStats' : ActorMethod<
     [
