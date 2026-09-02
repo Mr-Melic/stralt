@@ -99,6 +99,12 @@ import {
 } from "../engine/battleSetup";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
+  battleWalkCostPerTile,
+  battleWalkMpBudget,
+  battleWalkMpCost,
+  canAffordBattleWalk,
+} from "../engine/battleWalkMp";
+import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
   getAoETargets as getAoETargetsHelper,
 } from "../engine/castHelpers";
@@ -6985,10 +6991,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return playerPositionRef.current;
   }, [combatantStoreCtx]);
 
+  const walkMpCostPerTile = useCallback((): number => {
+    return battleWalkCostPerTile((base) =>
+      mapModifierRegistry.applyMpCost(base, activeMapModifierTypes, {
+        log: (msg: string) => logDebugInfo("MODIFIER", msg),
+        rng: Math.random,
+      }),
+    );
+  }, [activeMapModifierTypes]);
+
   // BFS flood-fill for MP reachable tiles
   const getMpReachableTiles = useCallback((): Set<string> => {
-    if (!currentMap || !inBattleRef.current || currentBattleMp <= 0)
-      return new Set();
+    const controllingId = activeControlledSummonIdRef.current;
+    const controlledSummon = controllingId
+      ? getLiveCombatants(combatantStoreCtx).find(
+          (e: { id: string }) => e.id === controllingId,
+        )
+      : undefined;
+    const mpBudget = battleWalkMpBudget({
+      playerMp: currentBattleMp,
+      controllingSummon: Boolean(controlledSummon),
+      summonMp: (controlledSummon as { currentMp?: number } | undefined)
+        ?.currentMp,
+    });
+    if (!currentMap || !inBattleRef.current || mpBudget <= 0) return new Set();
     // SECTION 2c — origin is the active caster's tile (controlled summon or
     // player) so movement-range previews render from the summon's position.
     const origin = getActiveCasterPos();
@@ -7006,15 +7032,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const reachable = new Set<string>();
     // Movement cost per tile — delegated to the modifier registry (Slime
     // Flood / Frozen Terrain double the cost via their onMpCost hooks).
-    const moveCostPerTile = mapModifierRegistry.applyMpCost(
-      1,
-      activeMapModifierTypes,
-      { log: (msg: string) => logDebugInfo("MODIFIER", msg), rng: Math.random },
-    );
+    // Same helper as player/summon execute so leftover 1-MP slices cannot
+    // exceed the highlighted ring.
+    const moveCostPerTile = walkMpCostPerTile();
     while (queue.length > 0) {
       const current = queue.shift()!;
       const nextSteps = current.steps + moveCostPerTile;
-      if (nextSteps > currentBattleMp) continue;
+      if (nextSteps > mpBudget) continue;
       const dirs = [
         { x: 1, y: 0 },
         { x: -1, y: 0 },
@@ -7042,13 +7066,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         if (prevBest !== undefined && prevBest <= nextSteps) continue;
         visited.set(key, nextSteps);
         reachable.add(key);
-        if (nextSteps < currentBattleMp) {
+        if (nextSteps < mpBudget) {
           queue.push({ x: nx, y: ny, steps: nextSteps });
         }
       }
     }
     return reachable;
-  }, [currentMap, currentBattleMp, activeMapModifierTypes, getActiveCasterPos]);
+  }, [
+    currentMap,
+    currentBattleMp,
+    combatantStoreCtx,
+    getActiveCasterPos,
+    walkMpCostPerTile,
+  ]);
 
   // Get tiles in spell range (Chebyshev) for blue highlights
   // STRUCTURAL FIX: read LIVE combatant truth at invocation via
@@ -10018,11 +10048,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               { x: gridPos.x, y: gridPos.y },
             );
             if (path && path.length > 0) {
-              const moveCost = path.length;
-              if ((summon.currentMp ?? 0) >= moveCost) {
-                applyControlledSummonWalk(summon, gridPos, moveCost);
+              const reachable = getMpReachableTiles();
+              if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
+                logBattleEntry("Can't reach", "#ef4444");
               } else {
-                logBattleEntry("Not enough MP", "#ef4444");
+                const costPerTile = walkMpCostPerTile();
+                const moveCost = battleWalkMpCost(path.length, costPerTile);
+                if (
+                  canAffordBattleWalk(
+                    summon.currentMp ?? 0,
+                    path.length,
+                    costPerTile,
+                  )
+                ) {
+                  applyControlledSummonWalk(summon, gridPos, moveCost);
+                } else {
+                  logBattleEntry("Not enough MP", "#ef4444");
+                }
               }
             }
           }
@@ -10450,11 +10492,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentBattleMp > 0 && !walkBlocked && walkReachable
               ? findPath(playerPositionRef.current, gridPos)
               : [];
+          const costPerTile = walkMpCostPerTile();
           const walkReject = classifyWalkReject({
             currentMp: currentBattleMp,
             isBlocked: walkBlocked,
             reachable: walkReachable,
             pathLength: path.length,
+            costPerTile,
           });
           if (walkReject) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -10465,7 +10509,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             return;
           }
-          const cost = path.length;
+          const cost = battleWalkMpCost(path.length, costPerTile);
           // Thorned Ground / Void Rift — same debit as touch walk.
           applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
@@ -10553,6 +10597,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
+      walkMpCostPerTile,
       getSpellRangeTiles,
       probeLiveCast,
       activeSpells,
@@ -10696,11 +10741,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               { x: gridPos.x, y: gridPos.y },
             );
             if (path && path.length > 0) {
-              const moveCost = path.length;
-              if ((summon.currentMp ?? 0) >= moveCost) {
-                applyControlledSummonWalk(summon, gridPos, moveCost);
+              const reachable = getMpReachableTiles();
+              if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
+                logBattleEntry("Can't reach", "#ef4444");
               } else {
-                logBattleEntry("Not enough MP", "#ef4444");
+                const costPerTile = walkMpCostPerTile();
+                const moveCost = battleWalkMpCost(path.length, costPerTile);
+                if (
+                  canAffordBattleWalk(
+                    summon.currentMp ?? 0,
+                    path.length,
+                    costPerTile,
+                  )
+                ) {
+                  applyControlledSummonWalk(summon, gridPos, moveCost);
+                } else {
+                  logBattleEntry("Not enough MP", "#ef4444");
+                }
               }
             }
           }
@@ -11014,11 +11071,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             currentBattleMp > 0 && !walkBlocked && walkReachable
               ? findPath(playerPositionRef.current, gridPos)
               : [];
+          const costPerTile = walkMpCostPerTile();
           const walkReject = classifyWalkReject({
             currentMp: currentBattleMp,
             isBlocked: walkBlocked,
             reachable: walkReachable,
             pathLength: path.length,
+            costPerTile,
           });
           if (walkReject) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -11029,7 +11088,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             return;
           }
-          const cost = path.length;
+          const cost = battleWalkMpCost(path.length, costPerTile);
           applyBattleWalkHazards(path.length, gridPos);
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
@@ -11113,6 +11172,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       battleActionMode,
       currentBattleMp,
       getMpReachableTiles,
+      walkMpCostPerTile,
       getSpellRangeTiles,
       probeLiveCast,
       pointerToRenderSpace,

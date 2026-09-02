@@ -2,6 +2,8 @@
 // Cast rejects already float via rejectCopy.ts. Walk no-MP / wall / out-of-
 // reach / over-budget clicks returned with no canvas reason.
 
+import { battleWalkMpCost } from "./battleWalkMp.ts";
+
 export type WalkRejectReason =
   | "no_mp"
   | "blocked"
@@ -67,13 +69,16 @@ export function classifyWalkReject(input: {
   isBlocked: boolean;
   reachable: boolean;
   pathLength: number;
+  /** Frozen Terrain / Slime Flood tile cost. Default 1 matches unmodified maps. */
+  costPerTile?: number;
 }): WalkRejectReason | null {
   const mp = Math.max(0, Math.floor(Number(input.currentMp) || 0));
   const pathLength = Math.max(0, Math.floor(Number(input.pathLength) || 0));
+  const costPerTile = Math.max(1, Math.floor(Number(input.costPerTile) || 1));
   if (mp <= 0) return "no_mp";
   if (input.isBlocked) return "blocked";
   if (!input.reachable || pathLength === 0) return "unreachable";
-  if (pathLength > mp) return "not_enough_mp";
+  if (battleWalkMpCost(pathLength, costPerTile) > mp) return "not_enough_mp";
   return null;
 }
 
