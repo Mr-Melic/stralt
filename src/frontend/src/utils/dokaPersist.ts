@@ -151,6 +151,57 @@ export function settleOneShotAfterCredit(
   return "keep";
 }
 
+export type OneShotCreditSettle =
+  | { kind: "commit"; doka: number }
+  | { kind: "release" }
+  | { kind: "keep" };
+
+/**
+ * Transport-after-invoke used to `keep` the claim (no remint) but never
+ * commit the persist lock. A later saveBattleStats heal then wrote the
+ * pre-credit snapshot and wiped the canister grant.
+ *
+ * Confirm via live wallet without releasing the one-shot id. A live
+ * balance that did not rise still `keep`s — retry would remint.
+ */
+export async function confirmKeptOneShotCredit(
+  committedDoka: number,
+  readWallet: () => Promise<unknown>,
+): Promise<number | null> {
+  try {
+    const raw = await readWallet();
+    if (raw == null) return null;
+    const live = Number(raw);
+    if (!Number.isFinite(live)) return null;
+    const n = Math.max(0, Math.floor(live));
+    const committed = Math.max(0, Math.floor(Number(committedDoka) || 0));
+    if (n <= committed) return null;
+    return n;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveOneShotCreditSettle(
+  result: PersistDokaCreditResult,
+  opts: {
+    committedDoka: number;
+    readWallet: () => Promise<unknown>;
+  },
+): Promise<OneShotCreditSettle> {
+  const settle = settleOneShotAfterCredit(result);
+  if (settle === "commit") {
+    return { kind: "commit", doka: persistDokaCreditAmount(result) };
+  }
+  if (settle === "release") return { kind: "release" };
+  const confirmed = await confirmKeptOneShotCredit(
+    opts.committedDoka,
+    opts.readWallet,
+  );
+  if (confirmed != null) return { kind: "commit", doka: confirmed };
+  return { kind: "keep" };
+}
+
 function classifyPersistDokaCreditError(
   error: unknown,
 ): "rejected" | "transport" {
