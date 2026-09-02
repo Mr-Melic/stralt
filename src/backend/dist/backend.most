@@ -378,7 +378,7 @@ type EnemyConfig__975897321 =
     regions : [Text];
     spriteUrl : ?Text
   };
-type GameKeyLedgerEntry__1038020019 =
+type GameKeyLedgerEntry__888979253 =
   {dokaAmount : Nat; redeemed : Bool; redeemedBy : Text; requestId : Text};
 type GameKeyLedgerEntry__932378475 =
   {dokaAmount : Nat; redeemed : Bool; redeemedBy : Text; requestId : Text};
@@ -397,7 +397,7 @@ type GameKeyRequest__16103690 =
     timestamp : Int;
     userPrincipal : Principal
   };
-type GameKeyRequest__349051387 =
+type GameKeyRequest__299976468 =
   {
     approvedAt : Int;
     dokaAmount : Nat;
@@ -497,19 +497,22 @@ type NewActor__163002496 =
     var bossRushConfigPrev : Text;
     var colorPalettePrev : Text;
     var gameConfigPrev : AdminGameConfig__610499303;
-    gameKeyLedger : Map__386906547<Text, GameKeyLedgerEntry__1038020019>;
-    gameKeyRequests : Map__386906547<Text, GameKeyRequest__349051387>;
-    gameKeyReveals : Map__386906547<Text, Text>;
     var hasBossRushConfigPrev : Bool;
     var hasColorPalettePrev : Bool;
     var hasGameConfigPrev : Bool;
     var hasLevelUpConfigPrev : Bool;
     var hasTierSpawnConfigPrev : Bool;
-    lastGameKeyRequestAt : Map__386906547<Principal, Int>;
     var levelUpConfigPrev : LevelUpConfig__394046285;
-    var nextGameKeyRequestId : Nat;
     spellConfigs : Map__386906547<Text, SpellConfig__592183512>;
     var tierSpawnConfigPrev : TierSpawnConfig__1005545496
+  };
+type NewActor__311599132 =
+  {
+    gameKeyLedger : Map__386906547<Text, GameKeyLedgerEntry__888979253>;
+    gameKeyRequests : Map__386906547<Text, GameKeyRequest__299976468>;
+    gameKeyReveals : Map__386906547<Text, Text>;
+    lastGameKeyRequestAt : Map__386906547<Principal, Int>;
+    var nextGameKeyRequestId : Nat
   };
 type NewActor__433970453 =
   {
@@ -591,6 +594,7 @@ type Node__430031793<K, V> =
   {#internal : Internal__161573640<K, V>; #leaf : Leaf__1045638083<K, V>};
 type OldActor__1060490054 =
   {spellConfigs : Map__386906547<Text, OldSpellConfig__721271437>};
+type OldActor__355695706 = {};
 type OldActor__642630178 = {};
 type OldActor__741741474 =
   {
@@ -982,7 +986,7 @@ type UserRole__1073662873 = {#admin; #guest; #user};
   "20260803_185500" : {} -> {};
   "20260827_000000" : (old : OldActor__741741474) -> NewActor__695517033;
   "20260831_000000" : (old : OldActor__1060490054) -> NewActor__163002496;
-  "20260901_000000" : {} -> {}
+  "20260901_000000" : (_old : OldActor__355695706) -> NewActor__311599132
 }
 actor  {
   stable accessControlState :

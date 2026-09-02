@@ -84,12 +84,13 @@
     "colorPalettePrev",
     "hasColorPalettePrev",
     "bossRushConfigPrev",
-    "hasBossRushConfigPrev",
+    "hasBossRushConfigPrev"
+  ],
+  "20260901_000000": [
     "gameKeyRequests",
     "gameKeyLedger",
     "gameKeyReveals",
     "lastGameKeyRequestAt",
     "nextGameKeyRequestId"
-  ],
-  "20260901_000000": []
+  ]
 }

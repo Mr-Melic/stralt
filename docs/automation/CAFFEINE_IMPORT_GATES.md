@@ -8,7 +8,7 @@ Caffeine GitHub → import uses:
 | Frontend | `src/frontend/caffeine.toml` `[build]` | `pnpm build` (vite/esbuild; duplicate exports fail here) |
 | Backend | `src/backend/caffeine.toml` `[check]` | `mops check` (also `caffeine check` at the workspace) |
 
-`pnpm check` errors on unused locals, exhaustive React hook deps, and `noRedeclare` (`src/frontend/biome.json`). Duplicate `export function` implementations in one file also fail `python3 scripts/check-duplicate-exports.py` and Caffeine `[build]` (`pnpm build` / vite esbuild). `mops check` compiles Motoko, runs the migration chain (`check-limit = 5`), and check-stable against the tracked `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked). Since the 2026-09-02 deployed-shape fix that file is the **reconstructed signature of the deployed Caffeine canister** (`zh6cg-aaaaa-aaaad-aar2q-cai` = PR #258 build), never a blank `actor { };` — the blank baseline from #177 let three incompatible deploys pass `mops check`. The gate script also runs `python3 scripts/check-eop-stables.py`, `mops check-stable` against every reconstructed live shape under `src/backend/migrations/snapshots/deployed/*.most` plus `snapshots/empty-canister.most`, and expects `snapshots/unsupported/*.most` to fail (documented limits). See `src/backend/migrations/snapshots/README.md`.
+`pnpm check` errors on unused locals, exhaustive React hook deps, and `noRedeclare` (`src/frontend/biome.json`). Duplicate `export function` implementations in one file also fail `python3 scripts/check-duplicate-exports.py` and Caffeine `[build]` (`pnpm build` / vite esbuild). `mops check` compiles Motoko, runs the migration chain (`check-limit = 5`), and check-stable against the tracked `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked). That file is **Caffeine-owned**: Caffeine compares every import against its own copy of the `.most` of the last build it deployed successfully — for this project the 2026-08-31 import (PR #181 merge `f8aa05e`: latest applied `20260831_000000`, 42 stables, **no GameKey**). The repo copy must stay byte-identical to that build so local `mops check` fails and passes exactly like Caffeine's (PR #311 committed a hand-reconstructed `.old` *with* GameKey; local `mops check` passed and Caffeine's failed with M0263). Never a blank `actor { };` either — the blank baseline from #177 let three incompatible deploys pass `mops check`. The gate script also runs `python3 scripts/check-eop-stables.py`, `mops check-stable` against every reconstructed live shape under `src/backend/migrations/snapshots/deployed/*.most` plus `snapshots/empty-canister.most`, and expects `snapshots/unsupported/*.most` to fail (documented limits). See `src/backend/migrations/snapshots/README.md`.
 
 Caffeine backend build is exactly `mops build` from the repo root (`src/backend/caffeine.toml` `[build]`), so the mops migration chain **is** applied at deploy. The runtime loads the canister at the chain position of the **latest applied migration name**; renaming/deleting a recorded name or changing a shipped `NewActor` traps `RTS error: Memory-incompatible program upgrade` (IC0503) even when static check-stable passes.
 
@@ -46,7 +46,8 @@ Import failed after merge bursts on:
 | Motoko M0215 / M0001 / M0155 | `mops check` / `caffeine check` |
 | Empty-canister M0263 | `mops check --no-check-limit` + `mops check-stable snapshots/empty-canister.most` + genesis migration `20260801_000000` (`OldActor = {}`) |
 | Duplicate `export function` (esbuild “already been declared”) | `python3 scripts/check-duplicate-exports.py` + `pnpm typecheck` (TS2393) + Biome `noRedeclare` + `pnpm --dir src/frontend build` |
-| Populated EOP `Memory-incompatible program upgrade` / IC0503 (3× on `cwofb…` / `zh6cg…`) | `python3 scripts/check-eop-stables.py` (frozen `NewActor`s, recorded chain names must stay files, `.old` must be a real signature) + `mops check-stable` vs `.old` **and** every `snapshots/deployed/*.most` + a **new later** migration (never edit a shipped `NewActor`) + `node scripts/eop-upgrade-matrix.mjs` when PocketIC is present |
+| Populated EOP `Memory-incompatible program upgrade` / IC0503 (3× on `cwofb…` / `zh6cg…`) | `python3 scripts/check-eop-stables.py` (frozen `NewActor`s, recorded chain names must stay files, `.old` must be a real signature, runtime-rule verdict for every snapshot) + `mops check-stable` vs `.old` **and** every `snapshots/deployed/*.most` + a **new later** migration (never edit a shipped `NewActor`) + `node scripts/eop-upgrade-matrix.mjs` when PocketIC is present |
+| Caffeine `M0263 the previous version does not contain the stable variable X` (PR #311 import) | `mops check` against the byte-identical `.old` of Caffeine's last deployed build reproduces it locally; fix = introduce `X` in a chain file that sorts **after** the deployed tail (`20260901_000000` for GameKey), never on the deployed step |
 
 Agents must not treat those as “pre-existing, skip.” `AGENTS.md` Verified Commands and `.cursor/rules/caffeine-import-gate.mdc` say the same.
 
@@ -78,15 +79,19 @@ recorded those names; a missing name falls back to the {} genesis and traps.
 New file: input = only the fields you transform ({} for pure additions);
 output = the new stables with empty-map / zero defaults. Bump mops.toml
 check-limit to the chain length. python3 scripts/check-eop-stables.py must pass.
-.old/src/backend/dist/backend.most is the real deployed signature (PR #258 build
-on zh6cg-aaaaa-aaaad-aar2q-cai) — never replace it with a blank actor. Also run:
+.old/src/backend/dist/backend.most is Caffeine-owned: the byte-identical .most
+of the last build Caffeine deployed (2026-08-31 import, PR #181 f8aa05e, no
+GameKey). Caffeine checks imports against its own copy of it, so never blank it
+and never hand-write it; a new stable must be produced by a file that sorts
+AFTER the deployed tail (else Caffeine fails M0263 at import). Also run:
   bash scripts/caffeine-import-gate.sh backend
   (= mops check, mops check --no-lint --no-check-limit, mops check-stable vs
    .old, snapshots/deployed/*.most, empty-canister.most; unsupported/ must fail)
   node scripts/eop-upgrade-matrix.mjs   # when pocket-ic is installed
-RTS error: Memory-incompatible program upgrade (IC0503) = this class of bug.
-Static check-stable passing is necessary, not sufficient (it passed for #177,
-#259 and #309 while the replica trapped). Do not delete needed stables from
+RTS error: Memory-incompatible program upgrade (IC0503) = latest applied name
+missing from the chain or extra fields at that position; `stable variable …
+not found in persisted state` = missing field there. Static check-stable
+passing is necessary, not sufficient (it passed Aug-31 -> #258, which trapped). Do not delete needed stables from
 main.mo to make the upgrade pass. After a successful Caffeine deploy, refresh
 .old with that build's src/backend/dist/backend.most and add it under
 src/backend/migrations/snapshots/deployed/.
@@ -196,7 +201,7 @@ Dashboard URL for any readable id: `https://cursor.com/automations/<id>`.
 | `scripts/caffeine-import-gate.sh` | Missing | Shared frontend + backend runner |
 | Root `package.json` scripts | typecheck / check / fix / build | Added `gate` / `gate:frontend` / `gate:backend` |
 | `src/frontend/caffeine.toml` / `biome.json` | Already Caffeine-shaped after #181 | Unchanged |
-| `src/backend/caffeine.toml` / `mops.toml` | Already `mops check` + check-stable | `check-limit` tracks chain length; `.old` = deployed PR #258 signature; `snapshots/deployed/*.most` are additional check-stable baselines; `scripts/eop-upgrade-matrix.mjs` is the PocketIC runtime proof |
+| `src/backend/caffeine.toml` / `mops.toml` | Already `mops check` + check-stable | `check-limit` tracks chain length; `.old` = Caffeine's previous version (2026-08-31 import, no GameKey), byte-identical; `snapshots/deployed/*.most` are additional check-stable baselines; `scripts/eop-upgrade-matrix.mjs` is the PocketIC runtime proof |
 | `.cursor/environment.json` | Not in repo (personal db-backed env) | Cannot edit |
 | Dependabot / pre-commit / Husky | None | Not added (no extra stack) |
 | Cursor environment install/start | Owner-restricted; no repo file | Cannot edit |

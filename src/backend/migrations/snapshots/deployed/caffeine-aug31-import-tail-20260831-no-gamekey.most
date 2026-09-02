@@ -1,6 +1,6 @@
 // Version: 4.0.0
-// Snapshot: PR #177..#256 shape (latest applied 20260831_000000 WITHOUT GameKey). NOT upgradable by this chain: same applied name as the #258 tail but missing GameKey fields; deploy origin/main@eb03bdc (#309) first, then this chain.
-// Built from git 036600f with moc 1.11.2 exactly as `mops build` does (see snapshots/README.md).
+// Snapshot: the signature Caffeine holds as "previous version" for this project: PR #181 merge f8aa05e (2026-08-31 18:50 UTC), the first successful Caffeine import. Latest applied 20260831_000000, 42 stables, NO GameKey. Byte-identical to .old/src/backend/dist/backend.most; `mops check-stable` against it reproduces the M0263 Caffeine reported for PR #311 and passes with this chain.
+// Built from git f8aa05e with moc 1.11.2 exactly as `mops build` does (see snapshots/README.md). Same signature for 036600f, dd275aa (#182) and 6a42687.
 type AccessControlState__45017055 =
   {
     var adminAssigned : Bool;

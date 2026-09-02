@@ -378,40 +378,6 @@ type EnemyConfig__975897321 =
     regions : [Text];
     spriteUrl : ?Text
   };
-type GameKeyLedgerEntry__1038020019 =
-  {dokaAmount : Nat; redeemed : Bool; redeemedBy : Text; requestId : Text};
-type GameKeyLedgerEntry__932378475 =
-  {dokaAmount : Nat; redeemed : Bool; redeemedBy : Text; requestId : Text};
-type GameKeyRequest__16103690 =
-  {
-    approvedAt : Int;
-    dokaAmount : Nat;
-    email : Text;
-    emailConsent : Bool;
-    emailed : Bool;
-    hintedEuroCents : Nat;
-    id : Text;
-    redeemedAt : Int;
-    redeemedBy : Text;
-    status : Text;
-    timestamp : Int;
-    userPrincipal : Principal
-  };
-type GameKeyRequest__349051387 =
-  {
-    approvedAt : Int;
-    dokaAmount : Nat;
-    email : Text;
-    emailConsent : Bool;
-    emailed : Bool;
-    hintedEuroCents : Nat;
-    id : Text;
-    redeemedAt : Int;
-    redeemedBy : Text;
-    status : Text;
-    timestamp : Int;
-    userPrincipal : Principal
-  };
 type Internal__161573640<K, V> =
   {children : [var ?Node__430031793<K, V>]; data : Data__265875254<K, V>};
 type Leaf__1045638083<K, V> = {data : Data__265875254<K, V>};
@@ -497,17 +463,12 @@ type NewActor__163002496 =
     var bossRushConfigPrev : Text;
     var colorPalettePrev : Text;
     var gameConfigPrev : AdminGameConfig__610499303;
-    gameKeyLedger : Map__386906547<Text, GameKeyLedgerEntry__1038020019>;
-    gameKeyRequests : Map__386906547<Text, GameKeyRequest__349051387>;
-    gameKeyReveals : Map__386906547<Text, Text>;
     var hasBossRushConfigPrev : Bool;
     var hasColorPalettePrev : Bool;
     var hasGameConfigPrev : Bool;
     var hasLevelUpConfigPrev : Bool;
     var hasTierSpawnConfigPrev : Bool;
-    lastGameKeyRequestAt : Map__386906547<Principal, Int>;
     var levelUpConfigPrev : LevelUpConfig__394046285;
-    var nextGameKeyRequestId : Nat;
     spellConfigs : Map__386906547<Text, SpellConfig__592183512>;
     var tierSpawnConfigPrev : TierSpawnConfig__1005545496
   };
@@ -1069,25 +1030,11 @@ actor  {
       dokaSpawnChance : Nat;
       leaderBoostPercent : Nat
     };
-  stable gameKeyLedger :
-    {
-      var root : Node__430031793<Text, GameKeyLedgerEntry__932378475>;
-      var size : Nat__58649523
-    };
-  stable gameKeyRequests :
-    {
-      var root : Node__430031793<Text, GameKeyRequest__16103690>;
-      var size : Nat__58649523
-    };
-  stable gameKeyReveals :
-    {var root : Node__430031793<Text, Text>; var size : Nat__58649523};
   stable var hasBossRushConfigPrev : Bool;
   stable var hasColorPalettePrev : Bool;
   stable var hasGameConfigPrev : Bool;
   stable var hasLevelUpConfigPrev : Bool;
   stable var hasTierSpawnConfigPrev : Bool;
-  stable lastGameKeyRequestAt :
-    {var root : Node__430031793<Principal, Int>; var size : Nat__58649523};
   stable var levelUpConfig :
     {
       apMpLevelThreshold : Nat;
@@ -1117,7 +1064,6 @@ actor  {
       var root : Node__430031793<Text, MapModifierConfig__998818509>;
       var size : Nat__58649523
     };
-  stable var nextGameKeyRequestId : Nat;
   stable var nextPurchaseId : Nat;
   stable playerSpriteConfigs :
     {

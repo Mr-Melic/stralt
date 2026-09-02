@@ -7,8 +7,8 @@ module {
 
   // Empty-canister genesis. A fresh Caffeine install runs the whole chain from
   // a canister whose previous stable signature has no fields. The rest of the
-  // chain (20260827 drop-transients, 20260831 summon + rollback + GameKey)
-  // describes upgrades from a real populated actor.
+  // chain (20260827 drop-transients, 20260831 summon + rollback, 20260901
+  // GameKey) describes upgrades from a real populated actor.
   //
   // The runtime only runs chain files whose name sorts AFTER the latest
   // migration already recorded on the canister. This file was named

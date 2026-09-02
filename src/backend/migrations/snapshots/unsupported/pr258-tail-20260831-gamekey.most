@@ -1,5 +1,5 @@
 // Version: 4.0.0
-// Snapshot: PR #258 fresh install (latest applied 20260831_000000 WITH GameKey). Reconstructed shape of zh6cg-aaaaa-aaaad-aar2q-cai; same content as .old/src/backend/dist/backend.most.
+// Snapshot: PR #258 build (latest applied 20260831_000000 WITH GameKey on that step). NOT upgradable by this chain: same applied name as the deployed Aug-31 tail but five extra fields at that position (M0169 / runtime `Memory-incompatible program upgrade`). No Caffeine deploy of #258 ever succeeded, so no known canister holds it; if one does, bridge it through origin/main@d8b8f35 (#311 chain) first — see snapshots/README.md.
 // Built from git 58302bc with moc 1.11.2 exactly as `mops build` does (see snapshots/README.md).
 type AccessControlState__45017055 =
   {
