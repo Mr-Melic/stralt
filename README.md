@@ -10,7 +10,7 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | :--- | :--- |
 | `src/backend/main.mo` | Canonical Motoko actor (characters, Doka, admin config, rewards) |
 | `src/backend/lib/adminGuard.mo` | Admin input / URL / retirement / rollback guards (authoritative) |
-| `src/backend/migrations/` | Stable-memory chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon + rollback (frozen), `20260901` GameKey maps |
+| `src/backend/migrations/` | Stable-memory chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon + rollback (frozen), `20260901` GameKey maps (frozen once applied) |
 | `src/backend/types/` | Shared Motoko types (`common.mo` combat, `admin.mo` config + summon fields) |
 | `src/frontend/src/` | React + Vite client |
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit; can lag Motoko public types |

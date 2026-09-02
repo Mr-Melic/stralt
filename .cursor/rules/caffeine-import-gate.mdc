@@ -10,7 +10,7 @@ Caffeine GitHub → import failed on unused-vars, hook-deps, mock TS2740, Motoko
 Before you finish, open a PR, or merge code:
 
 1. Run `pnpm typecheck` and `pnpm check` (or `pnpm fix` then `pnpm check`). Unused locals and `useExhaustiveDependencies` are **errors**.
-2. If Motoko, migrations, `.old`, `mops.toml`, or frontend mocks changed: run `mops check` or `caffeine check`. Missing toolchain is a **failure**, not a skip. Do not require `caffeine build` / PocketIC unless deploying. New persistent `let`/`var` on `main.mo` need a **new later** migration file (never amend a shipped `NewActor`). Also `mops check-stable src/backend/migrations/snapshots/post-20260831.most backend` — empty `.old` is not a populated Caffeine upgrade. `Memory-incompatible program upgrade` means this class of bug.
+2. If Motoko, migrations, `.old`, `mops.toml`, or frontend mocks changed: run `mops check` or `caffeine check`. Missing toolchain is a **failure**, not a skip. Do not require `caffeine build` / PocketIC unless deploying. New persistent `let`/`var` on `main.mo` need a **new later** migration file (never amend a shipped `NewActor`, including `20260901`). Also `mops check-stable` vs `snapshots/post-20260831.most` **and** `post-20260901.most`, plus `python3 scripts/check-eop-stables.py`. Empty `.old` is not a populated Caffeine upgrade. `Memory-incompatible program upgrade` means this class of bug. Duplicate `export function` copies in one TS file fail `vite build` (esbuild) — keep one implementation; restack union is not concatenate.
 3. Never finish with known unused-vars, hook-deps, mock shape mismatches, Motoko compile errors, or check-stable vs empty previous.
 
 Repo script (same commands): `bash scripts/caffeine-import-gate.sh all`

@@ -1,5 +1,6 @@
 # Same commands Caffeine GitHub → import uses.
 # Frontend: src/frontend/caffeine.toml [check] = pnpm typecheck && pnpm check
+#            [build] = pnpm build (vite/esbuild; duplicate exports)
 # Backend:  src/backend/caffeine.toml [check] = mops check
 # Do not run caffeine build / mops build (PocketIC / dfx). Do not skip.
 name: Caffeine import gate
@@ -51,7 +52,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Typecheck and Biome (Caffeine frontend [check])
+      - name: Typecheck, Biome, duplicate-export scan, vite build
         run: bash scripts/caffeine-import-gate.sh frontend
 
   backend:
@@ -71,5 +72,5 @@ jobs:
         run: npm install -g ic-mops@3.2.0
       - name: Install Motoko packages (locked)
         run: mops install --locked
-      - name: Motoko check (Caffeine backend [check] + populated EOP snapshot)
+      - name: Motoko check (empty .old + populated EOP snapshots + frozen NewActor)
         run: bash scripts/caffeine-import-gate.sh backend -- --locked

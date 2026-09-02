@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useActor } from "../hooks/useActor";
 import { readAdminCmdResult } from "../utils/adminContract";
+import { validateDokaGrant } from "../utils/adminSafety";
 import {
   type GameKeyRequestView,
   gameKeyApproveConfirmBody,
@@ -626,13 +627,23 @@ const AdminGameKeyPurchases: React.FC = () => {
                               data-ocid={`admin.purchases.approve_button.${i + 1}`}
                               disabled={busyId === rec.id}
                               onClick={() => {
-                                const amount = dokaFor(rec);
-                                const grantErr = validateDokaGrant(amount);
+                                const parsed = resolveAdminApproveDokaAmount(
+                                  dokaDraft[rec.id],
+                                );
+                                if ("err" in parsed) {
+                                  toast.error(parsed.err);
+                                  return;
+                                }
+                                const grantErr = validateDokaGrant(parsed.ok);
                                 if (grantErr) {
                                   toast.error(grantErr);
                                   return;
                                 }
-                                setConfirm({ kind: "approve", rec, amount });
+                                setConfirm({
+                                  kind: "approve",
+                                  rec,
+                                  amount: parsed.ok,
+                                });
                               }}
                               style={{
                                 minHeight: 36,

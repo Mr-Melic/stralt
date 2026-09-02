@@ -10,7 +10,7 @@ Automations branch from bare `main`. This repo merges **oldest still-open PR fir
 Before opening or finishing a PR:
 
 1. `git fetch origin main`. List open PRs targeting `main` (`gh pr list` / `gh api` GET only). Sort by `createdAt` ascending (oldest → newest). That is the merge order.
-2. Treat open PRs older than this work as already queued. List overlapping files. **Union** those files; do not overwrite a sibling's delta.
+2. Treat open PRs older than this work as already queued. List overlapping files. **Union** those files; do not overwrite a sibling's delta. Union means keep **one** `export function` / `export const` implementation per name. Concatenating two copies of the same helper (`shouldFloatWorldUnreachable` twice) fails Caffeine `vite build` / esbuild.
 3. Restack onto an oldest-first integration of those older PRs when files overlap or the stack-compat script reports a conflict. Independent rebase onto bare `main` is not sufficient.
 4. This PR must stay merge-clean vs `origin/main` (GitHub merge button) **and** merge-clean as the next item in that queue (inserted by `createdAt`).
 5. Conflicts are this change's problem. Do not skip as "pre-existing." Same-SHA subsumption is OK when this PR's unique delta is already in an older sibling.

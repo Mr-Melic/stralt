@@ -34,7 +34,10 @@ Start from latest origin/main. List still-open PRs targeting main; sort by
 createdAt ascending (oldest first — that is the merge order). Before opening
 or finishing a PR, treat older open PRs as already-queued: union overlapping
 files rather than overwriting, and restack onto an oldest-first integration
-of those PRs when needed. Independent rebase onto bare main is not enough.
+of those PRs when needed. Union overlapping files means keep one `export
+function` implementation per name — do not concatenate two copies of the same
+helper (esbuild “Multiple exports with the same name”). Independent rebase onto
+bare main is not enough.
 This PR must merge cleanly into current main AND after older still-open PRs
 land first. Do not treat stack conflicts as pre-existing. Same-SHA subsumption
 is OK when this PR's unique delta is already in an older sibling.

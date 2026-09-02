@@ -5,9 +5,10 @@ Caffeine GitHub → import uses:
 | Surface | Config | Command |
 | :--- | :--- | :--- |
 | Frontend | `src/frontend/caffeine.toml` `[check]` | `pnpm typecheck` then `pnpm check` (`biome check src`) |
+| Frontend | `src/frontend/caffeine.toml` `[build]` | `pnpm build` (vite/esbuild; duplicate exports fail here) |
 | Backend | `src/backend/caffeine.toml` `[check]` | `mops check` (also `caffeine check` at the workspace) |
 
-`pnpm check` errors on unused locals and exhaustive React hook deps (`src/frontend/biome.json`). `mops check` compiles Motoko, runs the migration chain (`check-limit = 4`), and check-stable against the tracked empty-canister baseline `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked). That empty baseline does **not** prove an upgrade of the live Caffeine canister (`cwofb-yqaaa-aaaap-qp45q-cai`). The gate script also runs `mops check-stable` against `src/backend/migrations/snapshots/post-20260831.most` (populated tail after 20260831, before GameKey).
+`pnpm check` errors on unused locals, exhaustive React hook deps, and `noRedeclare` (`src/frontend/biome.json`). Duplicate `export function` implementations in one file also fail `python3 scripts/check-duplicate-exports.py` and Caffeine `[build]` (`pnpm build` / vite esbuild). `mops check` compiles Motoko, runs the migration chain (`check-limit = 4`), and check-stable against the tracked empty-canister baseline `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked). That empty baseline does **not** prove an upgrade of the live Caffeine canister (`cwofb-yqaaa-aaaap-qp45q-cai`). The gate script also runs `python3 scripts/check-eop-stables.py` and `mops check-stable` against `snapshots/post-20260831.most` (populated tail after 20260831, before GameKey — first deploy trapped) **and** `post-20260901.most` (GameKey already applied).
 
 Do **not** require `caffeine build` / `mops build` for this gate (PocketIC / dfx).
 
@@ -17,7 +18,13 @@ Local:
 bash scripts/caffeine-import-gate.sh all
 # or
 pnpm typecheck && pnpm check
+python3 scripts/check-duplicate-exports.py src/frontend/src
+pnpm --dir src/frontend build
+python3 scripts/check-eop-stables.py
 mops check          # or: caffeine check
+mops check --no-lint --no-check-limit
+mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
+mops check-stable src/backend/migrations/snapshots/post-20260901.most backend
 ```
 
 CI: `.github/workflows/caffeine-import-gate.yml` (frontend + backend jobs on every PR and `main`). Both jobs always run. Neither is allowed to skip.
@@ -34,7 +41,8 @@ Import failed after merge bursts on:
 | Mock TS2740 | `pnpm typecheck` |
 | Motoko M0215 / M0001 / M0155 | `mops check` / `caffeine check` |
 | Empty-canister M0263 | `mops check` check-stable vs `.old` + genesis migration |
-| Populated EOP `Memory-incompatible program upgrade` / IC0503 | `mops check-stable` vs `snapshots/post-20260831.most` + a **new later** migration (never edit a shipped `NewActor`) |
+| Duplicate `export function` (esbuild “already been declared”) | `python3 scripts/check-duplicate-exports.py` + `pnpm typecheck` (TS2393) + Biome `noRedeclare` + `pnpm --dir src/frontend build` |
+| Populated EOP `Memory-incompatible program upgrade` / IC0503 | `python3 scripts/check-eop-stables.py` + `mops check-stable` vs `post-20260831.most` **and** `post-20260901.most` + a **new later** migration (never edit a shipped `NewActor`) |
 
 Agents must not treat those as “pre-existing, skip.” `AGENTS.md` Verified Commands and `.cursor/rules/caffeine-import-gate.mdc` say the same.
 
@@ -58,15 +66,23 @@ See AGENTS.md Verified Commands and docs/automation/CAFFEINE_IMPORT_GATES.md.
 
 EOP / Caffeine deploy (mandatory when adding persistent let/var on main.mo):
 Add a NEW later file under src/backend/migrations/ (lex order). Never edit a
-shipped NewActor (20260826 / 20260827 / 20260831 once Caffeine applied them).
-OldActor = currently deployed tail; NewActor = OldActor + new stables with
-empty-map / zero defaults. Bump mops.toml check-limit to the chain length.
-mops check vs .old is empty-import only. Also run:
+shipped NewActor (20260826 / 20260827 / 20260831 / 20260901 once Caffeine
+applied them). OldActor = currently deployed tail; NewActor = OldActor + new
+stables with empty-map / zero defaults. Bump mops.toml check-limit to the chain
+length. python3 scripts/check-eop-stables.py must pass. mops check vs .old is
+empty-import only. Also run:
   mops check --no-lint
   mops check --no-lint --no-check-limit
   mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
+  mops check-stable src/backend/migrations/snapshots/post-20260901.most backend
 RTS error: Memory-incompatible program upgrade (IC0503) = this class of bug.
 Do not delete needed stables from main.mo to make the upgrade pass.
+
+Duplicate TS exports (mandatory):
+Keep one `export function` / `export const` implementation per name in a file.
+Restack “union” does not mean concatenate two copies. Caffeine import `pnpm build`
+(esbuild) fails on “Multiple exports with the same name”. Local: python3
+scripts/check-duplicate-exports.py src/frontend/src
 ```
 
 Also paste the oldest-first open-PR stack addendum from `docs/automation/OPEN_PR_STACK_COMPAT.md` into those same prompts. Dashboard prompts have no write API; the in-repo rule + `scripts/open-pr-stack-compat.sh` + CI job `open-pr-stack` are the gate.

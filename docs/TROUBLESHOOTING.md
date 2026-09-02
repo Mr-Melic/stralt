@@ -180,11 +180,17 @@ Spellbook summon UI shows `SUMMON_UPGRADE_COST_MULTIPLIER * 10 * 2^level` (100 a
 
 Source on disk can be 12-field while the live canister is not. Symptom: Candid / upgrade errors on create or update. Fix: upgrade so the migration chain actually runs (`20260826` genesis, `20260827` drop-transients, `20260831` summon fields + rollback stables, `20260901` GameKey maps). Restarting the frontend is not enough. After the Motoko rebuild, `pnpm bindgen` — `backend.ts` SpellConfig can still omit `isSummon` / `summonUnitDef`.
 
+### Caffeine import `vite build` fails: Multiple exports with the same name
+
+esbuild cannot transform a module that declares the same `export function` twice. Typical restack-union failure: two copies of `shouldFloatWorldUnreachable` in `walkRejectCopy.ts`. Gold-highlight / “does not change pathfinding” is the intended helper — keep **one** implementation.
+
+`pnpm typecheck` (TS2393), Biome `noRedeclare`, and `python3 scripts/check-duplicate-exports.py src/frontend/src` must fail first. Stack-compat “union overlapping files” does not mean concatenate two `export function` copies.
+
 ### Caffeine `install_code` traps: `RTS error: Memory-incompatible program upgrade` (IC0503)
 
 Enhanced orthogonal persistence: the new wasm’s stable layout does not match the already-populated canister. Typical cause: a persistent `let`/`var` was added to `main.mo` **and** stuffed into an already-applied migration `NewActor` (example: GameKey maps on frozen `20260831_000000.mo` after Caffeine had run that step). `mops check` vs empty `.old` still passes.
 
-Fix: restore the shipped `NewActor`, add a **new later** chain file whose `OldActor` is the deployed tail and whose `NewActor` introduces the new fields with empty/zero defaults. Bump `check-limit`. Verify empty (`.old`) **and** `mops check-stable src/backend/migrations/snapshots/post-20260831.most backend`. Do not delete the new stables from `main.mo` to force a match.
+Fix: restore the shipped `NewActor`, add a **new later** chain file whose `OldActor` is the deployed tail and whose `NewActor` introduces the new fields with empty/zero defaults. Bump `check-limit`. Verify empty (`.old`) **and** `mops check-stable src/backend/migrations/snapshots/post-20260831.most backend` **and** `mops check-stable src/backend/migrations/snapshots/post-20260901.most backend`, plus `python3 scripts/check-eop-stables.py`. Do not delete the new stables from `main.mo` to force a match. `20260901` is frozen; further stables need `20260902+`.
 
 ### `dfx.json` vs `mops.toml`
 
@@ -307,7 +313,7 @@ It is a no-op stub (returns `0`; Candid kept). Official XP/Doka go through `appl
 
 ## Operational checklist (canister upgrade)
 
-1. Confirm `src/backend/main.mo` and `migrations/` match the intended `CharacterStats` (12 fields, `killCount` present, no `wp`/`wr`/`scp`) and admin `SpellConfig` summon fields. Chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon + rollback (frozen), `20260901` GameKey maps. New persistent fields need a **new later** file — do not edit a shipped `NewActor`.
+1. Confirm `src/backend/main.mo` and `migrations/` match the intended `CharacterStats` (12 fields, `killCount` present, no `wp`/`wr`/`scp`) and admin `SpellConfig` summon fields. Chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon + rollback (frozen), `20260901` GameKey maps (frozen once Caffeine may have applied it). New persistent fields need a **new later** file — do not edit a shipped `NewActor`.
 2. Confirm `applyRewards` uses `100 * 2^(N-1)` (same as `utils/xpCurve.ts`).
 3. `caffeine check --fix` then `caffeine build` (or the project’s deploy pipeline). Do not `dfx deploy` — `dfx.json` points at missing `src/backend_extended/main.mo`.
 4. `pnpm bindgen` and commit generated client files.

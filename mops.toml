@@ -15,7 +15,9 @@ main = "src/backend/main.mo"
 # Do not delete. Directory `.old/` is gitignored; this file is tracked.
 # Empty `.old` does **not** prove a populated Caffeine upgrade. When adding
 # persistent fields, also `mops check-stable` against
-# `src/backend/migrations/snapshots/post-20260831.most` (or a newer snapshot).
+# `src/backend/migrations/snapshots/post-20260831.most` (20260901 never
+# applied) and `post-20260901.most` (20260901 applied). Never amend a shipped
+# NewActor. `python3 scripts/check-eop-stables.py` must pass.
 [canisters.backend.check-stable]
 path = ".old/src/backend/dist/backend.most"
 

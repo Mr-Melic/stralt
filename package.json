@@ -14,6 +14,8 @@
     "gate": "bash scripts/caffeine-import-gate.sh all",
     "gate:frontend": "bash scripts/caffeine-import-gate.sh frontend",
     "gate:backend": "bash scripts/caffeine-import-gate.sh backend",
+    "dup-exports": "python3 scripts/check-duplicate-exports.py src/frontend/src",
+    "eop-stables": "python3 scripts/check-eop-stables.py",
     "stack-compat": "bash scripts/open-pr-stack-compat.sh --self",
     "bindgen": "caffeine-bindgen --did-file ./src/backend/dist/backend.did --out-dir ./src/frontend/src --actor-interface-file --force"
   },

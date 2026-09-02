@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # Same commands Caffeine GitHub → import uses.
 #   frontend: src/frontend/caffeine.toml [check] = pnpm typecheck && pnpm check
+#              [build] = pnpm build (vite/esbuild — this is what failed on
+#              duplicate export shouldFloatWorldUnreachable)
 #   backend:  src/backend/caffeine.toml [check] = mops check
 # Do not treat unused-vars, hook-deps, mock TS, Motoko syntax, or
 # empty-canister stable-compat as "pre-existing, skip".
 # Empty `.old` check-stable is fresh-canister import only. New persistent
 # stables also need mops check-stable vs snapshots/post-20260831.most
-# (populated Caffeine tail). Do not amend a shipped NewActor.
+# (20260901 never applied) AND post-20260901.most (20260901 applied).
+# Do not amend a shipped NewActor. python3 scripts/check-eop-stables.py
+# refuses new main.mo stables without a later chain file.
 # Do not run caffeine build / mops build here (PocketIC / dfx).
 # Before opening a PR also run: bash scripts/open-pr-stack-compat.sh --self
+# Stack-compat "union" means keep one export implementation, not concatenate
+# two `export function` copies of the same helper.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,35 +36,62 @@ if [[ "${1:-}" == "--" ]]; then
   shift
 fi
 
-run_frontend() {
-  echo "==> pnpm typecheck (Caffeine frontend [check])"
-  pnpm typecheck
-  echo "==> pnpm check (Biome: unused vars + exhaustive hook deps are errors)"
-  pnpm check
-}
-
-run_populated_stable() {
-  local populated="${ROOT}/src/backend/migrations/snapshots/post-20260831.most"
-  local stable_args=()
+stable_args_without_no_lint() {
   local a
   for a in "$@"; do
     if [[ "$a" != "--no-lint" ]]; then
-      stable_args+=("$a")
+      printf '%s\n' "$a"
     fi
   done
+}
+
+run_frontend() {
+  echo "==> duplicate export implementations (restack union ≠ concatenate)"
+  python3 "$ROOT/scripts/check-duplicate-exports.py" --self-test
+  python3 "$ROOT/scripts/check-duplicate-exports.py" src/frontend/src
+  echo "==> pnpm typecheck (Caffeine frontend [check]; TS2393 redeclare)"
+  pnpm typecheck
+  echo "==> pnpm check (Biome: unused vars, hook deps, noRedeclare are errors)"
+  pnpm check
+  echo "==> pnpm --dir src/frontend build (Caffeine frontend [build] / vite esbuild)"
+  pnpm --dir src/frontend build
+}
+
+run_one_populated_stable() {
+  local populated="$1"
+  shift
+  local -a stable_args=("$@")
   if [[ ! -f "$populated" ]]; then
     echo "caffeine-import-gate: missing populated EOP snapshot: $populated" >&2
     echo "Empty .old check is not a populated Caffeine upgrade." >&2
     exit 1
   fi
-  echo "==> mops check-stable vs populated post-20260831 (Caffeine live layout, not empty .old)"
+  echo "==> mops check-stable vs ${populated#"$ROOT"/} (populated Caffeine, not empty .old)"
   mops check-stable "$populated" backend "${stable_args[@]}"
 }
 
+run_populated_stable() {
+  local -a stable_args=()
+  local a
+  while IFS= read -r a; do
+    [[ -n "$a" ]] && stable_args+=("$a")
+  done < <(stable_args_without_no_lint "$@")
+  run_one_populated_stable \
+    "${ROOT}/src/backend/migrations/snapshots/post-20260831.most" \
+    "${stable_args[@]}"
+  run_one_populated_stable \
+    "${ROOT}/src/backend/migrations/snapshots/post-20260901.most" \
+    "${stable_args[@]}"
+}
+
 run_backend() {
+  echo "==> EOP stables vs latest NewActor / frozen NewActor / check-limit"
+  python3 "$ROOT/scripts/check-eop-stables.py"
   if command -v mops >/dev/null 2>&1; then
     echo "==> mops check (Motoko syntax/types, check-stable vs empty .old, migrations)"
     mops check "$@"
+    echo "==> mops check --no-lint --no-check-limit (full chain, empty-canister genesis kept)"
+    mops check --no-lint --no-check-limit "$@"
     run_populated_stable "$@"
     return
   fi
@@ -70,7 +103,9 @@ run_backend() {
     caffeine check
     echo "note: caffeine-only path skipped populated EOP check-stable (needs mops)." >&2
     echo "note: empty-canister check is not a populated Caffeine upgrade." >&2
-    echo "note: install ic-mops and re-run: mops check-stable src/backend/migrations/snapshots/post-20260831.most backend" >&2
+    echo "note: install ic-mops and re-run:" >&2
+    echo "  mops check-stable src/backend/migrations/snapshots/post-20260831.most backend" >&2
+    echo "  mops check-stable src/backend/migrations/snapshots/post-20260901.most backend" >&2
     return
   fi
   echo "caffeine-import-gate: mops and caffeine are not on PATH." >&2
