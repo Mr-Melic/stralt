@@ -17443,6 +17443,53 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }, [attackNearestEnemy]);
   const [noTargetFlash, setNoTargetFlash] = useState(false);
   // Show game over modal
+  // PERF-2026-09-02-051/052: keep panel props referentially stable across the
+  // 1 Hz turn timer and other WorldExploration setStates so memoized chrome
+  // (MapModifiersPanel / BattleUIPanel) can skip work when only the timer
+  // label needs to update.
+  const visibleMapModifiers = useMemo(
+    () =>
+      mapModifiers.filter((m) => activeMapModifierTypes.has(m.modifierType)),
+    [mapModifiers, activeMapModifierTypes],
+  );
+  const battleTurnOrderForUi = useMemo(
+    () =>
+      turnOrder.map((c) => {
+        if (c.type === "player") {
+          return {
+            ...c,
+            ap: currentBattleAp,
+            mp: currentBattleMp,
+            atk: 0,
+            res: characterStats.res,
+            sp: characterStats.sp,
+            chc: characterStats.chc,
+          };
+        }
+        const e = enemies.find((en) => en.id === c.id);
+        return {
+          ...c,
+          ...resolveEnemyApMp(e, c.level),
+          atk: e ? e.level * 2 : 0,
+          res: 0,
+          sp: 0,
+          chc: 2,
+          spells: e?.spells,
+          enraged: enragedEnemies.has(c.id),
+        };
+      }),
+    [
+      turnOrder,
+      currentBattleAp,
+      currentBattleMp,
+      characterStats.res,
+      characterStats.sp,
+      characterStats.chc,
+      enemies,
+      enragedEnemies,
+    ],
+  );
+
   if (showGameOver) {
     return (
       <div
@@ -17506,6 +17553,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       </div>
     );
   }
+
   return (
     <div
       className="fixed inset-0"
@@ -17891,12 +17939,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }}
       >
         {/* MapModifiersPanel is now a draggable overlay */}
-        <MapModifiersPanel
-          modifiers={mapModifiers.filter((m) =>
-            activeMapModifierTypes.has(m.modifierType),
-          )}
-          userId={userId}
-        />
+        <MapModifiersPanel modifiers={visibleMapModifiers} userId={userId} />
         <canvas
           ref={canvasRef}
           onClick={handleCanvasClick}
@@ -18925,30 +18968,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             })()
           }
           isMobile={isMobile}
-          turnOrder={turnOrder.map((c) => {
-            if (c.type === "player") {
-              return {
-                ...c,
-                ap: currentBattleAp,
-                mp: currentBattleMp,
-                atk: 0,
-                res: characterStats.res,
-                sp: characterStats.sp,
-                chc: characterStats.chc,
-              };
-            }
-            const e = enemies.find((en) => en.id === c.id);
-            return {
-              ...c,
-              ...resolveEnemyApMp(e, c.level),
-              atk: e ? e.level * 2 : 0,
-              res: 0,
-              sp: 0,
-              chc: 2,
-              spells: e?.spells,
-              enraged: enragedEnemies.has(c.id),
-            };
-          })}
+          turnOrder={battleTurnOrderForUi}
           currentTurnIndex={currentTurnIndex}
           battlePhase={battlePhase}
           battleTurn={battleTurn}

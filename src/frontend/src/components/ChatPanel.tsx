@@ -850,9 +850,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [battleLogEntries.length, isFolded, activeChannel]);
 
+  // PERF-2026-09-02-056: derive summon rows once per battleLogEntries identity
+  // so unread tracking and the Summons channel share one filter pass.
+  const summonLogEntries = useMemo(
+    () => battleLogEntries.filter((e) => e.isSummon === true),
+    [battleLogEntries],
+  );
+
   // Track unread summon log entries
   useEffect(() => {
-    const newCount = battleLogEntries.filter((e) => e.isSummon === true).length;
+    const newCount = summonLogEntries.length;
     if (newCount > lastSeenSummonsCount.current) {
       if (isFolded || activeChannel !== "summons") {
         setUnreadSummons(
@@ -866,7 +873,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       lastSeenSummonsCount.current = 0;
       setUnreadSummons(0);
     }
-  }, [battleLogEntries, isFolded, activeChannel]);
+  }, [summonLogEntries, isFolded, activeChannel]);
 
   const fetchMessages = useCallback(async () => {
     if (!actor) return;
@@ -975,9 +982,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         lastSeenBattleLogCount.current = battleLogEntries.length;
       } else if (activeChannel === "summons") {
         setUnreadSummons(0);
-        lastSeenSummonsCount.current = battleLogEntries.filter(
-          (e) => e.isSummon === true,
-        ).length;
+        lastSeenSummonsCount.current = summonLogEntries.length;
       } else if (activeChannel === "status") {
         setUnreadStatus(0);
         lastSeenStatusCountRef.current = activeEffects.length;
@@ -989,6 +994,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     activeChannel,
     messages,
     battleLogEntries,
+    summonLogEntries,
     activeEffects.length,
   ]);
 
@@ -1455,8 +1461,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   ))
                 ))}
               {activeChannel === "summons" &&
-                (battleLogEntries.filter((e) => e.isSummon === true).length ===
-                0 ? (
+                (summonLogEntries.length === 0 ? (
                   <div
                     data-ocid="chat.summons.empty_state"
                     className="text-muted-foreground"
@@ -1470,31 +1475,29 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                     No summon actions yet.
                   </div>
                 ) : (
-                  battleLogEntries
-                    .filter((e) => e.isSummon === true)
-                    .map((entry) => (
-                      <div
-                        key={entry.id}
-                        data-ocid="chat.summons.entry"
+                  summonLogEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      data-ocid="chat.summons.entry"
+                      style={{
+                        fontSize: 11,
+                        lineHeight: 1.5,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      <span
                         style={{
-                          fontSize: 11,
-                          lineHeight: 1.5,
-                          wordBreak: "break-word",
+                          color: "rgba(160,160,170,0.6)",
+                          fontSize: 10,
+                          marginRight: 5,
+                          fontVariantNumeric: "tabular-nums",
                         }}
                       >
-                        <span
-                          style={{
-                            color: "rgba(160,160,170,0.6)",
-                            fontSize: 10,
-                            marginRight: 5,
-                            fontVariantNumeric: "tabular-nums",
-                          }}
-                        >
-                          [{entry.timestamp}]
-                        </span>
-                        <BattleLogText text={entry.text} color={entry.color} />
-                      </div>
-                    ))
+                        [{entry.timestamp}]
+                      </span>
+                      <BattleLogText text={entry.text} color={entry.color} />
+                    </div>
+                  ))
                 ))}
               {activeChannel === "status" && renderStatusContent()}
               {activeChannel === "debug" && (
