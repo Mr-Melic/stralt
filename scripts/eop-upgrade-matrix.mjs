@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Runtime proof that the current backend upgrades from every reconstructed
-// deployed shape. Static `mops check-stable` has false negatives (it passed
-// PR #177 -> PR #258 which trapped with "not found in persisted state"), so
-// this installs real wasms on PocketIC and performs the upgrades.
+// deployed shape. Static `mops check-stable` has false negatives: when the
+// previous version is already at the head of the new chain, moc marks no field
+// as required, so it passed 2026-08-31 -> PR #258 which trapped with "stable
+// variable … not found in persisted state". This installs real wasms on
+// PocketIC and performs the upgrades. The built wasm never depends on
+// `.old/…/backend.most` (identical md5 with a blank, wrong or real baseline).
 //
 // Requirements (local only; not part of CI):
 //   - ic-mops on PATH with the toolchain from mops.toml (moc 1.11.2)

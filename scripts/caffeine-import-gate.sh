@@ -6,13 +6,18 @@
 #   backend:  src/backend/caffeine.toml [check] = mops check
 # Do not treat unused-vars, hook-deps, mock TS, Motoko syntax, or
 # empty-canister stable-compat as "pre-existing, skip".
-# `.old/src/backend/dist/backend.most` is the reconstructed signature of the
-# deployed Caffeine canister (PR #258 build), never a blank actor. The backend
-# gate also runs mops check-stable against every reconstructed deployed shape
-# under src/backend/migrations/snapshots/deployed/ plus empty-canister.most,
-# and expects snapshots/unsupported/*.most to FAIL (documented limits).
+# `.old/src/backend/dist/backend.most` is Caffeine-owned: the byte-identical
+# `.most` of the last build Caffeine deployed successfully (2026-08-31 import,
+# PR #181 merge f8aa05e — no GameKey). Caffeine compares every import against
+# its own copy of that file, so `mops check` here must fail exactly like
+# Caffeine's did for PR #311 (M0263) and pass now. Never blank it, never
+# hand-write it. The backend gate also runs mops check-stable against every
+# recorded shape under src/backend/migrations/snapshots/deployed/ plus
+# empty-canister.most, and expects snapshots/unsupported/*.most to FAIL.
 # Do not amend a shipped NewActor; never delete/rename a chain file whose name
-# a live canister recorded. python3 scripts/check-eop-stables.py enforces both.
+# a live canister recorded; never put a new stable on a file at or before the
+# deployed tail. python3 scripts/check-eop-stables.py enforces all of it with
+# the runtime rule (stricter than moc's compile-time check).
 # Static check-stable is necessary, not sufficient: run
 # node scripts/eop-upgrade-matrix.mjs when PocketIC is available.
 # Do not run caffeine build / mops build here (PocketIC / dfx).
