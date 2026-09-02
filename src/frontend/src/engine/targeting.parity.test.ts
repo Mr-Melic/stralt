@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
+  attackNearestResolvesOnCasterTile,
   canAffordCastAp,
+  canAttackNearestAgainstLive,
   chebyshevOnBoard,
   collectHighlightLiveMismatches,
   computeTargetableTiles,
   decideSpriteCastClick,
   decideTileCastClick,
   enemyCastGeometryOk,
+  enemyCastRangeOk,
   enemySpellRange,
   enemySpellRequiresLos,
   findAttackNearestTarget,
@@ -588,6 +591,96 @@ describe("findAttackNearestTarget", () => {
     );
   });
 
+  it("executes highlighted self/ally caster tiles (Timestep, Mirror, Shield)", () => {
+    const tiles = floorGrid(9);
+    const caster = { x: 4, y: 4 };
+    const rat = unit("rat", 6, 4, { side: "enemy" });
+    const timestep = baseSpell({
+      id: "spell-timestep",
+      targetType: "self",
+      effectType: "buff",
+      apCost: 0n,
+      maxRange: 0,
+      range: 0n,
+      minRange: 0,
+    });
+    const mirror = baseSpell({
+      id: "spell-mirror",
+      targetType: "self",
+      effectType: "defense",
+      maxRange: 0,
+      range: 0n,
+      minRange: 0,
+    });
+    const shield = baseSpell({
+      id: "starter-shield",
+      targetType: "ally",
+      effectType: "buff",
+      maxRange: 3,
+      range: 3n,
+    });
+    for (const spell of [timestep, mirror, shield]) {
+      assertParity(spell, caster, tiles, [rat], spell.maxRange ?? 1);
+      const highlighted = computeTargetableTiles(spell, caster, {
+        tiles,
+        enemies: [rat],
+        worldGridSize: 9,
+        effectiveRange: spell.maxRange ?? 1,
+        barrierTiles: new Map(),
+      });
+      assert.equal(highlighted.has("4,4"), true);
+      assert.equal(
+        highlighted.has("6,4"),
+        false,
+        "enemy tile is not a self/ally Attack Nearest pick",
+      );
+      const picked = findAttackNearestTarget(
+        spell,
+        caster,
+        [rat],
+        tiles,
+        spell.maxRange ?? 1,
+      );
+      assert.deepEqual(picked, caster);
+      assert.equal(
+        canAttackNearestAgainstLive(
+          spell,
+          caster,
+          [rat],
+          tiles,
+          spell.maxRange ?? 1,
+        ),
+        true,
+      );
+      assert.equal(
+        shouldExecuteLiveCast(
+          probeLiveCast(
+            spell,
+            caster,
+            picked!,
+            [rat],
+            tiles,
+            spell.maxRange ?? 1,
+          ),
+        ),
+        true,
+      );
+      const illegal = probeLiveCast(
+        spell,
+        caster,
+        { x: 6, y: 4 },
+        [rat],
+        tiles,
+        spell.maxRange ?? 1,
+      );
+      assert.equal(
+        shouldExecuteLiveCast(illegal),
+        false,
+        "hostile tile is not a self/ally execute target",
+      );
+    }
+  });
+
   it("probes a self-heal from the player tile, not a controlled summon tile", () => {
     const tiles = floorGrid(12);
     const player = { x: 2, y: 2 };
@@ -843,6 +936,34 @@ describe("player vs enemy LoS / range policies", () => {
       "out of Chebyshev range is still illegal",
     );
   });
+
+  it("shares Chebyshev range between geometry and range-only healer/bomber checks", () => {
+    const origin = { x: 2, y: 2 };
+    const inRange = { x: 4, y: 3 };
+    const out = { x: 6, y: 2 };
+    const spell = { range: 3n };
+    assert.equal(enemyCastRangeOk(origin, inRange, spell), true);
+    assert.equal(enemyCastRangeOk(origin, out, spell), false);
+    assert.equal(
+      enemyCastGeometryOk({
+        origin,
+        target: inRange,
+        spell,
+        hasLoS: false,
+      }),
+      false,
+      "default-on LoS still blocks healer-style range-ok tiles",
+    );
+    assert.equal(
+      enemyCastGeometryOk({
+        origin,
+        target: inRange,
+        spell: { range: 3n, lineOfSight: false },
+        hasLoS: false,
+      }),
+      true,
+    );
+  });
 });
 
 describe("decideSpriteCastClick mouse/touch table", () => {
@@ -982,5 +1103,45 @@ describe("resolveCastApCost", () => {
     assert.equal(resolveCastApCost(4, apply), 3);
     assert.equal(canAffordCastAp(3, 4, apply), true);
     assert.equal(canAffordCastAp(2, 4, apply), false);
+  });
+});
+
+describe("self/ally Attack Nearest vs sprite caster-tile hits", () => {
+  it("treats targetType all as a sprite self hit and keeps Attack Nearest on hostiles", () => {
+    assert.equal(playerSpellAllowsCasterTile({ targetType: "all" }), true);
+    assert.equal(
+      attackNearestResolvesOnCasterTile({ targetType: "all" }),
+      false,
+    );
+    assert.equal(
+      attackNearestResolvesOnCasterTile({ targetType: "self" }),
+      true,
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "spell-timestep",
+        hasSelectedSpell: true,
+        hitKind: "player",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: true,
+        selfOrAllySpell: playerSpellAllowsCasterTile({ targetType: "self" }),
+        hasBasicAttack: false,
+      }),
+      { action: "execute", source: "sprite-player" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "spell-timestep",
+        hasSelectedSpell: true,
+        hitKind: "player",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: false,
+        selfOrAllySpell: playerSpellAllowsCasterTile({ targetType: "self" }),
+        hasBasicAttack: false,
+      }),
+      { action: "reject_live" },
+    );
   });
 });
