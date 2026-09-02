@@ -8,7 +8,8 @@
  *
  * Pass 1: every free cell that meets ALL per-position minDist constraints;
  *         pick highest min Chebyshev, then nearest to origin.
- * Pass 2: cramped map — findNearestFreeCell (no spacing), never overlap.
+ * Pass 2: cramped map — nearest free cell on the origin component
+ *         (radius max(minDistFallback, w+h)), never overlap.
  *
  * React-free. Callers own refs/setters and the OccupancyContext.
  */
@@ -18,6 +19,7 @@ import {
   findNearestFreeCell,
   isCellFree,
   occKey,
+  progressionSearchRadius,
 } from "./occupancy.ts";
 
 /** A cell other combatants must stay at least `minDist` Chebyshev from. */
@@ -31,7 +33,7 @@ function occupancyGridSize(ctx: OccupancyContext): { w: number; h: number } {
   return { h: ctx.tiles.length, w: ctx.tiles[0]?.length ?? 0 };
 }
 
-/** Walkable island containing `origin` (tiles + void + barriers, ignore occupancy). */
+/** Walkable island containing `origin` (tiles + void + barriers + portals). */
 function floodOriginComponent(
   origin: { x: number; y: number },
   ctx: OccupancyContext,
@@ -42,7 +44,9 @@ function floodOriginComponent(
     if (x < 0 || y < 0 || x >= w || y >= h) return false;
     if (!ctx.tiles[y]?.[x]) return false;
     const k = occKey(x, y);
-    if (ctx.voidTiles.has(k) || ctx.barriers.has(k)) return false;
+    if (ctx.voidTiles.has(k) || ctx.barriers.has(k) || ctx.portals.has(k)) {
+      return false;
+    }
     return true;
   };
   if (!walk(origin.x, origin.y)) return seen;
@@ -75,12 +79,13 @@ function floodOriginComponent(
  * largest min-distance to any avoided cell, then the nearest to origin so
  * units spread around the player instead of stacking on one far corner.
  *
- * Pass 2 (no cell meets spacing): `findNearestFreeCell` ring-scan from
- * origin using `minDistFallback` as the radius. That fallback does not
- * re-apply spacing — it only guarantees a free tile when the map is cramped.
+ * Pass 2 (no cell meets spacing): `findNearestFreeCell` from origin on the
+ * origin component, radius `max(minDistFallback, w+h)`. That fallback does
+ * not re-apply spacing — it only guarantees a free tile when the map is cramped.
  *
- * Scan stays on the origin walkable component so leftover CA islands cannot
- * win max-spacing. Returns null only when the fallback also finds no free cell.
+ * Scan stays on the origin battle-walkable component so leftover CA islands
+ * and cells beyond a portal cut-vertex cannot win max-spacing. Returns null
+ * only when the fallback also finds no free cell.
  */
 export function findBattleStartCell(
   origin: { x: number; y: number },
@@ -89,7 +94,8 @@ export function findBattleStartCell(
   ctx: OccupancyContext,
 ): { x: number; y: number } | null {
   // Max-spacing used to scan the whole WORLD_GRID_SIZE and teleport onto a
-  // leftover CA island. Stay on the origin's walkable component.
+  // leftover CA island or the far side of a portal wall. Stay on the
+  // origin's battle-walkable component.
   const component = floodOriginComponent(origin, ctx);
   const { w, h } = occupancyGridSize(ctx);
   // Pass 1: collect every cell that is free AND meets EVERY per-position
@@ -135,13 +141,14 @@ export function findBattleStartCell(
     );
     return { x: spaced[0].x, y: spaced[0].y };
   }
-  // Pass 2 (cramped map): fall back to the nearest free cell to origin.
-  // findNearestFreeCell uses isCellFree under the hood, so the result is
-  // guaranteed unique + passable (it cannot overlap any combatant that
-  // ctx.isOccupied already knows about, including the ones we just placed).
-  // minDistFallback is the ring-scan radius used here (typically the
-  // loosest spacing target so the fallback still tries to respect spacing).
-  return findNearestFreeCell(origin, ctx, minDistFallback, undefined, (cell) =>
-    component.has(occKey(cell.x, cell.y)),
+  // Pass 2 (cramped map): nearest free cell on this component.
+  // Radius used to be minDistFallback (2–3), which missed the spawn
+  // alcove on a 16-wide unique corridor (Manhattan 15).
+  return findNearestFreeCell(
+    origin,
+    ctx,
+    Math.max(minDistFallback, progressionSearchRadius(ctx)),
+    undefined,
+    (cell) => component.has(occKey(cell.x, cell.y)),
   );
 }
