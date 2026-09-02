@@ -449,7 +449,7 @@ Player Mirror uses the token `"player"` (`activatePlayerMirror` / `consumePlayer
 
 ## Migrations
 
-`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 4`. Empty-canister baseline: `.old/src/backend/dist/backend.most` (directory gitignored; that file is force-tracked). Populated Caffeine tail (post-20260831, pre-GameKey): `src/backend/migrations/snapshots/post-20260831.most`. Empty `.old` does not prove `install_code` onto `cwofb-yqaaa-aaaap-qp45q-cai`.
+`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 4`. Empty-canister baseline: `.old/src/backend/dist/backend.most` (directory gitignored; that file is force-tracked). Populated Caffeine tails: `src/backend/migrations/snapshots/post-20260831.most` (pre-GameKey; 20260901 never applied) and `post-20260901.most` (GameKey applied). Empty `.old` does not prove `install_code` onto `cwofb-yqaaa-aaaap-qp45q-cai`. `python3 scripts/check-eop-stables.py` freezes NewActor field lists through 20260901.
 
 Lex order (do not rename; do not edit a shipped `NewActor` after Caffeine applied that step):
 
@@ -458,7 +458,7 @@ Lex order (do not rename; do not edit a shipped `NewActor` after Caffeine applie
 | `20260826_000000.mo` | Empty-canister genesis. Caffeine import deploys onto a fresh canister (`OldActor = {}`). Must stay first so check-stable does not treat the populated 20260827 shape as the chain start (M0263). |
 | `20260827_000000.mo` | Legacy → enhanced-orthogonal: inlined types, `NewActor` drops transients that `main.mo` now marks `transient` (`BUFF_CATALOG`, `DEFAULT_ENEMY_NAMES`, `ROLE_CHANGE_MIN_NS`, `chatMessages`, `nextChatId`, `enemyNamesInitialised`). Player/config maps copy through. |
 | `20260831_000000.mo` | **Frozen.** Seeds `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef` on persisted admin `SpellConfig` rows. Introduces rollback stables (`*Prev` / `has*Prev`) and `adminAuditLog`. Do not add fields here. |
-| `20260901_000000.mo` | GameKey shop stables (`gameKeyRequests`, `gameKeyLedger`, `gameKeyReveals`, `lastGameKeyRequestAt`, `nextGameKeyRequestId`). `OldActor` = 20260831 `NewActor`; new maps default empty. |
+| `20260901_000000.mo` | **Frozen** once Caffeine may have applied it. GameKey shop stables (`gameKeyRequests`, `gameKeyLedger`, `gameKeyReveals`, `lastGameKeyRequestAt`, `nextGameKeyRequestId`). `OldActor` = 20260831 `NewActor`; new maps default empty. |
 
 - Inlined `OldActor` / `NewActor` (no project type imports).
 - Fresh-install seeds live in `main.mo` `do { }` blocks (empty `appVersion` → `"v163"`, default game config, etc.) — not in the migration module.

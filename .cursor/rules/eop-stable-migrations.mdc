@@ -13,18 +13,25 @@ If you add a persistent `let`/`var` on `main.mo`:
 2. `OldActor` = the currently deployed tail (previous migration’s `NewActor`, plus any other already-live fields you must copy). Do **not** put the new fields on `OldActor`.
 3. `NewActor` = OldActor + the new stables with empty-map / zero defaults.
 4. Bump `mops.toml` `[canisters.backend.migrations] check-limit` so it is **>= the number of chain files**. Leaving it short drops `20260826` (`OldActor = {}`) and empty-import fails M0263.
-5. **Never** edit a shipped `NewActor` after Caffeine may have applied that step (`20260826`, `20260827`, `20260831`, …). Stuffing maps into an already-run file is what traps populated upgrades:
+5. **Never** edit a shipped `NewActor` after Caffeine may have applied that step (`20260826`, `20260827`, `20260831`, `20260901`, …). Stuffing maps into an already-run file is what traps populated upgrades:
 
    `RTS error: Memory-incompatible program upgrade` / IC0503
+
+6. `python3 scripts/check-eop-stables.py` must stay green. It freezes NewActor field lists through `20260901_000000` and the orthogonal allowlist (`snapshots/orthogonal-stables.txt`). New names on `main.mo` that are not on the latest `NewActor` fail — do not append them to the allowlist.
 
 `mops check` vs tracked `.old/src/backend/dist/backend.most` is **empty-canister** import only. When adding stables, also run:
 
 ```bash
+python3 scripts/check-eop-stables.py
 mops check --no-lint
 mops check --no-lint --no-check-limit
 mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
+mops check-stable src/backend/migrations/snapshots/post-20260901.most backend
 ```
 
-(or a newer populated snapshot of the last successfully deployed tail). You cannot talk to the live Caffeine replica from this agent; the snapshot is the stand-in.
+- `post-20260831.most`: populated Caffeine **before** GameKey (first `install_code` trapped; 20260901 never applied).
+- `post-20260901.most`: same canister **after** 20260901 applied. Stuffing into 20260901 NewActor must fail this check. Further stables need `20260902+` plus a new `post-<previous>.most`.
+
+You cannot talk to the live Caffeine replica from this agent; the snapshots are the stand-in.
 
 Do not delete needed stables from `main.mo` to “make upgrade work.” Do not rewrite an applied `OldActor`/`NewActor` pair. CharacterStats stays 12 fields.

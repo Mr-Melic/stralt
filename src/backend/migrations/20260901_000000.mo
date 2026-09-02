@@ -8,6 +8,11 @@ module {
   // OldActor is the frozen 20260831 NewActor (no GameKey maps). Other live
   // fields (characterSlots, dokaBalances, …) persist orthogonally.
   // Inlined types stay frozen if project types change later.
+  // FROZEN once Caffeine may have applied this tail. Do not add fields to
+  // NewActor — that traps populated upgrades (RTS memory-incompatible / IC0503).
+  // Further stables go in a later lex file (20260902+). Handle both replica
+  // states: 20260901 never applied (first deploy trapped) → this file is the
+  // GameKey step; 20260901 applied → new fields need a later file.
 
   type SummonUnitDef = {
     pieceType : Text;
