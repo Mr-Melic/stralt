@@ -438,6 +438,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
   applyXpDelta,
@@ -12530,39 +12531,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // applyRewards commits — markAchievementUnlocked now rejects
           // projected totals against the pre-credit canister snapshot,
           // and achievementsShownRef would block the post-credit retry.
-          checkAndFireAchievement("first_battle_win", true);
-          if (characterStats.hp === 1) {
-            checkAndFireAchievement("survive_1hp", true);
-          }
-          if (mapsVisitedCountRef.current >= 25) {
-            checkAndFireAchievement("explore_25_maps", true);
-          }
-          if (groundDokaPickupCountRef.current >= 10) {
-            checkAndFireAchievement("loot_10_doka", true);
-          }
-          if (activeSpells.length >= 8) {
-            checkAndFireAchievement("spell_master_8", true);
-          }
-          if (Object.values(spellLevels).some((l) => l >= 5)) {
-            checkAndFireAchievement("spell_level_5", true);
-          }
-          if (battleCritHitsRef.current >= 5) {
-            checkAndFireAchievement("critical_5_in_battle", true);
-          }
-          if (battleOnlyHealBuffSpellsRef.current) {
-            checkAndFireAchievement("pacifist_run", true);
-          }
-          if (battleBetrayalOccurredRef.current) {
-            checkAndFireAchievement("betrayal_witness", true);
-          }
-          if (battleDoubleBetrayelOccurredRef.current) {
-            checkAndFireAchievement("double_betrayal", true);
-          }
-          if (battleLeaderSlainRef.current) {
-            checkAndFireAchievement("leader_slayer", true);
+          // Shared with handleBossRushRoomClear: the victory gate never
+          // enters this function during a run, so those feats used to
+          // stay locked after a room-clear (pacifist_run 500 Doka).
+          for (const condition of clientTrustedVictoryAchievementConditions({
+            hp: characterStats.hp,
+            mapsVisited: mapsVisitedCountRef.current,
+            groundDokaPickups: groundDokaPickupCountRef.current,
+            spellBarCount: activeSpells.length,
+            hasSpellAtLeast5: Object.values(spellLevels).some((l) => l >= 5),
+            critHits: battleCritHitsRef.current,
+            pacifist: battleOnlyHealBuffSpellsRef.current,
+            betrayal: battleBetrayalOccurredRef.current,
+            doubleBetrayal: battleDoubleBetrayelOccurredRef.current,
+            leaderSlain: battleLeaderSlainRef.current,
+            bossId: activeBossConf?.id,
+          })) {
+            checkAndFireAchievement(condition, true);
           }
           if (activeBossConf) {
-            checkAndFireAchievement(`boss_defeated_${activeBossConf.id}`, true);
             logBattleEntry(
               `☠️ BOSS DEFEATED: ${activeBossConf.name}!`,
               "#c084fc",
@@ -12960,6 +12947,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         isBossRush: true,
         bossRushRoom: currentRoomIndex + 1,
       };
+
+      // Same client-trusted victory feats as handleBattleEnd. The victory
+      // gate calls this instead of handleBattleEnd during a run, so a
+      // pacifist / leader-kill / first-win room-clear never reached
+      // checkAndFireAchievement; battle start then reset the per-fight refs.
+      const activeBossConf = currentBossConfigRef.current;
+      for (const condition of clientTrustedVictoryAchievementConditions({
+        hp: characterStats.hp,
+        mapsVisited: mapsVisitedCountRef.current,
+        groundDokaPickups: groundDokaPickupCountRef.current,
+        spellBarCount: activeSpells.length,
+        hasSpellAtLeast5: Object.values(spellLevels).some((l) => l >= 5),
+        critHits: battleCritHitsRef.current,
+        pacifist: battleOnlyHealBuffSpellsRef.current,
+        betrayal: battleBetrayalOccurredRef.current,
+        doubleBetrayal: battleDoubleBetrayelOccurredRef.current,
+        leaderSlain: battleLeaderSlainRef.current,
+        bossId: activeBossConf?.id,
+      })) {
+        checkAndFireAchievement(condition, true);
+      }
+      if (activeBossConf) {
+        logBattleEntry(`☠️ BOSS DEFEATED: ${activeBossConf.name}!`, "#c084fc");
+      }
 
       // Set popup state (non-blocking overlay)
       if (shouldAnnounceLevelUp(characterStats.level, leveled.newLevel)) {
