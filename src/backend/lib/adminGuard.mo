@@ -547,6 +547,14 @@ module {
         100 + (lvl - 1) * growth
     };
 
+    /// Absolute HP writes must not silently cut HP already stored under a
+    /// wider historical cap (level*200+100) or after admin lowers
+    /// statGrowthPercent. New rows still cannot exceed the official max.
+    public func persistHpWriteCap(storedHp : Nat, level : Nat, growthPercent : Nat) : Nat {
+        let allowed = maxPersistedHp(level, growthPercent);
+        if (storedHp > allowed) { storedHp } else { allowed }
+    };
+
     /// Server-checkable achievement conditions. Combat feats stay client-trusted.
     public func achievementUnlockRejected(
         condition : Text,

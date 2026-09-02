@@ -235,6 +235,28 @@ export function maxPersistedHp(level: number, growthPercent: number): number {
   return 100 + (lvl - 1) * growth;
 }
 
+/** Mirrors adminGuard.persistHpWriteCap. Grandfather stored HP above the live formula. */
+export function persistHpWriteCap(
+  storedHp: number,
+  level: number,
+  growthPercent: number,
+): number {
+  const stored = Math.max(0, Math.floor(Number(storedHp) || 0));
+  const allowed = maxPersistedHp(level, growthPercent);
+  return stored > allowed ? stored : allowed;
+}
+
+/** Absolute saveBattleStats HP: min(incoming, persistHpWriteCap). Death still cuts. */
+export function clampPersistedHpWrite(
+  storedHp: number,
+  incomingHp: number,
+  level: number,
+  growthPercent: number,
+): number {
+  const raw = Math.max(0, Math.floor(Number(incomingHp) || 0));
+  return Math.min(raw, persistHpWriteCap(storedHp, level, growthPercent));
+}
+
 /**
  * Server-checkable achievement conditions. Combat feats stay client-trusted.
  * Mirrors adminGuard.achievementUnlockRejected.

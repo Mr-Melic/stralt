@@ -59,8 +59,8 @@ import {
 } from "../data/gameConstants";
 import {
   type CombatantEntity,
-  chessPiecePatterns,
   drawCombatant,
+  getPersistedPiecePattern,
   spawnPixelPuff,
 } from "../data/pieceArt";
 import { physicalAttackSpell, starterSpells } from "../data/spellData";
@@ -3655,7 +3655,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const pieceType: ChessPieceType = character?.pieceType || "king";
   const characterName: string = character?.name || "Adventurer";
 
-  // chessPiecePatterns now imported from ../data/pieceArt (see import near top).
+  // Piece art: getPersistedPiecePattern (unknown/retired ids → king.front).
   // Determine current region from backend configs matching player level
   const _currentRegionEffects = (() => {
     const level = characterStats.level;
@@ -3677,7 +3677,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ctx.fillStyle = "#0a0c18";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const pattern = chessPiecePatterns[pieceType].front;
+    const pattern = getPersistedPiecePattern(pieceType, "front");
     const pixelSize = 6;
     const patternW = pattern[0].length * pixelSize;
     const patternH = pattern.length * pixelSize;
@@ -8339,7 +8339,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             playerPositionRef.current.x,
             playerPositionRef.current.y,
           );
-          const playerPattern = chessPiecePatterns[pieceType][playerView];
+          const playerPattern = getPersistedPiecePattern(pieceType, playerView);
 
           // Player drop shadow
           {
