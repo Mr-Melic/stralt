@@ -936,10 +936,21 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
-        if (chance > 100) {
-            return #err("chance must be between 0 and 100");
+        switch (AdminGuard.validateMapModifierChance(id, chance)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
-        AdminLib.setMapModifierChance(mapModifierConfigs, id, chance);
+        let prevChance = switch (mapModifierConfigs.get(id)) {
+            case null { return #err("Map modifier '" # id # "' not found") };
+            case (?existing) { existing.triggerChance.toText() };
+        };
+        switch (AdminLib.setMapModifierChance(mapModifierConfigs, id, chance)) {
+            case (#err e) { #err(e) };
+            case (#ok) {
+                _recordAdminAudit(caller, "setMapModifierChance", id, prevChance, chance.toText());
+                #ok
+            };
+        };
     };
 
     // ─── Spell upgrade (per character) ──────────────────────────────────
@@ -1202,6 +1213,24 @@ actor {
         switch (AdminGuard.validateDokaGrant(dokaAmount)) {
             case (?e) { return #err(e) };
             case null {};
+        };
+        switch (purchaseId) {
+            case null {};
+            case (?pid) {
+                switch (purchaseRecords.get(pid)) {
+                    case null { return #err("Purchase record not found") };
+                    case (?rec) {
+                        switch (AdminGuard.purchaseCreditRejected(
+                            rec.userPrincipal.toText(),
+                            userPrincipal.toText(),
+                            rec.status,
+                        )) {
+                            case (?e) { return #err(e) };
+                            case null {};
+                        };
+                    };
+                };
+            };
         };
         let current = switch (dokaBalances.get(userPrincipal)) {
             case null { 0 };
@@ -2167,6 +2196,7 @@ actor {
         if (not found) {
             return #err("No package found with dokaAmount = " # dokaAmount.toText());
         };
+        _recordAdminAudit(caller, "setShopPaymentLink", dokaAmount.toText(), "previous", "updated");
         #ok;
     };
 

@@ -7,7 +7,11 @@ import type {
   MapModifierConfig,
 } from "../types/gameTypes";
 import { assertAdminCmdOk } from "../utils/adminContract";
-import { validateAssignRole, validateEnemyName } from "../utils/adminSafety";
+import {
+  validateAssignRole,
+  validateEnemyName,
+  validateMapModifierChance,
+} from "../utils/adminSafety";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
@@ -192,6 +196,8 @@ export function useAdminSetMapModifierChance() {
   return useMutation({
     mutationFn: async ({ id, chance }: { id: string; chance: number }) => {
       if (!actor) throw new Error("Actor not available");
+      const chanceErr = validateMapModifierChance(id, chance);
+      if (chanceErr) throw new Error(chanceErr);
       const result = await (actor as ActorAny).adminSetMapModifierChance(
         id,
         BigInt(Math.round(chance)),
