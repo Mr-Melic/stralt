@@ -4,6 +4,7 @@ import {
   type Challenge,
   type ChallengePanelProgress,
   type ChallengeTier,
+  challengeFailCopy,
   isChallengeCompleted,
   isChallengeFailed,
 } from "../utils/challengeCompletion";
@@ -295,7 +296,9 @@ export default function ChallengePanel({
                 {progress.totalDamage}
               </div>
               {currentChallenge.condition === "direct_hit" && (
-                <div>Direct hit: {progress.directHit ? "Yes" : "No"}</div>
+                <div>
+                  All casts within 2 tiles: {progress.directHit ? "Yes" : "No"}
+                </div>
               )}
               <div
                 style={{
@@ -325,7 +328,11 @@ export default function ChallengePanel({
                     ✗
                   </span>
                 ) : null}
-                {failed ? "Failed!" : onTrack ? "On track!" : "Not met yet"}
+                {failed
+                  ? challengeFailCopy(currentChallenge)
+                  : onTrack
+                    ? "On track!"
+                    : "Not met yet"}
               </div>
             </div>
           )}

@@ -14,10 +14,10 @@ import { collectPreservedLocalStorage } from "./utils/versionGate";
 const APP_VERSION = "v163";
 
 const CHANGELOG_ITEMS = [
-  "🏆 Achievements system — 15 milestones with Doka rewards",
-  "✨ Unique spell range patterns + 3 ultimate spells (Obliterate, Plague Wave, Void Collapse)",
-  "🤖 Enemy AI fully rebuilt — group tactics, leader death animation, cooldown strategy",
-  "💰 Doka ground loot visual trails — pick up coins scattered across maps",
+  "💰 Buy Doka is real-money credit: pay on Mollie, then redeem a GameKey while logged in",
+  "⚗️ Items (potions) spends Doka — it is not the same door as Buy Doka",
+  "💀 Death costs 20% leftover XP and 40% Doka, then the Death Realm — walk to a portal",
+  "✨ The XP bar is leftover experience in the current level, not a lifetime total",
 ];
 
 const AdminDashboard = lazy(() => import("./components/AdminDashboard"));

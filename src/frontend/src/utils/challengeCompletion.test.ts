@@ -9,6 +9,7 @@ import {
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
+  challengeFailCopy,
   isChallengeCompleted,
   isChallengeFailed,
   isSpellOnCooldown,
@@ -228,6 +229,9 @@ describe("isChallengeCompleted", () => {
       isChallengeFailed(striker, progress({ directHit: false })),
       true,
     );
+    assert.match(challengeFailCopy(striker), /beyond 2 tiles/i);
+    assert.match(challengeFailCopy(byId("easy_1")), /heal was used/i);
+    assert.match(challengeFailCopy(byId("legendary_1")), /damage was taken/i);
   });
 
   it("does not invent a completion for an unknown condition", () => {
