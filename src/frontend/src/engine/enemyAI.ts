@@ -40,6 +40,7 @@ import {
 } from "../data/gameConstants.ts";
 import type { ChessPieceType, Enemy, SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger.ts";
+import { enemyWalkCostPerTile } from "./enemyWalkMp.ts";
 import {
   type OccupancyContext,
   isCellFree as sharedIsCellFree,
@@ -256,6 +257,12 @@ export interface DecideEnemyContext {
   enrageMultiplier: number;
   /** True if the slime-flood flag is active (doubles per-tile path cost). */
   isSlimeFlood: boolean;
+  /**
+   * Frozen Terrain uses the same onMpCost doubler as Slime Flood. The
+   * player BFS already pays 2 MP/tile; omitting this left AI reachable
+   * at cost 1 on Frozen maps.
+   */
+  isFrozenTerrain?: boolean;
   /** Deterministic RNG function (Math.random by default). */
   rng: () => number;
   /** Effective-stat lookup: returns the post-modifier value for a stat. */
@@ -321,8 +328,8 @@ function effectiveHp(c: AICombatant): number {
 
 /**
  * BFS reachable tiles from the enemy's position, respecting the step budget
- * and per-tile cost (slime flood doubles cost). Mirrors the inline
- * `reachableTilesAI` computation in the original WX region.
+ * and per-tile cost (Slime Flood / Frozen Terrain each double). Mirrors the
+ * inline `reachableTilesAI` computation in the original WX region.
  *
  * Uses the shared `isCellFree` from engine/occupancy.ts for the passability
  * check on each neighbor, so grid walls, barriers, portals, void tiles, and
@@ -339,7 +346,10 @@ function computeReachable(
     { x: origin.x, y: origin.y, steps: 0 },
   ];
   visited.set(key(origin.x, origin.y), 0);
-  const costPerTile = ctx.isSlimeFlood ? 2 : 1;
+  const costPerTile = enemyWalkCostPerTile({
+    slimeFlood: ctx.isSlimeFlood,
+    frozenTerrain: ctx.isFrozenTerrain === true,
+  });
   const dirs = [
     { x: 1, y: 0 },
     { x: -1, y: 0 },
@@ -770,7 +780,7 @@ function findNearestLegalCastTile(
   const range = Number(spell.range);
   const needsLos = spell.lineOfSight !== false;
   // BFS from the origin over reachable tiles, ordered by step count. The
-  // `reachable` set already encodes the per-tile step cost (slime-flood aware),
+  // `reachable` set already encodes the per-tile step cost (Slime/Frozen),
   // so the first legal-cast tile we hit is the nearest by movement budget.
   const dirs = [
     { x: 1, y: 0 },

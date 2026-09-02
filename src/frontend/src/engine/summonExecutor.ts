@@ -53,7 +53,7 @@ export interface SummonExecutorHelpers {
   occupancyCtx: OccupancyContext;
   /** World grid size for clamping. */
   worldGridSize: number;
-  /** MP cost per tile of Chebyshev movement. */
+  /** MP cost per tile of Chebyshev movement (Slime/Frozen doublers). */
   mpCostPerTile: number;
   /** AP cost for a melee action. */
   meleeApCost: number;

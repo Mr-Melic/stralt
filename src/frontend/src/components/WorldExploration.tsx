@@ -144,6 +144,7 @@ import {
   getEnemyFamilyColors,
   getEnemyFamilyPixelPattern,
 } from "../engine/enemyPixelPatterns";
+import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
 import {
   applyFinalizedLayout,
@@ -2313,7 +2314,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const isThornedGround = activeMapModifierTypes.has("thorned_ground");
   const _isArcaneSurge = activeMapModifierTypes.has("arcane_surge");
   const isMirrorField = activeMapModifierTypes.has("mirror_field");
-  const _isFrozenTerrain = activeMapModifierTypes.has("frozen_terrain");
+  const isFrozenTerrain = activeMapModifierTypes.has("frozen_terrain");
   const isPlagueZone = activeMapModifierTypes.has("plague_zone");
   const isTimeWarp = activeMapModifierTypes.has("time_warp");
   const isVoidRift = activeMapModifierTypes.has("void_rift");
@@ -2322,6 +2323,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     isSlimeFloodRef.current = isSlimeFlood;
   }, [isSlimeFlood]);
+  const isFrozenTerrainRef = useRef(isFrozenTerrain);
+  useEffect(() => {
+    isFrozenTerrainRef.current = isFrozenTerrain;
+  }, [isFrozenTerrain]);
   const currentBattleMpRef = useRef(currentBattleMp);
   useEffect(() => {
     currentBattleMpRef.current = currentBattleMp;
@@ -15215,6 +15220,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             .length,
           enrageMultiplier: 1,
           isSlimeFlood: isSlimeFloodRef.current,
+          isFrozenTerrain: isFrozenTerrainRef.current,
           rng: Math.random,
           getEffectiveStat: (cid: string, stat: string) =>
             getStatModifier(cid, stat, activeEffectsRef.current) as number,
@@ -15258,7 +15264,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           calcScaledDamage,
           occupancyCtx: summonOccupancyCtx,
           worldGridSize: WORLD_GRID_SIZE,
-          mpCostPerTile: 1,
+          mpCostPerTile: enemyWalkCostPerTile({
+            slimeFlood: isSlimeFloodRef.current,
+            frozenTerrain: isFrozenTerrainRef.current,
+          }),
           meleeApCost: 1,
           getEnemyById: (id: string) =>
             enemiesRef.current.find((e: any) => e.id === id),
@@ -16375,6 +16384,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             .length,
           enrageMultiplier,
           isSlimeFlood: isSlimeFloodRef.current,
+          isFrozenTerrain: isFrozenTerrainRef.current,
           rng: Math.random,
           getEffectiveStat: (cid, stat) =>
             getStatModifier(cid, stat, activeEffectsRef.current) as number,
