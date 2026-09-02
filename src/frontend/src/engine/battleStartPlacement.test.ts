@@ -186,4 +186,23 @@ describe("findBattleStartCell", () => {
     assert.notDeepEqual(enemy, { x: 8, y: 8 });
     assert.ok(chebyshev(enemy, player) >= 3);
   });
+
+  it("does not teleport max-spacing onto a leftover island", () => {
+    const main: { x: number; y: number }[] = [];
+    for (let x = 6; x <= 10; x++) {
+      for (let y = 6; y <= 10; y++) main.push({ x, y });
+    }
+    const walkable = [...main, { x: 0, y: 0 }, { x: 1, y: 0 }];
+    const occupied = new Set(["8,8"]);
+    const cell = findBattleStartCell(
+      { x: 8, y: 8 },
+      [{ x: 8, y: 8, minDist: 3 }],
+      3,
+      island(walkable, occupied),
+    );
+    assert.ok(cell);
+    assert.notEqual(occKey(cell.x, cell.y), "0,0");
+    assert.notEqual(occKey(cell.x, cell.y), "1,0");
+    assert.ok(cell.x >= 6 && cell.x <= 10 && cell.y >= 6 && cell.y <= 10);
+  });
 });
