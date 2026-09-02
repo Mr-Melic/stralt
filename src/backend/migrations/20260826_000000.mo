@@ -5,12 +5,20 @@ import AccessControl "mo:caffeineai-authorization/access-control";
 
 module {
 
-  // Empty-canister genesis. Caffeine GitHub import deploys onto a fresh canister
-  // whose previous stable signature has no fields. The rest of the chain
-  // (20260827 drop-transients, 20260831 summon fields) still describes upgrades
-  // from a real populated actor — those steps are skipped when the deployed
-  // tail already matches them. This file must stay first in lex order and must
-  // not become the OldActor of a populated upgrade.
+  // Empty-canister genesis. Fresh Caffeine install (and Stralt_V2's v356
+  // import) runs the whole chain from a canister whose previous stable
+  // signature has no fields. The rest of the chain (20260827 drop-transients,
+  // 20260831 summon + rollback, 20260901 GameKey) describes upgrades from a
+  // real populated actor — those steps are skipped when the deployed tail
+  // already matches them.
+  //
+  // This file MUST stay named 20260826_000000. v356 / Stralt_V2 recorded that
+  // name (PR #181 merge f8aa05e). The original stralt repo renamed it to
+  // 20260801 so genesis would sort before Caffeine #347/#348's
+  // `20260803_185500` on cwofb… — do not copy that rename here, and do not add
+  // `20260803_185500` (it would sort BEFORE this file and steal first place).
+  // Must stay first in lex order and must never become the OldActor of a
+  // populated upgrade.
 
   // ─── Inlined types (must match 20260827 OldActor; no project imports) ──
 

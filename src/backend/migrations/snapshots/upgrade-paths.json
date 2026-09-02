@@ -1,0 +1,20 @@
+{
+  "$comment": "Runtime upgrade proof for scripts/eop-upgrade-matrix.mjs on Stralt_V2. Each path installs the first commit's backend wasm on a fresh PocketIC canister, upgrades through the remaining commits, then upgrades to the current working tree. 9bf8368 is this repo's Caffeine import of v356 (PR #181 merge f8aa05e: chain 20260826/27/31, 42 stables, no GameKey). HEAD is git HEAD (after this branch's commit, the GameKey chain). empty = persistent actor { }.",
+  "paths": [
+    {
+      "name": "empty canister (fresh Caffeine project) → HEAD",
+      "commits": ["empty"],
+      "expect": "ok"
+    },
+    {
+      "name": "v356-fresh (Stralt_V2 9bf8368, chain 20260826/27/31 no GameKey) → HEAD",
+      "commits": ["9bf836853f6ec4f323fd889757d724f336e72c08"],
+      "expect": "ok"
+    },
+    {
+      "name": "HEAD → HEAD (already at 20260901)",
+      "commits": ["HEAD"],
+      "expect": "ok"
+    }
+  ]
+}
