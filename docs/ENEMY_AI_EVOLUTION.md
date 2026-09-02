@@ -1,12 +1,13 @@
 # Advanced Enemy AI Evolution — Design Catalog
 
 **Status:** PROPOSED (design only; no production code in this change)  
-**Dates:** 2026-08-31 (T0–T5 catalog) · **2026-09-01 re-read** (line numbers + T6+ specs)  
+**Dates:** 2026-08-31 (T0–T5 catalog) · 2026-09-01 (T6+ FUT-01…23) · **2026-09-02 re-read** (WX drift + SYS-13…21 / FUT-24…35)  
 **Scope:** Reusable enemy sophistication that does not terminate at a fixed player level.
 
 This document is the implementation brief for later PRs. It does **not** change combat math, the RAF loop, map generation, or turn order. It records what the live engine already does, then proposes capability modules that can keep appearing as relative difficulty rises.
 
-**2026-09-01 increment:** [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) re-verifies live line numbers, records new honesty gaps (kit `levelZone` NaN, unread focus id, targeting-shape mismatch), and fully specifies T6+ modules that §14 only sketched. T0–T5 proposals in this file are unchanged and still **PROPOSED**.
+**2026-09-01 increment:** [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) — kit `levelZone` NaN, unread focus, targeting-shape mismatch, FUT-01…FUT-23.  
+**2026-09-02 increment:** [`ENEMY_AI_EVOLUTION_2026-09-02.md`](./ENEMY_AI_EVOLUTION_2026-09-02.md) — live WX line numbers, player-centric `isTileCastableLive`, empty summon occupancy, path vs Chebyshev MP, boss second-brain legality, SYS-13…SYS-21, FUT-24…FUT-35. T0–T5 proposals in this file are unchanged and still **PROPOSED**.
 
 ---
 
@@ -30,15 +31,15 @@ All line numbers are from this checkout. Re-read them before implementing.
 
 ### 2.1 Decision core
 
-| Piece | Path | What it actually does (2026-09-01 lines) |
+| Piece | Path | What it actually does (2026-09-02 lines) |
 | :--- | :--- | :--- |
-| Pure decide | `src/frontend/src/engine/enemyAI.ts` `decideEnemyAction` (1648–1692) | One action per turn: `cast` / `melee` / `move` / `skip`. No React. |
-| Apply | `WorldExploration.tsx` ~16705–17200 | Range check, then damage/drain/self-heal (`range === 0` only)/debuff, else fallback melee **or Fire Bolt**. |
-| Summon decide | `decideSummonAction` (1746+) | hunter / guardian / archer / bomber / healer. |
-| Summon apply | `engine/summonExecutor.ts` 122–210 | **Does** debit `currentAp` / `currentMp`. |
+| Pure decide | `src/frontend/src/engine/enemyAI.ts` `decideEnemyAction` (1649–1693) | One action per turn: `cast` / `melee` / `move` / `skip`. No React. |
+| Apply | `WorldExploration.tsx` 16537–16800+ | Chebyshev range only (16540–16544), then damage/drain/self-heal (`range === 0` only, 16736)/debuff, else fallback melee **or Fire Bolt** (16792–16800). |
+| Summon decide | `decideSummonAction` (1747+) | hunter / guardian / archer / bomber / healer. WX ctx at 15250 passes **empty** `occupied`. |
+| Summon apply | `engine/summonExecutor.ts` 119–210 | **Does** debit AP/MP. Movement bill is Chebyshev teleport (125–126), not 4-dir path cost. |
 | Boss decide | `hooks/useBossAI.ts` `pickBossKitSpell` (38–54) | First id in the phase pool. Call sites pass `new Map()` so cooldown is ignored. |
-| Occupancy | `engine/occupancy.ts` | Shared passability for AI pathing. |
-| Targeting truth | `engine/targeting.ts` `isTileCastableLive` (~660+) | Player: Manhattan ground; Chebyshev enemy/area; `minRange` / `linear` / `diagonal` / `freeCells`. AI decide uses Chebyshev + `lineOfSight !== false` only. |
+| Occupancy | `engine/occupancy.ts` | Shared passability for AI pathing. Pack snapshot fills occupied (WX 16397–16404); summon snapshot does not. |
+| Targeting truth | `engine/targeting.ts` `isTileCastableLive` (415+) | Player: Manhattan ground; Chebyshev enemy/area; `minRange ?? 1` / `linear` / `diagonal` / `freeCells`. `ally` = player-side summons only (476–495). AI decide uses Chebyshev + `lineOfSight !== false` only. |
 
 `DecideEnemyContext` already has LoS, hazards, barriers, focus-fire setters, enrage, slime-flood, and cooldown-filtered `availableSpells`. It does **not** carry enemy AP/MP, player AP/MP, RES/SR on combatants, or `activeEffects`.
 
@@ -64,14 +65,14 @@ export const computeAITier = (enemyLevel: number): number => {
 };
 ```
 
-Assigned at spawn (`WorldExploration.tsx` 6408, 6536). This is exactly “Level X equals AI tier Y,” plus a 30% scramble to 1–10 that can give a tutorial mob elite logic or a boss tutorial logic.
+Assigned at spawn (`WorldExploration.tsx` 5823, 5951). This is exactly “Level X equals AI tier Y,” plus a 30% scramble to 1–10 that can give a tutorial mob elite logic or a boss tutorial logic.
 
 `ENEMY_AI_TIER_GATES` (`gameConstants.ts` 200–209) lists `erratic`, `groupTactics`, `instantKill`, `betrayal`, `chokepointCamp`, `escapeRoute`, `bottleneckControl`, `defensiveRetreat`. **`enemyAI.ts` does not read this object** (only a comment at 1404). Live gates in the apply layer:
 
 | Gate | Lines | Behaviour |
 | :--- | :--- | :--- |
-| `aiTier >= 5` | WX 15956–16040 | After leader death: random adjacent step + 50% **logged** random spell name (spell is **not** applied — only `updateCombatant` position). |
-| `aiTier >= 10` | WX 16043–16059+ | 5% chance to damage an ally (“Betrayal”) and 6× enrage. |
+| `aiTier >= 5` | WX 15597–15679 | After leader death: random adjacent step + 50% **logged** random spell name (spell is **not** applied — only `updateCombatant` position). |
+| `aiTier >= 10` | WX 15683–15700+ | 5% chance to damage an ally (“Betrayal”) and 6× enrage. |
 
 Those are spectacle, not tactics. `instantKill` must never become a hidden-information or rule-breaking execute.
 
@@ -86,7 +87,7 @@ Those are spectacle, not tactics. `instantKill` must never become a hidden-infor
 5. Melee-only → charger.
 6. Else generic.
 
-`buildEnemyKit` (156–178) gives queens and kings `starter-heal` from `levelZone >= 1`. Those pieces therefore **become healers** and stop using their frost/inferno kit as primary. Summoner is **not** in this switch; WX 16402–16411 routes `enemy.isSummoner` to `decideSummonerAction` only.
+`buildEnemyKit` (156–178) gives queens and kings `starter-heal` from `levelZone >= 1`. Those pieces therefore **become healers** and stop using their frost/inferno kit as primary. Summoner is **not** in this switch; WX 16463–16472 routes `enemy.isSummoner` to `decideSummonerAction` only.
 
 First-class roles that do **not** exist: tank, assassin, kiter, support, controller, artillery, disruptor, protector.
 
@@ -116,28 +117,31 @@ Helpers that already exist and should be reused, not rewritten:
 - `backlineGuardCell` (815–842) — healer idle only
 - `applyLethalLookahead` / `applyOverkillSpread`
 
-Retreat often returns `kind: "skip"` while still moving (caster 915–924, flanker 1305–1314, generic 1501–1510). Apply then treats non-hold skips as a move (WX 16844–16866) or falls into melee if adjacent.
+Retreat often returns `kind: "skip"` while still moving (caster 910–925, flanker 1305–1314, generic 1501–1510). Apply then commits dest via `enemyDestToCommit` (WX 16504–16510) or falls into melee if adjacent.
 
 ### 2.6 Honesty gaps (must not be “sophistication”)
 
 | Gap | Evidence | Rule |
 | :--- | :--- | :--- |
 | Enemy AP/MP not spent | `decideEnemyAction` never reads `apCost` / `currentAp` / `currentMp` | AI must not cast or walk what the player could not. |
-| Fallback “Fire Bolt” | WX 17145–17150: if cast fails or `kind === "melee"`, 50% chance of a range-3 bolt **not in the kit** | Remove. Melee is adjacent-only Crush (or kit `physical_attack`). |
-| Ally heal apply | WX 17083: heal only if `spellType === "heal" && spellRange === 0` | `decideHealer` can target an ally in range; apply ignores it and may melee the player. |
+| Fallback “Fire Bolt” | WX 16792–16800: if cast fails or `kind === "melee"` and Chebyshev `nd <= 1`, 50% chance of a range-3 bolt **not in the kit** | Remove. Melee is adjacent-only Crush (or kit `physical_attack`). |
+| Ally heal apply | WX 16736: heal only if `spellType === "heal" && spellRange === 0` | `decideHealer` can target an ally in range; apply ignores it and may melee the player. |
 | Buff/utility apply | Apply handles damage/drain, self-heal, and `debuffStat`. No ally buff, swap, mark, sacrifice, AoE (`frost-nova`, `lifesteal-nova`) | Do not assign those spells until apply + scorer exist. |
-| LoS in apply | Decide checks LoS (`lineOfSight !== false`); apply re-checks Chebyshev range only. Player live gate requires `lineOfSight` **truthy** (`targeting.ts` 107–114) | Keep decide LoS. Never skip LoS for “smart” AI. Do not unify by turning AI LoS off. |
-| Betrayal / 6× enrage | WX 16043+ | Not a tactic. Do not treat as T5+. |
+| LoS in apply | Decide checks LoS (`lineOfSight !== false`); apply re-checks Chebyshev range only (WX 16540–16544). Player live gate requires `lineOfSight` **truthy** (`targeting.ts` 117–126) | Keep decide LoS. Never skip LoS for “smart” AI. Do not unify by turning AI LoS off. |
+| Betrayal / 6× enrage | WX 15683+ | Not a tactic. Do not treat as T5+. |
 | `instantKill` gate | Constant only | Never implement as a hidden execute. |
-| Focus id unread | `setFocusTargetId` at 939 / 1525; `scoreTargets` never reads `ctx.focusTargetId` | TEM-01 is a writer without a reader. |
-| Targeting shape | `findNearestLegalCastTile` (762–804): Chebyshev + LoS only | Player `isTileCastableLive` also gates `minRange`, `linear`, `diagonal`, `freeCells`, Manhattan ground. |
+| Focus id unread | `setFocusTargetId` at 940 / 1526; `scoreTargets` never reads `ctx.focusTargetId` | TEM-01 is a writer without a reader. |
+| Targeting shape | `findNearestLegalCastTile` (763–804): Chebyshev + LoS only | Player `isTileCastableLive` also gates `minRange`, `linear`, `diagonal`, `freeCells`, Manhattan ground. |
 | Kit width dead | `buildEnemyKit(..., currentMap.levelZone)` | Zone-0 kits forever until AI-SYS-09. |
+| Player-centric live helper | `isTileCastableLive` `ally` = `side === "player"` (`targeting.ts` 476–495) | SYS-13: side-parameterised helper. Raw extract would break enemy ally heals. |
+| Summon occupied empty | WX 15250 | SYS-14. |
+| Minion AP/MP 0 | WX 16243–16244 | SYS-21: seed, do not treat as budget 3. |
 
 Summon AI is the honesty template: `summonExecutor.ts` 122–210 blocks move/cast/melee when MP/AP is insufficient.
 
 ### 2.7 Spell kit vs spell book
 
-Battle start (`WX` 12479–12487) assigns `buildEnemyKit(pieceType, currentMap.levelZone)`, not “10 random spells” (comment is stale). **`currentMap.levelZone` is an object** (`{ name, minLevel, maxLevel }`, WX 5265 / type at 529). `buildEnemyKit` does `Math.floor(levelZone)` (`enemyAI.ts` 192). `Math.floor(object)` is `NaN`, so **every live kit stays on the zone-0 branch** (one spell). Confirmed by `longHorizonSim.ts` 45–52. Kit width must be re-keyed to **relative difficulty**, not that object and not a level cap. See AI-SYS-09.
+Battle start (`WX` 12030–12038) assigns `buildEnemyKit(pieceType, currentMap.levelZone)`, not “10 random spells” (comment at 12030 is stale). **`currentMap.levelZone` is an object** (`{ name, minLevel, maxLevel }`, WX 4680 / type at 558). `buildEnemyKit` does `Math.floor(levelZone)` (`enemyAI.ts` 192). `Math.floor(object)` is `NaN`, so **every live kit stays on the zone-0 branch** (one spell). Confirmed by `longHorizonSim.ts` 45–52. Kit width must be re-keyed to **relative difficulty**, not that object and not a level cap. See AI-SYS-09.
 
 Enemy-usable spells the decide loop cannot score intelligently today (do not give these to enemies until a profile exists):
 
@@ -675,7 +679,7 @@ Category defaults (reuse; do not special-case `spell.name`):
 **NAME:** Cooldown awareness  
 **ROLE:** resource  
 **SOPHISTICATION:** T2  
-**DECISION_RULES:** `availableSpells` is already cooldown-filtered (WX 16266–16269). Scorer should still *prefer* to hold a once-every-3 Inferno if a weaker spell does not lose a kill and Inferno will be ready when the player is in a cluster.  
+**DECISION_RULES:** `availableSpells` is already cooldown-filtered for **pack** enemies (WX 16357–16360). Summon ctx is **not** (WX 15265). Scorer should still *prefer* to hold a once-every-3 Inferno if a weaker spell does not lose a kill and Inferno will be ready when the player is in a cluster.  
 **SCORING_MODEL:** `+wHoldCd` if using the CD spell now has EV only slightly above the filler **and** next-turn cluster is already visible (units already stacked).  
 **SPELL_REQUIREMENTS:** `cooldown > 0` profiles.  
 **RELATIVE_DIFFICULTY_ELIGIBILITY:** `mu ≈ 0.3`.  
@@ -793,10 +797,10 @@ Roles are spawn metadata. Weights below are the *identity* of the role; modules 
 **NAME:** Summoner  
 **ROLE:** summoner  
 **SOPHISTICATION:** T2  
-**DECISION_RULES:** Keep cap/cooldown (`ENEMY_SUMMON_CAP`, `ENEMY_SUMMON_COOLDOWN_TURNS`). Place on a free tile that body-blocks or screens. **When they cannot summon, fall through to generic/caster** — current `decideSummonerAction` returns skip (1827–1873). Placement must be in spell range and `isCellFree` (midpoint today can be a wall).  
+**DECISION_RULES:** Keep cap/cooldown (`ENEMY_SUMMON_CAP`, `ENEMY_SUMMON_COOLDOWN_TURNS`). Place on a free tile that body-blocks or screens. **When they cannot summon, fall through to generic/caster** — current `decideSummonerAction` returns skip (1828–1875). Placement must be in spell range and `isCellFree` (midpoint today can be a wall).  
 **SCORING_MODEL:** Summon EV vs fight EV.  
 **SPELL_REQUIREMENTS:** `isSummon` + `usableByEnemy` (wolf/archer only today).  
-**RELATIVE_DIFFICULTY_ELIGIBILITY:** Existing summoner chance (`ENEMY_SUMMONER_CHANCE_*`) is a *spawn* rate, not an AI tier. Keep it ratio-scaled if changed, not `characterStats.level * constant` unbounded without a cap (WX 12496–12498 is `0.12 + level * 0.02` and hits 1.0 at level 44 — cap at e.g. 0.35; see AI-FUT-23).  
+**RELATIVE_DIFFICULTY_ELIGIBILITY:** Existing summoner chance (`ENEMY_SUMMONER_CHANCE_*`) is a *spawn* rate, not an AI tier. Keep it ratio-scaled if changed, not `characterStats.level * constant` unbounded without a cap (WX 12047–12049 is `0.12 + level * 0.02` and hits 1.0 at level 44 — cap at e.g. 0.35; see AI-FUT-23).  
 **ENEMY_ARCHETYPES:** summoner  
 **PLAYER_COUNTERPLAY:** Cap the board; kill the summoner; sit on spawn tiles.  
 **EDGE_CASES:** Midpoint occupied/void → scan ring around midpoint.  
@@ -1126,7 +1130,7 @@ All of this uses **public** combat state only.
 
 These are **not** a final boss form. They attach when `score` is high *relative to the player*, including both-level-900 peer fights that still want new toys later.
 
-Full proposal blocks (2026-09-01): [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) §4–§5.
+Full proposal blocks: [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) §4 (FUT-01…23) and [`ENEMY_AI_EVOLUTION_2026-09-02.md`](./ENEMY_AI_EVOLUTION_2026-09-02.md) §4 (FUT-24…35).
 
 | AI_ID | NAME | Idea (still legal, still bounded) |
 | :--- | :--- | :--- |
@@ -1153,8 +1157,20 @@ Full proposal blocks (2026-09-01): [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_
 | AI-FUT-21 | Public miss chance | Paper Windstorm range-cut is public — score expected miss. |
 | AI-FUT-22 | Swap / mark / sacrifice | Category profiles + apply before any kit emits those ids. |
 | AI-FUT-23 | Summoner relative cap | Cap spawn chance; when summon is illegal, fall through to kit. |
+| AI-FUT-24 | Authored-hazard scoring | Boss lava/shock/void on `currentMap.hazardTiles` use FUT-09 costs. |
+| AI-FUT-25 | DoT stack EV | Additive stacks (`dotStacks.ts`); extra venom is EV, not zero. |
+| AI-FUT-26 | Path-aware commit | Charger wait uses BFS/MP, not Chebyshev `budget+1`. |
+| AI-FUT-27 | Split / clone blackboard | Minions inherit parent `aiModules`; share TEM/focus. |
+| AI-FUT-28 | Public objective tiles | Anchors: body-block only as FUT-10, no private win-con. |
+| AI-FUT-29 | Sacrifice vs wounded log | HP flag does not emit `spell-sacrifice`. |
+| AI-FUT-30 | Chain on public shock | Profiled chain only along public shock/occupants. |
+| AI-FUT-31 | Mark tile vs unit | Score `targetType`, not flavour text. |
+| AI-FUT-32 | Initiative strip AP/MP | ADV-04 source is the public strip (SYS-10). |
+| AI-FUT-33 | Sim kit twin | `longHorizonSim` must call production kit helper. |
+| AI-FUT-34 | Mirror last-spell | Pack SR/physical bias; no combo replay. |
+| AI-FUT-35 | Barrier / ground gate | Manhattan ground; keep `usableByEnemy: false` until profiled. |
 
-Each module is **STATUS: PROPOSED**. Implement only after SYS-01…SYS-05 (and SYS-06…SYS-10 where the module depends on legality).
+Each module is **STATUS: PROPOSED**. Implement only after SYS-01…SYS-05 (and SYS-06…SYS-21 where the module depends on legality).
 
 ---
 
@@ -1202,7 +1218,7 @@ Each slice should be its own PR with `engine/enemyAI*.test.ts` and zero WX drive
 5. **Positioning / targets (POS-*, TGT-05, SYS-08)** — lift hazard gate; RES-aware estimate; **read** focus id.  
 6. **Team blackboard (TEM-*)**.  
 7. **Adaptive (ADV-*)** — only after AP/MP are on `AICombatant`.  
-8. **T6+ modules** — [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md). Stack; do not replace T0–T5.  
+8. **T6+ modules** — [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) then [`ENEMY_AI_EVOLUTION_2026-09-02.md`](./ENEMY_AI_EVOLUTION_2026-09-02.md). Stack; do not replace T0–T5.  
 9. **New spells** — one profile + apply + test per id.
 
 Bosses stay on `useBossAI` until slice 6; then T5 may call the same enumerator with a phase weight overlay.
