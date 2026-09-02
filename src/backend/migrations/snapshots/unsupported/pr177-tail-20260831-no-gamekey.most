@@ -1,7 +1,6 @@
 // Version: 4.0.0
-// Snapshot: populated Caffeine layout after 20260831 (pre-GameKey).
-// Compiled from origin/main~1 (01b8678) with moc --stable-types.
-// mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
+// Snapshot: PR #177..#256 shape (latest applied 20260831_000000 WITHOUT GameKey). NOT upgradable by this chain: same applied name as the #258 tail but missing GameKey fields; deploy origin/main@eb03bdc (#309) first, then this chain.
+// Built from git 036600f with moc 1.11.2 exactly as `mops build` does (see snapshots/README.md).
 type AccessControlState__45017055 =
   {
     var adminAssigned : Bool;

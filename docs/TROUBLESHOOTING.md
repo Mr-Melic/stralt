@@ -178,7 +178,7 @@ Spellbook summon UI shows `SUMMON_UPGRADE_COST_MULTIPLIER * 10 * 2^level` (100 a
 
 ### Deployed canister still on 15-field stats / pre-summon SpellConfig
 
-Source on disk can be 12-field while the live canister is not. Symptom: Candid / upgrade errors on create or update. Fix: upgrade so the migration chain actually runs (`20260826` genesis, `20260827` drop-transients, `20260831` summon fields + rollback stables, `20260901` GameKey maps). Restarting the frontend is not enough. After the Motoko rebuild, `pnpm bindgen` — `backend.ts` SpellConfig can still omit `isSummon` / `summonUnitDef`.
+Source on disk can be 12-field while the live canister is not. Symptom: Candid / upgrade errors on create or update. Fix: upgrade so the migration chain actually runs (`20260801` genesis, `20260803_185500` name-only, `20260827` drop-transients, `20260831` summon fields + rollback stables + GameKey maps, `20260901` name-only). Restarting the frontend is not enough. After the Motoko rebuild, `pnpm bindgen` — `backend.ts` SpellConfig can still omit `isSummon` / `summonUnitDef`.
 
 ### Caffeine import `vite build` fails: Multiple exports with the same name
 
@@ -188,9 +188,32 @@ esbuild cannot transform a module that declares the same `export function` twice
 
 ### Caffeine `install_code` traps: `RTS error: Memory-incompatible program upgrade` (IC0503)
 
-Enhanced orthogonal persistence: the new wasm’s stable layout does not match the already-populated canister. Typical cause: a persistent `let`/`var` was added to `main.mo` **and** stuffed into an already-applied migration `NewActor` (example: GameKey maps on frozen `20260831_000000.mo` after Caffeine had run that step). `mops check` vs empty `.old` still passes.
+Enhanced orthogonal persistence: the new wasm’s stable layout does not match the already-populated canister. Caffeine builds with `mops build`, so the `mops.toml` migration chain **is** what runs on the replica. The runtime keeps the names of the migrations it applied, looks up the **latest applied name** in the new program’s chain, and loads the stored state as the chain type at that position. It traps when:
 
-Fix: restore the shipped `NewActor`, add a **new later** chain file whose `OldActor` is the deployed tail and whose `NewActor` introduces the new fields with empty/zero defaults. Bump `check-limit`. Verify empty (`.old`) **and** `mops check-stable src/backend/migrations/snapshots/post-20260831.most backend` **and** `mops check-stable src/backend/migrations/snapshots/post-20260901.most backend`, plus `python3 scripts/check-eop-stables.py`. Do not delete the new stables from `main.mo` to force a match. `20260901` is frozen; further stables need `20260902+`.
+- that name is missing from the chain (renamed / deleted file) → falls back to the `{}` genesis input → IC0503 on any populated canister;
+- the chain type at that name has fewer fields than the canister holds (a shipped `NewActor` was changed, or fields were moved to a later file) → IC0503;
+- it has more fields → `stable variable … not found in persisted state`.
+
+History: `cwofb-yqaaa-aaaap-qp45q-cai` trapped twice (PR #177 renamed the Caffeine tail out of the chain; #258 stuffed GameKey into `20260831`). `zh6cg-aaaaa-aaaad-aar2q-cai` holds the **PR #258** build (latest name `20260831_000000` **with** GameKey); #259/#309 moved GameKey to `20260901`, so the loader found a `20260831` without GameKey and trapped. Reproduced on PocketIC; static `mops check-stable` against the blank `.old` passed every time.
+
+Fix on `main` (branch `cursor/eop-deployed-shape-fix-46e6`, 2026-09-02): `20260801_000000` genesis (`OldActor = {}`), `20260803_185500` name-only no-op (Caffeine #347/#348 tail), `20260827_000000`, `20260831_000000` restored to the #258 shape, `20260901_000000` name-only no-op, `check-limit = 5`. `.old/src/backend/dist/backend.most` is the reconstructed deployed signature; other candidates live under `src/backend/migrations/snapshots/deployed/`.
+
+Adding stables now: a **new later** chain file (`20260902+`), input `{}` for pure additions, output the new fields with empty/zero defaults, bump `check-limit`, `python3 scripts/check-eop-stables.py`, `bash scripts/caffeine-import-gate.sh backend`, and `node scripts/eop-upgrade-matrix.mjs` when `pocket-ic` is installed. Never delete/rename a chain file, never edit a frozen `NewActor`, never blank `.old`, never delete needed stables from `main.mo` to force a match.
+
+#### Operational fallback when the deployed shape is unknown
+
+(a) Read the live signature and validate against reality:
+
+```bash
+dfx canister --network ic metadata zh6cg-aaaaa-aaaad-aar2q-cai motoko:stable-types > deployed.most
+mops check-stable deployed.most backend
+```
+
+moc 1.11.2 stores the full `.most` as the `icp:private motoko:stable-types` custom section, so only a **controller** can read it. Caffeine controls its canisters: if `dfx` is rejected, ask Caffeine support (or use the dashboard export) for the deployed build’s `.most` / commit, or compare `dfx canister --network ic metadata <id> candid:service` (public) with `src/backend/dist/backend.did` history to identify the commit, then `mops build` that commit and take its `src/backend/dist/backend.most`. Commit the result as `.old/src/backend/dist/backend.most` (and under `snapshots/deployed/`), and make sure its latest chain name is a file in `src/backend/migrations/` (`scripts/check-eop-stables.py` enforces both).
+
+(b) Fresh reinstall when the canister only holds disposable test data: in Caffeine choose the reset / deploy-fresh option for the project (equivalent of `dfx canister install --mode reinstall`). Every stable map (`characterSlots`, `dokaBalances`, achievements, purchases, GameKey ledger, admin configs) is wiped and the whole chain runs from `20260801`. Local proof: `mops check-stable src/backend/migrations/snapshots/empty-canister.most backend`. This needs no upgrade path at all.
+
+Recommendation: try (a) first — the chain on `main` is already built for the #258 shape, so if the readout matches `.old` the next deploy is an ordinary upgrade and player data survives. Fall back to (b) only if the readout shows one of the `snapshots/unsupported/` shapes (PR #177 no-GameKey tail or the #340 legacy actor) and the data is expendable; otherwise bridge through the commit named in `snapshots/README.md`.
 
 ### `dfx.json` vs `mops.toml`
 

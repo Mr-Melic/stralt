@@ -1,13 +1,22 @@
 import Map "mo:core/Map";
 import List "mo:core/List";
+import Principal "mo:core/Principal";
 
 module {
 
-  // Seed explicit summon metadata onto persisted admin SpellConfig rows.
+  // Seed explicit summon metadata onto persisted admin SpellConfig rows and
+  // introduce the admin rollback snapshots, audit log and GameKey shop maps.
   // Inlined types stay frozen if project types change later.
-  // FROZEN after Caffeine applied this tail (post-#177/#181/#182). Do not add
-  // fields to NewActor — that traps populated upgrades (RTS memory-incompatible).
-  // New stables go in a later lex file (see 20260901_000000.mo for GameKey).
+  //
+  // FROZEN — this exact NewActor (summon + rollback + GameKey) is the tail the
+  // Caffeine canister zh6cg-aaaaa-aaaad-aar2q-cai applied when PR #258 was
+  // installed fresh (2026-09-01). PR #259 removed the GameKey fields from this
+  // file and re-added them in 20260901; on that replica 20260901 was pending
+  // and its outputs collided with fields that already existed, so every
+  // install_code trapped with `RTS error: Memory-incompatible program upgrade`
+  // (reproduced on PocketIC). Do not edit OldActor / NewActor / field types.
+  // New stables go in a later lex file (20260902+) with `OldActor = {}`-style
+  // minimal input; see .cursor/rules/eop-stable-migrations.mdc.
 
   type OldSpellConfig = {
     id : Text;
@@ -119,6 +128,28 @@ module {
     newSummary : Text;
   };
 
+  type GameKeyRequest = {
+    id : Text;
+    userPrincipal : Principal;
+    email : Text;
+    emailConsent : Bool;
+    hintedEuroCents : Nat;
+    timestamp : Int;
+    status : Text;
+    dokaAmount : Nat;
+    emailed : Bool;
+    approvedAt : Int;
+    redeemedAt : Int;
+    redeemedBy : Text;
+  };
+
+  type GameKeyLedgerEntry = {
+    requestId : Text;
+    dokaAmount : Nat;
+    redeemed : Bool;
+    redeemedBy : Text;
+  };
+
   type OldActor = {
     spellConfigs : Map.Map<Text, OldSpellConfig>;
   };
@@ -139,6 +170,11 @@ module {
     var hasColorPalettePrev : Bool;
     var bossRushConfigPrev : Text;
     var hasBossRushConfigPrev : Bool;
+    gameKeyRequests : Map.Map<Text, GameKeyRequest>;
+    gameKeyLedger : Map.Map<Text, GameKeyLedgerEntry>;
+    gameKeyReveals : Map.Map<Text, Text>;
+    lastGameKeyRequestAt : Map.Map<Principal, Int>;
+    var nextGameKeyRequestId : Nat;
   };
 
   public func migration(old : OldActor) : NewActor {
@@ -190,6 +226,11 @@ module {
       var hasColorPalettePrev = false;
       var bossRushConfigPrev = "";
       var hasBossRushConfigPrev = false;
+      gameKeyRequests = Map.empty();
+      gameKeyLedger = Map.empty();
+      gameKeyReveals = Map.empty();
+      lastGameKeyRequestAt = Map.empty();
+      var nextGameKeyRequestId = 0;
     };
   };
 };

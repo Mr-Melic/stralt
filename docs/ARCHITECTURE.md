@@ -449,20 +449,24 @@ Player Mirror uses the token `"player"` (`activatePlayerMirror` / `consumePlayer
 
 ## Migrations
 
-`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 4`. Empty-canister baseline: `.old/src/backend/dist/backend.most` (directory gitignored; that file is force-tracked). Populated Caffeine tails: `src/backend/migrations/snapshots/post-20260831.most` (pre-GameKey; 20260901 never applied) and `post-20260901.most` (GameKey applied). Empty `.old` does not prove `install_code` onto `cwofb-yqaaa-aaaap-qp45q-cai`. `python3 scripts/check-eop-stables.py` freezes NewActor field lists through 20260901.
+`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 5`. Caffeine builds the backend with exactly `mops build` (`src/backend/caffeine.toml` `[build]`), so this chain is what the replica runs. Baseline `.old/src/backend/dist/backend.most` (directory gitignored; file force-tracked) is the **reconstructed signature of the deployed Caffeine canister** — `zh6cg-aaaaa-aaaad-aar2q-cai` = PR #258 build, latest applied `20260831_000000` with GameKey. Other plausible live shapes: `src/backend/migrations/snapshots/deployed/*.most`; documented non-upgradable shapes: `snapshots/unsupported/`; fresh import: `snapshots/empty-canister.most` (see `snapshots/README.md`). `python3 scripts/check-eop-stables.py` freezes NewActor field lists through 20260901, requires every recorded deployed tail name to remain a chain file, and rejects a blank `.old`.
 
-Lex order (do not rename; do not edit a shipped `NewActor` after Caffeine applied that step):
+Runtime rule (moc 1.11 `--enhanced-migration`): the canister remembers the names of the migrations it applied; on upgrade the new program looks up the **latest applied name** in its chain and loads the state as the chain type at that position. Name missing from the chain → `{}` genesis input → `RTS error: Memory-incompatible program upgrade` (IC0503). Fewer fields at that position than the canister holds → IC0503. More fields → `stable variable … not found in persisted state`.
+
+Lex order (never rename or delete a file; never edit a shipped `NewActor`):
 
 | Module | Job |
 | :--- | :--- |
-| `20260826_000000.mo` | Empty-canister genesis. Caffeine import deploys onto a fresh canister (`OldActor = {}`). Must stay first so check-stable does not treat the populated 20260827 shape as the chain start (M0263). |
+| `20260801_000000.mo` | Empty-canister genesis (`OldActor = {}`), renamed from `20260826` so it sorts before every name a live canister recorded. Must stay first so a fresh install compiles (M0263). |
+| `20260803_185500.mo` | Name-only no-op (`(_ : {}) : {}`). Caffeine builds #347/#348 recorded this name on `cwofb-yqaaa-aaaap-qp45q-cai`; keeping it lets that canister resume from `20260827`. |
 | `20260827_000000.mo` | Legacy → enhanced-orthogonal: inlined types, `NewActor` drops transients that `main.mo` now marks `transient` (`BUFF_CATALOG`, `DEFAULT_ENEMY_NAMES`, `ROLE_CHANGE_MIN_NS`, `chatMessages`, `nextChatId`, `enemyNamesInitialised`). Player/config maps copy through. |
-| `20260831_000000.mo` | **Frozen.** Seeds `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef` on persisted admin `SpellConfig` rows. Introduces rollback stables (`*Prev` / `has*Prev`) and `adminAuditLog`. Do not add fields here. |
-| `20260901_000000.mo` | **Frozen** once Caffeine may have applied it. GameKey shop stables (`gameKeyRequests`, `gameKeyLedger`, `gameKeyReveals`, `lastGameKeyRequestAt`, `nextGameKeyRequestId`). `OldActor` = 20260831 `NewActor`; new maps default empty. |
+| `20260831_000000.mo` | **Frozen — PR #258 shape.** Seeds `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef` on persisted admin `SpellConfig` rows; introduces rollback stables (`*Prev` / `has*Prev`), `adminAuditLog`, **and** the GameKey stables (`gameKeyRequests`, `gameKeyLedger`, `gameKeyReveals`, `lastGameKeyRequestAt`, `nextGameKeyRequestId`). This is what `zh6cg…` holds; #259/#309 moving GameKey out of it is what trapped. |
+| `20260901_000000.mo` | Name-only no-op. #259/#309 fresh installs recorded this name (GameKey already present via `20260831`). Kept so those canisters keep a chain position. |
 
 - Inlined `OldActor` / `NewActor` (no project type imports).
 - Fresh-install seeds live in `main.mo` `do { }` blocks (empty `appVersion` → `"v163"`, default game config, etc.) — not in the migration module.
-- Current `main.mo` is a plain `actor {` — it does **not** use `(with migration = Migration.run)`. **mops injects** `--enhanced-migration` from the chain directory. The annotation exists only on the legacy `backend_extended` actor.
-- New persistent `let`/`var` on `main.mo` require a **new later** chain file. Mutating an already-applied `NewActor` (e.g. stuffing GameKey into `20260831` after Caffeine ran it) traps: `RTS error: Memory-incompatible program upgrade` / IC0503.
+- Current `main.mo` is a plain `actor {` — it does **not** use `(with migration = Migration.run)`. **mops injects** `--enhanced-migration` from the chain directory, and Caffeine runs mops. The annotation exists only on the legacy `backend_extended` actor.
+- New persistent `let`/`var` on `main.mo` require a **new later** chain file (`20260902+`, input `{}` for pure additions). Static `mops check-stable` is necessary but not sufficient (it passed for #177/#259/#309); `scripts/eop-upgrade-matrix.mjs` installs each candidate on PocketIC and upgrades to HEAD.
+- After every successful Caffeine deploy, refresh `.old` from that build's `src/backend/dist/backend.most` (or `dfx canister --network ic metadata <id> motoko:stable-types`, controller-only) and add it under `snapshots/deployed/`.
 
 A deployed canister still running the old 15-field `CharacterStats` (or pre-summon `SpellConfig`) will reject the new shapes until it is upgraded so these modules actually run.

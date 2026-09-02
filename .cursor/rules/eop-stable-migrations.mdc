@@ -1,37 +1,71 @@
 ---
-description: Motoko EOP stables require a new later migration file
+description: Motoko EOP migration chain must match the names and shapes the live Caffeine canisters recorded
 alwaysApply: true
 ---
 
 # Enhanced orthogonal persistence (EOP) migrations
 
-`mops.toml` injects `src/backend/migrations` even though live `src/backend/main.mo` is a plain `actor {` (no `(with migration = …)`). Caffeine `install_code` still uses that chain.
+`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"` makes
+`mops build` / `mops check` pass `--enhanced-migration=src/backend/migrations` to
+moc. Caffeine (local CLI **and** the GitHub import) runs exactly `mops build` from
+the repo root (`src/backend/caffeine.toml` `[build] commands = ["mops build", …]`),
+so the chain IS what gets deployed even though `src/backend/main.mo` is a plain
+`actor {`. Every `.old/…/backend.most` Caffeine committed (#305 … #354) carries a
+chain block, which proves it.
 
-If you add a persistent `let`/`var` on `main.mo`:
+## How the runtime resolves the chain (moc 1.11, `src/lowering/desugar.ml`)
 
-1. Add a **new** lexically later file `src/backend/migrations/YYYYMMDD_HHMMSS.mo`.
-2. `OldActor` = the currently deployed tail (previous migration’s `NewActor`, plus any other already-live fields you must copy). Do **not** put the new fields on `OldActor`.
-3. `NewActor` = OldActor + the new stables with empty-map / zero defaults.
-4. Bump `mops.toml` `[canisters.backend.migrations] check-limit` so it is **>= the number of chain files**. Leaving it short drops `20260826` (`OldActor = {}`) and empty-import fails M0263.
-5. **Never** edit a shipped `NewActor` after Caffeine may have applied that step (`20260826`, `20260827`, `20260831`, `20260901`, …). Stuffing maps into an already-run file is what traps populated upgrades:
+1. The canister remembers the names of the migrations it applied.
+2. On upgrade the new program looks up the **latest applied name** in its chain.
+3. The stored state is loaded as the chain type at that position: no extra
+   fields, no missing fields, compatible types. Later chain files then run.
+4. A latest name that is **not in the chain** falls back to the genesis input
+   `{}` → `RTS error: Memory-incompatible program upgrade` (IC0503) on any
+   populated canister. Missing fields → `stable variable … not found in
+   persisted state (migration should have initialized it)`.
 
-   `RTS error: Memory-incompatible program upgrade` / IC0503
+Consequences:
 
-6. `python3 scripts/check-eop-stables.py` must stay green. It freezes NewActor field lists through `20260901_000000` and the orthogonal allowlist (`snapshots/orthogonal-stables.txt`). New names on `main.mo` that are not on the latest `NewActor` fail — do not append them to the allowlist.
+- Never delete or rename a chain file whose name a live canister recorded
+  (`20260803_185500`, `20260827_000000`, `20260831_000000`, `20260901_000000`).
+  A `public func migration(_ : {}) : {} { {} }` no-op keeps the name.
+- Never change a frozen `NewActor` (through `20260901_000000`). The deployed
+  `20260831_000000` is the PR #258 version **with** GameKey; that is what
+  `zh6cg-aaaaa-aaaad-aar2q-cai` holds.
+- The genesis file must sort before every recorded name: `20260801_000000.mo`,
+  `OldActor = {}`.
+- Two canisters with the same latest name but different field sets cannot both
+  be served by one chain (PR #177 shape vs PR #258 shape). The #177 shape is
+  documented as unsupported; bridge it through `origin/main@eb03bdc` first.
 
-`mops check` vs tracked `.old/src/backend/dist/backend.most` is **empty-canister** import only. When adding stables, also run:
+## Adding a persistent `let`/`var` on `main.mo`
+
+1. Add a **new** lexically later file `src/backend/migrations/YYYYMMDD_HHMMSS.mo`
+   (after `20260901_000000`). Input = only the fields you transform (`{}` for
+   pure additions); output = the new fields with empty-map / zero defaults.
+2. Bump `mops.toml` `check-limit` to the number of chain files.
+3. `python3 scripts/check-eop-stables.py` must pass (regenerate manifests only
+   with `--write-manifests` when *bootstrapping* a new frozen file).
+4. Run the gate:
 
 ```bash
-python3 scripts/check-eop-stables.py
-mops check --no-lint
-mops check --no-lint --no-check-limit
-mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
-mops check-stable src/backend/migrations/snapshots/post-20260901.most backend
+bash scripts/caffeine-import-gate.sh backend        # eop checker, mops check, deployed snapshots
+node scripts/eop-upgrade-matrix.mjs                  # PocketIC runtime proof when pocket-ic is available
 ```
 
-- `post-20260831.most`: populated Caffeine **before** GameKey (first `install_code` trapped; 20260901 never applied).
-- `post-20260901.most`: same canister **after** 20260901 applied. Stuffing into 20260901 NewActor must fail this check. Further stables need `20260902+` plus a new `post-<previous>.most`.
+## Baselines
 
-You cannot talk to the live Caffeine replica from this agent; the snapshots are the stand-in.
+- `.old/src/backend/dist/backend.most` = the signature actually deployed
+  (reconstructed PR #258 build). Never a blank `actor { };` — that blank file
+  (PR #177) let three incompatible deploys through `mops check`.
+- `src/backend/migrations/snapshots/deployed/*.most` = every other plausible
+  live shape; `snapshots/unsupported/*.most` = documented limits;
+  `snapshots/empty-canister.most` = fresh import. See `snapshots/README.md`.
+- After every successful Caffeine deploy, refresh `.old` with that build's
+  `src/backend/dist/backend.most` (or the canister's `motoko:stable-types`
+  metadata) and add it under `snapshots/deployed/`.
+- Static `mops check-stable` is necessary but not sufficient (it accepted
+  #177 → #258, which trapped at runtime). PocketIC is the proof.
 
-Do not delete needed stables from `main.mo` to “make upgrade work.” Do not rewrite an applied `OldActor`/`NewActor` pair. CharacterStats stays 12 fields.
+Do not delete needed stables from `main.mo` to "make upgrade work." CharacterStats
+stays 12 fields.
