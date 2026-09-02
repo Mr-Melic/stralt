@@ -7,7 +7,7 @@
  * MUST route through `isCellFree` here so that one combatant per tile is
  * enforced consistently. The check is a full passability pass:
  *
- *   1. In-bounds (0..gridSize-1 on both axes)
+ *   1. In-bounds on the occupancy grid (not a hardcoded world size)
  *   2. Grid tile is walkable (`tiles[y][x] === true`)
  *   3. Not a barrier tile (spell-placed walls)
  *   4. Not a portal tile
@@ -83,7 +83,9 @@ export function occKey(x: number, y: number): string {
  */
 export function isCellFree(cell: OccCell, ctx: OccupancyContext): boolean {
   const { x, y } = cell;
-  if (x < 0 || x >= WORLD_GRID_SIZE || y < 0 || y >= WORLD_GRID_SIZE) {
+  const h = ctx.tiles.length;
+  const w = ctx.tiles[0]?.length ?? 0;
+  if (x < 0 || y < 0 || x >= w || y >= h) {
     return false;
   }
   if (!ctx.tiles[y]?.[x]) return false;
@@ -171,6 +173,13 @@ function floodPassable(
     }
   }
   return seen;
+}
+
+/** Manhattan radius that can reach any cell on this occupancy grid. */
+export function progressionSearchRadius(ctx: OccupancyContext): number {
+  const h = ctx.tiles.length;
+  const w = ctx.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  return Math.max(8, w + h);
 }
 
 /**
@@ -333,16 +342,22 @@ export function unsealProgressionOccupants(
     const avoid = new Set(
       result.filter((_, j) => j !== i).map((m) => occKey(m.x, m.y)),
     );
-    const found = findNearestFreeCell(result[i], ctx, 8, avoid, (cell) => {
-      return !occupantsSealProgression(
-        tiles,
-        voidTiles,
-        portals,
-        start,
-        trial(cell),
-        impassable,
-      );
-    });
+    const found = findNearestFreeCell(
+      result[i],
+      ctx,
+      progressionSearchRadius(ctx),
+      avoid,
+      (cell) => {
+        return !occupantsSealProgression(
+          tiles,
+          voidTiles,
+          portals,
+          start,
+          trial(cell),
+          impassable,
+        );
+      },
+    );
     if (found) result[i] = found;
   }
   return result;
@@ -430,7 +445,12 @@ export function relocateOffMandatoryCells(
       return { x: o.x, y: o.y };
     }
     const avoid = new Set<string>([...mandatory, ...placed]);
-    const next = findNearestFreeCell(o, ctx, 8, avoid);
+    const next = findNearestFreeCell(
+      o,
+      ctx,
+      progressionSearchRadius(ctx),
+      avoid,
+    );
     if (next) {
       placed.add(occKey(next.x, next.y));
       return next;

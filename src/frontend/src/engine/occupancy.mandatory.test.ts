@@ -154,6 +154,58 @@ describe("relocateOffMandatoryCells", () => {
   });
 });
 
+describe("long unique bridges relocate off-path beyond radius 8", () => {
+  it("seed-long-bridge-corpse: a far unique cell still slides into the alcove", () => {
+    // 12-tile corridor; alcove at spawn. Manhattan from (10,0) to (0,1) is 11.
+    const tiles = [
+      [true, true, true, true, true, true, true, true, true, true, true, true],
+      [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+      ],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["11,0"]);
+    const occupied = new Set<string>(["0,0"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const mandatory = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 0 },
+    );
+    assert.equal(mandatory.has("10,0"), true);
+    const [moved] = relocateOffMandatoryCells(
+      [{ x: 10, y: 0 }],
+      mandatory,
+      ctx,
+    );
+    assert.equal(mandatory.has(occKey(moved.x, moved.y)), false);
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 0 }, [
+        moved,
+      ]),
+      false,
+    );
+  });
+});
+
 describe("dual-path occupants cannot jointly seal the exit", () => {
   // Stem at (0,1) splits into two 1-wide corridors that rejoin at (4,0).
   // Unique-bridge reserve is empty; one summon per path still cuts every route.
