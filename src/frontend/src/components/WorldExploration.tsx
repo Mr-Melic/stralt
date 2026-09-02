@@ -59,8 +59,8 @@ import {
 } from "../data/gameConstants";
 import {
   type CombatantEntity,
-  chessPiecePatterns,
   drawCombatant,
+  getPersistedPiecePattern,
   spawnPixelPuff,
 } from "../data/pieceArt";
 import { physicalAttackSpell, starterSpells } from "../data/spellData";
@@ -95,6 +95,7 @@ import {
   shouldAwardVictory,
   shouldContinuePlayerTurnAfterHazard,
   shouldDispatchEnemyAiAfterTurnStart,
+  shouldTriggerOverworldEncounter,
 } from "../engine/battleSetup";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
@@ -186,7 +187,11 @@ import {
   snapshotDungeonChain,
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
-import { playerFacingRejectReason } from "../engine/rejectCopy";
+import {
+  SELECT_SPELL_COPY,
+  WAIT_FOR_TURN_COPY,
+  playerFacingRejectReason,
+} from "../engine/rejectCopy";
 import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
 import {
   type PlayerSpellContextDeps,
@@ -243,6 +248,7 @@ import {
 import {
   classifyWalkReject,
   playerFacingWalkReject,
+  shouldFloatWorldUnreachable,
 } from "../engine/walkRejectCopy";
 import {
   getCameraFollowSpeed,
@@ -414,6 +420,7 @@ import {
   planSummonControlCast,
   resolveLiveSummonAp,
   resolveSummonControlSpell,
+  shouldRouteCanvasToSummonControl,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
   summonTurnBudget,
@@ -3655,7 +3662,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const pieceType: ChessPieceType = character?.pieceType || "king";
   const characterName: string = character?.name || "Adventurer";
 
-  // chessPiecePatterns now imported from ../data/pieceArt (see import near top).
+  // Piece art: getPersistedPiecePattern (unknown/retired ids → king.front).
   // Determine current region from backend configs matching player level
   const _currentRegionEffects = (() => {
     const level = characterStats.level;
@@ -3677,7 +3684,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ctx.fillStyle = "#0a0c18";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const pattern = chessPiecePatterns[pieceType].front;
+    const pattern = getPersistedPiecePattern(pieceType, "front");
     const pixelSize = 6;
     const patternW = pattern[0].length * pixelSize;
     const patternH = pattern.length * pixelSize;
@@ -8339,7 +8346,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             playerPositionRef.current.x,
             playerPositionRef.current.y,
           );
-          const playerPattern = chessPiecePatterns[pieceType][playerView];
+          const playerPattern = getPersistedPiecePattern(pieceType, playerView);
 
           // Player drop shadow
           {
@@ -10061,11 +10068,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // ── SUMMON CONTROL ROUTING ──────────────────────────────────────
       // When the player is actively controlling a summon, clicks route to
       // that summon's movement/spell-cast logic instead of the player's.
-      if (activeControlledSummonIdRef.current) {
-        const summon = getLiveCombatants(combatantStoreCtx).find(
-          (e) => e.id === activeControlledSummonIdRef.current,
-        );
-        if (summon) {
+      // inBattle is required: Boss Rush room-clear used to leave the wolf
+      // and the control id, so overworld clicks walked the summon and the
+      // player could not step the progression portal.
+      {
+        const summon = activeControlledSummonIdRef.current
+          ? getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === activeControlledSummonIdRef.current,
+            )
+          : undefined;
+        if (
+          shouldRouteCanvasToSummonControl({
+            inBattle: inBattleRef.current,
+            controlledSummonId: activeControlledSummonIdRef.current,
+            summonStillLive: Boolean(summon),
+          }) &&
+          summon
+        ) {
           const gridPos = clientToGrid(event.clientX, event.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
@@ -10225,6 +10244,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               _hit.kind === "enemy" &&
               inBattleRef.current
             ) {
+              const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                WAIT_FOR_TURN_COPY,
+              );
               return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
               setInspectCombatantId(_hit.id);
@@ -10307,7 +10332,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
                 if (!_playerCastOk) {
-                  if (inBattleRef.current) return;
+                  if (inBattleRef.current) {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      WAIT_FOR_TURN_COPY,
+                    );
+                    return;
+                  }
                 } else {
                   const _liveSelf = probeLiveCast(_spell, {
                     x: _hit.logicalX,
@@ -10367,6 +10400,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if (_entry?.type !== "player") {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              WAIT_FOR_TURN_COPY,
+            );
             return;
           }
         }
@@ -10374,14 +10413,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // spell is selected (selectedSpellIdRef.current set), regardless of
         // battleActionMode — enemy-occupied or not, before any walk/pathing.
         // The walk branch only runs with NO spell selected. Attack mode with
-        // no spell selected is a silent return.
+        // no spell selected floats SELECT_SPELL_COPY.
         if (selectedSpellIdRef.current) {
           // CAST branch first — selected spell takes precedence over walk.
           // Attack mode: cast selected spell on clicked tile if in range.
           // Precedence: spell SELECTED (selectedSpellIdRef.current non-null) AND
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
-          // No spell selected → silent return (inspect opens only via the
-          // BattleUIPanel initiative chip button, NOT via canvas click).
           if (currentBattleApRef.current <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -10672,9 +10709,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           movementStartTimeRef.current = Date.now();
           if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
         } else {
-          // Attack mode with no spell selected — silent return. Inspect opens
-          // only via the BattleUIPanel initiative chip button, NOT via canvas
-          // click.
+          // Attack mode with no spell selected. Inspect still opens only via
+          // the BattleUIPanel initiative chip, not via canvas click.
+          const _screen = tileCenter(gridPos.x, gridPos.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            SELECT_SPELL_COPY,
+          );
         }
         return;
       }
@@ -10706,6 +10748,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setCurrentStepIndex(0);
             setIsMoving(true);
             movementStartTimeRef.current = Date.now();
+          } else if (
+            shouldFloatWorldUnreachable(0, playerPositionRef.current, gridPos)
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              playerFacingWalkReject("unreachable"),
+            );
           }
         }
       }
@@ -10824,11 +10875,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // ── SUMMON CONTROL ROUTING (touch) ──────────────────────────────
       // Mirrors the mouse handler: when actively controlling a summon,
       // touches route to that summon's movement/spell-cast logic.
-      if (activeControlledSummonIdRef.current) {
-        const summon = getLiveCombatants(combatantStoreCtx).find(
-          (e) => e.id === activeControlledSummonIdRef.current,
-        );
-        if (summon) {
+      {
+        const summon = activeControlledSummonIdRef.current
+          ? getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === activeControlledSummonIdRef.current,
+            )
+          : undefined;
+        if (
+          shouldRouteCanvasToSummonControl({
+            inBattle: inBattleRef.current,
+            controlledSummonId: activeControlledSummonIdRef.current,
+            summonStillLive: Boolean(summon),
+          }) &&
+          summon
+        ) {
           const gridPos = clientToGrid(touch.clientX, touch.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
@@ -10946,6 +11006,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               _hit.kind === "enemy" &&
               inBattleRef.current
             ) {
+              const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                WAIT_FOR_TURN_COPY,
+              );
               return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
               setInspectCombatantId(_hit.id);
@@ -11001,7 +11067,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
                 if (!_playerCastOk) {
-                  if (inBattleRef.current) return;
+                  if (inBattleRef.current) {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      WAIT_FOR_TURN_COPY,
+                    );
+                    return;
+                  }
                 } else {
                   const _liveSelf = probeLiveCast(_spell, {
                     x: _hit.logicalX,
@@ -11047,6 +11121,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if (_entry?.type !== "player") {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              WAIT_FOR_TURN_COPY,
+            );
             return;
           }
         }
@@ -11054,7 +11134,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // when a spell is selected (selectedSpellIdRef.current set),
         // regardless of battleActionMode — mirroring the mouse handler. The
         // walk branch only runs with NO spell selected. Attack mode with no
-        // spell selected is a silent return.
+        // spell selected floats SELECT_SPELL_COPY.
         if (selectedSpellIdRef.current) {
           // Attack mode: cast selected spell on touched tile if in range
           if (currentBattleApRef.current <= 0) {
@@ -11286,7 +11366,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           movementStartTimeRef.current = Date.now();
           if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
         } else {
-          // Attack mode with no spell selected — silent return.
+          const _screen = tileCenter(gridPos.x, gridPos.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            SELECT_SPELL_COPY,
+          );
         }
         return;
       }
@@ -11317,6 +11402,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setCurrentStepIndex(0);
             setIsMoving(true);
             movementStartTimeRef.current = Date.now();
+          } else if (
+            shouldFloatWorldUnreachable(0, playerPositionRef.current, gridPos)
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              playerFacingWalkReject("unreachable"),
+            );
           }
         }
       }
@@ -11780,6 +11874,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     battleEndedRef.current = persistBattleEndGuardAfterCleanup(
       battleEndedRef.current,
     );
+    // Drop leftover summon control. Boss Rush room-clear used to leave the
+    // id set, so after recap dismiss every canvas click walked the wolf
+    // instead of the player and the progression portal could not be stepped.
+    setActiveControlledSummonId(summonControlIdAfterAdvance(null));
+    activeControlledSummonIdRef.current = summonControlIdAfterAdvance(null);
+    setSelectedSummonSpellId(null);
     // H2 FIX: Clear active effects state and ref so status icons don't linger after victory
     activeEffectsRef.current = [];
     setActiveEffects([]);
@@ -11913,7 +12013,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       (enemy) => {
         return (
           enemy.x === playerPositionRef.current.x &&
-          enemy.y === playerPositionRef.current.y
+          enemy.y === playerPositionRef.current.y &&
+          shouldTriggerOverworldEncounter(enemy)
         );
       },
     );
@@ -13038,6 +13139,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // inBattle must also fall or checkBattleTrigger stays blocked and the
     // next Boss Rush room (and later overworld fights) never start.
     cleanupBattle();
+    // Same despawn as handleBattleEnd. Room-clear used to leave the wolf
+    // on the map: occupancy blocked the portal path, and a walk onto that
+    // tile started a 0-hostile "fight" that immediately applyRewards'd.
+    syncCombatants(combatantStoreCtx, despawnSummons(combatantsRef.current));
     setInBattle(false);
   }
 

@@ -168,11 +168,22 @@ export function shouldAllowBattleTrigger(opts: {
 
 /**
  * Returns `enemies` with all summons removed (living or dead). Used on
- * victory to despawn player-side summons cleanly so the post-battle state
- * contains only the original non-summon combatants.
+ * victory and Boss Rush room-clear so leftover player summons cannot occupy
+ * the walk to the progression portal or become the next overworld collision.
  */
 export function despawnSummons<T extends Combatant>(enemies: T[]): T[] {
   return enemies.filter((e) => !e.isSummon);
+}
+
+/**
+ * Overworld encounter collision. checkBattleTrigger used to start a fight
+ * on any same-cell combatant, so a leftover player-side wolf after a Boss
+ * Rush room-clear (which skipped despawnSummons) re-entered battle as the
+ * colliding "enemy" — often with 0 hostiles, so victory + applyRewards
+ * fired immediately.
+ */
+export function shouldTriggerOverworldEncounter(e: Combatant): boolean {
+  return isActiveHostile(e);
 }
 
 /**

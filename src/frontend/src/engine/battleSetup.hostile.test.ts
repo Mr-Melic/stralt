@@ -10,6 +10,7 @@ import {
   liveCombatantHp,
   shouldAdvanceAfterEnemyTurn,
   shouldAwardVictory,
+  shouldTriggerOverworldEncounter,
 } from "./battleSetup.ts";
 import { expireSummonsAtTurnStart } from "./summonLifespan.ts";
 
@@ -83,6 +84,41 @@ describe("isActiveHostile", () => {
     assert.deepEqual(
       after.map((e) => e.id),
       ["rat"],
+    );
+  });
+
+  it("Boss Rush room-clear leftovers must not start an overworld fight", () => {
+    // handleBattleEnd already despawnSummons. handleBossRushRoomClear used
+    // to skip that, so walking onto the wolf (or sharing its tile) started
+    // a 0-hostile encounter that immediately awarded applyRewards.
+    const leftovers = [
+      { id: "boss", hp: 0, isSummon: false, side: "enemy" as const },
+      {
+        id: "wolf",
+        hp: 40,
+        isSummon: true,
+        side: "player" as const,
+        x: 4,
+        y: 4,
+      },
+    ];
+    const afterClear = despawnSummons(leftovers);
+    assert.equal(
+      afterClear.some((c) => c.isSummon),
+      false,
+    );
+    assert.equal(shouldTriggerOverworldEncounter(leftovers[1]), false);
+    assert.equal(shouldTriggerOverworldEncounter(leftovers[0]), false);
+    assert.equal(
+      shouldTriggerOverworldEncounter({
+        id: "wanderer",
+        hp: 12,
+        isSummon: false,
+        side: "enemy",
+        x: 4,
+        y: 4,
+      }),
+      true,
     );
   });
 });
