@@ -7,7 +7,7 @@ Caffeine GitHub → import uses:
 | Frontend | `src/frontend/caffeine.toml` `[check]` | `pnpm typecheck` then `pnpm check` (`biome check src`) |
 | Backend | `src/backend/caffeine.toml` `[check]` | `mops check` (also `caffeine check` at the workspace) |
 
-`pnpm check` errors on unused locals and exhaustive React hook deps (`src/frontend/biome.json`). `mops check` compiles Motoko, runs the migration chain (`check-limit = 3`), and check-stable against the tracked empty-canister baseline `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked).
+`pnpm check` errors on unused locals and exhaustive React hook deps (`src/frontend/biome.json`). `mops check` compiles Motoko, runs the migration chain (`check-limit = 4`), and check-stable against the tracked empty-canister baseline `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked). That empty baseline does **not** prove an upgrade of the live Caffeine canister (`cwofb-yqaaa-aaaap-qp45q-cai`). The gate script also runs `mops check-stable` against `src/backend/migrations/snapshots/post-20260831.most` (populated tail after 20260831, before GameKey).
 
 Do **not** require `caffeine build` / `mops build` for this gate (PocketIC / dfx).
 
@@ -34,6 +34,7 @@ Import failed after merge bursts on:
 | Mock TS2740 | `pnpm typecheck` |
 | Motoko M0215 / M0001 / M0155 | `mops check` / `caffeine check` |
 | Empty-canister M0263 | `mops check` check-stable vs `.old` + genesis migration |
+| Populated EOP `Memory-incompatible program upgrade` / IC0503 | `mops check-stable` vs `snapshots/post-20260831.most` + a **new later** migration (never edit a shipped `NewActor`) |
 
 Agents must not treat those as “pre-existing, skip.” `AGENTS.md` Verified Commands and `.cursor/rules/caffeine-import-gate.mdc` say the same.
 
@@ -54,6 +55,18 @@ If Motoko, migrations, `.old`, mops.toml, or frontend mocks changed, run
 Do not run caffeine build / PocketIC just to finish. Do not treat lint, tsc,
 Motoko compile, or empty-canister stable-compat as pre-existing.
 See AGENTS.md Verified Commands and docs/automation/CAFFEINE_IMPORT_GATES.md.
+
+EOP / Caffeine deploy (mandatory when adding persistent let/var on main.mo):
+Add a NEW later file under src/backend/migrations/ (lex order). Never edit a
+shipped NewActor (20260826 / 20260827 / 20260831 once Caffeine applied them).
+OldActor = currently deployed tail; NewActor = OldActor + new stables with
+empty-map / zero defaults. Bump mops.toml check-limit to the chain length.
+mops check vs .old is empty-import only. Also run:
+  mops check --no-lint
+  mops check --no-lint --no-check-limit
+  mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
+RTS error: Memory-incompatible program upgrade (IC0503) = this class of bug.
+Do not delete needed stables from main.mo to make the upgrade pass.
 ```
 
 Also paste the oldest-first open-PR stack addendum from `docs/automation/OPEN_PR_STACK_COMPAT.md` into those same prompts. Dashboard prompts have no write API; the in-repo rule + `scripts/open-pr-stack-compat.sh` + CI job `open-pr-stack` are the gate.
@@ -154,7 +167,7 @@ Dashboard URL for any readable id: `https://cursor.com/automations/<id>`.
 | `scripts/caffeine-import-gate.sh` | Missing | Shared frontend + backend runner |
 | Root `package.json` scripts | typecheck / check / fix / build | Added `gate` / `gate:frontend` / `gate:backend` |
 | `src/frontend/caffeine.toml` / `biome.json` | Already Caffeine-shaped after #181 | Unchanged |
-| `src/backend/caffeine.toml` / `mops.toml` | Already `mops check` + check-stable | Comment only if needed |
+| `src/backend/caffeine.toml` / `mops.toml` | Already `mops check` + check-stable | `check-limit` tracks chain length; populated snapshot is a second check-stable |
 | `.cursor/environment.json` | Not in repo (personal db-backed env) | Cannot edit |
 | Dependabot / pre-commit / Husky | None | Not added (no extra stack) |
 | Cursor environment install/start | Owner-restricted; no repo file | Cannot edit |

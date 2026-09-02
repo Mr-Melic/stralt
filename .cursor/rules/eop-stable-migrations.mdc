@@ -1,0 +1,30 @@
+---
+description: Motoko EOP stables require a new later migration file
+alwaysApply: true
+---
+
+# Enhanced orthogonal persistence (EOP) migrations
+
+`mops.toml` injects `src/backend/migrations` even though live `src/backend/main.mo` is a plain `actor {` (no `(with migration = …)`). Caffeine `install_code` still uses that chain.
+
+If you add a persistent `let`/`var` on `main.mo`:
+
+1. Add a **new** lexically later file `src/backend/migrations/YYYYMMDD_HHMMSS.mo`.
+2. `OldActor` = the currently deployed tail (previous migration’s `NewActor`, plus any other already-live fields you must copy). Do **not** put the new fields on `OldActor`.
+3. `NewActor` = OldActor + the new stables with empty-map / zero defaults.
+4. Bump `mops.toml` `[canisters.backend.migrations] check-limit` so it is **>= the number of chain files**. Leaving it short drops `20260826` (`OldActor = {}`) and empty-import fails M0263.
+5. **Never** edit a shipped `NewActor` after Caffeine may have applied that step (`20260826`, `20260827`, `20260831`, …). Stuffing maps into an already-run file is what traps populated upgrades:
+
+   `RTS error: Memory-incompatible program upgrade` / IC0503
+
+`mops check` vs tracked `.old/src/backend/dist/backend.most` is **empty-canister** import only. When adding stables, also run:
+
+```bash
+mops check --no-lint
+mops check --no-lint --no-check-limit
+mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
+```
+
+(or a newer populated snapshot of the last successfully deployed tail). You cannot talk to the live Caffeine replica from this agent; the snapshot is the stand-in.
+
+Do not delete needed stables from `main.mo` to “make upgrade work.” Do not rewrite an applied `OldActor`/`NewActor` pair. CharacterStats stays 12 fields.

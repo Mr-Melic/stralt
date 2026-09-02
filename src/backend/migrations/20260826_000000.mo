@@ -7,10 +7,10 @@ module {
 
   // Empty-canister genesis. Caffeine GitHub import deploys onto a fresh canister
   // whose previous stable signature has no fields. The rest of the chain
-  // (20260827 drop-transients, 20260831 summon fields) still describes upgrades
-  // from a real populated actor — those steps are skipped when the deployed
-  // tail already matches them. This file must stay first in lex order and must
-  // not become the OldActor of a populated upgrade.
+  // (20260827 drop-transients, 20260831 summon fields, 20260901 GameKey maps)
+  // still describes upgrades from a real populated actor — those steps are
+  // skipped when the deployed tail already matches them. This file must stay
+  // first in lex order and must not become the OldActor of a populated upgrade.
 
   // ─── Inlined types (must match 20260827 OldActor; no project imports) ──
 

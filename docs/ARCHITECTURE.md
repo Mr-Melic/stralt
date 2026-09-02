@@ -25,7 +25,7 @@ Internet Identity
 | :--- | :--- |
 | `src/backend/main.mo` | Root `backend_extended/main.mo` (15-field stats). `dfx.json` points at missing `src/backend_extended/main.mo` |
 | `src/frontend/src/backend.ts` + `src/frontend/src/declarations/` | Root `declarations/backend/backend.did` (still has `wp`/`wr`/`scp`). Bindgen can also lag Motoko `SpellConfig` summon fields until `pnpm bindgen` |
-| Root `mops.toml` (moc 1.11.2, migrations chain, `check-limit = 3`, `.old` empty-canister baseline) | `src/backend/mops.toml` (older moc 1.9.0, no migrations) |
+| Root `mops.toml` (moc 1.11.2, migrations chain, `check-limit = 4`, `.old` empty-canister baseline) | `src/backend/mops.toml` (older moc 1.9.0, no migrations) |
 | Frontend `EnemyConfig` in `types/gameTypes.ts` (admin spawn template) | `src/backend/types/common.mo` `EnemyConfig` (runtime combat template — different fields) |
 
 `src/backend/mixins/*` are unused scaffolds. `src/backend/lib/admin.mo` is the live helper for default configs and admin CRUD. `src/backend/lib/adminGuard.mo` is the live input / URL / retirement / rollback guard.
@@ -429,18 +429,20 @@ Player Mirror uses the token `"player"` (`activatePlayerMirror` / `consumePlayer
 
 ## Migrations
 
-`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 3`. Empty-canister baseline: `.old/src/backend/dist/backend.most` (directory gitignored; that file is force-tracked).
+`mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 4`. Empty-canister baseline: `.old/src/backend/dist/backend.most` (directory gitignored; that file is force-tracked). Populated Caffeine tail (post-20260831, pre-GameKey): `src/backend/migrations/snapshots/post-20260831.most`. Empty `.old` does not prove `install_code` onto `cwofb-yqaaa-aaaap-qp45q-cai`.
 
-Lex order (do not rename):
+Lex order (do not rename; do not edit a shipped `NewActor` after Caffeine applied that step):
 
 | Module | Job |
 | :--- | :--- |
 | `20260826_000000.mo` | Empty-canister genesis. Caffeine import deploys onto a fresh canister (`OldActor = {}`). Must stay first so check-stable does not treat the populated 20260827 shape as the chain start (M0263). |
 | `20260827_000000.mo` | Legacy → enhanced-orthogonal: inlined types, `NewActor` drops transients that `main.mo` now marks `transient` (`BUFF_CATALOG`, `DEFAULT_ENEMY_NAMES`, `ROLE_CHANGE_MIN_NS`, `chatMessages`, `nextChatId`, `enemyNamesInitialised`). Player/config maps copy through. |
-| `20260831_000000.mo` | Seeds `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef` on persisted admin `SpellConfig` rows. Introduces rollback stables (`*Prev` / `has*Prev`) and `adminAuditLog`. |
+| `20260831_000000.mo` | **Frozen.** Seeds `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef` on persisted admin `SpellConfig` rows. Introduces rollback stables (`*Prev` / `has*Prev`) and `adminAuditLog`. Do not add fields here. |
+| `20260901_000000.mo` | GameKey shop stables (`gameKeyRequests`, `gameKeyLedger`, `gameKeyReveals`, `lastGameKeyRequestAt`, `nextGameKeyRequestId`). `OldActor` = 20260831 `NewActor`; new maps default empty. |
 
 - Inlined `OldActor` / `NewActor` (no project type imports).
 - Fresh-install seeds live in `main.mo` `do { }` blocks (empty `appVersion` → `"v163"`, default game config, etc.) — not in the migration module.
-- Current `main.mo` is a plain `actor {` — it does **not** use `(with migration = Migration.run)`. That annotation exists only on the legacy `backend_extended` actor.
+- Current `main.mo` is a plain `actor {` — it does **not** use `(with migration = Migration.run)`. **mops injects** `--enhanced-migration` from the chain directory. The annotation exists only on the legacy `backend_extended` actor.
+- New persistent `let`/`var` on `main.mo` require a **new later** chain file. Mutating an already-applied `NewActor` (e.g. stuffing GameKey into `20260831` after Caffeine ran it) traps: `RTS error: Memory-incompatible program upgrade` / IC0503.
 
 A deployed canister still running the old 15-field `CharacterStats` (or pre-summon `SpellConfig`) will reject the new shapes until it is upgraded so these modules actually run.

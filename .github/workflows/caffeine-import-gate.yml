@@ -71,5 +71,5 @@ jobs:
         run: npm install -g ic-mops@3.2.0
       - name: Install Motoko packages (locked)
         run: mops install --locked
-      - name: Motoko check (Caffeine backend [check])
+      - name: Motoko check (Caffeine backend [check] + populated EOP snapshot)
         run: bash scripts/caffeine-import-gate.sh backend -- --locked

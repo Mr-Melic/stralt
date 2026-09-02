@@ -13,6 +13,9 @@ main = "src/backend/main.mo"
 
 # Caffeine import / CI (`mops check`) compares this empty-canister baseline.
 # Do not delete. Directory `.old/` is gitignored; this file is tracked.
+# Empty `.old` does **not** prove a populated Caffeine upgrade. When adding
+# persistent fields, also `mops check-stable` against
+# `src/backend/migrations/snapshots/post-20260831.most` (or a newer snapshot).
 [canisters.backend.check-stable]
 path = ".old/src/backend/dist/backend.most"
 
@@ -21,7 +24,9 @@ chain = "src/backend/migrations"
 # Include empty-canister genesis (20260826) through the latest pending file so
 # `mops check` / Caffeine import compares an empty previous against OldActor = {}
 # rather than treating 20260827's populated legacy shape as the chain start.
-check-limit = 3
+# Must be >= number of chain files. Adding a later migration without bumping
+# this drops 20260826 and fails empty-import (M0263).
+check-limit = 4
 
 [toolchain]
 moc = "1.11.2"

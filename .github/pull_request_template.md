@@ -4,6 +4,7 @@ Same commands as GitHub → Caffeine import. Do not skip.
 
 - [ ] `pnpm typecheck` and `pnpm check` pass (or `pnpm fix` then `pnpm check`)
 - [ ] If Motoko / migrations / `.old` / mocks / `mops.toml` changed: `mops check` or `caffeine check` passes
+- [ ] If new persistent `let`/`var` on `main.mo`: a **new later** migration file exists (do not edit a shipped `NewActor`); `check-limit` covers the chain; `mops check-stable src/backend/migrations/snapshots/post-20260831.most backend` passes
 
 ```bash
 bash scripts/caffeine-import-gate.sh all
