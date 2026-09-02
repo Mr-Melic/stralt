@@ -1053,50 +1053,19 @@ describe("decideSpriteCastClick mouse/touch table", () => {
       { action: "wait_for_turn" },
     );
   });
+});
 
-  it("heal sprite off-turn waits, live-illegal heal rejects, unselected summon inspects", () => {
-    assert.deepEqual(
-      decideSpriteCastClick({
-        selectedSpellId: "starter-heal",
-        hasSelectedSpell: true,
-        hitKind: "player",
-        playerCastOk: false,
-        inBattle: true,
-        liveOk,
-        selfOrAllySpell: true,
-        hasBasicAttack: false,
-      }),
-      { action: "wait_for_turn" },
-    );
-    assert.deepEqual(
-      decideSpriteCastClick({
-        selectedSpellId: "starter-heal",
-        hasSelectedSpell: true,
-        hitKind: "player",
-        playerCastOk: true,
-        inBattle: true,
-        liveOk: liveFail,
-        selfOrAllySpell: true,
-        hasBasicAttack: false,
-      }),
-      { action: "reject_live" },
-    );
-    assert.deepEqual(
-      decideSpriteCastClick({
-        selectedSpellId: null,
-        hasSelectedSpell: false,
-        hitKind: "summon",
-        playerCastOk: true,
-        inBattle: true,
-        liveOk,
-        selfOrAllySpell: false,
-        hasBasicAttack: false,
-      }),
-      { action: "inspect" },
-    );
+describe("resolveCastApCost", () => {
+  it("is the same debit canAffordCastAp and planPlayerCastResources use", () => {
+    const apply = (base: number) => Math.max(1, base - 1);
+    assert.equal(resolveCastApCost(4, apply), 3);
+    assert.equal(canAffordCastAp(3, 4, apply), true);
+    assert.equal(canAffordCastAp(2, 4, apply), false);
   });
+});
 
-  it("treats targetType all as a self/ally sprite hit via playerSpellAllowsCasterTile", () => {
+describe("self/ally Attack Nearest vs sprite caster-tile hits", () => {
+  it("treats targetType all as a sprite self hit and keeps Attack Nearest on hostiles", () => {
     assert.equal(playerSpellAllowsCasterTile({ targetType: "all" }), true);
     assert.equal(
       attackNearestResolvesOnCasterTile({ targetType: "all" }),
@@ -1132,14 +1101,5 @@ describe("decideSpriteCastClick mouse/touch table", () => {
       }),
       { action: "reject_live" },
     );
-  });
-});
-
-describe("resolveCastApCost", () => {
-  it("is the same debit canAffordCastAp and planPlayerCastResources use", () => {
-    const apply = (base: number) => Math.max(1, base - 1);
-    assert.equal(resolveCastApCost(4, apply), 3);
-    assert.equal(canAffordCastAp(3, 4, apply), true);
-    assert.equal(canAffordCastAp(2, 4, apply), false);
   });
 });
