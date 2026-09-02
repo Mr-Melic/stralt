@@ -309,20 +309,29 @@ export function useGetPlayerAchievements() {
         );
         // [FEATS] LIST — log the refetched claimed flag per achievement so
         // the chain shows the post-claim/unlock state from the backend.
-        console.log("[FEATS] LIST", {
-          count: mapped.length,
-          claimed: mapped.map((p) => ({
-            achievementId: p.achievementId,
-            claimed: p.claimed,
-          })),
-        });
+        // PERF-2026-09-02-050: keep this off the production hot path. The
+        // hook is subscribed inside WorldExploration; a focus refetch with
+        // staleTime 0 re-rendered the whole world tree and allocated a
+        // claimed[] map on every tab focus.
+        if (import.meta.env.DEV) {
+          console.log("[FEATS] LIST", {
+            count: mapped.length,
+            claimed: mapped.map((p) => ({
+              achievementId: p.achievementId,
+              claimed: p.claimed,
+            })),
+          });
+        }
         return mapped;
       } catch {
         return [];
       }
     },
     enabled: !!actor && !actorFetching && !!player,
-    staleTime: 0,
+    // PERF-2026-09-02-050: unlock/claim mutations already invalidate this key.
+    // Do not refetch on every window focus while the world canvas is mounted.
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
     gcTime: 60000,
   });
 }

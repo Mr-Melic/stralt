@@ -111,6 +111,10 @@ const BloodParticles: React.FC<BloodParticlesProps> = ({
         if (bpGenRef.current !== myGen) return;
         animate();
       });
+      // PERF-2026-09-02-053: skip particle work while the tab is hidden.
+      // CharacterSelection mounts this under Starfield; both RAFs still
+      // schedule, but we avoid ellipse/save/restore work off-screen.
+      if (typeof document !== "undefined" && document.hidden) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const w = canvas.width;
