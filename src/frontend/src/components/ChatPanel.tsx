@@ -1221,7 +1221,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
               aria-haspopup="true"
               aria-expanded={channelMenuOpen}
               onClick={() => setChannelMenuOpen((v) => !v)}
-              className="flex items-center justify-center border-0 rounded-md transition-colors duration-150 cursor-pointer"
+              className="stone-touch-target flex items-center justify-center border-0 rounded-md transition-colors duration-150 cursor-pointer"
               style={{
                 flexShrink: 0,
                 width: 24,
@@ -1993,7 +1993,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                   data-ocid="chat.send_button"
                   onClick={handleSend}
                   disabled={!inputText.trim() || isSending}
-                  className="stone-btn-crimson"
+                  aria-label="Send message"
+                  className="stone-btn-crimson stone-touch-target"
                   style={{
                     width: 32,
                     height: 32,

@@ -479,6 +479,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.walk_button"
                   onClick={onSetWalk}
+                  aria-pressed={battleActionMode === "walk"}
                   title={
                     currentBattleMp <= 0
                       ? "No Movement Points left this turn"
@@ -497,6 +498,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   type="button"
                   data-ocid="battle_ui.attack_button"
                   onClick={onSetAttack}
+                  aria-pressed={battleActionMode === "attack"}
                   title={
                     currentBattleAp <= 0
                       ? "No Action Points left this turn"
@@ -641,6 +643,8 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                     }}
                     disabled={isEmpty || isOnCooldown}
                     title={spellTitle}
+                    aria-label={spellTitle}
+                    aria-pressed={isSelected}
                     style={{
                       width: 44,
                       height: 52,

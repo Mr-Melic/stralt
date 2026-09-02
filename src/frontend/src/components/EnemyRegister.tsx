@@ -329,6 +329,7 @@ const EnemyRegister: React.FC<EnemyRegisterProps> = ({ isOpen, onClose }) => {
             type="button"
             data-ocid="enemy_register.close_button"
             onClick={onClose}
+            className="stone-modal-close"
             style={{
               background: "transparent",
               border: "1px solid #7a1111",

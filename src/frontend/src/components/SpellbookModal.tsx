@@ -638,6 +638,8 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
               type="button"
               data-ocid="spellbook.close_button"
               onClick={onClose}
+              aria-label="Close spellbook"
+              className="stone-modal-close"
               style={{
                 background: "rgba(180,20,20,0.15)",
                 border: "1px solid rgba(180,20,20,0.4)",

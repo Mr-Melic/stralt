@@ -10801,7 +10801,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, applyBattleWalkHazards, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
   const handleCanvasTouch = useCallback(
     (event: React.TouchEvent<HTMLCanvasElement>) => {
-      lastCanvasTouchEndAtRef.current = Date.now();
+      // Cancel the synthetic click and browser pan/zoom before any early
+      // return. Recap/death taps still stamp the ghost-click clock so the
+      // trailing click cannot walk or cast.
+      if (event.cancelable) event.preventDefault();
+      const touchEndedAt = Date.now();
+      lastCanvasTouchEndAtRef.current = touchEndedAt;
+      lastCanvasTouchEndRef.current = rememberTouchEnd(touchEndedAt);
       if (!currentMap || transitionInProgressRef.current) return;
       if (
         shouldIgnoreWorldInputDuringRecap(
@@ -10816,9 +10822,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ) {
         return;
       }
-      // Prevent default scroll/zoom on canvas touch
-      event.preventDefault();
-      lastCanvasTouchEndRef.current = rememberTouchEnd(Date.now());
       const touch = event.changedTouches[0];
       if (!touch) return;
       // ── SUMMON CONTROL ROUTING (touch) ──────────────────────────────
