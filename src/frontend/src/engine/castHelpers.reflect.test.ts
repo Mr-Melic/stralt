@@ -404,3 +404,28 @@ describe("applyDamageToEnemy drain → challenge healUsed", () => {
     );
   });
 });
+
+describe("applyDamageToEnemy bounce → Striker victim tiles", () => {
+  it("reports the primary and bounce tiles so a far hop cannot persist Striker", () => {
+    const primary = enemy({ id: "e1", x: 10, y: 8 });
+    const bounce = enemy({ id: "e2", x: 12, y: 8 });
+    const victims: Array<{ x: number; y: number }> = [];
+    applyDamageToEnemy({
+      hitTarget: primary,
+      isFirstTarget: true,
+      deps: stubDeps({
+        spell: { id: "starter-blast", name: "Chain Lightning", bounces: 2 },
+        enemies: [primary, bounce],
+        targetsToHit: [primary],
+        enemyHpMap: { e1: 40, e2: 40 },
+        onDirectHitVictim: (pos) => {
+          victims.push(pos);
+        },
+      }),
+    });
+    assert.deepEqual(victims, [
+      { x: 10, y: 8 },
+      { x: 12, y: 8 },
+    ]);
+  });
+});

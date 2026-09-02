@@ -302,7 +302,7 @@ import {
 } from "../utils/adminSafety";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
-  applyChallengeDirectHit,
+  applyChallengeDirectHitOnCast,
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
@@ -9008,7 +9008,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     apCost: number;
     targetsToHit: any[];
     spell: any;
-  }>({ apCost: 0, targetsToHit: [], spell: null });
+    directHitVictimTiles: { x: number; y: number }[];
+  }>({ apCost: 0, targetsToHit: [], spell: null, directHitVictimTiles: [] });
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable values are intentionally omitted
   const deathPipelineCtx = useMemo<DeathPipelineCtx>(
     () => ({
@@ -9505,6 +9506,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 amount,
               );
             },
+            // Chain Lightning bounce tiles are not in targetsToHit. Record
+            // every victim so Striker cannot persist after a far hop.
+            onDirectHitVictim: (pos) => {
+              castRuntimeRef.current.directHitVictimTiles.push({
+                x: pos.x,
+                y: pos.y,
+              });
+            },
             // enemyTakesDamage / victory read combatantsRef. Without this
             // commit a later DoT tick recomputes from full store HP and
             // wipes the spell hit.
@@ -9845,6 +9854,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       summonCastCommittedRef.current = true;
       try {
+        castRuntimeRef.current.targetsToHit = [];
+        castRuntimeRef.current.directHitVictimTiles = [];
         resolveSpellCast(
           plan.spell as any,
           {
@@ -9870,13 +9881,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           { getStatModifier, calcScaledDamage } as any,
         );
         {
-          const nextDirect = applyChallengeDirectHit(
+          const nextDirect = applyChallengeDirectHitOnCast(
             {
               stillDirect: challengeDirectHitRef.current,
               attempts: challengeDirectHitAttemptsRef.current,
             },
             { x: summon.x, y: summon.y },
-            { x: targetEnemy.x, y: targetEnemy.y },
+            [
+              { x: targetEnemy.x, y: targetEnemy.y },
+              ...castRuntimeRef.current.targetsToHit,
+              ...castRuntimeRef.current.directHitVictimTiles,
+            ],
           );
           challengeDirectHitRef.current = nextDirect.stillDirect;
           challengeDirectHitAttemptsRef.current = nextDirect.attempts;
@@ -17149,6 +17164,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       {
         castRuntimeRef.current.apCost = _apCost;
         castRuntimeRef.current.spell = spell;
+        castRuntimeRef.current.targetsToHit = [];
+        castRuntimeRef.current.directHitVictimTiles = [];
         const _castResult = resolvePlayerCast(
           spell,
           targetTile,
@@ -17178,13 +17195,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // without the tile-click follow-up that flips Striker. Record
           // here so every executeCastAttempt caller shares the gate.
           {
-            const nextDirect = applyChallengeDirectHit(
+            const nextDirect = applyChallengeDirectHitOnCast(
               {
                 stillDirect: challengeDirectHitRef.current,
                 attempts: challengeDirectHitAttemptsRef.current,
               },
               playerPositionRef.current,
-              targetTile,
+              [
+                targetTile,
+                ...castRuntimeRef.current.targetsToHit,
+                ...castRuntimeRef.current.directHitVictimTiles,
+              ],
             );
             challengeDirectHitRef.current = nextDirect.stillDirect;
             challengeDirectHitAttemptsRef.current = nextDirect.attempts;
