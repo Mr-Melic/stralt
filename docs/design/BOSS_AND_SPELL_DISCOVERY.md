@@ -1,38 +1,40 @@
 # Stralt Boss & Boss-Spell Discovery Design
 
 **Author:** Boss and Boss-Spell Designer (automation)  
-**Date:** 2026-09-01 (iterates 2026-08-31 / #137)  
+**Date:** 2026-09-02 (iterates 2026-09-01 Wave 3 / 2026-08-31 / #137)  
 **Status:** PROPOSED (design only — no production code in this change)  
-**Scope:** All 19 shipped bosses, Wave-2 quartet, and Wave-3 quartet. Every special ability classified. Indefinite progression, no level cap.
+**Scope:** All 19 shipped bosses, Wave-2 quartet, Wave-3 quartet, and Wave-4 quartet. Every special ability classified. Indefinite progression, no level cap.
 
 This document is the design contract for later implementation. It does **not** change combat math, the RAF loop, map generation, turn order, or any runtime module. Implementers must follow the constraints in §2 and the per-boss `STATUS: PROPOSED` sheets.
 
 ---
 
-## 0. Changelog — 2026-09-01 cron
+## 0. Changelog — 2026-09-02 cron
 
-`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **unchanged** since #137. This run does **not** duplicate shipped or Wave-2 sheets. It reconciles the bible with sibling contracts that landed the same day and fills four remaining **primary-mechanic** holes.
+`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **unchanged** since #137. This run does **not** duplicate shipped, Wave-2, or Wave-3 sheets. It re-audits live gaps, aligns with the 2026-09-01 tactical Wave 2 (#133 ids in `SPELL_PROPOSALS_2026-09-01.md`), fills four remaining **primary-mechanic** holes, and writes the deferred Rush **Table B** pairing pass.
 
-Live audit against `dd275aa` (`main`):
+Live audit against `58302bc` (`main`, after #258 GameKey shop):
 
 | Fact | Still true |
 | :--- | :--- |
-| `getBossEffectiveStats` multiplies catalog HP by `1.08^diff` only | Slice A not implemented. Even-match HP is still 60–600. |
+| `getBossEffectiveStats` multiplies catalog HP by `1.08^diff` only | Slice A not implemented. Even-match HP is still 60–600. `progression.ts` 308–338. |
 | Final Pawn `phase2.statMultiplier: 999`, `summonCount: 11` | `bossDefaults.ts` 475–481 |
-| Rush room 9 `boss2Id: "weeping_pawn_2"` | Still not a `BossId`. Wave 3 names the remap. |
-| `pickBossKitSpell` first-off-cooldown | `useBossAI.ts` unchanged |
-| Backend `defaultBossConfigs()` stale 12-boss seed | Unchanged |
-| Long-horizon report (#143) | Combat HP stays static; Guide table is not the fight |
+| Rush room 9 `boss2Id: "weeping_pawn_2"` | Still not a `BossId`. Wave 3 remap to `second_lament` is still spec-only. `useBossRush.ts` 127. |
+| `pickBossKitSpell` first-off-cooldown | `useBossAI.ts` 38–54; decide fns still pass `new Map()` so cooldown is unused |
+| Backend `defaultBossConfigs()` stale 12-boss seed | `admin.mo` 350; still `fireball` / `cursed_gust` |
+| Long-horizon 2026-09-01 | Combat HP stays static; Guide table is not the fight. Practical XP still exhausts in the mid-teens. |
+| Push/pull × hazards | MIMA-2026-08-31-005 still OPEN: `applyAttract` / `applyPushback` have **zero** `resolvePlayerCast` callers. Wave-4 well/rime **position** is legal; ice-tax / fuse-tick on pull is **blocked** until that pair is wired. |
+| Swap × hazards | MIMA-2026-08-31-001 still OPEN. Dowager Swap onto rime/fuse does not tick until that pair lands. |
 
 **This pass adds:**
 
-1. Sibling alignment with #156 (use → observe → win) and #120 (tactical ids). Count-gates stay on #137 adaptations only.
-2. Id-collision table so implementers do not ship two burn-tiles or two snare glyphs.
-3. #120 `BOSS` grants wired onto the four sheets that already own those fantasies (`alabaster_fortress`, `pale_archivist`, `starved_vampire_pawn`, `void_grandmaster`).
-4. Wave 3: `second_lament`, `hook_regent`, `ivory_palisade`, `cord_familiar`. Not in `BOSS_IDS`. `weeping_pawn_2` remaps to `second_lament`.
-5. No new `BossAbility` enum members and **no new #137 spell ids**. Wave 3 learnables reuse #120 ids.
+1. Honesty fix: §5.2 lists **10** #137 adaptations (5 `PLAYER_LEARNABLE` + 3 `ACHIEVEMENT_UNLOCK` + 2 `CHALLENGE_UNLOCK`), not 8.
+2. Sibling alignment with tactical Wave 2 (`SPELL_PROPOSALS_2026-09-01.md`): extra `MULTI_SOURCE` / `BOSS` doors on existing #133 ids only. **No new #137 spell ids.**
+3. Grant-line edits: `cinder_lance` → `spell-file-lance`; `midnight_bishop` → `spell-life-tether` (already `bossIds: ["midnight_bishop"]` on the #133 card).
+4. Wave 4: `rime_margrave`, `wick_prelate`, `goad_pretender`, `sinkhole_dowager`. Not in `BOSS_IDS`. Primary holes: ice-slide, delayed fuse, forced targeting, pull-toward-tile.
+5. Rush **Table B** (§10.1): four post-clear rooms. Does **not** rewrite `BOSS_RUSH_ROOMS` 0–9 (still out of scope except the room-9 remap).
 
-Shipped + Wave-2 sheets remain `STATUS: PROPOSED` with the four grant-line edits in §7.
+Shipped + Wave-2 + Wave-3 sheets remain `STATUS: PROPOSED` with the two grant-line edits in §8 / §7.
 
 ---
 
@@ -249,7 +251,7 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `AP_DRAIN_PASSIVE` | `BOSS_ONLY` | Aura. Would brick the 20 AP cap on the player bar. | — |
 | `DAMAGE_IMMUNE` | `BOSS_ONLY` | Fight-structure. | — |
 
-**Count:** 46 shipped specials. Player-facing **#137 adaptations: 8** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum:
+**Count:** 46 shipped specials. Player-facing **#137 adaptations: 10** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum. Wave 4 adds four more. Tactical Wave 2 (#133) supplies the Wave-4 player doors.
 
 | Proposed special | Class | Player adaptation |
 | :--- | :--- | :--- |
@@ -257,6 +259,10 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `HOOK_REEL` (full-file / enrage) | `BOSS_ONLY` | Bounded #120 `spell-hook-line` |
 | `PALISADE_COVER` (LOS through own stakes) | `BOSS_ONLY` | Bounded #120 `spell-stone-turret` |
 | `TETHER_GATE` | `BOSS_ONLY` | — |
+| `RIME_SLIDE` (full-file ice slide) | `BOSS_ONLY` | Bounded #133 `spell-rime-tile` |
+| `WICK_PATTERN` (3-fuse cross) | `BOSS_ONLY` | Bounded #133 `spell-fuse-tile` |
+| `CROWN_GOAD` (taunt on decoy) | `BOSS_ONLY` | Bounded #133 `spell-goad` |
+| `WELL_TIDE` (radius-2 tile pull) | `BOSS_ONLY` | Bounded #133 `spell-sinkhole` |
 
 Most spectacular mechanics stay boss-only on purpose.
 
@@ -377,19 +383,27 @@ These are names for a later achievement PR. They are **not** in `defaultAchievem
 | `echo_duelist` | (reuse `legendary_3` on that boss) | Challenge unlock. |
 | `anchor_breaker` | `void_anchors_eight` | Optional mastery for Enthroned Void. |
 | `ghost_warden` | `final_pawn_no_ghost_wipe` | Optional mastery for Final Pawn. |
+| `rime_skater` | `rime_zero_slides` | Optional mastery for Rime Margrave (never ice-slid). |
+| `wick_douser` | `fuse_snuffer_before_tick` | Optional mastery for Wick Prelate. |
+| `unmasked_pretender` | `goad_never_hit_decoy` | Optional mastery for Goad Pretender. |
+| `well_walker` | `sinkhole_zero_pulls` | Optional mastery for Sinkhole Dowager. |
 
 Do not mint Doka from these until `claimAchievementReward` is wired. Suggested feat Doka: 150–300, in line with `leader_slayer` / `critical_striker`.
 
-### 5.4 Sibling contracts (2026-09-01)
+### 5.4 Sibling contracts (2026-09-02)
 
-Same-day design PRs own adjacent surfaces. This bible does not rewrite them.
+Same-week design PRs own adjacent surfaces. This bible does not rewrite them.
 
 | Sibling | Owns | How this bible attaches |
 | :--- | :--- | :--- |
 | #156 `SPELL_DISCOVERY_ECOSYSTEM` | Default pipeline: hostile **uses** an eligible id → OBSERVED → player **wins that battle** → unlock. Encounter start is not observation. Being hit is not required. | Kit-spell observation (when starters stop being innate) uses that default. **Boss-adaptation count-gates in §5.2 stay** (`see lava 3×`). #156 §3.3 allows count-gates on boss adaptations only. |
-| #120 `SPELL_PROPOSALS` | 16 tactical ids (`spell-shoulder-bash` … `spell-void-anchor`) with acquisition models. | Do **not** invent a second id for the same fantasy. Wave 3 observation sources point at #120 ids. |
+| #120 `SPELL_PROPOSALS` (2026-08-31) | 16 tactical ids (`spell-shoulder-bash` … `spell-void-anchor`) | Do **not** invent a second id for the same fantasy. Wave 3 observation sources point at #120 ids. |
+| Tactical Wave 2 (`SPELL_PROPOSALS_2026-09-01.md`) | 16 more ids (`spell-file-lance` … `spell-life-tether`) | Wave 4 extra doors **and** Cinder / Midnight grants reuse these ids. Do not mint `#137-b` aliases. |
+| Tactical Wave 3 (open #282, `SPELL_PROPOSALS_2026-09-02.md`) | `spell-ley-toll` … `spell-board-tilt` | Do **not** reuse those ids. `spell-slide-tile` is conveyor terrain, not Margrave’s ice gutter. `spell-board-tilt` is a mass-shove signature (`NOT_PLAYER_LEARNABLE`) — not Sinkhole. |
 | #116 Spell Admin | Persist `ownedSpellIds` / `observedSpellIds`, soft-retire | Observation counters in §5.2 belong next to `achievementProgress`, not `localStorage`. |
-| #143 Long Horizon | Live formulas explode XP and leave boss HP static | Confirms §3.1 is still the unbuilt no-cap fix. Do not “fix” XP curve from this doc. |
+| Long Horizon 2026-09-01 | Live formulas still leave boss HP static; HUD XP saturates at 48 | Confirms §3.1 is still the unbuilt no-cap fix. Do not “fix” XP curve from this doc. |
+| MIMA 2026-09-01 | Swap × hazards, push/pull × hazards still OPEN | Wave-4 slide / well **position** may ship; hazard ticks on forced move wait on MIMA-001 / 005. |
+| Encounter Evolution 2026-09-01 | ENC-BOSS-02 / ENC-RUSH-04…08 remix **existing** rooms | Table B is a **new** four-room post-clear table, not a rewrite of those remixes. |
 
 **Default vs boss-adaptation observation**
 
@@ -397,10 +411,11 @@ Same-day design PRs own adjacent surfaces. This bible does not rewrite them.
 | :--- | :--- | :--- |
 | #156 `ENEMY_DISCOVERY` | Hostile spent AP on that **spell id** (`kind: "cast"`). One use. | Same encounter (unless `allowLaterVictory`) |
 | #137 `PLAYER_LEARNABLE` adaptations in §5.2 | Named count-gate on a **boss special** (trail, spike land, shock tile, …), not necessarily a kit-spell cast | Defeat that boss after the count |
-| #120 `BOSS` (`observation` default **false**) | First victory vs listed `bossIds` | That boss defeat. No count-gate. |
+| #120 / #133 `BOSS` (`observation` default **false**) | First victory vs listed `bossIds` | That boss defeat. No count-gate. |
+| #120 / #133 extra `MULTI_SOURCE` doors | Hostile **use** of that id **or** first victory vs added `bossIds` | First grant wins |
 | #137 `ACHIEVEMENT_UNLOCK` / `CHALLENGE_UNLOCK` | Feat condition or live `DEFAULT_CHALLENGES` id on that fight | Feat claim / challenge persist |
 
-A boss may grant **both** a #137 adaptation and a #120 `BOSS` id. They are separate grants. First victory can award the #120 id while the #137 count-gate is still incomplete.
+A boss may grant **both** a #137 adaptation and a #120 / #133 `BOSS` (or extra-door) id. They are separate grants. First victory can award the sibling id while the #137 count-gate is still incomplete.
 
 **Id collision — do not ship aliases**
 
@@ -418,8 +433,14 @@ A boss may grant **both** a #137 adaptation and a #120 `BOSS` id. They are separ
 | — | `spell-blood-familiar` | First victory vs `starved_vampire_pawn`. Exsanguinate remains the #137 count-gate. |
 | — | `spell-void-anchor` | `NOT_PLAYER_LEARNABLE`. Witness on `void_grandmaster` only. |
 | — | `spell-hook-line` / `spell-stone-turret` | Wave 3 adds `bossIds` as extra `MULTI_SOURCE` doors. First grant wins. |
+| — | `spell-file-lance` | Wave 2 Cinder extra door. Full-file / crossing enrage lances stay `BOSS_ONLY`. |
+| — | `spell-life-tether` | #133 `BOSS` already lists `midnight_bishop`. This bible now matches that card. Shared-HP twins stay `BOSS_ONLY`; the player spell is breakable and 50/50. |
+| — | `spell-rime-tile` / `spell-fuse-tile` / `spell-goad` / `spell-sinkhole` | Wave 4 extra `MULTI_SOURCE` / `ENEMY_DISCOVERY` doors. Spectacular versions (`RIME_SLIDE`, `WICK_PATTERN`, `CROWN_GOAD`, `WELL_TIDE`) stay `BOSS_ONLY`. |
+| `RIME_SLIDE` (boss special) | #282 `spell-slide-tile` | **Keep both.** Slide Tile = one conveyor cell. Margrave gutter = full-file ice + 2-tile forced move. |
+| `WELL_TIDE` (boss special) | #282 `spell-board-tilt` | **Keep both closed to the player.** Board Tilt is already `NOT_PLAYER_LEARNABLE`. Well Tide is the Dowager director. Player door is Sinkhole only. |
+| `spell-ember-step` | `spell-rime-tile` / `spell-cinder-tile` | **Keep all three.** Ember = 2-tile burn walk. Cinder = one burn cell. Rime = ice MP tax, 0 HP. |
 
-#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. Do not reuse them here.
+#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. #133 Wave-2 ids stay on `SPELL_PROPOSALS_2026-09-01.md`. Do not reuse them as #137 ids.
 
 ---
 
@@ -609,7 +630,7 @@ RELATIVE_DIFFICULTY is the even-match rating from §3.2.
 | Enrage | turn 19 | All-lines loses the telegraph (enrage rule). |
 
 **SPELLS:** `physical_attack`, `spell-slow`, `spell-weaken`, `spell-iron-skin` (P2), `spell-rallying-cry` (P2).  
-**DISCOVERABLE_SPELLS:** none. Promote and all-lines are `BOSS_ONLY`.
+**DISCOVERABLE_SPELLS:** none. Promote and all-lines are `BOSS_ONLY`. #133 `spell-life-tether` is **not** this pawn — it is Midnight’s shared-HP door.
 
 **AI:** Advance like a pawn until promotion; then sit on a central intersection.  
 **ARENA_RULES:** Marked tile is visible (use Mark VFX, not a hidden hex).  
@@ -733,7 +754,7 @@ RELATIVE_DIFFICULTY is the even-match rating from §3.2.
 | Enrage | turn 21 | Merged form casts Swap then Nova the same turn. |
 
 **SPELLS:** `spell-cursed-wound`, `spell-mirror`, `spell-shadow-veil`, `spell-swap` (P2), `spell-frost-nova` (P2).  
-**DISCOVERABLE_SPELLS:** none.
+**DISCOVERABLE_SPELLS:** none from #137. #133 `spell-life-tether` (`BOSS` route — first victory, `bossIds: ["midnight_bishop"]`, observation **false**). Shared-HP twins stay `BOSS_ONLY`; the player spell is a 50/50 split that **breaks** at Chebyshev > 3.
 
 **AI:** Twins occupy opposite colors. They never stand on the same complex.  
 **ARENA_RULES:** Shared HP bar. Killing “one” is impossible; damage on either body hits the pool.  
@@ -1082,7 +1103,7 @@ They are **not** in Boss Rush until a later pairing pass. Do not add ids to `BOS
 | Enrage | turn 20 | Two lances, crossing. |
 
 **SPELLS (proposed kit):** `spell-inferno`, `starter-frost`, `spell-haste`, `spell-expose` (P2), `spell-enrage` (P2). Must stay unique vs Cavalier / Static / Countess sets.  
-**DISCOVERABLE_SPELLS:** none new. Ember Step / Shock Glyph already cover trail/tile. His lance is `BOSS_ONLY` (full-file charge).
+**DISCOVERABLE_SPELLS:** #133 `spell-file-lance` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: add `bossIds: ["cinder_lance"]`). Observation = he **casts** a lance (`kind: "cast"`, #156 default — one use, same-encounter win). Ember Step / Shock Glyph already cover trail/tile. The **full-file / crossing enrage lances** stay `BOSS_ONLY`.
 
 **AI:** Aim the lance at the player’s **current** tile at telegraph time (dodge is stepping off).  
 **ARENA_RULES:** Ember/rime use lava/frost-slow tiles, cap 50.  
@@ -1328,6 +1349,144 @@ They stay out of the 10-room Rush table except `second_lament`, which is the **r
 
 ---
 
+## 8.2 Encounter sheets — Wave 4 (not in `BOSS_IDS`)
+
+Primary-mechanic holes after Wave 3: **ice as a slide tax** (Countess owns lava; Cinder owns elemental windows), **delayed tile fuse**, **forced targeting / taunt**, **pull toward a tile** (Hook owns pull-to-caster).
+
+Do **not** add these ids to `BOSS_IDS` in this change. Proposed specials below are **design names**, not `BossAbility` enum members until an implementation PR adds them with explicit metadata.
+
+Wave-4 learnables reuse **#133 ids only** (`SPELL_PROPOSALS_2026-09-01.md`). No new #137 spell ids.
+
+They stay out of the 10-room Rush table. Pairing is **Table B** only (§10.1).
+
+**Hazard-on-forced-move prereq:** MIMA-2026-08-31-001 (Swap × hazards) and MIMA-2026-08-31-005 (push/pull × hazards) are still OPEN. Wave-4 **position** changes (slide, well attract, Swap) are legal without those PRs. Ice MP-tax and fuse occupancy ticks **on a forced move** must not be assumed until those pairs land. Until then, rime tax / fuse tick only on **walk enter** and **turn-start occupancy**.
+
+---
+
+### BOSS_ID: `rime_margrave`
+
+**NAME:** The Rime Margrave  
+**RELATIVE_DIFFICULTY:** 6  
+**THEME:** A rook of hoarfrost. The file is a gutter. Step wrong and the ice takes you.  
+**CORE_MECHANIC:** Ice **slide**. He paints a cardinal file in rime (`hazardType: "ice"`). Fail the movement check (end the turn on a rime tile, or be pushed/pulled onto one **after** MIMA-005) and you **slide 2 tiles** further along that file (forced move, LoS along the file, stop at occupancy / void / barrier). Distinct from Countess (burn wake), Cinder (element window), and Slow (unit MP debuff). The learnable is **one rime cell**, not the gutter.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Telegraph a 5-tile rime file (1-turn wind-up). Kit: Frost / Slow / Barrier. Slide is 2 tiles, 0 HP. Ice tax is +1 MP for the next walk step (#133 rule). |
+| 2 | ≤ 45% | Two rime files (rank **or** file, never both on the same turn). Frost Nova + Expose. One destructible **Brazier**; breaking it **clears rime** for 2 turns (does not stop the next telegraph). |
+| Enrage | turn 20 | Slide becomes 3 tiles. Overlay damage still +8%/stack — the ice itself stays 0 HP. |
+
+**SPELLS (proposed kit):** `starter-frost`, `spell-slow`, `spell-barrier`, `spell-frost-nova` (P2), `spell-expose` (P2). Unique vs Cinder (`inferno` / frost / haste / expose / enrage), Hook (frost / physical / haste / mark / nova), Ivory (barrier / expose / weaken / sentinel / frost), Pendulum (physical / slow / haste / nova / iron-skin).  
+**DISCOVERABLE_SPELLS:** #133 `spell-rime-tile` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: add `bossIds: ["rime_margrave"]`). Observation = he **paints** rime (`kind: "cast"` on the rime verb, #156 default). `RIME_SLIDE` (full-file gutter + 2-tile forced move) is `BOSS_ONLY`. Ember Step / Cinder Tile stay burn.
+
+**AI:** Telegraph the file the player is on at wind-up; do not track. Prefer Barrier on the **escape** rank after a slide.  
+**ARENA_RULES:** Rime uses existing ice hazard type, cap 50. Slide stops at units / barriers / void / map edge. Brazier HP = `0.15 * playerMaxHp`. `finalizePlayableLayout` after any rime paint — never ice-lock spawn.  
+**SUMMONS:** none.  
+**PLAYER_COUNTERPLAY:** Step off the glow; Barrier the gutter; break the Brazier if you must stand still; Haste to pay the ice tax; do not end adjacent to a wall on a rime file (slide into a wall is still a failed check — ice tax only, no extra HP).  
+**MASTERY_OBJECTIVE:** Win with **zero** slides (`rime_skater`).  
+**REWARDS:** 6 / 4 when shipped. Rime Tile is the prize (first grant wins if a bishop already taught it).  
+**SCALING_BEHAVIOUR:** hpRatio 1.80, atkRatio 1.05, offset +0, Phase-2 1.25. Slide distance **fixed**. Ice tax **fixed at +1 MP**.  
+**BALANCE_RISKS:** Slide + Hook is a delete until MIMA-005. Do not pair him with Hook, Countess, or Static. Player Rime Tile is one cell, 3 turns, 0 HP.  
+**QA:** Telegraph tiles computed at wind-up. Observation counts his paint, not player Rime Tile. Brazier 0 XP. Ice walk uses the same MP-tax path map ice already uses; challenge HP is **not** credited (0 damage). Forced-move ice tax waits on MIMA-005.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `wick_prelate`
+
+**NAME:** The Wick Prelate  
+**RELATIVE_DIFFICULTY:** 7  
+**THEME:** A bishop who lights the floor and waits. The sermon is the countdown.  
+**CORE_MECHANIC:** Delayed **fuse** tiles. He telegraphs a pattern; two world turns later the occupied cells detonate (spell-hit, RES+SR, `recordChallengeDamageTaken` — #133 Fuse Tile bind). One destructible **Snuffer**; breaking it **adds +1 to every live fuse’s remaining turns** (once per Snuffer). Distinct from Grave Bell (unit execute), Inferno (immediate DoT), and Fetid rot (stacking, no tile). The learnable is **one cell, radius 0**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 40% | Every 3 turns: 1-turn telegraph, then 2 fuses on the player’s tile **at wind-up** and the diagonal escape. Kit: Mark / Poison / Barrier. Mark does **not** amp fuses (explicit: environmental, no `isMark`). |
+| 2 | ≤ 40% | `WICK_PATTERN`: 3-fuse **diagonal cross** (his color complex). Inferno + Bomber. Bomber death does **not** arm a fourth fuse (cap the pattern). |
+| Enrage | turn 21 | Fuses tick in **1** world turn (was 2). Snuffer, if alive, breaks itself (no soft-lock). |
+
+**SPELLS (proposed kit):** `spell-mark`, `starter-poison`, `spell-barrier`, `spell-inferno` (P2), `summon-bomber` (P2). Unique vs Hexed (mark / slow / barrier / expose / archer), Archivist (cursed / mark / barrier / archer / veil), Conductor (rally / wisp / weaken / bomber / drain), Fetid (venom / poison / cursed / nova).  
+**DISCOVERABLE_SPELLS:** #133 `spell-fuse-tile` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: `bossIds: ["wick_prelate"]`). Observation = he **places** a fuse (`kind: "cast"`). The **3-fuse cross / 1-turn enrage wick** is `BOSS_ONLY`. `spell-ignite-stacks` stays elite ENEMY_DISCOVERY — do not also grant it here. `spell-rot-brand` stays Fetid.
+
+**AI:** Place fuses on the wind-up tile, not the current tile at tick. Recast Bomber only under cap. Never fuse a portal / spawn cell.  
+**ARENA_RULES:** Fuse table is **not** `hazardTiles` (those are lava/spikes/void). Cap **8** live fuses (pattern + leftovers). Snuffer HP = `0.15 * playerMaxHp`. Last writer on a cell wins (Barrier replaces fuse).  
+**SUMMONS:** 1 bomber in P2, cap 4. 0 XP. Bomber inferno is kit, not a fuse.  
+**PLAYER_COUNTERPLAY:** Leave the glow; Barrier the cell; break the Snuffer to buy a turn; do not Mark-amp greed on a fused tile (it will not amp).  
+**MASTERY_OBJECTIVE:** Break the Snuffer **before the first fuse ticks**, then win (`wick_douser`).  
+**REWARDS:** 6 / 4 when shipped.  
+**SCALING_BEHAVIOUR:** hpRatio 2.00, atkRatio 1.10, offset +1, Phase-2 1.20. Fuse damage is **flat 22 at L1 reference**, then SP-scaled like other kit hits — **not** % HP. Turns fixed.  
+**BALANCE_RISKS:** Fuse + Sinkhole (intended #133 combo) needs occupancy-at-tick, not enter-tick. Swap onto a fuse is MIMA-001. Do not pair with Pendulum until Table B’s “one clock” rule. Player Fuse Tile is one cell, 2 turns, radius 0.  
+**QA:** Telegraph computed at wind-up. Observation counts his place, not player Fuse. Snuffer 0 XP. Challenge bind is `recordChallengeDamageTaken` (spell-hit). Caster death does not cancel live fuses.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `goad_pretender`
+
+**NAME:** The Goad Pretender  
+**RELATIVE_DIFFICULTY:** 5  
+**THEME:** A pawn in a stolen crown. He insists you look at him. The crown is a lie with a body.  
+**CORE_MECHANIC:** Forced targeting. A destructible **Pretender Crown** sits on his tile’s neighbor. While it stands, the player’s next **damaging** action must choose him if he is a legal target (`tauntNextHit` — #133 Goad). Phase 2 he hatches a **decoy** (one extra pawn body, 25% of his effective HP). Goad may point at the **decoy**. Distinct from Grandmaster (three illusions, Swap identity), Cord (player-summon gate), and Hexed (leave-this-tile). The learnable is **one-action taunt on a real caster**, not decoy-goad.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 40% | Crown up. Kit: Strike / Shield / Weaken. Taunt duration 1 action. Non-damage tools (Slow, Barrier, Haste, Mark) ignore it. |
+| 2 | ≤ 40% | Decoy spawns adjacent. Crown, if still up, can **reattach** Goad to the decoy. Enrage + Iron Skin. If the Crown is already down, Phase 2 is kit-only — no free Crown rebuild. |
+| Enrage | turn 19 | Taunt lasts until **his** next turn (was 1 action). Decoy, if alive, also Goads (two legal forced targets — player may hit **either**). |
+
+**SPELLS (proposed kit):** `physical_attack`, `starter-shield`, `spell-weaken`, `spell-enrage` (P2), `spell-iron-skin` (P2). Unique vs Fortress (physical / iron-skin / shield / barrier / frost-nova), Weeping (physical / slow / weaken / iron / rally), Cavalier (physical / haste / enrage / expose), Lament (heal / barrier / weaken / enrage / sacrifice).  
+**DISCOVERABLE_SPELLS:** #133 `spell-goad` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: `bossIds: ["goad_pretender"]`). Observation = he **applies** taunt (`kind: "cast"`). `CROWN_GOAD` (taunt that can attach to the decoy / last until his turn) is `BOSS_ONLY`.
+
+**AI:** Goad when the player is in Strike/spell range of a **lower-HP** ally (decoy, or a rush partner). Skip if he is the only legal damage target. Prefer Weaken into the forced Strike.  
+**ARENA_RULES:** Crown is an object, HP = `0.15 * playerMaxHp`, not an enemy. Decoy is a body, counts toward the 4-extra cap, 0 XP. Decoy does **not** share HP with him (Midnight owns shared pools). Killing the decoy is not victory.  
+**SUMMONS:** 1 decoy in P2. Cap 4.  
+**PLAYER_COUNTERPLAY:** Cast a tool; walk out of range so taunt drops; break the Crown; AoE that already includes him **satisfies** the taunt (#133). Do not dump Sacrifice into the decoy.  
+**MASTERY_OBJECTIVE:** Win without ever damaging the decoy (`unmasked_pretender`). Killing him without spawning the decoy (Phase-1 kill) also passes.  
+**REWARDS:** 5 / 3 when shipped. Goad is the prize.  
+**SCALING_BEHAVIOUR:** hpRatio 1.60, atkRatio 1.00, offset +0, Phase-2 1.20. Decoy HP = 25% of **his** effective max. Taunt does not add damage.  
+**BALANCE_RISKS:** Taunt + Palisade (Table B) forces a walk around stakes — that is the intended exam, not a brick (`finalizePlayableLayout` still punches a path). Taunt + Cord gate would require a summon **and** a forced target — do not pair. Player Goad cannot attach to summons the caster does not own.  
+**QA:** Targeting UI must read `tauntCasterId` (metadata), not the name “Goad.” Observation counts his cast. Crown 0 XP. Decoy death ≠ victory. AoE that includes the goader consumes the taunt.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `sinkhole_dowager`
+
+**NAME:** The Sinkhole Dowager  
+**RELATIVE_DIFFICULTY:** 8  
+**THEME:** A queen whose throne is a drain. The board leans toward a hole she chose.  
+**CORE_MECHANIC:** Pull **toward a tile**, not toward her. One destructible **Wellhead**. Every 3 turns she telegraphs a Chebyshev radius-2 sink (1-turn wind-up); resolve pulls each hostile in the radius **1 step toward the well** (`applyAttract`, attractor = the tile — engine exists, unused). Distinct from Hook (single target, toward caster), Void Anchor / Collapse (toward caster + damage), and Swap (pairwise). The learnable is **one radius-2, distance-1 pull**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Wellhead opposite spawn. Kit: Swap / Frost / Barrier. Sink every 3 turns. Breaking the Wellhead **skips the next sink**. |
+| 2 | ≤ 45% | Radius stays 2 but she **Marks** the well cell (next **spell** there ×2 — still not fuse/ice). Lifesteal Nova + Shadow Veil. If the Wellhead is down, she may **rebuild it once** (3-turn cadence, never two wells). |
+| Enrage | turn 22 | Pull distance becomes **2** (was 1). Wellhead, if alive, cracks into a 1-tile pit (unwalkable, **one** hole — Starborn owns many voids). Overlay +8% still applies. |
+
+**SPELLS (proposed kit):** `spell-swap`, `starter-frost`, `spell-barrier`, `spell-lifesteal-nova` (P2), `spell-shadow-veil` (P2). Unique vs Starborn (blast / mark / frost-nova / veil), Grandmaster (blast / swap / mirror / timestep / frost), Hook (frost / physical / haste / mark / nova), Sovereign (blast / mirror / mark / veil / swap), Enthroned (swap / slow / wolf / veil / frost).  
+**DISCOVERABLE_SPELLS:** #133 `spell-sinkhole` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: `bossIds: ["sinkhole_dowager"]`). Observation = she **casts** the well pull (`kind: "cast"`). `WELL_TIDE` (rebuild + enrage distance-2 + pit) is `BOSS_ONLY`. Hook Line stays Hook Regent / #120.
+
+**AI:** Telegraph the well, not the player. Prefer Swap when the player is radius 3 (just outside). Nova only after a successful cluster (2+ bodies in radius 2 — usually rush, or a player summon).  
+**ARENA_RULES:** Wellhead is an object, HP = `0.15 * playerMaxHp`. Enrage pit is one void tile; never pit spawn, portal, or the only approach (`finalizePlayableLayout`). Pull does not go through void. Occupied well cell is legal (attract stops short).  
+**SUMMONS:** none.  
+**PLAYER_COUNTERPLAY:** Stand at radius 3; Barrier between you and the hole; break the Wellhead; body-block with a summon; do not Swap yourself onto the Marked well.  
+**MASTERY_OBJECTIVE:** Never get pulled (0 successful attracts) (`well_walker`).  
+**REWARDS:** 6 / 4 when shipped.  
+**SCALING_BEHAVIOUR:** hpRatio 2.20, atkRatio 1.15, offset +1, Phase-2 1.25. Pull distance **fixed at 1** until enrage. Radius **fixed at 2**.  
+**BALANCE_RISKS:** Well + Wick fuses is the #133 intended combo — **Table B does not pair them** until occupancy-at-tick is tested. Well + Rime is MIMA-005. Well + Hook is two attract verbs — illegal. Player Sinkhole is distance 1, CD 3, 0 damage.  
+**QA:** Telegraph at wind-up. Attract uses `applyAttract` with tile attractor, not a name check. Observation counts her cast. Wellhead 0 XP. Enrage pit does not seal the map. Swap onto the well does **not** tick ice/fuse until MIMA-001.  
+**STATUS:** PROPOSED
+
+---
+
 ## 9. Roster map
 
 | Id | Diff | Core | Learnable? | Rush room (live) |
@@ -1340,18 +1499,18 @@ They stay out of the 10-room Rush table except `second_lament`, which is the **r
 | `starborn_queen` | 7 | Lines + void + vuln window | — | 3 |
 | `fetid_rook` | 5 | Rot + split | Rot Brand | 1 |
 | `eternal_pawn_king` | 6 | Advance + stones | — | 6 |
-| `midnight_bishop` | 7 | Twin flank → merge | — | 7 |
+| `midnight_bishop` | 7 | Twin flank → merge | Life Tether (#133) | 7 |
 | `broodmother_rook` | 6 | Larvae / shell | Brood Ward | 8 |
 | `lord_of_static` | 6 | Shock graph | Shock Glyph | 2 |
 | `final_pawn` | 10 | 3-turn invuln + 4 ghosts | — | 6 |
-| `alabaster_fortress` | 7 | Resonance + shrink | Aftershock | 8 |
+| `alabaster_fortress` | 7 | Resonance + shrink | Aftershock, Pain Link (#120) | 8 |
 | `chessboard_lich` | 8 | Rotate / invert / claim | — | 5 |
 | `mirror_sovereign` | 8 | Mirror + replay | Echo Cast | 4 |
 | `starved_vampire_pawn` | 3 | Capped drain | Exsanguinate | 9 |
 | `pale_archivist` | 8 | Glyphs / pages | Glyph Snare | 5 |
 | `twin_monarchs` | 9 | Dual kill window | — | 7 |
 | `enthroned_void` | 9 | 8 anchors | — | 3 |
-| `cinder_lance` | 6 | Elemental lance | — | — (Wave 2) |
+| `cinder_lance` | 6 | Elemental lance | File Lance (#133) | — (Wave 2) |
 | `hexed_marker` | 5 | Hex movement | — | — (Wave 2) |
 | `unbound_pendulum` | 8 | Metronome clock | — | — (Wave 2) |
 | `silent_conductor` | 7 | Silence lanes | — | — (Wave 2) |
@@ -1359,6 +1518,10 @@ They stay out of the 10-room Rush table except `second_lament`, which is the **r
 | `hook_regent` | 6 | Linear hook + winch | Hook Line (#120) | — (Wave 3) |
 | `ivory_palisade` | 7 | Stakes / LOS cover | Stone Turret (#120) | — (Wave 3) |
 | `cord_familiar` | 5 | Player-summon gate | — | — (Wave 3) |
+| `rime_margrave` | 6 | Ice file slide | Rime Tile (#133) | — (Wave 4 / Table B) |
+| `wick_prelate` | 7 | Delayed fuse pattern | Fuse Tile (#133) | — (Wave 4 / Table B) |
+| `goad_pretender` | 5 | Crown taunt + decoy | Goad (#133) | — (Wave 4 / Table B) |
+| `sinkhole_dowager` | 8 | Pull toward a well tile | Sinkhole (#133) | — (Wave 4) |
 
 Live rush room 9 still stores `weeping_pawn_2`. Implementation remaps that string to `second_lament`. Do **not** spawn a second `weeping_pawn`.
 
@@ -1383,7 +1546,35 @@ Existing `BOSS_RUSH_ROOMS` combined mechanics stay. This spec changes how **each
 
 Rush Doka/XP in `BOSS_RUSH_ROOMS` are already large flat numbers (500–5000). Do **not** also multiply by `rewardDokaMultiplier` or by player level. Persist through `buildBossRushPersistInput` → `applyRewards` only.
 
-Wave-2 bosses stay out of the 10-room table until a dedicated pairing pass. Wave 3: only `second_lament` enters, as the room-9 remap. Do not pair `hook_regent` with Countess or Static, or `ivory_palisade` with Fortress, without a later pass.
+Wave-2 / Wave-3 / Wave-4 bosses stay out of the 10-room table except `second_lament` (room-9 remap). Pairings below are **Table B** only. Do not pair `hook_regent` with Countess, Static, or Rime. Do not pair `ivory_palisade` with Fortress. Do not pair `sinkhole_dowager` with Hook (two attract verbs).
+
+### 10.1 Rush Table B (post-first-clear, design only)
+
+Unlock: one complete clear of rooms 0–9 (after the room-9 remap). **New table**, new `roomIndex` namespace `B0`–`B3`. Do **not** overwrite `BOSS_RUSH_ROOMS`. Do **not** change ENC-RUSH-04…08 (those remix **existing** rooms 1/2/4/5/8).
+
+Flat rewards continue the live jackpot curve without a player-level exponent. Persist through `applyRewards` only. Shared 4-extra cap per room. Combined Doka/XP are document numbers — same rule as Table A: do not also multiply by `rewardDokaMultiplier`.
+
+| Room | Pair | Combined question | Hard rule |
+| :--- | :--- | :--- | :--- |
+| B0 | `cinder_lance` + `hexed_marker` | Charge the glowing window **and** leave the Hex. | Hex **never** occupies a telegraphed lance tile. Wrong-element is still −50%, not immune. |
+| B1 | `hook_regent` + `goad_pretender` | Get pulled, or get goaded into walking onto the ray. | Taunt does **not** force standing on the hook glow (player may tool-cast). Not Countess / Static / Rime. Winch and Crown are both objects. |
+| B2 | `ivory_palisade` + `silent_conductor` | Fight from a sounding **open** lane. | Silence files are the **punched** lanes, never the staked files. Not Fortress (two shrinks). Sentinel + musicians share cap 4. |
+| B3 | `unbound_pendulum` + `wick_prelate` | Race the clock **or** douse the wicks. | Fuses do **not** tick on a pendulum-sweep telegraph turn (one answer at a time). Metronomes delay enrage; Snuffer delays fuses. Shared extra cap: bomber only. |
+
+**Held (illegal until a later pass):**
+
+| Pair | Why illegal now |
+| :--- | :--- |
+| `rime_margrave` + `hook_regent` | Slide + attract. MIMA-005 unwired. |
+| `rime_margrave` + `crimson_countess` | Ice + lava on the same files. |
+| `sinkhole_dowager` + `wick_prelate` | Intended #133 combo, but occupancy-at-tick + pull is untested. |
+| `sinkhole_dowager` + `hook_regent` | Two attract verbs. |
+| `goad_pretender` + `cord_familiar` | Taunt + summon-gate is a double brick for a no-pet bar. |
+| `ivory_palisade` + `alabaster_fortress` | Two shrinks. |
+| `cord_familiar` + `second_lament` | Room 9 already owns the dual-growth jackpot. |
+| Wave-4 ids in rooms 0–9 | Table A stays the shipped 19 + lament remap. |
+
+`rime_margrave`, `sinkhole_dowager`, and `cord_familiar` remain **solo portal / dungeon capstone** until a Table C pass. Encounter Evolution may still attach a single Wave-4 id as ENC-BOSS-02 only if a human picks that id — this bible does not rewrite ENC-BOSS-02.
 
 ---
 
@@ -1403,6 +1594,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | H. Phase-3 type | Only if a sheet truly needs `phaseNumber: 3` | Do not widen the type “just in case” |
 | I. Rush room 9 remap | `useBossRush.ts` `weeping_pawn_2` → `second_lament` | Do not add Wave 3 ids to `BOSS_IDS` in the same PR as the string fix unless kits ship |
 | J. #120 BOSS grants | Persist first-victory ids for Pain Link / Glyph Tax / Blood Familiar | Do not also fire #137 count-gates from that same flag |
+| K. #133 extra doors | `bossIds` on File Lance / Life Tether / Rime / Fuse / Goad / Sinkhole | No new #137 ids; first grant wins |
+| L. Wave 4 kits | New `BossId`s + kits only when `spellData` already has the verbs **or** the kit stays on the live 32 | Do not add Wave 4 ids to `BOSS_IDS` without kits |
+| M. Rush Table B | New 4-room table after first clear | Do not rewrite rooms 0–9; do not collide ENC-RUSH-04…08 |
 
 **Spell metadata checklist** for every new discoverable:
 
@@ -1436,7 +1630,10 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | 11 | Rush room 9 | `weeping_pawn_2` remaps to `second_lament`. Two growth caps. Both objects destructible. |
 | 12 | Actor | No 15-field stats. Canonical `main.mo`. Rewards via `applyRewards`. |
 | 13 | Admin | Config editors stay gated. Unlock is not an admin checkbox for normal players. |
-| 14 | Typecheck | `pnpm typecheck` / `pnpm fix` / `pnpm build` clean when code lands. |
+| 14 | Typecheck | `pnpm typecheck` / `pnpm check` / `pnpm fix` / `pnpm build` clean when code lands. |
+| 15 | Table B | Hex never on lance glow. Silence on punched lanes only. Fuses skip pendulum-sweep turns. Attract pairs still illegal. |
+| 16 | Wave-4 objects | Brazier / Snuffer / Crown / Wellhead are not enemies, 0 XP. Decoy death ≠ victory. Enrage pit does not seal spawn. |
+| 17 | MIMA prereq | Slide / well **position** works; ice-tax and fuse-tick on forced move stay off until MIMA-001 / 005. |
 
 ---
 
@@ -1445,10 +1642,11 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 - Production TypeScript / Motoko for any of the above.
 - New CharacterStats fields.
 - Changing `xpForNextLevel`.
-- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I).
+- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I). Table B is additive.
 - Making every spectacular mechanic player-usable.
-- New #137 spell ids (Wave 3 reuses #120).
+- New #137 spell ids (Wave 3 reuses #120; Wave 4 reuses #133).
 - Deploying or “fixing” `backend_extended/`.
+- Wiring Swap × hazards or push/pull × hazards (MIMA owns those PRs).
 
 ---
 
@@ -1469,9 +1667,13 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | Rush pairings | `src/frontend/src/hooks/useBossRush.ts` | 10 rooms; room 9 `weeping_pawn_2` |
 | Guide copy | `src/frontend/src/components/BossGuideModal.tsx` | Ability blurbs for players |
 | Discovery pipeline | `docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md` | Use → observe → win default |
-| Tactical ids | `docs/automation/SPELL_PROPOSALS_2026-08-31.md` | 16 #120 spells; Wave 3 observation sources |
-| Long horizon | `docs/automation/LONG_HORIZON_2026-08-31.md` | Live boss HP still static |
+| Tactical ids Wave 1 | `docs/automation/SPELL_PROPOSALS_2026-08-31.md` | 16 #120 spells; Wave 3 observation sources |
+| Tactical ids Wave 2 | `docs/automation/SPELL_PROPOSALS_2026-09-01.md` | 16 #133 spells; Wave 4 + Cinder/Midnight doors |
+| Tactical ids Wave 3 | `docs/automation/SPELL_PROPOSALS_2026-09-02.md` (#282) | `spell-slide-tile` / `spell-board-tilt` are not Wave-4 aliases |
+| Long horizon | `docs/automation/LONG_HORIZON_2026-09-01.md` | Live boss HP still static; HUD sat at 48 |
+| MIMA | `docs/automation/MECHANIC_INTERACTION_MATRIX_2026-09-01.md` | Swap × hazards, push/pull × hazards still OPEN |
+| Encounter rooms | `docs/encounters/ENCOUNTER_EVOLUTION_2026-09-01.md` | ENC-RUSH-04…08 remix Table A; Table B is separate |
 
 ---
 
-**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 sheets. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
+**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 + 4 Wave-4 sheets. Rush Table B is additive. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
