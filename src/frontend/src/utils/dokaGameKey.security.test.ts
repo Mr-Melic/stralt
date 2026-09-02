@@ -39,7 +39,10 @@ describe("GameKey email mailto metacharacters", () => {
   it("rejects mailto query separators a raw client could store", () => {
     // Single-@ addresses still break `mailto:${email}?subject=` into extra
     // headers. Two-@ BCC forms are already rejected by the @ count.
-    assert.equal(validateGameKeyEmail("ada@example.com?subject=x") != null, true);
+    assert.equal(
+      validateGameKeyEmail("ada@example.com?subject=x") != null,
+      true,
+    );
     assert.equal(validateGameKeyEmail("ada@example.com&bcc=x") != null, true);
     assert.equal(validateGameKeyEmail("ada@example.com#frag") != null, true);
   });

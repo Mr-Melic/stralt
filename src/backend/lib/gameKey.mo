@@ -76,10 +76,12 @@ module {
                 return ?"Email cannot contain whitespace";
             };
             // mailto: query separators. A raw client used to store
-            // `a@b.com?bcc=...` so the admin mailto href injected extra headers.
-            if (c == '?' or c == '&' or c == '#' or c == ':' or c == '/'
-                or c == '\\' or c == '<' or c == '>' or c == '"' or c == '\''
-                or c == ',' or c == ';' or c == '%') {
+            // `a@b.com?subject=` so the admin mailto href injected extra headers.
+            let code = c.toNat32();
+            if (code == 0x3F or code == 0x26 or code == 0x23 or code == 0x3A
+                or code == 0x2F or code == 0x5C or code == 0x3C or code == 0x3E
+                or code == 0x22 or code == 0x27 or code == 0x2C or code == 0x3B
+                or code == 0x25) {
                 return ?"Email contains characters that cannot be used in mailto";
             };
             if (c == '@') {
