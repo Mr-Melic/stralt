@@ -239,7 +239,7 @@ actor {
 
     func _isHexColor(colorHex : Text) : Bool {
         if (colorHex.size() != 7) { return false };
-        var iter = colorHex.chars();
+        let iter = colorHex.chars();
         switch (iter.next()) {
             case (?c) { if (c != '#') { return false } };
             case null { return false };
