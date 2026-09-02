@@ -189,6 +189,16 @@ import { getPlayerBaseStats } from "../engine/progression";
 import { playerFacingRejectReason } from "../engine/rejectCopy";
 import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
 import {
+  SPAWN_MIN_CHEBYSHEV,
+  applyFamilyVariantsToRoster,
+  collectValidEnemySpawnCells,
+  dungeonScaledEnemyLevel,
+  dungeonSpawnExtras,
+  generateEnemyScaleFactors,
+  isSpawnFarEnough,
+  rollOverworldEnemyCount,
+} from "../engine/spawnPolicy";
+import {
   type PlayerSpellContextDeps,
   createPlayerSpellContext,
 } from "../engine/spellContext";
@@ -4530,46 +4540,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [currentMap],
   );
 
-  // Check if a position is adjacent to any portal
-  const isAdjacentToPortal = useCallback(
-    (x: number, y: number, portals: { x: number; y: number }[]): boolean => {
-      return portals.some((portal) => {
-        const distance = Math.abs(portal.x - x) + Math.abs(portal.y - y);
-        return distance <= 2;
-      });
-    },
-    [],
-  );
-
-  // Generate random scale factors for enemy variety
-  const generateEnemyScaleFactors = useCallback(() => {
-    const minScale = 0.6;
-    const maxScale = 1.4;
-
-    const _scaleX = Math.random() * (maxScale - minScale) + minScale;
-    const _scaleY = Math.random() * (maxScale - minScale) + minScale;
-
-    const variation = Math.random();
-
-    if (variation < 0.3) {
-      return {
-        scaleX: Math.random() * 0.3 + 0.6,
-        scaleY: Math.random() * 0.4 + 1.1,
-      };
-    }
-    if (variation < 0.6) {
-      return {
-        scaleX: Math.random() * 0.4 + 1.1,
-        scaleY: Math.random() * 0.3 + 0.6,
-      };
-    }
-    const uniformScale = Math.random() * (maxScale - minScale) + minScale;
-    return {
-      scaleX: uniformScale,
-      scaleY: uniformScale,
-    };
-  }, []);
-
   // Check if all portals are reachable
   const arePortalsReachable = useCallback(
     (
@@ -5705,10 +5675,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ): Enemy[] => {
       // ── EXP8: DUNGEON DIFFICULTY SCALING ───────────────────────────────
       // depth 0 = normal world; depth 1-5 = escalating dungeon difficulty
-      const dungeonExtraEnemies = [0, 2, 3, 4, 4, 5][Math.min(dungeonDepth, 5)];
-      const dungeonTierBoost = [0, 1, 2, 2, 3, 3][Math.min(dungeonDepth, 5)];
-      const enemyCount =
-        Math.floor(Math.random() * 8) + 1 + dungeonExtraEnemies;
+      const { extraEnemies: dungeonExtraEnemies, tierBoost: dungeonTierBoost } =
+        dungeonSpawnExtras(dungeonDepth);
+      const enemyCount = rollOverworldEnemyCount(dungeonExtraEnemies);
       const enemies: Enemy[] = [];
       const chessPieceTypes: ChessPieceType[] = [
         "king",
@@ -5722,17 +5691,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Each enemy independently picks its level via the tier probability function.
       // No more flat LEVEL_ZONES lookup.
       // Collect all valid floor positions spread across entire map
-      const allValid: PlayerPosition[] = [];
-      for (let y = 0; y < WORLD_GRID_SIZE; y++) {
-        for (let x = 0; x < WORLD_GRID_SIZE; x++) {
-          if (tiles[y][x] !== "floor") continue;
-          if (isAdjacentToPortal(x, y, portals)) continue;
-          if (Math.abs(x - 8) <= 3 && Math.abs(y - 8) <= 3) continue;
-          // FIX 2 — skip void tiles for enemy spawns
-          if ((voidTilesParam ?? new Set<string>()).has(`${x},${y}`)) continue;
-          allValid.push({ x, y });
-        }
-      }
+      // (portal Manhattan keep-clear, spawn Chebyshev keep-clear, voids).
+      const allValid = collectValidEnemySpawnCells(
+        tiles,
+        portals,
+        voidTilesParam ?? new Set<string>(),
+      );
       // Shuffle valid positions for random spread
       const shuffled = [...allValid].sort(() => Math.random() - 0.5);
       // Split map into 4 quadrants: top-left, top-right, bottom-left, bottom-right
@@ -5752,16 +5716,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const usedNamesOnThisMap = new Set<string>();
       let nameIndex = 0;
       // Try to place at least 1 enemy per quadrant first
-      const MIN_CHEBYSHEV = 4;
-      const isFarEnough = (pos: PlayerPosition): boolean =>
-        enemies.every(
-          (e) =>
-            Math.max(Math.abs(e.x - pos.x), Math.abs(e.y - pos.y)) >=
-            MIN_CHEBYSHEV,
-        );
       const tryPlaceEnemy = (candidates: PlayerPosition[]): boolean => {
         for (const pos of candidates) {
-          if (!isFarEnough(pos)) continue;
+          if (!isSpawnFarEnough(pos, enemies, SPAWN_MIN_CHEBYSHEV)) continue;
           const randomPieceType =
             chessPieceTypes[Math.floor(Math.random() * chessPieceTypes.length)];
           const initialDelay = Math.random() * 9000 + 1000;
@@ -5775,10 +5732,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             1,
             (tierConfigRef.current ?? loadTierConfig()).tierSize,
           );
-          const enemyLevel =
-            dungeonTierBoost > 0
-              ? Math.max(1, baseEnemyLevel + dungeonTierBoost * tierSize)
-              : baseEnemyLevel;
+          const enemyLevel = dungeonScaledEnemyLevel(
+            baseEnemyLevel,
+            dungeonTierBoost,
+            tierSize,
+          );
           const movementSpeed = Math.random() * 400 + 600;
           const movementRange = Math.floor(Math.random() * 3) + 1;
           const nextMoveDelay =
@@ -5852,116 +5810,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Fill remaining slots from any position with minimum spacing
       for (const pos of shuffled) {
         if (enemies.length >= enemyCount) break;
-        if (!isFarEnough(pos)) continue;
+        if (!isSpawnFarEnough(pos, enemies, SPAWN_MIN_CHEBYSHEV)) continue;
         tryPlaceEnemy([pos]);
       }
       // Guarantee at least 1 enemy if nothing placed (fallback)
       if (enemies.length === 0 && shuffled.length > 0) {
         tryPlaceEnemy(shuffled);
       }
-      // Family enemy variant spawning (30% chance per enemy — occasional but noticeable)
-      const familyTypesList: EnemyFamily[] = [
-        "wraith_bishop",
-        "iron_golem",
-        "plague_rat",
-        "ember_knight",
-        "tide_shade",
-        "bone_scribe",
-        "void_mirror",
-      ];
-      const familyStatMults: Record<
-        string,
-        {
-          hpMult: number;
-          dmgMult: number;
-          res: number;
-          spRes: number;
-          mp: number;
-          ap: number;
-        }
-      > = {
-        wraith_bishop: {
-          hpMult: 0.6,
-          dmgMult: 1.4,
-          res: 0.1,
-          spRes: 0.2,
-          mp: 4,
-          ap: 5,
-        },
-        iron_golem: {
-          hpMult: 2.5,
-          dmgMult: 0.7,
-          res: 0.75,
-          spRes: 0.6,
-          mp: 1,
-          ap: 4,
-        },
-        plague_rat: {
-          hpMult: 0.4,
-          dmgMult: 0.6,
-          res: 0.05,
-          spRes: 0.05,
-          mp: 3,
-          ap: 3,
-        },
-        ember_knight: {
-          hpMult: 1.1,
-          dmgMult: 1.0,
-          res: 0.3,
-          spRes: 0.15,
-          mp: 3,
-          ap: 4,
-        },
-        tide_shade: {
-          hpMult: 0.8,
-          dmgMult: 0.9,
-          res: 0.15,
-          spRes: 0.3,
-          mp: 5,
-          ap: 4,
-        },
-        bone_scribe: {
-          hpMult: 0.7,
-          dmgMult: 0.5,
-          res: 0.1,
-          spRes: 0.4,
-          mp: 3,
-          ap: 4,
-        },
-        void_mirror: {
-          hpMult: 1.0,
-          dmgMult: 0.8,
-          res: 0.2,
-          spRes: 0.5,
-          mp: 2,
-          ap: 3,
-        },
-      };
-      for (const en of enemies) {
-        if (Math.random() < 0.3) {
-          const fam =
-            familyTypesList[Math.floor(Math.random() * familyTypesList.length)];
-          const m = familyStatMults[fam];
-          en.family = fam;
-          en.hp = Math.max(1, Math.round(en.hp * m.hpMult));
-          en.maxHp = en.hp;
-          en.damage = Math.max(1, Math.round((en.damage ?? 0) * m.dmgMult));
-          en.res = m.res;
-          en.sp = m.spRes;
-          en.aiTier = computeAITier(en.level ?? 1);
-        }
-      }
+      // Family enemy variant spawning (30% chance per enemy — occasional but noticeable).
+      // Catalog ap/mp are unused. aiTier stays in combatMath (RNG inside computeAITier).
+      applyFamilyVariantsToRoster(enemies, Math.random, (en) => {
+        en.aiTier = computeAITier(en.level ?? 1);
+      });
       if (process.env.NODE_ENV === "development")
         console.log(`${enemies.length} enemies generated with quadrant spread`);
       return enemies;
     },
-    [
-      characterStats,
-      isAdjacentToPortal,
-      generateEnemyScaleFactors,
-      enemyNamesFromQuery,
-      pieceType,
-    ],
+    [characterStats, enemyNamesFromQuery, pieceType],
   );
   // Improved camera following with adaptive speed and smooth easing
   // On DESKTOP: camera is locked at offset 0 — full map always visible
