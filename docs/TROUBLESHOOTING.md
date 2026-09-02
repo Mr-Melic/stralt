@@ -19,11 +19,12 @@ pnpm build
 mops check      # or caffeine check; required when Motoko / mocks / migrations change
 pnpm bindgen    # after Candid / Motoko public-type changes
 bash scripts/caffeine-import-gate.sh all
+bash scripts/open-pr-stack-compat.sh --self
 ```
 
 Frontend scripts (`src/frontend/package.json`): `dev` (Vite), `build`, `typecheck`, `check` / `fix` (Biome).
 
-Caffeine GitHub → import frontend gate is exactly `src/frontend/caffeine.toml` `[check]`: `pnpm typecheck` then `pnpm check` (`biome check src`). Backend `[check]` is `mops check`. `pnpm fix` is the same Biome run with `--write`. Unused locals and React hook deps are errors in `src/frontend/biome.json` so local `pnpm check` fails the same way as the import. Do not treat those diagnostics as pre-existing. Full inventory: [CAFFEINE_IMPORT_GATES.md](automation/CAFFEINE_IMPORT_GATES.md). CI: `.github/workflows/caffeine-import-gate.yml` (frontend + Motoko jobs; no `caffeine build`).
+Caffeine GitHub → import frontend gate is exactly `src/frontend/caffeine.toml` `[check]`: `pnpm typecheck` then `pnpm check` (`biome check src`). Backend `[check]` is `mops check`. `pnpm fix` is the same Biome run with `--write`. Unused locals and React hook deps are errors in `src/frontend/biome.json` so local `pnpm check` fails the same way as the import. Do not treat those diagnostics as pre-existing. Full inventory: [CAFFEINE_IMPORT_GATES.md](automation/CAFFEINE_IMPORT_GATES.md). Oldest-first open PRs: [OPEN_PR_STACK_COMPAT.md](automation/OPEN_PR_STACK_COMPAT.md) (`bash scripts/open-pr-stack-compat.sh --self`). CI: `.github/workflows/caffeine-import-gate.yml` (frontend + Motoko + `open-pr-stack` jobs; no `caffeine build`).
 
 Local UI without a canister:
 
@@ -51,11 +52,12 @@ Candid requires **all 12** `CharacterStats` fields. Omitting `killCount` (or any
 
 Fix: always send the full record. Carry `character.stats.killCount` or `0n` on create.
 
-`updateCharacter` then applies Motoko checks:
+`updateCharacter` keeps stored `level` / `experience` / `stats` / spell-level arrays (cosmetics only). A stale full-record payload cannot mint HP or spell levels.
 
-- `hp <= level * 200 + 100`
-- `ap <= 20`, `mp <= 20`
-- `level` and `killCount` cannot decrease
+`saveBattleStats` clamps HP with `maxPersistedHp`: `100 + (level-1) * growthPercent` (not `level*200+100`, which allowed 300 HP at level 1). Do not cut HP already stored above that cap (`persistHpWriteCap`). Other Motoko checks on dedicated writers:
+
+- `ap <= 20`, `mp <= 20` on `saveBattleStats`
+- `level` and `killCount` cannot decrease (`saveBattleStats` / `saveKillCount`)
 - `colors.length <= 16`
 - slot must already exist
 
@@ -89,7 +91,7 @@ Fix: run the credit on the persist lock and `commit` the post-credit Doka. Add t
 The persist lock starts at `doka = 0` until an authoritative read or credit seeds it. GameFlow's pre-query state is also 0. A lava/combat death that penalizes that placeholder and `saveBattleStats`s it wipes the canister.
 
 - `walletReady` is `queryResolved && sessionCacheApplied` — not merely “React Query has data”.
-- Once seeded, `shouldCopyIdleWalletDoka` refuses any idle **cut** (stale pre-credit 50 over committed 550 is the same class).
+- Once seeded, `shouldCopyIdleWalletDoka` refuses **any** idle copy (not just cuts). A ghost HUD or stale-high query used to copy `incoming >= committed` and mint.
 - Unseeded death/heal must `resolveCommittedDokaForAbsoluteWrite` (live `getCallerDokaBalance`); skip the absolute write if the read fails.
 - Do not `commit` a rename/feat delta stacked on the placeholder (`shouldCommitRenameDokaSpend`).
 - Idle hydrate must not copy leftover XP from a lower UI level over a post-`applyRewards` level-up (`resolveHydratedXp`). That leftover refunds the death XP cut on the next `saveBattleStats`.
@@ -101,6 +103,8 @@ The persist lock starts at `doka = 0` until an authoritative read or credit seed
 ### Ground coin / shrine / dungeon-complete credited twice
 
 `applyRewards` is a raw Nat add. Claim a one-shot id **before** enqueue (`tryClaimPickupId` / `tryClaimFlag` / `tryClaimDungeonChainBonus` in `dokaPersist.ts`). Ground Doka used to credit inside `setDokaLoot` — React may replay that updater. Parse the result with `readApplyRewardsOk`; a `{ _ok }` that used to yield NaN left the canister credited and the persist lock unchanged.
+
+After persist, `settleOneShotAfterCredit`: `#ok` with a gain → commit; explicit canister `#err` → **release** the claim (safe retry); transport/parse miss after invoke → **keep**. Releasing on a transport miss lets the next RAF step remint.
 
 ### Victory XP advertised but `applyRewards` rejected
 
@@ -114,15 +118,15 @@ Debit `dokaBalanceRef` (live), not the click-time `dokaBalance - 100`. Recap is 
 
 ### Shop purchase never credits / nine-arg Candid reject
 
-`initiatePurchase` is nine positional `Text` fields (`packageId`, name, surname, email, address, city, country, postal, proof URL). Passing one customer object fails at serialize time.
+Paid Doka is **Buy Doka** (`DokaGameKeyShop.tsx`): Mollie pay → `requestGameKeyPurchase` → admin approve → email 120-char GameKey → `redeemGameKey` while logged in. Credits the **caller**. Official persist is `redeemGameKeyThroughPersist`: commit the `#ok` granted amount onto a seeded lock (`shouldCommitGameKeyRedeem`). A follow-up `getCallerDokaBalance` can still be the pre-redeem wallet; committing only on that delta used to skip the credit after the key was already consumed, then `saveBattleStats` wiped the mint.
 
-Credits are **not** instant: backend auto-completes pending records ≥ 60s. The client must call `processPendingPurchases` via `creditPendingPurchasesThroughPersist`. Shop-credit timers must **not** live in `pendingTimeoutsRef` — `cleanupBattle` clears that set on portal/death/victory (`shopCreditUsesBattleTimeoutSet` is false).
+`initiatePurchase` (nine positional Text args) always `#err`s: `"Doka purchases now use GameKey requests…"`. Passing a customer object still fails Candid, but even a well-formed call cannot mint. `processPendingPurchases` always returns `0`; remount still calls it, and `shouldCommitShopCredit` must refuse that no-op snapshot.
 
-A 60s remount retry or a no-op complete still reads `getCallerDokaBalance`. Committing that absolute snapshot when `gained === 0` refunds a recap heal that landed while the timer was waiting. Commit only when `shouldCommitShopCredit(gained)` is true, and never cut a higher lock snapshot.
+Items (BuffShop potions) is a different store — do not send potion checkout through GameKey, or GameKey through `BuffShop`.
 
 ### Item shop spend refunds and items do nothing
 
-`BuffShop` returns `null` unless `isOpen === true`. Host it in `WorldExploration` so buys go through `saveBattleStats` on the persist lock and uses reach `handleUseItem`. A `GameFlow`-only local deduct is restored on the next `getCallerDokaBalance` hydrate.
+`BuffShop` returns `null` unless `isOpen === true`. Host it in `WorldExploration` so buys go through `saveBattleStats` on the persist lock and uses reach `handleUseItem`. A `GameFlow`-only local deduct is restored on the next `getCallerDokaBalance` hydrate. Consume from `inventoryRef` (`tryConsumeBuffItem`) — a double-click on React state used to spend one stack twice. Copy GameFlow's `dokaBalance` prop onto the live ref only when the prop actually changed (`syncLiveDokaFromProp`); a child-only HP update used to restore a stale-high wallet and refund the spend.
 
 ### Portal +10 XP appears then vanishes / unpaid XP persists
 
@@ -132,9 +136,11 @@ Portal step XP is `PORTAL_TRANSITION_XP` (10) through `persistIncrementalRewards
 
 `handleBattleEnd` is a `useCallback` that omits `challengeAccepted` / `currentChallenge`. Pass the live accept flag and challenge from refs (`liveBattleChallengePersistEntries`). Persist both `dokaReward` **and** `xpReward` (hard/legendary objectives show 400–1000 XP). Persist only when `isChallengeCompleted` is true (`utils/challengeCompletion.ts`).
 
-The opening player turn never goes through `advanceTurn`. Without `shouldCountOpeningPlayerTurn`, six player turns still read as 5 and Blitz (900 XP) credits. Overworld Doka-to-HP must not flip `healUsed` — the flag only clears in `cleanupBattle`, so a pre-fight heal fails the next no-heal challenge.
+The opening player turn never goes through `advanceTurn`. Without `shouldCountOpeningPlayerTurn`, six player turns still read as 5 and Blitz (900 XP) credits. Overworld Doka-to-HP must not flip `healUsed` — the flag only clears in `cleanupBattle`, so a pre-fight heal fails the next no-heal challenge. In-battle BuffShop potions must call `recordChallengeItemHealUsed` or easy_1 / hard_1 still persist after a mid-fight drink.
 
 Sacrifice (`loseSelfHp`) floors the player at 1 and never entered `playerTakesDamage`. Without `recordChallengeSelfHpLoss`, Untouchable still persists after a 20% self-hit.
+
+Pacifist Run flips only on a resolved offensive cast. Range preview / `getSpellRangeTiles` must not call `applyHealBuffSideEffect` — selecting Strike to see range used to fail the feat without a cast.
 
 ### Untouchable / under-damage challenge credited after a hit
 
@@ -204,6 +210,8 @@ Viewport `< 768px` is a warning, not a hard block. **Continue anyway** writes `s
 ### Recap never shows the in-battle feat unlock
 
 Unlocks must ride `BattleRecapData.newlyUnlockedAchievements` (`attachRecapUnlocks`). The recap mounts in `App.tsx`; a WorldExploration-only `useState` never reaches it.
+
+Wallet/level feats (`doka_1000`, `doka_10000`, `level_10`) wait until `applyRewards` commits (`shouldDeferAchievementUnlockUntilRewardsPersist`). Firing them from projected recap totals `#err`s against the pre-credit snapshot, and `achievementsShownRef` then blocks the post-credit retry.
 
 ### Version bump logs everyone out
 
@@ -277,7 +285,7 @@ Enemy minions must spawn via `spawnEnemySummonUnit` (`side: "enemy"`, turn type 
 
 ### Generated map has no reachable portal / sealed Boss Rush room
 
-Do not retune archetype fill to fix a stuck seed. After generateEnemies, Boss Rush preferred cells, or rest-exit, run `finalizePlayableLayout` / `applyFinalizedLayout`: legal spawn (not on the exit), at least one reachable portal, hostiles punched onto the walkable graph. Wall/void Boss Rush kits used to seal the progression portal. `evaluateSolvability` names the failure (`isolated-enemies`, `isolated-portals`, `missing-exit-portal`, `spawn-on-portal`, …). Dual-path summons that seal both 1-wide corridors unseal via `unsealProgressionOccupants`. Summons must not sit on unique player→exit bridges (`collectMandatoryProgressionCells`).
+Do not retune archetype fill to fix a stuck seed. After generateEnemies, Boss Rush preferred cells, or rest-exit, run `finalizePlayableLayout` / `applyFinalizedLayout`: legal spawn (not on the exit), at least one reachable portal, hostiles punched onto the walkable graph. Wall/void Boss Rush kits used to seal the progression portal. `evaluateSolvability` names the failure (`isolated-enemies`, `isolated-portals`, `missing-exit-portal`, `spawn-on-portal`, …). Dual-path summons that seal both 1-wide corridors unseal via `unsealProgressionOccupants`. Summons must not sit on unique player→exit bridges (`collectMandatoryProgressionCells`). Leftover CA walkable islands become walls (`sealUnreachableWalkable`) — battle-start spacing used to teleport the player onto those pockets and seal every exit.
 
 ### Jackpot heal refunds / charges twice
 
@@ -293,7 +301,7 @@ It is a no-op stub (returns `0`; Candid kept). Official XP/Doka go through `appl
 
 ## Operational checklist (canister upgrade)
 
-1. Confirm `src/backend/main.mo` and `migrations/` match the intended `CharacterStats` (12 fields, `killCount` present, no `wp`/`wr`/`scp`) and admin `SpellConfig` summon fields. Chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon + rollback stables.
+1. Confirm `src/backend/main.mo` and `migrations/` match the intended `CharacterStats` (12 fields, `killCount` present, no `wp`/`wr`/`scp`) and admin `SpellConfig` summon fields. Chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon + rollback (frozen), `20260901` GameKey maps. New persistent fields need a **new later** file — do not edit a shipped `NewActor`.
 2. Confirm `applyRewards` uses `100 * 2^(N-1)` (same as `utils/xpCurve.ts`).
 3. `caffeine check --fix` then `caffeine build` (or the project’s deploy pipeline). Do not `dfx deploy` — `dfx.json` points at missing `src/backend_extended/main.mo`.
 4. `pnpm bindgen` and commit generated client files.
@@ -303,3 +311,4 @@ It is a no-op stub (returns `0`; Candid kept). Official XP/Doka go through `appl
 8. Smoke: accept Untouchable, take a regular melee **or** a Void Mirror / lava-in-battle / **touch-walk** Thorned Ground hit **or** a Sacrifice self-hit, confirm the reward is **not** granted. Attack Nearest (from the player tile) and a canvas summon both debit AP and honor cooldown. One touch tap must not cast twice.
 9. Smoke: die on the first map before the Doka query paints — canister wallet must not become 0. Walk a dungeon-chain progression portal and confirm the next depth (not an overworld map). White sanctuary portal must be walkable at spawn. Rest-exit dungeon must still be a chain at depth 1. Reload after a lava death before persist lands — 20/40 must still apply (`pbv_pending_death_penalty_slotN`).
 10. Smoke: last-enemy lava / last-minion DoT awards victory once. A generated overworld / Boss Rush / rest-exit map must have a reachable exit from spawn. Ground coin / shrine / dungeon-complete credit once. Selection / top bar show leftover XP (`xpHudProgress`), not 0. `applyRewards` of a huge Doka-Fever roll must persist (clamped), not `#err`.
+11. Smoke: Buy Doka `requestGameKeyPurchase` → admin approve → `redeemGameKey` credits **once** (second redeem `#err`). `initiatePurchase` must `#err`. In-battle health potion fails easy_1. Selecting Strike without casting must not fail Pacifist Run.

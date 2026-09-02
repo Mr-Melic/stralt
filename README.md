@@ -17,12 +17,14 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
 | `src/frontend/src/engine/portalRules.ts` | Run-mode portals + dungeon-chain snapshot (before `cleanupMap`) |
 | `src/frontend/src/engine/mapGen.ts` | Archetypes + `finalizePlayableLayout` (spawn / exit / hostile reachability) |
+| `src/frontend/src/engine/spawnPolicy.ts` | Overworld spawn filters + family variants + dungeon extras (not placement) |
 | `src/frontend/src/engine/worldFeatures.ts` | World-dynamics catalog (tests only — not wired into map gen) |
-| `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards` + `saveBattleStats` |
+| `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards`, `redeemGameKey`, `saveBattleStats` |
 | `src/frontend/src/utils/dokaPersist.ts` | One-shot ground / shrine / dungeon-complete credits before `applyRewards` |
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn / Sacrifice accumulators |
 | `src/frontend/src/utils/deathGuards.ts` | Death-realm timer + one-shot death guards |
 | `src/frontend/src/utils/deathPenalty.ts` | 20/40 death cut + localStorage replay (`pbv_pending_death_penalty_slotN`) |
+| `src/frontend/src/utils/dokaGameKey.ts` | Buy Doka GameKey format / email / consent (120-char single-use codes) |
 | `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` (clamped to canister maxima) |
 | `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` leftover-XP threshold (bigint) |
 | `src/frontend/src/utils/versionGate.ts` | Version-bump wipe: keep spawn/level-up config and `*_inventory` |
@@ -43,7 +45,7 @@ pnpm build        # frontend Vite build + env.json copy
 mops check        # Motoko + check-stable vs .old (or: caffeine check)
 ```
 
-Caffeine GitHub → import is exactly those check commands. Run `bash scripts/caffeine-import-gate.sh all` (or `pnpm gate`) before a PR. See [docs/automation/CAFFEINE_IMPORT_GATES.md](docs/automation/CAFFEINE_IMPORT_GATES.md).
+Caffeine GitHub → import is exactly those check commands. Run `bash scripts/caffeine-import-gate.sh all` (or `pnpm gate`) and `bash scripts/open-pr-stack-compat.sh --self` before a PR. See [docs/automation/CAFFEINE_IMPORT_GATES.md](docs/automation/CAFFEINE_IMPORT_GATES.md) and [docs/automation/OPEN_PR_STACK_COMPAT.md](docs/automation/OPEN_PR_STACK_COMPAT.md).
 
 Regenerate the frontend actor after Motoko/Candid changes:
 
@@ -68,6 +70,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [DESIGN.md](DESIGN.md) | Color, type, panel, motion constraints |
 | [AGENTS.md](AGENTS.md) | Verified commands and non-negotiable product rules |
 | [docs/automation/CAFFEINE_IMPORT_GATES.md](docs/automation/CAFFEINE_IMPORT_GATES.md) | Caffeine import CI + agent gates; Cursor automation inventory |
+| [docs/automation/OPEN_PR_STACK_COMPAT.md](docs/automation/OPEN_PR_STACK_COMPAT.md) | Oldest-first open-PR merge simulation (`scripts/open-pr-stack-compat.sh --self`) |
 | [docs/automation/QUALITY_AUDIT_2026-08-30.md](docs/automation/QUALITY_AUDIT_2026-08-30.md) | Weekly automation quality audit (process only) |
 | [docs/automation/EXPANSION_PROPOSALS_2026-09-01.md](docs/automation/EXPANSION_PROPOSALS_2026-09-01.md) | Expansion Director living catalog (proposals only; no gameplay code) |
 | [docs/automation/EXPANSION_PROPOSALS_2026-08-31.md](docs/automation/EXPANSION_PROPOSALS_2026-08-31.md) | Expansion Director first catalog (2026-08-31 archive) |
@@ -104,8 +107,9 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 ## Hard rules (product)
 
 - Backend owns persisted state. `localStorage` is a cache / UI preference only.
-- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`. Portal +10 XP must not update the HUD until that write commits. Official deltas clamp to `100_000` Doka / `500_000` XP (canister `#err` above that). Ground / shrine / dungeon-complete credits are one-shot (`dokaPersist.ts`).
-- Penalties and shop/heal spends persist through `saveBattleStats` on the same progress-persist lock. `applyRewards` cannot subtract. `saveBattleStats` never mints Doka/XP/level.
+- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`. Portal +10 XP must not update the HUD until that write commits. Official deltas clamp to `100_000` Doka / `500_000` XP (canister `#err` above that). Ground / shrine / dungeon-complete credits are one-shot (`dokaPersist.ts`); after invoke, a transport miss must **keep** the claim (`settleOneShotAfterCredit`) so RAF cannot remint.
+- Paid IAP Doka credits through `redeemGameKey` on the same persist lock. `initiatePurchase` always `#err`s (signature kept). `processPendingPurchases` is a no-op that returns `0`.
+- Penalties and item-shop/heal spends persist through `saveBattleStats` on the same progress-persist lock. `applyRewards` cannot subtract. `saveBattleStats` never mints Doka/XP/level. Items (BuffShop potions) is a different store from Buy Doka.
 - Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics. Admin catalog spells carry explicit summon fields — do not infer from the name.
 - Admin and debug tools stay gated. Do not ship them to normal players as first-class UI.
 - Recap UI mounts once, at app root (`App.tsx` → `PostBattleRecap`).
