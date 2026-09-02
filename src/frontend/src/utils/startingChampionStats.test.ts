@@ -31,10 +31,12 @@ describe("championForgeVitalsFromStats", () => {
       mp: 5,
       init: 10,
     });
-    assert.deepEqual(
-      championForgeVitalsFromStats(startingChampionStats()),
-      { hp: 100, ap: 10, mp: 5, init: 10 },
-    );
+    assert.deepEqual(championForgeVitalsFromStats(startingChampionStats()), {
+      hp: 100,
+      ap: 10,
+      mp: 5,
+      init: 10,
+    });
   });
 
   it("reads persisted stats on edit instead of resetting to the starter row", () => {
