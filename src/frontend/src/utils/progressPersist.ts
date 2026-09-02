@@ -165,14 +165,21 @@ export type HydrateWhenIdleOptions = {
  * A ghost HUD (failed applyRewards still credited locally, or a stale
  * high query) used to copy incoming >= committed and let the next
  * saveBattleStats mint. Credits and spends already commit on the lock.
+ *
+ * An unseeded GameKey / feat `#ok` must not be followed by an idle copy of
+ * the in-flight getCallerDokaBalance snapshot. That query is the pre-credit
+ * wallet; seeding from it marks the lock ready so the next saveBattleStats
+ * skips resolveCommittedDokaForAbsoluteWrite and wipes the paid grant.
  */
 export function shouldCopyIdleWalletDoka(args: {
   walletSeeded: boolean;
   walletReady?: boolean;
   incomingDoka: number;
   committedDoka: number;
+  idleWalletSeedBlocked?: boolean;
 }): boolean {
   if (args.walletSeeded) return false;
+  if (args.idleWalletSeedBlocked === true) return false;
   return args.walletReady === true;
 }
 
@@ -206,6 +213,9 @@ export function createProgressPersist(
   // A positive constructor seed came from GameFlow after the query landed.
   // 0 is ambiguous (new wallet vs query still in flight).
   let walletSeeded = initial?.doka != null && toNat(initial.doka, 0) > 0;
+  // Set when a credit landed on an unseeded placeholder. Idle hydrate must
+  // not copy the pre-credit query or death/heal will persist that snapshot.
+  let idleWalletSeedBlocked = false;
   let pending = 0;
   let chain: Promise<void> = Promise.resolve();
   let beforeEach = options?.beforeEach;
@@ -223,6 +233,15 @@ export function createProgressPersist(
     seedWallet(doka: number) {
       persist.commit({ doka: Math.max(0, toNat(doka, 0)) });
     },
+    /**
+     * redeemGameKey / claimAchievementReward `#ok` on an unseeded lock must
+     * not seed at grant-only, but the next walletReady hydrate used to copy
+     * the stale pre-credit query and mark the lock seeded. Death/heal then
+     * skipped the live fetch and saveBattleStats-wiped the paid grant.
+     */
+    noteUnseededCredit() {
+      if (!walletSeeded) idleWalletSeedBlocked = true;
+    },
     commit(next: Partial<CommittedProgress>) {
       committed = {
         doka:
@@ -238,7 +257,10 @@ export function createProgressPersist(
             ? Math.max(1, toNat(next.level, committed.level))
             : committed.level,
       };
-      if (next.doka != null) walletSeeded = true;
+      if (next.doka != null) {
+        walletSeeded = true;
+        idleWalletSeedBlocked = false;
+      }
     },
     hydrateWhenIdle(
       next: CommittedProgress,
@@ -250,6 +272,7 @@ export function createProgressPersist(
         walletReady: options?.walletReady,
         incomingDoka: next.doka,
         committedDoka: committed.doka,
+        idleWalletSeedBlocked,
       });
       persist.commit({
         doka: copyDoka ? next.doka : undefined,

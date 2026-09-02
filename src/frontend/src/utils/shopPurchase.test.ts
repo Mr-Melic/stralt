@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   applySpendToCommitted,
   createProgressPersist,
+  resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 import {
@@ -381,6 +382,23 @@ void (async () => {
       0,
       "grant-only must not seed the placeholder lock",
     );
+    // Query that started before redeem returns the pre-credit wallet.
+    // Seeding from it used to skip resolveCommittedDokaForAbsoluteWrite
+    // so the recap heal wrote 200 and wiped the paid 1000.
+    unseeded.hydrateWhenIdle(
+      { doka: 200, xp: 0, level: 1 },
+      { walletReady: true },
+    );
+    assert.equal(unseeded.isWalletSeeded(), false);
+    assert.equal(unseeded.snapshot().doka, 0);
+    const fetched = await resolveCommittedDokaForAbsoluteWrite(
+      unseeded,
+      async () => 1200,
+    );
+    assert.equal(fetched, 1200);
+    const spend = spendFromUiBalance(1200, 1170);
+    const wroteDoka = applySpendToCommitted(unseeded.snapshot().doka, spend);
+    assert.equal(wroteDoka, 1170);
   }
 
   console.log("shopPurchase.test: ok");

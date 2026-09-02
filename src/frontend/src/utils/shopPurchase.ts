@@ -181,6 +181,11 @@ export type ShopCreditPersistLock = {
   commit(next: { doka?: number }): void;
   snapshot(): { doka: number };
   isWalletSeeded(): boolean;
+  /**
+   * `#ok` on an unseeded placeholder must not seed at grant-only, but idle
+   * hydrate must not copy the pre-credit query either.
+   */
+  noteUnseededCredit?: () => void;
 };
 
 export async function creditPendingPurchasesThroughPersist(
@@ -310,6 +315,11 @@ export async function redeemGameKeyThroughPersist(
       persist.commit({
         doka: committedDokaAfterGameKeyRedeem(persist.snapshot().doka, gained),
       });
+    } else if (gained > 0) {
+      // Canister already added. Leave the placeholder unseeded so an
+      // absolute write fetches, but block idle hydrate from copying the
+      // in-flight pre-redeem query (that used to seed and wipe the grant).
+      persist.noteUnseededCredit?.();
     }
     const after = persist.snapshot().doka;
     return {

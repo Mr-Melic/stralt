@@ -235,6 +235,40 @@ describe("progress persist lock", () => {
     );
   });
 
+  it("does not let a stale pre-credit query seed after an unseeded #ok", () => {
+    // Chronology:
+    // 1. World mounts. Lock is placeholder 0, unseeded.
+    // 2. redeemGameKey / claimAchievementReward `#ok(1000)` while the
+    //    getCallerDokaBalance query is still in flight. Grant-only must
+    //    not seed (live wallet may already be 5000).
+    // 3. Query lands with the pre-credit 5000. walletReady hydrate used
+    //    to copy 5000 and mark the lock seeded.
+    // 4. Recap heal saveBattleStats wrote 5000 and wiped the paid 1000
+    //    (incoming-below-stored is applied; saveBattleStats never mints).
+    const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
+    lock.noteUnseededCredit();
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(
+      shouldCopyIdleWalletDoka({
+        walletSeeded: false,
+        walletReady: true,
+        incomingDoka: 5000,
+        committedDoka: 0,
+        idleWalletSeedBlocked: true,
+      }),
+      false,
+    );
+    assert.equal(
+      lock.hydrateWhenIdle(
+        { doka: 5000, xp: 80, level: 4 },
+        { walletReady: true },
+      ),
+      true,
+    );
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.snapshot().doka, 0);
+  });
+
   it("does not let a placeholder 0 overwrite a shop-credit seed when ready is early", () => {
     const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
     lock.commit({ doka: 500 });
