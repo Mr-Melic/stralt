@@ -11904,7 +11904,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         );
         // Stay on the player's battle component (stayOn). Pass 2 already
         // ring-scans that component at radius w+h. An unfiltered
-        // findNearestFreeCell(origin, 2) used to hop a portal cut.
+        // findNearestFreeCell(origin, 2) used to hop a portal cut onto the
+        // far island.
         const finalPos = candidate ?? { x: e.x, y: e.y };
         placed.add(`${finalPos.x},${finalPos.y}`);
         return {
