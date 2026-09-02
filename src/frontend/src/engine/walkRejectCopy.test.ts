@@ -162,6 +162,29 @@ describe("classifyWalkReject", () => {
       null,
     );
   });
+
+  it("rejects a Frozen 3-tile path when leftover MP would only cover 1× tiles", () => {
+    assert.equal(
+      classifyWalkReject({
+        currentMp: 6,
+        isBlocked: false,
+        reachable: true,
+        pathLength: 3,
+        costPerTile: 2,
+      }),
+      null,
+    );
+    assert.equal(
+      classifyWalkReject({
+        currentMp: 5,
+        isBlocked: false,
+        reachable: true,
+        pathLength: 3,
+        costPerTile: 2,
+      }),
+      "not_enough_mp",
+    );
+  });
 });
 
 describe("shouldFloatWorldUnreachable", () => {
