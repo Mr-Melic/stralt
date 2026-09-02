@@ -340,11 +340,10 @@ import {
 } from "../utils/debugLogger";
 import {
   type DokaCreditActor,
-  persistDokaCreditAmount,
   persistDokaCreditResult,
   releaseFlag,
   releasePickupId,
-  settleOneShotAfterCredit,
+  resolveOneShotCreditSettle,
   tryClaimDungeonChainBonus,
   tryClaimFlag,
   tryClaimPickupId,
@@ -6309,15 +6308,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               characterSlot,
               chainBonus,
             );
-            const newDoka = persistDokaCreditAmount(credited);
-            const settle = settleOneShotAfterCredit(credited);
-            if (settle === "commit") {
-              progressPersistRef.current.commit({ doka: newDoka });
+            const settle = await resolveOneShotCreditSettle(credited, {
+              committedDoka: progressPersistRef.current.snapshot().doka,
+              readWallet: () =>
+                (
+                  actor as {
+                    getCallerDokaBalance?: () => Promise<unknown>;
+                  }
+                ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+            });
+            if (settle.kind === "commit") {
+              progressPersistRef.current.commit({ doka: settle.doka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
-            } else if (settle === "release") {
+            } else if (settle.kind === "release") {
               releaseFlag(dungeonCompletionSavedRef);
             }
-            return newDoka;
+            return settle.kind === "commit" ? settle.doka : 0;
           });
         }
         chainJustCompleted = true;
@@ -11396,15 +11402,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   characterSlot,
                   300,
                 );
-                const newDoka = persistDokaCreditAmount(credited);
-                const settle = settleOneShotAfterCredit(credited);
-                if (settle === "commit") {
-                  progressPersistRef.current.commit({ doka: newDoka });
+                const settle = await resolveOneShotCreditSettle(credited, {
+                  committedDoka: progressPersistRef.current.snapshot().doka,
+                  readWallet: () =>
+                    (
+                      actor as {
+                        getCallerDokaBalance?: () => Promise<unknown>;
+                      }
+                    ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+                });
+                if (settle.kind === "commit") {
+                  progressPersistRef.current.commit({ doka: settle.doka });
                   onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
-                } else if (settle === "release") {
+                } else if (settle.kind === "release") {
                   releaseFlag(shrineRewardClaimedRef);
                 }
-                return newDoka;
+                return settle.kind === "commit" ? settle.doka : 0;
               });
             }
             if (_purePath) {
@@ -11451,20 +11464,27 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               characterSlot,
               hit.value,
             );
-            const newDoka = persistDokaCreditAmount(credited);
-            const settle = settleOneShotAfterCredit(credited);
-            if (settle === "commit") {
-              progressPersistRef.current.commit({ doka: newDoka });
+            const settle = await resolveOneShotCreditSettle(credited, {
+              committedDoka: progressPersistRef.current.snapshot().doka,
+              readWallet: () =>
+                (
+                  actor as {
+                    getCallerDokaBalance?: () => Promise<unknown>;
+                  }
+                ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+            });
+            if (settle.kind === "commit") {
+              progressPersistRef.current.commit({ doka: settle.doka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
               setDokaLoot((prev) =>
                 prev.map((l) =>
                   l.id === hit.id ? { ...l, collected: true } : l,
                 ),
               );
-            } else if (settle === "release") {
+            } else if (settle.kind === "release") {
               releasePickupId(claimedGroundLootIdsRef.current, hit.id);
             }
-            return newDoka;
+            return settle.kind === "commit" ? settle.doka : 0;
           });
           playSound("doka_collected", String(hit.value));
           // Track ground doka pickup count for achievement
