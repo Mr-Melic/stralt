@@ -1,30 +1,35 @@
 #!/usr/bin/env python3
-"""Fail if new persistent main.mo stables ship without a later migration.
+"""Fail if the EOP migration chain can no longer upgrade the deployed canisters.
 
-Caffeine `install_code` onto a populated canister traps
+How moc's enhanced migration chain is resolved at upgrade time (moc 1.11,
+src/lowering/desugar.ml `rts_was_migration_performed`): the runtime keeps a
+list of applied migration names and looks up the *latest applied name* in the
+new program's chain. The stored state is then loaded as the chain type at that
+position (no extra fields, no missing fields, compatible types) and every later
+chain file runs. A latest name that is missing from the chain falls back to the
+genesis input `{}`, which traps on any populated canister with
 
   RTS error: Memory-incompatible program upgrade / IC0503
 
-when a persistent `let`/`var` is stuffed into an already-applied migration
-`NewActor` (GameKey maps on frozen `20260831` after that tail had run).
+Three deploys of this project trapped that way (PR #258 → #259 → #309); the
+reconstruction and PocketIC proof are in docs/automation/CAFFEINE_IMPORT_GATES.md.
 
-Rules this script enforces:
+Rules this script enforces (no replica, no PocketIC, no dfx):
 
-1. Actor-level `let`/`var` on `src/backend/main.mo` (not `transient`) must be
-   either on the latest chain `NewActor` or in the frozen orthogonal allowlist.
-   New names cannot be added to the allowlist; they need a later `NewActor`.
-2. `NewActor` field sets for files at or before `FROZEN_THROUGH` must match
-   `src/backend/migrations/snapshots/frozen-newactor-fields.json`.
-3. `mops.toml` `check-limit` must be >= the number of chain files (dropping
-   `20260826` with `OldActor = {}` breaks empty-canister import / M0263).
-4. `20260826` `OldActor` must stay `{}`.
-5. If the latest `NewActor` introduces fields vs the previous file, a populated
-   snapshot `snapshots/post-<previous>.most` must exist. `post-20260831.most`
-   is the live Caffeine tail (GameKey never applied). `post-20260901.most` is
-   the same layout after 20260901 applied — stuffing into 20260901 must fail
-   that check-stable in the gate, and this script forbids editing that NewActor.
-
-Does not talk to the replica. Does not require PocketIC / dfx.
+1. The genesis file is `20260801_000000.mo` with `OldActor = {}` so a fresh
+   canister installs, and it sorts before every recorded Caffeine name.
+2. `NewActor` field sets for every file at or before `FROZEN_THROUGH` match
+   `snapshots/frozen-newactor-fields.json`. Name-only files (`20260803_185500`,
+   `20260901_000000`) stay `migration(_ : {}) : {}`.
+3. Actor-level `let`/`var` on `src/backend/main.mo` (not `transient`) must be
+   on the latest field-introducing `NewActor` or in the frozen orthogonal
+   allowlist. New names need a NEW later chain file (never edit a frozen one).
+4. `mops.toml` `check-limit` >= number of chain files.
+5. `.old/src/backend/dist/backend.most` and every
+   `snapshots/deployed/*.most` must be Version 4.0.0 signatures whose latest
+   applied migration name is a chain file. A blank `actor { };` baseline is
+   rejected (that is what hid the real incompatibility). `snapshots/empty-canister.most`
+   must exist for the fresh-import check.
 """
 
 from __future__ import annotations
@@ -39,18 +44,35 @@ ROOT = Path(__file__).resolve().parents[1]
 MAIN = ROOT / "src/backend/main.mo"
 MIGRATIONS = ROOT / "src/backend/migrations"
 SNAPSHOTS = MIGRATIONS / "snapshots"
+DEPLOYED = SNAPSHOTS / "deployed"
 MOPS = ROOT / "mops.toml"
+OLD_BASELINE = ROOT / ".old/src/backend/dist/backend.most"
+EMPTY_SNAPSHOT = SNAPSHOTS / "empty-canister.most"
 ORTHOGONAL = SNAPSHOTS / "orthogonal-stables.txt"
 FROZEN_JSON = SNAPSHOTS / "frozen-newactor-fields.json"
+GENESIS = "20260801_000000"
 FROZEN_THROUGH = "20260901_000000"
-REQUIRED_POPULATED = (
-    "post-20260831.most",  # first failed deploy / 20260901 never applied
-    "post-20260901.most",  # 20260901 applied; further stables need 20260902+
+# Names recorded on real Caffeine canisters. Each must stay a chain file.
+DEPLOYED_TAILS = {
+    "20260803_185500": "cwofb-yqaaa-aaaap-qp45q-cai at Caffeine build #347/#348",
+    "20260827_000000": "cwofb-yqaaa-aaaap-qp45q-cai at Caffeine build #354",
+    "20260831_000000": "zh6cg-aaaaa-aaaad-aar2q-cai (PR #258 fresh install, GameKey on this tail)",
+    "20260901_000000": "any canister created from main between PR #259 and #309",
+}
+REQUIRED_DEPLOYED_SNAPSHOTS = (
+    "caffeine-348-tail-20260803.most",
+    "caffeine-354-tail-20260827.most",
+    "pr258-tail-20260831-gamekey.most",
+    "pr259-tail-20260901.most",
 )
 
 ACTOR_FIELD = re.compile(r"^    (let|var) ([A-Za-z_][A-Za-z0-9_]*)\b")
 TYPE_NEW = re.compile(r"\btype NewActor\s*=")
 TYPE_OLD = re.compile(r"\btype OldActor\s*=")
+NOOP_MIGRATION = re.compile(
+    r"public\s+func\s+migration\s*\(\s*_\s*:\s*\{\s*\}\s*\)\s*:\s*\{\s*\}\s*\{\s*\{\s*\}\s*;?\s*\}\s*;?",
+    re.S,
+)
 CHECK_LIMIT = re.compile(
     r"\[canisters\.backend\.migrations\][\s\S]*?check-limit\s*=\s*(\d+)",
     re.M,
@@ -108,14 +130,22 @@ def _fields_from_actor_type(block: str) -> list[str]:
     return out
 
 
+def is_noop_migration(src: str) -> bool:
+    return NOOP_MIGRATION.search(src) is not None and not TYPE_NEW.search(src)
+
+
 def extract_new_actor_fields(src: str) -> list[str]:
+    if is_noop_migration(src):
+        return []
     block = _type_block(src, TYPE_NEW)
     if block is None:
-        raise ValueError("no type NewActor")
+        raise ValueError("no type NewActor (and not a `migration(_ : {}) : {}` no-op)")
     return _fields_from_actor_type(block)
 
 
 def extract_old_actor_fields(src: str) -> list[str]:
+    if is_noop_migration(src):
+        return []
     block = _type_block(src, TYPE_OLD)
     if block is None:
         raise ValueError("no type OldActor")
@@ -143,6 +173,32 @@ def chain_files() -> list[Path]:
         if CHAIN_FILE.match(p.name):
             files.append(p)
     return files
+
+
+def most_applied_names(content: str) -> list[str] | None:
+    """Migration names recorded in a Version 4.0.0 `.most` chain block.
+
+    Mirrors ic-mops `parseMostAppliedMigrationNames`. Returns [] for a
+    Version 1.0.0 signature (no chain), None if the file is not a `.most`.
+    """
+    m = re.search(r"^// Version: ([^\n]+)", content, re.M)
+    if not m:
+        return None
+    if m.group(1).strip() != "4.0.0":
+        return []
+    actor_idx = re.search(r"\nactor\b", content)
+    if actor_idx is None:
+        return None
+    block = content[: actor_idx.start()]
+    return re.findall(r'[{;]\s*"([^"]+)"\s*:', block)
+
+
+def most_stable_names(content: str) -> list[str]:
+    actor_idx = re.search(r"\nactor\b", content)
+    if actor_idx is None:
+        return []
+    body = content[actor_idx.start() :]
+    return re.findall(r"^\s+stable (?:var )?([A-Za-z_][A-Za-z0-9_]*)\s*:", body, re.M)
 
 
 def load_orthogonal() -> set[str]:
@@ -175,12 +231,15 @@ def parse_check_limit() -> int:
 
 
 def stem(path: Path) -> str:
-    return path.stem  # 20260901_000000
+    return path.stem  # 20260831_000000
 
 
-def date_prefix(st: str) -> str:
-    """20260901_000000 → 20260901 (snapshot filenames omit _HHMMSS)."""
-    return st.split("_", 1)[0]
+def latest_introducing(files: list[Path], new_by_stem: dict[str, list[str]]) -> Path | None:
+    """Last chain file whose NewActor lists fields (skips name-only no-ops)."""
+    for p in reversed(files):
+        if new_by_stem.get(stem(p)):
+            return p
+    return None
 
 
 def write_manifests() -> None:
@@ -188,19 +247,20 @@ def write_manifests() -> None:
     main_fields = extract_main_stables(MAIN.read_text(encoding="utf-8"))
     files = chain_files()
     frozen: dict[str, list[str]] = {}
-    latest_new: list[str] = []
+    new_by_stem: dict[str, list[str]] = {}
     for p in files:
-        src = p.read_text(encoding="utf-8")
-        fields = extract_new_actor_fields(src)
+        fields = extract_new_actor_fields(p.read_text(encoding="utf-8"))
+        new_by_stem[stem(p)] = fields
         if stem(p) <= FROZEN_THROUGH:
             frozen[stem(p)] = fields
-        latest_new = fields
-    latest_set = set(latest_new)
+    latest = latest_introducing(files, new_by_stem)
+    latest_set = set(new_by_stem.get(stem(latest), [])) if latest else set()
     ortho = [n for n in main_fields if n not in latest_set]
     ORTHOGONAL.write_text(
         "# Actor-level stables on main.mo that persist orthogonally (not listed\n"
-        "# on the latest NewActor). Frozen at 20260901. Do not add names here.\n"
-        "# New persistent let/var must appear on a later NewActor instead.\n"
+        "# on the latest field-introducing NewActor, 20260831_000000). Frozen.\n"
+        "# Do not add names here. New persistent let/var must appear on a later\n"
+        "# NewActor instead.\n"
         + "\n".join(ortho)
         + "\n",
         encoding="utf-8",
@@ -213,6 +273,33 @@ def write_manifests() -> None:
     print(f"wrote {FROZEN_JSON} ({len(frozen)} files)")
 
 
+def check_baseline(path: Path, chain_stems: set[str], errors: list[str], *, label: str) -> None:
+    if not path.is_file():
+        errors.append(f"missing {label}: {path}")
+        return
+    content = path.read_text(encoding="utf-8")
+    applied = most_applied_names(content)
+    if applied is None:
+        errors.append(f"{label} {path} is not a moc .most signature")
+        return
+    if not applied:
+        errors.append(
+            f"{label} {path} has no migration chain block (blank `actor {{ }};` or "
+            "Version 1.0.0). It must be the signature actually deployed "
+            "(`dfx canister metadata <id> motoko:stable-types` or the last "
+            "successful `mops build` .most), not an empty placeholder."
+        )
+        return
+    latest = max(applied)
+    if latest not in chain_stems:
+        errors.append(
+            f"{label} {path}: latest applied migration `{latest}` is not a chain "
+            f"file. moc falls back to the genesis input `{{}}` for an unknown "
+            "name and traps with `RTS error: Memory-incompatible program upgrade` "
+            "on a populated canister. Keep a (no-op) file with that name."
+        )
+
+
 def check() -> int:
     errors: list[str] = []
     files = chain_files()
@@ -220,12 +307,13 @@ def check() -> int:
         errors.append(f"no migration files in {MIGRATIONS}")
         _print(errors)
         return 1
+    chain_stems = {stem(p) for p in files}
 
     genesis = files[0]
-    if stem(genesis) != "20260826_000000":
+    if stem(genesis) != GENESIS:
         errors.append(
-            f"empty-canister genesis must stay first in lex order "
-            f"(got {genesis.name}, expected 20260826_000000.mo)"
+            f"empty-canister genesis must stay first in lex order and sort before "
+            f"every recorded Caffeine name (got {genesis.name}, expected {GENESIS}.mo)"
         )
     genesis_src = genesis.read_text(encoding="utf-8")
     try:
@@ -239,11 +327,19 @@ def check() -> int:
             f"(M0263); found {old_fields}"
         )
 
+    for name, where in DEPLOYED_TAILS.items():
+        if name not in chain_stems:
+            errors.append(
+                f"chain file {name}.mo is missing but that name is the latest "
+                f"applied migration on {where}. Deleting or renaming it makes moc "
+                "fall back to the genesis input and trap (IC0503)."
+            )
+
     limit = parse_check_limit()
     if limit < len(files):
         errors.append(
             f"mops.toml check-limit={limit} < chain length {len(files)}. "
-            "Bumping is required so 20260826 (OldActor = {}) is not dropped."
+            f"Bump it so {GENESIS} (OldActor = {{}}) is not dropped."
         )
 
     frozen_expected = load_frozen()
@@ -272,9 +368,13 @@ def check() -> int:
                     f"expected {expected}; found {fields}. "
                     "Add a later YYYYMMDD_*.mo instead."
                 )
+            if expected == [] and not is_noop_migration(src):
+                errors.append(
+                    f"{p.name}: must stay a name-only `migration(_ : {{}}) : {{}}` no-op."
+                )
 
-    latest = files[-1]
-    latest_fields = new_by_stem.get(stem(latest), [])
+    latest = latest_introducing(files, new_by_stem)
+    latest_fields = new_by_stem.get(stem(latest), []) if latest else []
     latest_set = set(latest_fields)
     main_src = MAIN.read_text(encoding="utf-8")
     main_fields = extract_main_stables(main_src)
@@ -286,16 +386,17 @@ def check() -> int:
     deleted = sorted(orthogonal - extra_set)
     if sneaked:
         errors.append(
-            "new persistent main.mo stables not on latest NewActor and not in "
-            f"frozen orthogonal allowlist: {sneaked}. Add a later migration "
-            f"(OldActor = {stem(latest)} NewActor; NewActor = +these fields). "
-            f"Do not edit {FROZEN_THROUGH} or earlier NewActor. "
-            "Do not append names to orthogonal-stables.txt."
+            "new persistent main.mo stables not on the latest field-introducing "
+            f"NewActor ({stem(latest) if latest else '?'}) and not in the frozen "
+            f"orthogonal allowlist: {sneaked}. Add a NEW later migration file "
+            "(input {} or the fields you transform; NewActor = the new fields) and "
+            f"bump mops.toml check-limit. Do not edit {FROZEN_THROUGH} or earlier. "
+            "Do not append to orthogonal-stables.txt."
         )
     if deleted:
         errors.append(
-            "do not delete live orthogonal stables from main.mo to force an "
-            f"upgrade match: {deleted}"
+            f"orthogonal stables removed from main.mo without a consuming migration: {deleted}. "
+            "Dropping a stable requires a later migration that lists it as input only."
         )
 
     missing_on_main = sorted(latest_set - main_set)
@@ -304,34 +405,41 @@ def check() -> int:
             f"latest NewActor fields missing from main.mo: {missing_on_main}"
         )
 
-    if len(files) >= 2:
-        prev = files[-2]
-        prev_set = set(new_by_stem.get(stem(prev), []))
-        introduced = [n for n in latest_fields if n not in prev_set]
-        if introduced:
-            snap = SNAPSHOTS / f"post-{date_prefix(stem(prev))}.most"
-            if not snap.is_file():
-                errors.append(
-                    f"latest migration {latest.name} introduces {introduced} "
-                    f"but missing populated snapshot {snap}. "
-                    "Empty .old is not a populated Caffeine upgrade."
-                )
-
-    for name in REQUIRED_POPULATED:
-        path = SNAPSHOTS / name
-        if not path.is_file():
-            errors.append(
-                f"missing populated EOP snapshot {path}. "
-                "Need both post-20260831 (20260901 never applied) and "
-                "post-20260901 (20260901 applied) so later stables cannot ship "
-                "by stuffing a frozen NewActor."
-            )
-
     if "gameKeyRequests" not in latest_set:
         errors.append(
-            "latest NewActor is missing gameKeyRequests; populated Caffeine "
-            "upgrade of a post-20260831 canister would still IC0503 or drop GameKey."
+            "latest field-introducing NewActor is missing gameKeyRequests; the "
+            "deployed 20260831 tail carries GameKey (PR #258 build)."
         )
+
+    check_baseline(OLD_BASELINE, chain_stems, errors, label="check-stable baseline")
+    for name in REQUIRED_DEPLOYED_SNAPSHOTS:
+        check_baseline(DEPLOYED / name, chain_stems, errors, label="deployed snapshot")
+    for p in sorted(DEPLOYED.glob("*.most")) if DEPLOYED.is_dir() else []:
+        if p.name not in REQUIRED_DEPLOYED_SNAPSHOTS:
+            check_baseline(p, chain_stems, errors, label="deployed snapshot")
+    if not EMPTY_SNAPSHOT.is_file():
+        errors.append(f"missing {EMPTY_SNAPSHOT} (fresh-import check-stable baseline)")
+
+    old_content = OLD_BASELINE.read_text(encoding="utf-8") if OLD_BASELINE.is_file() else ""
+    old_names = set(most_stable_names(old_content))
+    if old_names and old_names != main_set:
+        introduced_after_tail = sorted(main_set - old_names)
+        gone = sorted(old_names - main_set)
+        if introduced_after_tail:
+            latest_applied = max(most_applied_names(old_content) or [""])
+            later = [p.name for p in files if stem(p) > latest_applied]
+            if not later:
+                errors.append(
+                    f"main.mo has stables {introduced_after_tail} that the deployed "
+                    f"baseline lacks, but no chain file sorts after the deployed tail "
+                    f"`{latest_applied}` to introduce them (runtime trap: 'not found "
+                    "in persisted state')."
+                )
+        if gone:
+            errors.append(
+                f"deployed baseline has stables {gone} that main.mo no longer declares; "
+                "a later migration must consume them or the upgrade traps."
+            )
 
     _print(errors)
     return 1 if errors else 0

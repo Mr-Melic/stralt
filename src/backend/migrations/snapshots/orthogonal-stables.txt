@@ -1,6 +1,7 @@
 # Actor-level stables on main.mo that persist orthogonally (not listed
-# on the latest NewActor). Frozen at 20260901. Do not add names here.
-# New persistent let/var must appear on a later NewActor instead.
+# on the latest field-introducing NewActor, 20260831_000000). Frozen.
+# Do not add names here. New persistent let/var must appear on a later
+# NewActor instead.
 accessControlState
 userProfiles
 characterSlots

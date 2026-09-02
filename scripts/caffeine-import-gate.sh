@@ -6,11 +6,15 @@
 #   backend:  src/backend/caffeine.toml [check] = mops check
 # Do not treat unused-vars, hook-deps, mock TS, Motoko syntax, or
 # empty-canister stable-compat as "pre-existing, skip".
-# Empty `.old` check-stable is fresh-canister import only. New persistent
-# stables also need mops check-stable vs snapshots/post-20260831.most
-# (20260901 never applied) AND post-20260901.most (20260901 applied).
-# Do not amend a shipped NewActor. python3 scripts/check-eop-stables.py
-# refuses new main.mo stables without a later chain file.
+# `.old/src/backend/dist/backend.most` is the reconstructed signature of the
+# deployed Caffeine canister (PR #258 build), never a blank actor. The backend
+# gate also runs mops check-stable against every reconstructed deployed shape
+# under src/backend/migrations/snapshots/deployed/ plus empty-canister.most,
+# and expects snapshots/unsupported/*.most to FAIL (documented limits).
+# Do not amend a shipped NewActor; never delete/rename a chain file whose name
+# a live canister recorded. python3 scripts/check-eop-stables.py enforces both.
+# Static check-stable is necessary, not sufficient: run
+# node scripts/eop-upgrade-matrix.mjs when PocketIC is available.
 # Do not run caffeine build / mops build here (PocketIC / dfx).
 # Before opening a PR also run: bash scripts/open-pr-stack-compat.sh --self
 # Stack-compat "union" means keep one export implementation, not concatenate
@@ -62,12 +66,25 @@ run_one_populated_stable() {
   shift
   local -a stable_args=("$@")
   if [[ ! -f "$populated" ]]; then
-    echo "caffeine-import-gate: missing populated EOP snapshot: $populated" >&2
-    echo "Empty .old check is not a populated Caffeine upgrade." >&2
+    echo "caffeine-import-gate: missing EOP snapshot: $populated" >&2
     exit 1
   fi
-  echo "==> mops check-stable vs ${populated#"$ROOT"/} (populated Caffeine, not empty .old)"
+  echo "==> mops check-stable vs ${populated#"$ROOT"/} (reconstructed deployed shape)"
   mops check-stable "$populated" backend "${stable_args[@]}"
+}
+
+run_one_unsupported_stable() {
+  local unsupported="$1"
+  shift
+  local -a stable_args=("$@")
+  echo "==> mops check-stable vs ${unsupported#"$ROOT"/} (documented unsupported shape; expected to FAIL)"
+  if mops check-stable "$unsupported" backend "${stable_args[@]}" >/dev/null 2>&1; then
+    echo "note: ${unsupported#"$ROOT"/} now passes static check-stable." >&2
+    echo "note: static check has false negatives (missing-field case); confirm with" >&2
+    echo "note:   node scripts/eop-upgrade-matrix.mjs before treating that shape as supported." >&2
+  else
+    echo "    fails as documented (see src/backend/migrations/snapshots/README.md)"
+  fi
 }
 
 run_populated_stable() {
@@ -76,19 +93,30 @@ run_populated_stable() {
   while IFS= read -r a; do
     [[ -n "$a" ]] && stable_args+=("$a")
   done < <(stable_args_without_no_lint "$@")
-  run_one_populated_stable \
-    "${ROOT}/src/backend/migrations/snapshots/post-20260831.most" \
-    "${stable_args[@]}"
-  run_one_populated_stable \
-    "${ROOT}/src/backend/migrations/snapshots/post-20260901.most" \
-    "${stable_args[@]}"
+  local snap_dir="${ROOT}/src/backend/migrations/snapshots"
+  local found=0
+  local f
+  for f in "$snap_dir"/deployed/*.most; do
+    [[ -f "$f" ]] || continue
+    found=1
+    run_one_populated_stable "$f" "${stable_args[@]}"
+  done
+  if [[ "$found" -eq 0 ]]; then
+    echo "caffeine-import-gate: no snapshots under ${snap_dir#"$ROOT"/}/deployed/" >&2
+    exit 1
+  fi
+  run_one_populated_stable "$snap_dir/empty-canister.most" "${stable_args[@]}"
+  for f in "$snap_dir"/unsupported/*.most; do
+    [[ -f "$f" ]] || continue
+    run_one_unsupported_stable "$f" "${stable_args[@]}"
+  done
 }
 
 run_backend() {
   echo "==> EOP stables vs latest NewActor / frozen NewActor / check-limit"
   python3 "$ROOT/scripts/check-eop-stables.py"
   if command -v mops >/dev/null 2>&1; then
-    echo "==> mops check (Motoko syntax/types, check-stable vs empty .old, migrations)"
+    echo "==> mops check (Motoko syntax/types, check-stable vs deployed .old, migrations)"
     mops check "$@"
     echo "==> mops check --no-lint --no-check-limit (full chain, empty-canister genesis kept)"
     mops check --no-lint --no-check-limit "$@"
@@ -101,11 +129,9 @@ run_backend() {
     fi
     echo "==> caffeine check (workspace: frontend [check] + backend mops check)"
     caffeine check
-    echo "note: caffeine-only path skipped populated EOP check-stable (needs mops)." >&2
-    echo "note: empty-canister check is not a populated Caffeine upgrade." >&2
+    echo "note: caffeine-only path skipped the deployed-shape EOP check-stable (needs mops)." >&2
     echo "note: install ic-mops and re-run:" >&2
-    echo "  mops check-stable src/backend/migrations/snapshots/post-20260831.most backend" >&2
-    echo "  mops check-stable src/backend/migrations/snapshots/post-20260901.most backend" >&2
+    echo "  for f in src/backend/migrations/snapshots/deployed/*.most; do mops check-stable \"\$f\" backend; done" >&2
     return
   fi
   echo "caffeine-import-gate: mops and caffeine are not on PATH." >&2

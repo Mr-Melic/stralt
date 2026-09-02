@@ -1,5 +1,5 @@
 {
-  "20260826_000000": [
+  "20260801_000000": [
     "accessControlState",
     "userProfiles",
     "characterSlots",
@@ -38,6 +38,7 @@
     "chatMessages",
     "nextChatId"
   ],
+  "20260803_185500": [],
   "20260827_000000": [
     "accessControlState",
     "userProfiles",
@@ -83,25 +84,12 @@
     "colorPalettePrev",
     "hasColorPalettePrev",
     "bossRushConfigPrev",
-    "hasBossRushConfigPrev"
-  ],
-  "20260901_000000": [
-    "spellConfigs",
-    "adminAuditLog",
-    "levelUpConfigPrev",
-    "hasLevelUpConfigPrev",
-    "gameConfigPrev",
-    "hasGameConfigPrev",
-    "tierSpawnConfigPrev",
-    "hasTierSpawnConfigPrev",
-    "colorPalettePrev",
-    "hasColorPalettePrev",
-    "bossRushConfigPrev",
     "hasBossRushConfigPrev",
     "gameKeyRequests",
     "gameKeyLedger",
     "gameKeyReveals",
     "lastGameKeyRequestAt",
     "nextGameKeyRequestId"
-  ]
+  ],
+  "20260901_000000": []
 }

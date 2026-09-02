@@ -1,0 +1,55 @@
+{
+  "$comment": "Runtime upgrade proof for scripts/eop-upgrade-matrix.mjs. Each path installs the first commit's backend wasm on a fresh PocketIC canister, upgrades through the remaining commits in order, then upgrades to the current working tree. Commits are built with `mops build` at that commit. `expect` is `ok` or `fail`.",
+  "paths": [
+    {
+      "name": "zh6cg-aaaaa-aaaad-aar2q-cai: PR #258 fresh install (latest applied 20260831 with GameKey)",
+      "commits": ["58302bc"],
+      "expect": "ok"
+    },
+    {
+      "name": "Caffeine placeholder then PR #258 (upgrade-into-fresh hypothesis)",
+      "commits": ["empty", "58302bc"],
+      "expect": "ok"
+    },
+    {
+      "name": "cwofb-yqaaa-aaaap-qp45q-cai: Caffeine #340 -> #347 -> #348 -> #354",
+      "commits": ["cfe614b", "31feee5", "214fc41", "10d44dd"],
+      "expect": "ok"
+    },
+    {
+      "name": "cwofb-yqaaa-aaaap-qp45q-cai stuck at Caffeine #348 (latest applied 20260803_185500)",
+      "commits": ["cfe614b", "31feee5", "214fc41"],
+      "expect": "ok"
+    },
+    {
+      "name": "main between PR #259 and #309, fresh install (latest applied 20260901)",
+      "commits": ["1d5395a"],
+      "expect": "ok"
+    },
+    {
+      "name": "PR #309 main, fresh install",
+      "commits": ["eb03bdc"],
+      "expect": "ok"
+    },
+    {
+      "name": "PR #177 shape bridged through #309 first",
+      "commits": ["036600f", "eb03bdc"],
+      "expect": "ok"
+    },
+    {
+      "name": "empty canister (fresh Caffeine project)",
+      "commits": ["empty"],
+      "expect": "ok"
+    },
+    {
+      "name": "UNSUPPORTED: PR #177..#256 shape, GameKey never applied (same name 20260831, fewer fields)",
+      "commits": ["036600f"],
+      "expect": "fail"
+    },
+    {
+      "name": "UNSUPPORTED: Caffeine #340 legacy actor, no chain",
+      "commits": ["cfe614b"],
+      "expect": "fail"
+    }
+  ]
+}
