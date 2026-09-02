@@ -10,6 +10,7 @@ import {
   creditPendingPurchases,
   creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
+  dokaGainedFromGameKeyRedeem,
   readCallerDokaBalance,
   readInitiatePurchaseResult,
   readRedeemGameKeyResult,
@@ -93,6 +94,8 @@ assert.equal(
 assert.equal(creditedDokaDelta(100, 600), 500);
 assert.equal(creditedDokaDelta(600, 600), 0);
 assert.equal(creditedDokaDelta(null, 600), 0);
+assert.equal(dokaGainedFromGameKeyRedeem({ ok: 1000 }), 1000);
+assert.equal(dokaGainedFromGameKeyRedeem({ err: "GameKey already used" }), 0);
 assert.equal(shouldCommitShopCredit(500), true);
 assert.equal(shouldCommitShopCredit(0), false);
 assert.equal(committedDokaAfterShopCreditOnLock(250, 750), 750);

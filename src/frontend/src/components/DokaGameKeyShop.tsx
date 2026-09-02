@@ -9,12 +9,11 @@ import {
   MOLLIE_PAYMENT_LINK,
   euroTextToCents,
   hintedEurosLabel,
-  mapGameKeyRequestFromBackend,
   normalizeGameKeyInput,
+  parseMyGameKeyPurchaseStatus,
   playerGameKeyStatusCopy,
   readGameKeyCmdResult,
   suggestedDokaFromEuroCents,
-  unwrapOptRecord,
   validateGameKeyConsent,
   validateGameKeyEmail,
   validateGameKeyFormat,
@@ -32,7 +31,7 @@ import {
 } from "../utils/iapShopCopy";
 import {
   type ShopCreditPersistLock,
-  creditedDokaDelta,
+  dokaGainedFromGameKeyRedeem,
   redeemGameKeyThroughPersist,
   shouldStartShopPurchase,
 } from "../utils/shopPurchase";
@@ -89,8 +88,9 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   const loadStatus = useCallback(async () => {
     if (!actor?.getMyGameKeyPurchaseStatus) return;
     try {
-      const raw = unwrapOptRecord(await actor.getMyGameKeyPurchaseStatus());
-      setStatus(raw ? mapGameKeyRequestFromBackend(raw) : null);
+      setStatus(
+        parseMyGameKeyPurchaseStatus(await actor.getMyGameKeyPurchaseStatus()),
+      );
     } catch {
       setStatus(null);
     }
@@ -190,8 +190,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   };
 
   const redeem = async () => {
-    const code = normalizeGameKeyInput(gameKey);
-    const formatErr = validateGameKeyFormat(code);
+    const formatErr = validateGameKeyFormat(normalizeGameKeyInput(gameKey));
     if (formatErr) {
       toast.error(formatErr);
       return;
@@ -204,16 +203,16 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
     redeemInFlight.current = true;
     setRedeeming(true);
     try {
-      const { result, previous, credited } = await redeemGameKeyThroughPersist(
+      const { result } = await redeemGameKeyThroughPersist(
         actor,
         persist,
-        code,
+        normalizeGameKeyInput(gameKey),
       );
       if ("err" in result) {
         toast.error(result.err);
         return;
       }
-      const gained = creditedDokaDelta(previous, credited);
+      const gained = dokaGainedFromGameKeyRedeem(result);
       if (gained > 0) {
         onDokaCredited(gained);
         toast.success(`${gained.toLocaleString()} Doka credited!`);
