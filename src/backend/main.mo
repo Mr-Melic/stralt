@@ -1538,22 +1538,33 @@ actor {
                 switch (await _newUniqueGameKey()) {
                     case (#err e) { return #err(e) };
                     case (#ok code) {
-                        let now = Time.now();
-                        gameKeyLedger.add(code, {
-                            requestId = rec.id;
-                            dokaAmount;
-                            redeemed = false;
-                            redeemedBy = "";
-                        });
-                        gameKeyReveals.add(rec.id, code);
-                        gameKeyRequests.add(rec.id, {
-                            rec with
-                            status = "approved";
-                            dokaAmount;
-                            approvedAt = now;
-                        });
-                        _recordAdminAudit(caller, "approveGameKey", rec.userPrincipal.toText(), "pending", dokaAmount.toText());
-                        #ok(code)
+                        // raw_rand yields. Re-read so a reject (or a second
+                        // approve) that landed during the await cannot be
+                        // overwritten into an extra redeemable GameKey.
+                        switch (gameKeyRequests.get(requestId)) {
+                            case null { return #err("Purchase request not found") };
+                            case (?latest) {
+                                if (latest.status != "pending") {
+                                    return #err("Request is not pending");
+                                };
+                                let now = Time.now();
+                                gameKeyLedger.add(code, {
+                                    requestId = latest.id;
+                                    dokaAmount;
+                                    redeemed = false;
+                                    redeemedBy = "";
+                                });
+                                gameKeyReveals.add(latest.id, code);
+                                gameKeyRequests.add(latest.id, {
+                                    latest with
+                                    status = "approved";
+                                    dokaAmount;
+                                    approvedAt = now;
+                                });
+                                _recordAdminAudit(caller, "approveGameKey", latest.userPrincipal.toText(), "pending", dokaAmount.toText());
+                                #ok(code)
+                            };
+                        };
                     };
                 };
             };
