@@ -4430,9 +4430,10 @@ const LevelUpConfigPanel: React.FC = () => {
           lineHeight: 1.5,
         }}
       >
-        This panel edits all nine LevelUpConfig fields. Save publishes
-        immediately to the canister (and caches a local copy). This is not a
-        draft.
+        This panel edits range and fail chance only. Save also writes built-in
+        defaults for stat growth (5%), AP/MP threshold (25), spell leveling cost
+        (10 × 2^level), and spell damage growth (3%). Those fields are not shown
+        here — a saved draft here is not a full LevelUpConfig review.
       </p>
       <div
         style={{

@@ -60,7 +60,7 @@ File: `src/frontend/src/components/AdminDashboard.tsx` (one module). Purchases: 
 | AUX-AD-EMPTY-AS-ERROR | AUTO_FIXED |
 | AUX-BOSSRUSH-LIVE-UNLABELED | AUTO_FIXED |
 | AUX-ACCESS-FIRST-PLAYER-COPY | AUTO_FIXED |
-| AUX-LEVELUP-PARTIAL | AUTO_FIXED (drift auditor 2026-09-01 showed all nine fields; stale disclosure fixed this run) |
+| AUX-LEVELUP-PARTIAL | AUTO_FIXED (fields already shown; disclosure is sibling #281 — this PR does not rewrite that paragraph) |
 | AUX-GAMEKEY-NO-CONFIRM | AUTO_FIXED this run |
 | AUX-UNBAN-COPY-STALE | AUTO_FIXED this run |
 | AUX-UNBAN-NO-ASSERT | AUTO_FIXED this run |
@@ -120,7 +120,8 @@ Do **not** add Simulation until there is a read-only runner that cannot write wa
 2. Unban copy matches ban-keeps-progress; `assertAdminCmdOk` on unban  
 3. Shop: read-only banned principal list (`getBannedPrincipals`), click fills unban field  
 4. List search on sprites, modifiers, achievements, names, bosses  
-5. Honest copy: Enemy editor = Spawn template; LevelUpConfig disclosure no longer claims hidden literals  
-6. Confirm copy helpers in `dokaGameKey.ts` so Approve cannot be described as a wallet mint
+5. Honest copy: Enemy editor = Spawn template  
+6. Confirm copy helpers in `dokaGameKey.ts` so Approve cannot be described as a wallet mint  
+7. Level-up disclosure left for sibling drift PR #281 (same paragraph) so stack merge stays clean
 
 Major grouping, lifecycle state machine, dependency graph, new domains, and Health tab remain **HUMAN_APPROVAL_REQUIRED**.

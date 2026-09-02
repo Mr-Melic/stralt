@@ -80,10 +80,10 @@ TITLE: Level-up UI silently writes hardcoded remaining fields
 CATEGORY: system-config  
 PRIORITY: P1  
 CONFIDENCE: HIGH  
-EVIDENCE: Drift audit 2026-09-01 surfaced all nine fields and `toBackendLevelUpConfig`. This run: disclosure no longer says “range and fail chance only” / hidden literals. Save still publishes live.  
+EVIDENCE: Drift audit 2026-09-01 and sibling PR #281 already surface all nine fields. This PR does not rewrite the Settings disclosure paragraph (stack overlap). Save still publishes live.  
 SYSTEMS_AFFECTED: LevelUpConfigPanel  
 RECOMMENDED_ACTION: Keep all nine fields visible. Do not reintroduce hardcoded clobber.  
-AUTONOMY: SAFE_TO_AUTO_IMPLEMENT (disclosure); HUMAN for staged draft  
+AUTONOMY: SAFE_TO_AUTO_IMPLEMENT (disclosure on #281); HUMAN for staged draft  
 DEPENDENCIES: AUX-LIFE-NO-STATES  
 REGRESSION_RISK: LOW for copy  
 VALIDATION_REQUIRED: All nine inputs persist via `adminSetLevelUpConfig`.  
