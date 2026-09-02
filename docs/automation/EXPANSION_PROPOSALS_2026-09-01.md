@@ -1,5 +1,7 @@
 # Stralt expansion catalog — 2026-09-01
 
+> **Living catalog moved:** [`EXPANSION_PROPOSALS_2026-09-02.md`](./EXPANSION_PROPOSALS_2026-09-02.md). This file is the 2026-09-01 archive. Cards here remain **PROPOSED** (none shipped).
+
 **Author:** Expansion Director (cron `0 */24 * * *`, automation `3f31b18f-a492-11f1-a7d1-d6b4613131ce`)  
 **This run:** second catalog. Re-rank against `main` `dd275aa` (`Merge pull request #182` — Caffeine import gates).  
 **Prior catalog:** [`EXPANSION_PROPOSALS_2026-08-31.md`](./EXPANSION_PROPOSALS_2026-08-31.md) (`HEAD` then `22503b5`, merged as #118).  
