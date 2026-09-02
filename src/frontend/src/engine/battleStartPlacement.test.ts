@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import { findBattleStartCell } from "./battleStartPlacement.ts";
-import { type OccupancyContext, occKey } from "./occupancy.ts";
+import {
+  type OccupancyContext,
+  findNearestFreeCell,
+  occKey,
+} from "./occupancy.ts";
 
 function chebyshev(
   a: { x: number; y: number },
@@ -259,5 +263,40 @@ describe("findBattleStartCell", () => {
     assert.notEqual(occKey(cell.x, cell.y), "15,0");
     assert.equal(cell.y, 0);
     assert.equal(cell.x >= 0 && cell.x < WORLD_GRID_SIZE, true);
+  });
+
+  it("seed-destack-radius2-across-portal: unfiltered ring-scan hops the gate", () => {
+    // Left room (0,1)–(2,1) fully occupied, portal (3,1), far floor (4,1)–(5,1).
+    // findBattleStartCell correctly returns null (stay on origin). WX used to
+    // call findNearestFreeCell(origin, ctx, 2) which ring-scans through the
+    // portal onto (4,1).
+    const walkable = [
+      { x: 0, y: 1 },
+      { x: 1, y: 1 },
+      { x: 2, y: 1 },
+      { x: 3, y: 1 },
+      { x: 4, y: 1 },
+      { x: 5, y: 1 },
+    ];
+    const occupied = new Set(["0,1", "1,1", "2,1"]);
+    const ctx = island(walkable, occupied, { portals: new Set(["3,1"]) });
+    const unsafe = findNearestFreeCell({ x: 2, y: 1 }, ctx, 2);
+    assert.ok(unsafe);
+    assert.equal(
+      unsafe.x >= 4,
+      true,
+      "unfiltered radius-2 must be able to hop the portal (the WX bug)",
+    );
+    const safe = findBattleStartCell(
+      { x: 2, y: 1 },
+      [{ x: 2, y: 1, minDist: 1 }],
+      2,
+      ctx,
+    );
+    assert.equal(
+      safe,
+      null,
+      "cramped origin side must not destack across the gate",
+    );
   });
 });

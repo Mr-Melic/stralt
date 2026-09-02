@@ -159,6 +159,7 @@ import {
   attachWhitePortalAfterLegalize,
   checkVoidConnectivity,
   countWalkableVoid,
+  isEnemyWanderFloor,
   pickMapArchetype,
   pickProgressionPortalCell,
   placeBossRushSpawns,
@@ -171,8 +172,6 @@ import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
   type OccupancyContext,
   collectMandatoryProgressionCells,
-  findNearestFreeCell,
-  isCellFree,
   resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
 import {
@@ -5646,7 +5645,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           newY < WORLD_GRID_SIZE &&
           tiles[newY][newX] === "floor" &&
           !currentMap?.voidTiles?.has(`${newX},${newY}`) &&
-          (newX !== currentX || newY !== currentY)
+          (newX !== currentX || newY !== currentY) &&
+          isEnemyWanderFloor(
+            tiles as unknown as string[][],
+            currentMap?.voidTiles,
+            currentMap?.portals ?? [],
+            { x: currentX, y: currentY },
+            { x: newX, y: newY },
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          )
         ) {
           return { x: newX, y: newY };
         }
@@ -11875,22 +11883,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           2,
           occCtx,
         );
-        let finalPos: { x: number; y: number };
-        if (candidate) {
-          finalPos = candidate;
-        } else {
-          // Cramped-map fallback: keep the original cell ONLY if isCellFree
-          // confirms it is passable + unoccupied; otherwise ring-scan from
-          // the origin. Either way the result is added to `placed` so the
-          // next enemy cannot reuse it.
-          const origin = { x: e.x, y: e.y };
-          if (isCellFree(origin, occCtx)) {
-            finalPos = origin;
-          } else {
-            const near = findNearestFreeCell(origin, occCtx, 2);
-            finalPos = near ?? origin;
-          }
-        }
+        // findBattleStartCell pass 2 already ring-scans the origin battle
+        // component (radius w+h). An unfiltered findNearestFreeCell(2)
+        // used to hop a portal cut onto the far island.
+        const finalPos = candidate ?? { x: e.x, y: e.y };
         placed.add(`${finalPos.x},${finalPos.y}`);
         return {
           ...e,
