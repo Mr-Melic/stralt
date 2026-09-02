@@ -151,16 +151,25 @@ export function enemySpellRequiresLos(spell: {
  * LoS only when {@link enemySpellRequiresLos}. decideCaster used to require
  * LoS even for `lineOfSight === false` while generic / hunter / archer and
  * `findNearestLegalCastTile` honored the flag.
+ *
+ * {@link enemyCastRangeOk} is the range half used by healer / guardian /
+ * bomber (they still skip LoS on purpose). Do not merge those policies.
  */
+export function enemyCastRangeOk(
+  origin: CasterPosition,
+  target: CasterPosition,
+  spell: Pick<SpellConfig, "range">,
+): boolean {
+  return chebyshevOnBoard(origin, target) <= enemySpellRange(spell);
+}
+
 export function enemyCastGeometryOk(args: {
   origin: CasterPosition;
   target: CasterPosition;
   spell: Pick<SpellConfig, "range"> & { lineOfSight?: boolean };
   hasLoS: boolean;
 }): boolean {
-  if (
-    chebyshevOnBoard(args.origin, args.target) > enemySpellRange(args.spell)
-  ) {
+  if (!enemyCastRangeOk(args.origin, args.target, args.spell)) {
     return false;
   }
   if (enemySpellRequiresLos(args.spell) && !args.hasLoS) return false;
@@ -811,6 +820,58 @@ export function pickNearestLiveHostileTile(
   return nearest;
 }
 
+/**
+ * Attack Nearest / keyboard S must land on the highlighted caster tile
+ * for every `self` / `ally` spell, not only Blood Mend (`effectType ===
+ * "heal"`). Timestep, Mirror, and Shield paint that tile but the button
+ * used to search hostiles, so a legal highlighted target could not
+ * execute. `all` still prefers the nearest live hostile.
+ */
+export function attackNearestResolvesOnCasterTile(spell: {
+  targetType?: string;
+}): boolean {
+  const t = (spell.targetType ?? "enemy") as string;
+  return t === "self" || t === "ally";
+}
+
+/**
+ * Single Attack Nearest pick: caster tile for self/ally (live gate),
+ * else nearest live-ok hostile. Button enable and execute must share this.
+ */
+export function pickAttackNearestTile(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+  effectiveRange: number,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  hostiles?: ReadonlyArray<{ x: number; y: number }>,
+): { x: number; y: number } | null {
+  if (attackNearestResolvesOnCasterTile(spell)) {
+    const tile = { x: caster.x, y: caster.y };
+    const live = isTileCastableLive(
+      spell,
+      caster,
+      tile,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+      barrierTiles,
+    );
+    return shouldExecuteLiveCast(live) ? tile : null;
+  }
+  const search = hostiles ?? liveHostilesForAttackNearest(liveCombatants);
+  return pickNearestLiveHostileTile(
+    spell,
+    caster,
+    search,
+    liveCombatants,
+    mapTiles,
+    effectiveRange,
+    barrierTiles,
+  );
+}
+
 /** Attack Nearest button: same legal set as the live execute path. */
 export function canAttackNearestLive(
   spell: SpellConfig,
@@ -821,28 +882,15 @@ export function canAttackNearestLive(
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): boolean {
-  if (spell.targetType === "self" && spell.effectType === "heal") {
-    return shouldExecuteLiveCast(
-      isTileCastableLive(
-        spell,
-        caster,
-        { x: caster.x, y: caster.y },
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTiles,
-      ),
-    );
-  }
   return (
-    pickNearestLiveHostileTile(
+    pickAttackNearestTile(
       spell,
       caster,
-      hostiles,
       liveCombatants,
       mapTiles,
       effectiveRange,
       barrierTiles,
+      hostiles,
     ) != null
   );
 }
@@ -1004,10 +1052,9 @@ export function pickNearestAttackableHostile(
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): { x: number; y: number } | null {
-  return pickNearestLiveHostileTile(
+  return pickAttackNearestTile(
     spell,
     caster,
-    liveHostilesForAttackNearest(liveCombatants),
     liveCombatants,
     mapTiles,
     effectiveRange,
@@ -1024,14 +1071,15 @@ export function canAttackNearestAgainstLive(
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): boolean {
-  return canAttackNearestLive(
-    spell,
-    caster,
-    liveHostilesForAttackNearest(liveCombatants),
-    liveCombatants,
-    mapTiles,
-    effectiveRange,
-    barrierTiles,
+  return (
+    pickNearestAttackableHostile(
+      spell,
+      caster,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+      barrierTiles,
+    ) != null
   );
 }
 
@@ -1074,29 +1122,14 @@ export function findAttackNearestTarget(
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
 ): { x: number; y: number } | null {
-  if (spell.targetType === "self" && spell.effectType === "heal") {
-    return shouldExecuteLiveCast(
-      isTileCastableLive(
-        spell,
-        caster,
-        { x: caster.x, y: caster.y },
-        hostiles as Enemy[],
-        mapTiles,
-        effectiveRange,
-        barrierTiles,
-      ),
-    )
-      ? { x: caster.x, y: caster.y }
-      : null;
-  }
-  return pickNearestLiveHostileTile(
+  return pickAttackNearestTile(
     spell,
     caster,
-    hostiles,
     hostiles as Enemy[],
     mapTiles,
     effectiveRange,
     barrierTiles,
+    hostiles,
   );
 }
 

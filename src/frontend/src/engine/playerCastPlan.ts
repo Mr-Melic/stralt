@@ -110,3 +110,24 @@ export function playerCastAttemptResult(
   if (plan.reason === "no_ap") return "no_ap";
   return "abort";
 }
+
+/**
+ * Tile/touch used to abort when the wallet was 0, before reading the
+ * spell's cost. Timestep is 0 AP, so a highlighted self tile could not
+ * execute while sprite-click / {@link planPlayerCastAttempt} still could.
+ * Use this (or skip the extra gate and let {@link planPlayerCastAttempt}
+ * run) so empty AP only blocks positive-cost casts.
+ */
+export function shouldRejectCastForMissingAp(args: {
+  currentAp: number;
+  baseApCost: number;
+  applyApCost?: (base: number) => number;
+}): boolean {
+  const planned = planPlayerCastResources({
+    currentAp: args.currentAp,
+    baseApCost: args.baseApCost,
+    cooldownTurnsRemaining: 0,
+    applyApCost: args.applyApCost,
+  });
+  return !planned.ok && planned.reason === "no_ap";
+}
