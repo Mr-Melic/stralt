@@ -1,5 +1,5 @@
 import { Principal } from "@dfinity/principal";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { backendInterface } from "../backend";
 import { listAdminModifierTypeOptions } from "../engine/mapModifiers";
@@ -52,6 +52,7 @@ import type {
 } from "../types/gameTypes";
 import {
   assertAdminCmdOk,
+  readPrincipalListResult,
   toBackendLevelUpConfig,
 } from "../utils/adminContract";
 import {
@@ -725,7 +726,12 @@ const EnemyEditor: React.FC<{
   return (
     <div data-ocid="admin.enemy_editor" style={{ padding: 20 }}>
       <EnemyPresets currentConfig={cfg} onLoad={(loaded) => setCfg(loaded)} />
-      <p style={sectionHeadStyle}>Enemy Configuration</p>
+      <p style={sectionHeadStyle}>Spawn template</p>
+      <p style={{ color: "#6a6070", fontSize: 10, margin: "0 0 10px" }}>
+        Catalog spawn fields only (hp/ap/mp/init/level/regions). Combat identity
+        (damage, res, sp, sr, chc) is not on this form and is not persisted
+        here.
+      </p>
 
       <div
         style={{
@@ -1679,6 +1685,10 @@ const SpriteList: React.FC<{
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingCfg, setEditingCfg] = useState<PlayerSpriteConfig | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const visibleSprites = sprites.filter((s) =>
+    matchesQuery(query, s.name, s.id, s.characterPieceType),
+  );
 
   useEffect(() => {
     onEditorOpenChange?.(editingCfg ? (selectedId ?? "__new__") : null);
@@ -1773,6 +1783,12 @@ const SpriteList: React.FC<{
             characters keep the Default Pixel Visual until a renderer is wired.
             Custom URLs are optional and not mandatory for new pieces.
           </CatalogNote>
+          <ListSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter characters…"
+            ocid="admin.sprites.search_input"
+          />
         </div>
 
         {/* List */}
@@ -1809,7 +1825,21 @@ const SpriteList: React.FC<{
             </div>
           )}
 
-          {sprites.map((s, i) => {
+          {!loading && sprites.length > 0 && visibleSprites.length === 0 && (
+            <div
+              data-ocid="admin.sprites.no_match"
+              style={{
+                textAlign: "center",
+                padding: "24px 16px",
+                color: "#6a6070",
+                fontSize: 12,
+              }}
+            >
+              No characters match “{query}”
+            </div>
+          )}
+
+          {visibleSprites.map((s, i) => {
             const isActive = selectedId === s.id;
             const thumb = s.frontUrl[0];
             return (
@@ -5401,6 +5431,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
     id: string;
     label: string;
   } | null>(null);
+  const [modifierQuery, setModifierQuery] = useState("");
+  const [achievementQuery, setAchievementQuery] = useState("");
+  const [nameQuery, setNameQuery] = useState("");
+  const [bannedPrincipals, setBannedPrincipals] = useState<string[]>([]);
+  const [bannedLoadError, setBannedLoadError] = useState<string | null>(null);
 
   const { actor: adminActor } = useActor();
 
@@ -5433,6 +5468,24 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   useEffect(() => {
     if (gameConfigQ.data) setGameConfigDraft(gameConfigQ.data);
   }, [gameConfigQ.data]);
+
+  const loadBanned = useCallback(async () => {
+    if (!adminActor || !isAdmin) return;
+    try {
+      const result = await (
+        adminActor as unknown as backendInterface
+      ).getBannedPrincipals();
+      const list = readPrincipalListResult(result, "getBannedPrincipals");
+      setBannedPrincipals(list);
+      setBannedLoadError(null);
+    } catch (err) {
+      setBannedLoadError(err instanceof Error ? err.message : String(err));
+    }
+  }, [adminActor, isAdmin]);
+
+  useEffect(() => {
+    void loadBanned();
+  }, [loadBanned]);
 
   const hasOpenEditor =
     dashState.editingEnemyId != null ||
@@ -5475,6 +5528,17 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   const sprites = spriteQ.data ?? [];
   const spells = spellQ.data ?? [];
   const modifiers = modifierQ.data ?? [];
+  const visibleModifiers = modifiers.filter((m) =>
+    matchesQuery(modifierQuery, m.name, m.id, m.modifierType),
+  );
+  const achievements = achievementQ.data ?? [];
+  const visibleAchievements = achievements.filter((a) =>
+    matchesQuery(achievementQuery, a.name, a.id, a.condition),
+  );
+  const enemyNames = enemyNamesQ.data ?? [];
+  const visibleEnemyNames = enemyNames.filter((n) =>
+    matchesQuery(nameQuery, n),
+  );
 
   const editingEnemy =
     dashState.editingEnemyId === "__new__"
@@ -5716,6 +5780,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 toast.success(`Banned ${shopBanPrincipalId}`);
                 setSaveStatus("Saved");
                 setTimeout(() => setSaveStatus(null), 3000);
+                void loadBanned();
               } catch (err) {
                 toast.error(`Failed to ban player: ${String(err)}`);
                 setSaveStatus(`Save failed: ${String(err)}`);
@@ -5727,7 +5792,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       {shopConfirm === "unban" && (
         <ConfirmDialog
           title={`Unban ${shopBanPrincipalId}?`}
-          body="This restores purchases, buffs, achievement claims, boss rush, and Doka awards for this principal. Cleared achievement progress is not restored."
+          body="This restores purchases, buffs, achievement claims, boss rush, and Doka awards for this principal. Achievement progress was kept on ban, so claimed rewards stay claimed."
           confirmLabel="Unban player"
           ocidPrefix="admin.shop.unban"
           onCancel={() => setShopConfirm(null)}
@@ -5735,12 +5800,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
             setShopConfirm(null);
             void (async () => {
               try {
-                await (
+                const result = await (
                   adminActor as unknown as backendInterface
                 ).adminUnbanAccount(Principal.fromText(shopBanPrincipalId));
+                assertAdminCmdOk(result, "adminUnbanAccount");
                 toast.success(`Unbanned ${shopBanPrincipalId}`);
                 setSaveStatus("Saved");
                 setTimeout(() => setSaveStatus(null), 3000);
+                void loadBanned();
               } catch (err) {
                 toast.error(`Failed to unban player: ${String(err)}`);
                 setSaveStatus(`Save failed: ${String(err)}`);
@@ -6329,20 +6396,31 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   >
                     {modifiers.length} modifier
                     {modifiers.length === 1 ? "" : "s"} defined
+                    {modifierQuery.trim()
+                      ? ` · ${visibleModifiers.length} shown`
+                      : ""}
                   </p>
                 </div>
-                <Btn
-                  variant="gold"
-                  onClick={() =>
-                    setDashState((p) => ({
-                      ...p,
-                      editingModifierId: "__new__",
-                    }))
-                  }
-                  ocid="admin.modifiers.add_button"
-                >
-                  + Add Modifier
-                </Btn>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <ListSearch
+                    value={modifierQuery}
+                    onChange={setModifierQuery}
+                    placeholder="Filter modifiers…"
+                    ocid="admin.modifiers.search_input"
+                  />
+                  <Btn
+                    variant="gold"
+                    onClick={() =>
+                      setDashState((p) => ({
+                        ...p,
+                        editingModifierId: "__new__",
+                      }))
+                    }
+                    ocid="admin.modifiers.add_button"
+                  >
+                    + Add Modifier
+                  </Btn>
+                </div>
               </div>
 
               {dashState.editingModifierId ? (
@@ -6433,7 +6511,22 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       </div>
                     </div>
                   )}
-                  {modifiers.map((mod, i) => (
+                  {!modifierQ.isLoading &&
+                    modifiers.length > 0 &&
+                    visibleModifiers.length === 0 && (
+                      <div
+                        data-ocid="admin.modifiers.no_match"
+                        style={{
+                          textAlign: "center",
+                          padding: "24px 0",
+                          color: "#6a6070",
+                          fontSize: 12,
+                        }}
+                      >
+                        No modifiers match “{modifierQuery}”
+                      </div>
+                    )}
+                  {visibleModifiers.map((mod, i) => (
                     <PanelCard key={mod.id}>
                       <div
                         data-ocid={`admin.modifiers.item.${i + 1}`}
@@ -6566,21 +6659,32 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                     }}
                   >
                     Configure player achievements and Doka rewards
+                    {achievementQuery.trim()
+                      ? ` · ${visibleAchievements.length} shown`
+                      : ""}
                   </p>
                 </div>
-                <Btn
-                  variant="gold"
-                  small
-                  ocid="admin.achievements.add_button"
-                  onClick={() =>
-                    setDashState((p) => ({
-                      ...p,
-                      editingAchievementId: "__new__",
-                    }))
-                  }
-                >
-                  + New Achievement
-                </Btn>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <ListSearch
+                    value={achievementQuery}
+                    onChange={setAchievementQuery}
+                    placeholder="Filter achievements…"
+                    ocid="admin.achievements.search_input"
+                  />
+                  <Btn
+                    variant="gold"
+                    small
+                    ocid="admin.achievements.add_button"
+                    onClick={() =>
+                      setDashState((p) => ({
+                        ...p,
+                        editingAchievementId: "__new__",
+                      }))
+                    }
+                  >
+                    + New Achievement
+                  </Btn>
+                </div>
               </div>
 
               {/* Editor */}
@@ -6623,30 +6727,43 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       Loading…
                     </div>
                   )}
+                  {!achievementQ.isLoading && achievements.length === 0 && (
+                    <div
+                      data-ocid="admin.achievements.empty_state"
+                      style={{
+                        textAlign: "center",
+                        padding: "40px 0",
+                        color: "#6a6070",
+                        fontSize: 13,
+                        border: `1px dashed ${C.dimmer}`,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div style={{ fontSize: 28, marginBottom: 8 }}>🏆</div>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                        No achievements yet
+                      </div>
+                      <div style={{ fontSize: 11 }}>
+                        Add achievements with Doka rewards for players to unlock
+                      </div>
+                    </div>
+                  )}
                   {!achievementQ.isLoading &&
-                    (achievementQ.data ?? []).length === 0 && (
+                    achievements.length > 0 &&
+                    visibleAchievements.length === 0 && (
                       <div
-                        data-ocid="admin.achievements.empty_state"
+                        data-ocid="admin.achievements.no_match"
                         style={{
                           textAlign: "center",
-                          padding: "40px 0",
+                          padding: "24px 0",
                           color: "#6a6070",
-                          fontSize: 13,
-                          border: `1px dashed ${C.dimmer}`,
-                          borderRadius: 8,
+                          fontSize: 12,
                         }}
                       >
-                        <div style={{ fontSize: 28, marginBottom: 8 }}>🏆</div>
-                        <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                          No achievements yet
-                        </div>
-                        <div style={{ fontSize: 11 }}>
-                          Add achievements with Doka rewards for players to
-                          unlock
-                        </div>
+                        No achievements match “{achievementQuery}”
                       </div>
                     )}
-                  {(achievementQ.data ?? []).map((ach, i) => (
+                  {visibleAchievements.map((ach, i) => (
                     <PanelCard key={ach.id}>
                       <div
                         data-ocid={`admin.achievements.item.${i + 1}`}
@@ -6952,6 +7069,70 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   </Btn>
                 </div>
               </div>
+              <div
+                style={{
+                  background:
+                    "linear-gradient(160deg,#48343c 0%,#241a20 40%,#14101a 100%)",
+                  border: `1px solid ${C.goldDim}`,
+                  borderRadius: 8,
+                  padding: "14px 16px",
+                  marginTop: 16,
+                }}
+              >
+                <p style={sectionHeadStyle}>Banned principals</p>
+                <p
+                  style={{
+                    color: C.dim,
+                    fontSize: 10,
+                    margin: "0 0 10px",
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Live list from getBannedPrincipals. Click a principal to fill
+                  the unban field. Empty is valid — nobody is banned.
+                </p>
+                {bannedLoadError && (
+                  <p
+                    data-ocid="admin.shop.banned.error"
+                    style={{ color: C.red, fontSize: 11, margin: "0 0 8px" }}
+                  >
+                    {bannedLoadError}
+                  </p>
+                )}
+                {!bannedLoadError && bannedPrincipals.length === 0 && (
+                  <p
+                    data-ocid="admin.shop.banned.empty"
+                    style={{ color: C.green, fontSize: 11, margin: 0 }}
+                  >
+                    No banned principals (valid default)
+                  </p>
+                )}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {bannedPrincipals.map((p, i) => (
+                    <button
+                      key={p}
+                      type="button"
+                      data-ocid={`admin.shop.banned.pick_button.${i + 1}`}
+                      onClick={() => setShopBanPrincipalId(p)}
+                      style={{
+                        background: `${C.red}18`,
+                        border: `1px solid ${C.red}44`,
+                        color: C.silver,
+                        borderRadius: 20,
+                        padding: "4px 10px",
+                        fontSize: 10,
+                        cursor: "pointer",
+                        maxWidth: 280,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={p}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -7150,6 +7331,12 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   </p>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <ListSearch
+                    value={nameQuery}
+                    onChange={setNameQuery}
+                    placeholder="Filter names…"
+                    ocid="admin.names.search_input"
+                  />
                   <div
                     style={{
                       background: `${C.gold}18`,
@@ -7161,19 +7348,19 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                       fontWeight: 700,
                     }}
                   >
-                    {enemyNamesQ.data?.length ?? 0} names
+                    {enemyNames.length} names
+                    {nameQuery.trim() ? ` · ${visibleEnemyNames.length}` : ""}
                   </div>
-                  {(enemyNamesQ.data?.length ?? 0) === 0 &&
-                    !enemyNamesQ.isLoading && (
-                      <Btn
-                        variant="gold"
-                        small
-                        onClick={() => initDefaultNamesMut.mutate()}
-                        ocid="admin.names.init_defaults_button"
-                      >
-                        Load Defaults
-                      </Btn>
-                    )}
+                  {enemyNames.length === 0 && !enemyNamesQ.isLoading && (
+                    <Btn
+                      variant="gold"
+                      small
+                      onClick={() => initDefaultNamesMut.mutate()}
+                      ocid="admin.names.init_defaults_button"
+                    >
+                      Load Defaults
+                    </Btn>
+                  )}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
@@ -7239,32 +7426,44 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   Loading names…
                 </div>
               )}
-              {!enemyNamesQ.isLoading &&
-                (enemyNamesQ.data?.length ?? 0) === 0 && (
-                  <div
-                    data-ocid="admin.names.empty_state"
-                    style={{
-                      textAlign: "center",
-                      padding: "40px 0",
-                      color: "#6a6070",
-                      fontSize: 13,
-                      border: `1px dashed ${C.dimmer}`,
-                      borderRadius: 8,
-                    }}
-                  >
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>📛</div>
-                    <div style={{ fontWeight: 700, marginBottom: 4 }}>
-                      No enemy names yet
-                    </div>
-                    <div style={{ fontSize: 11 }}>
-                      Click &ldquo;Load Defaults&rdquo; to pre-fill with 90
-                      ancient names.
-                    </div>
+              {!enemyNamesQ.isLoading && enemyNames.length === 0 && (
+                <div
+                  data-ocid="admin.names.empty_state"
+                  style={{
+                    textAlign: "center",
+                    padding: "40px 0",
+                    color: "#6a6070",
+                    fontSize: 13,
+                    border: `1px dashed ${C.dimmer}`,
+                    borderRadius: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>📛</div>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>
+                    No enemy names yet
                   </div>
-                )}
-              {(enemyNamesQ.data?.length ?? 0) > 0 && (
+                  <div style={{ fontSize: 11 }}>
+                    Click &ldquo;Load Defaults&rdquo; to pre-fill with 90
+                    ancient names.
+                  </div>
+                </div>
+              )}
+              {enemyNames.length > 0 && visibleEnemyNames.length === 0 && (
+                <div
+                  data-ocid="admin.names.no_match"
+                  style={{
+                    textAlign: "center",
+                    padding: "24px 0",
+                    color: "#6a6070",
+                    fontSize: 12,
+                  }}
+                >
+                  No names match “{nameQuery}”
+                </div>
+              )}
+              {visibleEnemyNames.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {(enemyNamesQ.data ?? []).map((name, i) => (
+                  {visibleEnemyNames.map((name, i) => (
                     <div
                       key={name}
                       data-ocid={`admin.names.item.${i + 1}`}
@@ -7570,6 +7769,7 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
   const [confirmResetId, setConfirmResetId] = React.useState<string | null>(
     null,
   );
+  const [query, setQuery] = React.useState("");
 
   const getDraft = (id: string): BossConfig => {
     if (drafts[id]) return drafts[id];
@@ -7612,6 +7812,11 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
     });
   };
 
+  const visibleBossIds = BOSS_IDS.filter((bossId) => {
+    const draft = getDraft(bossId);
+    return matchesQuery(query, draft.name, bossId, draft.pieceType);
+  });
+
   return (
     <div
       data-ocid="admin.bosses_tab"
@@ -7646,6 +7851,14 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
           </p>
         </div>
       </div>
+      <div style={{ marginBottom: 12 }}>
+        <ListSearch
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter bosses…"
+          ocid="admin.bosses.search_input"
+        />
+      </div>
 
       {confirmResetId && (
         <ConfirmDialog
@@ -7662,7 +7875,21 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
         />
       )}
 
-      {BOSS_IDS.map((bossId, idx) => {
+      {query.trim() && visibleBossIds.length === 0 && (
+        <div
+          data-ocid="admin.bosses.no_match"
+          style={{
+            textAlign: "center",
+            padding: "24px 0",
+            color: "#6a6070",
+            fontSize: 12,
+          }}
+        >
+          No bosses match “{query}”
+        </div>
+      )}
+
+      {visibleBossIds.map((bossId, idx) => {
         const draft = getDraft(bossId);
         const isOpen = expandedId === bossId;
 

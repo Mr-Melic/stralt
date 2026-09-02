@@ -108,6 +108,23 @@ export function playerGameKeyStatusCopy(status: string): string {
   }
 }
 
+/** Owner-tool confirm: approve records Doka on the request; wallet credits on redeem. */
+export function gameKeyApproveConfirmBody(
+  amount: number,
+  email: string,
+): string {
+  const who = email.trim() || "this request";
+  return `This records ${amount} Doka for ${who} and mints a 120-character GameKey. The player wallet is not credited until they redeem. There is no undo.`;
+}
+
+export function gameKeyRejectConfirmBody(): string {
+  return "This marks the request rejected. The player may submit again. No GameKey is minted. There is no undo.";
+}
+
+export function gameKeyEmailedConfirmBody(): string {
+  return "This wipes the plaintext GameKey from admin view. Copy it first. The player still redeems the same code.";
+}
+
 export function hintedEurosLabel(euroCents: number): string {
   const n = Math.max(0, Math.floor(Number(euroCents) || 0));
   if (n <= 0) return "—";

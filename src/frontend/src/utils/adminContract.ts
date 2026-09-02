@@ -140,6 +140,31 @@ export function readPurchasesResult(result: unknown): AdminPurchaseRecord[] {
   return ok.map(mapPurchaseRecordFromBackend);
 }
 
+/** Unwrap getBannedPrincipals #ok so Shop can list who to unban. */
+export function readPrincipalListResult(
+  result: unknown,
+  method: string,
+): string[] {
+  if (Array.isArray(result)) {
+    return result.map((p) => textOf(p)).filter((t) => t.length > 0);
+  }
+  if (result == null || typeof result !== "object") {
+    throw new Error(`${method} returned an empty result`);
+  }
+  const r = result as Record<string, unknown>;
+  if (
+    r.__kind__ === "err" ||
+    (r.err != null && r.ok == null && r._ok == null)
+  ) {
+    throw new Error(String(r.err ?? r._err ?? `${method} failed`));
+  }
+  const ok = r.ok ?? r._ok;
+  if (!Array.isArray(ok)) {
+    throw new Error(`${method} missing ok payload`);
+  }
+  return ok.map((p) => textOf(p)).filter((t) => t.length > 0);
+}
+
 export function optUrlToOptional(
   value: [] | [string] | string | undefined | null,
 ): string | undefined {
