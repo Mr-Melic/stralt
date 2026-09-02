@@ -185,6 +185,19 @@ describe("classifyWalkReject", () => {
       "not_enough_mp",
     );
   });
+
+  it("rejects a leftover 1-MP Frozen step the 1× execute formula used to allow", () => {
+    assert.equal(
+      classifyWalkReject({
+        currentMp: 1,
+        isBlocked: false,
+        reachable: true,
+        pathLength: 1,
+        costPerTile: 2,
+      }),
+      "not_enough_mp",
+    );
+  });
 });
 
 describe("shouldFloatWorldUnreachable", () => {

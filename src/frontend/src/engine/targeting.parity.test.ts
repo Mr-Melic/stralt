@@ -932,6 +932,48 @@ describe("decideSpriteCastClick mouse/touch table", () => {
       { action: "wait_for_turn" },
     );
   });
+
+  it("heal sprite off-turn waits, live-illegal heal rejects, unselected summon inspects", () => {
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "starter-heal",
+        hasSelectedSpell: true,
+        hitKind: "player",
+        playerCastOk: false,
+        inBattle: true,
+        liveOk,
+        selfOrAllySpell: true,
+        hasBasicAttack: false,
+      }),
+      { action: "wait_for_turn" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "starter-heal",
+        hasSelectedSpell: true,
+        hitKind: "player",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: liveFail,
+        selfOrAllySpell: true,
+        hasBasicAttack: false,
+      }),
+      { action: "reject_live" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: null,
+        hasSelectedSpell: false,
+        hitKind: "summon",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk,
+        selfOrAllySpell: false,
+        hasBasicAttack: false,
+      }),
+      { action: "inspect" },
+    );
+  });
 });
 
 describe("resolveCastApCost", () => {
