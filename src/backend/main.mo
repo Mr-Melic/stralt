@@ -92,6 +92,9 @@ actor {
         if (caller.isAnonymous()) {
             return #err("Unauthorized: anonymous caller");
         };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return #err("Account banned for non-payment");
+        };
         if (layout.size() > 65_536) {
             return #err("uiLayout exceeds maximum size");
         };

@@ -40,13 +40,40 @@ export function euroTextToCents(raw: string): { ok: number } | { err: string } {
   return { ok: cents };
 }
 
+const EMAIL_MAILTO_META = /[?#&:/\\<>"',;%]/;
+
 export function validateGameKeyEmail(email: string): string | null {
   const t = email.trim();
   if (t.length < 6 || t.length > GAME_KEY_MAX_EMAIL) {
     return "Email must be between 6 and 200 characters";
   }
   if (!EMAIL_RE.test(t)) return "Enter a valid email address";
+  if (EMAIL_MAILTO_META.test(t)) {
+    return "Email contains characters that cannot be used in mailto";
+  }
   return null;
+}
+
+/**
+ * Admin Approve must use the Mollie-confirmed amount the operator typed.
+ * Falling back to `hintedEuroCents` let a raw client pre-fill 10M Doka.
+ */
+export function resolveAdminApproveDokaAmount(
+  draft: string | undefined,
+): { ok: number } | { err: string } {
+  if (draft == null || draft.trim() === "") {
+    return {
+      err: "Enter the Doka amount confirmed on Mollie; the player's hint is not a grant",
+    };
+  }
+  const n = Math.floor(Number(draft.trim()));
+  if (!Number.isFinite(n) || n <= 0) {
+    return { err: "Grant amount must be greater than 0" };
+  }
+  if (n > 10_000_000) {
+    return { err: "Grant amount exceeds maximum of 10000000" };
+  }
+  return { ok: n };
 }
 
 export function validateGameKeyConsent(consent: boolean): string | null {

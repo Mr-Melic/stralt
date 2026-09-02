@@ -75,6 +75,13 @@ module {
             if (c == ' ' or c == '\n' or c == '\t' or c == '\r') {
                 return ?"Email cannot contain whitespace";
             };
+            // mailto: query separators. A raw client used to store
+            // `a@b.com?bcc=...` so the admin mailto href injected extra headers.
+            if (c == '?' or c == '&' or c == '#' or c == ':' or c == '/'
+                or c == '\\' or c == '<' or c == '>' or c == '"' or c == '\''
+                or c == ',' or c == ';' or c == '%') {
+                return ?"Email contains characters that cannot be used in mailto";
+            };
             if (c == '@') {
                 atCount += 1;
                 atPos := i;
