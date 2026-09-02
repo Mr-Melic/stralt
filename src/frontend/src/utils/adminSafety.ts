@@ -257,6 +257,59 @@ export function clampPersistedHpWrite(
   return Math.min(raw, persistHpWriteCap(storedHp, level, growthPercent));
 }
 
+export const KNOWN_ACHIEVEMENT_CONDITIONS = [
+  "first_battle_win",
+  "survive_1hp",
+  "spell_level_5",
+  "doka_1000",
+  "explore_25_maps",
+  "betrayal_witness",
+  "leader_slayer",
+  "jackpot_heal",
+  "loot_10_doka",
+  "double_betrayal",
+  "level_10",
+  "spell_master_8",
+  "critical_5_in_battle",
+  "pacifist_run",
+  "doka_10000",
+] as const;
+
+export function knownAchievementCondition(condition: string): boolean {
+  return (KNOWN_ACHIEVEMENT_CONDITIONS as readonly string[]).includes(
+    condition,
+  );
+}
+
+export function validateAchievementConfig(config: {
+  id: string;
+  name: string;
+  condition: string;
+  dokaReward: number;
+  description?: string;
+}): string | null {
+  const idErr = requireId(config.id, "Achievement");
+  if (idErr) return idErr;
+  if (!config.name) return "Achievement name cannot be empty";
+  if (config.name.length > 100) {
+    return "Achievement name exceeds maximum length";
+  }
+  if (!knownAchievementCondition(config.condition)) {
+    return "condition is not a recognized value";
+  }
+  if (
+    !Number.isFinite(config.dokaReward) ||
+    config.dokaReward < 0 ||
+    config.dokaReward > 1_000_000
+  ) {
+    return "dokaReward exceeds maximum of 1000000";
+  }
+  if ((config.description?.length ?? 0) > 500) {
+    return "description exceeds maximum length";
+  }
+  return null;
+}
+
 /**
  * Server-checkable achievement conditions. Combat feats stay client-trusted.
  * Mirrors adminGuard.achievementUnlockRejected.
@@ -267,6 +320,9 @@ export function achievementUnlockRejected(
   doka: number,
   bestSpellLevel: number,
 ): string | null {
+  if (!knownAchievementCondition(condition)) {
+    return "condition is not a recognized value";
+  }
   if (condition === "level_10" && bestLevel < 10) return "Level below 10";
   if (condition === "doka_1000" && doka < 1000) {
     return "Doka balance below 1000";
@@ -443,6 +499,16 @@ export function validateGameConfig(config: {
     return "dokaSpawnBaseValue must be between 1 and 10000";
   }
   return null;
+}
+
+/**
+ * Fresh-install seed. dokaSpawnChance=0 is legal (no ground Doka) and must
+ * not be treated as uninitialized — that path rewrote live gameConfig.
+ */
+export function gameConfigNeedsSeed(config: {
+  dokaSpawnBaseValue: number;
+}): boolean {
+  return config.dokaSpawnBaseValue === 0;
 }
 
 export function validateTierSpawnConfig(config: {

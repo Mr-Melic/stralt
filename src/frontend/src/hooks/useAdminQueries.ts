@@ -8,6 +8,7 @@ import type {
 } from "../types/gameTypes";
 import { assertAdminCmdOk } from "../utils/adminContract";
 import {
+  validateAchievementConfig,
   validateAssignRole,
   validateEnemyName,
   validateMapModifierChance,
@@ -404,6 +405,8 @@ export function useAdminSetAchievementConfig() {
   return useMutation({
     mutationFn: async (config: AchievementConfig) => {
       if (!actor) throw new Error("Actor not available");
+      const guardErr = validateAchievementConfig(config);
+      if (guardErr) throw new Error(guardErr);
       const result = await (actor as ActorAny).adminSetAchievementConfig({
         ...config,
         dokaReward: BigInt(Math.round(config.dokaReward)),
