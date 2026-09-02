@@ -930,6 +930,108 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
       );
     }
   });
+
+  it("seed-portal-cut-hostile: relocates a rat beyond a portal choke onto the fight graph", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][3] = "portal";
+    const portals = [{ x: 3, y: 1 }];
+    const isolated = [{ x: 5, y: 1 }];
+    const before = evaluateSolvability(
+      tiles,
+      new Set(),
+      { x: 1, y: 1 },
+      portals,
+      isolated,
+      7,
+      3,
+    );
+    assert.equal(
+      before.enemiesReachable,
+      false,
+      "fixture must start battle-isolated across the gate",
+    );
+    assert.equal(
+      sequentialClearUnlocks(
+        tiles,
+        new Set(),
+        { x: 1, y: 1 },
+        portals,
+        isolated,
+        7,
+        3,
+      ),
+      false,
+      "melee cannot cross a battle-impassable portal",
+    );
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals,
+      spawns: isolated,
+      w: 7,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      7,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(
+      finalized.spawns[0].x < finalized.portals[0].x,
+      true,
+      "hostile must sit on the player's side of the gate",
+    );
+    assert.equal(
+      finalized.tiles[1][5],
+      F,
+      "must not wall the far-side floor (aesthetics)",
+    );
+  });
+
+  it("seed-spawn-on-portal-cut: moving off the gate stays on the large room", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [F, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][3] = "portal";
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 3, y: 1 },
+      portals: [{ x: 3, y: 1 }],
+      spawns: [],
+      w: 7,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      7,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(
+      finalized.playerSpawn.x < 3,
+      true,
+      "spawn-off-exit must not step onto the 2-tile far island",
+    );
+    assert.equal(finalized.tiles[1][4], F);
+    assert.equal(finalized.tiles[1][5], F);
+  });
 });
 
 describe("seeded world property suite", () => {

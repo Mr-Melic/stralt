@@ -249,12 +249,37 @@ function isWalkable(
   y: number,
   w: number,
   h: number,
+  extraBlocked?: Set<string>,
 ): boolean {
   if (x < 0 || y < 0 || x >= w || y >= h) return false;
   const t = tiles[y]?.[x] as string;
   if (t === "wall") return false;
-  if (vt.has(`${x},${y}`)) return false;
+  const k = `${x},${y}`;
+  if (vt.has(k)) return false;
+  if (extraBlocked?.has(k)) return false;
   return true;
+}
+
+/**
+ * Portal tiles are walkable in overworld (step-on to enter / walk through
+ * a locked gate) but impassable in battle (`isBattleWalkTileBlocked`).
+ * Occupancy floods that treat them as floor join both sides into one
+ * component; destack then teleports onto the far island.
+ */
+function collectPortalBlockers(
+  tiles: string[][],
+  portals: { x: number; y: number }[],
+  w: number,
+  h: number,
+): Set<string> {
+  const blocked = new Set<string>();
+  for (const p of portals) blocked.add(`${p.x},${p.y}`);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if ((tiles[y]?.[x] as string) === "portal") blocked.add(`${x},${y}`);
+    }
+  }
+  return blocked;
 }
 
 function floodFillReachable(
@@ -263,9 +288,12 @@ function floodFillReachable(
   start: { x: number; y: number },
   w: number,
   h: number,
+  extraBlocked?: Set<string>,
 ): Set<string> {
   const visited = new Set<string>();
-  if (!isWalkable(tiles, vt, start.x, start.y, w, h)) return visited;
+  if (!isWalkable(tiles, vt, start.x, start.y, w, h, extraBlocked)) {
+    return visited;
+  }
   const q: { x: number; y: number }[] = [start];
   visited.add(`${start.x},${start.y}`);
   while (q.length > 0) {
@@ -275,12 +303,113 @@ function floodFillReachable(
       const ny = cur.y + d[1];
       const k = `${nx},${ny}`;
       if (visited.has(k)) continue;
-      if (!isWalkable(tiles, vt, nx, ny, w, h)) continue;
+      if (!isWalkable(tiles, vt, nx, ny, w, h, extraBlocked)) continue;
       visited.add(k);
       q.push({ x: nx, y: ny });
     }
   }
   return visited;
+}
+
+/**
+ * Battle-walkable island the player can fight on. When the seed sits on a
+ * portal, pick the largest adjacent floor component so a 2-tile far island
+ * cannot win over the intended room.
+ */
+function largestBattleComponentFrom(
+  tiles: string[][],
+  vt: Set<string>,
+  seed: { x: number; y: number },
+  w: number,
+  h: number,
+  portalBlock: Set<string>,
+): { origin: { x: number; y: number }; reachable: Set<string> } | null {
+  const starts: { x: number; y: number }[] = [];
+  if (isWalkable(tiles, vt, seed.x, seed.y, w, h, portalBlock)) {
+    starts.push(seed);
+  } else {
+    for (const d of REACH_DIRS) {
+      const nx = seed.x + d[0];
+      const ny = seed.y + d[1];
+      if (isWalkable(tiles, vt, nx, ny, w, h, portalBlock)) {
+        starts.push({ x: nx, y: ny });
+      }
+    }
+  }
+  let best: {
+    origin: { x: number; y: number };
+    reachable: Set<string>;
+  } | null = null;
+  const seen = new Set<string>();
+  for (const s of starts) {
+    const sk = `${s.x},${s.y}`;
+    if (seen.has(sk)) continue;
+    const reachable = floodFillReachable(tiles, vt, s, w, h, portalBlock);
+    for (const k of reachable) seen.add(k);
+    if (!best || reachable.size > best.reachable.size) {
+      best = { origin: s, reachable };
+    }
+  }
+  return best;
+}
+
+/**
+ * Relocate hostiles that sit on the far side of a portal cut-vertex.
+ * Overworld flood walks through portals; battle pathing does not. Leaving
+ * a rat there keeps isProgressionLocked true with no legal melee approach.
+ */
+function relocateBattleIsolatedHostiles(
+  tiles: string[][],
+  vt: Set<string>,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  spawns: { x: number; y: number }[],
+  w: number,
+  h: number,
+): { x: number; y: number }[] {
+  if (spawns.length === 0) return spawns;
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  if (!battle || battle.reachable.size === 0) return spawns;
+  const out = spawns.map((s) => ({ x: s.x, y: s.y }));
+  const occupied = new Set<string>([
+    `${playerSpawn.x},${playerSpawn.y}`,
+    ...portals.map((p) => `${p.x},${p.y}`),
+  ]);
+  for (const s of out) {
+    if (battle.reachable.has(`${s.x},${s.y}`)) occupied.add(`${s.x},${s.y}`);
+  }
+  for (let i = 0; i < out.length; i++) {
+    const key = `${out[i].x},${out[i].y}`;
+    if (battle.reachable.has(key)) continue;
+    const near = claimUniqueReachableCell(
+      tiles,
+      vt,
+      out[i],
+      battle.reachable,
+      occupied,
+      w,
+      h,
+    );
+    if (near) {
+      occupied.delete(key);
+      out[i] = near;
+      occupied.add(`${near.x},${near.y}`);
+    }
+  }
+  const reserved = new Set<string>([
+    `${playerSpawn.x},${playerSpawn.y}`,
+    ...portals.map((p) => `${p.x},${p.y}`),
+  ]);
+  destackSpawns(tiles, vt, out, occupied, reserved, battle.reachable, w, h);
+  return out;
 }
 
 // BFS from `start` to any cell in `targetSet`, treating walls as walkable
@@ -1139,13 +1268,26 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     (p) => p.x === playerSpawn.x && p.y === playerSpawn.y,
   );
   if (spawnOnExit) {
-    const reachable = floodFillReachable(
+    // Overworld flood walks through the portal onto a far 2-tile island.
+    // Stay on the largest battle-walkable room so destack cannot start
+    // the fight on the wrong side of the gate.
+    const portalBlock = collectPortalBlockers(
+      liveTiles,
+      portals,
+      input.w,
+      input.h,
+    );
+    const battle = largestBattleComponentFrom(
       liveTiles,
       vt,
       playerSpawn,
       input.w,
       input.h,
+      portalBlock,
     );
+    const reachable =
+      battle?.reachable ??
+      floodFillReachable(liveTiles, vt, playerSpawn, input.w, input.h);
     let moved = false;
     for (const k of reachable) {
       // Standing on a rat used to start the room stacked on the hostile
@@ -1172,6 +1314,16 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
       if (punched) playerSpawn = punched;
     }
   }
+
+  spawns = relocateBattleIsolatedHostiles(
+    liveTiles,
+    vt,
+    playerSpawn,
+    portals,
+    spawns,
+    input.w,
+    input.h,
+  );
 
   // CA leftover islands (border 2-tile pockets) stay walkable but outside
   // the spawn flood. Battle-start max-spacing then teleports the player
@@ -1280,16 +1432,30 @@ export function sequentialClearUnlocks(
 ): boolean {
   if (portals.length === 0) return false;
   const portalKeys = portals.map((p) => `${p.x},${p.y}`);
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
   const blocked = new Set(spawns.map((s) => `${s.x},${s.y}`));
   blocked.delete(`${playerSpawn.x},${playerSpawn.y}`);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    voidTiles,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const battleOrigin = battle?.origin ?? playerSpawn;
 
-  const flood = (walls: Set<string>): Set<string> => {
+  const flood = (
+    walls: Set<string>,
+    extraBlocked?: Set<string>,
+    origin: { x: number; y: number } = playerSpawn,
+  ): Set<string> => {
     const visited = new Set<string>();
-    if (!isWalkable(tiles, voidTiles, playerSpawn.x, playerSpawn.y, w, h)) {
+    if (!isWalkable(tiles, voidTiles, origin.x, origin.y, w, h, extraBlocked)) {
       return visited;
     }
-    const q: { x: number; y: number }[] = [playerSpawn];
-    visited.add(`${playerSpawn.x},${playerSpawn.y}`);
+    const q: { x: number; y: number }[] = [origin];
+    visited.add(`${origin.x},${origin.y}`);
     while (q.length > 0) {
       const cur = q.shift()!;
       for (const d of REACH_DIRS) {
@@ -1297,7 +1463,7 @@ export function sequentialClearUnlocks(
         const ny = cur.y + d[1];
         const k = `${nx},${ny}`;
         if (visited.has(k)) continue;
-        if (!isWalkable(tiles, voidTiles, nx, ny, w, h)) continue;
+        if (!isWalkable(tiles, voidTiles, nx, ny, w, h, extraBlocked)) continue;
         if (walls.has(k)) continue;
         visited.add(k);
         q.push({ x: nx, y: ny });
@@ -1306,27 +1472,34 @@ export function sequentialClearUnlocks(
     return visited;
   };
 
-  // Portal walkability is not enough — leftover hostiles keep
-  // isProgressionLocked true. Every spawn must be engageable in waves.
+  const adjacentToReach = (
+    x: number,
+    y: number,
+    reach: Set<string>,
+  ): boolean => {
+    if (reach.has(`${x},${y}`)) return true;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        if (reach.has(`${x + dx},${y + dy}`)) return true;
+      }
+    }
+    return false;
+  };
+
+  // Battle pathing treats portals as walls. A rat beyond a portal choke
+  // is overworld-reachable (walk through the locked gate) but cannot be
+  // engaged once destack splits the fight. Require battle-graph waves.
   while (blocked.size > 0) {
-    const reach = flood(blocked);
+    const reach = flood(blocked, portalBlock, battleOrigin);
     let progressed = false;
     for (const ek of [...blocked]) {
       const parts = ek.split(",");
       const x = Number(parts[0]);
       const y = Number(parts[1]);
-      let engageable = reach.has(ek);
-      if (!engageable) {
-        for (let dy = -1; dy <= 1 && !engageable; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            if (reach.has(`${x + dx},${y + dy}`)) {
-              engageable = true;
-              break;
-            }
-          }
-        }
-      }
+      const engageable =
+        adjacentToReach(x, y, reach) ||
+        adjacentToReach(x, y, new Set([`${playerSpawn.x},${playerSpawn.y}`]));
       if (engageable) {
         blocked.delete(ek);
         progressed = true;
@@ -1359,9 +1532,20 @@ export function evaluateSolvability(
   );
   if (!playerSpawnLegal) failures.push("player-spawn-illegal");
   const reachable = floodFillReachable(tiles, vt, playerSpawn, w, h);
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const battleReachable = battle?.reachable ?? new Set<string>();
   let isolatedEnemies = 0;
   for (const s of spawns) {
-    if (!reachable.has(`${s.x},${s.y}`)) isolatedEnemies += 1;
+    const k = `${s.x},${s.y}`;
+    if (!reachable.has(k) || !battleReachable.has(k)) isolatedEnemies += 1;
   }
   const enemiesReachable = isolatedEnemies === 0;
   if (!enemiesReachable) {
