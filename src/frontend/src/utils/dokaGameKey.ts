@@ -132,11 +132,12 @@ export function hintedEurosLabel(euroCents: number): string {
 }
 
 export function gameKeyMailtoHref(email: string, code: string): string {
+  if (validateGameKeyEmail(email) != null) return "#";
   const subject = encodeURIComponent("Your Doka GameKey");
   const body = encodeURIComponent(
     `Your 120-character GameKey is:\n\n${code}\n\nRedeem it in Buy Doka while logged in. The code is single-use.`,
   );
-  return `mailto:${email}?subject=${subject}&body=${body}`;
+  return `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
 }
 
 export type GameKeyRequestView = {

@@ -2039,8 +2039,20 @@ actor {
         );
         let rawHp : Nat = if (hp <= 0) { 0 } else { hp.toNat() };
         let safeHp : Nat = _minNat(rawHp, maxHpAllowed);
-        let safeAp : Nat = _minNat(maxAp, 20);
-        let safeMp : Nat = _minNat(maxMp, 20);
+        // Official battle AP/MP is PLAYER_BASE + floor(level / threshold).
+        // A flat 20 cap let a raw client persist 20 AP/MP at level 1.
+        let maxApAllowed : Nat = AdminGuard.persistApWriteCap(
+            character.stats.ap,
+            character.level,
+            levelUpConfig.apMpLevelThreshold,
+        );
+        let maxMpAllowed : Nat = AdminGuard.persistMpWriteCap(
+            character.stats.mp,
+            character.level,
+            levelUpConfig.apMpLevelThreshold,
+        );
+        let safeAp : Nat = _minNat(maxAp, maxApAllowed);
+        let safeMp : Nat = _minNat(maxMp, maxMpAllowed);
 
         // Official heal/death/shop writes current stored atk/res/init. Do not
         // accept an inflated combat snapshot from a custom client.

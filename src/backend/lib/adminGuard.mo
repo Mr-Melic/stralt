@@ -11,6 +11,12 @@ module {
     public let MAX_ID : Nat = 64;
     public let MAX_NAME : Nat = 100;
     public let MAX_DUNGEON_DEPTH : Nat = 16;
+    /// Matches frontend PLAYER_BASE_AP / PLAYER_BASE_MP. saveBattleStats
+    /// used to accept maxAp=20 at level 1.
+    public let PLAYER_BASE_AP : Nat = 8;
+    public let PLAYER_BASE_MP : Nat = 4;
+    public let MAX_PERSISTED_AP : Nat = 20;
+    public let MAX_PERSISTED_MP : Nat = 20;
 
     public func isBuiltInSpellId(id : Text) : Bool {
         id == "shadow_strike" or id == "soul_rend" or id == "vampire_bite"
@@ -56,10 +62,21 @@ module {
         out
     };
 
+    func isUrlPrefixWs(c : Char) : Bool {
+        let n = c.toNat32();
+        c <= ' '
+            or n == (0xA0 : Nat32)
+            or n == (0xFEFF : Nat32)
+            or (n >= (0x2000 : Nat32) and n <= (0x200B : Nat32))
+            or n == (0x2028 : Nat32)
+            or n == (0x2029 : Nat32)
+            or n == (0x202F : Nat32)
+            or n == (0x205F : Nat32)
+            or n == (0x3000 : Nat32)
+    };
+
     func trimLeadingWs(url : Text) : Text {
-        url.trimStart(#predicate(func(c : Char) : Bool {
-            c == ' ' or c == '\t' or c == '\n' or c == '\r'
-        }))
+        url.trimStart(#predicate(isUrlPrefixWs))
     };
 
     func schemePrefix(url : Text) : Text {
@@ -67,12 +84,23 @@ module {
     };
 
     /// Case-insensitive, leading-whitespace-tolerant scheme check.
-    /// `JavaScript:` and ` javascript:` must not reach player-facing hrefs.
+    /// `JavaScript:`, ` javascript:`, NBSP/BOM prefixes, and `file:` must not
+    /// reach player-facing hrefs.
     public func unsafeUrl(url : Text) : Bool {
         let lower = schemePrefix(url);
         lower.startsWith(#text "javascript:")
             or lower.startsWith(#text "data:")
             or lower.startsWith(#text "vbscript:")
+            or lower.startsWith(#text "file:")
+    };
+
+    /// Landing ads are hosted PNG/WebP. http and non-URL schemes are rejected.
+    public func requireHttpsUrl(lbl : Text, url : Text) : ?Text {
+        let lower = schemePrefix(url);
+        if (not lower.startsWith(#text "https:")) {
+            return ?(lbl # " must be an https URL");
+        };
+        null
     };
 
     /// Official shop proof is `data:<image|pdf|octet-stream>;base64,...`.
@@ -614,6 +642,34 @@ module {
         if (storedHp > allowed) { storedHp } else { allowed }
     };
 
+    /// Official battle AP: PLAYER_BASE_AP + floor(level / apMpLevelThreshold).
+    /// saveBattleStats used a flat 20 cap, so a raw client persisted 20 AP at
+    /// level 1. Starter create still allows 10; persistApWriteCap grandfathers
+    /// that stored value the same way persistHpWriteCap does.
+    public func maxPersistedAp(level : Nat, threshold : Nat) : Nat {
+        let lvl = if (level < 1) { 1 } else { level };
+        let every = if (threshold < 1) { 1 } else { threshold };
+        let grown = PLAYER_BASE_AP + (lvl / every);
+        if (grown > MAX_PERSISTED_AP) { MAX_PERSISTED_AP } else { grown }
+    };
+
+    public func persistApWriteCap(storedAp : Nat, level : Nat, threshold : Nat) : Nat {
+        let allowed = maxPersistedAp(level, threshold);
+        if (storedAp > allowed) { storedAp } else { allowed }
+    };
+
+    public func maxPersistedMp(level : Nat, threshold : Nat) : Nat {
+        let lvl = if (level < 1) { 1 } else { level };
+        let every = if (threshold < 1) { 1 } else { threshold };
+        let grown = PLAYER_BASE_MP + (lvl / every);
+        if (grown > MAX_PERSISTED_MP) { MAX_PERSISTED_MP } else { grown }
+    };
+
+    public func persistMpWriteCap(storedMp : Nat, level : Nat, threshold : Nat) : Nat {
+        let allowed = maxPersistedMp(level, threshold);
+        if (storedMp > allowed) { storedMp } else { allowed }
+    };
+
     /// Server-checkable achievement conditions. Combat feats stay client-trusted
     /// only when the condition is in the known catalog. An unknown string used
     /// to pass, so adminSetAchievementConfig(condition="instant", dokaReward=1e6)
@@ -647,7 +703,9 @@ module {
     public func validateAdBox(index : Nat, imageUrl : Text, linkUrl : Text) : ?Text {
         if (index >= 3) { return ?"index out of range: must be 0, 1, or 2" };
         switch (validateRequiredUrl("imageUrl", imageUrl)) { case (?e) { return ?e }; case null {} };
+        switch (requireHttpsUrl("imageUrl", imageUrl)) { case (?e) { return ?e }; case null {} };
         switch (validateRequiredUrl("linkUrl", linkUrl)) { case (?e) { return ?e }; case null {} };
+        switch (requireHttpsUrl("linkUrl", linkUrl)) { case (?e) { return ?e }; case null {} };
         null
     };
 

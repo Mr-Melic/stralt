@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  gameKeyMailtoHref,
   resolveAdminApproveDokaAmount,
   suggestedDokaFromEuroCents,
   validateGameKeyEmail,
@@ -45,5 +46,16 @@ describe("GameKey email mailto metacharacters", () => {
     );
     assert.equal(validateGameKeyEmail("ada@example.com&bcc=x") != null, true);
     assert.equal(validateGameKeyEmail("ada@example.com#frag") != null, true);
+  });
+});
+
+describe("GameKey admin mailto", () => {
+  it("encodes the address and refuses stored mailto metacharacters", () => {
+    const href = gameKeyMailtoHref("ada@example.com", "A".repeat(120));
+    assert.equal(href.startsWith("mailto:ada%40example.com?"), true);
+    assert.equal(
+      gameKeyMailtoHref("ada@example.com?subject=x", "A".repeat(120)),
+      "#",
+    );
   });
 });

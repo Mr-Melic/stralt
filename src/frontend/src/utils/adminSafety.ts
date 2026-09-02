@@ -86,7 +86,8 @@ export function unsafeUrl(url: string): boolean {
   return (
     lower.startsWith("javascript:") ||
     lower.startsWith("data:") ||
-    lower.startsWith("vbscript:")
+    lower.startsWith("vbscript:") ||
+    lower.startsWith("file:")
   );
 }
 
@@ -200,10 +201,17 @@ export function validateAdBox(
   if (index < 0 || index > 2) return "index out of range: must be 0, 1, or 2";
   if (!imageUrl) return "imageUrl cannot be empty";
   if (!linkUrl) return "linkUrl cannot be empty";
-  return (
-    validateOptionalUrl("imageUrl", imageUrl) ??
-    validateOptionalUrl("linkUrl", linkUrl)
-  );
+  const imageErr = validateOptionalUrl("imageUrl", imageUrl);
+  if (imageErr) return imageErr;
+  if (!imageUrl.trimStart().toLowerCase().startsWith("https:")) {
+    return "imageUrl must be an https URL";
+  }
+  const linkErr = validateOptionalUrl("linkUrl", linkUrl);
+  if (linkErr) return linkErr;
+  if (!linkUrl.trimStart().toLowerCase().startsWith("https:")) {
+    return "linkUrl must be an https URL";
+  }
+  return null;
 }
 
 /** Retired catalog spells must not become owned via upgradeSpell. */
@@ -243,6 +251,44 @@ export function persistHpWriteCap(
 ): number {
   const stored = Math.max(0, Math.floor(Number(storedHp) || 0));
   const allowed = maxPersistedHp(level, growthPercent);
+  return stored > allowed ? stored : allowed;
+}
+
+/** Official battle AP: PLAYER_BASE_AP + floor(level / apMpLevelThreshold). */
+export const PLAYER_BASE_AP = 8;
+export const PLAYER_BASE_MP = 4;
+export const MAX_PERSISTED_AP = 20;
+export const MAX_PERSISTED_MP = 20;
+
+export function maxPersistedAp(level: number, threshold: number): number {
+  const lvl = Math.max(1, Math.floor(level));
+  const every = Math.max(1, Math.floor(threshold));
+  return Math.min(MAX_PERSISTED_AP, PLAYER_BASE_AP + Math.floor(lvl / every));
+}
+
+export function persistApWriteCap(
+  storedAp: number,
+  level: number,
+  threshold: number,
+): number {
+  const stored = Math.max(0, Math.floor(Number(storedAp) || 0));
+  const allowed = maxPersistedAp(level, threshold);
+  return stored > allowed ? stored : allowed;
+}
+
+export function maxPersistedMp(level: number, threshold: number): number {
+  const lvl = Math.max(1, Math.floor(level));
+  const every = Math.max(1, Math.floor(threshold));
+  return Math.min(MAX_PERSISTED_MP, PLAYER_BASE_MP + Math.floor(lvl / every));
+}
+
+export function persistMpWriteCap(
+  storedMp: number,
+  level: number,
+  threshold: number,
+): number {
+  const stored = Math.max(0, Math.floor(Number(storedMp) || 0));
+  const allowed = maxPersistedMp(level, threshold);
   return stored > allowed ? stored : allowed;
 }
 
