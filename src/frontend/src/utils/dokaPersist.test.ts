@@ -7,6 +7,7 @@ import {
   releasePickupId,
   resolveOneShotCreditSettle,
   settleOneShotAfterCredit,
+  settleOneShotPersistLock,
   shouldReleaseOneShotAfterPersist,
   shouldReleaseOneShotDokaCredit,
   tryClaimDungeonChainBonus,
@@ -14,6 +15,7 @@ import {
   tryClaimPickupId,
 } from "./dokaPersist.ts";
 import {
+  ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
   applySpendToCommitted,
   createProgressPersist,
   resolveCommittedDokaForAbsoluteWrite,
@@ -122,7 +124,7 @@ assert.equal(shouldReleaseOneShotAfterPersist(true), false);
   assert.equal(settled.kind, "commit");
   if (settled.kind !== "commit") throw new Error("expected commit");
   assert.equal(settled.doka, 550);
-  lock.commit({ doka: settled.doka });
+  settleOneShotPersistLock(lock, settled);
 
   const dokaBase = await resolveCommittedDokaForAbsoluteWrite(
     lock,
@@ -193,6 +195,57 @@ assert.equal(shouldReleaseOneShotAfterPersist(true), false);
     { kind: "keep" },
     "unseeded transport-keep must not false-commit live>0",
   );
+  settleOneShotPersistLock(lock, settled);
+  assert.equal(lock.isWalletSeeded(), false);
+  assert.equal(lock.hasUnconfirmedWalletCredit(), false);
+  lock.hydrateWhenIdle({ doka: 5000, xp: 0, level: 1 }, { walletReady: true });
+  assert.equal(lock.isWalletSeeded(), false);
+  assert.equal(lock.snapshot().doka, 0);
+}
+
+{
+  // Seeded keep + stale confirm must not let the next heal write 500.
+  const lock = createProgressPersist({ doka: 500, xp: 0, level: 1 });
+  let canister = 500;
+  const transportAfterAdd = await persistDokaCreditResult(
+    {
+      applyRewards: async (_slot, doka) => {
+        canister += Number(doka);
+        throw new Error("replica reject after add");
+      },
+    },
+    1,
+    50,
+  );
+  assert.equal(canister, 550);
+  const stale = await resolveOneShotCreditSettle(transportAfterAdd, {
+    committedDoka: lock.snapshot().doka,
+    walletSeeded: true,
+    readWallet: async () => 500,
+  });
+  assert.deepEqual(stale, { kind: "keep" });
+  settleOneShotPersistLock(lock, stale);
+  assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+  assert.equal(lock.snapshot().doka, 500);
+
+  let threw = false;
+  try {
+    await resolveCommittedDokaForAbsoluteWrite(lock, async () => 500);
+  } catch (err) {
+    threw =
+      err instanceof Error && err.message === ABSOLUTE_WRITE_UNCONFIRMED_CREDIT;
+  }
+  assert.equal(threw, true, "stale confirm must skip the absolute write");
+  assert.equal(lock.snapshot().doka, 500);
+
+  const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
+    lock,
+    async () => canister,
+  );
+  assert.equal(caughtUp, 550);
+  const afterHeal = applySpendToCommitted(lock.snapshot().doka, 10);
+  lock.commit({ doka: afterHeal });
+  assert.equal(afterHeal, 540);
 }
 
 console.log("dokaPersist.test: ok");

@@ -16,6 +16,7 @@ import {
   createSeededRng,
   evaluateSolvability,
   finalizePlayableLayout,
+  isEnemyWanderFloor,
   pickMapArchetype,
   placeBossRushSpawns,
   punchRosterReachability,
@@ -923,7 +924,7 @@ export function simulateCorpsesOnWorld(world: SimWorld): {
     }
   }
   if (offPath === 0) {
-    return { sealed: false, cells: [] };
+    return { sealed: true, cells: [] };
   }
   const ranked = [...mandatory]
     .map((k) => {
@@ -1055,7 +1056,13 @@ export function simulateBattleStartOnWorld(world: SimWorld): {
       const p = key.split(",");
       avoid.push({ x: Number(p[0]), y: Number(p[1]), minDist: 2 });
     }
-    const cell = findBattleStartCell({ x: s.x, y: s.y }, avoid, 2, ctx) ?? {
+    const cell = findBattleStartCell(
+      { x: s.x, y: s.y },
+      avoid,
+      2,
+      ctx,
+      player,
+    ) ?? {
       x: s.x,
       y: s.y,
     };
@@ -1114,6 +1121,19 @@ export function simulateEnemyWanderOnWorld(
       const ny = s.y + d[1];
       const k = `${nx},${ny}`;
       if (!walk(nx, ny) || occupied.has(k)) continue;
+      if (
+        !isEnemyWanderFloor(
+          world.tiles,
+          world.voidTiles,
+          world.portals,
+          { x: s.x, y: s.y },
+          { x: nx, y: ny },
+          size,
+          world.tiles.length,
+        )
+      ) {
+        continue;
+      }
       s.x = nx;
       s.y = ny;
     }

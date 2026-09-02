@@ -250,6 +250,12 @@ export interface ApplyDamageToEnemyDeps {
    */
   onPlayerHealed?: (amount: number) => void;
   /**
+   * legendary_3 Striker: bounce hops are not in `targetsToHit`. Report
+   * primary and bounce tiles so a Chebyshev-3+ victim cannot persist
+   * 400 Doka / 800 XP after an adjacent aim click.
+   */
+  onDirectHitVictim?: (pos: { x: number; y: number }) => void;
+  /**
    * Victory, DoT ticks, and later enemyTakesDamage read combatantsRef.
    * React-only enemyHpMap / turnOrder writes leave store hp unchanged, so
    * the next store-based tick recomputes from full HP and wipes this hit.
@@ -311,8 +317,19 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     processCombatantDeath,
     onPlayerReflectedDamage,
     onPlayerHealed,
+    onDirectHitVictim,
     commitEnemyHp,
   } = deps;
+
+  const notifyDirectHitVictim = (
+    pos: { x?: unknown; y?: unknown } | null | undefined,
+  ) => {
+    const x = Number(pos?.x);
+    const y = Number(pos?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    onDirectHitVictim?.({ x, y });
+  };
+  notifyDirectHitVictim(hitTarget);
 
   const targetEnemy =
     hitTarget.id === "__player__" ? undefined : (hitTarget as Enemy);
@@ -445,6 +462,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     });
     const bounceTargets = sorted.slice(0, spell.bounces);
     bounceTargets.forEach((bounceEnemy, idx) => {
+      notifyDirectHitVictim(bounceEnemy);
       const bounceDmg = Math.floor(finalDmg * 0.5 ** (idx + 1));
       enemyTakesDamage(
         bounceEnemy.id,

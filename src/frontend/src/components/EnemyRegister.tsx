@@ -1,5 +1,11 @@
 import type React from "react";
 import { useMemo, useState } from "react";
+import {
+  ENEMY_REGISTER_FOOTER_NOTE,
+  ENEMY_REGISTER_HONESTY,
+  ENEMY_REGISTER_SUBTITLE,
+  ENEMY_REGISTER_TITLE,
+} from "../utils/enemyRegisterCopy";
 
 export interface EnemyRegisterProps {
   isOpen: boolean;
@@ -312,17 +318,17 @@ const EnemyRegister: React.FC<EnemyRegisterProps> = ({ isOpen, onClose }) => {
                 textTransform: "uppercase",
               }}
             >
-              ENEMY REGISTER
+              {ENEMY_REGISTER_TITLE}
             </h2>
             <span
               style={{
-                color: "#660000",
+                color: "#8a6a22",
                 fontSize: 11,
                 letterSpacing: "1px",
                 marginLeft: 4,
               }}
             >
-              BESTIARY
+              {ENEMY_REGISTER_SUBTITLE}
             </span>
           </div>
           <button
@@ -345,6 +351,23 @@ const EnemyRegister: React.FC<EnemyRegisterProps> = ({ isOpen, onClose }) => {
           >
             ✕
           </button>
+        </div>
+
+        <div
+          data-ocid="enemy_register.honesty_banner"
+          role="note"
+          style={{
+            padding: "8px 20px",
+            background: "#1a0c05",
+            borderBottom: "1px solid #7a4a11",
+            color: "#d4a840",
+            fontSize: 11,
+            lineHeight: 1.45,
+            letterSpacing: "0.3px",
+            flexShrink: 0,
+          }}
+        >
+          {ENEMY_REGISTER_HONESTY}
         </div>
 
         {/* Search */}
@@ -698,9 +721,9 @@ const EnemyRegister: React.FC<EnemyRegisterProps> = ({ isOpen, onClose }) => {
             {MONSTERS.length} MONSTERS · {BOSSES.length} BOSSES
           </span>
           <span
-            style={{ color: "#553333", fontSize: 10, letterSpacing: "1px" }}
+            style={{ color: "#8a6a22", fontSize: 10, letterSpacing: "1px" }}
           >
-            ÆSTRALTØ ENEMY REGISTER
+            {ENEMY_REGISTER_FOOTER_NOTE}
           </span>
         </div>
       </div>

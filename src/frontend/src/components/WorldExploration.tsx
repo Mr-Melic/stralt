@@ -159,6 +159,7 @@ import {
   attachWhitePortalAfterLegalize,
   checkVoidConnectivity,
   countWalkableVoid,
+  isEnemyWanderFloor,
   pickMapArchetype,
   pickProgressionPortalCell,
   placeBossRushSpawns,
@@ -171,8 +172,6 @@ import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
   type OccupancyContext,
   collectMandatoryProgressionCells,
-  findNearestFreeCell,
-  isCellFree,
   resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
 import {
@@ -303,7 +302,7 @@ import {
 } from "../utils/adminSafety";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
-  applyChallengeDirectHit,
+  applyChallengeDirectHitOnCast,
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
@@ -361,6 +360,7 @@ import {
   releaseFlag,
   releasePickupId,
   resolveOneShotCreditSettle,
+  settleOneShotPersistLock,
   tryClaimDungeonChainBonus,
   tryClaimFlag,
   tryClaimPickupId,
@@ -5646,7 +5646,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           newY < WORLD_GRID_SIZE &&
           tiles[newY][newX] === "floor" &&
           !currentMap?.voidTiles?.has(`${newX},${newY}`) &&
-          (newX !== currentX || newY !== currentY)
+          (newX !== currentX || newY !== currentY) &&
+          isEnemyWanderFloor(
+            tiles as unknown as string[][],
+            currentMap?.voidTiles,
+            currentMap?.portals ?? [],
+            { x: currentX, y: currentY },
+            { x: newX, y: newY },
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          )
         ) {
           return { x: newX, y: newY };
         }
@@ -6345,8 +6354,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }
                 ).getCallerDokaBalance?.() ?? Promise.resolve(null),
             });
+            settleOneShotPersistLock(progressPersistRef.current, settle);
             if (settle.kind === "commit") {
-              progressPersistRef.current.commit({ doka: settle.doka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
             } else if (settle.kind === "release") {
               releaseFlag(dungeonCompletionSavedRef);
@@ -9000,7 +9009,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     apCost: number;
     targetsToHit: any[];
     spell: any;
-  }>({ apCost: 0, targetsToHit: [], spell: null });
+    directHitVictimTiles: { x: number; y: number }[];
+  }>({ apCost: 0, targetsToHit: [], spell: null, directHitVictimTiles: [] });
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable values are intentionally omitted
   const deathPipelineCtx = useMemo<DeathPipelineCtx>(
     () => ({
@@ -9497,6 +9507,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 amount,
               );
             },
+            // Chain Lightning bounce tiles are not in targetsToHit. Record
+            // every victim so Striker cannot persist after a far hop.
+            onDirectHitVictim: (pos) => {
+              castRuntimeRef.current.directHitVictimTiles.push({
+                x: pos.x,
+                y: pos.y,
+              });
+            },
             // enemyTakesDamage / victory read combatantsRef. Without this
             // commit a later DoT tick recomputes from full store HP and
             // wipes the spell hit.
@@ -9837,6 +9855,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       summonCastCommittedRef.current = true;
       try {
+        castRuntimeRef.current.targetsToHit = [];
+        castRuntimeRef.current.directHitVictimTiles = [];
         resolveSpellCast(
           plan.spell as any,
           {
@@ -9862,13 +9882,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           { getStatModifier, calcScaledDamage } as any,
         );
         {
-          const nextDirect = applyChallengeDirectHit(
+          const nextDirect = applyChallengeDirectHitOnCast(
             {
               stillDirect: challengeDirectHitRef.current,
               attempts: challengeDirectHitAttemptsRef.current,
             },
             { x: summon.x, y: summon.y },
-            { x: targetEnemy.x, y: targetEnemy.y },
+            [
+              { x: targetEnemy.x, y: targetEnemy.y },
+              ...castRuntimeRef.current.targetsToHit,
+              ...castRuntimeRef.current.directHitVictimTiles,
+            ],
           );
           challengeDirectHitRef.current = nextDirect.stillDirect;
           challengeDirectHitAttemptsRef.current = nextDirect.attempts;
@@ -11308,8 +11332,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       }
                     ).getCallerDokaBalance?.() ?? Promise.resolve(null),
                 });
+                settleOneShotPersistLock(progressPersistRef.current, settle);
                 if (settle.kind === "commit") {
-                  progressPersistRef.current.commit({ doka: settle.doka });
                   onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
                 } else if (settle.kind === "release") {
                   releaseFlag(shrineRewardClaimedRef);
@@ -11371,8 +11395,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }
                 ).getCallerDokaBalance?.() ?? Promise.resolve(null),
             });
+            settleOneShotPersistLock(progressPersistRef.current, settle);
             if (settle.kind === "commit") {
-              progressPersistRef.current.commit({ doka: settle.doka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
               setDokaLoot((prev) =>
                 prev.map((l) =>
@@ -11858,8 +11882,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (newPlayerPos) placed.add(`${newPlayerPos.x},${newPlayerPos.y}`);
 
       // Enemies: each gets a UNIQUE cell >= 3 from the player and >= 2 from
-      // every already-placed enemy. We add each result to `placed` so the
-      // next enemy's isCellFree check sees it — no stacking possible.
+      // every already-placed enemy. Stay on the player's battle component
+      // so a wander through an overworld portal cannot destack onto the
+      // far island (findBattleStartCell's origin flood used to keep them
+      // there). We add each result to `placed` so the next enemy's
+      // isCellFree check sees it — no stacking possible.
       const updatedEnemies = enemies.map((e) => {
         const stats = computeEnemyStats(e.level, e.pieceType, e.id);
         const avoid: { x: number; y: number; minDist: number }[] = [];
@@ -11874,23 +11901,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           avoid,
           2,
           occCtx,
+          newPlayerPos ?? playerPosition,
         );
-        let finalPos: { x: number; y: number };
-        if (candidate) {
-          finalPos = candidate;
-        } else {
-          // Cramped-map fallback: keep the original cell ONLY if isCellFree
-          // confirms it is passable + unoccupied; otherwise ring-scan from
-          // the origin. Either way the result is added to `placed` so the
-          // next enemy cannot reuse it.
-          const origin = { x: e.x, y: e.y };
-          if (isCellFree(origin, occCtx)) {
-            finalPos = origin;
-          } else {
-            const near = findNearestFreeCell(origin, occCtx, 2);
-            finalPos = near ?? origin;
-          }
-        }
+        // Stay on the player's battle component (stayOn). Pass 2 already
+        // ring-scans that component at radius w+h. An unfiltered
+        // findNearestFreeCell(origin, 2) used to hop a portal cut onto the
+        // far island.
+        const finalPos = candidate ?? { x: e.x, y: e.y };
         placed.add(`${finalPos.x},${finalPos.y}`);
         return {
           ...e,
@@ -17149,6 +17166,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       {
         castRuntimeRef.current.apCost = _apCost;
         castRuntimeRef.current.spell = spell;
+        castRuntimeRef.current.targetsToHit = [];
+        castRuntimeRef.current.directHitVictimTiles = [];
         const _castResult = resolvePlayerCast(
           spell,
           targetTile,
@@ -17178,13 +17197,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // without the tile-click follow-up that flips Striker. Record
           // here so every executeCastAttempt caller shares the gate.
           {
-            const nextDirect = applyChallengeDirectHit(
+            const nextDirect = applyChallengeDirectHitOnCast(
               {
                 stillDirect: challengeDirectHitRef.current,
                 attempts: challengeDirectHitAttemptsRef.current,
               },
               playerPositionRef.current,
-              targetTile,
+              [
+                targetTile,
+                ...castRuntimeRef.current.targetsToHit,
+                ...castRuntimeRef.current.directHitVictimTiles,
+              ],
             );
             challengeDirectHitRef.current = nextDirect.stillDirect;
             challengeDirectHitAttemptsRef.current = nextDirect.attempts;

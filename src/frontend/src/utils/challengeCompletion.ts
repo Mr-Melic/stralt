@@ -401,6 +401,59 @@ export type DirectHitChallengeState = {
   attempts: number;
 };
 
+export type DirectHitTile = { x: number; y: number };
+
+/**
+ * Unique finite tiles a spent attempt actually consulted (aim, AoE
+ * splash, bounce). Dedupe so one Frost Nova does not increment
+ * attempts once per occupant.
+ */
+export function collectChallengeDirectHitTiles(
+  tiles: Array<{ x?: unknown; y?: unknown } | null | undefined>,
+): DirectHitTile[] {
+  const seen = new Set<string>();
+  const out: DirectHitTile[] = [];
+  for (const tile of tiles) {
+    if (!tile) continue;
+    const x = Number(tile.x);
+    const y = Number(tile.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const key = `${x},${y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ x, y });
+  }
+  return out;
+}
+
+/**
+ * Count one spent spell attempt toward Striker. `stillDirect` stays true
+ * only when every victim tile is Chebyshev ≤ 2 of the caster.
+ *
+ * Aim-tile-only left Frost Nova / Lifesteal Nova splash and Chain
+ * Lightning bounces beyond 2 paying 400 Doka / 800 XP. Empty / invalid
+ * tiles cannot verify range, so they fail the flag (attempts still +1).
+ */
+export function applyChallengeDirectHitOnCast(
+  state: DirectHitChallengeState,
+  caster: { x: number; y: number },
+  tiles: Array<{ x?: unknown; y?: unknown } | null | undefined>,
+): DirectHitChallengeState {
+  const unique = collectChallengeDirectHitTiles(tiles);
+  let stillDirect = state.stillDirect === true;
+  if (unique.length === 0) {
+    stillDirect = false;
+  } else {
+    for (const tile of unique) {
+      stillDirect = recordChallengeDirectHit(stillDirect, caster, tile);
+    }
+  }
+  return {
+    stillDirect,
+    attempts: Math.max(0, Math.floor(Number(state.attempts) || 0)) + 1,
+  };
+}
+
 /**
  * Count a spent spell attempt toward Striker. `recordChallengeDirectHit`
  * alone left attempts at 0, so a no-cast victory still read
@@ -411,10 +464,7 @@ export function applyChallengeDirectHit(
   caster: { x: number; y: number },
   target: { x: number; y: number },
 ): DirectHitChallengeState {
-  return {
-    stillDirect: recordChallengeDirectHit(state.stillDirect, caster, target),
-    attempts: Math.max(0, Math.floor(Number(state.attempts) || 0)) + 1,
-  };
+  return applyChallengeDirectHitOnCast(state, caster, [target]);
 }
 
 /** legendary_3: every spent attempt in range, and at least one attempt. */
