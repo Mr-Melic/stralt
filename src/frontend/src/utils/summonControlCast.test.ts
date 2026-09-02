@@ -9,6 +9,7 @@ import {
   planSummonControlCast,
   resolveLiveSummonAp,
   resolveSummonControlSpell,
+  shouldRouteCanvasToSummonControl,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
   summonControlRangeCap,
@@ -470,6 +471,44 @@ describe("summonControlIdAfterAdvance", () => {
     );
     assert.equal(summonControlIdAfterAdvance(null), null);
     assert.equal(summonControlIdAfterAdvance(undefined), null);
+  });
+});
+
+describe("shouldRouteCanvasToSummonControl", () => {
+  it("stops capturing clicks after room-clear even if the wolf is still live", () => {
+    assert.equal(
+      shouldRouteCanvasToSummonControl({
+        inBattle: true,
+        controlledSummonId: "wolf-1",
+        summonStillLive: true,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldRouteCanvasToSummonControl({
+        inBattle: false,
+        controlledSummonId: "wolf-1",
+        summonStillLive: true,
+      }),
+      false,
+      "Boss Rush leftover control must not walk the summon instead of the player",
+    );
+    assert.equal(
+      shouldRouteCanvasToSummonControl({
+        inBattle: false,
+        controlledSummonId: "wolf-1",
+        summonStillLive: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRouteCanvasToSummonControl({
+        inBattle: true,
+        controlledSummonId: null,
+        summonStillLive: true,
+      }),
+      false,
+    );
   });
 });
 

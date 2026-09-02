@@ -95,6 +95,7 @@ import {
   shouldAwardVictory,
   shouldContinuePlayerTurnAfterHazard,
   shouldDispatchEnemyAiAfterTurnStart,
+  shouldTriggerOverworldEncounter,
 } from "../engine/battleSetup";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
@@ -419,6 +420,7 @@ import {
   planSummonControlCast,
   resolveLiveSummonAp,
   resolveSummonControlSpell,
+  shouldRouteCanvasToSummonControl,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
   summonTurnBudget,
@@ -10066,11 +10068,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // ── SUMMON CONTROL ROUTING ──────────────────────────────────────
       // When the player is actively controlling a summon, clicks route to
       // that summon's movement/spell-cast logic instead of the player's.
-      if (activeControlledSummonIdRef.current) {
-        const summon = getLiveCombatants(combatantStoreCtx).find(
-          (e) => e.id === activeControlledSummonIdRef.current,
-        );
-        if (summon) {
+      // inBattle is required: Boss Rush room-clear used to leave the wolf
+      // and the control id, so overworld clicks walked the summon and the
+      // player could not step the progression portal.
+      {
+        const summon = activeControlledSummonIdRef.current
+          ? getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === activeControlledSummonIdRef.current,
+            )
+          : undefined;
+        if (
+          shouldRouteCanvasToSummonControl({
+            inBattle: inBattleRef.current,
+            controlledSummonId: activeControlledSummonIdRef.current,
+            summonStillLive: Boolean(summon),
+          }) &&
+          summon
+        ) {
           const gridPos = clientToGrid(event.clientX, event.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
@@ -10861,11 +10875,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // ── SUMMON CONTROL ROUTING (touch) ──────────────────────────────
       // Mirrors the mouse handler: when actively controlling a summon,
       // touches route to that summon's movement/spell-cast logic.
-      if (activeControlledSummonIdRef.current) {
-        const summon = getLiveCombatants(combatantStoreCtx).find(
-          (e) => e.id === activeControlledSummonIdRef.current,
-        );
-        if (summon) {
+      {
+        const summon = activeControlledSummonIdRef.current
+          ? getLiveCombatants(combatantStoreCtx).find(
+              (e) => e.id === activeControlledSummonIdRef.current,
+            )
+          : undefined;
+        if (
+          shouldRouteCanvasToSummonControl({
+            inBattle: inBattleRef.current,
+            controlledSummonId: activeControlledSummonIdRef.current,
+            summonStillLive: Boolean(summon),
+          }) &&
+          summon
+        ) {
           const gridPos = clientToGrid(touch.clientX, touch.clientY);
           if (!gridPos) return;
           if (selectedSummonSpellId) {
@@ -11851,6 +11874,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     battleEndedRef.current = persistBattleEndGuardAfterCleanup(
       battleEndedRef.current,
     );
+    // Drop leftover summon control. Boss Rush room-clear used to leave the
+    // id set, so after recap dismiss every canvas click walked the wolf
+    // instead of the player and the progression portal could not be stepped.
+    setActiveControlledSummonId(summonControlIdAfterAdvance(null));
+    activeControlledSummonIdRef.current = summonControlIdAfterAdvance(null);
+    setSelectedSummonSpellId(null);
     // H2 FIX: Clear active effects state and ref so status icons don't linger after victory
     activeEffectsRef.current = [];
     setActiveEffects([]);
@@ -11984,7 +12013,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       (enemy) => {
         return (
           enemy.x === playerPositionRef.current.x &&
-          enemy.y === playerPositionRef.current.y
+          enemy.y === playerPositionRef.current.y &&
+          shouldTriggerOverworldEncounter(enemy)
         );
       },
     );
@@ -13109,6 +13139,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // inBattle must also fall or checkBattleTrigger stays blocked and the
     // next Boss Rush room (and later overworld fights) never start.
     cleanupBattle();
+    // Same despawn as handleBattleEnd. Room-clear used to leave the wolf
+    // on the map: occupancy blocked the portal path, and a walk onto that
+    // tile started a 0-hostile "fight" that immediately applyRewards'd.
+    syncCombatants(combatantStoreCtx, despawnSummons(combatantsRef.current));
     setInBattle(false);
   }
 
