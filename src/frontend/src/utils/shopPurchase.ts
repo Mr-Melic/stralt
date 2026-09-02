@@ -156,6 +156,7 @@ export type ShopCreditPersistLock = {
   enqueue<T>(fn: () => Promise<T>): Promise<T>;
   commit(next: { doka?: number }): void;
   snapshot(): { doka: number };
+  isWalletSeeded(): boolean;
 };
 
 export async function creditPendingPurchasesThroughPersist(
@@ -179,7 +180,6 @@ export async function creditPendingPurchasesThroughPersist(
 
 export type GameKeyRedeemActor = {
   redeemGameKey?: (code: string) => Promise<unknown>;
-  getCallerDokaBalance?: () => Promise<unknown>;
 };
 
 export function readRedeemGameKeyResult(
@@ -204,8 +204,49 @@ export function readRedeemGameKeyResult(
 }
 
 /**
- * redeemGameKey is a credit. Same persist-lock rules as processPendingPurchases:
- * enqueue, commit only when this pair observed a gain, never cut a higher snapshot.
+ * redeemGameKey returns the granted delta (`#ok(dokaAmount)`), not the new
+ * wallet. Committing a follow-up getCallerDokaBalance used to skip the credit
+ * when that query was stale or threw after the key was already consumed.
+ *
+ * Chronology (stale query + recap heal):
+ * 1. Player redeems. Canister adds 1000; `#ok(1000)`.
+ * 2. getCallerDokaBalance still returns the pre-redeem wallet (replica lag)
+ *    or throws. creditedDokaDelta is 0, so the persist lock never commits.
+ * 3. Shop toasts "still pending" and does not credit the live UI.
+ * 4. Retry → "GameKey already used".
+ * 5. Recap heal saveBattleStats writes the pre-redeem snapshot and wipes
+ *    the paid Doka. Incoming-above-stored is ignored, so the mint is gone.
+ *
+ * Match claimAchievementReward: add `#ok` onto a seeded lock. Leave an
+ * unseeded placeholder alone so resolveCommittedDokaForAbsoluteWrite fetches.
+ */
+export function committedDokaAfterGameKeyRedeem(
+  committedDoka: number,
+  granted: number,
+): number {
+  const base = Math.max(0, Math.floor(Number(committedDoka) || 0));
+  const add = Math.max(0, Math.floor(Number(granted) || 0));
+  return base + add;
+}
+
+export function shouldCommitGameKeyRedeem(
+  walletSeeded: boolean,
+  granted: number,
+): boolean {
+  return walletSeeded && Math.max(0, Math.floor(Number(granted) || 0)) > 0;
+}
+
+/** HUD / live-ref credit. Prefer `#ok`, never a stale wallet-query delta. */
+export function dokaGainedFromGameKeyRedeem(
+  result: { ok: number } | { err: string },
+): number {
+  if (!("ok" in result)) return 0;
+  return Math.max(0, Math.floor(Number(result.ok) || 0));
+}
+
+/**
+ * redeemGameKey is a credit. Enqueue on the persist lock and commit the
+ * granted delta from `#ok` — do not require a second wallet query.
  */
 export async function redeemGameKeyThroughPersist(
   actor: GameKeyRedeemActor,
@@ -217,25 +258,26 @@ export async function redeemGameKeyThroughPersist(
   result: { ok: number } | { err: string };
 }> {
   return persist.enqueue(async () => {
-    if (!actor.getCallerDokaBalance || !actor.redeemGameKey) {
+    if (!actor.redeemGameKey) {
       return {
         previous: null,
         credited: null,
         result: { err: "Actor not available" },
       };
     }
-    const previous = readCallerDokaBalance(await actor.getCallerDokaBalance());
+    const before = persist.snapshot().doka;
     const parsed = readRedeemGameKeyResult(await actor.redeemGameKey(code));
-    const credited = readCallerDokaBalance(await actor.getCallerDokaBalance());
-    const gained = creditedDokaDelta(previous, credited);
-    if (credited != null && shouldCommitShopCredit(gained)) {
+    const gained = dokaGainedFromGameKeyRedeem(parsed);
+    if (shouldCommitGameKeyRedeem(persist.isWalletSeeded(), gained)) {
       persist.commit({
-        doka: committedDokaAfterShopCreditOnLock(
-          persist.snapshot().doka,
-          credited,
-        ),
+        doka: committedDokaAfterGameKeyRedeem(persist.snapshot().doka, gained),
       });
     }
-    return { previous, credited, result: parsed };
+    const after = persist.snapshot().doka;
+    return {
+      previous: persist.isWalletSeeded() ? before : null,
+      credited: persist.isWalletSeeded() && gained > 0 ? after : null,
+      result: parsed,
+    };
   });
 }
