@@ -1985,9 +1985,13 @@ actor {
         };
 
         // Clamp hp to 0 — CharacterStats.hp is Nat. Cap at the official
-        // overworld / heal formula (not level*200+100, which allowed 300 HP
-        // on a level-1 raw client).
-        let maxHpAllowed : Nat = AdminGuard.maxPersistedHp(character.level, levelUpConfig.statGrowthPercent);
+        // overworld / heal formula, but never cut HP already stored under the
+        // old level*200+100 cap or a previous growth percent (SDEG-2026-09-02-003).
+        let maxHpAllowed : Nat = AdminGuard.persistHpWriteCap(
+            character.stats.hp,
+            character.level,
+            levelUpConfig.statGrowthPercent,
+        );
         let rawHp : Nat = if (hp <= 0) { 0 } else { hp.toNat() };
         let safeHp : Nat = _minNat(rawHp, maxHpAllowed);
         let safeAp : Nat = _minNat(maxAp, 20);

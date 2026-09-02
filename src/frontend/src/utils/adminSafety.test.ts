@@ -3,10 +3,12 @@ import {
   achievementUnlockRejected,
   chatCooldownActive,
   clampDungeonDepth,
+  clampPersistedHpWrite,
   incomingSpellLevelsWouldMint,
   isBanReasonKey,
   isBuiltInSpellId,
   maxPersistedHp,
+  persistHpWriteCap,
   proofDataMimeAllowed,
   rejectSecondPendingPurchase,
   resolveAppearanceSpellLevels,
@@ -311,6 +313,13 @@ assert.equal(clampDungeonDepth(4), 4);
 assert.equal(maxPersistedHp(1, 5), 100);
 assert.equal(maxPersistedHp(10, 5), 145);
 assert.equal(maxPersistedHp(20, 50), 1050);
+assert.equal(persistHpWriteCap(300, 1, 5), 300);
+assert.equal(persistHpWriteCap(80, 1, 5), 100);
+assert.equal(clampPersistedHpWrite(300, 300, 1, 5), 300);
+assert.equal(clampPersistedHpWrite(300, 50, 1, 5), 50);
+assert.equal(clampPersistedHpWrite(80, 500, 1, 5), 100);
+// First victory write of 150 at L10 (victory floor) still clips to 145.
+assert.equal(clampPersistedHpWrite(100, 150, 10, 5), 145);
 
 // Failure: markAchievementUnlocked trusted client for wallet/level/spell feats.
 assert.equal(achievementUnlockRejected("level_10", 9, 0, 0), "Level below 10");
