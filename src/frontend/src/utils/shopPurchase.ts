@@ -122,6 +122,30 @@ export function shouldCommitShopCredit(gained: number): boolean {
   return gained > 0;
 }
 
+/** processPendingPurchases returns the credited Nat. A 0 means no-op. */
+export function readProcessPendingPurchasesMinted(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
+}
+
+/**
+ * World remount still calls processPendingPurchases, which is now a no-op
+ * (GameKey redeem is the paid-credit writer). Two getCallerDokaBalance
+ * queries can disagree on IC; treating that jitter as a shop gain restored
+ * a pre-heal wallet on the persist lock and the next saveBattleStats
+ * refunded the spend.
+ */
+export function shouldCommitLegacyPurchaseCredit(
+  minted: number,
+  gained: number,
+): boolean {
+  return (
+    readProcessPendingPurchasesMinted(minted) > 0 &&
+    shouldCommitShopCredit(gained)
+  );
+}
+
 export function committedDokaAfterShopCreditOnLock(
   committedDoka: number,
   credited: number,
@@ -164,9 +188,23 @@ export async function creditPendingPurchasesThroughPersist(
   persist: ShopCreditPersistLock,
 ): Promise<{ previous: number | null; credited: number | null }> {
   return persist.enqueue(async () => {
-    const result = await creditPendingPurchases(actor);
+    let minted = 0;
+    const actorWithMinted: PurchaseCreditActor = {
+      getCallerDokaBalance: actor.getCallerDokaBalance,
+      processPendingPurchases: actor.processPendingPurchases
+        ? async () => {
+            const raw = await actor.processPendingPurchases?.();
+            minted = readProcessPendingPurchasesMinted(raw);
+            return raw;
+          }
+        : undefined,
+    };
+    const result = await creditPendingPurchases(actorWithMinted);
     const gained = creditedDokaDelta(result.previous, result.credited);
-    if (result.credited != null && shouldCommitShopCredit(gained)) {
+    if (
+      result.credited != null &&
+      shouldCommitLegacyPurchaseCredit(minted, gained)
+    ) {
       persist.commit({
         doka: committedDokaAfterShopCreditOnLock(
           persist.snapshot().doka,
