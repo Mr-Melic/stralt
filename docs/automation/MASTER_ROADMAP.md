@@ -19,7 +19,7 @@ This file is the living prioritized roadmap. ACTION_ID records for this run live
 | Specialist reports (09-01) | Expansion, PX, long-horizon, telemetry balance/architecture/dashboard, spell admin, discovery, enemy/boss admin, world-encounter, visual assets, mechanic matrix, game feel, UX, admin UX/drift, dead-code, data-evolution, performance, enemy AI/elites/formations |
 | Open ACTION_IDs | Hundreds still `NEW` across dated producer files. Reuse; do not mint twins. |
 | Recent commits | `git log` `dd275aa` → `58302bc` (~62 merge commits; humans merged the 09-01 leftover queue **and** frozen surfaces) |
-| Open drafts | **#259** (draft, unique, EOP GameKey migration; created 2026-09-01 22:19 UTC; merge-clean vs `main`). While this run wrote, the 00:00 flock already opened **#260–#264** (TBC docs, GameKey Candid tests, enemy-evolution docs, content-diversity docs, SDA docs). Default hold except #259. |
+| Open drafts | **#259** (P0 EOP). During this run the 00:00 flock opened **#260–#273** (and still launching). Docs-only PRs are the intended specialist output. **Hold gameplay:** #265 (WX reject floats), #272 (GameKey bindgen — restack after #259). |
 | Player telemetry | **Still none.** `longHorizonSim.telemetry.available === false`. TBC remains `WAITING_FOR_TELEMETRY`. No collectors in `src/backend`. |
 | Same-hour flock (this minute) | **41** automations launched ~00:00 UTC 2026-09-02, including implementers (Approved Game Design, map integrity, combat parity, adversarial QA, security, persist, economy, complexity reduction, admin, expansion, AI, feel, telemetry dashboard). |
 
@@ -217,9 +217,11 @@ HP/death extraction (MTD-003) is still valid. Do not start it in the same hour a
 | Order | PR | Action |
 | :--- | :--- | :--- |
 | 1 | **#259** | Review/merge/deploy. Unique P0 EOP migration so Caffeine can upgrade GameKey stables. Draft, +1397/−54, 15 files, clean vs `58302bc`. Oldest open PR. |
-| — | **#260 #262 #263 #264** | Docs-only from this hour’s wave. Acceptable **if** they do not rewrite SDA/SDE/EBA schemas or retune BAL-*. Do not merge ahead of #259 if files overlap. |
-| — | **#261** | GameKey Candid tests. Hold until #259 lands; restack if it touches migrations/bindgen. |
-| — | Any later PR from the 09-02 00:00 wave | Default **hold**. Report ACTION_IDs only unless unique, display-only, and not already on `main`. Especially hold mapGen, targeting, persist, `enemyAI`, AdminDashboard, `main.mo` stables, and telemetry UI. |
+| 2 | **#272** | GameKey bindgen/Candid sync. **After #259**, not instead of it. #259 does not regenerate `backend.ts`. |
+| — | **#261** | GameKey Candid tests. After #259/#272. |
+| — | **#265** | **Hold.** WX reject floats (AQA-007 / GFCF). Display-only but touches the freeze file during a flock. |
+| — | **#260 #262–#264 #266–#271 #273** | Docs-only from this hour. OK if they do not rewrite SDA/SDE/EBA schemas or retune BAL-*. Do not merge ahead of #259 when files overlap. |
+| — | Any later PR from the 09-02 00:00 wave | Default **hold**. Especially hold mapGen, targeting, persist, `enemyAI`, AdminDashboard, `main.mo` stables, and telemetry UI. |
 | — | Motoko PRs that add persistent `let`/`var` | **Hold until #259 is on `main` and deployed.** Restack onto #259; never amend `20260831` / `20260901` NewActor. |
 
 Do not restack death-replay, `writeLiveDoka`, `writeLevel`, leftover-XP HUD, recap click-through, or GameKey product code.
