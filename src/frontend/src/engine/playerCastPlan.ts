@@ -16,6 +16,7 @@ import {
   type TileCastableResult,
   type TileType,
   isTileCastableLive,
+  resolveCastApCost,
   shouldExecuteLiveCast,
 } from "./targeting.ts";
 
@@ -34,8 +35,7 @@ export function planPlayerCastResources(args: {
   cooldownTurnsRemaining: unknown;
   applyApCost?: (base: number) => number;
 }): PlayerCastResourceDecision {
-  const apply = args.applyApCost ?? ((base: number) => base);
-  const apCost = apply(Math.max(0, Math.floor(Number(args.baseApCost) || 0)));
+  const apCost = resolveCastApCost(args.baseApCost, args.applyApCost);
   if (isSpellOnCooldown(args.cooldownTurnsRemaining)) {
     return { ok: false, reason: "on_cooldown", apCost };
   }

@@ -6,7 +6,11 @@ import {
   chebyshevOnBoard,
   collectHighlightLiveMismatches,
   computeTargetableTiles,
+  decideSpriteCastClick,
   decideTileCastClick,
+  enemyCastGeometryOk,
+  enemySpellRange,
+  enemySpellRequiresLos,
   findAttackNearestTarget,
   groundTileInRange,
   hasBresenhamLoS,
@@ -19,6 +23,7 @@ import {
   playerSpellEffectiveRange,
   playerSpellRequiresLos,
   probeLiveCast,
+  resolveCastApCost,
   shouldBypassHighlightForLiveHostile,
   shouldExecuteLiveCast,
   spellHighlightRangeBase,
@@ -791,5 +796,149 @@ describe("shared helpers", () => {
       ),
       null,
     );
+  });
+});
+
+describe("player vs enemy LoS / range policies", () => {
+  it("does not merge player truthy-LoS with enemy default-on LoS", () => {
+    assert.equal(playerSpellRequiresLos({}), false);
+    assert.equal(playerSpellRequiresLos({ lineOfSight: false }), false);
+    assert.equal(playerSpellRequiresLos({ lineOfSight: true }), true);
+    assert.equal(enemySpellRequiresLos({}), true);
+    assert.equal(enemySpellRequiresLos({ lineOfSight: false }), false);
+    assert.equal(enemySpellRequiresLos({ lineOfSight: true }), true);
+  });
+
+  it("keeps AI range on Number(spell.range), not maxRange", () => {
+    const spell = baseSpell({ range: 2n, maxRange: 6 });
+    assert.equal(enemySpellRange(spell), 2);
+    assert.equal(spellRangeBase(spell), 6);
+  });
+
+  it("lets a no-LoS enemy spell execute through a wall the player gate would skip", () => {
+    const origin = { x: 4, y: 4 };
+    const target = { x: 7, y: 4 };
+    const throughWall = enemyCastGeometryOk({
+      origin,
+      target,
+      spell: { range: 4n, lineOfSight: false },
+      hasLoS: false,
+    });
+    const defaultLos = enemyCastGeometryOk({
+      origin,
+      target,
+      spell: { range: 4n },
+      hasLoS: false,
+    });
+    assert.equal(throughWall, true);
+    assert.equal(defaultLos, false);
+    assert.equal(
+      enemyCastGeometryOk({
+        origin,
+        target: { x: 8, y: 4 },
+        spell: { range: 3n, lineOfSight: false },
+        hasLoS: false,
+      }),
+      false,
+      "out of Chebyshev range is still illegal",
+    );
+  });
+});
+
+describe("decideSpriteCastClick mouse/touch table", () => {
+  const liveOk = true;
+  const liveFail = false;
+
+  it("executes a live-ok hostile sprite and rejects an illegal one", () => {
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "starter-poison",
+        hasSelectedSpell: true,
+        hitKind: "enemy",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk,
+        selfOrAllySpell: false,
+        hasBasicAttack: false,
+      }),
+      { action: "execute", source: "sprite-enemy" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "starter-poison",
+        hasSelectedSpell: true,
+        hitKind: "enemy",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: liveFail,
+        selfOrAllySpell: false,
+        hasBasicAttack: false,
+      }),
+      { action: "reject_live" },
+    );
+  });
+
+  it("does not let Strike execute off-turn or out of live range", () => {
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: null,
+        hasSelectedSpell: false,
+        hitKind: "enemy",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: liveFail,
+        selfOrAllySpell: false,
+        hasBasicAttack: true,
+      }),
+      { action: "inspect" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: null,
+        hasSelectedSpell: false,
+        hitKind: "enemy",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk,
+        selfOrAllySpell: false,
+        hasBasicAttack: true,
+      }),
+      { action: "execute", source: "sprite-basic" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "starter-heal",
+        hasSelectedSpell: true,
+        hitKind: "player",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk,
+        selfOrAllySpell: true,
+        hasBasicAttack: false,
+      }),
+      { action: "execute", source: "sprite-player" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "starter-poison",
+        hasSelectedSpell: true,
+        hitKind: "enemy",
+        playerCastOk: false,
+        inBattle: true,
+        liveOk,
+        selfOrAllySpell: false,
+        hasBasicAttack: false,
+      }),
+      { action: "wait_for_turn" },
+    );
+  });
+});
+
+describe("resolveCastApCost", () => {
+  it("is the same debit canAffordCastAp and planPlayerCastResources use", () => {
+    const apply = (base: number) => Math.max(1, base - 1);
+    assert.equal(resolveCastApCost(4, apply), 3);
+    assert.equal(canAffordCastAp(3, 4, apply), true);
+    assert.equal(canAffordCastAp(2, 4, apply), false);
   });
 });

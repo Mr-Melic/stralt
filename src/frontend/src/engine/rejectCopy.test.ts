@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   SELECT_SPELL_COPY,
   WAIT_FOR_TURN_COPY,
+  playerFacingCastResult,
   playerFacingRejectReason,
 } from "./rejectCopy.ts";
 
@@ -55,5 +56,14 @@ describe("attack-mode and off-turn canvas copy", () => {
   it("tells the player to pick a spell or wait", () => {
     assert.equal(SELECT_SPELL_COPY, "Select a spell");
     assert.equal(WAIT_FOR_TURN_COPY, "Wait for your turn");
+  });
+});
+
+describe("playerFacingCastResult", () => {
+  it("unifies sprite and tile no-AP / cooldown / abort copy", () => {
+    assert.equal(playerFacingCastResult("no_ap"), "Not enough AP");
+    assert.equal(playerFacingCastResult("on_cooldown"), "On cooldown");
+    assert.equal(playerFacingCastResult("abort"), "Aborted");
+    assert.equal(playerFacingCastResult("fizzled"), "Cast fizzled!");
   });
 });

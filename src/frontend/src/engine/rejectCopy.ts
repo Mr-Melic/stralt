@@ -51,3 +51,14 @@ export function playerFacingRejectReason(reason: string): string {
   if (!token.includes("_")) return token;
   return "Invalid target";
 }
+
+/**
+ * Sprite and tile execute used different no-AP copy ("Not enough AP" vs
+ * "No AP!"). One helper so mouse, touch, and Attack Nearest agree.
+ */
+export function playerFacingCastResult(castResult: string): string {
+  if (castResult === "no_ap") return "Not enough AP";
+  if (castResult === "on_cooldown") return "On cooldown";
+  if (castResult === "abort") return "Aborted";
+  return `Cast ${castResult}!`;
+}

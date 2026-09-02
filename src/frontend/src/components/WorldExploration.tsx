@@ -195,6 +195,7 @@ import { getPlayerBaseStats } from "../engine/progression";
 import {
   SELECT_SPELL_COPY,
   WAIT_FOR_TURN_COPY,
+  playerFacingCastResult,
   playerFacingRejectReason,
 } from "../engine/rejectCopy";
 import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
@@ -246,6 +247,7 @@ import {
   attackNearestLiveCasterPos,
   canAttackNearestAgainstLive,
   computeTargetableTiles,
+  decideSpriteCastClick,
   decideTileCastClick,
   hasBresenhamLoS,
   isTileCastableLive,
@@ -10055,20 +10057,94 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               deathTriggered: deathTriggeredRef.current,
               hp: characterStatsRef.current.hp,
             });
-            if (
-              selectedSpellIdRef.current &&
-              _hit.kind === "enemy" &&
-              _playerCastOk
-            ) {
-              const _spell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
+            const _tile = { x: _hit.logicalX, y: _hit.logicalY };
+            const _selectedId = selectedSpellIdRef.current;
+            const _selectedSpell = _selectedId
+              ? activeSpells.find((s) => s.id === _selectedId)
+              : undefined;
+            const _basicAttack =
+              !_selectedId && _hit.kind === "enemy"
+                ? activeSpells.find((s) => s.id === "physical_attack")
+                : undefined;
+            const _probeSpell = _selectedSpell ?? _basicAttack;
+            const _live = _probeSpell
+              ? probeLiveCast(_probeSpell, _tile)
+              : { ok: false, reason: "no_matching_branch" };
+            const _spriteDecision = decideSpriteCastClick({
+              selectedSpellId: _selectedId,
+              hasSelectedSpell: Boolean(_selectedSpell),
+              hitKind: _hit.kind,
+              playerCastOk: _playerCastOk,
+              inBattle: inBattleRef.current,
+              liveOk: shouldExecuteLiveCast(_live),
+              selfOrAllySpell:
+                _selectedSpell?.targetType === "self" ||
+                _selectedSpell?.targetType === "ally",
+              hasBasicAttack: Boolean(_basicAttack),
+            });
+            if (_spriteDecision.action === "wait_for_turn") {
+              const _screen = tileCenter(_tile.x, _tile.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                WAIT_FOR_TURN_COPY,
               );
-              if (_spell) {
-                const _live = probeLiveCast(_spell, {
-                  x: _hit.logicalX,
-                  y: _hit.logicalY,
-                });
-                if (shouldExecuteLiveCast(_live)) {
+              return;
+            }
+            if (_spriteDecision.action === "reject_live") {
+              const _screen = tileCenter(_tile.x, _tile.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                playerFacingRejectReason(_live.reason),
+              );
+              try {
+                recordClickOutcome(
+                  event.clientX,
+                  event.clientY,
+                  "cast-sprite",
+                  null,
+                  _live.reason,
+                  null,
+                  null,
+                );
+              } catch {}
+              return;
+            }
+            if (_spriteDecision.action === "inspect") {
+              if (
+                _hit.kind === "enemy" &&
+                _probeSpell &&
+                !(shouldExecuteLiveCast(_live) && _playerCastOk)
+              ) {
+                const _screen = tileCenter(_tile.x, _tile.y);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  playerFacingRejectReason(_live.reason),
+                );
+              }
+              setInspectCombatantId(_hit.id);
+              try {
+                recordClickOutcome(
+                  event.clientX,
+                  event.clientY,
+                  _hit.kind === "summon" ? "inspect-sprite" : "sprite-basic",
+                  null,
+                  null,
+                  null,
+                  null,
+                );
+              } catch {}
+              return;
+            }
+            if (_spriteDecision.action === "execute") {
+              const _spellToCast =
+                _spriteDecision.source === "sprite-basic"
+                  ? _basicAttack
+                  : _selectedSpell;
+              if (_spellToCast) {
+                if (_spriteDecision.source === "sprite-enemy") {
                   // eslint-disable-next-line no-console
                   console.log("[CLICK-ENEMY]", {
                     branchTaken: "cast-sprite",
@@ -10077,202 +10153,43 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     targetsCount: 1,
                     targetIds: [_hit.id],
                   });
-                  // Reuse the existing cast body — same path the
-                  // cast-live branch at 9092 takes. AP cost is computed
-                  // via mapModifierRegistry.applyApCost (Arcane Surge etc.)
-                  // and the cast is resolved via resolvePlayerCast at the
-                  // entity's logical tile.
-                  const { castResult: _castResult, apCost: _apCost } =
-                    executeCastAttempt(
-                      _spell,
-                      { x: _hit.logicalX, y: _hit.logicalY },
-                      "sprite-enemy",
-                    );
-                  if (_castResult !== "cast") {
-                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      _castResult === "no_ap"
-                        ? "Not enough AP"
-                        : _castResult === "on_cooldown"
-                          ? "On cooldown"
-                          : `Cast ${_castResult}!`,
-                    );
-                  }
-                  try {
-                    recordClickOutcome(
-                      event.clientX,
-                      event.clientY,
-                      "cast-sprite",
-                      _castResult,
-                      null,
-                      null,
-                      null,
-                    );
-                  } catch {}
-                  return;
                 }
-                {
-                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                const { castResult: _castResult, apCost: _apCost } =
+                  executeCastAttempt(
+                    _spellToCast,
+                    _tile,
+                    _spriteDecision.source,
+                  );
+                void _apCost;
+                if (
+                  _castResult !== "cast" &&
+                  _spriteDecision.source !== "sprite-player"
+                ) {
+                  const _screen = tileCenter(_tile.x, _tile.y);
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    playerFacingRejectReason(_live.reason),
+                    playerFacingCastResult(_castResult),
                   );
+                  if (_spriteDecision.source === "sprite-basic") {
+                    setInspectCombatantId(_hit.id);
+                  }
                 }
                 try {
                   recordClickOutcome(
                     event.clientX,
                     event.clientY,
-                    "cast-sprite",
+                    _spriteDecision.source === "sprite-enemy"
+                      ? "cast-sprite"
+                      : _spriteDecision.source,
+                    _castResult,
                     null,
-                    _live.reason,
                     null,
                     null,
                   );
                 } catch {}
                 return;
               }
-            } else if (
-              selectedSpellIdRef.current &&
-              _hit.kind === "enemy" &&
-              inBattleRef.current
-            ) {
-              const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-              effectsManagerRef.current?.spawnFloatText(
-                _screen.x,
-                _screen.y,
-                WAIT_FOR_TURN_COPY,
-              );
-              return;
-            } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
-              setInspectCombatantId(_hit.id);
-              try {
-                recordClickOutcome(
-                  event.clientX,
-                  event.clientY,
-                  "inspect-sprite",
-                  null,
-                  null,
-                  null,
-                  null,
-                );
-              } catch {}
-              return;
-            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
-              // No spell selected — attempt basic physical attack through
-              // the same live validation + cast ritual as a selected spell.
-              // If not legal, show floating reason AND open inspect fallback.
-              // executeCastAttempt has no range check; skip it when the
-              // live gate fails or Strike hits from anywhere on the map.
-              const _basicAttack = activeSpells.find(
-                (s) => s.id === "physical_attack",
-              );
-              let _spriteBasicCastResult: string | null = null;
-              if (_basicAttack && _hit.id) {
-                const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                const _live = probeLiveCast(_basicAttack, _tile);
-                if (shouldExecuteLiveCast(_live) && _playerCastOk) {
-                  const { castResult: _castResult, apCost: _apCostBasic } =
-                    executeCastAttempt(_basicAttack, _tile, "sprite-basic");
-                  void _apCostBasic;
-                  _spriteBasicCastResult = _castResult;
-                  if (_castResult !== "cast") {
-                    const _screen = tileCenter(_tile.x, _tile.y);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      _castResult === "no_ap"
-                        ? "Not enough AP"
-                        : _castResult === "on_cooldown"
-                          ? "On cooldown"
-                          : `Cast ${_castResult}!`,
-                    );
-                    setInspectCombatantId(_hit.id);
-                  }
-                } else {
-                  const _screen = tileCenter(_tile.x, _tile.y);
-                  effectsManagerRef.current?.spawnFloatText(
-                    _screen.x,
-                    _screen.y,
-                    playerFacingRejectReason(_live.reason),
-                  );
-                  setInspectCombatantId(_hit.id);
-                }
-              } else {
-                setInspectCombatantId(_hit.id);
-              }
-              try {
-                recordClickOutcome(
-                  event.clientX,
-                  event.clientY,
-                  "sprite-basic",
-                  _spriteBasicCastResult,
-                  null,
-                  null,
-                  null,
-                );
-              } catch {}
-              return;
-            } else if (selectedSpellIdRef.current && _hit.kind === "player") {
-              // Self/ally-targetable spell + player sprite hit → self-cast.
-              // Uses the spell's explicit targetType metadata (NOT name
-              // heuristics) per the targeting-rule spec.
-              const _spell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
-              );
-              if (
-                _spell &&
-                (_spell.targetType === "self" || _spell.targetType === "ally")
-              ) {
-                if (!_playerCastOk) {
-                  if (inBattleRef.current) {
-                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      WAIT_FOR_TURN_COPY,
-                    );
-                    return;
-                  }
-                } else {
-                  const _liveSelf = probeLiveCast(_spell, {
-                    x: _hit.logicalX,
-                    y: _hit.logicalY,
-                  });
-                  if (!shouldExecuteLiveCast(_liveSelf)) {
-                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      playerFacingRejectReason(_liveSelf.reason),
-                    );
-                    return;
-                  }
-                  const { castResult: _castResult, apCost: _apCost } =
-                    executeCastAttempt(
-                      _spell,
-                      { x: _hit.logicalX, y: _hit.logicalY },
-                      "sprite-player",
-                    );
-                  void _castResult;
-                  void _apCost;
-                  try {
-                    recordClickOutcome(
-                      event.clientX,
-                      event.clientY,
-                      "sprite-player",
-                      _castResult,
-                      null,
-                      null,
-                      null,
-                    );
-                  } catch {}
-                  return;
-                }
-              }
-              // Not self/ally-targetable → fall through to tile logic.
             }
           }
         }
@@ -10492,11 +10409,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screen.x,
               _screen.y,
-              castResult === "no_ap"
-                ? "No AP!"
-                : castResult === "on_cooldown"
-                  ? "On cooldown"
-                  : "Aborted",
+              playerFacingCastResult(castResult),
             );
           }
         }
@@ -10815,151 +10728,94 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               deathTriggered: deathTriggeredRef.current,
               hp: characterStatsRef.current.hp,
             });
-            if (
-              selectedSpellIdRef.current &&
-              _hit.kind === "enemy" &&
-              _playerCastOk
-            ) {
-              const _spell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
-              );
-              if (_spell) {
-                const _live = probeLiveCast(_spell, {
-                  x: _hit.logicalX,
-                  y: _hit.logicalY,
-                });
-                if (shouldExecuteLiveCast(_live)) {
-                  const { castResult: _castResult, apCost: _apCost } =
-                    executeCastAttempt(
-                      _spell,
-                      { x: _hit.logicalX, y: _hit.logicalY },
-                      "sprite-enemy",
-                    );
-                  if (_castResult !== "cast") {
-                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      _castResult === "no_ap"
-                        ? "Not enough AP"
-                        : _castResult === "on_cooldown"
-                          ? "On cooldown"
-                          : `Cast ${_castResult}!`,
-                    );
-                  }
-                  return;
-                }
-                {
-                  const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                  effectsManagerRef.current?.spawnFloatText(
-                    _screen.x,
-                    _screen.y,
-                    playerFacingRejectReason(_live.reason),
-                  );
-                }
-                return;
-              }
-            } else if (
-              selectedSpellIdRef.current &&
-              _hit.kind === "enemy" &&
-              inBattleRef.current
-            ) {
-              const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+            const _tile = { x: _hit.logicalX, y: _hit.logicalY };
+            const _selectedId = selectedSpellIdRef.current;
+            const _selectedSpell = _selectedId
+              ? activeSpells.find((s) => s.id === _selectedId)
+              : undefined;
+            const _basicAttack =
+              !_selectedId && _hit.kind === "enemy"
+                ? activeSpells.find((s) => s.id === "physical_attack")
+                : undefined;
+            const _probeSpell = _selectedSpell ?? _basicAttack;
+            const _live = _probeSpell
+              ? probeLiveCast(_probeSpell, _tile)
+              : { ok: false, reason: "no_matching_branch" };
+            const _spriteDecision = decideSpriteCastClick({
+              selectedSpellId: _selectedId,
+              hasSelectedSpell: Boolean(_selectedSpell),
+              hitKind: _hit.kind,
+              playerCastOk: _playerCastOk,
+              inBattle: inBattleRef.current,
+              liveOk: shouldExecuteLiveCast(_live),
+              selfOrAllySpell:
+                _selectedSpell?.targetType === "self" ||
+                _selectedSpell?.targetType === "ally",
+              hasBasicAttack: Boolean(_basicAttack),
+            });
+            if (_spriteDecision.action === "wait_for_turn") {
+              const _screen = tileCenter(_tile.x, _tile.y);
               effectsManagerRef.current?.spawnFloatText(
                 _screen.x,
                 _screen.y,
                 WAIT_FOR_TURN_COPY,
               );
               return;
-            } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
+            }
+            if (_spriteDecision.action === "reject_live") {
+              const _screen = tileCenter(_tile.x, _tile.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                playerFacingRejectReason(_live.reason),
+              );
+              return;
+            }
+            if (_spriteDecision.action === "inspect") {
+              if (
+                _hit.kind === "enemy" &&
+                _probeSpell &&
+                !(shouldExecuteLiveCast(_live) && _playerCastOk)
+              ) {
+                const _screen = tileCenter(_tile.x, _tile.y);
+                effectsManagerRef.current?.spawnFloatText(
+                  _screen.x,
+                  _screen.y,
+                  playerFacingRejectReason(_live.reason),
+                );
+              }
               setInspectCombatantId(_hit.id);
               return;
-            } else if (!selectedSpellIdRef.current && _hit.kind === "enemy") {
-              // No spell selected — attempt basic physical attack through
-              // the same live validation + cast ritual as a selected spell.
-              // If not legal, show floating reason AND open inspect fallback.
-              // executeCastAttempt has no range check; skip it when the
-              // live gate fails or Strike hits from anywhere on the map.
-              const _basicAttack = activeSpells.find(
-                (s) => s.id === "physical_attack",
-              );
-              if (_basicAttack && _hit.id) {
-                const _tile = { x: _hit.logicalX, y: _hit.logicalY };
-                const _live = probeLiveCast(_basicAttack, _tile);
-                if (shouldExecuteLiveCast(_live) && _playerCastOk) {
-                  const { castResult: _castResult, apCost: _apCostBasic } =
-                    executeCastAttempt(_basicAttack, _tile, "sprite-basic");
-                  void _apCostBasic;
-                  if (_castResult !== "cast") {
-                    const _screen = tileCenter(_tile.x, _tile.y);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      _castResult === "no_ap"
-                        ? "Not enough AP"
-                        : _castResult === "on_cooldown"
-                          ? "On cooldown"
-                          : `Cast ${_castResult}!`,
-                    );
-                    setInspectCombatantId(_hit.id);
-                  }
-                } else {
+            }
+            if (_spriteDecision.action === "execute") {
+              const _spellToCast =
+                _spriteDecision.source === "sprite-basic"
+                  ? _basicAttack
+                  : _selectedSpell;
+              if (_spellToCast) {
+                const { castResult: _castResult, apCost: _apCost } =
+                  executeCastAttempt(
+                    _spellToCast,
+                    _tile,
+                    _spriteDecision.source,
+                  );
+                void _apCost;
+                if (
+                  _castResult !== "cast" &&
+                  _spriteDecision.source !== "sprite-player"
+                ) {
                   const _screen = tileCenter(_tile.x, _tile.y);
                   effectsManagerRef.current?.spawnFloatText(
                     _screen.x,
                     _screen.y,
-                    playerFacingRejectReason(_live.reason),
+                    playerFacingCastResult(_castResult),
                   );
-                  setInspectCombatantId(_hit.id);
-                }
-              } else {
-                setInspectCombatantId(_hit.id);
-              }
-              return;
-            } else if (selectedSpellIdRef.current && _hit.kind === "player") {
-              const _spell = activeSpells.find(
-                (s) => s.id === selectedSpellIdRef.current,
-              );
-              if (
-                _spell &&
-                (_spell.targetType === "self" || _spell.targetType === "ally")
-              ) {
-                if (!_playerCastOk) {
-                  if (inBattleRef.current) {
-                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      WAIT_FOR_TURN_COPY,
-                    );
-                    return;
+                  if (_spriteDecision.source === "sprite-basic") {
+                    setInspectCombatantId(_hit.id);
                   }
-                } else {
-                  const _liveSelf = probeLiveCast(_spell, {
-                    x: _hit.logicalX,
-                    y: _hit.logicalY,
-                  });
-                  if (!shouldExecuteLiveCast(_liveSelf)) {
-                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
-                    effectsManagerRef.current?.spawnFloatText(
-                      _screen.x,
-                      _screen.y,
-                      playerFacingRejectReason(_liveSelf.reason),
-                    );
-                    return;
-                  }
-                  const { castResult: _castResult, apCost: _apCost } =
-                    executeCastAttempt(
-                      _spell,
-                      { x: _hit.logicalX, y: _hit.logicalY },
-                      "sprite-player",
-                    );
-                  void _castResult;
-                  void _apCost;
-                  return;
                 }
+                return;
               }
-              // Not self/ally-targetable → fall through to tile logic.
             }
           }
         }
@@ -11120,11 +10976,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effectsManagerRef.current?.spawnFloatText(
               _screen.x,
               _screen.y,
-              castResult === "no_ap"
-                ? "No AP!"
-                : castResult === "on_cooldown"
-                  ? "On cooldown"
-                  : "Aborted",
+              playerFacingCastResult(castResult),
             );
           }
         }
