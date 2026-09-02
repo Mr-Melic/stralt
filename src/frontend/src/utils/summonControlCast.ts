@@ -298,6 +298,28 @@ export function summonControlCastFailMessage(
 }
 
 /**
+ * Canvas mouse/touch routing into summon-control walks and kit casts.
+ *
+ * handleBossRushRoomClear used to leave the wolf on the map AND keep
+ * activeControlledSummonId set. After recap dismiss, every click then
+ * walked the summon (and returned) so the player could not step the
+ * progression portal. Regular victory already despawned, so `if (summon)`
+ * failed and clicks fell through. Gate on inBattle so leftover control
+ * cannot capture overworld input even if despawn is skipped.
+ */
+export function shouldRouteCanvasToSummonControl(opts: {
+  inBattle: boolean;
+  controlledSummonId: string | null | undefined;
+  summonStillLive: boolean;
+}): boolean {
+  return (
+    opts.inBattle === true &&
+    Boolean(opts.controlledSummonId) &&
+    opts.summonStillLive === true
+  );
+}
+
+/**
  * Summon-control id after a turn advance.
  *
  * Previous control is never carried forward. The 30s turn timer (and any

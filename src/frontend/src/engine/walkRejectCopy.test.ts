@@ -2,9 +2,87 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   classifyWalkReject,
+  isBattleWalkTileBlocked,
   playerFacingWalkReject,
+  shouldFloatWorldUnreachable,
   spawnWalkRejectFloat,
 } from "./walkRejectCopy.ts";
+
+describe("isBattleWalkTileBlocked", () => {
+  const empty = new Set<string>();
+  const portals = new Set(["3,3"]);
+  const barriers = new Set(["2,2"]);
+  const voids = new Set(["1,1"]);
+
+  it("matches highlight and execute for wall, void, barrier, and in-battle portal", () => {
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "wall",
+        key: "0,0",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "1,1",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "2,2",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "3,3",
+        inBattle: true,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "3,3",
+        inBattle: false,
+        portals,
+        barriers,
+        voidTiles: voids,
+      }),
+      false,
+    );
+    assert.equal(
+      isBattleWalkTileBlocked({
+        tileKind: "floor",
+        key: "4,4",
+        inBattle: true,
+        portals: empty,
+        barriers: empty,
+        voidTiles: empty,
+      }),
+      false,
+    );
+  });
+});
 
 describe("playerFacingWalkReject", () => {
   it("uses short carved-stone walk copy", () => {
@@ -82,6 +160,30 @@ describe("classifyWalkReject", () => {
         pathLength: 3,
       }),
       null,
+    );
+  });
+});
+
+describe("shouldFloatWorldUnreachable", () => {
+  it("is quiet when a path exists or the tile is self / adjacent", () => {
+    assert.equal(
+      shouldFloatWorldUnreachable(3, { x: 1, y: 1 }, { x: 4, y: 4 }),
+      false,
+    );
+    assert.equal(
+      shouldFloatWorldUnreachable(0, { x: 2, y: 2 }, { x: 2, y: 2 }),
+      false,
+    );
+    assert.equal(
+      shouldFloatWorldUnreachable(0, { x: 2, y: 2 }, { x: 3, y: 3 }),
+      false,
+    );
+  });
+
+  it("floats when an empty path is not the adjacent fallback", () => {
+    assert.equal(
+      shouldFloatWorldUnreachable(0, { x: 0, y: 0 }, { x: 4, y: 0 }),
+      true,
     );
   });
 });

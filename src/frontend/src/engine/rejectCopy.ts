@@ -4,6 +4,7 @@
 
 const REJECT_COPY: Record<string, string> = {
   out_of_bounds: "Out of bounds",
+  out_of_range: "Out of range",
   wall_tile: "Blocked",
   self_other_tile: "Invalid target",
   ally_out_of_range: "Out of range",
@@ -30,6 +31,12 @@ const REJECT_COPY: Record<string, string> = {
   area_no_anchor: "Invalid target",
   no_matching_branch: "Invalid target",
 };
+
+/** Canvas copy when Attack mode is on and no spell is selected. */
+export const SELECT_SPELL_COPY = "Select a spell";
+
+/** Canvas copy when a leftover spell click lands off the player turn. */
+export const WAIT_FOR_TURN_COPY = "Wait for your turn";
 
 /**
  * Map a live-cast / targeting reason to short carved-stone float copy.

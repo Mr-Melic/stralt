@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { playerFacingRejectReason } from "./rejectCopy.ts";
+import {
+  SELECT_SPELL_COPY,
+  WAIT_FOR_TURN_COPY,
+  playerFacingRejectReason,
+} from "./rejectCopy.ts";
 
 describe("playerFacingRejectReason", () => {
   it("maps engine tokens to short player copy", () => {
@@ -29,6 +33,7 @@ describe("playerFacingRejectReason", () => {
     assert.equal(playerFacingRejectReason("barrier_tile"), "Blocked");
     assert.equal(playerFacingRejectReason("line_blocked_barrier"), "Blocked");
     assert.equal(playerFacingRejectReason("ground_barrier"), "Blocked");
+    assert.equal(playerFacingRejectReason("out_of_range"), "Out of range");
     assert.equal(
       playerFacingRejectReason("line_los_blocked"),
       "No line of sight",
@@ -43,5 +48,12 @@ describe("playerFacingRejectReason", () => {
   it("falls back for empty or unknown snake_case tokens", () => {
     assert.equal(playerFacingRejectReason(""), "Invalid target");
     assert.equal(playerFacingRejectReason("future_gate_xyz"), "Invalid target");
+  });
+});
+
+describe("attack-mode and off-turn canvas copy", () => {
+  it("tells the player to pick a spell or wait", () => {
+    assert.equal(SELECT_SPELL_COPY, "Select a spell");
+    assert.equal(WAIT_FOR_TURN_COPY, "Wait for your turn");
   });
 });
