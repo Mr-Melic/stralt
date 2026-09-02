@@ -31,9 +31,11 @@ import {
   applyVoidTiles,
   attachWhitePortalAfterLegalize,
   canPlaceWalkBlocker,
+  countProgressionDumpCells,
   createSeededRng,
   evaluateSolvability,
   finalizePlayableLayout,
+  isEnemyWanderFloor,
   resetFailedGenerationVoids,
   sequentialClearUnlocks,
 } from "./mapGen.ts";
@@ -998,6 +1000,71 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
   });
 
+  it("seed-portal-cut-relocate-punch: destack alcoves must not bypass the gate", () => {
+    // Near room is two floors; five far-side rats force relocate+punch.
+    // Punching the wall beside the portal used to join the far room so
+    // battle walk could go around the cut-vertex.
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [W, F, "portal", F, F, F, F, W],
+      [W, F, W, F, F, F, F, W],
+      [W, W, W, F, F, F, F, W],
+      [W, W, W, W, W, W, W, W],
+    ];
+    const portals = [{ x: 2, y: 1 }];
+    const spawns = [
+      { x: 3, y: 1 },
+      { x: 4, y: 1 },
+      { x: 5, y: 1 },
+      { x: 6, y: 1 },
+      { x: 3, y: 2 },
+    ];
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals,
+      spawns,
+      w: 8,
+      h: 5,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      5,
+    );
+    const portalX = finalized.portals[0]?.x ?? 2;
+    assert.equal(
+      finalized.tiles[2]?.[2],
+      W,
+      "wall beside the portal must not become a parallel corridor",
+    );
+    for (const s of finalized.spawns) {
+      assert.equal(
+        s.x < portalX,
+        true,
+        `hostile at ${s.x},${s.y} must stay on the player's side of the gate`,
+      );
+    }
+    assert.equal(
+      sequentialClearUnlocks(
+        finalized.tiles,
+        new Set(),
+        finalized.playerSpawn,
+        finalized.portals,
+        finalized.spawns,
+        8,
+        5,
+      ),
+      true,
+      after.failures.join(","),
+    );
+  });
+
   it("seed-spawn-on-portal-cut: moving off the gate stays on the large room", () => {
     const tiles = [
       [W, W, W, W, W, W, W],
@@ -1031,6 +1098,97 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
     assert.equal(finalized.tiles[1][4], F);
     assert.equal(finalized.tiles[1][5], F);
+  });
+
+  it("seed-unique-corridor-no-alcove: punches a dump cell so corpses cannot seal the exit", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][5] = "portal";
+    const before = countProgressionDumpCells(
+      tiles,
+      new Set(),
+      { x: 1, y: 1 },
+      [{ x: 5, y: 1 }],
+      7,
+      3,
+    );
+    assert.ok(before.mandatory > 0, "1-wide corridor must be a unique bridge");
+    assert.equal(before.dump, 0, "fixture must start with no dump cell");
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals: [{ x: 5, y: 1 }],
+      spawns: [],
+      w: 7,
+      h: 3,
+    });
+    const afterCounts = countProgressionDumpCells(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      7,
+      3,
+    );
+    assert.ok(
+      afterCounts.dump > 0,
+      "must punch a dead-end alcove rather than carve a new corridor",
+    );
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      7,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(
+      finalized.tiles[1].filter((t) => t === F).length >= 4,
+      true,
+      "must not wall the corridor (aesthetics)",
+    );
+  });
+
+  it("seed-wander-across-portal: wander targets stay on the fight graph", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][3] = "portal";
+    const portals = [{ x: 3, y: 1 }];
+    assert.equal(
+      isEnemyWanderFloor(
+        tiles,
+        new Set(),
+        portals,
+        { x: 1, y: 1 },
+        { x: 5, y: 1 },
+        7,
+        3,
+      ),
+      false,
+      "Chebyshev pick beyond the gate must be rejected",
+    );
+    assert.equal(
+      isEnemyWanderFloor(
+        tiles,
+        new Set(),
+        portals,
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        7,
+        3,
+      ),
+      true,
+      "same-side floor must stay legal",
+    );
   });
 });
 
@@ -1231,6 +1389,18 @@ describe("seeded world property suite", () => {
     const failures: string[] = [];
     for (const seed of seeds) {
       const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const dump = countProgressionDumpCells(
+        world.tiles,
+        world.voidTiles,
+        world.playerSpawn,
+        world.portals,
+        world.tiles[0]?.length ?? WORLD_GRID_SIZE,
+        world.tiles.length,
+      );
+      if (dump.mandatory > 0 && dump.dump === 0) {
+        failures.push(`seed ${seed}: no dump cell`);
+        continue;
+      }
       const occ = simulateCorpsesOnWorld(world);
       if (occ.sealed) {
         failures.push(
@@ -1255,6 +1425,37 @@ describe("seeded world property suite", () => {
       }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("battle-start destack pulls a far-side wanderer onto the player component", () => {
+    // WX replica: one hostile stayed near, one wandered through the portal.
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, "portal", F, F, W],
+      [W, F, F, W, W, W, W],
+      [W, W, W, W, W, W, W],
+    ];
+    const after = simulateBattleStartOnWorld({
+      tiles,
+      voidTiles: new Set(),
+      portals: [{ x: 3, y: 1, color: "black" }],
+      playerSpawn: { x: 1, y: 1 },
+      spawns: [
+        { x: 2, y: 2 },
+        { x: 5, y: 1 },
+      ],
+      runMode: "none",
+      archetype: MAP_ARCHETYPES[0].type,
+      seed: 0,
+    });
+    for (const s of after.spawns) {
+      assert.equal(
+        s.x < 3,
+        true,
+        `hostile at ${s.x},${s.y} must destack onto the player's side`,
+      );
+    }
+    assert.equal(after.playerSpawn.x < 3, true);
   });
 
   it("battle-start destack keeps a legal route across seeds", () => {

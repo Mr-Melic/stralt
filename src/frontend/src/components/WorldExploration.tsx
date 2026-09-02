@@ -159,6 +159,7 @@ import {
   attachWhitePortalAfterLegalize,
   checkVoidConnectivity,
   countWalkableVoid,
+  isEnemyWanderFloor,
   pickMapArchetype,
   pickProgressionPortalCell,
   placeBossRushSpawns,
@@ -171,8 +172,6 @@ import { MAP_MODIFIERS, mapModifierRegistry } from "../engine/mapModifiers";
 import {
   type OccupancyContext,
   collectMandatoryProgressionCells,
-  findNearestFreeCell,
-  isCellFree,
   resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
 import {
@@ -5646,7 +5645,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           newY < WORLD_GRID_SIZE &&
           tiles[newY][newX] === "floor" &&
           !currentMap?.voidTiles?.has(`${newX},${newY}`) &&
-          (newX !== currentX || newY !== currentY)
+          (newX !== currentX || newY !== currentY) &&
+          isEnemyWanderFloor(
+            tiles as unknown as string[][],
+            currentMap?.voidTiles,
+            currentMap?.portals ?? [],
+            { x: currentX, y: currentY },
+            { x: newX, y: newY },
+            WORLD_GRID_SIZE,
+            WORLD_GRID_SIZE,
+          )
         ) {
           return { x: newX, y: newY };
         }
@@ -11858,8 +11866,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (newPlayerPos) placed.add(`${newPlayerPos.x},${newPlayerPos.y}`);
 
       // Enemies: each gets a UNIQUE cell >= 3 from the player and >= 2 from
-      // every already-placed enemy. We add each result to `placed` so the
-      // next enemy's isCellFree check sees it — no stacking possible.
+      // every already-placed enemy. Stay on the player's battle component
+      // so a wander through an overworld portal cannot destack onto the
+      // far island (findBattleStartCell's origin flood used to keep them
+      // there). We add each result to `placed` so the next enemy's
+      // isCellFree check sees it — no stacking possible.
       const updatedEnemies = enemies.map((e) => {
         const stats = computeEnemyStats(e.level, e.pieceType, e.id);
         const avoid: { x: number; y: number; minDist: number }[] = [];
@@ -11874,23 +11885,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           avoid,
           2,
           occCtx,
+          newPlayerPos ?? playerPosition,
         );
-        let finalPos: { x: number; y: number };
-        if (candidate) {
-          finalPos = candidate;
-        } else {
-          // Cramped-map fallback: keep the original cell ONLY if isCellFree
-          // confirms it is passable + unoccupied; otherwise ring-scan from
-          // the origin. Either way the result is added to `placed` so the
-          // next enemy cannot reuse it.
-          const origin = { x: e.x, y: e.y };
-          if (isCellFree(origin, occCtx)) {
-            finalPos = origin;
-          } else {
-            const near = findNearestFreeCell(origin, occCtx, 2);
-            finalPos = near ?? origin;
-          }
-        }
+        // Stay on the player's battle component (stayOn). Pass 2 already
+        // ring-scans that component at radius w+h. An unfiltered
+        // findNearestFreeCell(origin, 2) used to hop a portal cut.
+        const finalPos = candidate ?? { x: e.x, y: e.y };
         placed.add(`${finalPos.x},${finalPos.y}`);
         return {
           ...e,
