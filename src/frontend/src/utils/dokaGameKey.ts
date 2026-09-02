@@ -81,6 +81,23 @@ export function playerGameKeyStatusCopy(status: string): string {
   }
 }
 
+/** Owner-tool confirm: approve records Doka on the request; wallet credits on redeem. */
+export function gameKeyApproveConfirmBody(
+  amount: number,
+  email: string,
+): string {
+  const who = email.trim() || "this request";
+  return `This records ${amount} Doka for ${who} and mints a 120-character GameKey. The player wallet is not credited until they redeem. There is no undo.`;
+}
+
+export function gameKeyRejectConfirmBody(): string {
+  return "This marks the request rejected. The player may submit again. No GameKey is minted. There is no undo.";
+}
+
+export function gameKeyEmailedConfirmBody(): string {
+  return "This wipes the plaintext GameKey from admin view. Copy it first. The player still redeems the same code.";
+}
+
 export function hintedEurosLabel(euroCents: number): string {
   const n = Math.max(0, Math.floor(Number(euroCents) || 0));
   if (n <= 0) return "—";
@@ -153,6 +170,23 @@ export function unwrapOptRecord(value: unknown): unknown | null {
   if (value == null) return null;
   if (Array.isArray(value)) return value[0] ?? null;
   return value;
+}
+
+/**
+ * `getMyGameKeyPurchaseStatus` is Candid `opt record`. Bindgen may return
+ * `[]` (none), `[row]`, or the row. Mapping `[]` as a record used to yield
+ * `status: "pending"` with an empty id, so Buy Doka blocked a new request
+ * and never showed the real queue.
+ */
+export function parseMyGameKeyPurchaseStatus(
+  raw: unknown,
+): GameKeyRequestView | null {
+  const inner = unwrapOptRecord(raw);
+  if (inner == null || typeof inner !== "object" || Array.isArray(inner)) {
+    return null;
+  }
+  const mapped = mapGameKeyRequestFromBackend(inner);
+  return mapped.id.length > 0 ? mapped : null;
 }
 
 export function readGameKeyCmdResult(

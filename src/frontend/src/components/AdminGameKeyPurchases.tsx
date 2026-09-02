@@ -6,7 +6,10 @@ import { readAdminCmdResult } from "../utils/adminContract";
 import { MAX_DOKA_GRANT, validateDokaGrant } from "../utils/adminSafety";
 import {
   type GameKeyRequestView,
+  gameKeyApproveConfirmBody,
+  gameKeyEmailedConfirmBody,
   gameKeyMailtoHref,
+  gameKeyRejectConfirmBody,
   hintedEurosLabel,
   playerGameKeyStatusCopy,
   readGameKeyCmdResult,
@@ -44,6 +47,112 @@ const inputStyle: React.CSSProperties = {
   minHeight: 44,
 };
 
+function PurchaseConfirm({
+  title,
+  body,
+  confirmLabel,
+  ocidPrefix,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  ocidPrefix: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      data-ocid={`${ocidPrefix}.dialog`}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(5,6,14,0.85)",
+        zIndex: 410,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        style={{
+          background: "linear-gradient(180deg,#13141c,#0e0f16)",
+          border: `1px solid ${C.red}`,
+          borderRadius: 10,
+          padding: "28px 32px",
+          minWidth: 320,
+          maxWidth: 440,
+          boxShadow: "0 0 40px rgba(192,57,43,0.25)",
+          fontFamily: "'Space Grotesk', system-ui, sans-serif",
+        }}
+      >
+        <div style={{ fontSize: 28, textAlign: "center", marginBottom: 12 }}>
+          ⚠️
+        </div>
+        <h3
+          style={{
+            color: "#f0c44a",
+            textAlign: "center",
+            margin: "0 0 10px",
+            fontSize: 15,
+            fontWeight: 800,
+          }}
+        >
+          {title}
+        </h3>
+        <p
+          style={{
+            color: "#8a8090",
+            fontSize: 12,
+            textAlign: "center",
+            marginBottom: 20,
+            lineHeight: 1.5,
+          }}
+        >
+          {body}
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button
+            type="button"
+            data-ocid={`${ocidPrefix}.cancel_button`}
+            onClick={onCancel}
+            style={{
+              minHeight: 44,
+              padding: "8px 14px",
+              background: "transparent",
+              border: `1px solid ${C.goldDim}`,
+              color: C.dim,
+              borderRadius: 6,
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-ocid={`${ocidPrefix}.confirm_button`}
+            onClick={onConfirm}
+            style={{
+              minHeight: 44,
+              padding: "8px 14px",
+              background: "linear-gradient(135deg,#6a0a0a,#c0392b)",
+              border: "1px solid #c0392b",
+              color: "#fff",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontWeight: 700,
+            }}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const AdminGameKeyPurchases: React.FC = () => {
   const { actor: rawActor } = useActor();
   const actor = asActor(rawActor);
@@ -61,6 +170,12 @@ const AdminGameKeyPurchases: React.FC = () => {
     code: string;
   } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<
+    | null
+    | { kind: "approve"; rec: GameKeyRequestView; amount: number }
+    | { kind: "reject"; rec: GameKeyRequestView }
+    | { kind: "emailed"; id: string }
+  >(null);
 
   const load = useCallback(async () => {
     const list = actor?.adminListGameKeyRequests;
@@ -523,7 +638,15 @@ const AdminGameKeyPurchases: React.FC = () => {
                               type="button"
                               data-ocid={`admin.purchases.approve_button.${i + 1}`}
                               disabled={busyId === rec.id}
-                              onClick={() => void approve(rec)}
+                              onClick={() => {
+                                const amount = dokaFor(rec);
+                                const grantErr = validateDokaGrant(amount);
+                                if (grantErr) {
+                                  toast.error(grantErr);
+                                  return;
+                                }
+                                setConfirm({ kind: "approve", rec, amount });
+                              }}
                               style={{
                                 minHeight: 36,
                                 padding: "6px 10px",
@@ -542,7 +665,9 @@ const AdminGameKeyPurchases: React.FC = () => {
                               type="button"
                               data-ocid={`admin.purchases.reject_button.${i + 1}`}
                               disabled={busyId === rec.id}
-                              onClick={() => void reject(rec)}
+                              onClick={() =>
+                                setConfirm({ kind: "reject", rec })
+                              }
                               style={{
                                 minHeight: 36,
                                 padding: "6px 10px",
@@ -679,7 +804,7 @@ const AdminGameKeyPurchases: React.FC = () => {
               <button
                 type="button"
                 data-ocid="admin.purchases.mark_emailed_button"
-                onClick={() => void markEmailed(reveal.id)}
+                onClick={() => setConfirm({ kind: "emailed", id: reveal.id })}
                 style={{
                   minHeight: 44,
                   padding: "8px 14px",
@@ -711,6 +836,49 @@ const AdminGameKeyPurchases: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {confirm?.kind === "approve" && (
+        <PurchaseConfirm
+          title={`Approve ${confirm.amount.toLocaleString()} Doka?`}
+          body={gameKeyApproveConfirmBody(confirm.amount, confirm.rec.email)}
+          confirmLabel="Approve GameKey"
+          ocidPrefix="admin.purchases.approve"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const rec = confirm.rec;
+            setConfirm(null);
+            void approve(rec);
+          }}
+        />
+      )}
+      {confirm?.kind === "reject" && (
+        <PurchaseConfirm
+          title={`Reject ${confirm.rec.email || confirm.rec.id}?`}
+          body={gameKeyRejectConfirmBody()}
+          confirmLabel="Reject request"
+          ocidPrefix="admin.purchases.reject"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const rec = confirm.rec;
+            setConfirm(null);
+            void reject(rec);
+          }}
+        />
+      )}
+      {confirm?.kind === "emailed" && (
+        <PurchaseConfirm
+          title="Wipe GameKey from admin view?"
+          body={gameKeyEmailedConfirmBody()}
+          confirmLabel="Mark emailed"
+          ocidPrefix="admin.purchases.mark_emailed"
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const id = confirm.id;
+            setConfirm(null);
+            void markEmailed(id);
+          }}
+        />
       )}
     </div>
   );

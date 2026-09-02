@@ -7,6 +7,7 @@ import {
   mapPurchaseRecordFromBackend,
   purchaseTimestampMs,
   readAdminCmdResult,
+  readPrincipalListResult,
   readPurchasesResult,
   toBackendEnemySpriteUrl,
   toBackendLevelUpConfig,
@@ -82,6 +83,25 @@ describe("purchase mapping", () => {
           __kind__: "err",
           err: "Unauthorized: admin only",
         }),
+      /Unauthorized/,
+    );
+  });
+
+  it("unwraps getBannedPrincipals #ok into principal texts", () => {
+    const list = readPrincipalListResult(
+      {
+        __kind__: "ok",
+        ok: [{ toText: () => "aaaaa-aa" }, "bbbbb-bb"],
+      },
+      "getBannedPrincipals",
+    );
+    assert.deepEqual(list, ["aaaaa-aa", "bbbbb-bb"]);
+    assert.throws(
+      () =>
+        readPrincipalListResult(
+          { __kind__: "err", err: "Unauthorized: admin only" },
+          "getBannedPrincipals",
+        ),
       /Unauthorized/,
     );
   });
