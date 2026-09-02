@@ -183,6 +183,34 @@ export function shouldCopyIdleWalletDoka(args: {
   return args.walletReady === true;
 }
 
+/**
+ * Thrown when saveBattleStats would write a seeded pre-credit snapshot
+ * after a one-shot applyRewards transport-keep whose confirm was stale.
+ */
+export const ABSOLUTE_WRITE_UNCONFIRMED_CREDIT =
+  "absolute write skipped: unconfirmed credit";
+
+/**
+ * Seeded one-shot transport-keep left the lock at the pre-credit wallet
+ * when getCallerDokaBalance was stale or threw. Recap heal then
+ * saveBattleStats-wrote that snapshot and wiped the canister grant
+ * (incoming-below-stored is applied; saveBattleStats never mints).
+ *
+ * Skip the absolute write unless the live read is strictly above the
+ * lock. A miss must not use the stale committed value.
+ */
+export function shouldSkipAbsoluteDokaWrite(args: {
+  unconfirmedWalletCredit: boolean;
+  liveDoka: number | null;
+  committedDoka: number;
+}): boolean {
+  if (args.unconfirmedWalletCredit !== true) return false;
+  if (args.liveDoka == null) return true;
+  const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
+  const committed = Math.max(0, Math.floor(Number(args.committedDoka) || 0));
+  return live <= committed;
+}
+
 export type ProgressPersistEnqueueOptions = {
   /**
    * Death persist writes the pending marker then the 20/40 cut. Running
@@ -216,6 +244,9 @@ export function createProgressPersist(
   // Set when a credit landed on an unseeded placeholder. Idle hydrate must
   // not copy the pre-credit query or death/heal will persist that snapshot.
   let idleWalletSeedBlocked = false;
+  // Seeded one-shot transport-keep: canister may have the grant, confirm
+  // did not see a rise. Absolute writes must re-fetch and skip if stale.
+  let unconfirmedWalletCredit = false;
   let pending = 0;
   let chain: Promise<void> = Promise.resolve();
   let beforeEach = options?.beforeEach;
@@ -242,6 +273,18 @@ export function createProgressPersist(
     noteUnseededCredit() {
       if (!walletSeeded) idleWalletSeedBlocked = true;
     },
+    /**
+     * One-shot applyRewards invoked but the confirm did not see a rise.
+     * Block idle seed (unseeded placeholder) and force the next absolute
+     * write to re-fetch. A stale snapshot must not wipe the grant.
+     */
+    noteUnconfirmedCredit() {
+      idleWalletSeedBlocked = true;
+      if (walletSeeded) unconfirmedWalletCredit = true;
+    },
+    hasUnconfirmedWalletCredit() {
+      return unconfirmedWalletCredit;
+    },
     commit(next: Partial<CommittedProgress>) {
       committed = {
         doka:
@@ -260,6 +303,7 @@ export function createProgressPersist(
       if (next.doka != null) {
         walletSeeded = true;
         idleWalletSeedBlocked = false;
+        unconfirmedWalletCredit = false;
       }
     },
     hydrateWhenIdle(
@@ -318,6 +362,13 @@ export function createProgressPersist(
 
 export type ProgressPersist = ReturnType<typeof createProgressPersist>;
 
+export type AbsoluteWritePersist = Pick<
+  ProgressPersist,
+  "isWalletSeeded" | "seedWallet" | "snapshot"
+> & {
+  hasUnconfirmedWalletCredit?: () => boolean;
+};
+
 /**
  * saveBattleStats writes an absolute wallet. The persist lock starts at 0
  * whenever WorldExploration mounts before getCallerDokaBalance resolves.
@@ -327,20 +378,44 @@ export type ProgressPersist = ReturnType<typeof createProgressPersist>;
  * Fetch the live wallet when the lock was never seeded from an authoritative
  * read/credit. Return null if the read fails so the caller can skip the
  * absolute write instead of persisting the placeholder.
+ *
+ * After a seeded one-shot transport-keep, re-fetch even when seeded. A
+ * stale or missing live read must not return the pre-credit snapshot.
  */
 export async function resolveCommittedDokaForAbsoluteWrite(
-  persist: Pick<ProgressPersist, "isWalletSeeded" | "seedWallet" | "snapshot">,
+  persist: AbsoluteWritePersist,
   readWallet: () => Promise<unknown>,
 ): Promise<number | null> {
-  if (persist.isWalletSeeded()) {
+  const unconfirmed = persist.hasUnconfirmedWalletCredit?.() === true;
+  if (persist.isWalletSeeded() && !unconfirmed) {
     return persist.snapshot().doka;
   }
+  const skipStale = (live: number | null): boolean =>
+    shouldSkipAbsoluteDokaWrite({
+      unconfirmedWalletCredit: unconfirmed,
+      liveDoka: live,
+      committedDoka: persist.snapshot().doka,
+    });
+  const refuseStaleWrite = (): never => {
+    throw new Error(ABSOLUTE_WRITE_UNCONFIRMED_CREDIT);
+  };
   try {
     const live = readWalletNumber(await readWallet());
+    if (skipStale(live)) {
+      if (persist.isWalletSeeded()) refuseStaleWrite();
+      return null;
+    }
     if (live == null) return null;
     persist.seedWallet(live);
     return live;
-  } catch {
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === ABSOLUTE_WRITE_UNCONFIRMED_CREDIT
+    ) {
+      throw err;
+    }
+    if (unconfirmed && persist.isWalletSeeded()) refuseStaleWrite();
     return null;
   }
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
   clampAbsoluteProgressWrite,
@@ -11,6 +12,7 @@ import {
   resolveHydratedXp,
   shouldCopyIdleWalletDoka,
   shouldPersistAbsoluteDokaSpend,
+  shouldSkipAbsoluteDokaWrite,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -521,6 +523,95 @@ describe("progress persist lock", () => {
       },
     );
     assert.equal(missed, null);
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.snapshot().doka, 0);
+  });
+
+  it("does not saveBattleStats-wipe a seeded one-shot keep whose confirm was stale", async () => {
+    // Chronology:
+    // 1. Seeded lock at 500. Ground/shrine applyRewards adds 50 (canister 550)
+    //    then the replica rejects. settle is keep (do not remint).
+    // 2. getCallerDokaBalance still returns 500. Confirm sees no rise.
+    // 3. Recap heal used to applySpendToCommitted(500, 10) → 490 and
+    //    saveBattleStats-wipe the grant (never mints incoming-below-stored).
+    // 4. noteUnconfirmedCredit forces a live re-fetch. Stale/throw skips
+    //    the write. A later rise seeds 550, then the spend applies to 540.
+    assert.equal(
+      shouldSkipAbsoluteDokaWrite({
+        unconfirmedWalletCredit: true,
+        liveDoka: 500,
+        committedDoka: 500,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldSkipAbsoluteDokaWrite({
+        unconfirmedWalletCredit: true,
+        liveDoka: null,
+        committedDoka: 500,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldSkipAbsoluteDokaWrite({
+        unconfirmedWalletCredit: true,
+        liveDoka: 550,
+        committedDoka: 500,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldSkipAbsoluteDokaWrite({
+        unconfirmedWalletCredit: false,
+        liveDoka: 500,
+        committedDoka: 500,
+      }),
+      false,
+    );
+
+    const lock = createProgressPersist({ doka: 500, xp: 0, level: 1 });
+    lock.noteUnconfirmedCredit();
+    assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+    assert.equal(lock.isWalletSeeded(), true);
+
+    await assert.rejects(
+      () => resolveCommittedDokaForAbsoluteWrite(lock, async () => 500),
+      new RegExp(ABSOLUTE_WRITE_UNCONFIRMED_CREDIT),
+    );
+    assert.equal(lock.snapshot().doka, 500);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+
+    await assert.rejects(
+      () =>
+        resolveCommittedDokaForAbsoluteWrite(lock, async () => {
+          throw new Error("replica timeout");
+        }),
+      new RegExp(ABSOLUTE_WRITE_UNCONFIRMED_CREDIT),
+    );
+
+    const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => 550,
+    );
+    assert.equal(caughtUp, 550);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), false);
+    const wrote = applySpendToCommitted(lock.snapshot().doka, 10);
+    lock.commit({ doka: wrote });
+    assert.equal(wrote, 540);
+  });
+
+  it("blocks idle wallet seed after an unseeded one-shot keep", () => {
+    const lock = createProgressPersist({ doka: 0, xp: 0, level: 1 });
+    lock.noteUnconfirmedCredit();
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), false);
+    assert.equal(
+      lock.hydrateWhenIdle(
+        { doka: 5000, xp: 0, level: 1 },
+        { walletReady: true },
+      ),
+      true,
+    );
     assert.equal(lock.isWalletSeeded(), false);
     assert.equal(lock.snapshot().doka, 0);
   });
