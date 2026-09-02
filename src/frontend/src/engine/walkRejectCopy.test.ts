@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   classifyWalkReject,
   playerFacingWalkReject,
+  shouldFloatWorldUnreachable,
   spawnWalkRejectFloat,
 } from "./walkRejectCopy.ts";
 
@@ -82,6 +83,30 @@ describe("classifyWalkReject", () => {
         pathLength: 3,
       }),
       null,
+    );
+  });
+});
+
+describe("shouldFloatWorldUnreachable", () => {
+  it("is quiet when a path exists or the tile is self / adjacent", () => {
+    assert.equal(
+      shouldFloatWorldUnreachable(3, { x: 1, y: 1 }, { x: 4, y: 4 }),
+      false,
+    );
+    assert.equal(
+      shouldFloatWorldUnreachable(0, { x: 2, y: 2 }, { x: 2, y: 2 }),
+      false,
+    );
+    assert.equal(
+      shouldFloatWorldUnreachable(0, { x: 2, y: 2 }, { x: 3, y: 3 }),
+      false,
+    );
+  });
+
+  it("floats when an empty path is not the adjacent fallback", () => {
+    assert.equal(
+      shouldFloatWorldUnreachable(0, { x: 0, y: 0 }, { x: 4, y: 0 }),
+      true,
     );
   });
 });

@@ -31,10 +31,17 @@ const REJECT_COPY: Record<string, string> = {
   no_matching_branch: "Invalid target",
 };
 
+/** Canvas copy when Attack mode is on and no spell is selected. */
+export const SELECT_SPELL_COPY = "Select a spell";
+
+/** Canvas copy when a leftover spell click lands off the player turn. */
+export const WAIT_FOR_TURN_COPY = "Wait for your turn";
+
 /**
  * Map a live-cast / targeting reason to short carved-stone float copy.
  * Already-human strings (spaces, no snake_case) pass through unchanged.
  */
+
 export function playerFacingRejectReason(reason: string): string {
   const token = String(reason ?? "").trim();
   if (!token) return "Invalid target";
