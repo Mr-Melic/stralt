@@ -296,9 +296,11 @@ import {
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
+  isPlayerHealTargetId,
   nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeHealFromHpRestore,
   recordChallengeItemHealUsed,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
@@ -9131,11 +9133,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return amount;
       },
       heal: (combatantId: string, amount: number) => {
-        if (combatantId === "player" || combatantId === "__player__") {
+        if (isPlayerHealTargetId(combatantId)) {
+          const previousHp = characterStatsRef.current.hp;
           setCharacterStats((prev: any) => ({
             ...prev,
             hp: Math.min(maxHp, prev.hp + amount),
           }));
+          challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
+            inBattleRef.current,
+            challengeHealUsedRef.current,
+            characterStatsRef.current.hp - previousHp,
+          );
           const pos = playerPositionRef.current;
           spawnDamageAtTile(
             effectsManagerRef.current,
@@ -9438,6 +9446,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             onPlayerReflectedDamage: (amount: number) => {
               challengeTotalDamageRef.current = recordChallengeDamageTaken(
                 challengeTotalDamageRef.current,
+                amount,
+              );
+            },
+            onPlayerHealed: (amount: number) => {
+              challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
+                inBattleRef.current,
+                challengeHealUsedRef.current,
                 amount,
               );
             },
@@ -15046,11 +15061,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return amount;
           },
           heal: (combatantId: string, amount: number) => {
-            if (combatantId === "player" || combatantId === "__player__") {
+            if (isPlayerHealTargetId(combatantId)) {
+              const previousHp = characterStatsRef.current.hp;
               setCharacterStats((prev: any) => ({
                 ...prev,
                 hp: Math.min(maxHp, prev.hp + amount),
               }));
+              challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
+                inBattleRef.current,
+                challengeHealUsedRef.current,
+                characterStatsRef.current.hp - previousHp,
+              );
               const pos = playerPositionRef.current;
               spawnDamageAtTile(
                 effectsManagerRef.current,
