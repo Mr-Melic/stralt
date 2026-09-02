@@ -506,6 +506,11 @@ describe("challenge completion → persist XP", () => {
     const striker = byId("legendary_3");
     const vacuous = progress({ directHit: true, directHitAttempts: 0 });
     assert.equal(isStrikerChallengeComplete(vacuous), false);
+    assert.equal(
+      isStrikerChallengeComplete({ directHit: true }),
+      false,
+      "pre-fix progress omitted attempts and still persisted Striker",
+    );
     assert.equal(isChallengeCompleted(striker, vacuous), false);
     assert.deepEqual(
       liveBattleChallengePersistEntries(

@@ -154,6 +154,13 @@ assert.equal(shouldReleaseOneShotAfterPersist(true), false);
     },
   );
   assert.deepEqual(rejectedKeep, { kind: "keep" });
+
+  const fromNat = await resolveOneShotCreditSettle(transportAfterAdd, {
+    committedDoka: 500,
+    readWallet: async () => 550n,
+  });
+  assert.equal(fromNat.kind, "commit");
+  if (fromNat.kind === "commit") assert.equal(fromNat.doka, 550);
 }
 
 console.log("dokaPersist.test: ok");
