@@ -2310,6 +2310,12 @@ const RegionList: React.FC<{
           </Btn>
         </div>
       </div>
+      <CatalogNote>
+        Catalog only. Saving a region does not change map tiles, hazards, or
+        combat. WorldExploration loads the list and matches player level, then
+        discards battle effects and background color. Level min/max is an
+        eligibility band, not a career cap.
+      </CatalogNote>
 
       {loading && (
         <div
@@ -3599,6 +3605,12 @@ const SpellList: React.FC<{
           </Btn>
         </div>
       </div>
+      <CatalogNote>
+        Cooldown and multi-target round-trip via adapter. Summon metadata is
+        seeded on new drafts and saved when present, but this editor has no
+        summon controls. Swap, Barrier, Trap, DoT, and buff numeric flags are
+        frontend-only and drop on reload. minLevel is not enforced at hydrate.
+      </CatalogNote>
 
       {loading && (
         <div
@@ -4183,6 +4195,12 @@ const SettingsTab: React.FC = () => {
       >
         Manage admin permissions and game settings.
       </p>
+      <CatalogNote>
+        Role transfer uses assignUserRole. Canister also has rollback
+        (LevelUp/Game/Tier/Palette/BossRush), getAdminAuditLog, setAppVersion /
+        setChangelog, and getBannedPrincipals — none of those have editors on
+        this tab.
+      </CatalogNote>
 
       <p style={sectionHeadStyle}>Transfer Admin Role</p>
       <div
@@ -4400,10 +4418,11 @@ const LevelUpConfigPanel: React.FC = () => {
           lineHeight: 1.5,
         }}
       >
-        This panel edits range and fail chance only. Save also writes built-in
-        defaults for stat growth (5%), AP/MP threshold (25), spell leveling cost
-        (10 × 2^level), and spell damage growth (3%). Those fields are not shown
-        here — a saved draft here is not a full LevelUpConfig review.
+        All nine LevelUpConfig fields are editable. Save writes the full
+        canister payload (no hardcoded growth/cost clobber). Live combat still
+        hydrates fail/range from pbv_levelup_config until WorldExploration calls
+        getLevelUpConfig. Cost multiplier is stored; upgradeSpell still charges
+        base × 2^level. No player level cap.
       </p>
       <div
         style={{
@@ -4995,6 +5014,11 @@ const ModifierEditor: React.FC<{
         <p style={{ ...sectionHeadStyle, margin: "0 0 8px" }}>
           Global Modifier Roll Settings
         </p>
+        <p style={{ color: C.dim, fontSize: 10, margin: "0 0 8px" }}>
+          Only this modifier&apos;s weight (triggerChance) persists on the
+          canister. Global trigger % and second-modifier % are not Candid fields
+          — reload resets them to engine defaults 20 / 50.
+        </p>
         <div
           style={{
             display: "grid",
@@ -5093,7 +5117,7 @@ const ModifierEditor: React.FC<{
           htmlFor="admin.modifier.active_checkbox"
           style={{ ...labelStyle, marginBottom: 0, cursor: "pointer" }}
         >
-          Active on all maps
+          Eligible for portal modifier roll
         </label>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
@@ -6111,6 +6135,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   onRetry={() => modifierQ.refetch()}
                 />
               )}
+              <CatalogNote>
+                Active means eligible for the portal roll, not always-on every
+                map. Registry ids are selectable. Global/second chances shown in
+                the editor are not stored on MapModifierConfig.
+              </CatalogNote>
               {/* Doka Spawn Config */}
               <div
                 data-ocid="admin.doka_spawn_config"
