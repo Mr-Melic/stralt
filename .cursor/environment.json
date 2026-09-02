@@ -1,0 +1,17 @@
+{
+  "name": "Stralt",
+  "install": "corepack enable\npnpm install --frozen-lockfile",
+  "terminals": [
+    {
+      "name": "frontend-dev",
+      "command": "VITE_USE_MOCK=true pnpm --filter \"@caffeine/template-frontend\" dev --host 0.0.0.0 --port 5173",
+      "description": "Vite dev server for the React frontend in mock mode (no IC canister / dfx required). Serves the game UI at http://localhost:5173. VITE_USE_MOCK swaps in the in-memory mock backend actor from src/frontend/src/mocks/backend.ts."
+    }
+  ],
+  "ports": [
+    {
+      "name": "frontend",
+      "port": 5173
+    }
+  ]
+}
