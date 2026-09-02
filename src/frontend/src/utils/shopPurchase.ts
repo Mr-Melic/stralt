@@ -4,6 +4,8 @@
  * Candid and the purchase record is never created.
  */
 
+import { legacyPurchaseCreditForHud } from "./legacyPurchaseCredit.ts";
+
 export type ShopCustomerFields = {
   firstName?: string;
   lastName?: string;
@@ -140,11 +142,9 @@ export async function creditPendingPurchases(
     return { previous: null, credited: null };
   }
   const previous = readCallerDokaBalance(await actor.getCallerDokaBalance());
-  await actor.processPendingPurchases();
-  return {
-    previous,
-    credited: readCallerDokaBalance(await actor.getCallerDokaBalance()),
-  };
+  const minted = await actor.processPendingPurchases();
+  const credited = readCallerDokaBalance(await actor.getCallerDokaBalance());
+  return legacyPurchaseCreditForHud(minted, { previous, credited });
 }
 
 /**
