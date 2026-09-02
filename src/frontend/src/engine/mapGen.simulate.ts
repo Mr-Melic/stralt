@@ -30,6 +30,7 @@ import {
   occupantsSealProgression,
   progressionReserved,
   relocateOffMandatoryCells,
+  unsealProgressionOccupants,
 } from "./occupancy.ts";
 import {
   type DungeonChainSnapshot,
@@ -559,7 +560,13 @@ export function generateSeededRestMap(): SimWorld {
       restExitType: "dungeon",
       isDungeonEntry: true,
     },
-    { x: Math.floor(size / 2), y: size - 3, color: "boss", isRestExit: true },
+    {
+      x: Math.floor(size / 2),
+      y: size - 3,
+      color: "boss",
+      isRestExit: true,
+      restExitType: "boss",
+    },
   ];
   const center = Math.floor(size / 2);
   stampPortalTiles(tiles, portals);
@@ -585,11 +592,12 @@ export function generateSeededRestMap(): SimWorld {
   };
 }
 
-export function simulateRestExitEncounter(seed: number): SimWorld {
-  const rest = generateSeededRestMap();
-  const dungeonExit = rest.portals.find((p) => p.restExitType === "dungeon");
-  const arm = shouldArmDungeonChainOnRestExit(dungeonExit?.restExitType);
-  const depth = restExitSpawnDepth(dungeonExit?.restExitType);
+export function simulateRestExitEncounter(
+  seed: number,
+  restExitType = "dungeon",
+): SimWorld {
+  const arm = shouldArmDungeonChainOnRestExit(restExitType);
+  const depth = restExitSpawnDepth(restExitType);
   const world = generateSeededWorld({
     seed,
     runMode: arm ? "dungeon" : "none",
@@ -902,7 +910,7 @@ export function simulateCorpsesOnWorld(world: SimWorld): {
   if (mandatory.size === 0) {
     return { sealed: false, cells: [] };
   }
-  let offPath = false;
+  let offPath = 0;
   const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
   for (let y = 0; y < world.tiles.length; y++) {
     for (let x = 0; x < size; x++) {
@@ -911,26 +919,46 @@ export function simulateCorpsesOnWorld(world: SimWorld): {
       if (k === `${world.playerSpawn.x},${world.playerSpawn.y}`) continue;
       if (world.tiles[y][x] === "wall") continue;
       if (world.voidTiles.has(k)) continue;
-      offPath = true;
-      break;
+      offPath += 1;
     }
-    if (offPath) break;
   }
-  if (!offPath) {
+  if (offPath === 0) {
     return { sealed: false, cells: [] };
   }
-  const first = [...mandatory][0].split(",");
-  const corpses: OccCell[] = [{ x: Number(first[0]), y: Number(first[1]) }];
+  const ranked = [...mandatory]
+    .map((k) => {
+      const p = k.split(",");
+      const x = Number(p[0]);
+      const y = Number(p[1]);
+      return {
+        x,
+        y,
+        dist:
+          Math.abs(x - world.playerSpawn.x) + Math.abs(y - world.playerSpawn.y),
+      };
+    })
+    .sort((a, b) => b.dist - a.dist);
+  const corpses: OccCell[] = ranked
+    .slice(0, Math.min(ranked.length, Math.min(offPath, 4)))
+    .map((c) => ({ x: c.x, y: c.y }));
   const moved = relocateOffMandatoryCells(corpses, mandatory, ctx);
+  const unsealed = unsealProgressionOccupants(
+    moved,
+    tiles,
+    world.voidTiles,
+    portals,
+    world.playerSpawn,
+    ctx,
+  );
   return {
     sealed: occupantsSealProgression(
       tiles,
       world.voidTiles,
       portals,
       world.playerSpawn,
-      moved,
+      unsealed,
     ),
-    cells: moved,
+    cells: unsealed,
   };
 }
 
@@ -1044,4 +1072,61 @@ export function simulateBattleStartOnWorld(world: SimWorld): {
     world.tiles.length,
   );
   return { playerSpawn: player, spawns: nextSpawns, ok: report.ok };
+}
+
+const WANDER_DIRS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;
+
+/**
+ * Replay overworld wander on the finalized graph. Enemies used to step onto
+ * leftover CA crumbs (still floor, outside the spawn flood); battle then
+ * started on an island and sealed every exit. After seal they must stay
+ * engageable.
+ */
+export function simulateEnemyWanderOnWorld(
+  world: SimWorld,
+  steps: number,
+  rng: Rng,
+): { spawns: { x: number; y: number }[]; ok: boolean } {
+  const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const portals = new Set(world.portals.map((p) => `${p.x},${p.y}`));
+  const occupied = new Set<string>([
+    `${world.playerSpawn.x},${world.playerSpawn.y}`,
+  ]);
+  const walk = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= size || y >= world.tiles.length) return false;
+    if (world.tiles[y][x] === "wall") return false;
+    const k = `${x},${y}`;
+    if (world.voidTiles.has(k) || portals.has(k)) return false;
+    return true;
+  };
+  const spawns = world.spawns.map((s) => ({ x: s.x, y: s.y }));
+  for (const s of spawns) occupied.add(`${s.x},${s.y}`);
+  for (const s of spawns) {
+    occupied.delete(`${s.x},${s.y}`);
+    for (let i = 0; i < steps; i++) {
+      const d = WANDER_DIRS[Math.floor(rng() * WANDER_DIRS.length)];
+      const nx = s.x + d[0];
+      const ny = s.y + d[1];
+      const k = `${nx},${ny}`;
+      if (!walk(nx, ny) || occupied.has(k)) continue;
+      s.x = nx;
+      s.y = ny;
+    }
+    occupied.add(`${s.x},${s.y}`);
+  }
+  const report = evaluateSolvability(
+    world.tiles,
+    world.voidTiles,
+    world.playerSpawn,
+    world.portals,
+    spawns,
+    size,
+    world.tiles.length,
+  );
+  return { spawns, ok: report.ok };
 }
