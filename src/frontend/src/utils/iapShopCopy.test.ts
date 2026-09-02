@@ -5,6 +5,7 @@ import {
   GAME_KEY_ALPHABET,
   GAME_KEY_LENGTH,
   euroTextToCents,
+  normalizeGameKeyInput,
   playerGameKeyStatusCopy,
   suggestedDokaFromEuroCents,
   suggestedDokaFromEuros,
@@ -15,9 +16,11 @@ import {
 import {
   IAP_SHOP_CLOSE_LABEL,
   IAP_SHOP_CONSENT_LABEL,
+  IAP_SHOP_HOW_TO_HEADING,
   IAP_SHOP_KYC_PREAMBLE,
   IAP_SHOP_PACKAGES_DETAIL,
   IAP_SHOP_PACKAGES_LEAD,
+  IAP_SHOP_STEPS,
   IAP_SHOP_TITLE,
 } from "./iapShopCopy.ts";
 
@@ -42,6 +45,15 @@ describe("iapShopCopy", () => {
     assert.match(IAP_SHOP_KYC_PREAMBLE, /no proof of address/i);
     assert.equal(/proof-of-address/i.test(IAP_SHOP_KYC_PREAMBLE), false);
     assert.match(IAP_SHOP_CONSENT_LABEL, /email/i);
+  });
+
+  it("lists buy steps in request → pay → wait → redeem order", () => {
+    assert.equal(IAP_SHOP_HOW_TO_HEADING, "How to buy");
+    assert.equal(IAP_SHOP_STEPS.length, 4);
+    assert.match(IAP_SHOP_STEPS[0], /email/i);
+    assert.match(IAP_SHOP_STEPS[1], /Mollie/i);
+    assert.match(IAP_SHOP_STEPS[2], /Approved/i);
+    assert.match(IAP_SHOP_STEPS[3], /120-character GameKey/i);
   });
 });
 
@@ -71,6 +83,9 @@ describe("dokaGameKey", () => {
       validateGameKeyFormat(`${"A".repeat(119)} `),
       "GameKey contains invalid characters",
     );
+    const wrapped = `${valid.slice(0, 60)}\n ${valid.slice(60)}`;
+    assert.equal(normalizeGameKeyInput(wrapped), valid);
+    assert.equal(validateGameKeyFormat(normalizeGameKeyInput(wrapped)), null);
   });
 
   it("validates email and consent", () => {

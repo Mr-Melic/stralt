@@ -621,15 +621,19 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                 const cdTurns = spell ? (spellCooldowns[spell.id] ?? 0) : 0;
                 const isOnCooldown = cdTurns > 0;
 
-                const spellTitle = spell
-                  ? `${spell.name} \u2014 ${spell.description} | ${
-                      isHeal
-                        ? `Heals: ${spell.healAmount ?? 0} HP`
-                        : `Damage: ${Number(spell.damage)}`
-                    } | ${Number(spell.apCost)} AP | Range: ${Number(
-                      spell.range,
-                    )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}`
-                  : `Empty slot ${slotIndex + 1}`;
+                const spellTitle = !inBattle
+                  ? spell
+                    ? `${spell.name} — usable once a fight starts`
+                    : `Empty slot ${slotIndex + 1}`
+                  : spell
+                    ? `${spell.name} \u2014 ${spell.description} | ${
+                        isHeal
+                          ? `Heals: ${spell.healAmount ?? 0} HP`
+                          : `Damage: ${Number(spell.damage)}`
+                      } | ${Number(spell.apCost)} AP | Range: ${Number(
+                        spell.range,
+                      )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}`
+                    : `Empty slot ${slotIndex + 1}`;
 
                 return (
                   <button
@@ -637,9 +641,10 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                     type="button"
                     data-ocid={`battle_ui.spell.${slotIndex + 1}`}
                     onClick={() => {
+                      if (!inBattle) return;
                       if (spell && !isOnCooldown) onSelectSpell(spell.id);
                     }}
-                    disabled={isEmpty || isOnCooldown}
+                    disabled={isEmpty || isOnCooldown || !inBattle}
                     title={spellTitle}
                     style={{
                       width: 44,
@@ -671,7 +676,10 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                             : isHeal
                               ? "2px solid rgba(40,160,80,0.6)"
                               : "2px solid rgba(180,20,20,0.55)",
-                      cursor: isEmpty || isOnCooldown ? "default" : "pointer",
+                      cursor:
+                        isEmpty || isOnCooldown || !inBattle
+                          ? "default"
+                          : "pointer",
                       display: "flex",
                       flexDirection: "column",
                       alignItems: "center",
@@ -687,7 +695,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                             : "0 0 14px rgba(255,60,60,0.5)"
                         : "0 2px 5px rgba(0,0,0,0.35)",
                       flexShrink: 0,
-                      opacity: isOnCooldown ? 0.5 : 1,
+                      opacity: isOnCooldown || !inBattle ? 0.5 : 1,
                     }}
                   >
                     {/* Cooldown number overlay */}
@@ -821,11 +829,13 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
               onClick={onAttackNearest}
               disabled={!canAttackNearest}
               title={
-                canAttackNearest
-                  ? isMobile
-                    ? "Attack the nearest valid target"
-                    : "Attack the nearest valid target [S]"
-                  : "Select a spell in Attack mode with enough AP and a target in range"
+                !inBattle
+                  ? "Attack Nearest is usable once a fight starts"
+                  : canAttackNearest
+                    ? isMobile
+                      ? "Attack the nearest valid target"
+                      : "Attack the nearest valid target [S]"
+                    : "Select a spell in Attack mode with enough AP and a target in range"
               }
               style={{
                 minWidth: 58,

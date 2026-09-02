@@ -4,11 +4,13 @@ import { toast } from "sonner";
 import molliePaymentQr from "../assets/mollie-payment-qr.png";
 import { safeExternalHref } from "../utils/adminSafety";
 import {
+  GAME_KEY_LENGTH,
   type GameKeyRequestView,
   MOLLIE_PAYMENT_LINK,
   euroTextToCents,
   hintedEurosLabel,
   mapGameKeyRequestFromBackend,
+  normalizeGameKeyInput,
   playerGameKeyStatusCopy,
   readGameKeyCmdResult,
   suggestedDokaFromEuroCents,
@@ -20,9 +22,11 @@ import {
 import {
   IAP_SHOP_CLOSE_LABEL,
   IAP_SHOP_CONSENT_LABEL,
+  IAP_SHOP_HOW_TO_HEADING,
   IAP_SHOP_KYC_PREAMBLE,
   IAP_SHOP_PACKAGES_DETAIL,
   IAP_SHOP_PACKAGES_LEAD,
+  IAP_SHOP_STEPS,
   IAP_SHOP_TITLE,
   IAP_SHOP_WAIT_COPY,
 } from "../utils/iapShopCopy";
@@ -80,6 +84,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   const [copied, setCopied] = useState(false);
   const requestInFlight = useRef(false);
   const redeemInFlight = useRef(false);
+  const seenStatusRef = useRef<string | null>(null);
 
   const loadStatus = useCallback(async () => {
     if (!actor?.getMyGameKeyPurchaseStatus) return;
@@ -94,6 +99,29 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void loadStatus();
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, [loadStatus]);
+
+  useEffect(() => {
+    const next = status?.status ?? null;
+    if (next === "approved" && seenStatusRef.current === "pending") {
+      toast.success("Approved — check email for your GameKey");
+    }
+    seenStatusRef.current = next;
+  }, [status]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const hintCents = euroTextToCents(euroHint);
   const suggested =
@@ -162,7 +190,8 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   };
 
   const redeem = async () => {
-    const formatErr = validateGameKeyFormat(gameKey.trim());
+    const code = normalizeGameKeyInput(gameKey);
+    const formatErr = validateGameKeyFormat(code);
     if (formatErr) {
       toast.error(formatErr);
       return;
@@ -178,7 +207,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
       const { result, previous, credited } = await redeemGameKeyThroughPersist(
         actor,
         persist,
-        gameKey.trim(),
+        code,
       );
       if ("err" in result) {
         toast.error(result.err);
@@ -262,9 +291,42 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
         <p style={{ color: "#e0d6c8", fontSize: 12, marginBottom: 6 }}>
           {IAP_SHOP_PACKAGES_LEAD}
         </p>
-        <p style={{ color: "#6a7a8a", fontSize: 12, marginBottom: 16 }}>
+        <p style={{ color: "#6a7a8a", fontSize: 12, marginBottom: 12 }}>
           {IAP_SHOP_PACKAGES_DETAIL}
         </p>
+        <div
+          data-ocid="shop.how_to_buy"
+          style={{
+            background: "#0d0f1a",
+            border: "1px solid #8b1a1a",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              color: "#f1c40f",
+              fontSize: 10,
+              fontWeight: 800,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}
+          >
+            {IAP_SHOP_HOW_TO_HEADING}
+          </div>
+          <ol style={{ margin: 0, paddingLeft: 18, color: "#e0d6c8" }}>
+            {IAP_SHOP_STEPS.map((step) => (
+              <li
+                key={step}
+                style={{ fontSize: 12, lineHeight: 1.45, marginBottom: 4 }}
+              >
+                {step}
+              </li>
+            ))}
+          </ol>
+        </div>
 
         {status && (
           <div
@@ -460,6 +522,13 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
           data-ocid="shop.confirm_button"
           onClick={() => void submitRequest()}
           disabled={submitting || openPending || openApproved}
+          title={
+            openPending
+              ? "Request recorded — pay on Mollie if you have not already, then wait here"
+              : openApproved
+                ? "Approved — paste the GameKey from email below"
+                : "Record this email, then pay on Mollie"
+          }
           style={{
             width: "100%",
             minHeight: 44,
@@ -524,7 +593,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
             id="shop-gamekey"
             data-ocid="shop.form.gamekey_input"
             value={gameKey}
-            onChange={(e) => setGameKey(e.target.value)}
+            onChange={(e) => setGameKey(normalizeGameKeyInput(e.target.value))}
             rows={3}
             spellCheck={false}
             aria-describedby="shop-gamekey-help"
@@ -541,8 +610,9 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
             id="shop-gamekey-help"
             style={{ color: "#6a7a8a", fontSize: 11, margin: "0 0 10px" }}
           >
-            Paste the 120-character code from your email. It credits this
-            logged-in player and can be used once.
+            Paste the 120-character code from your email. Spaces and line breaks
+            are stripped. It credits this logged-in player and can be used once.{" "}
+            {gameKey.length}/{GAME_KEY_LENGTH}
           </p>
           <button
             type="button"

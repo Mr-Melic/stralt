@@ -399,3 +399,23 @@ export function isChallengeFailed(
       return false;
   }
 }
+
+/** Player-facing reason when the mid-fight banner is already failed. */
+export function challengeFailCopy(challenge: Challenge): string {
+  switch (challenge.condition) {
+    case "no_healing":
+      return "Failed — a heal was used";
+    case "under_50_damage":
+      return "Failed — damage taken reached 50";
+    case "no_healing_under_30_damage":
+      return "Failed — heal used or damage reached 30";
+    case "under_8_ap_per_turn":
+      return "Failed — more than 8 AP spent in one turn";
+    case "no_damage_taken":
+      return "Failed — damage was taken";
+    case "direct_hit":
+      return "Failed — a spell landed beyond 2 tiles";
+    default:
+      return "Failed!";
+  }
+}

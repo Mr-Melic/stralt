@@ -55,6 +55,11 @@ export function validateGameKeyConsent(consent: boolean): string | null {
     : "Consent is required to use this email for the GameKey";
 }
 
+/** Strip wrapping/newlines from an emailed 120-character GameKey. */
+export function normalizeGameKeyInput(raw: string): string {
+  return String(raw ?? "").replace(/\s+/g, "");
+}
+
 export function validateGameKeyFormat(code: string): string | null {
   if (code.length < GAME_KEY_LENGTH) return "GameKey is too short";
   if (code.length > GAME_KEY_LENGTH) return "GameKey is too long";

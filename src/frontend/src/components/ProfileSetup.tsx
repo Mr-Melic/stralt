@@ -213,6 +213,8 @@ const ProfileSetup: React.FC = () => {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Enter your name…"
+                    maxLength={50}
+                    minLength={2}
                     disabled={saveProfileMutation.isPending}
                     data-ocid="profile_setup.input"
                     style={{
@@ -238,6 +240,17 @@ const ProfileSetup: React.FC = () => {
                     }}
                   />
                 </div>
+                <p
+                  style={{
+                    color: "#6a7a8a",
+                    fontSize: 11,
+                    margin: 0,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  2–50 characters. This is your account name, shown on the
+                  board.
+                </p>
               </div>
 
               {error && (
