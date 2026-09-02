@@ -345,6 +345,21 @@ export function validateDokaGrant(amount: number): string | null {
   return null;
 }
 
+/** Credit A while completing B's pending purchase is the mismatched-id path. */
+export function purchaseCreditRejected(args: {
+  recordOwner: string;
+  creditedPrincipal: string;
+  status: string;
+}): string | null {
+  if (args.recordOwner !== args.creditedPrincipal) {
+    return "purchaseId does not belong to the credited principal";
+  }
+  if (args.status !== "pending") {
+    return "purchase is not pending";
+  }
+  return null;
+}
+
 export function validateAssignRole(role: string): string | null {
   if (role !== "admin" && role !== "user") {
     return 'role must be "admin" or "user"';
@@ -538,6 +553,18 @@ export function validateBossPortalAssignment(
   bossId: string,
 ): string | null {
   return requireId(portalId, "Portal") ?? requireId(bossId, "Boss");
+}
+
+export function validateMapModifierChance(
+  id: string,
+  chance: number,
+): string | null {
+  const idErr = requireId(id, "Map modifier");
+  if (idErr) return idErr;
+  if (!Number.isFinite(chance) || chance < 0 || chance > 100) {
+    return "chance must be between 0 and 100";
+  }
+  return null;
 }
 
 /**

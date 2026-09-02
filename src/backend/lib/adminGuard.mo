@@ -382,19 +382,28 @@ module {
             };
         };
         // Summon metadata is optional on non-summons (empty AI, 0 scales).
-        // When present, reject unknown archetypes and non-finite / huge scales
-        // that would mint Inf-HP units in getSummonBaseStats.
-        if (config.summonAI != "" and not knownSummonAI(config.summonAI)) {
-            return ?"summonAI is not a recognized archetype";
+        // isSummon=true with empty AI used to pass; spawnSummonUnit then does
+        // `spell.summonAI || "hunter"` and silently rewrites the unit.
+        if (config.isSummon) {
+            if (not knownSummonAI(config.summonAI)) {
+                return ?"summonAI must be a known archetype";
+            };
+            if (not knownPieceType(config.summonUnitDef.pieceType)) {
+                return ?"summonUnitDef.pieceType is not a recognized value";
+            };
+        } else {
+            if (config.summonAI != "") {
+                return ?"summonAI must be empty when isSummon is false";
+            };
+            if (config.summonUnitDef.pieceType != "" and not knownPieceType(config.summonUnitDef.pieceType)) {
+                return ?"summonUnitDef.pieceType is not a recognized piece type";
+            };
         };
         if (config.summonLifespan > 20) {
             return ?"summonLifespan cannot exceed 20";
         };
         if (config.summonUnitDef.level > 99) {
             return ?"summonUnitDef.level cannot exceed 99";
-        };
-        if (config.summonUnitDef.pieceType != "" and not knownPieceType(config.summonUnitDef.pieceType)) {
-            return ?"summonUnitDef.pieceType is not a recognized piece type";
         };
         switch (finiteInRange("summonUnitDef.hpScale", config.summonUnitDef.hpScale, 0.0, 10.0)) {
             case (?e) { return ?e };
@@ -421,6 +430,30 @@ module {
         };
         if (config.triggerChance > 100) {
             return ?"Invalid chance value: triggerChance must be between 0 and 100";
+        };
+        null
+    };
+
+    public func validateMapModifierChance(id : Text, chance : Nat) : ?Text {
+        switch (requireId(id, "Map modifier")) { case (?e) { return ?e }; case null {} };
+        if (chance > 100) {
+            return ?"chance must be between 0 and 100";
+        };
+        null
+    };
+
+    /// adminAddDokaToUser used to credit target A and mark any purchaseId
+    /// completed, including a pending record owned by B.
+    public func purchaseCreditRejected(
+        recOwnerText : Text,
+        creditedText : Text,
+        status : Text,
+    ) : ?Text {
+        if (recOwnerText != creditedText) {
+            return ?"purchaseId does not belong to the credited principal";
+        };
+        if (status != "pending") {
+            return ?"purchase is not pending";
         };
         null
     };

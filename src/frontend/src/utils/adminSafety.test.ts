@@ -10,6 +10,7 @@ import {
   maxPersistedHp,
   persistHpWriteCap,
   proofDataMimeAllowed,
+  purchaseCreditRejected,
   rejectSecondPendingPurchase,
   resolveAppearanceSpellLevels,
   safeExternalHref,
@@ -31,6 +32,7 @@ import {
   validateGameConfig,
   validateJsonBlob,
   validateLevelUpConfig,
+  validateMapModifierChance,
   validateOptionalUrl,
   validateProofFileUrl,
   validateSpellConfig,
@@ -210,6 +212,57 @@ assert.equal(
   }),
   null,
 );
+// Failure: empty summonAI + isSummon used to pass the canister; spawnSummonUnit
+// then does `spell.summonAI || "hunter"` and silently rewrites the unit.
+assert.equal(
+  validateSpellConfig({
+    id: "summon-dire-wolf",
+    name: "Summon Dire Wolf",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "summon",
+    effectType: "summon",
+    effectCategory: "damage",
+    isSummon: true,
+    summonAI: "",
+    summonLifespan: 4,
+    summonUnitDef: { pieceType: "wolf", hpScale: 1, damageScale: 1 },
+  }),
+  "summonAI must be a known archetype",
+);
+assert.equal(
+  validateSpellConfig({
+    id: "summon-dire-wolf",
+    name: "Summon Dire Wolf",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 2,
+    spellType: "summon",
+    effectType: "summon",
+    effectCategory: "damage",
+    isSummon: true,
+    summonAI: "hunter",
+    summonLifespan: 4,
+    summonUnitDef: { pieceType: "", hpScale: 1, damageScale: 1 },
+  }),
+  "summonUnitDef.pieceType is not a recognized value",
+);
+assert.equal(
+  validateSpellConfig({
+    id: "shadow_strike",
+    name: "Shadow Strike",
+    apCost: 3,
+    minRange: 1,
+    maxRange: 4,
+    spellType: "damage",
+    effectType: "damage",
+    effectCategory: "damage",
+    isSummon: false,
+    summonAI: "hunter",
+  }),
+  "summonAI must be empty when isSummon is false",
+);
 assert.ok(validateBossPortalAssignment("", "ashen_crown"));
 assert.ok(validateBossPortalAssignment("x".repeat(65), "ashen_crown"));
 assert.equal(validateBossPortalAssignment("portal_a", "ashen_crown"), null);
@@ -217,6 +270,33 @@ assert.equal(validateBossPortalAssignment("portal_a", "ashen_crown"), null);
 assert.equal(validateDokaGrant(0), "Grant amount must be greater than 0");
 assert.ok(validateDokaGrant(10_000_001));
 assert.equal(validateDokaGrant(100), null);
+assert.equal(
+  purchaseCreditRejected({
+    recordOwner: "aaaaa-aa",
+    creditedPrincipal: "bbbbb-bb",
+    status: "pending",
+  }),
+  "purchaseId does not belong to the credited principal",
+);
+assert.equal(
+  purchaseCreditRejected({
+    recordOwner: "aaaaa-aa",
+    creditedPrincipal: "aaaaa-aa",
+    status: "completed",
+  }),
+  "purchase is not pending",
+);
+assert.equal(
+  purchaseCreditRejected({
+    recordOwner: "aaaaa-aa",
+    creditedPrincipal: "aaaaa-aa",
+    status: "pending",
+  }),
+  null,
+);
+assert.ok(validateMapModifierChance("", 20));
+assert.ok(validateMapModifierChance("slime_flood", 101));
+assert.equal(validateMapModifierChance("slime_flood", 20), null);
 
 assert.equal(validateAssignRole("admn"), 'role must be "admin" or "user"');
 // Failure: MixinAuthorization.assignCallerUserRole accepted #guest and
