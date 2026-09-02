@@ -5,6 +5,7 @@
  * generating decisions across indefinite progression. Uses rarity weights and
  * relative difficulty versus same-tier content — never player-level cutoffs.
  * Wave 1: WDD-2026-08-31-001. Wave 2: WDD-2026-09-01-001.
+ * Wave 3: WDD-2026-09-02-001.
  *
  * This module does NOT generate maps, advance turns, or change combat damage
  * formulas. Placement must run after `evaluateSolvability` / finalize and
@@ -59,6 +60,9 @@ export type RelativeDifficulty = "soft" | "medium" | "hard" | "extreme";
 
 export type WorldFeatureSlot = "tile" | "encounter" | "event";
 
+/** Catalog generation. Omitted `catalogWave` on a feature is wave 1. */
+export type CatalogWave = 1 | 2 | 3;
+
 /** Exploration is `RunMode "none"`. Death Realm is always quiet. */
 export type WorldFeatureRunMode = "exploration" | "dungeon" | "bossRush";
 
@@ -104,11 +108,11 @@ export interface WorldFeature {
    * Catalog generation. Omitted features are wave 1 (2026-08-31).
    * Later waves add seams; they do not replace earlier ids.
    */
-  catalogWave?: 1 | 2;
+  catalogWave?: CatalogWave;
 }
 
 /** Newest designed wave. Overlay wiring still requires a human ACTION_ID pick. */
-export const LATEST_CATALOG_WAVE = 2 as const;
+export const LATEST_CATALOG_WAVE = 3 as const;
 
 export const RARITY_WEIGHT: Record<WorldFeatureRarity, number> = {
   common: 40,
@@ -1212,6 +1216,483 @@ export const WORLD_FEATURES: WorldFeature[] = [
     extraHazardCount: { min: 2, max: 2 },
     catalogWave: 2,
   },
+  {
+    id: "WF-HAZ-NEEDLE_GRASS",
+    name: "Needle Grass",
+    category: "hazard",
+    mechanic:
+      "Pale-green barbs on floor tiles. Walking through is free. Ending a turn on a needle tile costs a fraction of current max HP. Walkable. Does not replace lava, ice, ember, or salt.",
+    playerDecision:
+      "Cut through and keep moving, camp on the barbs and pay, or spend MP to end off the grass.",
+    relativeDifficulty: "medium",
+    rarity: "common",
+    visual: visual(
+      "needle-grass",
+      "#2a3a18",
+      "#8cb86a",
+      "Needle Grass — walk-through free; ending a turn here taxes % max HP",
+    ),
+    solvability:
+      "Never on spawn±3 or portals. Never the only walkable cell in a corridor — grass occupies floor but does not block.",
+    combatRules:
+      "HP via recordChallengeDamageTaken (explore) or recordInBattleChallengeDamage (in battle). Wounded AI treats ending a turn on grass like lava. Counts toward MAX_HAZARD_TILES.",
+    counterplay:
+      "End the turn on adjacent floor, teleport (metadata targetType ground/self), or send a summon to hold the cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.04,
+    extraHazardCount: { min: 4, max: 8 },
+    catalogWave: 3,
+  },
+  {
+    id: "WF-HAZ-ORBIT_CINDER",
+    name: "Orbiting Cinder",
+    category: "moving_hazard",
+    mechanic:
+      "A cinder orb occupies one cell of a painted 4-tile square and steps one cell clockwise at each round start. Landing on a unit costs a max-HP tax. Out of battle it still orbits on wander ticks.",
+    playerDecision:
+      "Stand in the hollow of the square, time a cross after it passes, or bait an enemy onto the next cell.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "orbit-cinder",
+      "#5a2810",
+      "#f07830",
+      "Orbiting Cinder — clockwise on the marked square; landing tax % max HP",
+    ),
+    solvability:
+      "Square is floor only. Never covers spawn±3 or the only portal. A floor path around the square always remains. The cinder is not a wall.",
+    combatRules:
+      "Advances on round start (not mid-turn). Tax uses challenge HP recorders. Does not skip turns or spend AP/MP. Occupies 1 hazard budget (the orb); painted track is visual only.",
+    counterplay:
+      "Stand off the painted square, end off the next clockwise cell, or push/attract a foe onto that cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.05,
+    extraHazardCount: { min: 1, max: 1 },
+    catalogWave: 3,
+  },
+  {
+    id: "WF-TRP-CHEVRON_PLATE",
+    name: "Chevron Plate",
+    category: "trap",
+    mechanic:
+      "A visible rune plate with a painted chevron. Stepping onto it from the chevron's facing is free. Stepping onto it from any other side costs a max-HP tax once, then the plate becomes floor.",
+    playerDecision:
+      "Approach from the marked side, spend MP to go around, or bait an enemy from the wrong side.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "chevron-plate",
+      "#4a1818",
+      "#e06050",
+      "Chevron Plate — safe from the chevron; other approaches one-shot %HP",
+    ),
+    solvability:
+      "Walkable before and after. Never on spawn±3 or portals. Does not seal a path. Chevron always visible from adjacent tiles.",
+    combatRules:
+      "Triggers on step from a non-facing side, once. Uses challenge HP recorders. No hidden tiles. Does not change spell damage math.",
+    counterplay:
+      "Enter from the chevron, send a summon from the unsafe side, or shove an enemy onto it from a flank.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.08,
+    extraHazardCount: { min: 1, max: 2 },
+    catalogWave: 3,
+  },
+  {
+    id: "WF-TER-FROST_PANE",
+    name: "Frost Pane",
+    category: "destructible_terrain",
+    mechanic:
+      "A sheet of carved ice occupies a cell: units may walk through it, but it blocks line of sight. Adjacent: 1 AP (no spell) smashes it to clear floor.",
+    playerDecision:
+      "Spend 1 AP for LoS, hide behind the pane, or walk through and accept the blind.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "frost-pane",
+      "#2a3a48",
+      "#8ec8e0",
+      "Frost Pane — walkable LoS block; 1 AP adjacent to smash",
+    ),
+    solvability:
+      "Does not block walk. Never on spawn±3 or portals. Smash is optional — the map is solvable with the pane intact.",
+    combatRules:
+      "Smash is an AP occupancy action, not a spell (no name heuristics). No damage. Counts as a wall for LoS until smashed. Walk occupancy is floor.",
+    counterplay:
+      "Ignore it and walk through; smash when a linear shot is worth 1 AP; stand behind it against linear spells.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-OBS-SPENT_BRIDGE",
+    name: "Spent Bridge",
+    category: "temporary_obstacle",
+    mechanic:
+      "A short-path floor cell with three painted pips. Each time a unit leaves the cell, one pip burns. After three crossings the cell becomes a wall for the rest of the map.",
+    playerDecision:
+      "Burn crossings on the short path now, save pips for a later retreat, or never use it and keep the long path.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "spent-bridge",
+      "#3a3020",
+      "#c4a070",
+      "Spent Bridge — three crossings, then this cell walls off",
+    ),
+    solvability:
+      "Place only when a second spawn→portal route already exists. Evaluate solvability as if the bridge were already a wall. Never the only exit. Never on spawn±3 or portals.",
+    combatRules:
+      "Walkable until the third leave. Then wall occupancy. No damage. Pip count is shared (any unit's leave spends a pip). Do not place on the same cell as another blocksWalk feature.",
+    counterplay:
+      "Take the long path, spend the three crossings when tempo matters, or teleport past if metadata allows.",
+    rewardPath: "none",
+    blocksWalk: true,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-ZON-RALLY_DRUM",
+    name: "Rally Drum",
+    category: "heal_buff_zone",
+    mechanic:
+      "A bronze drum inlay. The first unit to end a turn here this map recovers 1 MP already spent this turn (cannot exceed their max MP). Then the tile dries. Either side may use it.",
+    playerDecision:
+      "End movement here to walk farther this turn, deny the enemy the tile, or ignore it.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "rally-drum",
+      "#3a2810",
+      "#d4a06a",
+      "Rally Drum — first end-turn here refunds 1 spent MP, then dries",
+    ),
+    solvability:
+      "Walkable floor. Never on spawn or portals. Does not block exits.",
+    combatRules:
+      "Refunds 1 MP already spent this turn. Not a spell and not a heal — does not call saveBattleStats or applyRewards. Does not raise max MP. Null Field does not strip it (not a buff spell).",
+    counterplay:
+      "Step on it first, shove the enemy off before their end-turn, or ignore it when you still have MP.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-TEL-TRIUNE_PADS",
+    name: "Triune Pads",
+    category: "teleport_tile",
+    mechanic:
+      "Three linked cyan pads painted 1→2→3→1. Entering a pad for 1 MP exits at the next clockwise pad. If that pad is occupied, the travelers swap. Either side may use any pad.",
+    playerDecision:
+      "Spend 1 MP to rotate positions, walk, or leave a pad as an enemy carousel.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "triune-pads",
+      "#0e2a42",
+      "#4ad4f0",
+      "Triune Pads — 1 MP cycles you to the next clockwise pad",
+    ),
+    solvability:
+      "All three on floor, mutually reachable, never on spawn/portals. The trio is optional — the map is solvable without using it.",
+    combatRules:
+      "Costs 1 MP from the unit's current MP. Occupancy: destination free, or swap with the unit on the next pad. Not a teleport spell — do not key off effectCategory.",
+    counterplay:
+      "Stand on the next clockwise pad to block or force a swap, ignore the trio, or use it to break melee.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-PRT-LATCH_GATE",
+    name: "Latch Gate",
+    category: "unstable_portal",
+    mechanic:
+      "An extra sealed portal with a latch glyph. Adjacent 1 AP arms it (the glyph flips open). Entering the armed gate rolls a random eligible overworld map and pays a hard applyRewards grant. Unarmed, it is not an exit. It is never the only portal on the map.",
+    playerDecision:
+      "Spend 1 AP to arm a bonus gamble exit, or take the stable portal you can already see.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "latch-portal",
+      "#2a1a38",
+      "#c090ff",
+      "Latch Gate — 1 AP to arm; then unknown map + hard bonus",
+    ),
+    solvability:
+      "Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm (portalRules filter). Never at spawn. Unarmed it does not count as an exit.",
+    combatRules:
+      "Arm cost is AP, not a spell. Entry is a portal transition, not a combat action. Bonus XP/Doka via applyRewards on the persist lock (same as portal +10). Death-realm guards still block entry while armed.",
+    counterplay:
+      "Ignore it. The stable exit always works. Do not arm or enter while a Death Realm timer is pending.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: true,
+    allowedRunModes: EXPLORATION_ONLY,
+    slot: "event",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-INV-SLEEPING_VANGUARD",
+    name: "Sleeping Vanguard",
+    category: "rare_invasion",
+    mechanic:
+      "Two extra same-tier enemies (hard threat) lie on painted cots. They do not wander. Adjacent contact wakes them and starts a normal battle. Victory pays hard reward multiplier. Exploration: you may leave without waking them. Dungeon / boss rush: they count as hostiles for map-clear.",
+    playerDecision:
+      "Give the cots a wide berth, wake them for the hard purse, or (in a run) clear them because the portal will not open.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "sleeping-cots",
+      "#2a2430",
+      "#c08090",
+      "Sleeping Vanguard — two elites on cots; touch to wake, or leave",
+    ),
+    solvability:
+      "Cots are floor. Exit reachable without stepping adjacent. Counts as 2 toward MAX_ENEMIES. Skip if the roster cannot fit 2.",
+    combatRules:
+      "World contact starts a normal battle (inBattleRef + death guards). Extra spells from usableByEnemy only. Victory → applyRewards. Sleeping is not a skipped turn and does not rewrite combatMath.",
+    counterplay:
+      "Stay off the cots in exploration; wake when you want the purse. In a run, fight them — they are required for clear.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 2, max: 2 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-ELT-CART_GUARD",
+    name: "Cart Guard",
+    category: "elite_patrol",
+    mechanic:
+      "One elite (same-tier × hard threat) escorts a painted cart one tile per wander along a 5–7 tile path toward a marked departure cell. Touching the elite starts combat. Kill pays hard reward multiplier. In exploration, if the cart reaches departure both leave (no fight, no purse). In dungeon / boss rush they do not depart — required for map-clear.",
+    playerDecision:
+      "Intercept before they leave, let them depart (exploration), or fight them as a required hostile in a run.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "cart-guard",
+      "#3a2818",
+      "#d49860",
+      "Cart Guard — elite escorts a cart to departure; intercept or let go",
+    ),
+    solvability:
+      "Path is floor. Exit reachable without touching the elite. Counts as 1 toward MAX_ENEMIES. Departure cell is never a portal and never spawn±3.",
+    combatRules:
+      "World contact starts a normal battle (inBattleRef + death guards). Elite spells from usableByEnemy only. Victory → applyRewards. Departure is exploration-only and does not call applyRewards.",
+    counterplay:
+      "Stand off the path; intercept when the cart is far from departure; in exploration, let them go. In a run, they cannot leave.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 1, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-TRS-SPLIT_CACHE",
+    name: "Split Cache",
+    category: "treasure_encounter",
+    mechanic:
+      "Two adjacent niches. Spending 1 AP adjacent to either opens that niche and collapses the other. Left: soft applyRewards, no guardian. Right: hard applyRewards, 50% chance of one same-tier guardian.",
+    playerDecision:
+      "Take the sure small purse, gamble the hard niche, or walk past both.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "split-cache",
+      "#3a2e10",
+      "#e0c070",
+      "Split Cache — pick left (soft, safe) or right (hard, maybe guardian)",
+    ),
+    solvability:
+      "Both niches occupy floor but are walkable-adjacent, not walls. Guardian spawn must be a reachable floor cell; if none, the right niche pays the hard grant with no guardian.",
+    combatRules:
+      "Open cost is AP, not a spell. Credits via applyRewards on the persist lock. Guardian is a normal hostile. Do not write Doka with updateCharacter. Opening one destroys the other — no double grant.",
+    counterplay:
+      "Skip both, pick left when wounded, pick right when you can handle a possible extra body.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 0, max: 1 },
+    catalogWave: 3,
+  },
+  {
+    id: "WF-SPL-LOANER_MAGE",
+    name: "Loaner Mage",
+    category: "spell_bearing_enemy",
+    mechanic:
+      "One same-tier enemy (medium threat) carries 1 extra SpellConfig row with usableByEnemy === true. Adjacent 1 AP loans that spell id as a single remaining cast this map without killing them. Killing them grants the same one-cast if you have not already taken it (does not stack). They stay hostile after a loan.",
+    playerDecision:
+      "Spend 1 AP to borrow a one-shot without the kill, kill them for the purse plus the same one-cast, or ignore them.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "loaner-mage",
+      "#1a2438",
+      "#7aa0e0",
+      "Loaner Mage — 1 AP adjacent to borrow one cast; they stay hostile",
+    ),
+    solvability:
+      "Replaces one existing spawn when possible; otherwise +1 if under MAX_ENEMIES. Must remain reachable.",
+    combatRules:
+      "Spell list is metadata-only (usableByEnemy, targetType, costs). Loan and kill-grant do not call upgradeSpell and do not persist spellLevel arrays. Victory rewards still applyRewards. Loan is AP, not a spell.",
+    counterplay:
+      "Kite and ignore, borrow then leave, or kill for the purse if you already hold the cast.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 0, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-RSK-STILLNESS_OATH",
+    name: "Stillness Oath",
+    category: "risk_reward",
+    mechanic:
+      "A slate inlay. Voluntarily ending a turn on it flags this map. While flagged, any MP spend by the player clears the flag. If the flag is still held at the next applyRewards, that credit uses the hard multiplier. One flag, this map only.",
+    playerDecision:
+      "Wager that you can win or leave without walking, or stay unflagged and move freely.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "stillness-inlay",
+      "#1a1a24",
+      "#9090c0",
+      "Stillness Oath — no MP this map after the flag; next rewards × hard",
+    ),
+    solvability:
+      "Optional floor tile. Map remains solvable if never used. Never on spawn/portals. The map is solvable without standing still.",
+    combatRules:
+      "Flag is not a buff spell (Null Field does not strip it). MP spends (walk or 1 MP tiles) clear it. Attack Nearest, AP spells, and summons do not clear it. Multiplier applies to the next applyRewards enqueue only. Death still uses saveBattleStats.",
+    counterplay:
+      "Skip it. Use it only when enemies will come to you, a summon can walk, or a portal is already adjacent.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-MOD-SHORT_FUSE",
+    name: "Short Fuse",
+    category: "map_modifier",
+    mechanic:
+      "This map only: any spell whose SpellConfig.cooldown is greater than 0 cannot be cast on round 1 (it is already expended). Zero-cooldown spells are unchanged. Uses the cooldown field only — never the spell name.",
+    playerDecision:
+      "Open with 0-cooldown spells or Attack Nearest, wait a round for cooldowns, or skip the fight.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "short-fuse",
+      "#3a2018",
+      "#e08050",
+      "Short Fuse — cooldown spells locked on round 1; 0-cooldown unchanged",
+    ),
+    solvability:
+      "Does not alter tiles. Exits unchanged. Melee, Attack Nearest, summons, and 0-cooldown kits remain fully usable.",
+    combatRules:
+      "Reads SpellConfig.cooldown only. Summons and Attack Nearest are unaffected (they are not spells). Does not rewrite damage. Round 2+ uses the spell's normal cooldown clock.",
+    counterplay:
+      "Cast 0-cooldown spells, close to melee, wait one round, or refuse the fight.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-EVT-HARVEST_MOON",
+    name: "Harvest Moon",
+    category: "world_event",
+    mechanic:
+      "This map only: if the player's current HP never dropped below 70% of max HP, the next applyRewards uses the hard multiplier. If it did drop below 70%, that credit is unchanged. Announced with a copper corona overlay.",
+    playerDecision:
+      "Play a clean fight or skip optional trades for a hard purse, or take damage and accept normal rewards.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "harvest-moon",
+      "#3a1810",
+      "#e09050",
+      "Harvest Moon — stay at or above 70% HP this map for hard rewards",
+    ),
+    solvability: "No tile blocks. Portals unchanged. Leaving is always legal.",
+    combatRules:
+      "HP checks use current/max after challenge recorders and combat. Multiplier applies only to persist-lock applyRewards. Does not rewrite combatMath. Death still uses saveBattleStats. Optional — never forces a fight.",
+    counterplay:
+      "Leave without fighting (HP never dipped), kite and heal to hold 70%, or ignore the corona and take normal rewards.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 3,
+  },
+  {
+    id: "WF-ENV-ISOLATION_CHILL",
+    name: "Isolation Chill",
+    category: "environmental_combat",
+    mechanic:
+      "At the end of each combatant turn, if no other living unit is within 3 Chebyshev tiles, they pay 3% max HP. A painted warm ring of radius 3 sits around every living body.",
+    playerDecision:
+      "Clump to stay warm, summon a body to share the ring, or kite alone and pay.",
+    relativeDifficulty: "hard",
+    rarity: "uncommon",
+    visual: visual(
+      "isolation-chill",
+      "#1a2838",
+      "#80c0d4",
+      "Isolation Chill — 3% max HP unless another unit is within 3 tiles",
+    ),
+    solvability:
+      "Does not add walls. Skip if the map would start with only one living unit so a warm pair cannot exist. Rings never cover the only portal as a block (the tax is not a wall).",
+    combatRules:
+      "End-of-turn tax via challenge HP recorders. Summons count as living units. Does not skip turns. Does not alter spell damage. Wounded AI prefers ending inside a painted ring when a legal move exists.",
+    counterplay:
+      "End turns inside a ring, summon a front-liner, shove a foe to 3 tiles, or pay to hold a kite.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    hpTaxPctOfMax: 0.03,
+    catalogWave: 3,
+  },
 ];
 
 const FEATURE_BY_ID = new Map<string, WorldFeature>(
@@ -1223,11 +1704,11 @@ export function getWorldFeature(id: string): WorldFeature | undefined {
 }
 
 /** Omitted `catalogWave` is wave 1. */
-export function featureCatalogWave(feature: WorldFeature): 1 | 2 {
+export function featureCatalogWave(feature: WorldFeature): CatalogWave {
   return feature.catalogWave ?? 1;
 }
 
-export function featuresInCatalogWave(wave: 1 | 2): WorldFeature[] {
+export function featuresInCatalogWave(wave: CatalogWave): WorldFeature[] {
   return WORLD_FEATURES.filter((f) => featureCatalogWave(f) === wave);
 }
 
