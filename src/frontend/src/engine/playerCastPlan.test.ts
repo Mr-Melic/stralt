@@ -5,6 +5,7 @@ import {
   planPlayerCastAttempt,
   planPlayerCastResources,
   playerCastAttemptResult,
+  shouldRejectCastForMissingAp,
 } from "./playerCastPlan.ts";
 import {
   canAffordCastAp,
@@ -90,6 +91,50 @@ describe("planPlayerCastResources", () => {
     assert.equal(blocked.ok, false);
     assert.equal(blocked.reason, "on_cooldown");
     assert.equal(blocked.apCost, 2);
+  });
+
+  it("lets a 0-AP spell execute when the wallet is empty", () => {
+    assert.equal(
+      shouldRejectCastForMissingAp({ currentAp: 0, baseApCost: 0 }),
+      false,
+    );
+    assert.equal(
+      shouldRejectCastForMissingAp({ currentAp: 0, baseApCost: 2 }),
+      true,
+    );
+    assert.equal(
+      shouldRejectCastForMissingAp({
+        currentAp: 0,
+        baseApCost: 2,
+        applyApCost: () => 0,
+      }),
+      false,
+      "Arcane Surge (or any modifier) reducing cost to 0 must match execute",
+    );
+    const timestep = planPlayerCastAttempt({
+      spell: {
+        ...strike(),
+        id: "spell-timestep",
+        apCost: 0n,
+        damage: 0n,
+        range: 0n,
+        effectType: "buff",
+        targetType: "self",
+        isTimestep: true,
+        maxRange: 0,
+        minRange: 0,
+      },
+      caster: { x: 4, y: 4 },
+      tile: { x: 4, y: 4 },
+      liveCombatants: [],
+      mapTiles: floorGrid(9),
+      effectiveRange: 0,
+      currentAp: 0,
+      baseApCost: 0,
+      cooldownTurnsRemaining: 0,
+    });
+    assert.equal(timestep.ok, true);
+    assert.equal(playerCastAttemptResult(timestep), "ok");
   });
 });
 

@@ -244,6 +244,18 @@ export interface ApplyDamageToEnemyDeps {
    */
   onPlayerReflectedDamage: (amount: number) => void;
   /**
+   * Drain restores player HP without executeCastAttempt's self+heal gate.
+   * Callers must flip challenge healUsed here so easy_1 / hard_1 cannot
+   * persist after a Life Drain that actually increased HP.
+   */
+  onPlayerHealed?: (amount: number) => void;
+  /**
+   * legendary_3 Striker: bounce hops are not in `targetsToHit`. Report
+   * primary and bounce tiles so a Chebyshev-3+ victim cannot persist
+   * 400 Doka / 800 XP after an adjacent aim click.
+   */
+  onDirectHitVictim?: (pos: { x: number; y: number }) => void;
+  /**
    * Victory, DoT ticks, and later enemyTakesDamage read combatantsRef.
    * React-only enemyHpMap / turnOrder writes leave store hp unchanged, so
    * the next store-based tick recomputes from full HP and wipes this hit.
@@ -304,8 +316,20 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     setCharacterStats,
     processCombatantDeath,
     onPlayerReflectedDamage,
+    onPlayerHealed,
+    onDirectHitVictim,
     commitEnemyHp,
   } = deps;
+
+  const notifyDirectHitVictim = (
+    pos: { x?: unknown; y?: unknown } | null | undefined,
+  ) => {
+    const x = Number(pos?.x);
+    const y = Number(pos?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    onDirectHitVictim?.({ x, y });
+  };
+  notifyDirectHitVictim(hitTarget);
 
   const targetEnemy =
     hitTarget.id === "__player__" ? undefined : (hitTarget as Enemy);
@@ -438,6 +462,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     });
     const bounceTargets = sorted.slice(0, spell.bounces);
     bounceTargets.forEach((bounceEnemy, idx) => {
+      notifyDirectHitVictim(bounceEnemy);
       const bounceDmg = Math.floor(finalDmg * 0.5 ** (idx + 1));
       enemyTakesDamage(
         bounceEnemy.id,
@@ -476,6 +501,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
         hp: Math.min(maxHp, prev.hp + healAmt),
       }));
       logBattleEntry(`${spell.name} drained ${healAmt} HP!`, "#22c55e");
+      onPlayerHealed?.(healAmt);
     }
   }
 }

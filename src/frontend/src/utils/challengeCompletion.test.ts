@@ -6,18 +6,21 @@ import {
   type ChallengePanelProgress,
   DEFAULT_CHALLENGES,
   applyChallengeDirectHit,
+  applyChallengeDirectHitOnCast,
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
   challengeFailCopy,
   isChallengeCompleted,
   isChallengeFailed,
+  isPlayerHealTargetId,
   isSpellOnCooldown,
   isStrikerChallengeComplete,
   nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
+  recordChallengeHealFromHpRestore,
   recordChallengeItemHealUsed,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
@@ -371,6 +374,62 @@ describe("recordInBattleChallengeHealUsed", () => {
       "overworld item use must not stick healUsed into the next fight",
     );
   });
+
+  it("fails no-heal when Life Drain or ctx.heal actually restores HP in battle", () => {
+    assert.equal(isPlayerHealTargetId("player"), true);
+    assert.equal(isPlayerHealTargetId("__player__"), true);
+    assert.equal(isPlayerHealTargetId("wisp-1"), false);
+    const healUsed = recordChallengeHealFromHpRestore(true, false, 10);
+    assert.equal(healUsed, true);
+    assert.equal(
+      isChallengeCompleted(byId("easy_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      isChallengeCompleted(byId("hard_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      addChallengeRewardDeltas(
+        0,
+        0,
+        liveBattleChallengePersistEntries(true, byId("easy_1"), false),
+      ).dokaFromChallenges,
+      0,
+      "easy_1 50 Doka must not persist after an in-battle HP restore",
+    );
+    assert.equal(
+      addChallengeRewardDeltas(
+        0,
+        0,
+        liveBattleChallengePersistEntries(true, byId("hard_1"), false),
+      ).xpDelta,
+      0,
+      "hard_1 500 XP must not persist after an in-battle HP restore",
+    );
+  });
+
+  it("does not fail no-heal for a 0-HP drain or an overworld restore", () => {
+    assert.equal(recordChallengeHealFromHpRestore(true, false, 0), false);
+    assert.equal(
+      recordChallengeHealFromHpRestore(true, false, Number.NaN),
+      false,
+    );
+    assert.equal(
+      recordChallengeHealFromHpRestore(false, false, 12),
+      false,
+      "overworld ctx.heal must not stick healUsed into the next fight",
+    );
+    assert.equal(
+      isChallengeCompleted(
+        byId("easy_1"),
+        progress({
+          healUsed: recordChallengeHealFromHpRestore(true, false, 0),
+        }),
+      ),
+      true,
+    );
+  });
 });
 
 describe("battle-walk hazards fail Untouchable (mouse and touch share this path)", () => {
@@ -691,6 +750,100 @@ describe("recordChallengeDirectHit", () => {
       directHitAttempts: state.attempts,
     });
     assert.equal(state.attempts, 2);
+    assert.equal(isChallengeCompleted(striker, snap), true);
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(
+          true,
+          striker,
+          isChallengeCompleted(striker, snap),
+        ),
+      ),
+      800,
+    );
+  });
+
+  it("fails Striker when AoE splash lands beyond Chebyshev 2 of the caster", () => {
+    const caster = { x: 8, y: 8 };
+    // Frost Nova / Lifesteal Nova: adjacent aim is legal, but splash can
+    // hit an occupant Chebyshev 3 from the player. One spent cast.
+    let state = { stillDirect: true, attempts: 0 };
+    state = applyChallengeDirectHitOnCast(state, caster, [
+      { x: 9, y: 8 },
+      { x: 9, y: 8 },
+      { x: 11, y: 8 },
+    ]);
+    assert.equal(state.stillDirect, false);
+    assert.equal(state.attempts, 1);
+
+    const striker = byId("legendary_3");
+    const snap = progress({
+      directHit: state.stillDirect,
+      directHitAttempts: state.attempts,
+    });
+    assert.equal(isChallengeCompleted(striker, snap), false);
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, snap),
+      ),
+      [],
+    );
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(
+          true,
+          striker,
+          isChallengeCompleted(striker, snap),
+        ),
+      ),
+      0,
+    );
+  });
+
+  it("fails Striker when a Chain Lightning bounce lands beyond Chebyshev 2", () => {
+    const caster = { x: 8, y: 8 };
+    let state = { stillDirect: true, attempts: 0 };
+    state = applyChallengeDirectHitOnCast(state, caster, [
+      { x: 10, y: 8 },
+      { x: 10, y: 8 },
+      { x: 12, y: 8 },
+    ]);
+    assert.equal(state.stillDirect, false);
+    assert.equal(state.attempts, 1);
+
+    const striker = byId("legendary_3");
+    const snap = progress({
+      directHit: state.stillDirect,
+      directHitAttempts: state.attempts,
+    });
+    assert.equal(isChallengeCompleted(striker, snap), false);
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, snap),
+      ),
+      [],
+    );
+  });
+
+  it("still completes when aim, splash, and bounce all stay within 2 tiles", () => {
+    const caster = { x: 8, y: 8 };
+    let state = { stillDirect: true, attempts: 0 };
+    state = applyChallengeDirectHitOnCast(state, caster, [
+      { x: 9, y: 8 },
+      { x: 10, y: 8 },
+      { x: 10, y: 9 },
+    ]);
+    assert.equal(state.stillDirect, true);
+    assert.equal(state.attempts, 1);
+    const striker = byId("legendary_3");
+    const snap = progress({
+      directHit: state.stillDirect,
+      directHitAttempts: state.attempts,
+    });
     assert.equal(isChallengeCompleted(striker, snap), true);
     assert.equal(
       challengeXpFromEntries(

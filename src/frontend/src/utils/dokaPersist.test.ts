@@ -116,6 +116,7 @@ assert.equal(shouldReleaseOneShotAfterPersist(true), false);
 
   const settled = await resolveOneShotCreditSettle(transportAfterAdd, {
     committedDoka: lock.snapshot().doka,
+    walletSeeded: true,
     readWallet: async () => canister,
   });
   assert.equal(settled.kind, "commit");
@@ -150,17 +151,48 @@ assert.equal(shouldReleaseOneShotAfterPersist(true), false);
     ),
     {
       committedDoka: 550,
+      walletSeeded: true,
       readWallet: async () => 550,
     },
   );
   assert.deepEqual(rejectedKeep, { kind: "keep" });
 
+  // Union with #312: confirm path must accept bigint wallet reads.
   const fromNat = await resolveOneShotCreditSettle(transportAfterAdd, {
     committedDoka: 500,
+    walletSeeded: true,
     readWallet: async () => 550n,
   });
   assert.equal(fromNat.kind, "commit");
   if (fromNat.kind === "commit") assert.equal(fromNat.doka, 550);
+}
+
+{
+  // Unseeded lock snapshot is 0. Transport-keep must NOT confirm just because
+  // live wallet > 0 — WorldExploration credits the pickup on commit and would
+  // mint ghost HUD Doka, then shop/heal over-spend against the real lock.
+  const lock = createProgressPersist({ doka: 0, xp: 0, level: 1 });
+  assert.equal(lock.isWalletSeeded(), false);
+  const transportMiss = await persistDokaCreditResult(
+    {
+      applyRewards: async () => {
+        throw new Error("replica reject before add");
+      },
+    },
+    1,
+    300,
+  );
+  assert.equal(settleOneShotAfterCredit(transportMiss), "keep");
+  const settled = await resolveOneShotCreditSettle(transportMiss, {
+    committedDoka: lock.snapshot().doka,
+    walletSeeded: lock.isWalletSeeded(),
+    readWallet: async () => 5000,
+  });
+  assert.deepEqual(
+    settled,
+    { kind: "keep" },
+    "unseeded transport-keep must not false-commit live>0",
+  );
 }
 
 console.log("dokaPersist.test: ok");

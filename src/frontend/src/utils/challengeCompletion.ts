@@ -235,6 +235,30 @@ export function recordChallengeItemHealUsed(
   return recordInBattleChallengeHealUsed(inBattle, alreadyUsed);
 }
 
+/** Player combatant ids that restore the character strip, not a summon. */
+export function isPlayerHealTargetId(id: string | undefined | null): boolean {
+  return id === "player" || id === "__player__";
+}
+
+/**
+ * Life Drain (`applyDamageToEnemy`) and summon/ctx.heal restore player HP
+ * without the executeCastAttempt `self` + `heal` gate. handleBattleEnd then
+ * persisted easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP) as a clean
+ * no-heal fight. Record only when HP actually increased, and only in battle
+ * — the same overworld-must-not-stick rule as Doka-to-HP.
+ */
+export function recordChallengeHealFromHpRestore(
+  inBattle: boolean,
+  alreadyUsed: boolean,
+  restoredHp: number,
+): boolean {
+  const restored = Number(restoredHp);
+  if (!inBattle || !Number.isFinite(restored) || restored <= 0) {
+    return alreadyUsed === true;
+  }
+  return recordInBattleChallengeHealUsed(true, alreadyUsed);
+}
+
 /**
  * Lava / spike tiles live on the overworld map and also deal HP during
  * combat walks. The challenge counter is zeroed in cleanupBattle, not at
@@ -377,6 +401,59 @@ export type DirectHitChallengeState = {
   attempts: number;
 };
 
+export type DirectHitTile = { x: number; y: number };
+
+/**
+ * Unique finite tiles a spent attempt actually consulted (aim, AoE
+ * splash, bounce). Dedupe so one Frost Nova does not increment
+ * attempts once per occupant.
+ */
+export function collectChallengeDirectHitTiles(
+  tiles: Array<{ x?: unknown; y?: unknown } | null | undefined>,
+): DirectHitTile[] {
+  const seen = new Set<string>();
+  const out: DirectHitTile[] = [];
+  for (const tile of tiles) {
+    if (!tile) continue;
+    const x = Number(tile.x);
+    const y = Number(tile.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    const key = `${x},${y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ x, y });
+  }
+  return out;
+}
+
+/**
+ * Count one spent spell attempt toward Striker. `stillDirect` stays true
+ * only when every victim tile is Chebyshev ≤ 2 of the caster.
+ *
+ * Aim-tile-only left Frost Nova / Lifesteal Nova splash and Chain
+ * Lightning bounces beyond 2 paying 400 Doka / 800 XP. Empty / invalid
+ * tiles cannot verify range, so they fail the flag (attempts still +1).
+ */
+export function applyChallengeDirectHitOnCast(
+  state: DirectHitChallengeState,
+  caster: { x: number; y: number },
+  tiles: Array<{ x?: unknown; y?: unknown } | null | undefined>,
+): DirectHitChallengeState {
+  const unique = collectChallengeDirectHitTiles(tiles);
+  let stillDirect = state.stillDirect === true;
+  if (unique.length === 0) {
+    stillDirect = false;
+  } else {
+    for (const tile of unique) {
+      stillDirect = recordChallengeDirectHit(stillDirect, caster, tile);
+    }
+  }
+  return {
+    stillDirect,
+    attempts: Math.max(0, Math.floor(Number(state.attempts) || 0)) + 1,
+  };
+}
+
 /**
  * Count a spent spell attempt toward Striker. `recordChallengeDirectHit`
  * alone left attempts at 0, so a no-cast victory still read
@@ -387,10 +464,7 @@ export function applyChallengeDirectHit(
   caster: { x: number; y: number },
   target: { x: number; y: number },
 ): DirectHitChallengeState {
-  return {
-    stillDirect: recordChallengeDirectHit(state.stillDirect, caster, target),
-    attempts: Math.max(0, Math.floor(Number(state.attempts) || 0)) + 1,
-  };
+  return applyChallengeDirectHitOnCast(state, caster, [target]);
 }
 
 /** legendary_3: every spent attempt in range, and at least one attempt. */

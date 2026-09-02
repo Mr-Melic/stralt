@@ -163,11 +163,20 @@ export type OneShotCreditSettle =
  *
  * Confirm via live wallet without releasing the one-shot id. A live
  * balance that did not rise still `keep`s — retry would remint.
+ *
+ * Only confirm when the persist lock is already wallet-seeded. An unseeded
+ * placeholder is 0; any live balance looks like a rise, so callers that
+ * creditLiveDoka the pickup amount on commit would mint ghost HUD Doka.
+ * Unseeded absolute writes already fetch live via
+ * resolveCommittedDokaForAbsoluteWrite — confirm is unnecessary there.
  */
 export async function confirmKeptOneShotCredit(
   committedDoka: number,
   readWallet: () => Promise<unknown>,
+  walletSeeded = false,
 ): Promise<number | null> {
+  // Fail-closed: unseeded / omitted must not treat live > 0 as a pickup.
+  if (!walletSeeded) return null;
   try {
     const raw = await readWallet();
     if (raw == null) return null;
@@ -187,6 +196,8 @@ export async function resolveOneShotCreditSettle(
   opts: {
     committedDoka: number;
     readWallet: () => Promise<unknown>;
+    /** When false, transport-keep stays keep (no false commit on placeholder 0). */
+    walletSeeded?: boolean;
   },
 ): Promise<OneShotCreditSettle> {
   const settle = settleOneShotAfterCredit(result);
@@ -197,6 +208,7 @@ export async function resolveOneShotCreditSettle(
   const confirmed = await confirmKeptOneShotCredit(
     opts.committedDoka,
     opts.readWallet,
+    opts.walletSeeded === true,
   );
   if (confirmed != null) return { kind: "commit", doka: confirmed };
   return { kind: "keep" };

@@ -150,6 +150,7 @@ import {
   getEnemyFamilyColors,
   getEnemyFamilyPixelPattern,
 } from "../engine/enemyPixelPatterns";
+import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
 import {
   applyFinalizedLayout,
@@ -178,6 +179,7 @@ import {
   planPlayerCastAttempt,
   planPlayerCastResources,
   playerCastAttemptResult,
+  shouldRejectCastForMissingAp,
 } from "../engine/playerCastPlan";
 import {
   PROGRESSION_PORTAL_KIND,
@@ -258,6 +260,7 @@ import {
   hasBresenhamLoS,
   isTileCastableLive,
   pickNearestAttackableHostile,
+  playerSpellAllowsCasterTile,
   playerSpellEffectiveRange,
   probeLiveCast as probeLiveCastAt,
   shouldExecuteLiveCast,
@@ -300,13 +303,15 @@ import {
 } from "../utils/adminSafety";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
-  applyChallengeDirectHit,
+  applyChallengeDirectHitOnCast,
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
+  isPlayerHealTargetId,
   nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
+  recordChallengeHealFromHpRestore,
   recordChallengeItemHealUsed,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
@@ -446,6 +451,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
   applyXpDelta,
@@ -2321,7 +2327,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const isThornedGround = activeMapModifierTypes.has("thorned_ground");
   const _isArcaneSurge = activeMapModifierTypes.has("arcane_surge");
   const isMirrorField = activeMapModifierTypes.has("mirror_field");
-  const _isFrozenTerrain = activeMapModifierTypes.has("frozen_terrain");
+  const isFrozenTerrain = activeMapModifierTypes.has("frozen_terrain");
   const isPlagueZone = activeMapModifierTypes.has("plague_zone");
   const isTimeWarp = activeMapModifierTypes.has("time_warp");
   const isVoidRift = activeMapModifierTypes.has("void_rift");
@@ -2330,6 +2336,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     isSlimeFloodRef.current = isSlimeFlood;
   }, [isSlimeFlood]);
+  const isFrozenTerrainRef = useRef(isFrozenTerrain);
+  useEffect(() => {
+    isFrozenTerrainRef.current = isFrozenTerrain;
+  }, [isFrozenTerrain]);
   const currentBattleMpRef = useRef(currentBattleMp);
   useEffect(() => {
     currentBattleMpRef.current = currentBattleMp;
@@ -6327,6 +6337,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             const settle = await resolveOneShotCreditSettle(credited, {
               committedDoka: progressPersistRef.current.snapshot().doka,
+              walletSeeded: progressPersistRef.current.isWalletSeeded(),
               readWallet: () =>
                 (
                   actor as {
@@ -8989,7 +9000,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     apCost: number;
     targetsToHit: any[];
     spell: any;
-  }>({ apCost: 0, targetsToHit: [], spell: null });
+    directHitVictimTiles: { x: number; y: number }[];
+  }>({ apCost: 0, targetsToHit: [], spell: null, directHitVictimTiles: [] });
   // biome-ignore lint/correctness/useExhaustiveDependencies: refs and stable values are intentionally omitted
   const deathPipelineCtx = useMemo<DeathPipelineCtx>(
     () => ({
@@ -9163,11 +9175,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return amount;
       },
       heal: (combatantId: string, amount: number) => {
-        if (combatantId === "player" || combatantId === "__player__") {
+        if (isPlayerHealTargetId(combatantId)) {
+          const previousHp = characterStatsRef.current.hp;
           setCharacterStats((prev: any) => ({
             ...prev,
             hp: Math.min(maxHp, prev.hp + amount),
           }));
+          challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
+            inBattleRef.current,
+            challengeHealUsedRef.current,
+            characterStatsRef.current.hp - previousHp,
+          );
           const pos = playerPositionRef.current;
           spawnDamageAtTile(
             effectsManagerRef.current,
@@ -9472,6 +9490,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 challengeTotalDamageRef.current,
                 amount,
               );
+            },
+            onPlayerHealed: (amount: number) => {
+              challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
+                inBattleRef.current,
+                challengeHealUsedRef.current,
+                amount,
+              );
+            },
+            // Chain Lightning bounce tiles are not in targetsToHit. Record
+            // every victim so Striker cannot persist after a far hop.
+            onDirectHitVictim: (pos) => {
+              castRuntimeRef.current.directHitVictimTiles.push({
+                x: pos.x,
+                y: pos.y,
+              });
             },
             // enemyTakesDamage / victory read combatantsRef. Without this
             // commit a later DoT tick recomputes from full store HP and
@@ -9813,6 +9846,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       summonCastCommittedRef.current = true;
       try {
+        castRuntimeRef.current.targetsToHit = [];
+        castRuntimeRef.current.directHitVictimTiles = [];
         resolveSpellCast(
           plan.spell as any,
           {
@@ -9838,13 +9873,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           { getStatModifier, calcScaledDamage } as any,
         );
         {
-          const nextDirect = applyChallengeDirectHit(
+          const nextDirect = applyChallengeDirectHitOnCast(
             {
               stillDirect: challengeDirectHitRef.current,
               attempts: challengeDirectHitAttemptsRef.current,
             },
             { x: summon.x, y: summon.y },
-            { x: targetEnemy.x, y: targetEnemy.y },
+            [
+              { x: targetEnemy.x, y: targetEnemy.y },
+              ...castRuntimeRef.current.targetsToHit,
+              ...castRuntimeRef.current.directHitVictimTiles,
+            ],
           );
           challengeDirectHitRef.current = nextDirect.stillDirect;
           challengeDirectHitAttemptsRef.current = nextDirect.attempts;
@@ -10119,9 +10158,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               playerCastOk: _playerCastOk,
               inBattle: inBattleRef.current,
               liveOk: shouldExecuteLiveCast(_live),
-              selfOrAllySpell:
-                _selectedSpell?.targetType === "self" ||
-                _selectedSpell?.targetType === "ally",
+              selfOrAllySpell: playerSpellAllowsCasterTile(
+                _selectedSpell ?? {},
+              ),
               hasBasicAttack: Boolean(_basicAttack),
             });
             if (_spriteDecision.action === "wait_for_turn") {
@@ -10273,21 +10312,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Attack mode: cast selected spell on clicked tile if in range.
           // Precedence: spell SELECTED (selectedSpellIdRef.current non-null) AND
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
-          if (currentBattleApRef.current <= 0) {
-            {
-              const _screen = tileCenter(gridPos.x, gridPos.y);
-              effectsManagerRef.current?.spawnFloatText(
-                _screen.x,
-                _screen.y,
-                "Not enough AP",
-              );
-            }
-            selectedSpellIdRef.current = null;
-            setSpellSelectionVersion((v) => v + 1);
-            spellRangeCacheRef.current.clear();
-            setBattleActionMode("walk");
-            return;
-          }
+          // AP is gated by shouldRejectCastForMissingAp / executeCastAttempt
+          // (0-cost Timestep is legal at 0 AP). Do not abort on wallet === 0.
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the rejection log reports whether the cache
           // already held an entry for this key.
@@ -10306,6 +10332,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) {
+            return;
+          }
+          if (
+            shouldRejectCastForMissingAp({
+              currentAp: currentBattleApRef.current,
+              baseApCost: Number(spell.apCost),
+              applyApCost: (base) =>
+                mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                }),
+            })
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Not enough AP",
+            );
             return;
           }
           const _liveBeforeCast = probeLiveCast(spell, gridPos);
@@ -10805,9 +10850,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               playerCastOk: _playerCastOk,
               inBattle: inBattleRef.current,
               liveOk: shouldExecuteLiveCast(_live),
-              selfOrAllySpell:
-                _selectedSpell?.targetType === "self" ||
-                _selectedSpell?.targetType === "ally",
+              selfOrAllySpell: playerSpellAllowsCasterTile(
+                _selectedSpell ?? {},
+              ),
               hasBasicAttack: Boolean(_basicAttack),
             });
             if (_spriteDecision.action === "wait_for_turn") {
@@ -10907,22 +10952,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // walk branch only runs with NO spell selected. Attack mode with no
         // spell selected floats SELECT_SPELL_COPY.
         if (selectedSpellIdRef.current) {
-          // Attack mode: cast selected spell on touched tile if in range
-          if (currentBattleApRef.current <= 0) {
-            {
-              const _screen = tileCenter(gridPos.x, gridPos.y);
-              effectsManagerRef.current?.spawnFloatText(
-                _screen.x,
-                _screen.y,
-                "Not enough AP",
-              );
-            }
-            selectedSpellIdRef.current = null;
-            setSpellSelectionVersion((v) => v + 1);
-            spellRangeCacheRef.current.clear();
-            setBattleActionMode("walk");
-            return;
-          }
+          // Attack mode: cast selected spell on touched tile if in range.
+          // AP is gated by shouldRejectCastForMissingAp / executeCastAttempt
+          // (0-cost Timestep is legal at 0 AP). Do not abort on wallet === 0.
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the touch rejection log reports whether the
           // cache already held an entry for this key.
@@ -10937,6 +10969,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             (s) => s.id === selectedSpellIdRef.current,
           );
           if (!spell) {
+            return;
+          }
+          if (
+            shouldRejectCastForMissingAp({
+              currentAp: currentBattleApRef.current,
+              baseApCost: Number(spell.apCost),
+              applyApCost: (base) =>
+                mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                  log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                  rng: Math.random,
+                }),
+            })
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              "Not enough AP",
+            );
             return;
           }
           const _liveBeforeCastTouch = probeLiveCast(spell, gridPos);
@@ -11264,6 +11315,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 const settle = await resolveOneShotCreditSettle(credited, {
                   committedDoka: progressPersistRef.current.snapshot().doka,
+                  walletSeeded: progressPersistRef.current.isWalletSeeded(),
                   readWallet: () =>
                     (
                       actor as {
@@ -11326,6 +11378,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             const settle = await resolveOneShotCreditSettle(credited, {
               committedDoka: progressPersistRef.current.snapshot().doka,
+              walletSeeded: progressPersistRef.current.isWalletSeeded(),
               readWallet: () =>
                 (
                   actor as {
@@ -12442,39 +12495,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // applyRewards commits — markAchievementUnlocked now rejects
           // projected totals against the pre-credit canister snapshot,
           // and achievementsShownRef would block the post-credit retry.
-          checkAndFireAchievement("first_battle_win", true);
-          if (characterStats.hp === 1) {
-            checkAndFireAchievement("survive_1hp", true);
-          }
-          if (mapsVisitedCountRef.current >= 25) {
-            checkAndFireAchievement("explore_25_maps", true);
-          }
-          if (groundDokaPickupCountRef.current >= 10) {
-            checkAndFireAchievement("loot_10_doka", true);
-          }
-          if (activeSpells.length >= 8) {
-            checkAndFireAchievement("spell_master_8", true);
-          }
-          if (Object.values(spellLevels).some((l) => l >= 5)) {
-            checkAndFireAchievement("spell_level_5", true);
-          }
-          if (battleCritHitsRef.current >= 5) {
-            checkAndFireAchievement("critical_5_in_battle", true);
-          }
-          if (battleOnlyHealBuffSpellsRef.current) {
-            checkAndFireAchievement("pacifist_run", true);
-          }
-          if (battleBetrayalOccurredRef.current) {
-            checkAndFireAchievement("betrayal_witness", true);
-          }
-          if (battleDoubleBetrayelOccurredRef.current) {
-            checkAndFireAchievement("double_betrayal", true);
-          }
-          if (battleLeaderSlainRef.current) {
-            checkAndFireAchievement("leader_slayer", true);
+          // Shared with handleBossRushRoomClear: the victory gate never
+          // enters this function during a run, so those feats used to
+          // stay locked after a room-clear (pacifist_run 500 Doka).
+          for (const condition of clientTrustedVictoryAchievementConditions({
+            hp: characterStats.hp,
+            mapsVisited: mapsVisitedCountRef.current,
+            groundDokaPickups: groundDokaPickupCountRef.current,
+            spellBarCount: activeSpells.length,
+            hasSpellAtLeast5: Object.values(spellLevels).some((l) => l >= 5),
+            critHits: battleCritHitsRef.current,
+            pacifist: battleOnlyHealBuffSpellsRef.current,
+            betrayal: battleBetrayalOccurredRef.current,
+            doubleBetrayal: battleDoubleBetrayelOccurredRef.current,
+            leaderSlain: battleLeaderSlainRef.current,
+            bossId: activeBossConf?.id,
+          })) {
+            checkAndFireAchievement(condition, true);
           }
           if (activeBossConf) {
-            checkAndFireAchievement(`boss_defeated_${activeBossConf.id}`, true);
             logBattleEntry(
               `☠️ BOSS DEFEATED: ${activeBossConf.name}!`,
               "#c084fc",
@@ -12872,6 +12911,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         isBossRush: true,
         bossRushRoom: currentRoomIndex + 1,
       };
+
+      // Same client-trusted victory feats as handleBattleEnd. The victory
+      // gate calls this instead of handleBattleEnd during a run, so a
+      // pacifist / leader-kill / first-win room-clear never reached
+      // checkAndFireAchievement; battle start then reset the per-fight refs.
+      const activeBossConf = currentBossConfigRef.current;
+      for (const condition of clientTrustedVictoryAchievementConditions({
+        hp: characterStats.hp,
+        mapsVisited: mapsVisitedCountRef.current,
+        groundDokaPickups: groundDokaPickupCountRef.current,
+        spellBarCount: activeSpells.length,
+        hasSpellAtLeast5: Object.values(spellLevels).some((l) => l >= 5),
+        critHits: battleCritHitsRef.current,
+        pacifist: battleOnlyHealBuffSpellsRef.current,
+        betrayal: battleBetrayalOccurredRef.current,
+        doubleBetrayal: battleDoubleBetrayelOccurredRef.current,
+        leaderSlain: battleLeaderSlainRef.current,
+        bossId: activeBossConf?.id,
+      })) {
+        checkAndFireAchievement(condition, true);
+      }
+      if (activeBossConf) {
+        logBattleEntry(`☠️ BOSS DEFEATED: ${activeBossConf.name}!`, "#c084fc");
+      }
 
       // Set popup state (non-blocking overlay)
       if (shouldAnnounceLevelUp(characterStats.level, leveled.newLevel)) {
@@ -14958,11 +15021,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return amount;
           },
           heal: (combatantId: string, amount: number) => {
-            if (combatantId === "player" || combatantId === "__player__") {
+            if (isPlayerHealTargetId(combatantId)) {
+              const previousHp = characterStatsRef.current.hp;
               setCharacterStats((prev: any) => ({
                 ...prev,
                 hp: Math.min(maxHp, prev.hp + amount),
               }));
+              challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
+                inBattleRef.current,
+                challengeHealUsedRef.current,
+                characterStatsRef.current.hp - previousHp,
+              );
               const pos = playerPositionRef.current;
               spawnDamageAtTile(
                 effectsManagerRef.current,
@@ -15127,6 +15196,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             .length,
           enrageMultiplier: 1,
           isSlimeFlood: isSlimeFloodRef.current,
+          isFrozenTerrain: isFrozenTerrainRef.current,
           rng: Math.random,
           getEffectiveStat: (cid: string, stat: string) =>
             getStatModifier(cid, stat, activeEffectsRef.current) as number,
@@ -15170,7 +15240,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           calcScaledDamage,
           occupancyCtx: summonOccupancyCtx,
           worldGridSize: WORLD_GRID_SIZE,
-          mpCostPerTile: 1,
+          mpCostPerTile: enemyWalkCostPerTile({
+            slimeFlood: isSlimeFloodRef.current,
+            frozenTerrain: isFrozenTerrainRef.current,
+          }),
           meleeApCost: 1,
           getEnemyById: (id: string) =>
             enemiesRef.current.find((e: any) => e.id === id),
@@ -16287,6 +16360,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             .length,
           enrageMultiplier,
           isSlimeFlood: isSlimeFloodRef.current,
+          isFrozenTerrain: isFrozenTerrainRef.current,
           rng: Math.random,
           getEffectiveStat: (cid, stat) =>
             getStatModifier(cid, stat, activeEffectsRef.current) as number,
@@ -17090,6 +17164,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       {
         castRuntimeRef.current.apCost = _apCost;
         castRuntimeRef.current.spell = spell;
+        castRuntimeRef.current.targetsToHit = [];
+        castRuntimeRef.current.directHitVictimTiles = [];
         const _castResult = resolvePlayerCast(
           spell,
           targetTile,
@@ -17119,13 +17195,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // without the tile-click follow-up that flips Striker. Record
           // here so every executeCastAttempt caller shares the gate.
           {
-            const nextDirect = applyChallengeDirectHit(
+            const nextDirect = applyChallengeDirectHitOnCast(
               {
                 stillDirect: challengeDirectHitRef.current,
                 attempts: challengeDirectHitAttemptsRef.current,
               },
               playerPositionRef.current,
-              targetTile,
+              [
+                targetTile,
+                ...castRuntimeRef.current.targetsToHit,
+                ...castRuntimeRef.current.directHitVictimTiles,
+              ],
             );
             challengeDirectHitRef.current = nextDirect.stillDirect;
             challengeDirectHitAttemptsRef.current = nextDirect.attempts;
