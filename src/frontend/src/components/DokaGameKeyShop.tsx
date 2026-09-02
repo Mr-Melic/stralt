@@ -26,6 +26,10 @@ import {
   IAP_SHOP_WAIT_COPY,
 } from "../utils/iapShopCopy";
 import {
+  shouldDismissShopDialogOnBackdrop,
+  shouldDismissShopDialogOnKey,
+} from "../utils/shopDialogDismiss";
+import {
   type ShopCreditPersistLock,
   dokaGainedFromGameKeyRedeem,
   redeemGameKeyThroughPersist,
@@ -204,6 +208,8 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   return (
     <div
       data-ocid="shop.dialog"
+      aria-modal="true"
+      aria-labelledby="shop-title"
       style={{
         position: "fixed",
         inset: 0,
@@ -213,6 +219,14 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
         alignItems: "center",
         justifyContent: "center",
         overflow: "auto",
+      }}
+      onClick={(e) => {
+        if (shouldDismissShopDialogOnBackdrop(e.target, e.currentTarget)) {
+          onClose();
+        }
+      }}
+      onKeyDown={(e) => {
+        if (shouldDismissShopDialogOnKey(e.key)) onClose();
       }}
     >
       <div
@@ -250,6 +264,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
         </button>
 
         <h2
+          id="shop-title"
           style={{
             color: "#e74c3c",
             fontFamily: "serif",
