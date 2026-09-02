@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useActor } from "../hooks/useActor";
 import { readAdminCmdResult } from "../utils/adminContract";
-import { MAX_DOKA_GRANT, validateDokaGrant } from "../utils/adminSafety";
 import {
   type GameKeyRequestView,
   gameKeyMailtoHref,
@@ -11,6 +10,7 @@ import {
   playerGameKeyStatusCopy,
   readGameKeyCmdResult,
   readGameKeyRequestList,
+  resolveAdminApproveDokaAmount,
   suggestedDokaFromEuroCents,
 } from "../utils/dokaGameKey";
 
@@ -94,26 +94,13 @@ const AdminGameKeyPurchases: React.FC = () => {
     );
   });
 
-  const dokaFor = (rec: GameKeyRequestView): number => {
-    const drafted = dokaDraft[rec.id];
-    if (drafted != null && drafted.length > 0) {
-      return Math.floor(Number(drafted) || 0);
-    }
-    if (rec.dokaAmount > 0) return rec.dokaAmount;
-    return suggestedDokaFromEuroCents(rec.hintedEuroCents);
-  };
-
   const approve = async (rec: GameKeyRequestView) => {
-    const amount = dokaFor(rec);
-    const grantErr = validateDokaGrant(amount);
-    if (grantErr) {
-      toast.error(grantErr);
+    const parsed = resolveAdminApproveDokaAmount(dokaDraft[rec.id]);
+    if ("err" in parsed) {
+      toast.error(parsed.err);
       return;
     }
-    if (amount > MAX_DOKA_GRANT) {
-      toast.error("Doka amount exceeds maximum");
-      return;
-    }
+    const amount = parsed.ok;
     const fn = actor?.adminApproveGameKeyPurchase;
     if (typeof fn !== "function") {
       toast.error("Approve is not available");
@@ -121,15 +108,15 @@ const AdminGameKeyPurchases: React.FC = () => {
     }
     setBusyId(rec.id);
     try {
-      const parsed = readGameKeyCmdResult(
+      const cmd = readGameKeyCmdResult(
         await fn(rec.id, BigInt(amount)),
         "adminApproveGameKeyPurchase",
       );
-      if ("err" in parsed) {
-        toast.error(parsed.err);
+      if ("err" in cmd) {
+        toast.error(cmd.err);
         return;
       }
-      setReveal({ id: rec.id, email: rec.email, code: parsed.ok });
+      setReveal({ id: rec.id, email: rec.email, code: cmd.ok });
       toast.success("GameKey generated. Copy it, then mark emailed.");
       await load();
     } catch (e) {
@@ -284,9 +271,10 @@ const AdminGameKeyPurchases: React.FC = () => {
               margin: "4px 0 0",
             }}
           >
-            Confirm Mollie payment, enter Doka (1000 / 10€), then Approve. The
-            canister cannot send email — copy the code or use mailto, then mark
-            emailed.
+            Confirm Mollie payment, type the Doka amount (1000 / 10€), then
+            Approve. The player hint is a claim only — it is never the grant.
+            The canister cannot send email — copy the code or use mailto, then
+            mark emailed.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -451,7 +439,7 @@ const AdminGameKeyPurchases: React.FC = () => {
                       {hintedEurosLabel(rec.hintedEuroCents)}
                       {suggested > 0 ? (
                         <div style={{ color: C.dim, fontSize: 10 }}>
-                          ≈ {suggested.toLocaleString()} Doka
+                          player claim ≈ {suggested.toLocaleString()} Doka
                         </div>
                       ) : null}
                     </td>
@@ -462,9 +450,8 @@ const AdminGameKeyPurchases: React.FC = () => {
                           data-ocid={`admin.purchases.doka_input.${i + 1}`}
                           type="number"
                           min={1}
-                          value={
-                            dokaDraft[rec.id] ?? String(dokaFor(rec) || "")
-                          }
+                          placeholder="Mollie Doka"
+                          value={dokaDraft[rec.id] ?? ""}
                           onChange={(e) =>
                             setDokaDraft((p) => ({
                               ...p,
