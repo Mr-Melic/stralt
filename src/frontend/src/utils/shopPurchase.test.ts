@@ -6,15 +6,18 @@ import {
 } from "./progressPersist.ts";
 import {
   buildInitiatePurchaseArgs,
+  committedDokaAfterGameKeyRedeem,
   committedDokaAfterShopCreditOnLock,
   creditPendingPurchases,
   creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
+  dokaGainedFromGameKeyRedeem,
   readCallerDokaBalance,
   readInitiatePurchaseResult,
   readRedeemGameKeyResult,
   redeemGameKeyThroughPersist,
   shopCreditUsesBattleTimeoutSet,
+  shouldCommitGameKeyRedeem,
   shouldCommitShopCredit,
   shouldStartShopPurchase,
 } from "./shopPurchase.ts";
@@ -229,6 +232,16 @@ void (async () => {
     { err: "GameKey already used" },
   );
   assert.equal(readRedeemGameKeyResult({ __kind__: "ok" }).err != null, true);
+  assert.equal(committedDokaAfterGameKeyRedeem(200, 1000), 1200);
+  assert.equal(shouldCommitGameKeyRedeem(true, 1000), true);
+  assert.equal(
+    shouldCommitGameKeyRedeem(false, 1000),
+    false,
+    "unseeded placeholder must not seed at grant-only",
+  );
+  assert.equal(shouldCommitGameKeyRedeem(true, 0), false);
+  assert.equal(dokaGainedFromGameKeyRedeem({ ok: 1000 }), 1000);
+  assert.equal(dokaGainedFromGameKeyRedeem({ err: "GameKey already used" }), 0);
 
   {
     let backendDoka = 200;
@@ -293,6 +306,80 @@ void (async () => {
       lock.snapshot().doka,
       170,
       "failed redeem must not commit a stale wallet snapshot",
+    );
+  }
+
+  {
+    // Chronology: redeem #ok(1000), then a recap heal saveBattleStats.
+    // A stale getCallerDokaBalance (always the pre-redeem 200) used to skip
+    // the persist-lock commit. The heal then wrote 170 and wiped the paid
+    // 1000. Commit from #ok so the spend applies to 1200.
+    let backendDoka = 200;
+    const staleActor = {
+      redeemGameKey: async () => {
+        backendDoka += 1000;
+        return { __kind__: "ok" as const, ok: 1000n };
+      },
+      getCallerDokaBalance: async () => 200n,
+    };
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const redeemed = await redeemGameKeyThroughPersist(
+      staleActor,
+      lock,
+      "A".repeat(120),
+    );
+    assert.deepEqual(redeemed.result, { ok: 1000 });
+    assert.equal(dokaGainedFromGameKeyRedeem(redeemed.result), 1000);
+    assert.equal(
+      lock.snapshot().doka,
+      1200,
+      "stale wallet query must not skip the #ok credit",
+    );
+    const spend = spendFromUiBalance(200, 170);
+    const wroteDoka = applySpendToCommitted(lock.snapshot().doka, spend);
+    backendDoka = wroteDoka;
+    lock.commit({ doka: wroteDoka });
+    assert.equal(wroteDoka, 1170);
+    assert.equal(backendDoka, 1170);
+    assert.equal(lock.snapshot().doka, 1170);
+  }
+
+  {
+    const throwingActor = {
+      redeemGameKey: async () => ({ __kind__: "ok" as const, ok: 1000n }),
+      getCallerDokaBalance: async () => {
+        throw new Error("query replica unavailable");
+      },
+    };
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const redeemed = await redeemGameKeyThroughPersist(
+      throwingActor,
+      lock,
+      "A".repeat(120),
+    );
+    assert.deepEqual(redeemed.result, { ok: 1000 });
+    assert.equal(
+      lock.snapshot().doka,
+      1200,
+      "a throwing wallet query after #ok must not abort the lock commit",
+    );
+  }
+
+  {
+    const unseeded = createProgressPersist({ doka: 0, xp: 0, level: 1 });
+    assert.equal(unseeded.isWalletSeeded(), false);
+    await redeemGameKeyThroughPersist(
+      {
+        redeemGameKey: async () => ({ __kind__: "ok" as const, ok: 1000n }),
+      },
+      unseeded,
+      "A".repeat(120),
+    );
+    assert.equal(unseeded.isWalletSeeded(), false);
+    assert.equal(
+      unseeded.snapshot().doka,
+      0,
+      "grant-only must not seed the placeholder lock",
     );
   }
 

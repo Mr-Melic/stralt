@@ -27,7 +27,7 @@ import {
 } from "../utils/iapShopCopy";
 import {
   type ShopCreditPersistLock,
-  creditedDokaDelta,
+  dokaGainedFromGameKeyRedeem,
   redeemGameKeyThroughPersist,
   shouldStartShopPurchase,
 } from "../utils/shopPurchase";
@@ -175,7 +175,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
     redeemInFlight.current = true;
     setRedeeming(true);
     try {
-      const { result, previous, credited } = await redeemGameKeyThroughPersist(
+      const { result } = await redeemGameKeyThroughPersist(
         actor,
         persist,
         gameKey.trim(),
@@ -184,7 +184,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
         toast.error(result.err);
         return;
       }
-      const gained = creditedDokaDelta(previous, credited);
+      const gained = dokaGainedFromGameKeyRedeem(result);
       if (gained > 0) {
         onDokaCredited(gained);
         toast.success(`${gained.toLocaleString()} Doka credited!`);
