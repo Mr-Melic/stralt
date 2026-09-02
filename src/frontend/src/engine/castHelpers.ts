@@ -244,6 +244,12 @@ export interface ApplyDamageToEnemyDeps {
    */
   onPlayerReflectedDamage: (amount: number) => void;
   /**
+   * Drain restores player HP without executeCastAttempt's self+heal gate.
+   * Callers must flip challenge healUsed here so easy_1 / hard_1 cannot
+   * persist after a Life Drain that actually increased HP.
+   */
+  onPlayerHealed?: (amount: number) => void;
+  /**
    * Victory, DoT ticks, and later enemyTakesDamage read combatantsRef.
    * React-only enemyHpMap / turnOrder writes leave store hp unchanged, so
    * the next store-based tick recomputes from full HP and wipes this hit.
@@ -304,6 +310,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     setCharacterStats,
     processCombatantDeath,
     onPlayerReflectedDamage,
+    onPlayerHealed,
     commitEnemyHp,
   } = deps;
 
@@ -476,6 +483,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
         hp: Math.min(maxHp, prev.hp + healAmt),
       }));
       logBattleEntry(`${spell.name} drained ${healAmt} HP!`, "#22c55e");
+      onPlayerHealed?.(healAmt);
     }
   }
 }

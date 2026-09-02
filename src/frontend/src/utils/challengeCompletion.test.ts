@@ -12,12 +12,14 @@ import {
   challengeFailCopy,
   isChallengeCompleted,
   isChallengeFailed,
+  isPlayerHealTargetId,
   isSpellOnCooldown,
   isStrikerChallengeComplete,
   nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
   recordChallengeDirectHit,
+  recordChallengeHealFromHpRestore,
   recordChallengeItemHealUsed,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
@@ -369,6 +371,62 @@ describe("recordInBattleChallengeHealUsed", () => {
       recordChallengeItemHealUsed(false, false),
       false,
       "overworld item use must not stick healUsed into the next fight",
+    );
+  });
+
+  it("fails no-heal when Life Drain or ctx.heal actually restores HP in battle", () => {
+    assert.equal(isPlayerHealTargetId("player"), true);
+    assert.equal(isPlayerHealTargetId("__player__"), true);
+    assert.equal(isPlayerHealTargetId("wisp-1"), false);
+    const healUsed = recordChallengeHealFromHpRestore(true, false, 10);
+    assert.equal(healUsed, true);
+    assert.equal(
+      isChallengeCompleted(byId("easy_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      isChallengeCompleted(byId("hard_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      addChallengeRewardDeltas(
+        0,
+        0,
+        liveBattleChallengePersistEntries(true, byId("easy_1"), false),
+      ).dokaFromChallenges,
+      0,
+      "easy_1 50 Doka must not persist after an in-battle HP restore",
+    );
+    assert.equal(
+      addChallengeRewardDeltas(
+        0,
+        0,
+        liveBattleChallengePersistEntries(true, byId("hard_1"), false),
+      ).xpDelta,
+      0,
+      "hard_1 500 XP must not persist after an in-battle HP restore",
+    );
+  });
+
+  it("does not fail no-heal for a 0-HP drain or an overworld restore", () => {
+    assert.equal(recordChallengeHealFromHpRestore(true, false, 0), false);
+    assert.equal(
+      recordChallengeHealFromHpRestore(true, false, Number.NaN),
+      false,
+    );
+    assert.equal(
+      recordChallengeHealFromHpRestore(false, false, 12),
+      false,
+      "overworld ctx.heal must not stick healUsed into the next fight",
+    );
+    assert.equal(
+      isChallengeCompleted(
+        byId("easy_1"),
+        progress({
+          healUsed: recordChallengeHealFromHpRestore(true, false, 0),
+        }),
+      ),
+      true,
     );
   });
 });
