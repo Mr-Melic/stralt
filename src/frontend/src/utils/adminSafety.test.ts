@@ -9,8 +9,12 @@ import {
   isBanReasonKey,
   isBuiltInSpellId,
   knownAchievementCondition,
+  maxPersistedAp,
   maxPersistedHp,
+  maxPersistedMp,
+  persistApWriteCap,
   persistHpWriteCap,
+  persistMpWriteCap,
   proofDataMimeAllowed,
   purchaseCreditRejected,
   rejectSecondPendingPurchase,
@@ -321,6 +325,8 @@ assert.equal(unsafeUrl("javascript:alert(1)"), true);
 assert.equal(unsafeUrl("JavaScript:alert(1)"), true);
 assert.equal(unsafeUrl(" javascript:alert(1)"), true);
 assert.equal(unsafeUrl("  DATA:text/html,x"), true);
+assert.equal(unsafeUrl("file:///etc/passwd"), true);
+assert.equal(unsafeUrl("\u00A0javascript:alert(1)"), true);
 assert.ok(validateOptionalUrl("linkUrl", "javascript:alert(1)"));
 assert.ok(validateOptionalUrl("linkUrl", "JavaScript:alert(1)"));
 assert.ok(validateOptionalUrl("linkUrl", "  DATA:text/html,x"));
@@ -357,6 +363,8 @@ assert.equal(chatCooldownActive(0, 3_000_000_000, 2_000_000_000), false);
 assert.ok(validateWalkFrameUrls(["javascript:alert(1)"]));
 assert.equal(validateWalkFrameUrls(["https://cdn.example/f.png"]), null);
 assert.ok(validateAdBox(0, "javascript:x", "https://ok.example"));
+assert.ok(validateAdBox(0, "http://cdn.example/a.png", "https://ok.example"));
+assert.ok(validateAdBox(0, "https://cdn.example/a.png", "http://ok.example"));
 assert.equal(
   validateAdBox(0, "https://cdn.example/a.png", "https://ok.example"),
   null,
@@ -407,6 +415,16 @@ assert.equal(clampPersistedHpWrite(300, 50, 1, 5), 50);
 assert.equal(clampPersistedHpWrite(80, 500, 1, 5), 100);
 // First victory write of 150 at L10 (victory floor) still clips to 145.
 assert.equal(clampPersistedHpWrite(100, 150, 10, 5), 145);
+
+// Failure: saveBattleStats accepted maxAp/maxMp=20 at level 1.
+assert.equal(maxPersistedAp(1, 25), 8);
+assert.equal(maxPersistedAp(25, 25), 9);
+assert.equal(persistApWriteCap(10, 1, 25), 10);
+assert.equal(persistApWriteCap(6, 1, 25), 8);
+assert.equal(Math.min(20, persistApWriteCap(10, 1, 25)), 10);
+assert.equal(maxPersistedMp(1, 25), 4);
+assert.equal(persistMpWriteCap(5, 1, 25), 5);
+assert.equal(persistMpWriteCap(3, 1, 25), 4);
 
 // Failure: markAchievementUnlocked trusted client for wallet/level/spell feats.
 assert.equal(achievementUnlockRejected("level_10", 9, 0, 0), "Level below 10");
