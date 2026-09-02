@@ -22,6 +22,23 @@ export function playerFacingWalkReject(reason: WalkRejectReason): string {
   }
 }
 
+/**
+ * World-mode click: empty `findPath` only auto-steps Chebyshev-adjacent
+ * floor. Distant empty paths used to gold-tint with no reason. Self-tile
+ * stays quiet (gold is enough). Does not change pathfinding.
+ */
+export function shouldFloatWorldUnreachable(
+  pathLength: number,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): boolean {
+  if (pathLength > 0) return false;
+  const dx = Math.abs(to.x - from.x);
+  const dy = Math.abs(to.y - from.y);
+  if (dx + dy === 0) return false;
+  return !(dx <= 1 && dy <= 1);
+}
+
 export function classifyWalkReject(input: {
   currentMp: number;
   isBlocked: boolean;

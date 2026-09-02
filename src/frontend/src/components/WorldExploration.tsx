@@ -186,7 +186,11 @@ import {
   snapshotDungeonChain,
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
-import { playerFacingRejectReason } from "../engine/rejectCopy";
+import {
+  SELECT_SPELL_COPY,
+  WAIT_FOR_TURN_COPY,
+  playerFacingRejectReason,
+} from "../engine/rejectCopy";
 import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
 import {
   type PlayerSpellContextDeps,
@@ -243,6 +247,7 @@ import {
 import {
   classifyWalkReject,
   playerFacingWalkReject,
+  shouldFloatWorldUnreachable,
 } from "../engine/walkRejectCopy";
 import {
   getCameraFollowSpeed,
@@ -10225,6 +10230,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               _hit.kind === "enemy" &&
               inBattleRef.current
             ) {
+              const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                WAIT_FOR_TURN_COPY,
+              );
               return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
               setInspectCombatantId(_hit.id);
@@ -10307,7 +10318,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
                 if (!_playerCastOk) {
-                  if (inBattleRef.current) return;
+                  if (inBattleRef.current) {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      WAIT_FOR_TURN_COPY,
+                    );
+                    return;
+                  }
                 } else {
                   const _liveSelf = probeLiveCast(_spell, {
                     x: _hit.logicalX,
@@ -10367,6 +10386,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if (_entry?.type !== "player") {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              WAIT_FOR_TURN_COPY,
+            );
             return;
           }
         }
@@ -10374,14 +10399,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // spell is selected (selectedSpellIdRef.current set), regardless of
         // battleActionMode — enemy-occupied or not, before any walk/pathing.
         // The walk branch only runs with NO spell selected. Attack mode with
-        // no spell selected is a silent return.
+        // no spell selected floats SELECT_SPELL_COPY.
         if (selectedSpellIdRef.current) {
           // CAST branch first — selected spell takes precedence over walk.
           // Attack mode: cast selected spell on clicked tile if in range.
           // Precedence: spell SELECTED (selectedSpellIdRef.current non-null) AND
           // tile is a legal target (spellTiles.has(tile)) → CAST, always.
-          // No spell selected → silent return (inspect opens only via the
-          // BattleUIPanel initiative chip button, NOT via canvas click).
           if (currentBattleApRef.current <= 0) {
             {
               const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -10672,9 +10695,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           movementStartTimeRef.current = Date.now();
           if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
         } else {
-          // Attack mode with no spell selected — silent return. Inspect opens
-          // only via the BattleUIPanel initiative chip button, NOT via canvas
-          // click.
+          // Attack mode with no spell selected. Inspect still opens only via
+          // the BattleUIPanel initiative chip, not via canvas click.
+          const _screen = tileCenter(gridPos.x, gridPos.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            SELECT_SPELL_COPY,
+          );
         }
         return;
       }
@@ -10706,6 +10734,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setCurrentStepIndex(0);
             setIsMoving(true);
             movementStartTimeRef.current = Date.now();
+          } else if (
+            shouldFloatWorldUnreachable(0, playerPositionRef.current, gridPos)
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              playerFacingWalkReject("unreachable"),
+            );
           }
         }
       }
@@ -10946,6 +10983,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               _hit.kind === "enemy" &&
               inBattleRef.current
             ) {
+              const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                WAIT_FOR_TURN_COPY,
+              );
               return;
             } else if (!selectedSpellIdRef.current && _hit.kind === "summon") {
               setInspectCombatantId(_hit.id);
@@ -11001,7 +11044,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 (_spell.targetType === "self" || _spell.targetType === "ally")
               ) {
                 if (!_playerCastOk) {
-                  if (inBattleRef.current) return;
+                  if (inBattleRef.current) {
+                    const _screen = tileCenter(_hit.logicalX, _hit.logicalY);
+                    effectsManagerRef.current?.spawnFloatText(
+                      _screen.x,
+                      _screen.y,
+                      WAIT_FOR_TURN_COPY,
+                    );
+                    return;
+                  }
                 } else {
                   const _liveSelf = probeLiveCast(_spell, {
                     x: _hit.logicalX,
@@ -11047,6 +11098,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         {
           const _entry = turnOrderRef.current[currentTurnIndexRef.current];
           if (_entry?.type !== "player") {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              WAIT_FOR_TURN_COPY,
+            );
             return;
           }
         }
@@ -11054,7 +11111,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // when a spell is selected (selectedSpellIdRef.current set),
         // regardless of battleActionMode — mirroring the mouse handler. The
         // walk branch only runs with NO spell selected. Attack mode with no
-        // spell selected is a silent return.
+        // spell selected floats SELECT_SPELL_COPY.
         if (selectedSpellIdRef.current) {
           // Attack mode: cast selected spell on touched tile if in range
           if (currentBattleApRef.current <= 0) {
@@ -11286,7 +11343,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           movementStartTimeRef.current = Date.now();
           if (currentBattleMp - cost <= 0) setBattleActionMode("attack");
         } else {
-          // Attack mode with no spell selected — silent return.
+          const _screen = tileCenter(gridPos.x, gridPos.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            SELECT_SPELL_COPY,
+          );
         }
         return;
       }
@@ -11317,6 +11379,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setCurrentStepIndex(0);
             setIsMoving(true);
             movementStartTimeRef.current = Date.now();
+          } else if (
+            shouldFloatWorldUnreachable(0, playerPositionRef.current, gridPos)
+          ) {
+            const _screen = tileCenter(gridPos.x, gridPos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              _screen.x,
+              _screen.y,
+              playerFacingWalkReject("unreachable"),
+            );
           }
         }
       }
