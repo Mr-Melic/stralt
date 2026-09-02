@@ -287,6 +287,7 @@ import {
 } from "../utils/adminSafety";
 import { evaluateChallenges } from "../utils/battleFixes";
 import {
+  applyChallengeDirectHit,
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
@@ -294,7 +295,6 @@ import {
   nextSpellCooldownTurns,
   recordChallengeApSpend,
   recordChallengeDamageTaken,
-  recordChallengeDirectHit,
   recordChallengeItemHealUsed,
   recordChallengePlayerTurnStart,
   recordChallengeSelfHpLoss,
@@ -1240,6 +1240,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const challengeMaxApThisTurnRef = useRef(0);
   const challengeApThisTurnRef = useRef(0);
   const challengeDirectHitRef = useRef(true);
+  const challengeDirectHitAttemptsRef = useRef(0);
   // Mirror of challengeAccepted state for stable access inside callbacks
   // (cast/move handlers are useCallback-memoized and would otherwise see a
   // stale closure of the accepted flag).
@@ -9788,11 +9789,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           playerSpellContext() as any,
           { getStatModifier, calcScaledDamage } as any,
         );
-        challengeDirectHitRef.current = recordChallengeDirectHit(
-          challengeDirectHitRef.current,
-          { x: summon.x, y: summon.y },
-          { x: targetEnemy.x, y: targetEnemy.y },
-        );
+        {
+          const nextDirect = applyChallengeDirectHit(
+            {
+              stillDirect: challengeDirectHitRef.current,
+              attempts: challengeDirectHitAttemptsRef.current,
+            },
+            { x: summon.x, y: summon.y },
+            { x: targetEnemy.x, y: targetEnemy.y },
+          );
+          challengeDirectHitRef.current = nextDirect.stillDirect;
+          challengeDirectHitAttemptsRef.current = nextDirect.attempts;
+        }
         updateCombatant(combatantStoreCtx, summon.id, {
           currentAp: plan.remainingAp,
         });
@@ -11647,6 +11655,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     challengeMaxApThisTurnRef.current = 0;
     challengeApThisTurnRef.current = 0;
     challengeDirectHitRef.current = true;
+    challengeDirectHitAttemptsRef.current = 0;
     challengeAcceptedRef.current = false;
     currentChallengeRef.current = null;
     firstActionTakenRef.current = false;
@@ -12410,6 +12419,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 totalDamage: challengeTotalDamageRef.current,
                 healUsed: challengeHealUsedRef.current,
                 directHit: challengeDirectHitRef.current,
+                directHitAttempts: challengeDirectHitAttemptsRef.current,
                 maxApUsedInTurn: challengeMaxApThisTurnRef.current,
               })
             : false;
@@ -12885,6 +12895,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               totalDamage: challengeTotalDamageRef.current,
               healUsed: challengeHealUsedRef.current,
               directHit: challengeDirectHitRef.current,
+              directHitAttempts: challengeDirectHitAttemptsRef.current,
               maxApUsedInTurn: challengeMaxApThisTurnRef.current,
             })
           : false;
@@ -17232,11 +17243,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Sprite-click (sprite-enemy / sprite-basic) used to return
           // without the tile-click follow-up that flips Striker. Record
           // here so every executeCastAttempt caller shares the gate.
-          challengeDirectHitRef.current = recordChallengeDirectHit(
-            challengeDirectHitRef.current,
-            playerPositionRef.current,
-            targetTile,
-          );
+          {
+            const nextDirect = applyChallengeDirectHit(
+              {
+                stillDirect: challengeDirectHitRef.current,
+                attempts: challengeDirectHitAttemptsRef.current,
+              },
+              playerPositionRef.current,
+              targetTile,
+            );
+            challengeDirectHitRef.current = nextDirect.stillDirect;
+            challengeDirectHitAttemptsRef.current = nextDirect.attempts;
+          }
         }
         if (
           _castResult === "cast" &&
@@ -19228,6 +19246,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           totalDamage: challengeTotalDamageRef.current,
           healUsed: challengeHealUsedRef.current,
           directHit: challengeDirectHitRef.current,
+          directHitAttempts: challengeDirectHitAttemptsRef.current,
           maxApUsedInTurn: challengeMaxApThisTurnRef.current,
         }}
       />

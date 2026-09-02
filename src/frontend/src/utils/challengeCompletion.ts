@@ -33,6 +33,12 @@ export interface ChallengePanelProgress {
   healUsed: boolean;
   directHit: boolean;
   maxApUsedInTurn: number;
+  /**
+   * Spent cast / fizzle / summon attempts that consulted Striker range.
+   * `directHit` starts true (no long-range miss yet). A lava / reflect /
+   * wait win never increments this, so legendary_3 must not persist.
+   */
+  directHitAttempts?: number;
 }
 
 export const DEFAULT_CHALLENGES: Challenge[] = [
@@ -124,7 +130,7 @@ export function isChallengeCompleted(
     case "under_5_turns":
       return progress.turnCount <= 5;
     case "direct_hit":
-      return progress.directHit;
+      return isStrikerChallengeComplete(progress);
     default:
       return false;
   }
@@ -364,6 +370,38 @@ export function recordChallengeDirectHit(
   const dy = Math.abs(Number(target.y) - Number(caster.y));
   if (!Number.isFinite(dx) || !Number.isFinite(dy)) return false;
   return Math.max(dx, dy) <= 2;
+}
+
+export type DirectHitChallengeState = {
+  stillDirect: boolean;
+  attempts: number;
+};
+
+/**
+ * Count a spent spell attempt toward Striker. `recordChallengeDirectHit`
+ * alone left attempts at 0, so a no-cast victory still read
+ * `directHit === true` and persisted 400 Doka / 800 XP.
+ */
+export function applyChallengeDirectHit(
+  state: DirectHitChallengeState,
+  caster: { x: number; y: number },
+  target: { x: number; y: number },
+): DirectHitChallengeState {
+  return {
+    stillDirect: recordChallengeDirectHit(state.stillDirect, caster, target),
+    attempts: Math.max(0, Math.floor(Number(state.attempts) || 0)) + 1,
+  };
+}
+
+/** legendary_3: every spent attempt in range, and at least one attempt. */
+export function isStrikerChallengeComplete(progress: {
+  directHit: boolean;
+  directHitAttempts?: number;
+}): boolean {
+  return (
+    progress.directHit === true &&
+    Math.max(0, Math.floor(Number(progress.directHitAttempts) || 0)) > 0
+  );
 }
 
 /**
