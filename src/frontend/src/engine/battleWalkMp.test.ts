@@ -53,6 +53,14 @@ describe("battleWalkMpCost / canAffordBattleWalk", () => {
     assert.equal(canAffordBattleWalk(leftover, 1, per), true);
     assert.equal(leftover + first, 6);
   });
+
+  it("a leftover 1-MP slice cannot walk 1 Frozen/Slime tile", () => {
+    // Execute used to debit path.length. Highlight already charged 2×, so a
+    // 1-MP remainder walked one more tile past the green ring.
+    assert.equal(battleWalkMpCost(1, 2), 2);
+    assert.equal(canAffordBattleWalk(1, 1, 2), false);
+    assert.equal(canAffordBattleWalk(2, 1, 2), true);
+  });
 });
 
 describe("battleWalkMpBudget", () => {
