@@ -8,6 +8,7 @@ import {
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
   firstLevelResCanHit100,
+  firstSpellLevelCostExceeds,
   formulaAp,
   jackpotPersistIfHit,
   jackpotUnclampedMean,
@@ -17,6 +18,7 @@ import {
   runLongHorizonSim,
   spawnPlaceholderDamage,
   spellFailChance,
+  spellUpgradeCostBigInt,
   summonerChance,
   victoryHpFloor,
   xpNeedExactAsNumber,
@@ -76,5 +78,20 @@ assert.equal(
   report.xpRows.find((r) => r.level === 1000)?.stackedXpTruncated,
   true,
 );
+assert.equal(
+  report.xpRows.some((r) => r.level === 10_000),
+  true,
+);
+assert.equal(report.xpRows.find((r) => r.level === 10_000)?.pBelowTier, 1);
+assert.equal(report.xpRows.find((r) => r.level === 50_000)?.pBelowTier, 1);
+assert.equal(report.persistContract.saveBattleStatsCannotLowerLevel, true);
+assert.equal(report.persistContract.maxDokaGrant, 10_000_000);
+assert.equal(report.persistContract.gameKeyBypassesApplyRewardsCeiling, true);
+assert.equal(spellUpgradeCostBigInt(0), 10n);
+assert.equal(spellUpgradeCostBigInt(14), 163_840n);
+assert.equal(firstSpellLevelCostExceeds(100_000), 14);
+assert.equal(firstSpellLevelCostExceeds(10_000_000), 20);
+assert.equal(report.persistContract.firstSpellLevelCombatDokaCannotBuy, 14);
+assert.equal(report.persistContract.firstSpellLevelGameKeyCannotBuy, 20);
 
 console.log("longHorizonSim.test: ok");
