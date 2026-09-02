@@ -56,8 +56,10 @@ import {
   toBackendLevelUpConfig,
 } from "../utils/adminContract";
 import {
+  KNOWN_ACHIEVEMENT_CONDITIONS,
   MAX_DOKA_GRANT,
   unsafeUrl,
+  validateAchievementConfig,
   validateAdBox,
   validateDokaGrant,
   validateGameConfig,
@@ -5185,24 +5187,6 @@ const newAchievement = (): AchievementConfig => ({
   active: true,
 });
 
-const ACHIEVEMENT_CONDITIONS = [
-  "first_battle_win",
-  "survive_1hp",
-  "spell_level_5",
-  "doka_1000",
-  "explore_25_maps",
-  "betrayal_witness",
-  "leader_slayer",
-  "jackpot_heal",
-  "loot_10_doka",
-  "double_betrayal",
-  "level_10",
-  "spell_master_8",
-  "critical_5_in_battle",
-  "pacifist_run",
-  "doka_10000",
-];
-
 const AchievementEditor: React.FC<{
   initial: AchievementConfig;
   onSave: (c: AchievementConfig) => void;
@@ -5299,7 +5283,7 @@ const AchievementEditor: React.FC<{
               { ...inputStyle(), appearance: "none" } as React.CSSProperties
             }
           >
-            {ACHIEVEMENT_CONDITIONS.map((c) => (
+            {KNOWN_ACHIEVEMENT_CONDITIONS.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
@@ -5340,6 +5324,11 @@ const AchievementEditor: React.FC<{
           onClick={() => {
             if (!cfg.id.trim() || !cfg.name.trim()) {
               toast.error("Achievement ID and name are required");
+              return;
+            }
+            const err = validateAchievementConfig(cfg);
+            if (err) {
+              toast.error(err);
               return;
             }
             onSave(cfg);

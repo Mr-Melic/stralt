@@ -1658,8 +1658,10 @@ actor {
     var gameConfig : AdminTypes.AdminGameConfig;
 
     // Seed the default game config on first run (fresh installs only).
+    // Sentinel is dokaSpawnBaseValue==0 — dokaSpawnChance==0 is a legal
+    // live value and must not wipe a valid admin singleton.
     do {
-        if (gameConfig.dokaSpawnChance == 0) {
+        if (AdminGuard.gameConfigNeedsSeed(gameConfig)) {
             gameConfig := AdminLib.defaultGameConfig();
         };
     };
@@ -2521,6 +2523,9 @@ actor {
         };
         if (progress.claimed) {
             return #err("Reward already claimed");
+        };
+        if (not AdminGuard.knownAchievementCondition(config.condition)) {
+            return #err("condition is not a recognized value");
         };
         // Mark as claimed.
         achievementProgress.add(key, { progress with claimed = true });

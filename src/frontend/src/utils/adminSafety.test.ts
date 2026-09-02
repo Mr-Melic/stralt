@@ -4,9 +4,11 @@ import {
   chatCooldownActive,
   clampDungeonDepth,
   clampPersistedHpWrite,
+  gameConfigNeedsSeed,
   incomingSpellLevelsWouldMint,
   isBanReasonKey,
   isBuiltInSpellId,
+  knownAchievementCondition,
   maxPersistedHp,
   persistHpWriteCap,
   proofDataMimeAllowed,
@@ -23,6 +25,7 @@ import {
   shouldWipeAchievementsOnBan,
   thresholdAchievementConditionsFromPersist,
   unsafeUrl,
+  validateAchievementConfig,
   validateAdBox,
   validateAssignRole,
   validateBossPortalAssignment,
@@ -115,6 +118,10 @@ assert.equal(
   }),
   null,
 );
+// Failure: dokaSpawnChance=0 is legal (no ground Doka) but was the actor
+// init sentinel, so a valid admin singleton was rewritten to defaults.
+assert.equal(gameConfigNeedsSeed({ dokaSpawnBaseValue: 5 }), false);
+assert.equal(gameConfigNeedsSeed({ dokaSpawnBaseValue: 0 }), true);
 
 // Failure: minRange > maxRange is a stale targeting payload.
 assert.equal(
@@ -419,6 +426,31 @@ assert.equal(
 );
 assert.equal(achievementUnlockRejected("spell_level_5", 20, 0, 5), null);
 assert.equal(achievementUnlockRejected("first_battle_win", 1, 0, 0), null);
+assert.equal(
+  achievementUnlockRejected("instant_win", 1, 0, 0),
+  "condition is not a recognized value",
+);
+assert.equal(knownAchievementCondition("first_battle_win"), true);
+assert.equal(knownAchievementCondition("instant_win"), false);
+assert.equal(
+  validateAchievementConfig({
+    id: "first_blood",
+    name: "First Blood",
+    condition: "first_battle_win",
+    dokaReward: 50,
+    description: "Win your first battle.",
+  }),
+  null,
+);
+assert.equal(
+  validateAchievementConfig({
+    id: "free_doka",
+    name: "Free Doka",
+    condition: "instant_win",
+    dokaReward: 1_000_000,
+  }),
+  "condition is not a recognized value",
+);
 
 // Failure: victory fired doka_1000 / level_10 from projected recap totals
 // (900 + 150, level 9 + XP) before applyRewards. Canister still had the

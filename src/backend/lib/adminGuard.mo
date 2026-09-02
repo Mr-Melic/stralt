@@ -200,6 +200,14 @@ module {
         null
     };
 
+    /// Fresh-install seed. dokaSpawnChance=0 is a legal live value (no ground
+    /// Doka). Using it as the sentinel rewrote a valid admin singleton to
+    /// defaultGameConfig on the next actor init. dokaSpawnBaseValue cannot be
+    /// 0 after validateGameConfig, so it is the uninitialized marker.
+    public func gameConfigNeedsSeed(config : Types.AdminGameConfig) : Bool {
+        config.dokaSpawnBaseValue == 0
+    };
+
     /// Failure: tierSize=0 is the fresh-install seed sentinel and is used as a
     /// divisor when computing player tier. Negative percents invert spawn weights.
     public func validateTierSpawnConfig(config : Types.TierSpawnConfig) : ?Text {
@@ -476,11 +484,29 @@ module {
         null
     };
 
+    public func knownAchievementCondition(condition : Text) : Bool {
+        condition == "first_battle_win"
+            or condition == "survive_1hp"
+            or condition == "spell_level_5"
+            or condition == "doka_1000"
+            or condition == "explore_25_maps"
+            or condition == "betrayal_witness"
+            or condition == "leader_slayer"
+            or condition == "jackpot_heal"
+            or condition == "loot_10_doka"
+            or condition == "double_betrayal"
+            or condition == "level_10"
+            or condition == "spell_master_8"
+            or condition == "critical_5_in_battle"
+            or condition == "pacifist_run"
+            or condition == "doka_10000"
+    };
+
     public func validateAchievementConfig(config : Types.AchievementConfig) : ?Text {
         switch (requireId(config.id, "Achievement")) { case (?e) { return ?e }; case null {} };
         switch (requireName(config.name, "Achievement")) { case (?e) { return ?e }; case null {} };
-        if (config.condition == "" or config.condition.size() > MAX_ID) {
-            return ?"condition is missing or too long";
+        if (not knownAchievementCondition(config.condition)) {
+            return ?"condition is not a recognized value";
         };
         if (config.dokaReward > 1_000_000) {
             return ?"dokaReward exceeds maximum of 1000000";
@@ -588,14 +614,19 @@ module {
         if (storedHp > allowed) { storedHp } else { allowed }
     };
 
-    /// Server-checkable achievement conditions. Combat feats stay client-trusted.
+    /// Server-checkable achievement conditions. Combat feats stay client-trusted
+    /// only when the condition is in the known catalog. An unknown string used
+    /// to pass, so adminSetAchievementConfig(condition="instant", dokaReward=1e6)
+    /// let any player markAchievementUnlocked + claim.
     public func achievementUnlockRejected(
         condition : Text,
         bestLevel : Nat,
         doka : Nat,
         bestSpellLevel : Nat,
     ) : ?Text {
-        if (condition == "level_10" and bestLevel < 10) {
+        if (not knownAchievementCondition(condition)) {
+            ?"condition is not a recognized value"
+        } else if (condition == "level_10" and bestLevel < 10) {
             ?"Level below 10"
         } else if (condition == "doka_1000" and doka < 1000) {
             ?"Doka balance below 1000"
