@@ -6,6 +6,8 @@
 **HEAD audited:** `dd275aa` (`Merge pull request #182`)  
 **Scope:** Owner tooling for the complete spell ecosystem. **No production code in this PR.**
 
+**2026-09-02 re-audit:** this delta still stands. Bindgen summon lag (09-01-002) closed; lifecycle is still `usableByPlayer=false`. Current HEAD and ACTION_IDs: [`SPELL_ADMIN_DESIGN_2026-09-02.md`](./SPELL_ADMIN_DESIGN_2026-09-02.md), [`ACTION_IDS_SDA_2026-09-02.md`](./ACTION_IDS_SDA_2026-09-02.md).
+
 This is a **delta** on [`SPELL_ADMIN_DESIGN_2026-08-31.md`](./SPELL_ADMIN_DESIGN_2026-08-31.md) (#116, merged). Sections 2–11 of that document remain the contract (canonical `SpellDefinition`, acquisition routes, observe→win→unlock, CORE–SIGNATURE pools, dependency views, soft-retire + legacy owned, studio tabs, persist sketch). This run does **not** replace that contract.
 
 It records what landed after #116, what that partial work broke, and the ACTION_IDs in [`ACTION_IDS_SDA_2026-09-01.md`](./ACTION_IDS_SDA_2026-09-01.md).
