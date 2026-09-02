@@ -544,6 +544,81 @@ function destackSpawns(
   }
 }
 
+function chebyshevDist(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+function nearerWalkableCell(
+  current: { x: number; y: number } | null,
+  candidate: { x: number; y: number },
+  origin: { x: number; y: number },
+): { x: number; y: number } {
+  if (!current) return candidate;
+  const dc = chebyshevDist(current, origin);
+  const dn = chebyshevDist(candidate, origin);
+  if (dn < dc) return candidate;
+  if (dn > dc) return current;
+  const mc = Math.abs(current.x - origin.x) + Math.abs(current.y - origin.y);
+  const mn =
+    Math.abs(candidate.x - origin.x) + Math.abs(candidate.y - origin.y);
+  if (mn < mc) return candidate;
+  if (mn > mc) return current;
+  if (candidate.y < current.y) return candidate;
+  if (candidate.y > current.y) return current;
+  if (candidate.x < current.x) return candidate;
+  return current;
+}
+
+/**
+ * Prefer the largest walkable component so a wall spawn next to a 2-tile
+ * leftover island does not relocate onto the crumb. Flooding from that
+ * crumb would then seal the real map (or punch a corridor through the CA).
+ */
+function nearestWalkableCell(
+  tiles: string[][],
+  voidTiles: Set<string>,
+  origin: { x: number; y: number },
+  w: number,
+  h: number,
+): { x: number; y: number } | null {
+  const seen = new Set<string>();
+  let bestSize = 0;
+  let bestMinDist = Number.POSITIVE_INFINITY;
+  let best: { x: number; y: number } | null = null;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!isWalkable(tiles, voidTiles, x, y, w, h)) continue;
+      const startKey = `${x},${y}`;
+      if (seen.has(startKey)) continue;
+      const component = floodFillReachable(tiles, voidTiles, { x, y }, w, h);
+      for (const k of component) seen.add(k);
+      let nearest: { x: number; y: number } | null = null;
+      for (const k of component) {
+        const p = k.split(",");
+        nearest = nearerWalkableCell(
+          nearest,
+          { x: Number(p[0]), y: Number(p[1]) },
+          origin,
+        );
+      }
+      if (!nearest) continue;
+      const minDist = chebyshevDist(nearest, origin);
+      if (
+        component.size > bestSize ||
+        (component.size === bestSize && minDist < bestMinDist)
+      ) {
+        bestSize = component.size;
+        bestMinDist = minDist;
+        best = nearest;
+      }
+    }
+  }
+  return best;
+}
+
 export function legalizePlayerSpawn(
   tiles: string[][],
   voidTiles: Set<string>,
@@ -551,10 +626,15 @@ export function legalizePlayerSpawn(
   w: number,
   h: number,
 ): { x: number; y: number } {
-  if (isWalkable(tiles, voidTiles, spawn.x, spawn.y, w, h)) {
-    return { x: spawn.x, y: spawn.y };
-  }
-  // Wall (not void): carve the spawn cell so the player stands on floor.
+  // Prefer the largest existing floor/portal component over carving a
+  // 1-tile pocket inside a wall mass (fortress corners) or relocating onto
+  // a leftover island that is merely closer. Carving first used to isolate
+  // the player so ensureReachability had to punch a new corridor through
+  // the CA; picking the crumb used to seal the intended map.
+  const existing = nearestWalkableCell(tiles, voidTiles, spawn, w, h);
+  if (existing) return existing;
+  // No walkable cell yet (wall-only / void spawn): carve the spawn cell
+  // when it is a wall, then fall back to a 3×3 around a clamped origin.
   if (
     spawn.x >= 0 &&
     spawn.y >= 0 &&
@@ -565,19 +645,6 @@ export function legalizePlayerSpawn(
     tiles[spawn.y][spawn.x] = "floor";
     return { x: spawn.x, y: spawn.y };
   }
-  let best: { x: number; y: number } | null = null;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!isWalkable(tiles, voidTiles, x, y, w, h)) continue;
-      const dist = Math.max(Math.abs(x - spawn.x), Math.abs(y - spawn.y));
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = { x, y };
-      }
-    }
-  }
-  if (best) return best;
   const cx = Math.max(0, Math.min(w - 1, spawn.x));
   const cy = Math.max(0, Math.min(h - 1, spawn.y));
   for (let dy = -1; dy <= 1; dy++) {
@@ -1181,6 +1248,8 @@ export interface SolvabilityReport {
   stackedPortals: number;
   enemiesOnPortal: number;
   portalTileMismatch: number;
+  leftoverIslands: number;
+  outOfBounds: number;
   clearingUnlocks: boolean;
   failures: string[];
 }
@@ -1365,6 +1434,27 @@ export function evaluateSolvability(
   if (portals.length > 0 && !clearingUnlocks) {
     failures.push("clearing-locked");
   }
+  let leftoverIslands = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!isWalkable(tiles, vt, x, y, w, h)) continue;
+      if (!reachable.has(`${x},${y}`)) leftoverIslands += 1;
+    }
+  }
+  if (leftoverIslands > 0) {
+    failures.push(`leftover-islands:${leftoverIslands}`);
+  }
+  const inBounds = (c: { x: number; y: number }) =>
+    c.x >= 0 && c.y >= 0 && c.x < w && c.y < h;
+  let outOfBounds = 0;
+  if (!inBounds(playerSpawn)) outOfBounds += 1;
+  for (const p of portals) {
+    if (!inBounds(p)) outOfBounds += 1;
+  }
+  for (const s of spawns) {
+    if (!inBounds(s)) outOfBounds += 1;
+  }
+  if (outOfBounds > 0) failures.push(`out-of-bounds:${outOfBounds}`);
   return {
     ok: failures.length === 0,
     playerSpawnLegal,
@@ -1376,6 +1466,8 @@ export function evaluateSolvability(
     stackedPortals,
     enemiesOnPortal,
     portalTileMismatch,
+    leftoverIslands,
+    outOfBounds,
     clearingUnlocks,
     failures,
   };

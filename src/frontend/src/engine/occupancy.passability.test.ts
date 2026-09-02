@@ -51,6 +51,19 @@ describe("isCellFree", () => {
     assert.equal(isCellFree({ x: 7, y: 7 }, occupancy), false);
     assert.equal(isCellFree({ x: 8, y: 8 }, occupancy), false);
   });
+
+  it("allows cells past 16 when the occupancy grid is wider", () => {
+    const tiles = [Array.from({ length: 20 }, () => true)];
+    const occupancy: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles: new Set(),
+      portals: new Set(),
+      isOccupied: () => false,
+    };
+    assert.equal(isCellFree({ x: 18, y: 0 }, occupancy), true);
+    assert.equal(isCellFree({ x: 20, y: 0 }, occupancy), false);
+  });
 });
 
 describe("findNearestFreeCell", () => {

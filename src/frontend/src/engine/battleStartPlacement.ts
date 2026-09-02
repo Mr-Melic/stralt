@@ -13,11 +13,11 @@
  * React-free. Callers own refs/setters and the OccupancyContext.
  */
 
-import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import {
   type OccupancyContext,
   findNearestFreeCell,
   isCellFree,
+  occKey,
 } from "./occupancy.ts";
 
 /** A cell other combatants must stay at least `minDist` Chebyshev from. */
@@ -25,6 +25,46 @@ export interface BattleStartAvoid {
   x: number;
   y: number;
   minDist: number;
+}
+
+function occupancyGridSize(ctx: OccupancyContext): { w: number; h: number } {
+  return { h: ctx.tiles.length, w: ctx.tiles[0]?.length ?? 0 };
+}
+
+/** Walkable island containing `origin` (tiles + void + barriers, ignore occupancy). */
+function floodOriginComponent(
+  origin: { x: number; y: number },
+  ctx: OccupancyContext,
+): Set<string> {
+  const { w, h } = occupancyGridSize(ctx);
+  const seen = new Set<string>();
+  const walk = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return false;
+    if (!ctx.tiles[y]?.[x]) return false;
+    const k = occKey(x, y);
+    if (ctx.voidTiles.has(k) || ctx.barriers.has(k)) return false;
+    return true;
+  };
+  if (!walk(origin.x, origin.y)) return seen;
+  const q = [{ x: origin.x, y: origin.y }];
+  seen.add(occKey(origin.x, origin.y));
+  while (q.length > 0) {
+    const cur = q.shift()!;
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      const nx = cur.x + dx;
+      const ny = cur.y + dy;
+      const k = occKey(nx, ny);
+      if (seen.has(k) || !walk(nx, ny)) continue;
+      seen.add(k);
+      q.push({ x: nx, y: ny });
+    }
+  }
+  return seen;
 }
 
 /**
@@ -39,7 +79,8 @@ export interface BattleStartAvoid {
  * origin using `minDistFallback` as the radius. That fallback does not
  * re-apply spacing — it only guarantees a free tile when the map is cramped.
  *
- * Returns null only when the fallback also finds no free cell.
+ * Scan stays on the origin walkable component so leftover CA islands cannot
+ * win max-spacing. Returns null only when the fallback also finds no free cell.
  */
 export function findBattleStartCell(
   origin: { x: number; y: number },
@@ -47,6 +88,10 @@ export function findBattleStartCell(
   minDistFallback: number,
   ctx: OccupancyContext,
 ): { x: number; y: number } | null {
+  // Max-spacing used to scan the whole WORLD_GRID_SIZE and teleport onto a
+  // leftover CA island. Stay on the origin's walkable component.
+  const component = floodOriginComponent(origin, ctx);
+  const { w, h } = occupancyGridSize(ctx);
   // Pass 1: collect every cell that is free AND meets EVERY per-position
   // spacing target. A cell qualifies iff for each avoided position p,
   // Chebyshev(cell, p) >= p.minDist. This lets the caller demand, e.g.,
@@ -57,9 +102,10 @@ export function findBattleStartCell(
     minD: number;
     dFromOrigin: number;
   }[] = [];
-  for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-    for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
+  for (let gy = 0; gy < h; gy++) {
+    for (let gx = 0; gx < w; gx++) {
       const cell = { x: gx, y: gy };
+      if (!component.has(occKey(gx, gy))) continue;
       if (!isCellFree(cell, ctx)) continue;
       let ok = true;
       let minD = Number.POSITIVE_INFINITY;
@@ -95,5 +141,7 @@ export function findBattleStartCell(
   // ctx.isOccupied already knows about, including the ones we just placed).
   // minDistFallback is the ring-scan radius used here (typically the
   // loosest spacing target so the fallback still tries to respect spacing).
-  return findNearestFreeCell(origin, ctx, minDistFallback);
+  return findNearestFreeCell(origin, ctx, minDistFallback, undefined, (cell) =>
+    component.has(occKey(cell.x, cell.y)),
+  );
 }
