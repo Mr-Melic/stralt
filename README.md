@@ -10,7 +10,7 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | :--- | :--- |
 | `src/backend/main.mo` | Canonical Motoko actor (characters, Doka, admin config, rewards) |
 | `src/backend/lib/adminGuard.mo` | Admin input / URL / retirement / rollback guards (authoritative) |
-| `src/backend/migrations/` | Stable-memory chain: `20260826` genesis, `20260827` drop-transients, `20260831` summon + rollback (frozen), `20260901` GameKey maps (frozen once applied) |
+| `src/backend/migrations/` | Stable-memory chain: `20260801` genesis, `20260803_185500` name-only, `20260827` drop-transients, `20260831` summon + rollback + GameKey (frozen, deployed), `20260901` name-only. `snapshots/` = deployed `.most` baselines |
 | `src/backend/types/` | Shared Motoko types (`common.mo` combat, `admin.mo` config + summon fields) |
 | `src/frontend/src/` | React + Vite client |
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit; can lag Motoko public types |
@@ -42,8 +42,8 @@ pnpm typecheck    # tsc --noEmit in each package
 pnpm check        # Biome (unused vars + hook deps are errors)
 pnpm fix          # biome --write on frontend
 pnpm build        # frontend Vite build + env.json copy
-mops check        # Motoko + empty .old check-stable (or: caffeine check)
-                  # New stables: also mops check-stable snapshots/post-20260831.most
+mops check        # Motoko + check-stable vs .old = deployed Caffeine signature (or: caffeine check)
+                  # New stables: bash scripts/caffeine-import-gate.sh backend (all snapshots/deployed/*.most)
 ```
 
 Caffeine GitHub → import is exactly those check commands. Run `bash scripts/caffeine-import-gate.sh all` (or `pnpm gate`) and `bash scripts/open-pr-stack-compat.sh --self` before a PR. See [docs/automation/CAFFEINE_IMPORT_GATES.md](docs/automation/CAFFEINE_IMPORT_GATES.md) and [docs/automation/OPEN_PR_STACK_COMPAT.md](docs/automation/OPEN_PR_STACK_COMPAT.md).

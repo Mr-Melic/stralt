@@ -8,9 +8,11 @@ Caffeine GitHub → import uses:
 | Frontend | `src/frontend/caffeine.toml` `[build]` | `pnpm build` (vite/esbuild; duplicate exports fail here) |
 | Backend | `src/backend/caffeine.toml` `[check]` | `mops check` (also `caffeine check` at the workspace) |
 
-`pnpm check` errors on unused locals, exhaustive React hook deps, and `noRedeclare` (`src/frontend/biome.json`). Duplicate `export function` implementations in one file also fail `python3 scripts/check-duplicate-exports.py` and Caffeine `[build]` (`pnpm build` / vite esbuild). `mops check` compiles Motoko, runs the migration chain (`check-limit = 4`), and check-stable against the tracked empty-canister baseline `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked). That empty baseline does **not** prove an upgrade of the live Caffeine canister (`cwofb-yqaaa-aaaap-qp45q-cai`). The gate script also runs `python3 scripts/check-eop-stables.py` and `mops check-stable` against `snapshots/post-20260831.most` (populated tail after 20260831, before GameKey — first deploy trapped) **and** `post-20260901.most` (GameKey already applied).
+`pnpm check` errors on unused locals, exhaustive React hook deps, and `noRedeclare` (`src/frontend/biome.json`). Duplicate `export function` implementations in one file also fail `python3 scripts/check-duplicate-exports.py` and Caffeine `[build]` (`pnpm build` / vite esbuild). `mops check` compiles Motoko, runs the migration chain (`check-limit = 5`), and check-stable against the tracked `.old/src/backend/dist/backend.most` (directory is gitignored; that file is force-tracked). Since the 2026-09-02 deployed-shape fix that file is the **reconstructed signature of the deployed Caffeine canister** (`zh6cg-aaaaa-aaaad-aar2q-cai` = PR #258 build), never a blank `actor { };` — the blank baseline from #177 let three incompatible deploys pass `mops check`. The gate script also runs `python3 scripts/check-eop-stables.py`, `mops check-stable` against every reconstructed live shape under `src/backend/migrations/snapshots/deployed/*.most` plus `snapshots/empty-canister.most`, and expects `snapshots/unsupported/*.most` to fail (documented limits). See `src/backend/migrations/snapshots/README.md`.
 
-Do **not** require `caffeine build` / `mops build` for this gate (PocketIC / dfx).
+Caffeine backend build is exactly `mops build` from the repo root (`src/backend/caffeine.toml` `[build]`), so the mops migration chain **is** applied at deploy. The runtime loads the canister at the chain position of the **latest applied migration name**; renaming/deleting a recorded name or changing a shipped `NewActor` traps `RTS error: Memory-incompatible program upgrade` (IC0503) even when static check-stable passes.
+
+Do **not** require `caffeine build` / `mops build` for this gate (PocketIC / dfx). When `pocket-ic` is available, `node scripts/eop-upgrade-matrix.mjs` is the runtime proof (install each candidate commit, upgrade to HEAD, probe a user profile).
 
 Local:
 
@@ -23,8 +25,10 @@ pnpm --dir src/frontend build
 python3 scripts/check-eop-stables.py
 mops check          # or: caffeine check
 mops check --no-lint --no-check-limit
-mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
-mops check-stable src/backend/migrations/snapshots/post-20260901.most backend
+for f in src/backend/migrations/snapshots/deployed/*.most src/backend/migrations/snapshots/empty-canister.most; do
+  mops check-stable "$f" backend
+done
+node scripts/eop-upgrade-matrix.mjs   # optional runtime proof; needs pocket-ic
 ```
 
 CI: `.github/workflows/caffeine-import-gate.yml` (frontend + backend jobs on every PR and `main`). Both jobs always run. Neither is allowed to skip.
@@ -40,9 +44,9 @@ Import failed after merge bursts on:
 | Format nits | `pnpm check` (formatter enabled) |
 | Mock TS2740 | `pnpm typecheck` |
 | Motoko M0215 / M0001 / M0155 | `mops check` / `caffeine check` |
-| Empty-canister M0263 | `mops check` check-stable vs `.old` + genesis migration |
+| Empty-canister M0263 | `mops check --no-check-limit` + `mops check-stable snapshots/empty-canister.most` + genesis migration `20260801_000000` (`OldActor = {}`) |
 | Duplicate `export function` (esbuild “already been declared”) | `python3 scripts/check-duplicate-exports.py` + `pnpm typecheck` (TS2393) + Biome `noRedeclare` + `pnpm --dir src/frontend build` |
-| Populated EOP `Memory-incompatible program upgrade` / IC0503 | `python3 scripts/check-eop-stables.py` + `mops check-stable` vs `post-20260831.most` **and** `post-20260901.most` + a **new later** migration (never edit a shipped `NewActor`) |
+| Populated EOP `Memory-incompatible program upgrade` / IC0503 (3× on `cwofb…` / `zh6cg…`) | `python3 scripts/check-eop-stables.py` (frozen `NewActor`s, recorded chain names must stay files, `.old` must be a real signature) + `mops check-stable` vs `.old` **and** every `snapshots/deployed/*.most` + a **new later** migration (never edit a shipped `NewActor`) + `node scripts/eop-upgrade-matrix.mjs` when PocketIC is present |
 
 Agents must not treat those as “pre-existing, skip.” `AGENTS.md` Verified Commands and `.cursor/rules/caffeine-import-gate.mdc` say the same.
 
@@ -65,18 +69,27 @@ Motoko compile, or empty-canister stable-compat as pre-existing.
 See AGENTS.md Verified Commands and docs/automation/CAFFEINE_IMPORT_GATES.md.
 
 EOP / Caffeine deploy (mandatory when adding persistent let/var on main.mo):
-Add a NEW later file under src/backend/migrations/ (lex order). Never edit a
-shipped NewActor (20260826 / 20260827 / 20260831 / 20260901 once Caffeine
-applied them). OldActor = currently deployed tail; NewActor = OldActor + new
-stables with empty-map / zero defaults. Bump mops.toml check-limit to the chain
-length. python3 scripts/check-eop-stables.py must pass. mops check vs .old is
-empty-import only. Also run:
-  mops check --no-lint
-  mops check --no-lint --no-check-limit
-  mops check-stable src/backend/migrations/snapshots/post-20260831.most backend
-  mops check-stable src/backend/migrations/snapshots/post-20260901.most backend
+Caffeine runs `mops build`, so the mops migration chain IS deployed. The runtime
+loads the canister at the chain position of the LATEST APPLIED migration name.
+Add a NEW later file under src/backend/migrations/ (after 20260901_000000).
+Never edit a shipped NewActor (20260801 / 20260803_185500 / 20260827 /
+20260831 / 20260901) and never delete or rename a chain file — a live canister
+recorded those names; a missing name falls back to the {} genesis and traps.
+New file: input = only the fields you transform ({} for pure additions);
+output = the new stables with empty-map / zero defaults. Bump mops.toml
+check-limit to the chain length. python3 scripts/check-eop-stables.py must pass.
+.old/src/backend/dist/backend.most is the real deployed signature (PR #258 build
+on zh6cg-aaaaa-aaaad-aar2q-cai) — never replace it with a blank actor. Also run:
+  bash scripts/caffeine-import-gate.sh backend
+  (= mops check, mops check --no-lint --no-check-limit, mops check-stable vs
+   .old, snapshots/deployed/*.most, empty-canister.most; unsupported/ must fail)
+  node scripts/eop-upgrade-matrix.mjs   # when pocket-ic is installed
 RTS error: Memory-incompatible program upgrade (IC0503) = this class of bug.
-Do not delete needed stables from main.mo to make the upgrade pass.
+Static check-stable passing is necessary, not sufficient (it passed for #177,
+#259 and #309 while the replica trapped). Do not delete needed stables from
+main.mo to make the upgrade pass. After a successful Caffeine deploy, refresh
+.old with that build's src/backend/dist/backend.most and add it under
+src/backend/migrations/snapshots/deployed/.
 
 Duplicate TS exports (mandatory):
 Keep one `export function` / `export const` implementation per name in a file.
@@ -183,7 +196,7 @@ Dashboard URL for any readable id: `https://cursor.com/automations/<id>`.
 | `scripts/caffeine-import-gate.sh` | Missing | Shared frontend + backend runner |
 | Root `package.json` scripts | typecheck / check / fix / build | Added `gate` / `gate:frontend` / `gate:backend` |
 | `src/frontend/caffeine.toml` / `biome.json` | Already Caffeine-shaped after #181 | Unchanged |
-| `src/backend/caffeine.toml` / `mops.toml` | Already `mops check` + check-stable | `check-limit` tracks chain length; populated snapshot is a second check-stable |
+| `src/backend/caffeine.toml` / `mops.toml` | Already `mops check` + check-stable | `check-limit` tracks chain length; `.old` = deployed PR #258 signature; `snapshots/deployed/*.most` are additional check-stable baselines; `scripts/eop-upgrade-matrix.mjs` is the PocketIC runtime proof |
 | `.cursor/environment.json` | Not in repo (personal db-backed env) | Cannot edit |
 | Dependabot / pre-commit / Husky | None | Not added (no extra stack) |
 | Cursor environment install/start | Owner-restricted; no repo file | Cannot edit |

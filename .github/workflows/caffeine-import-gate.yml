@@ -72,5 +72,5 @@ jobs:
         run: npm install -g ic-mops@3.2.0
       - name: Install Motoko packages (locked)
         run: mops install --locked
-      - name: Motoko check (empty .old + populated EOP snapshots + frozen NewActor)
+      - name: Motoko check (deployed .old + snapshots/deployed EOP baselines + frozen NewActor)
         run: bash scripts/caffeine-import-gate.sh backend -- --locked

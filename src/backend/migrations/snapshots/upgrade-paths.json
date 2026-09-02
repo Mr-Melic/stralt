@@ -42,6 +42,11 @@
       "expect": "ok"
     },
     {
+      "name": "REGRESSION: zh6cg (PR #258) upgraded with PR #309 main — the failed Caffeine deploy (GameKey moved out of applied 20260831)",
+      "commits": ["58302bc", "eb03bdc"],
+      "expect": "fail"
+    },
+    {
       "name": "UNSUPPORTED: PR #177..#256 shape, GameKey never applied (same name 20260831, fewer fields)",
       "commits": ["036600f"],
       "expect": "fail"
