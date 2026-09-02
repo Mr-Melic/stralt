@@ -6329,6 +6329,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             const settle = await resolveOneShotCreditSettle(credited, {
               committedDoka: progressPersistRef.current.snapshot().doka,
+              walletSeeded: progressPersistRef.current.isWalletSeeded(),
               readWallet: () =>
                 (
                   actor as {
@@ -11279,6 +11280,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
                 const settle = await resolveOneShotCreditSettle(credited, {
                   committedDoka: progressPersistRef.current.snapshot().doka,
+                  walletSeeded: progressPersistRef.current.isWalletSeeded(),
                   readWallet: () =>
                     (
                       actor as {
@@ -11341,6 +11343,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             const settle = await resolveOneShotCreditSettle(credited, {
               committedDoka: progressPersistRef.current.snapshot().doka,
+              walletSeeded: progressPersistRef.current.isWalletSeeded(),
               readWallet: () =>
                 (
                   actor as {
