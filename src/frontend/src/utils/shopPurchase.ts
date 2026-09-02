@@ -109,14 +109,6 @@ export function creditedDokaDelta(
   return Math.max(0, credited - previous);
 }
 
-/** Granted Doka from redeemGameKey `#ok(dokaAmount)`, not a wallet query. */
-export function dokaGainedFromGameKeyRedeem(
-  result: { ok: number } | { err: string },
-): number {
-  if (!("ok" in result)) return 0;
-  return Math.max(0, Math.floor(Number(result.ok) || 0));
-}
-
 /**
  * processPendingPurchases is a credit. The 60s remount retry and a no-op
  * complete both still read getCallerDokaBalance and used to commit that

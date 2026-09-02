@@ -55,11 +55,6 @@ export function validateGameKeyConsent(consent: boolean): string | null {
     : "Consent is required to use this email for the GameKey";
 }
 
-/** Strip wrapping/newlines from an emailed 120-character GameKey. */
-export function normalizeGameKeyInput(raw: string): string {
-  return String(raw ?? "").replace(/\s+/g, "");
-}
-
 export function validateGameKeyFormat(code: string): string | null {
   if (code.length < GAME_KEY_LENGTH) return "GameKey is too short";
   if (code.length > GAME_KEY_LENGTH) return "GameKey is too long";
@@ -158,23 +153,6 @@ export function unwrapOptRecord(value: unknown): unknown | null {
   if (value == null) return null;
   if (Array.isArray(value)) return value[0] ?? null;
   return value;
-}
-
-/**
- * `getMyGameKeyPurchaseStatus` is Candid `opt record`. Bindgen may return
- * `[]` (none), `[row]`, or the row. Mapping `[]` as a record used to yield
- * `status: "pending"` with an empty id, so Buy Doka blocked a new request
- * and never showed the real queue.
- */
-export function parseMyGameKeyPurchaseStatus(
-  raw: unknown,
-): GameKeyRequestView | null {
-  const inner = unwrapOptRecord(raw);
-  if (inner == null || typeof inner !== "object" || Array.isArray(inner)) {
-    return null;
-  }
-  const mapped = mapGameKeyRequestFromBackend(inner);
-  return mapped.id.length > 0 ? mapped : null;
 }
 
 export function readGameKeyCmdResult(

@@ -42,6 +42,11 @@ function persistSmallScreenContinue(): void {
 
 /** Warns on small screens; Continue lets the player enter anyway. */
 function SmallScreenGuard({ onContinue }: { onContinue: () => void }) {
+  const continueRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    continueRef.current?.focus();
+  }, []);
+
   return (
     <dialog
       open
@@ -105,6 +110,7 @@ function SmallScreenGuard({ onContinue }: { onContinue: () => void }) {
           experience, use a device with a larger screen (768px or wider).
         </p>
         <button
+          ref={continueRef}
           type="button"
           data-ocid="small_screen.continue_button"
           onClick={onContinue}
