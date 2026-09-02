@@ -9,6 +9,7 @@ import {
   occKey,
   occupantsSealProgression,
   progressionReserved,
+  progressionSearchRadius,
   relocateOffMandatoryCells,
   resolveControlledSummonMoveDest,
   resolveProgressionSafeOccupantCell,
@@ -202,6 +203,112 @@ describe("long unique bridges relocate off-path beyond radius 8", () => {
         moved,
       ]),
       false,
+    );
+  });
+
+  it("spawn fallback used to miss the alcove beyond radius 6 on a 16-wide unique corridor", () => {
+    // 1-wide floor (0,0)→(15,0), portal at (15,0), alcove at (0,1).
+    // Requested cell (14,0) is reserved. Manhattan to the alcove is 15.
+    const tiles = [
+      Array.from({ length: 16 }, () => true),
+      Array.from({ length: 16 }, (_, x) => x === 0),
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["15,0"]);
+    const occupied = new Set<string>(["0,0"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const reserved = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 0 },
+    );
+    const far = { x: 14, y: 0 };
+    assert.equal(reserved.has("14,0"), true);
+    assert.equal(
+      progressionSearchRadius(ctx) >= 16 + 2,
+      true,
+      "grid radius must cover the far alcove, not a hardcoded 6/8",
+    );
+    assert.equal(
+      findNearestFreeCell(far, ctx, 6, reserved),
+      null,
+      "radius 6 used to leave the wolf on the only portal path",
+    );
+    assert.equal(
+      findNearestFreeCell(far, ctx, 8, reserved),
+      null,
+      "radius 8 also misses Manhattan 15",
+    );
+    assert.deepEqual(
+      findNearestFreeCell(far, ctx, progressionSearchRadius(ctx), reserved),
+      { x: 0, y: 1 },
+    );
+
+    // Omit progressStart so unseal cannot hide a reverted spawn radius.
+    const spawned = spawnSummonUnit(
+      far,
+      {
+        id: "summon-wolf",
+        name: "Summon Wolf",
+        summonUnitDef: { pieceType: "pawn", level: 1 },
+        summonAI: "hunter",
+      },
+      "player",
+      1,
+      () => {},
+      () => ({ init: 4 }),
+      0,
+      { ...ctx, reserved },
+    );
+    assert.deepEqual(
+      { x: spawned.summon.x, y: spawned.summon.y },
+      { x: 0, y: 1 },
+    );
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 0 }, [
+        { x: spawned.summon.x, y: spawned.summon.y },
+      ]),
+      false,
+    );
+  });
+
+  it("unseal slides a far unique occupant into the spawn alcove", () => {
+    const tiles = [
+      Array.from({ length: 16 }, () => true),
+      Array.from({ length: 16 }, (_, x) => x === 0),
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["15,0"]);
+    const occupied = new Set<string>(["0,0"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const [moved] = unsealProgressionOccupants(
+      [{ x: 14, y: 0 }],
+      tiles,
+      voidTiles,
+      portals,
+      { x: 0, y: 0 },
+      ctx,
+    );
+    assert.notEqual(occKey(moved.x, moved.y), "14,0");
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 0, y: 0 }, [
+        moved,
+      ]),
+      false,
+      "a leftover summon on the 16-wide unique bridge used to seal the portal",
     );
   });
 });
