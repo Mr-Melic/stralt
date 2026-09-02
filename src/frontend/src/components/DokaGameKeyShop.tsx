@@ -8,11 +8,10 @@ import {
   MOLLIE_PAYMENT_LINK,
   euroTextToCents,
   hintedEurosLabel,
-  mapGameKeyRequestFromBackend,
+  parseMyGameKeyPurchaseStatus,
   playerGameKeyStatusCopy,
   readGameKeyCmdResult,
   suggestedDokaFromEuroCents,
-  unwrapOptRecord,
   validateGameKeyConsent,
   validateGameKeyEmail,
   validateGameKeyFormat,
@@ -84,8 +83,9 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   const loadStatus = useCallback(async () => {
     if (!actor?.getMyGameKeyPurchaseStatus) return;
     try {
-      const raw = unwrapOptRecord(await actor.getMyGameKeyPurchaseStatus());
-      setStatus(raw ? mapGameKeyRequestFromBackend(raw) : null);
+      setStatus(
+        parseMyGameKeyPurchaseStatus(await actor.getMyGameKeyPurchaseStatus()),
+      );
     } catch {
       setStatus(null);
     }

@@ -155,6 +155,23 @@ export function unwrapOptRecord(value: unknown): unknown | null {
   return value;
 }
 
+/**
+ * `getMyGameKeyPurchaseStatus` is Candid `opt record`. Bindgen may return
+ * `[]` (none), `[row]`, or the row. Mapping `[]` as a record used to yield
+ * `status: "pending"` with an empty id, so Buy Doka blocked a new request
+ * and never showed the real queue.
+ */
+export function parseMyGameKeyPurchaseStatus(
+  raw: unknown,
+): GameKeyRequestView | null {
+  const inner = unwrapOptRecord(raw);
+  if (inner == null || typeof inner !== "object" || Array.isArray(inner)) {
+    return null;
+  }
+  const mapped = mapGameKeyRequestFromBackend(inner);
+  return mapped.id.length > 0 ? mapped : null;
+}
+
 export function readGameKeyCmdResult(
   result: unknown,
   method: string,
