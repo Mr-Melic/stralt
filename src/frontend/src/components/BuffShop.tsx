@@ -302,7 +302,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
         className="stone-frame"
         style={{
           width: "min(520px, 94vw)",
-          maxHeight: "80vh",
+          maxHeight: "min(80vh, 80dvh)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -321,7 +321,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
             data-ocid="buff_shop.close_button"
             onClick={onClose}
             aria-label="Close shop"
-            className="stone-btn-slate"
+            className="stone-btn-slate stone-modal-close"
             style={{
               width: 30,
               height: 30,

@@ -889,9 +889,19 @@ button,
   .stone-nav-btn,
   .stone-touch-target,
   .stone-battle-action,
-  .stone-top-bar button {
+  .stone-top-bar button,
+  .stone-modal-close {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  /* iOS zooms focused fields under 16px; keep game labels 12px but not inputs */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(
+      [type="color"]
+    ):not([type="hidden"]),
+  textarea,
+  select {
+    font-size: 16px;
   }
 
   /* Prevent zoom on double tap without allowing canvas pan/zoom */

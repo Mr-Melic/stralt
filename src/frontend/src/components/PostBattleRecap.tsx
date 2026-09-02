@@ -623,6 +623,7 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
               textTransform: "uppercase",
               cursor: "pointer",
               transition: "all 0.2s",
+              minHeight: 44,
               boxShadow: "0 0 12px oklch(var(--dofus-border-gold) / 0.2)",
             }}
             onMouseEnter={(e) => {

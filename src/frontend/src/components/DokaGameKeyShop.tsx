@@ -236,7 +236,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
           borderRadius: 14,
           padding: 28,
           width: "min(560px, 95vw)",
-          maxHeight: "90vh",
+          maxHeight: "min(90vh, 90dvh)",
           overflowY: "auto",
           boxShadow: "0 0 60px rgba(192,57,43,0.5)",
           position: "relative",

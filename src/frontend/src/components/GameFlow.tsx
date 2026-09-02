@@ -509,7 +509,7 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         className="stone-frame"
         style={{
           width: "min(640px, 94vw)",
-          maxHeight: "80vh",
+          maxHeight: "min(80vh, 80dvh)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -528,7 +528,7 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             data-ocid="leaderboard.close_button"
             onClick={onClose}
             aria-label="Close leaderboard"
-            className="stone-btn-slate"
+            className="stone-btn-slate stone-modal-close"
             style={{
               width: 30,
               height: 30,
