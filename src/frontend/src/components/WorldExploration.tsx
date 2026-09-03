@@ -360,6 +360,7 @@ import {
   releaseFlag,
   releasePickupId,
   resolveOneShotCreditSettle,
+  settleOneShotPersistLock,
   tryClaimDungeonChainBonus,
   tryClaimFlag,
   tryClaimPickupId,
@@ -6353,8 +6354,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }
                 ).getCallerDokaBalance?.() ?? Promise.resolve(null),
             });
+            settleOneShotPersistLock(progressPersistRef.current, settle);
             if (settle.kind === "commit") {
-              progressPersistRef.current.commit({ doka: settle.doka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
             } else if (settle.kind === "release") {
               releaseFlag(dungeonCompletionSavedRef);
@@ -11316,8 +11317,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       }
                     ).getCallerDokaBalance?.() ?? Promise.resolve(null),
                 });
+                settleOneShotPersistLock(progressPersistRef.current, settle);
                 if (settle.kind === "commit") {
-                  progressPersistRef.current.commit({ doka: settle.doka });
                   onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
                 } else if (settle.kind === "release") {
                   releaseFlag(shrineRewardClaimedRef);
@@ -11379,8 +11380,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }
                 ).getCallerDokaBalance?.() ?? Promise.resolve(null),
             });
+            settleOneShotPersistLock(progressPersistRef.current, settle);
             if (settle.kind === "commit") {
-              progressPersistRef.current.commit({ doka: settle.doka });
               onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
               setDokaLoot((prev) =>
                 prev.map((l) =>

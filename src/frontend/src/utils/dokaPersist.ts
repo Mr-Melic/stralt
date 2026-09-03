@@ -214,6 +214,32 @@ export async function resolveOneShotCreditSettle(
   return { kind: "keep" };
 }
 
+export type OneShotPersistLock = {
+  commit: (next: { doka?: number }) => void;
+  noteUnconfirmedCredit: () => void;
+};
+
+/**
+ * Apply a one-shot settle to the persist lock.
+ *
+ * `keep` used to no-op: the lock stayed at the pre-credit snapshot, so a
+ * later saveBattleStats heal wrote that snapshot and wiped the grant.
+ * Note the unconfirmed credit so absolute writes re-fetch (or skip) instead
+ * of trusting the stale committed wallet.
+ */
+export function settleOneShotPersistLock(
+  persist: OneShotPersistLock,
+  settle: OneShotCreditSettle,
+): void {
+  if (settle.kind === "commit") {
+    persist.commit({ doka: settle.doka });
+    return;
+  }
+  if (settle.kind === "keep") {
+    persist.noteUnconfirmedCredit();
+  }
+}
+
 function classifyPersistDokaCreditError(
   error: unknown,
 ): "rejected" | "transport" {
