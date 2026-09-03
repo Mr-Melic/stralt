@@ -8,6 +8,7 @@ import {
   isChallengeCompleted,
   isChallengeFailed,
 } from "../utils/challengeCompletion";
+import { shouldShowChallengeHud } from "../utils/challengeHudVisibility";
 import { logDebugWarn } from "../utils/debugLogger";
 
 export type {
@@ -169,7 +170,16 @@ export default function ChallengePanel({
     });
   }, [pos, persistLayout]);
 
-  if (!visible || !currentChallenge) return null;
+  if (
+    !shouldShowChallengeHud({
+      offerVisible: visible,
+      accepted,
+      hasChallenge: currentChallenge != null,
+    }) ||
+    !currentChallenge
+  ) {
+    return null;
+  }
 
   const tierStyle = TIER_STYLES[currentChallenge.tier];
   const failed =
