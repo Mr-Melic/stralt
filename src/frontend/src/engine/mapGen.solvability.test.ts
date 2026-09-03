@@ -31,9 +31,11 @@ import {
   applyVoidTiles,
   attachWhitePortalAfterLegalize,
   canPlaceWalkBlocker,
+  countProgressionDumpCells,
   createSeededRng,
   evaluateSolvability,
   finalizePlayableLayout,
+  isEnemyWanderFloor,
   resetFailedGenerationVoids,
   sequentialClearUnlocks,
 } from "./mapGen.ts";
@@ -1032,6 +1034,97 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     assert.equal(finalized.tiles[1][4], F);
     assert.equal(finalized.tiles[1][5], F);
   });
+
+  it("seed-unique-corridor-no-alcove: punches a dump cell so corpses cannot seal the exit", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][5] = "portal";
+    const before = countProgressionDumpCells(
+      tiles,
+      new Set(),
+      { x: 1, y: 1 },
+      [{ x: 5, y: 1 }],
+      7,
+      3,
+    );
+    assert.ok(before.mandatory > 0, "1-wide corridor must be a unique bridge");
+    assert.equal(before.dump, 0, "fixture must start with no dump cell");
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals: [{ x: 5, y: 1 }],
+      spawns: [],
+      w: 7,
+      h: 3,
+    });
+    const afterCounts = countProgressionDumpCells(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      7,
+      3,
+    );
+    assert.ok(
+      afterCounts.dump > 0,
+      "must punch a dead-end alcove rather than carve a new corridor",
+    );
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      7,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(
+      finalized.tiles[1].filter((t) => t === F).length >= 4,
+      true,
+      "must not wall the corridor (aesthetics)",
+    );
+  });
+
+  it("seed-wander-across-portal: wander targets stay on the fight graph", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][3] = "portal";
+    const portals = [{ x: 3, y: 1 }];
+    assert.equal(
+      isEnemyWanderFloor(
+        tiles,
+        new Set(),
+        portals,
+        { x: 1, y: 1 },
+        { x: 5, y: 1 },
+        7,
+        3,
+      ),
+      false,
+      "Chebyshev pick beyond the gate must be rejected",
+    );
+    assert.equal(
+      isEnemyWanderFloor(
+        tiles,
+        new Set(),
+        portals,
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        7,
+        3,
+      ),
+      true,
+      "same-side floor must stay legal",
+    );
+  });
 });
 
 describe("seeded world property suite", () => {
@@ -1231,6 +1324,18 @@ describe("seeded world property suite", () => {
     const failures: string[] = [];
     for (const seed of seeds) {
       const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const dump = countProgressionDumpCells(
+        world.tiles,
+        world.voidTiles,
+        world.playerSpawn,
+        world.portals,
+        world.tiles[0]?.length ?? WORLD_GRID_SIZE,
+        world.tiles.length,
+      );
+      if (dump.mandatory > 0 && dump.dump === 0) {
+        failures.push(`seed ${seed}: no dump cell`);
+        continue;
+      }
       const occ = simulateCorpsesOnWorld(world);
       if (occ.sealed) {
         failures.push(

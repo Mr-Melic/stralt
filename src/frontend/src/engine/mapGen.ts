@@ -1,6 +1,8 @@
 // Pure map-generation helpers — extracted from WorldExploration.tsx
 // Zero React / DOM dependencies.
 
+import { collectMandatoryProgressionCells } from "./occupancy.ts";
+
 export const MAP_ARCHETYPES = [
   {
     type: "openField" as const,
@@ -561,6 +563,104 @@ function claimUniqueReachableCell(
   const near = nearestReachableCell(from, reachable, w, h, exclude);
   if (near) return near;
   return punchAdjacentFloor(tiles, vt, reachable, exclude, w, h);
+}
+
+function occupancyTiles(tiles: string[][]): boolean[][] {
+  return tiles.map((row) => (row ?? []).map((t) => t !== "wall"));
+}
+
+/**
+ * Walkable floors that are not spawn, not an exit, and not a unique
+ * player→exit bridge. Corpses/summons relocate here; a 1-wide corridor
+ * with no alcove has zero dump cells and permanently seals progression.
+ */
+export function countProgressionDumpCells(
+  tiles: string[][],
+  voidTiles: Set<string> | Map<string, unknown> | undefined,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  w: number,
+  h: number,
+): { dump: number; mandatory: number } {
+  const vt = toVoidSet(voidTiles);
+  const portalSet = new Set(portals.map((p) => `${p.x},${p.y}`));
+  const mandatory = collectMandatoryProgressionCells(
+    occupancyTiles(tiles),
+    vt,
+    portalSet,
+    playerSpawn,
+  );
+  const spawnKey = `${playerSpawn.x},${playerSpawn.y}`;
+  let dump = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (!isWalkable(tiles, vt, x, y, w, h)) continue;
+      const k = `${x},${y}`;
+      if (k === spawnKey || portalSet.has(k) || mandatory.has(k)) continue;
+      dump += 1;
+    }
+  }
+  return { dump, mandatory: mandatory.size };
+}
+
+/**
+ * Punch one dead-end alcove when every floor is a unique bridge.
+ * Does not carve a new corridor or join leftover islands.
+ */
+function ensureProgressionAlcove(
+  tiles: string[][],
+  vt: Set<string>,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  w: number,
+  h: number,
+): void {
+  const counts = countProgressionDumpCells(
+    tiles,
+    vt,
+    playerSpawn,
+    portals,
+    w,
+    h,
+  );
+  if (counts.mandatory === 0 || counts.dump > 0) return;
+  const reachable = floodFillReachable(tiles, vt, playerSpawn, w, h);
+  const exclude = new Set<string>([
+    `${playerSpawn.x},${playerSpawn.y}`,
+    ...portals.map((p) => `${p.x},${p.y}`),
+  ]);
+  punchAdjacentFloor(tiles, vt, reachable, exclude, w, h);
+}
+
+/**
+ * Overworld enemy wander may Chebyshev-pick a floor beyond a portal choke
+ * then A* through the gate (portals are walkable out of battle). Stay on
+ * the origin's battle-walkable island so destack cannot split the fight.
+ */
+export function isEnemyWanderFloor(
+  tiles: string[][],
+  voidTiles: Set<string> | Map<string, unknown> | undefined,
+  portals: { x: number; y: number }[],
+  origin: { x: number; y: number },
+  cell: { x: number; y: number },
+  w: number,
+  h: number,
+): boolean {
+  const vt = toVoidSet(voidTiles);
+  if ((tiles[cell.y]?.[cell.x] as string) === "portal") return false;
+  if (!isWalkable(tiles, vt, cell.x, cell.y, w, h)) return false;
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  if (portalBlock.has(`${cell.x},${cell.y}`)) return false;
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    origin,
+    w,
+    h,
+    portalBlock,
+  );
+  if (!battle) return false;
+  return battle.reachable.has(`${cell.x},${cell.y}`);
 }
 
 function isWhitePortalFlag(portal: object): boolean {
@@ -1337,6 +1437,17 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     input.h,
   );
 
+  // 1-wide unique corridors have no dump cell. A corpse/summon on the
+  // bridge then seals the unlocked portal with nowhere to relocate.
+  ensureProgressionAlcove(
+    liveTiles,
+    vt,
+    playerSpawn,
+    portals,
+    input.w,
+    input.h,
+  );
+
   return {
     tiles: liveTiles,
     playerSpawn,
@@ -1402,6 +1513,7 @@ export interface SolvabilityReport {
   portalTileMismatch: number;
   leftoverIslands: number;
   outOfBounds: number;
+  dumpCells: number;
   clearingUnlocks: boolean;
   failures: string[];
 }
@@ -1639,6 +1751,10 @@ export function evaluateSolvability(
     if (!inBounds(s)) outOfBounds += 1;
   }
   if (outOfBounds > 0) failures.push(`out-of-bounds:${outOfBounds}`);
+  const dump = countProgressionDumpCells(tiles, vt, playerSpawn, portals, w, h);
+  if (dump.mandatory > 0 && dump.dump === 0) {
+    failures.push("no-dump-cell");
+  }
   return {
     ok: failures.length === 0,
     playerSpawnLegal,
@@ -1652,6 +1768,7 @@ export function evaluateSolvability(
     portalTileMismatch,
     leftoverIslands,
     outOfBounds,
+    dumpCells: dump.dump,
     clearingUnlocks,
     failures,
   };
