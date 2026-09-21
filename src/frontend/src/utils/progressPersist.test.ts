@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
+  ABSOLUTE_WRITE_UNCONFIRMED_XP,
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
   clampAbsoluteProgressWrite,
@@ -9,10 +10,12 @@ import {
   createProgressPersist,
   floorHydratedLevel,
   resolveCommittedDokaForAbsoluteWrite,
+  resolveCommittedXpForAbsoluteWrite,
   resolveHydratedXp,
   shouldCopyIdleWalletDoka,
   shouldPersistAbsoluteDokaSpend,
   shouldSkipAbsoluteDokaWrite,
+  shouldSkipAbsoluteXpWrite,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -639,5 +642,71 @@ describe("progress persist lock", () => {
       order.push("victory");
     });
     assert.deepEqual(order, ["flush", "heal", "death", "flush", "victory"]);
+  });
+
+  it("does not saveBattleStats-wipe portal +10 after applyRewards throw-after-add", async () => {
+    // Chronology:
+    // 1. Portal applyRewards adds leftover 80→90 then the replica rejects.
+    // 2. HUD stays at 80. Idle hydrate must not clear unconfirmedXpCredit.
+    // 3. Recap heal used to saveBattleStats-write leftover 80 and wipe +10.
+    // 4. noteUnconfirmedXpCredit + stale getCharacter skips the write.
+    // 5. A later rise (90) seeds, then the spend keeps leftover 90.
+    assert.equal(
+      shouldSkipAbsoluteXpWrite({
+        unconfirmedXpCredit: true,
+        liveXp: 80,
+        liveLevel: 4,
+        committedXp: 80,
+        committedLevel: 4,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldSkipAbsoluteXpWrite({
+        unconfirmedXpCredit: true,
+        liveXp: 90,
+        liveLevel: 4,
+        committedXp: 80,
+        committedLevel: 4,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldSkipAbsoluteXpWrite({
+        unconfirmedXpCredit: true,
+        liveXp: 5,
+        liveLevel: 5,
+        committedXp: 95,
+        committedLevel: 4,
+      }),
+      false,
+      "level-up leftover drop still counts as the grant landing",
+    );
+
+    const lock = createProgressPersist({ doka: 200, xp: 80, level: 4 });
+    lock.noteUnconfirmedXpCredit();
+    assert.equal(lock.hasUnconfirmedXpCredit(), true);
+    assert.equal(lock.hydrateWhenIdle({ doka: 200, xp: 80, level: 4 }), true);
+    assert.equal(lock.hasUnconfirmedXpCredit(), true);
+    assert.equal(lock.snapshot().xp, 80);
+
+    await assert.rejects(
+      () =>
+        resolveCommittedXpForAbsoluteWrite(lock, async () => ({
+          experience: 80,
+          level: 4,
+        })),
+      new RegExp(ABSOLUTE_WRITE_UNCONFIRMED_XP),
+    );
+    assert.equal(lock.snapshot().xp, 80);
+    assert.equal(lock.hasUnconfirmedXpCredit(), true);
+
+    const caughtUp = await resolveCommittedXpForAbsoluteWrite(
+      lock,
+      async () => ({ experience: 90, level: 4 }),
+    );
+    assert.deepEqual(caughtUp, { xp: 90, level: 4 });
+    assert.equal(lock.hasUnconfirmedXpCredit(), false);
+    assert.equal(lock.snapshot().xp, 90);
   });
 });
