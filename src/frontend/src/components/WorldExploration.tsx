@@ -17246,18 +17246,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         deathTriggered: deathTriggeredRef.current,
         hp: characterStatsRef.current.hp,
       })
-    ) {
-      const _screen = tileCenter(
-        playerPositionRef.current.x,
-        playerPositionRef.current.y,
-      );
-      effectsManagerRef.current?.spawnFloatText(
-        _screen.x,
-        _screen.y,
-        WAIT_FOR_TURN_COPY,
-      );
+    )
       return;
-    }
     // Do not markFirstAction here. Cooldown / missing spell / no legal
     // target used to dismiss an unaccepted offer with no AP spend.
     // executeCastAttempt marks only after a real debit.
@@ -17277,15 +17267,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }),
     });
     if (!_anResources.ok) {
-      const _screen = tileCenter(
-        playerPositionRef.current.x,
-        playerPositionRef.current.y,
-      );
-      effectsManagerRef.current?.spawnFloatText(
-        _screen.x,
-        _screen.y,
-        playerFacingCastResult(_anResources.reason),
-      );
+      if (_anResources.reason === "on_cooldown") {
+        const _screen = tileCenter(
+          playerPositionRef.current.x,
+          playerPositionRef.current.y,
+        );
+        effectsManagerRef.current?.spawnFloatText(
+          _screen.x,
+          _screen.y,
+          "On cooldown",
+        );
+      }
       return;
     }
     const isHealSpell =
