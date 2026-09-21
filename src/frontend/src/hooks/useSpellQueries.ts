@@ -14,7 +14,10 @@ import {
   toBackendPlayerSpriteConfig,
   toBackendSpellConfig,
 } from "../utils/adminContract";
-import { validateSpellConfig } from "../utils/adminSafety";
+import {
+  adminSpellDeleteBlockedReason,
+  validateSpellConfig,
+} from "../utils/adminSafety";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,6 +54,9 @@ export function useGetSpellConfigs() {
     enabled: !!actor && !actorFetching,
     staleTime: 30000,
     gcTime: 120000,
+    // PERF-2026-09-21-061: WorldExploration subscribes. Default focus refetch
+    // decoded the catalog on the main thread and reconciled the world tree.
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -98,6 +104,8 @@ export function useAdminDeleteSpellConfig() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
+      const blocked = adminSpellDeleteBlockedReason(id);
+      if (blocked) throw new Error(blocked);
       const result = await (actor as ActorAny).adminDeleteSpellConfig(id);
       assertAdminCmdOk(result, "adminDeleteSpellConfig");
       return result;
@@ -193,6 +201,8 @@ export function useGetRegionConfigs() {
     enabled: !!actor && !actorFetching,
     staleTime: 30000,
     gcTime: 120000,
+    // PERF-2026-09-21-061: WorldExploration subscribes; skip tab-focus refetch.
+    refetchOnWindowFocus: false,
   });
 }
 
