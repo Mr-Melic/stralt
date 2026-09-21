@@ -16,6 +16,7 @@ import {
   shouldApplyCallerDokaHydrate,
   shouldMarkCallerDokaWalletReady,
 } from "../utils/dokaBalanceQuery";
+import { shouldDismissShopDialogOnKey } from "../utils/shopDialogDismiss";
 import BossGuideModal from "./BossGuideModal";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
@@ -420,6 +421,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
             <button
               type="button"
               onClick={handleBackToSelection}
+              aria-label="Back to character selection"
               className="stone-btn-slate stone-nav-btn"
             >
               <ArrowLeft size={14} />
@@ -459,6 +461,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
           <button
             type="button"
             onClick={handleLogout}
+            aria-label="Log out"
             className="stone-btn-slate stone-nav-btn"
           >
             <LogOut size={14} />
@@ -482,6 +485,14 @@ const GameFlow: React.FC<GameFlowProps> = ({
 const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { data: entries = [], isLoading } = useGetLeaderboard();
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (shouldDismissShopDialogOnKey(event.key)) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
     <div
       data-ocid="leaderboard.dialog"
@@ -497,6 +508,10 @@ const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
       }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
       onKeyDown={(e) => {
+        if (shouldDismissShopDialogOnKey(e.key)) {
+          onClose();
+          return;
+        }
         if (
           (e.key === "Enter" || e.key === " ") &&
           e.target === e.currentTarget
