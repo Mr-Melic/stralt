@@ -43,7 +43,7 @@ There is **no character level cap**. XP continues `100 * 2^(N-1)`. Encounter gen
 | `WorldExploration.tsx` | **19,213** lines (was 19,253). PREREQ-D still binds. Open **#327** owns this file. |
 | `mapGen.ts` | **1,937** lines (was 1,544). Freeze still. Open **#331** owns destack. |
 | `enemyAI.ts` | **2,580** lines. Do not grow it for content tables. |
-| Open PR queue (oldest `createdAt` first) | **#327** Striker AoE (`WX` / targeting / `challengeCompletion`). **#331** portal destack (`mapGen` / Register restack). **#333** TBC docs (`README.md`). **#334** is newer than this branch (admin honesty). |
+| Open PR queue (oldest `createdAt` first) | **#327** Striker AoE (`WX` / targeting / `challengeCompletion`). **#331** portal destack (`mapGen` / Register restack). **#333** TBC docs (`README.md`). Same-hour 2026-09-21 flock also opened **#334–#360** (admin, a11y, MIMA, Wave 4 spell/world/elite/AI/encounter sheets, persist, perf). This catalog does **not** mint twins of those sheets. Wave 4 remains **Hold**. |
 
 Practical XP horizon: unchanged. Mid-teens exhaust intended income; level 25 is ~1.678e9 XP. Not a level cap. Do **not** retune the curve as expansion. Content must work at **1–20** and stay valid if someone is still climbing.
 
@@ -59,7 +59,7 @@ Practical XP horizon: unchanged. Mid-teens exhaust intended income; level 25 is 
 | [`SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md`](./SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md) | Observe → win → unlock; Wave 1 pool | 003 |
 | [`SPELL_DISCOVERY_ECOSYSTEM_2026-09-01.md`](./SPELL_DISCOVERY_ECOSYSTEM_2026-09-01.md) / [`2026-09-02`](./SPELL_DISCOVERY_ECOSYSTEM_2026-09-02.md) | Wave 2 / Wave 3 discovery ids | **Hold** until 003 is live |
 | [`SPELL_ADMIN_DESIGN_2026-09-02.md`](./SPELL_ADMIN_DESIGN_2026-09-02.md) | `ownedSpellIds` / `observedSpellIds` persist types | 003 persist (PREREQ-J) |
-| [`SPELL_PROPOSALS_2026-08-31.md`](./SPELL_PROPOSALS_2026-08-31.md) + [`09-01`](./SPELL_PROPOSALS_2026-09-01.md) + [`09-02`](./SPELL_PROPOSALS_2026-09-02.md) | Wave 1–3 tactical gap-fill ids | **Hold** until 003 ships |
+| [`SPELL_PROPOSALS_2026-08-31.md`](./SPELL_PROPOSALS_2026-08-31.md) + [`09-01`](./SPELL_PROPOSALS_2026-09-01.md) + [`09-02`](./SPELL_PROPOSALS_2026-09-02.md) | Wave 1–3 tactical gap-fill ids | **Hold** until 003 ships. Same-hour **#342** is Wave 4 — also **Hold** |
 | [`ENEMY_AI_EVOLUTION.md`](../ENEMY_AI_EVOLUTION.md) + [`09-01`](../ENEMY_AI_EVOLUTION_2026-09-01.md) + [`09-02`](../ENEMY_AI_EVOLUTION_2026-09-02.md) | Unbounded AI modules | 005 |
 | [`BOSS_AND_SPELL_DISCOVERY.md`](../design/BOSS_AND_SPELL_DISCOVERY.md) | 19 boss sheets + adaptations | 011, 017 |
 | [`ENCOUNTER_EVOLUTION_2026-08-31.md`](../encounters/ENCOUNTER_EVOLUTION_2026-08-31.md) + [`09-01`](../encounters/ENCOUNTER_EVOLUTION_2026-09-01.md) + [`09-02`](../encounters/ENCOUNTER_EVOLUTION_2026-09-02.md) | Teach → pressure dungeon beats | 007, 010 |
@@ -619,7 +619,7 @@ PREREQ-G (dual frontend / Motoko spell catalogs) stays a hygiene note, not a shi
 ## Do not build
 
 - New enemy **ids** that only change HP/ATK. Use family × variant × elite × kit. Do not add Register-lore `Crimson Spawn` / `Shadow Lurker` / `Storm Caller` as stat skins. Do not convert the flavor Register back into a live bestiary.
-- Wave 2 / Wave 3 families / spell ids / encounter rooms **before** 019, 014, 001, 018, and 003.
+- Wave 2 / Wave 3 / same-hour Wave 4 families / spell ids / encounter rooms **before** 019, 014, 001, 018, and 003. Same-hour PRs **#342 / #344 / #347 / #348 / #349 / #351** are sibling sheets, not a license to implement.
 - A maximum player level, New Game+, or “endgame bracket.”
 - High-level design that is only larger `level * 8 + 20` HP or Titan’s Vigor +1000.
 - Rewrites of `mapGen.ts`, RAF, turn-advance, or `calcScaledDamage`. Do not restack `mapGen.ts` while **#331** is open. Do not restack `WorldExploration.tsx` / `challengeCompletion.ts` while **#327** is open.
