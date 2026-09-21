@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { CombatantEntry } from "../components/InitiativeStrip";
+import { MAP_MODIFIER_VOID_RIFT_DAMAGE } from "../data/gameConstants.ts";
 import type { Enemy } from "../types/gameTypes";
 import {
   PLAGUE_ZONE_TICK,
@@ -220,6 +221,14 @@ describe("turn-start plague store write", () => {
 });
 
 describe("turn-start void rift store write", () => {
+  it("walk ticks and the catalog Void Rift amount stay 3 HP", () => {
+    // WX walk uses battleSetup.VOID_RIFT_TICK; the modifier registry and
+    // gameConstants catalog used to drift, so Untouchable / under-damage
+    // challenges could pass on one path and fail on the other.
+    assert.equal(VOID_RIFT_TICK, 3);
+    assert.equal(VOID_RIFT_TICK, MAP_MODIFIER_VOID_RIFT_DAMAGE);
+  });
+
   it("marks void rift as lethal so callers must processCombatantDeath", () => {
     assert.deepEqual(enemyHpAfterHazardDamage(3, VOID_RIFT_TICK), {
       newHp: 0,
