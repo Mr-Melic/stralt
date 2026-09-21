@@ -734,6 +734,7 @@ export function validateSpellConfig(config: {
     hpScale?: number;
     damageScale?: number;
   };
+  effectParams?: string | null;
 }): string | null {
   const idErr = requireId(config.id, "Spell");
   if (idErr) return idErr;
@@ -793,6 +794,13 @@ export function validateSpellConfig(config: {
   if (damageScale != null) {
     const dmg = finiteInRange("summonUnitDef.damageScale", damageScale, 0, 10);
     if (dmg) return dmg;
+  }
+  if (config.effectParams != null && config.effectParams !== "") {
+    if (config.effectParams.length > 2_048) {
+      return "effectParams exceeds maximum length";
+    }
+    const blobErr = validateJsonBlob("effectParams", config.effectParams);
+    if (blobErr) return blobErr;
   }
   return null;
 }

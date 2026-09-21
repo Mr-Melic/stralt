@@ -513,6 +513,12 @@ module {
                 if (p.size() > 2_048) {
                     return ?"effectParams exceeds maximum length";
                 };
+                // Failure: `{oops` used to replace void_collapse attractDistance
+                // JSON and leave attract_multi with a silent parse miss.
+                switch (validateJsonBlob("effectParams", p)) {
+                    case (?e) { return ?e };
+                    case null {};
+                };
             };
         };
         // Summon metadata is optional on non-summons (empty AI, 0 scales).

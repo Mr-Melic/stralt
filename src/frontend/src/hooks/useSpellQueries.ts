@@ -77,6 +77,7 @@ export function useAdminSetSpellConfig() {
         summonLevel: config.summonUnitDef?.level,
         hpScale: config.summonUnitDef?.hpScale,
         damageScale: config.summonUnitDef?.damageScale,
+        effectParams: config.effectParams ?? null,
       });
       if (spellErr) throw new Error(spellErr);
       const result = await (actor as ActorAny).adminSetSpellConfig(

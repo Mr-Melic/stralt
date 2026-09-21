@@ -283,6 +283,34 @@ assert.equal(
   }),
   "summonAI must be empty when isSummon is false",
 );
+// Failure: `{oops` effectParams used to overwrite void_collapse attract JSON.
+assert.ok(
+  validateSpellConfig({
+    id: "void_collapse",
+    name: "Void Collapse",
+    apCost: 12,
+    minRange: 1,
+    maxRange: 3,
+    spellType: "damage",
+    effectType: "attract_multi",
+    effectCategory: "aoe",
+    effectParams: "{oops",
+  }),
+);
+assert.equal(
+  validateSpellConfig({
+    id: "void_collapse",
+    name: "Void Collapse",
+    apCost: 12,
+    minRange: 1,
+    maxRange: 3,
+    spellType: "damage",
+    effectType: "attract_multi",
+    effectCategory: "aoe",
+    effectParams: '{"attractDistance":2,"attractAll":true}',
+  }),
+  null,
+);
 assert.ok(validateBossPortalAssignment("", "ashen_crown"));
 assert.ok(validateBossPortalAssignment("x".repeat(65), "ashen_crown"));
 assert.equal(validateBossPortalAssignment("portal_a", "ashen_crown"), null);
