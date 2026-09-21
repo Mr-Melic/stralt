@@ -191,6 +191,13 @@ export const ABSOLUTE_WRITE_UNCONFIRMED_CREDIT =
   "absolute write skipped: unconfirmed credit";
 
 /**
+ * Thrown when saveBattleStats would write a pre-credit leftover after an
+ * applyRewards transport-keep whose character confirm was stale.
+ */
+export const ABSOLUTE_WRITE_UNCONFIRMED_XP =
+  "absolute write skipped: unconfirmed xp credit";
+
+/**
  * Seeded one-shot transport-keep left the lock at the pre-credit wallet
  * when getCallerDokaBalance was stale or threw. Recap heal then
  * saveBattleStats-wrote that snapshot and wiped the canister grant
@@ -232,6 +239,50 @@ export function shouldClearUnconfirmedWalletCredit(args: {
   return next > previous;
 }
 
+/**
+ * Portal +10 / victory applyRewards can land on the canister then throw.
+ * Leftover XP may *drop* across a level-up (95 + 10 → leftover 5), so a
+ * live-xp-not-higher test would miss the grant and let the next
+ * saveBattleStats write the pre-level leftover.
+ *
+ * Credit landed when level rose, or leftover rose at the same level.
+ */
+export function shouldSkipAbsoluteXpWrite(args: {
+  unconfirmedXpCredit: boolean;
+  liveXp: number | null;
+  liveLevel: number | null;
+  committedXp: number;
+  committedLevel: number;
+}): boolean {
+  if (args.unconfirmedXpCredit !== true) return false;
+  if (args.liveXp == null || args.liveLevel == null) return true;
+  const liveXp = Math.max(0, Math.floor(Number(args.liveXp) || 0));
+  const liveLevel = Math.max(1, Math.floor(Number(args.liveLevel) || 1));
+  const committedXp = Math.max(0, Math.floor(Number(args.committedXp) || 0));
+  const committedLevel = Math.max(
+    1,
+    Math.floor(Number(args.committedLevel) || 1),
+  );
+  if (liveLevel > committedLevel) return false;
+  if (liveLevel === committedLevel && liveXp > committedXp) return false;
+  return true;
+}
+
+/** Parse `getCharacter` leftover XP + level for unconfirmed applyRewards. */
+export function readCharacterProgress(
+  raw: unknown,
+): { xp: number; level: number } | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const rec = raw as { experience?: unknown; level?: unknown };
+  const xp = Number(rec.experience);
+  const level = Number(rec.level);
+  if (!Number.isFinite(xp) || !Number.isFinite(level)) return null;
+  return {
+    xp: Math.max(0, Math.floor(xp)),
+    level: Math.max(1, Math.floor(level)),
+  };
+}
+
 export type ProgressPersistEnqueueOptions = {
   /**
    * Death persist writes the pending marker then the 20/40 cut. Running
@@ -268,6 +319,10 @@ export function createProgressPersist(
   // Seeded one-shot transport-keep: canister may have the grant, confirm
   // did not see a rise. Absolute writes must re-fetch and skip if stale.
   let unconfirmedWalletCredit = false;
+  // Portal +10 / victory applyRewards transport-keep: leftover/level may
+  // have landed. Idle hydrate must not clear this by re-committing the
+  // stale UI leftover; absolute writes must re-fetch getCharacter.
+  let unconfirmedXpCredit = false;
   let pending = 0;
   let chain: Promise<void> = Promise.resolve();
   let beforeEach = options?.beforeEach;
@@ -306,6 +361,16 @@ export function createProgressPersist(
     hasUnconfirmedWalletCredit() {
       return unconfirmedWalletCredit;
     },
+    /**
+     * persistIncrementalRewards invoked but the ok payload was lost.
+     * Force the next saveBattleStats to re-fetch leftover XP/level.
+     */
+    noteUnconfirmedXpCredit() {
+      unconfirmedXpCredit = true;
+    },
+    hasUnconfirmedXpCredit() {
+      return unconfirmedXpCredit;
+    },
     commit(next: Partial<CommittedProgress>) {
       const previousDoka = committed.doka;
       const nextDoka =
@@ -336,6 +401,9 @@ export function createProgressPersist(
           unconfirmedWalletCredit = false;
         }
       }
+      if (next.xp != null) {
+        unconfirmedXpCredit = false;
+      }
     },
     hydrateWhenIdle(
       next: CommittedProgress,
@@ -349,15 +417,21 @@ export function createProgressPersist(
         committedDoka: committed.doka,
         idleWalletSeedBlocked,
       });
+      // A dokaBalance-only idle pass must not re-commit the stale leftover
+      // and clear unconfirmedXpCredit — that re-opens the wipe.
       persist.commit({
         doka: copyDoka ? next.doka : undefined,
-        xp: resolveHydratedXp(
-          committed.xp,
-          committed.level,
-          next.xp,
-          next.level,
-        ),
-        level: floorHydratedLevel(committed.level, next.level),
+        xp: unconfirmedXpCredit
+          ? undefined
+          : resolveHydratedXp(
+              committed.xp,
+              committed.level,
+              next.xp,
+              next.level,
+            ),
+        level: unconfirmedXpCredit
+          ? undefined
+          : floorHydratedLevel(committed.level, next.level),
       });
       return true;
     },
@@ -398,6 +472,8 @@ export type AbsoluteWritePersist = Pick<
   "isWalletSeeded" | "seedWallet" | "snapshot"
 > & {
   hasUnconfirmedWalletCredit?: () => boolean;
+  hasUnconfirmedXpCredit?: () => boolean;
+  commit?: (next: Partial<CommittedProgress>) => void;
 };
 
 /**
@@ -447,6 +523,94 @@ export async function resolveCommittedDokaForAbsoluteWrite(
       throw err;
     }
     if (unconfirmed && persist.isWalletSeeded()) refuseStaleWrite();
+    return null;
+  }
+}
+
+/**
+ * saveBattleStats writes leftover XP absolutely. Portal +10 / victory
+ * applyRewards can land then throw, leaving the lock at the pre-credit
+ * leftover. A later heal/death used to persist that leftover and wipe
+ * the grant (incoming-below-stored is applied).
+ *
+ * Re-fetch getCharacter while unconfirmed. Skip when live leftover/level
+ * did not advance. A miss must not use the stale committed leftover.
+ */
+export async function resolveCommittedXpForAbsoluteWrite(
+  persist: AbsoluteWritePersist,
+  readCharacter: () => Promise<unknown>,
+): Promise<{ xp: number; level: number } | null> {
+  const unconfirmed = persist.hasUnconfirmedXpCredit?.() === true;
+  if (!unconfirmed) {
+    const snap = persist.snapshot();
+    return { xp: snap.xp, level: snap.level };
+  }
+  const skipStale = (live: { xp: number; level: number } | null): boolean =>
+    shouldSkipAbsoluteXpWrite({
+      unconfirmedXpCredit: true,
+      liveXp: live?.xp ?? null,
+      liveLevel: live?.level ?? null,
+      committedXp: persist.snapshot().xp,
+      committedLevel: persist.snapshot().level,
+    });
+  const refuseStaleWrite = (): never => {
+    throw new Error(ABSOLUTE_WRITE_UNCONFIRMED_XP);
+  };
+  try {
+    const live = readCharacterProgress(await readCharacter());
+    if (skipStale(live)) refuseStaleWrite();
+    if (live == null) return null;
+    persist.commit?.({ xp: live.xp, level: live.level });
+    return live;
+  } catch (err) {
+    if (err instanceof Error && err.message === ABSOLUTE_WRITE_UNCONFIRMED_XP) {
+      throw err;
+    }
+    return refuseStaleWrite();
+  }
+}
+
+/**
+ * After applyRewards transport-keep, confirm leftover/level rose without
+ * releasing a retry. Null means keep unconfirmed — do not remint and do
+ * not saveBattleStats the pre-credit leftover.
+ */
+export async function confirmKeptIncrementalXp(
+  committed: { xp: number; level: number },
+  readCharacter: () => Promise<unknown>,
+): Promise<{ xp: number; level: number } | null> {
+  try {
+    const live = readCharacterProgress(await readCharacter());
+    if (
+      live == null ||
+      shouldSkipAbsoluteXpWrite({
+        unconfirmedXpCredit: true,
+        liveXp: live.xp,
+        liveLevel: live.level,
+        committedXp: committed.xp,
+        committedLevel: committed.level,
+      })
+    ) {
+      return null;
+    }
+    return live;
+  } catch {
+    return null;
+  }
+}
+
+/** Live wallet rose after an applyRewards transport-keep. */
+export async function confirmKeptIncrementalDoka(
+  committedDoka: number,
+  readWallet: () => Promise<unknown>,
+): Promise<number | null> {
+  try {
+    const live = readWalletNumber(await readWallet());
+    if (live == null) return null;
+    const committed = Math.max(0, Math.floor(Number(committedDoka) || 0));
+    if (live <= committed) return null;
+    return live;
+  } catch {
     return null;
   }
 }
