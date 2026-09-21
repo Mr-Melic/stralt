@@ -80,23 +80,27 @@ function floodOriginComponent(
  * units spread around the player instead of stacking on one far corner.
  *
  * Pass 2 (no cell meets spacing): `findNearestFreeCell` from origin on the
- * origin component, radius `max(minDistFallback, w+h)`. That fallback does
+ * stay-on component, radius `max(minDistFallback, w+h)`. That fallback does
  * not re-apply spacing — it only guarantees a free tile when the map is cramped.
  *
- * Scan stays on the origin battle-walkable component so leftover CA islands
- * and cells beyond a portal cut-vertex cannot win max-spacing. Returns null
- * only when the fallback also finds no free cell.
+ * Scan stays on `stayOn`'s battle-walkable component (defaults to `origin`)
+ * so leftover CA islands and cells beyond a portal cut-vertex cannot win
+ * max-spacing. Enemy placement must pass the player's cell as `stayOn`:
+ * flooding from a wandered-far origin keeps the hostile unreachable.
+ * Returns null only when the fallback also finds no free cell.
  */
 export function findBattleStartCell(
   origin: { x: number; y: number },
   avoid: BattleStartAvoid[],
   minDistFallback: number,
   ctx: OccupancyContext,
+  stayOn: { x: number; y: number } = origin,
 ): { x: number; y: number } | null {
   // Max-spacing used to scan the whole WORLD_GRID_SIZE and teleport onto a
   // leftover CA island or the far side of a portal wall. Stay on the
-  // origin's battle-walkable component.
-  const component = floodOriginComponent(origin, ctx);
+  // fight graph the player can actually walk — not the unit's overworld
+  // island beyond a portal choke.
+  const component = floodOriginComponent(stayOn, ctx);
   const { w, h } = occupancyGridSize(ctx);
   // Pass 1: collect every cell that is free AND meets EVERY per-position
   // spacing target. A cell qualifies iff for each avoided position p,
