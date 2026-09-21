@@ -511,9 +511,9 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                   onClick={onSetAttack}
                   aria-pressed={battleActionMode === "attack"}
                   title={
-                    !attackModeOpen
-                      ? "No affordable spell this turn"
-                      : "Attack — select a spell, then choose a target in range"
+                    currentBattleAp <= 0
+                      ? "No Action Points left this turn"
+                      : "Attack — select a spell, then click a target in range"
                   }
                   className={`
                     stone-battle-action
@@ -850,13 +850,6 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                     ? isMobile
                       ? "Attack the nearest valid target"
                       : "Attack the nearest valid target [S]"
-                    : "Select a spell in Attack mode with enough AP and a target in range"
-              }
-              aria-label={
-                !inBattle
-                  ? "Attack Nearest is usable once a fight starts"
-                  : canAttackNearest
-                    ? "Attack the nearest valid target"
                     : "Select a spell in Attack mode with enough AP and a target in range"
               }
               style={{

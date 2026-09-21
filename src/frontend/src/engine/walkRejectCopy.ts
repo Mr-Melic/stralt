@@ -44,10 +44,7 @@ export function isBattleWalkDestinationOccupied(
   tile: { x: number; y: number },
 ): boolean {
   return occupants.some(
-    (c) =>
-      c.x === tile.x &&
-      c.y === tile.y &&
-      Math.max(0, Math.floor(Number(c.hp) || 0)) > 0,
+    (c) => c.x === tile.x && c.y === tile.y && Number(c.hp) > 0,
   );
 }
 
