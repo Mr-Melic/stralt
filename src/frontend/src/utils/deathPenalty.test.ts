@@ -3,13 +3,16 @@ import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress.ts"
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
   applyUnpaidDeathPenaltyToWrite,
+  clearPendingDeathPenaltiesOnIdentityChange,
   clearPendingDeathPenalty,
   clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
   confirmPendingDeathPenalty,
   experienceFromCharacterRecord,
   flushPendingDeathPenalty,
+  getDeathPenaltyOwnerKey,
   mergeVictoryRewardLiveStats,
+  pendingDeathPenaltyStorageKey,
   persistDeathPenalty,
   persistWithRetry,
   raiseUiAfterDeathPersist,
@@ -18,6 +21,8 @@ import {
   readPendingDeathPenaltyAnywhere,
   resolvePendingDeathReplay,
   respawnHpAfterDeath,
+  setDeathPenaltyOwnerKey,
+  shouldApplyPendingDeathForOwner,
   shouldApplyVictoryLiveHydrate,
   victoryResourceFloor,
   writePendingDeathPenalty,
@@ -849,6 +854,86 @@ function memStorage(): import("./deathPenalty.ts").DeathPenaltyStorage {
   assert.equal(readPendingDeathPenalty(local, 1), null);
   assert.equal(readPendingDeathPenalty(session, 1), null);
   assert.equal(readPendingDeathPenaltyAnywhere(1, local, session), null);
+}
+
+{
+  // After #183, replay taxes any wallet that has not already absorbed the
+  // unpaid loss. Slot-only keys let principal B (logout, same browser, same
+  // slot, richer leftover) take A's 20/40 cut.
+  const pending = {
+    slot: 1,
+    preXp: 1000,
+    preDoka: 5000,
+    afterXp: 800,
+    afterDoka: 3000,
+  };
+  assert.deepEqual(
+    resolvePendingDeathReplay(5000, 10000, pending),
+    { action: "write", newXp: 4800, newDoka: 8000 },
+    "richer foreign wallet used to be taxed the unpaid 20/40 amounts",
+  );
+  assert.equal(
+    shouldApplyPendingDeathForOwner(
+      { ...pending, ownerKey: "prin-a" },
+      "prin-b",
+    ),
+    false,
+  );
+  setDeathPenaltyOwnerKey("prin-b");
+  assert.deepEqual(
+    resolvePendingDeathReplay(5000, 10000, { ...pending, ownerKey: "prin-a" }),
+    { action: "clear" },
+    "mismatched owner must not saveBattleStats-cut the live principal",
+  );
+  setDeathPenaltyOwnerKey(null);
+
+  const mem = memStorage();
+  setDeathPenaltyOwnerKey("prin-a");
+  writePendingDeathPenalty(mem, pending);
+  assert.equal(
+    mem.getItem(pendingDeathPenaltyStorageKey(1)),
+    null,
+    "new writes must not leave a slot-only key for the next II",
+  );
+  assert.deepEqual(readPendingDeathPenalty(mem, 1), {
+    ...pending,
+    ownerKey: "prin-a",
+  });
+
+  setDeathPenaltyOwnerKey("prin-b");
+  assert.equal(
+    readPendingDeathPenalty(mem, 1),
+    null,
+    "principal B must not load A's unpaid death marker",
+  );
+
+  setDeathPenaltyOwnerKey("prin-a");
+  assert.deepEqual(
+    readPendingDeathPenalty(mem, 1)?.afterXp,
+    800,
+    "same principal reload must still replay the 20/40 cut",
+  );
+
+  clearPendingDeathPenaltiesOnIdentityChange(mem, "prin-a");
+  assert.equal(readPendingDeathPenalty(mem, 1), null);
+  setDeathPenaltyOwnerKey("prin-b");
+  assert.equal(readPendingDeathPenalty(mem, 1), null);
+
+  const legacy = memStorage();
+  setDeathPenaltyOwnerKey(null);
+  writePendingDeathPenalty(legacy, pending);
+  assert.ok(legacy.getItem(pendingDeathPenaltyStorageKey(1)));
+  setDeathPenaltyOwnerKey("prin-a");
+  clearPendingDeathPenaltiesOnIdentityChange(legacy, "prin-a");
+  setDeathPenaltyOwnerKey("prin-b");
+  assert.equal(
+    readPendingDeathPenalty(legacy, 1),
+    null,
+    "logout must drop slot-only pending so B cannot be taxed",
+  );
+
+  setDeathPenaltyOwnerKey(null);
+  assert.equal(getDeathPenaltyOwnerKey(), null);
 }
 
 console.log("deathPenalty.test: ok");
