@@ -15,6 +15,11 @@ export type AchievementCreditPersistLock = {
    * hydrate must not copy the pre-claim query either.
    */
   noteUnseededCredit?: () => void;
+  /**
+   * claimAchievementReward invoked but the ok payload was lost. Absolute
+   * writes must re-fetch instead of saveBattleStats-writing the pre-claim wallet.
+   */
+  noteUnconfirmedCredit?: () => void;
 };
 
 /**
@@ -117,9 +122,16 @@ export async function creditAchievementRewardThroughPersist(
   achievementId: string,
 ): Promise<{ ok: number } | { err: string }> {
   return persist.enqueue(async () => {
-    const parsed = readClaimAchievementReward(
-      await actor.claimAchievementReward(achievementId),
-    );
+    let parsed: { ok: number } | { err: string };
+    try {
+      parsed = readClaimAchievementReward(
+        await actor.claimAchievementReward(achievementId),
+      );
+    } catch {
+      persist.noteUnconfirmedCredit?.();
+      persist.noteUnseededCredit?.();
+      return { err: "claimAchievementReward transport error" };
+    }
     if (
       "ok" in parsed &&
       shouldCommitAchievementCredit(persist.isWalletSeeded())

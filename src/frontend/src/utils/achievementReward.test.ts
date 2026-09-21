@@ -13,6 +13,7 @@ import {
   applyShopCreditDeltaToUi,
   applySpendToCommitted,
   createProgressPersist,
+  resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 
@@ -190,6 +191,36 @@ void (async () => {
     720,
     "stale high refetch must not mint the pre-heal wallet onto committed",
   );
+
+  {
+    // Chronology: claim credits 500 then throws. Lock stayed at 200.
+    // Recap heal used to saveBattleStats-write 190 and wipe the grant.
+    let canister = 200;
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const kept = await creditAchievementRewardThroughPersist(
+      {
+        claimAchievementReward: async () => {
+          canister += 500;
+          throw new Error("replica reject after credit");
+        },
+      },
+      lock,
+      "first_blood",
+    );
+    assert.equal("err" in kept, true);
+    assert.equal(canister, 700);
+    assert.equal(lock.snapshot().doka, 200);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+    await assert.rejects(
+      () => resolveCommittedDokaForAbsoluteWrite(lock, async () => 200),
+      /unconfirmed credit/,
+    );
+    const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => canister,
+    );
+    assert.equal(caughtUp, 700);
+  }
 
   console.log("achievementReward.test: ok");
 })();

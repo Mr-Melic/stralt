@@ -401,5 +401,39 @@ void (async () => {
     assert.equal(wroteDoka, 1170);
   }
 
+  {
+    // Chronology: redeemGameKey credits 1000 then throws. The persist lock
+    // used to stay at 200. Recap heal saveBattleStats-wrote 190 and wiped
+    // the paid grant (incoming-below-stored; never mints).
+    let canister = 200;
+    const lock = createProgressPersist({ doka: 200, xp: 50, level: 4 });
+    const kept = await redeemGameKeyThroughPersist(
+      {
+        redeemGameKey: async () => {
+          canister += 1000;
+          throw new Error("replica reject after credit");
+        },
+      },
+      lock,
+      "A".repeat(120),
+    );
+    assert.equal("err" in kept.result, true);
+    assert.equal(canister, 1200);
+    assert.equal(lock.snapshot().doka, 200);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+    await assert.rejects(
+      () => resolveCommittedDokaForAbsoluteWrite(lock, async () => 200),
+      /unconfirmed credit/,
+    );
+    const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => canister,
+    );
+    assert.equal(caughtUp, 1200);
+    const wrote = applySpendToCommitted(lock.snapshot().doka, 10);
+    lock.commit({ doka: wrote });
+    assert.equal(wrote, 1190);
+  }
+
   console.log("shopPurchase.test: ok");
 })();

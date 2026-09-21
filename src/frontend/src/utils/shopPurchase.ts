@@ -186,6 +186,11 @@ export type ShopCreditPersistLock = {
    * hydrate must not copy the pre-credit query either.
    */
   noteUnseededCredit?: () => void;
+  /**
+   * redeemGameKey invoked but the ok payload was lost. Absolute writes
+   * must re-fetch instead of saveBattleStats-writing the pre-credit wallet.
+   */
+  noteUnconfirmedCredit?: () => void;
 };
 
 export async function creditPendingPurchasesThroughPersist(
@@ -309,7 +314,20 @@ export async function redeemGameKeyThroughPersist(
       };
     }
     const before = persist.snapshot().doka;
-    const parsed = readRedeemGameKeyResult(await actor.redeemGameKey(code));
+    let parsed: { ok: number } | { err: string };
+    try {
+      parsed = readRedeemGameKeyResult(await actor.redeemGameKey(code));
+    } catch {
+      // Canister may have consumed the key and credited. Do not retry.
+      // A later saveBattleStats must re-fetch, not write the pre-credit wallet.
+      persist.noteUnconfirmedCredit?.();
+      persist.noteUnseededCredit?.();
+      return {
+        previous: null,
+        credited: null,
+        result: { err: "redeemGameKey transport error" },
+      };
+    }
     const gained = dokaGainedFromGameKeyRedeem(parsed);
     if (shouldCommitGameKeyRedeem(persist.isWalletSeeded(), gained)) {
       persist.commit({
