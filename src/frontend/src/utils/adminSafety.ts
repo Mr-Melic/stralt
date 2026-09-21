@@ -722,6 +722,14 @@ export function isBuiltInSpellId(id: string): boolean {
   return (BUILT_IN_SPELL_IDS as readonly string[]).includes(id);
 }
 
+/** Mirrors adminDeleteSpellConfig — built-in ids must be retired, not deleted. */
+export const BUILT_IN_SPELL_DELETE_BLOCKED =
+  "Cannot delete a built-in spell; set usableByPlayer=false to retire it";
+
+export function adminSpellDeleteBlockedReason(id: string): string | null {
+  return isBuiltInSpellId(id) ? BUILT_IN_SPELL_DELETE_BLOCKED : null;
+}
+
 /** Ban must keep claimed flags; wiping them is the double-claim path. */
 export function shouldWipeAchievementsOnBan(): boolean {
   return false;
