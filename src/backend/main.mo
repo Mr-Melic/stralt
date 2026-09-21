@@ -1771,8 +1771,16 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
-        colorPalettePrev := colorPaletteStore;
-        hasColorPalettePrev := true;
+        // Failure: `{oops` used to pass the `{` prefix check, become live, then
+        // a second invalid write stored the first invalid blob as *Prev so
+        // rollback could not restore the last valid palette.
+        let paletteSnap = AdminGuard.jsonPrevSnapshot(
+            colorPaletteStore,
+            colorPalettePrev,
+            hasColorPalettePrev,
+        );
+        colorPalettePrev := paletteSnap.prev;
+        hasColorPalettePrev := paletteSnap.hasPrev;
         colorPaletteStore := palettes;
         _recordAdminAudit(caller, "setColorPalette", "colorPalette", "previous", "updated");
         #ok;
@@ -1812,8 +1820,13 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
-        bossRushConfigPrev := bossRushConfigStore;
-        hasBossRushConfigPrev := true;
+        let rushSnap = AdminGuard.jsonPrevSnapshot(
+            bossRushConfigStore,
+            bossRushConfigPrev,
+            hasBossRushConfigPrev,
+        );
+        bossRushConfigPrev := rushSnap.prev;
+        hasBossRushConfigPrev := rushSnap.hasPrev;
         bossRushConfigStore := config;
         _recordAdminAudit(caller, "setBossRushConfig", "bossRushConfig", "previous", "updated");
         #ok;
@@ -2363,6 +2376,12 @@ actor {
     /// Called by the frontend after the player dismisses the changelog popup.
     /// Records that the caller has seen the changelog for the given version.
     public shared ({ caller }) func markChangelogShown(version : Text) : async () {
+        if (caller.isAnonymous()) {
+            return;
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return;
+        };
         if (version.size() > 32) {
             return;
         };
@@ -2713,9 +2732,13 @@ actor {
                 case (null) { false };
             };
             if (not alreadyExists) {
-                enemyNames.add(n);
+                switch (AdminGuard.enemyNamePoolRejected(enemyNames.size())) {
+                    case (?_) {};
+                    case null { enemyNames.add(n) };
+                };
             };
         };
+        _recordAdminAudit(caller, "initDefaultNames", "enemyNames", "previous", "seeded");
     };
 
     /// Returns the current list of admin-managed enemy names.
@@ -2749,7 +2772,15 @@ actor {
             case (?e) { Runtime.trap(e) };
             case null {};
         };
+        if (AdminGuard.enemyNameDuplicate(enemyNames.toArray(), name)) {
+            Runtime.trap("Name already exists in the pool");
+        };
+        switch (AdminGuard.enemyNamePoolRejected(enemyNames.size())) {
+            case (?e) { Runtime.trap(e) };
+            case null {};
+        };
         enemyNames.add(name);
+        _recordAdminAudit(caller, "addEnemyName", name, "absent", "present");
     };
 
     /// Removes a name from the pool by value (admin only).
@@ -2759,6 +2790,7 @@ actor {
         };
         let filtered = enemyNames.toArray().filter(func(n) { n != name });
         enemyNames := List.fromArray(filtered);
+        _recordAdminAudit(caller, "deleteEnemyName", name, "present", "removed");
     };
 
     // ─── Buff shop inventory ───────────────────────────────────────────────
