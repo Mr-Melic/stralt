@@ -4,9 +4,11 @@ import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
   applyHealBuffSideEffect,
   attackNearestLiveCasterPos,
+  canAttackNearestAgainstLive,
   canAttackNearestLive,
   computeTargetableTiles,
   isTileCastableLive,
+  pickNearestAttackableHostile,
   pickNearestLiveHostileTile,
   shouldApplyHealBuffSideEffectOnRangePreview,
   shouldExecuteLiveCast,
@@ -499,6 +501,85 @@ describe("Attack Nearest live gate", () => {
         tiles,
         1,
       ),
+      false,
+    );
+  });
+});
+
+describe("Attack Nearest production path while controlling a summon", () => {
+  function selfSpell(
+    id: string,
+    effectType: SpellConfig["effectType"],
+  ): SpellConfig {
+    return {
+      id,
+      name: id,
+      description: "",
+      iconEmoji: "",
+      apCost: id === "spell-timestep" ? 0n : 4n,
+      mpCost: 0n,
+      damage: 0n,
+      range: 0n,
+      effectType,
+      targetType: "self",
+      maxRange: 0,
+      minRange: 0,
+    } as SpellConfig;
+  }
+
+  it("button enable and execute share the player tile for Timestep and Mirror", () => {
+    // #326: Attack Nearest only treated self+heal as a caster-tile spell.
+    // Timestep (buff) and Mirror (defense) painted the player tile but the
+    // button searched hostiles. Production execute and canAttackNearest use
+    // pickNearestAttackableHostile after attackNearestLiveCasterPos so a
+    // leftover controlled summon cannot steal the origin.
+    const player = { x: 2, y: 2 };
+    const summon = { x: 8, y: 7 };
+    const caster = attackNearestLiveCasterPos(player, summon);
+    const tiles = floorGrid(16);
+    const ratBesideSummon = {
+      id: "rat-summon-adj",
+      x: 8,
+      y: 8,
+      hp: 20,
+      maxHp: 20,
+      name: "Rat",
+      pieceType: "pawn",
+      side: "enemy" as const,
+    } as Enemy;
+    const live = [ratBesideSummon];
+
+    for (const spell of [
+      selfSpell("spell-timestep", "buff"),
+      selfSpell("spell-mirror", "defense"),
+    ]) {
+      const picked = pickNearestAttackableHostile(
+        spell,
+        caster,
+        live,
+        tiles,
+        0,
+      );
+      assert.deepEqual(
+        picked,
+        player,
+        `${spell.id} must execute on the player tile, not the summon or the rat`,
+      );
+      assert.equal(
+        canAttackNearestAgainstLive(spell, caster, live, tiles, 0),
+        true,
+      );
+      assert.notDeepEqual(picked, summon);
+      assert.notDeepEqual(picked, { x: 8, y: 8 });
+    }
+
+    assert.equal(
+      pickNearestAttackableHostile(strikeSpell(), caster, live, tiles, 1),
+      null,
+      "Strike from the player tile must not snipe a summon-adjacent hostile",
+    );
+    assert.equal(
+      canAttackNearestAgainstLive(strikeSpell(), caster, live, tiles, 1),
       false,
     );
   });
