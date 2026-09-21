@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import {
   BUILT_IN_SPELL_DELETE_BLOCKED,
-  MAX_ENEMY_NAMES,
   achievementUnlockRejected,
   adminSpellDeleteBlockedReason,
   chatCooldownActive,
@@ -416,7 +415,7 @@ assert.equal(validateEnemyName("Malachar"), null);
 assert.equal(enemyNameDuplicate(["Malachar", "Vorenth"], "Malachar"), true);
 assert.equal(enemyNameDuplicate(["Malachar"], "Aethys"), false);
 assert.equal(
-  enemyNamePoolRejected(MAX_ENEMY_NAMES),
+  enemyNamePoolRejected(256),
   "Enemy name pool exceeds maximum of 256",
 );
 assert.equal(enemyNamePoolRejected(0), null);
