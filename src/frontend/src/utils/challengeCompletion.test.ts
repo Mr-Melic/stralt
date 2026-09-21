@@ -10,6 +10,7 @@ import {
   castResultAppliesCooldown,
   castResultSpendsAp,
   challengeFailCopy,
+  challengeHpRestoredByHeal,
   isChallengeCompleted,
   isChallengeFailed,
   isPlayerHealTargetId,
@@ -406,6 +407,65 @@ describe("recordInBattleChallengeHealUsed", () => {
       0,
       "hard_1 500 XP must not persist after an in-battle HP restore",
     );
+  });
+
+  it("fails no-heal when Wisp ctx.heal restores HP before React flushes the stats ref", () => {
+    // Official WX: previousHp = ref.hp; setCharacterStats(updater);
+    // then recordChallengeHealFromHpRestore(..., ref.hp - previousHp).
+    // React batches the updater, so the ref delta is 0 and easy_1 / hard_1
+    // still persisted after starter-heal (12) landed on the next paint.
+    const hpBefore = 40;
+    const maxHp = 100;
+    const starterHeal = 12;
+    const refAfterBatchedSetState = hpBefore;
+    assert.equal(
+      refAfterBatchedSetState - hpBefore,
+      0,
+      "batched setState must not be treated as a 0-HP restore",
+    );
+    const restored = challengeHpRestoredByHeal(hpBefore, maxHp, starterHeal);
+    assert.equal(restored, 12);
+    const healUsed = recordChallengeHealFromHpRestore(true, false, restored);
+    assert.equal(healUsed, true);
+    assert.equal(
+      isChallengeCompleted(byId("easy_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      isChallengeCompleted(byId("hard_1"), progress({ healUsed })),
+      false,
+    );
+    assert.equal(
+      addChallengeRewardDeltas(
+        0,
+        0,
+        liveBattleChallengePersistEntries(true, byId("easy_1"), false),
+      ).dokaFromChallenges,
+      0,
+      "easy_1 50 Doka must not persist after a Wisp heal",
+    );
+    assert.equal(
+      addChallengeRewardDeltas(
+        0,
+        0,
+        liveBattleChallengePersistEntries(true, byId("hard_1"), false),
+      ).xpDelta,
+      0,
+      "hard_1 500 XP must not persist after a Wisp heal",
+    );
+    assert.equal(
+      recordChallengeHealFromHpRestore(
+        true,
+        false,
+        refAfterBatchedSetState - hpBefore,
+      ),
+      false,
+      "unflushed ref delta would have kept the no-heal payout",
+    );
+    assert.equal(challengeHpRestoredByHeal(100, 100, 12), 0);
+    assert.equal(challengeHpRestoredByHeal(95, 100, 12), 5);
+    assert.equal(challengeHpRestoredByHeal(40, 100, 0), 0);
+    assert.equal(challengeHpRestoredByHeal(40, 100, Number.NaN), 0);
   });
 
   it("does not fail no-heal for a 0-HP drain or an overworld restore", () => {

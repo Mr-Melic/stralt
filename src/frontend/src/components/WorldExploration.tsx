@@ -306,6 +306,7 @@ import {
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
+  challengeHpRestoredByHeal,
   isPlayerHealTargetId,
   nextSpellCooldownTurns,
   recordChallengeApSpend,
@@ -9185,6 +9186,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       heal: (combatantId: string, amount: number) => {
         if (isPlayerHealTargetId(combatantId)) {
           const previousHp = characterStatsRef.current.hp;
+          // React batches the wrapped updater; the ref still equals
+          // previousHp here. Wisp starter-heal used that 0 delta and
+          // still persisted easy_1 / hard_1.
+          const restored = challengeHpRestoredByHeal(previousHp, maxHp, amount);
           setCharacterStats((prev: any) => ({
             ...prev,
             hp: Math.min(maxHp, prev.hp + amount),
@@ -9192,7 +9197,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
             inBattleRef.current,
             challengeHealUsedRef.current,
-            characterStatsRef.current.hp - previousHp,
+            restored,
           );
           const pos = playerPositionRef.current;
           spawnDamageAtTile(
@@ -15005,6 +15010,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           heal: (combatantId: string, amount: number) => {
             if (isPlayerHealTargetId(combatantId)) {
               const previousHp = characterStatsRef.current.hp;
+              // Same batched-ref trap as playerSpellContext.heal.
+              const restored = challengeHpRestoredByHeal(
+                previousHp,
+                maxHp,
+                amount,
+              );
               setCharacterStats((prev: any) => ({
                 ...prev,
                 hp: Math.min(maxHp, prev.hp + amount),
@@ -15012,7 +15023,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               challengeHealUsedRef.current = recordChallengeHealFromHpRestore(
                 inBattleRef.current,
                 challengeHealUsedRef.current,
-                characterStatsRef.current.hp - previousHp,
+                restored,
               );
               const pos = playerPositionRef.current;
               spawnDamageAtTile(

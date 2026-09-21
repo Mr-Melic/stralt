@@ -241,11 +241,37 @@ export function isPlayerHealTargetId(id: string | undefined | null): boolean {
 }
 
 /**
+ * HP actually restored by a ctx.heal write.
+ *
+ * WorldExploration used `characterStatsRef.hp - previousHp` immediately
+ * after `setCharacterStats`. The wrapped setter forwards a React
+ * updater, so the ref is still `previousHp` until flush (delta 0).
+ * Wisp `starter-heal` / resolveSpellCast then left `healUsed` false
+ * and handleBattleEnd persisted easy_1 (50 Doka) and hard_1 (200 Doka
+ * / 500 XP). Compute the cap here — do not wait for the ref.
+ *
+ * Full-HP / 0 / invalid requests restore 0 so a damage-only Life Drain
+ * can still complete no-heal. Does not change advertised rewards.
+ */
+export function challengeHpRestoredByHeal(
+  hpBefore: number,
+  maxHp: number,
+  requestedHeal: number,
+): number {
+  const before = Number.isFinite(hpBefore) ? Math.max(0, hpBefore) : 0;
+  const max = Number.isFinite(maxHp) ? Math.max(0, maxHp) : before;
+  const want = Number.isFinite(requestedHeal) ? Math.max(0, requestedHeal) : 0;
+  return Math.max(0, Math.min(max, before + want) - before);
+}
+
+/**
  * Life Drain (`applyDamageToEnemy`) and summon/ctx.heal restore player HP
  * without the executeCastAttempt `self` + `heal` gate. handleBattleEnd then
  * persisted easy_1 (50 Doka) and hard_1 (200 Doka / 500 XP) as a clean
  * no-heal fight. Record only when HP actually increased, and only in battle
  * — the same overworld-must-not-stick rule as Doka-to-HP.
+ *
+ * Pass {@link challengeHpRestoredByHeal}, not a post-setState ref delta.
  */
 export function recordChallengeHealFromHpRestore(
   inBattle: boolean,
