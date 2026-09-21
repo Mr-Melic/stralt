@@ -1,5 +1,7 @@
 # Stralt expansion catalog — 2026-09-02
 
+> **Archive.** Living catalog is [`EXPANSION_PROPOSALS_2026-09-21.md`](./EXPANSION_PROPOSALS_2026-09-21.md). Cards in this file remain historical **PROPOSED** records; do not silently rewrite them. New IDs and re-ranks live in the 2026-09-21 file.
+
 **Author:** Expansion Director (cron `0 */24 * * *`, automation `3f31b18f-a492-11f1-a7d1-d6b4613131ce`)  
 **This run:** third catalog. Re-rank against `origin/main` `58302bc` (`Merge pull request #258` — GameKey admin-approval shop).  
 **Prior living catalog:** [`EXPANSION_PROPOSALS_2026-09-01.md`](./EXPANSION_PROPOSALS_2026-09-01.md) (`HEAD` then `dd275aa`, merged as #192). Now an archive.  
