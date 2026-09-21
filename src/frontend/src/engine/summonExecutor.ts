@@ -32,6 +32,7 @@ import {
   resolveProgressionSafeOccupantCell,
 } from "./occupancy.ts";
 import type { SpellContext } from "./spellEngine.ts";
+import { resolveCastApCost } from "./targeting.ts";
 
 export interface SummonExecutorResult {
   /** New grid position after movement (clamped to grid bounds). */
@@ -151,7 +152,7 @@ export function executeSummonAction(
   // ── Cast primitive (shared by the `cast` branch and the move-then-cast
   // re-evaluation follow-up). Returns true when AP was spent on a real cast.
   const applyCast = (spell: SpellConfig, targetId: string): boolean => {
-    const apCost = Number(spell.apCost ?? 0);
+    const apCost = resolveCastApCost(Number(spell.apCost));
     if (currentAp < apCost) {
       logLines.push(
         `[cast] ${summonLabel} ${spell.name} → ${targetId} blocked (need ${apCost}AP, have ${currentAp}AP)`,
