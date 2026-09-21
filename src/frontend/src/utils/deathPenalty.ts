@@ -129,6 +129,15 @@ export function shouldApplyVictoryLiveHydrate(
 }
 
 /**
+ * Official overworld / persist max HP: `100 + (level-1) * 5`.
+ * Same linear growth as `respawnHpAfterDeath` and `maxPersistedHp(level, 5)`.
+ */
+export function scaledMaxHpForLevel(level: number): number {
+  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
+  return Math.floor(100 * (1 + (safeLevel - 1) * 0.05));
+}
+
+/**
  * 50% of the level-scaled max HP (`100 * (1 + (level-1) * 0.05)`).
  *
  * Must match handleRespawn / Death Realm UI. persistDeathPenalty used to
@@ -136,11 +145,14 @@ export function shouldApplyVictoryLiveHydrate(
  * the player far above max HP.
  */
 export function respawnHpAfterDeath(level: number): number {
-  const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
-  return Math.max(1, Math.floor(100 * (1 + (safeLevel - 1) * 0.05) * 0.5));
+  return Math.max(1, Math.floor(scaledMaxHpForLevel(level) * 0.5));
 }
 
-/** Post-battle HP/AP/MP floor. Uses the pre-hydrate level, matching the live setState. */
+/**
+ * Post-battle HP/AP/MP floor. Uses the pre-hydrate level, matching the live
+ * setState. HP never exceeds the persist cap (`scaledMaxHpForLevel`): the
+ * raw `50 + level * 10` line crossed that cap at level 10 (150 vs 145).
+ */
 export function victoryResourceFloor(level: number): {
   hp: number;
   mp: number;
@@ -148,7 +160,7 @@ export function victoryResourceFloor(level: number): {
 } {
   const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
   return {
-    hp: 50 + safeLevel * 10,
+    hp: Math.min(50 + safeLevel * 10, scaledMaxHpForLevel(safeLevel)),
     mp: 5 + Math.floor(safeLevel / 10),
     ap: 6 + Math.floor(safeLevel / 20),
   };
@@ -304,33 +316,63 @@ export type PendingDeathPenalty = {
    * earn" and resolvePendingDeathReplay cleared without writing.
    */
   cutConfirmed?: boolean;
+  /**
+   * Internet Identity principal that wrote the marker. Slot-only keys
+   * (`pbv_pending_death_penalty_slotN`) used to tax a second II on the
+   * same browser after #183's richer-wallet replay.
+   */
+  ownerKey?: string;
 };
 
-export function pendingDeathPenaltyStorageKey(slot: number): string {
-  return `pbv_pending_death_penalty_slot${Math.max(1, Math.floor(Number(slot) || 1))}`;
+export const DEATH_PENALTY_CHARACTER_SLOTS = [1, 2, 3] as const;
+
+/** Live II principal for new writes. Seeded from App on identity change. */
+let deathPenaltyOwnerKey: string | null = null;
+
+export function normalizeDeathPenaltyOwnerKey(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
-export function writePendingDeathPenalty(
-  storage: DeathPenaltyStorage,
-  pending: PendingDeathPenalty,
-): void {
+export function deathPenaltyOwnerKeyFromIdentity(
+  identity:
+    | { getPrincipal?: () => { toText?: () => string } }
+    | null
+    | undefined,
+): string | null {
   try {
-    storage.setItem(
-      pendingDeathPenaltyStorageKey(pending.slot),
-      JSON.stringify(pending),
+    return normalizeDeathPenaltyOwnerKey(
+      identity?.getPrincipal?.()?.toText?.(),
     );
   } catch {
-    // sessionStorage can throw in private mode; skip the reload replay.
+    return null;
   }
 }
 
-export function readPendingDeathPenalty(
-  storage: DeathPenaltyStorage,
+export function getDeathPenaltyOwnerKey(): string | null {
+  return deathPenaltyOwnerKey;
+}
+
+export function setDeathPenaltyOwnerKey(ownerKey: string | null): void {
+  deathPenaltyOwnerKey = normalizeDeathPenaltyOwnerKey(ownerKey);
+}
+
+export function pendingDeathPenaltyStorageKey(
   slot: number,
+  ownerKey?: string | null,
+): string {
+  const slotPart = Math.max(1, Math.floor(Number(slot) || 1));
+  const owner = normalizeDeathPenaltyOwnerKey(ownerKey);
+  if (owner) return `pbv_pending_death_penalty_${owner}_slot${slotPart}`;
+  return `pbv_pending_death_penalty_slot${slotPart}`;
+}
+
+function parsePendingDeathPenalty(
+  raw: string | null,
 ): PendingDeathPenalty | null {
+  if (!raw) return null;
   try {
-    const raw = storage.getItem(pendingDeathPenaltyStorageKey(slot));
-    if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingDeathPenalty>;
     if (
       parsed.slot == null ||
@@ -349,7 +391,68 @@ export function readPendingDeathPenalty(
       afterDoka: Math.max(0, Math.floor(Number(parsed.afterDoka))),
     };
     if (parsed.cutConfirmed === true) pending.cutConfirmed = true;
+    const owner = normalizeDeathPenaltyOwnerKey(parsed.ownerKey);
+    if (owner) pending.ownerKey = owner;
     return pending;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * After #183, replay subtracts the unpaid loss from any snapshot that has
+ * not already absorbed it — including a second principal's richer wallet.
+ */
+export function shouldApplyPendingDeathForOwner(
+  pending: PendingDeathPenalty,
+  currentOwnerKey: string | null = getDeathPenaltyOwnerKey(),
+): boolean {
+  const pendingOwner = normalizeDeathPenaltyOwnerKey(pending.ownerKey);
+  const current = normalizeDeathPenaltyOwnerKey(currentOwnerKey);
+  if (pendingOwner && current && pendingOwner !== current) return false;
+  return true;
+}
+
+export function writePendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  pending: PendingDeathPenalty,
+): void {
+  try {
+    const owner =
+      normalizeDeathPenaltyOwnerKey(pending.ownerKey) ??
+      getDeathPenaltyOwnerKey();
+    const record: PendingDeathPenalty = owner
+      ? { ...pending, ownerKey: owner }
+      : pending;
+    storage.setItem(
+      pendingDeathPenaltyStorageKey(pending.slot, owner),
+      JSON.stringify(record),
+    );
+  } catch {
+    // sessionStorage can throw in private mode; skip the reload replay.
+  }
+}
+
+export function readPendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  slot: number,
+): PendingDeathPenalty | null {
+  try {
+    const owner = getDeathPenaltyOwnerKey();
+    if (owner) {
+      const scoped = parsePendingDeathPenalty(
+        storage.getItem(pendingDeathPenaltyStorageKey(slot, owner)),
+      );
+      if (scoped && shouldApplyPendingDeathForOwner(scoped, owner)) {
+        return scoped;
+      }
+    }
+    const legacy = parsePendingDeathPenalty(
+      storage.getItem(pendingDeathPenaltyStorageKey(slot)),
+    );
+    if (!legacy) return null;
+    if (!shouldApplyPendingDeathForOwner(legacy, owner)) return null;
+    return legacy;
   } catch {
     return null;
   }
@@ -361,6 +464,47 @@ export function clearPendingDeathPenalty(
 ): void {
   try {
     storage.removeItem(pendingDeathPenaltyStorageKey(slot));
+    const owner = getDeathPenaltyOwnerKey();
+    if (owner) {
+      storage.removeItem(pendingDeathPenaltyStorageKey(slot, owner));
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Logout / II switch. Slot-only markers used to survive `clear()` and tax
+ * the next principal on this browser. Does not run on first hydrate.
+ */
+export function clearPendingDeathPenaltiesOnIdentityChange(
+  storage: DeathPenaltyStorage,
+  previousOwnerKey?: string | null,
+  fallback?: DeathPenaltyStorage,
+): void {
+  const owners = new Set<string | null>([null]);
+  const prev = normalizeDeathPenaltyOwnerKey(previousOwnerKey);
+  const current = getDeathPenaltyOwnerKey();
+  if (prev) owners.add(prev);
+  if (current) owners.add(current);
+  const clearOne = (target: DeathPenaltyStorage) => {
+    for (const slot of DEATH_PENALTY_CHARACTER_SLOTS) {
+      for (const owner of owners) {
+        try {
+          target.removeItem(pendingDeathPenaltyStorageKey(slot, owner));
+        } catch {
+          // ignore
+        }
+      }
+    }
+  };
+  clearOne(storage);
+  if (fallback) {
+    clearOne(fallback);
+    return;
+  }
+  try {
+    if (typeof sessionStorage !== "undefined") clearOne(sessionStorage);
   } catch {
     // ignore
   }
@@ -446,6 +590,9 @@ export function resolvePendingDeathReplay(
 ): PendingDeathReplay {
   const xp = Math.max(0, Math.floor(Number(backendXp) || 0));
   const doka = Math.max(0, Math.floor(Number(backendDoka) || 0));
+  if (!shouldApplyPendingDeathForOwner(pending)) {
+    return { action: "clear" };
+  }
   if (pending.cutConfirmed === true) {
     return { action: "clear" };
   }
