@@ -93,6 +93,26 @@ export function validateGameKeyFormat(code: string): string | null {
   return null;
 }
 
+export function gameKeyRequestId(serial: number): string {
+  return `gk_${Math.max(0, Math.floor(Number(serial) || 0))}`;
+}
+
+/**
+ * Next GameKey request serial. Mirrors `GameKey.bumpRequestSerial` plus the
+ * occupied skip in `requestGameKeyPurchase`. Motoko `Nat` never wraps; a
+ * 999_999_999 cap used to overwrite `gk_1`.
+ */
+export function nextGameKeyRequestSerial(
+  current: number,
+  occupiedIds: ReadonlySet<string>,
+): number {
+  let n = Math.max(0, Math.floor(Number(current) || 0)) + 1;
+  while (occupiedIds.has(gameKeyRequestId(n))) {
+    n += 1;
+  }
+  return n;
+}
+
 export function playerGameKeyStatusCopy(status: string): string {
   switch (status) {
     case "pending":

@@ -122,6 +122,17 @@ module {
         }
     };
 
+    /// Stable request id. Motoko `Nat` is unbounded — never wrap this serial
+    /// onto `gk_1` (a 999_999_999 cap used to overwrite the first row).
+    public func requestId(serial : Nat) : Text {
+        "gk_" # serial.toText()
+    };
+
+    /// Next serial after `current`. Callers skip occupied ids in `main.mo`.
+    public func bumpRequestSerial(current : Nat) : Nat {
+        current + 1
+    };
+
     public func requestCooldownActive(lastSent : Int, now : Int) : Bool {
         now - lastSent < REQUEST_COOLDOWN_NS
     };

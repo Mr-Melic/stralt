@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   gameKeyMailtoHref,
+  gameKeyRequestId,
+  nextGameKeyRequestSerial,
   resolveAdminApproveDokaAmount,
   suggestedDokaFromEuroCents,
   validateGameKeyEmail,
@@ -46,6 +48,24 @@ describe("GameKey email mailto metacharacters", () => {
     );
     assert.equal(validateGameKeyEmail("ada@example.com&bcc=x") != null, true);
     assert.equal(validateGameKeyEmail("ada@example.com#frag") != null, true);
+  });
+});
+
+describe("GameKey request serial (unbounded, skip occupied)", () => {
+  it("does not wrap 999_999_999 onto gk_1", () => {
+    assert.equal(
+      nextGameKeyRequestSerial(999_999_999, new Set()),
+      1_000_000_000,
+    );
+    assert.equal(gameKeyRequestId(1_000_000_000), "gk_1000000000");
+  });
+
+  it("skips an existing gk_1 instead of overwriting", () => {
+    assert.equal(nextGameKeyRequestSerial(0, new Set(["gk_1"])), 2);
+  });
+
+  it("does not rewind onto a lower occupied id", () => {
+    assert.equal(nextGameKeyRequestSerial(5, new Set(["gk_1"])), 6);
   });
 });
 
