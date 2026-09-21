@@ -432,6 +432,7 @@ import {
   creditPendingPurchasesThroughPersist,
   creditedDokaDelta,
 } from "../utils/shopPurchase";
+import { spellLevelsFromCharacterRecord } from "../utils/spellLevelHydrate";
 import {
   type SpellUpgradeActor,
   applySpellLevel,
@@ -3101,36 +3102,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   }, [playerPosition]);
   const [spellbookOpen, setSpellbookOpen] = useState(false);
 
-  // FIX 5: Spell level tracking and Doka upgrade — restore from backend character if available
-  const [spellLevels, setSpellLevels] = useState<Record<string, number>>(() => {
-    // Prefer backend-saved spell levels from character prop
-    if (
-      character?.spellLevelKeys?.length > 0 &&
-      character?.spellLevelValues?.length > 0
-    ) {
-      const result: Record<string, number> = {};
-      const keys = (character?.spellLevelKeys ?? []) as string[];
-      const vals = (character?.spellLevelValues ?? []) as (bigint | number)[];
-      keys.forEach((k, i) => {
-        result[k] = Number(vals[i] ?? 0);
-      });
-      return result;
-    }
-    try {
-      // M6: Try namespaced key first, fall back to legacy for migration
-      const namespacedKey = userId
-        ? `${userId}_slot${characterSlot}_pbv_spell_levels`
-        : "pbv_spell_levels";
-      const saved =
-        localStorage.getItem(namespacedKey) ??
-        localStorage.getItem("pbv_spell_levels");
-      if (saved && userId) localStorage.setItem(namespacedKey, saved); // migrate
-      if (saved) return JSON.parse(saved) as Record<string, number>;
-    } catch {
-      /* ignore */
-    }
-    return {};
-  });
+  // Spell levels: canister arrays only. Empty keys used to fall through to
+  // `{userId}_slotN_pbv_spell_levels` (and leftover `pbv_spell_levels`), so a
+  // delete+recreate on the same slot fought with the previous occupant's
+  // paid upgrades. saveBattleStats ignores the arrays; combat still scaled.
+  const [spellLevels, setSpellLevels] = useState<Record<string, number>>(() =>
+    spellLevelsFromCharacterRecord(character),
+  );
   const spellLevelsRef = useRef<Record<string, number>>({});
   useEffect(() => {
     spellLevelsRef.current = spellLevels;
