@@ -240,6 +240,18 @@ export function settleOneShotPersistLock(
   }
 }
 
+/**
+ * Ground-doka pickup count feeds `loot_10_doka`. The movement step used
+ * to increment (and persist localStorage) immediately after claiming the
+ * id, before settle. Keep/release then still counted toward the feat
+ * without a canister credit.
+ */
+export function shouldCountGroundDokaPickup(
+  settle: OneShotCreditSettle,
+): boolean {
+  return settle.kind === "commit";
+}
+
 function classifyPersistDokaCreditError(
   error: unknown,
 ): "rejected" | "transport" {

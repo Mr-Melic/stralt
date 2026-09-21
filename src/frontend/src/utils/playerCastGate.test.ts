@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   isPlayerTurnEntry,
   shouldAllowPlayerCastEntry,
+  shouldRecordFirstActionForAttackNearest,
 } from "./playerCastGate.ts";
 
 describe("isPlayerTurnEntry", () => {
@@ -82,6 +83,59 @@ describe("shouldAllowPlayerCastEntry", () => {
         hp: 40,
       }),
       false,
+    );
+  });
+});
+
+describe("shouldRecordFirstActionForAttackNearest", () => {
+  it("does not dismiss an unaccepted offer on cooldown, no-AP, or no target", () => {
+    assert.equal(
+      shouldRecordFirstActionForAttackNearest({
+        hasSpell: true,
+        resourcesOk: false,
+        hasLegalTarget: true,
+        spentAp: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRecordFirstActionForAttackNearest({
+        hasSpell: true,
+        resourcesOk: true,
+        hasLegalTarget: false,
+        spentAp: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRecordFirstActionForAttackNearest({
+        hasSpell: false,
+        resourcesOk: true,
+        hasLegalTarget: true,
+        spentAp: false,
+      }),
+      false,
+    );
+  });
+
+  it("marks only after a real AP spend, matching executeCastAttempt", () => {
+    assert.equal(
+      shouldRecordFirstActionForAttackNearest({
+        hasSpell: true,
+        resourcesOk: true,
+        hasLegalTarget: true,
+        spentAp: false,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldRecordFirstActionForAttackNearest({
+        hasSpell: true,
+        resourcesOk: true,
+        hasLegalTarget: true,
+        spentAp: true,
+      }),
+      true,
     );
   });
 });

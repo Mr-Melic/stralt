@@ -184,6 +184,27 @@ export function shouldCopyIdleWalletDoka(args: {
 }
 
 /**
+ * Spell upgrade / rename / shop `commit({ doka: lock - spend })` after a
+ * seeded one-shot transport-keep used to clear `unconfirmedWalletCredit`.
+ * The next heal then skipped the live re-fetch and saveBattleStats-wrote
+ * the pre-credit snapshot (incoming-below-stored; never mints).
+ *
+ * Only a strict wallet rise proves the grant is visible. A spend or a
+ * stale-equal snapshot must keep the flag so resolveCommittedDoka still
+ * re-fetches.
+ */
+export function shouldClearUnconfirmedWalletCredit(args: {
+  unconfirmed: boolean;
+  previousDoka: number;
+  nextDoka: number;
+}): boolean {
+  if (args.unconfirmed !== true) return true;
+  const previous = Math.max(0, Math.floor(Number(args.previousDoka) || 0));
+  const next = Math.max(0, Math.floor(Number(args.nextDoka) || 0));
+  return next > previous;
+}
+
+/**
  * Thrown when saveBattleStats would write a seeded pre-credit snapshot
  * after a one-shot applyRewards transport-keep whose confirm was stale.
  */
@@ -286,6 +307,7 @@ export function createProgressPersist(
       return unconfirmedWalletCredit;
     },
     commit(next: Partial<CommittedProgress>) {
+      const previousDoka = committed.doka;
       committed = {
         doka:
           next.doka != null
@@ -302,8 +324,16 @@ export function createProgressPersist(
       };
       if (next.doka != null) {
         walletSeeded = true;
-        idleWalletSeedBlocked = false;
-        unconfirmedWalletCredit = false;
+        if (
+          shouldClearUnconfirmedWalletCredit({
+            unconfirmed: unconfirmedWalletCredit,
+            previousDoka,
+            nextDoka: committed.doka,
+          })
+        ) {
+          idleWalletSeedBlocked = false;
+          unconfirmedWalletCredit = false;
+        }
       }
     },
     hydrateWhenIdle(
