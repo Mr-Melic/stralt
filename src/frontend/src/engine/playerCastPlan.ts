@@ -13,6 +13,7 @@ import { isSpellOnCooldown } from "../utils/challengeCompletion.ts";
 import {
   type BarrierTiles,
   type CasterPosition,
+  type PlayerCastStatus,
   type TileCastableResult,
   type TileType,
   isTileCastableLive,
@@ -72,6 +73,7 @@ export function planPlayerCastAttempt(args: {
   baseApCost: number;
   cooldownTurnsRemaining: unknown;
   applyApCost?: (base: number) => number;
+  castStatus?: PlayerCastStatus;
 }): PlayerCastAttemptPlan {
   const resources = planPlayerCastResources({
     currentAp: args.currentAp,
@@ -87,6 +89,7 @@ export function planPlayerCastAttempt(args: {
     args.mapTiles,
     args.effectiveRange,
     args.barrierTiles,
+    args.castStatus,
   );
   if (!resources.ok) {
     return {

@@ -30,6 +30,7 @@ const REJECT_COPY: Record<string, string> = {
   area_no_radius: "Invalid target",
   area_no_anchor: "Invalid target",
   no_matching_branch: "Invalid target",
+  timestep_spent: "Already used",
 };
 
 /** Canvas copy when Attack mode is on and no spell is selected. */

@@ -14,6 +14,7 @@ import {
   type TileType,
   computeTargetableTiles,
   spellHighlightRangeBase,
+  spellbookRangeCaption,
 } from "../engine/targeting";
 import type { Enemy, SpellConfig } from "../types/gameTypes";
 
@@ -122,19 +123,7 @@ const RangePatternGrid: React.FC<{ spell: SpellConfig }> = ({ spell }) => {
   const center = Math.floor(GRID / 2); // 4
   const hitSet = computePreviewCells(spell);
   const previewColor = getSpellPreviewColor(spell);
-  const targetType = spell.targetType ?? "enemy";
-  const range = Number(spell.range ?? 0);
-
-  const subtitle =
-    targetType === "self"
-      ? "Self target"
-      : targetType === "all"
-        ? "All targets"
-        : targetType === "line"
-          ? `Line — ${range} tiles`
-          : targetType === "area"
-            ? `Area — radius ${spell.areaRadius ?? range}`
-            : `Range — ${range} tiles`;
+  const subtitle = spellbookRangeCaption(spell);
 
   return (
     <div style={{ marginTop: 8, marginBottom: 6 }}>

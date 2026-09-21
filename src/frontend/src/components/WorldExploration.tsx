@@ -7139,7 +7139,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // SECTION 2c — cache key uses the active caster's tile (controlled summon
     // or player) so spell-range previews render from the summon's position.
     const casterPos = getActiveCasterPos();
-    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
+    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}_${timestepUsedRef.current ? "ts1" : "ts0"}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     // Pacifist Run flips in recordPlayerSpellType on a resolved offensive
@@ -7154,6 +7154,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       worldGridSize: WORLD_GRID_SIZE,
       effectiveRange: playerSpellEffectiveRange(spell, getEffectiveSpellRange),
       barrierTiles: barrierTilesRef.current,
+      castStatus: { timestepUsed: timestepUsedRef.current },
     });
     // M5: store computed result in cache
     spellRangeCacheRef.current.set(cacheKey, result);
@@ -7179,6 +7180,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         currentMap?.tiles ?? [],
         playerSpellEffectiveRange(spell, getEffectiveSpellRange),
         barrierTilesRef.current,
+        { timestepUsed: timestepUsedRef.current },
       );
     },
     [combatantStoreCtx, currentMap, getActiveCasterPos, getEffectiveSpellRange],
@@ -10311,7 +10313,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the rejection log reports whether the cache
           // already held an entry for this key.
-          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}_${timestepUsedRef.current ? "ts1" : "ts0"}`;
           const _preClickCacheHit =
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
@@ -17131,6 +17133,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             log: (msg: string) => logDebugInfo("MODIFIER", msg),
             rng: Math.random,
           }),
+        castStatus: { timestepUsed: timestepUsedRef.current },
       });
       const planned = playerCastAttemptResult(plan);
       if (planned === "on_cooldown") {
@@ -17295,6 +17298,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         mapTiles,
         effectiveRange,
         barrierTilesRef.current,
+        { timestepUsed: timestepUsedRef.current },
       );
       if (!shouldExecuteLiveCast(liveHeal)) {
         setNoTargetFlash(true);
@@ -17312,6 +17316,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         mapTiles,
         effectiveRange,
         barrierTilesRef.current,
+        { timestepUsed: timestepUsedRef.current },
       );
       if (!nearest) {
         setNoTargetFlash(true);
@@ -18892,6 +18897,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 tiles,
                 playerSpellEffectiveRange(spell, getEffectiveSpellRange),
                 barrierTilesRef.current,
+                { timestepUsed: timestepUsedRef.current },
               );
             })()
           }

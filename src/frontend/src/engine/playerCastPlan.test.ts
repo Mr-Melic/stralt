@@ -136,6 +136,35 @@ describe("planPlayerCastResources", () => {
     assert.equal(timestep.ok, true);
     assert.equal(playerCastAttemptResult(timestep), "ok");
   });
+
+  it("does not execute a spent Timestep that highlight would also hide", () => {
+    const spent = planPlayerCastAttempt({
+      spell: {
+        ...strike(),
+        id: "spell-timestep",
+        apCost: 0n,
+        damage: 0n,
+        range: 0n,
+        effectType: "buff",
+        targetType: "self",
+        isTimestep: true,
+        maxRange: 0,
+        minRange: 0,
+      },
+      caster: { x: 4, y: 4 },
+      tile: { x: 4, y: 4 },
+      liveCombatants: [],
+      mapTiles: floorGrid(9),
+      effectiveRange: 0,
+      currentAp: 4,
+      baseApCost: 0,
+      cooldownTurnsRemaining: 0,
+      castStatus: { timestepUsed: true },
+    });
+    assert.equal(spent.ok, false);
+    assert.equal(playerCastAttemptResult(spent), "abort");
+    assert.equal(spent.live.reason, "timestep_spent");
+  });
 });
 
 describe("planPlayerCastAttempt highlight vs execute", () => {
