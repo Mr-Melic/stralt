@@ -134,4 +134,3 @@ describe("applyDamageToEnemy Shell Armor death return", () => {
     assert.equal(result, true);
   });
 });
-});
