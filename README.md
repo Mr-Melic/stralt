@@ -78,7 +78,9 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP accumulators |
 | `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
 | [docs/automation/MASTER_ROADMAP.md](docs/automation/MASTER_ROADMAP.md) | Master Technical Director roadmap (no gameplay changes) |
-| [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | Current director ACTION_ID ledger (reuses 08-30/08-31 IDs) |
+| [docs/automation/ACTION_IDS_2026-09-21.md](docs/automation/ACTION_IDS_2026-09-21.md) | Current director ACTION_ID ledger (2026-09-21) |
+| [docs/automation/ACTION_IDS_2026-09-02.md](docs/automation/ACTION_IDS_2026-09-02.md) | Prior director ACTION_ID ledger (2026-09-02) — do not append |
+| [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | 2026-09-01 director file concatenated by TBC/LHIPS — do not append |
 | [docs/automation/ACTION_IDS_2026-08-31.md](docs/automation/ACTION_IDS_2026-08-31.md) | 2026-08-31 specialist dump yard — do not append |
 | [docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md](docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md) | Player-experience coherence audit (systems, not process) |
 | [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Owner-facing aggregate telemetry design (no production instrumentation) |
@@ -86,6 +88,8 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | TBC 2026-09-01 ACTION_ID ledger (`TBC-2026-09-01-001`; prior TBC/AQA IDs still NEW) |
 | [docs/automation/TELEMETRY_BALANCE_2026-09-02.md](docs/automation/TELEMETRY_BALANCE_2026-09-02.md) | TBC cron 2026-09-02: STATUS WAITING_FOR_TELEMETRY (HEAD `58302bc`; still 0 collectors / 0 rows) |
 | [docs/automation/ACTION_IDS_TBC_2026-09-02.md](docs/automation/ACTION_IDS_TBC_2026-09-02.md) | TBC 2026-09-02 ACTION_ID ledger (`TBC-2026-09-02-001` / `002`; prior TBC/AQA IDs still NEW) |
+| [docs/automation/TELEMETRY_BALANCE_2026-09-21.md](docs/automation/TELEMETRY_BALANCE_2026-09-21.md) | TBC cron 2026-09-21: STATUS WAITING_FOR_TELEMETRY (HEAD `0f5363f`; 158 commits / 70 merges still 0 collectors / 0 rows) |
+| [docs/automation/ACTION_IDS_TBC_2026-09-21.md](docs/automation/ACTION_IDS_TBC_2026-09-21.md) | TBC 2026-09-21 ACTION_ID ledger (`TBC-2026-09-21-001` / `002`; prior TBC/AQA IDs still NEW) |
 | [docs/automation/TELEMETRY_DASHBOARD_2026-09-01.md](docs/automation/TELEMETRY_DASHBOARD_2026-09-01.md) | Owner Health dashboard support matrix (design only; refresh of 2026-08-31) |
 | [docs/automation/ACTION_IDS_TADD_2026-09-01.md](docs/automation/ACTION_IDS_TADD_2026-09-01.md) | Telemetry dashboard designer ACTION_IDs (2026-09-01) |
 | [docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md](docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md) | Owner Health dashboard support matrix (design only; refresh after GameKey + audit bindgen) |
