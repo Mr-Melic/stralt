@@ -7,6 +7,7 @@ import {
   getStatModifier,
   isAdditiveResourceStat,
   mergeIncomingEffect,
+  modifiedResourcePool,
   tickNonDotEffects,
 } from "./statusEffects.ts";
 
@@ -145,6 +146,108 @@ describe("getStatModifier", () => {
     ];
     assert.equal(getStatModifier("player", "dmg", effects), 1);
     assert.equal(getStatModifier("player", "ap", effects), 0);
+  });
+});
+
+describe("modifiedResourcePool", () => {
+  it("is base plus additive AP/MP modifiers and does not clamp", () => {
+    const effects = [
+      fx({
+        effectName: "Haste",
+        type: "buff",
+        targetId: "player",
+        stat: "ap",
+        modifier: 2,
+      }),
+      fx({
+        effectName: "Slow",
+        type: "debuff",
+        targetId: "player",
+        stat: "ap",
+        modifier: -1,
+      }),
+      fx({
+        effectName: "Focus",
+        type: "buff",
+        targetId: "player",
+        stat: "mp",
+        modifier: 3,
+      }),
+    ];
+    assert.equal(modifiedResourcePool(8, effects, "ap"), 9);
+    assert.equal(modifiedResourcePool(4, effects, "mp"), 7);
+  });
+
+  it("returns the progression base when nothing matches", () => {
+    assert.equal(modifiedResourcePool(8, [], "ap"), 8);
+    assert.equal(modifiedResourcePool(4, [], "mp"), 4);
+    assert.equal(
+      modifiedResourcePool(
+        8,
+        [
+          fx({
+            effectName: "Rage",
+            type: "buff",
+            targetId: "player",
+            stat: "dmg",
+            modifier: 1.5,
+          }),
+        ],
+        "ap",
+      ),
+      8,
+    );
+  });
+
+  it("can go negative; turn-start clamp is the caller's job", () => {
+    const pool = modifiedResourcePool(
+      8,
+      [
+        fx({
+          effectName: "Exhaust",
+          type: "debuff",
+          targetId: "player",
+          stat: "ap",
+          modifier: -10,
+        }),
+      ],
+      "ap",
+    );
+    assert.equal(pool, -2);
+    assert.equal(Math.max(0, pool), 0);
+  });
+
+  it("lets restoreApMp subtract apCost after the pool with no clamp", () => {
+    assert.equal(modifiedResourcePool(8, [], "ap") - 3, 5);
+    assert.equal(modifiedResourcePool(8, [], "ap") - 10, -2);
+  });
+
+  it("ignores legacy maxAp/maxMp rows on the ap/mp pool", () => {
+    const effects = [
+      fx({
+        effectName: "LegacyMaxAp",
+        type: "buff",
+        targetId: "player",
+        stat: "maxAp",
+        modifier: 5,
+      }),
+    ];
+    assert.equal(modifiedResourcePool(8, effects, "ap"), 8);
+    assert.equal(isAdditiveResourceStat("maxAp"), false);
+  });
+
+  it("defaults to the player target so summon rows do not inflate the pool", () => {
+    const effects = [
+      fx({
+        effectName: "Haste",
+        type: "buff",
+        targetId: "summon-1",
+        stat: "ap",
+        modifier: 2,
+      }),
+    ];
+    assert.equal(modifiedResourcePool(8, effects, "ap"), 8);
+    assert.equal(modifiedResourcePool(8, effects, "ap", "summon-1"), 10);
   });
 });
 
