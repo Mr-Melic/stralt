@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SpellConfig } from "../types/gameTypes";
+import { isSpellOnCooldown } from "../utils/challengeCompletion";
 import DraggablePanel from "./DraggablePanel";
 import type { CombatantEntry } from "./InitiativeStrip";
 import StatPopup from "./StatPopup";
@@ -621,7 +622,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                 const isHeal =
                   spell?.spellType === "heal" || spell?.spellType === "drain";
                 const cdTurns = spell ? (spellCooldowns[spell.id] ?? 0) : 0;
-                const isOnCooldown = cdTurns > 0;
+                const isOnCooldown = isSpellOnCooldown(cdTurns);
 
                 const spellTitle = !inBattle
                   ? spell

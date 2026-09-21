@@ -48,6 +48,7 @@ import {
 import {
   chebyshevOnBoard as chebyshev,
   enemyCastGeometryOk,
+  enemyCastRangeOk,
   enemySpellRange,
   enemySpellRequiresLos,
 } from "./targeting.ts";
@@ -949,7 +950,7 @@ function decideCaster(
     const spell = pickBestDamageSpell(ctx, t.combatant);
     if (!spell) continue;
     const targetCell = { x: t.combatant.x, y: t.combatant.y };
-    const inRange = chebyshev(origin, targetCell) <= enemySpellRange(spell);
+    const inRange = enemyCastRangeOk(origin, targetCell, spell);
     if (aiCanCast(origin, targetCell, spell, ctx)) {
       // Section 4(a): prefer a target that dies this turn when lookahead is on.
       const lethal = applyLethalLookahead(scored, ctx, spell);
@@ -1096,8 +1097,7 @@ function decideHealer(
     (s) => s.spellType === "heal" || (s.healAmount ?? 0) > 0,
   );
   if (wounded && healSpell) {
-    const dist = chebyshev(origin, { x: wounded.x, y: wounded.y });
-    if (dist <= enemySpellRange(healSpell)) {
+    if (enemyCastRangeOk(origin, { x: wounded.x, y: wounded.y }, healSpell)) {
       ctx.log(`${ctx.enemy.pieceType} heals ${wounded.name}`, HEAL_COLOR);
       logIntent("healer", "heal", wounded.id, "wounded-ally-in-range");
       return {
@@ -1531,7 +1531,7 @@ function decideGeneric(
   const dist = chebyshev(origin, targetCell);
   // Try a ranged spell first.
   const spell = pickBestDamageSpell(ctx, target.combatant);
-  if (spell && dist <= enemySpellRange(spell)) {
+  if (spell && enemyCastRangeOk(origin, targetCell, spell)) {
     if (aiCanCast(origin, targetCell, spell, ctx)) {
       // Section 4(a): prefer a target that dies this turn when lookahead is on.
       const lethal = applyLethalLookahead(scored, ctx, spell);
@@ -1937,7 +1937,7 @@ function decideSummonHunter(
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
   const dist = chebyshev(origin, targetCell);
   // Prefer venom strike when in range; fall back to physical_attack (melee).
-  if (venom && dist <= enemySpellRange(venom)) {
+  if (venom && enemyCastRangeOk(origin, targetCell, venom)) {
     if (aiCanCast(origin, targetCell, venom, ctx)) {
       const lethal = applyLethalLookahead(scored, ctx, venom);
       ctx.log(
@@ -2128,8 +2128,7 @@ function decideSummonGuardian(
   const shield = findKitSpell(kit[0], ctx);
   if (shield && ward) {
     const wardCell = { x: ward.x, y: ward.y };
-    const dist = chebyshev(origin, wardCell);
-    const inRange = dist <= enemySpellRange(shield);
+    const inRange = enemyCastRangeOk(origin, wardCell, shield);
     if (inRange) {
       ctx.log(`${summon.pieceType} shields ${ward.name}`, HEAL_COLOR);
       logIntent("guardian", "cast", ward.id, "starter-shield");
@@ -2250,7 +2249,7 @@ function decideSummonArcher(
   const target = scored[0];
   const targetCell = { x: target.combatant.x, y: target.combatant.y };
   const dist = chebyshev(origin, targetCell);
-  if (preferred && dist <= enemySpellRange(preferred)) {
+  if (preferred && enemyCastRangeOk(origin, targetCell, preferred)) {
     if (aiCanCast(origin, targetCell, preferred, ctx)) {
       ctx.log(
         `${summon.pieceType} looses an arrow at ${target.combatant.name}!`,
@@ -2405,9 +2404,8 @@ function decideSummonBomber(
     hpFracSummon < AI_KAMIKAZE_LOW_HP_PCT;
   if (bestCenter && detonateEligible) {
     const centerCell = { x: bestCenter.x, y: bestCenter.y };
-    const dist = chebyshev(origin, centerCell);
     // Detonate when the cluster center is within cast range.
-    if (dist <= enemySpellRange(inferno)) {
+    if (enemyCastRangeOk(origin, centerCell, inferno)) {
       ctx.log(
         `${summon.pieceType} detonates Inferno on ${bestCount} foes!`,
         CAST_COLOR,
@@ -2483,8 +2481,7 @@ function decideSummonHealer(
   );
   const wounded = pickBestAlly(woundedCandidates, summon, "healer", "heal");
   if (wounded && healSpell) {
-    const dist = chebyshev(origin, { x: wounded.x, y: wounded.y });
-    if (dist <= enemySpellRange(healSpell)) {
+    if (enemyCastRangeOk(origin, { x: wounded.x, y: wounded.y }, healSpell)) {
       ctx.log(`${summon.pieceType} heals ${wounded.name}`, HEAL_COLOR);
       logIntent("healer", "heal", wounded.id, "wounded-ally-in-range");
       return {
@@ -2526,8 +2523,7 @@ function decideSummonHealer(
   // out of range or lower-priority.
   const ward = pickBestAlly(allies, summon, "healer", "rally");
   if (rallySpell && ward) {
-    const dist = chebyshev(origin, { x: ward.x, y: ward.y });
-    if (dist <= enemySpellRange(rallySpell)) {
+    if (enemyCastRangeOk(origin, { x: ward.x, y: ward.y }, rallySpell)) {
       ctx.log(`${summon.pieceType} rallies ${ward.name}`, HEAL_COLOR);
       logIntent("healer", "cast", ward.id, "rallying-cry");
       return {
