@@ -1,13 +1,14 @@
 # Advanced Enemy AI Evolution — Design Catalog
 
 **Status:** PROPOSED (design only; no production code in this change)  
-**Dates:** 2026-08-31 (T0–T5 catalog) · 2026-09-01 (T6+ FUT-01…23) · **2026-09-02 re-read** (WX drift + SYS-13…21 / FUT-24…35)  
+**Dates:** 2026-08-31 (T0–T5 catalog) · 2026-09-01 (T6+ FUT-01…23) · 2026-09-02 (SYS-13…21 / FUT-24…35) · **2026-09-21 re-read** (combat-parity helpers + SYS-22…32 / FUT-36…47)  
 **Scope:** Reusable enemy sophistication that does not terminate at a fixed player level.
 
 This document is the implementation brief for later PRs. It does **not** change combat math, the RAF loop, map generation, or turn order. It records what the live engine already does, then proposes capability modules that can keep appearing as relative difficulty rises.
 
 **2026-09-01 increment:** [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) — kit `levelZone` NaN, unread focus, targeting-shape mismatch, FUT-01…FUT-23.  
-**2026-09-02 increment:** [`ENEMY_AI_EVOLUTION_2026-09-02.md`](./ENEMY_AI_EVOLUTION_2026-09-02.md) — live WX line numbers, player-centric `isTileCastableLive`, empty summon occupancy, path vs Chebyshev MP, boss second-brain legality, SYS-13…SYS-21, FUT-24…FUT-35. T0–T5 proposals in this file are unchanged and still **PROPOSED**.
+**2026-09-02 increment:** [`ENEMY_AI_EVOLUTION_2026-09-02.md`](./ENEMY_AI_EVOLUTION_2026-09-02.md) — live WX line numbers, player-centric `isTileCastableLive`, empty summon occupancy, path vs Chebyshev MP, boss second-brain legality, SYS-13…SYS-21, FUT-24…FUT-35.  
+**2026-09-21 increment:** [`ENEMY_AI_EVOLUTION_2026-09-21.md`](./ENEMY_AI_EVOLUTION_2026-09-21.md) — `enemyCastGeometryOk` / Frozen walk *rate* / `playerCastPlan` / summon `reevaluate` landed but P0 Fire Bolt + empty summon occupancy + `computeAITier` remain; SYS-22…SYS-32, FUT-36…FUT-47. T0–T5 proposals in this file are unchanged and still **PROPOSED**. Live WX cites in §2 below are **stale**; use the 2026-09-21 table.
 
 ---
 
@@ -27,7 +28,7 @@ The current engine maps level bands to an integer `aiTier` and then mostly ignor
 
 ## 2. Current implementation (read-back)
 
-All line numbers are from this checkout. Re-read them before implementing.
+All line numbers in this section were accurate on **2026-09-02**. For the 2026-09-21 checkout, use [`ENEMY_AI_EVOLUTION_2026-09-21.md`](./ENEMY_AI_EVOLUTION_2026-09-21.md) §1. Behaviour did not close P0 honesty; several WX sites moved (Fire Bolt is **16710–16715**, kit **11920**, summon occupied **15156**).
 
 ### 2.1 Decision core
 
@@ -1130,7 +1131,7 @@ All of this uses **public** combat state only.
 
 These are **not** a final boss form. They attach when `score` is high *relative to the player*, including both-level-900 peer fights that still want new toys later.
 
-Full proposal blocks: [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) §4 (FUT-01…23) and [`ENEMY_AI_EVOLUTION_2026-09-02.md`](./ENEMY_AI_EVOLUTION_2026-09-02.md) §4 (FUT-24…35).
+Full proposal blocks: [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_2026-09-01.md) §4 (FUT-01…23), [`ENEMY_AI_EVOLUTION_2026-09-02.md`](./ENEMY_AI_EVOLUTION_2026-09-02.md) §4 (FUT-24…35), and [`ENEMY_AI_EVOLUTION_2026-09-21.md`](./ENEMY_AI_EVOLUTION_2026-09-21.md) §4 (FUT-36…47).
 
 | AI_ID | NAME | Idea (still legal, still bounded) |
 | :--- | :--- | :--- |
@@ -1169,8 +1170,20 @@ Full proposal blocks: [`ENEMY_AI_EVOLUTION_2026-09-01.md`](./ENEMY_AI_EVOLUTION_
 | AI-FUT-33 | Sim kit twin | `longHorizonSim` must call production kit helper. |
 | AI-FUT-34 | Mirror last-spell | Pack SR/physical bias; no combo replay. |
 | AI-FUT-35 | Barrier / ground gate | Manhattan ground; keep `usableByEnemy: false` until profiled. |
+| AI-FUT-36 | Public shield EV | Expected HP damage subtracts public shield; prefer unshielded summons. |
+| AI-FUT-37 | Public mirror don’t-cast | Score self-damage EV when apply would `consumePlayerMirror`. |
+| AI-FUT-38 | Pack leftover-AP redecide | Summon `reevaluate` template after a **paid** walk (SYS-25). |
+| AI-FUT-39 | Stacked terrain scoring | Leftover MP after Frozen+Slime `applyMpCost`; do not raise budget 3. |
+| AI-FUT-40 | Global flags → modules | `AI_*_ENABLED` attach via SYS-01; not all-on for remnants. |
+| AI-FUT-41 | Dest-commit + failed heal | Pairing must not fall through to Fire Bolt. |
+| AI-FUT-42 | Origin vacate in combo | Acting unit’s origin is free for its own follow-up only. |
+| AI-FUT-43 | `getEffectiveStat` TGT-05 | Wired unused; RES/SR estimate only. |
+| AI-FUT-44 | Windstorm miss EV | 50% on **legal** ranged kit ids; never on cheat bolts. |
+| AI-FUT-45 | Boss Manhattan adjacency | Tagged boss brain; pack melee stays Chebyshev. |
+| AI-FUT-46 | Arcane Surge leftover AP | Score a second cheap spell after public `applyApCost`. |
+| AI-FUT-47 | Summon redecide snapshot | Follow-up `decideSummonAction` sees vacated origin + filled occupied. |
 
-Each module is **STATUS: PROPOSED**. Implement only after SYS-01…SYS-05 (and SYS-06…SYS-21 where the module depends on legality).
+Each module is **STATUS: PROPOSED**. Implement only after SYS-01…SYS-05 (and SYS-06…SYS-32 where the module depends on legality).
 
 ---
 
