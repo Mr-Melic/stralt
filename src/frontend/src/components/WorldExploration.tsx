@@ -252,6 +252,7 @@ import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   type TileCastableResult,
   attackNearestLiveCasterPos,
+  bindPlayerCastStatus,
   canAttackNearestAgainstLive,
   computeTargetableTiles,
   decideSpriteCastClick,
@@ -7138,6 +7139,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // SECTION 2c — cache key uses the active caster's tile (controlled summon
     // or player) so spell-range previews render from the summon's position.
     const casterPos = getActiveCasterPos();
+    bindPlayerCastStatus({ timestepUsed: timestepUsedRef.current });
     const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}_${timestepUsedRef.current ? "ts1" : "ts0"}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
@@ -17110,6 +17112,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ) {
         return { castResult: "abort", apCost: 0 };
       }
+      bindPlayerCastStatus({ timestepUsed: timestepUsedRef.current });
       const plan = planPlayerCastAttempt({
         spell,
         caster: attackNearestLiveCasterPos(
@@ -17218,6 +17221,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
   const attackNearestEnemy = useCallback(() => {
+    bindPlayerCastStatus({ timestepUsed: timestepUsedRef.current });
     if (
       !inBattle ||
       battleActionMode !== "attack" ||
@@ -17288,6 +17292,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       mapTiles,
       effectiveRange,
       barrierTilesRef.current,
+      { timestepUsed: timestepUsedRef.current },
     );
     if (!nearest) {
       setNoTargetFlash(true);

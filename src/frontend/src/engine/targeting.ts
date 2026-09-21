@@ -197,11 +197,28 @@ export interface PlayerCastStatus {
   timestepUsed?: boolean;
 }
 
+/**
+ * Highlight / Attack Nearest bind this so a #340-shaped picker call
+ * (no extra argument) still rejects a spent Timestep.
+ */
+let implicitPlayerCastStatus: PlayerCastStatus | undefined;
+
+export function bindPlayerCastStatus(status?: PlayerCastStatus | null): void {
+  implicitPlayerCastStatus = status ?? undefined;
+}
+
+export function boundPlayerCastStatus(
+  explicit?: PlayerCastStatus | null,
+): PlayerCastStatus | undefined {
+  return explicit ?? implicitPlayerCastStatus;
+}
+
 export function playerCastStatusRejects(
   spell: { isTimestep?: boolean },
   status?: PlayerCastStatus | null,
 ): string | null {
-  if (spell.isTimestep === true && status?.timestepUsed === true) {
+  const resolved = boundPlayerCastStatus(status);
+  if (spell.isTimestep === true && resolved?.timestepUsed === true) {
     return "timestep_spent";
   }
   return null;
@@ -524,7 +541,10 @@ export function isTileCastableLive(
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
   castStatus?: PlayerCastStatus,
 ): TileCastableResult {
-  const statusReject = playerCastStatusRejects(spell, castStatus);
+  const statusReject = playerCastStatusRejects(
+    spell,
+    boundPlayerCastStatus(castStatus),
+  );
   if (statusReject) {
     return { ok: false, reason: statusReject };
   }
