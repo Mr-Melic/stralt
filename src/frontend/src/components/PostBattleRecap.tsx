@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
 import type { AchievementConfig } from "../types/gameTypes";
+import { FEATS_UNLOCKED_RECAP_TITLE } from "../utils/featsCopy";
 import { recapUnlocksFromData } from "../utils/recapUnlocks";
 
 export interface BattleRecapData {
@@ -536,9 +537,9 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
             )}
           </RecapSection>
 
-          {/* Newly Unlocked Achievements */}
+          {/* Newly unlocked feats */}
           {unlockedAchievements.length > 0 && (
-            <RecapSection icon="🏆" title="Achievements Unlocked">
+            <RecapSection icon="🏆" title={FEATS_UNLOCKED_RECAP_TITLE}>
               <div
                 className="dofus-scrollbar"
                 style={{ maxHeight: 120, overflowY: "auto" }}
