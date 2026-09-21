@@ -175,6 +175,8 @@ import {
   resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
 import {
+  canEnterAttackModeWithCurrentAp,
+  canSelectSpellWithCurrentAp,
   planPlayerCastAttempt,
   planPlayerCastResources,
   playerCastAttemptResult,
@@ -261,7 +263,6 @@ import {
   pickNearestAttackableHostile,
   playerSpellAllowsCasterTile,
   playerSpellEffectiveRange,
-  probeLiveCast as probeLiveCastAt,
   shouldExecuteLiveCast,
 } from "../engine/targeting";
 import {
@@ -17262,12 +17263,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return;
     }
-    const isHealSpell =
-      spell.targetType === "self" && spell.effectType === "heal";
-    // Same range + live gate as the highlight / sprite-click paths.
-    // Chebyshev-only nearest search used raw `spell.range` and skipped LoS,
-    // so Attack Nearest could fire on a tile the preview never offered.
-    // Caster origin stays the player tile — see attackNearestLiveCasterPos.
     const mapTiles = currentMapRef.current?.tiles;
     if (!mapTiles) return;
     // Player tile, not getActiveCasterPos(): resolvePlayerCast heals only
@@ -17282,44 +17277,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       spell,
       getEffectiveSpellRange,
     );
-    let gridPos: { x: number; y: number };
-    if (isHealSpell) {
-      gridPos = { x: casterPos.x, y: casterPos.y };
-      // Local probeLiveCast uses getActiveCasterPos() (summon tile).
-      // Attack Nearest heals only on the player tile — probe from casterPos.
-      const liveHeal = probeLiveCastAt(
-        spell,
-        casterPos,
-        gridPos,
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTilesRef.current,
-      );
-      if (!shouldExecuteLiveCast(liveHeal)) {
-        setNoTargetFlash(true);
-        setTimeout(() => setNoTargetFlash(false), 1200);
-        return;
-      }
-    } else {
-      // Live store includes enemy summons that are not in React `enemies`.
-      // isActiveHostile is the canonical filter (enemy-side summons after #79).
-      // isTileCastableLive is the same gate as getSpellRangeTiles / sprite-click.
-      const nearest = pickNearestAttackableHostile(
-        spell,
-        casterPos,
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTilesRef.current,
-      );
-      if (!nearest) {
-        setNoTargetFlash(true);
-        setTimeout(() => setNoTargetFlash(false), 1200);
-        return;
-      }
-      gridPos = nearest;
+    // Blood Mend used a local self+heal branch; Timestep / Shield already
+    // went through pickNearestAttackableHostile. One picker so button enable
+    // and execute cannot fork.
+    const nearest = pickNearestAttackableHostile(
+      spell,
+      casterPos,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+      barrierTilesRef.current,
+    );
+    if (!nearest) {
+      setNoTargetFlash(true);
+      setTimeout(() => setNoTargetFlash(false), 1200);
+      return;
     }
+    const gridPos = nearest;
     if (spell.isSummon) {
       logDebugInfo("SUMMON", "cast handler received summon spell", {
         spellId: spell.id,
@@ -18840,7 +18814,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           spellSelectionVersion={spellSelectionVersion}
           hasSelectedSpell={!!selectedSpellIdRef.current}
           onSelectSpell={(id) => {
-            if (!inBattle || currentBattleAp > 0) {
+            const spell = activeSpells.find((s) => s.id === id);
+            const applyAp = (base: number) =>
+              mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              });
+            if (
+              !inBattle ||
+              (spell != null &&
+                canSelectSpellWithCurrentAp({
+                  currentAp: currentBattleAp,
+                  baseApCost: Number(spell.apCost),
+                  applyApCost: applyAp,
+                }))
+            ) {
               selectedSpellIdRef.current = id;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -18909,7 +18897,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             spellRangeCacheRef.current.clear();
           }}
           onSetAttack={() => {
-            if (currentBattleAp > 0) setBattleActionMode("attack");
+            const applyAp = (base: number) =>
+              mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              });
+            if (
+              canEnterAttackModeWithCurrentAp({
+                currentAp: currentBattleAp,
+                spellBaseApCosts: activeSpells.map((s) => Number(s.apCost)),
+                applyApCost: applyAp,
+              })
+            ) {
+              setBattleActionMode("attack");
+            }
           }}
           currentBattleAp={currentBattleAp}
           currentBattleMp={currentBattleMp}

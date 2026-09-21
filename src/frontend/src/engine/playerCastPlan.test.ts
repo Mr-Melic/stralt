@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
+  canEnterAttackModeWithCurrentAp,
+  canSelectSpellWithCurrentAp,
   planPlayerCastAttempt,
   planPlayerCastResources,
   playerCastAttemptResult,
@@ -135,6 +137,66 @@ describe("planPlayerCastResources", () => {
     });
     assert.equal(timestep.ok, true);
     assert.equal(playerCastAttemptResult(timestep), "ok");
+  });
+});
+
+describe("canSelectSpellWithCurrentAp / canEnterAttackModeWithCurrentAp", () => {
+  it("lets a 0-AP Timestep be selected when the wallet is empty", () => {
+    assert.equal(
+      canSelectSpellWithCurrentAp({ currentAp: 0, baseApCost: 0 }),
+      true,
+    );
+    assert.equal(
+      canSelectSpellWithCurrentAp({ currentAp: 0, baseApCost: 2 }),
+      false,
+    );
+    assert.equal(
+      canSelectSpellWithCurrentAp({
+        currentAp: 0,
+        baseApCost: 2,
+        applyApCost: () => 0,
+      }),
+      true,
+    );
+  });
+
+  it("opens attack mode at 0 AP only when some spell is affordable", () => {
+    assert.equal(
+      canEnterAttackModeWithCurrentAp({
+        currentAp: 0,
+        spellBaseApCosts: [2, 4],
+      }),
+      false,
+    );
+    assert.equal(
+      canEnterAttackModeWithCurrentAp({
+        currentAp: 0,
+        spellBaseApCosts: [2, 0],
+      }),
+      true,
+    );
+    assert.equal(
+      canEnterAttackModeWithCurrentAp({
+        currentAp: 0,
+        spellBaseApCosts: [],
+      }),
+      false,
+    );
+    assert.equal(
+      canEnterAttackModeWithCurrentAp({
+        currentAp: 3,
+        spellBaseApCosts: [],
+      }),
+      true,
+    );
+    assert.equal(
+      canEnterAttackModeWithCurrentAp({
+        currentAp: 0,
+        spellBaseApCosts: [4],
+        applyApCost: () => 0,
+      }),
+      true,
+    );
   });
 });
 
