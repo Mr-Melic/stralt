@@ -16,10 +16,6 @@ import {
   shouldApplyCallerDokaHydrate,
   shouldMarkCallerDokaWalletReady,
 } from "../utils/dokaBalanceQuery";
-import {
-  clearAllPendingDeathPenalties,
-  defaultDeathPenaltyStorage,
-} from "../utils/deathPenalty";
 import BossGuideModal from "./BossGuideModal";
 import CharacterCreation from "./CharacterCreation";
 import CharacterSelection from "./CharacterSelection";
@@ -128,20 +124,10 @@ const GameFlow: React.FC<GameFlowProps> = ({
 
   // addDebugLog removed — debug events now route through logDebugInfo directly
 
-  const { clear, identity } = useInternetIdentity();
+  const { clear } = useInternetIdentity();
   const queryClient = useQueryClient();
 
   const handleLogout = async () => {
-    // Drop unpaid death markers before the II identity is cleared. Slot-only
-    // keys let the next principal on this browser replay resolvePendingDeathReplay.
-    try {
-      clearAllPendingDeathPenalties(
-        defaultDeathPenaltyStorage(),
-        identity?.getPrincipal?.()?.toText?.() ?? null,
-      );
-    } catch {
-      // ignore storage / private-mode failures
-    }
     await clear();
     queryClient.clear();
   };
