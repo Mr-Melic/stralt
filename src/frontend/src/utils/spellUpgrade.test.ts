@@ -3,6 +3,7 @@ import {
   createProgressPersist,
   resolveCommittedDokaForAbsoluteWrite,
 } from "./progressPersist.ts";
+import { hasUnconfirmedWalletSpend } from "./progressPersistSpend.ts";
 import {
   applySpellLevel,
   committedDokaAfterSpellUpgrade,
@@ -239,7 +240,7 @@ assert.equal(spellUpgradeUiSpend(100, 0, 190), 10);
   assert.equal(upgrades, 1);
   assert.equal(canister, 190);
   assert.equal(lock.snapshot().doka, 200);
-  assert.equal(lock.hasUnconfirmedWalletSpend(), true);
+  assert.equal(hasUnconfirmedWalletSpend(lock), true);
   assert.equal(shouldReleaseSpellUpgradeInFlight(threw), false);
 
   const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
@@ -247,7 +248,7 @@ assert.equal(spellUpgradeUiSpend(100, 0, 190), 10);
     async () => canister,
   );
   assert.equal(caughtUp, 190);
-  assert.equal(lock.hasUnconfirmedWalletSpend(), false);
+  assert.equal(hasUnconfirmedWalletSpend(lock), false);
 }
 
 {
@@ -267,7 +268,7 @@ assert.equal(spellUpgradeUiSpend(100, 0, 190), 10);
     banned = String((e as Error).message).includes("Account banned");
   }
   assert.equal(banned, true);
-  assert.equal(lock.hasUnconfirmedWalletSpend(), false);
+  assert.equal(hasUnconfirmedWalletSpend(lock), false);
   assert.equal(lock.snapshot().doka, 200);
 }
 

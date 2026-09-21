@@ -11,6 +11,11 @@
  * committed and the next heal/shop saveBattleStats writes it on-chain.
  */
 
+import {
+  clearUnconfirmedWalletSpend,
+  noteUnconfirmedSpend,
+} from "./progressPersistSpend.ts";
+
 export function readRenameCharacterResult(
   result: unknown,
 ): { ok: true } | { err: string } {
@@ -89,7 +94,6 @@ export type RenamePersistLock = {
   snapshot(): { doka: number };
   isWalletSeeded(): boolean;
   noteUnseededCredit?: () => void;
-  noteUnconfirmedSpend?: () => void;
 };
 
 export type RenameActor = {
@@ -123,7 +127,7 @@ export async function persistRenameThroughLock(
         await actor.renameCharacter(BigInt(slot), newName),
       );
     } catch {
-      persist.noteUnconfirmedSpend?.();
+      noteUnconfirmedSpend(persist);
       persist.noteUnseededCredit?.();
       return { err: "renameCharacter transport error" };
     }
@@ -134,6 +138,7 @@ export async function persistRenameThroughLock(
       persist.commit({
         doka: committedDokaAfterRename(persist.snapshot().doka),
       });
+      clearUnconfirmedWalletSpend(persist);
     }
     return parsed;
   });

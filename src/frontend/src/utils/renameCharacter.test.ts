@@ -6,6 +6,7 @@ import {
   resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
 } from "./progressPersist.ts";
+import { hasUnconfirmedWalletSpend } from "./progressPersistSpend.ts";
 import {
   RENAME_DOKA_COST,
   beginRename,
@@ -191,7 +192,7 @@ describe("persistRenameThroughLock throw-after-debit", () => {
     assert.equal(canister, 400);
     assert.equal(name, "Alice");
     assert.equal(lock.snapshot().doka, 500);
-    assert.equal(lock.hasUnconfirmedWalletSpend(), true);
+    assert.equal(hasUnconfirmedWalletSpend(lock), true);
 
     const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
       lock,
@@ -216,6 +217,6 @@ describe("persistRenameThroughLock throw-after-debit", () => {
     );
     assert.deepEqual(parsed, { ok: true });
     assert.equal(lock.snapshot().doka, 400);
-    assert.equal(lock.hasUnconfirmedWalletSpend(), false);
+    assert.equal(hasUnconfirmedWalletSpend(lock), false);
   });
 });

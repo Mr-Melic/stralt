@@ -5,6 +5,8 @@
  * restored the next time callerDokaBalance refetches.
  */
 
+import { noteUnconfirmedSpend } from "./progressPersistSpend.ts";
+
 export interface SpellUpgradeOk {
   newLevel: number;
   newDoka?: number;
@@ -77,7 +79,6 @@ export const SPELL_UPGRADE_TRANSPORT_AFTER_INVOKE =
 
 export type SpellUpgradePersistLock = {
   noteUnseededCredit?: () => void;
-  noteUnconfirmedSpend?: () => void;
 };
 
 /**
@@ -94,7 +95,7 @@ export type SpellUpgradePersistLock = {
 export function noteSpellUpgradeTransportKeep(
   persist: SpellUpgradePersistLock,
 ): void {
-  persist.noteUnconfirmedSpend?.();
+  noteUnconfirmedSpend(persist);
   persist.noteUnseededCredit?.();
 }
 
