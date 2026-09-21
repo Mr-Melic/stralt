@@ -82,6 +82,11 @@ export function validateGameKeyConsent(consent: boolean): string | null {
     : "Consent is required to use this email for the GameKey";
 }
 
+/** Strip whitespace so email/paste newlines do not fail a 120-character key. */
+export function normalizeGameKeyInput(raw: string): string {
+  return raw.replace(/\s+/g, "");
+}
+
 export function validateGameKeyFormat(code: string): string | null {
   if (code.length < GAME_KEY_LENGTH) return "GameKey is too short";
   if (code.length > GAME_KEY_LENGTH) return "GameKey is too long";
