@@ -293,11 +293,6 @@ export type DeathPenaltyStorage = Pick<
 
 export type PendingDeathPenalty = {
   slot: number;
-  /**
-   * Principal (or other stable account id). Required on new writes so a
-   * second II identity on the same browser cannot replay this cut.
-   */
-  ownerKey?: string;
   preXp: number;
   preDoka: number;
   afterXp: number;
@@ -311,28 +306,8 @@ export type PendingDeathPenalty = {
   cutConfirmed?: boolean;
 };
 
-function normalizeDeathOwnerKey(ownerKey?: string | null): string {
-  return String(ownerKey ?? "").trim();
-}
-
-/**
- * Slot-only keys let a second II principal on the same browser adopt an
- * unpaid 20/40 marker and tax their wallet via resolvePendingDeathReplay
- * (any snap with xp/doka above the dead account's `after*` is cut).
- */
-export function pendingDeathPenaltyStorageKey(
-  slot: number,
-  ownerKey?: string | null,
-): string {
-  const s = Math.max(1, Math.floor(Number(slot) || 1));
-  const owner = normalizeDeathOwnerKey(ownerKey);
-  if (owner) return `pbv_pending_death_penalty_${owner}_slot${s}`;
-  return `pbv_pending_death_penalty_slot${s}`;
-}
-
-/** Legacy pre-owner key. Cleared on logout / after a scoped write. */
-export function legacyPendingDeathPenaltyStorageKey(slot: number): string {
-  return pendingDeathPenaltyStorageKey(slot);
+export function pendingDeathPenaltyStorageKey(slot: number): string {
+  return `pbv_pending_death_penalty_slot${Math.max(1, Math.floor(Number(slot) || 1))}`;
 }
 
 export function writePendingDeathPenalty(
@@ -340,33 +315,22 @@ export function writePendingDeathPenalty(
   pending: PendingDeathPenalty,
 ): void {
   try {
-    const owner = normalizeDeathOwnerKey(pending.ownerKey);
-    const payload: PendingDeathPenalty = owner
-      ? { ...pending, ownerKey: owner }
-      : pending;
     storage.setItem(
-      pendingDeathPenaltyStorageKey(pending.slot, owner || undefined),
-      JSON.stringify(payload),
+      pendingDeathPenaltyStorageKey(pending.slot),
+      JSON.stringify(pending),
     );
-    // Stop cross-account adoption of a pre-owner marker on this slot.
-    if (owner) {
-      try {
-        storage.removeItem(legacyPendingDeathPenaltyStorageKey(pending.slot));
-      } catch {
-        // ignore
-      }
-    }
   } catch {
     // sessionStorage can throw in private mode; skip the reload replay.
   }
 }
 
-function parsePendingDeathPenalty(
-  raw: string | null,
-  expectedOwner?: string | null,
+export function readPendingDeathPenalty(
+  storage: DeathPenaltyStorage,
+  slot: number,
 ): PendingDeathPenalty | null {
-  if (!raw) return null;
   try {
+    const raw = storage.getItem(pendingDeathPenaltyStorageKey(slot));
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingDeathPenalty>;
     if (
       parsed.slot == null ||
@@ -377,14 +341,6 @@ function parsePendingDeathPenalty(
     ) {
       return null;
     }
-    const owner = normalizeDeathOwnerKey(parsed.ownerKey);
-    const want = normalizeDeathOwnerKey(expectedOwner);
-    // Scoped reads must not adopt another principal's marker. Owner-less
-    // legacy JSON is only returned when the caller asked for legacy
-    // (expectedOwner empty) — callers that pass a principal reject it.
-    if (want) {
-      if (!owner || owner !== want) return null;
-    }
     const pending: PendingDeathPenalty = {
       slot: Math.floor(Number(parsed.slot)),
       preXp: Math.max(0, Math.floor(Number(parsed.preXp))),
@@ -392,40 +348,8 @@ function parsePendingDeathPenalty(
       afterXp: Math.max(0, Math.floor(Number(parsed.afterXp))),
       afterDoka: Math.max(0, Math.floor(Number(parsed.afterDoka))),
     };
-    if (owner) pending.ownerKey = owner;
     if (parsed.cutConfirmed === true) pending.cutConfirmed = true;
     return pending;
-  } catch {
-    return null;
-  }
-}
-
-export function readPendingDeathPenalty(
-  storage: DeathPenaltyStorage,
-  slot: number,
-  ownerKey?: string | null,
-): PendingDeathPenalty | null {
-  try {
-    const owner = normalizeDeathOwnerKey(ownerKey);
-    if (owner) {
-      const scoped = parsePendingDeathPenalty(
-        storage.getItem(pendingDeathPenaltyStorageKey(slot, owner)),
-        owner,
-      );
-      if (scoped) return scoped;
-      // Drop owner-less legacy markers so a second II identity cannot
-      // replay them. Same-tab unpaid deaths after this deploy write scoped.
-      try {
-        storage.removeItem(legacyPendingDeathPenaltyStorageKey(slot));
-      } catch {
-        // ignore
-      }
-      return null;
-    }
-    return parsePendingDeathPenalty(
-      storage.getItem(legacyPendingDeathPenaltyStorageKey(slot)),
-      null,
-    );
   } catch {
     return null;
   }
@@ -434,26 +358,11 @@ export function readPendingDeathPenalty(
 export function clearPendingDeathPenalty(
   storage: DeathPenaltyStorage,
   slot: number,
-  ownerKey?: string | null,
 ): void {
   try {
-    const owner = normalizeDeathOwnerKey(ownerKey);
-    if (owner) {
-      storage.removeItem(pendingDeathPenaltyStorageKey(slot, owner));
-    }
-    storage.removeItem(legacyPendingDeathPenaltyStorageKey(slot));
+    storage.removeItem(pendingDeathPenaltyStorageKey(slot));
   } catch {
     // ignore
-  }
-}
-
-/** Logout / account switch must drop every slot marker for this browser. */
-export function clearAllPendingDeathPenalties(
-  storage: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
-  ownerKey?: string | null,
-): void {
-  for (const slot of [1, 2, 3]) {
-    clearPendingDeathPenalty(storage, slot, ownerKey);
   }
 }
 
@@ -583,37 +492,35 @@ export function readPendingDeathPenaltyAnywhere(
   slot: number,
   primary: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
   fallback?: DeathPenaltyStorage,
-  ownerKey?: string | null,
 ): PendingDeathPenalty | null {
-  const first = readPendingDeathPenalty(primary, slot, ownerKey);
+  const first = readPendingDeathPenalty(primary, slot);
   if (first) return first;
   if (!fallback) {
     try {
       if (typeof sessionStorage !== "undefined") {
-        return readPendingDeathPenalty(sessionStorage, slot, ownerKey);
+        return readPendingDeathPenalty(sessionStorage, slot);
       }
     } catch {
       return null;
     }
     return null;
   }
-  return readPendingDeathPenalty(fallback, slot, ownerKey);
+  return readPendingDeathPenalty(fallback, slot);
 }
 
 export function clearPendingDeathPenaltyAnywhere(
   slot: number,
   primary: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
   fallback?: DeathPenaltyStorage,
-  ownerKey?: string | null,
 ): void {
-  clearPendingDeathPenalty(primary, slot, ownerKey);
+  clearPendingDeathPenalty(primary, slot);
   if (fallback) {
-    clearPendingDeathPenalty(fallback, slot, ownerKey);
+    clearPendingDeathPenalty(fallback, slot);
     return;
   }
   try {
     if (typeof sessionStorage !== "undefined") {
-      clearPendingDeathPenalty(sessionStorage, slot, ownerKey);
+      clearPendingDeathPenalty(sessionStorage, slot);
     }
   } catch {
     // ignore
@@ -633,7 +540,7 @@ export function confirmAndClearPendingDeathPenalty(
   pending: PendingDeathPenalty,
 ): void {
   confirmPendingDeathPenalty(storage, pending);
-  clearPendingDeathPenalty(storage, pending.slot, pending.ownerKey);
+  clearPendingDeathPenalty(storage, pending.slot);
 }
 
 export function confirmAndClearPendingDeathPenaltyAnywhere(
@@ -642,20 +549,13 @@ export function confirmAndClearPendingDeathPenaltyAnywhere(
   primary: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
   fallback?: DeathPenaltyStorage,
 ): void {
-  const withSlot = {
-    ...pending,
-    slot,
-    ownerKey: pending.ownerKey,
-  };
-  confirmPendingDeathPenalty(primary, withSlot);
-  clearPendingDeathPenaltyAnywhere(slot, primary, fallback, pending.ownerKey);
+  confirmPendingDeathPenalty(primary, { ...pending, slot });
+  clearPendingDeathPenaltyAnywhere(slot, primary, fallback);
 }
 
 export type FlushPendingDeathArgs = {
   storage: DeathPenaltyStorage;
   slot: number;
-  /** Principal text — required so a second II identity cannot flush this cut. */
-  ownerKey?: string | null;
   persist: {
     commit: (next: { doka?: number; xp?: number }) => void;
   };
@@ -672,30 +572,20 @@ export type FlushPendingDeathArgs = {
 export async function flushPendingDeathPenalty(
   args: FlushPendingDeathArgs,
 ): Promise<boolean> {
-  const pending = readPendingDeathPenalty(
-    args.storage,
-    args.slot,
-    args.ownerKey,
-  );
+  const pending = readPendingDeathPenalty(args.storage, args.slot);
   if (!pending) return false;
   const snap = await args.fetchSnapshot();
   if (!snap) return false;
   const decision = resolvePendingDeathReplay(snap.xp, snap.doka, pending);
   if (decision.action !== "write") {
-    clearPendingDeathPenalty(args.storage, args.slot, args.ownerKey);
+    clearPendingDeathPenalty(args.storage, args.slot);
     return false;
   }
   await persistWithRetry(() =>
     args.writePenalty(decision.newXp, decision.newDoka),
   );
   args.persist.commit({ doka: decision.newDoka, xp: decision.newXp });
-  confirmAndClearPendingDeathPenalty(args.storage, {
-    ...pending,
-    ownerKey:
-      pending.ownerKey ||
-      normalizeDeathOwnerKey(args.ownerKey) ||
-      undefined,
-  });
+  confirmAndClearPendingDeathPenalty(args.storage, pending);
   return true;
 }
 
