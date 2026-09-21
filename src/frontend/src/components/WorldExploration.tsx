@@ -9454,7 +9454,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ) => {
         const isPhysical = spell?.isPhysical ?? false;
         const isDrainSpell = spell?.effectType === "drain";
-        applyDamageToEnemyHelper({
+        return applyDamageToEnemyHelper({
           hitTarget: target as any,
           isFirstTarget,
           deps: {
