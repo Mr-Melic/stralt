@@ -102,7 +102,6 @@ import {
   battleWalkCostPerTile,
   battleWalkMpBudget,
   battleWalkMpCost,
-  canAffordBattleWalk,
 } from "../engine/battleWalkMp";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
@@ -153,6 +152,10 @@ import {
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
 import {
+  buffItemHealAmount,
+  buffItemResourceFloat,
+} from "../engine/itemUseFeel";
+import {
   applyFinalizedLayout,
   applySanctuaryLayout,
   applyVoidTiles,
@@ -200,7 +203,9 @@ import {
 } from "../engine/portalRules";
 import { getPlayerBaseStats } from "../engine/progression";
 import {
+  PAPER_WINDSTORM_MISS_COPY,
   SELECT_SPELL_COPY,
+  SUMMON_NO_TARGET_COPY,
   WAIT_FOR_TURN_COPY,
   playerFacingCastResult,
   playerFacingRejectReason,
@@ -270,6 +275,7 @@ import {
   removeCombatantFromTurnQueue,
 } from "../engine/turnQueue";
 import {
+  classifySummonControlWalkReject,
   classifyWalkReject,
   isBattleWalkTileBlocked,
   playerFacingWalkReject,
@@ -3590,6 +3596,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           break;
         default:
           break;
+      }
+      {
+        const pos = playerPositionRef.current;
+        const healAmt = buffItemHealAmount(itemType, maxHp);
+        if (healAmt != null && healAmt > 0) {
+          spawnDamageAtTile(
+            effectsManagerRef.current,
+            tileCenterRef.current,
+            pos.x,
+            pos.y,
+            healAmt,
+            "heal",
+          );
+        } else {
+          const resource = buffItemResourceFloat(itemType);
+          if (resource) {
+            const screen = tileCenterRef.current(pos.x, pos.y);
+            effectsManagerRef.current?.spawnFloatText(
+              screen.x,
+              screen.y,
+              resource.text,
+              resource.color,
+            );
+          }
+        }
       }
       // Potions restore HP without executeCastAttempt / Doka-heal, so
       // healUsed used to stay false and no-heal challenges still paid out.
@@ -9384,6 +9415,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ...prev,
           hp: Math.max(1, prev.hp - amount),
         }));
+        if (recorded.lost > 0) {
+          const pos = playerPositionRef.current;
+          spawnDamageAtTile(
+            effectsManagerRef.current,
+            tileCenterRef.current,
+            pos.x,
+            pos.y,
+            recorded.lost,
+            "damage",
+          );
+        }
         return amount;
       },
       swapPositions: (targetEnemyId: string) => {
@@ -9566,6 +9608,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           logBattleEntry(
             "Paper Windstorm blows your spell off course!",
             "#94a3b8",
+          );
+          const _screen = tileCenterRef.current(_gridPos.x, _gridPos.y);
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            PAPER_WINDSTORM_MISS_COPY,
           );
           return true;
         }
@@ -9841,7 +9889,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           : undefined,
       });
       if (!plan.ok) {
-        logBattleEntry(summonControlCastFailMessage(plan.reason), "#ef4444");
+        const failCopy = summonControlCastFailMessage(plan.reason);
+        logBattleEntry(failCopy, "#ef4444");
+        const _screen = tileCenter(targetEnemy.x, targetEnemy.y);
+        effectsManagerRef.current?.spawnFloatText(
+          _screen.x,
+          _screen.y,
+          failCopy,
+        );
         return;
       }
       summonCastCommittedRef.current = true;
@@ -9900,6 +9955,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       combatantStoreCtx,
       currentMap,
       logBattleEntry,
+      tileCenter,
     ],
   );
 
@@ -10074,31 +10130,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
             if (targetEnemy) {
               castControlledSummonSpell(summon as any, targetEnemy);
+            } else {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                SUMMON_NO_TARGET_COPY,
+              );
             }
           } else {
-            const path = findPath(
-              { x: summon.x, y: summon.y },
-              { x: gridPos.x, y: gridPos.y },
-            );
-            if (path && path.length > 0) {
-              const reachable = getMpReachableTiles();
-              if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
-                logBattleEntry("Can't reach", "#ef4444");
-              } else {
-                const costPerTile = walkMpCostPerTile();
-                const moveCost = battleWalkMpCost(path.length, costPerTile);
-                if (
-                  canAffordBattleWalk(
-                    summon.currentMp ?? 0,
-                    path.length,
-                    costPerTile,
-                  )
-                ) {
-                  applyControlledSummonWalk(summon, gridPos, moveCost);
-                } else {
-                  logBattleEntry("Not enough MP", "#ef4444");
-                }
-              }
+            const path =
+              findPath(
+                { x: summon.x, y: summon.y },
+                { x: gridPos.x, y: gridPos.y },
+              ) ?? [];
+            const reachable = getMpReachableTiles();
+            const costPerTile = walkMpCostPerTile();
+            const walkReject = classifySummonControlWalkReject({
+              from: { x: summon.x, y: summon.y },
+              to: gridPos,
+              pathLength: path.length,
+              reachable: reachable.has(`${gridPos.x},${gridPos.y}`),
+              currentMp: summon.currentMp ?? 0,
+              costPerTile,
+            });
+            if (walkReject) {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                playerFacingWalkReject(walkReject),
+              );
+              logBattleEntry(playerFacingWalkReject(walkReject), "#ef4444");
+            } else {
+              const moveCost = battleWalkMpCost(path.length, costPerTile);
+              applyControlledSummonWalk(summon, gridPos, moveCost);
             }
           }
           return;
@@ -10773,31 +10839,41 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 );
             if (targetEnemy) {
               castControlledSummonSpell(summon as any, targetEnemy);
+            } else {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                SUMMON_NO_TARGET_COPY,
+              );
             }
           } else {
-            const path = findPath(
-              { x: summon.x, y: summon.y },
-              { x: gridPos.x, y: gridPos.y },
-            );
-            if (path && path.length > 0) {
-              const reachable = getMpReachableTiles();
-              if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
-                logBattleEntry("Can't reach", "#ef4444");
-              } else {
-                const costPerTile = walkMpCostPerTile();
-                const moveCost = battleWalkMpCost(path.length, costPerTile);
-                if (
-                  canAffordBattleWalk(
-                    summon.currentMp ?? 0,
-                    path.length,
-                    costPerTile,
-                  )
-                ) {
-                  applyControlledSummonWalk(summon, gridPos, moveCost);
-                } else {
-                  logBattleEntry("Not enough MP", "#ef4444");
-                }
-              }
+            const path =
+              findPath(
+                { x: summon.x, y: summon.y },
+                { x: gridPos.x, y: gridPos.y },
+              ) ?? [];
+            const reachable = getMpReachableTiles();
+            const costPerTile = walkMpCostPerTile();
+            const walkReject = classifySummonControlWalkReject({
+              from: { x: summon.x, y: summon.y },
+              to: gridPos,
+              pathLength: path.length,
+              reachable: reachable.has(`${gridPos.x},${gridPos.y}`),
+              currentMp: summon.currentMp ?? 0,
+              costPerTile,
+            });
+            if (walkReject) {
+              const _screen = tileCenter(gridPos.x, gridPos.y);
+              effectsManagerRef.current?.spawnFloatText(
+                _screen.x,
+                _screen.y,
+                playerFacingWalkReject(walkReject),
+              );
+              logBattleEntry(playerFacingWalkReject(walkReject), "#ef4444");
+            } else {
+              const moveCost = battleWalkMpCost(path.length, costPerTile);
+              applyControlledSummonWalk(summon, gridPos, moveCost);
             }
           }
           return;
@@ -16493,6 +16569,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   `Paper Windstorm! ${enemy.pieceType}'s ${chosenSpell.name} missed!`,
                   "#AAAAAA",
                 );
+                const _missScreen = tileCenterRef.current(
+                  targetCell.x,
+                  targetCell.y,
+                );
+                effectsManagerRef.current?.spawnFloatText(
+                  _missScreen.x,
+                  _missScreen.y,
+                  PAPER_WINDSTORM_MISS_COPY,
+                );
               } else if (
                 !chosenSpell.hitsMultiple &&
                 !chosenSpell.aoe &&
@@ -16726,12 +16811,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 1,
                 Math.round(rawFB * (1 - meleeRes / 100)),
               );
-              if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5)
+              if (isPaperWindstorm && fb.range > 1 && Math.random() < 0.5) {
                 logBattleEntry(
                   `Paper Windstorm! ${enemy.pieceType}'s ${fb.name} missed!`,
                   "#AAAAAA",
                 );
-              else if (isSummonTarget && resolvedTarget) {
+                const _missScreen = tileCenterRef.current(
+                  targetCell.x,
+                  targetCell.y,
+                );
+                effectsManagerRef.current?.spawnFloatText(
+                  _missScreen.x,
+                  _missScreen.y,
+                  PAPER_WINDSTORM_MISS_COPY,
+                );
+              } else if (isSummonTarget && resolvedTarget) {
                 // Summon target: route through enemyTakesDamage; no shield/DoTs.
                 enemyTakesDamage(
                   resolvedTarget.id,
@@ -17230,8 +17324,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         deathTriggered: deathTriggeredRef.current,
         hp: characterStatsRef.current.hp,
       })
-    )
+    ) {
+      const _screen = tileCenter(
+        playerPositionRef.current.x,
+        playerPositionRef.current.y,
+      );
+      effectsManagerRef.current?.spawnFloatText(
+        _screen.x,
+        _screen.y,
+        WAIT_FOR_TURN_COPY,
+      );
       return;
+    }
     markFirstAction();
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
@@ -17249,17 +17353,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }),
     });
     if (!_anResources.ok) {
-      if (_anResources.reason === "on_cooldown") {
-        const _screen = tileCenter(
-          playerPositionRef.current.x,
-          playerPositionRef.current.y,
-        );
-        effectsManagerRef.current?.spawnFloatText(
-          _screen.x,
-          _screen.y,
-          "On cooldown",
-        );
-      }
+      const _screen = tileCenter(
+        playerPositionRef.current.x,
+        playerPositionRef.current.y,
+      );
+      effectsManagerRef.current?.spawnFloatText(
+        _screen.x,
+        _screen.y,
+        playerFacingCastResult(_anResources.reason),
+      );
       return;
     }
     const isHealSpell =

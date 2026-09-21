@@ -50,6 +50,35 @@ export function shouldFloatWorldUnreachable(
   return !(dx <= 1 && dy <= 1);
 }
 
+/**
+ * Controlled-summon walk: player battle-walk already floats via
+ * {@link classifyWalkReject}. This path used to log "Can't reach" /
+ * "Not enough MP" and stay silent on an empty path. Self-tile stays
+ * quiet. Empty path (not self) is unreachable — summon control does
+ * not auto-step adjacent floor the way world-mode does.
+ */
+export function classifySummonControlWalkReject(input: {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  pathLength: number;
+  reachable: boolean;
+  currentMp: number;
+  costPerTile?: number;
+}): WalkRejectReason | null {
+  const dx = Math.abs(input.to.x - input.from.x);
+  const dy = Math.abs(input.to.y - input.from.y);
+  if (dx + dy === 0) return null;
+  const pathLength = Math.max(0, Math.floor(Number(input.pathLength) || 0));
+  if (pathLength <= 0) return "unreachable";
+  return classifyWalkReject({
+    currentMp: input.currentMp,
+    isBlocked: false,
+    reachable: input.reachable,
+    pathLength,
+    costPerTile: input.costPerTile,
+  });
+}
+
 export function playerFacingWalkReject(reason: WalkRejectReason): string {
   switch (reason) {
     case "no_mp":

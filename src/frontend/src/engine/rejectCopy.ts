@@ -38,6 +38,12 @@ export const SELECT_SPELL_COPY = "Select a spell";
 /** Canvas copy when a leftover spell click lands off the player turn. */
 export const WAIT_FOR_TURN_COPY = "Wait for your turn";
 
+/** Canvas IMPACT when Paper Windstorm spends AP and the spell does not land. */
+export const PAPER_WINDSTORM_MISS_COPY = "Missed!";
+
+/** Canvas copy when summon-control has a kit spell selected but the click has no target. */
+export const SUMMON_NO_TARGET_COPY = "No target";
+
 /**
  * Map a live-cast / targeting reason to short carved-stone float copy.
  * Already-human strings (spaces, no snake_case) pass through unchanged.
