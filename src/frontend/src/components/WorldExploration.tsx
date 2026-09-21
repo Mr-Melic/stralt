@@ -252,6 +252,7 @@ import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   type TileCastableResult,
   attackNearestLiveCasterPos,
+  bindPlayerCastStatus,
   canAttackNearestAgainstLive,
   computeTargetableTiles,
   decideSpriteCastClick,
@@ -261,7 +262,6 @@ import {
   pickNearestAttackableHostile,
   playerSpellAllowsCasterTile,
   playerSpellEffectiveRange,
-  probeLiveCast as probeLiveCastAt,
   shouldExecuteLiveCast,
 } from "../engine/targeting";
 import {
@@ -7139,7 +7139,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // SECTION 2c — cache key uses the active caster's tile (controlled summon
     // or player) so spell-range previews render from the summon's position.
     const casterPos = getActiveCasterPos();
-    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}`;
+    bindPlayerCastStatus({ timestepUsed: timestepUsedRef.current });
+    const cacheKey = `${selectedSpellIdRef.current}_${casterPos.x}_${casterPos.y}_${battleWorldVersionRef.current}_${timestepUsedRef.current ? "ts1" : "ts0"}`;
     const cached = spellRangeCacheRef.current.get(cacheKey);
     if (cached) return cached;
     // Pacifist Run flips in recordPlayerSpellType on a resolved offensive
@@ -7154,6 +7155,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       worldGridSize: WORLD_GRID_SIZE,
       effectiveRange: playerSpellEffectiveRange(spell, getEffectiveSpellRange),
       barrierTiles: barrierTilesRef.current,
+      castStatus: { timestepUsed: timestepUsedRef.current },
     });
     // M5: store computed result in cache
     spellRangeCacheRef.current.set(cacheKey, result);
@@ -7179,6 +7181,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         currentMap?.tiles ?? [],
         playerSpellEffectiveRange(spell, getEffectiveSpellRange),
         barrierTilesRef.current,
+        { timestepUsed: timestepUsedRef.current },
       );
     },
     [combatantStoreCtx, currentMap, getActiveCasterPos, getEffectiveSpellRange],
@@ -10311,7 +10314,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // FIX 1.2: capture cache-hit state BEFORE getSpellRangeTiles may
           // populate the cache, so the rejection log reports whether the cache
           // already held an entry for this key.
-          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}`;
+          const _preClickCacheKey = `${selectedSpellIdRef.current}_${playerPositionRef.current.x}_${playerPositionRef.current.y}_${battleWorldVersionRef.current}_${timestepUsedRef.current ? "ts1" : "ts0"}`;
           const _preClickCacheHit =
             spellRangeCacheRef.current.has(_preClickCacheKey);
           const spellTiles = getSpellRangeTiles();
@@ -17109,6 +17112,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ) {
         return { castResult: "abort", apCost: 0 };
       }
+      bindPlayerCastStatus({ timestepUsed: timestepUsedRef.current });
       const plan = planPlayerCastAttempt({
         spell,
         caster: attackNearestLiveCasterPos(
@@ -17131,6 +17135,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             log: (msg: string) => logDebugInfo("MODIFIER", msg),
             rng: Math.random,
           }),
+        castStatus: { timestepUsed: timestepUsedRef.current },
       });
       const planned = playerCastAttemptResult(plan);
       if (planned === "on_cooldown") {
@@ -17216,6 +17221,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ],
   );
   const attackNearestEnemy = useCallback(() => {
+    bindPlayerCastStatus({ timestepUsed: timestepUsedRef.current });
     if (
       !inBattle ||
       battleActionMode !== "attack" ||
@@ -17262,12 +17268,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return;
     }
-    const isHealSpell =
-      spell.targetType === "self" && spell.effectType === "heal";
-    // Same range + live gate as the highlight / sprite-click paths.
-    // Chebyshev-only nearest search used raw `spell.range` and skipped LoS,
-    // so Attack Nearest could fire on a tile the preview never offered.
-    // Caster origin stays the player tile — see attackNearestLiveCasterPos.
     const mapTiles = currentMapRef.current?.tiles;
     if (!mapTiles) return;
     // Player tile, not getActiveCasterPos(): resolvePlayerCast heals only
@@ -17282,44 +17282,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       spell,
       getEffectiveSpellRange,
     );
-    let gridPos: { x: number; y: number };
-    if (isHealSpell) {
-      gridPos = { x: casterPos.x, y: casterPos.y };
-      // Local probeLiveCast uses getActiveCasterPos() (summon tile).
-      // Attack Nearest heals only on the player tile — probe from casterPos.
-      const liveHeal = probeLiveCastAt(
-        spell,
-        casterPos,
-        gridPos,
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTilesRef.current,
-      );
-      if (!shouldExecuteLiveCast(liveHeal)) {
-        setNoTargetFlash(true);
-        setTimeout(() => setNoTargetFlash(false), 1200);
-        return;
-      }
-    } else {
-      // Live store includes enemy summons that are not in React `enemies`.
-      // isActiveHostile is the canonical filter (enemy-side summons after #79).
-      // isTileCastableLive is the same gate as getSpellRangeTiles / sprite-click.
-      const nearest = pickNearestAttackableHostile(
-        spell,
-        casterPos,
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTilesRef.current,
-      );
-      if (!nearest) {
-        setNoTargetFlash(true);
-        setTimeout(() => setNoTargetFlash(false), 1200);
-        return;
-      }
-      gridPos = nearest;
+    // Blood Mend used a local self+heal branch; Timestep / Shield already
+    // went through pickNearestAttackableHostile. One picker so button enable
+    // and execute cannot fork.
+    const nearest = pickNearestAttackableHostile(
+      spell,
+      casterPos,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+      barrierTilesRef.current,
+      { timestepUsed: timestepUsedRef.current },
+    );
+    if (!nearest) {
+      setNoTargetFlash(true);
+      setTimeout(() => setNoTargetFlash(false), 1200);
+      return;
     }
+    const gridPos = nearest;
     if (spell.isSummon) {
       logDebugInfo("SUMMON", "cast handler received summon spell", {
         spellId: spell.id,
@@ -18892,6 +18872,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 tiles,
                 playerSpellEffectiveRange(spell, getEffectiveSpellRange),
                 barrierTilesRef.current,
+                { timestepUsed: timestepUsedRef.current },
               );
             })()
           }

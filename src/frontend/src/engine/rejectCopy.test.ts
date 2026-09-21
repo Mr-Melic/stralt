@@ -18,6 +18,7 @@ describe("playerFacingRejectReason", () => {
       "Out of range",
     );
     assert.equal(playerFacingRejectReason("ground_occupied"), "Occupied");
+    assert.equal(playerFacingRejectReason("timestep_spent"), "Already used");
     assert.equal(playerFacingRejectReason("line_below_min_range"), "Too close");
     assert.equal(
       playerFacingRejectReason("diagonal_off_axis"),

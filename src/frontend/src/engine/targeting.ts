@@ -27,7 +27,7 @@
  */
 
 import type { Enemy, SpellConfig } from "../types/gameTypes";
-import { isActiveHostile } from "./battleSetup.ts";
+import { isActiveHostile, isAliveCombatant } from "./battleSetup.ts";
 
 /**
  * #19 Pacifist Run: flip `battleOnlyHealBuffSpellsRef` false when an
@@ -186,6 +186,71 @@ export function playerSpellAllowsCasterTile(spell: {
 }): boolean {
   const t = (spell.targetType ?? "enemy") as string;
   return t === "self" || t === "ally" || t === "all";
+}
+
+/**
+ * Status flags that execute already honors and highlight must share.
+ * Timestep aborts in `resolvePlayerCast` once consumed; painting the
+ * caster tile after that made a highlighted self target non-executable.
+ */
+export interface PlayerCastStatus {
+  timestepUsed?: boolean;
+}
+
+/**
+ * Highlight / Attack Nearest bind this so a #340-shaped picker call
+ * (no extra argument) still rejects a spent Timestep.
+ */
+let implicitPlayerCastStatus: PlayerCastStatus | undefined;
+
+export function bindPlayerCastStatus(status?: PlayerCastStatus | null): void {
+  implicitPlayerCastStatus = status ?? undefined;
+}
+
+export function boundPlayerCastStatus(
+  explicit?: PlayerCastStatus | null,
+): PlayerCastStatus | undefined {
+  return explicit ?? implicitPlayerCastStatus;
+}
+
+export function playerCastStatusRejects(
+  spell: { isTimestep?: boolean },
+  status?: PlayerCastStatus | null,
+): string | null {
+  const resolved = boundPlayerCastStatus(status);
+  if (spell.isTimestep === true && resolved?.timestepUsed === true) {
+    return "timestep_spent";
+  }
+  return null;
+}
+
+/**
+ * Walk execute (`isAliveCombatant`) and ally targeting already ignore
+ * corpses. Ground / freeCells used any store row, so a highlighted
+ * barrier tile could disagree with a walkable corpse cell.
+ */
+export function livingOccupantAt(
+  combatants: ReadonlyArray<Pick<Enemy, "x" | "y" | "hp">>,
+  tile: { x: number; y: number },
+): boolean {
+  return combatants.some(
+    (e) => e.x === tile.x && e.y === tile.y && isAliveCombatant(e),
+  );
+}
+
+/** Spellbook caption uses the same base the preview grid paints. */
+export function spellbookRangeCaption(
+  spell: Pick<SpellConfig, "range" | "maxRange" | "targetType" | "areaRadius">,
+): string {
+  const targetType = (spell.targetType ?? "enemy") as string;
+  const range = spellHighlightRangeBase(spell);
+  if (targetType === "self") return "Self target";
+  if (targetType === "all") return "All targets";
+  if (targetType === "line") return `Line — ${range} tiles`;
+  if (targetType === "area") {
+    return `Area — radius ${spell.areaRadius ?? range}`;
+  }
+  return `Range — ${range} tiles`;
 }
 
 /**
@@ -361,6 +426,8 @@ export interface TargetGridState {
   effectiveRange: number;
   /** Active barrier tiles → turns remaining (impassable, treated as walls). */
   barrierTiles: TileKeySet;
+  /** Execute-path status (Timestep spent). Highlight must use the same flags. */
+  castStatus?: PlayerCastStatus;
 }
 
 /** Caster position on the grid. */
@@ -408,6 +475,7 @@ export function computeTargetableTiles(
         tiles,
         effectiveRange,
         barrierTiles,
+        gridState.castStatus,
       );
       if (shouldExecuteLiveCast(live)) {
         out.add(`${x},${y}`);
@@ -471,7 +539,15 @@ export function isTileCastableLive(
   mapTiles: TileType[][],
   effectiveRange?: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  castStatus?: PlayerCastStatus,
 ): TileCastableResult {
+  const statusReject = playerCastStatusRejects(
+    spell,
+    boundPlayerCastStatus(castStatus),
+  );
+  if (statusReject) {
+    return { ok: false, reason: statusReject };
+  }
   const targetType = (spell.targetType ?? "enemy") as string;
   const worldGridSize = mapTiles.length;
   const range = effectiveRange ?? spellRangeBase(spell);
@@ -557,10 +633,9 @@ export function isTileCastableLive(
     if (barriers?.has(destKey)) {
       return { ok: false, reason: "ground_barrier" };
     }
-    // Occupied tiles (by a combatant or the caster) are not castable ground.
+    // Occupied tiles (by a living combatant or the caster) are not castable ground.
     const occupied =
-      liveCombatants.some((e) => e.x === tx && e.y === ty) ||
-      (tx === casterPos.x && ty === casterPos.y);
+      livingOccupantAt(liveCombatants, tile) || isCasterTile(casterPos, tile);
     if (occupied) {
       return { ok: false, reason: "ground_occupied" };
     }
@@ -630,8 +705,7 @@ export function isTileCastableLive(
 
   const destBarrier = barrierTiles.has(`${tx},${ty}`);
   const destOccupied =
-    liveCombatants.some((e) => e.x === tx && e.y === ty) ||
-    (tx === casterPos.x && ty === casterPos.y);
+    livingOccupantAt(liveCombatants, tile) || isCasterTile(casterPos, tile);
 
   // Linear: only cardinal directions (dx=0 or dy=0).
   if (spell.linear && dx !== 0 && dy !== 0) {
@@ -712,7 +786,7 @@ export function isTileCastableLive(
         if (spell.diagonal && Math.abs(ax) !== Math.abs(ay)) continue;
         if (spell.freeCells) {
           const occ =
-            liveCombatants.some((e) => e.x === axN && e.y === ayN) ||
+            livingOccupantAt(liveCombatants, { x: axN, y: ayN }) ||
             (axN === casterPos.x && ayN === casterPos.y);
           if (occ) continue;
         }
@@ -796,6 +870,7 @@ export function pickNearestLiveHostileTile(
   mapTiles: TileType[][],
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  castStatus?: PlayerCastStatus,
 ): { x: number; y: number } | null {
   let nearest: { x: number; y: number } | null = null;
   let nearestDist = Number.POSITIVE_INFINITY;
@@ -809,6 +884,7 @@ export function pickNearestLiveHostileTile(
       mapTiles,
       effectiveRange,
       barrierTiles,
+      castStatus,
     );
     if (!shouldExecuteLiveCast(live)) continue;
     const dist = chebyshevOnBoard(tile, caster);
@@ -846,6 +922,7 @@ export function pickAttackNearestTile(
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
   hostiles?: ReadonlyArray<{ x: number; y: number }>,
+  castStatus?: PlayerCastStatus,
 ): { x: number; y: number } | null {
   if (attackNearestResolvesOnCasterTile(spell)) {
     const tile = { x: caster.x, y: caster.y };
@@ -857,6 +934,7 @@ export function pickAttackNearestTile(
       mapTiles,
       effectiveRange,
       barrierTiles,
+      castStatus,
     );
     return shouldExecuteLiveCast(live) ? tile : null;
   }
@@ -869,6 +947,7 @@ export function pickAttackNearestTile(
     mapTiles,
     effectiveRange,
     barrierTiles,
+    castStatus,
   );
 }
 
@@ -881,6 +960,7 @@ export function canAttackNearestLive(
   mapTiles: TileType[][],
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  castStatus?: PlayerCastStatus,
 ): boolean {
   return (
     pickAttackNearestTile(
@@ -891,6 +971,7 @@ export function canAttackNearestLive(
       effectiveRange,
       barrierTiles,
       hostiles,
+      castStatus,
     ) != null
   );
 }
@@ -930,6 +1011,7 @@ export function probeLiveCast(
   mapTiles: TileType[][],
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  castStatus?: PlayerCastStatus,
 ): TileCastableResult {
   return isTileCastableLive(
     spell,
@@ -939,6 +1021,7 @@ export function probeLiveCast(
     mapTiles,
     effectiveRange,
     barrierTiles,
+    castStatus,
   );
 }
 
@@ -1051,6 +1134,7 @@ export function pickNearestAttackableHostile(
   mapTiles: TileType[][],
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  castStatus?: PlayerCastStatus,
 ): { x: number; y: number } | null {
   return pickAttackNearestTile(
     spell,
@@ -1059,6 +1143,8 @@ export function pickNearestAttackableHostile(
     mapTiles,
     effectiveRange,
     barrierTiles,
+    undefined,
+    castStatus,
   );
 }
 
@@ -1070,6 +1156,7 @@ export function canAttackNearestAgainstLive(
   mapTiles: TileType[][],
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  castStatus?: PlayerCastStatus,
 ): boolean {
   return (
     pickNearestAttackableHostile(
@@ -1079,6 +1166,7 @@ export function canAttackNearestAgainstLive(
       mapTiles,
       effectiveRange,
       barrierTiles,
+      castStatus,
     ) != null
   );
 }
@@ -1121,6 +1209,7 @@ export function findAttackNearestTarget(
   mapTiles: TileType[][],
   effectiveRange: number,
   barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+  castStatus?: PlayerCastStatus,
 ): { x: number; y: number } | null {
   return pickAttackNearestTile(
     spell,
@@ -1130,6 +1219,7 @@ export function findAttackNearestTarget(
     effectiveRange,
     barrierTiles,
     hostiles,
+    castStatus,
   );
 }
 
@@ -1188,6 +1278,7 @@ export function collectHighlightLiveMismatches(
         grid.tiles,
         grid.effectiveRange,
         grid.barrierTiles,
+        grid.castStatus,
       );
       const hi = highlighted.has(key);
       const ok = shouldExecuteLiveCast(live);

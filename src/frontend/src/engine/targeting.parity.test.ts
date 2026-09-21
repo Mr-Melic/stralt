@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import {
+  planPlayerCastAttempt,
+  playerCastAttemptResult,
+} from "./playerCastPlan.ts";
+import {
   attackNearestResolvesOnCasterTile,
   canAffordCastAp,
   canAttackNearestAgainstLive,
@@ -21,6 +25,7 @@ import {
   hitsMultipleIncludesOccupant,
   isCasterTile,
   isTileCastableLive,
+  pickAttackNearestTile,
   pickNearestLiveHostileTile,
   playerSpellAllowsCasterTile,
   playerSpellEffectiveRange,
@@ -32,6 +37,12 @@ import {
   spellHighlightRangeBase,
   spellRangeBase,
 } from "./targeting.ts";
+import {
+  bindPlayerCastStatus,
+  livingOccupantAt,
+  playerCastStatusRejects,
+  spellbookRangeCaption,
+} from "./targetingCastStatus.ts";
 
 function floorGrid(size: number): Array<Array<"floor" | "wall" | "portal">> {
   return Array.from({ length: size }, () =>
@@ -111,6 +122,205 @@ describe("spellRangeBase", () => {
     assert.equal(
       spellRangeBase(baseSpell({ range: 4n, maxRange: undefined })),
       4,
+    );
+  });
+});
+
+describe("living occupancy vs corpses", () => {
+  it("lets ground highlight and execute on a corpse the walk path already treats as free", () => {
+    const tiles = floorGrid(9);
+    const caster = { x: 4, y: 4 };
+    const corpse = unit("dead", 5, 4, { side: "enemy", hp: 0 });
+    const living = unit("rat", 4, 6, { side: "enemy", hp: 12 });
+    const spell = baseSpell({
+      targetType: "ground",
+      isBarrier: true,
+      freeCells: true,
+      maxRange: 2,
+      range: 2n,
+    });
+    assert.equal(livingOccupantAt([corpse, living], { x: 5, y: 4 }), false);
+    assert.equal(livingOccupantAt([corpse, living], { x: 4, y: 6 }), true);
+    assertParity(spell, caster, tiles, [corpse, living], 2);
+    const highlighted = computeTargetableTiles(spell, caster, {
+      tiles,
+      enemies: [corpse, living],
+      worldGridSize: 9,
+      effectiveRange: 2,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlighted.has("5,4"), true, "corpse must not block ground");
+    assert.equal(highlighted.has("4,6"), false, "living occupant still blocks");
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(
+          spell,
+          caster,
+          { x: 5, y: 4 },
+          [corpse, living],
+          tiles,
+          2,
+        ),
+      ),
+      true,
+    );
+    assert.equal(
+      shouldExecuteLiveCast(
+        probeLiveCast(
+          spell,
+          caster,
+          { x: 4, y: 6 },
+          [corpse, living],
+          tiles,
+          2,
+        ),
+      ),
+      false,
+    );
+  });
+});
+
+describe("timestep spent status vs highlight/execute", () => {
+  const tiles = floorGrid(7);
+  const caster = { x: 3, y: 3 };
+  const timestep = baseSpell({
+    id: "spell-timestep",
+    targetType: "self",
+    effectType: "buff",
+    apCost: 0n,
+    maxRange: 0,
+    range: 0n,
+    minRange: 0,
+    isTimestep: true,
+  });
+
+  it("paints and executes Timestep only before it is spent", () => {
+    bindPlayerCastStatus(undefined);
+    assert.equal(playerCastStatusRejects(timestep, {}), null);
+    assert.equal(
+      playerCastStatusRejects(timestep, { timestepUsed: true }),
+      "timestep_spent",
+    );
+    const openGrid = {
+      tiles,
+      enemies: [] as Enemy[],
+      worldGridSize: 7,
+      effectiveRange: 0,
+      barrierTiles: new Map<string, number>(),
+    };
+    assert.deepEqual(
+      collectHighlightLiveMismatches(timestep, caster, openGrid),
+      { highlightOnly: [], liveOnly: [] },
+    );
+    assert.equal(
+      computeTargetableTiles(timestep, caster, openGrid).has("3,3"),
+      true,
+    );
+    const spentGrid = { ...openGrid, castStatus: { timestepUsed: true } };
+    assert.deepEqual(
+      collectHighlightLiveMismatches(timestep, caster, spentGrid),
+      { highlightOnly: [], liveOnly: [] },
+    );
+    assert.equal(
+      computeTargetableTiles(timestep, caster, spentGrid).has("3,3"),
+      false,
+    );
+    const legal = probeLiveCast(
+      timestep,
+      caster,
+      caster,
+      [],
+      tiles,
+      0,
+      new Map(),
+    );
+    const spent = probeLiveCast(
+      timestep,
+      caster,
+      caster,
+      [],
+      tiles,
+      0,
+      new Map(),
+      { timestepUsed: true },
+    );
+    assert.equal(shouldExecuteLiveCast(legal), true);
+    assert.equal(shouldExecuteLiveCast(spent), false);
+    assert.equal(spent.reason, "timestep_spent");
+    assert.deepEqual(
+      decideTileCastClick({
+        live: legal,
+        tileHighlighted: true,
+        occupantIsLiveHostile: false,
+      }),
+      { action: "execute", bypassHighlight: false },
+    );
+    assert.deepEqual(
+      decideTileCastClick({
+        live: spent,
+        tileHighlighted: false,
+        occupantIsLiveHostile: false,
+      }),
+      { action: "reject", reason: "out_of_range" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: "spell-timestep",
+        hasSelectedSpell: true,
+        hitKind: "player",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: shouldExecuteLiveCast(spent),
+        selfOrAllySpell: true,
+        hasBasicAttack: false,
+      }),
+      { action: "reject_live" },
+    );
+    assert.deepEqual(
+      findAttackNearestTarget(timestep, caster, [], tiles, 0),
+      caster,
+    );
+    bindPlayerCastStatus({ timestepUsed: true });
+    assert.equal(findAttackNearestTarget(timestep, caster, [], tiles, 0), null);
+    bindPlayerCastStatus(undefined);
+    assert.equal(
+      findAttackNearestTarget(timestep, caster, [], tiles, 0, new Map(), {
+        timestepUsed: true,
+      }),
+      null,
+    );
+    assert.equal(
+      canAttackNearestAgainstLive(timestep, caster, [], tiles, 0, new Map(), {
+        timestepUsed: true,
+      }),
+      false,
+    );
+  });
+});
+
+describe("spellbook caption vs highlight range", () => {
+  it("uses maxRange the preview grid paints, not raw range", () => {
+    const grown = baseSpell({
+      range: 2n,
+      maxRange: 5,
+      targetType: "enemy",
+    });
+    assert.equal(spellHighlightRangeBase(grown), 5);
+    assert.equal(spellbookRangeCaption(grown), "Range — 5 tiles");
+    assert.equal(
+      spellbookRangeCaption(baseSpell({ targetType: "self" })),
+      "Self target",
+    );
+    assert.equal(
+      spellbookRangeCaption(
+        baseSpell({
+          targetType: "area",
+          areaRadius: 2,
+          maxRange: 1,
+          range: 1n,
+        }),
+      ),
+      "Area — radius 2",
     );
   });
 });
@@ -1143,5 +1353,176 @@ describe("self/ally Attack Nearest vs sprite caster-tile hits", () => {
       }),
       { action: "reject_live" },
     );
+  });
+});
+
+describe("highlighted legal target is executable; illegal cannot execute", () => {
+  it("agrees across highlight, tile click, sprite click, Attack Nearest, and plan", () => {
+    const tiles = floorGrid(11);
+    tiles[5][6] = "wall";
+    const caster = { x: 5, y: 5 };
+    const open = unit("open", 5, 8, { side: "enemy" });
+    const blocked = unit("blocked", 8, 5, { side: "enemy" });
+    const enemies = [open, blocked];
+    const spell = baseSpell({
+      targetType: "enemy",
+      lineOfSight: true,
+      maxRange: 4,
+      range: 4n,
+      apCost: 2n,
+    });
+    const grid = {
+      tiles,
+      enemies,
+      worldGridSize: 11,
+      effectiveRange: 4,
+      barrierTiles: new Map<string, number>(),
+    };
+    assert.deepEqual(collectHighlightLiveMismatches(spell, caster, grid), {
+      highlightOnly: [],
+      liveOnly: [],
+    });
+    const highlighted = computeTargetableTiles(spell, caster, grid);
+    assert.equal(highlighted.has("5,8"), true);
+    assert.equal(highlighted.has("8,5"), false);
+
+    const legalLive = probeLiveCast(
+      spell,
+      caster,
+      { x: 5, y: 8 },
+      enemies,
+      tiles,
+      4,
+    );
+    const illegalLive = probeLiveCast(
+      spell,
+      caster,
+      { x: 8, y: 5 },
+      enemies,
+      tiles,
+      4,
+    );
+    assert.equal(shouldExecuteLiveCast(legalLive), true);
+    assert.equal(shouldExecuteLiveCast(illegalLive), false);
+
+    assert.deepEqual(
+      decideTileCastClick({
+        live: legalLive,
+        tileHighlighted: highlighted.has("5,8"),
+        occupantIsLiveHostile: true,
+      }),
+      { action: "execute", bypassHighlight: true },
+    );
+    assert.deepEqual(
+      decideTileCastClick({
+        live: illegalLive,
+        tileHighlighted: highlighted.has("8,5"),
+        occupantIsLiveHostile: true,
+      }),
+      { action: "reject", reason: illegalLive.reason },
+    );
+
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: spell.id,
+        hasSelectedSpell: true,
+        hitKind: "enemy",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: shouldExecuteLiveCast(legalLive),
+        selfOrAllySpell: false,
+        hasBasicAttack: false,
+      }),
+      { action: "execute", source: "sprite-enemy" },
+    );
+    assert.deepEqual(
+      decideSpriteCastClick({
+        selectedSpellId: spell.id,
+        hasSelectedSpell: true,
+        hitKind: "enemy",
+        playerCastOk: true,
+        inBattle: true,
+        liveOk: shouldExecuteLiveCast(illegalLive),
+        selfOrAllySpell: false,
+        hasBasicAttack: false,
+      }),
+      { action: "reject_live" },
+    );
+
+    const picked = pickAttackNearestTile(spell, caster, enemies, tiles, 4);
+    assert.deepEqual(picked, { x: 5, y: 8 });
+    assert.equal(highlighted.has(`${picked!.x},${picked!.y}`), true);
+
+    const legalPlan = planPlayerCastAttempt({
+      spell,
+      caster,
+      tile: { x: 5, y: 8 },
+      liveCombatants: enemies,
+      mapTiles: tiles,
+      effectiveRange: 4,
+      currentAp: 4,
+      baseApCost: 2,
+      cooldownTurnsRemaining: 0,
+    });
+    const illegalPlan = planPlayerCastAttempt({
+      spell,
+      caster,
+      tile: { x: 8, y: 5 },
+      liveCombatants: enemies,
+      mapTiles: tiles,
+      effectiveRange: 4,
+      currentAp: 4,
+      baseApCost: 2,
+      cooldownTurnsRemaining: 0,
+    });
+    assert.equal(playerCastAttemptResult(legalPlan), "ok");
+    assert.equal(playerCastAttemptResult(illegalPlan), "abort");
+  });
+
+  it("keeps Attack Nearest on a highlighted self tile Blood Mend / Timestep share", () => {
+    const tiles = floorGrid(9);
+    const caster = { x: 4, y: 4 };
+    const rat = unit("rat", 6, 4, { side: "enemy" });
+    const heal = baseSpell({
+      targetType: "self",
+      effectType: "heal",
+      maxRange: 0,
+      range: 0n,
+      minRange: 0,
+    });
+    const highlighted = computeTargetableTiles(heal, caster, {
+      tiles,
+      enemies: [rat],
+      worldGridSize: 9,
+      effectiveRange: 1,
+      barrierTiles: new Map(),
+    });
+    assert.equal(highlighted.has("4,4"), true);
+    const picked = pickAttackNearestTile(heal, caster, [rat], tiles, 1);
+    assert.deepEqual(picked, caster);
+    const plan = planPlayerCastAttempt({
+      spell: heal,
+      caster,
+      tile: picked!,
+      liveCombatants: [rat],
+      mapTiles: tiles,
+      effectiveRange: 1,
+      currentAp: 3,
+      baseApCost: 2,
+      cooldownTurnsRemaining: 0,
+    });
+    assert.equal(playerCastAttemptResult(plan), "ok");
+    const miss = planPlayerCastAttempt({
+      spell: heal,
+      caster,
+      tile: { x: 6, y: 4 },
+      liveCombatants: [rat],
+      mapTiles: tiles,
+      effectiveRange: 1,
+      currentAp: 3,
+      baseApCost: 2,
+      cooldownTurnsRemaining: 0,
+    });
+    assert.equal(playerCastAttemptResult(miss), "abort");
   });
 });
