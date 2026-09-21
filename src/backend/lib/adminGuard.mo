@@ -10,6 +10,7 @@ module {
     public let MAX_URL : Nat = 2_048;
     public let MAX_ID : Nat = 64;
     public let MAX_NAME : Nat = 100;
+    public let MAX_ENEMY_NAMES : Nat = 256;
     public let MAX_DUNGEON_DEPTH : Nat = 16;
     /// Matches frontend PLAYER_BASE_AP / PLAYER_BASE_MP. saveBattleStats
     /// used to accept maxAp=20 at level 1.
@@ -152,6 +153,100 @@ module {
         validateOptionalUrl(lbl, url)
     };
 
+    func jsonWs(c : Char) : Bool {
+        c == ' ' or c == '\n' or c == '\r' or c == '\t'
+    };
+
+    /// Brace/bracket scanner. Motoko cannot JSON.parse; this still rejects the
+    /// `{oops` / `{oops}` prefix-only payloads that used to replace live
+    /// colorPalette / bossRushConfig and then poison *Prev on a second write.
+    public func jsonBlobLooksWellFormed(blob : Text) : Bool {
+        if (blob.size() == 0) { return true };
+        var inString = false;
+        var escaped = false;
+        var objDepth : Nat = 0;
+        var arrDepth : Nat = 0;
+        var finished = false;
+        var rootIsObj = false;
+        var rootIsArr = false;
+        var seenColonInRootObj = false;
+        var sawNonWsInRootObj = false;
+        let QUOTE : Nat32 = 34;
+        let BACKSLASH : Nat32 = 92;
+        let LBRACE : Nat32 = 123;
+        let RBRACE : Nat32 = 125;
+        let LBRACK : Nat32 = 91;
+        let RBRACK : Nat32 = 93;
+        let COLON : Nat32 = 58;
+
+        for (c in blob.chars()) {
+            let n = c.toNat32();
+            if (finished) {
+                if (not jsonWs(c)) { return false };
+            } else if (inString) {
+                if (escaped) {
+                    escaped := false;
+                } else if (n == BACKSLASH) {
+                    escaped := true;
+                } else if (n == QUOTE) {
+                    inString := false;
+                };
+            } else if (n == QUOTE) {
+                inString := true;
+                if (rootIsObj and objDepth == 1) { sawNonWsInRootObj := true };
+            } else if (n == LBRACE) {
+                if (not rootIsObj and not rootIsArr) { rootIsObj := true };
+                objDepth += 1;
+            } else if (n == RBRACE) {
+                if (objDepth == 0) { return false };
+                objDepth -= 1;
+                if (objDepth == 0 and arrDepth == 0) { finished := true };
+            } else if (n == LBRACK) {
+                if (not rootIsObj and not rootIsArr) { rootIsArr := true };
+                arrDepth += 1;
+                if (rootIsObj and objDepth == 1) { sawNonWsInRootObj := true };
+            } else if (n == RBRACK) {
+                if (arrDepth == 0) { return false };
+                arrDepth -= 1;
+                if (objDepth == 0 and arrDepth == 0) { finished := true };
+            } else if (n == COLON) {
+                if (rootIsObj and objDepth == 1) {
+                    seenColonInRootObj := true;
+                    sawNonWsInRootObj := true;
+                };
+            } else if (not jsonWs(c)) {
+                if (not rootIsObj and not rootIsArr) { return false };
+                if (rootIsObj and objDepth == 1) { sawNonWsInRootObj := true };
+            };
+        };
+        if (inString or escaped) { return false };
+        if (objDepth != 0 or arrDepth != 0) { return false };
+        if (not finished) { return false };
+        if (rootIsArr) { return true };
+        if (rootIsObj) {
+            if (sawNonWsInRootObj and not seenColonInRootObj) { return false };
+            true
+        } else {
+            false
+        }
+    };
+
+    /// Empty (no override) or a well-formed object/array may be remembered as
+    /// last-good. An already-poisoned live blob must not become *Prev.
+    public func shouldSnapshotJsonBlob(blob : Text) : Bool {
+        jsonBlobLooksWellFormed(blob)
+    };
+
+    public type JsonPrevSnapshot = { prev : Text; hasPrev : Bool };
+
+    public func jsonPrevSnapshot(current : Text, prev : Text, hasPrev : Bool) : JsonPrevSnapshot {
+        if (shouldSnapshotJsonBlob(current)) {
+            { prev = current; hasPrev = true }
+        } else {
+            { prev = prev; hasPrev = hasPrev }
+        }
+    };
+
     public func validateJsonBlob(lbl : Text, blob : Text) : ?Text {
         if (blob.size() > MAX_JSON_BLOB) {
             return ?(lbl # " exceeds maximum size");
@@ -159,6 +254,9 @@ module {
         if (blob.size() == 0) { return null };
         if (not (blob.startsWith(#text "{") or blob.startsWith(#text "["))) {
             return ?(lbl # " must be empty or a JSON object/array");
+        };
+        if (not jsonBlobLooksWellFormed(blob)) {
+            return ?(lbl # " is not well-formed JSON");
         };
         null
     };
@@ -619,6 +717,19 @@ module {
         if (name == "") { return ?"Name cannot be empty" };
         if (name.size() > MAX_NAME) { return ?"Name exceeds maximum length" };
         null
+    };
+
+    public func enemyNamePoolRejected(currentSize : Nat) : ?Text {
+        if (currentSize >= MAX_ENEMY_NAMES) {
+            ?"Enemy name pool exceeds maximum of 256"
+        } else { null }
+    };
+
+    public func enemyNameDuplicate(existing : [Text], name : Text) : Bool {
+        for (n in existing.values()) {
+            if (n == name) { return true };
+        };
+        false
     };
 
     public func clampDungeonDepth(depth : Nat) : Nat {
