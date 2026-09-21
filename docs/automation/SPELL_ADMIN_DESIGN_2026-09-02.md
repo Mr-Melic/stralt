@@ -10,6 +10,8 @@ This is a **delta** on [`SPELL_ADMIN_DESIGN_2026-08-31.md`](./SPELL_ADMIN_DESIGN
 
 It records what landed after `dd275aa`, what is still the wrong field, and the ACTION_IDs in [`ACTION_IDS_SDA_2026-09-02.md`](./ACTION_IDS_SDA_2026-09-02.md).
 
+**2026-09-21 re-audit:** this delta still stands. Empty-AI Motoko reject landed; lifecycle is still the cast flag; `physical_attack` is still purged and tombstoned. Current HEAD and ACTION_IDs: [`SPELL_ADMIN_DESIGN_2026-09-21.md`](./SPELL_ADMIN_DESIGN_2026-09-21.md), [`ACTION_IDS_SDA_2026-09-21.md`](./ACTION_IDS_SDA_2026-09-21.md).
+
 Do not implement those IDs unless a human or orchestrator picks one. Do not grow `WorldExploration.tsx` (19 253 lines). Never introduce spell-name heuristics.
 
 ---
