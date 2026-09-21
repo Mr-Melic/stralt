@@ -6,6 +6,7 @@
 
 export const MAX_DOKA_GRANT = 10_000_000;
 export const MAX_JSON_BLOB = 32_768;
+export const MAX_ENEMY_NAMES = 256;
 export const BUILT_IN_SPELL_IDS = [
   "shadow_strike",
   "soul_rend",
@@ -81,8 +82,30 @@ function requireId(id: string, label: string): string | null {
   return null;
 }
 
+/** Mirrors adminGuard.isUrlPrefixWs: BOM / ZWSP / NBSP must not hide javascript:. */
+function isUrlPrefixWs(ch: string): boolean {
+  const n = ch.codePointAt(0) ?? 0;
+  return (
+    n <= 0x20 ||
+    n === 0xa0 ||
+    n === 0xfeff ||
+    (n >= 0x2000 && n <= 0x200b) ||
+    n === 0x2028 ||
+    n === 0x2029 ||
+    n === 0x202f ||
+    n === 0x205f ||
+    n === 0x3000
+  );
+}
+
+function trimUrlPrefixWs(url: string): string {
+  let i = 0;
+  while (i < url.length && isUrlPrefixWs(url[i] ?? "")) i += 1;
+  return url.slice(i);
+}
+
 export function unsafeUrl(url: string): boolean {
-  const lower = url.trimStart().toLowerCase();
+  const lower = trimUrlPrefixWs(url).toLowerCase();
   return (
     lower.startsWith("javascript:") ||
     lower.startsWith("data:") ||
@@ -91,9 +114,9 @@ export function unsafeUrl(url: string): boolean {
   );
 }
 
-/** Player-facing hrefs: only http(s) after trim. Rejects javascript: ads. */
+/** Player-facing hrefs: only http(s) after prefix-strip. Rejects javascript: ads. */
 export function safeExternalHref(url: string): string {
-  const trimmed = url.trim();
+  const trimmed = trimUrlPrefixWs(url);
   const lower = trimmed.toLowerCase();
   if (lower.startsWith("https://") || lower.startsWith("http://")) {
     return trimmed;
@@ -101,9 +124,27 @@ export function safeExternalHref(url: string): string {
   return "#";
 }
 
+/** Landing ads are https-only on the canister. Do not render http / script URLs. */
+export function safeHttpsHref(url: string): string {
+  const trimmed = trimUrlPrefixWs(url);
+  if (trimmed.toLowerCase().startsWith("https://")) {
+    return trimmed;
+  }
+  return "#";
+}
+
+/** Player-facing <img src>. Empty string means do not render. */
+export function safeHttpsSrc(url: string): string {
+  const trimmed = trimUrlPrefixWs(url);
+  if (trimmed.toLowerCase().startsWith("https://") && !unsafeUrl(trimmed)) {
+    return trimmed;
+  }
+  return "";
+}
+
 /** Official shop proof MIME list. Rejects data:text/html admin XSS. */
 export function proofDataMimeAllowed(url: string): boolean {
-  const mime = url.trimStart().toLowerCase();
+  const mime = trimUrlPrefixWs(url).toLowerCase();
   return (
     mime.startsWith("data:image/jpeg") ||
     mime.startsWith("data:image/jpg") ||
@@ -118,7 +159,7 @@ export function proofDataMimeAllowed(url: string): boolean {
  * `window.open("data:text/html,<script>")` is stored XSS.
  */
 export function safeProofHref(url: string): string {
-  const trimmed = url.trim();
+  const trimmed = trimUrlPrefixWs(url);
   const lower = trimmed.toLowerCase();
   if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
     return "#";
@@ -135,7 +176,7 @@ export function safeProofHref(url: string): string {
 export function validateProofFileUrl(url: string): string | null {
   if (!url) return "proofFileUrl is required";
   if (url.length > 524_288) return "proofFileUrl exceeds maximum size";
-  const lower = url.trimStart().toLowerCase();
+  const lower = trimUrlPrefixWs(url).toLowerCase();
   if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
     return "proofFileUrl uses a forbidden URL scheme";
   }
@@ -193,6 +234,20 @@ export function validateEnemyName(name: string): string | null {
   return null;
 }
 
+export function enemyNamePoolRejected(currentSize: number): string | null {
+  if (currentSize >= MAX_ENEMY_NAMES) {
+    return "Enemy name pool exceeds maximum of 256";
+  }
+  return null;
+}
+
+export function enemyNameDuplicate(
+  existing: readonly string[],
+  name: string,
+): boolean {
+  return existing.includes(name);
+}
+
 export function validateAdBox(
   index: number,
   imageUrl: string,
@@ -203,12 +258,12 @@ export function validateAdBox(
   if (!linkUrl) return "linkUrl cannot be empty";
   const imageErr = validateOptionalUrl("imageUrl", imageUrl);
   if (imageErr) return imageErr;
-  if (!imageUrl.trimStart().toLowerCase().startsWith("https:")) {
+  if (!trimUrlPrefixWs(imageUrl).toLowerCase().startsWith("https:")) {
     return "imageUrl must be an https URL";
   }
   const linkErr = validateOptionalUrl("linkUrl", linkUrl);
   if (linkErr) return linkErr;
-  if (!linkUrl.trimStart().toLowerCase().startsWith("https:")) {
+  if (!trimUrlPrefixWs(linkUrl).toLowerCase().startsWith("https:")) {
     return "linkUrl must be an https URL";
   }
   return null;
@@ -434,7 +489,89 @@ export function validateJsonBlob(label: string, blob: string): string | null {
   if (!(blob.startsWith("{") || blob.startsWith("["))) {
     return `${label} must be empty or a JSON object/array`;
   }
+  if (!jsonBlobLooksWellFormed(blob)) {
+    return `${label} is not well-formed JSON`;
+  }
   return null;
+}
+
+/**
+ * Brace/bracket scan matching adminGuard.jsonBlobLooksWellFormed.
+ * The official UI JSON.parse's these blobs; `{oops` used to pass the
+ * prefix-only Motoko check and replace live colorPalette / bossRushConfig.
+ */
+export function jsonBlobLooksWellFormed(blob: string): boolean {
+  if (blob.length === 0) return true;
+  let inString = false;
+  let escaped = false;
+  let objDepth = 0;
+  let arrDepth = 0;
+  let finished = false;
+  let rootIsObj = false;
+  let rootIsArr = false;
+  let seenColonInRootObj = false;
+  let sawNonWsInRootObj = false;
+  const ws = (c: string) => c === " " || c === "\n" || c === "\r" || c === "\t";
+  for (const c of blob) {
+    if (finished) {
+      if (!ws(c)) return false;
+    } else if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+    } else if (c === '"') {
+      inString = true;
+      if (rootIsObj && objDepth === 1) sawNonWsInRootObj = true;
+    } else if (c === "{") {
+      if (!rootIsObj && !rootIsArr) rootIsObj = true;
+      objDepth += 1;
+    } else if (c === "}") {
+      if (objDepth === 0) return false;
+      objDepth -= 1;
+      if (objDepth === 0 && arrDepth === 0) finished = true;
+    } else if (c === "[") {
+      if (!rootIsObj && !rootIsArr) rootIsArr = true;
+      arrDepth += 1;
+      if (rootIsObj && objDepth === 1) sawNonWsInRootObj = true;
+    } else if (c === "]") {
+      if (arrDepth === 0) return false;
+      arrDepth -= 1;
+      if (objDepth === 0 && arrDepth === 0) finished = true;
+    } else if (c === ":") {
+      if (rootIsObj && objDepth === 1) {
+        seenColonInRootObj = true;
+        sawNonWsInRootObj = true;
+      }
+    } else if (!ws(c)) {
+      if (!rootIsObj && !rootIsArr) return false;
+      if (rootIsObj && objDepth === 1) sawNonWsInRootObj = true;
+    }
+  }
+  if (inString || escaped) return false;
+  if (objDepth !== 0 || arrDepth !== 0) return false;
+  if (!finished) return false;
+  if (rootIsArr) return true;
+  if (rootIsObj) {
+    if (sawNonWsInRootObj && !seenColonInRootObj) return false;
+    return true;
+  }
+  return false;
+}
+
+export function shouldSnapshotJsonBlob(blob: string): boolean {
+  return jsonBlobLooksWellFormed(blob);
+}
+
+/** Keep last-good *Prev when live is already poisoned. */
+export function jsonPrevSnapshot(
+  current: string,
+  prev: string,
+  hasPrev: boolean,
+): { prev: string; hasPrev: boolean } {
+  if (shouldSnapshotJsonBlob(current)) {
+    return { prev: current, hasPrev: true };
+  }
+  return { prev, hasPrev };
 }
 
 export function validateDokaGrant(amount: number): string | null {
@@ -597,6 +734,7 @@ export function validateSpellConfig(config: {
     hpScale?: number;
     damageScale?: number;
   };
+  effectParams?: string | null;
 }): string | null {
   const idErr = requireId(config.id, "Spell");
   if (idErr) return idErr;
@@ -656,6 +794,13 @@ export function validateSpellConfig(config: {
   if (damageScale != null) {
     const dmg = finiteInRange("summonUnitDef.damageScale", damageScale, 0, 10);
     if (dmg) return dmg;
+  }
+  if (config.effectParams != null && config.effectParams !== "") {
+    if (config.effectParams.length > 2_048) {
+      return "effectParams exceeds maximum length";
+    }
+    const blobErr = validateJsonBlob("effectParams", config.effectParams);
+    if (blobErr) return blobErr;
   }
   return null;
 }
@@ -720,6 +865,14 @@ export function shouldIncludeBackendSpellInLibrary(args: {
 
 export function isBuiltInSpellId(id: string): boolean {
   return (BUILT_IN_SPELL_IDS as readonly string[]).includes(id);
+}
+
+/** Mirrors adminDeleteSpellConfig — built-in ids must be retired, not deleted. */
+export const BUILT_IN_SPELL_DELETE_BLOCKED =
+  "Cannot delete a built-in spell; set usableByPlayer=false to retire it";
+
+export function adminSpellDeleteBlockedReason(id: string): string | null {
+  return isBuiltInSpellId(id) ? BUILT_IN_SPELL_DELETE_BLOCKED : null;
 }
 
 /** Ban must keep claimed flags; wiping them is the double-claim path. */
