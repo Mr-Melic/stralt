@@ -13,6 +13,7 @@ import { logDebugInfo } from "../utils/debugLogger.ts";
 import {
   type OccupancyContext,
   findNearestFreeCell,
+  onBattleGraph,
   progressionSearchRadius,
   isCellFree as sharedIsCellFree,
   unsealProgressionOccupants,
@@ -120,6 +121,7 @@ export function spawnSummonUnit(
       occupancyCtx,
       progressionSearchRadius(occupancyCtx),
       reserved,
+      onBattleGraph(occupancyCtx, cell),
     );
     if (fallback) spawnCell = fallback;
   }
