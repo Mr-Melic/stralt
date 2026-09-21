@@ -17,6 +17,11 @@ import {
   shouldInvalidateCallerDokaAfterClaim,
   shouldRollbackClaimFailure,
 } from "../utils/achievementReward";
+import {
+  FEATS_CHROME_LABEL,
+  FEATS_CLOSE_ARIA_LABEL,
+  FEATS_DIALOG_ARIA_LABEL,
+} from "../utils/featsCopy";
 
 interface AchievementsPanelProps {
   userId?: string;
@@ -213,7 +218,7 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
         if (e.key === "Escape") onClose?.();
       }}
       aria-modal="true"
-      aria-label="Achievements"
+      aria-label={FEATS_DIALOG_ARIA_LABEL}
     >
       <div
         className="stone-frame"
@@ -230,14 +235,14 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Trophy size={18} style={{ color: "#f0c44a" }} />
             <span className="stone-header-title" style={{ fontSize: 16 }}>
-              Feats
+              {FEATS_CHROME_LABEL}
             </span>
           </div>
           <button
             type="button"
             data-ocid="achievements.close_button"
             onClick={onClose}
-            aria-label="Close achievements"
+            aria-label={FEATS_CLOSE_ARIA_LABEL}
             className="stone-btn-slate stone-modal-close"
             style={{
               width: 30,
