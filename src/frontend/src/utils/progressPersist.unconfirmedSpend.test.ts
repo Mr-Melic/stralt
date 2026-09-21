@@ -7,6 +7,7 @@ import {
   resolveCommittedDokaForAbsoluteWrite,
   shouldClearUnconfirmedWalletCredit,
 } from "./progressPersist.ts";
+import { committedDokaAfterSpellUpgrade } from "./spellUpgrade.ts";
 
 describe("unconfirmed wallet spend commits", () => {
   it("keeps unconfirmed after a spell-upgrade spend so a later heal cannot wipe the grant", async () => {
@@ -51,7 +52,9 @@ describe("unconfirmed wallet spend commits", () => {
 
     const lock = createProgressPersist({ doka: 500, xp: 0, level: 1 });
     lock.noteUnconfirmedCredit();
-    lock.commit({ doka: 490 });
+    const next = committedDokaAfterSpellUpgrade(500, 500, 10);
+    lock.commit({ doka: next });
+    assert.equal(next, 490);
     assert.equal(lock.snapshot().doka, 490);
     assert.equal(lock.hasUnconfirmedWalletCredit(), true);
 

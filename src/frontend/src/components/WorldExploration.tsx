@@ -17248,9 +17248,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       })
     )
       return;
-    // Do not markFirstAction here. Cooldown / missing spell / no legal
-    // target used to dismiss an unaccepted offer with no AP spend.
-    // executeCastAttempt marks only after a real debit.
+    markFirstAction();
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
     // Spell bar only disables re-selection. Inferno used to recast via
@@ -17379,6 +17377,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     getEffectiveSpellRange,
     getActiveCasterPos,
     combatantStoreCtx,
+    markFirstAction,
     executeCastAttempt,
     tileCenter,
   ]);
