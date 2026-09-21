@@ -410,11 +410,8 @@ import {
 import {
   RENAME_DOKA_COST,
   beginRename,
-  committedDokaAfterRename,
   liveDokaAfterRename,
-  readRenameCharacterResult,
-  shouldCommitRenameDokaSpend,
-  shouldDebitRenameDoka,
+  persistRenameThroughLock,
 } from "../utils/renameCharacter";
 import {
   PORTAL_TRANSITION_XP,
@@ -436,8 +433,10 @@ import {
   type SpellUpgradeActor,
   applySpellLevel,
   committedDokaAfterSpellUpgrade,
-  persistSpellUpgrade,
+  isSpellUpgradeTransportError,
+  persistSpellUpgradeOnLock,
   shouldCommitSpellUpgradeDoka,
+  shouldReleaseSpellUpgradeInFlight,
   spellUpgradeUiSpend,
 } from "../utils/spellUpgrade";
 import {
@@ -2114,27 +2113,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     setIsRenaming(true);
     try {
       if (actor) {
-        const parsed = await progressPersistRef.current.enqueue(async () => {
-          const result = readRenameCharacterResult(
-            await (actor as Record<string, any>).renameCharacter(
-              BigInt(characterSlot),
-              newName,
-            ),
-          );
-          if (
-            shouldDebitRenameDoka(result) &&
-            shouldCommitRenameDokaSpend(
-              progressPersistRef.current.isWalletSeeded(),
-            )
-          ) {
-            progressPersistRef.current.commit({
-              doka: committedDokaAfterRename(
-                progressPersistRef.current.snapshot().doka,
-              ),
-            });
-          }
-          return result;
-        });
+        const parsed = await persistRenameThroughLock(
+          actor as {
+            renameCharacter?: (slot: bigint, name: string) => Promise<unknown>;
+          },
+          progressPersistRef.current,
+          characterSlot,
+          newName,
+        );
         if ("err" in parsed) {
           toast.error(parsed.err);
           return;
@@ -3144,13 +3130,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (!actor?.upgradeSpell) return;
       spellUpgradeInFlightRef.current.add(spellId);
       void (async () => {
+        let transportAfterInvoke = false;
         try {
           const { newLevel, spent } = await progressPersistRef.current.enqueue(
             async () => {
               const committedBefore =
                 progressPersistRef.current.snapshot().doka;
-              const result = await persistSpellUpgrade(
+              const result = await persistSpellUpgradeOnLock(
                 actor as SpellUpgradeActor,
+                progressPersistRef.current,
                 characterSlot,
                 spellId,
               );
@@ -3213,9 +3201,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             return next;
           });
         } catch (err) {
+          transportAfterInvoke = isSpellUpgradeTransportError(err);
           console.warn("[PBV] Spell upgrade failed:", err);
         } finally {
-          spellUpgradeInFlightRef.current.delete(spellId);
+          if (shouldReleaseSpellUpgradeInFlight(transportAfterInvoke)) {
+            spellUpgradeInFlightRef.current.delete(spellId);
+          }
         }
       })();
     },
