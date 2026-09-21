@@ -78,7 +78,9 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP accumulators |
 | `backend_extended/` | Legacy dfx entry. Stale 15-field stats. Not the caffeine/mops build |
 | [docs/automation/MASTER_ROADMAP.md](docs/automation/MASTER_ROADMAP.md) | Master Technical Director roadmap (no gameplay changes) |
-| [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | Current director ACTION_ID ledger (reuses 08-30/08-31 IDs) |
+| [docs/automation/ACTION_IDS_2026-09-21.md](docs/automation/ACTION_IDS_2026-09-21.md) | Current director ACTION_ID ledger (2026-09-21) |
+| [docs/automation/ACTION_IDS_2026-09-02.md](docs/automation/ACTION_IDS_2026-09-02.md) | Prior director ACTION_ID ledger (2026-09-02) — do not append |
+| [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | 2026-09-01 director file concatenated by TBC/LHIPS — do not append |
 | [docs/automation/ACTION_IDS_2026-08-31.md](docs/automation/ACTION_IDS_2026-08-31.md) | 2026-08-31 specialist dump yard — do not append |
 | [docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md](docs/automation/PX_COHERENCE_AUDIT_2026-08-31.md) | Player-experience coherence audit (systems, not process) |
 | [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Owner-facing aggregate telemetry design (no production instrumentation) |
