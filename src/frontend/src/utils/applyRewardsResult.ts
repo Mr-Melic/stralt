@@ -1,3 +1,5 @@
+import { confirmKeptIncrementalXp } from "./progressPersist.ts";
+
 export interface ApplyRewardsOk {
   newDoka: number;
   newXp: number;
@@ -77,4 +79,99 @@ export async function persistIncrementalRewards(
     BigInt(clamped.xpDelta),
   );
   return readApplyRewardsOk(result);
+}
+
+export type PersistIncrementalRewardsResult =
+  | { ok: ApplyRewardsOk }
+  | { err: "rejected" | "transport" };
+
+/**
+ * `#err` / `applyRewards failed` means the canister did not add.
+ * Any other throw is after-or-during invoke — the replica may have the
+ * grant. Callers must not retry the same delta and must not
+ * saveBattleStats the pre-credit leftover.
+ */
+export function classifyApplyRewardsError(
+  error: unknown,
+): "rejected" | "transport" {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes("applyRewards failed") ? "rejected" : "transport";
+}
+
+export async function persistIncrementalRewardsResult(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  actor: any,
+  selectedSlot: number,
+  dokaDelta: number,
+  xpDelta: number,
+): Promise<PersistIncrementalRewardsResult> {
+  try {
+    return {
+      ok: await persistIncrementalRewards(
+        actor,
+        selectedSlot,
+        dokaDelta,
+        xpDelta,
+      ),
+    };
+  } catch (error) {
+    return { err: classifyApplyRewardsError(error) };
+  }
+}
+
+export type IncrementalRewardsPersistLock = {
+  commit: (next: { doka?: number; xp?: number; level?: number }) => void;
+  snapshot: () => { doka: number; xp: number; level: number };
+  isWalletSeeded: () => boolean;
+  noteUnconfirmedXpCredit: () => void;
+  noteUnconfirmedCredit?: () => void;
+};
+
+export type IncrementalXpConfirm = {
+  readCharacter: () => Promise<unknown>;
+};
+
+/**
+ * Portal +10 used persistIncrementalRewards which throws after invoke.
+ * The persist lock never committed leftover XP, so a recap heal
+ * saveBattleStats-wrote the pre-portal leftover and wiped the grant.
+ *
+ * Transport-keep notes unconfirmed XP (do not remint; do not write the
+ * stale leftover). Confirm via getCharacter when the replica has caught up.
+ */
+export async function persistIncrementalXpThroughLock(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  actor: any,
+  selectedSlot: number,
+  xpDelta: number,
+  persist: IncrementalRewardsPersistLock,
+  confirm: IncrementalXpConfirm,
+): Promise<ApplyRewardsOk | null> {
+  const result = await persistIncrementalRewardsResult(
+    actor,
+    selectedSlot,
+    0,
+    xpDelta,
+  );
+  if ("ok" in result) {
+    persist.commit({ xp: result.ok.newXp, level: result.ok.newLevel });
+    return result.ok;
+  }
+  if (result.err === "rejected") {
+    throw new Error("applyRewards failed");
+  }
+  persist.noteUnconfirmedXpCredit();
+  const confirmed = await confirmKeptIncrementalXp(
+    persist.snapshot(),
+    confirm.readCharacter,
+  );
+  if (confirmed) {
+    persist.commit({ xp: confirmed.xp, level: confirmed.level });
+    return {
+      newDoka: persist.snapshot().doka,
+      newXp: confirmed.xp,
+      newLevel: confirmed.level,
+    };
+  }
+  return null;
 }

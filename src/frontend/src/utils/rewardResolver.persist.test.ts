@@ -3,15 +3,21 @@ import { describe, it } from "node:test";
 import {
   PORTAL_TRANSITION_XP,
   persistIncrementalRewards,
+  persistIncrementalXpThroughLock,
   readApplyRewardsOk,
 } from "./applyRewardsResult.ts";
 import { liveBattleChallengePersistEntries } from "./challengeRewards.ts";
-import { createProgressPersist } from "./progressPersist.ts";
+import {
+  applySpendToCommitted,
+  createProgressPersist,
+  resolveCommittedXpForAbsoluteWrite,
+} from "./progressPersist.ts";
 import {
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
   computeRewardDeltas,
   computeVictoryExp,
+  persistBattleRewardsOnLock,
   selectDefeatedEnemiesForRewards,
 } from "./rewardResolver.ts";
 
@@ -179,6 +185,133 @@ describe("applyRewards result parsing", () => {
     assert.equal(uiXp, 80);
     assert.equal(lock.hydrateWhenIdle({ doka: 200, xp: uiXp, level: 4 }), true);
     assert.equal(lock.snapshot().xp, 80);
+  });
+
+  it("notes unconfirmed XP when portal applyRewards adds then throws", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 80, level: 4 });
+    let canisterXp = 80;
+    let applyCalls = 0;
+    const persisted = await persistIncrementalXpThroughLock(
+      {
+        applyRewards: async (_slot: bigint, _doka: bigint, xp: bigint) => {
+          applyCalls += 1;
+          canisterXp += Number(xp);
+          throw new Error("replica reject after add");
+        },
+      },
+      1,
+      PORTAL_TRANSITION_XP,
+      lock,
+      {
+        readCharacter: async () => ({
+          experience: canisterXp,
+          level: 4,
+        }),
+      },
+    );
+    assert.equal(applyCalls, 1);
+    assert.equal(canisterXp, 90);
+    assert.equal(persisted?.newXp, 90);
+    assert.equal(lock.snapshot().xp, 90);
+    assert.equal(lock.hasUnconfirmedXpCredit(), false);
+  });
+
+  it("skips the next saveBattleStats leftover write when confirm is stale", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 80, level: 4 });
+    let canisterXp = 80;
+    const kept = await persistIncrementalXpThroughLock(
+      {
+        applyRewards: async (_slot: bigint, _doka: bigint, xp: bigint) => {
+          canisterXp += Number(xp);
+          throw new Error("replica reject after add");
+        },
+      },
+      1,
+      PORTAL_TRANSITION_XP,
+      lock,
+      {
+        readCharacter: async () => ({ experience: 80, level: 4 }),
+      },
+    );
+    assert.equal(kept, null);
+    assert.equal(canisterXp, 90);
+    assert.equal(lock.hasUnconfirmedXpCredit(), true);
+    assert.equal(lock.snapshot().xp, 80);
+
+    await assert.rejects(
+      () =>
+        resolveCommittedXpForAbsoluteWrite(lock, async () => ({
+          experience: 80,
+          level: 4,
+        })),
+      /unconfirmed xp credit/,
+    );
+    const caughtUp = await resolveCommittedXpForAbsoluteWrite(
+      lock,
+      async () => ({ experience: canisterXp, level: 4 }),
+    );
+    assert.equal(caughtUp?.xp, 90);
+    assert.equal(applySpendToCommitted(lock.snapshot().doka, 10), 190);
+    assert.equal(lock.snapshot().xp, 90);
+  });
+
+  it("does not remint portal XP after a transport keep", async () => {
+    let applyCalls = 0;
+    const lock = createProgressPersist({ doka: 200, xp: 80, level: 4 });
+    await persistIncrementalXpThroughLock(
+      {
+        applyRewards: async () => {
+          applyCalls += 1;
+          throw new Error("replica reject after add");
+        },
+      },
+      1,
+      PORTAL_TRANSITION_XP,
+      lock,
+      { readCharacter: async () => ({ experience: 80, level: 4 }) },
+    );
+    assert.equal(applyCalls, 1);
+    assert.equal(lock.hasUnconfirmedXpCredit(), true);
+  });
+});
+
+describe("persistBattleRewardsOnLock throw-after-add", () => {
+  it("notes unconfirmed XP and Doka when victory applyRewards adds then throws", async () => {
+    const lock = createProgressPersist({ doka: 200, xp: 80, level: 4 });
+    let canisterDoka = 200;
+    let canisterXp = 80;
+    await assert.rejects(
+      persistBattleRewardsOnLock(
+        {
+          applyRewards: async (_slot: bigint, doka: bigint, xp: bigint) => {
+            canisterDoka += Number(doka);
+            canisterXp += Number(xp);
+            throw new Error("replica reject after add");
+          },
+        },
+        1,
+        {
+          victory: true,
+          enemiesDefeated: [{ name: "rat", level: 2 }],
+          completedChallenges: [],
+          dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+          baseDoka: 50,
+          baseXp: 40,
+        },
+        lock,
+        {
+          readCharacter: async () => ({ experience: 80, level: 4 }),
+          readWallet: async () => 200,
+        },
+      ),
+      /transport keep/,
+    );
+    assert.equal(canisterDoka, 250);
+    assert.equal(canisterXp, 120);
+    assert.equal(lock.hasUnconfirmedXpCredit(), true);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+    assert.equal(lock.snapshot().xp, 80);
+    assert.equal(lock.snapshot().doka, 200);
   });
 });
 
