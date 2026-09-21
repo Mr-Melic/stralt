@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  BUILT_IN_SPELL_DELETE_BLOCKED,
   achievementUnlockRejected,
+  adminSpellDeleteBlockedReason,
   chatCooldownActive,
   clampDungeonDepth,
   clampPersistedHpWrite,
@@ -531,6 +533,16 @@ assert.equal(validateJsonBlob("colorPalette", ""), null);
 
 assert.equal(isBuiltInSpellId("void_collapse"), true);
 assert.equal(isBuiltInSpellId("custom_bolt"), false);
+assert.equal(
+  adminSpellDeleteBlockedReason("void_collapse"),
+  BUILT_IN_SPELL_DELETE_BLOCKED,
+);
+assert.equal(
+  adminSpellDeleteBlockedReason("shadow_strike"),
+  BUILT_IN_SPELL_DELETE_BLOCKED,
+);
+assert.equal(adminSpellDeleteBlockedReason("custom_bolt"), null);
+assert.equal(adminSpellDeleteBlockedReason(""), null);
 
 const owned = new Set(["void_collapse"]);
 assert.equal(
