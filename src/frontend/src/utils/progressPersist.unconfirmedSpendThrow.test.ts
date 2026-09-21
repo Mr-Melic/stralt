@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
   ABSOLUTE_WRITE_UNCONFIRMED_SPEND,
   applySpendToCommitted,
   createProgressPersist,
   resolveCommittedDokaForAbsoluteWrite,
+  shouldClearUnconfirmedWalletCredit,
   shouldSkipAbsoluteDokaSpendWrite,
   shouldSkipAbsoluteDokaWrite,
 } from "./progressPersist.ts";
@@ -92,5 +94,36 @@ describe("unconfirmed wallet spend throw-after-debit", () => {
     const wrote = applySpendToCommitted(lock.snapshot().doka, 50);
     lock.commit({ doka: wrote });
     assert.equal(wrote, 350);
+  });
+
+  it("keeps an unconfirmed credit through a successful spend commit", async () => {
+    // Union with #375: rename/upgrade commit({ doka: lock - spend }) must
+    // not clear a seeded one-shot keep. Recap heal would then skip the
+    // live re-fetch and saveBattleStats-wipe the grant (never mints).
+    assert.equal(
+      shouldClearUnconfirmedWalletCredit({
+        unconfirmed: true,
+        previousDoka: 500,
+        nextDoka: 400,
+      }),
+      false,
+    );
+    const lock = createProgressPersist({ doka: 500, xp: 0, level: 1 });
+    lock.noteUnconfirmedCredit();
+    lock.commit({ doka: 400 });
+    assert.equal(lock.snapshot().doka, 400);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+    assert.equal(lock.hasUnconfirmedWalletSpend(), false);
+
+    await assert.rejects(
+      () => resolveCommittedDokaForAbsoluteWrite(lock, async () => 400),
+      new RegExp(ABSOLUTE_WRITE_UNCONFIRMED_CREDIT),
+    );
+    const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => 450,
+    );
+    assert.equal(caughtUp, 450);
+    assert.equal(lock.hasUnconfirmedWalletCredit(), false);
   });
 });
