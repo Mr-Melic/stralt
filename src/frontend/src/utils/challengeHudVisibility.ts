@@ -21,3 +21,20 @@ export function shouldShowChallengeHud(args: {
   if (args.offerVisible) return true;
   return args.accepted;
 }
+
+/**
+ * #332 kept an accepted contract on screen after the first AP/MP spend.
+ * The panel is `position:fixed; z-index:1200` with wrapper onMouseDown
+ * preventDefault — above the canvas and BattleUIPanel (z 200). Before
+ * that fix the first action hid it; afterward the 240px overlay ate
+ * targeting / Attack Nearest for the rest of the fight (on a 390px
+ * viewport the default x = innerWidth-260 covers almost the field).
+ *
+ * Offer window still needs capture for Accept/Decline. Tracker mode
+ * must let map clicks through; fold keeps pointer-events:auto.
+ */
+export function challengeHudCapturesMapPointer(args: {
+  accepted: boolean;
+}): boolean {
+  return args.accepted !== true;
+}
