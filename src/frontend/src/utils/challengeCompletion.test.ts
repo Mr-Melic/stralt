@@ -857,9 +857,26 @@ describe("recordChallengeDirectHit", () => {
     );
   });
 
+  it("does not treat the opening directHit=true flag as a spent attempt", () => {
+    assert.equal(
+      recordChallengeDirectHit(true, { x: 1, y: 1 }, { x: 1, y: 1 }),
+      true,
+    );
+    assert.equal(
+      isStrikerChallengeComplete({ directHit: true, directHitAttempts: 0 }),
+      false,
+    );
+    assert.equal(
+      isStrikerChallengeComplete({ directHit: true, directHitAttempts: 1 }),
+      true,
+    );
+  });
+
   it("fails Striker when an AI summon kit-casts beyond Chebyshev 2", () => {
     // Archer AI Poison Arrow (range 4) never entered executeCastAttempt.
     // Player only placed the summon adjacent; victory still persisted 800 XP.
+    // Inserted after the shared #327 splash/bounce cases so oldest-first
+    // merge does not collide on the same hunk.
     const summon = { x: 8, y: 8 };
     let state = { stillDirect: true, attempts: 0 };
     state = applyChallengeDirectHitOnCast(state, summon, [{ x: 12, y: 8 }]);
@@ -880,21 +897,6 @@ describe("recordChallengeDirectHit", () => {
         ),
       ),
       0,
-    );
-  });
-
-  it("does not treat the opening directHit=true flag as a spent attempt", () => {
-    assert.equal(
-      recordChallengeDirectHit(true, { x: 1, y: 1 }, { x: 1, y: 1 }),
-      true,
-    );
-    assert.equal(
-      isStrikerChallengeComplete({ directHit: true, directHitAttempts: 0 }),
-      false,
-    );
-    assert.equal(
-      isStrikerChallengeComplete({ directHit: true, directHitAttempts: 1 }),
-      true,
     );
   });
 });
