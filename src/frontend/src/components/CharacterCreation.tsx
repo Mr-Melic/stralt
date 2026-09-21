@@ -717,6 +717,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                   onChange={(e) => setCharacterName(e.target.value)}
                   placeholder="Enter a name for your champion\u2026"
                   maxLength={20}
+                  aria-describedby="character_creation_name_hint"
                   data-ocid="character_creation.name_input"
                   style={{
                     width: "100%",
@@ -741,6 +742,19 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                     e.currentTarget.style.boxShadow = "none";
                   }}
                 />
+                <p
+                  id="character_creation_name_hint"
+                  data-ocid="character_creation.name_hint"
+                  style={{
+                    color: "#6a7a8a",
+                    fontSize: 11,
+                    margin: "8px 0 0",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Up to 20 characters. This is your champion's name on the
+                  board.
+                </p>
               </div>
             </div>
 

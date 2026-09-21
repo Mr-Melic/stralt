@@ -8,6 +8,7 @@ import {
   MOLLIE_PAYMENT_LINK,
   euroTextToCents,
   hintedEurosLabel,
+  normalizeGameKeyInput,
   parseMyGameKeyPurchaseStatus,
   playerGameKeyStatusCopy,
   readGameKeyCmdResult,
@@ -168,7 +169,8 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   };
 
   const redeem = async () => {
-    const formatErr = validateGameKeyFormat(gameKey.trim());
+    const normalized = normalizeGameKeyInput(gameKey);
+    const formatErr = validateGameKeyFormat(normalized);
     if (formatErr) {
       toast.error(formatErr);
       return;
@@ -184,7 +186,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
       const { result } = await redeemGameKeyThroughPersist(
         actor,
         persist,
-        gameKey.trim(),
+        normalized,
       );
       if ("err" in result) {
         toast.error(result.err);
@@ -580,7 +582,7 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
             id="shop-gamekey"
             data-ocid="shop.form.gamekey_input"
             value={gameKey}
-            onChange={(e) => setGameKey(e.target.value)}
+            onChange={(e) => setGameKey(normalizeGameKeyInput(e.target.value))}
             rows={3}
             spellCheck={false}
             aria-describedby="shop-gamekey-help"

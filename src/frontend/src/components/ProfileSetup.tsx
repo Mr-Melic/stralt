@@ -256,6 +256,7 @@ const ProfileSetup: React.FC = () => {
               {error && (
                 <div
                   data-ocid="profile_setup.error_state"
+                  role="alert"
                   style={{
                     background: "rgba(231,76,60,0.12)",
                     border: "1px solid rgba(231,76,60,0.4)",

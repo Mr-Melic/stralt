@@ -792,7 +792,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
             padding: "4px 12px",
           }}
           onKeyDown={(e) => e.key === "Enter" && handleAdminTriggerClick()}
-          aria-label="v1.0"
+          aria-label="Hidden admin trigger"
           type="button"
         >
           v1.0

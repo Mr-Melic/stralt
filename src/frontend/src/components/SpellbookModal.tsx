@@ -1151,6 +1151,19 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
                                 </div>
                               </div>
                             </div>
+                            {spell.isSummon && spell.summonUnitDef ? (
+                              <div
+                                data-ocid="spellbook.summon_upgrade_tax"
+                                style={{
+                                  fontSize: 9,
+                                  color: "rgba(241,196,15,0.7)",
+                                  marginBottom: 6,
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                Summon rank-up costs 10× the usual Doka.
+                              </div>
+                            ) : null}
                             <button
                               type="button"
                               data-ocid={`spellbook.upgrade_button.${idx + 1}`}

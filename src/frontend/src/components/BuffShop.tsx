@@ -296,7 +296,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
         if (e.key === "Escape") onClose?.();
       }}
       aria-modal="true"
-      aria-label="Item Shop"
+      aria-label="Items"
     >
       <div
         className="stone-frame"
@@ -313,14 +313,14 @@ const BuffShop: React.FC<BuffShopProps> = ({
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 18 }}>⚗️</span>
             <span className="stone-header-title" style={{ fontSize: 16 }}>
-              Item Shop
+              Items
             </span>
           </div>
           <button
             type="button"
             data-ocid="buff_shop.close_button"
             onClick={onClose}
-            aria-label="Close shop"
+            aria-label="Close Items"
             className="stone-btn-slate stone-modal-close"
             style={{
               width: 30,

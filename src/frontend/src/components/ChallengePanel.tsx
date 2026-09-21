@@ -347,42 +347,58 @@ export default function ChallengePanel({
             </div>
           )}
           {!accepted ? (
-            <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
-              <button
-                type="button"
-                onClick={onAccept}
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={onAccept}
+                  title="Lock this bonus. Break the rule and you earn no extra Doka/XP."
+                  style={{
+                    flex: 1,
+                    background: "#8b0000",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 3,
+                    padding: "4px 0",
+                    fontSize: 10,
+                    cursor: "pointer",
+                    fontWeight: "bold",
+                    minHeight: 44,
+                  }}
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  onClick={onDecline}
+                  title="Fight this battle without the extra Doka/XP."
+                  style={{
+                    flex: 1,
+                    background: "#333",
+                    color: "#aaa",
+                    border: "none",
+                    borderRadius: 3,
+                    padding: "4px 0",
+                    fontSize: 10,
+                    cursor: "pointer",
+                    minHeight: 44,
+                  }}
+                >
+                  Skip bonus
+                </button>
+              </div>
+              <p
+                data-ocid="challenge.accept_window_hint"
                 style={{
-                  flex: 1,
-                  background: "#8b0000",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 3,
-                  padding: "4px 0",
+                  margin: "8px 0 0",
+                  color: "#8a7a70",
                   fontSize: 10,
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  minHeight: 44,
+                  lineHeight: 1.4,
                 }}
               >
-                Accept
-              </button>
-              <button
-                type="button"
-                onClick={onDecline}
-                style={{
-                  flex: 1,
-                  background: "#333",
-                  color: "#aaa",
-                  border: "none",
-                  borderRadius: 3,
-                  padding: "4px 0",
-                  fontSize: 10,
-                  cursor: "pointer",
-                  minHeight: 44,
-                }}
-              >
-                Decline
-              </button>
+                Accept before you move or cast. The offer ends on your first
+                action.
+              </p>
             </div>
           ) : (
             <div
