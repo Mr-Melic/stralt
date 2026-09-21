@@ -3,6 +3,7 @@ import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress.ts"
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import {
   applyUnpaidDeathPenaltyToWrite,
+  clearAllPendingDeathPenalties,
   clearPendingDeathPenalty,
   clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
@@ -10,6 +11,7 @@ import {
   experienceFromCharacterRecord,
   flushPendingDeathPenalty,
   mergeVictoryRewardLiveStats,
+  pendingDeathPenaltyStorageKey,
   persistDeathPenalty,
   persistWithRetry,
   raiseUiAfterDeathPersist,
@@ -849,6 +851,95 @@ function memStorage(): import("./deathPenalty.ts").DeathPenaltyStorage {
   assert.equal(readPendingDeathPenalty(local, 1), null);
   assert.equal(readPendingDeathPenalty(session, 1), null);
   assert.equal(readPendingDeathPenaltyAnywhere(1, local, session), null);
+}
+
+{
+  // Second II identity on the same browser must not adopt an unpaid 20/40.
+  const storage = new Map<string, string>();
+  const mem: import("./deathPenalty.ts").DeathPenaltyStorage = {
+    getItem: (k) => storage.get(k) ?? null,
+    setItem: (k, v) => {
+      storage.set(k, v);
+    },
+    removeItem: (k) => {
+      storage.delete(k);
+    },
+  };
+  writePendingDeathPenalty(mem, {
+    slot: 1,
+    ownerKey: "aaaaa-aa",
+    preXp: 1000,
+    preDoka: 5000,
+    afterXp: 800,
+    afterDoka: 3000,
+  });
+  assert.deepEqual(
+    readPendingDeathPenalty(mem, 1, "aaaaa-aa"),
+    {
+      slot: 1,
+      ownerKey: "aaaaa-aa",
+      preXp: 1000,
+      preDoka: 5000,
+      afterXp: 800,
+      afterDoka: 3000,
+    },
+    "writer principal must read their scoped marker",
+  );
+  assert.equal(
+    readPendingDeathPenalty(mem, 1, "bbbbb-bb"),
+    null,
+    "second II principal must not see the first principal's unpaid cut",
+  );
+  assert.equal(
+    storage.has(pendingDeathPenaltyStorageKey(1)),
+    false,
+    "scoped write must remove the legacy slot-only key",
+  );
+  // Poisoned legacy marker from an older build: reading as principal B
+  // must drop it instead of taxing B via resolvePendingDeathReplay.
+  storage.set(
+    pendingDeathPenaltyStorageKey(1),
+    JSON.stringify({
+      slot: 1,
+      preXp: 1000,
+      preDoka: 5000,
+      afterXp: 800,
+      afterDoka: 3000,
+    }),
+  );
+  assert.equal(
+    readPendingDeathPenalty(mem, 1, "bbbbb-bb"),
+    null,
+    "owner-less legacy marker must not apply to a different principal",
+  );
+  assert.equal(
+    storage.has(pendingDeathPenaltyStorageKey(1)),
+    false,
+    "reading as a principal must clear the owner-less legacy poison",
+  );
+  const foreignCut = resolvePendingDeathReplay(5000, 9000, {
+    slot: 1,
+    preXp: 1000,
+    preDoka: 5000,
+    afterXp: 800,
+    afterDoka: 3000,
+  });
+  assert.deepEqual(
+    foreignCut,
+    { action: "write", newXp: 4800, newDoka: 7000 },
+    "proof: unscoped replay would tax a richer second wallet (200 XP / 2000 Doka)",
+  );
+  writePendingDeathPenalty(mem, {
+    slot: 2,
+    ownerKey: "aaaaa-aa",
+    preXp: 50,
+    preDoka: 50,
+    afterXp: 40,
+    afterDoka: 30,
+  });
+  clearAllPendingDeathPenalties(mem, "aaaaa-aa");
+  assert.equal(readPendingDeathPenalty(mem, 1, "aaaaa-aa"), null);
+  assert.equal(readPendingDeathPenalty(mem, 2, "aaaaa-aa"), null);
 }
 
 console.log("deathPenalty.test: ok");

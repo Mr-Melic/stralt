@@ -283,6 +283,7 @@ import {
 import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress";
 import { useBossAI } from "../hooks/useBossAI";
 import { useBossRush } from "../hooks/useBossRush";
+import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   applyBossAbility,
   checkPhaseTransition,
@@ -860,6 +861,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   type ActorAny = Record<string, any>;
   const { actor: rawActor } = useActor();
   const actor = rawActor as ActorAny | null;
+  const { identity } = useInternetIdentity();
+  // Death-pending localStorage must be principal-scoped. A slot-only key let
+  // a second II identity replay resolvePendingDeathReplay onto their wallet.
+  const deathOwnerKey =
+    identity?.getPrincipal?.()?.toText?.() ?? null;
+  const deathOwnerKeyRef = useRef(deathOwnerKey);
+  deathOwnerKeyRef.current = deathOwnerKey;
 
   // M6: Per-character localStorage key helper — namespaced by userId + slot
   // so switching characters or principals never cross-pollutes saved state.
@@ -1449,6 +1457,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     await flushPendingDeathPenalty({
       storage: DEATH_PENALTY_STORAGE,
       slot,
+      ownerKey: deathOwnerKeyRef.current,
       persist: progressPersistRef.current,
       fetchSnapshot: () =>
         readDeathReplayBackendSnapshot({
@@ -12974,6 +12983,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const respawnHp = respawnHpAfterDeath(characterStatsRef.current.level);
     writePendingDeathPenalty(DEATH_PENALTY_STORAGE, {
       slot: characterSlot,
+      ownerKey: deathOwnerKeyRef.current || undefined,
       preXp: currentXp,
       preDoka: currentDoka,
       afterXp: xpAfter,
@@ -13005,6 +13015,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             );
             writePendingDeathPenalty(DEATH_PENALTY_STORAGE, {
               slot: characterSlot,
+              ownerKey: deathOwnerKeyRef.current || undefined,
               preXp: committed.xp,
               preDoka: dokaBase ?? committed.doka,
               afterXp: after.newXp,
@@ -13033,6 +13044,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 characterSlot,
                 {
                   slot: characterSlot,
+                  ownerKey: deathOwnerKeyRef.current || undefined,
                   preXp: committed.xp,
                   preDoka: dokaBase ?? committed.doka,
                   afterXp: after.newXp,
@@ -13137,6 +13149,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const pendingDeath = readPendingDeathPenaltyAnywhere(
             characterSlot,
             DEATH_PENALTY_STORAGE,
+            undefined,
+            deathOwnerKeyRef.current,
           );
           const honoured = pendingDeath
             ? applyUnpaidDeathPenaltyToWrite(
@@ -13192,6 +13206,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const pending = readPendingDeathPenaltyAnywhere(
       characterSlot,
       DEATH_PENALTY_STORAGE,
+      undefined,
+      deathOwnerKey,
     );
     if (!pending) return;
     let cancelled = false;
@@ -13209,7 +13225,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (cancelled || !snap) return;
       const decision = resolvePendingDeathReplay(snap.xp, snap.doka, pending);
       if (decision.action !== "write") {
-        clearPendingDeathPenaltyAnywhere(characterSlot, DEATH_PENALTY_STORAGE);
+        clearPendingDeathPenaltyAnywhere(
+          characterSlot,
+          DEATH_PENALTY_STORAGE,
+          undefined,
+          deathOwnerKey,
+        );
         return;
       }
       try {
@@ -13257,7 +13278,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [actor, character, characterSlot, onDokaBalanceChange, setCharacterStats]);
+  }, [
+    actor,
+    character,
+    characterSlot,
+    deathOwnerKey,
+    onDokaBalanceChange,
+    setCharacterStats,
+  ]);
 
   // Handle player death
   // biome-ignore lint/correctness/useExhaustiveDependencies: characterStats.hp read as stale snapshot for diagnostic log only; death decision is made by callers using computed post-damage values
