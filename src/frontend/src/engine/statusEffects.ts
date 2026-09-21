@@ -5,6 +5,10 @@
  * processActiveEffects own refs, map-modifier suppression, DoT damage, and
  * battle-log side effects. This module is React-free.
  *
+ * Battle AP/MP pools use modifiedResourcePool (base + additive modifier).
+ * Do not merge the three WX restore paths: battle-start writes the raw
+ * pool, restoreApMp subtracts apCost, turn-start clamps Math.max(0, …).
+ *
  * DoT stacking and per-stack duration ticks stay in engine/dotStacks.ts.
  * Call mergeIncomingEffect to route type === "dot" there and every other
  * type through replace-or-refresh.
@@ -60,6 +64,30 @@ export function getStatModifier(
     }
   }
   return isAdditiveResourceStat(stat) ? additive : multiplier;
+}
+
+/**
+ * Battle AP/MP pool = progression base + additive buff/debuff on that stat.
+ *
+ * Does not clamp and does not spend. Callers keep their own restore
+ * semantics:
+ *   - battle-start writes the raw pool;
+ *   - restoreApMp subtracts castRuntime.apCost after this;
+ *   - player turn-start clamps Math.max(0, pool).
+ *
+ * `stat` must be 'ap' or 'mp'. Legacy 'maxAp' / 'maxMp' keys are
+ * multiplicative in getStatModifier and must not be used here.
+ *
+ * Defaults to targetId "player" — the three WX restore sites all restore
+ * the player, not a controlled summon.
+ */
+export function modifiedResourcePool(
+  base: number,
+  effects: readonly StatModifiableEffect[],
+  stat: "ap" | "mp",
+  targetId = "player",
+): number {
+  return base + getStatModifier(targetId, stat, effects);
 }
 
 /**

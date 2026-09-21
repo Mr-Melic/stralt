@@ -409,7 +409,7 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `summonSpawn.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle. Hostile minions: `spawnEnemySummonUnit`. Kit casts: `utils/summonControlCast.ts` (catalog `summonKit`, not `summon.spells`). `summonAI.ts` exists but `runSummonAI` is unused; live summon turns use `enemyAI.ts` |
 | `summonLifespan.ts` | Lifespan tick against the **live** combatant store; drop expired ids through `removeCombatant` |
 | `dotStacks.ts` | Same-name DoT append + independent per-stack duration tick (RES applied by damage helpers, not here) |
-| `statusEffects.ts` | Non-DoT replace-or-refresh, AP/MP additive vs multiplicative `getStatModifier`, battle-log magnitude. WX still owns map-modifier suppression, DoT damage, death, and the expire-log loop |
+| `statusEffects.ts` | Non-DoT replace-or-refresh, AP/MP additive vs multiplicative `getStatModifier`, `modifiedResourcePool` (base + additive AP/MP; no clamp), battle-log magnitude. WX still owns map-modifier suppression, DoT damage, death, the expire-log loop, and the three restore paths (battle-start raw pool, `restoreApMp` minus `apCost`, turn-start `Math.max(0, …)`) |
 | `battleStartPlacement.ts` | Battle-start cell spacing (player ≥3 / enemies ≥2, occupancy fallback) |
 | `spawnPolicy.ts` | Overworld / dungeon enemy spawn policy: dungeon extra-count + tier-boost tables, valid-cell filters, family 30% variants, visual scale. `generateEnemies` still places units and re-rolls `aiTier`. Family catalog `ap`/`mp` are unused. Portal keep-clear is Manhattan ≤ 2; map-spawn keep-clear is Chebyshev ≤ 3 from (8,8); enemy spacing is Chebyshev ≥ 4 — do not merge these |
 

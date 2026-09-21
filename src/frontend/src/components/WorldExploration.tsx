@@ -236,6 +236,7 @@ import {
   formatBattleEffectMagnitude,
   getStatModifier,
   mergeIncomingEffect,
+  modifiedResourcePool,
   tickNonDotEffects,
 } from "../engine/statusEffects";
 import {
@@ -9353,21 +9354,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return false;
       },
       restoreApMp: () => {
-        // Per-turn restore now reads from the canonical progression formula
-        // (getPlayerBaseStats) + active-effect modifiers. The stat key is
-        // 'ap'/'mp' (NOT 'maxAp'/'maxMp') because getStatModifier only treats
-        // 'ap'/'mp' as additive — the legacy 'maxAp'/'maxMp' keys hit the
-        // multiplier branch and returned 1 (no-op), capping restore at 1.
+        // Pool = getPlayerBaseStats + additive ap/mp modifiers. Subtract
+        // apCost here — do not clamp; turn-start is the Math.max(0, …) path.
         const _baseStats = getPlayerBaseStats(
           characterStats.level,
           levelUpConfig,
         );
-        const maxApRestore =
-          _baseStats.ap +
-          getStatModifier("player", "ap", activeEffectsRef.current);
-        const maxMpRestore =
-          _baseStats.mp +
-          getStatModifier("player", "mp", activeEffectsRef.current);
+        const maxApRestore = modifiedResourcePool(
+          _baseStats.ap,
+          activeEffectsRef.current,
+          "ap",
+        );
+        const maxMpRestore = modifiedResourcePool(
+          _baseStats.mp,
+          activeEffectsRef.current,
+          "mp",
+        );
         setCurrentBattleApSynced(maxApRestore - castRuntimeRef.current.apCost);
         setCurrentBattleMp(maxMpRestore);
       },
@@ -12098,20 +12100,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         inBattleRef.current = true;
         onDebugLog?.("BATTLE_START", "Battle started");
         setBattleEnemies([...enemiesWithSpells]);
-        // Battle-start AP/MP init now reads from the canonical progression
-        // formula (getPlayerBaseStats) + active-effect modifiers, NOT the raw
-        // persisted characterStats.ap/mp. The formula is the floor
-        // (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence.
+        // Battle-start AP/MP: progression formula + additive modifiers, not
+        // persisted characterStats.ap/mp. Raw pool (no clamp, no apCost).
         const _baseStats = getPlayerBaseStats(
           characterStats.level,
           levelUpConfig,
         );
-        const _baseAp =
-          _baseStats.ap +
-          getStatModifier("player", "ap", activeEffectsRef.current);
-        const _baseMp =
-          _baseStats.mp +
-          getStatModifier("player", "mp", activeEffectsRef.current);
+        const _baseAp = modifiedResourcePool(
+          _baseStats.ap,
+          activeEffectsRef.current,
+          "ap",
+        );
+        const _baseMp = modifiedResourcePool(
+          _baseStats.mp,
+          activeEffectsRef.current,
+          "mp",
+        );
         setCurrentBattleApSynced(_baseAp);
         setCurrentBattleMp(_baseMp);
         if (
@@ -14334,11 +14338,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             }
             // Reset the AP-debuff flag at start of player's turn
             playerApWasDebuffedRef.current = false;
-            // Per-turn restore now reads from the canonical progression formula
-            // (getPlayerBaseStats) + active-effect modifiers, mirroring the
-            // restoreApMp callback and battle-start init. The formula is the
-            // floor (PLAYER_BASE_AP=8, PLAYER_BASE_MP=4) and wins on divergence
-            // with persisted characterStats.ap/mp — eliminating the 10/4 flapping.
+            // Turn-start restore: same pool as battle-start / restoreApMp,
+            // then clamp at 0. Read activeEffectsRef inside the updater so
+            // the live list is sampled at apply time, not schedule time.
             const _baseStats = getPlayerBaseStats(
               characterStats.level,
               levelUpConfig,
@@ -14346,22 +14348,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             setCurrentBattleApSynced((prev) => {
               void prev;
               // Arcane Surge: spells cost 1 less AP, which is applied at cast time not here
-              // Apply AP buffs/debuffs from active effects
-              const apMod = getStatModifier(
-                "player",
-                "ap",
-                activeEffectsRef.current,
+              return Math.max(
+                0,
+                modifiedResourcePool(
+                  _baseStats.ap,
+                  activeEffectsRef.current,
+                  "ap",
+                ),
               );
-              return Math.max(0, _baseStats.ap + apMod);
             });
             setCurrentBattleMp((prev) => {
               void prev;
-              const mpMod = getStatModifier(
-                "player",
-                "mp",
-                activeEffectsRef.current,
+              return Math.max(
+                0,
+                modifiedResourcePool(
+                  _baseStats.mp,
+                  activeEffectsRef.current,
+                  "mp",
+                ),
               );
-              return Math.max(0, _baseStats.mp + mpMod);
             });
             setBattleActionMode("walk");
             selectedSpellIdRef.current = null;
