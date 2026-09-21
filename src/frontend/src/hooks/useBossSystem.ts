@@ -11,6 +11,7 @@
  */
 
 import type React from "react";
+import { dawnBlessingForRoll } from "../engine/dawnBlessing.ts";
 import {
   BossAbility,
   type BossAbilityParams,
@@ -1271,7 +1272,8 @@ function applyPagesOfDoom(params: BossAbilityParams): BossAbilityResult {
 }
 
 /** DAWN_BUFF — Twin Monarchs (boss 19, phase 1)
- * Every 3rd boss turn, apply a random positive buff to the player. */
+ * Every 3rd boss turn, apply a random positive buff to the player.
+ * Outcomes live in dawnBlessingForRoll (AP copy matches the WX AP consumer). */
 function applyDawnBuff(
   _params: BossAbilityParams,
   bossPhase1TurnCount: number,
@@ -1280,25 +1282,10 @@ function applyDawnBuff(
     return { logMessages: [] };
   }
   const roll = Math.floor(Math.random() * 3);
-  if (roll === 0) {
-    // +2 AP for this turn
-    return {
-      playerApModifier: 2,
-      logMessages: ["Dawn briefly blesses you with +2 AP!"],
-    };
+  if (roll !== 0 && roll !== 1 && roll !== 2) {
+    return { logMessages: [] };
   }
-  if (roll === 1) {
-    // +10 HP heal — represented as negative damage
-    return {
-      damageToPlayer: -10,
-      logMessages: ["Dawn briefly blesses you with a +10 HP heal!"],
-    };
-  }
-  // +1 MP for this turn — represented as AP modifier (same pattern, world uses apModifier)
-  return {
-    playerApModifier: 1,
-    logMessages: ["Dawn briefly blesses you with +1 MP bonus!"],
-  };
+  return dawnBlessingForRoll(roll);
 }
 
 /** DUSK_DOT — Twin Monarchs (boss 19, phase 1)
