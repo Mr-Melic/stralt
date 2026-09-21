@@ -1,13 +1,19 @@
 import type { BattleRecapData } from "../components/PostBattleRecap";
 import { countsTowardKillRewards } from "../engine/battleSetup.ts";
 import {
+  type IncrementalRewardsPersistLock,
   clampApplyRewardsDeltas,
+  persistIncrementalRewardsResult,
   readApplyRewardsOk,
 } from "./applyRewardsResult.ts";
 import {
   type CompletedChallengeReward,
   addChallengeRewardDeltas,
 } from "./challengeRewards.ts";
+import {
+  confirmKeptIncrementalDoka,
+  confirmKeptIncrementalXp,
+} from "./progressPersist.ts";
 import { xpForNextLevel } from "./xpCurve.ts";
 
 export type { ApplyRewardsOk } from "./applyRewardsResult.ts";
@@ -17,6 +23,8 @@ export {
   PORTAL_TRANSITION_XP,
   clampApplyRewardsDeltas,
   persistIncrementalRewards,
+  persistIncrementalRewardsResult,
+  persistIncrementalXpThroughLock,
   readApplyRewardsOk,
 } from "./applyRewardsResult.ts";
 export {
@@ -223,4 +231,121 @@ export async function resolveBattleRewards(
   };
 
   return recap;
+}
+
+export type BattleRewardsConfirm = {
+  readCharacter: () => Promise<unknown>;
+  readWallet?: () => Promise<unknown>;
+};
+
+function recapFromApplyRewardsOk(
+  input: RewardInput,
+  ok: { newDoka: number; newXp: number; newLevel: number },
+  dokaFromChallenges: number,
+  dokaDelta: number,
+  xpDelta: number,
+): BattleRecapData {
+  const {
+    victory,
+    enemiesDefeated,
+    completedChallenges,
+    dungeonMultiplier,
+    baseDoka,
+  } = input;
+  return {
+    xpEarned: xpDelta,
+    dokaEarned: dokaDelta,
+    dokaFromVictory: victory
+      ? dungeonMultiplier === PREAPPLIED_REWARD_MULTIPLIER
+        ? baseDoka
+        : Math.floor(baseDoka * dungeonMultiplier)
+      : 0,
+    dokaFromChallenges: dokaFromChallenges,
+    completedChallenges: completedChallenges.map((c) => c.name),
+    enemiesDefeated: enemiesDefeated,
+    currentLevel: Number(ok.newLevel),
+    currentXP: Number(ok.newXp),
+    newDoka: Number(ok.newDoka),
+    newXp: Number(ok.newXp),
+    xpForNextLevel: xpForNextLevel(Number(ok.newLevel)),
+    mapTitle: "",
+    hitsDealt: 0,
+    dokaBreakdown: [],
+  };
+}
+
+/**
+ * Victory / Boss Rush applyRewards can land then throw. The recap overlay
+ * is pointer-events: none, so a heal saveBattleStats used to write the
+ * pre-credit leftover/wallet and wipe the grant.
+ *
+ * Transport-keep notes unconfirmed XP (and Doka when the call included a
+ * Doka delta) so absolute writes re-fetch instead of trusting the lock.
+ */
+export async function persistBattleRewardsOnLock(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  actor: any,
+  selectedSlot: number,
+  input: RewardInput,
+  persist: IncrementalRewardsPersistLock,
+  confirm: BattleRewardsConfirm,
+): Promise<BattleRecapData> {
+  const { dokaDelta, xpDelta, dokaFromChallenges } = computeRewardDeltas(input);
+  const result = await persistIncrementalRewardsResult(
+    actor,
+    selectedSlot,
+    dokaDelta,
+    xpDelta,
+  );
+  if ("ok" in result) {
+    persist.commit({
+      doka: result.ok.newDoka,
+      xp: result.ok.newXp,
+      level: result.ok.newLevel,
+    });
+    return recapFromApplyRewardsOk(
+      input,
+      result.ok,
+      dokaFromChallenges,
+      dokaDelta,
+      xpDelta,
+    );
+  }
+  if (result.err === "rejected") {
+    throw new Error("applyRewards failed");
+  }
+  if (xpDelta > 0) persist.noteUnconfirmedXpCredit();
+  if (dokaDelta > 0) persist.noteUnconfirmedCredit?.();
+  const liveProgress = await confirmKeptIncrementalXp(
+    persist.snapshot(),
+    confirm.readCharacter,
+  );
+  const liveDoka =
+    dokaDelta > 0 && persist.isWalletSeeded() && confirm.readWallet
+      ? await confirmKeptIncrementalDoka(
+          persist.snapshot().doka,
+          confirm.readWallet,
+        )
+      : null;
+  if (liveProgress) {
+    persist.commit({ xp: liveProgress.xp, level: liveProgress.level });
+  }
+  if (liveDoka != null) {
+    persist.commit({ doka: liveDoka });
+  }
+  if (!liveProgress && liveDoka == null) {
+    throw new Error("applyRewards transport keep");
+  }
+  const snap = persist.snapshot();
+  return recapFromApplyRewardsOk(
+    input,
+    {
+      newDoka: liveDoka ?? snap.doka,
+      newXp: liveProgress?.xp ?? snap.xp,
+      newLevel: liveProgress?.level ?? snap.level,
+    },
+    dokaFromChallenges,
+    dokaDelta,
+    xpDelta,
+  );
 }

@@ -398,6 +398,7 @@ import {
   clampAbsoluteProgressWrite,
   createProgressPersist,
   resolveCommittedDokaForAbsoluteWrite,
+  resolveCommittedXpForAbsoluteWrite,
   shouldPersistAbsoluteDokaSpend,
   spendFromUiBalance,
 } from "../utils/progressPersist";
@@ -422,8 +423,8 @@ import {
   buildBossRushPersistInput,
   clampApplyRewardsDeltas,
   computeVictoryExp,
-  persistIncrementalRewards,
-  resolveBattleRewards,
+  persistBattleRewardsOnLock,
+  persistIncrementalXpThroughLock,
   selectDefeatedEnemiesForRewards,
 } from "../utils/rewardResolver";
 import {
@@ -6806,17 +6807,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const deathEpochAtPersistStart = deathEpochRef.current;
         void progressPersistRef.current
           .enqueue(async () => {
-            const persisted = await persistIncrementalRewards(
+            return persistIncrementalXpThroughLock(
               actor,
               characterSlot,
-              0,
               PORTAL_TRANSITION_XP,
+              progressPersistRef.current,
+              {
+                readCharacter: () =>
+                  (
+                    actor as {
+                      getCharacter?: (slot: bigint) => Promise<unknown>;
+                    }
+                  ).getCharacter?.(BigInt(characterSlot)) ??
+                  Promise.resolve(null),
+              },
             );
-            progressPersistRef.current.commit({
-              xp: persisted.newXp,
-              level: persisted.newLevel,
-            });
-            return persisted;
           })
           .then((persisted) => {
             // Recap is not up after a portal swap. Lava on the new map
@@ -6824,6 +6829,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // death write already penalized the post-credit snapshot;
             // restoring absolute XP here lets raiseUiAfterDeathPersist
             // keep the unpenalized UI and refund the penalty.
+            if (!persisted) return;
             if (
               !shouldApplyVictoryLiveHydrate(
                 deathTriggeredRef.current,
@@ -12525,24 +12531,38 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           try {
             const _recapData = await progressPersistRef.current.enqueue(
               async () => {
-                const recap = await resolveBattleRewards(actor, characterSlot, {
-                  victory,
-                  enemiesDefeated: defeated,
-                  completedChallenges: challengePersistEntries,
-                  // SECTION 3b: handleBattleEnd already applies chainMult to Doka
-                  // locally; pass PREAPPLIED_REWARD_MULTIPLIER so resolveBattleRewards
-                  // does NOT multiply baseDoka again (fixes the chainMult² double
-                  // multiplier). XP still uses the pre-applied baseXp.
-                  dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
-                  baseDoka: totalDoka || 0,
-                  baseXp: finalExp || 0,
-                });
-                progressPersistRef.current.commit({
-                  doka:
-                    recap.newDoka ?? progressPersistRef.current.snapshot().doka,
-                  xp: recap.newXp ?? progressPersistRef.current.snapshot().xp,
-                  level: recap.currentLevel,
-                });
+                const recap = await persistBattleRewardsOnLock(
+                  actor,
+                  characterSlot,
+                  {
+                    victory,
+                    enemiesDefeated: defeated,
+                    completedChallenges: challengePersistEntries,
+                    // SECTION 3b: handleBattleEnd already applies chainMult to Doka
+                    // locally; pass PREAPPLIED_REWARD_MULTIPLIER so resolveBattleRewards
+                    // does NOT multiply baseDoka again (fixes the chainMult² double
+                    // multiplier). XP still uses the pre-applied baseXp.
+                    dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+                    baseDoka: totalDoka || 0,
+                    baseXp: finalExp || 0,
+                  },
+                  progressPersistRef.current,
+                  {
+                    readCharacter: () =>
+                      (
+                        actor as {
+                          getCharacter?: (slot: bigint) => Promise<unknown>;
+                        }
+                      ).getCharacter?.(BigInt(characterSlot)) ??
+                      Promise.resolve(null),
+                    readWallet: () =>
+                      (
+                        actor as {
+                          getCallerDokaBalance?: () => Promise<unknown>;
+                        }
+                      ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+                  },
+                );
                 // Unlock wallet/level feats against the post-credit
                 // snapshot. A queued death saveBattleStats can cut Doka
                 // as soon as this enqueue returns.
@@ -12814,7 +12834,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           progressPersistRef.current,
           () => persistRoomClear(currentRoomIndex),
           async () => {
-            const persisted = await resolveBattleRewards(
+            const persisted = await persistBattleRewardsOnLock(
               actor,
               characterSlot,
               buildBossRushPersistInput({
@@ -12823,15 +12843,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 baseDoka: totalDoka,
                 completedChallenges: challengePersistEntries,
               }),
+              progressPersistRef.current,
+              {
+                readCharacter: () =>
+                  (
+                    actor as {
+                      getCharacter?: (slot: bigint) => Promise<unknown>;
+                    }
+                  ).getCharacter?.(BigInt(characterSlot)) ??
+                  Promise.resolve(null),
+                readWallet: () =>
+                  (
+                    actor as {
+                      getCallerDokaBalance?: () => Promise<unknown>;
+                    }
+                  ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+              },
             );
-            progressPersistRef.current.commit({
-              doka:
-                persisted.newDoka ?? progressPersistRef.current.snapshot().doka,
-              xp: persisted.newXp ?? progressPersistRef.current.snapshot().xp,
-              level:
-                persisted.currentLevel ||
-                progressPersistRef.current.snapshot().level,
-            });
             return persisted;
           },
         )
@@ -12996,13 +13024,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ) {
               throw new Error("death-save skipped: wallet not seeded");
             }
+            const xpBase = await resolveCommittedXpForAbsoluteWrite(
+              progressPersistRef.current,
+              () =>
+                (
+                  actor as {
+                    getCharacter?: (slot: bigint) => Promise<unknown>;
+                  }
+                ).getCharacter?.(BigInt(characterSlot)) ??
+                Promise.resolve(null),
+            );
+            if (xpBase == null) {
+              throw new Error("death-save skipped: unconfirmed xp credit");
+            }
             const after = computeDeathPenalty(
-              committed.xp,
+              xpBase.xp,
               dokaBase ?? committed.doka,
             );
             writePendingDeathPenalty(DEATH_PENALTY_STORAGE, {
               slot: characterSlot,
-              preXp: committed.xp,
+              preXp: xpBase.xp,
               preDoka: dokaBase ?? committed.doka,
               afterXp: after.newXp,
               afterDoka: after.newDoka,
@@ -13011,7 +13052,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               await persistWithRetry(() =>
                 persistAbsoluteStats(actor, {
                   slot: characterSlot,
-                  level: committed.level,
+                  level: xpBase.level,
                   hp: respawnHp,
                   maxHp: characterStatsRef.current.maxHp ?? 0,
                   ap: characterStatsRef.current.ap ?? 0,
@@ -13030,7 +13071,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 characterSlot,
                 {
                   slot: characterSlot,
-                  preXp: committed.xp,
+                  preXp: xpBase.xp,
                   preDoka: dokaBase ?? committed.doka,
                   afterXp: after.newXp,
                   afterDoka: after.newDoka,
@@ -13044,14 +13085,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               progressPersistRef.current.commit({
                 doka: after.newDoka,
                 xp: after.newXp,
-                level: committed.level,
+                level: xpBase.level,
               });
               throw err;
             }
             progressPersistRef.current.commit({
               doka: after.newDoka,
               xp: after.newXp,
-              level: committed.level,
+              level: xpBase.level,
             });
             // Snap the live wallet to the persisted penalty. raiseUi(ref, after)
             // used the uncut ref (optimistic onDokaBalanceChange never wrote it)
@@ -13064,11 +13105,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               uiXp: characterStatsRef.current.exp ?? 0,
               uiLevel: uiLevelBefore,
               persistedXp: after.newXp,
-              persistedLevel: committed.level,
+              persistedLevel: xpBase.level,
             });
             const nextLevel = raiseUiAfterDeathPersist(
               uiLevelBefore,
-              committed.level,
+              xpBase.level,
             );
             onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, nextDoka));
             if (
@@ -13131,6 +13172,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           ) {
             throw new Error("doka-spend save skipped: wallet not seeded");
           }
+          const xpBase = await resolveCommittedXpForAbsoluteWrite(
+            progressPersistRef.current,
+            () =>
+              (
+                actor as {
+                  getCharacter?: (slot: bigint) => Promise<unknown>;
+                }
+              ).getCharacter?.(BigInt(characterSlot)) ?? Promise.resolve(null),
+          );
+          if (xpBase == null) {
+            throw new Error("doka-spend save skipped: unconfirmed xp credit");
+          }
           const pendingDeath = readPendingDeathPenaltyAnywhere(
             characterSlot,
             DEATH_PENALTY_STORAGE,
@@ -13138,11 +13191,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const honoured = pendingDeath
             ? applyUnpaidDeathPenaltyToWrite(
                 pendingDeath,
-                committed.xp,
+                xpBase.xp,
                 applySpendToCommitted(dokaBase ?? committed.doka, spend),
               )
             : {
-                xp: committed.xp,
+                xp: xpBase.xp,
                 doka: applySpendToCommitted(dokaBase ?? committed.doka, spend),
               };
           const writeDoka = clampAbsoluteProgressWrite(
@@ -13152,7 +13205,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const writeXp = honoured.xp;
           await persistAbsoluteStats(actor, {
             slot: characterSlot,
-            level: committed.level,
+            level: xpBase.level,
             hp: resolveAbsoluteWriteHp(characterStatsRef.current.hp, newHp),
             maxHp: characterStatsRef.current.maxHp ?? 0,
             ap: characterStatsRef.current.ap ?? 0,
@@ -13166,7 +13219,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             newDoka: writeDoka,
             spellLevels: spellLevelsRef.current,
           });
-          progressPersistRef.current.commit({ doka: writeDoka, xp: writeXp });
+          progressPersistRef.current.commit({
+            doka: writeDoka,
+            xp: writeXp,
+            level: xpBase.level,
+          });
           // Death persist raiseUi can restore a pre-spend wallet while this
           // write is queued. Sync UI down so idle hydrate cannot refund.
           if (dokaBalanceRef.current > writeDoka) {
