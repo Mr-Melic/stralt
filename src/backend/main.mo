@@ -1436,11 +1436,17 @@ actor {
             };
             case null {};
         };
-        nextGameKeyRequestId += 1;
-        if (nextGameKeyRequestId > 999_999_999) {
-            nextGameKeyRequestId := 1;
+        // Unbounded Nat serial. Never wrap onto gk_1 (SDEG-2026-09-02-005).
+        nextGameKeyRequestId := GameKey.bumpRequestSerial(nextGameKeyRequestId);
+        label skipOccupied while (true) {
+            switch (gameKeyRequests.get(GameKey.requestId(nextGameKeyRequestId))) {
+                case null { break skipOccupied };
+                case (?_) {
+                    nextGameKeyRequestId := GameKey.bumpRequestSerial(nextGameKeyRequestId);
+                };
+            };
         };
-        let id = "gk_" # nextGameKeyRequestId.toText();
+        let id = GameKey.requestId(nextGameKeyRequestId);
         let record : AdminTypes.GameKeyRequest = {
             id;
             userPrincipal = caller;
@@ -3167,8 +3173,9 @@ actor {
         #ok;
     };
 
-    /// Save the active spell loadout (up to 8 spell IDs) for a character slot.
-    /// Replaces localStorage so spell loadouts persist across devices and browser clears.
+    /// Legacy loadout writer. Official clients persist ids via setSpellBarOrder
+    /// (`?[Text]`). This `[Nat]` field is unused on load; accepting a write would
+    /// store catalog indices that retarget after a rename. Keep stored values.
     public shared ({ caller }) func saveActiveSpells(
         slot   : Nat,
         spells : [Nat],
@@ -3189,20 +3196,14 @@ actor {
             case null { return #err("No characters found for user") };
             case (?s) { s };
         };
-        let character = switch (slot) {
+        // Slot must exist; do not write the incoming Nat indices.
+        ignore (switch (slot) {
             case 1 { switch (existingSlots.slot1) { case null { return #err("Slot 1 is empty") }; case (?c) { c } } };
             case 2 { switch (existingSlots.slot2) { case null { return #err("Slot 2 is empty") }; case (?c) { c } } };
             case 3 { switch (existingSlots.slot3) { case null { return #err("Slot 3 is empty") }; case (?c) { c } } };
             case _ { return #err("Invalid slot") };
-        };
-        let updatedCharacter : Character = { character with activeSpells = ?spells };
-        let updatedSlots = switch (slot) {
-            case 1 { { existingSlots with slot1 = ?updatedCharacter } };
-            case 2 { { existingSlots with slot2 = ?updatedCharacter } };
-            case 3 { { existingSlots with slot3 = ?updatedCharacter } };
-            case _ { existingSlots };
-        };
-        characterSlots.add(caller, updatedSlots);
+        });
+        ignore spells;
         #ok;
     };
 
