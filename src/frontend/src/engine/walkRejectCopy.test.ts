@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  classifySummonControlWalkReject,
   classifyWalkReject,
   isBattleWalkTileBlocked,
   playerFacingWalkReject,
@@ -196,6 +197,90 @@ describe("classifyWalkReject", () => {
         costPerTile: 2,
       }),
       "not_enough_mp",
+    );
+  });
+});
+
+describe("classifySummonControlWalkReject", () => {
+  it("stays quiet on the summon's own tile", () => {
+    assert.equal(
+      classifySummonControlWalkReject({
+        from: { x: 2, y: 2 },
+        to: { x: 2, y: 2 },
+        pathLength: 0,
+        reachable: false,
+        currentMp: 4,
+      }),
+      null,
+    );
+  });
+
+  it("treats an empty path as unreachable, including adjacent blocked tiles", () => {
+    assert.equal(
+      classifySummonControlWalkReject({
+        from: { x: 0, y: 0 },
+        to: { x: 4, y: 0 },
+        pathLength: 0,
+        reachable: false,
+        currentMp: 4,
+      }),
+      "unreachable",
+    );
+    assert.equal(
+      classifySummonControlWalkReject({
+        from: { x: 2, y: 2 },
+        to: { x: 3, y: 2 },
+        pathLength: 0,
+        reachable: false,
+        currentMp: 4,
+      }),
+      "unreachable",
+    );
+  });
+
+  it("reuses player walk copy for leftover MP and BFS misses", () => {
+    assert.equal(
+      classifySummonControlWalkReject({
+        from: { x: 0, y: 0 },
+        to: { x: 3, y: 0 },
+        pathLength: 3,
+        reachable: false,
+        currentMp: 4,
+      }),
+      "unreachable",
+    );
+    assert.equal(
+      classifySummonControlWalkReject({
+        from: { x: 0, y: 0 },
+        to: { x: 3, y: 0 },
+        pathLength: 3,
+        reachable: true,
+        currentMp: 2,
+      }),
+      "not_enough_mp",
+    );
+    assert.equal(
+      classifySummonControlWalkReject({
+        from: { x: 0, y: 0 },
+        to: { x: 3, y: 0 },
+        pathLength: 3,
+        reachable: true,
+        currentMp: 0,
+      }),
+      "no_mp",
+    );
+  });
+
+  it("allows a legal controlled-summon walk", () => {
+    assert.equal(
+      classifySummonControlWalkReject({
+        from: { x: 0, y: 0 },
+        to: { x: 2, y: 0 },
+        pathLength: 2,
+        reachable: true,
+        currentMp: 3,
+      }),
+      null,
     );
   });
 });

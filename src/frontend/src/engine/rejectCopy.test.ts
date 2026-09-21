@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  PAPER_WINDSTORM_MISS_COPY,
   SELECT_SPELL_COPY,
+  SUMMON_NO_TARGET_COPY,
   WAIT_FOR_TURN_COPY,
   playerFacingCastResult,
   playerFacingRejectReason,
@@ -56,6 +58,13 @@ describe("attack-mode and off-turn canvas copy", () => {
   it("tells the player to pick a spell or wait", () => {
     assert.equal(SELECT_SPELL_COPY, "Select a spell");
     assert.equal(WAIT_FOR_TURN_COPY, "Wait for your turn");
+  });
+});
+
+describe("paper-windstorm and summon-control canvas copy", () => {
+  it("uses a short miss float and a no-target kit click", () => {
+    assert.equal(PAPER_WINDSTORM_MISS_COPY, "Missed!");
+    assert.equal(SUMMON_NO_TARGET_COPY, "No target");
   });
 });
 
