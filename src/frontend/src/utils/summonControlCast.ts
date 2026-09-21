@@ -22,6 +22,7 @@ import {
   chebyshevOnBoard,
   isCasterTile,
   isTileCastableLive,
+  resolveCastApCost,
   shouldExecuteLiveCast,
 } from "../engine/targeting.ts";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
@@ -241,7 +242,7 @@ export function planSummonControlCast<T extends SummonKitCatalogSpell>(args: {
   );
   if (!spell) return { ok: false, reason: "no_spell" };
 
-  const cost = Math.max(0, Math.floor(Number(spell.apCost) || 0));
+  const cost = resolveCastApCost(Number(spell.apCost));
   const ap = Math.max(0, Math.floor(Number(args.currentAp) || 0));
   if (ap < cost) return { ok: false, reason: "no_ap" };
 
