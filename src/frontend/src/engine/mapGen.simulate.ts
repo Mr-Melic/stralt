@@ -1056,7 +1056,13 @@ export function simulateBattleStartOnWorld(world: SimWorld): {
       const p = key.split(",");
       avoid.push({ x: Number(p[0]), y: Number(p[1]), minDist: 2 });
     }
-    const cell = findBattleStartCell({ x: s.x, y: s.y }, avoid, 2, ctx) ?? {
+    const cell = findBattleStartCell(
+      { x: s.x, y: s.y },
+      avoid,
+      2,
+      ctx,
+      player,
+    ) ?? {
       x: s.x,
       y: s.y,
     };
@@ -1130,6 +1136,70 @@ export function simulateEnemyWanderOnWorld(
       }
       s.x = nx;
       s.y = ny;
+    }
+    occupied.add(`${s.x},${s.y}`);
+  }
+  const report = evaluateSolvability(
+    world.tiles,
+    world.voidTiles,
+    world.playerSpawn,
+    world.portals,
+    spawns,
+    size,
+    world.tiles.length,
+  );
+  return { spawns, ok: report.ok };
+}
+
+/**
+ * Replay WX `generateRandomWalkablePosition` (Chebyshev delta in ±range,
+ * 50 attempts, `isEnemyWanderFloor`). Destination is the wander target;
+ * overworld A* may step a portal mid-path but must end on the fight graph.
+ */
+export function simulateChebyshevWanderOnWorld(
+  world: SimWorld,
+  steps: number,
+  rng: Rng,
+  range = 3,
+): { spawns: { x: number; y: number }[]; ok: boolean } {
+  const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const occupied = new Set<string>([
+    `${world.playerSpawn.x},${world.playerSpawn.y}`,
+  ]);
+  const spawns = world.spawns.map((s) => ({ x: s.x, y: s.y }));
+  for (const s of spawns) occupied.add(`${s.x},${s.y}`);
+  for (const s of spawns) {
+    occupied.delete(`${s.x},${s.y}`);
+    for (let i = 0; i < steps; i++) {
+      let picked: { x: number; y: number } | null = null;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const deltaX = Math.floor(rng() * (range * 2 + 1)) - range;
+        const deltaY = Math.floor(rng() * (range * 2 + 1)) - range;
+        const nx = s.x + deltaX;
+        const ny = s.y + deltaY;
+        if (nx === s.x && ny === s.y) continue;
+        if (
+          !isEnemyWanderFloor(
+            world.tiles,
+            world.voidTiles,
+            world.portals,
+            { x: s.x, y: s.y },
+            { x: nx, y: ny },
+            size,
+            world.tiles.length,
+          )
+        ) {
+          continue;
+        }
+        const k = `${nx},${ny}`;
+        if (occupied.has(k)) continue;
+        picked = { x: nx, y: ny };
+        break;
+      }
+      if (picked) {
+        s.x = picked.x;
+        s.y = picked.y;
+      }
     }
     occupied.add(`${s.x},${s.y}`);
   }

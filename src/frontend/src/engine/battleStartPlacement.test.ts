@@ -265,6 +265,54 @@ describe("findBattleStartCell", () => {
     assert.equal(cell.x >= 0 && cell.x < WORLD_GRID_SIZE, true);
   });
 
+  it("destacks a far-side origin onto the player's portal component", () => {
+    // Overworld wander can path through a portal; battle cannot. Destack
+    // used to flood from the enemy origin and keep them on the far island.
+    const main: { x: number; y: number }[] = [];
+    for (let x = 0; x <= 2; x++) {
+      for (let y = 0; y <= 2; y++) main.push({ x, y });
+    }
+    const walkable = [
+      ...main,
+      { x: 3, y: 1 },
+      { x: 4, y: 1 },
+      { x: 5, y: 1 },
+      { x: 6, y: 1 },
+    ];
+    const placed = new Set(["1,1", "2,1", "5,1"]);
+    const ctx = island(walkable, placed, { portals: new Set(["3,1"]) });
+    const player = findBattleStartCell(
+      { x: 1, y: 1 },
+      [
+        { x: 2, y: 1, minDist: 3 },
+        { x: 5, y: 1, minDist: 3 },
+      ],
+      3,
+      ctx,
+    );
+    assert.ok(player);
+    assert.ok(player.x <= 2);
+    placed.add(occKey(player.x, player.y));
+    const far = findBattleStartCell(
+      { x: 5, y: 1 },
+      [
+        { ...player, minDist: 3 },
+        { x: 2, y: 1, minDist: 2 },
+        { x: 5, y: 1, minDist: 2 },
+      ],
+      2,
+      ctx,
+      player,
+    );
+    assert.ok(far);
+    assert.equal(
+      far.x <= 2,
+      true,
+      `far origin must destack onto the player's side, got ${far.x},${far.y}`,
+    );
+    assert.notEqual(occKey(far.x, far.y), occKey(player.x, player.y));
+  });
+
   it("seed-destack-radius2-across-portal: unfiltered ring-scan hops the gate", () => {
     // Left room (0,1)–(2,1) fully occupied, portal (3,1), far floor (4,1)–(5,1).
     // findBattleStartCell correctly returns null (stay on origin). WX used to

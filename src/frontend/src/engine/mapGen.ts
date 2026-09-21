@@ -522,6 +522,34 @@ function nearestReachableCell(
   return best;
 }
 
+/**
+ * Relocate/destack punch must not open a parallel corridor around a portal
+ * cut-vertex. A wall that already touches a floor outside `reachable` would
+ * join that island into the battle graph (hostiles beyond the gate become
+ * walk-reachable without stepping on the portal).
+ */
+function punchJoinsForeignWalkable(
+  tiles: string[][],
+  vt: Set<string>,
+  x: number,
+  y: number,
+  reachable: Set<string>,
+  w: number,
+  h: number,
+): boolean {
+  for (const d of REACH_DIRS) {
+    const nx = x + d[0];
+    const ny = y + d[1];
+    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+    const nk = `${nx},${ny}`;
+    if (vt.has(nk) || reachable.has(nk)) continue;
+    const t = tiles[ny]?.[nx] as string;
+    if (t === "wall" || t === "portal") continue;
+    return true;
+  }
+  return false;
+}
+
 /** Punch one neighboring wall so destack has a unique floor. */
 function punchAdjacentFloor(
   tiles: string[][],
@@ -541,11 +569,13 @@ function punchAdjacentFloor(
       if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
       const nk = `${nx},${ny}`;
       if (vt.has(nk) || exclude.has(nk)) continue;
-      if ((tiles[ny]?.[nx] as string) === "wall") {
-        tiles[ny][nx] = "floor";
-        reachable.add(nk);
-        return { x: nx, y: ny };
+      if ((tiles[ny]?.[nx] as string) !== "wall") continue;
+      if (punchJoinsForeignWalkable(tiles, vt, nx, ny, reachable, w, h)) {
+        continue;
       }
+      tiles[ny][nx] = "floor";
+      reachable.add(nk);
+      return { x: nx, y: ny };
     }
   }
   return null;

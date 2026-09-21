@@ -17,6 +17,7 @@ import {
   generateSeededWorld,
   reportWorld,
   simulateBattleStartOnWorld,
+  simulateChebyshevWanderOnWorld,
   simulateCleanupSnapshotProgression,
   simulateClearUnlocksPortal,
   simulateCorpsesOnWorld,
@@ -1000,6 +1001,71 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
   });
 
+  it("seed-portal-cut-relocate-punch: destack alcoves must not bypass the gate", () => {
+    // Near room is two floors; five far-side rats force relocate+punch.
+    // Punching the wall beside the portal used to join the far room so
+    // battle walk could go around the cut-vertex.
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [W, F, "portal", F, F, F, F, W],
+      [W, F, W, F, F, F, F, W],
+      [W, W, W, F, F, F, F, W],
+      [W, W, W, W, W, W, W, W],
+    ];
+    const portals = [{ x: 2, y: 1 }];
+    const spawns = [
+      { x: 3, y: 1 },
+      { x: 4, y: 1 },
+      { x: 5, y: 1 },
+      { x: 6, y: 1 },
+      { x: 3, y: 2 },
+    ];
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals,
+      spawns,
+      w: 8,
+      h: 5,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      5,
+    );
+    const portalX = finalized.portals[0]?.x ?? 2;
+    assert.equal(
+      finalized.tiles[2]?.[2],
+      W,
+      "wall beside the portal must not become a parallel corridor",
+    );
+    for (const s of finalized.spawns) {
+      assert.equal(
+        s.x < portalX,
+        true,
+        `hostile at ${s.x},${s.y} must stay on the player's side of the gate`,
+      );
+    }
+    assert.equal(
+      sequentialClearUnlocks(
+        finalized.tiles,
+        new Set(),
+        finalized.playerSpawn,
+        finalized.portals,
+        finalized.spawns,
+        8,
+        5,
+      ),
+      true,
+      after.failures.join(","),
+    );
+  });
+
   it("seed-spawn-on-portal-cut: moving off the gate stays on the large room", () => {
     const tiles = [
       [W, W, W, W, W, W, W],
@@ -1362,6 +1428,37 @@ describe("seeded world property suite", () => {
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
   });
 
+  it("battle-start destack pulls a far-side wanderer onto the player component", () => {
+    // WX replica: one hostile stayed near, one wandered through the portal.
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, "portal", F, F, W],
+      [W, F, F, W, W, W, W],
+      [W, W, W, W, W, W, W],
+    ];
+    const after = simulateBattleStartOnWorld({
+      tiles,
+      voidTiles: new Set(),
+      portals: [{ x: 3, y: 1, color: "black" }],
+      playerSpawn: { x: 1, y: 1 },
+      spawns: [
+        { x: 2, y: 2 },
+        { x: 5, y: 1 },
+      ],
+      runMode: "none",
+      archetype: MAP_ARCHETYPES[0].type,
+      seed: 0,
+    });
+    for (const s of after.spawns) {
+      assert.equal(
+        s.x < 3,
+        true,
+        `hostile at ${s.x},${s.y} must destack onto the player's side`,
+      );
+    }
+    assert.equal(after.playerSpawn.x < 3, true);
+  });
+
   it("battle-start destack keeps a legal route across seeds", () => {
     const failures: string[] = [];
     for (const seed of seeds) {
@@ -1385,6 +1482,23 @@ describe("seeded world property suite", () => {
       );
       if (!after.ok) {
         failures.push(`seed ${seed}: wander left a hostile isolated`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("Chebyshev wander picks stay on the fight graph across seeds", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const after = simulateChebyshevWanderOnWorld(
+        world,
+        8,
+        createSeededRng(seed + 131),
+        3,
+      );
+      if (!after.ok) {
+        failures.push(`seed ${seed}: Chebyshev wander left a hostile isolated`);
       }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));

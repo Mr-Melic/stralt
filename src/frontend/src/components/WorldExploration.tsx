@@ -11867,8 +11867,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (newPlayerPos) placed.add(`${newPlayerPos.x},${newPlayerPos.y}`);
 
       // Enemies: each gets a UNIQUE cell >= 3 from the player and >= 2 from
-      // every already-placed enemy. We add each result to `placed` so the
-      // next enemy's isCellFree check sees it — no stacking possible.
+      // every already-placed enemy. Stay on the player's battle component
+      // so a wander through an overworld portal cannot destack onto the
+      // far island (findBattleStartCell's origin flood used to keep them
+      // there). We add each result to `placed` so the next enemy's
+      // isCellFree check sees it — no stacking possible.
       const updatedEnemies = enemies.map((e) => {
         const stats = computeEnemyStats(e.level, e.pieceType, e.id);
         const avoid: { x: number; y: number; minDist: number }[] = [];
@@ -11883,10 +11886,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           avoid,
           2,
           occCtx,
+          newPlayerPos ?? playerPosition,
         );
-        // findBattleStartCell pass 2 already ring-scans the origin battle
-        // component (radius w+h). An unfiltered findNearestFreeCell(2)
-        // used to hop a portal cut onto the far island.
+        // Stay on the player's battle component (stayOn). Pass 2 already
+        // ring-scans that component at radius w+h. An unfiltered
+        // findNearestFreeCell(origin, 2) used to hop a portal cut onto the
+        // far island.
         const finalPos = candidate ?? { x: e.x, y: e.y };
         placed.add(`${finalPos.x},${finalPos.y}`);
         return {
