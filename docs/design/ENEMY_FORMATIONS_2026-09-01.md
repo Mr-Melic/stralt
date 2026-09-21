@@ -8,6 +8,8 @@ The 2026-08-31 catalog already covers the seven teaching pairs (protector + arti
 
 No new sprites. Higher progression unlocks more sophisticated **compositions**, not a last level band.
 
+See also: [`ENEMY_FORMATIONS_2026-08-31.md`](./ENEMY_FORMATIONS_2026-08-31.md) (drop 1), [`ENEMY_FORMATIONS_2026-09-02.md`](./ENEMY_FORMATIONS_2026-09-02.md) (drop 3), [`ENEMY_FORMATIONS_2026-09-21.md`](./ENEMY_FORMATIONS_2026-09-21.md) (drop 4 — Wave 3 packs).
+
 ---
 
 ## Grounding (live, 2026-09-01)

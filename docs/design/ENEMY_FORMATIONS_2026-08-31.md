@@ -4,7 +4,7 @@
 **Date:** 2026-08-31  
 **Status:** PROPOSED — design only. No production code, spawn tables, or AI changes in this drop.
 
-**See also:** `docs/design/ENEMY_FORMATIONS_2026-09-01.md` — second catalog (buffer + bruiser, sniper + ward, proposed-family packs). Do not reuse these `FSN-*` ids.
+**See also:** `docs/design/ENEMY_FORMATIONS_2026-09-01.md` (drop 2), `docs/design/ENEMY_FORMATIONS_2026-09-02.md` (drop 3), `docs/design/ENEMY_FORMATIONS_2026-09-21.md` (drop 4 — Wave 3 packs). Do not reuse these `FSN-*` ids.
 
 This catalog builds **tactically coherent packs** from pieces, families, kits, and summons that already exist. New experiences come from **who stands together**, not from new sprites.
 

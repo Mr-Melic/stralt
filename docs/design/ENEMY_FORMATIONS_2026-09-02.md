@@ -8,7 +8,7 @@ Drops 1 and 2 already taught the seven pairing words and the Wave 1 proposed-fam
 
 No new sprites. Higher progression unlocks more sophisticated **compositions**, not a last level band.
 
-See also: [`ENEMY_FORMATIONS_2026-08-31.md`](./ENEMY_FORMATIONS_2026-08-31.md) (drop 1), [`ENEMY_FORMATIONS_2026-09-01.md`](./ENEMY_FORMATIONS_2026-09-01.md) (drop 2). Wave 3 families (`docs/automation/ENEMY_ELITE_EVOLUTION_2026-09-02.md`) are **deferred** — see the unlock graph.
+See also: [`ENEMY_FORMATIONS_2026-08-31.md`](./ENEMY_FORMATIONS_2026-08-31.md) (drop 1), [`ENEMY_FORMATIONS_2026-09-01.md`](./ENEMY_FORMATIONS_2026-09-01.md) (drop 2), [`ENEMY_FORMATIONS_2026-09-21.md`](./ENEMY_FORMATIONS_2026-09-21.md) (drop 4 — Wave 3 packs). Wave 3 families (`docs/automation/ENEMY_ELITE_EVOLUTION_2026-09-02.md`) are **sheeted as `FSN-*` in drop 4**.
 
 ---
 
