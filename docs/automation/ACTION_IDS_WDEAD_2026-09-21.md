@@ -10,6 +10,8 @@ This run ships **docs only**. Do not implement production, RAF, map generation, 
 
 HEAD audited: `0f5363f`.
 
+Queued older siblings (do not duplicate): #334 `AFDA-2026-09-21-026` (Tiers leftover / unused Rush multiplier **copy**). That honesty does not implement relative spawn knobs, the Simulation Lab, or wave-3 owner mix.
+
 ---
 
 ACTION_ID: WDEAD-2026-09-21-001  
@@ -35,7 +37,7 @@ TITLE: Wrap live spawnPolicy.ts as draft defaults — tests currently lock depth
 CATEGORY: spawn-admin  
 PRIORITY: P0  
 CONFIDENCE: HIGH  
-EVIDENCE: `WDEAD-2026-08-31-001` asked implementers to extract pickers to `engine/spawnPolicy.ts`. That extract landed (`7fd4013`). WX `generateEnemies` (5711–5869) now calls `dungeonSpawnExtras`, `rollOverworldEnemyCount`, `collectValidEnemySpawnCells`, `dungeonScaledEnemyLevel`, `applyFamilyVariantsToRoster`. The module is live policy, not owner knobs: `DUNGEON_SPAWN_DEPTH_CAP = 5` (`spawnPolicy.ts` 26–29), `OVERWORLD_ENEMY_COUNT_SPAN = 8` (32), `FAMILY_VARIANT_CHANCE = 0.3` (35), equal-weight `FAMILY_TYPES` (49–57). `spawnPolicy.test.ts` 63–84 requires `dungeonSpawnExtras(99) === dungeonSpawnExtras(5)`. `spawnPolicy.test.ts` 239 locks `FAMILY_VARIANT_CHANCE === 0.3`. Tiers tab still four buckets + unread `threeOrMorePercent` (`AdminDashboard.tsx` 3809–3834; `combatMath.ts` 75). `pickEnemyLevelFromTiers` still `maxTier = floor(999 / ts)` (`combatMath.ts` 58). No equal/above first-class fields.  
+EVIDENCE: `WDEAD-2026-08-31-001` asked implementers to extract pickers to `engine/spawnPolicy.ts`. That extract landed (`7fd4013`). WX `generateEnemies` (5711–5869) now calls `dungeonSpawnExtras`, `rollOverworldEnemyCount`, `collectValidEnemySpawnCells`, `dungeonScaledEnemyLevel`, `applyFamilyVariantsToRoster`. The module is live policy, not owner knobs: `DUNGEON_SPAWN_DEPTH_CAP = 5` (`spawnPolicy.ts` 26–29), `OVERWORLD_ENEMY_COUNT_SPAN = 8` (32), `FAMILY_VARIANT_CHANCE = 0.3` (35), equal-weight `FAMILY_TYPES` (49–57). `spawnPolicy.test.ts` 63–84 requires `dungeonSpawnExtras(99) === dungeonSpawnExtras(5)`. `spawnPolicy.test.ts` 239 locks `FAMILY_VARIANT_CHANCE === 0.3`. Tiers tab still four buckets (`AdminDashboard.tsx` 3809+). `pickEnemyLevelFromTiers` still `maxTier = floor(999 / ts)` (`combatMath.ts` 58). No equal/above first-class fields. Queued #334 adds a Tiers CatalogNote that **names** the leftover ±3+ and 999 clamp — honesty, not owner knobs (`AFDA-2026-09-21-026`).  
 SYSTEMS_AFFECTED: `engine/spawnPolicy.ts` (wrap as draft defaults); Admin Spawn tab; future pack `spawnPolicy`. Live WX generate stays until VALIDATE. Not RAF, not damage math.  
 RECOMMENDED_ACTION: Treat current `spawnPolicy.ts` exports as the **draft default** snapshot. Owner fields from `WDEAD-2026-08-31-002` / `011` (equal-level, above-level, open tail, elite %, variant %, size `{min,max,depthCurve}`, family weights, advanced-spell %, AI-sophistication %) overlay those defaults after ACTIVATE. Do not fork a second extras / family table in WX or Admin. Do not present the extracted constants as already owner-configurable. Prefer DRAFT → SIMULATE → VALIDATE → ACTIVATE so a save cannot imply activate. Board-safety `SPAWN_MIN_CHEBYSHEV = 4` / portal Manhattan ≤ 2 / spawn Chebyshev ≤ 3 stay named constants (do not merge metrics).  
 AUTONOMY: HUMAN_APPROVE — live spawn. Copy-only “these constants are live defaults, not knobs” is IMPLEMENT_WHEN_PICKED.  

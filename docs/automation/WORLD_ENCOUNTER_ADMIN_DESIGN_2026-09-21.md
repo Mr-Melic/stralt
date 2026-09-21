@@ -16,7 +16,7 @@ This run’s IDs: [`ACTION_IDS_WDEAD_2026-09-21.md`](./ACTION_IDS_WDEAD_2026-09-
 
 Do **not** re-issue `WDEAD-2026-08-31-*`, `WDEAD-2026-09-01-*`, `WDEAD-2026-09-02-*`, `WDD-*`, `EBA-*`, `EED-*` / `ENC-*`, `FSN-*`, `AFDA-*`, `LHIPS-*`, or `EBMA-*`.
 
-Open PRs targeting `main` at audit time (oldest `createdAt` first): #327 (draft, Striker AoE), #331 (draft, portal destack). This run is docs-only and must stay merge-clean vs both.
+Open PRs targeting `main` at audit time (oldest `createdAt` first): #327 (draft, Striker AoE), #331 (draft, portal destack), #333 (docs, telemetry-waiting), #334 (AFDA honesty: Tiers leftover / unused Rush multiplier copy). This run is docs-only and must stay merge-clean vs all four. Do not duplicate `AFDA-2026-09-21-026` (sum-100 gate). #334 is **copy + save-gate**, not the owner pack.
 
 ---
 
@@ -39,7 +39,7 @@ Line numbers below are **this HEAD**. Status stays `NEW` unless noted.
 | ID | Still true? | Live evidence @ `0f5363f` |
 | :--- | :--- | :--- |
 | 001 hard ceilings | Yes | `combatMath.ts` 58 `maxTier = floor(999 / ts)`. `computeAITier` 36–51 stops at 900 → tier 10; 30% uniform 1–10. Admin default `levelMax` is `BigInt(9999)` (`AdminDashboard.tsx` 138–157). Region match is still a **closed interval** `level <= levelMax` (WX 3702). Dungeon extras / boost now live in `spawnPolicy.dungeonSpawnExtras` and still clamp `Math.min(dungeonDepth, 5)` (`spawnPolicy.ts` 26–29, 144; test 84: depth 99 == depth 5). Chain length `3 + floor(random*3)` (WX 6232, 6324). Death Realm fallbacks `maxLevel: 5` (WX 13514, 13646) vs entry `9999` (5439). Rest maps `maxLevel: 9999` (5517). Closed-interval 9999 stay `WDEAD-2026-09-02-001`. Dual depth-5 tables → **09-21-006**. |
-| 002 relative spawn knobs | Yes | Tiers tab still four buckets + sum-100 (`AdminDashboard.tsx` 3809–3834). Preview `SAMPLE_LEVELS = [1, 10, 25, 50, 100, 200, 500]` (3877). `tierSize` `max={100}` (3959) and `validateTierSpawnConfig` `tierSize > 100` (`adminSafety.ts` 567–568). Frontend `TierSpawnConfig` (`gameTypes.ts` 428–434) still omits `levelVarianceChance`. Tiers tab has **no** `CatalogNote` (3926–3929 is a live-looking intro). Extract path `engine/spawnPolicy.ts` now **exists** as live defaults, not owner knobs → **09-21-002**. |
+| 002 relative spawn knobs | Yes | Tiers tab still four buckets. Preview `SAMPLE_LEVELS = [1, 10, 25, 50, 100, 200, 500]` (3877). `tierSize` `max={100}` (3959) and `validateTierSpawnConfig` `tierSize > 100` (`adminSafety.ts` 567–568). Frontend `TierSpawnConfig` (`gameTypes.ts` 428–434) still omits `levelVarianceChance`. **Queued #334** adds a Tiers `CatalogNote` (leftover ±3+, hardcoded 15% variance, `floor(999 / tierSize)` named as a spawn-band clamp) and stops blocking the 60/20/10/5 95-total canister default — honesty, not relative knobs. Extract path `engine/spawnPolicy.ts` now **exists** as live defaults, not owner knobs → **09-21-002**. |
 | 003 Simulation Lab | Yes | No Admin Simulation tab (`gameTypes.ts` 482–498; `TABS` 5610–5626, 15 keys). `mapGen.simulate.ts` is a seeded **solvability** replica of generateRandomMap / generateEnemies (header 1–5), not an encounter lab. `longHorizonSim.ts` is still the LHIPS CLI. **Do not treat either as 003.** Isolation expansion → **09-21-005**. |
 | 004 draft lifecycle | Yes | Tiers save writes canister then `localStorage` immediately (3861–3869). Boss Rush save same pattern. No pack status. |
 | 005 encounter catalog | Yes | `generateEnemies` (WX 5711–5869) now **calls** `dungeonSpawnExtras` / `rollOverworldEnemyCount` / `collectValidEnemySpawnCells` / `applyFamilyVariantsToRoster` from `spawnPolicy.ts`. Size is still `1..8` + depth table, random chess piece, quadrant + Chebyshev ≥ 4, then 30% equal-weight family (5862–5866). No formation / rarity / rule / encounter-bound objective. Consume `EED-*` / `FSN-*` as data; do not duplicate rooms. |
@@ -62,7 +62,7 @@ Missing tabs (unchanged): Encounters, Dungeons, World Events, Spawn (beyond coar
 
 | ID | Still true? | Drift since 09-02 |
 | :--- | :--- | :--- |
-| 001 lying knobs | Yes (partial labels) | Honesty `CatalogNote` on Enemies, Sprites, Shop, Boss Rush. Player Register is flavor lore. **Tiers unlabeled** and still requires unread `threeOrMorePercent` in the sum-100 gate (3829–3834 vs leftover `_threeMore` at `combatMath.ts` 75). `levelVarianceChance` still engine-only. Boss Rush CatalogNote still claims `parsed.rewardMultiplier` is read (7141–7146) while the hook discards it — stay `WDEAD-2026-09-02-002`. |
+| 001 lying knobs | Yes (labels queued) | Honesty `CatalogNote` on Enemies, Sprites, Shop, Boss Rush. Player Register is flavor lore. **Queued #334** (`AFDA-2026-09-21-026`) labels leftover `threeOrMorePercent` and unused Rush multiplier — do not re-issue 001/09-02-002 for copy. `levelVarianceChance` still engine-only. Relative equal/above knobs still missing (`WDEAD-2026-08-31-002`). |
 | 002 isolate `longHorizonSim` | Yes | Still CLI. **`STRESS_LEVELS` now includes 10_000 / 50_000** (`longHorizonSim.ts` 82–85). That is LHIPS overflow sampling, **not** the owner lab. Header still “observation harness.” Do not promote. Isolation expansion (simulate.ts, feats, one-shots) → **09-21-005**. |
 | 003 one roll budget | Yes | Wave 3 **reaffirmed** independent two-roll in `docs/WORLD_DYNAMICS.md`. Catalog grew 36 → **52** ids. `pickWeightedFeatures` (1853–1871) still mixes all waves into `MAX_ROLLED_FEATURES = 3` (32). WX still does not import `worldFeatures`. **New owner-wave-3 + contract conflict → 09-21-001.** |
 | 004 `skippedForBudget` | Yes | `MAX_ROLLED_FEATURES = 3`. `canAddEnemies` / `canAddHazardTiles` still skip at 20 / 50. Three waves now compete for the same 3 slots. Sleeping Vanguard (+2) and Warband (+3–5) skip harder. |
@@ -80,7 +80,7 @@ Missing tabs (unchanged): Encounters, Dungeons, World Events, Spawn (beyond coar
 | ID | Still true? | Drift since 09-02 |
 | :--- | :--- | :--- |
 | 001 closed 9999 | Yes | Defaults and `ELIGIBILITY_BAND_HINT` unchanged (`AdminDashboard.tsx` 137–249). WX closed interval unchanged (3702). Do not raise 9999. |
-| 002 Rush CatalogNote lie | Yes | Copy still “only parsed.rewardMultiplier is read” (7141–7146). Setter at `useBossRush.ts` 243; **zero readers**. |
+| 002 Rush CatalogNote lie | Copy queued in #334 | HEAD still says “only parsed.rewardMultiplier is read” (7141–7146). Setter at `useBossRush.ts` 243; **zero readers**. #334 relabels to unused state. Wiring `rewardMultiplier` into `applyRewards` stays `WDEAD-2026-09-01-009`. Do not re-issue 002. |
 | 003 catalogWave + one budget | Yes | Now **worse**: wave 3 landed (`WDD-2026-09-02-001` DESIGNED). `featuresInCatalogWave(3)` is 16 ids (`worldFeatures.test.ts` 154–157). `pickWeightedFeatures` still has no wave filter. Do not re-issue 003; owner `enabledWaves` must include **3** → **09-21-001**. |
 | 004 `oneCast` + Scourge/Echo | Yes | Still unwired. Loaner Mage / Short Fuse / Harvest Moon / Stillness Oath are additional classes. Expand → **09-21-003**. |
 | 005 AdminGuard 99 / 999 | Yes | `adminGuard.mo` 411 `minLevel > 999`, 438–441 `summonLifespan > 20`, `summonUnitDef.level > 99`. Unchanged. |
@@ -102,6 +102,7 @@ Missing tabs (unchanged): Encounters, Dungeons, World Events, Spawn (beyond coar
 | LHIPS `STRESS_LEVELS` + 10k/50k | Engineer CLI | **No** | **No** |
 | Enemy Register flavor lore | Player honesty | N/A | **No** |
 | Admin `CatalogNote` + `DEFAULT_ELIGIBILITY_LEVEL_MAX = 9999` | Honesty / AFDA | Band fields yes | Region match yes (closed interval). EnemyConfig rows still unused. |
+| Queued #334 Tiers leftover + Rush unused-state copy | Honesty (`AFDA-2026-09-21-026`) | Labels yes | Spawn still four buckets + 999 clamp. Not the owner pack. |
 | `dungeonDokaMultiplierFor` | Shared helper | **No** | Yes — freeze at depth 5 |
 | GameKey / Mollie shop | Live economy | Approve / grant / ban | Not spawn. **Is** a persist credit. |
 | Boss Rush victory feats on room-clear | Live persist | No | Not spawn. **Is** an unlock writer. |
