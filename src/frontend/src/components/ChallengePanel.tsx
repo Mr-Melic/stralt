@@ -8,7 +8,10 @@ import {
   isChallengeCompleted,
   isChallengeFailed,
 } from "../utils/challengeCompletion";
-import { shouldShowChallengeHud } from "../utils/challengeHudVisibility";
+import {
+  challengeHudCapturesMapPointer,
+  shouldShowChallengeHud,
+} from "../utils/challengeHudVisibility";
 import { logDebugWarn } from "../utils/debugLogger";
 
 export type {
@@ -111,6 +114,9 @@ export default function ChallengePanel({
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if ((e.target as HTMLElement).closest("button")) return;
+      // Accepted tracker is click-through; do not start a drag that
+      // preventDefault's a canvas targeting click.
+      if (challengeHudCapturesMapPointer({ accepted }) !== true) return;
       e.preventDefault();
       dragRef.current = { mx: e.clientX, my: e.clientY, px: pos.x, py: pos.y };
       const onMove = (ev: MouseEvent) => {
@@ -160,7 +166,7 @@ export default function ChallengePanel({
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     },
-    [pos, folded, persistLayout],
+    [pos, folded, persistLayout, accepted],
   );
 
   const toggleFold = useCallback(() => {
@@ -182,6 +188,7 @@ export default function ChallengePanel({
   }
 
   const tierStyle = TIER_STYLES[currentChallenge.tier];
+  const capturesMapPointer = challengeHudCapturesMapPointer({ accepted });
   const failed =
     accepted && progress
       ? isChallengeFailed(currentChallenge, progress)
@@ -205,7 +212,8 @@ export default function ChallengePanel({
         boxShadow: "0 4px 16px rgba(139,0,0,0.5)",
         zIndex: 1200,
         userSelect: "none",
-        cursor: "grab",
+        cursor: capturesMapPointer ? "grab" : "default",
+        pointerEvents: capturesMapPointer ? "auto" : "none",
         fontFamily: "monospace",
       }}
     >
@@ -241,6 +249,7 @@ export default function ChallengePanel({
             fontSize: 12,
             cursor: "pointer",
             padding: "0 4px",
+            pointerEvents: "auto",
           }}
         >
           {folded ? "▼" : "▲"}

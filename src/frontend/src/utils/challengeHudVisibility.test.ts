@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { shouldShowChallengeHud } from "./challengeHudVisibility.ts";
+import {
+  challengeHudCapturesMapPointer,
+  shouldShowChallengeHud,
+} from "./challengeHudVisibility.ts";
 
 describe("shouldShowChallengeHud", () => {
   it("shows the offer while the accept window is open", () => {
@@ -53,5 +56,18 @@ describe("shouldShowChallengeHud", () => {
       }),
       false,
     );
+  });
+});
+
+describe("challengeHudCapturesMapPointer", () => {
+  it("lets Accept/Decline capture during the offer window", () => {
+    assert.equal(challengeHudCapturesMapPointer({ accepted: false }), true);
+  });
+
+  it("does not steal canvas clicks after the contract is accepted", () => {
+    // Sequence: accept → first AP/MP (offerVisible false, HUD stays) →
+    // click a hostile under the default right-side panel. Wrapper
+    // preventDefault used to eat that click for the rest of the fight.
+    assert.equal(challengeHudCapturesMapPointer({ accepted: true }), false);
   });
 });
