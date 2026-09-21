@@ -2115,10 +2115,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (actor) {
         const parsed = await persistRenameThroughLock(
           actor as {
-            renameCharacter?: (
-              slot: bigint,
-              name: string,
-            ) => Promise<unknown>;
+            renameCharacter?: (slot: bigint, name: string) => Promise<unknown>;
           },
           progressPersistRef.current,
           characterSlot,

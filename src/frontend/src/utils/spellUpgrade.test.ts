@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { createProgressPersist, resolveCommittedDokaForAbsoluteWrite } from "./progressPersist.ts";
+import {
+  createProgressPersist,
+  resolveCommittedDokaForAbsoluteWrite,
+} from "./progressPersist.ts";
 import {
   applySpellLevel,
   committedDokaAfterSpellUpgrade,
