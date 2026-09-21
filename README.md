@@ -18,9 +18,12 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/engine/portalRules.ts` | Run-mode portals + dungeon-chain snapshot (before `cleanupMap`) |
 | `src/frontend/src/engine/mapGen.ts` | Archetypes + `finalizePlayableLayout` (spawn / exit / hostile reachability) |
 | `src/frontend/src/engine/spawnPolicy.ts` | Overworld spawn filters + family variants + dungeon extras (not placement) |
+| `src/frontend/src/engine/battleWalkMp.ts` | Frozen/Slime walk MP: preview, execute, and summon-control share `battleWalkMpCost` (2×) |
+| `src/frontend/src/engine/playerCastPlan.ts` | Shared AP + cooldown + live-tile gate for tile / sprite / Attack Nearest / keyboard |
 | `src/frontend/src/engine/worldFeatures.ts` | World-dynamics catalog (tests only — not wired into map gen) |
 | `src/frontend/src/utils/progressPersist.ts` | World-session lock: serialize `applyRewards`, `redeemGameKey`, `saveBattleStats` |
 | `src/frontend/src/utils/dokaPersist.ts` | One-shot ground / shrine / dungeon-complete credits before `applyRewards` |
+| `src/frontend/src/utils/startingChampionStats.ts` | Official 12-field create defaults (`createCharacter` rejects higher) |
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn / Sacrifice accumulators |
 | `src/frontend/src/utils/deathGuards.ts` | Death-realm timer + one-shot death guards |
 | `src/frontend/src/utils/deathPenalty.ts` | 20/40 death cut + localStorage replay (`pbv_pending_death_penalty_slotN`) |
@@ -86,6 +89,8 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/ACTION_IDS_2026-09-01.md](docs/automation/ACTION_IDS_2026-09-01.md) | TBC 2026-09-01 ACTION_ID ledger (`TBC-2026-09-01-001`; prior TBC/AQA IDs still NEW) |
 | [docs/automation/TELEMETRY_BALANCE_2026-09-02.md](docs/automation/TELEMETRY_BALANCE_2026-09-02.md) | TBC cron 2026-09-02: STATUS WAITING_FOR_TELEMETRY (HEAD `58302bc`; still 0 collectors / 0 rows) |
 | [docs/automation/ACTION_IDS_TBC_2026-09-02.md](docs/automation/ACTION_IDS_TBC_2026-09-02.md) | TBC 2026-09-02 ACTION_ID ledger (`TBC-2026-09-02-001` / `002`; prior TBC/AQA IDs still NEW) |
+| [docs/automation/TELEMETRY_BALANCE_2026-09-21.md](docs/automation/TELEMETRY_BALANCE_2026-09-21.md) | TBC cron 2026-09-21: STATUS WAITING_FOR_TELEMETRY (HEAD `0f5363f`; 158 commits / 70 merges still 0 collectors / 0 rows) |
+| [docs/automation/ACTION_IDS_TBC_2026-09-21.md](docs/automation/ACTION_IDS_TBC_2026-09-21.md) | TBC 2026-09-21 ACTION_ID ledger (`TBC-2026-09-21-001` / `002`; prior TBC/AQA IDs still NEW) |
 | [docs/automation/TELEMETRY_DASHBOARD_2026-09-01.md](docs/automation/TELEMETRY_DASHBOARD_2026-09-01.md) | Owner Health dashboard support matrix (design only; refresh of 2026-08-31) |
 | [docs/automation/ACTION_IDS_TADD_2026-09-01.md](docs/automation/ACTION_IDS_TADD_2026-09-01.md) | Telemetry dashboard designer ACTION_IDs (2026-09-01) |
 | [docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md](docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md) | Owner Health dashboard support matrix (design only; refresh after GameKey + audit bindgen) |
@@ -112,7 +117,7 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 ## Hard rules (product)
 
 - Backend owns persisted state. `localStorage` is a cache / UI preference only.
-- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`. Portal +10 XP must not update the HUD until that write commits. Official deltas clamp to `100_000` Doka / `500_000` XP (canister `#err` above that). Ground / shrine / dungeon-complete credits are one-shot (`dokaPersist.ts`); after invoke, a transport miss must **keep** the claim (`settleOneShotAfterCredit`) so RAF cannot remint.
+- Battle XP and Doka **credits** persist only through `applyRewards`. Do not write rewards via `updateCharacter`. Portal +10 XP must not update the HUD until that write commits. Official deltas clamp to `100_000` Doka / `500_000` XP (canister `#err` above that). Ground / shrine / dungeon-complete credits are one-shot (`dokaPersist.ts`); after invoke, a transport miss must **keep** the claim (`settleOneShotAfterCredit`) so RAF cannot remint. Confirm a keep only on a **seeded** lock (`confirmKeptOneShotCredit`); `settleOneShotPersistLock` notes an unconfirmed credit so a later `saveBattleStats` cannot write the pre-credit wallet.
 - Paid IAP Doka credits through `redeemGameKey` on the same persist lock. `initiatePurchase` always `#err`s (signature kept). `processPendingPurchases` is a no-op that returns `0`.
 - Penalties and item-shop/heal spends persist through `saveBattleStats` on the same progress-persist lock. `applyRewards` cannot subtract. `saveBattleStats` never mints Doka/XP/level. Items (BuffShop potions) is a different store from Buy Doka.
 - Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics. Admin catalog spells carry explicit summon fields — do not infer from the name.
