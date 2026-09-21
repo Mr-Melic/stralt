@@ -181,30 +181,4 @@ export function buildSpellContext(deps: SpellContextDeps): SpellContext {
   return createSpellContext(deps);
 }
 
-export function getPlayerSideTargets(enemies: any[]): any[] {
-  return enemies.filter((e: any) => e.side === "player" || e.isPlayer);
-}
-
-/**
- * Resolve the AP/MP to display for a turn-order combatant. Player-side summons
- * carry their own currentAp/currentMp budget (seeded in spawnSummonUnit and
- * refreshed each turn in handleSummonTurn); regular enemies derive AP/MP from
- * their level. Falls back to the combatant's existing level when the enemy
- * record is missing.
- */
-export function resolveEnemyApMp(
-  enemy: any | undefined,
-  fallbackLevel: number,
-): { ap: number; mp: number } {
-  if (!enemy) return { ap: fallbackLevel, mp: 1 };
-  if (enemy.isSummon) {
-    return {
-      ap: enemy.currentAp ?? enemy.level ?? fallbackLevel,
-      mp: enemy.currentMp ?? Math.max(1, Math.floor((enemy.level ?? 1) / 2)),
-    };
-  }
-  return {
-    ap: enemy.level ?? fallbackLevel,
-    mp: Math.max(1, Math.floor(enemy.level / 2)),
-  };
-}
+export { getPlayerSideTargets, resolveEnemyApMp } from "./summonHud.ts";

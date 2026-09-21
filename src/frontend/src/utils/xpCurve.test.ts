@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   applyXpDelta,
+  cumulativeXpToReachLevel,
   recapXpAfterGrant,
   xpForNextLevel,
   xpHudProgress,
@@ -36,11 +37,19 @@ assert.deepEqual(applyXpDelta(150, 2, 60), { newXp: 10, newLevel: 3 });
 assert.deepEqual(applyXpDelta(80, 1, 400), { newXp: 180, newLevel: 3 });
 
 // Leftover HUD: experience is remainder in the current level, not cumulative.
+assert.equal(cumulativeXpToReachLevel(1), 0);
+assert.equal(cumulativeXpToReachLevel(2), 100);
+assert.equal(cumulativeXpToReachLevel(3), 300);
 assert.deepEqual(xpHudProgress(50, 2), {
   leftover: 50,
   needed: 200,
   percent: 25,
 });
+assert.notEqual(
+  xpHudProgress(50, 2).leftover,
+  Math.max(0, 50 - cumulativeXpToReachLevel(2)),
+  "selection HUD used to subtract cumulativeXpToReachLevel(2)=100 from leftover 50",
+);
 assert.deepEqual(xpHudProgress(0, 3), {
   leftover: 0,
   needed: 400,
