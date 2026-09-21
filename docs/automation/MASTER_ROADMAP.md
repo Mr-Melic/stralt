@@ -18,7 +18,7 @@ This file is the living prioritized roadmap. ACTION_ID records for this run live
 | Specialist reports dated 2026-09-02 | Expansion, PX, long-horizon, telemetry balance/architecture/dashboard, spell admin, discovery, enemy/boss admin, world-encounter, visual assets, mechanic matrix, game feel, UX, admin UX/drift, dead-code, data-evolution, performance, enemy AI/elites/formations. **No 09-03…09-21 specialist reports in-repo** except orchestrator [`ACTION_IDS_2026-09-03-0000.md`](./ACTION_IDS_2026-09-03-0000.md). |
 | Open ACTION_IDs | Hundreds still `NEW` across dated producer files. Reuse; do not mint twins. |
 | Recent commits | `git log` `58302bc` → `0f5363f` (**158** commits / ~70 merge PRs on 2026-09-02…03). **Zero** commits 2026-09-03 00:28 UTC → 2026-09-21. |
-| Open drafts | **#327** Striker AoE/bounce (P1 economy/challenge). **#331** mapGen portal-punch (AQA-006 freeze). Both 18 days stale vs `main`. |
+| Open drafts | **#327** Striker AoE/bounce (P1). **#331** mapGen portal-punch (HOLD). During this run the 00:00 flock already opened **#333** (TBC WAITING docs — OK), **#334** (AdminDashboard — HOLD), **#335** (a11y — HOLD). |
 | Player telemetry | **Still none.** `longHorizonSim.telemetry.available === false`. TBC stays `WAITING_FOR_TELEMETRY`. Zero collectors in `src/backend`. |
 | Same-hour flock (this minute) | **26** automations already RUNNING at 00:01 UTC 2026-09-21 (combat parity, persist, adversarial QA, security, critical defects `1aa41c6c` still enabled, admin ×2, AI, formations, spell mechanics, expansion-adjacent, telemetry **dashboard** with nothing to display). More still launching. |
 
@@ -222,8 +222,11 @@ HP/death extraction (MTD-003) is still valid. Do not start it in the same hour a
 | Order | PR | Action |
 | :--- | :--- | :--- |
 | 1 | **#327** | Unique P1: Striker legendary_3 pays on AoE/bounce Chebyshev > 2. Oldest open. **Restack onto current `main`** (unioned #315–#326; those have merged; 18 days stale). Then review/merge. |
-| 2 | **#331** | **Hold.** mapGen portal-punch. AQA-006. Recurring hotspot. Needs human playtest of #321/#329 first. Restack if a human explicitly wants it. |
-| — | Any PR from the 09-21 00:00 wave | Default **hold**. Especially hold mapGen, targeting, persist, `enemyAI`, AdminDashboard, `main.mo` stables, telemetry UI, WX drive-bys. |
+| 2 | **#333** | TBC WAITING_FOR_TELEMETRY docs. Unique, aligned with AQA-012. OK after #327 if files do not rewrite BAL-*. |
+| 3 | **#331** | **Hold.** mapGen portal-punch. AQA-006. Recurring hotspot. Needs human playtest of #321/#329 first. |
+| — | **#334** | **Hold.** AdminDashboard (`save live 95% tier default`). AQA freeze + MTD-004. |
+| — | **#335** | **Hold this hour.** Unique a11y (Escape / 44px / named buttons). P3. Do not merge ahead of #327. |
+| — | Any later PR from the 09-21 00:00 wave | Default **hold**. Especially hold mapGen, targeting, persist, `enemyAI`, AdminDashboard, `main.mo` stables, telemetry UI, WX drive-bys. |
 | — | Motoko PRs that add persistent `let`/`var` | **Hold until Caffeine deploy of the 20260901 tail is confirmed** and `.old` refreshed. Then: new later file; never amend frozen NewActors. |
 | — | Docs-only from this hour | OK if they do not rewrite SDA/SDE/EBA schemas, retune BAL-*, or concatenate into 08-31 / 09-01 / 09-02 director files. |
 
