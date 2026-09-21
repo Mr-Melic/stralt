@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { shouldRunDecorativeCanvasLoop } from "../engine/canvasLoopActivity";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { safeExternalHref, unsafeUrl } from "../utils/adminSafety";
+import { safeHttpsHref, safeHttpsSrc } from "../utils/adminSafety";
 
 // ─── Animated skate-style title ──────────────────────────────────────────────
 const SkateStyleTitle: React.FC = () => {
@@ -703,7 +703,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
         </div>
 
         {/* Ad boxes — only rendered when admin has uploaded images */}
-        {adBoxes.some(([imageUrl]) => imageUrl) && (
+        {adBoxes.some(([imageUrl]) => Boolean(safeHttpsSrc(imageUrl))) && (
           <div
             data-ocid="landing.ad_boxes"
             style={{
@@ -716,11 +716,12 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
               maxWidth: "680px",
             }}
           >
-            {adBoxes.map(([imageUrl, linkUrl], index) =>
-              imageUrl && !unsafeUrl(imageUrl) ? (
+            {adBoxes.map(([imageUrl, linkUrl], index) => {
+              const src = safeHttpsSrc(imageUrl);
+              return src ? (
                 <a
                   key={`ad-box-${index}-${imageUrl.slice(0, 10)}`}
-                  href={safeExternalHref(linkUrl || "")}
+                  href={safeHttpsHref(linkUrl || "")}
                   target="_blank"
                   rel="noopener noreferrer"
                   data-ocid={`landing.ad_box.${index + 1}`}
@@ -747,7 +748,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
                   }}
                 >
                   <img
-                    src={imageUrl}
+                    src={src}
                     alt={`Advertisement ${index + 1}`}
                     style={{
                       width: "200px",
@@ -757,8 +758,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
                     }}
                   />
                 </a>
-              ) : null,
-            )}
+              ) : null;
+            })}
           </div>
         )}
       </div>

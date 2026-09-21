@@ -81,8 +81,30 @@ function requireId(id: string, label: string): string | null {
   return null;
 }
 
+/** Mirrors adminGuard.isUrlPrefixWs: BOM / ZWSP / NBSP must not hide javascript:. */
+function isUrlPrefixWs(ch: string): boolean {
+  const n = ch.codePointAt(0) ?? 0;
+  return (
+    n <= 0x20 ||
+    n === 0xa0 ||
+    n === 0xfeff ||
+    (n >= 0x2000 && n <= 0x200b) ||
+    n === 0x2028 ||
+    n === 0x2029 ||
+    n === 0x202f ||
+    n === 0x205f ||
+    n === 0x3000
+  );
+}
+
+function trimUrlPrefixWs(url: string): string {
+  let i = 0;
+  while (i < url.length && isUrlPrefixWs(url[i] ?? "")) i += 1;
+  return url.slice(i);
+}
+
 export function unsafeUrl(url: string): boolean {
-  const lower = url.trimStart().toLowerCase();
+  const lower = trimUrlPrefixWs(url).toLowerCase();
   return (
     lower.startsWith("javascript:") ||
     lower.startsWith("data:") ||
@@ -91,9 +113,9 @@ export function unsafeUrl(url: string): boolean {
   );
 }
 
-/** Player-facing hrefs: only http(s) after trim. Rejects javascript: ads. */
+/** Player-facing hrefs: only http(s) after prefix-strip. Rejects javascript: ads. */
 export function safeExternalHref(url: string): string {
-  const trimmed = url.trim();
+  const trimmed = trimUrlPrefixWs(url);
   const lower = trimmed.toLowerCase();
   if (lower.startsWith("https://") || lower.startsWith("http://")) {
     return trimmed;
@@ -101,9 +123,27 @@ export function safeExternalHref(url: string): string {
   return "#";
 }
 
+/** Landing ads are https-only on the canister. Do not render http / script URLs. */
+export function safeHttpsHref(url: string): string {
+  const trimmed = trimUrlPrefixWs(url);
+  if (trimmed.toLowerCase().startsWith("https://")) {
+    return trimmed;
+  }
+  return "#";
+}
+
+/** Player-facing <img src>. Empty string means do not render. */
+export function safeHttpsSrc(url: string): string {
+  const trimmed = trimUrlPrefixWs(url);
+  if (trimmed.toLowerCase().startsWith("https://") && !unsafeUrl(trimmed)) {
+    return trimmed;
+  }
+  return "";
+}
+
 /** Official shop proof MIME list. Rejects data:text/html admin XSS. */
 export function proofDataMimeAllowed(url: string): boolean {
-  const mime = url.trimStart().toLowerCase();
+  const mime = trimUrlPrefixWs(url).toLowerCase();
   return (
     mime.startsWith("data:image/jpeg") ||
     mime.startsWith("data:image/jpg") ||
@@ -118,7 +158,7 @@ export function proofDataMimeAllowed(url: string): boolean {
  * `window.open("data:text/html,<script>")` is stored XSS.
  */
 export function safeProofHref(url: string): string {
-  const trimmed = url.trim();
+  const trimmed = trimUrlPrefixWs(url);
   const lower = trimmed.toLowerCase();
   if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
     return "#";
@@ -135,7 +175,7 @@ export function safeProofHref(url: string): string {
 export function validateProofFileUrl(url: string): string | null {
   if (!url) return "proofFileUrl is required";
   if (url.length > 524_288) return "proofFileUrl exceeds maximum size";
-  const lower = url.trimStart().toLowerCase();
+  const lower = trimUrlPrefixWs(url).toLowerCase();
   if (lower.startsWith("javascript:") || lower.startsWith("vbscript:")) {
     return "proofFileUrl uses a forbidden URL scheme";
   }
@@ -203,12 +243,12 @@ export function validateAdBox(
   if (!linkUrl) return "linkUrl cannot be empty";
   const imageErr = validateOptionalUrl("imageUrl", imageUrl);
   if (imageErr) return imageErr;
-  if (!imageUrl.trimStart().toLowerCase().startsWith("https:")) {
+  if (!trimUrlPrefixWs(imageUrl).toLowerCase().startsWith("https:")) {
     return "imageUrl must be an https URL";
   }
   const linkErr = validateOptionalUrl("linkUrl", linkUrl);
   if (linkErr) return linkErr;
-  if (!linkUrl.trimStart().toLowerCase().startsWith("https:")) {
+  if (!trimUrlPrefixWs(linkUrl).toLowerCase().startsWith("https:")) {
     return "linkUrl must be an https URL";
   }
   return null;
@@ -720,6 +760,14 @@ export function shouldIncludeBackendSpellInLibrary(args: {
 
 export function isBuiltInSpellId(id: string): boolean {
   return (BUILT_IN_SPELL_IDS as readonly string[]).includes(id);
+}
+
+/** Mirrors adminDeleteSpellConfig — built-in ids must be retired, not deleted. */
+export const BUILT_IN_SPELL_DELETE_BLOCKED =
+  "Cannot delete a built-in spell; set usableByPlayer=false to retire it";
+
+export function adminSpellDeleteBlockedReason(id: string): string | null {
+  return isBuiltInSpellId(id) ? BUILT_IN_SPELL_DELETE_BLOCKED : null;
 }
 
 /** Ban must keep claimed flags; wiping them is the double-claim path. */

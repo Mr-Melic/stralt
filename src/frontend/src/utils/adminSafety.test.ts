@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import {
+  BUILT_IN_SPELL_DELETE_BLOCKED,
   achievementUnlockRejected,
+  adminSpellDeleteBlockedReason,
   chatCooldownActive,
   clampDungeonDepth,
   clampPersistedHpWrite,
@@ -20,6 +22,8 @@ import {
   rejectSecondPendingPurchase,
   resolveAppearanceSpellLevels,
   safeExternalHref,
+  safeHttpsHref,
+  safeHttpsSrc,
   safeProofHref,
   shouldCountBossRushRun,
   shouldDeferAchievementUnlockUntilRewardsPersist,
@@ -327,7 +331,10 @@ assert.equal(unsafeUrl(" javascript:alert(1)"), true);
 assert.equal(unsafeUrl("  DATA:text/html,x"), true);
 assert.equal(unsafeUrl("file:///etc/passwd"), true);
 assert.equal(unsafeUrl("\u00A0javascript:alert(1)"), true);
+assert.equal(unsafeUrl("\u200Bjavascript:alert(1)"), true);
+assert.equal(unsafeUrl("\uFEFFjavascript:alert(1)"), true);
 assert.ok(validateOptionalUrl("linkUrl", "javascript:alert(1)"));
+assert.ok(validateOptionalUrl("linkUrl", "\u200Bjavascript:alert(1)"));
 assert.ok(validateOptionalUrl("linkUrl", "JavaScript:alert(1)"));
 assert.ok(validateOptionalUrl("linkUrl", "  DATA:text/html,x"));
 assert.equal(validateOptionalUrl("linkUrl", "https://example.com"), null);
@@ -338,6 +345,23 @@ assert.equal(
 assert.equal(safeExternalHref("https://example.com"), "https://example.com");
 assert.equal(safeExternalHref("javascript:alert(1)"), "#");
 assert.equal(safeExternalHref("  JavaScript:alert(1)"), "#");
+assert.equal(safeExternalHref("\u200Bjavascript:alert(1)"), "#");
+assert.equal(
+  safeHttpsHref("https://cdn.example/a.png"),
+  "https://cdn.example/a.png",
+);
+assert.equal(safeHttpsHref("http://cdn.example/a.png"), "#");
+assert.equal(
+  safeHttpsHref("\u200Bhttps://cdn.example/a.png"),
+  "https://cdn.example/a.png",
+);
+assert.equal(
+  safeHttpsSrc("https://cdn.example/a.png"),
+  "https://cdn.example/a.png",
+);
+assert.equal(safeHttpsSrc("http://cdn.example/a.png"), "");
+assert.equal(safeHttpsSrc("javascript:alert(1)"), "");
+assert.equal(safeHttpsSrc("\u200Bjavascript:alert(1)"), "");
 
 assert.equal(validateProofFileUrl(""), "proofFileUrl is required");
 assert.ok(validateProofFileUrl("https://evil.example/proof.jpg"));
@@ -367,6 +391,10 @@ assert.ok(validateAdBox(0, "http://cdn.example/a.png", "https://ok.example"));
 assert.ok(validateAdBox(0, "https://cdn.example/a.png", "http://ok.example"));
 assert.equal(
   validateAdBox(0, "https://cdn.example/a.png", "https://ok.example"),
+  null,
+);
+assert.equal(
+  validateAdBox(0, "\u200Bhttps://cdn.example/a.png", "https://ok.example"),
   null,
 );
 
@@ -531,6 +559,16 @@ assert.equal(validateJsonBlob("colorPalette", ""), null);
 
 assert.equal(isBuiltInSpellId("void_collapse"), true);
 assert.equal(isBuiltInSpellId("custom_bolt"), false);
+assert.equal(
+  adminSpellDeleteBlockedReason("void_collapse"),
+  BUILT_IN_SPELL_DELETE_BLOCKED,
+);
+assert.equal(
+  adminSpellDeleteBlockedReason("shadow_strike"),
+  BUILT_IN_SPELL_DELETE_BLOCKED,
+);
+assert.equal(adminSpellDeleteBlockedReason("custom_bolt"), null);
+assert.equal(adminSpellDeleteBlockedReason(""), null);
 
 const owned = new Set(["void_collapse"]);
 assert.equal(

@@ -2363,6 +2363,12 @@ actor {
     /// Called by the frontend after the player dismisses the changelog popup.
     /// Records that the caller has seen the changelog for the given version.
     public shared ({ caller }) func markChangelogShown(version : Text) : async () {
+        if (caller.isAnonymous()) {
+            return;
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            return;
+        };
         if (version.size() > 32) {
             return;
         };
@@ -2928,6 +2934,9 @@ actor {
     public shared ({ caller }) func resetDungeonChain(principal : Principal) : async () {
         if (caller != principal and not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             Runtime.trap("Unauthorized");
+        };
+        if (bannedPrincipals.containsKey(caller.toText())) {
+            Runtime.trap("Account banned for non-payment");
         };
         switch (dungeonRecords.get(principal)) {
             case null {};
