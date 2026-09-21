@@ -1,13 +1,19 @@
 import assert from "node:assert/strict";
 import {
+  BUILT_IN_SPELL_DELETE_BLOCKED,
   achievementUnlockRejected,
+  adminSpellDeleteBlockedReason,
   chatCooldownActive,
   clampDungeonDepth,
   clampPersistedHpWrite,
+  enemyNameDuplicate,
+  enemyNamePoolRejected,
   gameConfigNeedsSeed,
   incomingSpellLevelsWouldMint,
   isBanReasonKey,
   isBuiltInSpellId,
+  jsonBlobLooksWellFormed,
+  jsonPrevSnapshot,
   knownAchievementCondition,
   maxPersistedAp,
   maxPersistedHp,
@@ -20,12 +26,15 @@ import {
   rejectSecondPendingPurchase,
   resolveAppearanceSpellLevels,
   safeExternalHref,
+  safeHttpsHref,
+  safeHttpsSrc,
   safeProofHref,
   shouldCountBossRushRun,
   shouldDeferAchievementUnlockUntilRewardsPersist,
   shouldIncludeBackendSpellInLibrary,
   shouldRejectInactiveAchievementUnlock,
   shouldRejectRetiredSpellUpgrade,
+  shouldSnapshotJsonBlob,
   shouldWipeAchievementsOnBan,
   thresholdAchievementConditionsFromPersist,
   unsafeUrl,
@@ -327,7 +336,10 @@ assert.equal(unsafeUrl(" javascript:alert(1)"), true);
 assert.equal(unsafeUrl("  DATA:text/html,x"), true);
 assert.equal(unsafeUrl("file:///etc/passwd"), true);
 assert.equal(unsafeUrl("\u00A0javascript:alert(1)"), true);
+assert.equal(unsafeUrl("\u200Bjavascript:alert(1)"), true);
+assert.equal(unsafeUrl("\uFEFFjavascript:alert(1)"), true);
 assert.ok(validateOptionalUrl("linkUrl", "javascript:alert(1)"));
+assert.ok(validateOptionalUrl("linkUrl", "\u200Bjavascript:alert(1)"));
 assert.ok(validateOptionalUrl("linkUrl", "JavaScript:alert(1)"));
 assert.ok(validateOptionalUrl("linkUrl", "  DATA:text/html,x"));
 assert.equal(validateOptionalUrl("linkUrl", "https://example.com"), null);
@@ -338,6 +350,23 @@ assert.equal(
 assert.equal(safeExternalHref("https://example.com"), "https://example.com");
 assert.equal(safeExternalHref("javascript:alert(1)"), "#");
 assert.equal(safeExternalHref("  JavaScript:alert(1)"), "#");
+assert.equal(safeExternalHref("\u200Bjavascript:alert(1)"), "#");
+assert.equal(
+  safeHttpsHref("https://cdn.example/a.png"),
+  "https://cdn.example/a.png",
+);
+assert.equal(safeHttpsHref("http://cdn.example/a.png"), "#");
+assert.equal(
+  safeHttpsHref("\u200Bhttps://cdn.example/a.png"),
+  "https://cdn.example/a.png",
+);
+assert.equal(
+  safeHttpsSrc("https://cdn.example/a.png"),
+  "https://cdn.example/a.png",
+);
+assert.equal(safeHttpsSrc("http://cdn.example/a.png"), "");
+assert.equal(safeHttpsSrc("javascript:alert(1)"), "");
+assert.equal(safeHttpsSrc("\u200Bjavascript:alert(1)"), "");
 
 assert.equal(validateProofFileUrl(""), "proofFileUrl is required");
 assert.ok(validateProofFileUrl("https://evil.example/proof.jpg"));
@@ -369,6 +398,10 @@ assert.equal(
   validateAdBox(0, "https://cdn.example/a.png", "https://ok.example"),
   null,
 );
+assert.equal(
+  validateAdBox(0, "\u200Bhttps://cdn.example/a.png", "https://ok.example"),
+  null,
+);
 
 // Failure: banPlayer wrote reasons to public getChangelog("ban#<principal>").
 assert.equal(isBanReasonKey("ban#aaaaa-aa"), true);
@@ -379,6 +412,13 @@ assert.equal(validateChangelog("v164", "notes"), null);
 assert.ok(validateEnemyName(""));
 assert.ok(validateEnemyName("x".repeat(101)));
 assert.equal(validateEnemyName("Malachar"), null);
+assert.equal(enemyNameDuplicate(["Malachar", "Vorenth"], "Malachar"), true);
+assert.equal(enemyNameDuplicate(["Malachar"], "Aethys"), false);
+assert.equal(
+  enemyNamePoolRejected(256),
+  "Enemy name pool exceeds maximum of 256",
+);
+assert.equal(enemyNamePoolRejected(0), null);
 
 // Failure: upgradeSpell appended a retired catalog id the player never owned.
 assert.equal(
@@ -528,9 +568,42 @@ assert.equal(
   null,
 );
 assert.equal(validateJsonBlob("colorPalette", ""), null);
+assert.equal(validateJsonBlob("colorPalette", '["#8b0000","#c0392b"]'), null);
+assert.ok(validateJsonBlob("colorPalette", "{"));
+assert.ok(validateJsonBlob("bossRushConfig", "{oops"));
+assert.ok(validateJsonBlob("bossRushConfig", "{oops}"));
+assert.ok(
+  validateJsonBlob("bossRushConfig", '{"rewardMultiplier":1} trailing'),
+);
+assert.equal(jsonBlobLooksWellFormed(""), true);
+assert.equal(jsonBlobLooksWellFormed("{}"), true);
+assert.equal(jsonBlobLooksWellFormed("[]"), true);
+assert.equal(jsonBlobLooksWellFormed("{oops}"), false);
+assert.equal(jsonBlobLooksWellFormed('{"a":"b}c"}'), true);
+assert.equal(shouldSnapshotJsonBlob("{oops"), false);
+assert.equal(shouldSnapshotJsonBlob('["#8b0000"]'), true);
+// Failure: second invalid write used to store the first invalid blob as *Prev.
+const afterGood = jsonPrevSnapshot('["#8b0000"]', "", false);
+assert.deepEqual(afterGood, { prev: '["#8b0000"]', hasPrev: true });
+const afterInvalid = jsonPrevSnapshot(
+  "{oops",
+  afterGood.prev,
+  afterGood.hasPrev,
+);
+assert.deepEqual(afterInvalid, { prev: '["#8b0000"]', hasPrev: true });
 
 assert.equal(isBuiltInSpellId("void_collapse"), true);
 assert.equal(isBuiltInSpellId("custom_bolt"), false);
+assert.equal(
+  adminSpellDeleteBlockedReason("void_collapse"),
+  BUILT_IN_SPELL_DELETE_BLOCKED,
+);
+assert.equal(
+  adminSpellDeleteBlockedReason("shadow_strike"),
+  BUILT_IN_SPELL_DELETE_BLOCKED,
+);
+assert.equal(adminSpellDeleteBlockedReason("custom_bolt"), null);
+assert.equal(adminSpellDeleteBlockedReason(""), null);
 
 const owned = new Set(["void_collapse"]);
 assert.equal(
