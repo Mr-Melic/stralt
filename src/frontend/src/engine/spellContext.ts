@@ -176,7 +176,7 @@ export interface PlayerSpellContextDeps extends SpellContextDeps {
     preCritDmg: number,
     preCritDmgBM: number,
     isFirstTarget: boolean,
-  ) => void;
+  ) => boolean;
   applyDamageToPlayer: (finalDmg: number) => void;
   mirrorRedirect: (
     targetEnemy: PlayerCastEnemy,

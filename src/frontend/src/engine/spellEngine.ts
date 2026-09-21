@@ -176,7 +176,12 @@ export interface PlayerSpellContext extends SpellContext {
     isPhysical: boolean,
     isCrit: boolean,
   ): { finalDamage: number; breakdown: string };
-  /** Per-target damage application (enemyHpMap + turnOrder + kill + bounces + drain). */
+  /**
+   * Per-target damage application (enemyHpMap + turnOrder + kill + bounces +
+   * drain). Returns true when this hit processed death after mitigations
+   * (Shell Armor, store commit). The damage loop must not recompute death
+   * from pre-mitigation finalDmg.
+   */
   applyDamageToEnemy(
     target: PlayerCastEnemy,
     finalDmg: number,
@@ -187,11 +192,11 @@ export interface PlayerSpellContext extends SpellContext {
     preCritDmg: number,
     preCritDmgBM: number,
     isFirstTarget: boolean,
-  ): void;
+  ): boolean;
   /**
-   * Idempotent combatant death processing. Called by the damage loop after
-   * applyDamageToEnemy when a target's post-damage hp drops to <= 0. Returns
-   * true if the death sequence ran this call, false if already removed.
+   * Idempotent combatant death processing. Prefer the boolean returned by
+   * applyDamageToEnemy for kill tracking — that path already calls this
+   * after post-mitigation HP is committed.
    */
   processCombatantDeath: (id: string) => boolean;
   /** hitsAllies __player__ branch — apply finalDmg to the player. */
@@ -1002,7 +1007,7 @@ export function resolvePlayerCast(
         finalDmg = preCritDmgBM;
       }
 
-      ctx.applyDamageToEnemy(
+      const died = ctx.applyDamageToEnemy(
         hitEnemy ?? (hitTarget as PlayerCastEnemy),
         finalDmg,
         spell,
@@ -1013,11 +1018,10 @@ export function resolvePlayerCast(
         preCritDmgBM,
         i === 0,
       );
-      // Detect death from the pre-damage hp snapshot minus the applied damage.
-      // applyDamageToEnemy returns void and updates enemyHpMap asynchronously,
-      // so the synchronous hp - finalDmg check is the reliable death signal here.
-      if (hitTarget.hp - finalDmg <= 0 && hitTarget.id !== "__player__") {
-        ctx.processCombatantDeath(hitTarget.id);
+      // Death is decided inside applyDamageToEnemy after Shell Armor / store
+      // commit. Recomputing hitTarget.hp - finalDmg here ignores that
+      // mitigation and falsely removes a living Broodmother Rook.
+      if (died && hitTarget.id !== "__player__") {
         killedThisCast.add(hitTarget.id);
       }
       ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");

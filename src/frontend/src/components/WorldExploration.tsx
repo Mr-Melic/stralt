@@ -9454,7 +9454,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ) => {
         const isPhysical = spell?.isPhysical ?? false;
         const isDrainSpell = spell?.effectType === "drain";
-        applyDamageToEnemyHelper({
+        // Return post-mitigation death so resolvePlayerCast can skip
+        // multi-hit corpses without recomputing hp - pre-armor finalDmg
+        // (that path falsely killed Broodmother Rook through Shell Armor).
+        return applyDamageToEnemyHelper({
           hitTarget: target as any,
           isFirstTarget,
           deps: {
