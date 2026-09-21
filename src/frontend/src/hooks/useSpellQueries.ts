@@ -51,6 +51,9 @@ export function useGetSpellConfigs() {
     enabled: !!actor && !actorFetching,
     staleTime: 30000,
     gcTime: 120000,
+    // PERF-2026-09-21-061: WorldExploration subscribes. Default focus refetch
+    // decoded the catalog on the main thread and reconciled the world tree.
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -193,6 +196,8 @@ export function useGetRegionConfigs() {
     enabled: !!actor && !actorFetching,
     staleTime: 30000,
     gcTime: 120000,
+    // PERF-2026-09-21-061: WorldExploration subscribes; skip tab-focus refetch.
+    refetchOnWindowFocus: false,
   });
 }
 
