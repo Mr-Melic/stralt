@@ -30,6 +30,10 @@ import {
   setGeometryOverlayEnabled,
   subscribeGeometryOverlayEnabled,
 } from "../debug/geometryOverlayState";
+import {
+  shouldCountGeneralChatUnread,
+  shouldTickChatPoll,
+} from "../engine/chatPollActivity";
 import { useActor } from "../hooks/useActor";
 import type { ActiveEffect, BattleLogEntry } from "../types/gameTypes";
 import {
@@ -556,9 +560,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const activeChannelRef = useRef(activeChannel);
+  const isFoldedRef = useRef(isFolded);
+  const chatWidthRef = useRef(chatWidth);
+  const pendingChatWidthRef = useRef<number | null>(null);
+  const chatWidthRafRef = useRef<number | null>(null);
   useEffect(() => {
     activeChannelRef.current = activeChannel;
   }, [activeChannel]);
+  useEffect(() => {
+    isFoldedRef.current = isFolded;
+  }, [isFolded]);
+  useEffect(() => {
+    chatWidthRef.current = chatWidth;
+  }, [chatWidth]);
   const { actor } = useActor();
 
   // Unread count lookup keyed by channel — drives the badge in the tab row.
@@ -631,6 +645,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     }
   }, [chatWidth]);
 
+  useEffect(() => {
+    return () => {
+      if (chatWidthRafRef.current !== null) {
+        cancelAnimationFrame(chatWidthRafRef.current);
+        chatWidthRafRef.current = null;
+      }
+    };
+  }, []);
+
   /**
    * Right-edge drag handle: widens the panel beyond the auto-computed width
    * (up to MAX_CHAT_WIDTH). On drag end the new width is persisted via the
@@ -652,13 +675,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
           // ignore — capture is best-effort
         }
       }
+      const flushWidth = () => {
+        chatWidthRafRef.current = null;
+        const next = pendingChatWidthRef.current;
+        if (next != null && next !== chatWidthRef.current) {
+          setChatWidth(next);
+        }
+      };
       const onMove = (ev: PointerEvent) => {
         const delta = ev.clientX - dragStartXRef.current;
         const next = Math.min(
           MAX_CHAT_WIDTH,
           Math.max(DEFAULT_CHAT_WIDTH, dragStartWidthRef.current + delta),
         );
-        setChatWidth(next);
+        pendingChatWidthRef.current = next;
+        if (chatWidthRafRef.current === null) {
+          chatWidthRafRef.current = requestAnimationFrame(flushWidth);
+        }
       };
       const onUp = (ev: PointerEvent) => {
         const h = dragHandleRef.current;
@@ -671,6 +704,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         }
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
+        if (chatWidthRafRef.current !== null) {
+          cancelAnimationFrame(chatWidthRafRef.current);
+          chatWidthRafRef.current = null;
+        }
+        flushWidth();
       };
       document.addEventListener("pointermove", onMove);
       document.addEventListener("pointerup", onUp);
@@ -903,7 +941,12 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         if (prev.length === 0 && next.length === 0) return prev;
         return next;
       });
-      if (isFolded || activeChannel !== "general") {
+      if (
+        shouldCountGeneralChatUnread(
+          isFoldedRef.current,
+          activeChannelRef.current,
+        )
+      ) {
         const newMsgs = (raw as ChatMessage[]).filter(
           (m) => m.id > lastSeenIdRef.current,
         );
@@ -922,7 +965,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
       if (didTimeout) return; // skip silently on timeout
       // Silently ignore other errors
     }
-  }, [actor, isFolded, activeChannel]);
+  }, [actor]);
 
   const isPausedRef = useRef(isPaused);
   useEffect(() => {
@@ -949,8 +992,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     if (isPaused) return;
     fetchMessages();
     const id = setInterval(() => {
-      if (isPausedRef.current) return; // stale-closure guard
-      if (!tabVisibleRef.current) return; // C6: skip while tab is backgrounded
+      if (!shouldTickChatPoll(isPausedRef.current, tabVisibleRef.current)) {
+        return;
+      }
       fetchMessages();
     }, 2000);
     return () => clearInterval(id);

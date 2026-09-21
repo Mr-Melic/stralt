@@ -11,6 +11,24 @@ const VOLUME_KEY = "pbv_sound_volume";
 const MUTE_KEY = "pbv_sound_muted";
 const DEFAULT_VOLUME = 0.5;
 const VOICE_CAP = 8;
+/** Longest playNoise burst is map_transition at 0.6s; one shared buffer covers it. */
+export const SHARED_NOISE_DURATION_SEC = 1;
+
+export function sharedNoiseFrameCount(
+  sampleRate: number,
+  durationSec: number = SHARED_NOISE_DURATION_SEC,
+): number {
+  return Math.max(1, Math.floor(sampleRate * durationSec));
+}
+
+export function fillWhiteNoise(
+  channel: Float32Array,
+  random: () => number = Math.random,
+): void {
+  for (let i = 0; i < channel.length; i++) {
+    channel[i] = random() * 2 - 1;
+  }
+}
 
 type ActiveVoice = {
   stop: () => void;
@@ -53,6 +71,7 @@ export class SoundEngine {
   private muted: boolean;
   private voices: ActiveVoice[] = [];
   private gestureWired = false;
+  private noiseBuffer: AudioBuffer | null = null;
 
   constructor() {
     this.volume = Math.min(
@@ -95,6 +114,7 @@ export class SoundEngine {
       this.master = this.ctx.createGain();
       this.master.gain.value = this.muted ? 0 : this.volume;
       this.master.connect(this.ctx.destination);
+      this.noiseBuffer = null;
     } catch {
       this.ctx = null;
       this.master = null;
@@ -202,6 +222,23 @@ export class SoundEngine {
     this.registerVoice(voice);
   }
 
+  private getSharedNoiseBuffer(): AudioBuffer | null {
+    const ctx = this.ctx;
+    if (!ctx) return null;
+    if (
+      this.noiseBuffer &&
+      this.noiseBuffer.sampleRate === ctx.sampleRate &&
+      this.noiseBuffer.length >= sharedNoiseFrameCount(ctx.sampleRate)
+    ) {
+      return this.noiseBuffer;
+    }
+    const length = sharedNoiseFrameCount(ctx.sampleRate);
+    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
+    fillWhiteNoise(buffer.getChannelData(0));
+    this.noiseBuffer = buffer;
+    return buffer;
+  }
+
   private playNoise(
     duration: number,
     filterType: BiquadFilterType,
@@ -217,12 +254,8 @@ export class SoundEngine {
     const master = this.master;
     if (!ctx || !master) return;
     const now = ctx.currentTime + (opts?.delay ?? 0);
-    const length = Math.max(1, Math.floor(ctx.sampleRate * duration));
-    const buffer = ctx.createBuffer(1, length, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < length; i++) {
-      data[i] = Math.random() * 2 - 1;
-    }
+    const buffer = this.getSharedNoiseBuffer();
+    if (!buffer) return;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     const filter = ctx.createBiquadFilter();
@@ -242,8 +275,9 @@ export class SoundEngine {
     src.connect(filter);
     filter.connect(g);
     g.connect(master);
+    const playDur = Math.min(duration, buffer.duration);
     src.start(now);
-    src.stop(now + duration + 0.02);
+    src.stop(now + playDur + 0.02);
 
     const voice: ActiveVoice = {
       ended: false,

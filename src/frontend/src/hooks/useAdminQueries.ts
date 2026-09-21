@@ -153,6 +153,8 @@ export function useGetMapModifiers() {
     enabled: !!actor && !actorFetching,
     staleTime: 30000,
     gcTime: 120000,
+    // PERF-2026-09-21-061: WorldExploration subscribes; skip tab-focus refetch.
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -247,6 +249,8 @@ export function useGetGameConfig() {
     enabled: !!actor && !actorFetching,
     staleTime: 30000,
     gcTime: 120000,
+    // PERF-2026-09-21-061: WorldExploration subscribes; skip tab-focus refetch.
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -298,6 +302,8 @@ export function useGetAchievementConfigs() {
     enabled: !!actor && !actorFetching,
     staleTime: 30000,
     gcTime: 120000,
+    // PERF-2026-09-21-061: WorldExploration subscribes; skip tab-focus refetch.
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -451,6 +457,8 @@ export function useGetEnemyNames() {
     enabled: !!actor && !actorFetching,
     staleTime: 60000,
     gcTime: 300000,
+    // PERF-2026-09-21-061: WorldExploration subscribes; skip tab-focus refetch.
+    refetchOnWindowFocus: false,
   });
 }
 
