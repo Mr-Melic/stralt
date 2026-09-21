@@ -17288,7 +17288,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       mapTiles,
       effectiveRange,
       barrierTilesRef.current,
-      { timestepUsed: timestepUsedRef.current },
     );
     if (!nearest) {
       setNoTargetFlash(true);
