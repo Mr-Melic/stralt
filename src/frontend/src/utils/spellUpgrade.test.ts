@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { createProgressPersist } from "./progressPersist.ts";
+import { createProgressPersist, resolveCommittedDokaForAbsoluteWrite } from "./progressPersist.ts";
 import {
   applySpellLevel,
   committedDokaAfterSpellUpgrade,
+  isSpellUpgradeTransportError,
   persistSpellUpgrade,
+  persistSpellUpgradeOnLock,
   readUpgradeSpellOk,
   shouldCommitSpellUpgradeDoka,
+  shouldReleaseSpellUpgradeInFlight,
   spellUpgradeCanisterSpend,
   spellUpgradeUiSpend,
 } from "./spellUpgrade.ts";
@@ -203,6 +206,66 @@ assert.equal(spellUpgradeUiSpend(100, 0, 190), 10);
     1,
     "a throwing wallet query after #ok must not look like a failed upgrade",
   );
+}
+
+{
+  // Chronology: upgradeSpell deducts 10 then throws. Lock stayed at 200.
+  // inFlight used to clear so retry charged again. Recap shop wrote the
+  // pre-upgrade wallet (never mints incoming-above-stored).
+  let canister = 200;
+  let upgrades = 0;
+  const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
+  let threw = false;
+  try {
+    await persistSpellUpgradeOnLock(
+      {
+        upgradeSpell: async () => {
+          upgrades += 1;
+          canister -= 10;
+          throw new Error("replica reject after debit");
+        },
+      },
+      lock,
+      1,
+      "fireball",
+    );
+  } catch (err) {
+    threw = isSpellUpgradeTransportError(err);
+  }
+  assert.equal(threw, true);
+  assert.equal(upgrades, 1);
+  assert.equal(canister, 190);
+  assert.equal(lock.snapshot().doka, 200);
+  assert.equal(lock.hasUnconfirmedWalletSpend(), true);
+  assert.equal(shouldReleaseSpellUpgradeInFlight(threw), false);
+
+  const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
+    lock,
+    async () => canister,
+  );
+  assert.equal(caughtUp, 190);
+  assert.equal(lock.hasUnconfirmedWalletSpend(), false);
+}
+
+{
+  // Genuine #err must not note a spend — canister did not debit.
+  const lock = createProgressPersist({ doka: 200, xp: 0, level: 1 });
+  let banned = false;
+  try {
+    await persistSpellUpgradeOnLock(
+      {
+        upgradeSpell: async () => ({ err: "Account banned" }),
+      },
+      lock,
+      1,
+      "fireball",
+    );
+  } catch (e) {
+    banned = String((e as Error).message).includes("Account banned");
+  }
+  assert.equal(banned, true);
+  assert.equal(lock.hasUnconfirmedWalletSpend(), false);
+  assert.equal(lock.snapshot().doka, 200);
 }
 
 console.log("spellUpgrade.test: ok");

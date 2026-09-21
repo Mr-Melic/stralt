@@ -72,6 +72,70 @@ export function readUpgradeSpellOk(result: unknown): number {
  * return `{ newLevel }` so callers can commit the advertised canister spend
  * instead of treating a successful write as a failed upgrade.
  */
+export const SPELL_UPGRADE_TRANSPORT_AFTER_INVOKE =
+  "upgradeSpell transport error";
+
+export type SpellUpgradePersistLock = {
+  noteUnseededCredit?: () => void;
+  noteUnconfirmedSpend?: () => void;
+};
+
+/**
+ * upgradeSpell deducts Doka and writes the new level, then may throw.
+ * The persist job used to reject with no lock note, so inFlight cleared
+ * and retry charged a second time. Recap shop then saveBattleStats-wrote
+ * the pre-upgrade wallet (never mints incoming-above-stored) while the
+ * item still landed — or a second upgrade stacked on the first spend.
+ *
+ * Note the unconfirmed spend so the next absolute write re-fetches. A
+ * live drop is the fee; stale-equal skips instead of writing the
+ * pre-upgrade snapshot.
+ */
+export function noteSpellUpgradeTransportKeep(
+  persist: SpellUpgradePersistLock,
+): void {
+  persist.noteUnconfirmedSpend?.();
+  persist.noteUnseededCredit?.();
+}
+
+export function isSpellUpgradeCanisterReject(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("upgradeSpell failed");
+}
+
+export function isSpellUpgradeTransportError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes(SPELL_UPGRADE_TRANSPORT_AFTER_INVOKE);
+}
+
+/** Keep inFlight after throw-after-debit so retry cannot charge twice. */
+export function shouldReleaseSpellUpgradeInFlight(
+  transportAfterInvoke: boolean,
+): boolean {
+  return transportAfterInvoke !== true;
+}
+
+export async function persistSpellUpgradeOnLock(
+  actor: SpellUpgradeActor,
+  persist: SpellUpgradePersistLock,
+  slot: number,
+  spellId: string,
+): Promise<SpellUpgradeOk> {
+  try {
+    return await persistSpellUpgrade(actor, slot, spellId);
+  } catch (err) {
+    if (!isSpellUpgradeCanisterReject(err)) {
+      noteSpellUpgradeTransportKeep(persist);
+      throw new Error(
+        `${SPELL_UPGRADE_TRANSPORT_AFTER_INVOKE}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    throw err;
+  }
+}
+
 export async function persistSpellUpgrade(
   actor: SpellUpgradeActor,
   slot: number,

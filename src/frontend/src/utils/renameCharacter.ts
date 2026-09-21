@@ -82,3 +82,59 @@ export function committedDokaAfterRename(committedDoka: number): number {
 export function shouldCommitRenameDokaSpend(walletSeeded: boolean): boolean {
   return walletSeeded;
 }
+
+export type RenamePersistLock = {
+  enqueue<T>(fn: () => Promise<T>): Promise<T>;
+  commit(next: { doka?: number }): void;
+  snapshot(): { doka: number };
+  isWalletSeeded(): boolean;
+  noteUnseededCredit?: () => void;
+  noteUnconfirmedSpend?: () => void;
+};
+
+export type RenameActor = {
+  renameCharacter?: (slot: bigint, newName: string) => Promise<unknown>;
+};
+
+/**
+ * renameCharacter deducts 100 Doka then returns `#ok`. A replica reject
+ * after that write used to leave the persist lock at the pre-rename
+ * wallet. Retry hits "Name already in use" (own name matches), so the
+ * player cannot pay again — but recap shop saveBattleStats wrote the
+ * ghost-high lock. Incoming-above-stored is ignored, so the item landed
+ * while canister Doka stayed put.
+ *
+ * Catch the throw, note an unconfirmed spend, and let the next absolute
+ * write re-fetch. A live drop is the fee; a stale-equal snapshot skips.
+ */
+export async function persistRenameThroughLock(
+  actor: RenameActor,
+  persist: RenamePersistLock,
+  slot: number,
+  newName: string,
+): Promise<{ ok: true } | { err: string }> {
+  return persist.enqueue(async () => {
+    if (!actor.renameCharacter) {
+      return { err: "Actor not available" };
+    }
+    let parsed: { ok: true } | { err: string };
+    try {
+      parsed = readRenameCharacterResult(
+        await actor.renameCharacter(BigInt(slot), newName),
+      );
+    } catch {
+      persist.noteUnconfirmedSpend?.();
+      persist.noteUnseededCredit?.();
+      return { err: "renameCharacter transport error" };
+    }
+    if (
+      shouldDebitRenameDoka(parsed) &&
+      shouldCommitRenameDokaSpend(persist.isWalletSeeded())
+    ) {
+      persist.commit({
+        doka: committedDokaAfterRename(persist.snapshot().doka),
+      });
+    }
+    return parsed;
+  });
+}

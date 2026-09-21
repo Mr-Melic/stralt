@@ -191,21 +191,60 @@ export const ABSOLUTE_WRITE_UNCONFIRMED_CREDIT =
   "absolute write skipped: unconfirmed credit";
 
 /**
- * Seeded one-shot transport-keep left the lock at the pre-credit wallet
- * when getCallerDokaBalance was stale or threw. Recap heal then
- * saveBattleStats-wrote that snapshot and wiped the canister grant
- * (incoming-below-stored is applied; saveBattleStats never mints).
- *
- * Skip the absolute write unless the live read is strictly above the
- * lock. A miss must not use the stale committed value.
+ * Thrown when saveBattleStats would write a seeded pre-spend snapshot
+ * after rename / upgradeSpell throw-after-debit whose wallet confirm
+ * was stale (live still equals the lock).
  */
-export function shouldSkipAbsoluteDokaWrite(args: {
-  unconfirmedWalletCredit: boolean;
+export const ABSOLUTE_WRITE_UNCONFIRMED_SPEND =
+  "absolute write skipped: unconfirmed spend";
+
+/**
+ * Seeded rename / upgradeSpell invoked then threw. Recap shop used to
+ * saveBattleStats-write the pre-spend lock (incoming-above-stored is
+ * ignored) while BuffShop still granted the item — a free purchase.
+ *
+ * Skip unless the live read is strictly below the lock. A stale-equal
+ * or missing read must not use the pre-spend snapshot.
+ */
+export function shouldSkipAbsoluteDokaSpendWrite(args: {
+  unconfirmedWalletSpend: boolean;
   liveDoka: number | null;
   committedDoka: number;
 }): boolean {
-  if (args.unconfirmedWalletCredit !== true) return false;
+  if (args.unconfirmedWalletSpend !== true) return false;
   if (args.liveDoka == null) return true;
+  const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
+  const committed = Math.max(0, Math.floor(Number(args.committedDoka) || 0));
+  return live >= committed;
+}
+
+/**
+ * Credit keep: skip unless live rose. Spend keep: skip unless live
+ * dropped. Both flags (shrine keep then rename throw): skip only when
+ * live still equals the lock — a rise or drop is the replica catching up.
+ */
+export function shouldSkipAbsoluteDokaWrite(args: {
+  unconfirmedWalletCredit: boolean;
+  unconfirmedWalletSpend?: boolean;
+  liveDoka: number | null;
+  committedDoka: number;
+}): boolean {
+  const credit = args.unconfirmedWalletCredit === true;
+  const spend = args.unconfirmedWalletSpend === true;
+  if (!credit && !spend) return false;
+  if (args.liveDoka == null) return true;
+  if (credit && spend) {
+    const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
+    const committed = Math.max(0, Math.floor(Number(args.committedDoka) || 0));
+    return live === committed;
+  }
+  if (spend) {
+    return shouldSkipAbsoluteDokaSpendWrite({
+      unconfirmedWalletSpend: true,
+      liveDoka: args.liveDoka,
+      committedDoka: args.committedDoka,
+    });
+  }
   const live = Math.max(0, Math.floor(Number(args.liveDoka) || 0));
   const committed = Math.max(0, Math.floor(Number(args.committedDoka) || 0));
   return live <= committed;
@@ -247,6 +286,10 @@ export function createProgressPersist(
   // Seeded one-shot transport-keep: canister may have the grant, confirm
   // did not see a rise. Absolute writes must re-fetch and skip if stale.
   let unconfirmedWalletCredit = false;
+  // Seeded rename / upgradeSpell throw-after-debit: canister may have
+  // spent. Credit-style live<=committed skip would stuck-skip forever
+  // (live dropped). Absolute writes must re-fetch and seed a drop.
+  let unconfirmedWalletSpend = false;
   let pending = 0;
   let chain: Promise<void> = Promise.resolve();
   let beforeEach = options?.beforeEach;
@@ -263,6 +306,12 @@ export function createProgressPersist(
     },
     seedWallet(doka: number) {
       persist.commit({ doka: Math.max(0, toNat(doka, 0)) });
+      // Authoritative live read: both throw-after-add and throw-after-spend
+      // are resolved. A later heal must not skip because a credit flag
+      // survived a spend-confirm drop.
+      unconfirmedWalletCredit = false;
+      unconfirmedWalletSpend = false;
+      idleWalletSeedBlocked = false;
     },
     /**
      * redeemGameKey / claimAchievementReward `#ok` on an unseeded lock must
@@ -284,6 +333,19 @@ export function createProgressPersist(
     },
     hasUnconfirmedWalletCredit() {
       return unconfirmedWalletCredit;
+    },
+    /**
+     * renameCharacter / upgradeSpell invoked but the ok payload was lost.
+     * Force the next saveBattleStats to re-fetch. A live drop is the spend;
+     * a stale-equal snapshot must not write the pre-spend lock (shop item
+     * would land while canister Doka stays put — never mints).
+     */
+    noteUnconfirmedSpend() {
+      idleWalletSeedBlocked = true;
+      if (walletSeeded) unconfirmedWalletSpend = true;
+    },
+    hasUnconfirmedWalletSpend() {
+      return unconfirmedWalletSpend;
     },
     commit(next: Partial<CommittedProgress>) {
       committed = {
@@ -367,6 +429,7 @@ export type AbsoluteWritePersist = Pick<
   "isWalletSeeded" | "seedWallet" | "snapshot"
 > & {
   hasUnconfirmedWalletCredit?: () => boolean;
+  hasUnconfirmedWalletSpend?: () => boolean;
 };
 
 /**
@@ -386,18 +449,25 @@ export async function resolveCommittedDokaForAbsoluteWrite(
   persist: AbsoluteWritePersist,
   readWallet: () => Promise<unknown>,
 ): Promise<number | null> {
-  const unconfirmed = persist.hasUnconfirmedWalletCredit?.() === true;
+  const unconfirmedCredit = persist.hasUnconfirmedWalletCredit?.() === true;
+  const unconfirmedSpend = persist.hasUnconfirmedWalletSpend?.() === true;
+  const unconfirmed = unconfirmedCredit || unconfirmedSpend;
   if (persist.isWalletSeeded() && !unconfirmed) {
     return persist.snapshot().doka;
   }
   const skipStale = (live: number | null): boolean =>
     shouldSkipAbsoluteDokaWrite({
-      unconfirmedWalletCredit: unconfirmed,
+      unconfirmedWalletCredit: unconfirmedCredit,
+      unconfirmedWalletSpend: unconfirmedSpend,
       liveDoka: live,
       committedDoka: persist.snapshot().doka,
     });
   const refuseStaleWrite = (): never => {
-    throw new Error(ABSOLUTE_WRITE_UNCONFIRMED_CREDIT);
+    throw new Error(
+      unconfirmedSpend && !unconfirmedCredit
+        ? ABSOLUTE_WRITE_UNCONFIRMED_SPEND
+        : ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
+    );
   };
   try {
     const live = readWalletNumber(await readWallet());
@@ -411,7 +481,8 @@ export async function resolveCommittedDokaForAbsoluteWrite(
   } catch (err) {
     if (
       err instanceof Error &&
-      err.message === ABSOLUTE_WRITE_UNCONFIRMED_CREDIT
+      (err.message === ABSOLUTE_WRITE_UNCONFIRMED_CREDIT ||
+        err.message === ABSOLUTE_WRITE_UNCONFIRMED_SPEND)
     ) {
       throw err;
     }

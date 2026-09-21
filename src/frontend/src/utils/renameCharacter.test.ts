@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   applySpendToCommitted,
   createProgressPersist,
+  resolveCommittedDokaForAbsoluteWrite,
   spendFromUiBalance,
 } from "./progressPersist.ts";
 import {
@@ -10,6 +11,7 @@ import {
   beginRename,
   committedDokaAfterRename,
   liveDokaAfterRename,
+  persistRenameThroughLock,
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
@@ -161,5 +163,59 @@ describe("liveDokaAfterRename / committedDokaAfterRename", () => {
     }
     assert.equal(lock.isWalletSeeded(), false);
     assert.equal(lock.snapshot().doka, 0);
+  });
+});
+
+describe("persistRenameThroughLock throw-after-debit", () => {
+  it("notes an unconfirmed spend so recap shop cannot mint a free item", async () => {
+    // Chronology:
+    // 1. Player has 500 Doka. renameCharacter writes Alice and deducts 100.
+    // 2. Replica throws. Lock stays 500. Retry → "Name already in use".
+    // 3. Recap shop used to write 450 against canister 400 (never mints).
+    let canister = 500;
+    let name = "Bob";
+    const lock = createProgressPersist({ doka: 500, xp: 0, level: 1 });
+    const kept = await persistRenameThroughLock(
+      {
+        renameCharacter: async (_slot: bigint, newName: string) => {
+          canister -= 100;
+          name = newName;
+          throw new Error("replica reject after debit");
+        },
+      },
+      lock,
+      1,
+      "Alice",
+    );
+    assert.equal("err" in kept, true);
+    assert.equal(canister, 400);
+    assert.equal(name, "Alice");
+    assert.equal(lock.snapshot().doka, 500);
+    assert.equal(lock.hasUnconfirmedWalletSpend(), true);
+
+    const caughtUp = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => canister,
+    );
+    assert.equal(caughtUp, 400);
+    const shopSpend = spendFromUiBalance(500, 450);
+    const wrote = applySpendToCommitted(lock.snapshot().doka, shopSpend);
+    lock.commit({ doka: wrote });
+    assert.equal(wrote, 350);
+  });
+
+  it("still commits a confirmed #ok spend", async () => {
+    const lock = createProgressPersist({ doka: 500, xp: 0, level: 1 });
+    const parsed = await persistRenameThroughLock(
+      {
+        renameCharacter: async () => ({ __kind__: "ok", ok: null }),
+      },
+      lock,
+      1,
+      "Alice",
+    );
+    assert.deepEqual(parsed, { ok: true });
+    assert.equal(lock.snapshot().doka, 400);
+    assert.equal(lock.hasUnconfirmedWalletSpend(), false);
   });
 });
