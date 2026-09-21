@@ -95,6 +95,7 @@ import {
   shouldAwardVictory,
   shouldContinuePlayerTurnAfterHazard,
   shouldDispatchEnemyAiAfterTurnStart,
+  shouldTickSummonLifespan,
   shouldTriggerOverworldEncounter,
 } from "../engine/battleSetup";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
@@ -361,6 +362,7 @@ import {
   releasePickupId,
   resolveOneShotCreditSettle,
   settleOneShotPersistLock,
+  shouldCountGroundDokaPickup,
   tryClaimDungeonChainBonus,
   tryClaimFlag,
   tryClaimPickupId,
@@ -11388,26 +11390,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   l.id === hit.id ? { ...l, collected: true } : l,
                 ),
               );
+              // Count only a committed credit. Keep/release used to bump
+              // loot_10_doka from a transport-keep that never minted.
+              if (shouldCountGroundDokaPickup(settle)) {
+                groundDokaPickupCountRef.current += 1;
+                try {
+                  const gdKey = userId
+                    ? `${userId}_slot${characterSlot}_pbv_ground_doka_pickups`
+                    : "pbv_ground_doka_pickups";
+                  localStorage.setItem(
+                    gdKey,
+                    String(groundDokaPickupCountRef.current),
+                  );
+                } catch {
+                  /* ignore */
+                }
+              }
             } else if (settle.kind === "release") {
               releasePickupId(claimedGroundLootIdsRef.current, hit.id);
             }
             return settle.kind === "commit" ? settle.doka : 0;
           });
           playSound("doka_collected", String(hit.value));
-          // Track ground doka pickup count for achievement
-          groundDokaPickupCountRef.current += 1;
-          try {
-            // M6: Namespace by userId+slot
-            const gdKey = userId
-              ? `${userId}_slot${characterSlot}_pbv_ground_doka_pickups`
-              : "pbv_ground_doka_pickups";
-            localStorage.setItem(
-              gdKey,
-              String(groundDokaPickupCountRef.current),
-            );
-          } catch {
-            /* ignore */
-          }
           logBattleEntry(
             `\uD83D\uDCB0 [COLLECT] You found ${hit.value} Doka on the ground!`,
             "#f1c40f",
@@ -14067,6 +14071,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const _activeSummonId = _nextCombatant?.isSummon
         ? _nextCombatant.id
         : null;
+      // Last-hostile kill → leftover End Turn / 30s timer still reached
+      // this prelude. Ticking here faded a surviving summon on a cancelled
+      // advance. Skip expire when the fight is already over; last-minion
+      // fade still runs below when hostiles were > 0 going in.
+      if (
+        !shouldTickSummonLifespan({
+          deathTriggered: deathTriggeredRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+        })
+      ) {
+        return;
+      }
       // Live store only. advanceTurn does not list `enemies` in its deps,
       // so the React snapshot is the pre-battle roster (often []). Ticking
       // that list and setEnemies(it) dropped mid-fight summons and skipped
@@ -17232,7 +17248,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       })
     )
       return;
-    markFirstAction();
+    // Do not markFirstAction here. Cooldown / missing spell / no legal
+    // target used to dismiss an unaccepted offer with no AP spend.
+    // executeCastAttempt marks only after a real debit.
     const spell = activeSpells.find((s) => s.id === selectedSpellIdRef.current);
     if (!spell) return;
     // Spell bar only disables re-selection. Inferno used to recast via
@@ -17361,7 +17379,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     getEffectiveSpellRange,
     getActiveCasterPos,
     combatantStoreCtx,
-    markFirstAction,
     executeCastAttempt,
     tileCenter,
   ]);

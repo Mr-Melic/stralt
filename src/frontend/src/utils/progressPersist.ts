@@ -211,6 +211,27 @@ export function shouldSkipAbsoluteDokaWrite(args: {
   return live <= committed;
 }
 
+/**
+ * Spell upgrade / rename / shop `commit({ doka: lock - spend })` after a
+ * seeded one-shot transport-keep used to clear `unconfirmedWalletCredit`.
+ * The next heal then skipped the live re-fetch and saveBattleStats-wrote
+ * the pre-credit snapshot (incoming-below-stored; never mints).
+ *
+ * Only a strict wallet rise proves the grant is visible. A spend or a
+ * stale-equal snapshot must keep the flag so resolveCommittedDoka still
+ * re-fetches.
+ */
+export function shouldClearUnconfirmedWalletCredit(args: {
+  unconfirmed: boolean;
+  previousDoka: number;
+  nextDoka: number;
+}): boolean {
+  if (args.unconfirmed !== true) return true;
+  const previous = Math.max(0, Math.floor(Number(args.previousDoka) || 0));
+  const next = Math.max(0, Math.floor(Number(args.nextDoka) || 0));
+  return next > previous;
+}
+
 export type ProgressPersistEnqueueOptions = {
   /**
    * Death persist writes the pending marker then the 20/40 cut. Running
@@ -286,11 +307,13 @@ export function createProgressPersist(
       return unconfirmedWalletCredit;
     },
     commit(next: Partial<CommittedProgress>) {
+      const previousDoka = committed.doka;
+      const nextDoka =
+        next.doka != null
+          ? Math.max(0, toNat(next.doka, committed.doka))
+          : committed.doka;
       committed = {
-        doka:
-          next.doka != null
-            ? Math.max(0, toNat(next.doka, committed.doka))
-            : committed.doka,
+        doka: next.doka != null ? nextDoka : committed.doka,
         xp:
           next.xp != null
             ? Math.max(0, toNat(next.xp, committed.xp))
@@ -302,8 +325,16 @@ export function createProgressPersist(
       };
       if (next.doka != null) {
         walletSeeded = true;
-        idleWalletSeedBlocked = false;
-        unconfirmedWalletCredit = false;
+        if (
+          shouldClearUnconfirmedWalletCredit({
+            unconfirmed: unconfirmedWalletCredit,
+            previousDoka,
+            nextDoka,
+          })
+        ) {
+          idleWalletSeedBlocked = false;
+          unconfirmedWalletCredit = false;
+        }
       }
     },
     hydrateWhenIdle(

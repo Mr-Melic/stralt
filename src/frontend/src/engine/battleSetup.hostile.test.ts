@@ -10,6 +10,7 @@ import {
   liveCombatantHp,
   shouldAdvanceAfterEnemyTurn,
   shouldAwardVictory,
+  shouldTickSummonLifespan,
   shouldTriggerOverworldEncounter,
 } from "./battleSetup.ts";
 import { expireSummonsAtTurnStart } from "./summonLifespan.ts";
@@ -303,6 +304,64 @@ describe("shouldAdvanceAfterEnemyTurn", () => {
       }),
       false,
       "advanceTurn must not require an expire list — player End Turn and the 30s timer still fire after a last-hit",
+    );
+  });
+});
+
+describe("shouldTickSummonLifespan", () => {
+  it("does not decrement a leftover summon after the last hostile is already dead", () => {
+    const wolf = {
+      id: "wolf",
+      isSummon: true,
+      side: "player" as const,
+      hp: 20,
+      name: "Wolf",
+      turnsRemaining: 3,
+    };
+    const hostilesRemaining = 0;
+    assert.equal(
+      shouldTickSummonLifespan({
+        deathTriggered: false,
+        hostilesRemaining,
+      }),
+      false,
+    );
+    if (
+      shouldTickSummonLifespan({
+        deathTriggered: false,
+        hostilesRemaining,
+      })
+    ) {
+      expireSummonsAtTurnStart([wolf], () => {}, "wolf");
+    }
+    assert.equal(wolf.turnsRemaining, 3);
+    assert.equal(wolf.hp, 20);
+  });
+
+  it("still fades the last hostile minion when hostiles were live going into the tick", () => {
+    const minion = {
+      id: "larva-1",
+      isSummon: true,
+      side: "enemy" as const,
+      hp: 20,
+      name: "Larva",
+      turnsRemaining: 1,
+    };
+    assert.equal(
+      shouldTickSummonLifespan({
+        deathTriggered: false,
+        hostilesRemaining: 1,
+      }),
+      true,
+    );
+    const expired = expireSummonsAtTurnStart([minion], () => {}, "larva-1");
+    assert.deepEqual(expired, ["larva-1"]);
+    assert.equal(
+      shouldAdvanceAfterEnemyTurn({
+        deathTriggered: false,
+        hostilesRemaining: activeHostilesRemaining([minion]),
+      }),
+      false,
     );
   });
 });

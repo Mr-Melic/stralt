@@ -462,10 +462,17 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
 
   // hitsAllies player-sentinel: deduct damage from the player's own HP
   if (hitTarget.id === "__player__") {
+    const hpBefore = Math.max(0, Math.floor(Number(characterStats.hp) || 0));
+    const want = Math.max(0, Math.floor(Number(finalDmg) || 0));
+    const lost = Math.min(hpBefore, want);
     setCharacterStats((prev) => ({
       ...prev,
       hp: Math.max(0, prev.hp - finalDmg),
     }));
+    // Reflect / melee already record through this callback. Skipping it
+    // here left Untouchable / under-N-damage at 0 after a self-AoE that
+    // also killed the last hostile, so handleBattleEnd persisted 500 Doka.
+    if (lost > 0) onPlayerReflectedDamage(lost);
   } else if (enemyNewHp <= 0) {
     processCombatantDeath(hitTarget.id);
   }

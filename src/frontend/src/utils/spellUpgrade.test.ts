@@ -162,6 +162,20 @@ assert.equal(spellUpgradeUiSpend(100, 0, 190), 10);
 }
 
 {
+  // Seeded one-shot keep (lock 500, canister maybe 550) then upgradeSpell
+  // spends 10. Stale getCallerDokaBalance returns 500, so nextDoka is 490.
+  // commit must keep unconfirmed so a recap heal re-fetches 540 instead of
+  // saveBattleStats-writing 490 and wiping the grant.
+  const lock = createProgressPersist({ doka: 500, xp: 0, level: 1 });
+  lock.noteUnconfirmedCredit();
+  const next = committedDokaAfterSpellUpgrade(500, 500, 10);
+  lock.commit({ doka: next });
+  assert.equal(next, 490);
+  assert.equal(lock.snapshot().doka, 490);
+  assert.equal(lock.hasUnconfirmedWalletCredit(), true);
+}
+
+{
   // Chronology: upgradeSpell #ok(2) deducts 20. getCallerDokaBalance throws.
   // The persist job used to reject, so spellLevelsRef / the lock never
   // updated and inFlight cleared. Retry called upgradeSpell again (level 3,

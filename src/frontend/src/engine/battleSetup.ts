@@ -386,6 +386,24 @@ export function shouldAdvanceAfterEnemyTurn(opts: {
 }
 
 /**
+ * Last-hostile kill → leftover End Turn / 30s timer still entered
+ * `advanceTurn` and ran `expireSummonsAtTurnStart` *before* the dispatch
+ * gate. A surviving player summon lost a lifespan tick (or faded) on a
+ * cancelled advance; victory later despawned it anyway.
+ *
+ * Same predicate as {@link shouldAdvanceAfterEnemyTurn}: tick only when
+ * the fight is still live. Call this *before* expire so a 0-hostile
+ * leftover cannot decrement; last-minion fade still runs when hostiles
+ * were 1 going into the tick.
+ */
+export function shouldTickSummonLifespan(opts: {
+  deathTriggered: boolean;
+  hostilesRemaining: number;
+}): boolean {
+  return shouldAdvanceAfterEnemyTurn(opts);
+}
+
+/**
  * Clamp the AI destination and return a store patch when the unit actually
  * leaves its origin tile. The WX apply layer used dest only for range /
  * hazard math and never called updateCombatant({ x, y }), so regular
