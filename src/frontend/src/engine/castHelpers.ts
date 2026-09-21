@@ -270,8 +270,13 @@ export interface ApplyDamageToEnemyArgs {
  * 8722-8958. The for-loop over `targetsToHit` itself stays in WorldExploration;
  * only the body moves here. Every log string, damage number, side-effect
  * ordering, and branch matches the inline path exactly.
+ *
+ * Returns `true` when this hit processed a combatant death (post-mitigation
+ * HP ≤ 0, including Shell Armor). Callers must use this flag for multi-hit
+ * skip / kill tracking — recomputing `hp - preArmorFinalDmg` falsely kills
+ * Broodmother Rook through Shell Armor.
  */
-export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
+export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): boolean {
   const { hitTarget, deps } = args;
   const {
     spell,
@@ -461,6 +466,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
   }
 
   // hitsAllies player-sentinel: deduct damage from the player's own HP
+  let died = false;
   if (hitTarget.id === "__player__") {
     setCharacterStats((prev) => ({
       ...prev,
@@ -468,6 +474,7 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     }));
   } else if (enemyNewHp <= 0) {
     processCombatantDeath(hitTarget.id);
+    died = true;
   }
 
   // Drain: heal player too (once per cast, not per target)
@@ -486,4 +493,5 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
       onPlayerHealed?.(healAmt);
     }
   }
+  return died;
 }
