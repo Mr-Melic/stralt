@@ -1,5 +1,12 @@
 import { Toaster } from "@/components/ui/sonner";
-import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
+import React, {
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import GameFlow from "./components/GameFlow";
 import LandingPage from "./components/LandingPage";
 import type { BattleRecapData } from "./components/PostBattleRecap";
@@ -8,6 +15,13 @@ import ProfileSetup from "./components/ProfileSetup";
 import StarfieldBackground from "./components/StarfieldBackground";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetCallerUserProfile, useGetUserRole } from "./hooks/useQueries";
+import {
+  clearPendingDeathPenaltiesOnIdentityChange,
+  deathPenaltyOwnerKeyFromIdentity,
+  defaultDeathPenaltyStorage,
+  getDeathPenaltyOwnerKey,
+  setDeathPenaltyOwnerKey,
+} from "./utils/deathPenalty";
 import { collectPreservedLocalStorage } from "./utils/versionGate";
 
 /** Current app version — bump this on every deploy to force re-login and show changelog. */
@@ -291,6 +305,20 @@ function App() {
   const isAdmin = userRole === "admin";
 
   const isAuthenticated = !!identity;
+
+  // Slot-only death-pending keys survived logout and taxed the next II.
+  // Seed the owner before WorldExploration's replay effect (useLayout vs useEffect).
+  useLayoutEffect(() => {
+    const next = deathPenaltyOwnerKeyFromIdentity(identity);
+    const prev = getDeathPenaltyOwnerKey();
+    if (prev && prev !== next) {
+      clearPendingDeathPenaltiesOnIdentityChange(
+        defaultDeathPenaltyStorage(),
+        prev,
+      );
+    }
+    setDeathPenaltyOwnerKey(next);
+  }, [identity]);
 
   // Version-based forced re-login + changelog
   const [showChangelog, setShowChangelog] = useState(false);
