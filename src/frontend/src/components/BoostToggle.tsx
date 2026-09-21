@@ -43,6 +43,8 @@ const BoostToggle: React.FC<BoostToggleProps> = ({
           type="button"
           data-ocid="boost_toggle.open_modal_button"
           onClick={() => setVisible(true)}
+          className="stone-touch-target"
+          aria-label="Show battle boost"
           style={{
             background: "rgba(10,6,20,0.88)",
             border: "none",
@@ -133,6 +135,7 @@ const BoostToggle: React.FC<BoostToggleProps> = ({
               type="button"
               data-ocid="boost_toggle.close_button"
               onClick={() => setVisible(false)}
+              className="stone-touch-target"
               style={{
                 background: "transparent",
                 border: "none",
@@ -207,6 +210,9 @@ const BoostToggle: React.FC<BoostToggleProps> = ({
             data-ocid="boost_toggle.tab"
             onClick={() => !inBattle && onToggle("xp")}
             disabled={inBattle}
+            className="stone-touch-target"
+            aria-pressed={boostMode === "xp"}
+            aria-label="XP Boost"
             style={{
               flex: 1,
               padding: "4px 0",
@@ -238,6 +244,9 @@ const BoostToggle: React.FC<BoostToggleProps> = ({
             data-ocid="boost_toggle.tab"
             onClick={() => !inBattle && onToggle("rewards")}
             disabled={inBattle}
+            className="stone-touch-target"
+            aria-pressed={boostMode === "rewards"}
+            aria-label="Rewards boost"
             style={{
               flex: 1,
               padding: "4px 0",
