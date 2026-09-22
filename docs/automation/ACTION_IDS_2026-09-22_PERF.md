@@ -1,6 +1,10 @@
-# ACTION_IDs — 2026-09-22 Performance Auditor (canvas / RAF / particle / memory)
+# ACTION_IDs — 2026-09-22 Performance Auditor
 
-Report-only canvas/RAF/particle/memory audit. No WorldExploration RAF schedule or gameplay-timing changes.
+Report-only. Two passes on this date:
+- **071–079:** canvas / RAF / particle / memory
+- **080–085:** React / subscriptions / ChatPanel / DraggablePanel / hooks (this pass)
+
+No WorldExploration RAF schedule or gameplay-timing changes. The React pass does not recommend changing `WorldExploration.tsx` (open #327 / #331).
 
 Do not re-file: PERF-2026-08-31-001..010, PERF-2026-09-01-011..036, PERF-2026-09-02-037..060, PERF-2026-09-21-061..070.
 
@@ -168,4 +172,119 @@ AUTONOMY:
 - REPORT_ONLY
 REGRESSION_RISK: Fragment spin look changes if rotate path is dropped.
 VALIDATION_REQUIRED: Kill an enemy; fragments still arc and fade.
+STATUS: NEW
+
+---
+
+# React / subscriptions pass (GameFlow, App, ChatPanel, BattleUIPanel, hooks)
+
+Focus: setInterval/setTimeout/addEventListener/subscribe/rAF/JSON.parse/QueryClient/polling in GameFlow, App, main, ChatPanel, BattleUIPanel, InitiativeStrip (unused mount), Leaderboard, Admin, Debug overlay, PostBattleRecap, SettingsPanel, SpellBar/Spellbook, useActor, useInternetIdentity, hooks/*.
+Skipped already-reported: tile/MP cache, turn timer island, starfield shadowBlur, Doka/QC focus, RAF watchdog, walk setState, activeEffects lift, battle log virtualize, chat cap, Sets/Maps reuse, summon kit memo, BattleUIPanel unitStats, WE island split, HP regen, mobile tile cache, hover computeDamage, effects-by-targetId, entity shadows, vignette/portals, floor shimmer, AO bake, depth-sort, dust, BloodParticles per slot, landing cube shadowBlur, doka loot glow, getContext twice, EffectsManager dual arrays, enemy labels, tick(16), leader-death particles, doka HUD island, BuffShop/Achievements/Challenge/BattleUI always mounted, bake pixels, summon shadowBlur, chat width localStorage on rAF, global QC focus; plus 061–070 and 071–079 above.
+
+---
+
+ACTION_ID: PERF-2026-09-22-080
+TITLE: ChatPanel re-focuses the text input on every poll / battle-log update while open
+CATEGORY: runtime-performance
+PRIORITY: high
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/ChatPanel.tsx (~L972–999)
+CURRENT_BEHAVIOUR: While `!isFolded`, a useEffect depends on `messages`, `battleLogEntries`, and `summonLogEntries` (full array identities). Every successful 2s `getMessages` poll that returns a new array, and every battle-log append, clears unread then `setTimeout(() => inputRef.current?.focus(), 80)`. Chat defaults to unfolded (`defaultFolded={false}`, `isFolded` starts false).
+DESIRED_BEHAVIOUR: Focus the input only on fold→unfold or channel switch to General (or first mount of the input), not on every message identity change.
+EVIDENCE: Effect body at ChatPanel.tsx L972–990; deps include `messages` / `battleLogEntries` / `summonLogEntries` at L992–998. Distinct from PERF-063 (poll interval identity) and PERF-019 (virtualize list).
+RECOMMENDED_ACTION: Gate focus on `isFolded` / `activeChannel` transitions via refs; keep unread-clear side effects.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: Players who rely on the input staying focused after sending must still get focus after Send / channel switch.
+VALIDATION_REQUIRED: Open chat; leave focus on the canvas or Items button; wait for a poll or battle action; input must not steal focus. Unfold chat / switch to General still focuses the field. Mobile: soft keyboard must not flash every 2s.
+STATUS: NEW
+
+---
+
+ACTION_ID: PERF-2026-09-22-081
+TITLE: ChatPanel builds full channel React trees even when the panel is folded
+CATEGORY: runtime-performance
+PRIORITY: high
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/ChatPanel.tsx (~L1113–2070); src/frontend/src/components/DraggablePanel.tsx (~L934–943)
+CURRENT_BEHAVIOUR: `DraggablePanel` only mounts `{!folded && children}`, but `ChatPanel` still evaluates the entire message / battle-log / summons / status / debug JSX (including `messages.map`, `battleLogEntries.map` up to 500, `filteredDebugEntries.map` up to 2000) on every ChatPanel render before passing children. Battle log and active-effects updates from GameFlow still re-render memoized ChatPanel while folded.
+DESIRED_BEHAVIOUR: Short-circuit inside ChatPanel: when `isFolded`, render DraggablePanel chrome/title only (or `children={null}`) so large `.map` trees are not allocated.
+EVIDENCE: ChatPanel return always nests the full body under `<DraggablePanel>`; fold gate is only inside DraggablePanel. Distinct from PERF-019 (virtualize when open) and PERF-064 (width drag).
+RECOMMENDED_ACTION: ` {!isFolded ? <body…/> : null} ` as DraggablePanel children; keep tab unread badges on the folded title path if needed.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: Unfold must still show the active channel scrolled to bottom; unread badges while folded must keep working (effects already use lengths, not DOM).
+VALIDATION_REQUIRED: Fold chat during a busy battle; React profiler / CPU should drop ChatPanel render cost; unfold restores the list; unread increments while folded.
+STATUS: NEW
+
+---
+
+ACTION_ID: PERF-2026-09-22-082
+TITLE: Each DraggablePanel independently fetches getUserUiLayout on mount
+CATEGORY: runtime-performance
+PRIORITY: high
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/DraggablePanel.tsx (~L449–530)
+CURRENT_BEHAVIOUR: Every mounted panel’s mount effect calls `actor.getUserUiLayout()`, JSON.parses the full blob, and may rewrite localStorage. World entry mounts at least chat-panel, battle-ui-panel, map-modifiers, settings, and stats-panel → five parallel identical canister queries plus five parse/setState cycles under Starfield/canvas startup.
+DESIRED_BEHAVIOUR: One shared in-flight / cached layout promise per userId (module or context); panels await the same result. localStorage paint-first path unchanged.
+EVIDENCE: DraggablePanel.tsx L469–471 `void (actor as UiLayoutActor).getUserUiLayout()`. Panel ids in ChatPanel, BattleUIPanel, MapModifiersPanel, SettingsPanel, WorldExploration stats-panel. Distinct from PERF-011/012 (drag listeners / rAF). Helper can live outside WorldExploration.
+RECOMMENDED_ACTION: Extract `loadUserUiLayoutOnce(actor, userId)` with promise dedupe; do not change snap math.
+AUTONOMY:
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: Race if one panel saves while others are still applying the shared fetch; LEAK-15 instance guards must still drop stale applies.
+VALIDATION_REQUIRED: Enter world once; network tab shows a single getUserUiLayout; drag/fold one panel still persists; relogin restores positions.
+STATUS: NEW
+
+---
+
+ACTION_ID: PERF-2026-09-22-083
+TITLE: Feat unlock/claim mutations still console.log in production
+CATEGORY: runtime-performance
+PRIORITY: low
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/hooks/useAdminQueries.ts (useMarkAchievementUnlocked ~L358; useClaimAchievementReward ~L382–391)
+CURRENT_BEHAVIOUR: LIST logging was DEV-gated (PERF-050), but UNLOCK / CLAIM / CREDIT still call `console.log` with response objects on every feat persist. Mid-combat unlocks hit the console on the main thread; with DevTools open this is a visible hitch.
+DESIRED_BEHAVIOUR: Same `import.meta.env.DEV` gate as LIST.
+EVIDENCE: useAdminQueries.ts L358–361, L382–391 unconditional console.log. Distinct from PERF-050 (query staleTime / LIST gate only) and from 077 (debug ring buffer).
+RECOMMENDED_ACTION: Wrap the three logs in DEV checks. Do not change invalidateQueries paths.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: None for players; debug of feat credit needs DEV build or structured debugLogger.
+VALIDATION_REQUIRED: Typecheck; unlock/claim a feat still invalidates playerAchievements / callerDokaBalance; production build has no [FEATS] console noise.
+STATUS: NEW
+
+---
+
+ACTION_ID: PERF-2026-09-22-084
+TITLE: Debug tab re-snaps click-trace state on every debug log line
+CATEGORY: runtime-performance
+PRIORITY: low
+CONFIDENCE: high
+FILES_OR_SYSTEMS: src/frontend/src/components/ChatPanel.tsx (~L736–748)
+CURRENT_BEHAVIOUR: While `activeChannel === "debug"`, an effect depends on `debugEntries` and calls `setClickTraceEntries(getClickTraceBuffer())` on every structured log line. Combat/AI logging then causes two React commits per line (debugEntries + clickTraceEntries) even when the Clicks sub-view is not visible.
+DESIRED_BEHAVIOUR: Refresh click traces only when `debugSubView === "clicks"`, or on a slower interval / explicit refresh, not on every log append.
+EVIDENCE: Comment at L736–743 admits debugEntries is a deliberate tick; effect at L745–748. Subscribe path at L709–718 already gates React mirror on the Debug channel. Distinct from 003 (subscriber gate) and 077 (prod buffer writes).
+RECOMMENDED_ACTION: Gate the effect on `debugSubView === "clicks"` (and channel). Do not change clickTrace buffer capacity.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: Clicks sub-view may lag one log tick behind new click outcomes until the next click or sub-view toggle — acceptable if toggle re-snaps.
+VALIDATION_REQUIRED: Open Debug → Log during battle; React commit count should be ~1 per log. Switch to Clicks; traces still appear after a map click.
+STATUS: NEW
+
+---
+
+ACTION_ID: PERF-2026-09-22-085
+TITLE: Leaderboard query keeps default window-focus refetch while the modal is open
+CATEGORY: runtime-performance
+PRIORITY: low
+CONFIDENCE: medium
+FILES_OR_SYSTEMS: src/frontend/src/hooks/useLeaderboardQueries.ts (~L15–40); src/frontend/src/components/GameFlow.tsx (LeaderboardModal ~L482)
+CURRENT_BEHAVIOUR: `useGetLeaderboard` sets `staleTime: 30_000` but not `refetchOnWindowFocus: false`. The modal mounts the hook only while open; alt-tabbing with Board open re-hits `getLeaderboard`, remaps bigint fields, and re-renders the 50-row table under the live world tree.
+DESIRED_BEHAVIOUR: `refetchOnWindowFocus: false` (mutations / explicit reopen can still refresh). Aligns with catalog gating (PERF-061) without changing the global QueryClient (PERF-070).
+EVIDENCE: useLeaderboardQueries.ts L38–39; GameFlow LeaderboardModal calls useGetLeaderboard only when `showLeaderboard`. Distinct from PERF-009/070 (Doka / global default).
+RECOMMENDED_ACTION: Add refetchOnWindowFocus false on this query only.
+AUTONOMY:
+- SAFE_TO_AUTO_IMPLEMENT
+REGRESSION_RISK: Rankings from another tab lag until close/reopen or staleTime expiry on remount.
+VALIDATION_REQUIRED: Open Board; alt-tab after 30s; no extra getLeaderboard; reopen still loads.
 STATUS: NEW
