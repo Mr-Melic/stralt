@@ -3,7 +3,11 @@ import { describe, it } from "node:test";
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import type { EnemyFamily } from "../types/gameTypes.ts";
 import { generateSeededWorld } from "./mapGen.simulate.ts";
-import { isEnemyWanderFloor } from "./mapGen.ts";
+import {
+  evaluateSolvability,
+  finalizePlayableLayout,
+  isEnemyWanderFloor,
+} from "./mapGen.ts";
 import {
   FAMILY_STAT_MULTS,
   FAMILY_TYPES,
@@ -137,6 +141,10 @@ describe("distance metrics stay distinct", () => {
     assert.equal(isInsideMapSpawnKeepClear(12, 8), false);
     // Diagonal Chebyshev 3 is blocked; Manhattan 6 would look "far".
     assert.equal(isInsideMapSpawnKeepClear(11, 11), true);
+    // Live spawn (void at center, spiral to the border) must keep-clear
+    // around the actual cell, not the hardcoded (8,8) diamond.
+    assert.equal(isInsideMapSpawnKeepClear(12, 8, { x: 12, y: 8 }), true);
+    assert.equal(isInsideMapSpawnKeepClear(8, 8, { x: 12, y: 8 }), false);
   });
 
   it("enemy spacing is Chebyshev >= 4 (not the battle-start 2/3)", () => {
@@ -204,23 +212,64 @@ describe("collectValidEnemySpawnCells", () => {
     );
   });
 
-  it("falls back to keep-clear cells when the fight graph has no spawn tile", () => {
+  it("falls back to keep-clear fight-graph cells, not the far island", () => {
     // Near side is only the keep-clear diamond; every keep-clear-legal
-    // floor sits past the choke. Empty-graph filter would skip generateEnemies.
+    // floor sits past the choke. Falling back to allValid used to drop a
+    // rat on (0,8). Finalize cannot punch when the near cell is boxed by
+    // voids — isProgressionLocked never clears.
     const tiles = Array.from({ length: WORLD_GRID_SIZE }, () =>
       Array.from({ length: WORLD_GRID_SIZE }, () => "wall"),
     );
     for (let x = 0; x <= 3; x++) tiles[8][x] = "floor";
     tiles[8][3] = "portal";
     tiles[8][8] = "floor";
+    const voids = new Set<string>();
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      voids.add(`${8 + dx},${8 + dy}`);
+    }
     const cells = collectValidEnemySpawnCells(
       tiles,
       [{ x: 3, y: 8 }],
-      new Set(),
+      voids,
       { x: 8, y: 8 },
     );
     const keys = new Set(cells.map((c) => `${c.x},${c.y}`));
-    assert.equal(keys.has("0,8"), true, "fallback must still place someone");
+    assert.equal(
+      keys.has("0,8"),
+      false,
+      "far-island floor must not be the keep-clear fallback",
+    );
+    assert.equal(
+      keys.has("8,8"),
+      true,
+      "fallback must still place someone on the fight graph",
+    );
+
+    const placed = finalizePlayableLayout({
+      tiles,
+      voidTiles: voids,
+      playerSpawn: { x: 8, y: 8 },
+      portals: [{ x: 3, y: 8 }],
+      spawns: cells.map((c) => ({ ...c })),
+      w: WORLD_GRID_SIZE,
+      h: WORLD_GRID_SIZE,
+    });
+    const after = evaluateSolvability(
+      placed.tiles,
+      voids,
+      placed.playerSpawn,
+      placed.portals,
+      placed.spawns,
+      WORLD_GRID_SIZE,
+      WORLD_GRID_SIZE,
+    );
+    assert.equal(after.isolatedEnemies, 0, after.failures.join(","));
+    assert.equal(after.clearingUnlocks, true, after.failures.join(","));
   });
 
   it("seeded chessboard maps stay on the fight graph when a near cell exists", () => {
@@ -252,9 +301,7 @@ describe("collectValidEnemySpawnCells", () => {
             world.tiles.length,
           ),
       );
-      if (isolated.length === 0) continue;
-      const nearExists = cells.length > isolated.length;
-      if (nearExists) {
+      if (isolated.length > 0) {
         failures.push(
           `seed ${seed}: far-island spawns ${isolated.map((c) => `${c.x},${c.y}`).join("/")}`,
         );

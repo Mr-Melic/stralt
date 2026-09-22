@@ -207,6 +207,7 @@ import {
 } from "../engine/rejectCopy";
 import { shouldAnnounceLevelUp } from "../engine/rewardFeel";
 import {
+  MAP_SPAWN_CELL,
   SPAWN_MIN_CHEBYSHEV,
   applyFamilyVariantsToRoster,
   collectValidEnemySpawnCells,
@@ -5714,6 +5715,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       portals: { x: number; y: number }[],
       dungeonDepth = 0,
       voidTilesParam?: Set<string>,
+      playerSpawn: { x: number; y: number } = MAP_SPAWN_CELL,
     ): Enemy[] => {
       // ── EXP8: DUNGEON DIFFICULTY SCALING ───────────────────────────────
       // depth 0 = normal world; depth 1-5 = escalating dungeon difficulty
@@ -5732,12 +5734,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // FIX 3 — Tier-based enemy level selection
       // Each enemy independently picks its level via the tier probability function.
       // No more flat LEVEL_ZONES lookup.
-      // Collect all valid floor positions spread across entire map
-      // (portal Manhattan keep-clear, spawn Chebyshev keep-clear, voids).
+      // Collect all valid floor positions on the fight graph
+      // (portal Manhattan keep-clear, spawn Chebyshev keep-clear, voids,
+      // live spawn origin so a legalized spawn is not stacked).
       const allValid = collectValidEnemySpawnCells(
         tiles,
         portals,
         voidTilesParam ?? new Set<string>(),
+        playerSpawn,
       );
       // Shuffle valid positions for random spread
       const shuffled = [...allValid].sort(() => Math.random() - 0.5);
@@ -6248,7 +6252,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 newMap.tiles,
                 newMap.portals,
                 restExitSpawnDepth(restExitType),
-                newMap.voidTiles,
+                toVoidSet(newMap.voidTiles),
+                spawnPosition,
               );
           // Main portal path punches CA pockets so a walled-off rat cannot
           // seal the progression portal. Rest-exit used to skip that and
@@ -6579,7 +6584,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               newMap.tiles,
               newMap.portals,
               effectiveDepth,
-              newMap.voidTiles,
+              toVoidSet(newMap.voidTiles),
+              spawnPosition,
             );
       }
       // Section 6: ensure all spawns + player + portal are mutually reachable.
@@ -13737,7 +13743,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       map.tiles,
       map.portals,
       0,
-      map.voidTiles,
+      toVoidSet(map.voidTiles),
+      spawnPosition,
     );
     // Section 6: ensure all spawns + player + portal are mutually reachable
     const applied = applyFinalizedLayout(

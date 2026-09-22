@@ -44,6 +44,7 @@ import {
   shouldArmDungeonChainOnRestExit,
   snapshotDungeonChain,
 } from "./portalRules.ts";
+import { collectValidEnemySpawnCells } from "./spawnPolicy.ts";
 import { spawnSummonUnit } from "./summonSpawn.ts";
 
 export type SimArchetype = (typeof MAP_ARCHETYPES)[number]["type"];
@@ -341,20 +342,15 @@ function placeEnemies(
   portals: { x: number; y: number }[],
   voidTiles: Set<string>,
   rng: Rng,
-  size: number,
   count: number,
+  playerSpawn: { x: number; y: number },
 ): { x: number; y: number }[] {
-  const allValid: { x: number; y: number }[] = [];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (tiles[y][x] !== "floor") continue;
-      if (voidTiles.has(`${x},${y}`)) continue;
-      if (Math.abs(x - 8) <= 3 && Math.abs(y - 8) <= 3) continue;
-      if (portals.some((p) => Math.abs(p.x - x) + Math.abs(p.y - y) <= 2))
-        continue;
-      allValid.push({ x, y });
-    }
-  }
+  const allValid = collectValidEnemySpawnCells(
+    tiles,
+    portals,
+    voidTiles,
+    playerSpawn,
+  );
   const shuffled = [...allValid];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -465,7 +461,14 @@ export function generateSeededWorld(opts: GenerateSeededWorldOpts): SimWorld {
 
   const playerSpawn = pickSpawn(tiles, voidTiles, size);
   const enemyCount = opts.enemyCount ?? 1 + Math.floor(rng() * 8);
-  let spawns = placeEnemies(tiles, portals, voidTiles, rng, size, enemyCount);
+  let spawns = placeEnemies(
+    tiles,
+    portals,
+    voidTiles,
+    rng,
+    enemyCount,
+    playerSpawn,
+  );
 
   if (opts.finalize !== false) {
     const finalized = finalizePlayableLayout({
@@ -663,7 +666,10 @@ export function simulateClearUnlocksPortal(
 }
 
 export function generateSeededSanctuary(seed: number): SimWorld {
-  const world = generateSeededWorld({ seed, runMode: "none" });
+  // Production sanctuary (applySanctuaryLayout) never calls generateEnemies
+  // and resetCombatantStore clears the roster. Keeping a leftover world
+  // roster made a white gateway on spawn look like an isolated-hostile lock.
+  const world = generateSeededWorld({ seed, runMode: "none", enemyCount: 0 });
   const map = {
     tiles: world.tiles,
     portals: world.portals,
@@ -685,6 +691,7 @@ export function generateSeededSanctuary(seed: number): SimWorld {
     tiles: map.tiles,
     portals: map.portals,
     playerSpawn: applied.spawn,
+    spawns: [],
   };
 }
 
