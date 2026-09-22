@@ -10,6 +10,7 @@ import {
   SUMMON_MP_PER_LEVELS,
   SUMMON_UPGRADE_COST_MULTIPLIER,
 } from "../data/gameConstants";
+import { spellbookCatalogRange } from "../engine/spellbookAdvertisedRange";
 import {
   type TileType,
   computeTargetableTiles,
@@ -998,7 +999,7 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
                             padding: "1px 4px",
                           }}
                         >
-                          🗡 {currentDmg} dmg · 📡 {Number(spell.range)}
+                          🗡 {currentDmg} dmg · 📡 {spellbookCatalogRange(spell)}
                         </span>
                         {(spell.hitTiles ?? []).length > 0 && (
                           <span
