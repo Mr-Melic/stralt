@@ -15229,6 +15229,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           meleeApCost: 1,
           getEnemyById: (id: string) =>
             enemiesRef.current.find((e: any) => e.id === id),
+          playerTarget: {
+            x: playerPositionRef.current.x,
+            y: playerPositionRef.current.y,
+          },
           getAoEVictims: (primaryId: string, blastR: number) => {
             const primary = enemiesRef.current.find(
               (e: any) => e.id === primaryId,

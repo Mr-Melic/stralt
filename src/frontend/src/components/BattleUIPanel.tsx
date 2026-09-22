@@ -2,6 +2,7 @@ import { BookOpen, Skull, Swords } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { spellHighlightRangeBase } from "../engine/targeting";
 import type { SpellConfig } from "../types/gameTypes";
 import DraggablePanel from "./DraggablePanel";
 import type { CombatantEntry } from "./InitiativeStrip";
@@ -632,8 +633,8 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                         isHeal
                           ? `Heals: ${spell.healAmount ?? 0} HP`
                           : `Damage: ${Number(spell.damage)}`
-                      } | ${Number(spell.apCost)} AP | Range: ${Number(
-                        spell.range,
+                      } | ${Number(spell.apCost)} AP | Range: ${spellHighlightRangeBase(
+                        spell,
                       )}${isOnCooldown ? ` | CD: ${cdTurns}t` : ""}`
                     : `Empty slot ${slotIndex + 1}`;
 
