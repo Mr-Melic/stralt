@@ -6,6 +6,7 @@ import {
   type ChallengePanelProgress,
   DEFAULT_CHALLENGES,
   applyChallengeDirectHit,
+  applyChallengeDirectHitOnCast,
   castFollowUpShouldDebitAp,
   castResultAppliesCooldown,
   castResultSpendsAp,
@@ -762,6 +763,100 @@ describe("recordChallengeDirectHit", () => {
     );
   });
 
+  it("fails Striker when AoE splash lands beyond Chebyshev 2 of the caster", () => {
+    const caster = { x: 8, y: 8 };
+    // Frost Nova / Lifesteal Nova: adjacent aim is legal, but splash can
+    // hit an occupant Chebyshev 3 from the player. One spent cast.
+    let state = { stillDirect: true, attempts: 0 };
+    state = applyChallengeDirectHitOnCast(state, caster, [
+      { x: 9, y: 8 },
+      { x: 9, y: 8 },
+      { x: 11, y: 8 },
+    ]);
+    assert.equal(state.stillDirect, false);
+    assert.equal(state.attempts, 1);
+
+    const striker = byId("legendary_3");
+    const snap = progress({
+      directHit: state.stillDirect,
+      directHitAttempts: state.attempts,
+    });
+    assert.equal(isChallengeCompleted(striker, snap), false);
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, snap),
+      ),
+      [],
+    );
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(
+          true,
+          striker,
+          isChallengeCompleted(striker, snap),
+        ),
+      ),
+      0,
+    );
+  });
+
+  it("fails Striker when a Chain Lightning bounce lands beyond Chebyshev 2", () => {
+    const caster = { x: 8, y: 8 };
+    let state = { stillDirect: true, attempts: 0 };
+    state = applyChallengeDirectHitOnCast(state, caster, [
+      { x: 10, y: 8 },
+      { x: 10, y: 8 },
+      { x: 12, y: 8 },
+    ]);
+    assert.equal(state.stillDirect, false);
+    assert.equal(state.attempts, 1);
+
+    const striker = byId("legendary_3");
+    const snap = progress({
+      directHit: state.stillDirect,
+      directHitAttempts: state.attempts,
+    });
+    assert.equal(isChallengeCompleted(striker, snap), false);
+    assert.deepEqual(
+      liveBattleChallengePersistEntries(
+        true,
+        striker,
+        isChallengeCompleted(striker, snap),
+      ),
+      [],
+    );
+  });
+
+  it("still completes when aim, splash, and bounce all stay within 2 tiles", () => {
+    const caster = { x: 8, y: 8 };
+    let state = { stillDirect: true, attempts: 0 };
+    state = applyChallengeDirectHitOnCast(state, caster, [
+      { x: 9, y: 8 },
+      { x: 10, y: 8 },
+      { x: 10, y: 9 },
+    ]);
+    assert.equal(state.stillDirect, true);
+    assert.equal(state.attempts, 1);
+    const striker = byId("legendary_3");
+    const snap = progress({
+      directHit: state.stillDirect,
+      directHitAttempts: state.attempts,
+    });
+    assert.equal(isChallengeCompleted(striker, snap), true);
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(
+          true,
+          striker,
+          isChallengeCompleted(striker, snap),
+        ),
+      ),
+      800,
+    );
+  });
+
   it("does not treat the opening directHit=true flag as a spent attempt", () => {
     assert.equal(
       recordChallengeDirectHit(true, { x: 1, y: 1 }, { x: 1, y: 1 }),
@@ -774,6 +869,34 @@ describe("recordChallengeDirectHit", () => {
     assert.equal(
       isStrikerChallengeComplete({ directHit: true, directHitAttempts: 1 }),
       true,
+    );
+  });
+
+  it("fails Striker when an AI summon kit-casts beyond Chebyshev 2", () => {
+    // Archer AI Poison Arrow (range 4) never entered executeCastAttempt.
+    // Player only placed the summon adjacent; victory still persisted 800 XP.
+    // Inserted after the shared #327 splash/bounce cases so oldest-first
+    // merge does not collide on the same hunk.
+    const summon = { x: 8, y: 8 };
+    let state = { stillDirect: true, attempts: 0 };
+    state = applyChallengeDirectHitOnCast(state, summon, [{ x: 12, y: 8 }]);
+    assert.equal(state.stillDirect, false);
+    assert.equal(state.attempts, 1);
+    const striker = byId("legendary_3");
+    const snap = progress({
+      directHit: state.stillDirect,
+      directHitAttempts: state.attempts,
+    });
+    assert.equal(isChallengeCompleted(striker, snap), false);
+    assert.equal(
+      challengeXpFromEntries(
+        liveBattleChallengePersistEntries(
+          true,
+          striker,
+          isChallengeCompleted(striker, snap),
+        ),
+      ),
+      0,
     );
   });
 });

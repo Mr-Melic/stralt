@@ -35,11 +35,19 @@ export function resolveSummonExecuteTarget(args: {
   targetId: string;
   found?: SummonExecuteTargetLookup | null;
   playerTarget?: SummonExecuteCell | null;
+  getTargetPos?: (id: string) => SummonExecuteCell | undefined;
 }): SummonExecuteCell | null {
   if (args.found) {
     return { x: args.found.x, y: args.found.y };
   }
-  if (args.targetId === "player" && args.playerTarget) {
+  const fromLookup = args.getTargetPos?.(args.targetId);
+  if (fromLookup) {
+    return { x: fromLookup.x, y: fromLookup.y };
+  }
+  if (
+    (args.targetId === "player" || args.targetId === "__player__") &&
+    args.playerTarget
+  ) {
     return { x: args.playerTarget.x, y: args.playerTarget.y };
   }
   return null;

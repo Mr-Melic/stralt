@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  applyChallengeDirectHitOnCast,
+  isChallengeCompleted,
+  isStrikerChallengeComplete,
+} from "../utils/challengeCompletion.ts";
+import {
   type OccupancyContext,
   occupantsSealProgression,
 } from "./occupancy.ts";
@@ -257,5 +262,206 @@ describe("executeSummonAction Frozen/Slime MP debit", () => {
       "need 4 MP for a 2-tile Frozen stride",
     );
     assert.equal(result.currentMp, 3);
+  });
+});
+
+describe("executeSummonAction Striker spent-cast notice", () => {
+  const emptyOccupancy: OccupancyContext = {
+    tiles: [
+      [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+      ],
+      [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+      ],
+    ],
+    barriers: new Set(),
+    voidTiles: new Set(),
+    portals: new Set(),
+    isOccupied: () => false,
+  };
+
+  it("reports a range-4 Poison Arrow so legendary_3 cannot persist 800 XP", () => {
+    const notices: Array<{
+      caster: { x: number; y: number };
+      tiles: Array<{ x: number; y: number }>;
+    }> = [];
+    executeSummonAction(
+      {
+        archetype: "archer",
+        kind: "cast",
+        destination: { x: 8, y: 8 },
+        spell: {
+          id: "starter-poison",
+          name: "Poison Arrow",
+          apCost: 2,
+          damage: 8,
+          range: 4,
+        } as any,
+        targetId: "rat",
+        intent: "kite",
+        intentColor: "#a78bfa",
+        retreating: false,
+      },
+      {
+        id: "archer-1",
+        x: 8,
+        y: 8,
+        hp: 10,
+        maxHp: 10,
+        currentAp: 2,
+        currentMp: 3,
+        maxAp: 2,
+        maxMp: 3,
+        level: 1,
+        pieceType: "archer",
+        summonAI: "archer",
+      } as any,
+      dummyCtx(),
+      {
+        calcScaledDamage: (n) => n,
+        occupancyCtx: emptyOccupancy,
+        worldGridSize: 16,
+        mpCostPerTile: 1,
+        meleeApCost: 1,
+        getEnemyById: (id) =>
+          id === "rat"
+            ? ({ id: "rat", x: 12, y: 8, hp: 20, maxHp: 20 } as any)
+            : undefined,
+        getAoEVictims: () => [],
+        onSpentCast: (notice) => {
+          notices.push(notice);
+        },
+      },
+    );
+    assert.equal(notices.length, 1);
+    assert.deepEqual(notices[0].caster, { x: 8, y: 8 });
+    assert.deepEqual(notices[0].tiles, [{ x: 12, y: 8 }]);
+    const state = applyChallengeDirectHitOnCast(
+      { stillDirect: true, attempts: 0 },
+      notices[0].caster,
+      notices[0].tiles,
+    );
+    assert.equal(state.stillDirect, false);
+    assert.equal(
+      isStrikerChallengeComplete({
+        directHit: state.stillDirect,
+        directHitAttempts: state.attempts,
+      }),
+      false,
+    );
+    assert.equal(
+      isChallengeCompleted(
+        {
+          id: "legendary_3",
+          tier: "legendary",
+          description: "Win using only spells cast on targets within 2 tiles",
+          condition: "direct_hit",
+          rewards: { doka: 400, xp: 800, badge: "Striker" },
+        },
+        {
+          turnCount: 1,
+          totalDamage: 0,
+          healUsed: false,
+          directHit: state.stillDirect,
+          maxApUsedInTurn: 4,
+          directHitAttempts: state.attempts,
+        },
+      ),
+      false,
+    );
+  });
+
+  it("still completes Striker when the AI kit-cast stays within 2 tiles", () => {
+    const notices: Array<{
+      caster: { x: number; y: number };
+      tiles: Array<{ x: number; y: number }>;
+    }> = [];
+    executeSummonAction(
+      {
+        archetype: "archer",
+        kind: "cast",
+        destination: { x: 8, y: 8 },
+        spell: {
+          id: "starter-poison",
+          name: "Poison Arrow",
+          apCost: 2,
+          damage: 8,
+          range: 4,
+        } as any,
+        targetId: "rat",
+        intent: "kite",
+        intentColor: "#a78bfa",
+        retreating: false,
+      },
+      {
+        id: "archer-1",
+        x: 8,
+        y: 8,
+        hp: 10,
+        maxHp: 10,
+        currentAp: 2,
+        currentMp: 3,
+        maxAp: 2,
+        maxMp: 3,
+        level: 1,
+        pieceType: "archer",
+        summonAI: "archer",
+      } as any,
+      dummyCtx(),
+      {
+        calcScaledDamage: (n) => n,
+        occupancyCtx: emptyOccupancy,
+        worldGridSize: 16,
+        mpCostPerTile: 1,
+        meleeApCost: 1,
+        getEnemyById: (id) =>
+          id === "rat"
+            ? ({ id: "rat", x: 10, y: 8, hp: 20, maxHp: 20 } as any)
+            : undefined,
+        getAoEVictims: () => [],
+        onSpentCast: (n) => {
+          notices.push(n);
+        },
+      },
+    );
+    assert.equal(notices.length, 1);
+    const state = applyChallengeDirectHitOnCast(
+      { stillDirect: true, attempts: 0 },
+      notices[0].caster,
+      notices[0].tiles,
+    );
+    assert.equal(state.stillDirect, true);
+    assert.equal(
+      isStrikerChallengeComplete({
+        directHit: true,
+        directHitAttempts: state.attempts,
+      }),
+      true,
+    );
   });
 });

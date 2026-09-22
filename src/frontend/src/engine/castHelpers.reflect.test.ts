@@ -311,6 +311,28 @@ describe("applyDamageToEnemy store HP commit", () => {
     });
     assert.equal(committedId, null);
   });
+
+  it("reports primary and bounce tiles so Striker can fail a far hop", () => {
+    const primary = enemy({ id: "near", x: 10, y: 8 });
+    const hop = enemy({ id: "far", x: 12, y: 8 });
+    const reported: Array<{ x: number; y: number }> = [];
+    applyDamageToEnemy({
+      hitTarget: primary,
+      isFirstTarget: true,
+      deps: stubDeps({
+        spell: { id: "starter-blast", name: "Chain Lightning", bounces: 2 },
+        preCritDmgBM: 20,
+        enemies: [primary, hop],
+        onDirectHitVictim: (pos) => {
+          reported.push(pos);
+        },
+      }),
+    });
+    assert.deepEqual(reported, [
+      { x: 10, y: 8 },
+      { x: 12, y: 8 },
+    ]);
+  });
 });
 
 describe("applyDamageToEnemy drain → challenge healUsed", () => {

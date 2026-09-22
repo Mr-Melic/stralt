@@ -105,6 +105,15 @@ describe("summon execute range vs decide (enemyCastRangeOk)", () => {
       }),
       { x: 8, y: 8 },
     );
+    assert.deepEqual(
+      resolveSummonExecuteTarget({
+        targetId: "player",
+        found: undefined,
+        getTargetPos: (id) =>
+          id === "player" ? { x: 9, y: 8 } : undefined,
+      }),
+      { x: 9, y: 8 },
+    );
     assert.equal(
       resolveSummonExecuteTarget({
         targetId: "player",

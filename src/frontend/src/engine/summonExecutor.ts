@@ -23,6 +23,7 @@
  */
 
 import type { Enemy, SpellConfig } from "../types/gameTypes";
+import { collectChallengeDirectHitTiles } from "../utils/challengeCompletion.ts";
 import { logDebugError } from "../utils/debugLogger.ts";
 import type { EnemyAction } from "./enemyAI";
 import {
@@ -83,6 +84,21 @@ export interface SummonExecutorHelpers {
    * side. Returns the list of secondary victim ids to apply blast damage to.
    */
   getAoEVictims: (primaryTargetId: string, blastRadius: number) => Enemy[];
+  /**
+   * Resolve a target id that is not in enemiesRef (the player tile).
+   * Kit heals / ally casts used to skip Striker because getEnemyById
+   * returned undefined for `"player"`.
+   */
+  getTargetPos?: (id: string) => { x: number; y: number } | undefined;
+  /**
+   * legendary_3 Striker: AI-controlled kit casts never went through
+   * executeCastAttempt, so an Archer Poison Arrow at range 4 still
+   * persisted 400 Doka / 800 XP after the player only placed the summon.
+   */
+  onSpentCast?: (notice: {
+    caster: { x: number; y: number };
+    tiles: Array<{ x: number; y: number }>;
+  }) => void;
   /**
    * Optional re-evaluator used by the `kind === "move"` branch to decide a
    * follow-up cast/melee AFTER the move, mirroring the enemy move-then-cast
@@ -176,6 +192,7 @@ export function executeSummonAction(
       targetId,
       found: target,
       playerTarget: helpers.playerTarget,
+      getTargetPos: helpers.getTargetPos,
     });
     if (
       !summonExecuteCastProceeds({
@@ -191,22 +208,37 @@ export function executeSummonAction(
     }
     const damage = Number(spell.damage ?? 0);
     const healAmount = Number(spell.healAmount ?? 0);
+    const noticeSpentCast = (
+      extraTiles: Array<{ x?: number; y?: number }> = [],
+    ) => {
+      helpers.onSpentCast?.({
+        caster: { x, y },
+        tiles: collectChallengeDirectHitTiles([
+          target
+            ? { x: target.x, y: target.y }
+            : (helpers.getTargetPos?.(targetId) ?? helpers.playerTarget),
+          ...extraTiles,
+        ]),
+      });
+    };
     const casterSide = summon.side === "player" ? "player" : "enemy";
     const hitsResolvedDamageTarget =
       damage > 0 &&
       (Boolean(target) ||
-        (targetId === "player" && Boolean(helpers.playerTarget)));
+        ((targetId === "player" || targetId === "__player__") &&
+          Boolean(targetCell)));
     if (hitsResolvedDamageTarget) {
       const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
       summonCtx.dealDamage(targetId, baseDmg);
       const blastR = Number(spell.areaRadius ?? 0);
-      if (blastR > 0) {
-        for (const victim of helpers.getAoEVictims(targetId, blastR)) {
-          if (!summonAoEVictimAllowed(victim, casterSide, targetId)) continue;
-          summonCtx.dealDamage(victim.id, baseDmg);
-        }
+      const aoeVictims =
+        blastR > 0 ? helpers.getAoEVictims(targetId, blastR) : [];
+      for (const victim of aoeVictims) {
+        if (!summonAoEVictimAllowed(victim, casterSide, targetId)) continue;
+        summonCtx.dealDamage(victim.id, baseDmg);
       }
       currentAp -= apCost;
+      noticeSpentCast(aoeVictims);
       logLines.push(
         `[cast] ${summonLabel} ${spell.name} → ${targetId} for ${baseDmg}`,
       );
@@ -219,6 +251,7 @@ export function executeSummonAction(
     if (healAmount > 0) {
       summonCtx.heal(targetId, healAmount);
       currentAp -= apCost;
+      noticeSpentCast();
       logLines.push(
         `[cast] ${summonLabel} ${spell.name} → ${targetId} healed ${healAmount}`,
       );
@@ -238,6 +271,7 @@ export function executeSummonAction(
       description: spell.description ?? "",
     });
     currentAp -= apCost;
+    noticeSpentCast();
     logLines.push(
       `[cast] ${summonLabel} ${spell.name} → ${targetId} applied effect`,
     );
@@ -259,6 +293,7 @@ export function executeSummonAction(
       targetId,
       found: meleeTarget,
       playerTarget: helpers.playerTarget,
+      getTargetPos: helpers.getTargetPos,
     });
     if (
       !summonExecuteMeleeProceeds({
