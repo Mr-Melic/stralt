@@ -134,6 +134,7 @@ import {
   shouldApplyLeaderDeathBoost,
 } from "../engine/deathPipeline";
 import { type DotTickResult, tickDotStacks } from "../engine/dotStacks";
+import { livePlayerHpForDrainCap } from "../engine/drainHeal";
 import { EffectsManager } from "../engine/effects";
 import {
   type AICell,
@@ -9467,7 +9468,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             preCritDmgBM,
             isDrainSpell,
             maxHp,
-            characterStats: { hp: characterStats.hp },
+            characterStats: {
+              hp: livePlayerHpForDrainCap(characterStatsRef.current.hp),
+            },
             targetsToHit: castRuntimeRef.current.targetsToHit as any[],
             activeEffectsRef,
             turnOrderRef,
