@@ -18,10 +18,12 @@ const DEFAULT_TIER_CONFIG: TierSpawnConfig = {
   threeOrMorePercent: 5,
 };
 
-let _cachedBackendTierConfig: TierSpawnConfig | null = null;
-
+/**
+ * Admin Tiers persist in `pbv_tier_spawn_config` (version-gate keep-list).
+ * There is no in-module backend cache: `_cachedBackendTierConfig` was
+ * never assigned, so the early return could not skip localStorage.
+ */
 export function loadTierConfig(): TierSpawnConfig {
-  if (_cachedBackendTierConfig) return _cachedBackendTierConfig;
   try {
     const raw = localStorage.getItem("pbv_tier_spawn_config");
     if (raw) return { ...DEFAULT_TIER_CONFIG, ...JSON.parse(raw) };
