@@ -37,6 +37,8 @@ export function useGetLeaderboard() {
     },
     enabled: !!actor && !actorFetching,
     staleTime: 30_000,
+    // PERF-2026-09-22-085: Board modal remaps bigint rows; skip tab-focus refetch.
+    refetchOnWindowFocus: false,
   });
 }
 

@@ -1,10 +1,12 @@
 # ACTION_IDs — 2026-09-22 Performance Auditor
 
-Report-only. Two passes on this date:
-- **071–079:** canvas / RAF / particle / memory
-- **080–085:** React / subscriptions / ChatPanel / DraggablePanel / hooks (this pass)
+Implemented this increment: PERF-2026-09-22-073, 074, 080, 083, 084, 085.
+Reported only: 071, 072, 075–079, 081, 082.
+Did not touch `WorldExploration.tsx` (open #327 / #331 stack) or the world RAF loop.
 
-No WorldExploration RAF schedule or gameplay-timing changes. The React pass does not recommend changing `WorldExploration.tsx` (open #327 / #331).
+Two inspection passes on this date:
+- **071–079:** canvas / RAF / particle / memory
+- **080–085:** React / subscriptions / ChatPanel / DraggablePanel / hooks
 
 Do not re-file: PERF-2026-08-31-001..010, PERF-2026-09-01-011..036, PERF-2026-09-02-037..060, PERF-2026-09-21-061..070.
 
@@ -64,7 +66,7 @@ AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: Revoking before the browser starts the download can break the save on slow devices — revoke on next tick.
 VALIDATION_REQUIRED: Export .txt twice; download succeeds; no growing blob: URLs in DevTools.
-STATUS: NEW
+STATUS: IMPLEMENTED
 
 ---
 
@@ -82,7 +84,7 @@ AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: Resume must restore parent size before spawn or drips clip wrong for one frame.
 VALIDATION_REQUIRED: 3-slot select; background tab; memory/GPU buffer drops; return; drips resume.
-STATUS: NEW
+STATUS: IMPLEMENTED
 
 ---
 
@@ -197,7 +199,7 @@ AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: Players who rely on the input staying focused after sending must still get focus after Send / channel switch.
 VALIDATION_REQUIRED: Open chat; leave focus on the canvas or Items button; wait for a poll or battle action; input must not steal focus. Unfold chat / switch to General still focuses the field. Mobile: soft keyboard must not flash every 2s.
-STATUS: NEW
+STATUS: IMPLEMENTED
 
 ---
 
@@ -251,7 +253,7 @@ AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: None for players; debug of feat credit needs DEV build or structured debugLogger.
 VALIDATION_REQUIRED: Typecheck; unlock/claim a feat still invalidates playerAchievements / callerDokaBalance; production build has no [FEATS] console noise.
-STATUS: NEW
+STATUS: IMPLEMENTED
 
 ---
 
@@ -269,7 +271,7 @@ AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: Clicks sub-view may lag one log tick behind new click outcomes until the next click or sub-view toggle — acceptable if toggle re-snaps.
 VALIDATION_REQUIRED: Open Debug → Log during battle; React commit count should be ~1 per log. Switch to Clicks; traces still appear after a map click.
-STATUS: NEW
+STATUS: IMPLEMENTED
 
 ---
 
@@ -287,4 +289,4 @@ AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
 REGRESSION_RISK: Rankings from another tab lag until close/reopen or staleTime expiry on remount.
 VALIDATION_REQUIRED: Open Board; alt-tab after 30s; no extra getLeaderboard; reopen still loads.
-STATUS: NEW
+STATUS: IMPLEMENTED

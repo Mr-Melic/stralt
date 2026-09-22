@@ -355,10 +355,13 @@ export function useMarkAchievementUnlocked() {
       const res = await (actor as ActorAny).markAchievementUnlocked(
         achievementId,
       );
-      console.log("[FEATS] UNLOCK", {
-        achievementId,
-        response: res,
-      });
+      // PERF-2026-09-22-083: LIST is already DEV-gated (PERF-050); keep UNLOCK off prod.
+      if (import.meta.env.DEV) {
+        console.log("[FEATS] UNLOCK", {
+          achievementId,
+          response: res,
+        });
+      }
       return res;
     },
     onSuccess: () => {
@@ -379,16 +382,20 @@ export function useClaimAchievementReward() {
     onSuccess: (result) => {
       if (result && typeof result === "object" && "__kind__" in result) {
         if (result.__kind__ === "ok") {
-          console.log("[FEATS] CLAIM", { ok: result.ok });
-          const oldBalance = queryClient.getQueryData(["callerDokaBalance"]);
-          console.log("[FEATS] CREDIT", {
-            old: oldBalance,
-            new: Number(result.ok),
-          });
+          if (import.meta.env.DEV) {
+            console.log("[FEATS] CLAIM", { ok: result.ok });
+            const oldBalance = queryClient.getQueryData(["callerDokaBalance"]);
+            console.log("[FEATS] CREDIT", {
+              old: oldBalance,
+              new: Number(result.ok),
+            });
+          }
           queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
           queryClient.invalidateQueries({ queryKey: ["playerAchievements"] });
         } else if (result.__kind__ === "err") {
-          console.log("[FEATS] CLAIM", { err: result.err });
+          if (import.meta.env.DEV) {
+            console.log("[FEATS] CLAIM", { err: result.err });
+          }
         }
       } else {
         queryClient.invalidateQueries({ queryKey: ["callerDokaBalance"] });
