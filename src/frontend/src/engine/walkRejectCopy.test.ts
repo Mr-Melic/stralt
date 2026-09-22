@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   classifyWalkReject,
+  isBattleWalkDestinationOccupied,
   isBattleWalkTileBlocked,
   playerFacingWalkReject,
   shouldFloatWorldUnreachable,
+  shouldPaintBattleWalkDestination,
   spawnWalkRejectFloat,
 } from "./walkRejectCopy.ts";
 
@@ -80,6 +82,57 @@ describe("isBattleWalkTileBlocked", () => {
         voidTiles: empty,
       }),
       false,
+    );
+  });
+});
+
+describe("walk highlight occupancy vs execute Occupied", () => {
+  it("paints an empty tile and refuses a living occupant", () => {
+    const rat = { x: 4, y: 4, hp: 12 };
+    const corpse = { x: 5, y: 5, hp: 0 };
+    const emptyTile = { x: 3, y: 3 };
+    assert.equal(
+      isBattleWalkDestinationOccupied([rat, corpse], emptyTile),
+      false,
+    );
+    assert.equal(shouldPaintBattleWalkDestination(false), true);
+    assert.equal(isBattleWalkDestinationOccupied([rat, corpse], rat), true);
+    assert.equal(shouldPaintBattleWalkDestination(true), false);
+    assert.equal(
+      isBattleWalkDestinationOccupied([rat, corpse], corpse),
+      false,
+      "corpses are free, matching walk execute",
+    );
+  });
+
+  it("keeps a highlighted legal destination executable and an occupied tile illegal", () => {
+    const occupants = [
+      { x: 2, y: 2, hp: 20 },
+      { x: 6, y: 6, hp: 0 },
+    ];
+    const painted = ["1,1", "2,2", "6,6"].filter((key) => {
+      const [xs, ys] = key.split(",");
+      const tile = { x: Number(xs), y: Number(ys) };
+      return shouldPaintBattleWalkDestination(
+        isBattleWalkDestinationOccupied(occupants, tile),
+      );
+    });
+    assert.deepEqual(painted, ["1,1", "6,6"]);
+    for (const key of painted) {
+      const [xs, ys] = key.split(",");
+      assert.equal(
+        isBattleWalkDestinationOccupied(occupants, {
+          x: Number(xs),
+          y: Number(ys),
+        }),
+        false,
+        `${key} is highlighted so execute must not float Occupied`,
+      );
+    }
+    assert.equal(
+      isBattleWalkDestinationOccupied(occupants, { x: 2, y: 2 }),
+      true,
+      "occupied tile cannot execute",
     );
   });
 });

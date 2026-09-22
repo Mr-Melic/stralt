@@ -3,6 +3,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SpellConfig } from "../types/gameTypes";
+import { isSpellOnCooldown } from "../utils/challengeCompletion";
 import DraggablePanel from "./DraggablePanel";
 import type { CombatantEntry } from "./InitiativeStrip";
 import StatPopup from "./StatPopup";
@@ -49,6 +50,12 @@ export interface BattleUIPanelProps {
   onSetAttack: () => void;
   currentBattleAp: number;
   currentBattleMp: number;
+  /**
+   * Attack-mode toggle. Defaults to leftover AP > 0. Pass the same
+   * `canEnterAttackModeWithCurrentAp` execute uses so a 0-AP Timestep
+   * still lights Attack after the last positive-cost spend.
+   */
+  canEnterAttackMode?: boolean;
   /** H6 fix: the player’s actual maximum AP this battle (characterStats.ap, grows +1/25 levels). */
   maxBattleAp?: number;
   /** H6 fix: the player’s actual maximum MP this battle (characterStats.mp, grows +1/25 levels). */
@@ -107,6 +114,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   onSetAttack,
   currentBattleAp,
   currentBattleMp,
+  canEnterAttackMode,
   maxBattleAp,
   maxBattleMp,
   onEndTurn,
@@ -119,6 +127,9 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
   isPlayerTurn = true,
 }) => {
   const forceUpdate = spellSelectionVersion; // keeps spellSelectionVersion used
+  const attackModeOpen =
+    canEnterAttackMode ??
+    Math.max(0, Math.floor(Number(currentBattleAp) || 0)) > 0;
   const [selectedCombatantId, setSelectedCombatantId] = useState<string | null>(
     null,
   );
@@ -508,7 +519,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                     stone-battle-action
                     px-2 py-1 rounded-[5px] text-[10px] font-extrabold tracking-wide transition-all duration-150
                     ${battleActionMode === "attack" ? "stone-btn-blue" : "stone-btn-slate opacity-55"}
-                    ${currentBattleAp <= 0 ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
+                    ${!attackModeOpen ? "opacity-45 cursor-not-allowed" : "cursor-pointer"}
                   `}
                 >
                   ⚔️ ATTACK
@@ -621,7 +632,7 @@ const BattleUIPanel: React.FC<BattleUIPanelProps> = ({
                 const isHeal =
                   spell?.spellType === "heal" || spell?.spellType === "drain";
                 const cdTurns = spell ? (spellCooldowns[spell.id] ?? 0) : 0;
-                const isOnCooldown = cdTurns > 0;
+                const isOnCooldown = isSpellOnCooldown(cdTurns);
 
                 const spellTitle = !inBattle
                   ? spell

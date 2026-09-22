@@ -34,6 +34,28 @@ export function isBattleWalkTileBlocked(args: {
 }
 
 /**
+ * Walk execute rejects a living occupant with "Occupied". The MP ring
+ * used to paint that tile (BFS never consulted occupancy), so a green
+ * destination could not execute. Highlight destinations must use this
+ * same occupant test. BFS may still expand through the cell.
+ */
+export function isBattleWalkDestinationOccupied(
+  occupants: ReadonlyArray<{ x: number; y: number; hp?: number }>,
+  tile: { x: number; y: number },
+): boolean {
+  return occupants.some(
+    (c) => c.x === tile.x && c.y === tile.y && Number(c.hp) > 0,
+  );
+}
+
+/** Paint a walk destination only when execute would not float Occupied. */
+export function shouldPaintBattleWalkDestination(
+  occupiedByLiving: boolean,
+): boolean {
+  return occupiedByLiving !== true;
+}
+
+/**
  * World-mode click: empty `findPath` only auto-steps Chebyshev-adjacent
  * floor. Distant empty paths used to gold-tint with no reason. Self-tile
  * stays quiet (gold is enough). Does not change pathfinding.
