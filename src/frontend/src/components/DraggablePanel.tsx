@@ -1,6 +1,7 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { backendInterface } from "../backend";
+import { loadUserUiLayoutOnce } from "../engine/uiLayoutActivity";
 import { useActor } from "../hooks/useActor";
 import {
   BACKEND_SAVE_DEBOUNCE_MS,
@@ -467,52 +468,13 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
     // and write the full backend layout back to localStorage so the cache
     // stays in sync with the authoritative blob.
     if (actor) {
-      void (actor as UiLayoutActor)
-        .getUserUiLayout()
-        .then((blob: string) => {
-          // LEAK-15: stale unmount guard
+      // PERF-2026-09-22-082: share one in-flight getUserUiLayout across
+      // every mounted panel. localStorage still paints first; LEAK-15
+      // still drops a result that arrives after unmount.
+      void loadUserUiLayoutOnce(actor as UiLayoutActor, userId).then(
+        (parsed) => {
           if (panelInstanceIdRef.current !== myInstance) return;
-          if (!blob) return;
-          let parsed: Record<
-            string,
-            { x: number; y: number; folded: boolean }
-          > | null = null;
-          try {
-            const obj = JSON.parse(blob) as unknown;
-            if (
-              typeof obj === "object" &&
-              obj !== null &&
-              !Array.isArray(obj)
-            ) {
-              const result: Record<
-                string,
-                { x: number; y: number; folded: boolean }
-              > = {};
-              for (const [id, entry] of Object.entries(
-                obj as Record<string, unknown>,
-              )) {
-                if (
-                  typeof entry !== "object" ||
-                  entry === null ||
-                  Array.isArray(entry)
-                )
-                  continue;
-                const e = entry as Record<string, unknown>;
-                if (
-                  typeof e.x !== "number" ||
-                  typeof e.y !== "number" ||
-                  typeof e.folded !== "boolean"
-                )
-                  continue;
-                result[id] = { x: e.x, y: e.y, folded: e.folded };
-              }
-              if (Object.keys(result).length > 0) parsed = result;
-            }
-          } catch {
-            parsed = null;
-          }
           if (!parsed) return;
-          // Write the full backend layout back to the localStorage cache.
           try {
             localStorage.setItem(
               STORAGE_PREFIX + userId,
@@ -521,7 +483,6 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
           } catch {
             // ignore storage errors — backend blob is still authoritative
           }
-          // Apply this panel's entry if present.
           if (parsed[panelId]) {
             const saved = parsed[panelId];
             setPosition({ x: saved.x, y: saved.y });
@@ -529,14 +490,8 @@ const DraggablePanel: React.FC<DraggablePanelProps> = ({
             currentPosRef.current = { x: saved.x, y: saved.y };
             currentFoldedRef.current = saved.folded;
           }
-        })
-        .catch((err: unknown) => {
-          // Backend load failed — keep the localStorage layout. Never throw.
-          console.warn(
-            "DraggablePanel: getUserUiLayout failed, keeping localStorage layout",
-            err,
-          );
-        });
+        },
+      );
     }
 
     return () => {

@@ -1,5 +1,9 @@
 import { useCallback } from "react";
 import type { backendInterface } from "../backend";
+import {
+  type PanelLayoutMap,
+  loadUserUiLayoutOnce,
+} from "../engine/uiLayoutActivity";
 import { useActor } from "./useActor";
 
 const STORAGE_PREFIX = "pbv_panel_layout_";
@@ -14,7 +18,7 @@ export interface PanelState {
   folded: boolean;
 }
 
-type LayoutMap = Record<string, PanelState>;
+type LayoutMap = PanelLayoutMap;
 
 /**
  * Extended actor interface that includes the two uiLayout endpoints.
@@ -126,48 +130,6 @@ function resolveOverlaps(panels: LayoutMap): LayoutMap {
 }
 
 /**
- * Parse a compact JSON layout blob coming from the backend into a LayoutMap.
- * Returns null if the blob is empty or cannot be parsed/validated, so the
- * caller falls back to localStorage / defaults.
- *
- * Compact JSON format (single Text field, no pretty-printing):
- *   {"stats":{"x":100,"y":50,"folded":false},"spellbook":{"x":10,"y":60,"folded":true}}
- */
-function parseBackendLayout(blob: string): LayoutMap | null {
-  if (!blob) return null;
-  try {
-    const parsed = JSON.parse(blob) as unknown;
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed)
-    ) {
-      return null;
-    }
-    const result: LayoutMap = {};
-    for (const [id, entry] of Object.entries(
-      parsed as Record<string, unknown>,
-    )) {
-      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-        continue;
-      }
-      const e = entry as Record<string, unknown>;
-      if (
-        typeof e.x !== "number" ||
-        typeof e.y !== "number" ||
-        typeof e.folded !== "boolean"
-      ) {
-        continue;
-      }
-      result[id] = { x: e.x, y: e.y, folded: e.folded };
-    }
-    return Object.keys(result).length > 0 ? result : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Serialize the full panel layout into ONE compact JSON Text field for the
  * backend blob. No pretty-printing — single line, minimal separators.
  */
@@ -185,18 +147,10 @@ function serializeLayout(layout: LayoutMap): string {
  */
 async function loadLayoutFromBackend(
   actor: backendInterface | null,
+  userId: string,
 ): Promise<LayoutMap | null> {
   if (!actor) return null;
-  try {
-    const blob = await (actor as UiLayoutActor).getUserUiLayout();
-    return parseBackendLayout(blob);
-  } catch (err) {
-    console.warn(
-      "usePanelLayout: getUserUiLayout failed, falling back to localStorage",
-      err,
-    );
-    return null;
-  }
+  return loadUserUiLayoutOnce(actor as UiLayoutActor, userId);
 }
 
 /**
@@ -252,7 +206,7 @@ export function usePanelLayout(userId: string, panelIds?: string[]) {
    * both backend and localStorage are empty and panelIds were provided).
    */
   const initLayoutFromBackend = useCallback(async (): Promise<LayoutMap> => {
-    const backendLayout = await loadLayoutFromBackend(actor);
+    const backendLayout = await loadLayoutFromBackend(actor, userId);
     if (backendLayout) {
       // Backend authoritative — refresh the localStorage cache to match.
       writeLayout(userId, backendLayout);
