@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import { starterSpells } from "../data/spellData.ts";
 import { isActiveHostile } from "../engine/battleSetup.ts";
 import {
+  canAffordCastAp,
   computeTargetableTiles,
   isTileCastableLive,
+  resolveCastApCost,
   shouldExecuteLiveCast,
 } from "../engine/targeting.ts";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
@@ -178,6 +180,25 @@ describe("planSummonControlCast", () => {
       target: { x: 2, y: 1 },
     });
     assert.deepEqual(noAp, { ok: false, reason: "no_ap" });
+  });
+
+  it("uses the same AP floor as player execute so kit UI disable matches the cast", () => {
+    assert.equal(resolveCastApCost(2), 2);
+    assert.equal(canAffordCastAp(2, 2), true);
+    assert.equal(canAffordCastAp(1, 2), false);
+    assert.equal(canAffordCastAp(0, 0), true);
+    const zeroCost = planSummonControlCast({
+      pieceType: "archer",
+      spellId: "starter-poison",
+      catalog: starterSpells.map((s) =>
+        s.id === "starter-poison" ? { ...s, apCost: 0n } : s,
+      ),
+      fallbackSpells: [],
+      currentAp: 0,
+      caster: { x: 1, y: 1 },
+      target: { x: 2, y: 1 },
+    });
+    assert.equal(zeroCost.ok, true);
   });
 
   it("rejects a Bomber Inferno beyond its range-3 so control mode cannot snipe", () => {

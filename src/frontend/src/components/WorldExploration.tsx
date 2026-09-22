@@ -100,6 +100,7 @@ import {
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
   battleWalkCostPerTile,
+  battleWalkHoverMpPreview,
   battleWalkMpBudget,
   battleWalkMpCost,
   canAffordBattleWalk,
@@ -175,6 +176,8 @@ import {
   resolveControlledSummonMoveDest,
 } from "../engine/occupancy";
 import {
+  canEnterAttackModeWithCurrentAp,
+  canSelectSpellWithCurrentAp,
   planPlayerCastAttempt,
   planPlayerCastResources,
   playerCastAttemptResult,
@@ -253,15 +256,17 @@ import {
   type TileCastableResult,
   attackNearestLiveCasterPos,
   canAttackNearestAgainstLive,
+  chebyshevOnBoard,
   computeTargetableTiles,
   decideSpriteCastClick,
   decideTileCastClick,
+  enemyCastRangeOk,
+  enemySpellRange,
   hasBresenhamLoS,
   isTileCastableLive,
   pickNearestAttackableHostile,
   playerSpellAllowsCasterTile,
   playerSpellEffectiveRange,
-  probeLiveCast as probeLiveCastAt,
   shouldExecuteLiveCast,
 } from "../engine/targeting";
 import {
@@ -271,9 +276,11 @@ import {
 } from "../engine/turnQueue";
 import {
   classifyWalkReject,
+  isBattleWalkDestinationOccupied,
   isBattleWalkTileBlocked,
   playerFacingWalkReject,
   shouldFloatWorldUnreachable,
+  shouldPaintBattleWalkDestination,
 } from "../engine/walkRejectCopy";
 import {
   getCameraFollowSpeed,
@@ -1846,6 +1853,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // activeEffectsRef sync removed — ref is set synchronously at every mutation site
   const timestepUsedRef = useRef(false);
   const playerApWasDebuffedRef = useRef(false);
+  /** Dest key → MP debit from the same BFS as the green walk ring. */
+  const battleWalkReachableCostRef = useRef<Map<string, number>>(new Map());
 
   // Sync active effects to parent (ChatPanel Status tab)
   useEffect(() => {
@@ -7034,7 +7043,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       summonMp: (controlledSummon as { currentMp?: number } | undefined)
         ?.currentMp,
     });
-    if (!currentMap || !inBattleRef.current || mpBudget <= 0) return new Set();
+    if (!currentMap || !inBattleRef.current || mpBudget <= 0) {
+      battleWalkReachableCostRef.current = new Map();
+      return new Set();
+    }
     // SECTION 2c — origin is the active caster's tile (controlled summon or
     // player) so movement-range previews render from the summon's position.
     const origin = getActiveCasterPos();
@@ -7050,11 +7062,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ];
     visited.set(`${origin.x},${origin.y}`, 0);
     const reachable = new Set<string>();
+    const destCosts = new Map<string, number>();
     // Movement cost per tile — delegated to the modifier registry (Slime
     // Flood / Frozen Terrain double the cost via their onMpCost hooks).
     // Same helper as player/summon execute so leftover 1-MP slices cannot
     // exceed the highlighted ring.
     const moveCostPerTile = walkMpCostPerTile();
+    const occupants = getLiveCombatants(combatantStoreCtx);
     while (queue.length > 0) {
       const current = queue.shift()!;
       const nextSteps = current.steps + moveCostPerTile;
@@ -7085,12 +7099,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const prevBest = visited.get(key);
         if (prevBest !== undefined && prevBest <= nextSteps) continue;
         visited.set(key, nextSteps);
-        reachable.add(key);
+        destCosts.set(key, nextSteps);
+        if (
+          shouldPaintBattleWalkDestination(
+            isBattleWalkDestinationOccupied(occupants, { x: nx, y: ny }),
+          )
+        ) {
+          reachable.add(key);
+        }
         if (nextSteps < mpBudget) {
           queue.push({ x: nx, y: ny, steps: nextSteps });
         }
       }
     }
+    battleWalkReachableCostRef.current = destCosts;
     return reachable;
   }, [
     currentMap,
@@ -8518,32 +8540,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       hoveredTile
     ) {
       const hoverScreen = gridToScreen(hoveredTile.x, hoveredTile.y);
-      const dist =
-        Math.abs(hoveredTile.x - playerPositionRef.current.x) +
-        Math.abs(hoveredTile.y - playerPositionRef.current.y);
-      const mpCost =
-        dist *
-        mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
-          log: (msg: string) => logDebugInfo("MODIFIER", msg),
-          rng: Math.random,
-        });
-      if (
-        dist > 0 &&
-        currentMap.tiles[hoveredTile.y]?.[hoveredTile.x] === "floor"
-      ) {
+      const destKey = `${hoveredTile.x},${hoveredTile.y}`;
+      const hoverPreview = battleWalkHoverMpPreview({
+        destKey,
+        reachable: mpTiles,
+        mpCost: battleWalkReachableCostRef.current.get(destKey) ?? 0,
+        currentMp: currentBattleMpRef.current,
+      });
+      if (hoverPreview) {
         ctx.save();
         ctx.font = "bold 12px Arial";
         ctx.textAlign = "center";
         ctx.strokeStyle = "rgba(0,0,0,0.85)";
         ctx.lineWidth = 2.5;
-        const costLabel = `${mpCost} MP`;
+        const costLabel = `${hoverPreview.mpCost} MP`;
         ctx.strokeText(
           costLabel,
           hoverScreen.x,
           hoverScreen.y + effectiveTileH / 2 - 4,
         );
-        ctx.fillStyle =
-          mpCost <= currentBattleMpRef.current ? "#4ade80" : "#f87171";
+        ctx.fillStyle = hoverPreview.affordable ? "#4ade80" : "#f87171";
         ctx.fillText(
           costLabel,
           hoverScreen.x,
@@ -10504,9 +10520,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // the live list (drawQueue skip at 7649), so corpse tiles the player
           // just stepped onto are correctly treated as free. This prevents the
           // player from pathing onto a tile a living enemy/summon stands on.
-          const _walkOccupantMouse = getLiveCombatants(combatantStoreCtx).find(
-            (e) =>
-              e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
+          const _walkOccupantMouse = isBattleWalkDestinationOccupied(
+            getLiveCombatants(combatantStoreCtx),
+            gridPos,
           );
           if (_walkOccupantMouse) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -11089,9 +11105,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // handler's occupancy check. Reject the move if a LIVING combatant
           // occupies the target tile. Dead combatants are already dropped from
           // the live list, so corpse tiles are correctly free.
-          const _walkOccupantTouch = getLiveCombatants(combatantStoreCtx).find(
-            (e) =>
-              e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
+          const _walkOccupantTouch = isBattleWalkDestinationOccupied(
+            getLiveCombatants(combatantStoreCtx),
+            gridPos,
           );
           if (_walkOccupantTouch) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -16448,12 +16464,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           let didAct = false;
           // ── Apply spell cast ──────────────────────────────────────────────
           if (action.kind === "cast" && chosenSpell) {
-            const spellRange = Number(chosenSpell.range);
-            const distAM = Math.max(
-              Math.abs(newX - targetCell.x),
-              Math.abs(newY - targetCell.y),
+            const spellRange = enemySpellRange(chosenSpell);
+            const inRange = enemyCastRangeOk(
+              { x: newX, y: newY },
+              targetCell,
+              chosenSpell,
             );
-            const inRange = distAM <= spellRange;
             const spellType = chosenSpell.spellType ?? "damage";
             const spellDmg = Number(chosenSpell.damage);
             if (
@@ -16702,10 +16718,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           // ── Fallback melee or skip ────────────────────────────────────────
           if (action.kind === "melee" || !didAct) {
-            const nd = Math.max(
-              Math.abs(newX - targetCell.x),
-              Math.abs(newY - targetCell.y),
-            );
+            const nd = chebyshevOnBoard({ x: newX, y: newY }, targetCell);
             if (nd <= 1) {
               const fallbackPool = [
                 { id: "e-crush", name: "Crush", range: 1, damage: 12 },
@@ -17262,12 +17275,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       return;
     }
-    const isHealSpell =
-      spell.targetType === "self" && spell.effectType === "heal";
-    // Same range + live gate as the highlight / sprite-click paths.
-    // Chebyshev-only nearest search used raw `spell.range` and skipped LoS,
-    // so Attack Nearest could fire on a tile the preview never offered.
-    // Caster origin stays the player tile — see attackNearestLiveCasterPos.
     const mapTiles = currentMapRef.current?.tiles;
     if (!mapTiles) return;
     // Player tile, not getActiveCasterPos(): resolvePlayerCast heals only
@@ -17282,44 +17289,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       spell,
       getEffectiveSpellRange,
     );
-    let gridPos: { x: number; y: number };
-    if (isHealSpell) {
-      gridPos = { x: casterPos.x, y: casterPos.y };
-      // Local probeLiveCast uses getActiveCasterPos() (summon tile).
-      // Attack Nearest heals only on the player tile — probe from casterPos.
-      const liveHeal = probeLiveCastAt(
-        spell,
-        casterPos,
-        gridPos,
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTilesRef.current,
-      );
-      if (!shouldExecuteLiveCast(liveHeal)) {
-        setNoTargetFlash(true);
-        setTimeout(() => setNoTargetFlash(false), 1200);
-        return;
-      }
-    } else {
-      // Live store includes enemy summons that are not in React `enemies`.
-      // isActiveHostile is the canonical filter (enemy-side summons after #79).
-      // isTileCastableLive is the same gate as getSpellRangeTiles / sprite-click.
-      const nearest = pickNearestAttackableHostile(
-        spell,
-        casterPos,
-        liveCombatants,
-        mapTiles,
-        effectiveRange,
-        barrierTilesRef.current,
-      );
-      if (!nearest) {
-        setNoTargetFlash(true);
-        setTimeout(() => setNoTargetFlash(false), 1200);
-        return;
-      }
-      gridPos = nearest;
+    // Blood Mend used a local self+heal branch; Timestep / Shield already
+    // went through pickNearestAttackableHostile. One picker so button enable
+    // and execute cannot fork.
+    const nearest = pickNearestAttackableHostile(
+      spell,
+      casterPos,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+      barrierTilesRef.current,
+    );
+    if (!nearest) {
+      setNoTargetFlash(true);
+      setTimeout(() => setNoTargetFlash(false), 1200);
+      return;
     }
+    const gridPos = nearest;
     if (spell.isSummon) {
       logDebugInfo("SUMMON", "cast handler received summon spell", {
         spellId: spell.id,
@@ -18840,7 +18826,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           spellSelectionVersion={spellSelectionVersion}
           hasSelectedSpell={!!selectedSpellIdRef.current}
           onSelectSpell={(id) => {
-            if (!inBattle || currentBattleAp > 0) {
+            const spell = activeSpells.find((s) => s.id === id);
+            const applyAp = (base: number) =>
+              mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              });
+            if (
+              !inBattle ||
+              (spell != null &&
+                canSelectSpellWithCurrentAp({
+                  currentAp: currentBattleAp,
+                  baseApCost: Number(spell.apCost),
+                  applyApCost: applyAp,
+                }))
+            ) {
               selectedSpellIdRef.current = id;
               setSpellSelectionVersion((v) => v + 1);
               spellRangeCacheRef.current.clear();
@@ -18909,10 +18909,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             spellRangeCacheRef.current.clear();
           }}
           onSetAttack={() => {
-            if (currentBattleAp > 0) setBattleActionMode("attack");
+            const applyAp = (base: number) =>
+              mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              });
+            if (
+              canEnterAttackModeWithCurrentAp({
+                currentAp: currentBattleAp,
+                spellBaseApCosts: activeSpells.map((s) => Number(s.apCost)),
+                applyApCost: applyAp,
+              })
+            ) {
+              setBattleActionMode("attack");
+            }
           }}
           currentBattleAp={currentBattleAp}
           currentBattleMp={currentBattleMp}
+          canEnterAttackMode={canEnterAttackModeWithCurrentAp({
+            currentAp: currentBattleAp,
+            spellBaseApCosts: activeSpells.map((s) => Number(s.apCost)),
+            applyApCost: (base) =>
+              mapModifierRegistry.applyApCost(base, activeMapModifierTypes, {
+                log: (msg: string) => logDebugInfo("MODIFIER", msg),
+                rng: Math.random,
+              }),
+          })}
           maxBattleAp={characterStats.maxAp}
           maxBattleMp={characterStats.maxMp}
           onEndBattle={() => {

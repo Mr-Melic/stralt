@@ -1,4 +1,5 @@
 import { Footprints, Heart, Hourglass, Square, Sword } from "lucide-react";
+import { canAffordCastAp } from "../engine/targeting";
 
 /**
  * Props for the SummonControlPanel.
@@ -340,7 +341,7 @@ export default function SummonControlPanel({
                 key={spell.id}
                 spell={spell}
                 index={i}
-                disabled={currentAp < spell.apCost}
+                disabled={!canAffordCastAp(currentAp, spell.apCost)}
                 onSelect={onSpellSelect}
               />
             ))

@@ -131,3 +131,38 @@ export function shouldRejectCastForMissingAp(args: {
   });
   return !planned.ok && planned.reason === "no_ap";
 }
+
+/**
+ * Spell-bar / keyboard selection must use the same AP wallet as execute.
+ * `currentBattleAp > 0` blocked Timestep (0 AP) after a last-AP spend
+ * cleared the previous selection, even though highlight + execute allow it.
+ */
+export function canSelectSpellWithCurrentAp(args: {
+  currentAp: number;
+  baseApCost: number;
+  applyApCost?: (base: number) => number;
+}): boolean {
+  return !shouldRejectCastForMissingAp(args);
+}
+
+/**
+ * Attack-mode toggle. Empty bar keeps the historic "need leftover AP"
+ * rule. Otherwise any affordable spell (including 0-cost after Arcane
+ * Surge) may enter attack mode so a highlighted Timestep remains selectable.
+ */
+export function canEnterAttackModeWithCurrentAp(args: {
+  currentAp: number;
+  spellBaseApCosts: readonly number[];
+  applyApCost?: (base: number) => number;
+}): boolean {
+  if (args.spellBaseApCosts.length === 0) {
+    return Math.max(0, Math.floor(Number(args.currentAp) || 0)) > 0;
+  }
+  return args.spellBaseApCosts.some((base) =>
+    canSelectSpellWithCurrentAp({
+      currentAp: args.currentAp,
+      baseApCost: base,
+      applyApCost: args.applyApCost,
+    }),
+  );
+}

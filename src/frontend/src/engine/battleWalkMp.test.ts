@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   battleWalkCostPerTile,
+  battleWalkHoverMpPreview,
   battleWalkMpBudget,
   battleWalkMpCost,
   canAffordBattleWalk,
@@ -94,6 +95,74 @@ describe("battleWalkMpBudget", () => {
         summonMp: undefined,
       }),
       0,
+    );
+  });
+});
+
+describe("battleWalkHoverMpPreview vs execute debit", () => {
+  it("shows the BFS/execute cost on a highlighted tile, not Manhattan", () => {
+    const destKey = "5,3";
+    const reachable = new Set([destKey, "4,4"]);
+    // Wall detour: Manhattan from (4,4) to (5,3) is 2; cardinal path is 4.
+    const executeCost = battleWalkMpCost(4, 1);
+    assert.equal(executeCost, 4);
+    const preview = battleWalkHoverMpPreview({
+      destKey,
+      reachable,
+      mpCost: executeCost,
+      currentMp: 6,
+    });
+    assert.deepEqual(preview, { mpCost: 4, affordable: true });
+    assert.notEqual(
+      preview?.mpCost,
+      2,
+      "Manhattan hover must not under-charge a detour the click pays in full",
+    );
+    assert.equal(canAffordBattleWalk(6, 4, 1), true);
+  });
+
+  it("keeps Frozen hover on the 2× debit execute will take", () => {
+    const destKey = "7,4";
+    const reachable = new Set([destKey]);
+    const executeCost = battleWalkMpCost(3, 2);
+    assert.equal(executeCost, 6);
+    const preview = battleWalkHoverMpPreview({
+      destKey,
+      reachable,
+      mpCost: executeCost,
+      currentMp: 6,
+    });
+    assert.deepEqual(preview, { mpCost: 6, affordable: true });
+    const tooPoor = battleWalkHoverMpPreview({
+      destKey,
+      reachable,
+      mpCost: executeCost,
+      currentMp: 4,
+    });
+    assert.deepEqual(tooPoor, { mpCost: 6, affordable: false });
+    assert.equal(canAffordBattleWalk(4, 3, 2), false);
+  });
+
+  it("hides cost on an illegal tile so hover cannot imply the walk is executable", () => {
+    const reachable = new Set(["2,2"]);
+    assert.equal(
+      battleWalkHoverMpPreview({
+        destKey: "8,8",
+        reachable,
+        mpCost: 6,
+        currentMp: 6,
+      }),
+      null,
+    );
+    assert.equal(
+      battleWalkHoverMpPreview({
+        destKey: "2,2",
+        reachable,
+        mpCost: 0,
+        currentMp: 6,
+      }),
+      null,
+      "origin is highlighted as occupied-by-self, not a walk spend",
     );
   });
 });
