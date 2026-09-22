@@ -6,6 +6,7 @@
  * relative difficulty versus same-tier content — never player-level cutoffs.
  * Wave 1: WDD-2026-08-31-001. Wave 2: WDD-2026-09-01-001.
  * Wave 3: WDD-2026-09-02-001. Wave 4: WDD-2026-09-21-001.
+ * Wave 5: WDD-2026-09-22-001.
  *
  * This module does NOT generate maps, advance turns, or change combat damage
  * formulas. Placement must run after `evaluateSolvability` / finalize and
@@ -61,7 +62,7 @@ export type RelativeDifficulty = "soft" | "medium" | "hard" | "extreme";
 export type WorldFeatureSlot = "tile" | "encounter" | "event";
 
 /** Catalog generation. Omitted `catalogWave` on a feature is wave 1. */
-export type CatalogWave = 1 | 2 | 3 | 4;
+export type CatalogWave = 1 | 2 | 3 | 4 | 5;
 
 /** Exploration is `RunMode "none"`. Death Realm is always quiet. */
 export type WorldFeatureRunMode = "exploration" | "dungeon" | "bossRush";
@@ -112,7 +113,7 @@ export interface WorldFeature {
 }
 
 /** Newest designed wave. Overlay wiring still requires a human ACTION_ID pick. */
-export const LATEST_CATALOG_WAVE = 4 as const;
+export const LATEST_CATALOG_WAVE = 5 as const;
 
 export const RARITY_WEIGHT: Record<WorldFeatureRarity, number> = {
   common: 40,
@@ -2170,6 +2171,482 @@ export const WORLD_FEATURES: WorldFeature[] = [
     slot: "event",
     hpTaxPctOfMax: 0.03,
     catalogWave: 4,
+  },
+  {
+    id: "WF-HAZ-GLASS_SHARD",
+    name: "Glass Shard",
+    category: "hazard",
+    mechanic:
+      "Pale glass tiles. Voluntary walk-on and ending a turn are free. Occupying a shard because of forced movement (push, attract, wind slide, swap, or a teleport tile) costs a fraction of current max HP. Walkable. Does not replace lava, ice, ember, salt, needle grass, or flint.",
+    playerDecision:
+      "Stand on glass as cover, path so a shove cannot dump you onto it, or shove a foe onto a shard.",
+    relativeDifficulty: "medium",
+    rarity: "common",
+    visual: visual(
+      "glass-shard",
+      "#4a4850",
+      "#c8d0d8",
+      "Glass Shard — walk free; forced occupancy taxes % max HP",
+    ),
+    solvability:
+      "Never on spawn±3 or portals. Never the only walkable cell in a corridor — shards occupy floor but do not block.",
+    combatRules:
+      "HP via recordChallengeDamageTaken (explore) or recordInBattleChallengeDamage (in battle). Trigger is occupancy from forced movement, not a spell-name check and not voluntary MP walk. Counts toward MAX_HAZARD_TILES.",
+    counterplay:
+      "Walk onto shards yourself, end so the next forced cell is not glass, or send a summon to occupy a dump cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.05,
+    extraHazardCount: { min: 4, max: 8 },
+    catalogWave: 5,
+  },
+  {
+    id: "WF-HAZ-RATCHET_COG",
+    name: "Ratchet Cog",
+    category: "moving_hazard",
+    mechanic:
+      "A cog occupies one of two painted adjacent floor cells and swaps to the other at each round start. Landing on a unit costs a max-HP tax. Out of battle it still ratchets on wander ticks.",
+    playerDecision:
+      "Stand off the pair, occupy the cell it just left, or bait an enemy onto the next cell.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "ratchet-cog",
+      "#3a3020",
+      "#d4a050",
+      "Ratchet Cog — swaps the two marked cells each round; landing tax % max HP",
+    ),
+    solvability:
+      "Both cells are floor. Never covers spawn±3 or the only portal. A floor path around the pair always remains. The cog is not a wall.",
+    combatRules:
+      "Advances on round start (not mid-turn) by swapping the pair. Tax uses challenge HP recorders. Does not skip turns or spend AP/MP. Occupies 1 hazard budget (the cog); painted pair is visual only.",
+    counterplay:
+      "Stand off the pair, end on the cell it just left, or push/attract a foe onto the next cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.05,
+    extraHazardCount: { min: 1, max: 1 },
+    catalogWave: 5,
+  },
+  {
+    id: "WF-TRP-SECOND_FOOT",
+    name: "Second Foot",
+    category: "trap",
+    mechanic:
+      "A visible print plate. The first unit to step on it leaves a painted print and takes no tax. The next occupancy of that cell this map (same unit returning, or another body) pays a max-HP tax once; the plate then becomes floor.",
+    playerDecision:
+      "Spend the first print yourself so a foe pays the second, bait a second body onto it, or never step.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "second-foot",
+      "#4a2018",
+      "#e07050",
+      "Second Foot — first step free; the next occupancy one-shot %HP",
+    ),
+    solvability:
+      "Walkable before and after. Never on spawn±3 or portals. Does not seal a path. Plate and print always visible from adjacent tiles.",
+    combatRules:
+      "First step arms (no tax). Second occupancy detonates once. Challenge HP recorders. No hidden tiles. Does not change spell damage math.",
+    counterplay:
+      "Never step, spend the first print then leave, send a summon for the second occupancy, or shove a foe onto the printed cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.08,
+    extraHazardCount: { min: 1, max: 2 },
+    catalogWave: 5,
+  },
+  {
+    id: "WF-TER-SANDBAG",
+    name: "Sandbag",
+    category: "destructible_terrain",
+    mechanic:
+      "A sandbag blocks walk and occupancy but does not block line of sight. Adjacent: 1 AP pushes it one cardinal into empty floor; 1 AP dumps it to clear floor. No damage either way.",
+    playerDecision:
+      "Push it as moving cover, dump it for the cell, or leave it as a walk-block you can shoot through.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "sandbag",
+      "#3a3428",
+      "#c4b090",
+      "Sandbag — blocks walk, not LoS; 1 AP push or dump",
+    ),
+    solvability:
+      "Must not be a cut-vertex with the bag intact. If a candidate would fail evaluateSolvability, skip the feature. Never on spawn±3 or portals. Push stays on the walkable graph.",
+    combatRules:
+      "Push and dump are AP occupancy actions, not spells (no name heuristics). No damage. Walk occupancy is wall until dumped. LoS treats it as empty floor. Distinct from Reed Screen (cut in place) and Cinder Barrel (roll tax).",
+    counterplay:
+      "Ignore it if a bypass exists; dump when the cell is worth 1 AP; push it to plug a lane; shoot linear spells through it.",
+    rewardPath: "none",
+    blocksWalk: true,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-OBS-SHIFT_SLAB",
+    name: "Shift Slab",
+    category: "temporary_obstacle",
+    mechanic:
+      "Two painted adjacent short-path cells. Exactly one is a wall and the other is floor. They swap at each round start (a painted pip shows which cell is open). A long path always exists.",
+    playerDecision:
+      "Cross on the currently open slab, wait one round for the other lane, or spend MP on the always-open long path.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "shift-slab",
+      "#2a3238",
+      "#80a8b8",
+      "Shift Slab — two cells; exactly one is open, they swap each round",
+    ),
+    solvability:
+      "Place only when a spawn→portal route already exists with cell A walled AND with cell B walled. Never the only exit. Never on spawn±3 or portals. Do not share a cell with another blocksWalk feature.",
+    combatRules:
+      "Wall occupancy on the shut cell. No damage. Swap ticks at round start for everyone. Never both open or both shut.",
+    counterplay:
+      "Wait one round, take the long path, or teleport past if a spell's metadata allows freeCells/ground.",
+    rewardPath: "none",
+    blocksWalk: true,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-ZON-KEEN_EDGE",
+    name: "Keen Edge",
+    category: "heal_buff_zone",
+    mechanic:
+      "A bronze grindstone inlay. While a unit occupies it, Attack Nearest deals +15% of the already-computed hit (after existing RES/SR). Spells, summons, and leaving lose it. Either side may hold it.",
+    playerDecision:
+      "Plant for a harder basic attack, yank the holder off, or ignore it and cast spells.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "keen-edge",
+      "#3a2810",
+      "#e0a050",
+      "Keen Edge — Attack Nearest +15% while you stand here (enemies too)",
+    ),
+    solvability:
+      "Walkable floor. Never on spawn or portals. Does not block exits. The grindstone is not a walk wall.",
+    combatRules:
+      "Bonus applies only to Attack Nearest, which is not a spell. The +15% scales the post-formula number — it does not replace combatMath. Not a buff spell (Null Field does not strip it). No duration after leaving.",
+    counterplay:
+      "Occupy it, push the holder off, fight with spells so the stone is irrelevant, or ignore it.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-TEL-RECALL_PIN",
+    name: "Recall Pin",
+    category: "teleport_tile",
+    mechanic:
+      "A single cyan pin-stone. Adjacent 1 AP plants your recall mark on your current cell (painted pin; one pin per side). Later, entering the stone for 1 MP exits at your pin. If the pin cell is occupied, the travelers swap. Entering with no pin spends nothing.",
+    playerDecision:
+      "Spend 1 AP to mark a cell worth returning to, 1 MP later to recall, walk, or leave the stone as an enemy recall.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "recall-pin",
+      "#0e2438",
+      "#50c8e0",
+      "Recall Pin — 1 AP adjacent to mark; 1 MP on the stone returns you",
+    ),
+    solvability:
+      "Stone on floor, never on spawn/portals. Optional — the map is solvable without using it. Recall never leaves the walkable graph.",
+    combatRules:
+      "Plant is 1 AP, recall is 1 MP from the unit's current MP only if a pin exists. Occupancy: destination free, or swap. Not a teleport spell — do not key off effectCategory. Each side holds at most one pin.",
+    counterplay:
+      "Stand on an enemy pin to force a swap, ignore the stone, or plant next to a portal / hazard.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-PRT-PACT_GATE",
+    name: "Pact Gate",
+    category: "unstable_portal",
+    mechanic:
+      "An extra pact-rim portal. Entering while a living allied summon is within 2 Chebyshev rolls a random eligible overworld map and pays a hard applyRewards grant. Entering without that summon is a spare exit with no bonus. It is never the only exit.",
+    playerDecision:
+      "Bring a summon into range for the hard gamble, take it as a spare exit, or use the stable portal you can already see.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "pact-portal",
+      "#1a2430",
+      "#90d0c0",
+      "Pact Gate — extra exit; hard bonus if an allied summon is within 2",
+    ),
+    solvability:
+      "Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm (portalRules filter). Never at spawn. No summon is required to leave.",
+    combatRules:
+      "Entry is a portal transition, not a combat action. Bonus XP/Doka via applyRewards on the persist lock only when a living allied summon is within 2 Chebyshev. Death-realm guards still block entry while armed.",
+    counterplay:
+      "Ignore it. The stable exit always works. Enter without a summon for no bonus, or summon then step in.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: true,
+    allowedRunModes: EXPLORATION_ONLY,
+    slot: "event",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-INV-MIRROR_HOST",
+    name: "Mirror Host",
+    category: "rare_invasion",
+    mechanic:
+      "One extra same-tier elite (hard threat) stands on a painted tether. Out of battle, whenever the player pays HP (challenge or combat), the host loses the same percent of its max HP (visual tether). Touching it starts a normal battle at remaining HP. Victory pays hard if the host was above 50% max at contact, medium if already wounded. Exploration: leave without touching. Dungeon / boss rush: they count as a hostile for map-clear.",
+    playerDecision:
+      "Fight it healthy, tax yourself first to weaken the tether, or never touch it (exploration).",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "mirror-host",
+      "#2a1a28",
+      "#d080c0",
+      "Mirror Host — elite mirrors your HP loss; fight, bleed it, or leave",
+    ),
+    solvability:
+      "Tether cell is floor. Exit reachable without touching. Counts as 1 toward MAX_ENEMIES. Skip if the roster cannot fit 1. In dungeon / boss rush they count as hostiles for map-clear.",
+    combatRules:
+      "World attrition is not a player fight and does not call applyRewards. Contact starts a normal battle (inBattleRef + death guards). Extra spells from usableByEnemy only. Victory → applyRewards. The % drip does not rewrite combatMath.",
+    counterplay:
+      "Stay off the tether in exploration; step on a hazard first to wound it; leave the map. In a run, fight it healthy or wounded.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 1, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-ELT-DRIFT_SENTINEL",
+    name: "Drift Sentinel",
+    category: "elite_patrol",
+    mechanic:
+      "One elite (same-tier × hard threat) wanders only on odd rounds along a 4–6 tile loop (painted odd pip). On even rounds it stands still. Touching it starts combat. Killing it pays hard reward multiplier. Exploration: never touch them. Dungeon / boss rush: they count as a hostile for map-clear.",
+    playerDecision:
+      "Intercept on even rounds while it stands, cross the loop on odd while it moves, or never touch them.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "drift-sentinel",
+      "#2a2820",
+      "#c8b070",
+      "Drift Sentinel — elite walks odd rounds, stands even; touch to fight",
+    ),
+    solvability:
+      "Loop is floor. Exit reachable without crossing the loop. Counts as 1 toward MAX_ENEMIES. The pip is always visible.",
+    combatRules:
+      "World contact starts a normal battle (inBattleRef + death guards). Elite spells from usableByEnemy only. Victory → applyRewards. Odd/even is round index, not a skipped turn.",
+    counterplay:
+      "Stand off the loop; fight when it is planted on even; in exploration, leave. In a run, they cannot be skipped for clear.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 1, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-TRS-BLOOD_LOCK",
+    name: "Blood Lock",
+    category: "treasure_encounter",
+    mechanic:
+      "A sealed chest with a crimson lock. Spending 1 AP adjacent and paying 5% max HP opens it: a hard applyRewards grant, no guardian, no coin-flip.",
+    playerDecision: "Pay 1 AP and HP for a sure hard purse, or walk past.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "blood-lock",
+      "#3a1418",
+      "#e06070",
+      "Blood Lock — 1 AP + 5% max HP for a sure hard purse; no guardian",
+    ),
+    solvability:
+      "Chest occupies a floor cell but is walkable-adjacent, not a wall. Optional. Never on spawn/portals.",
+    combatRules:
+      "Open cost is AP plus challenge HP, not a spell. Credits via persist-lock applyRewards. No guardian. Do not write Doka with updateCharacter.",
+    counterplay:
+      "Skip the chest, or open it when 5% is cheap and you expect the credit.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    hpTaxPctOfMax: 0.05,
+    catalogWave: 5,
+  },
+  {
+    id: "WF-SPL-OATH_CANTOR",
+    name: "Oath Cantor",
+    category: "spell_bearing_enemy",
+    mechanic:
+      "One same-tier enemy (medium threat) carries 1 extra SpellConfig row with usableByEnemy === true. Adjacent 1 AP binds that spell id as a cast you may use this map only while the cantor is still alive. Killing them ends the bind (does not grant a leftover cast). They stay hostile after the bind.",
+    playerDecision:
+      "Spend 1 AP to borrow a spell you must keep them alive to use, kill them for the purse and lose the bind, or ignore them.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "oath-cantor",
+      "#1a2030",
+      "#80a0d0",
+      "Oath Cantor — 1 AP to bind their extra spell while they live",
+    ),
+    solvability:
+      "Replaces one existing spawn when possible; otherwise +1 if under MAX_ENEMIES. Must remain reachable.",
+    combatRules:
+      "Spell list is metadata-only (usableByEnemy, targetType, costs). The bind does not call upgradeSpell and does not persist spellLevel arrays. Inverse of Loaner Mage (loan dies with them). Victory rewards still applyRewards. Bind is AP, not a spell.",
+    counterplay:
+      "Kite and ignore, bind then leave them alive, or kill for the purse if you do not need the spell.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 0, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-RSK-OPEN_VEIN",
+    name: "Open Vein",
+    category: "risk_reward",
+    mechanic:
+      "A crimson inlay. Voluntarily ending a turn on it pays 10% current max HP and flags this map: if you start at least one encounter, the next applyRewards uses the hard multiplier. If you leave without starting a fight, the tax is a sunk cost (no multiplier). One flag, this map only.",
+    playerDecision: "Pay HP only if you intend to fight, or stay unflagged.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "open-vein",
+      "#2a1014",
+      "#c04050",
+      "Open Vein — pay 10% max HP; hard rewards only if you start a fight",
+    ),
+    solvability:
+      "Optional floor tile. Map remains solvable if never used. Never on spawn/portals.",
+    combatRules:
+      "HP debit uses challenge recorders. Multiplier applies to the next applyRewards enqueue only if inBattleRef became true this map. Inverse of Pilgrim Banners (peace grant). Death still uses saveBattleStats.",
+    counterplay:
+      "Skip it. Use it only when you already plan a fight. In a run the clear still counts as starting encounters.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    hpTaxPctOfMax: 0.1,
+    catalogWave: 5,
+  },
+  {
+    id: "WF-MOD-THIN_AIR",
+    name: "Thin Air",
+    category: "map_modifier",
+    mechanic:
+      "This map only: any spell whose SpellConfig.apCost is exactly 1 costs 2 AP instead. Spells with apCost 0 or 2+ are unchanged. Uses apCost only — never the spell name.",
+    playerDecision:
+      "Open with 2+ AP spells or Attack Nearest, pay 2 AP for cheap spells, or skip the fight.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "thin-air",
+      "#1a2830",
+      "#90c0d0",
+      "Thin Air — 1-AP spells cost 2 AP this map; 0 and 2+ unchanged",
+    ),
+    solvability:
+      "Does not alter tiles. Exits unchanged. Melee, Attack Nearest, summons, and 2+ AP kits remain fully usable.",
+    combatRules:
+      "Reads SpellConfig.apCost only. Summons and Attack Nearest are unaffected (they are not spells). Does not rewrite damage. Distinct from Heavy Incant (which taxes AP≥3 with MP).",
+    counterplay:
+      "Cast 2+ AP spells, Attack Nearest, wait for AP, or refuse the fight.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-EVT-FIRST_BLOOD",
+    name: "First Blood",
+    category: "world_event",
+    mechanic:
+      "This map only: if the first HP debit (challenge recorder or combat) is suffered by an enemy, the next applyRewards uses the hard multiplier. If the player or a player-side summon takes the first debit, that credit is unchanged. Announced with a crimson first-strike overlay.",
+    playerDecision:
+      "Strike or dump a foe onto a hazard first for a hard purse, or accept normal rewards if you take the first hit.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "first-blood",
+      "#3a1818",
+      "#e07070",
+      "First Blood — the first HP loss this map decides hard vs normal rewards",
+    ),
+    solvability: "No tile blocks. Portals unchanged. Leaving is always legal.",
+    combatRules:
+      "First debit is the first challenge/combat HP loss this map. Player-side summons count as player-side. Multiplier applies only to persist-lock applyRewards. Does not rewrite combatMath. Death still uses saveBattleStats. Optional — never forces a fight.",
+    counterplay:
+      "Leave without anyone taking HP, shove a foe onto a tax first, or ignore the overlay.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 5,
+  },
+  {
+    id: "WF-ENV-CROWD_PRESS",
+    name: "Crowd Press",
+    category: "environmental_combat",
+    mechanic:
+      "At the end of each combatant turn, if two or more other living units are within 2 Chebyshev tiles, they pay 3% max HP. A painted press ring of radius 2 sits around every living body. Inverse of Isolation Chill.",
+    playerDecision:
+      "Kite alone to stay unpressed, clump and pay, or shove a pair onto each other.",
+    relativeDifficulty: "hard",
+    rarity: "uncommon",
+    visual: visual(
+      "crowd-press",
+      "#2a2028",
+      "#c090a0",
+      "Crowd Press — 3% max HP if two other units are within 2 tiles",
+    ),
+    solvability:
+      "Does not add walls. Skip if the map would start with fewer than 3 living units so a press trio cannot exist. Tax is not a wall.",
+    combatRules:
+      "End-of-turn tax via challenge HP recorders. Summons count as living units. Does not skip turns. Does not alter spell damage. Wounded AI prefers ending outside a press ring of two others when a legal move exists.",
+    counterplay:
+      "End turns with at most one other body in the ring, kite, or pay to hold a clump.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    hpTaxPctOfMax: 0.03,
+    catalogWave: 5,
   },
 ];
 
