@@ -71,6 +71,11 @@ import type { SpriteRect } from "../debug/clickTrace";
 // [CLICK-TRACE] Shared geometry-overlay toggle (read each frame by the render
 // post-pass and at click time to arm lastClickOverlayRef).
 import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
+import {
+  NO_TARGET_COPY,
+  attackNearestModeRejectCopy,
+  shouldFloatAttackNearestNoTarget,
+} from "../engine/attackNearestFeel";
 import { drawBarrierTower } from "../engine/barrierRender";
 import {
   PLAGUE_ZONE_TICK,
@@ -17220,8 +17225,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       !inBattle ||
       battleActionMode !== "attack" ||
       !selectedSpellIdRef.current
-    )
+    ) {
+      const modeCopy = attackNearestModeRejectCopy({
+        inBattle,
+        battleActionMode,
+        hasSelectedSpell: Boolean(selectedSpellIdRef.current),
+      });
+      if (modeCopy) {
+        const _screen = tileCenter(
+          playerPositionRef.current.x,
+          playerPositionRef.current.y,
+        );
+        effectsManagerRef.current?.spawnFloatText(
+          _screen.x,
+          _screen.y,
+          modeCopy,
+        );
+      }
       return;
+    }
     if (deathTriggeredRef.current || characterStatsRef.current.hp <= 0) return;
     if (
       !shouldAllowPlayerCastEntry({
@@ -17296,9 +17318,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         effectiveRange,
         barrierTilesRef.current,
       );
-      if (!shouldExecuteLiveCast(liveHeal)) {
+      const healLegal = shouldExecuteLiveCast(liveHeal);
+      if (!healLegal) {
         setNoTargetFlash(true);
         setTimeout(() => setNoTargetFlash(false), 1200);
+        if (shouldFloatAttackNearestNoTarget(healLegal)) {
+          const _screen = tileCenter(
+            playerPositionRef.current.x,
+            playerPositionRef.current.y,
+          );
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            NO_TARGET_COPY,
+          );
+        }
         return;
       }
     } else {
@@ -17316,6 +17350,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       if (!nearest) {
         setNoTargetFlash(true);
         setTimeout(() => setNoTargetFlash(false), 1200);
+        if (shouldFloatAttackNearestNoTarget(Boolean(nearest))) {
+          const _screen = tileCenter(
+            playerPositionRef.current.x,
+            playerPositionRef.current.y,
+          );
+          effectsManagerRef.current?.spawnFloatText(
+            _screen.x,
+            _screen.y,
+            NO_TARGET_COPY,
+          );
+        }
         return;
       }
       gridPos = nearest;
