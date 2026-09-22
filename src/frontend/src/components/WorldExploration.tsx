@@ -301,6 +301,7 @@ import {
   thresholdAchievementConditionsFromPersist,
 } from "../utils/adminSafety";
 import { evaluateChallenges } from "../utils/battleFixes";
+import { shouldAllowBuffItemUse } from "../utils/buffItemUseGate";
 import {
   applyChallengeDirectHit,
   castFollowUpShouldDebitAp,
@@ -17937,7 +17938,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             });
           }}
           onUseItem={handleUseItem}
-          isPlayerTurn={battlePhase === "player" && inBattle}
+          isPlayerTurn={shouldAllowBuffItemUse({
+            inBattle,
+            turnEntry: turnOrder[currentTurnIndex],
+            deathTriggered: deathTriggeredRef.current,
+            hp: characterStats.hp,
+          })}
           inBattle={inBattle}
           userId={userId}
           principalId={userId}
