@@ -1,10 +1,10 @@
 # World Dynamics Catalog
 
 **Role:** World Dynamics Designer  
-**Date:** 2026-09-02 (wave 3)  
+**Date:** 2026-09-22 (wave 5)  
 **Canonical IDs:** `src/frontend/src/engine/worldFeatures.ts`  
 **Status:** Designed. Not wired into map generation, the RAF loop, turn advance, or combat damage formulas.  
-**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3)
+**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5)
 
 These features exist so a long-lived character still meets new spatial and risk decisions after the 22 live map modifiers and lava / ice / spikes have been seen many times. Variation comes from **rarity weights** and **relative difficulty versus same-tier content**, not from “unlocks at level N”.
 
@@ -40,7 +40,7 @@ Hard product rules this catalog must not break:
 | HP taxes | fraction of **current max HP** so a seam still matters at 1000 HP |
 | Slots per map | tile 55% · encounter 25% · event 15% · max 3 features |
 | Death Realm | no features |
-| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate (portal-filter + run integrity) |
+| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate (portal-filter + run integrity) |
 | Live modifiers | the existing 22 still roll on their own two-roll; this catalog does not replace them |
 
 `pickWeightedFeatures` never receives player level.
@@ -67,6 +67,8 @@ New seams, clouds, and bars use **% max HP** so they stay relevant beside those 
 7. Maps that would start with only one living unit skip Isolation Chill (no warm pair).
 8. Do not add a second copy of the same `WORLD_FEATURE_ID` on one map.
 9. Do not place two `blocksWalk` features on the same cell.
+10. Maps that cannot fit 3 extra enemies skip Phalanx Line.
+11. Maps that would start with fewer than 3 living units skip Crowd Press (no press trio).
 
 ## Visual language
 
@@ -766,6 +768,434 @@ COUNTERPLAY: End turns inside a ring; summon a front-liner; shove a foe to 3 til
 
 ---
 
+## Wave 4 (2026-09-21)
+
+Fourth-wave seams so a long-lived character still meets new decisions after waves 1–3 have been seen many times. Same rarity weights and relative difficulty. Same overlay contract. Do not clone lava / ice / spikes, the live 22 modifiers, or wave-1 / wave-2 / wave-3 ids.
+
+### WF-HAZ-FLINT_DUST
+
+WORLD_FEATURE_ID: WF-HAZ-FLINT_DUST  
+NAME: Flint Dust  
+MECHANIC: Pale flint tiles. Walking through and ending a turn are free. Spending AP (a spell or Attack Nearest) while occupying a flint tile costs 4% max HP. Walkable. Does not replace lava, ice, ember, salt, or needle grass.  
+PLAYER_DECISION: Fight from clean floor, pay to hold a flint angle, or shove a caster onto the dust.  
+RELATIVE_DIFFICULTY: medium (threat 1.0 — a casting tax, not a fight)  
+RARITY: common (weight 40)  
+VISUAL: Flint inlay, `#3a3428` wash, dust glyph, tooltip “walk free; spending AP here taxes % max HP”.  
+SOLVABILITY: Floor only. Never on spawn±3 or portals. Never the only cell in a corridor (does not block).  
+COMBAT_RULES: Challenge HP recorders. Trigger is AP spend while occupying, not a spell name. Wounded AI avoids casting from dust like lava. Counts toward `MAX_HAZARD_TILES` (4–8 tiles).  
+COUNTERPLAY: Step off before spending AP, teleport (ground/self metadata), or send a summon to hold the cell.
+
+### WF-HAZ-PENDULUM_CENSER
+
+WORLD_FEATURE_ID: WF-HAZ-PENDULUM_CENSER  
+NAME: Pendulum Censer  
+MECHANIC: A censer occupies one cell of a painted 5-tile nave line and steps one cell along that line at each round start, reversing at the ends. Landing on a unit costs 5% max HP.  
+PLAYER_DECISION: Stand off the nave, cross just after it passes, or bait an enemy onto the next cell.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare (weight 8)  
+VISUAL: Censer glyph, `#3a2418` wash, reverse chevrons at both ends of the nave.  
+SOLVABILITY: Line is floor. Never covers spawn/portal. A path around the nave remains. Not a wall.  
+COMBAT_RULES: Round-start 1-tile step, then reverse at either end. Challenge HP. No AP/MP spend, no skipped turns. 1 hazard budget.  
+COUNTERPLAY: Stand off the nave; end off the next cell; push/attract a foe onto that cell.
+
+### WF-TRP-DELAY_GNOMON
+
+WORLD_FEATURE_ID: WF-TRP-DELAY_GNOMON  
+NAME: Delay Gnomon  
+MECHANIC: A visible sundial. The first unit to step on it arms a 2-round fuse (no tax). Two round-starts later every unit on that cell pays 6% max HP once; the plate then becomes floor. If nobody steps, it never detonates.  
+PLAYER_DECISION: Arm it as area denial and leave, bait a foe to stay two rounds, or never step on it.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon (weight 20)  
+VISUAL: Sundial plate, `#3a2a18` wash, painted 2→1 pips after arming. Always visible.  
+SOLVABILITY: Walkable before and after. Never hidden. Never on spawn/portals.  
+COMBAT_RULES: Arm on first step. Detonate on the second following round start. Challenge HP. No name-based trap lookup.  
+COUNTERPLAY: Never arm it; arm and leave before pip 0; send a summon to arm it; shove a foe onto the armed cell.
+
+### WF-TER-REED_SCREEN
+
+WORLD_FEATURE_ID: WF-TER-REED_SCREEN  
+NAME: Reed Screen  
+MECHANIC: A carved reed lattice blocks walk and occupancy but does not block LoS. Adjacent: 1 AP (no spell) cuts it to clear floor. Inverse of Frost Pane.  
+PLAYER_DECISION: Spend 1 AP for the cell, leave it as a walk-block you can shoot through, or make the enemy cut it.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Reed lattice, `#2a3220` wash, cut chips on break.  
+SOLVABILITY: Must not be a cut-vertex. Skip if `evaluateSolvability` would fail with it intact.  
+COMBAT_RULES: 1 AP occupancy action. No damage. Wall for walk until cut. LoS treats it as empty floor.  
+COUNTERPLAY: Ignore when a bypass exists; cut when the cell is worth 1 AP; shoot linear spells through it.
+
+### WF-OBS-HOURGLASS_ARCH
+
+WORLD_FEATURE_ID: WF-OBS-HOURGLASS_ARCH  
+NAME: Hourglass Arch  
+MECHANIC: A short-path floor cell with three painted sand pips. It starts walkable. After three round-starts the sand runs out and the cell becomes a wall for the rest of the map. Inverse of Fallen Gate.  
+PLAYER_DECISION: Use the short path in the first three rounds, or never rely on it and keep the long path.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Stone arch, `#3a3024` wash, three sand pips that empty.  
+SOLVABILITY: Place only when a second spawn→portal route already exists. Evaluate solvability as if the arch were already a wall. Never the only exit.  
+COMBAT_RULES: Walkable until the third round start, then wall occupancy. No damage. Timer ticks at round start.  
+COUNTERPLAY: Take the long path; cross during the first three rounds; teleport past if metadata allows.
+
+### WF-ZON-VEIL_FONT
+
+WORLD_FEATURE_ID: WF-ZON-VEIL_FONT  
+NAME: Veil Font  
+MECHANIC: A pale inlay. While a unit occupies it, spells with `linear === true` treat that cell as a LoS wall in both directions. Non-linear spells, Attack Nearest, and summons are unchanged. Lost on leaving. Either side may hold it.  
+PLAYER_DECISION: Plant on the font to hide from linear shots (and give up linear yourself), yank the holder off, or ignore it.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Pale veil inlay, `#2a2a38` wash, hanging-cloth glyph.  
+SOLVABILITY: Walkable. Optional. Never on spawn/portals. The veil is not a walk wall.  
+COMBAT_RULES: Reads `SpellConfig.linear` / `lineOfSight` only. Not a buff spell (Null Field does not strip it). No damage rewrite.  
+COUNTERPLAY: Occupy it against a linear kit; push the holder off; cast non-linear; fight where the font is irrelevant.
+
+### WF-TEL-SWAP_ANCHOR
+
+WORLD_FEATURE_ID: WF-TEL-SWAP_ANCHOR  
+NAME: Swap Anchor  
+MECHANIC: A single cyan anchor. Entering it for 1 MP swaps you with the nearest other living unit (Chebyshev; ties break by live initiative order). If no other living unit exists, the 1 MP is not spent.  
+PLAYER_DECISION: Spend 1 MP to swap with the nearest body, walk, or leave the pad as an enemy yank.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Single cyan anchor, `#0e2a3a` wash, twin-arrow glyph.  
+SOLVABILITY: Floor, not on spawn/portals. The map is solvable without using it. Swap stays on the walkable graph.  
+COMBAT_RULES: 1 MP from the unit’s current MP only if a swap occurs. Occupancy swap. Not a teleport spell — do not key off `effectCategory`.  
+COUNTERPLAY: Stand farther than the unit you do not want swapped; ignore the pad; yank a foe onto a hazard.
+
+### WF-PRT-WAGER_GATE
+
+WORLD_FEATURE_ID: WF-PRT-WAGER_GATE  
+NAME: Wager Gate  
+MECHANIC: An extra coin-rim portal. Entering while current HP is at least 50% of max HP rolls a random eligible overworld map and pays a hard `applyRewards` grant. Entering below 50% is a regular extra portal with no bonus. It is never the only exit.  
+PLAYER_DECISION: Heal or hold HP to gamble the hard purse, take it wounded as a spare exit, or use the stable portal you can already see.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic (weight 3)  
+VISUAL: Portal with coin rim, `#2a1a28` wash, gold flicker.  
+SOLVABILITY: Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm. HP check is current/max — no level cutoff.  
+COMBAT_RULES: Portal transition, not a combat action. Bonus via `applyRewards` on the persist lock only when the 50% check passes. Death-realm guards still block entry.  
+COUNTERPLAY: Ignore it. The stable exit always works. Enter wounded for no bonus, or drink a shrine first.
+
+### WF-INV-PHALANX_LINE
+
+WORLD_FEATURE_ID: WF-INV-PHALANX_LINE  
+NAME: Phalanx Line  
+MECHANIC: Three extra same-tier elites (hard threat) stand in a painted 3-tile line. They do not wander. Touching any one starts a normal battle with all three at full HP. Victory pays hard reward multiplier. Exploration: leave without touching. Dungeon / boss rush: they count as hostiles for map-clear.  
+PLAYER_DECISION: Give the line a wide berth, engage all three for the hard purse, or (in a run) clear them because the portal will not open.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Three shields in a line, `#3a1818` wash, pennants upright.  
+SOLVABILITY: Line is floor. Exit reachable without stepping adjacent. Counts as 3 toward `MAX_ENEMIES`. Skip if the roster cannot fit 3.  
+COMBAT_RULES: World contact starts a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: Stay off the line in exploration; engage when you want the purse; in a run, fight them.
+
+### WF-ELT-LEASH_WARDEN
+
+WORLD_FEATURE_ID: WF-ELT-LEASH_WARDEN  
+NAME: Leash Warden  
+MECHANIC: One elite (same-tier × hard) wanders only inside a painted Chebyshev-3 leash around a post. Touch to fight (hard purse). Exploration: walk around the leash. Dungeon / boss rush: they count as a hostile for map-clear — you must enter the leash.  
+PLAYER_DECISION: Circle the leash, step in when the warden is isolated, or (in a run) enter because the portal will not open.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare  
+VISUAL: Post + leash ring, `#3a2018` wash, tether glyph.  
+SOLVABILITY: Post and leash are floor. Exit reachable without entering the leash. Counts as 1 enemy. Post is never a portal and never spawn±3.  
+COMBAT_RULES: World contact starts a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`. The leash is not a wall.  
+COUNTERPLAY: Stay off the leash in exploration; enter when isolated; in a run they cannot be skipped for clear.
+
+### WF-TRS-PATIENCE_CACHE
+
+WORLD_FEATURE_ID: WF-TRS-PATIENCE_CACHE  
+NAME: Patience Cache  
+MECHANIC: A visible chest with two sand pips. Adjacent 1 AP opens it now for a guaranteed soft `applyRewards` grant and no guardian. If left closed, after two round-starts (or two wander ticks out of battle) it auto-opens: 50% medium grant, 50% one same-tier guardian and no grant.  
+PLAYER_DECISION: Take the sure small purse now, wait for a maybe-better auto-open, or walk past.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Chest with sand pips, `#3a2a14` wash, gold trim.  
+SOLVABILITY: Adjacent-open, not a wall. If no guardian cell, a failed auto-open pays the medium grant with no guardian.  
+COMBAT_RULES: AP cost, not a spell. Credits via persist-lock `applyRewards`. Manual open cancels the auto-open — no double grant.  
+COUNTERPLAY: Skip; open now when wounded; wait when you can handle a possible extra body.
+
+### WF-SPL-ECHO_SCRIBE
+
+WORLD_FEATURE_ID: WF-SPL-ECHO_SCRIBE  
+NAME: Echo Scribe  
+MECHANIC: One same-tier enemy (medium threat) carries extra `usableByEnemy` spells. On death the player may take the last spell id that scribe actually cast this fight as a **single remaining cast** this map. If they never cast a spell (only Attack Nearest / movement), there is no grant.  
+PLAYER_DECISION: Bait a cast then kill for that one-shot, burst them before they show a spell, or ignore them.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Enemy with a hovering quill, `#241828` wash.  
+SOLVABILITY: Prefer replacing one existing spawn; else +1 if under the enemy cap. Must stay reachable.  
+COMBAT_RULES: Copied id is the last spell they cast, metadata only. Attack Nearest is not a spell and yields no grant. One-cast does not call `upgradeSpell` and does not persist `spellLevel*` arrays.  
+COUNTERPLAY: Kite and ignore; burst before they cast; wait for a utility cast then take it.
+
+### WF-RSK-SEEPING_TITHE
+
+WORLD_FEATURE_ID: WF-RSK-SEEPING_TITHE  
+NAME: Seeping Tithe  
+MECHANIC: End a turn on the copper-black inlay to pay 8% max HP once and flag this map: at the start of each of your turns you pay 4% max HP. The next `applyRewards` uses the extreme multiplier. One flag, this map only. Enemies do not pay the tithe.  
+PLAYER_DECISION: Accept a repeating HP tax for an extreme purse, or stay unflagged.  
+RELATIVE_DIFFICULTY: extreme  
+RARITY: epic  
+VISUAL: Copper-black inlay, `#2a1410` wash, slow drip glyph.  
+SOLVABILITY: Optional floor tile. Map is solvable if never used.  
+COMBAT_RULES: HP via challenge recorders. Per-turn tax is at the start of player turns only. Multiplier on the next `applyRewards` enqueue only. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Skip unless the fight will be short, you can out-heal the drip, or a portal credit is already in reach.
+
+### WF-MOD-HEAVY_INCANT
+
+WORLD_FEATURE_ID: WF-MOD-HEAVY_INCANT  
+NAME: Heavy Incant  
+MECHANIC: Spells with `apCost >= 3` also spend 1 MP if the caster has at least 1 current MP. If they have 0 MP the spell still casts. Uses `SpellConfig.apCost` only — never the spell name.  
+PLAYER_DECISION: Cast heavy spells and accept the MP tax, open with 1–2 AP spells, or close to melee / Attack Nearest.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Heavy-sigil overlay, `#2a1a28` wash, extra-MP pip on high-AP spells.  
+SOLVABILITY: No tile change. Melee, Attack Nearest, summons, and 1–2 AP kits remain usable.  
+COMBAT_RULES: Reads `SpellConfig.apCost` only. Attack Nearest and summons are not spells. No damage rewrite. 0 MP does not block the cast.  
+COUNTERPLAY: Cast low-AP spells; Attack Nearest; spend MP first then accept a 0-MP heavy cast; refuse the fight.
+
+### WF-EVT-IRON_LENT
+
+WORLD_FEATURE_ID: WF-EVT-IRON_LENT  
+NAME: Iron Lent  
+MECHANIC: This map only: if the player’s current HP never increased (no shrine, potion, zone heal, or other HP gain), the next `applyRewards` uses the hard multiplier. Taking damage is allowed. If HP ever went up, that credit is unchanged.  
+PLAYER_DECISION: Skip heals for a hard purse, or drink and accept normal rewards.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Iron corona, `#2a2420` wash, empty-cup glyph at the horizon.  
+SOLVABILITY: No blocks. Leaving is always legal.  
+COMBAT_RULES: HP-increase checks compare current HP to the previous value this map. Multipliers on persist-lock `applyRewards` only. Does not rewrite `combatMath`. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Leave without fighting; play the fight without drinking; ignore the overlay and heal.
+
+### WF-ENV-STAGNANT_HAZE
+
+WORLD_FEATURE_ID: WF-ENV-STAGNANT_HAZE  
+NAME: Stagnant Haze  
+MECHANIC: At the end of each combatant turn, if that unit spent 0 MP this turn, they pay 3% max HP. Spending any MP this turn clears the haze for that unit.  
+PLAYER_DECISION: Spend 1 MP even to shuffle, plant and pay, or shove a planted foe.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: uncommon  
+VISUAL: Green-grey haze, `#243028` wash, clinging motes on planted units.  
+SOLVABILITY: Tax is not a wall. Optional fights can be refused in exploration.  
+COMBAT_RULES: End-of-turn challenge HP. Summons pay it. Attack Nearest and AP spells do not count as MP. No skipped turns. No spell-damage change.  
+COUNTERPLAY: Spend 1 MP to an adjacent floor; summon a walker; pay to plant for a linear shot.
+
+---
+
+## Wave 5 (2026-09-22)
+
+Fifth-wave seams so a long-lived character still meets new decisions after waves 1–4 have been seen many times. Same rarity weights and relative difficulty. Same overlay contract. Do not clone lava / ice / spikes, the live 22 modifiers, or wave-1 / wave-2 / wave-3 / wave-4 ids.
+
+### WF-HAZ-GLASS_SHARD
+
+WORLD_FEATURE_ID: WF-HAZ-GLASS_SHARD  
+NAME: Glass Shard  
+MECHANIC: Pale glass tiles. Voluntary walk-on and ending a turn are free. Occupying a shard because of forced movement (push, attract, wind slide, swap, or a teleport tile) costs 5% max HP. Walkable. Does not replace lava, ice, ember, salt, needle grass, or flint.  
+PLAYER_DECISION: Stand on glass as cover, path so a shove cannot dump you onto it, or shove a foe onto a shard.  
+RELATIVE_DIFFICULTY: medium (threat 1.0 — a dump tax, not a fight)  
+RARITY: common (weight 40)  
+VISUAL: Glass inlay, `#4a4850` wash, shard glyph, tooltip “walk free; forced occupancy taxes % max HP”.  
+SOLVABILITY: Floor only. Never on spawn±3 or portals. Never the only cell in a corridor (does not block).  
+COMBAT_RULES: Challenge HP recorders. Trigger is forced occupancy, not voluntary walk and not a spell-name check. Counts toward `MAX_HAZARD_TILES` (4–8 tiles).  
+COUNTERPLAY: Walk onto shards yourself; end so the next forced cell is not glass; send a summon to occupy a dump cell.
+
+### WF-HAZ-RATCHET_COG
+
+WORLD_FEATURE_ID: WF-HAZ-RATCHET_COG  
+NAME: Ratchet Cog  
+MECHANIC: A cog occupies one of two painted adjacent floor cells and swaps to the other at each round start. Landing on a unit costs 5% max HP.  
+PLAYER_DECISION: Stand off the pair, occupy the cell it just left, or bait an enemy onto the next cell.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare (weight 8)  
+VISUAL: Cog glyph, `#3a3020` wash, two-cell pip that flips.  
+SOLVABILITY: Pair is floor. Never covers spawn/portal. A path around the pair remains. Not a wall.  
+COMBAT_RULES: Round-start swap. Challenge HP. No AP/MP spend, no skipped turns. 1 hazard budget.  
+COUNTERPLAY: Stand off the pair; end on the cell it just left; push/attract a foe onto the next cell.
+
+### WF-TRP-SECOND_FOOT
+
+WORLD_FEATURE_ID: WF-TRP-SECOND_FOOT  
+NAME: Second Foot  
+MECHANIC: A visible print plate. The first unit to step on it leaves a painted print and takes no tax. The next occupancy of that cell this map pays 8% max HP once; the plate then becomes floor.  
+PLAYER_DECISION: Spend the first print yourself so a foe pays the second, bait a second body onto it, or never step.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon (weight 20)  
+VISUAL: Print plate, `#4a2018` wash, always-visible print after the first step.  
+SOLVABILITY: Walkable before and after. Never hidden. Never on spawn/portals.  
+COMBAT_RULES: First step arms (no tax). Second occupancy detonates once. Challenge HP. No name-based trap lookup.  
+COUNTERPLAY: Never step; spend the first print then leave; send a summon for the second occupancy; shove a foe onto the print.
+
+### WF-TER-SANDBAG
+
+WORLD_FEATURE_ID: WF-TER-SANDBAG  
+NAME: Sandbag  
+MECHANIC: A sandbag blocks walk and occupancy but does not block LoS. Adjacent: 1 AP pushes it one cardinal into empty floor; 1 AP dumps it to clear floor. No damage. Distinct from Reed Screen (cut in place) and Cinder Barrel (roll tax).  
+PLAYER_DECISION: Push it as moving cover, dump it for the cell, or leave it as a walk-block you can shoot through.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Sandbag, `#3a3428` wash, dump chips.  
+SOLVABILITY: Must not be a cut-vertex. Skip if `evaluateSolvability` would fail with it intact. Push stays on the walkable graph.  
+COMBAT_RULES: 1 AP occupancy actions. No damage. Wall for walk until dumped. LoS treats it as empty floor.  
+COUNTERPLAY: Ignore when a bypass exists; dump when the cell is worth 1 AP; push it to plug a lane; shoot linear spells through it.
+
+### WF-OBS-SHIFT_SLAB
+
+WORLD_FEATURE_ID: WF-OBS-SHIFT_SLAB  
+NAME: Shift Slab  
+MECHANIC: Two painted adjacent short-path cells. Exactly one is a wall and the other is floor. They swap at each round start. A painted pip shows which cell is open.  
+PLAYER_DECISION: Cross on the currently open slab, wait one round for the other lane, or spend MP on the always-open long path.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Twin slabs, `#2a3238` wash, open/shut pip.  
+SOLVABILITY: Place only when spawn→portal remains with cell A walled AND with cell B walled. Never the only exit. Never both open or both shut.  
+COMBAT_RULES: Wall occupancy on the shut cell. No damage. Swap ticks at round start.  
+COUNTERPLAY: Wait one round; take the long path; teleport past if metadata allows.
+
+### WF-ZON-KEEN_EDGE
+
+WORLD_FEATURE_ID: WF-ZON-KEEN_EDGE  
+NAME: Keen Edge  
+MECHANIC: A bronze grindstone. While a unit occupies it, Attack Nearest deals +15% of the already-computed hit (after RES/SR). Spells and summons are unchanged. Lost on leaving. Either side may hold it.  
+PLAYER_DECISION: Plant for a harder basic attack, yank the holder off, or ignore it and cast spells.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Bronze grindstone, `#3a2810` wash, edge glyph.  
+SOLVABILITY: Walkable. Optional. Never on spawn/portals. Not a walk wall.  
+COMBAT_RULES: Bonus applies only to Attack Nearest (not a spell). The +15% scales the post-formula number — it does not replace `combatMath`. Null Field does not strip it.  
+COUNTERPLAY: Occupy it; push the holder off; fight with spells; ignore it.
+
+### WF-TEL-RECALL_PIN
+
+WORLD_FEATURE_ID: WF-TEL-RECALL_PIN  
+NAME: Recall Pin  
+MECHANIC: A single cyan pin-stone. Adjacent 1 AP plants your recall mark on your current cell (one pin per side). Later, entering the stone for 1 MP exits at your pin. If occupied, the travelers swap. Entering with no pin spends nothing.  
+PLAYER_DECISION: Spend 1 AP to mark a cell worth returning to, 1 MP later to recall, walk, or leave the stone as an enemy recall.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Cyan pin-stone, `#0e2438` wash, painted pin on the marked cell.  
+SOLVABILITY: Floor, not on spawn/portals. The map is solvable without using it. Recall stays on the walkable graph.  
+COMBAT_RULES: Plant is 1 AP, recall is 1 MP only if a pin exists. Occupancy swap. Not a teleport spell — do not key off `effectCategory`.  
+COUNTERPLAY: Stand on an enemy pin to force a swap; ignore the stone; plant next to a portal or hazard.
+
+### WF-PRT-PACT_GATE
+
+WORLD_FEATURE_ID: WF-PRT-PACT_GATE  
+NAME: Pact Gate  
+MECHANIC: An extra pact-rim portal. Entering while a living allied summon is within 2 Chebyshev rolls a random eligible overworld map and pays a hard `applyRewards` grant. Entering without that summon is a spare exit with no bonus. It is never the only exit.  
+PLAYER_DECISION: Bring a summon into range for the hard gamble, take it as a spare exit, or use the stable portal you can already see.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic (weight 3)  
+VISUAL: Portal with pact rim, `#1a2430` wash, teal flicker.  
+SOLVABILITY: Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm. No summon is required to leave.  
+COMBAT_RULES: Portal transition, not a combat action. Bonus via `applyRewards` on the persist lock only when a living allied summon is within 2 Chebyshev. Death-realm guards still block entry.  
+COUNTERPLAY: Ignore it. The stable exit always works. Enter without a summon for no bonus, or summon then step in.
+
+### WF-INV-MIRROR_HOST
+
+WORLD_FEATURE_ID: WF-INV-MIRROR_HOST  
+NAME: Mirror Host  
+MECHANIC: One extra same-tier elite (hard threat) stands on a painted tether. Out of battle, whenever the player pays HP, the host loses the same percent of its max HP. Touch starts a normal battle at remaining HP. Victory pays hard if the host was above 50% at contact, medium if already wounded. Exploration: leave. Dungeon / boss rush: they count as a hostile for map-clear.  
+PLAYER_DECISION: Fight it healthy, tax yourself first to weaken the tether, or never touch it (exploration).  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Tethered elite, `#2a1a28` wash, mirrored HP pip.  
+SOLVABILITY: Tether is floor. Exit reachable without touching. Counts as 1 toward `MAX_ENEMIES`.  
+COMBAT_RULES: World attrition does not call `applyRewards`. Contact is a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: Stay off the tether in exploration; step on a hazard first to wound it; in a run, fight it.
+
+### WF-ELT-DRIFT_SENTINEL
+
+WORLD_FEATURE_ID: WF-ELT-DRIFT_SENTINEL  
+NAME: Drift Sentinel  
+MECHANIC: One elite (same-tier × hard) wanders only on odd rounds along a 4–6 tile loop (painted odd pip). On even rounds it stands still. Touch to fight (hard purse). Exploration: skip. Dungeon / boss rush: required for map-clear.  
+PLAYER_DECISION: Intercept on even rounds while it stands, cross the loop on odd while it moves, or never touch them.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare  
+VISUAL: Loop + odd pip, `#2a2820` wash, sentinel pennant.  
+SOLVABILITY: Loop is floor. Exit reachable without crossing. Counts as 1 enemy.  
+COMBAT_RULES: World contact starts a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`. Odd/even is round index, not a skipped turn.  
+COUNTERPLAY: Stand off the loop; fight when planted on even; in exploration, leave.
+
+### WF-TRS-BLOOD_LOCK
+
+WORLD_FEATURE_ID: WF-TRS-BLOOD_LOCK  
+NAME: Blood Lock  
+MECHANIC: A sealed chest with a crimson lock. 1 AP adjacent plus 5% max HP opens it: a hard `applyRewards` grant, no guardian, no coin-flip.  
+PLAYER_DECISION: Pay AP and HP for a sure hard purse, or walk past.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Crimson-lock chest, `#3a1418` wash, gold trim.  
+SOLVABILITY: Adjacent-open, not a wall. Optional.  
+COMBAT_RULES: AP plus challenge HP, not a spell. Credits via persist-lock `applyRewards`. No guardian. No `updateCharacter` Doka.  
+COUNTERPLAY: Skip; open when 5% is cheap and you expect the credit.
+
+### WF-SPL-OATH_CANTOR
+
+WORLD_FEATURE_ID: WF-SPL-OATH_CANTOR  
+NAME: Oath Cantor  
+MECHANIC: One same-tier enemy (medium threat) carries 1 extra `usableByEnemy` spell. Adjacent 1 AP binds that spell id as a cast you may use this map only while the cantor is still alive. Killing them ends the bind. They stay hostile. Inverse of Loaner Mage.  
+PLAYER_DECISION: Borrow a spell you must keep them alive to use, kill them for the purse and lose the bind, or ignore them.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Enemy with a bound ribbon, `#1a2030` wash.  
+SOLVABILITY: Prefer replacing one existing spawn; else +1 if under the enemy cap. Must stay reachable.  
+COMBAT_RULES: Metadata only (`usableByEnemy`, `targetType`, costs). Bind does not call `upgradeSpell` and does not persist `spellLevel*` arrays.  
+COUNTERPLAY: Kite and ignore; bind then leave them alive; kill for the purse if you do not need the spell.
+
+### WF-RSK-OPEN_VEIN
+
+WORLD_FEATURE_ID: WF-RSK-OPEN_VEIN  
+NAME: Open Vein  
+MECHANIC: End a turn on the crimson inlay to pay 10% max HP once and flag this map: if you start at least one encounter, the next `applyRewards` uses the hard multiplier. If you leave without fighting, the tax is a sunk cost. Inverse of Pilgrim Banners.  
+PLAYER_DECISION: Pay HP only if you intend to fight, or stay unflagged.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Crimson inlay, `#2a1014` wash, open-vein glyph.  
+SOLVABILITY: Optional floor tile. Map is solvable if never used.  
+COMBAT_RULES: HP via challenge recorders. Multiplier on the next `applyRewards` enqueue only if a fight started. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Skip unless you already plan a fight. In a run the clear still counts as starting encounters.
+
+### WF-MOD-THIN_AIR
+
+WORLD_FEATURE_ID: WF-MOD-THIN_AIR  
+NAME: Thin Air  
+MECHANIC: Spells with `apCost === 1` cost 2 AP this map. Spells with `apCost` 0 or 2+ are unchanged. Uses `SpellConfig.apCost` only — never the spell name. Distinct from Heavy Incant (which taxes AP≥3 with MP).  
+PLAYER_DECISION: Open with 2+ AP spells or Attack Nearest, pay 2 AP for cheap spells, or skip the fight.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Thin-air overlay, `#1a2830` wash, extra-AP pip on 1-AP spells.  
+SOLVABILITY: No tile change. Melee, Attack Nearest, summons, and 2+ AP kits remain usable.  
+COMBAT_RULES: Reads `SpellConfig.apCost` only. Attack Nearest and summons are not spells. No damage rewrite.  
+COUNTERPLAY: Cast 2+ AP spells; Attack Nearest; wait for AP; refuse the fight.
+
+### WF-EVT-FIRST_BLOOD
+
+WORLD_FEATURE_ID: WF-EVT-FIRST_BLOOD  
+NAME: First Blood  
+MECHANIC: This map only: if the first HP debit is suffered by an enemy, the next `applyRewards` uses the hard multiplier. If the player or a player-side summon takes the first debit, that credit is unchanged.  
+PLAYER_DECISION: Strike or dump a foe onto a hazard first for a hard purse, or accept normal rewards if you take the first hit.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Crimson first-strike overlay, `#3a1818` wash, first-blood disc.  
+SOLVABILITY: No blocks. Leaving is always legal.  
+COMBAT_RULES: First debit is the first challenge/combat HP loss this map. Player-side summons count as player-side. Multipliers on persist-lock `applyRewards` only. Does not rewrite `combatMath`. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Leave without anyone taking HP; shove a foe onto a tax first; ignore the overlay.
+
+### WF-ENV-CROWD_PRESS
+
+WORLD_FEATURE_ID: WF-ENV-CROWD_PRESS  
+NAME: Crowd Press  
+MECHANIC: At the end of each combatant turn, if two or more other living units are within 2 Chebyshev tiles, they pay 3% max HP. Inverse of Isolation Chill.  
+PLAYER_DECISION: Kite alone to stay unpressed, clump and pay, or shove a pair onto each other.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: uncommon  
+VISUAL: Press wash `#2a2028`, rings of radius 2 around bodies.  
+SOLVABILITY: Skip if the map would start with fewer than 3 living units so a press trio cannot exist. Tax is not a wall.  
+COMBAT_RULES: End-of-turn challenge HP. Summons count as living units. No skipped turns. No spell-damage change.  
+COUNTERPLAY: End turns with at most one other body in the ring; kite; pay to hold a clump.
+
+---
+
 ## Composition examples (same level, different maps)
 
 1. Ember Vein + Banner Patrol + Crosswind — path taxes, a moving elite, slides that can dump you onto the seam.  
@@ -782,10 +1212,20 @@ COUNTERPLAY: End turns inside a ring; summon a front-liner; shove a foe to 3 til
 12. Orbiting Cinder + Rally Drum + Isolation Chill — clockwise orb, an MP refund race, clump-or-pay cold.  
 13. Spent Bridge + Triune Pads — three-crossing shortcut vs 1 MP carousel skip.  
 14. Sleeping Vanguard + Stillness Oath — wake-or-leave elites plus a no-walk reward wager.  
-15. Split Cache + Harvest Moon — pick a niche, then hold 70% HP for a hard purse.
+15. Split Cache + Harvest Moon — pick a niche, then hold 70% HP for a hard purse.  
+16. Flint Dust + Leash Warden + Heavy Incant — do not cast from dust, circle-or-enter an elite, high-AP spells cost MP.  
+17. Pendulum Censer + Veil Font + Stagnant Haze — time the nave, hide from linear, keep moving.  
+18. Hourglass Arch + Swap Anchor — three-round shortcut vs 1 MP nearest-body swap.  
+19. Phalanx Line + Seeping Tithe — optional three-elite line plus a repeating HP tax for an extreme purse.  
+20. Patience Cache + Iron Lent — wait-or-open a chest, then skip heals for a hard grant.  
+21. Glass Shard + Drift Sentinel + Thin Air — dump-tax tiles, odd-round elite, 1-AP spells cost 2.  
+22. Ratchet Cog + Keen Edge + Crowd Press — two-cell cog, plant for Attack Nearest, kite or pay the clump.  
+23. Shift Slab + Recall Pin — wait-or-swap shortcut vs 1 AP mark / 1 MP return.  
+24. Mirror Host + Open Vein — bleed-or-fight elite plus HP tax that only pays if you start a fight.  
+25. Blood Lock + First Blood — sure hard chest, then land the first HP debit for another hard grant.
 
 None of these require a higher character level. The warband is scarier because it is a larger same-tier pack, not because it is “level 40 content”.
 
 ## Implementation gate
 
-Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, or **WDD-2026-09-02-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
+Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, or **WDD-2026-09-22-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
