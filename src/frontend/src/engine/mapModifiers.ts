@@ -695,6 +695,72 @@ export const mapModifierRegistry = {
   },
 };
 
+/**
+ * Player lives outside `combatantsRef`, so
+ * `playerTurnStartModifierTarget` + `applyTurnStart` is a no-op
+ * (`MIMA-2026-09-21-001`). WorldExploration already commits Plague Zone at
+ * `PLAGUE_ZONE_TICK` (2) via `setCharacterStats`. Registry `plague_zone` is a
+ * 1-damage tick — skip it here or the player would take 3 when this helper is
+ * wired. Void Rift / Mending Mist / Swift Winds have no player commit today.
+ *
+ * Apply the returned HP/MP **after** the per-turn formula restore
+ * (`getPlayerBaseStats` + active-effect mods). Swift Winds is a +2 MP bonus
+ * on top of that restore, not a replacement for it.
+ */
+export const PLAYER_TURN_START_SKIP_IDS: ReadonlySet<string> = new Set([
+  "plague_zone",
+]);
+
+export type PlayerTurnStartModifierVitals = {
+  hp: number;
+  maxHp: number;
+  mp: number;
+};
+
+export type PlayerTurnStartModifierCommit = PlayerTurnStartModifierVitals & {
+  hpDelta: number;
+  mpDelta: number;
+  /** HP rose (Mending Mist). In-battle heals fail no_healing challenges. */
+  healUsed: boolean;
+};
+
+const silentPlayerTurnStartCtx: ModifierCtx = {
+  log: () => {},
+  rng: () => 0,
+};
+
+export function resolvePlayerTurnStartModifierVitals(
+  vitals: PlayerTurnStartModifierVitals,
+  activeModifierTypes: Iterable<string>,
+  ctx: ModifierCtx = silentPlayerTurnStartCtx,
+): PlayerTurnStartModifierCommit {
+  const activeIds = new Set<string>();
+  for (const id of activeModifierTypes) {
+    if (!PLAYER_TURN_START_SKIP_IDS.has(id)) activeIds.add(id);
+  }
+  const row: CombatantExt = {
+    id: "player",
+    assignedName: "player",
+    hp: vitals.hp,
+    maxHp: vitals.maxHp,
+    mp: vitals.mp,
+  };
+  mapModifierRegistry.applyTurnStart(row, activeIds, ctx);
+  const hp = Math.max(0, Number.isFinite(row.hp) ? row.hp : vitals.hp);
+  const nextMp = row.mp ?? vitals.mp;
+  const mp = Math.max(0, Number.isFinite(nextMp) ? nextMp : vitals.mp);
+  const hpDelta = hp - vitals.hp;
+  const mpDelta = mp - vitals.mp;
+  return {
+    hp,
+    maxHp: vitals.maxHp,
+    mp,
+    hpDelta,
+    mpDelta,
+    healUsed: hpDelta > 0,
+  };
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
