@@ -3826,12 +3826,51 @@ const TierConfigTab: React.FC = () => {
     return DEFAULT_TIER_CFG;
   });
 
+  useEffect(() => {
+    if (!actor) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await (
+          actor as unknown as backendInterface
+        ).getTierSpawnConfig();
+        if (cancelled || !remote) return;
+        const next: TierSpawnConfig = {
+          tierSize: Number(remote.tierSize ?? DEFAULT_TIER_CFG.tierSize),
+          sameTierPercent: Number(
+            remote.sameTierPercent ?? DEFAULT_TIER_CFG.sameTierPercent,
+          ),
+          adjacentTierPercent: Number(
+            remote.adjacentTierPercent ?? DEFAULT_TIER_CFG.adjacentTierPercent,
+          ),
+          twoAwayPercent: Number(
+            remote.twoAwayPercent ?? DEFAULT_TIER_CFG.twoAwayPercent,
+          ),
+          threeOrMorePercent: Number(
+            remote.threeOrMorePercent ?? DEFAULT_TIER_CFG.threeOrMorePercent,
+          ),
+        };
+        if (cancelled) return;
+        setCfg(next);
+        localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(next));
+      } catch {
+        /* keep localStorage draft */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [actor]);
+
   const total =
     cfg.sameTierPercent +
     cfg.adjacentTierPercent +
     cfg.twoAwayPercent +
     cfg.threeOrMorePercent;
-  const isValid = total === 100;
+  const remainderThreePlus = Math.max(
+    0,
+    100 - cfg.sameTierPercent - cfg.adjacentTierPercent - cfg.twoAwayPercent,
+  );
 
   const setNum = (k: keyof TierSpawnConfig, v: string) => {
     const n = Math.max(0, Number.parseInt(v) || 0);
@@ -3839,10 +3878,6 @@ const TierConfigTab: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!isValid) {
-      toast.error("Percentages must sum to exactly 100%");
-      return;
-    }
     const tierErr = validateTierSpawnConfig({
       tierSize: Number(cfg.tierSize),
       sameTierPercent: Number(cfg.sameTierPercent),
@@ -3906,7 +3941,7 @@ const TierConfigTab: React.FC = () => {
       adjHigh: `T${adjHigh + 1}`,
       twoLow: `T${twoLow + 1}`,
       twoHigh: `T${twoHigh + 1}`,
-      threePlus: `${cfg.threeOrMorePercent}%`,
+      threePlus: `${remainderThreePlus}%`,
     };
   });
 
@@ -3923,10 +3958,19 @@ const TierConfigTab: React.FC = () => {
       >
         Enemy Tier Spawn System
       </h3>
-      <p style={{ color: "#8a8090", fontSize: 11, margin: "0 0 20px" }}>
+      <p style={{ color: "#8a8090", fontSize: 11, margin: "0 0 12px" }}>
         Configure how likely players are to encounter same-tier vs
-        higher/lower-tier enemies. All percentages must sum to 100.
+        higher/lower-tier enemies. Canister default is 60/20/10/5 (95 total).
       </p>
+      <CatalogNote>
+        Live spawn does not require the four percents to sum to 100. It spends
+        same, then adjacent, then ±2, and puts leftover into ±3+. The stored
+        threeOrMorePercent is not the roll weight. ±1 tier variance is a
+        hardcoded 15% in combatMath, not a field here. computeAITier kit bands
+        are 10/30/60/100/150/250/400/600/900 (not editable). ENEMY_KITS stay
+        code-owned. Tier index still caps at floor(999 / tierSize) — a
+        spawn-band clamp, not a player career cap.
+      </CatalogNote>
 
       {/* Config inputs */}
       <div
@@ -3980,7 +4024,7 @@ const TierConfigTab: React.FC = () => {
               value={cfg.sameTierPercent}
               onChange={(e) => setNum("sameTierPercent", e.target.value)}
               data-ocid="admin.tier.same_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
@@ -3997,7 +4041,7 @@ const TierConfigTab: React.FC = () => {
               value={cfg.adjacentTierPercent}
               onChange={(e) => setNum("adjacentTierPercent", e.target.value)}
               data-ocid="admin.tier.adjacent_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
@@ -4014,14 +4058,14 @@ const TierConfigTab: React.FC = () => {
               value={cfg.twoAwayPercent}
               onChange={(e) => setNum("twoAwayPercent", e.target.value)}
               data-ocid="admin.tier.twoaway_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
           {/* ±3+ tiers % */}
           <div style={{ marginBottom: 12 }}>
             <label htmlFor="tier.three" style={labelStyle}>
-              ±3+ Tiers % (default 5)
+              ±3+ Tiers % stored (default 5; live leftover is the roll)
             </label>
             <input
               id="tier.three"
@@ -4031,7 +4075,7 @@ const TierConfigTab: React.FC = () => {
               value={cfg.threeOrMorePercent}
               onChange={(e) => setNum("threeOrMorePercent", e.target.value)}
               data-ocid="admin.tier.threemore_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
@@ -4046,8 +4090,8 @@ const TierConfigTab: React.FC = () => {
           >
             <div
               style={{
-                background: isValid ? `${C.green}22` : `${C.red}22`,
-                border: `1px solid ${isValid ? C.green : C.red}`,
+                background: `${C.green}22`,
+                border: `1px solid ${C.green}`,
                 borderRadius: 6,
                 padding: "6px 14px",
                 width: "100%",
@@ -4056,12 +4100,13 @@ const TierConfigTab: React.FC = () => {
             >
               <span
                 style={{
-                  color: isValid ? C.green : C.red,
+                  color: C.green,
                   fontWeight: 800,
                   fontSize: 13,
                 }}
               >
-                Total: {total}%{isValid ? " ✔" : " ✘ must be 100"}
+                Total stored: {total}% · live ±3+ leftover: {remainderThreePlus}
+                %
               </span>
             </div>
           </div>
@@ -4228,10 +4273,11 @@ const SettingsTab: React.FC = () => {
         Manage admin permissions and game settings.
       </p>
       <CatalogNote>
-        Role transfer uses assignUserRole. Canister also has rollback
-        (LevelUp/Game/Tier/Palette/BossRush), getAdminAuditLog, setAppVersion /
-        setChangelog, and getBannedPrincipals — none of those have editors on
-        this tab.
+        Role transfer uses assignUserRole. Ban list is on Shop
+        (getBannedPrincipals). Ground Doka / leaderBoost live on Map Modifiers
+        (getGameConfig). This tab has no editors for rollback
+        (LevelUp/Game/Tier/Palette/BossRush), getAdminAuditLog, or setAppVersion
+        / setChangelog.
       </CatalogNote>
 
       <p style={sectionHeadStyle}>Transfer Admin Role</p>
@@ -6675,6 +6721,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   </Btn>
                 </div>
               </div>
+              <CatalogNote>
+                Canister rows are live: WorldExploration and AchievementsPanel
+                read getAchievementConfigs. Conditions must be in
+                KNOWN_ACHIEVEMENT_CONDITIONS. doka_1000 / doka_10000 / level_10
+                wait until applyRewards commits. level_10 is a feat, not a
+                career cap. Challenges have no admin tab.
+              </CatalogNote>
 
               {/* Editor */}
               {dashState.editingAchievementId && (
@@ -7140,9 +7193,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               </h3>
               <CatalogNote>
                 Enable/reward toggles write opaque JSON. Live rooms come from
-                BOSS_RUSH_ROOMS; only parsed.rewardMultiplier is read. Room 10
-                lists Weeping Pawn; live room 9 uses weeping_pawn_2. Canister
-                save publishes immediately — this is not a browser draft.
+                BOSS_RUSH_ROOMS. parsed.rewardMultiplier is loaded into unused
+                state — it does not scale dokaReward/xpReward. Room 10 lists
+                Weeping Pawn; live room 9 uses weeping_pawn_2. Canister save
+                publishes immediately — this is not a browser draft.
               </CatalogNote>
               {[
                 { room: 1, a: "Pale Archbishop", b: "Weeping Pawn" },
@@ -7834,9 +7888,11 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
             Boss Editor
           </h2>
           <p style={{ color: "#8a8090", margin: 0, fontSize: 11 }}>
-            Browser-local drafts only (pbv_boss_configs). Not canister-live. A
-            saved draft is not the live encounter until a backend writer exists.
-            Changes apply on this browser's next boss encounter.
+            Browser-local drafts only (pbv_boss_configs). WorldExploration reads
+            that key. Canister setBossConfig / getAllBossConfigs exist, but the
+            frontend shape (iconEmoji, loreText, chc) does not match Motoko
+            (defeated, adminNotes). Hooks do not call the actor. Empty custom
+            art is valid — default pixel visual.
           </p>
         </div>
       </div>
