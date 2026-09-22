@@ -64,20 +64,20 @@ const GameOverModal: React.FC<GameOverModalProps> = ({
                   }}
                 >
                   {xpLost !== undefined && xpLost > 0 && (
-                    <span className="block">−{xpLost} XP (20% penalty)</span>
+                    <span className="block">−{xpLost} leftover XP</span>
                   )}
                   {dokaLost !== undefined && dokaLost > 0 && (
-                    <span className="block">
-                      −{dokaLost} Doka (40% penalty)
-                    </span>
+                    <span className="block">−{dokaLost} Doka</span>
                   )}
                 </span>
               ) : null}
               <span
                 className="block text-xs mt-1"
+                data-ocid="game_over.penalty_rule"
                 style={{ color: "oklch(var(--dofus-text-dim))" }}
               >
-                Your level is kept. You revive at half health.
+                Death takes 20% leftover XP and 40% Doka. Your level is kept.
+                You revive at half health.
               </span>
             </AlertDialogDescription>
           </AlertDialogHeader>
