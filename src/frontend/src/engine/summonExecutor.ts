@@ -22,7 +22,14 @@
  * (detonation kills the summon). This mirrors the inline WX behavior.
  */
 
+import {
+  resolveSummonExecuteTarget,
+  summonAoEVictimAllowed,
+  summonExecuteCastProceeds,
+  summonExecuteMeleeProceeds,
+} from "../engine/summonCastExecute.ts";
 import type { Enemy, SpellConfig } from "../types/gameTypes";
+import { collectChallengeDirectHitTiles } from "../utils/challengeCompletion.ts";
 import { logDebugError } from "../utils/debugLogger.ts";
 import type { EnemyAction } from "./enemyAI";
 import {
@@ -32,6 +39,7 @@ import {
   resolveProgressionSafeOccupantCell,
 } from "./occupancy.ts";
 import type { SpellContext } from "./spellEngine.ts";
+import { resolveCastApCost } from "./targeting.ts";
 
 export interface SummonExecutorResult {
   /** New grid position after movement (clamped to grid bounds). */
@@ -64,12 +72,33 @@ export interface SummonExecutorHelpers {
    */
   getEnemyById: (id: string) => Enemy | undefined;
   /**
+   * Player cell when decide's `targetId` is `"player"`. `getEnemyById`
+   * only searches the enemy roster, so range/melee execute used to skip
+   * the decide gate against the human combatant.
+   */
+  playerTarget?: { x: number; y: number };
+  /**
    * Resolve AoE blast victims: every enemy within Chebyshev distance
    * blastRadius of the primary target (excluding the primary target and
    * same-side combatants). Caller reads enemiesRef.current and filters by
    * side. Returns the list of secondary victim ids to apply blast damage to.
    */
   getAoEVictims: (primaryTargetId: string, blastRadius: number) => Enemy[];
+  /**
+   * Resolve a target id that is not in enemiesRef (the player tile).
+   * Kit heals / ally casts used to skip Striker because getEnemyById
+   * returned undefined for `"player"`.
+   */
+  getTargetPos?: (id: string) => { x: number; y: number } | undefined;
+  /**
+   * legendary_3 Striker: AI-controlled kit casts never went through
+   * executeCastAttempt, so an Archer Poison Arrow at range 4 still
+   * persisted 400 Doka / 800 XP after the player only placed the summon.
+   */
+  onSpentCast?: (notice: {
+    caster: { x: number; y: number };
+    tiles: Array<{ x: number; y: number }>;
+  }) => void;
   /**
    * Optional re-evaluator used by the `kind === "move"` branch to decide a
    * follow-up cast/melee AFTER the move, mirroring the enemy move-then-cast
@@ -151,7 +180,7 @@ export function executeSummonAction(
   // ── Cast primitive (shared by the `cast` branch and the move-then-cast
   // re-evaluation follow-up). Returns true when AP was spent on a real cast.
   const applyCast = (spell: SpellConfig, targetId: string): boolean => {
-    const apCost = Number(spell.apCost ?? 0);
+    const apCost = resolveCastApCost(Number(spell.apCost));
     if (currentAp < apCost) {
       logLines.push(
         `[cast] ${summonLabel} ${spell.name} → ${targetId} blocked (need ${apCost}AP, have ${currentAp}AP)`,
@@ -159,18 +188,57 @@ export function executeSummonAction(
       return false;
     }
     const target = helpers.getEnemyById(targetId);
+    const targetCell = resolveSummonExecuteTarget({
+      targetId,
+      found: target,
+      playerTarget: helpers.playerTarget,
+      getTargetPos: helpers.getTargetPos,
+    });
+    if (
+      !summonExecuteCastProceeds({
+        origin: { x, y },
+        target: targetCell,
+        spell,
+      })
+    ) {
+      logLines.push(
+        `[cast] ${summonLabel} ${spell.name} → ${targetId} blocked (out of range)`,
+      );
+      return false;
+    }
     const damage = Number(spell.damage ?? 0);
     const healAmount = Number(spell.healAmount ?? 0);
-    if (damage > 0 && target) {
+    const noticeSpentCast = (
+      extraTiles: Array<{ x?: number; y?: number }> = [],
+    ) => {
+      helpers.onSpentCast?.({
+        caster: { x, y },
+        tiles: collectChallengeDirectHitTiles([
+          target
+            ? { x: target.x, y: target.y }
+            : (helpers.getTargetPos?.(targetId) ?? helpers.playerTarget),
+          ...extraTiles,
+        ]),
+      });
+    };
+    const casterSide = summon.side === "player" ? "player" : "enemy";
+    const hitsResolvedDamageTarget =
+      damage > 0 &&
+      (Boolean(target) ||
+        ((targetId === "player" || targetId === "__player__") &&
+          Boolean(targetCell)));
+    if (hitsResolvedDamageTarget) {
       const baseDmg = helpers.calcScaledDamage(damage, summon.level, 0);
       summonCtx.dealDamage(targetId, baseDmg);
       const blastR = Number(spell.areaRadius ?? 0);
-      if (blastR > 0) {
-        for (const victim of helpers.getAoEVictims(targetId, blastR)) {
-          summonCtx.dealDamage(victim.id, baseDmg);
-        }
+      const aoeVictims =
+        blastR > 0 ? helpers.getAoEVictims(targetId, blastR) : [];
+      for (const victim of aoeVictims) {
+        if (!summonAoEVictimAllowed(victim, casterSide, targetId)) continue;
+        summonCtx.dealDamage(victim.id, baseDmg);
       }
       currentAp -= apCost;
+      noticeSpentCast(aoeVictims);
       logLines.push(
         `[cast] ${summonLabel} ${spell.name} → ${targetId} for ${baseDmg}`,
       );
@@ -183,6 +251,7 @@ export function executeSummonAction(
     if (healAmount > 0) {
       summonCtx.heal(targetId, healAmount);
       currentAp -= apCost;
+      noticeSpentCast();
       logLines.push(
         `[cast] ${summonLabel} ${spell.name} → ${targetId} healed ${healAmount}`,
       );
@@ -202,6 +271,7 @@ export function executeSummonAction(
       description: spell.description ?? "",
     });
     currentAp -= apCost;
+    noticeSpentCast();
     logLines.push(
       `[cast] ${summonLabel} ${spell.name} → ${targetId} applied effect`,
     );
@@ -215,6 +285,24 @@ export function executeSummonAction(
     if (currentAp < apCost) {
       logLines.push(
         `[melee] ${summonLabel} → ${targetId} blocked (need ${apCost}AP, have ${currentAp}AP)`,
+      );
+      return false;
+    }
+    const meleeTarget = helpers.getEnemyById(targetId);
+    const meleeCell = resolveSummonExecuteTarget({
+      targetId,
+      found: meleeTarget,
+      playerTarget: helpers.playerTarget,
+      getTargetPos: helpers.getTargetPos,
+    });
+    if (
+      !summonExecuteMeleeProceeds({
+        origin: { x, y },
+        target: meleeCell,
+      })
+    ) {
+      logLines.push(
+        `[melee] ${summonLabel} → ${targetId} blocked (out of range)`,
       );
       return false;
     }
