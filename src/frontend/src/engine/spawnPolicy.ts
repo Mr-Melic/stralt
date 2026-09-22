@@ -10,6 +10,9 @@
  *   - portal keep-clear: Manhattan <= 2
  *   - map-spawn keep-clear: Chebyshev <= 3 from (8, 8)
  *   - enemy-to-enemy spacing: Chebyshev >= 4
+ * Spawn cells must also sit on the player's battle-walkable island
+ * (`isEnemyWanderFloor`). Do not treat overworld flood-through-portal as
+ * fight-graph reachability.
  *
  * Family catalog `ap` / `mp` fields are unused at spawn (WX never wrote
  * them). Do not start applying them in a modularity run.
@@ -20,6 +23,7 @@
 
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import type { EnemyFamily } from "../types/gameTypes.ts";
+import { isEnemyWanderFloor } from "./mapGen.ts";
 
 export type Rng = () => number;
 
@@ -189,16 +193,29 @@ export function isInsideMapSpawnKeepClear(x: number, y: number): boolean {
 
 /**
  * Floor cells that may host an overworld / dungeon spawn: not a portal
- * neighbor, not the map-spawn keep-clear diamond, not void.
+ * neighbor, not the map-spawn keep-clear diamond, not void, and on the
+ * player's battle-walkable island.
+ *
+ * Keep-clear forces hostiles onto the border ring, which is exactly where
+ * a portal choke creates a far island. Overworld flood walks through the
+ * gate; battle pathing does not. Leaving a rat there keeps
+ * `isProgressionLocked` true with no legal melee approach. Finalize can
+ * relocate afterward — skip the isolated cells at spawn when the fight
+ * graph still has a legal candidate.
  */
 export function collectValidEnemySpawnCells(
   tiles: readonly (readonly string[])[],
   portals: readonly { x: number; y: number }[],
   voidTiles: ReadonlySet<string> = new Set(),
+  playerSpawn: { x: number; y: number } = MAP_SPAWN_CELL,
 ): { x: number; y: number }[] {
+  const h = tiles.length;
+  const w = tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const grid = tiles as string[][];
+  const portalList = portals as { x: number; y: number }[];
   const allValid: { x: number; y: number }[] = [];
-  for (let y = 0; y < WORLD_GRID_SIZE; y++) {
-    for (let x = 0; x < WORLD_GRID_SIZE; x++) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
       if (tiles[y][x] !== "floor") continue;
       if (isSpawnAdjacentToPortal(x, y, portals)) continue;
       if (isInsideMapSpawnKeepClear(x, y)) continue;
@@ -206,7 +223,13 @@ export function collectValidEnemySpawnCells(
       allValid.push({ x, y });
     }
   }
-  return allValid;
+  const voids = new Set(voidTiles);
+  const onGraph = allValid.filter((cell) =>
+    isEnemyWanderFloor(grid, voids, portalList, playerSpawn, cell, w, h),
+  );
+  // Center keep-clear can eat every near-side floor (phase-4 7×7). Fall
+  // back so generateEnemies still places someone; finalize relocates.
+  return onGraph.length > 0 ? onGraph : allValid;
 }
 
 export function isSpawnFarEnough(
