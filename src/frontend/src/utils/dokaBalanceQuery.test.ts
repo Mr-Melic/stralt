@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import {
   normalizeCallerDokaBalance,
+  noteCallerDokaSessionWrite,
   shouldApplyCallerDokaHydrate,
   shouldMarkCallerDokaWalletReady,
   syncLiveDokaFromProp,
 } from "./dokaBalanceQuery.ts";
+import { syncLiveDokaFromProp as syncLiveWalletFromProp } from "./itemShop.ts";
 
 assert.equal(normalizeCallerDokaBalance(0), 0);
 assert.equal(normalizeCallerDokaBalance(250n), 250);
@@ -124,6 +126,68 @@ assert.equal(
   assert.equal(live.current, 90, "GameFlow committing the debit is a no-op");
   syncLiveDokaFromProp(lastSeen, live, 140);
   assert.equal(live.current, 140, "a real parent credit must still land");
+}
+
+{
+  // Unseeded GameKey / feat `#ok` flushed setDokaBalance(1000) before the
+  // in-flight getCallerDokaBalance (200) arrived. First hydrate used to
+  // replace the grant; WorldExploration's sync then adopted 200 because
+  // live === prev after the credit.
+  const afterCredit = noteCallerDokaSessionWrite({ inWorld: true });
+  assert.equal(afterCredit.dokaSessionApplied, true);
+  assert.equal(afterCredit.alreadyHydratedInWorld, true);
+  assert.equal(
+    shouldApplyCallerDokaHydrate({
+      backendDoka: 200,
+      inWorld: true,
+      alreadyHydratedInWorld: afterCredit.alreadyHydratedInWorld,
+    }),
+    false,
+    "pre-credit query must not replace a flushed GameKey/feat HUD credit",
+  );
+  assert.equal(
+    shouldApplyCallerDokaHydrate({
+      backendDoka: 1200,
+      inWorld: true,
+      alreadyHydratedInWorld: afterCredit.alreadyHydratedInWorld,
+    }),
+    false,
+    "do not re-open later higher snapshots — that refunds a recap heal",
+  );
+
+  let live = 0;
+  let prev = 0;
+  const credited = syncLiveWalletFromProp({
+    propDoka: 1000,
+    prevPropDoka: prev,
+    liveDoka: 1000,
+  });
+  live = credited.liveDoka;
+  prev = credited.prevPropDoka;
+  assert.equal(live, 1000);
+  assert.equal(prev, 1000);
+  const clobber = syncLiveWalletFromProp({
+    propDoka: 200,
+    prevPropDoka: prev,
+    liveDoka: live,
+  });
+  assert.equal(
+    clobber.liveDoka,
+    200,
+    "if the first hydrate still landed, the HUD would drop the grant",
+  );
+
+  const selectWrite = noteCallerDokaSessionWrite({ inWorld: false });
+  assert.equal(selectWrite.alreadyHydratedInWorld, false);
+  assert.equal(
+    shouldApplyCallerDokaHydrate({
+      backendDoka: 200,
+      inWorld: true,
+      alreadyHydratedInWorld: selectWrite.alreadyHydratedInWorld,
+    }),
+    true,
+    "character-select writes must not skip the first in-world hydrate",
+  );
 }
 
 console.log("dokaBalanceQuery.test: ok");
