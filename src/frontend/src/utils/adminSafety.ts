@@ -357,6 +357,21 @@ export function validateAchievementConfig(config: {
 }
 
 /**
+ * Failure: raising dokaReward on a live achievement with unlocked-but-unclaimed
+ * progress made claimAchievementReward pay the new amount.
+ */
+export function achievementLiveRewardRejected(args: {
+  previousReward: number;
+  nextReward: number;
+  hasUnclaimed: boolean;
+}): string | null {
+  if (args.hasUnclaimed && args.previousReward !== args.nextReward) {
+    return "Cannot change dokaReward while unclaimed progress exists";
+  }
+  return null;
+}
+
+/**
  * Server-checkable achievement conditions. Combat feats stay client-trusted.
  * Mirrors adminGuard.achievementUnlockRejected.
  */
@@ -725,4 +740,17 @@ export function isBuiltInSpellId(id: string): boolean {
 /** Ban must keep claimed flags; wiping them is the double-claim path. */
 export function shouldWipeAchievementsOnBan(): boolean {
   return false;
+}
+
+/**
+ * Fresh-install adBoxes is `[]`. Indexing missing slots must yield an inactive
+ * tuple so adminSetAdBox / getAdBoxes never trap or omit a landing slot.
+ */
+export function adBoxAt(
+  boxes: readonly (readonly [string, string, boolean])[],
+  index: number,
+): [string, string, boolean] {
+  const row = boxes[index];
+  if (row) return [row[0], row[1], row[2]];
+  return ["", "", false];
 }

@@ -2380,6 +2380,25 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
+        switch (achievementConfigs.get(config.id)) {
+            case null {};
+            case (?existing) {
+                var hasUnclaimed = false;
+                for (p in achievementProgress.values()) {
+                    if (p.achievementId == config.id and p.unlocked and not p.claimed) {
+                        hasUnclaimed := true;
+                    };
+                };
+                switch (AdminGuard.achievementLiveRewardRejected(
+                    existing.dokaReward,
+                    config.dokaReward,
+                    hasUnclaimed,
+                )) {
+                    case (?e) { return #err(e) };
+                    case null {};
+                };
+            };
+        };
         achievementConfigs.add(config.id, config);
         _recordAdminAudit(caller, "setAchievementConfig", config.id, "previous", config.name);
         #ok;
@@ -3438,9 +3457,20 @@ actor {
     // compatibility.  Each entry is (imageUrl, linkUrl, isActive).
     var adBoxes : [(Text, Text, Bool)];
 
+    // Genesis / empty-canister `adBoxes` is `[]`. Pad to three inactive slots
+    // so adminSetAdBox cannot trap on adBoxes[i].
+    do {
+        if (adBoxes.size() < 3) {
+            let current = adBoxes;
+            adBoxes := Array.tabulate(3, func i {
+                AdminGuard.adBoxAt(current, i)
+            });
+        };
+    };
+
     /// Returns all three ad box slots.  Empty/inactive slots have isActive=false.
     public query func getAdBoxes() : async [(Text, Text, Bool)] {
-        adBoxes
+        Array.tabulate(3, func i { AdminGuard.adBoxAt(adBoxes, i) })
     };
 
     /// Admin: set the image URL and link URL for a specific ad box slot.
@@ -3457,9 +3487,10 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
+        let currentSet = adBoxes;
         adBoxes := Array.tabulate(3, func i {
             if (i == index) { (imageUrl, linkUrl, true) }
-            else { adBoxes[i] }
+            else { AdminGuard.adBoxAt(currentSet, i) }
         });
         _recordAdminAudit(caller, "setAdBox", index.toText(), "previous", "active");
         #ok
@@ -3475,9 +3506,10 @@ actor {
         if (index >= 3) {
             return #err("index out of range: must be 0, 1, or 2");
         };
+        let currentClear = adBoxes;
         adBoxes := Array.tabulate(3, func i {
             if (i == index) { ("", "", false) }
-            else { adBoxes[i] }
+            else { AdminGuard.adBoxAt(currentClear, i) }
         });
         _recordAdminAudit(caller, "clearAdBox", index.toText(), "active", "cleared");
         #ok

@@ -545,6 +545,19 @@ module {
         null
     };
 
+    /// Failure: adminSetAchievementConfig used to raise dokaReward on a live
+    /// row while players had unlocked-but-unclaimed progress, so claim paid
+    /// the new amount instead of the advertised unlock reward.
+    public func achievementLiveRewardRejected(
+        previousReward : Nat,
+        nextReward : Nat,
+        hasUnclaimed : Bool,
+    ) : ?Text {
+        if (hasUnclaimed and previousReward != nextReward) {
+            ?"Cannot change dokaReward while unclaimed progress exists"
+        } else { null }
+    };
+
     public func validateBossConfig(config : Types.BossConfig) : ?Text {
         switch (requireId(config.id, "Boss")) { case (?e) { return ?e }; case null {} };
         switch (requireName(config.name, "Boss")) { case (?e) { return ?e }; case null {} };
@@ -707,6 +720,12 @@ module {
         switch (validateRequiredUrl("linkUrl", linkUrl)) { case (?e) { return ?e }; case null {} };
         switch (requireHttpsUrl("linkUrl", linkUrl)) { case (?e) { return ?e }; case null {} };
         null
+    };
+
+    /// Fresh-install / genesis `adBoxes` is `[]`. Indexing `adBoxes[i]` in
+    /// Array.tabulate(3, ...) traps, so landing ads could never be set.
+    public func adBoxAt(boxes : [(Text, Text, Bool)], i : Nat) : (Text, Text, Bool) {
+        if (i < boxes.size()) { boxes[i] } else { ("", "", false) }
     };
 
     public func truncateSummary(text : Text) : Text {
