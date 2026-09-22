@@ -22,6 +22,12 @@
  * (detonation kills the summon). This mirrors the inline WX behavior.
  */
 
+import {
+  resolveSummonExecuteTarget,
+  summonAoEVictimAllowed,
+  summonExecuteCastProceeds,
+  summonExecuteMeleeProceeds,
+} from "../engine/summonCastExecute.ts";
 import type { Enemy, SpellConfig } from "../types/gameTypes";
 import { collectChallengeDirectHitTiles } from "../utils/challengeCompletion.ts";
 import { logDebugError } from "../utils/debugLogger.ts";
@@ -33,12 +39,6 @@ import {
   resolveProgressionSafeOccupantCell,
 } from "./occupancy.ts";
 import type { SpellContext } from "./spellEngine.ts";
-import {
-  resolveSummonExecuteTarget,
-  summonAoEVictimAllowed,
-  summonExecuteCastProceeds,
-  summonExecuteMeleeProceeds,
-} from "./summonCastExecute.ts";
 import { resolveCastApCost } from "./targeting.ts";
 
 export interface SummonExecutorResult {
