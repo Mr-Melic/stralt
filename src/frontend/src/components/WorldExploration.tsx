@@ -379,6 +379,7 @@ import {
   syncLiveDokaFromProp,
   writeLiveDoka,
 } from "../utils/itemShop";
+import { nextLiveDokaAfterOneShotCommit } from "../utils/oneShotCreditHud";
 import { shouldAllowPlayerCastEntry } from "../utils/playerCastGate";
 import {
   activatePlayerMirror,
@@ -6354,9 +6355,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }
                 ).getCallerDokaBalance?.() ?? Promise.resolve(null),
             });
+            const walletSeededBeforeCommit =
+              progressPersistRef.current.isWalletSeeded();
             settleOneShotPersistLock(progressPersistRef.current, settle);
             if (settle.kind === "commit") {
-              onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, chainBonus));
+              onDokaBalanceChange(
+                writeLiveDoka(
+                  dokaBalanceRef,
+                  nextLiveDokaAfterOneShotCommit({
+                    walletSeededBeforeCommit,
+                    liveDoka: dokaBalanceRef.current,
+                    pickupDelta: chainBonus,
+                    committedDoka: settle.doka,
+                  }),
+                ),
+              );
             } else if (settle.kind === "release") {
               releaseFlag(dungeonCompletionSavedRef);
             }
@@ -11317,9 +11330,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       }
                     ).getCallerDokaBalance?.() ?? Promise.resolve(null),
                 });
+                const walletSeededBeforeCommit =
+                  progressPersistRef.current.isWalletSeeded();
                 settleOneShotPersistLock(progressPersistRef.current, settle);
                 if (settle.kind === "commit") {
-                  onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, 300));
+                  onDokaBalanceChange(
+                    writeLiveDoka(
+                      dokaBalanceRef,
+                      nextLiveDokaAfterOneShotCommit({
+                        walletSeededBeforeCommit,
+                        liveDoka: dokaBalanceRef.current,
+                        pickupDelta: 300,
+                        committedDoka: settle.doka,
+                      }),
+                    ),
+                  );
                 } else if (settle.kind === "release") {
                   releaseFlag(shrineRewardClaimedRef);
                 }
@@ -11380,9 +11405,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   }
                 ).getCallerDokaBalance?.() ?? Promise.resolve(null),
             });
+            const walletSeededBeforeCommit =
+              progressPersistRef.current.isWalletSeeded();
             settleOneShotPersistLock(progressPersistRef.current, settle);
             if (settle.kind === "commit") {
-              onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, hit.value));
+              onDokaBalanceChange(
+                writeLiveDoka(
+                  dokaBalanceRef,
+                  nextLiveDokaAfterOneShotCommit({
+                    walletSeededBeforeCommit,
+                    liveDoka: dokaBalanceRef.current,
+                    pickupDelta: hit.value,
+                    committedDoka: settle.doka,
+                  }),
+                ),
+              );
               setDokaLoot((prev) =>
                 prev.map((l) =>
                   l.id === hit.id ? { ...l, collected: true } : l,
