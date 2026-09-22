@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   shouldDismissShopDialogOnBackdrop,
   shouldDismissShopDialogOnKey,
+  subscribeEscapeToDismiss,
 } from "./shopDialogDismiss.ts";
 
 describe("shouldDismissShopDialogOnBackdrop", () => {
@@ -22,5 +23,26 @@ describe("shouldDismissShopDialogOnKey", () => {
     assert.equal(shouldDismissShopDialogOnKey("Enter"), false);
     assert.equal(shouldDismissShopDialogOnKey("Tab"), false);
     assert.equal(shouldDismissShopDialogOnKey(""), false);
+  });
+});
+
+describe("subscribeEscapeToDismiss", () => {
+  it("invokes onClose only for Escape and unsubscribes", () => {
+    const target = new EventTarget();
+    let closes = 0;
+    const unsubscribe = subscribeEscapeToDismiss(() => {
+      closes += 1;
+    }, target);
+    const keydown = (key: string) => {
+      const event = new Event("keydown");
+      Object.defineProperty(event, "key", { value: key });
+      return event;
+    };
+    target.dispatchEvent(keydown("Tab"));
+    target.dispatchEvent(keydown("Escape"));
+    assert.equal(closes, 1);
+    unsubscribe();
+    target.dispatchEvent(keydown("Escape"));
+    assert.equal(closes, 1);
   });
 });

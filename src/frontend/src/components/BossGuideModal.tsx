@@ -1,6 +1,6 @@
 import { Crown, X } from "lucide-react";
 import type React from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   BOSS_LEVEL_DIFF_OFFSETS,
   getBossScalingRows,
@@ -8,6 +8,7 @@ import {
 import { DEFAULT_BOSS_CONFIGS } from "../types/bossDefaults";
 import { BossAbility, type BossConfig } from "../types/bossTypes";
 import type { BossBaseStats } from "../types/bossTypes";
+import { subscribeEscapeToDismiss } from "../utils/shopDialogDismiss";
 
 // ── Defensive kit import ─────────────────────────────────────────────────────
 // The parallel "boss kit" task may produce either:
@@ -233,6 +234,11 @@ const BossGuideModal: React.FC<BossGuideModalProps> = ({
   playerLevel = DEFAULT_PLAYER_LEVEL,
 }) => {
   const bosses = useMemo(() => DEFAULT_BOSS_CONFIGS, []);
+
+  useEffect(() => {
+    if (!open) return;
+    return subscribeEscapeToDismiss(onClose);
+  }, [open, onClose]);
 
   if (!open) return null;
 
