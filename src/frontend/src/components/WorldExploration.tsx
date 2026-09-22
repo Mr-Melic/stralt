@@ -452,6 +452,7 @@ import {
   summonTurnBudget,
 } from "../utils/summonControlCast";
 import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
+import { nextLiveDokaAfterLockCredit } from "../utils/victoryLockCreditHud";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
   applyXpDelta,
@@ -12521,6 +12522,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
           // Persist rewards in a separate try/catch so failures never hide the recap
           const deathEpochAtPersistStart = deathEpochRef.current;
+          const walletSeededBeforeCredit =
+            progressPersistRef.current.isWalletSeeded();
           victoryPersistPendingRef.current = true;
           try {
             const _recapData = await progressPersistRef.current.enqueue(
@@ -12602,9 +12605,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               // copies that inflated UI into committed and the next persist
               // writes the pre-spend wallet back to the canister.
               onDokaBalanceChange(
-                creditLiveDoka(
+                writeLiveDoka(
                   dokaBalanceRef,
-                  _rewardRecap.dokaEarned ?? totalDoka,
+                  nextLiveDokaAfterLockCredit({
+                    walletSeededBeforeCredit,
+                    liveDoka: dokaBalanceRef.current,
+                    creditDelta: _rewardRecap.dokaEarned ?? totalDoka,
+                    committedDoka: progressPersistRef.current.snapshot().doka,
+                  }),
                 ),
               );
             }
@@ -12808,6 +12816,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // and the next saveBattleStats mints the unpaid wallet — or a recap
       // shop spend drains the real pre-reward balance.
       const deathEpochAtPersistStart = deathEpochRef.current;
+      const walletSeededBeforeCredit =
+        progressPersistRef.current.isWalletSeeded();
       if (actor) {
         victoryPersistPendingRef.current = true;
         void persistBossRushRewardsThroughLock(
@@ -12854,9 +12864,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             // applyRewards' absolute newDoka refunds a recap heal/shop spend
             // the player already applied locally while this persist ran.
             onDokaBalanceChange(
-              creditLiveDoka(
+              writeLiveDoka(
                 dokaBalanceRef,
-                persisted.dokaEarned ?? roomClearDoka,
+                nextLiveDokaAfterLockCredit({
+                  walletSeededBeforeCredit,
+                  liveDoka: dokaBalanceRef.current,
+                  creditDelta: persisted.dokaEarned ?? roomClearDoka,
+                  committedDoka: progressPersistRef.current.snapshot().doka,
+                }),
               ),
             );
           })
