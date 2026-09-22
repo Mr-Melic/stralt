@@ -350,6 +350,10 @@ import {
   xpAfterDeathPersist,
 } from "../utils/deathPenalty";
 import {
+  hpForUnpaidDeathPersist,
+  liveStatsAfterDeathReplay,
+} from "../utils/deathReplayHp";
+import {
   logDebugError,
   logDebugInfo,
   logDebugWarn,
@@ -1446,7 +1450,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const liveActor = persistActorRef.current;
     if (!liveActor?.saveBattleStats) return;
     const slot = persistSlotRef.current;
-    await flushPendingDeathPenalty({
+    const flushed = await flushPendingDeathPenalty({
       storage: DEATH_PENALTY_STORAGE,
       slot,
       persist: progressPersistRef.current,
@@ -1467,7 +1471,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return persistAbsoluteStats(liveActor, {
           slot,
           level: committed.level,
-          hp: stats.hp ?? 0,
+          hp: hpForUnpaidDeathPersist(committed.level),
           maxHp: stats.maxHp ?? 0,
           ap: stats.ap ?? 0,
           maxAp: stats.maxAp ?? 0,
@@ -1482,6 +1486,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         });
       },
     });
+    // Remount Play-entry HP is pre-death. Flush writes respawn; sync the
+    // live ref so the shop/heal job's min(live, click) cannot resurrect it.
+    if (flushed) {
+      const committed = progressPersistRef.current.snapshot();
+      const hp = hpForUnpaidDeathPersist(committed.level);
+      applyHealHpToLiveStats(characterStatsRef, hp);
+      setCharacterStats((prev) =>
+        liveStatsAfterDeathReplay(prev, { xp: committed.xp, hp }),
+      );
+    }
   });
   const applyPendingPurchaseCredit = useCallback(
     async (announceAmount?: number) => {
@@ -13210,14 +13224,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return;
       }
       try {
-        await progressPersistRef.current.enqueue(
+        const replayedHp = await progressPersistRef.current.enqueue(
           async () => {
             const committed = progressPersistRef.current.snapshot();
+            const respawnHp = hpForUnpaidDeathPersist(committed.level);
             await persistWithRetry(() =>
               persistAbsoluteStats(actor, {
                 slot: characterSlot,
                 level: committed.level,
-                hp: respawnHpAfterDeath(committed.level),
+                hp: respawnHp,
                 maxHp: characterStatsRef.current.maxHp ?? 0,
                 ap: characterStatsRef.current.ap ?? 0,
                 maxAp: characterStatsRef.current.maxAp ?? 0,
@@ -13236,6 +13251,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               xp: decision.newXp,
               level: committed.level,
             });
+            return respawnHp;
           },
           { skipBeforeEach: true },
         );
@@ -13246,7 +13262,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           DEATH_PENALTY_STORAGE,
         );
         onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, decision.newDoka));
-        setCharacterStats((prev) => ({ ...prev, exp: decision.newXp }));
+        applyHealHpToLiveStats(characterStatsRef, replayedHp);
+        setCharacterStats((prev) =>
+          liveStatsAfterDeathReplay(prev, {
+            xp: decision.newXp,
+            hp: replayedHp,
+          }),
+        );
       } catch (err) {
         console.error("[death-save] replay failed:", err);
       }
