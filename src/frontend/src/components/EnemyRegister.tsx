@@ -1,11 +1,12 @@
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ENEMY_REGISTER_FOOTER_NOTE,
   ENEMY_REGISTER_HONESTY,
   ENEMY_REGISTER_SUBTITLE,
   ENEMY_REGISTER_TITLE,
 } from "../utils/enemyRegisterCopy";
+import { subscribeEscapeToDismiss } from "../utils/shopDialogDismiss";
 
 export interface EnemyRegisterProps {
   isOpen: boolean;
@@ -253,6 +254,11 @@ const EnemyRegister: React.FC<EnemyRegisterProps> = ({ isOpen, onClose }) => {
         b.tip.toLowerCase().includes(q),
     );
   }, [search]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    return subscribeEscapeToDismiss(onClose);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 

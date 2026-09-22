@@ -135,9 +135,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ userId }) => {
             onClick={handleMute}
             aria-pressed={muted}
             aria-label={muted ? "Unmute sound" : "Mute sound"}
+            className="stone-touch-target"
             style={{
               marginTop: 10,
               width: "100%",
+              minHeight: 44,
               padding: "5px 0",
               borderRadius: 4,
               border: muted

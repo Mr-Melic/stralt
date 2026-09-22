@@ -1,6 +1,6 @@
 import { ArrowLeftRight, Check, TrendingUp, X } from "lucide-react";
 import type React from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   SUMMON_AP_PER_LEVELS,
   SUMMON_BASE_HP,
@@ -16,6 +16,7 @@ import {
   spellHighlightRangeBase,
 } from "../engine/targeting";
 import type { Enemy, SpellConfig } from "../types/gameTypes";
+import { shouldDismissShopDialogOnKey } from "../utils/shopDialogDismiss";
 
 interface SpellbookModalProps {
   allSpells: SpellConfig[];
@@ -539,9 +540,24 @@ const SpellbookModal: React.FC<SpellbookModalProps> = ({
 
   const isInActive = (spellId: string) => draft.some((s) => s?.id === spellId);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!shouldDismissShopDialogOnKey(event.key)) return;
+      if (pendingSwap) {
+        setPendingSwap(null);
+        return;
+      }
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, pendingSwap]);
+
   return (
     <div
       data-ocid="spellbook.dialog"
+      aria-modal="true"
+      aria-label="Spellbook"
       style={{
         position: "fixed",
         inset: 0,

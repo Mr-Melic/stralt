@@ -708,7 +708,7 @@ const FilledSlot: React.FC<{
         type="button"
         data-ocid="character_selection.play_button"
         onClick={onPlay}
-        className="stone-btn-crimson flex-1 py-2.5"
+        className="stone-btn-crimson stone-touch-target flex-1 py-2.5"
         style={{
           background: "linear-gradient(135deg,#a0721a,#c0392b,#e8b840)",
           color: "#0d0f1a",
@@ -814,7 +814,7 @@ const EmptySlot: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
       type="button"
       data-ocid="character_selection.create_button"
       onClick={onCreate}
-      className="stone-btn-crimson w-full justify-center py-2.5"
+      className="stone-btn-crimson stone-touch-target w-full justify-center py-2.5"
       style={{
         background: "linear-gradient(135deg,#1a1e30,#141726)",
         color: "#e74c3c",
