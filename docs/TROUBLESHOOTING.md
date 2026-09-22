@@ -54,9 +54,9 @@ Fix: always send the full record. Carry `character.stats.killCount` or `0n` on c
 
 `updateCharacter` keeps stored `level` / `experience` / `stats` / spell-level arrays (cosmetics only). A stale full-record payload cannot mint HP or spell levels.
 
-`saveBattleStats` clamps HP with `maxPersistedHp`: `100 + (level-1) * growthPercent` (not `level*200+100`, which allowed 300 HP at level 1). Do not cut HP already stored above that cap (`persistHpWriteCap`). Other Motoko checks on dedicated writers:
+`saveBattleStats` clamps HP with `persistHpWriteCap` over `maxPersistedHp`: `100 + (level-1) * growthPercent` (not `level*200+100`, which allowed 300 HP at level 1). AP/MP use `persistApWriteCap` / `persistMpWriteCap` (`PLAYER_BASE` 8/4 + `floor(level / apMpLevelThreshold)`, hard max 20). Do not cut values already stored above those caps. Other Motoko checks on dedicated writers:
 
-- `ap <= 20`, `mp <= 20` on `saveBattleStats`
+- starter create: `_starterStatsRejected` (official forge maxima; AP 10 / MP 5, not the battle floor 8/4); `_starterCharacter` strips spell arrays and session/completion fields; level must be 1 with 0 XP and no upgraded spells
 - `level` and `killCount` cannot decrease (`saveBattleStats` / `saveKillCount`)
 - `colors.length <= 16`
 - slot must already exist
@@ -93,6 +93,7 @@ The persist lock starts at `doka = 0` until an authoritative read or credit seed
 - `walletReady` is `queryResolved && sessionCacheApplied` — not merely “React Query has data”.
 - Once seeded, `shouldCopyIdleWalletDoka` refuses **any** idle copy (not just cuts). A ghost HUD or stale-high query used to copy `incoming >= committed` and mint.
 - Unseeded death/heal must `resolveCommittedDokaForAbsoluteWrite` (live `getCallerDokaBalance`); skip the absolute write if the read fails.
+- Unseeded GameKey / feat `#ok` must `noteUnseededCredit` so a stale pre-credit query cannot seed, then let death/heal skip the live fetch and wipe the grant.
 - Do not `commit` a rename/feat delta stacked on the placeholder (`shouldCommitRenameDokaSpend`).
 - Idle hydrate must not copy leftover XP from a lower UI level over a post-`applyRewards` level-up (`resolveHydratedXp`). That leftover refunds the death XP cut on the next `saveBattleStats`.
 
@@ -105,6 +106,8 @@ The persist lock starts at `doka = 0` until an authoritative read or credit seed
 `applyRewards` is a raw Nat add. Claim a one-shot id **before** enqueue (`tryClaimPickupId` / `tryClaimFlag` / `tryClaimDungeonChainBonus` in `dokaPersist.ts`). Ground Doka used to credit inside `setDokaLoot` — React may replay that updater. Parse the result with `readApplyRewardsOk`; a `{ _ok }` that used to yield NaN left the canister credited and the persist lock unchanged.
 
 After persist, `settleOneShotAfterCredit`: `#ok` with a gain → commit; explicit canister `#err` → **release** the claim (safe retry); transport/parse miss after invoke → **keep**. Releasing on a transport miss lets the next RAF step remint.
+
+A keep used to leave the persist lock at the pre-credit wallet. Recap heal then `saveBattleStats`-wrote that snapshot and wiped the canister grant (incoming-below-stored is applied). `settleOneShotPersistLock` `noteUnconfirmedCredit`s a keep so `shouldSkipAbsoluteDokaWrite` skips unless a live wallet read is **strictly above** committed. Confirm a keep (`confirmKeptOneShotCredit`) only when the lock is already wallet-seeded — an unseeded placeholder is 0, so any live balance looks like a rise and would mint ghost HUD Doka.
 
 ### Victory XP advertised but `applyRewards` rejected
 
@@ -136,7 +139,11 @@ Portal step XP is `PORTAL_TRANSITION_XP` (10) through `persistIncrementalRewards
 
 `handleBattleEnd` is a `useCallback` that omits `challengeAccepted` / `currentChallenge`. Pass the live accept flag and challenge from refs (`liveBattleChallengePersistEntries`). Persist both `dokaReward` **and** `xpReward` (hard/legendary objectives show 400–1000 XP). Persist only when `isChallengeCompleted` is true (`utils/challengeCompletion.ts`).
 
-The opening player turn never goes through `advanceTurn`. Without `shouldCountOpeningPlayerTurn`, six player turns still read as 5 and Blitz (900 XP) credits. Overworld Doka-to-HP must not flip `healUsed` — the flag only clears in `cleanupBattle`, so a pre-fight heal fails the next no-heal challenge. In-battle BuffShop potions must call `recordChallengeItemHealUsed` or easy_1 / hard_1 still persist after a mid-fight drink.
+The opening player turn never goes through `advanceTurn`. Without `shouldCountOpeningPlayerTurn`, six player turns still read as 5 and Blitz (900 XP) credits.
+
+`healUsed` is only cleared in `cleanupBattle`. Overworld Doka-to-HP must not flip it — a pre-fight heal fails the next no-heal challenge. In-battle BuffShop potions must call `recordChallengeItemHealUsed` or easy_1 / hard_1 still persist after a mid-fight drink. Life Drain and summon/`ctx.heal` restore HP without the self-heal gate — `recordChallengeHealFromHpRestore` when HP actually increased (a damage-only drain at full HP can still complete no-heal).
+
+WorldExploration still passes `visible` as the accept window (`!firstActionTaken`). An accepted challenge HUD must stay after the first AP/MP spend (`shouldShowChallengeHud`) or the turns / damage / Striker tracker vanish mid-fight. Persist uses the refs, not that flag.
 
 Sacrifice (`loseSelfHp`) floors the player at 1 and never entered `playerTakesDamage`. Without `recordChallengeSelfHpLoss`, Untouchable still persists after a 20% self-hit.
 
@@ -152,7 +159,7 @@ Pacifist Run flips only on a resolved offensive cast. Range preview / `getSpellR
 
 Attack Nearest calls `resolvePlayerCast` directly (not `executeCastAttempt`). Canvas summons return `"summon"` — `castResultSpendsAp` includes that result. Both paths must debit AP and `recordChallengeApSpend`. A free cast also hides a 9+ AP dump from `hard_3`. Tile follow-up after `executeCastAttempt` must **not** debit again on fizzle (`castFollowUpShouldDebitAp`).
 
-Attack Nearest and sprite-click Strike must pick from `getLiveCombatants` + `isActiveHostile` / `isTileCastableLive` (range, LoS, cooldown). A React `enemies` snapshot misses enemy minions and leftover corpses, and leftover AP used to recast Inferno every click without consulting the cooldown map. Range/LoS origin is the **player** tile (`attackNearestLiveCasterPos`) — using the controlled summon spent player AP on a self-heal that never applied.
+Attack Nearest and sprite-click Strike must pick from `getLiveCombatants` + `isActiveHostile` / `isTileCastableLive` (range, LoS, cooldown). A React `enemies` snapshot misses enemy minions and leftover corpses, and leftover AP used to recast Inferno every click without consulting the cooldown map. Range/LoS origin is the **player** tile (`attackNearestLiveCasterPos`) — using the controlled summon spent player AP on a self-heal that never applied. Tile / sprite / Attack Nearest / keyboard share `planPlayerCastResources` / `planPlayerCastAttempt` so Arcane Surge preview cannot disagree with the debit.
 
 ### Touch tap casts twice
 
@@ -263,6 +270,10 @@ Unlocks must ride `BattleRecapData.newlyUnlockedAchievements` (`attachRecapUnloc
 
 Wallet/level feats (`doka_1000`, `doka_10000`, `level_10`) wait until `applyRewards` commits (`shouldDeferAchievementUnlockUntilRewardsPersist`). Firing them from projected recap totals `#err`s against the pre-credit snapshot, and `achievementsShownRef` then blocks the post-credit retry.
 
+Boss Rush room-clear must fire the same client-trusted list (`clientTrustedVictoryAchievementConditions`) — the victory gate never enters `handleBattleEnd` during a run, so pacifist_run / first_battle_win / leader_slayer used to stay locked.
+
+Admin `condition` must be in `knownAchievementCondition`. An unknown string (`"instant"`) used to pass `markAchievementUnlocked` and mint the catalog Doka.
+
 ### Version bump logs everyone out
 
 Changing `APP_VERSION` in `App.tsx` clears almost all `localStorage` and reloads. Preserve via `shouldPreserveVersionGateKey`: `pbv_tier_spawn_config`, `pbv_levelup_config`, and keys ending `_inventory`. A blanket `clear()` drops paid BuffShop potions (`${principal}_inventory`) while the canister Doka spend stays. Bump `CHANGELOG_ITEMS` in the same change.
@@ -335,7 +346,7 @@ Enemy minions must spawn via `spawnEnemySummonUnit` (`side: "enemy"`, turn type 
 
 ### Generated map has no reachable portal / sealed Boss Rush room
 
-Do not retune archetype fill to fix a stuck seed. After generateEnemies, Boss Rush preferred cells, or rest-exit, run `finalizePlayableLayout` / `applyFinalizedLayout`: legal spawn (not on the exit), at least one reachable portal, hostiles punched onto the walkable graph. Wall/void Boss Rush kits used to seal the progression portal. `evaluateSolvability` names the failure (`isolated-enemies`, `isolated-portals`, `missing-exit-portal`, `spawn-on-portal`, …). Dual-path summons that seal both 1-wide corridors unseal via `unsealProgressionOccupants`. Summons must not sit on unique player→exit bridges (`collectMandatoryProgressionCells`). Leftover CA walkable islands become walls (`sealUnreachableWalkable`) — battle-start spacing used to teleport the player onto those pockets and seal every exit.
+Do not retune archetype fill to fix a stuck seed. After generateEnemies, Boss Rush preferred cells, or rest-exit, run `finalizePlayableLayout` / `applyFinalizedLayout`: legal spawn (not on the exit), at least one reachable portal, hostiles punched onto the walkable graph. Wall/void Boss Rush kits used to seal the progression portal. `evaluateSolvability` names the failure (`isolated-enemies`, `isolated-portals`, `missing-exit-portal`, `spawn-on-portal`, …). Dual-path summons that seal both 1-wide corridors unseal via `unsealProgressionOccupants`. Summons must not sit on unique player→exit bridges (`collectMandatoryProgressionCells`). Leftover CA walkable islands become walls (`sealUnreachableWalkable`) — battle-start spacing used to teleport the player onto those pockets and seal every exit. Destack / wander stay on the player's battle-walkable island (`collectPortalBlockers`) — overworld portals are walkable and used to join both sides. 1-wide unique corridors need a dump alcove (`ensureProgressionAlcove`) or a corpse/summon on the bridge seals the exit.
 
 ### Jackpot heal refunds / charges twice
 
@@ -347,7 +358,15 @@ It is a no-op stub (returns `0`; Candid kept). Official XP/Doka go through `appl
 
 ### Motoko / frontend level-up floors differ
 
-`progression.getPlayerBaseStats` uses floors AP=8, MP=4 (plus optional `LevelUpConfig` growth). Character creation defaults AP=10, MP=5. Battle init prefers the formula when they diverge — do not “fix” one without checking the other.
+`progression.getPlayerBaseStats` uses floors AP=8, MP=4 (plus optional `LevelUpConfig` growth). Character creation defaults AP=10, MP=5 (`startingChampionStats`; `createCharacter` rejects higher). Battle init prefers the formula when they diverge — do not “fix” one without checking the other. `saveBattleStats` grandfathers the stored 10/5 via `persistApWriteCap` / `persistMpWriteCap`.
+
+### Frozen leftover 1-MP walks / AI ignores Frozen
+
+Frozen Terrain / Slime Flood implement `onMpCost: (c) => c * 2`. Preview already used the registry; execute used to debit `path.length` (1 MP/tile), so a 6-MP Frozen walk split into leftover 1-MP slices past the highlighted ring. Enemy `computeReachable` only saw Slime Flood; summon-AI hardcoded 1 MP/tile. Share `battleWalkMpCost` (player / summon-control) and `enemyWalkCostPerTile` (enemy / summon-AI). Do not change the 2× formula.
+
+### `dokaSpawnChance=0` rewrites live gameConfig
+
+`dokaSpawnChance=0` is legal (no ground Doka). Treating it as uninitialized used to replace a valid admin singleton with `defaultGameConfig` on the next actor init. Fresh-install sentinel is `dokaSpawnBaseValue==0` (`gameConfigNeedsSeed`).
 
 ## Operational checklist (canister upgrade)
 
@@ -361,4 +380,4 @@ It is a no-op stub (returns `0`; Candid kept). Official XP/Doka go through `appl
 8. Smoke: accept Untouchable, take a regular melee **or** a Void Mirror / lava-in-battle / **touch-walk** Thorned Ground hit **or** a Sacrifice self-hit, confirm the reward is **not** granted. Attack Nearest (from the player tile) and a canvas summon both debit AP and honor cooldown. One touch tap must not cast twice.
 9. Smoke: die on the first map before the Doka query paints — canister wallet must not become 0. Walk a dungeon-chain progression portal and confirm the next depth (not an overworld map). White sanctuary portal must be walkable at spawn. Rest-exit dungeon must still be a chain at depth 1. Reload after a lava death before persist lands — 20/40 must still apply (`pbv_pending_death_penalty_slotN`).
 10. Smoke: last-enemy lava / last-minion DoT awards victory once. A generated overworld / Boss Rush / rest-exit map must have a reachable exit from spawn. Ground coin / shrine / dungeon-complete credit once. Selection / top bar show leftover XP (`xpHudProgress`), not 0. `applyRewards` of a huge Doka-Fever roll must persist (clamped), not `#err`.
-11. Smoke: Buy Doka `requestGameKeyPurchase` → admin approve → `redeemGameKey` credits **once** (second redeem `#err`). `initiatePurchase` must `#err`. In-battle health potion fails easy_1. Selecting Strike without casting must not fail Pacifist Run.
+11. Smoke: Buy Doka `requestGameKeyPurchase` → admin approve → `redeemGameKey` credits **once** (second redeem `#err`). `initiatePurchase` must `#err`. In-battle health potion **or Life Drain that restored HP** fails easy_1. Selecting Strike without casting must not fail Pacifist Run. Accepted challenge HUD stays after the first action. Frozen / Slime walk MP is 2× on execute and on enemy walks.
