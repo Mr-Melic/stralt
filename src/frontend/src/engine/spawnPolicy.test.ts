@@ -232,12 +232,10 @@ describe("collectValidEnemySpawnCells", () => {
     ] as const) {
       voids.add(`${8 + dx},${8 + dy}`);
     }
-    const cells = collectValidEnemySpawnCells(
-      tiles,
-      [{ x: 3, y: 8 }],
-      voids,
-      { x: 8, y: 8 },
-    );
+    const cells = collectValidEnemySpawnCells(tiles, [{ x: 3, y: 8 }], voids, {
+      x: 8,
+      y: 8,
+    });
     const keys = new Set(cells.map((c) => `${c.x},${c.y}`));
     assert.equal(
       keys.has("0,8"),
