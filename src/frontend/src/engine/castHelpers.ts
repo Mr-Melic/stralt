@@ -26,6 +26,7 @@ import type { SoundEvent } from "../hooks/useSoundHooks";
 import type { ActiveEffect } from "../types/gameTypes";
 import type { Enemy } from "../types/gameTypes";
 import { isActiveHostile } from "./battleSetup.ts";
+import { pickChainBounceTargets } from "./chainBounce.ts";
 import {
   type DeathPipelineCtx,
   processCombatantDeath,
@@ -435,15 +436,11 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     hitTarget.id &&
     hitTarget.id !== "__player__"
   ) {
-    const otherEnemies = enemies.filter(
-      (e) => e.id !== hitTarget.id && isActiveHostile(e),
+    const bounceTargets = pickChainBounceTargets(
+      hitTarget,
+      enemies,
+      spell.bounces,
     );
-    const sorted = otherEnemies.sort((a, b) => {
-      const distA = Math.abs(a.x - hitTarget.x) + Math.abs(a.y - hitTarget.y);
-      const distB = Math.abs(b.x - hitTarget.x) + Math.abs(b.y - hitTarget.y);
-      return distA - distB;
-    });
-    const bounceTargets = sorted.slice(0, spell.bounces);
     bounceTargets.forEach((bounceEnemy, idx) => {
       const bounceDmg = Math.floor(finalDmg * 0.5 ** (idx + 1));
       enemyTakesDamage(
