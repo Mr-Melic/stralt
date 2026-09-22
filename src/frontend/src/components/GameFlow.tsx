@@ -13,6 +13,7 @@ import type {
 } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import {
+  noteCallerDokaSessionWrite,
   shouldApplyCallerDokaHydrate,
   shouldMarkCallerDokaWalletReady,
 } from "../utils/dokaBalanceQuery";
@@ -230,6 +231,19 @@ const GameFlow: React.FC<GameFlowProps> = ({
   const handleDebugLog = useCallback((event: string, detail: string) => {
     logDebugInfo("GENERAL", event, detail);
   }, []);
+  const handleDokaBalanceChange = useCallback(
+    (next: number) => {
+      const noted = noteCallerDokaSessionWrite({
+        inWorld: currentStage === "world",
+      });
+      setDokaBalance(next);
+      setDokaSessionApplied(noted.dokaSessionApplied);
+      if (noted.alreadyHydratedInWorld) {
+        worldDokaHydratedRef.current = true;
+      }
+    },
+    [currentStage],
+  );
   const handleItemShopClose = useCallback(() => setShowShop(false), []);
   const handleAchievementsClose = useCallback(
     () => setShowAchievements(false),
@@ -262,7 +276,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
             queryResolved: backendDokaBalance !== undefined,
             sessionCacheApplied: dokaSessionApplied,
           })}
-          onDokaBalanceChange={setDokaBalance}
+          onDokaBalanceChange={handleDokaBalanceChange}
           onDebugContextChange={handleDebugContextChange}
           itemShopOpen={showShop}
           onItemShopClose={handleItemShopClose}

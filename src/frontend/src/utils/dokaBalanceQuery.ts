@@ -32,6 +32,30 @@ export function shouldApplyCallerDokaHydrate(args: {
 }
 
 /**
+ * GameKey / feat `#ok` (and other WX credits) call setDokaBalance before the
+ * first getCallerDokaBalance hydrate. That in-flight query is the pre-credit
+ * wallet. Applying it after the HUD already shows the grant drops the grant
+ * from the session cache: creditLiveDoka flushes live===prev, then
+ * syncLiveDokaFromProp adopts the lower prop.
+ *
+ * Mark the world session written so shouldApplyCallerDokaHydrate skips.
+ * Character-select writes must not set alreadyHydratedInWorld — entering
+ * the world still needs the first query.
+ *
+ * Do not re-open later window-focus / claim refetches after this mark:
+ * a higher snapshot refunds a recap heal (the reason first-hydrate is once).
+ */
+export function noteCallerDokaSessionWrite(args: { inWorld: boolean }): {
+  dokaSessionApplied: true;
+  alreadyHydratedInWorld: boolean;
+} {
+  return {
+    dokaSessionApplied: true,
+    alreadyHydratedInWorld: args.inWorld,
+  };
+}
+
+/**
  * WorldExploration's idle hydrate treats walletReady as "the session cache
  * is the canister wallet, including a real 0".
  *
