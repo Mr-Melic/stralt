@@ -270,6 +270,65 @@ describe("collectValidEnemySpawnCells", () => {
     assert.equal(after.clearingUnlocks, true, after.failures.join(","));
   });
 
+  it("seed-portal-ring-only-near: last-resort places on the gate ring, not past the choke", () => {
+    // Portal on the spawn-diamond rim. Every near floor is portal
+    // Manhattan ≤ 2, so #436's onGraph (fight-graph AND not portal-adj)
+    // is empty. generateEnemies then returns [] and a dungeon progression
+    // portal unlocks with no hostiles (skip the run).
+    const tiles = Array.from({ length: WORLD_GRID_SIZE }, () =>
+      Array.from({ length: WORLD_GRID_SIZE }, () => "wall"),
+    );
+    for (let x = 8; x <= 12; x++) tiles[8][x] = "floor";
+    tiles[8][10] = "portal";
+    const portals = [{ x: 10, y: 8 }];
+    const spawn = { x: 8, y: 8 };
+    assert.equal(
+      isSpawnAdjacentToPortal(8, 8, portals),
+      true,
+      "spawn itself is inside the portal ring",
+    );
+    assert.equal(isSpawnAdjacentToPortal(9, 8, portals), true);
+    assert.equal(
+      isSpawnAdjacentToPortal(12, 8, portals),
+      true,
+      "far cell is also portal-adjacent; unfiltered keep-clear is empty",
+    );
+
+    const cells = collectValidEnemySpawnCells(tiles, portals, new Set(), spawn);
+    const keys = new Set(cells.map((c) => `${c.x},${c.y}`));
+    assert.ok(cells.length > 0, "must not skip the room");
+    assert.equal(keys.has("11,8"), false, "far island must stay empty");
+    assert.equal(keys.has("12,8"), false, "far island must stay empty");
+    assert.equal(keys.has("10,8"), false, "must not sit on the portal tile");
+    assert.equal(
+      keys.has("9,8"),
+      true,
+      "last resort is the near-side portal ring",
+    );
+
+    const placed = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: spawn,
+      portals,
+      spawns: cells.map((c) => ({ ...c })),
+      w: WORLD_GRID_SIZE,
+      h: WORLD_GRID_SIZE,
+    });
+    const after = evaluateSolvability(
+      placed.tiles,
+      new Set(),
+      placed.playerSpawn,
+      placed.portals,
+      placed.spawns,
+      WORLD_GRID_SIZE,
+      WORLD_GRID_SIZE,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(after.isolatedEnemies, 0);
+    assert.equal(after.clearingUnlocks, true);
+  });
+
   it("seeded chessboard maps stay on the fight graph when a near cell exists", () => {
     const seeds = Array.from({ length: 64 }, (_, i) => 2400 + i * 19);
     const failures: string[] = [];

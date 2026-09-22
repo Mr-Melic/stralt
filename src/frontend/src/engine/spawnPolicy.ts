@@ -8,7 +8,7 @@
  *
  * Distance metrics are intentionally different — do not merge them:
  *   - portal keep-clear: Manhattan <= 2
- *   - map-spawn keep-clear: Chebyshev <= 3 from (8, 8)
+ *   - map-spawn keep-clear: Chebyshev <= 3 from the live spawn (default 8,8)
  *   - enemy-to-enemy spacing: Chebyshev >= 4
  * Spawn cells must also sit on the player's battle-walkable island
  * (`isEnemyWanderFloor`). Do not treat overworld flood-through-portal as
@@ -197,7 +197,7 @@ export function isInsideMapSpawnKeepClear(
 
 /**
  * Floor cells that may host an overworld / dungeon spawn: not a portal
- * neighbor, not void, and on the player's battle-walkable island.
+ * tile, not void, and on the player's battle-walkable island.
  *
  * Keep-clear (Chebyshev ≤ 3 from the live spawn) is preferred so hostiles
  * do not start stacked on the player. That diamond plus portal Manhattan
@@ -208,8 +208,10 @@ export function isInsideMapSpawnKeepClear(
  * cannot punch an alcove when the near side is boxed in by voids.
  *
  * Prefer keep-clear-legal fight-graph cells; if none exist (phase-4 7×7
- * is the whole room), fall back to fight-graph keep-clear cells. Never
- * return a cell the player cannot engage.
+ * is the whole room), fall back to fight-graph cells outside the portal
+ * ring. If the near side is entirely inside portal Manhattan ≤ 2, still
+ * return those fight-graph cells (not the far island, not the portal
+ * tile) so generateEnemies cannot skip a dungeon room.
  */
 export function collectValidEnemySpawnCells(
   tiles: readonly (readonly string[])[],
@@ -222,11 +224,10 @@ export function collectValidEnemySpawnCells(
   const grid = tiles as string[][];
   const portalList = portals as { x: number; y: number }[];
   const voids = new Set(voidTiles);
-  const onGraph: { x: number; y: number }[] = [];
+  const fightGraph: { x: number; y: number }[] = [];
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       if (tiles[y][x] !== "floor") continue;
-      if (isSpawnAdjacentToPortal(x, y, portals)) continue;
       if (voids.has(`${x},${y}`)) continue;
       const cell = { x, y };
       if (
@@ -234,17 +235,31 @@ export function collectValidEnemySpawnCells(
       ) {
         continue;
       }
-      onGraph.push(cell);
+      fightGraph.push(cell);
     }
   }
-  const keepClearLegal = onGraph.filter(
+  const notOnSpawn = fightGraph.filter(
+    (cell) => cell.x !== playerSpawn.x || cell.y !== playerSpawn.y,
+  );
+  const notPortalAdj = fightGraph.filter(
+    (cell) => !isSpawnAdjacentToPortal(cell.x, cell.y, portals),
+  );
+  const keepClearLegal = notPortalAdj.filter(
     (cell) => !isInsideMapSpawnKeepClear(cell.x, cell.y, playerSpawn),
   );
+  if (keepClearLegal.length > 0) return keepClearLegal;
   // Phase-4 center 7×7 can be the entire fight graph. Prefer spreading
   // off the spawn diamond; if that set is empty, still place on the
   // near-side keep-clear cells so generateEnemies does not skip the
   // room or drop a rat past the choke.
-  return keepClearLegal.length > 0 ? keepClearLegal : onGraph;
+  if (notPortalAdj.length > 0) return notPortalAdj;
+  // Unique extra vs #436: the near side can sit entirely inside portal
+  // Manhattan ≤ 2 (gate on the spawn-diamond rim). #436's onGraph is
+  // empty then, so generateEnemies returns [] and a dungeon progression
+  // portal unlocks with no hostiles. Last resort is fight-graph cells
+  // the player can actually engage — never the far island.
+  if (notOnSpawn.length > 0) return notOnSpawn;
+  return fightGraph;
 }
 
 export function isSpawnFarEnough(
