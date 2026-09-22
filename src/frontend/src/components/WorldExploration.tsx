@@ -100,6 +100,7 @@ import {
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
   battleWalkCostPerTile,
+  battleWalkHoverMpPreview,
   battleWalkMpBudget,
   battleWalkMpCost,
   canAffordBattleWalk,
@@ -253,9 +254,12 @@ import {
   type TileCastableResult,
   attackNearestLiveCasterPos,
   canAttackNearestAgainstLive,
+  chebyshevOnBoard,
   computeTargetableTiles,
   decideSpriteCastClick,
   decideTileCastClick,
+  enemyCastRangeOk,
+  enemySpellRange,
   hasBresenhamLoS,
   isTileCastableLive,
   pickNearestAttackableHostile,
@@ -1846,6 +1850,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // activeEffectsRef sync removed — ref is set synchronously at every mutation site
   const timestepUsedRef = useRef(false);
   const playerApWasDebuffedRef = useRef(false);
+  /** Dest key → MP debit from the same BFS as the green walk ring. */
+  const battleWalkReachableCostRef = useRef<Map<string, number>>(new Map());
 
   // Sync active effects to parent (ChatPanel Status tab)
   useEffect(() => {
@@ -7034,7 +7040,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       summonMp: (controlledSummon as { currentMp?: number } | undefined)
         ?.currentMp,
     });
-    if (!currentMap || !inBattleRef.current || mpBudget <= 0) return new Set();
+    if (!currentMap || !inBattleRef.current || mpBudget <= 0) {
+      battleWalkReachableCostRef.current = new Map();
+      return new Set();
+    }
     // SECTION 2c — origin is the active caster's tile (controlled summon or
     // player) so movement-range previews render from the summon's position.
     const origin = getActiveCasterPos();
@@ -7050,6 +7059,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     ];
     visited.set(`${origin.x},${origin.y}`, 0);
     const reachable = new Set<string>();
+    const destCosts = new Map<string, number>();
     // Movement cost per tile — delegated to the modifier registry (Slime
     // Flood / Frozen Terrain double the cost via their onMpCost hooks).
     // Same helper as player/summon execute so leftover 1-MP slices cannot
@@ -7085,12 +7095,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         const prevBest = visited.get(key);
         if (prevBest !== undefined && prevBest <= nextSteps) continue;
         visited.set(key, nextSteps);
+        destCosts.set(key, nextSteps);
         reachable.add(key);
         if (nextSteps < mpBudget) {
           queue.push({ x: nx, y: ny, steps: nextSteps });
         }
       }
     }
+    battleWalkReachableCostRef.current = destCosts;
     return reachable;
   }, [
     currentMap,
@@ -8518,32 +8530,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       hoveredTile
     ) {
       const hoverScreen = gridToScreen(hoveredTile.x, hoveredTile.y);
-      const dist =
-        Math.abs(hoveredTile.x - playerPositionRef.current.x) +
-        Math.abs(hoveredTile.y - playerPositionRef.current.y);
-      const mpCost =
-        dist *
-        mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
-          log: (msg: string) => logDebugInfo("MODIFIER", msg),
-          rng: Math.random,
-        });
-      if (
-        dist > 0 &&
-        currentMap.tiles[hoveredTile.y]?.[hoveredTile.x] === "floor"
-      ) {
+      const destKey = `${hoveredTile.x},${hoveredTile.y}`;
+      const hoverPreview = battleWalkHoverMpPreview({
+        destKey,
+        reachable: mpTiles,
+        mpCost: battleWalkReachableCostRef.current.get(destKey) ?? 0,
+        currentMp: currentBattleMpRef.current,
+      });
+      if (hoverPreview) {
         ctx.save();
         ctx.font = "bold 12px Arial";
         ctx.textAlign = "center";
         ctx.strokeStyle = "rgba(0,0,0,0.85)";
         ctx.lineWidth = 2.5;
-        const costLabel = `${mpCost} MP`;
+        const costLabel = `${hoverPreview.mpCost} MP`;
         ctx.strokeText(
           costLabel,
           hoverScreen.x,
           hoverScreen.y + effectiveTileH / 2 - 4,
         );
-        ctx.fillStyle =
-          mpCost <= currentBattleMpRef.current ? "#4ade80" : "#f87171";
+        ctx.fillStyle = hoverPreview.affordable ? "#4ade80" : "#f87171";
         ctx.fillText(
           costLabel,
           hoverScreen.x,
@@ -16448,12 +16454,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           let didAct = false;
           // ── Apply spell cast ──────────────────────────────────────────────
           if (action.kind === "cast" && chosenSpell) {
-            const spellRange = Number(chosenSpell.range);
-            const distAM = Math.max(
-              Math.abs(newX - targetCell.x),
-              Math.abs(newY - targetCell.y),
+            const spellRange = enemySpellRange(chosenSpell);
+            const inRange = enemyCastRangeOk(
+              { x: newX, y: newY },
+              targetCell,
+              chosenSpell,
             );
-            const inRange = distAM <= spellRange;
             const spellType = chosenSpell.spellType ?? "damage";
             const spellDmg = Number(chosenSpell.damage);
             if (
@@ -16702,10 +16708,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           }
           // ── Fallback melee or skip ────────────────────────────────────────
           if (action.kind === "melee" || !didAct) {
-            const nd = Math.max(
-              Math.abs(newX - targetCell.x),
-              Math.abs(newY - targetCell.y),
-            );
+            const nd = chebyshevOnBoard({ x: newX, y: newY }, targetCell);
             if (nd <= 1) {
               const fallbackPool = [
                 { id: "e-crush", name: "Crush", range: 1, damage: 12 },

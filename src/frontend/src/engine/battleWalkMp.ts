@@ -50,3 +50,35 @@ export function battleWalkMpBudget(args: {
   }
   return Math.max(0, Math.floor(Number(args.playerMp) || 0));
 }
+
+export type BattleWalkHoverMpPreview = {
+  mpCost: number;
+  affordable: boolean;
+};
+
+/**
+ * Canvas hover used Manhattan from the player tile (`|dx|+|dy| * applyMpCost`).
+ * Highlight BFS and execute debit {@link battleWalkMpCost} from the active
+ * caster along the cardinal path (walls detour; Frozen/Slime already baked
+ * into the BFS step total). A far/blocked floor therefore showed a cheap
+ * green cost the click then rejected, and a wall-around tile showed 2 MP
+ * while execute charged 4.
+ *
+ * Show a cost only for a highlighted destination, using the same MP the
+ * walk click will spend. Origin (cost 0) and illegal tiles stay quiet.
+ */
+export function battleWalkHoverMpPreview(args: {
+  destKey: string;
+  reachable: ReadonlySet<string>;
+  mpCost: number;
+  currentMp: number;
+}): BattleWalkHoverMpPreview | null {
+  if (!args.reachable.has(args.destKey)) return null;
+  const mpCost = Math.max(0, Math.floor(Number(args.mpCost) || 0));
+  if (mpCost <= 0) return null;
+  const currentMp = Math.max(0, Math.floor(Number(args.currentMp) || 0));
+  return {
+    mpCost,
+    affordable: currentMp >= mpCost,
+  };
+}
