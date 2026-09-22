@@ -397,8 +397,12 @@ const XpBar: React.FC<{ experience: bigint; level: bigint }> = ({
         <span className="stone-pill stone-pill-crimson text-[10px] font-extrabold tracking-widest uppercase">
           LV {lvl}
         </span>
-        <span className="text-[10px] font-mono text-[#a55eea]">
-          {progressXp.toLocaleString()} / {needed.toLocaleString()} XP
+        <span
+          className="text-[10px] font-mono text-[#a55eea]"
+          data-ocid="character_selection.xp_this_level"
+          title="Leftover experience in this level, not a lifetime total"
+        >
+          {progressXp.toLocaleString()} / {needed.toLocaleString()} this level
         </span>
       </div>
       <div className="dofus-xp-bar">
@@ -708,6 +712,8 @@ const FilledSlot: React.FC<{
         type="button"
         data-ocid="character_selection.play_button"
         onClick={onPlay}
+        title="Enter the realm"
+        aria-label="Play — enter the realm"
         className="stone-btn-crimson flex-1 py-2.5"
         style={{
           background: "linear-gradient(135deg,#a0721a,#c0392b,#e8b840)",
@@ -897,7 +903,11 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
     return (
       <div className="fixed inset-0 bg-[#0d0f1a] flex items-center justify-center z-20">
         <div className="text-center">
-          <p className="text-[#e74c3c] font-display mb-4">
+          <p
+            className="text-[#e74c3c] font-display mb-4"
+            data-ocid="character_selection.error_state"
+            role="alert"
+          >
             Failed to load character slots.
           </p>
           <button
@@ -942,7 +952,7 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
               backgroundClip: "text",
             }}
           >
-            Choose your Paper Baby Vampire!
+            Choose your champion
           </h1>
         </div>
         <p className="text-[#6a7a8a] text-sm m-0">
