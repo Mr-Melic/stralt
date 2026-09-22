@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   JACKPOT_HEAL_DOKA_COST,
   applyHealHpToLiveStats,
+  confirmedOwnedAfterBuffBuyPersist,
   creditLiveDoka,
   dokaHealAmounts,
   isBuffShopHealItem,
@@ -11,6 +12,7 @@ import {
   nextDokaAfterJackpotHeal,
   nextDokaAfterShopSpend,
   nextHpAfterDokaHeal,
+  ownedForBuffBuy,
   resolveAbsoluteWriteHp,
   resolveOverworldHealSpend,
   shouldAllowShopSpend,
@@ -184,6 +186,67 @@ assert.equal(
   );
   assert.equal(tryConsumeBuffItem(0), null);
   assert.equal(tryConsumeBuffItem(-1), null);
+}
+
+{
+  // Own 1 confirmed. Buy 2nd (persist in flight). Fight. Use.
+  // Use must consume the confirmed stack, not confirmed+pending.
+  let confirmed = 1;
+  let pending = 0;
+  const buy = tryPurchaseBuffItem({
+    wallet: 50,
+    cost: 50,
+    owned: ownedForBuffBuy(confirmed, pending),
+    maxStack: 5,
+    inBattle: false,
+  });
+  assert.deepEqual(buy, { nextWallet: 0, nextOwned: 2 });
+  pending += 1;
+  assert.equal(ownedForBuffBuy(confirmed, pending), 2);
+  assert.equal(
+    tryConsumeBuffItem(ownedForBuffBuy(confirmed, pending)),
+    1,
+    "old path: consume confirmed+pending, persist then prev+1 restores a free stack",
+  );
+  const usedConfirmed = tryConsumeBuffItem(confirmed);
+  assert.equal(usedConfirmed, 0, "Use is enabled by the confirmed stack only");
+  confirmed = usedConfirmed ?? 0;
+  confirmed = confirmedOwnedAfterBuffBuyPersist(confirmed, true);
+  pending -= 1;
+  assert.equal(confirmed, 1, "own 1, buy 1, use 1, persist ok → 1 left");
+  assert.equal(pending, 0);
+
+  let reactInventory = 1;
+  let liveRef = 1;
+  liveRef = 2;
+  const consumedOptimistic = tryConsumeBuffItem(liveRef);
+  reactInventory = consumedOptimistic ?? 0;
+  reactInventory = (reactInventory ?? 0) + 1;
+  assert.equal(
+    reactInventory,
+    2,
+    "setInventory(prev + 1) after optimistic consume is the extra potion",
+  );
+}
+
+{
+  assert.equal(confirmedOwnedAfterBuffBuyPersist(0, true), 1);
+  assert.equal(confirmedOwnedAfterBuffBuyPersist(0, false), 0);
+  assert.equal(confirmedOwnedAfterBuffBuyPersist(1, false), 1);
+  assert.equal(ownedForBuffBuy(0, 1), 1);
+  assert.equal(ownedForBuffBuy(1, 1), 2);
+  // Two in-flight buys, then Use the confirmed stack, then both persist.
+  let confirmedStacks = 1;
+  let pendingBuys = 2;
+  const used = tryConsumeBuffItem(confirmedStacks);
+  assert.equal(used, 0);
+  confirmedStacks = used ?? 0;
+  confirmedStacks = confirmedOwnedAfterBuffBuyPersist(confirmedStacks, true);
+  pendingBuys -= 1;
+  confirmedStacks = confirmedOwnedAfterBuffBuyPersist(confirmedStacks, true);
+  pendingBuys -= 1;
+  assert.equal(confirmedStacks, 2, "own 1, buy 2, use 1, both persist → 2");
+  assert.equal(pendingBuys, 0);
 }
 
 {

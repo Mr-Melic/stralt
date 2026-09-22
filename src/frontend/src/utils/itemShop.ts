@@ -154,6 +154,35 @@ export function tryConsumeBuffItem(owned: number): number | null {
   return count - 1;
 }
 
+/**
+ * Buy increments a pending count immediately so a second click cannot
+ * pass maxStack, but saveBattleStats is still in flight. Owned-for-buy
+ * is confirmed + pending. Use must see confirmed only.
+ */
+export function ownedForBuffBuy(
+  confirmedOwned: number,
+  pendingBuys: number,
+): number {
+  return toNat(confirmedOwned) + toNat(pendingBuys);
+}
+
+/**
+ * Persist success used `setInventory(prev => prev + 1)` while Buy had
+ * already incremented inventoryRef. Use consumed that optimistic stack,
+ * set React to the remainder, then persist restored `remainder + 1`.
+ *
+ * Own 1 → Buy 2nd (in flight) → fight → Use 1 → persist ok: should keep 1
+ * (1 bought − 1 used), not 2.
+ */
+export function confirmedOwnedAfterBuffBuyPersist(
+  confirmedOwned: number,
+  persistOk: boolean,
+): number {
+  const confirmed = toNat(confirmedOwned);
+  if (persistOk !== true) return confirmed;
+  return confirmed + 1;
+}
+
 export type OverworldHealSpendInput = {
   currentHp: number;
   maxHp: number;
