@@ -401,7 +401,7 @@ import {
   shouldPersistAbsoluteDokaSpend,
   spendFromUiBalance,
 } from "../utils/progressPersist";
-import { queuedDeathPenaltyCut } from "../utils/queuedDeathPenaltyCut";
+import { shouldSkipQueuedDeathPenaltyCut } from "../utils/queuedDeathPenaltyCut";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import {
   shouldAbortMovementRaf,
@@ -12997,17 +12997,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ) {
               throw new Error("death-save skipped: wallet not seeded");
             }
+            const after = computeDeathPenalty(
+              committed.xp,
+              dokaBase ?? committed.doka,
+            );
             // Heal/shop beforeEach may already have flushed this marker.
-            // computeDeathPenalty on that lock used to apply a second 20/40.
-            const after = queuedDeathPenaltyCut({
-              pending: readPendingDeathPenaltyAnywhere(
-                characterSlot,
-                DEATH_PENALTY_STORAGE,
-              ),
-              lockXp: committed.xp,
-              lockDoka: dokaBase ?? committed.doka,
-            });
-            if (!after) {
+            // Writing `after` used to apply a second 20/40 (XP 80→64).
+            // Inserted *after* computeDeathPenalty so #356's xpBase union
+            // still auto-merges this hunk.
+            if (
+              shouldSkipQueuedDeathPenaltyCut({
+                pending: readPendingDeathPenaltyAnywhere(
+                  characterSlot,
+                  DEATH_PENALTY_STORAGE,
+                ),
+                lockXp: committed.xp,
+                lockDoka: dokaBase ?? committed.doka,
+              })
+            ) {
               return;
             }
             writePendingDeathPenalty(DEATH_PENALTY_STORAGE, {

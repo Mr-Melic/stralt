@@ -14,8 +14,11 @@
  *    second 20/40 (XP 80→64, Doka 120→72).
  *
  * Skip the queued cut when flush already honoured the marker. Still cut
- * when the pending 20/40 is unpaid. Lives beside deathPenalty.ts so older
- * persist PRs (#385 owner-key, #356 XP keep) can merge that file.
+ * when the pending 20/40 is unpaid. WorldExploration keeps
+ * computeDeathPenalty and inserts shouldSkipQueuedDeathPenaltyCut after
+ * it so #356's xpBase argument change still auto-merges. Lives beside
+ * deathPenalty.ts so older persist PRs (#385 owner-key, #356 XP keep)
+ * can merge that file.
  */
 
 import {
