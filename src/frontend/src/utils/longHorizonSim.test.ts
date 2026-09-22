@@ -4,9 +4,12 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
 } from "./applyRewardsResult.ts";
 import {
+  PLAYER_CREATE_INIT,
   fightsToNextLevel,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
+  firstLevelChcCanHit100,
+  firstLevelFormulaApExceedsPersistCap,
   firstLevelResCanHit100,
   firstSpellLevelCostExceeds,
   formulaAp,
@@ -84,6 +87,11 @@ assert.equal(
 );
 assert.equal(report.xpRows.find((r) => r.level === 10_000)?.pBelowTier, 1);
 assert.equal(report.xpRows.find((r) => r.level === 50_000)?.pBelowTier, 1);
+assert.equal(
+  report.xpRows.some((r) => r.level === 100_000),
+  true,
+);
+assert.equal(report.xpRows.find((r) => r.level === 100_000)?.pBelowTier, 1);
 assert.equal(report.persistContract.saveBattleStatsCannotLowerLevel, true);
 assert.equal(report.persistContract.maxDokaGrant, 10_000_000);
 assert.equal(report.persistContract.gameKeyBypassesApplyRewardsCeiling, true);
@@ -93,5 +101,23 @@ assert.equal(firstSpellLevelCostExceeds(100_000), 14);
 assert.equal(firstSpellLevelCostExceeds(10_000_000), 20);
 assert.equal(report.persistContract.firstSpellLevelCombatDokaCannotBuy, 14);
 assert.equal(report.persistContract.firstSpellLevelGameKeyCannotBuy, 20);
+assert.equal(PLAYER_CREATE_INIT, 10);
+assert.equal(report.persistContract.playerCreateInit, 10);
+assert.equal(report.persistContract.saveBattleStatsCannotRaiseInit, true);
+assert.equal(report.persistContract.maxPersistedAp, 20);
+assert.equal(firstLevelFormulaApExceedsPersistCap(), 325);
+assert.equal(report.persistContract.firstLevelFormulaApExceedsPersistCap, 325);
+assert.equal(firstLevelChcCanHit100("bishop"), 115);
+assert.equal(firstLevelChcCanHit100("king"), 138);
+assert.ok(
+  (report.xpRows.find((r) => r.level === 25)?.pPlayerWinsInitiative3 ?? 1) <
+    0.15,
+);
+assert.ok(
+  (report.xpRows.find((r) => r.level === 100)?.pPlayerWinsInitiative3 ?? 1) <
+    0.05,
+);
+assert.equal(report.chcBreakpoints.bishop, 115);
+assert.equal(report.chcBreakpoints.king, 138);
 
 console.log("longHorizonSim.test: ok");
