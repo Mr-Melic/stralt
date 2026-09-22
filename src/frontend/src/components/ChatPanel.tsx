@@ -30,6 +30,10 @@ import {
   setGeometryOverlayEnabled,
   subscribeGeometryOverlayEnabled,
 } from "../debug/geometryOverlayState";
+import {
+  shouldFocusChatComposer,
+  shouldRefreshClickTraceMirror,
+} from "../engine/chatPanelActivity";
 import { useActor } from "../hooks/useActor";
 import type { ActiveEffect, BattleLogEntry } from "../types/gameTypes";
 import {
@@ -734,18 +738,16 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   }, []);
 
   // SECTION 6 (build #329): refresh the click-trace ring buffer mirror
-  // whenever the Debug tab is active. The buffer is a readonly snapshot from
+  // while Debug → Clicks is visible. The buffer is a readonly snapshot from
   // getClickTraceBuffer() (oldest-first); we reverse for newest-first display.
-  // Re-snap on every debugEntries change as a cheap "something happened" tick
-  // — click traces are recorded by the WX click handler, not by the debug
-  // logger, so there is no dedicated subscription channel. Polling on the
-  // debug-log tick is a low-cost way to keep the Clicks view fresh while the
-  // Debug tab is open. debugEntries is intentionally a refresh trigger.
+  // Re-snap on debugEntries only in that sub-view — click traces are recorded
+  // by the WX click handler, not by the debug logger. PERF-2026-09-22-084:
+  // the Log sub-view must not pay a second setState per combat log line.
   // biome-ignore lint/correctness/useExhaustiveDependencies: debugEntries is a deliberate tick to re-pull the click trace buffer when new debug events arrive.
   useEffect(() => {
-    if (activeChannel !== "debug") return;
+    if (!shouldRefreshClickTraceMirror(activeChannel, debugSubView)) return;
     setClickTraceEntries(getClickTraceBuffer());
-  }, [activeChannel, debugEntries]);
+  }, [activeChannel, debugSubView, debugEntries]);
 
   // SECTION 6 (build #329): subscribe to geometry-overlay flag changes so the
   // toolbar toggle reflects the global flag consumed by the WX render loop.
@@ -987,7 +989,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         setUnreadStatus(0);
         lastSeenStatusCountRef.current = activeEffects.length;
       }
-      setTimeout(() => inputRef.current?.focus(), 80);
     }
   }, [
     isFolded,
@@ -997,6 +998,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
     summonLogEntries,
     activeEffects.length,
   ]);
+
+  // PERF-2026-09-22-080: poll / battle-log identity must not steal canvas
+  // focus or flash the mobile keyboard. Unfold and channel switch still do.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChannel is an intentional refocus trigger on tab change, not read in the body.
+  useEffect(() => {
+    if (!shouldFocusChatComposer(isFolded)) return;
+    const t = window.setTimeout(() => inputRef.current?.focus(), 80);
+    return () => window.clearTimeout(t);
+  }, [isFolded, activeChannel]);
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
@@ -1751,11 +1761,18 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
                           { type: "text/plain" },
                         );
                         const a = document.createElement("a");
-                        a.href = URL.createObjectURL(blob);
+                        const objectUrl = URL.createObjectURL(blob);
+                        a.href = objectUrl;
                         a.download = `debug-export-${Date.now()}.txt`;
                         document.body.appendChild(a);
                         a.click();
                         document.body.removeChild(a);
+                        // PERF-2026-09-22-073: revoke on the next tick so the
+                        // browser can start the download first.
+                        window.setTimeout(
+                          () => URL.revokeObjectURL(objectUrl),
+                          0,
+                        );
                       }}
                       title="Export debug report as plain text file"
                       style={{

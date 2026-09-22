@@ -1,6 +1,9 @@
 import type React from "react";
 import { useCallback, useEffect, useRef } from "react";
-import { shouldRunDecorativeCanvasLoop } from "../engine/canvasLoopActivity";
+import {
+  shouldReleaseDecorativeCanvasBuffer,
+  shouldRunDecorativeCanvasLoop,
+} from "../engine/canvasLoopActivity";
 
 interface BloodParticle {
   x: number;
@@ -94,19 +97,39 @@ const BloodParticles: React.FC<BloodParticlesProps> = ({
     if (!canvas) return;
 
     let ctx = canvas.getContext("2d");
+
+    const applyParentSize = () => {
+      const parent = canvas.parentElement || canvas;
+      const width = parent.clientWidth || 100;
+      const height = parent.clientHeight || 100;
+      canvas.width = width;
+      canvas.height = height;
+      ctx = canvas.getContext("2d");
+    };
+
+    const releaseGpuBuffer = () => {
+      canvas.width = 1;
+      canvas.height = 1;
+      particlesRef.current.length = 0;
+      ctx = canvas.getContext("2d");
+    };
+
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
+      if (
+        typeof document !== "undefined" &&
+        shouldReleaseDecorativeCanvasBuffer(document.hidden)
+      ) {
+        return;
+      }
       const { width, height } = entry.contentRect;
       canvas.width = width;
       canvas.height = height;
       ctx = canvas.getContext("2d");
     });
     ro.observe(canvas.parentElement || canvas);
-    const parent = canvas.parentElement || canvas;
-    canvas.width = parent.clientWidth || 100;
-    canvas.height = parent.clientHeight || 100;
-    ctx = canvas.getContext("2d");
+    applyParentSize();
 
     const myGen = ++bpGenRef.current;
 
@@ -209,16 +232,18 @@ const BloodParticles: React.FC<BloodParticlesProps> = ({
     const syncLoop = () => {
       if (
         typeof document !== "undefined" &&
-        !shouldRunDecorativeCanvasLoop(document.hidden)
+        shouldReleaseDecorativeCanvasBuffer(document.hidden)
       ) {
         stopLoop();
+        releaseGpuBuffer();
         return;
       }
+      applyParentSize();
       startLoop();
     };
 
     document.addEventListener("visibilitychange", syncLoop);
-    startLoop();
+    syncLoop();
     return () => {
       document.removeEventListener("visibilitychange", syncLoop);
       // LEAK-18: Increment generation so any in-flight RAF frame self-terminates

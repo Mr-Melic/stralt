@@ -10,3 +10,15 @@ export function shouldRunDecorativeCanvasLoop(
 ): boolean {
   return !documentHidden;
 }
+
+/**
+ * Hidden decorative canvases drop the backing store (BloodParticles
+ * PERF-2026-09-22-074). Distinct from Starfield's tab-hidden
+ * pause_keep_buffer — drips are cheap to respawn, and CharacterSelection
+ * can mount one instance per filled slot.
+ */
+export function shouldReleaseDecorativeCanvasBuffer(
+  documentHidden: boolean,
+): boolean {
+  return documentHidden;
+}
