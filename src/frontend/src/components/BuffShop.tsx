@@ -1,9 +1,11 @@
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  confirmedOwnedAfterBuffBuyPersist,
   isBuffShopOpen,
   liveDokaForShopSpend,
   liveShopWallet,
+  ownedForBuffBuy,
   shouldAllowShopSpend,
   shouldRollbackFailedShopSpend,
   tryConsumeBuffItem,
@@ -183,6 +185,9 @@ const BuffShop: React.FC<BuffShopProps> = ({
   const prevKeyRef = useRef(storageKey);
   const liveWalletRef = useRef(dokaBalance);
   const inventoryRef = useRef(inventory);
+  // Buy increments this immediately for maxStack. Use reads inventoryRef
+  // (confirmed only) so a fight-before-persist cannot consume the unpaid stack.
+  const pendingBuysRef = useRef<Partial<Record<BuffItemType, number>>>({});
   useEffect(() => {
     // Host live wallet is authoritative. Copying the render prop here
     // restored a stale-high balance after a same-tick heal/buy debit
@@ -212,21 +217,24 @@ const BuffShop: React.FC<BuffShopProps> = ({
         getLiveDoka,
         liveShopWallet(liveWalletRef.current, getLiveDoka),
       );
+      const pending = pendingBuysRef.current[item.id] ?? 0;
+      const confirmed = inventoryRef.current[item.id] ?? 0;
       const purchase = tryPurchaseBuffItem({
         wallet,
         cost: item.cost,
-        owned: inventoryRef.current[item.id] ?? 0,
+        owned: ownedForBuffBuy(confirmed, pending),
         maxStack: item.maxStack,
         inBattle,
       });
       if (!purchase) return;
       liveWalletRef.current = purchase.nextWallet;
-      inventoryRef.current = {
-        ...inventoryRef.current,
-        [item.id]: purchase.nextOwned,
-      };
-      void Promise.resolve(onDeductDoka(item.cost)).then((ok) => {
-        if (ok === false) {
+      pendingBuysRef.current[item.id] = pending + 1;
+      const settleBuy = (ok: boolean) => {
+        pendingBuysRef.current[item.id] = Math.max(
+          0,
+          (pendingBuysRef.current[item.id] ?? 0) - 1,
+        );
+        if (ok !== true) {
           if (
             shouldRollbackFailedShopSpend({
               liveDoka: liveWalletRef.current,
@@ -235,17 +243,25 @@ const BuffShop: React.FC<BuffShopProps> = ({
           ) {
             liveWalletRef.current += item.cost;
           }
-          inventoryRef.current = {
-            ...inventoryRef.current,
-            [item.id]: Math.max(0, purchase.nextOwned - 1),
-          };
           return;
         }
+        const nextOwned = confirmedOwnedAfterBuffBuyPersist(
+          inventoryRef.current[item.id] ?? 0,
+          true,
+        );
+        inventoryRef.current = {
+          ...inventoryRef.current,
+          [item.id]: nextOwned,
+        };
         setInventory((prev) => ({
           ...prev,
-          [item.id]: (prev[item.id] ?? 0) + 1,
+          [item.id]: nextOwned,
         }));
-      });
+      };
+      void Promise.resolve(onDeductDoka(item.cost)).then(
+        (ok) => settleBuy(ok !== false),
+        () => settleBuy(false),
+      );
     },
     [getLiveDoka, inBattle, onDeductDoka],
   );
@@ -296,7 +312,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
         if (e.key === "Escape") onClose?.();
       }}
       aria-modal="true"
-      aria-label="Item Shop"
+      aria-label="Items"
     >
       <div
         className="stone-frame"
@@ -313,14 +329,14 @@ const BuffShop: React.FC<BuffShopProps> = ({
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 18 }}>⚗️</span>
             <span className="stone-header-title" style={{ fontSize: 16 }}>
-              Item Shop
+              Items
             </span>
           </div>
           <button
             type="button"
             data-ocid="buff_shop.close_button"
             onClick={onClose}
-            aria-label="Close shop"
+            aria-label="Close Items"
             className="stone-btn-slate stone-modal-close"
             style={{
               width: 30,
