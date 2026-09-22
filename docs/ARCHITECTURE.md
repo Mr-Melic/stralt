@@ -412,6 +412,7 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `statusEffects.ts` | Non-DoT replace-or-refresh, AP/MP additive vs multiplicative `getStatModifier`, battle-log magnitude. WX still owns map-modifier suppression, DoT damage, death, and the expire-log loop |
 | `battleStartPlacement.ts` | Battle-start cell spacing (player ≥3 / enemies ≥2, occupancy fallback) |
 | `spawnPolicy.ts` | Overworld / dungeon enemy spawn policy: dungeon extra-count + tier-boost tables, valid-cell filters, family 30% variants, visual scale. `generateEnemies` still places units and re-rolls `aiTier`. Family catalog `ap`/`mp` are unused. Portal keep-clear is Manhattan ≤ 2; map-spawn keep-clear is Chebyshev ≤ 3 from (8,8); enemy spacing is Chebyshev ≥ 4 — do not merge these |
+| `spriteHitTest.ts` | Sprite-first pointer pick. Mouse pad 10px, touch pad 14px (do not unify). `makeSpriteHitRect` is the shared player/enemy box; WX still owns `spriteRectsRef` per-frame rebuild |
 
 Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRange`, `lineOfSight`, `linear`, `diagonal`, `freeCells`, `areaRadius`, `isBarrier`. `spell.name` is UI/log only. Sprite-click Strike and Attack Nearest must use the same live gate (`isTileCastableLive` / `isActiveHostile` on `getLiveCombatants`) — a React `enemies` snapshot misses enemy minions and leftover corpses. Attack Nearest range/LoS uses the **player** tile (`attackNearestLiveCasterPos`), not a controlled summon.
 

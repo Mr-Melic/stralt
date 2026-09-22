@@ -231,6 +231,15 @@ import {
   resolvePlayerCast,
   resolveSpellCast,
 } from "../engine/spellEngine";
+import {
+  PLAYER_SPRITE_DRAW_ORDER,
+  SPRITE_HIT_PADDING_MOUSE,
+  SPRITE_HIT_PADDING_TOUCH,
+  type SpriteHitRect,
+  hitTestSprite,
+  makeSpriteHitRect,
+  pointHitsSpriteRect,
+} from "../engine/spriteHitTest";
 import { setStarfieldPaused } from "../engine/starfieldActivity";
 import {
   formatBattleEffectMagnitude,
@@ -971,25 +980,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // entity directly without tile math (which mis-resolves because sprites
   // are drawn at screenPos.y - CHARACTER_Y_OFFSET, so the visible body maps
   // to a tile BEHIND the enemy's logical tile).
-  const spriteRectsRef = useRef<
-    Map<
-      string,
-      {
-        x: number;
-        y: number;
-        w: number;
-        h: number;
-        drawOrder: number;
-        id: string;
-        kind: string;
-        logicalX: number;
-        logicalY: number;
-        isAlive: boolean;
-        drawAnchor: { x: number; y: number };
-        drawSize: { w: number; h: number };
-      }
-    >
-  >(new Map());
+  const spriteRectsRef = useRef<Map<string, SpriteHitRect>>(new Map());
   // [CLICK-TRACE] Last click position in render space, for the 2-second
   // debug overlay. Set by handleCanvasClick/handleCanvasTouch when the
   // geometry overlay is enabled; consumed by the render post-pass.
@@ -8076,33 +8067,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           if (enemy.isMoving) ctx.restore();
 
           // Record this enemy/summon/boss sprite's screen-space rect for
-          // sprite-first hit-testing. Centered on the draw point
-          // (screenPos.x, screenPos.y - CHARACTER_Y_OFFSET) with a generous
-          // bounding box (effectiveTileW × effectiveTileH*1.5) so the visible
-          // body — which sits ABOVE the logical tile due to CHARACTER_Y_OFFSET
-          // — is fully covered. drawOrder uses the depth-sorted render index so
-          // the front-most sprite wins on overlap.
-          {
-            const _srW = effectiveTileW;
-            const _srH = effectiveTileH * 1.5;
-            spriteRectsRef.current.set(enemy.id, {
-              x: screenPos.x - _srW / 2,
-              y: screenPos.y - CHARACTER_Y_OFFSET - _srH / 2,
-              w: _srW,
-              h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _srH / 2,
+          // sprite-first hit-testing. Formula lives in makeSpriteHitRect so
+          // player and enemy cannot drift. drawOrder is the depth-sorted
+          // render index so the front-most sprite wins on overlap.
+          spriteRectsRef.current.set(
+            enemy.id,
+            makeSpriteHitRect({
+              screenX: screenPos.x,
+              screenY: screenPos.y,
+              tileW: effectiveTileW,
+              tileH: effectiveTileH,
+              characterYOffset: CHARACTER_Y_OFFSET,
               drawOrder: renderItem.depth,
               id: enemy.id,
               kind: enemy.side === "player" ? "summon" : "enemy",
               logicalX: enemy.x ?? 0,
               logicalY: enemy.y ?? 0,
               isAlive: (enemy.hp ?? 0) > 0,
-              drawAnchor: {
-                x: screenPos.x,
-                y: screenPos.y - CHARACTER_Y_OFFSET,
-              },
-              drawSize: { w: effectiveTileW, h: effectiveTileH * 1.5 },
-            });
-          }
+            }),
+          );
 
           const isLeader = leaderEnemyIdRef.current === enemy.id;
           // Enemy name label — name on first line, level on second line with color coding
@@ -8326,32 +8309,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
 
           // Record the player sprite's screen-space rect for sprite-first
-          // hit-testing. Same bounding-box formula as the enemy rect
-          // (effectiveTileW × effectiveTileH*1.5) centered on the draw point
-          // (playerScreenPos.x, playerScreenPos.y - CHARACTER_Y_OFFSET).
-          // drawOrder 99999 guarantees the player wins any overlap tiebreak
+          // hit-testing. Same makeSpriteHitRect formula as enemies.
+          // PLAYER_SPRITE_DRAW_ORDER guarantees the player wins any overlap
           // (it is always rendered last in the depth-sorted pass).
-          {
-            const _psrW = effectiveTileW;
-            const _psrH = effectiveTileH * 1.5;
-            spriteRectsRef.current.set("player", {
-              x: playerScreenPos.x - _psrW / 2,
-              y: playerScreenPos.y - CHARACTER_Y_OFFSET - _psrH / 2,
-              w: _psrW,
-              h: effectiveTileH / 2 + CHARACTER_Y_OFFSET + _psrH / 2,
-              drawOrder: 99999,
+          spriteRectsRef.current.set(
+            "player",
+            makeSpriteHitRect({
+              screenX: playerScreenPos.x,
+              screenY: playerScreenPos.y,
+              tileW: effectiveTileW,
+              tileH: effectiveTileH,
+              characterYOffset: CHARACTER_Y_OFFSET,
+              drawOrder: PLAYER_SPRITE_DRAW_ORDER,
               id: "player",
               kind: "player",
               logicalX: playerPositionRef.current.x,
               logicalY: playerPositionRef.current.y,
               isAlive: true,
-              drawAnchor: {
-                x: playerScreenPos.x,
-                y: playerScreenPos.y - CHARACTER_Y_OFFSET,
-              },
-              drawSize: { w: _psrW, h: _psrH },
-            });
-          }
+            }),
+          );
 
           // Status effect icons above player sprite
           if (inBattleRef.current) {
@@ -8645,13 +8621,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ctx.lineTo(_lc.x, _lc.y + 10);
       ctx.stroke();
       for (const r of spriteRectsRef.current.values()) {
-        ctx.strokeStyle =
-          _lc.x >= r.x &&
-          _lc.x <= r.x + r.w &&
-          _lc.y >= r.y &&
-          _lc.y <= r.y + r.h
-            ? "#22c55e"
-            : "#666";
+        ctx.strokeStyle = pointHitsSpriteRect(r, _lc.x, _lc.y, 0)
+          ? "#22c55e"
+          : "#666";
         ctx.strokeRect(r.x, r.y, r.w, r.h);
         ctx.fillStyle = "#ec8a85";
         ctx.fillText(r.id, r.x, r.y - 2);
@@ -8873,50 +8845,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return () => window.removeEventListener("resize", onResize);
   }, [rebuildTileCornerCache]);
 
-  // Sprite-first hit testing. Iterates the per-frame spriteRectsRef map
-  // populated during the render pass and returns the front-most LIVING
-  // combatant whose expanded rect contains (canvasX, canvasY). Padding
-  // widens the hit box (~10px mouse, ~14px touch) so the visible body —
-  // which sits ABOVE the logical tile due to CHARACTER_Y_OFFSET — is
-  // reliably clickable. Front-most is highest drawOrder, tiebroken by
-  // lowest y (topmost on screen). Returns null when no living sprite is
-  // hit, in which case the caller falls through to the existing
-  // clientToGrid tile-conversion path unchanged.
-  const hitTestSprite = useCallback(
-    (canvasX: number, canvasY: number, padding: number) => {
-      let best: {
-        x: number;
-        y: number;
-        w: number;
-        h: number;
-        drawOrder: number;
-        id: string;
-        kind: string;
-        logicalX: number;
-        logicalY: number;
-        isAlive: boolean;
-      } | null = null;
-      for (const entry of spriteRectsRef.current.values()) {
-        if (!entry.isAlive) continue;
-        if (
-          canvasX < entry.x - padding ||
-          canvasX > entry.x + entry.w + padding ||
-          canvasY < entry.y - padding ||
-          canvasY > entry.y + entry.h + padding
-        )
-          continue;
-        if (
-          !best ||
-          entry.drawOrder > best.drawOrder ||
-          (entry.drawOrder === best.drawOrder && entry.y < best.y)
-        ) {
-          best = entry;
-        }
-      }
-      return best;
-    },
-    [],
-  );
+  // Sprite-first hit testing lives in engine/spriteHitTest.ts. Click/touch
+  // pass spriteRectsRef (this-frame map) plus mouse 10px / touch 14px pad.
 
   const clientToGrid = useCallback(
     (clientX: number, clientY: number) => {
@@ -10124,7 +10054,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _ptr = pointerToRenderSpace(event.clientX, event.clientY);
           const _canvasX = _ptr.x;
           const _canvasY = _ptr.y;
-          const _hit = hitTestSprite(_canvasX, _canvasY, 10);
+          const _hit = hitTestSprite(
+            spriteRectsRef.current.values(),
+            _canvasX,
+            _canvasY,
+            SPRITE_HIT_PADDING_MOUSE,
+          );
           if (_hit) {
             const _playerCastOk = shouldAllowPlayerCastEntry({
               inBattle: inBattleRef.current,
@@ -10644,7 +10579,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       applyBattleWalkHazards,
       applyControlledSummonWalk,
       combatantStoreCtx,
-      hitTestSprite,
       setCurrentBattleApSynced,
       tileCenter,
       pointerToRenderSpace,
@@ -10701,7 +10635,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
   // Touch handler — delegates to same grid logic as mouse click
   // Touch handler — delegates to same grid logic as mouse click
-  // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, applyBattleWalkHazards, activeSpells, hitTestSprite, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: deps array is intentionally curated — battleActionMode, currentBattleMp, getMpReachableTiles, getSpellRangeTiles, pointerToRenderSpace, setCurrentBattleApSynced, applyBattleWalkHazards, activeSpells, combatantStoreCtx, tileCenter are all used in the handler body; refs (selectedSpellIdRef, currentBattleApRef, playerPositionRef, transitionInProgressRef, effectsManagerRef) are stable and intentionally omitted.
   const handleCanvasTouch = useCallback(
     (event: React.TouchEvent<HTMLCanvasElement>) => {
       // Cancel the synthetic click and browser pan/zoom before any early
@@ -10816,7 +10750,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const _ptr = pointerToRenderSpace(touch.clientX, touch.clientY);
           const _canvasX = _ptr.x;
           const _canvasY = _ptr.y;
-          const _hit = hitTestSprite(_canvasX, _canvasY, 14);
+          const _hit = hitTestSprite(
+            spriteRectsRef.current.values(),
+            _canvasX,
+            _canvasY,
+            SPRITE_HIT_PADDING_TOUCH,
+          );
           if (_hit) {
             const _playerCastOk = shouldAllowPlayerCastEntry({
               inBattle: inBattleRef.current,
