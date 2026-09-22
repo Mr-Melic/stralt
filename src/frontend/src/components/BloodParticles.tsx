@@ -1,6 +1,9 @@
 import type React from "react";
 import { useCallback, useEffect, useRef } from "react";
-import { shouldRunDecorativeCanvasLoop } from "../engine/canvasLoopActivity";
+import {
+  decorativeCanvasBackingSize,
+  shouldRunDecorativeCanvasLoop,
+} from "../engine/canvasLoopActivity";
 
 interface BloodParticle {
   x: number;
@@ -94,19 +97,42 @@ const BloodParticles: React.FC<BloodParticlesProps> = ({
     if (!canvas) return;
 
     let ctx = canvas.getContext("2d");
+    const applyBackingStore = (documentHidden: boolean) => {
+      const parent = canvas.parentElement || canvas;
+      const size = decorativeCanvasBackingSize(
+        documentHidden,
+        parent.clientWidth,
+        parent.clientHeight,
+      );
+      if (canvas.width !== size.width) canvas.width = size.width;
+      if (canvas.height !== size.height) canvas.height = size.height;
+      if (documentHidden) {
+        particlesRef.current.length = 0;
+      }
+      ctx = canvas.getContext("2d");
+    };
     const ro = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
+      // PERF-2026-09-22-074: a hidden-tab resize must not restore a
+      // full-size GPU buffer while RAF is stopped.
+      if (
+        typeof document !== "undefined" &&
+        !shouldRunDecorativeCanvasLoop(document.hidden)
+      ) {
+        return;
+      }
       const { width, height } = entry.contentRect;
-      canvas.width = width;
-      canvas.height = height;
+      if (width <= 0 || height <= 0) return;
+      const size = decorativeCanvasBackingSize(false, width, height);
+      canvas.width = size.width;
+      canvas.height = size.height;
       ctx = canvas.getContext("2d");
     });
     ro.observe(canvas.parentElement || canvas);
-    const parent = canvas.parentElement || canvas;
-    canvas.width = parent.clientWidth || 100;
-    canvas.height = parent.clientHeight || 100;
-    ctx = canvas.getContext("2d");
+    applyBackingStore(
+      typeof document !== "undefined" ? document.hidden : false,
+    );
 
     const myGen = ++bpGenRef.current;
 
@@ -126,6 +152,7 @@ const BloodParticles: React.FC<BloodParticlesProps> = ({
         typeof document !== "undefined" &&
         !shouldRunDecorativeCanvasLoop(document.hidden)
       ) {
+        applyBackingStore(true);
         animFrameRef.current = undefined;
         return;
       }
@@ -207,13 +234,15 @@ const BloodParticles: React.FC<BloodParticlesProps> = ({
     };
 
     const syncLoop = () => {
-      if (
+      const hidden =
         typeof document !== "undefined" &&
-        !shouldRunDecorativeCanvasLoop(document.hidden)
-      ) {
+        !shouldRunDecorativeCanvasLoop(document.hidden);
+      if (hidden) {
         stopLoop();
+        applyBackingStore(true);
         return;
       }
+      applyBackingStore(false);
       startLoop();
     };
 
