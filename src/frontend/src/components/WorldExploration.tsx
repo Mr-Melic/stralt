@@ -12086,7 +12086,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             ...entry,
             hp: live.hp,
             maxHp: live.maxHp ?? entry.maxHp,
-            res: live.res ?? entry.res,
           };
         });
         setEnragedEnemies(new Set());
