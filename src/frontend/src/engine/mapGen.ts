@@ -1820,7 +1820,12 @@ export function applySanctuaryLayout<P extends { x: number; y: number }>(
 ): { spawn: { x: number; y: number } } {
   const applied = applyFinalizedLayout(map, [], spawn, size);
   colocateWhitePortal(map, applied.spawn, whitePortal);
-  return { spawn: applied.spawn };
+  // Stamping the gateway onto spawn is a new portal cut-vertex. Battle
+  // pathing cannot walk it; re-legalize so leftover hostiles cannot sit
+  // on the far island (production then resetCombatantStore, but dungeon-
+  // complete attach keeps a roster).
+  const relaid = applyFinalizedLayout(map, [], applied.spawn, size);
+  return { spawn: relaid.spawn };
 }
 
 /**
@@ -1843,7 +1848,7 @@ export function attachWhitePortalAfterLegalize<
 ): { spawn: { x: number; y: number }; roster: T[] } {
   const applied = applyFinalizedLayout(map, roster, spawn, size);
   colocateWhitePortal(map, applied.spawn, whitePortal);
-  return applied;
+  return applyFinalizedLayout(map, applied.roster, applied.spawn, size);
 }
 
 /**

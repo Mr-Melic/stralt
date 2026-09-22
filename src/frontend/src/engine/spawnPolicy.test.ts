@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import type { EnemyFamily } from "../types/gameTypes.ts";
+import { generateSeededWorld } from "./mapGen.simulate.ts";
+import {
+  evaluateSolvability,
+  finalizePlayableLayout,
+  isEnemyWanderFloor,
+} from "./mapGen.ts";
 import {
   FAMILY_STAT_MULTS,
   FAMILY_TYPES,
@@ -135,6 +141,10 @@ describe("distance metrics stay distinct", () => {
     assert.equal(isInsideMapSpawnKeepClear(12, 8), false);
     // Diagonal Chebyshev 3 is blocked; Manhattan 6 would look "far".
     assert.equal(isInsideMapSpawnKeepClear(11, 11), true);
+    // Live spawn (void at center, spiral to the border) must keep-clear
+    // around the actual cell, not the hardcoded (8,8) diamond.
+    assert.equal(isInsideMapSpawnKeepClear(12, 8, { x: 12, y: 8 }), true);
+    assert.equal(isInsideMapSpawnKeepClear(8, 8, { x: 12, y: 8 }), false);
   });
 
   it("enemy spacing is Chebyshev >= 4 (not the battle-start 2/3)", () => {
@@ -165,6 +175,137 @@ describe("collectValidEnemySpawnCells", () => {
     assert.equal(keys.has("11,8"), false); // spawn keep-clear edge
     assert.equal(keys.has("12,8"), true);
     assert.equal(keys.has("3,2"), true); // Manhattan 3 from portal
+  });
+
+  it("seed-portal-cut-far-spawn: does not place a rat on the far island of a choke", () => {
+    // 1-wide east-west corridor, portal choke at (3,8). Keep-clear eats the
+    // center 7×7, so (0,8) (Manhattan 3 from the gate) used to be a legal
+    // spawn despite being fight-graph-isolated — melee cannot cross a
+    // battle-impassable portal, so isProgressionLocked never clears.
+    const tiles = Array.from({ length: WORLD_GRID_SIZE }, () =>
+      Array.from({ length: WORLD_GRID_SIZE }, () => "wall"),
+    );
+    for (let x = 0; x <= 12; x++) tiles[8][x] = "floor";
+    tiles[8][3] = "portal";
+    const portals = [{ x: 3, y: 8 }];
+    const unfilteredFar = !isSpawnAdjacentToPortal(0, 8, portals);
+    assert.equal(unfilteredFar, true, "fixture far cell must pass keep-clear");
+    assert.equal(isInsideMapSpawnKeepClear(0, 8), false);
+    assert.equal(isInsideMapSpawnKeepClear(12, 8), false);
+
+    const cells = collectValidEnemySpawnCells(tiles, portals, new Set(), {
+      x: 8,
+      y: 8,
+    });
+    const keys = new Set(cells.map((c) => `${c.x},${c.y}`));
+    assert.equal(
+      keys.has("0,8"),
+      false,
+      "far-island floor must not be a spawn candidate",
+    );
+    assert.equal(keys.has("1,8"), false);
+    assert.equal(keys.has("2,8"), false);
+    assert.equal(
+      keys.has("12,8"),
+      true,
+      "near-side border floor must stay legal",
+    );
+  });
+
+  it("falls back to keep-clear fight-graph cells, not the far island", () => {
+    // Near side is only the keep-clear diamond; every keep-clear-legal
+    // floor sits past the choke. Falling back to allValid used to drop a
+    // rat on (0,8). Finalize cannot punch when the near cell is boxed by
+    // voids — isProgressionLocked never clears.
+    const tiles = Array.from({ length: WORLD_GRID_SIZE }, () =>
+      Array.from({ length: WORLD_GRID_SIZE }, () => "wall"),
+    );
+    for (let x = 0; x <= 3; x++) tiles[8][x] = "floor";
+    tiles[8][3] = "portal";
+    tiles[8][8] = "floor";
+    const voids = new Set<string>();
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      voids.add(`${8 + dx},${8 + dy}`);
+    }
+    const cells = collectValidEnemySpawnCells(tiles, [{ x: 3, y: 8 }], voids, {
+      x: 8,
+      y: 8,
+    });
+    const keys = new Set(cells.map((c) => `${c.x},${c.y}`));
+    assert.equal(
+      keys.has("0,8"),
+      false,
+      "far-island floor must not be the keep-clear fallback",
+    );
+    assert.equal(
+      keys.has("8,8"),
+      true,
+      "fallback must still place someone on the fight graph",
+    );
+
+    const placed = finalizePlayableLayout({
+      tiles,
+      voidTiles: voids,
+      playerSpawn: { x: 8, y: 8 },
+      portals: [{ x: 3, y: 8 }],
+      spawns: cells.map((c) => ({ ...c })),
+      w: WORLD_GRID_SIZE,
+      h: WORLD_GRID_SIZE,
+    });
+    const after = evaluateSolvability(
+      placed.tiles,
+      voids,
+      placed.playerSpawn,
+      placed.portals,
+      placed.spawns,
+      WORLD_GRID_SIZE,
+      WORLD_GRID_SIZE,
+    );
+    assert.equal(after.isolatedEnemies, 0, after.failures.join(","));
+    assert.equal(after.clearingUnlocks, true, after.failures.join(","));
+  });
+
+  it("seeded chessboard maps stay on the fight graph when a near cell exists", () => {
+    const seeds = Array.from({ length: 64 }, (_, i) => 2400 + i * 19);
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({
+        seed,
+        runMode: "none",
+        archetype: "chessboard",
+        finalize: false,
+      });
+      const cells = collectValidEnemySpawnCells(
+        world.tiles,
+        world.portals,
+        world.voidTiles,
+        world.playerSpawn,
+      );
+      const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+      const isolated = cells.filter(
+        (cell) =>
+          !isEnemyWanderFloor(
+            world.tiles,
+            world.voidTiles,
+            world.portals,
+            world.playerSpawn,
+            cell,
+            size,
+            world.tiles.length,
+          ),
+      );
+      if (isolated.length > 0) {
+        failures.push(
+          `seed ${seed}: far-island spawns ${isolated.map((c) => `${c.x},${c.y}`).join("/")}`,
+        );
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
   });
 });
 

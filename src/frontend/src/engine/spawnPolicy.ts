@@ -10,6 +10,9 @@
  *   - portal keep-clear: Manhattan <= 2
  *   - map-spawn keep-clear: Chebyshev <= 3 from (8, 8)
  *   - enemy-to-enemy spacing: Chebyshev >= 4
+ * Spawn cells must also sit on the player's battle-walkable island
+ * (`isEnemyWanderFloor`). Do not treat overworld flood-through-portal as
+ * fight-graph reachability.
  *
  * Family catalog `ap` / `mp` fields are unused at spawn (WX never wrote
  * them). Do not start applying them in a modularity run.
@@ -20,6 +23,7 @@
 
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import type { EnemyFamily } from "../types/gameTypes.ts";
+import { isEnemyWanderFloor } from "./mapGen.ts";
 
 export type Rng = () => number;
 
@@ -180,33 +184,67 @@ export function isSpawnAdjacentToPortal(
   });
 }
 
-export function isInsideMapSpawnKeepClear(x: number, y: number): boolean {
+export function isInsideMapSpawnKeepClear(
+  x: number,
+  y: number,
+  origin: { x: number; y: number } = MAP_SPAWN_CELL,
+): boolean {
   return (
-    Math.abs(x - MAP_SPAWN_CELL.x) <= MAP_SPAWN_KEEP_CLEAR_CHEBYSHEV &&
-    Math.abs(y - MAP_SPAWN_CELL.y) <= MAP_SPAWN_KEEP_CLEAR_CHEBYSHEV
+    Math.abs(x - origin.x) <= MAP_SPAWN_KEEP_CLEAR_CHEBYSHEV &&
+    Math.abs(y - origin.y) <= MAP_SPAWN_KEEP_CLEAR_CHEBYSHEV
   );
 }
 
 /**
  * Floor cells that may host an overworld / dungeon spawn: not a portal
- * neighbor, not the map-spawn keep-clear diamond, not void.
+ * neighbor, not void, and on the player's battle-walkable island.
+ *
+ * Keep-clear (Chebyshev ≤ 3 from the live spawn) is preferred so hostiles
+ * do not start stacked on the player. That diamond plus portal Manhattan
+ * ≤ 2 is exactly the border ring where a portal choke creates a far
+ * island. Overworld flood walks through the gate; battle pathing does
+ * not. Falling back to those far-island floors keeps
+ * `isProgressionLocked` true with no legal melee approach — and finalize
+ * cannot punch an alcove when the near side is boxed in by voids.
+ *
+ * Prefer keep-clear-legal fight-graph cells; if none exist (phase-4 7×7
+ * is the whole room), fall back to fight-graph keep-clear cells. Never
+ * return a cell the player cannot engage.
  */
 export function collectValidEnemySpawnCells(
   tiles: readonly (readonly string[])[],
   portals: readonly { x: number; y: number }[],
   voidTiles: ReadonlySet<string> = new Set(),
+  playerSpawn: { x: number; y: number } = MAP_SPAWN_CELL,
 ): { x: number; y: number }[] {
-  const allValid: { x: number; y: number }[] = [];
-  for (let y = 0; y < WORLD_GRID_SIZE; y++) {
-    for (let x = 0; x < WORLD_GRID_SIZE; x++) {
+  const h = tiles.length;
+  const w = tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const grid = tiles as string[][];
+  const portalList = portals as { x: number; y: number }[];
+  const voids = new Set(voidTiles);
+  const onGraph: { x: number; y: number }[] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
       if (tiles[y][x] !== "floor") continue;
       if (isSpawnAdjacentToPortal(x, y, portals)) continue;
-      if (isInsideMapSpawnKeepClear(x, y)) continue;
-      if (voidTiles.has(`${x},${y}`)) continue;
-      allValid.push({ x, y });
+      if (voids.has(`${x},${y}`)) continue;
+      const cell = { x, y };
+      if (
+        !isEnemyWanderFloor(grid, voids, portalList, playerSpawn, cell, w, h)
+      ) {
+        continue;
+      }
+      onGraph.push(cell);
     }
   }
-  return allValid;
+  const keepClearLegal = onGraph.filter(
+    (cell) => !isInsideMapSpawnKeepClear(cell.x, cell.y, playerSpawn),
+  );
+  // Phase-4 center 7×7 can be the entire fight graph. Prefer spreading
+  // off the spawn diamond; if that set is empty, still place on the
+  // near-side keep-clear cells so generateEnemies does not skip the
+  // room or drop a rat past the choke.
+  return keepClearLegal.length > 0 ? keepClearLegal : onGraph;
 }
 
 export function isSpawnFarEnough(
