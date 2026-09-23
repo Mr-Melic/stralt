@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { starterSpells } from "../data/spellData.ts";
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
-import { planPlayerCastAttempt, playerCastAttemptResult } from "./playerCastPlan.ts";
+import {
+  planPlayerCastAttempt,
+  playerCastAttemptResult,
+} from "./playerCastPlan.ts";
 import {
   playerMirrorResolvesOnTile,
   playerShieldBuffResolves,
   playerTimestepResolvesOnTile,
 } from "./playerSpecialCast.ts";
-import {
-  type PlayerSpellContext,
-  resolvePlayerCast,
-} from "./spellEngine.ts";
+import { type PlayerSpellContext, resolvePlayerCast } from "./spellEngine.ts";
 import {
   collectHighlightLiveMismatches,
   computeTargetableTiles,
@@ -223,10 +223,7 @@ describe("Timestep highlight vs restore effect", () => {
 
     const offRestore: number[] = [];
     const offCtx = stubCtx({ restoreCalls: offRestore });
-    assert.equal(
-      resolvePlayerCast(timestep, { x: 6, y: 4 }, offCtx),
-      "abort",
-    );
+    assert.equal(resolvePlayerCast(timestep, { x: 6, y: 4 }, offCtx), "abort");
     assert.equal(offRestore.length, 0);
   });
 
@@ -254,12 +251,18 @@ describe("Mirror highlight vs activate effect", () => {
     });
     assert.equal(highlighted.has("4,4"), true);
     assert.equal(highlighted.has("6,4"), false);
-    assert.equal(shouldExecuteLiveCast(
-      isTileCastableLive(mirror, caster, caster, [rat], tiles, 1),
-    ), true);
-    assert.equal(shouldExecuteLiveCast(
-      isTileCastableLive(mirror, caster, { x: 6, y: 4 }, [rat], tiles, 1),
-    ), false);
+    assert.equal(
+      shouldExecuteLiveCast(
+        isTileCastableLive(mirror, caster, caster, [rat], tiles, 1),
+      ),
+      true,
+    );
+    assert.equal(
+      shouldExecuteLiveCast(
+        isTileCastableLive(mirror, caster, { x: 6, y: 4 }, [rat], tiles, 1),
+      ),
+      false,
+    );
 
     const mirrorCalls: number[] = [];
     const ctx = stubCtx({ mirrorCalls });

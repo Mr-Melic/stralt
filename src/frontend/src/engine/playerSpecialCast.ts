@@ -21,7 +21,9 @@ export function playerShieldBuffResolves(spell: {
   if (t !== "self" && t !== "ally") return false;
   if (spell.effectType !== "buff") return false;
   if (!spell.buffStat) return false;
-  return spell.buffModifier != null && Number.isFinite(Number(spell.buffModifier));
+  return (
+    spell.buffModifier != null && Number.isFinite(Number(spell.buffModifier))
+  );
 }
 
 export function playerTimestepResolvesOnTile(
