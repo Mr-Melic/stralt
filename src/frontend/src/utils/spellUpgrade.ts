@@ -168,8 +168,23 @@ export function shouldCommitSpellUpgradeDoka(
   committedBefore: number,
   nextDoka: number,
   walletSeeded: boolean,
+  persist?: {
+    isWalletSeeded: () => boolean;
+    unseededCreditWriteSkipFloor?: number;
+  },
 ): boolean {
   if (nextDoka === 0 && committedBefore === 0 && !walletSeeded) {
+    return false;
+  }
+  // Optional persist is the world lock. After an unseeded GameKey/feat
+  // `#ok` the helper sets `unseededCreditWriteSkipFloor` so a stale
+  // `commit({ doka: query })` cannot seed the pre-credit wallet. No import
+  // of `unseededCreditWriteSkip` — #387 occupies that top-of-file hole.
+  if (
+    persist &&
+    !persist.isWalletSeeded() &&
+    (persist.unseededCreditWriteSkipFloor ?? 0) > 0
+  ) {
     return false;
   }
   return true;

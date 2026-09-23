@@ -5,6 +5,7 @@
  */
 
 import { legacyPurchaseCreditForHud } from "./legacyPurchaseCredit.ts";
+import { noteUnseededCreditWriteSkip } from "./unseededCreditWriteSkip.ts";
 
 export type ShopCustomerFields = {
   firstName?: string;
@@ -320,6 +321,7 @@ export async function redeemGameKeyThroughPersist(
       // absolute write fetches, but block idle hydrate from copying the
       // in-flight pre-redeem query (that used to seed and wipe the grant).
       persist.noteUnseededCredit?.();
+      noteUnseededCreditWriteSkip(persist, gained);
     }
     const after = persist.snapshot().doka;
     return {

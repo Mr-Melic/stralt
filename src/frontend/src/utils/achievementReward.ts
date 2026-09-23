@@ -5,6 +5,8 @@
  * balance and wipes the reward.
  */
 
+import { noteUnseededCreditWriteSkip } from "./unseededCreditWriteSkip.ts";
+
 export type AchievementCreditPersistLock = {
   enqueue<T>(fn: () => Promise<T>): Promise<T>;
   commit(next: { doka?: number }): void;
@@ -132,6 +134,7 @@ export async function creditAchievementRewardThroughPersist(
       });
     } else if ("ok" in parsed && parsed.ok > 0) {
       persist.noteUnseededCredit?.();
+      noteUnseededCreditWriteSkip(persist, parsed.ok);
     }
     return parsed;
   });
