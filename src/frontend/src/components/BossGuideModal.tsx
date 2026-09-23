@@ -282,20 +282,48 @@ const BossGuideModal: React.FC<BossGuideModalProps> = ({
             flexShrink: 0,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Crown size={18} style={{ color: "#f1c40f" }} />
-            <span
-              style={{
-                color: "#e74c3c",
-                fontWeight: 800,
-                fontSize: 16,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                fontFamily: "'Space Grotesk', system-ui, sans-serif",
-              }}
-            >
-              Boss Guide
-            </span>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              minWidth: 0,
+              paddingRight: 8,
+            }}
+          >
+            <Crown
+              size={18}
+              style={{ color: "#f1c40f", flexShrink: 0, marginTop: 2 }}
+            />
+            <div>
+              <span
+                style={{
+                  color: "#e74c3c",
+                  fontWeight: 800,
+                  fontSize: 16,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  fontFamily: "'Space Grotesk', system-ui, sans-serif",
+                }}
+              >
+                Boss Guide
+              </span>
+              <p
+                data-ocid="boss_guide.next_step"
+                style={{
+                  margin: "4px 0 0",
+                  color: "#8a9aaa",
+                  fontSize: 11,
+                  lineHeight: 1.4,
+                  fontWeight: 500,
+                  letterSpacing: "0.02em",
+                  textTransform: "none",
+                }}
+              >
+                Step onto a purple whirlpool in the realm to challenge one. Boss
+                Rush is a separate ten-room chain.
+              </p>
+            </div>
           </div>
           <button
             type="button"

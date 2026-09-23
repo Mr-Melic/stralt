@@ -776,9 +776,12 @@ const FilledSlot: React.FC<{
               <AlertDialogTitle className="text-[#e74c3c] font-display">
                 Delete Character
               </AlertDialogTitle>
-              <AlertDialogDescription className="text-[#c0ccd8]">
-                Delete &ldquo;{character.name}&rdquo;? This action cannot be
-                undone.
+              <AlertDialogDescription
+                className="text-[#c0ccd8]"
+                data-ocid="character_selection.delete_copy"
+              >
+                Remove &ldquo;{character.name}&rdquo; from this slot? You can
+                forge another in its place.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter className="mt-4">
@@ -814,6 +817,8 @@ const EmptySlot: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
       type="button"
       data-ocid="character_selection.create_button"
       onClick={onCreate}
+      title="Name a piece, pick colors, then Play from this slot"
+      aria-label="Forge a champion in this empty slot"
       className="stone-btn-crimson w-full justify-center py-2.5"
       style={{
         background: "linear-gradient(135deg,#1a1e30,#141726)",
@@ -832,7 +837,7 @@ const EmptySlot: React.FC<{ onCreate: () => void }> = ({ onCreate }) => (
       }}
     >
       <Plus className="w-4 h-4" />
-      <span>Create Character</span>
+      <span>Forge a Champion</span>
     </button>
   </div>
 );
@@ -953,7 +958,7 @@ const CharacterSelection: React.FC<CharacterSelectionProps> = ({
           >
             {userProfile.name}
           </span>
-          . Select a character or create a new one.
+          . Select a champion or forge a new one.
         </p>
         <div
           className="h-px mx-auto mt-5"
