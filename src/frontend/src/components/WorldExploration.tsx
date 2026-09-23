@@ -79,6 +79,7 @@ import {
   battleWalkHazardDamages,
   countsTowardKillRewards,
   despawnSummons,
+  enemyApplyTargetCell,
   enemyDestToCommit,
   enemyHpAfterHazardDamage,
   hpAfterBossPhase2,
@@ -16433,9 +16434,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             action.targetId && action.targetId !== "player"
               ? prevEnemies.find((e) => e.id === action.targetId)
               : null;
-          const targetCell = resolvedTarget
-            ? { x: resolvedTarget.x, y: resolvedTarget.y }
-            : playerPosition;
+          // The 800ms AI timeout closes over React playerPosition from End
+          // Turn. Decide already reads playerPositionRef; apply must too or
+          // leftover walk-start tiles eat fallback melee (`!didAct`, nd<=1).
+          const targetCell = enemyApplyTargetCell(
+            resolvedTarget,
+            playerPositionRef.current,
+          );
           const isSummonTarget = !!resolvedTarget;
           const resolvedTargetId = action.targetId ?? "player";
 

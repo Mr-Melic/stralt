@@ -4,7 +4,9 @@ import {
   activeHostilesRemaining,
   countsTowardKillRewards,
   despawnSummons,
+  enemyApplyTargetCell,
   enemyDestToCommit,
+  enemyFallbackMeleeInRange,
   enemyHpAfterHazardDamage,
   isActiveHostile,
   liveCombatantHp,
@@ -324,6 +326,40 @@ describe("enemyDestToCommit", () => {
     assert.deepEqual(enemyDestToCommit({ x: 0, y: 0 }, { x: -3, y: 99 }, 12), {
       x: 0,
       y: 11,
+    });
+  });
+});
+
+describe("enemyApplyTargetCell vs leftover walk-start state", () => {
+  it("does not let fallback melee strike the vacated tile after End Turn during a walk", () => {
+    // Enemy (5,5) adjacent to player (6,5). Player walks east to (9,5) and
+    // End Turns before the 600ms RAF finishes. Decide (800ms) reads the ref
+    // at (9,5) and steps onto (6,5). Apply used to Chebyshev the closed-over
+    // (6,5) — nd 0 — and still debit the player at (9,5).
+    const enemyAfterStep = { x: 6, y: 5 };
+    const staleWalkStart = { x: 6, y: 5 };
+    const liveAfterWalk = { x: 9, y: 5 };
+
+    const staleTarget = enemyApplyTargetCell(null, staleWalkStart);
+    const liveTarget = enemyApplyTargetCell(null, liveAfterWalk);
+
+    assert.equal(
+      enemyFallbackMeleeInRange(enemyAfterStep, staleTarget),
+      true,
+      "stale walk-start tile is the false-positive the apply layer used",
+    );
+    assert.equal(
+      enemyFallbackMeleeInRange(enemyAfterStep, liveTarget),
+      false,
+      "live dest after a 3-tile walk is out of melee",
+    );
+    assert.deepEqual(liveTarget, liveAfterWalk);
+  });
+
+  it("still aims at a resolved summon instead of the player tile", () => {
+    assert.deepEqual(enemyApplyTargetCell({ x: 3, y: 4 }, { x: 9, y: 5 }), {
+      x: 3,
+      y: 4,
     });
   });
 });

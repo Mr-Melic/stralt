@@ -240,6 +240,42 @@ export function liveCombatantHp(
 }
 
 /**
+ * Apply-layer tile for enemy melee / spell after `decideEnemyAction`.
+ *
+ * The enemy-AI timeout (800ms) is created when `battlePhase` becomes
+ * `"enemy"`. That effect omits `playerPosition` from its deps, so a walk
+ * started just before End Turn keeps RAF-updating `playerPositionRef`
+ * (`MOVEMENT_DURATION` 600ms) while the timeout still holds the React
+ * state from the End Turn render.
+ *
+ * Decide already reads the ref. Apply used the closed-over state, so
+ * fallback melee (`kind === "move"` then `!didAct` → `nd <= 1`) struck
+ * the vacated walk-start tile and `setCharacterStats` still hurt the
+ * player 2–3 tiles away.
+ */
+export function enemyApplyTargetCell(
+  resolvedTarget: { x: number; y: number } | null | undefined,
+  livePlayerPos: { x: number; y: number },
+): { x: number; y: number } {
+  if (resolvedTarget) {
+    return { x: resolvedTarget.x, y: resolvedTarget.y };
+  }
+  return { x: livePlayerPos.x, y: livePlayerPos.y };
+}
+
+/** Same Chebyshev `nd <= 1` as the WX fallback-melee execute (includes same tile). */
+export function enemyFallbackMeleeInRange(
+  attacker: { x: number; y: number },
+  target: { x: number; y: number },
+): boolean {
+  const nd = Math.max(
+    Math.abs(attacker.x - target.x),
+    Math.abs(attacker.y - target.y),
+  );
+  return nd <= 1;
+}
+
+/**
  * Next HP after an enemy/boss self-heal or drain.
  *
  * Callers must write this through `updateCombatant`. A `setTurnOrder`-only
