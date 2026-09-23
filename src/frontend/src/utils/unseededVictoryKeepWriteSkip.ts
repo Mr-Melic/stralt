@@ -121,22 +121,3 @@ export function noteUnseededVictoryKeepWriteSkip(
   unseededVictoryKeepWriteSkip.add(persist);
   wrapSeedWalletOnce(persist);
 }
-
-let activeVictoryKeepPersist: UnseededVictoryKeepWriteSkipPersist | null = null;
-
-/**
- * WorldExploration builds one persist lock per mount. Register it so
- * `resolveBattleRewards` throw-after-add can note the skip without a
- * WorldExploration import (older persist PRs occupy that file).
- */
-export function registerUnseededVictoryKeepPersist(
-  persist: UnseededVictoryKeepWriteSkipPersist,
-): void {
-  activeVictoryKeepPersist = persist;
-}
-
-/** Note skip on the registered world persist. No-op when none is registered. */
-export function noteUnseededVictoryKeepWriteSkipOnActive(error: unknown): void {
-  if (!activeVictoryKeepPersist) return;
-  noteUnseededVictoryKeepWriteSkip(activeVictoryKeepPersist, error);
-}

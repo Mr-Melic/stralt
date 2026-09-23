@@ -180,24 +180,29 @@ describe("unseeded victory / Boss Rush keep vs stale absolute-write fetch", () =
     assert.equal(hasUnseededVictoryKeepWriteSkip(lock), false);
   });
 
-  it("notes skip from resolveBattleRewards via the registered world persist", async () => {
+  it("notes skip from resolveBattleRewards throw inside persistBossRushRewardsThroughLock", async () => {
     const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
     await assert.rejects(
-      resolveBattleRewards(
-        {
-          applyRewards: async () => {
-            throw new Error("replica reject after add");
-          },
-        },
-        1,
-        {
-          victory: true,
-          enemiesDefeated: [{ name: "rat", level: 2 }],
-          completedChallenges: [],
-          dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
-          baseDoka: 80,
-          baseXp: 40,
-        },
+      persistBossRushRewardsThroughLock(
+        lock,
+        async () => undefined,
+        () =>
+          resolveBattleRewards(
+            {
+              applyRewards: async () => {
+                throw new Error("replica reject after add");
+              },
+            },
+            1,
+            {
+              victory: true,
+              enemiesDefeated: [{ name: "rat", level: 2 }],
+              completedChallenges: [],
+              dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+              baseDoka: 80,
+              baseXp: 40,
+            },
+          ),
       ),
       /replica reject after add/,
     );

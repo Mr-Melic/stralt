@@ -15,8 +15,6 @@
  * snapshot and wipes the grant.
  */
 
-import { registerUnseededVictoryKeepPersist } from "./unseededVictoryKeepWriteSkip.ts";
-
 export type CommittedProgress = {
   doka: number;
   xp: number;
@@ -359,7 +357,6 @@ export function createProgressPersist(
     },
   };
 
-  registerUnseededVictoryKeepPersist(persist);
   return persist;
 }
 
