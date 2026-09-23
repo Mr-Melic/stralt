@@ -132,6 +132,7 @@ import {
   type DeathPipelineCtx,
   processCombatantDeath,
   shouldApplyLeaderDeathBoost,
+  shouldProcessBetrayalKill,
 } from "../engine/deathPipeline";
 import { type DotTickResult, tickDotStacks } from "../engine/dotStacks";
 import { EffectsManager } from "../engine/effects";
@@ -11988,15 +11989,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         (a, b) => b.initiative - a.initiative,
       );
 
-      const hpMap: Record<string, number> = {};
-      for (const e of updatedEnemies) {
-        const isBossForHp =
-          !!currentBossConfigRef.current && e.id.startsWith("boss_");
-        hpMap[e.id] = isBossForHp
-          ? currentBossConfigRef.current!.baseStats.hp
-          : calcEnemyMaxHp(e.level);
-      }
-
       // --- SYNCHRONOUS flushSync: ALL battle-init state in a single commit ---
       // This prevents any render cycle from seeing partially-updated state
       // (old pattern with startTransition deferred the updates causing a
@@ -12077,10 +12069,30 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           combatantsRef.current,
           activeMapModifierTypes,
         );
+        // applyBattleStart mutates store HP/RES in place (Titan's +1000,
+        // Doka Fever, Iron Curse). hpMap + orderWithLeader were built
+        // before that pass. Mirror reflect / betrayal used to debit the
+        // pre-bonus baseline and write it back into the store — a 50 HP
+        // base + Titan's 1050 store died to a 50-dmg reflect (false
+        // victory). Rebuild both from the post-modifier store.
+        const postModHpMap: Record<string, number> = {};
+        for (const c of combatantsRef.current) {
+          postModHpMap[c.id] = c.hp;
+        }
+        const orderSynced = orderWithLeader.map((entry) => {
+          if (entry.type === "player") return entry;
+          const live = combatantsRef.current.find((c) => c.id === entry.id);
+          if (!live) return entry;
+          return {
+            ...entry,
+            hp: live.hp,
+            maxHp: live.maxHp ?? entry.maxHp,
+          };
+        });
         setEnragedEnemies(new Set());
-        setEnemyHpMap(hpMap);
-        setTurnOrder(orderWithLeader);
-        turnOrderRef.current = orderWithLeader;
+        setEnemyHpMap(postModHpMap);
+        setTurnOrder(orderSynced);
+        turnOrderRef.current = orderSynced;
         setCurrentTurnIndex(0);
         currentTurnIndexRef.current = 0;
         // Part 2: Explicit turn-0 dispatch. advanceTurn's AI branches drive
@@ -15602,21 +15614,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             1,
             enemy.level * 2 + Math.floor(Math.random() * 5),
           );
-          const allyPrevHp =
-            enemyHpMap[allyT.id] ?? calcEnemyMaxHp(allyT.level);
+          const allyPrevHp = liveCombatantHp(
+            getLiveCombatants(combatantStoreCtx),
+            allyT.id,
+            allyT.hp,
+          );
           const allyNewHp = Math.max(0, allyPrevHp - btDmg);
           logBattleEntry(
             `${enemy.pieceType} turns on ${allyT.pieceType}! Betrayal!`,
             "#ef4444",
           );
           battleBetrayalOccurredRef.current = true;
-          if (allyNewHp <= 0) {
+          if (shouldProcessBetrayalKill(allyNewHp)) {
             if (
               allyT.id === leaderEnemyIdRef.current &&
               !leaderDiedRef.current
             ) {
-              leaderDiedRef.current = true;
-              triggerLeaderDeathAnimation(allyT.x, allyT.y);
+              // Flavor only. Do not set leaderDiedRef here — that would
+              // make applyLeaderDeathBoost a no-op and skip
+              // battleLeaderSlainRef (leader_slayer) plus the 0.25 boost.
               logBattleEntry(
                 `\ud83d\udc51 The leader ${allyT.pieceType} fell via betrayal!`,
                 "#f97316",
@@ -15627,14 +15643,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               n.add(enemyId);
               return n;
             });
-            // Route the ally removal + enemy enrage through the unified
-            // combatant store: removeCombatant drops allyT from
-            // combatants/enemies/battleEnemies/turnOrder atomically;
-            // updateCombatant applies the 6× maxHp/hp boost to enemyId
-            // across all mirrors + setters. The store auto-syncs
-            // battleEnemies, so the explicit setBattleEnemies sync is
-            // redundant and removed.
-            removeCombatant(combatantStoreCtx, allyT.id);
+            // Death pipeline (not bare removeCombatant): attributeKillReward
+            // fills battleDefeatedRef so victory XP/Doka include the victim.
+            processCombatantDeathCb(allyT.id);
             updateCombatant(combatantStoreCtx, enemyId, {
               maxHp: Math.round(
                 (turnOrderRef.current.find((c) => c.id === enemyId)?.maxHp ??
@@ -15687,21 +15698,20 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     `${sb.pieceType} attacks ${sbT.pieceType} for ${sbDmg}!`,
                     "#f97316",
                   );
-                  setEnemyHpMap((h) => {
-                    const curHp = h[sbT.id] ?? calcEnemyMaxHp(sbT.level);
-                    const nHp = Math.max(0, curHp - sbDmg);
-                    if (nHp <= 0) {
-                      // Route the double-betrayal kill through the unified
-                      // store: removeCombatant drops sbT from
-                      // combatants/enemies/battleEnemies/turnOrder
-                      // atomically (replaces the separate setTurnOrder +
-                      // setEnemies filters).
-                      removeCombatant(combatantStoreCtx, sbT.id);
-                    } else {
-                      updateCombatant(combatantStoreCtx, sbT.id, { hp: nHp });
-                    }
-                    return { ...h, [sbT.id]: nHp };
-                  });
+                  const curHp = liveCombatantHp(
+                    getLiveCombatants(combatantStoreCtx),
+                    sbT.id,
+                    sbT.hp,
+                  );
+                  const nHp = Math.max(0, curHp - sbDmg);
+                  if (shouldProcessBetrayalKill(nHp)) {
+                    // Same as first betrayal: death pipeline attributes
+                    // the kill. Bare removeCombatant omitted XP/Doka.
+                    processCombatantDeathCb(sbT.id);
+                  } else {
+                    updateCombatant(combatantStoreCtx, sbT.id, { hp: nHp });
+                  }
+                  setEnemyHpMap((h) => ({ ...h, [sbT.id]: nHp }));
                 }
               }, 200);
               // C-1 / M-4: Register AFTER assigning ID, guard with cleanupRanRef
@@ -16508,7 +16518,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           100),
                   ),
                 );
-                const curEnemyHp = enemyHpMap[enemyId] ?? currentCombatant.hp;
+                // Store is authoritative after applyBattleStart (Titan's etc.).
+                // enemyHpMap / turn-order closures can still hold the pre-bonus
+                // baseline — writing that back false-killed titan-buffed units.
+                const curEnemyHp = liveCombatantHp(
+                  getLiveCombatants(combatantStoreCtx),
+                  enemyId,
+                  currentCombatant.hp,
+                );
                 const newEnemyHpMirror = Math.max(0, curEnemyHp - mirrorDmg);
                 setEnemyHpMap((prev) => ({
                   ...prev,
