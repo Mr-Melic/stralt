@@ -2376,6 +2376,19 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        for ((id, existing) in achievementConfigs.entries()) {
+            switch (AdminGuard.achievementConditionTaken(
+                config.id,
+                config.condition,
+                config.active,
+                id,
+                existing.condition,
+                existing.active,
+            )) {
+                case (?e) { return #err(e) };
+                case null {};
+            };
+        };
         switch (AdminGuard.validateAchievementConfig(config)) {
             case (?e) { return #err(e) };
             case null {};

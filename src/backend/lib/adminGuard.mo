@@ -700,6 +700,23 @@ module {
         roomIndex == 9 and currentRoom == 9
     };
 
+    /// Failure: a second *active* row with the same condition lets official
+    /// `checkAndFireAchievement` `.find()` unlock the new id, and a raw client
+    /// can mark+claim both combat-trusted ids. That is a duplicate reward.
+    /// Inactive/retired rows keep claim rights but do not occupy the condition.
+    public func achievementConditionTaken(
+        nextId : Text,
+        nextCondition : Text,
+        nextActive : Bool,
+        existingId : Text,
+        existingCondition : Text,
+        existingActive : Bool,
+    ) : ?Text {
+        if (nextActive and existingActive and existingId != nextId and existingCondition == nextCondition) {
+            ?"condition is already used by another achievement"
+        } else { null }
+    };
+
     public func validateAdBox(index : Nat, imageUrl : Text, linkUrl : Text) : ?Text {
         if (index >= 3) { return ?"index out of range: must be 0, 1, or 2" };
         switch (validateRequiredUrl("imageUrl", imageUrl)) { case (?e) { return ?e }; case null {} };
