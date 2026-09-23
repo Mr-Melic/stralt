@@ -150,3 +150,12 @@ export function nextTurnIndex(currentIdx: number, orderLength: number): number {
   if (orderLength <= 0) return 0;
   return (currentIdx + 1) % orderLength;
 }
+
+export {
+  beginTurnAdvance,
+  bumpTurnTimerGeneration,
+  endTurnAdvance,
+  shouldDispatchDeferredTurnAdvance,
+  shouldDispatchTurnTimerExpiry,
+  shouldHonorTurnTimerTick,
+} from "./turnTimer.ts";

@@ -265,9 +265,15 @@ import {
   shouldExecuteLiveCast,
 } from "../engine/targeting";
 import {
+  beginTurnAdvance,
+  bumpTurnTimerGeneration,
+  endTurnAdvance,
   liveTurnOrder,
   nextTurnIndex,
   removeCombatantFromTurnQueue,
+  shouldDispatchDeferredTurnAdvance,
+  shouldDispatchTurnTimerExpiry,
+  shouldHonorTurnTimerTick,
 } from "../engine/turnQueue";
 import {
   classifyWalkReject,
@@ -1611,6 +1617,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // FIX-1: Turn-timer generation counter — prevents the old interval from firing
   // once more after currentTurnIndex changes but before the effect re-runs.
   const turnTimerGenerationRef = useRef<number>(0);
+  const turnAdvanceInFlightRef = useRef(false);
   // RC FIX: isLoopRunningRef removed — single loop runs for component lifetime
   // M2: Track consecutive render errors; restart loop cleanly after 3 in a row
   const renderErrorCountRef = useRef<number>(0);
@@ -14017,7 +14024,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Advance to next combatant in turn order and reset timer
   // biome-ignore lint/correctness/useExhaustiveDependencies: flushSync-wrapped advanceTurn intentionally captures stable refs
   const advanceTurn = useCallback(() => {
+    if (!beginTurnAdvance(turnAdvanceInFlightRef)) return;
     flushSync(() => {
+      // End Turn already flipped currentTurnIndex; bump here so a queued
+      // 30s-timer setTurnTimeLeft updater cannot honor its stale generation
+      // and skip the combatant this dispatch just handed the turn to.
+      turnTimerGenerationRef.current = bumpTurnTimerGeneration(
+        turnTimerGenerationRef.current,
+      );
       // Drop leftover summon control before dispatch. The 30s timer (and
       // any other advanceTurn caller) used to leave the previous summon
       // id set, so canvas clicks and BattleUIPanel End Turn stayed locked
@@ -14723,6 +14737,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         return prevOrder;
       });
     }); // end flushSync
+    endTurnAdvance(turnAdvanceInFlightRef);
   }, [
     characterStats.level,
     logBattleEntry,
@@ -14756,6 +14771,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         setActiveControlledSummonId(null);
         activeControlledSummonIdRef.current = null;
         setSelectedSummonSpellId(null);
+        if (
+          !shouldDispatchDeferredTurnAdvance({
+            inBattle: inBattleRef.current,
+            deathTriggered: deathTriggeredRef.current,
+            battleEnded: battleEndedRef.current,
+            hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+          })
+        ) {
+          return;
+        }
         advanceTurn();
       }, 500);
       return () => clearTimeout(t);
@@ -14781,17 +14806,46 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     timerIntervalRef.current = setInterval(() => {
       // FIX-1: If the generation has moved on (effect re-ran), this stale
       // interval must not fire advanceTurn on outdated state.
-      if (turnTimerGenerationRef.current !== myGeneration) return;
+      if (
+        !shouldHonorTurnTimerTick(myGeneration, turnTimerGenerationRef.current)
+      )
+        return;
       setTurnTimeLeft((prev) => {
+        if (
+          !shouldHonorTurnTimerTick(
+            myGeneration,
+            turnTimerGenerationRef.current,
+          )
+        ) {
+          return prev;
+        }
         if (prev <= 1) {
           if (timerIntervalRef.current) {
             clearInterval(timerIntervalRef.current);
             timerIntervalRef.current = null;
           }
-          // FIX-1 & FIX-5: Use the ref so we always call the latest version of
-          // advanceTurn (avoids stale closure over characterStats / activeEffects).
-          turnEndReasonRef.current = "timer-expiry";
-          advanceTurnRef.current();
+          // Do not advance inside this updater. End Turn's flushSync can
+          // still bump generation before React flushes this setState; a
+          // same-tick expiry then skipped the enemy. Honor the tick on a
+          // later task against the live generation + roster.
+          queueMicrotask(() => {
+            if (
+              !shouldDispatchTurnTimerExpiry({
+                callbackGeneration: myGeneration,
+                liveGeneration: turnTimerGenerationRef.current,
+                inBattle: inBattleRef.current,
+                deathTriggered: deathTriggeredRef.current,
+                battleEnded: battleEndedRef.current,
+                hostilesRemaining: activeHostilesRemaining(
+                  combatantsRef.current,
+                ),
+              })
+            ) {
+              return;
+            }
+            turnEndReasonRef.current = "timer-expiry";
+            advanceTurnRef.current();
+          });
           return timerStart;
         }
         return prev - 1;
