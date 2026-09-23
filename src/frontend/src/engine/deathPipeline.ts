@@ -58,6 +58,17 @@ export interface DeathPipelineCtx {
 }
 
 /**
+ * Lethal AI betrayal / double-betrayal must enter
+ * {@link processCombatantDeath}. A bare `removeCombatant` still
+ * clears hostiles (victory fires) but never runs `attributeKillReward`
+ * or `applyLeaderDeathBoost`, so victory XP/Doka omit the victim and
+ * `leader_slayer` can miss.
+ */
+export function shouldProcessBetrayalKill(newHp: number): boolean {
+  return Number.isFinite(newHp) && newHp <= 0;
+}
+
+/**
  * Step 8 of {@link processCombatantDeath}. Every roster death calls
  * `applyLeaderDeathBoost(deadId)`. The designated leader is the
  * highest-level enemy at battle start (`leaderEnemyIdRef`). A grunt,
