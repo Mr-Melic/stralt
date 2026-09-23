@@ -451,6 +451,10 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import {
+  noteUnseededCreditFloorIfNeeded,
+  wrapPersistSeedWallet,
+} from "../utils/unseededCreditFloor";
 import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
@@ -1436,11 +1440,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const persistSlotRef = useRef(characterSlot);
   persistSlotRef.current = characterSlot;
   const progressPersistRef = useRef(
-    createProgressPersist({
-      doka: dokaBalance,
-      xp: character?.experience != null ? Number(character.experience) : 0,
-      level: character?.level != null ? Number(character.level) : 1,
-    }),
+    wrapPersistSeedWallet(
+      createProgressPersist({
+        doka: dokaBalance,
+        xp: character?.experience != null ? Number(character.experience) : 0,
+        level: character?.level != null ? Number(character.level) : 1,
+      }),
+    ),
   );
   progressPersistRef.current.setBeforeEach(async () => {
     const liveActor = persistActorRef.current;
@@ -1524,6 +1530,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         achievementId,
       );
       if ("ok" in result && result.ok > 0) {
+        noteUnseededCreditFloorIfNeeded(progressPersistRef.current, result.ok);
         onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, result.ok));
       }
       return result;
@@ -19164,6 +19171,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           persist={progressPersistRef.current}
           onClose={() => setShowShop(false)}
           onDokaCredited={(gained) => {
+            noteUnseededCreditFloorIfNeeded(progressPersistRef.current, gained);
             onDokaBalanceChange(creditLiveDoka(dokaBalanceRef, gained));
           }}
         />
