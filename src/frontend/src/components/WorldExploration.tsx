@@ -401,6 +401,12 @@ import {
   shouldPersistAbsoluteDokaSpend,
   spendFromUiBalance,
 } from "../utils/progressPersist";
+import {
+  GROUND_DOKA_PICKUPS_PROGRESS_BASE,
+  MAPS_VISITED_PROGRESS_BASE,
+  readMigratingCharacterProgress,
+  writeCharacterProgress,
+} from "../utils/progressStorageKey";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import {
   shouldAbortMovementRaf,
@@ -541,6 +547,12 @@ interface WorldExplorationProps {
   // export-report builder can include it. Additive — existing callers unaffected.
   onDebugContextChange?: (ctx: DebugContext) => void;
   userId?: string;
+  /**
+   * II principal text for paid inventory and feat counters. GameFlow's
+   * `userId` is the display name; names are not unique, so two principals
+   * named the same used to share potions and loot/explore counters.
+   */
+  storageOwnerId?: string;
   onDebugLog?: (event: string, detail: string) => void;
   onShowBattleSummary?: (data: BattleRecapData) => void;
   /**
@@ -848,6 +860,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   onTransitionChange,
   onDebugContextChange,
   userId,
+  storageOwnerId,
   onDebugLog,
   onShowBattleSummary,
   battleRecapOpen = false,
@@ -2187,21 +2200,32 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const groundDokaPickupCountRef = useRef<number>(0);
   // ISSUE 2 FIX: Load namespaced localStorage values once userId + characterSlot are known.
   useEffect(() => {
-    if (!userId || characterSlot === undefined) return;
-    const nsPrefix = `${userId}_slot${characterSlot}_`;
+    if ((!storageOwnerId && !userId) || characterSlot === undefined) return;
     try {
       mapsVisitedCountRef.current = Number.parseInt(
-        localStorage.getItem(`${nsPrefix}pbv_maps_visited_count`) || "0",
+        readMigratingCharacterProgress(
+          localStorage,
+          storageOwnerId,
+          userId,
+          characterSlot,
+          MAPS_VISITED_PROGRESS_BASE,
+        ) || "0",
         10,
       );
       groundDokaPickupCountRef.current = Number.parseInt(
-        localStorage.getItem(`${nsPrefix}pbv_ground_doka_pickups`) || "0",
+        readMigratingCharacterProgress(
+          localStorage,
+          storageOwnerId,
+          userId,
+          characterSlot,
+          GROUND_DOKA_PICKUPS_PROGRESS_BASE,
+        ) || "0",
         10,
       );
     } catch {
       // localStorage unavailable — leave at 0
     }
-  }, [userId, characterSlot]);
+  }, [storageOwnerId, userId, characterSlot]);
   // Per-battle tracking
   const battleCritHitsRef = useRef<number>(0);
   const battleBetrayalOccurredRef = useRef<boolean>(false);
@@ -6470,11 +6494,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Track map visits for achievement
       mapsVisitedCountRef.current += 1;
       try {
-        // M6: Namespace by userId+slot so switching accounts doesn't cross-pollute
-        const mvKey = userId
-          ? `${userId}_slot${characterSlot}_pbv_maps_visited_count`
-          : "pbv_maps_visited_count";
-        localStorage.setItem(mvKey, String(mapsVisitedCountRef.current));
+        writeCharacterProgress(
+          localStorage,
+          storageOwnerId,
+          userId,
+          characterSlot,
+          MAPS_VISITED_PROGRESS_BASE,
+          String(mapsVisitedCountRef.current),
+        );
       } catch {
         /* ignore */
       }
@@ -11397,12 +11424,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // Track ground doka pickup count for achievement
           groundDokaPickupCountRef.current += 1;
           try {
-            // M6: Namespace by userId+slot
-            const gdKey = userId
-              ? `${userId}_slot${characterSlot}_pbv_ground_doka_pickups`
-              : "pbv_ground_doka_pickups";
-            localStorage.setItem(
-              gdKey,
+            writeCharacterProgress(
+              localStorage,
+              storageOwnerId,
+              userId,
+              characterSlot,
+              GROUND_DOKA_PICKUPS_PROGRESS_BASE,
               String(groundDokaPickupCountRef.current),
             );
           } catch {
@@ -11512,6 +11539,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     currentMap,
     applyActiveEffect,
     userId,
+    storageOwnerId,
     characterSlot,
     dokaBalance,
     onDokaBalanceChange,
@@ -17940,7 +17968,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           isPlayerTurn={battlePhase === "player" && inBattle}
           inBattle={inBattle}
           userId={userId}
-          principalId={userId}
+          principalId={storageOwnerId || userId}
           isOpen={itemShopOpen}
           onClose={onItemShopClose}
         />

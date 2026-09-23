@@ -9,6 +9,10 @@ import {
   tryConsumeBuffItem,
   tryPurchaseBuffItem,
 } from "../utils/itemShop";
+import {
+  readMigratingInventoryJson,
+  writeInventoryJson,
+} from "../utils/progressStorageKey";
 
 // ── Item Definitions ──────────────────────────────────────────────────────────
 export type BuffItemType =
@@ -82,9 +86,16 @@ export const BUFF_ITEMS: BuffItem[] = [
 // ── Inventory persistence ──────────────────────────────────────────────────────
 export type Inventory = Partial<Record<BuffItemType, number>>;
 
-export function loadInventory(principalId: string): Inventory {
+export function loadInventory(
+  principalId: string,
+  legacyDisplayName?: string,
+): Inventory {
   try {
-    const raw = localStorage.getItem(`${principalId}_inventory`);
+    const raw = readMigratingInventoryJson(
+      localStorage,
+      principalId,
+      legacyDisplayName,
+    );
     if (!raw) return {};
     return JSON.parse(raw) as Inventory;
   } catch {
@@ -92,12 +103,17 @@ export function loadInventory(principalId: string): Inventory {
   }
 }
 
-export function saveInventory(principalId: string, inv: Inventory): void {
-  try {
-    localStorage.setItem(`${principalId}_inventory`, JSON.stringify(inv));
-  } catch {
-    // ignore
-  }
+export function saveInventory(
+  principalId: string,
+  inv: Inventory,
+  legacyDisplayName?: string,
+): void {
+  writeInventoryJson(
+    localStorage,
+    principalId,
+    legacyDisplayName,
+    JSON.stringify(inv),
+  );
 }
 
 // ── Props ──────────────────────────────────────────────────────────────────────
@@ -175,8 +191,10 @@ const BuffShop: React.FC<BuffShopProps> = ({
   onClose,
 }) => {
   const storageKey = principalId ?? userId ?? "guest";
+  const legacyDisplayName =
+    principalId && userId && userId !== principalId ? userId : undefined;
   const [inventory, setInventory] = useState<Inventory>(() =>
-    loadInventory(storageKey),
+    loadInventory(storageKey, legacyDisplayName),
   );
   const [activeTab, setActiveTab] = useState<"shop" | "inventory">("shop");
   // Track storageKey to reload when it changes (login)
@@ -197,14 +215,14 @@ const BuffShop: React.FC<BuffShopProps> = ({
   useEffect(() => {
     if (prevKeyRef.current !== storageKey) {
       prevKeyRef.current = storageKey;
-      setInventory(loadInventory(storageKey));
+      setInventory(loadInventory(storageKey, legacyDisplayName));
     }
-  }, [storageKey]);
+  }, [storageKey, legacyDisplayName]);
 
   // Persist whenever inventory changes
   useEffect(() => {
-    saveInventory(storageKey, inventory);
-  }, [inventory, storageKey]);
+    saveInventory(storageKey, inventory, legacyDisplayName);
+  }, [inventory, storageKey, legacyDisplayName]);
 
   const handleBuy = useCallback(
     (item: BuffItem) => {
