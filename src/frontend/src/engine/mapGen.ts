@@ -522,6 +522,34 @@ function nearestReachableCell(
   return best;
 }
 
+/**
+ * Relocate/destack punch must not open a parallel corridor around a portal
+ * cut-vertex. A wall that already touches a floor outside `reachable` would
+ * join that island into the battle graph (hostiles beyond the gate become
+ * walk-reachable without stepping on the portal).
+ */
+function punchJoinsForeignWalkable(
+  tiles: string[][],
+  vt: Set<string>,
+  x: number,
+  y: number,
+  reachable: Set<string>,
+  w: number,
+  h: number,
+): boolean {
+  for (const d of REACH_DIRS) {
+    const nx = x + d[0];
+    const ny = y + d[1];
+    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+    const nk = `${nx},${ny}`;
+    if (vt.has(nk) || reachable.has(nk)) continue;
+    const t = tiles[ny]?.[nx] as string;
+    if (t === "wall" || t === "portal") continue;
+    return true;
+  }
+  return false;
+}
+
 /** Punch one neighboring wall so destack has a unique floor. */
 function punchAdjacentFloor(
   tiles: string[][],
@@ -541,11 +569,13 @@ function punchAdjacentFloor(
       if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
       const nk = `${nx},${ny}`;
       if (vt.has(nk) || exclude.has(nk)) continue;
-      if ((tiles[ny]?.[nx] as string) === "wall") {
-        tiles[ny][nx] = "floor";
-        reachable.add(nk);
-        return { x: nx, y: ny };
+      if ((tiles[ny]?.[nx] as string) !== "wall") continue;
+      if (punchJoinsForeignWalkable(tiles, vt, nx, ny, reachable, w, h)) {
+        continue;
       }
+      tiles[ny][nx] = "floor";
+      reachable.add(nk);
+      return { x: nx, y: ny };
     }
   }
   return null;
@@ -570,9 +600,10 @@ function occupancyTiles(tiles: string[][]): boolean[][] {
 }
 
 /**
- * Walkable floors that are not spawn, not an exit, and not a unique
- * player→exit bridge. Corpses/summons relocate here; a 1-wide corridor
- * with no alcove has zero dump cells and permanently seals progression.
+ * Walkable battle-graph floors that are not spawn, not an exit, and not a
+ * unique player→exit bridge. Corpses/summons relocate here. Overworld
+ * floors beyond a portal choke must not count — a 1-wide near corridor
+ * would otherwise skip the alcove and seal (or teleport through) the gate.
  */
 export function countProgressionDumpCells(
   tiles: string[][],
@@ -584,28 +615,54 @@ export function countProgressionDumpCells(
 ): { dump: number; mandatory: number } {
   const vt = toVoidSet(voidTiles);
   const portalSet = new Set(portals.map((p) => `${p.x},${p.y}`));
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const origin = battle?.origin ?? playerSpawn;
   const mandatory = collectMandatoryProgressionCells(
     occupancyTiles(tiles),
     vt,
     portalSet,
-    playerSpawn,
+    origin,
   );
-  const spawnKey = `${playerSpawn.x},${playerSpawn.y}`;
+  const spawnKey = `${origin.x},${origin.y}`;
+  const battleReachable = battle?.reachable;
   let dump = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!isWalkable(tiles, vt, x, y, w, h)) continue;
-      const k = `${x},${y}`;
+  if (battleReachable) {
+    // Overworld flood walks through a locked gate onto the far island.
+    // Corpses/summons cannot path there in battle (`isCellFree` blocks
+    // portals), so those floors must not count as dump cells.
+    for (const k of battleReachable) {
       if (k === spawnKey || portalSet.has(k) || mandatory.has(k)) continue;
+      const p = k.split(",");
+      const x = Number(p[0]);
+      const y = Number(p[1]);
+      if (!isWalkable(tiles, vt, x, y, w, h, portalBlock)) continue;
       dump += 1;
+    }
+  } else {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!isWalkable(tiles, vt, x, y, w, h)) continue;
+        const k = `${x},${y}`;
+        if (k === spawnKey || portalSet.has(k) || mandatory.has(k)) continue;
+        dump += 1;
+      }
     }
   }
   return { dump, mandatory: mandatory.size };
 }
 
 /**
- * Punch one dead-end alcove when every floor is a unique bridge.
- * Does not carve a new corridor or join leftover islands.
+ * Punch one dead-end alcove when every battle-graph floor is a unique bridge.
+ * Does not carve a new corridor, join leftover islands, or walk around a
+ * portal cut-vertex onto the far room.
  */
 function ensureProgressionAlcove(
   tiles: string[][],
@@ -624,9 +681,20 @@ function ensureProgressionAlcove(
     h,
   );
   if (counts.mandatory === 0 || counts.dump > 0) return;
-  const reachable = floodFillReachable(tiles, vt, playerSpawn, w, h);
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const origin = battle?.origin ?? playerSpawn;
+  const reachable =
+    battle?.reachable ?? floodFillReachable(tiles, vt, origin, w, h);
   const exclude = new Set<string>([
-    `${playerSpawn.x},${playerSpawn.y}`,
+    `${origin.x},${origin.y}`,
     ...portals.map((p) => `${p.x},${p.y}`),
   ]);
   punchAdjacentFloor(tiles, vt, reachable, exclude, w, h);
@@ -1447,6 +1515,14 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     input.w,
     input.h,
   );
+  ensureProgressionDumpFloor(
+    liveTiles,
+    vt,
+    playerSpawn,
+    portals,
+    input.w,
+    input.h,
+  );
 
   return {
     tiles: liveTiles,
@@ -1934,4 +2010,57 @@ export function canPlaceWalkBlocker(
     h,
     opts,
   ).ok;
+}
+
+/**
+ * Living occupants that relocate off a unique player→exit bridge.
+ * One dump cell is enough for a single corpse; a second summon still
+ * sits on the only remaining path and seals the unlocked portal.
+ */
+export const PROGRESSION_DUMP_FLOOR = 2;
+
+/**
+ * One alcove is not enough when two living occupants sit on a unique
+ * bridge. Punch additional fight-graph dead-ends until dump ≥ 2. Does
+ * not join leftover islands or walk around a portal choke.
+ */
+function ensureProgressionDumpFloor(
+  tiles: string[][],
+  vt: Set<string>,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  w: number,
+  h: number,
+): void {
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const origin = battle?.origin ?? playerSpawn;
+  const reachable =
+    battle?.reachable ?? floodFillReachable(tiles, vt, origin, w, h);
+  const exclude = new Set<string>([
+    `${origin.x},${origin.y}`,
+    ...portals.map((p) => `${p.x},${p.y}`),
+  ]);
+  for (let n = 0; n < 8; n++) {
+    const counts = countProgressionDumpCells(
+      tiles,
+      vt,
+      playerSpawn,
+      portals,
+      w,
+      h,
+    );
+    if (counts.mandatory === 0 || counts.dump >= PROGRESSION_DUMP_FLOOR) {
+      return;
+    }
+    const punched = punchAdjacentFloor(tiles, vt, reachable, exclude, w, h);
+    if (!punched) return;
+  }
 }
