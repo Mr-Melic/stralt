@@ -522,6 +522,34 @@ function nearestReachableCell(
   return best;
 }
 
+/**
+ * Relocate/destack punch must not open a parallel corridor around a portal
+ * cut-vertex. A wall that already touches a floor outside `reachable` would
+ * join that island into the battle graph (hostiles beyond the gate become
+ * walk-reachable without stepping on the portal).
+ */
+function punchJoinsForeignWalkable(
+  tiles: string[][],
+  vt: Set<string>,
+  x: number,
+  y: number,
+  reachable: Set<string>,
+  w: number,
+  h: number,
+): boolean {
+  for (const d of REACH_DIRS) {
+    const nx = x + d[0];
+    const ny = y + d[1];
+    if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+    const nk = `${nx},${ny}`;
+    if (vt.has(nk) || reachable.has(nk)) continue;
+    const t = tiles[ny]?.[nx] as string;
+    if (t === "wall" || t === "portal") continue;
+    return true;
+  }
+  return false;
+}
+
 /** Punch one neighboring wall so destack has a unique floor. */
 function punchAdjacentFloor(
   tiles: string[][],
@@ -541,11 +569,13 @@ function punchAdjacentFloor(
       if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
       const nk = `${nx},${ny}`;
       if (vt.has(nk) || exclude.has(nk)) continue;
-      if ((tiles[ny]?.[nx] as string) === "wall") {
-        tiles[ny][nx] = "floor";
-        reachable.add(nk);
-        return { x: nx, y: ny };
+      if ((tiles[ny]?.[nx] as string) !== "wall") continue;
+      if (punchJoinsForeignWalkable(tiles, vt, nx, ny, reachable, w, h)) {
+        continue;
       }
+      tiles[ny][nx] = "floor";
+      reachable.add(nk);
+      return { x: nx, y: ny };
     }
   }
   return null;
@@ -570,9 +600,10 @@ function occupancyTiles(tiles: string[][]): boolean[][] {
 }
 
 /**
- * Walkable floors that are not spawn, not an exit, and not a unique
- * player→exit bridge. Corpses/summons relocate here; a 1-wide corridor
- * with no alcove has zero dump cells and permanently seals progression.
+ * Walkable battle-graph floors that are not spawn, not an exit, and not a
+ * unique player→exit bridge. Corpses/summons relocate here. Overworld
+ * floors beyond a portal choke must not count — a 1-wide near corridor
+ * would otherwise skip the alcove and seal (or teleport through) the gate.
  */
 export function countProgressionDumpCells(
   tiles: string[][],
@@ -584,28 +615,54 @@ export function countProgressionDumpCells(
 ): { dump: number; mandatory: number } {
   const vt = toVoidSet(voidTiles);
   const portalSet = new Set(portals.map((p) => `${p.x},${p.y}`));
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const origin = battle?.origin ?? playerSpawn;
   const mandatory = collectMandatoryProgressionCells(
     occupancyTiles(tiles),
     vt,
     portalSet,
-    playerSpawn,
+    origin,
   );
-  const spawnKey = `${playerSpawn.x},${playerSpawn.y}`;
+  const spawnKey = `${origin.x},${origin.y}`;
+  const battleReachable = battle?.reachable;
   let dump = 0;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      if (!isWalkable(tiles, vt, x, y, w, h)) continue;
-      const k = `${x},${y}`;
+  if (battleReachable) {
+    // Overworld flood walks through a locked gate onto the far island.
+    // Corpses/summons cannot path there in battle (`isCellFree` blocks
+    // portals), so those floors must not count as dump cells.
+    for (const k of battleReachable) {
       if (k === spawnKey || portalSet.has(k) || mandatory.has(k)) continue;
+      const p = k.split(",");
+      const x = Number(p[0]);
+      const y = Number(p[1]);
+      if (!isWalkable(tiles, vt, x, y, w, h, portalBlock)) continue;
       dump += 1;
+    }
+  } else {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!isWalkable(tiles, vt, x, y, w, h)) continue;
+        const k = `${x},${y}`;
+        if (k === spawnKey || portalSet.has(k) || mandatory.has(k)) continue;
+        dump += 1;
+      }
     }
   }
   return { dump, mandatory: mandatory.size };
 }
 
 /**
- * Punch one dead-end alcove when every floor is a unique bridge.
- * Does not carve a new corridor or join leftover islands.
+ * Punch one dead-end alcove when every battle-graph floor is a unique bridge.
+ * Does not carve a new corridor, join leftover islands, or walk around a
+ * portal cut-vertex onto the far room.
  */
 function ensureProgressionAlcove(
   tiles: string[][],
@@ -624,9 +681,20 @@ function ensureProgressionAlcove(
     h,
   );
   if (counts.mandatory === 0 || counts.dump > 0) return;
-  const reachable = floodFillReachable(tiles, vt, playerSpawn, w, h);
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const origin = battle?.origin ?? playerSpawn;
+  const reachable =
+    battle?.reachable ?? floodFillReachable(tiles, vt, origin, w, h);
   const exclude = new Set<string>([
-    `${playerSpawn.x},${playerSpawn.y}`,
+    `${origin.x},${origin.y}`,
     ...portals.map((p) => `${p.x},${p.y}`),
   ]);
   punchAdjacentFloor(tiles, vt, reachable, exclude, w, h);
@@ -667,6 +735,65 @@ function isWhitePortalFlag(portal: object): boolean {
   return (portal as { isWhitePortal?: unknown }).isWhitePortal === true;
 }
 
+/**
+ * 4-neighbor battle floors the player can step from onto `portal`.
+ * Overworld flood walks through a portal tile; stepping on it leaves the
+ * map, so a destacked exit on the far island is not a legal second route.
+ */
+function portalApproachKeys(
+  portal: { x: number; y: number },
+  battleReachable: Set<string>,
+): string[] {
+  const out: string[] = [];
+  for (const d of REACH_DIRS) {
+    const k = `${portal.x + d[0]},${portal.y + d[1]}`;
+    if (battleReachable.has(k)) out.push(k);
+  }
+  return out;
+}
+
+/**
+ * True when the player can enter `portal` from the fight graph (or is
+ * already standing on it — white sanctuary / spawn-colocated gate).
+ */
+export function portalSteppableFromBattle(
+  portal: { x: number; y: number },
+  playerSpawn: { x: number; y: number },
+  battleReachable: Set<string>,
+): boolean {
+  if (portal.x === playerSpawn.x && portal.y === playerSpawn.y) return true;
+  return portalApproachKeys(portal, battleReachable).length > 0;
+}
+
+function battleWalkableFrom(
+  tiles: string[][],
+  vt: Set<string>,
+  seed: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  w: number,
+  h: number,
+): Set<string> {
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(tiles, vt, seed, w, h, portalBlock);
+  return battle?.reachable ?? new Set();
+}
+
+/** Unique-bridge cells that are the only fight-graph step onto a kept exit. */
+function solePortalApproachKeys(
+  portals: { x: number; y: number }[],
+  battleReachable: Set<string>,
+  retain: Set<string>,
+): Set<string> {
+  const sole = new Set<string>();
+  for (const p of portals) {
+    const pk = `${p.x},${p.y}`;
+    if (!retain.has(pk)) continue;
+    const approaches = portalApproachKeys(p, battleReachable);
+    if (approaches.length === 1) sole.add(approaches[0]);
+  }
+  return sole;
+}
+
 function destackStackedPortals<P extends { x: number; y: number }>(
   tiles: string[][],
   vt: Set<string>,
@@ -676,7 +803,11 @@ function destackStackedPortals<P extends { x: number; y: number }>(
   w: number,
   h: number,
 ): void {
-  const reachable = floodFillReachable(tiles, vt, playerSpawn, w, h);
+  // Overworld flood walks through a locked gate onto the far island.
+  // Destack used to relocate the duplicate there; stepping on the kept
+  // choke then leaves the map, so the destacked exit is unusable.
+  // Never fall back to that flood — an empty fight graph destacks onto
+  // spawn (later spawn-on-exit) rather than the far room.
   const occupied = new Set<string>([
     `${playerSpawn.x},${playerSpawn.y}`,
     ...spawns.map((s) => `${s.x},${s.y}`),
@@ -689,24 +820,67 @@ function destackStackedPortals<P extends { x: number; y: number }>(
       occupied.add(k);
       continue;
     }
-    const retainTiles = new Set(
-      portals.filter((_, j) => j !== i).map((p) => `${p.x},${p.y}`),
-    );
+    const keep = portals.filter((_, j) => j !== i);
+    const retainTiles = new Set(keep.map((p) => `${p.x},${p.y}`));
+    const destGraph = battleWalkableFrom(tiles, vt, playerSpawn, keep, w, h);
+    const sole = solePortalApproachKeys(keep, destGraph, retainTiles);
     const next = relocatePortalOntoReachable(
       tiles,
       vt,
       portals[i],
-      reachable,
+      destGraph,
       playerSpawn,
       w,
       h,
-      new Set([...occupied, ...seen]),
+      new Set([...occupied, ...seen, ...sole]),
       retainTiles,
     );
     portals[i].x = next.x;
     portals[i].y = next.y;
     seen.add(`${next.x},${next.y}`);
     occupied.add(`${next.x},${next.y}`);
+  }
+}
+
+/**
+ * A second exit can sit on a far island that is overworld-reachable only
+ * by walking through another portal (leaving the map). Relocate it onto
+ * the fight graph; do not occupy the kept choke's sole approach.
+ */
+function relocateBattleIsolatedPortals<P extends { x: number; y: number }>(
+  tiles: string[][],
+  vt: Set<string>,
+  portals: P[],
+  playerSpawn: { x: number; y: number },
+  spawns: { x: number; y: number }[],
+  w: number,
+  h: number,
+): void {
+  for (let i = 0; i < portals.length; i++) {
+    const keep = portals.filter((_, j) => j !== i);
+    const battle = battleWalkableFrom(tiles, vt, playerSpawn, portals, w, h);
+    if (portalSteppableFromBattle(portals[i], playerSpawn, battle)) continue;
+    const destGraph = battleWalkableFrom(tiles, vt, playerSpawn, keep, w, h);
+    const retainTiles = new Set(keep.map((p) => `${p.x},${p.y}`));
+    const occupied = new Set<string>([
+      `${playerSpawn.x},${playerSpawn.y}`,
+      ...spawns.map((s) => `${s.x},${s.y}`),
+      ...retainTiles,
+    ]);
+    const sole = solePortalApproachKeys(keep, destGraph, retainTiles);
+    const next = relocatePortalOntoReachable(
+      tiles,
+      vt,
+      portals[i],
+      destGraph,
+      playerSpawn,
+      w,
+      h,
+      new Set([...occupied, ...sole]),
+      retainTiles,
+    );
+    portals[i].x = next.x;
+    portals[i].y = next.y;
   }
 }
 
@@ -1095,17 +1269,41 @@ export function ensureReachability(
       reachable = floodFillReachable(out, vt, liveSpawn, w, h);
     }
     // Void pockets and carve-cap (>8 walls) used to leave the portal
-    // isolated. Relocate onto the player's walkable graph.
+    // isolated. Relocate onto the player's fight graph — overworld flood
+    // walks through another portal onto the far island, where the moved
+    // exit is only reachable by stepping on that choke (leaving the map).
     if (!reachable.has(`${livePortal.x},${livePortal.y}`)) {
+      const others: { x: number; y: number }[] = [...(portalExclude ?? [])].map(
+        (key) => {
+          const p = key.split(",");
+          return { x: Number(p[0]), y: Number(p[1]) };
+        },
+      );
+      const battleGraph = battleWalkableFrom(
+        out,
+        vt,
+        liveSpawn,
+        [livePortal, ...others],
+        w,
+        h,
+      );
       livePortal = relocatePortalOntoReachable(
         out,
         vt,
         livePortal,
-        reachable,
+        battleGraph.size > 0 ? battleGraph : reachable,
         liveSpawn,
         w,
         h,
-        new Set([...(portalExclude ?? []), ...occupied]),
+        new Set([
+          ...(portalExclude ?? []),
+          ...occupied,
+          ...solePortalApproachKeys(
+            others,
+            battleGraph.size > 0 ? battleGraph : reachable,
+            new Set(others.map((p) => `${p.x},${p.y}`)),
+          ),
+        ]),
       );
       reachable = floodFillReachable(out, vt, liveSpawn, w, h);
     }
@@ -1189,9 +1387,19 @@ export function punchRosterReachability<T extends { x: number; y: number }>(
   portal: { x: number; y: number } | undefined,
   worldW: number,
   worldH: number,
-): { tiles: string[][]; roster: T[]; playerSpawn: { x: number; y: number } } {
+): {
+  tiles: string[][];
+  roster: T[];
+  playerSpawn: { x: number; y: number };
+  portal: { x: number; y: number };
+} {
   if (roster.length === 0) {
-    return { tiles, roster, playerSpawn: spawnPosition };
+    return {
+      tiles,
+      roster,
+      playerSpawn: spawnPosition,
+      portal: portal ?? spawnPosition,
+    };
   }
   // Missing portal used to no-op, leaving CA pocket hostiles that seal
   // isProgressionLocked. Gate through the player spawn like Boss Rush.
@@ -1199,6 +1407,7 @@ export function punchRosterReachability<T extends { x: number; y: number }>(
     tiles: nextTiles,
     spawns,
     playerSpawn,
+    portal: livePortal,
   } = ensureReachability(
     tiles,
     toVoidSet(voidTiles),
@@ -1211,7 +1420,12 @@ export function punchRosterReachability<T extends { x: number; y: number }>(
   const nextRoster = roster.map((e, i) =>
     spawns[i] ? { ...e, x: spawns[i].x, y: spawns[i].y } : e,
   );
-  return { tiles: nextTiles, roster: nextRoster, playerSpawn };
+  return {
+    tiles: nextTiles,
+    roster: nextRoster,
+    playerSpawn,
+    portal: livePortal,
+  };
 }
 
 export interface PlayablePortal {
@@ -1262,6 +1476,11 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
   );
   const portals = input.portals.map((p) => ({ ...p }));
   const requireExit = input.requireExit !== false;
+  // placeBossRushSpawns / punchRosterReachability copy tiles but callers
+  // (WX spawnBossRushRoom, rest-exit) keep the pre-punch portal object.
+  // A leftover portal *tile* is a battle wall (`isBattleWalkTileBlocked`)
+  // and can cut the fight graph even when the object sits on a floor.
+  reconcilePortalTiles(tiles, portals, input.w, input.h);
 
   let primary: { x: number; y: number } | null = portals[0] ?? null;
   if (requireExit && !primary) {
@@ -1359,7 +1578,19 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     input.w,
     input.h,
   );
+  relocateBattleIsolatedPortals(
+    liveTiles,
+    vt,
+    portals,
+    playerSpawn,
+    spawns,
+    input.w,
+    input.h,
+  );
   stampPortalTiles(liveTiles, portals);
+  // Floor leftover punch tiles (WX keeps the pre-punch object) after the
+  // destack stamp so this hunk still auto-merges with #428's stamp line.
+  reconcilePortalTiles(liveTiles, portals, input.w, input.h);
 
   const takenPortals = new Set(portals.map((p) => `${p.x},${p.y}`));
   const takenHostiles = new Set(spawns.map((s) => `${s.x},${s.y}`));
@@ -1511,9 +1742,11 @@ export interface SolvabilityReport {
   stackedPortals: number;
   enemiesOnPortal: number;
   portalTileMismatch: number;
+  strayPortalTiles: number;
   leftoverIslands: number;
   outOfBounds: number;
   dumpCells: number;
+  battleIsolatedPortals: number;
   clearingUnlocks: boolean;
   failures: string[];
 }
@@ -1671,6 +1904,14 @@ export function evaluateSolvability(
   if (portals.length > 0 && isolatedPortals > 0) {
     failures.push(`isolated-portals:${isolatedPortals}`);
   }
+  let battleIsolatedPortals = 0;
+  for (const p of portals) {
+    if (portalSteppableFromBattle(p, playerSpawn, battleReachable)) continue;
+    battleIsolatedPortals += 1;
+  }
+  if (battleIsolatedPortals > 0) {
+    failures.push(`battle-isolated-portals:${battleIsolatedPortals}`);
+  }
   if (portals.length === 0) failures.push("missing-exit-portal");
   const occupancy = new Map<string, number>();
   for (const s of spawns) {
@@ -1701,6 +1942,17 @@ export function evaluateSolvability(
   }
   if (portalTileMismatch > 0) {
     failures.push(`portal-tile-mismatch:${portalTileMismatch}`);
+  }
+  let strayPortalTiles = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if ((tiles[y]?.[x] as string) !== "portal") continue;
+      if (portalKeys.has(`${x},${y}`)) continue;
+      strayPortalTiles += 1;
+    }
+  }
+  if (strayPortalTiles > 0) {
+    failures.push(`stray-portal-tiles:${strayPortalTiles}`);
   }
   if (
     playerSpawnLegal &&
@@ -1766,9 +2018,11 @@ export function evaluateSolvability(
     stackedPortals,
     enemiesOnPortal,
     portalTileMismatch,
+    strayPortalTiles,
     leftoverIslands,
     outOfBounds,
     dumpCells: dump.dump,
+    battleIsolatedPortals,
     clearingUnlocks,
     failures,
   };
@@ -1794,6 +2048,51 @@ export function stampPortalTiles<P extends { x: number; y: number }>(
   }
 }
 
+/** Portal tiles with no matching portal object. Battle treats them as walls. */
+export function countStrayPortalTiles(
+  tiles: string[][],
+  portals: { x: number; y: number }[],
+  w: number,
+  h: number,
+): number {
+  const keys = new Set(portals.map((p) => `${p.x},${p.y}`));
+  let n = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if ((tiles[y]?.[x] as string) !== "portal") continue;
+      if (keys.has(`${x},${y}`)) continue;
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/**
+ * Floor leftover portal tiles, then stamp every portal object.
+ * A prior ensureReachability pass (Boss Rush preferred cells, rest-exit
+ * punch) mutates tiles but callers often keep the pre-punch portal
+ * object; the orphan tile is a battle choke.
+ */
+export function reconcilePortalTiles<P extends { x: number; y: number }>(
+  tiles: string[][],
+  portals: P[],
+  w: number,
+  h: number,
+): number {
+  const keys = new Set(portals.map((p) => `${p.x},${p.y}`));
+  let cleared = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if ((tiles[y]?.[x] as string) !== "portal") continue;
+      if (keys.has(`${x},${y}`)) continue;
+      tiles[y][x] = "floor";
+      cleared += 1;
+    }
+  }
+  stampPortalTiles(tiles, portals);
+  return cleared;
+}
+
 function colocateWhitePortal<P extends { x: number; y: number }>(
   map: { tiles: string[][]; portals: P[] },
   spawn: { x: number; y: number },
@@ -1805,7 +2104,12 @@ function colocateWhitePortal<P extends { x: number; y: number }>(
   );
   if (existing >= 0) map.portals[existing] = placed;
   else map.portals.push(placed);
-  stampPortalTiles(map.tiles as string[][], map.portals);
+  reconcilePortalTiles(
+    map.tiles as string[][],
+    map.portals,
+    map.tiles[0]?.length ?? 0,
+    map.tiles.length,
+  );
 }
 
 /**
@@ -1887,7 +2191,7 @@ export function applyFinalizedLayout<
       }
     }
   }
-  stampPortalTiles(map.tiles as string[][], map.portals);
+  reconcilePortalTiles(map.tiles as string[][], map.portals, size, size);
   const nextRoster = roster.map((e, i) =>
     finalized.spawns[i]
       ? { ...e, x: finalized.spawns[i].x, y: finalized.spawns[i].y }
