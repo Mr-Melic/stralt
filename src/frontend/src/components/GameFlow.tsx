@@ -124,7 +124,8 @@ const GameFlow: React.FC<GameFlowProps> = ({
 
   // addDebugLog removed — debug events now route through logDebugInfo directly
 
-  const { clear } = useInternetIdentity();
+  const { identity, clear } = useInternetIdentity();
+  const storageOwnerId = identity?.getPrincipal?.()?.toText() ?? "";
   const queryClient = useQueryClient();
 
   const handleLogout = async () => {
@@ -254,6 +255,7 @@ const GameFlow: React.FC<GameFlowProps> = ({
           onInBattleChange={setIsInBattle}
           onTransitionChange={setIsTransitioning}
           userId={String(userProfile.id ?? userProfile.name ?? "guest")}
+          storageOwnerId={storageOwnerId || undefined}
           onDebugLog={handleDebugLog}
           onShowBattleSummary={onShowBattleSummary}
           battleRecapOpen={battleRecapOpen}
