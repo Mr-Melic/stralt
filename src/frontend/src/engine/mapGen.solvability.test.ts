@@ -17,6 +17,7 @@ import {
   generateSeededWorld,
   reportWorld,
   simulateBattleStartOnWorld,
+  simulateChebyshevWanderOnWorld,
   simulateCleanupSnapshotProgression,
   simulateClearUnlocksPortal,
   simulateCorpsesOnWorld,
@@ -1000,6 +1001,71 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
   });
 
+  it("seed-portal-cut-relocate-punch: destack alcoves must not bypass the gate", () => {
+    // Near room is two floors; five far-side rats force relocate+punch.
+    // Punching the wall beside the portal used to join the far room so
+    // battle walk could go around the cut-vertex.
+    const tiles = [
+      [W, W, W, W, W, W, W, W],
+      [W, F, "portal", F, F, F, F, W],
+      [W, F, W, F, F, F, F, W],
+      [W, W, W, F, F, F, F, W],
+      [W, W, W, W, W, W, W, W],
+    ];
+    const portals = [{ x: 2, y: 1 }];
+    const spawns = [
+      { x: 3, y: 1 },
+      { x: 4, y: 1 },
+      { x: 5, y: 1 },
+      { x: 6, y: 1 },
+      { x: 3, y: 2 },
+    ];
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 1, y: 1 },
+      portals,
+      spawns,
+      w: 8,
+      h: 5,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      8,
+      5,
+    );
+    const portalX = finalized.portals[0]?.x ?? 2;
+    assert.equal(
+      finalized.tiles[2]?.[2],
+      W,
+      "wall beside the portal must not become a parallel corridor",
+    );
+    for (const s of finalized.spawns) {
+      assert.equal(
+        s.x < portalX,
+        true,
+        `hostile at ${s.x},${s.y} must stay on the player's side of the gate`,
+      );
+    }
+    assert.equal(
+      sequentialClearUnlocks(
+        finalized.tiles,
+        new Set(),
+        finalized.playerSpawn,
+        finalized.portals,
+        finalized.spawns,
+        8,
+        5,
+      ),
+      true,
+      after.failures.join(","),
+    );
+  });
+
   it("seed-spawn-on-portal-cut: moving off the gate stays on the large room", () => {
     const tiles = [
       [W, W, W, W, W, W, W],
@@ -1033,6 +1099,131 @@ describe("ensureReachability / finalizePlayableLayout regressions", () => {
     );
     assert.equal(finalized.tiles[1][4], F);
     assert.equal(finalized.tiles[1][5], F);
+  });
+
+  it("seed-portal-cut-far-dump: far-side floors must not skip the near alcove", () => {
+    // 1-wide near corridor, portal choke, far room. Overworld dump used to
+    // count (4,1)/(5,1) so ensureProgressionAlcove no-oped; a corpse on
+    // the unique near bridge then teleported through the gate or sealed it.
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, "portal", F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    const spawn = { x: 1, y: 1 };
+    const portals = [{ x: 3, y: 1 }];
+    const before = countProgressionDumpCells(
+      tiles,
+      new Set(),
+      spawn,
+      portals,
+      7,
+      3,
+    );
+    assert.ok(before.mandatory > 0, "near cell (2,1) is a unique bridge");
+    assert.equal(
+      before.dump,
+      0,
+      "far-side floors are not battle-reachable dump cells",
+    );
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: spawn,
+      portals,
+      spawns: [],
+      w: 7,
+      h: 3,
+    });
+    const afterCounts = countProgressionDumpCells(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      7,
+      3,
+    );
+    assert.ok(
+      afterCounts.dump > 0,
+      "must punch a near-side alcove, not treat the far room as dump",
+    );
+    assert.equal(
+      finalized.tiles[1][4],
+      F,
+      "must not wall the far-side floor (aesthetics)",
+    );
+    assert.equal(
+      finalized.tiles[1][5],
+      F,
+      "must not wall the far-side floor (aesthetics)",
+    );
+    const portalX = finalized.portals[0]?.x ?? 3;
+    const nearAlcove = [
+      finalized.tiles[0]?.[1],
+      finalized.tiles[0]?.[2],
+      finalized.tiles[2]?.[1],
+      finalized.tiles[2]?.[2],
+      finalized.tiles[1]?.[0],
+    ].some((t) => t === F);
+    assert.equal(
+      nearAlcove,
+      true,
+      "alcove must sit on the player's side of the gate",
+    );
+    for (let y = 0; y < 3; y++) {
+      for (let x = portalX + 1; x < 7; x++) {
+        if (y === 1) continue;
+        assert.equal(
+          finalized.tiles[y][x],
+          W,
+          `must not punch a far-side alcove at ${x},${y}`,
+        );
+      }
+    }
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      7,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    const occ = simulateCorpsesOnWorld({
+      tiles: finalized.tiles,
+      voidTiles: new Set(),
+      portals: finalized.portals.map((p) => ({
+        x: p.x,
+        y: p.y,
+        color: "progression",
+      })),
+      playerSpawn: finalized.playerSpawn,
+      spawns: [],
+      runMode: "dungeon",
+      archetype: MAP_ARCHETYPES[0].type,
+      seed: 0,
+    });
+    assert.equal(
+      occ.sealed,
+      false,
+      "corpses must relocate onto the near alcove",
+    );
+    for (const c of occ.cells) {
+      assert.equal(
+        isEnemyWanderFloor(
+          finalized.tiles,
+          new Set(),
+          finalized.portals,
+          finalized.playerSpawn,
+          c,
+          7,
+          3,
+        ),
+        true,
+        `corpse at ${c.x},${c.y} must stay on the fight graph`,
+      );
+    }
   });
 
   it("seed-unique-corridor-no-alcove: punches a dump cell so corpses cannot seal the exit", () => {
@@ -1342,6 +1533,23 @@ describe("seeded world property suite", () => {
           `seed ${seed}: corpses at ${occ.cells.map((c) => `${c.x},${c.y}`).join("/")}`,
         );
       }
+      for (const c of occ.cells) {
+        if (
+          !isEnemyWanderFloor(
+            world.tiles,
+            world.voidTiles,
+            world.portals,
+            world.playerSpawn,
+            c,
+            world.tiles[0]?.length ?? WORLD_GRID_SIZE,
+            world.tiles.length,
+          )
+        ) {
+          failures.push(
+            `seed ${seed}: corpse at ${c.x},${c.y} left the fight graph`,
+          );
+        }
+      }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
   });
@@ -1360,6 +1568,37 @@ describe("seeded world property suite", () => {
       }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("battle-start destack pulls a far-side wanderer onto the player component", () => {
+    // WX replica: one hostile stayed near, one wandered through the portal.
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [W, F, F, "portal", F, F, W],
+      [W, F, F, W, W, W, W],
+      [W, W, W, W, W, W, W],
+    ];
+    const after = simulateBattleStartOnWorld({
+      tiles,
+      voidTiles: new Set(),
+      portals: [{ x: 3, y: 1, color: "black" }],
+      playerSpawn: { x: 1, y: 1 },
+      spawns: [
+        { x: 2, y: 2 },
+        { x: 5, y: 1 },
+      ],
+      runMode: "none",
+      archetype: MAP_ARCHETYPES[0].type,
+      seed: 0,
+    });
+    for (const s of after.spawns) {
+      assert.equal(
+        s.x < 3,
+        true,
+        `hostile at ${s.x},${s.y} must destack onto the player's side`,
+      );
+    }
+    assert.equal(after.playerSpawn.x < 3, true);
   });
 
   it("battle-start destack keeps a legal route across seeds", () => {
@@ -1385,6 +1624,23 @@ describe("seeded world property suite", () => {
       );
       if (!after.ok) {
         failures.push(`seed ${seed}: wander left a hostile isolated`);
+      }
+    }
+    assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
+  });
+
+  it("Chebyshev wander picks stay on the fight graph across seeds", () => {
+    const failures: string[] = [];
+    for (const seed of seeds) {
+      const world = generateSeededWorld({ seed, runMode: "dungeon" });
+      const after = simulateChebyshevWanderOnWorld(
+        world,
+        8,
+        createSeededRng(seed + 131),
+        3,
+      );
+      if (!after.ok) {
+        failures.push(`seed ${seed}: Chebyshev wander left a hostile isolated`);
       }
     }
     assert.equal(failures.length, 0, failures.slice(0, 8).join(" | "));
@@ -1537,5 +1793,157 @@ describe("map bounds", () => {
         );
       }
     }
+  });
+});
+
+describe("far-island leftover spawn snap", () => {
+  it("seed-far-island-spawn: relocates onto the large near room, not the 2-tile pocket", () => {
+    // Spawn-on-exit only fires when the seed sits on the gate. A walkable
+    // far-island seed is already legal overworld, so legalize kept it and
+    // destack piled hostiles onto 2 tiles behind a battle-impassable portal.
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [F, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][3] = "portal";
+    const portals = [{ x: 3, y: 1 }];
+    const farSpawn = { x: 5, y: 1 };
+    const before = evaluateSolvability(
+      tiles,
+      new Set(),
+      farSpawn,
+      portals,
+      [{ x: 1, y: 1 }],
+      7,
+      3,
+    );
+    assert.equal(
+      before.spawnOnLargestBattleRoom,
+      false,
+      "fixture must start on the far-island fight graph",
+    );
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: farSpawn,
+      portals,
+      spawns: [{ x: 1, y: 1 }],
+      w: 7,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      7,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(after.spawnOnLargestBattleRoom, true);
+    assert.equal(
+      finalized.playerSpawn.x < finalized.portals[0].x,
+      true,
+      "spawn must sit on the large near room, not past the choke",
+    );
+    assert.equal(
+      finalized.tiles[1][4],
+      F,
+      "must not wall the far-side floor (aesthetics)",
+    );
+    assert.equal(finalized.tiles[1][5], F);
+  });
+
+  it("seed-wall-next-to-far-island: legalize must not pick the closer pocket", () => {
+    const tiles = [
+      [W, W, W, W, W, W, W],
+      [F, F, F, F, F, F, W],
+      [W, W, W, W, W, W, W],
+    ];
+    tiles[1][3] = "portal";
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: { x: 5, y: 0 },
+      portals: [{ x: 3, y: 1 }],
+      spawns: [{ x: 1, y: 1 }],
+      w: 7,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      7,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(after.spawnOnLargestBattleRoom, true);
+    assert.equal(finalized.playerSpawn.x < 3, true);
+    assert.equal(finalized.tiles[1][5], F);
+  });
+
+  it("seed-center-spawn-keeps-small-near: do not snap onto a larger far island", () => {
+    // Void-boxed spawn diamond at map center is the intended fight graph
+    // even when leftover CA past the gate is bigger. Hopping spawn there
+    // would relocate every rat onto the far island and undo #430/#436/#444.
+    const tiles = [
+      [W, W, W, W, W, W, W, W, W],
+      [W, W, W, F, F, F, F, F, F],
+      [W, W, W, W, W, W, W, W, W],
+    ];
+    tiles[1][5] = "portal";
+    const centerSpawn = { x: 4, y: 1 };
+    const portals = [{ x: 5, y: 1 }];
+    const before = evaluateSolvability(
+      tiles,
+      new Set(),
+      centerSpawn,
+      portals,
+      [{ x: 3, y: 1 }],
+      9,
+      3,
+    );
+    assert.equal(
+      before.spawnOnLargestBattleRoom,
+      true,
+      "center diamond is the preferred room, not the larger far island",
+    );
+    const finalized = finalizePlayableLayout({
+      tiles,
+      voidTiles: new Set(),
+      playerSpawn: centerSpawn,
+      portals,
+      spawns: [{ x: 3, y: 1 }],
+      w: 9,
+      h: 3,
+    });
+    const after = evaluateSolvability(
+      finalized.tiles,
+      new Set(),
+      finalized.playerSpawn,
+      finalized.portals,
+      finalized.spawns,
+      9,
+      3,
+    );
+    assert.equal(after.ok, true, after.failures.join(","));
+    assert.equal(after.spawnOnLargestBattleRoom, true);
+    assert.equal(
+      finalized.playerSpawn.x < finalized.portals[0].x,
+      true,
+      "must keep spawn on the center diamond",
+    );
+    assert.equal(finalized.tiles[1][6], F);
+    assert.equal(finalized.tiles[1][8], F);
+    assert.equal(
+      finalized.spawns[0].x < finalized.portals[0].x,
+      true,
+      "hostiles must stay on the player's center graph",
+    );
   });
 });

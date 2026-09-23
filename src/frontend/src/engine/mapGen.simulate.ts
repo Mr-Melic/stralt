@@ -44,7 +44,18 @@ import {
   shouldArmDungeonChainOnRestExit,
   snapshotDungeonChain,
 } from "./portalRules.ts";
+import { collectValidEnemySpawnCells } from "./spawnPolicy.ts";
 import { spawnSummonUnit } from "./summonSpawn.ts";
+
+/** 4th live-spawn arg exists on #430+; extra JS args are ignored until then. */
+declare module "./spawnPolicy.ts" {
+  export function collectValidEnemySpawnCells(
+    tiles: readonly (readonly string[])[],
+    portals: readonly { x: number; y: number }[],
+    voidTiles?: ReadonlySet<string>,
+    playerSpawn?: { x: number; y: number },
+  ): { x: number; y: number }[];
+}
 
 export type SimArchetype = (typeof MAP_ARCHETYPES)[number]["type"];
 
@@ -341,20 +352,15 @@ function placeEnemies(
   portals: { x: number; y: number }[],
   voidTiles: Set<string>,
   rng: Rng,
-  size: number,
   count: number,
+  playerSpawn: { x: number; y: number },
 ): { x: number; y: number }[] {
-  const allValid: { x: number; y: number }[] = [];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (tiles[y][x] !== "floor") continue;
-      if (voidTiles.has(`${x},${y}`)) continue;
-      if (Math.abs(x - 8) <= 3 && Math.abs(y - 8) <= 3) continue;
-      if (portals.some((p) => Math.abs(p.x - x) + Math.abs(p.y - y) <= 2))
-        continue;
-      allValid.push({ x, y });
-    }
-  }
+  const allValid = collectValidEnemySpawnCells(
+    tiles,
+    portals,
+    voidTiles,
+    playerSpawn,
+  );
   const shuffled = [...allValid];
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -465,7 +471,14 @@ export function generateSeededWorld(opts: GenerateSeededWorldOpts): SimWorld {
 
   const playerSpawn = pickSpawn(tiles, voidTiles, size);
   const enemyCount = opts.enemyCount ?? 1 + Math.floor(rng() * 8);
-  let spawns = placeEnemies(tiles, portals, voidTiles, rng, size, enemyCount);
+  let spawns = placeEnemies(
+    tiles,
+    portals,
+    voidTiles,
+    rng,
+    enemyCount,
+    playerSpawn,
+  );
 
   if (opts.finalize !== false) {
     const finalized = finalizePlayableLayout({
@@ -663,7 +676,10 @@ export function simulateClearUnlocksPortal(
 }
 
 export function generateSeededSanctuary(seed: number): SimWorld {
-  const world = generateSeededWorld({ seed, runMode: "none" });
+  // Production sanctuary (applySanctuaryLayout) never calls generateEnemies
+  // and resetCombatantStore clears the roster. Keeping a leftover world
+  // roster made a white gateway on spawn look like an isolated-hostile lock.
+  const world = generateSeededWorld({ seed, runMode: "none", enemyCount: 0 });
   const map = {
     tiles: world.tiles,
     portals: world.portals,
@@ -685,6 +701,7 @@ export function generateSeededSanctuary(seed: number): SimWorld {
     tiles: map.tiles,
     portals: map.portals,
     playerSpawn: applied.spawn,
+    spawns: [],
   };
 }
 
@@ -920,6 +937,21 @@ export function simulateCorpsesOnWorld(world: SimWorld): {
       if (k === `${world.playerSpawn.x},${world.playerSpawn.y}`) continue;
       if (world.tiles[y][x] === "wall") continue;
       if (world.voidTiles.has(k)) continue;
+      // Far-side floors beyond a portal choke are overworld-walkable but
+      // not a legal battle dump: relocate would teleport through the gate.
+      if (
+        !isEnemyWanderFloor(
+          world.tiles,
+          world.voidTiles,
+          world.portals,
+          world.playerSpawn,
+          { x, y },
+          size,
+          world.tiles.length,
+        )
+      ) {
+        continue;
+      }
       offPath += 1;
     }
   }
@@ -1056,7 +1088,13 @@ export function simulateBattleStartOnWorld(world: SimWorld): {
       const p = key.split(",");
       avoid.push({ x: Number(p[0]), y: Number(p[1]), minDist: 2 });
     }
-    const cell = findBattleStartCell({ x: s.x, y: s.y }, avoid, 2, ctx) ?? {
+    const cell = findBattleStartCell(
+      { x: s.x, y: s.y },
+      avoid,
+      2,
+      ctx,
+      player,
+    ) ?? {
       x: s.x,
       y: s.y,
     };
@@ -1130,6 +1168,70 @@ export function simulateEnemyWanderOnWorld(
       }
       s.x = nx;
       s.y = ny;
+    }
+    occupied.add(`${s.x},${s.y}`);
+  }
+  const report = evaluateSolvability(
+    world.tiles,
+    world.voidTiles,
+    world.playerSpawn,
+    world.portals,
+    spawns,
+    size,
+    world.tiles.length,
+  );
+  return { spawns, ok: report.ok };
+}
+
+/**
+ * Replay WX `generateRandomWalkablePosition` (Chebyshev delta in ±range,
+ * 50 attempts, `isEnemyWanderFloor`). Destination is the wander target;
+ * overworld A* may step a portal mid-path but must end on the fight graph.
+ */
+export function simulateChebyshevWanderOnWorld(
+  world: SimWorld,
+  steps: number,
+  rng: Rng,
+  range = 3,
+): { spawns: { x: number; y: number }[]; ok: boolean } {
+  const size = world.tiles[0]?.length ?? WORLD_GRID_SIZE;
+  const occupied = new Set<string>([
+    `${world.playerSpawn.x},${world.playerSpawn.y}`,
+  ]);
+  const spawns = world.spawns.map((s) => ({ x: s.x, y: s.y }));
+  for (const s of spawns) occupied.add(`${s.x},${s.y}`);
+  for (const s of spawns) {
+    occupied.delete(`${s.x},${s.y}`);
+    for (let i = 0; i < steps; i++) {
+      let picked: { x: number; y: number } | null = null;
+      for (let attempt = 0; attempt < 50; attempt++) {
+        const deltaX = Math.floor(rng() * (range * 2 + 1)) - range;
+        const deltaY = Math.floor(rng() * (range * 2 + 1)) - range;
+        const nx = s.x + deltaX;
+        const ny = s.y + deltaY;
+        if (nx === s.x && ny === s.y) continue;
+        if (
+          !isEnemyWanderFloor(
+            world.tiles,
+            world.voidTiles,
+            world.portals,
+            { x: s.x, y: s.y },
+            { x: nx, y: ny },
+            size,
+            world.tiles.length,
+          )
+        ) {
+          continue;
+        }
+        const k = `${nx},${ny}`;
+        if (occupied.has(k)) continue;
+        picked = { x: nx, y: ny };
+        break;
+      }
+      if (picked) {
+        s.x = picked.x;
+        s.y = picked.y;
+      }
     }
     occupied.add(`${s.x},${s.y}`);
   }
