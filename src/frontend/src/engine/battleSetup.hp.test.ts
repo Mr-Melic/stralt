@@ -5,9 +5,11 @@ import {
   hpAfterBossPhase2,
   hpAfterHeal,
   hpAfterIncomingDamage,
+  liveCombatantHp,
   thornedGroundWalkDamage,
   voidRiftWalkDamage,
 } from "./battleSetup.ts";
+import { mapModifierRegistry } from "./mapModifiers.ts";
 
 describe("hpAfterIncomingDamage live HP", () => {
   it("subtracts a DoT tick from live HP instead of a mount-time snapshot", () => {
@@ -104,5 +106,27 @@ describe("hpAfterBossPhase2 store contract", () => {
       hp: 400,
       maxHp: 400,
     });
+  });
+});
+
+describe("liveCombatantHp after applyBattleStart (Mirror / betrayal)", () => {
+  it("prefers Titan-buffed store HP over a pre-bonus enemyHpMap baseline", () => {
+    // Battle start used to setEnemyHpMap(pre) after applyBattleStart mutated
+    // the store. Mirror reflect then did max(0, mapHp - dmg) and wrote that
+    // into the store — a 50 HP base + Titan's 1050 died to a 50-dmg reflect.
+    const combatants = [
+      { id: "rat-1", hp: 50, maxHp: 50, side: "enemy" as const },
+    ];
+    mapModifierRegistry.applyBattleStart(
+      combatants as any,
+      new Set(["titans_vigor"]),
+    );
+    assert.equal(combatants[0].hp, 1050);
+    const staleMapHp = 50;
+    const mirrorDmg = 50;
+    assert.equal(Math.max(0, staleMapHp - mirrorDmg), 0);
+    const live = liveCombatantHp(combatants, "rat-1", staleMapHp);
+    assert.equal(live, 1050);
+    assert.equal(Math.max(0, live - mirrorDmg), 1000);
   });
 });
