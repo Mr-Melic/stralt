@@ -706,8 +706,11 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   // Subscribe to structured debug logs. Mirror into React only while the
   // Debug tab is open — battle/AI/spell logs otherwise re-rendered ChatPanel
   // on every line (array copy of up to 2000 entries).
+  // PERF-2026-09-23-096: do not snapshot the module buffer on mount. After a
+  // long session the ring can hold 2000 entries; copying them into React
+  // state (and filtering on every battle-log render) hit ChatPanel even when
+  // Debug was never opened. Opening the tab still snaps via the channel effect.
   useEffect(() => {
-    setDebugEntries([...getDebugLogBuffer()]);
     const unsub = subscribeDebugLogs((entry) => {
       if (activeChannelRef.current !== "debug") return;
       setDebugEntries((prev) => {
