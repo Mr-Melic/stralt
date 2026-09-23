@@ -6,8 +6,10 @@ import {
   applyPushback,
   collectMandatoryProgressionCells,
   findNearestFreeCell,
+  floodBattleComponent,
   occKey,
   occupantsSealProgression,
+  onBattleGraph,
   progressionReserved,
   progressionSearchRadius,
   relocateOffMandatoryCells,
@@ -739,5 +741,169 @@ describe("summon spawn avoids reserved bridges", () => {
     const found = findNearestFreeCell({ x: 0, y: 0 }, ctx, 2, new Set(["0,0"]));
     assert.ok(found);
     assert.notEqual(occKey(found.x, found.y), "0,0");
+  });
+});
+
+describe("portal-cut relocate stays on the fight graph", () => {
+  // 1-wide near corridor, spawn alcove, portal choke, far room.
+  // Unique bridge (5,1) is Manhattan 2 from far (7,1) and 5 from alcove (1,2).
+  // Unfiltered findNearestFreeCell hops the gate; relocate/spawn must not.
+  function portalCutLongBridge() {
+    const tiles = [
+      Array.from({ length: 10 }, () => false),
+      [false, true, true, true, true, true, true, true, true, false],
+      [false, true, false, false, false, false, false, false, false, false],
+    ];
+    const voidTiles = new Set<string>();
+    const portals = new Set(["6,1"]);
+    const occupied = new Set<string>(["1,1"]);
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles,
+      portals,
+      progressStart: { x: 1, y: 1 },
+      isOccupied: (c) => occupied.has(occKey(c.x, c.y)),
+    };
+    const mandatory = collectMandatoryProgressionCells(
+      tiles,
+      voidTiles,
+      portals,
+      { x: 1, y: 1 },
+    );
+    ctx.reserved = mandatory;
+    return { tiles, voidTiles, portals, occupied, ctx, mandatory };
+  }
+
+  it("seed-portal-cut-relocate-teleport: unfiltered ring-scan hops, relocate does not", () => {
+    const { tiles, voidTiles, portals, ctx, mandatory } = portalCutLongBridge();
+    assert.equal(mandatory.has("5,1"), true, "near cell is a unique bridge");
+    const hopped = findNearestFreeCell(
+      { x: 5, y: 1 },
+      ctx,
+      progressionSearchRadius(ctx),
+      mandatory,
+    );
+    assert.ok(hopped);
+    assert.equal(
+      hopped.x >= 7,
+      true,
+      "unfiltered ring-scan must be able to hop the portal (the occupancy bug)",
+    );
+    const stay = onBattleGraph(ctx, { x: 5, y: 1 });
+    assert.ok(stay);
+    assert.equal(stay({ x: 7, y: 1 }), false);
+    assert.equal(stay({ x: 1, y: 2 }), true);
+    const graph = floodBattleComponent(ctx, { x: 1, y: 1 });
+    assert.equal(graph.has("7,1"), false);
+    assert.equal(graph.has("1,2"), true);
+
+    const [moved] = relocateOffMandatoryCells([{ x: 5, y: 1 }], mandatory, ctx);
+    assert.equal(mandatory.has(occKey(moved.x, moved.y)), false);
+    assert.equal(
+      moved.x < 6,
+      true,
+      `corpse at ${moved.x},${moved.y} must stay on the near side`,
+    );
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 1, y: 1 }, [
+        moved,
+      ]),
+      false,
+    );
+  });
+
+  it("seed-portal-cut-unseal-teleport: unseal dumps onto the near alcove", () => {
+    const { tiles, voidTiles, portals, ctx } = portalCutLongBridge();
+    const [moved] = unsealProgressionOccupants(
+      [{ x: 5, y: 1 }],
+      tiles,
+      voidTiles,
+      portals,
+      { x: 1, y: 1 },
+      ctx,
+    );
+    assert.equal(moved.x < 6, true, `unseal landed at ${moved.x},${moved.y}`);
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 1, y: 1 }, [
+        moved,
+      ]),
+      false,
+    );
+  });
+
+  it("seed-portal-cut-summon-teleport: spawn fallback does not hop the gate", () => {
+    const { tiles, voidTiles, portals, ctx, mandatory } = portalCutLongBridge();
+    const spawned = spawnSummonUnit(
+      { x: 5, y: 1 },
+      {
+        id: "summon-wolf",
+        name: "Summon Wolf",
+        summonUnitDef: { pieceType: "pawn", level: 1 },
+        summonAI: "hunter",
+      },
+      "player",
+      1,
+      () => {},
+      () => ({ init: 4 }),
+      0,
+      { ...ctx, reserved: mandatory },
+    );
+    assert.equal(
+      spawned.summon.x < 6,
+      true,
+      `summon at ${spawned.summon.x},${spawned.summon.y} hopped the portal`,
+    );
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 1, y: 1 }, [
+        { x: spawned.summon.x, y: spawned.summon.y },
+      ]),
+      false,
+    );
+  });
+
+  it("seed-portal-cut-push-attract: slides stay on the near alcove", () => {
+    const { tiles, voidTiles, portals, ctx, mandatory } = portalCutLongBridge();
+    ctx.reserved = mandatory;
+    const pushed = applyPushback({ x: 5, y: 1 }, { x: 4, y: 1 }, 2, ctx);
+    assert.equal(pushed.x < 6, true, `push landed at ${pushed.x},${pushed.y}`);
+    const attracted = applyAttract({ x: 5, y: 1 }, { x: 8, y: 1 }, 3, ctx);
+    assert.equal(
+      attracted.x < 6,
+      true,
+      `attract landed at ${attracted.x},${attracted.y}`,
+    );
+    assert.equal(
+      occupantsSealProgression(tiles, voidTiles, portals, { x: 1, y: 1 }, [
+        pushed,
+      ]),
+      false,
+    );
+  });
+
+  it("seed-white-portal-spawn: battle graph picks the large adjacent room", () => {
+    // Player stands on the white portal. Far island is 1 tile; main room is 3.
+    const tiles = [
+      [false, false, false, false, false, false, false],
+      [false, true, true, true, true, true, false],
+      [false, false, false, false, false, false, false],
+    ];
+    const ctx: OccupancyContext = {
+      tiles,
+      barriers: new Set(),
+      voidTiles: new Set(),
+      portals: new Set(["4,1"]),
+      progressStart: { x: 4, y: 1 },
+      isOccupied: () => false,
+    };
+    const graph = floodBattleComponent(ctx, { x: 4, y: 1 });
+    assert.equal(graph.has("1,1"), true);
+    assert.equal(graph.has("2,1"), true);
+    assert.equal(graph.has("3,1"), true);
+    assert.equal(graph.has("5,1"), false);
+    const stay = onBattleGraph(ctx, { x: 4, y: 1 });
+    assert.ok(stay);
+    assert.equal(stay({ x: 3, y: 1 }), true);
+    assert.equal(stay({ x: 5, y: 1 }), false);
   });
 });
