@@ -6916,6 +6916,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 Players buy Doka with a Mollie payment + GameKey request.
                 Incoming requests live on the Purchases tab. Grant and ban use
                 separate principal fields and write live — there is no undo.
+                Canister ShopPackage CRUD and initiatePurchase remain unused by
+                this UI; do not delete them until a deployed DID prove-out.
               </CatalogNote>
               <div
                 style={{
@@ -7352,6 +7354,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   )}
                 </div>
               </div>
+              <CatalogNote>
+                Live. WorldExploration hydrates getEnemyNames and assigns a
+                unique name per enemy on each map (fallback
+                DEFAULT_ANCIENT_NAMES when the pool is empty). This is not the
+                Enemies catalog — those rows do not change encounter packs,
+                stats, or pixel visuals.
+              </CatalogNote>
               <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
                 <input
                   data-ocid="admin.names.input"
