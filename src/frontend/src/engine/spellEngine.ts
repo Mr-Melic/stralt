@@ -14,8 +14,13 @@
  */
 
 import type { SpellConfig } from "../types/gameTypes";
-import { logDebugInfo } from "../utils/debugLogger";
-import { isActiveHostile } from "./battleSetup";
+import { logDebugInfo } from "../utils/debugLogger.ts";
+import { isActiveHostile } from "./battleSetup.ts";
+import {
+  playerMirrorResolvesOnTile,
+  playerShieldBuffResolves,
+  playerTimestepResolvesOnTile,
+} from "./playerSpecialCast.ts";
 
 export type Side = "player" | "enemy";
 
@@ -631,9 +636,11 @@ export function resolvePlayerCast(
   const isHealSpell =
     spell.targetType === "self" && spell.effectType === "heal";
   const isDrainSpell = spell.effectType === "drain";
-  const isShieldSpell =
-    (spell.targetType === "self" || spell.targetType === "ally") &&
-    spell.effectType === "buff";
+  // Shield is self/ally + buff + buffStat. Timestep is also self+buff
+  // but has no buffStat — the old predicate returned "cast" here and
+  // never reached restoreApMp, so a highlighted caster tile executed
+  // without the advertised AP/MP reset.
+  const isShieldSpell = playerShieldBuffResolves(spell);
   const isSwapSpell = spell.isSwap === true;
   const isPlayerTile =
     gridPos.x === ctx.playerPosition.x && gridPos.y === ctx.playerPosition.y;
@@ -719,7 +726,16 @@ export function resolvePlayerCast(
   }
 
   // ── Timestep: restore AP and MP to full once per battle (inline line 8326) ──
+  // Same caster-tile gate as highlight (`targetType === "self"`). Off-tile
+  // used to fall through after the shield steal and still consume.
   if (spell.isTimestep) {
+    if (!playerTimestepResolvesOnTile(spell, isPlayerTile)) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "timestep requires caster tile"}`,
+      );
+      return "abort";
+    }
     if (ctx.consumeTimestep()) {
       logDebugInfo(
         "RESOLVER",
@@ -731,6 +747,26 @@ export function resolvePlayerCast(
     ctx.restoreApMp();
     ctx.log("Timestep! AP and MP restored to full", "#22d3ee");
     return "no_ap"; // caller must NOT deduct AP — timestep restored it
+  }
+
+  // ── Mirror: activate on the caster tile. Lived inside the
+  // `targetEnemy || hitsMultiple` loop, so a highlighted self tile
+  // returned "cast" without activateMirror.
+  if (spell.isMirror) {
+    if (!playerMirrorResolvesOnTile(spell, isPlayerTile)) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "mirror requires caster tile"}`,
+      );
+      return "abort";
+    }
+    ctx.activateMirror();
+    ctx.log(
+      "Mirror active! Next single-target damage spell cast at you reflects back!",
+      "#c084fc",
+    );
+    ctx.recordSpellType(spell.effectType ?? "damage");
+    return "cast";
   }
 
   // ── Check if an enemy is on clicked tile (inline line 8349) ──
@@ -912,17 +948,6 @@ export function resolvePlayerCast(
         ctx.recordSpellType(spell.effectType ?? "damage");
         return "cast";
       }
-    }
-
-    // Mirror spell — activate mirror shield on the player (inline line 8522)
-    if (spell.isMirror) {
-      ctx.activateMirror();
-      ctx.log(
-        "Mirror active! Next single-target damage spell cast at you reflects back!",
-        "#c084fc",
-      );
-      ctx.recordSpellType(spell.effectType ?? "damage");
-      return "cast";
     }
 
     // Mark spell (inline line 8577)
