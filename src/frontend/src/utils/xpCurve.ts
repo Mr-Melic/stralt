@@ -102,6 +102,20 @@ export function recapXpAfterGrant(
 }
 
 /**
- * HUD progress for leftover XP in the current level (the applyRewards store).
- * Do not subtract a cumulative total — experience is already the remainder.
+ * Motoko `applyRewards` builds `100 * 2^(level-1)` with an O(level) loop on
+ * every credit, including when leftover XP cannot afford the next level.
+ * Short-circuit that multiply when leftover is strictly below the threshold.
+ * Do not change the curve.
  */
+export function leftoverXpCannotAffordNextLevel(
+  leftoverXp: number | bigint,
+  level: number,
+): boolean {
+  const xp =
+    typeof leftoverXp === "bigint"
+      ? leftoverXp < 0n
+        ? 0n
+        : leftoverXp
+      : toNatXp(Number(leftoverXp));
+  return xp < xpThresholdBigInt(level);
+}

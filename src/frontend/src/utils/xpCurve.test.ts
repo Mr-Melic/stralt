@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   applyXpDelta,
+  leftoverXpCannotAffordNextLevel,
   recapXpAfterGrant,
   xpForNextLevel,
   xpHudProgress,
@@ -76,6 +77,19 @@ assert.deepEqual(
   applyXpDelta(0, 47, 7_036_874_417_766_400),
   { newXp: 0, newLevel: 48 },
   "exact safe-integer threshold at 47 still levels",
+);
+
+assert.equal(leftoverXpCannotAffordNextLevel(0, 1), true);
+assert.equal(leftoverXpCannotAffordNextLevel(99, 1), true);
+assert.equal(leftoverXpCannotAffordNextLevel(100, 1), false);
+assert.equal(leftoverXpCannotAffordNextLevel(0n, 1000), true);
+assert.equal(
+  leftoverXpCannotAffordNextLevel(xpThresholdBigInt(1000) - 1n, 1000),
+  true,
+);
+assert.equal(
+  leftoverXpCannotAffordNextLevel(xpThresholdBigInt(1000), 1000),
+  false,
 );
 
 console.log("xpCurve.test: ok");

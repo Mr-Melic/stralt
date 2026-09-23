@@ -30,3 +30,28 @@ export function clampSaveBattleStatsWrite(
     level: storedLevel,
   };
 }
+
+export type OffensiveStatsSnapshot = {
+  atk: number;
+  res: number;
+  init: number;
+};
+
+/**
+ * Mirrors saveBattleStats atk/res/init: min(incoming, stored). Official
+ * heals send the current store. There is no persist grow writer for these
+ * fields (or sp/sr/chc/evasion/resilience).
+ */
+export function clampSaveBattleStatsOffensiveStats(
+  stored: OffensiveStatsSnapshot,
+  incoming: OffensiveStatsSnapshot,
+): OffensiveStatsSnapshot {
+  const storedAtk = Math.max(0, toNat(stored.atk, 0));
+  const storedRes = Math.max(0, toNat(stored.res, 0));
+  const storedInit = Math.max(0, toNat(stored.init, 0));
+  return {
+    atk: Math.min(storedAtk, Math.max(0, toNat(incoming.atk, storedAtk))),
+    res: Math.min(storedRes, Math.max(0, toNat(incoming.res, storedRes))),
+    init: Math.min(storedInit, Math.max(0, toNat(incoming.init, storedInit))),
+  };
+}
