@@ -327,6 +327,31 @@ export function knownAchievementCondition(condition: string): boolean {
   );
 }
 
+/**
+ * Failure: a second *active* catalog row with the same condition lets
+ * WorldExploration `.find()` unlock the new id, and a raw client can
+ * mark+claim both combat-trusted rows. Inactive rows may keep the
+ * condition so a replacement feat can be published after retirement.
+ */
+export function achievementConditionTaken(args: {
+  nextId: string;
+  nextCondition: string;
+  nextActive: boolean;
+  existingId: string;
+  existingCondition: string;
+  existingActive: boolean;
+}): string | null {
+  if (
+    args.nextActive &&
+    args.existingActive &&
+    args.existingId !== args.nextId &&
+    args.existingCondition === args.nextCondition
+  ) {
+    return "condition is already used by another achievement";
+  }
+  return null;
+}
+
 export function validateAchievementConfig(config: {
   id: string;
   name: string;
