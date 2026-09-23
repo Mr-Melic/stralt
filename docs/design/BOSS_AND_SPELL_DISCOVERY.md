@@ -1,19 +1,52 @@
 # Stralt Boss & Boss-Spell Discovery Design
 
 **Author:** Boss and Boss-Spell Designer (automation)  
-**Date:** 2026-09-22 (iterates 2026-09-21 Wave 5 / 2026-09-02 Wave 4 / 2026-09-01 Wave 3 / 2026-08-31 / #137)  
+**Date:** 2026-09-23 (iterates 2026-09-22 Wave 6 / 2026-09-21 Wave 5 / 2026-09-02 Wave 4 / 2026-09-01 Wave 3 / 2026-08-31 / #137)  
 **Status:** PROPOSED (design only — no production code in this change)  
-**Scope:** All 19 shipped bosses, Wave-2 / Wave-3 / Wave-4 / Wave-5 quartets, and Wave-6 quartet. Every special ability classified. Indefinite progression, no level cap.
+**Scope:** All 19 shipped bosses, Wave-2 through Wave-6 quartets, and Wave-7 quartet. Every special ability classified. Indefinite progression, no level cap.
 
 This document is the design contract for later implementation. It does **not** change combat math, the RAF loop, map generation, turn order, or any runtime module. Implementers must follow the constraints in §2 and the per-boss `STATUS: PROPOSED` sheets.
 
 ---
 
-## 0. Changelog — 2026-09-22 cron
+## 0. Changelog — 2026-09-23 cron
 
-`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f` (no merge since the 2026-09-21 Wave-5 pass). Open #367 holds Wave 5 + Table C and is **not** on `main`; this file **unions** that draft (does not overwrite it) and adds Wave 6 + Rush **Table D**.
+`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; neither is on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 7 + Rush **Table E**.
 
-Live audit against `0f5363f` (`Merge pull request #332`) — same facts as §0.1, re-read on 2026-09-22:
+Live audit against `0f5363f` (`Merge pull request #332`) — same facts as §0.1 / §0.2, re-read on 2026-09-23:
+
+| Fact | Still true |
+| :--- | :--- |
+| `getBossEffectiveStats` multiplies catalog HP by `1.08^diff` only | Slice A not implemented. Even-match HP is still 60–600. `progression.ts` 308–338. |
+| Final Pawn `phase2.statMultiplier: 999`, `summonCount: 11` | `bossDefaults.ts` 475–481 |
+| Rush room 9 `boss2Id: "weeping_pawn_2"` | Still not a `BossId`. Wave 3 remap to `second_lament` is still spec-only. `useBossRush.ts` 127. |
+| `pickBossKitSpell` first-off-cooldown | `useBossAI.ts` 38–54; decide fns still pass `new Map()` (e.g. 172) so cooldown is unused |
+| Backend `defaultBossConfigs()` stale 12-boss seed | `admin.mo` 350; still `fireball` / `cursed_gust` |
+| Frontend catalog forced innate | `WorldExploration.tsx` 2400–2411 maps every `starterSpells` row `isBaseSpell: true`. `adminSafety.ts` 712–718 still does not create a discovery path. |
+| `applyAttract` / `applyPushback` unused by casts | `occupancy.ts` 482 / 537; tests only. MIMA-2026-08-31-005 still OPEN (#336). |
+| Swap × hazards | `spellEngine.ts` 768 calls `swapPositions`; WX still copies coords only (`WorldExploration.tsx` 9389). MIMA-2026-08-31-001 still OPEN. |
+| Phase-2 multiplier apply site | `WorldExploration.tsx` 15762 (19,213 lines). |
+| Line targeting exists, unread by data | `targeting.ts` 580. `areaShape` still unread (Chebyshev, 690–727). Fan Bolt’s cone wire is still unbuilt. |
+| Seeded feats | Still 15 in `defaultAchievements()` (`admin.mo` 309–326). No boss-discovery feats. |
+
+**This pass adds:**
+
+1. Union of Wave 5 (`ram_castellan`, `fosse_warden`, `stride_censor`, `morrow_herald`) + Table C from open #367 **and** Wave 6 (`lock_marshal`, `bait_vicar`, `font_abbess`, `surplus_auditor`) + Table D from open #406.
+2. Wave 7: `mill_seneschal`, `counter_chaplain`, `wedge_prior`, `levy_rector`. Not in `BOSS_IDS`. Primary holes: **conveyor enter-slide** (Margrave is ice-file *gutter* + 2-tile forced move; Slide Tile is one cell, enter-only, distance 1), **two-hostile swap** (Grandmaster is caster↔player `isSwap`; Pawn Trade swaps two *other* bodies and the caster stays), **facing cone** (Queen is omni-lines; Cinder is a full file; Ram is a shove ray; Fan Bolt is a 90° wedge), **unit next-cast AP tax** (Glyph Tax is a *tile* zone; Drain Courage is immediate −1 current AP; Hex Toll brands the *unit*).
+3. Extra `MULTI_SOURCE` / `ENEMY_DISCOVERY` doors on existing **#282** ids only. **No new #137 spell ids.** Slide Tile / Pawn Trade / Fan Bolt / Hex Toll. Spectacular `MILL_RACE` / `FALSE_COUNTER` / `TRIPLE_WEDGE` / `TITHE_STACK` stay `BOSS_ONLY`.
+4. Rush **Table E** (§10.4): four post-Table-D rooms. Does **not** rewrite rooms 0–9, Table B, Table C, or Table D.
+
+Shipped + Wave-2–6 sheets remain `STATUS: PROPOSED`. Table B/C/D holds still apply (rime/well/ram×pit; lock×fosse; bait×goad; surplus×eternal). `rime_margrave` / `sinkhole_dowager` stay solo (MIMA-005).
+
+Do **not** extra-door #411 Wave-5 tactical ids (`spell-oncoming` … `spell-act-bell`) from these sheets. Do **not** grant Gale Fan (cone+push) from Wedge (Fan Bolt is the one-body wedge).
+
+---
+
+## 0.1 Changelog — 2026-09-22 cron (kept)
+
+`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f` (no merge since the 2026-09-21 Wave-5 pass). Open #367 holds Wave 5 + Table C and is **not** on `main`; that file **unioned** that draft (did not overwrite it) and added Wave 6 + Rush **Table D**.
+
+Live audit against `0f5363f` (`Merge pull request #332`) — same facts as §0.2, re-read on 2026-09-22:
 
 | Fact | Still true |
 | :--- | :--- |
@@ -40,7 +73,7 @@ Shipped + Wave-2–5 sheets remain `STATUS: PROPOSED`. Table B/C holds still app
 
 ---
 
-## 0.1 Changelog — 2026-09-21 cron (kept)
+## 0.2 Changelog — 2026-09-21 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. Nineteen days of merges (`58302bc` → `0f5363f`, through #332) did not add a boss id, a `BossAbility` member, or a live catalog spell. That run did **not** duplicate shipped or Wave-2–4 sheets. It re-audited live gaps at `0f5363f`, aligned with same-day tactical Wave 4 (`SPELL_PROPOSALS_2026-09-21.md`, open #342), filled four remaining **primary-mechanic** holes, and wrote Rush **Table C**.
 
@@ -73,7 +106,7 @@ Shipped + Wave-2–4 sheets remain `STATUS: PROPOSED`. Wave-4 Table B still hold
 
 ---
 
-## 0.2 Changelog — 2026-09-02 cron (kept)
+## 0.3 Changelog — 2026-09-02 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) were unchanged since #137. That run did **not** duplicate shipped, Wave-2, or Wave-3 sheets. It re-audited live gaps, aligned with tactical Wave 2 (#133), filled four **primary-mechanic** holes, and wrote Rush **Table B**.
 
@@ -315,7 +348,7 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `AP_DRAIN_PASSIVE` | `BOSS_ONLY` | Aura. Would brick the 20 AP cap on the player bar. | — |
 | `DAMAGE_IMMUNE` | `BOSS_ONLY` | Fight-structure. | — |
 
-**Count:** 46 shipped specials. Player-facing **#137 adaptations: 10** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum. Wave 4 adds four more. Wave 5 adds four more. Wave 6 adds four more. Tactical Wave 2 (#133) supplies Wave-4 player doors. Wave 5 reuses #120 / #282 / #342. Wave 6 reuses #282 / #342 — **no new #137 ids**.
+**Count:** 46 shipped specials. Player-facing **#137 adaptations: 10** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum. Wave 4 adds four more. Wave 5 adds four more. Wave 6 adds four more. Wave 7 adds four more. Tactical Wave 2 (#133) supplies Wave-4 player doors. Wave 5 reuses #120 / #282 / #342. Wave 6 reuses #282 / #342. Wave 7 reuses **#282 only** — **no new #137 ids**.
 
 | Proposed special | Class | Player adaptation |
 | :--- | :--- | :--- |
@@ -335,6 +368,10 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `FALSE_RELIQUARY` (punish-on-hit pylon) | `BOSS_ONLY` | Bounded #342 `spell-bait-pylon` |
 | `CHOIR_FONT` (multi-file heal pulse) | `BOSS_ONLY` | Bounded #282 `spell-mercy-font` |
 | `AUDIT_TITHE` (leftover-AP evade / brand) | `BOSS_ONLY` | Bounded #342 `spell-surplus-ward` |
+| `MILL_RACE` (3-cell conveyor chain) | `BOSS_ONLY` | Bounded #282 `spell-slide-tile` |
+| `FALSE_COUNTER` (swap player with decoy) | `BOSS_ONLY` | Bounded #282 `spell-pawn-trade` |
+| `TRIPLE_WEDGE` (stacked facing cones) | `BOSS_ONLY` | Bounded #282 `spell-fan-bolt` |
+| `TITHE_STACK` (stacked next-cast AP tax) | `BOSS_ONLY` | Bounded #282 `spell-hex-toll` |
 
 Most spectacular mechanics stay boss-only on purpose.
 
@@ -467,10 +504,14 @@ These are names for a later achievement PR. They are **not** in `defaultAchievem
 | `unfooled_vicar` | `bait_zero_pylon_hits` | Optional mastery for Bait Vicar (never damage the pylon). |
 | `font_breaker` | `choir_font_destroyed_before_second_pulse` | Optional mastery for Font Abbess (kill the font before its second pulse). |
 | `spent_auditor` | `surplus_zero_leftover_ap` | Optional mastery for Surplus Auditor (never end a player turn with ≥ 2 leftover AP). |
+| `mill_unslid` | `mill_zero_enters` | Optional mastery for Mill Seneschal (never enter a mill cell). |
+| `pair_unbroken` | `pawn_trade_zero_swaps` | Optional mastery for Counter Chaplain (never have two player-side bodies swapped). |
+| `wedge_sidestep` | `fan_zero_hits` | Optional mastery for Wedge Prior (never take a cone hit). |
+| `levy_unbranded` | `hex_toll_zero_inflated_casts` | Optional mastery for Levy Rector (never pay an inflated spell cost). |
 
 Do not mint Doka from these until `claimAchievementReward` is wired. Suggested feat Doka: 150–300, in line with `leader_slayer` / `critical_striker`.
 
-### 5.4 Sibling contracts (2026-09-22)
+### 5.4 Sibling contracts (2026-09-23)
 
 Same-week design PRs own adjacent surfaces. This bible does not rewrite them.
 
@@ -479,12 +520,13 @@ Same-week design PRs own adjacent surfaces. This bible does not rewrite them.
 | #156 `SPELL_DISCOVERY_ECOSYSTEM` | Default pipeline: hostile **uses** an eligible id → OBSERVED → player **wins that battle** → unlock. Encounter start is not observation. Being hit is not required. | Kit-spell observation (when starters stop being innate) uses that default. **Boss-adaptation count-gates in §5.2 stay** (`see lava 3×`). #156 §3.3 allows count-gates on boss adaptations only. |
 | #120 `SPELL_PROPOSALS` (2026-08-31) | 16 tactical ids (`spell-shoulder-bash` … `spell-void-anchor`) | Do **not** invent a second id for the same fantasy. Wave 3 observation sources point at #120 ids. Wave 5 Ram extra-doors **Shoulder Bash**. |
 | Tactical Wave 2 (`SPELL_PROPOSALS_2026-09-01.md`) | 16 more ids (`spell-file-lance` … `spell-life-tether`) | Wave 4 extra doors **and** Cinder / Midnight grants reuse these ids. Do not mint `#137-b` aliases. |
-| Tactical Wave 3 (`SPELL_PROPOSALS_2026-09-02.md`, #282) | `spell-ley-toll` … `spell-board-tilt` | Do **not** reuse those ids as #137 aliases. `spell-slide-tile` is conveyor, not Margrave ice. `spell-board-tilt` is `NOT_PLAYER_LEARNABLE` mass shove — not Ram (Ram’s player door is Shoulder Bash). Wave 5 Fosse / Stride extra-door Open Pit / Stride Brand. Wave 6 Lock extra-doors Rank Lock; Font extra-doors Mercy Font. |
-| Tactical Wave 4 (open #342, `SPELL_PROPOSALS_2026-09-21.md`) | `spell-gale-fan` … `spell-eclipse-fold` | Do **not** reuse those ids. Gale Fan is cone+push on packs — **not** Ram’s grant (two push verbs). Twin Gate already stamps `void_grandmaster`. Cut In / After Verse / Sanguine Toll / Draw Together / Eclipse Fold are #342 `BOSS` doors on **shipped** ids — roster notes only. Morrow extra-doors `spell-morrow-step`. Wave 6 Bait extra-doors Bait Pylon; Auditor extra-doors Surplus Ward. |
+| Tactical Wave 3 (`SPELL_PROPOSALS_2026-09-02.md`, #282) | `spell-ley-toll` … `spell-board-tilt` | Do **not** reuse those ids as #137 aliases. `spell-slide-tile` is conveyor, not Margrave ice — Wave 7 Mill extra-doors it. `spell-board-tilt` is `NOT_PLAYER_LEARNABLE` mass shove — not Ram (Ram’s player door is Shoulder Bash) and not Wedge. Wave 5 Fosse / Stride extra-door Open Pit / Stride Brand. Wave 6 Lock extra-doors Rank Lock; Font extra-doors Mercy Font. Wave 7 extra-doors Slide Tile / Pawn Trade / Fan Bolt / Hex Toll. |
+| Tactical Wave 4 (open #342, `SPELL_PROPOSALS_2026-09-21.md`) | `spell-gale-fan` … `spell-eclipse-fold` | Do **not** reuse those ids. Gale Fan is cone+push on packs — **not** Ram’s grant and **not** Wedge’s grant (Fan Bolt is the 90° wedge with **no** push). Twin Gate already stamps `void_grandmaster`. Cut In / After Verse / Sanguine Toll / Draw Together / Eclipse Fold are #342 `BOSS` doors on **shipped** ids — roster notes only. Morrow extra-doors `spell-morrow-step`. Wave 6 Bait extra-doors Bait Pylon; Auditor extra-doors Surplus Ward. |
+| Tactical Wave 5 (open #411, `SPELL_PROPOSALS_2026-09-22.md`) | `spell-oncoming` … `spell-act-bell` | Do **not** extra-door those ids from Wave-7 sheets. False Cut stays `NOT_PLAYER_LEARNABLE` (Lament kit). Cover Step / Span Pylon / Act Tax are not Mill / Counter / Wedge / Levy doors. |
 | #116 Spell Admin | Persist `ownedSpellIds` / `observedSpellIds`, soft-retire | Observation counters in §5.2 belong next to `achievementProgress`, not `localStorage`. |
 | Long Horizon 2026-09-01 | Live formulas still leave boss HP static; HUD XP saturates at 48 | Confirms §3.1 is still the unbuilt no-cap fix. Do not “fix” XP curve from this doc. |
-| MIMA 2026-09-21 (#336) | Swap × hazards, push/pull × hazards still OPEN; new Dawn-MP / modifier-HP items | Wave-4/5 **position** may ship; hazard ticks on forced move wait on MIMA-001 / 005. Do not pair Ram with pits until 005. |
-| Encounter Evolution 2026-09-01 / 2026-09-21 | ENC-BOSS-02 / ENC-RUSH-04… remix **existing** rooms | Table B / Table C / Table D are **new** post-clear tables, not a rewrite of those remixes. |
+| MIMA 2026-09-21 (#336) | Swap × hazards, push/pull × hazards still OPEN; new Dawn-MP / modifier-HP items | Wave-4/5 **position** may ship; hazard ticks on forced move wait on MIMA-001 / 005. Do not pair Ram / Mill with pits until 005. Pawn Trade landing ticks wait on 001. |
+| Encounter Evolution 2026-09-01 / 2026-09-21 | ENC-BOSS-02 / ENC-RUSH-04… remix **existing** rooms | Table B / Table C / Table D / Table E are **new** post-clear tables, not a rewrite of those remixes. |
 
 **Default vs boss-adaptation observation**
 
@@ -517,7 +559,7 @@ A boss may grant **both** a #137 adaptation and a #120 / #133 `BOSS` (or extra-d
 | — | `spell-file-lance` | Wave 2 Cinder extra door. Full-file / crossing enrage lances stay `BOSS_ONLY`. |
 | — | `spell-life-tether` | #133 `BOSS` already lists `midnight_bishop`. This bible now matches that card. Shared-HP twins stay `BOSS_ONLY`; the player spell is breakable and 50/50. |
 | — | `spell-rime-tile` / `spell-fuse-tile` / `spell-goad` / `spell-sinkhole` | Wave 4 extra `MULTI_SOURCE` / `ENEMY_DISCOVERY` doors. Spectacular versions (`RIME_SLIDE`, `WICK_PATTERN`, `CROWN_GOAD`, `WELL_TIDE`) stay `BOSS_ONLY`. |
-| `RIME_SLIDE` (boss special) | #282 `spell-slide-tile` | **Keep both.** Slide Tile = one conveyor cell. Margrave gutter = full-file ice + 2-tile forced move. |
+| `RIME_SLIDE` (boss special) | #282 `spell-slide-tile` | **Keep both.** Slide Tile = one conveyor cell, enter-only, distance 1. Margrave gutter = full-file ice + 2-tile forced move. Wave 7 Mill extra-doors Slide Tile; `MILL_RACE` (3-cell chain) stays `BOSS_ONLY`. |
 | `WELL_TIDE` (boss special) | #282 `spell-board-tilt` | **Keep both closed to the player.** Board Tilt is already `NOT_PLAYER_LEARNABLE`. Well Tide is the Dowager director. Player door is Sinkhole only. |
 | `spell-ember-step` | `spell-rime-tile` / `spell-cinder-tile` | **Keep all three.** Ember = 2-tile burn walk. Cinder = one burn cell. Rime = ice MP tax, 0 HP. |
 | — | `spell-shoulder-bash` | Wave 5 Ram extra door. Full-file / wall-slam ram stays `BOSS_ONLY`. |
@@ -532,8 +574,13 @@ A boss may grant **both** a #137 adaptation and a #120 / #133 `BOSS` (or extra-d
 | — | `spell-cut-in` / `spell-after-verse` / `spell-sanguine-toll` / `spell-draw-together` | #342 `BOSS` / MULTI on **shipped** Queen / Archivist / Starved / Static. Do not re-stamp. After Verse ≠ Echo Cast. |
 | — | `spell-eclipse-fold` | #342 `NOT_PLAYER_LEARNABLE` on Final Pawn kit. Witness only. |
 | `WALL_RAM` (boss special) | #282 `spell-board-tilt` | **Keep both closed.** Board Tilt is mass shove of all bodies. Ram is one telegraphed ray + wall-slam. Player door is Shoulder Bash. |
+| — | `spell-slide-tile` | Wave 7 Mill extra door. `MILL_RACE` (3-cell mill / hopper director / chain) stays `BOSS_ONLY`. Player Slide Tile is one cell, 3 turns, enter-only, distance 1. |
+| — | `spell-pawn-trade` | Wave 7 Counter extra door. `FALSE_COUNTER` (decoy body / player↔decoy) stays `BOSS_ONLY`. Player Pawn Trade is two hostiles, caster stays, radius 3, no decoy. |
+| — | `spell-fan-bolt` | Wave 7 Wedge extra door. `TRIPLE_WEDGE` (stacked cones / facing lock) stays `BOSS_ONLY`. Player Fan Bolt is one 90° wedge, 0 push. Do **not** also grant `spell-gale-fan`. |
+| — | `spell-hex-toll` | Wave 7 Levy extra door. `TITHE_STACK` (stacked tax / inflated 4+ costs) stays `BOSS_ONLY`. Player Hex Toll is +1 AP on the next spell, 2 turns, no stack. Glyph Tax stays Archivist. |
+| — | `spell-oncoming` / `spell-facing-pin` / `spell-cover-step` / `spell-act-tax` | #411 Wave-5 tactical. **Not** Wave-7 doors. |
 
-#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. #133 Wave-2 ids stay on `SPELL_PROPOSALS_2026-09-01.md`. #282 Wave-3 ids stay on `SPELL_PROPOSALS_2026-09-02.md`. #342 Wave-4 ids stay on `SPELL_PROPOSALS_2026-09-21.md`. Do not reuse them as #137 ids.
+#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. #133 Wave-2 ids stay on `SPELL_PROPOSALS_2026-09-01.md`. #282 Wave-3 ids stay on `SPELL_PROPOSALS_2026-09-02.md`. #342 Wave-4 ids stay on `SPELL_PROPOSALS_2026-09-21.md`. #411 Wave-5 ids stay on `SPELL_PROPOSALS_2026-09-22.md`. Do not reuse them as #137 ids.
 
 ---
 
@@ -1856,6 +1903,144 @@ They stay out of rooms 0–9, Table B, and Table C. Pairing is **Table D** only 
 
 ---
 
+## 8.5 Encounter sheets — Wave 7 (not in `BOSS_IDS`)
+
+Primary-mechanic holes after Wave 6: **conveyor enter-slide** (Margrave ice *gutter* forces 2 tiles along a file and taxes MP; Slide Tile is one cell, enter-only, distance 1, no ice), **two-hostile swap** (Grandmaster / Morrow / Dowager use caster↔player `isSwap`; Pawn Trade swaps two *other* bodies and the caster stays), **facing cone** (Queen is omni-lines; Cinder is a full file; Ram is a shove ray; Gale Fan is cone+pack-push — none is a 90° damage wedge with 0 push), **unit next-cast AP tax** (Glyph Tax is a *tile*; Drain Courage is immediate −1 current AP; Surplus cares about leftover AP; Hex Toll brands the *unit* so the next *spell* costs +1).
+
+Do **not** add these ids to `BOSS_IDS` in this change. Proposed specials below are **design names**, not `BossAbility` enum members until an implementation PR adds them with explicit metadata.
+
+Wave-7 learnables reuse **#282 ids only**. No new #137 spell ids. No #411 extra doors.
+
+They stay out of rooms 0–9, Table B, Table C, and Table D. Pairing is **Table E** only (§10.4).
+
+**Hazard-on-forced-move prereq:** MIMA-2026-08-31-001 and MIMA-2026-08-31-005 are still OPEN (#336). Mill **position** (enter then push 1) is legal without those PRs. Hazard ticks **on the slide landing** must not be assumed until 005. Pawn Trade landing ticks wait on 001. Until then, lava/spike/ice tax only on **walk enter** and **turn-start occupancy**. Do not pair Mill with Ram / Hook / Rime / Dowager / Countess / Fosse until 005.
+
+---
+
+### BOSS_ID: `mill_seneschal`
+
+**NAME:** The Mill Seneschal  
+**RELATIVE_DIFFICULTY:** 6  
+**THEME:** A bishop of the mill-race. The floor is a wheel. You are grain only if you step on it.  
+**CORE_MECHANIC:** Telegraphed **conveyor**. 1-turn wind-up paints **one** floor cell (Chebyshev ≤ 3, LoS, never spawn / portal). Resolve: that cell is a mill pad for 3 turns. Direction = 8-dir from **him → painted cell** stored on the tile (`slideDistance: 1`). A unit that **enters** (walk dest, push/pull/swap/gate landing) is then `applyPushback` 1 along that dir. Standing on it at paint time does **not** slide (enter-only). Distinct from Rime (full-file ice + 2-tile forced move + MP tax), Fuse (delayed damage, no move), Cinder (burn tick), Twin Gate (teleport pair). The learnable is **one conveyor cell**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | One mill cell every 3 turns. Kit: Strike / Slow / Barrier. One destructible **Hopper**; breaking it **clears every mill cell**. |
+| 2 | ≤ 45% | `MILL_RACE`: up to **3** mill cells (rebuilds to 3, never above). Expose + Frost Nova. Pads **do not** chain in one enter (same as #282: one slide per enter event). Hopper, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 20 | Paint resolves same turn as telegraph. Hopper, if alive, breaks itself. Slide distance stays **1**. Overlay +8%. |
+
+**SPELLS (proposed kit):** `physical_attack`, `spell-slow`, `spell-barrier`, `spell-expose` (P2), `spell-frost-nova` (P2). Unique vs Lock (`physical` / slow / mark / iron-skin / nova), Pendulum (`physical` / slow / haste / nova / iron-skin), Rime (frost / slow / barrier / nova / expose), Ram (`physical` / haste / shield / barrier / rally).  
+**DISCOVERABLE_SPELLS:** #282 `spell-slide-tile` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: add `bossIds: ["mill_seneschal"]`). Observation = he **paints** a mill cell (`kind: "cast"`). `MILL_RACE` (3 cells / Hopper director / enrage same-turn paint) is `BOSS_ONLY`. Margrave ice stays Rime. Discovery `spell-file-slide` stays on the ecosystem doc.
+
+**AI:** Paint a cell the player is **about to enter** (adjacent step toward him, or the only approach). Skip if Hopper was broken this cycle. Frost Nova only when the player is adjacent after a slide. Never paint spawn / portal / the only walk path (`finalizePlayableLayout` after paint).  
+**ARENA_RULES:** Hopper HP = `0.15 * playerMaxHp`. Cap **3** mill cells. Pads are **not** `hazardTiles` lava/spikes (those cap 50). Enter-slide uses `applyPushback`. `movedThisTurn` = true if they slid ≥ 1. No bounce-loop on the same pad in one enter.  
+**SUMMONS:** none.  
+**PLAYER_COUNTERPLAY:** Do not enter the glow; Barrier the cell; break the Hopper; enter from a dir that slides you to safety; Strike from a neighboring file.  
+**MASTERY_OBJECTIVE:** Never enter a mill cell (`mill_unslid`). Being shoved/swapped **onto** a pad still **fails** mastery (you entered). Standing on a cell at paint time is allowed.  
+**REWARDS:** 6 / 4 when shipped. Slide Tile is the prize (first grant wins if a queen pack already taught it).  
+**SCALING_BEHAVIOUR:** hpRatio 1.80, atkRatio 1.05, offset +0, Phase-2 1.25. Slide **distance fixed at 1**. Cell count 1 then 3.  
+**BALANCE_RISKS:** Mill + Ram / Hook / Rime / Dowager / Countess / Fosse waits on MIMA-005 (forced move × hazards / two slides / pits). Mill + Lock can seal the only legal step onto a pad — illegal until playtest (held). Player Slide Tile is one cell, 3 turns, enter-only.  
+**QA:** Telegraph tiles computed at wind-up. Observation counts his paint, not player Slide Tile. Hopper 0 XP. Landing lava/spike does **not** tick until MIMA-005. Challenge: slide is not a spell-hit unless a dest hazard deals damage through the existing helper.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `counter_chaplain`
+
+**NAME:** The Counter Chaplain  
+**RELATIVE_DIFFICULTY:** 5  
+**THEME:** A king who never moves the piece you aimed at. The other body was always the one in front.  
+**CORE_MECHANIC:** **Two-hostile swap.** He targets one living **player-side** body (you or a summon) and swaps it with the nearest **other** living player-side body within Chebyshev 3 of that target (`swapTwoHostiles`, **not** `isSwap`). He does not move. If you have no second body, the cast **fizzles** (AP spent) unless Phase 2 has planted a decoy. Distinct from Grandmaster Swap (caster↔you), Morrow (delayed self-blink), Dowager (well pull), Ward Interpose (ally). The learnable is **swap two hostiles, caster stays**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 40% | Trade every 3 turns if ≥ 2 player-side bodies. Kit: Swap / Mark / Weaken. If you are solo, he Marks and Weakens — no fake swap. |
+| 2 | ≤ 40% | `FALSE_COUNTER`: plants a 1-HP **decoy pawn** (`summonAI` existing, lifespan 3, 0 damage) so a solo player becomes a legal pair. He then prefers swapping **you** with the decoy (puts you onto the decoy’s tile). Sentinel + Haste. One destructible **Abacus**; breaking it **kills the decoy** and suppresses the next trade. |
+| Enrage | turn 19 | Trade resolves same turn as telegraph. Abacus, if alive, breaks itself. Search radius stays 3. Overlay +8%. |
+
+**SPELLS (proposed kit):** `spell-swap`, `spell-mark`, `spell-weaken`, `summon-sentinel` (P2), `spell-haste` (P2). Unique vs Grandmaster (blast / swap / mirror / timestep / nova), Sovereign (blast / mirror / mark / veil / swap), Morrow (swap / haste / drain / mirror / wolf), Ivory (barrier / expose / weaken / sentinel / frost), Goad (`physical` / shield / weaken / enrage / iron-skin).  
+**DISCOVERABLE_SPELLS:** #282 `spell-pawn-trade` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: `bossIds: ["counter_chaplain"]`). Observation = he **resolves** a two-body swap (`kind: "cast"`; a P1 fizzle is **not** observation). `FALSE_COUNTER` (decoy pawn / player↔decoy preference / Abacus director) is `BOSS_ONLY`. Kit `spell-swap` stays his self-defense, not the grant.
+
+**AI:** Telegraph both bodies 1 turn (highlight both tiles). Prefer swapping the player onto the decoy / a marked tile. Skip if Abacus was broken this cycle **and** the player is solo. Sentinel behind him, not as the decoy.  
+**ARENA_RULES:** Decoy is a summon, 1 HP, 0 XP, lifespan 3. Abacus is an object, HP = `0.15 * playerMaxHp`. Pair swap uses occupancy vacated-pair (both cells legal because they exchange). Never call `swapPositions(targetEnemyId)`. `finalizePlayableLayout` after every trade.  
+**SUMMONS:** 1 decoy in P2; +1 sentinel. Cap 4. 0 XP. Decoy death ≠ victory.  
+**PLAYER_COUNTERPLAY:** Fight solo in P1 (no pet); kill the decoy before the trade; Self Anchor if owned; break the Abacus; isolate so radius 3 has no pair.  
+**MASTERY_OBJECTIVE:** Never have two player-side bodies swapped (`pair_unbroken`). A P1 fizzle does **not** fail it. Being swapped with the decoy **fails** it.  
+**REWARDS:** 5 / 3 when shipped.  
+**SCALING_BEHAVIOUR:** hpRatio 1.60, atkRatio 1.00, offset +0, Phase-2 1.20. Radius **fixed at 3**. One decoy.  
+**BALANCE_RISKS:** Counter + Grandmaster is two swap verbs — illegal. Counter + Bait is two targeting tricks — illegal. Counter + Cord: decoy must **not** be a valid Cord gate key (same rule as Font). Landing ticks wait on MIMA-001. Player Pawn Trade cannot plant a decoy.  
+**QA:** Observation counts a resolved swap, not kit Swap and not a fizzle. Decoy / Sentinel / Abacus 0 XP. Two bodies never occupy one cell. Challenge: swap is not a spell-hit. Attack Nearest must not prefer the decoy when the Chaplain is in range.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `wedge_prior`
+
+**NAME:** The Wedge Prior  
+**RELATIVE_DIFFICULTY:** 7  
+**THEME:** A queen who only blesses one quarter of the compass. The heresy is standing in the choir’s mouth.  
+**CORE_MECHANIC:** Telegraphed **90° cone**. 1-turn wind-up paints a facing (8-dir from him → player tile at telegraph time). Resolve: `areaShape: "cone"`, Chebyshev 1..3, facing **or a 45° neighbor** (90° wedge), LoS, walls/Barriers stop that ray only. Deal kit-scaled damage (L1 reference 10, not % HP) to each hostile in the wedge. Caster tile excluded. Distinct from Queen omni-lines, Cinder full-file lance, Ram shove ray, Frost Nova (circle around target), Gale Fan (cone **plus** pack push). The learnable is **one facing cone, 0 push**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Cone every 3 turns. Kit: Blast / Iron Skin / Mark. One destructible **Lectern**; breaking it **skips the next cone**. |
+| 2 | ≤ 45% | `TRIPLE_WEDGE`: after a cone, rotating vuln Window C: +40% from the **facing line** (the cone’s center file). Inferno + Enrage. A second cone may telegraph on the **perpendicular** facing if you are still in the first wedge at resolve (never two cones the same turn). Lectern, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 21 | Cone resolves same turn as telegraph. Lectern, if alive, breaks itself. Wedge geometry stays 90° / length 3. Overlay +8%. |
+
+**SPELLS (proposed kit):** `starter-blast`, `spell-iron-skin`, `spell-mark`, `spell-inferno` (P2), `spell-enrage` (P2). Unique vs Static (blast / haste / nova / expose), Queen (blast / mark / nova / veil), Cinder (inferno / frost / haste / expose / enrage), Cavalier (`physical` / haste / enrage / expose).  
+**DISCOVERABLE_SPELLS:** #282 `spell-fan-bolt` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: `bossIds: ["wedge_prior"]`). Observation = she **resolves** a cone (`kind: "cast"`). `TRIPLE_WEDGE` (perp follow-up / line vuln / Lectern director) is `BOSS_ONLY`. Do **not** grant `spell-gale-fan` (cone+push) or `spell-oncoming` (#411). Until `targeting.ts` reads `areaShape`, this sheet is **not** license to ship a Chebyshev blob and call it a cone.
+
+**AI:** Telegraph the facing through the player at wind-up; do not track. Skip if Lectern was broken this cycle. Inferno the landing if you stayed in the wedge. Never cone through spawn (`finalizePlayableLayout`).  
+**ARENA_RULES:** Lectern HP = `0.15 * playerMaxHp`. Preview, live gate, and execute share one cone helper (same contract as `computeTargetableTiles` === `isTileCastableLive`). Hits player-side summons in the wedge. Does **not** push.  
+**SUMMONS:** none.  
+**PLAYER_COUNTERPLAY:** Step to the back-diagonal (outside the 90°); Barrier a spoke; hug her (Chebyshev 0 excluded); break the Lectern; Mark is a gift if you have a line spell on Window C.  
+**MASTERY_OBJECTIVE:** Never take a cone hit (`wedge_sidestep`). A summon in the wedge does **not** fail it (you were not hit). Hugging Chebyshev 0 is allowed.  
+**REWARDS:** 6 / 4 when shipped.  
+**SCALING_BEHAVIOUR:** hpRatio 2.00, atkRatio 1.10, offset +1, Phase-2 1.20. Cone **length 3 / 90° fixed**. Damage is kit-scaled, not % HP.  
+**BALANCE_RISKS:** Wedge + Queen is two multi-file directors — illegal. Wedge + Ram / Cinder in the **same** telegraph is two rays — Table E pairs with Cinder only if cone **never occupies the lance glow**. Gale Fan stays a pack door.  
+**QA:** Telegraph tiles = the cone at wind-up facing. Observation counts her cone, not player Fan Bolt. Lectern 0 XP. Challenge cone uses `recordChallengeDamageTaken`. `areaShape !== "cone"` must not enter the helper.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `levy_rector`
+
+**NAME:** The Levy Rector  
+**RELATIVE_DIFFICULTY:** 6  
+**THEME:** A bishop of the parish levy. The crime is the expensive prayer. Walking is free.  
+**CORE_MECHANIC:** **Next-cast AP tax.** He brands you (`nextCastApTax: 1`, duration 2 turns or until you successfully spend on a **spell**, whichever first). Walk, potions, and Strike (`physical_attack`) do **not** consume it. Distinct from Glyph Tax (tile zone), Drain Courage (immediate −1 current AP), Surplus (leftover AP evade), Ley Toll (your mpCost). The learnable is **+1 AP on the next spell, no stack**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Brand every 3 turns. Kit: Drain Courage / Expose / Poison. One destructible **Tithe-box**; breaking it **clears the current tax**. |
+| 2 | ≤ 45% | `TITHE_STACK`: tax becomes **+2** if you already carry a brand (stack cap 2). Cursed Wound + Barrier. Rotating vuln Window B: +40% from non-physical while branded (the cheap-tool window). Tithe-box, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 20 | Brand resolves same turn as telegraph. Tithe-box, if alive, breaks itself. Stack cap stays 2. Overlay +8%. |
+
+**SPELLS (proposed kit):** `spell-drain-courage`, `spell-expose`, `starter-poison`, `spell-cursed-wound` (P2), `spell-barrier` (P2). Unique vs Eternal (slow / drain-courage / iron-skin / cursed-wound), Surplus (drain-courage / mark / haste / mirror / barrier), Archivist (cursed / mark / barrier / archer / veil), Hexed (mark / slow / barrier / expose / archer).  
+**DISCOVERABLE_SPELLS:** #282 `spell-hex-toll` (`PLAYER_LEARNABLE` / extra `MULTI_SOURCE` door: `bossIds: ["levy_rector"]`). Observation = he **applies** a brand (`kind: "cast"`). `TITHE_STACK` (stack cap 2 / Window B / Tithe-box director) is `BOSS_ONLY`. Player Hex Toll is +1, 2 turns, no stack. Glyph Tax stays Archivist. Act Tax (#411) is not this door.
+
+**AI:** Brand if the player’s bar includes a spell with `apCost >= 3`. Drain only if current AP ≥ 3 (leave a 2-cost tool to burn the tax). Skip brand if Tithe-box was broken this cycle.  
+**ARENA_RULES:** Tithe-box HP = `0.15 * playerMaxHp`. Tax applies inside `executeCastAttempt` **after** `applyApCost` map modifiers. If they cannot pay, the cast rejects (`no_ap`) and the tax **remains**. Fizzle that spent AP consumes the tax. Cleanse / Absolve / Dispel Thread strip via `cleanseTypes` include `"nextCastApTax"` — not via name.  
+**SUMMONS:** none.  
+**PLAYER_COUNTERPLAY:** Walk and wait 2 turns; burn the tax with a 2-cost tool (Mark, Slow, Shield); break the Tithe-box; Strike (physical does not consume); do not Inferno through a +2 stack.  
+**MASTERY_OBJECTIVE:** Never pay an inflated spell cost (`levy_unbranded`). Burning the tax with a 2-cost tool **is** an inflated cast (2→3) and **fails** mastery. Waiting it out, or clearing via Tithe-box / Cleanse, is the pass.  
+**REWARDS:** 6 / 4 when shipped.  
+**SCALING_BEHAVIOUR:** hpRatio 1.80, atkRatio 1.05, offset +0, Phase-2 1.25. Tax **+1 then stack cap 2**. Duration 2. Not % HP.  
+**BALANCE_RISKS:** Levy + Archivist is two AP taxes on casts — illegal. Levy + Surplus / Eternal is two AP resources — illegal. Levy + Conductor silences the cheap-tool file — illegal. Table E pairs with Fosse: one committed poke across a pit, tax is not a pit-step.  
+**QA:** Observation counts his apply, not player Hex Toll. Tithe-box 0 XP. Physical Strike does not consume the tax. Challenge: tax is not a hit; a rejected `no_ap` still spent nothing extra.  
+**STATUS:** PROPOSED
+
+---
+
 ## 9. Roster map
 
 | Id | Diff | Core | Learnable? | Rush room (live) |
@@ -1899,6 +2084,10 @@ They stay out of rooms 0–9, Table B, and Table C. Pairing is **Table D** only 
 | `bait_vicar` | 5 | Bait intercept pylon | Bait Pylon (#342) | — (Wave 6 / Table D) |
 | `font_abbess` | 7 | Stationary heal font | Mercy Font (#282) | — (Wave 6 / Table D) |
 | `surplus_auditor` | 8 | Leftover-AP evade | Surplus Ward (#342) | — (Wave 6 / Table D) |
+| `mill_seneschal` | 6 | Conveyor enter-slide | Slide Tile (#282) | — (Wave 7 / Table E) |
+| `counter_chaplain` | 5 | Two-hostile swap | Pawn Trade (#282) | — (Wave 7 / Table E) |
+| `wedge_prior` | 7 | Facing 90° cone | Fan Bolt (#282) | — (Wave 7 / Table E) |
+| `levy_rector` | 6 | Next-cast AP tax | Hex Toll (#282) | — (Wave 7 / Table E) |
 
 Live rush room 9 still stores `weeping_pawn_2`. Implementation remaps that string to `second_lament`. Do **not** spawn a second `weeping_pawn`.
 
@@ -1923,7 +2112,7 @@ Existing `BOSS_RUSH_ROOMS` combined mechanics stay. This spec changes how **each
 
 Rush Doka/XP in `BOSS_RUSH_ROOMS` are already large flat numbers (500–5000). Do **not** also multiply by `rewardDokaMultiplier` or by player level. Persist through `buildBossRushPersistInput` → `applyRewards` only.
 
-Wave-2 / Wave-3 / Wave-4 / Wave-5 / Wave-6 bosses stay out of the 10-room table except `second_lament` (room-9 remap). Pairings below are **Table B** (Wave 2–4), **Table C** (Wave 5), and **Table D** (Wave 6). Do not pair `hook_regent` with Countess, Static, or Rime. Do not pair `ivory_palisade` with Fortress. Do not pair `sinkhole_dowager` with Hook (two attract verbs). Do not pair `ram_castellan` with Fosse / Hook / Rime / Dowager. Do not pair `lock_marshal` with Fosse / Hex / Palisade / Ram / Hook / Rime. Do not pair `bait_vicar` with Goad. Do not pair `font_abbess` with Lament / Archbishop. Do not pair `surplus_auditor` with Eternal / Stride.
+Wave-2 / Wave-3 / Wave-4 / Wave-5 / Wave-6 / Wave-7 bosses stay out of the 10-room table except `second_lament` (room-9 remap). Pairings below are **Table B** (Wave 2–4), **Table C** (Wave 5), **Table D** (Wave 6), and **Table E** (Wave 7). Do not pair `hook_regent` with Countess, Static, or Rime. Do not pair `ivory_palisade` with Fortress. Do not pair `sinkhole_dowager` with Hook (two attract verbs). Do not pair `ram_castellan` with Fosse / Hook / Rime / Dowager. Do not pair `lock_marshal` with Fosse / Hex / Palisade / Ram / Hook / Rime. Do not pair `bait_vicar` with Goad. Do not pair `font_abbess` with Lament / Archbishop. Do not pair `surplus_auditor` with Eternal / Stride. Do not pair `mill_seneschal` with Ram / Hook / Rime / Dowager / Countess / Fosse / Lock. Do not pair `counter_chaplain` with Grandmaster / Bait / Cord. Do not pair `wedge_prior` with Queen / Ram. Do not pair `levy_rector` with Archivist / Surplus / Eternal / Conductor.
 
 ### 10.1 Rush Table B (post-first-clear, design only)
 
@@ -2008,6 +2197,34 @@ Flat rewards continue the live jackpot curve without a player-level exponent. Pe
 
 `rime_margrave` / `sinkhole_dowager` remain **solo portal / dungeon capstone**. Encounter Evolution may still attach a single Wave-6 id as ENC-BOSS-02 only if a human picks that id — this bible does not rewrite ENC-BOSS-02.
 
+### 10.4 Rush Table E (post-Table-D, design only)
+
+Unlock: one complete clear of Table D (D0–D3). **New table**, new `roomIndex` namespace `E0`–`E3`. Do **not** overwrite `BOSS_RUSH_ROOMS`, Table B, Table C, or Table D. Do **not** collide ENC-RUSH remixes.
+
+Flat rewards continue the live jackpot curve without a player-level exponent. Persist through `applyRewards` only. Shared 4-extra cap per room.
+
+| Room | Pair | Combined question | Hard rule |
+| :--- | :--- | :--- | :--- |
+| E0 | `mill_seneschal` + `silent_conductor` | Stay on a sounding file; do not step onto the mill. | Mill cells **never** occupy a sounding file. Hopper sits on a silenced file (tempting a walk). Musicians only (cap 4). Not Lock / Rime. |
+| E1 | `counter_chaplain` + `ivory_palisade` | He trades your pet onto the far bank of the stakes. | Swap **never** lands inside a sealed pocket (`finalizePlayableLayout`). Decoy is **not** a stake and is **not** a Cord gate. Sentinel + Chaplain extras share cap 4. Not Grandmaster / Bait / Fortress. |
+| E2 | `wedge_prior` + `cinder_lance` | Step out of the cone **and** charge the glowing window. | Cone tiles **never** occupy a telegraphed lance file. Lectern and Brazier are both objects. Wrong-element still −50%. Not Queen / Ram. |
+| E3 | `levy_rector` + `fosse_warden` | One committed poke across a pit; do not eat the tax on that poke. | Tax is **not** a pit-step (walk fail does not consume it). Pits **never** occupy his brand telegraph. Tithe-box sits on the near bank. Causeway is the only walk across. Not Archivist / Surplus / Conductor. |
+
+**Held (illegal until a later pass):**
+
+| Pair | Why illegal now |
+| :--- | :--- |
+| `mill_seneschal` + `ram_castellan` / `hook_regent` / `rime_margrave` / `sinkhole_dowager` / `crimson_countess` / `fosse_warden` | Forced move × hazards / two slides / pits. MIMA-005. |
+| `mill_seneschal` + `lock_marshal` | Axis lock + mill can seal the only legal step onto a pad. |
+| `counter_chaplain` + `void_grandmaster` | Two swap verbs. |
+| `counter_chaplain` + `bait_vicar` | Two targeting tricks. |
+| `counter_chaplain` + `cord_familiar` | Decoy must not be a Cord gate; still a double body-exam for a no-pet bar. |
+| `wedge_prior` + `starborn_queen` / `ram_castellan` | Two multi-file / ray directors. |
+| `levy_rector` + `pale_archivist` / `surplus_auditor` / `eternal_pawn_king` / `silent_conductor` | Two AP taxes, or silence of the cheap-tool file. |
+| Wave-7 ids in rooms 0–9, B0–B3, C0–C3, or D0–D3 | Table A stays the shipped 19 + lament remap. Table B stays Wave 2–4. Table C stays Wave 5. Table D stays Wave 6. |
+
+`rime_margrave` / `sinkhole_dowager` remain **solo portal / dungeon capstone**. Encounter Evolution may still attach a single Wave-7 id as ENC-BOSS-02 only if a human picks that id — this bible does not rewrite ENC-BOSS-02.
+
 ---
 
 ## 11. Implementation contract (later PRs)
@@ -2034,6 +2251,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | P. #342 extra doors | `bossIds` on Morrow Step / Bait Pylon / Surplus Ward; roster notes for Cut In / After Verse / Sanguine Toll / Draw Together | Do not re-stamp #342 `BOSS` doors on shipped ids; first grant wins |
 | Q. Wave 6 kits | New `BossId`s + kits only when `spellData` already has the verbs **or** the kit stays on the live 32 | Do not add Wave 6 ids to `BOSS_IDS` without kits. No new #137 spell ids. `summonAI: "bait"` / `"font"` must be allowed strings. |
 | R. Rush Table D | New 4-room table after Table C clear | Do not rewrite rooms 0–9, B0–B3, or C0–C3 |
+| S. Wave 7 kits | New `BossId`s + kits only when `spellData` already has the verbs **or** the kit stays on the live 32 | Do not add Wave 7 ids to `BOSS_IDS` without kits. No new #137 spell ids. Cone requires `areaShape` wire. Pawn Trade must **not** call `swapPositions`. |
+| T. Rush Table E | New 4-room table after Table D clear | Do not rewrite rooms 0–9, B0–B3, C0–C3, or D0–D3 |
+| U. #282 Wave-7 extra doors | `bossIds` on Slide Tile / Pawn Trade / Fan Bolt / Hex Toll | Do not extra-door #411 ids; do not grant Gale Fan from Wedge; first grant wins |
 
 **Spell metadata checklist** for every new discoverable:
 
@@ -2075,6 +2295,8 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | 19 | Wave-5 objects | Brace / Causeway / Ledger / Hour-bell are not enemies, 0 XP. Pits stay LoS-open. `movedThisTurn` ignores Swap in Stride P1. Two bodies never share Morrow’s landing. |
 | 20 | Table D | Fuses never on the locked file. Silence never on the Vicar’s file. Enemy font ≠ Cord gate. Leftover check skips pendulum-sweep telegraph turns. |
 | 21 | Wave-6 objects | Compass / Censer / Bowl-lid / Audit-bell are not enemies, 0 XP. Pylon death ≠ victory. Font death ≠ victory. Off-axis walk rejects before MP debit. Leftover reads current AP at turn end. |
+| 22 | Table E | Mill never on a sounding file. Swap never into a sealed pocket. Cone never on lance glow. Tax is not a pit-step. |
+| 23 | Wave-7 objects | Hopper / Abacus / Lectern / Tithe-box are not enemies, 0 XP. Decoy death ≠ victory. Slide distance 1. Cone is `areaShape: "cone"`, not a Chebyshev blob. Physical Strike does not consume Hex Toll. |
 
 ---
 
@@ -2083,12 +2305,13 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 - Production TypeScript / Motoko for any of the above.
 - New CharacterStats fields.
 - Changing `xpForNextLevel`.
-- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I). Table B, Table C, and Table D are additive.
+- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I). Table B, Table C, Table D, and Table E are additive.
 - Making every spectacular mechanic player-usable.
-- New #137 spell ids (Wave 3 reuses #120; Wave 4 reuses #133; Wave 5 reuses #120 / #282 / #342; Wave 6 reuses #282 / #342).
+- New #137 spell ids (Wave 3 reuses #120; Wave 4 reuses #133; Wave 5 reuses #120 / #282 / #342; Wave 6 reuses #282 / #342; Wave 7 reuses #282).
 - Deploying or “fixing” `backend_extended/`.
 - Wiring Swap × hazards or push/pull × hazards (MIMA owns those PRs).
-- Granting Gale Fan, Twin Gate, Cut In, After Verse, Sanguine Toll, Draw Together, or Eclipse Fold from Wave-5 / Wave-6 sheets (#342 already stamped those doors on shipped bosses).
+- Granting Gale Fan, Twin Gate, Cut In, After Verse, Sanguine Toll, Draw Together, or Eclipse Fold from Wave-5 / Wave-6 / Wave-7 sheets (#342 already stamped those doors on shipped bosses).
+- Extra-dooring #411 Wave-5 tactical ids (`spell-oncoming` … `spell-act-bell`) from Wave-7 sheets.
 
 ---
 
@@ -2114,12 +2337,13 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | Discovery pipeline | `docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md` | Use → observe → win default |
 | Tactical ids Wave 1 | `docs/automation/SPELL_PROPOSALS_2026-08-31.md` | 16 #120 spells; Wave 3 / Wave 5 Ram observation sources |
 | Tactical ids Wave 2 | `docs/automation/SPELL_PROPOSALS_2026-09-01.md` | 16 #133 spells; Wave 4 + Cinder/Midnight doors |
-| Tactical ids Wave 3 | `docs/automation/SPELL_PROPOSALS_2026-09-02.md` (#282) | Open Pit / Stride Brand Wave-5 doors; Rank Lock / Mercy Font Wave-6 doors; slide-tile / board-tilt are not aliases |
+| Tactical ids Wave 3 | `docs/automation/SPELL_PROPOSALS_2026-09-02.md` (#282) | Open Pit / Stride Brand Wave-5 doors; Rank Lock / Mercy Font Wave-6 doors; Slide Tile / Pawn Trade / Fan Bolt / Hex Toll Wave-7 doors; board-tilt is not an alias |
 | Tactical ids Wave 4 | `docs/automation/SPELL_PROPOSALS_2026-09-21.md` (#342) | Morrow Step Wave-5 door; Bait Pylon / Surplus Ward Wave-6 doors; Cut In / After Verse / Sanguine Toll on shipped bosses |
+| Tactical ids Wave 5 | `docs/automation/SPELL_PROPOSALS_2026-09-22.md` (#411) | Not Wave-7 doors. False Cut stays Lament kit-only. |
 | Long horizon | `docs/automation/LONG_HORIZON_2026-09-01.md` | Live boss HP still static; HUD sat at 48 |
 | MIMA | `docs/automation/MECHANIC_INTERACTION_MATRIX_2026-09-21.md` (#336) | Swap × hazards, push/pull × hazards still OPEN |
-| Encounter rooms | `docs/encounters/ENCOUNTER_EVOLUTION_2026-09-01.md` | ENC-RUSH remixes Table A; Table B / C / D are separate |
+| Encounter rooms | `docs/encounters/ENCOUNTER_EVOLUTION_2026-09-01.md` | ENC-RUSH remixes Table A; Table B / C / D / E are separate |
 
 ---
 
-**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 + 4 Wave-4 + 4 Wave-5 + 4 Wave-6 sheets. Rush Table B, Table C, and Table D are additive. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
+**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 + 4 Wave-4 + 4 Wave-5 + 4 Wave-6 + 4 Wave-7 sheets. Rush Table B, Table C, Table D, and Table E are additive. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
