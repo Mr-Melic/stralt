@@ -19,11 +19,10 @@
  *
  * Seeded keep already re-fetches and skips when live ≤ committed
  * (`ABSOLUTE_WRITE_UNCONFIRMED_CREDIT`). GameKey / feat `#ok` floors are
- * older persist PRs. This wrap covers the unseeded keep / unseeded
- * victory-transport-keep note path without editing `progressPersist.ts`
- * or `dokaPersist.ts`.
+ * older persist PRs. `settleOneShotPersistLock` notes this skip on keep
+ * so WorldExploration stays off this delta (older persist PRs occupy
+ * the summonControlCast import hole).
  *
- * WorldExploration wraps `noteUnconfirmedCredit` at persist construction.
  * Death / heal keep the original `resolveCommittedDokaForAbsoluteWrite`
  * call — #356 inserts `resolveCommittedXpForAbsoluteWrite` next to both.
  * Wrap throws; leftover resolve swallows unknown seed errors as null so
@@ -111,10 +110,9 @@ function wrapNoteUnconfirmedCreditOnce(
 }
 
 /**
- * Intercept `noteUnconfirmedCredit` so WorldExploration can keep calling
- * `settleOneShotPersistLock` / leftover `resolveCommittedDoka` (older
- * persist PRs insert XP resolve next to that import and both death/heal
- * call sites). Idempotent across renders.
+ * Optional intercept for tests / leftover `noteUnconfirmedCredit` callers
+ * that do not go through `settleOneShotPersistLock`. Production keep is
+ * noted inside that settle. Idempotent.
  */
 export function wrapUnseededKeepWriteSkip<
   T extends UnseededKeepWriteSkipPersist,

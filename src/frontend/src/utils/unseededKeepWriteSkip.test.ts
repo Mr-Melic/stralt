@@ -45,9 +45,8 @@ describe("unseeded one-shot keep vs stale absolute-write fetch", () => {
     assert.equal(leftover.isWalletSeeded(), true);
     assert.equal(leftover.snapshot().doka, 190);
 
-    const guarded = wrapUnseededKeepWriteSkip(
-      createProgressPersist({ doka: 0, xp: 80, level: 4 }),
-    );
+    // Production path: settleOneShotPersistLock notes the skip. No WX wrap.
+    const guarded = createProgressPersist({ doka: 0, xp: 80, level: 4 });
     settleOneShotPersistLock(guarded, { kind: "keep" });
     assert.equal(guarded.isWalletSeeded(), false);
     assert.equal(guarded.hasUnconfirmedWalletCredit(), false);
@@ -85,7 +84,7 @@ describe("unseeded one-shot keep vs stale absolute-write fetch", () => {
     assert.equal(hasUnseededKeepWriteSkip(seeded), false);
   });
 
-  it("wrap is idempotent across WorldExploration renders", () => {
+  it("wrap is idempotent across leftover noteUnconfirmedCredit callers", () => {
     const lock = createProgressPersist({ doka: 0, xp: 0, level: 1 });
     wrapUnseededKeepWriteSkip(lock);
     wrapUnseededKeepWriteSkip(lock);

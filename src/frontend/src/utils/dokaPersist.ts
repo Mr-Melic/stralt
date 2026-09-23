@@ -1,4 +1,5 @@
 import { readApplyRewardsOk } from "./applyRewardsResult.ts";
+import { noteUnseededKeepWriteSkip } from "./unseededKeepWriteSkip.ts";
 
 /** One shrine altar credit per room. Stepping the tile twice must not applyRewards 300 twice. */
 export const SHRINE_ALTAR_CREDIT_ID = "shrine-altar";
@@ -217,6 +218,8 @@ export async function resolveOneShotCreditSettle(
 export type OneShotPersistLock = {
   commit: (next: { doka?: number }) => void;
   noteUnconfirmedCredit: () => void;
+  isWalletSeeded: () => boolean;
+  seedWallet?: (doka: number) => void;
 };
 
 /**
@@ -226,6 +229,11 @@ export type OneShotPersistLock = {
  * later saveBattleStats heal wrote that snapshot and wiped the grant.
  * Note the unconfirmed credit so absolute writes re-fetch (or skip) instead
  * of trusting the stale committed wallet.
+ *
+ * Unseeded keep only blocks idle hydrate (`unconfirmedWalletCredit` stays
+ * false). `noteUnseededKeepWriteSkip` then refuses `seedWallet` so a stale
+ * pre-credit `getCallerDokaBalance` cannot seed the placeholder and let
+ * recap heal `saveBattleStats`-write it.
  */
 export function settleOneShotPersistLock(
   persist: OneShotPersistLock,
@@ -237,6 +245,7 @@ export function settleOneShotPersistLock(
   }
   if (settle.kind === "keep") {
     persist.noteUnconfirmedCredit();
+    noteUnseededKeepWriteSkip(persist);
   }
 }
 

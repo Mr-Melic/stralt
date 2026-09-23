@@ -451,7 +451,6 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
-import { wrapUnseededKeepWriteSkip } from "../utils/unseededKeepWriteSkip";
 import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
@@ -1443,7 +1442,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       level: character?.level != null ? Number(character.level) : 1,
     }),
   );
-  wrapUnseededKeepWriteSkip(progressPersistRef.current);
   progressPersistRef.current.setBeforeEach(async () => {
     const liveActor = persistActorRef.current;
     if (!liveActor?.saveBattleStats) return;
