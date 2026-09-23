@@ -90,8 +90,12 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/ACTION_IDS_TADD_2026-09-01.md](docs/automation/ACTION_IDS_TADD_2026-09-01.md) | Telemetry dashboard designer ACTION_IDs (2026-09-01) |
 | [docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md](docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md) | Owner Health dashboard support matrix (design only; refresh after GameKey + audit bindgen) |
 | [docs/automation/ACTION_IDS_TADD_2026-09-02.md](docs/automation/ACTION_IDS_TADD_2026-09-02.md) | Telemetry dashboard designer ACTION_IDs (2026-09-02) |
-| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md) | Current owner-facing aggregate telemetry design (no production instrumentation) |
-| [docs/automation/ACTION_IDS_GTAD_2026-09-01.md](docs/automation/ACTION_IDS_GTAD_2026-09-01.md) | GTAD-2026-09-01 ACTION_ID ledger (supersedes 08-31 GTAD ids for implementers) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-23.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-23.md) | Current owner-facing aggregate telemetry design (HEAD `0f5363f`; no production instrumentation) |
+| [docs/automation/ACTION_IDS_GTAD_2026-09-23.md](docs/automation/ACTION_IDS_GTAD_2026-09-23.md) | GTAD-2026-09-23 ACTION_ID ledger (deltas; 09-01 Phase 0/1 tickets still NEW) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-02.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-02.md) | Prior 2026-09-02 telemetry architecture (last merged design on main before 09-23) |
+| [docs/automation/ACTION_IDS_GTAD_2026-09-02.md](docs/automation/ACTION_IDS_GTAD_2026-09-02.md) | GTAD-2026-09-02 ACTION_ID ledger (still NEW; prefer 09-23 where they overlap) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md) | Prior 2026-09-01 telemetry architecture (stale EVENT_SOURCE vs 09-23) |
+| [docs/automation/ACTION_IDS_GTAD_2026-09-01.md](docs/automation/ACTION_IDS_GTAD_2026-09-01.md) | GTAD-2026-09-01 ACTION_ID ledger (Phase 0/1 implementation tickets; still NEW) |
 | [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Prior telemetry architecture (PR #130; still valid policy, stale line numbers) |
 | [docs/design/ENEMY_FORMATIONS_2026-08-31.md](docs/design/ENEMY_FORMATIONS_2026-08-31.md) | Proposed enemy synergy packs (design only) |
 | [docs/ENEMY_AI_EVOLUTION.md](docs/ENEMY_AI_EVOLUTION.md) | Proposed unbounded enemy AI modules (design only; no production AI in that doc) |
