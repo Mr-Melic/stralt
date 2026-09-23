@@ -215,14 +215,17 @@ function ChangelogPopup({ onDismiss }: { onDismiss: () => void }) {
           </h2>
         </div>
         <p
+          data-ocid="changelog.cache_note"
           style={{
             color: "rgba(200,200,200,0.55)",
             fontSize: 11,
             marginBottom: 16,
             marginTop: 4,
+            lineHeight: 1.45,
           }}
         >
-          Game updated — please review before playing.
+          The realm shifted. Champions on the canister stay — this device only
+          refreshed its local cache.
         </p>
         <ul
           style={{
