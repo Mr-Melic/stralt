@@ -1,13 +1,17 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { AchievementConfig } from "../types/gameTypes";
+import {
+  FEAT_UNLOCKED_TOAST_HEADING,
+  featUnlockedToastAriaLabel,
+} from "../utils/featToastCopy";
 
 interface AchievementToastProps {
   achievement: AchievementConfig;
   onDismiss: () => void;
 }
 
-/** Non-intrusive achievement toast that slots in below the top bar (right side). */
+/** Non-intrusive feat-unlock toast that slots in below the top bar (right side). */
 const AchievementToast: React.FC<AchievementToastProps> = ({
   achievement,
   onDismiss,
@@ -65,6 +69,7 @@ const AchievementToast: React.FC<AchievementToastProps> = ({
       type="button"
       data-ocid="achievement_toast"
       aria-live="polite"
+      aria-label={featUnlockedToastAriaLabel(achievement.name)}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       style={{
@@ -116,7 +121,7 @@ const AchievementToast: React.FC<AchievementToastProps> = ({
             marginBottom: 2,
           }}
         >
-          Achievement Unlocked!
+          {FEAT_UNLOCKED_TOAST_HEADING}
         </div>
         <div
           style={{
