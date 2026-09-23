@@ -3,6 +3,11 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useActor } from "../hooks/useActor";
 import { readAdminCmdResult } from "../utils/adminContract";
+import {
+  gameKeyAdminEscapeCloses,
+  shouldActivateGameKeyAdminOverlayDismiss,
+  shouldCancelGameKeyAdminOverlayOnBackdrop,
+} from "../utils/adminPurchaseOverlayDismiss";
 import { validateDokaGrant } from "../utils/adminSafety";
 import {
   type GameKeyRequestView,
@@ -64,11 +69,43 @@ function PurchaseConfirm({
   onConfirm: () => void;
 }) {
   return (
-    <div
+    <dialog
+      open
       data-ocid={`${ocidPrefix}.dialog`}
+      aria-modal="true"
+      aria-labelledby={`${ocidPrefix}-title`}
+      onClick={(event) => {
+        if (
+          shouldCancelGameKeyAdminOverlayOnBackdrop(
+            event.target,
+            event.currentTarget,
+          )
+        ) {
+          onCancel();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (
+          shouldActivateGameKeyAdminOverlayDismiss(
+            event.key,
+            event.target,
+            event.currentTarget,
+          )
+        ) {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
       style={{
         position: "fixed",
         inset: 0,
+        width: "100%",
+        height: "100%",
+        maxWidth: "none",
+        maxHeight: "none",
+        margin: 0,
+        border: "none",
+        padding: 0,
         background: "rgba(5,6,14,0.85)",
         zIndex: 410,
         display: "flex",
@@ -92,6 +129,7 @@ function PurchaseConfirm({
           ⚠️
         </div>
         <h3
+          id={`${ocidPrefix}-title`}
           style={{
             color: "#f0c44a",
             textAlign: "center",
@@ -150,7 +188,7 @@ function PurchaseConfirm({
           </button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
 
@@ -200,6 +238,26 @@ const AdminGameKeyPurchases: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (confirm == null && reveal == null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = gameKeyAdminEscapeCloses(
+        event.key,
+        confirm != null,
+        reveal != null,
+      );
+      if (!target) return;
+      event.preventDefault();
+      if (target === "confirm") {
+        setConfirm(null);
+        return;
+      }
+      setReveal(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [confirm, reveal]);
 
   const filtered = rows.filter((rec) => {
     if (statusFilter !== "all" && rec.status !== statusFilter) return false;
@@ -714,11 +772,42 @@ const AdminGameKeyPurchases: React.FC = () => {
       )}
 
       {reveal && (
-        <div
+        <dialog
+          open
           data-ocid="admin.purchases.reveal_dialog"
+          aria-modal="true"
+          aria-labelledby="admin-purchases-reveal-title"
+          onClick={(event) => {
+            if (
+              shouldCancelGameKeyAdminOverlayOnBackdrop(
+                event.target,
+                event.currentTarget,
+              )
+            ) {
+              setReveal(null);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (
+              shouldActivateGameKeyAdminOverlayDismiss(
+                event.key,
+                event.target,
+                event.currentTarget,
+              )
+            ) {
+              event.preventDefault();
+              setReveal(null);
+            }
+          }}
           style={{
             position: "fixed",
             inset: 0,
+            width: "100%",
+            height: "100%",
+            maxWidth: "none",
+            maxHeight: "none",
+            margin: 0,
+            border: "none",
             background: "rgba(0,0,0,0.72)",
             zIndex: 400,
             display: "flex",
@@ -736,7 +825,10 @@ const AdminGameKeyPurchases: React.FC = () => {
               width: "min(560px, 96vw)",
             }}
           >
-            <h4 style={{ color: C.gold, margin: "0 0 8px" }}>
+            <h4
+              id="admin-purchases-reveal-title"
+              style={{ color: C.gold, margin: "0 0 8px" }}
+            >
               GameKey (shown until marked emailed)
             </h4>
             <p style={{ color: C.dim, fontSize: 11, margin: "0 0 10px" }}>
@@ -833,7 +925,7 @@ const AdminGameKeyPurchases: React.FC = () => {
               </button>
             </div>
           </div>
-        </div>
+        </dialog>
       )}
 
       {confirm?.kind === "approve" && (
