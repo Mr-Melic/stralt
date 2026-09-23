@@ -177,6 +177,42 @@ export function computeRewardDeltas(input: RewardInput): {
   };
 }
 
+/**
+ * Immediate recap numbers for handleBattleEnd (shown before applyRewards).
+ *
+ * The overlay used to clamp kill Doka with kill XP + challenge XP and omit
+ * challenge Doka. Persist still runs {@link computeRewardDeltas}, so an
+ * accepted hard/legendary completion advertised 400–1000 XP and 0 extra
+ * Doka while applyRewards credited 150–500 Doka. Boss Rush recap already
+ * adds both. Keep this on the same deltas as persist.
+ */
+export function buildImmediateVictoryRecapGrant(args: {
+  killDoka: number;
+  killXp: number;
+  challenges?: CompletedChallengeReward[];
+}): {
+  dokaDelta: number;
+  xpDelta: number;
+  dokaFromChallenges: number;
+  dokaFromVictory: number;
+} {
+  const challenges = args.challenges ?? [];
+  const deltas = computeRewardDeltas({
+    victory: true,
+    enemiesDefeated: [],
+    completedChallenges: challenges,
+    dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+    baseDoka: args.killDoka,
+    baseXp: args.killXp,
+  });
+  return {
+    dokaDelta: deltas.dokaDelta,
+    xpDelta: deltas.xpDelta,
+    dokaFromChallenges: deltas.dokaFromChallenges,
+    dokaFromVictory: Math.max(0, Math.floor(Number(args.killDoka) || 0)),
+  };
+}
+
 export async function resolveBattleRewards(
   actor: any,
   selectedSlot: number,
