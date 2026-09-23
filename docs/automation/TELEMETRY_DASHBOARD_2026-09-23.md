@@ -60,7 +60,7 @@ Inspected against PR #424 (draft, same base `0f5363f`) and `origin/main`.
 | `saveKillCount` | Hook only (`useLeaderboardQueries.ts` **43–50**); **0** TSX callers | Unchanged | Still not battle count. |
 | `APP_VERSION` | `v163` (`App.tsx` **14**) | Unchanged | H11 unchanged. |
 | Starter catalog | 32 (`longHorizonSim.test.ts` **66**) | Unchanged | H3 caption. |
-| Queued sibling design PRs | #333–#380+ (09-21 swarm) | **Plus 09-22 copies** #392–#430+: TBC #395, GTAD #422, VAL #418, SDA #398, TADD #424, formations/AI/LHIPS/WDD duplicates. None are on `main`. | **Extend the process fence.** TADD-2026-09-23-001. |
+| Queued sibling design PRs | #333–#380+ (09-21 swarm) | **Plus 09-22 copies** #392–#430+ and **09-23 copies already open this hour** (#447 PERF, #448 director, #449 EBA, **#450 GTAD**). TBC #395, GTAD #422/#450, VAL #418, SDA #398, TADD #424. None are on `main`. | **Extend the process fence.** TADD-2026-09-23-001. |
 | Unmerged TADD matrices | #345 only | **#345 and #424** both still open (drafts). This file is the third dated matrix on the same SHA. | Do not concatenate three Health card sets. TADD-2026-09-23-002. |
 
 `longHorizonSim` is **not** a Health data source.
@@ -74,7 +74,7 @@ not read them as `LIVE_SNAPSHOT` or `APPROVED_EVENT`.
 | :--- | :--- | :--- |
 | #333 / **#395** TBC | `WAITING_FOR_TELEMETRY`, 0 rows | Do not paint those zeros as “zero battles.” |
 | #345 / **#424** TADD | Prior matrices, same HEAD | Same H1–H14. This file is the 48-hour reconfirm + 09-22 swarm fence. |
-| #352 / **#422** GTAD | Architecture + Phase 1 extras | Implement AQA-012 seven counters only until a human expands 012. Do not pre-build battle start/defeat/flee, Q-015, Q-016. |
+| #352 / **#422** / **#450** GTAD | Architecture + Phase 1 extras | Implement AQA-012 seven counters only until a human expands 012. Do not pre-build battle start/defeat/flee, Q-015, Q-016. |
 | #355 / **#418** VAL | Visual library design | No custom-URL loader. No `CUSTOM_FALLBACK` series. |
 | #371 SDE | Observe→win design (no 09-22 SDE PR at inspect) | No `observedSpellIds` / `ownedSpellIds` persist. |
 | #348–#351 / #401 / #405 / #416 | Formations / elites / AI docs | No encounter, elite, or archetype usage charts. |
