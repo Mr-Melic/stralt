@@ -38,10 +38,13 @@ export default function StatusEffectBadge({ effect }: StatusEffectBadgeProps) {
         ? "stone-pill-gold"
         : "stone-pill-crimson";
 
+  const detail = `${effect.description} — ${turns} turn${turns !== 1 ? "s" : ""} remaining`;
+
   return (
     <div
       data-ocid={`status_effect.${effect.targetId}.${effect.effectName}.badge`}
-      title={`${effect.description} — ${turns} turn${turns !== 1 ? "s" : ""} remaining`}
+      title={detail}
+      aria-label={`${label}. ${detail}`}
       className={pillClass}
       style={{
         gap: 4,

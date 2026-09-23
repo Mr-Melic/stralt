@@ -383,6 +383,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                       filter: "drop-shadow(0 0 3px rgba(255,210,0,0.9))",
                     }}
                     title="Leader — gains strength from ally deaths"
+                    aria-label="Leader — gains strength from ally deaths"
                   >
                     \uD83D\uDC51
                   </div>
@@ -494,6 +495,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                   <div
                     data-ocid={`initiative.lifespan.${index + 1}`}
                     title={`Summon persists ${combatant.turnsRemaining} more turn${combatant.turnsRemaining === 1 ? "" : "s"}`}
+                    aria-label={`Summon persists ${combatant.turnsRemaining} more turn${combatant.turnsRemaining === 1 ? "" : "s"}`}
                     style={{
                       marginTop: 2,
                       fontSize: 7,
@@ -558,6 +560,7 @@ const InitiativeStrip: React.FC<InitiativeStripProps> = ({
                           fontSize: 11,
                         }}
                         title="Leader"
+                        aria-label="Leader — gains strength from ally deaths"
                       >
                         \uD83D\uDC51
                       </span>

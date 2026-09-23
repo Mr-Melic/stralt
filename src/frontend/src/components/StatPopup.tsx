@@ -1,4 +1,6 @@
 import type React from "react";
+import { useEffect } from "react";
+import { subscribeEscapeToDismiss } from "../utils/shopDialogDismiss";
 
 interface StatPopupProps {
   combatant: any;
@@ -26,6 +28,11 @@ export default function StatPopup({
   style,
   anchorRect,
 }: StatPopupProps) {
+  useEffect(() => {
+    if (!combatant) return;
+    return subscribeEscapeToDismiss(onClose);
+  }, [combatant, onClose]);
+
   if (!combatant) return null;
   const stats = unitStats[combatant.id] || {};
   const effects = unitEffects[combatant.id] || [];
