@@ -40,6 +40,10 @@ export function useGetCallerUserProfile() {
     enabled: !!actor && !actorFetching,
     retry: 1,
     staleTime: 30000,
+    // PERF-2026-09-23-095: App stays mounted for the whole session. Default
+    // focus refetch after staleTime decoded the profile on the main thread
+    // when returning to a live world tab. Mutations still invalidate.
+    refetchOnWindowFocus: false,
   });
 
   return {
