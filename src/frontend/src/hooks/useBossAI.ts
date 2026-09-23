@@ -12,6 +12,10 @@
  *   if (aiGenerationRef.current !== currentGeneration) return; // stale, abort
  */
 
+import {
+  isManhattanAdjacent,
+  manhattanOnBoard,
+} from "../engine/combatAdjacency";
 import { BOSS_IDS, BossAbility } from "../types/bossTypes";
 import type {
   AIAction,
@@ -80,13 +84,6 @@ function getWalkableMoves(
     );
 }
 
-function dist(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
-}
-
 function moveToward(
   boss: CombatantEntryLike,
   target: CombatantEntryLike,
@@ -100,7 +97,7 @@ function moveToward(
   const moves = getWalkableMoves(boss.x, boss.y, allTiles, occupied);
   if (moves.length === 0) return { type: "skip" };
   const best = moves.reduce((a, b) =>
-    dist(a, target) < dist(b, target) ? a : b,
+    manhattanOnBoard(a, target) < manhattanOnBoard(b, target) ? a : b,
   );
   return { type: "move", targetX: best.x, targetY: best.y };
 }
@@ -116,13 +113,6 @@ function attackPlayer(
     targetY: player.y,
     logMessage: `${boss.name} attacks!`,
   };
-}
-
-function isAdjacent(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): boolean {
-  return dist(a, b) === 1;
 }
 
 // ── Helpers for building BossAbilityParams ──────────────────────────────────
@@ -208,7 +198,7 @@ export const decidePaleArchbishopAction: BossDecisionFn = (
   }
 
   // Adjacent: attack with curse chance
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     const curseResult = applyBossAbility(BossAbility.CURSE_ON_HIT, p);
     if (curseResult.debuffsApplied && curseResult.debuffsApplied.length > 0) {
       return {
@@ -279,7 +269,7 @@ export const decideCrimsonCountessAction: BossDecisionFn = (
   }
 
   // Adjacent: attack with 30% bleed chance
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     if (Math.random() < 0.3) {
       const rotResult = applyBossAbility(BossAbility.COMPOUNDING_ROT, p);
       return {
@@ -365,7 +355,7 @@ export const decideVoidGrandmasterAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) return attackPlayer(boss, player);
+  if (isManhattanAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
 
@@ -438,7 +428,7 @@ export const decideBoneCavalierAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) return attackPlayer(boss, player);
+  if (isManhattanAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
 
@@ -488,7 +478,7 @@ export const decideWeepingPawnAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     // 25% chance to curse on hit
     const curseResult = applyBossAbility(BossAbility.CURSE_ON_HIT, p);
     if (curseResult.debuffsApplied && curseResult.debuffsApplied.length > 0) {
@@ -560,7 +550,7 @@ export const decideStarbornQueenAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) return attackPlayer(boss, player);
+  if (isManhattanAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
 
@@ -610,7 +600,7 @@ export const decideFetidRookAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     // Apply compounding rot on attack
     const rotResult = applyBossAbility(BossAbility.COMPOUNDING_ROT, p);
     return {
@@ -682,7 +672,7 @@ export const decideEternalPawnKingAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) return attackPlayer(boss, player);
+  if (isManhattanAdjacent(boss, player)) return attackPlayer(boss, player);
   return { type: "skip", logMessage: `${boss.name} stands its ground.` };
 };
 
@@ -734,7 +724,7 @@ export const decideMidnightBishopAction: BossDecisionFn = (
 
   // After merge: reflect magic, attack if adjacent
   if (bossState.bishopsMerged) {
-    if (isAdjacent(boss, player)) return attackPlayer(boss, player);
+    if (isManhattanAdjacent(boss, player)) return attackPlayer(boss, player);
     return moveToward(boss, player, allTiles, allEnemies);
   }
 
@@ -748,7 +738,7 @@ export const decideMidnightBishopAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) return attackPlayer(boss, player);
+  if (isManhattanAdjacent(boss, player)) return attackPlayer(boss, player);
   return moveToward(boss, player, allTiles, allEnemies);
 };
 
@@ -824,7 +814,7 @@ export const decideBroodmotherRookAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     return {
       type: "attack",
       targetId: player.id,
@@ -902,7 +892,7 @@ export const decideLordOfStaticAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) return attackPlayer(boss, player);
+  if (isManhattanAdjacent(boss, player)) return attackPlayer(boss, player);
   return { type: "skip" };
 };
 
@@ -990,7 +980,7 @@ export const decideFinalPawnAction: BossDecisionFn = (
   }
 
   // Phase 1: ranged attack when within ~3 tiles but not adjacent
-  const d = dist(boss, player);
+  const d = manhattanOnBoard(boss, player);
   if (d <= 3 && d > 1) {
     return {
       type: "attack",
@@ -1002,7 +992,7 @@ export const decideFinalPawnAction: BossDecisionFn = (
   }
 
   // Phase 1: weak melee attack
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     const baseAtk = attackPlayer(boss, player);
     if (Math.random() < 0.2) {
       const curseResult = applyBossAbility(BossAbility.CURSE_ON_HIT, p);
@@ -1082,7 +1072,7 @@ export const decideAlabasterFortressAction: BossDecisionFn = (
   }
 
   // Adjacent: physical attack (slow, massive tank boss)
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     return {
       ...attackPlayer(boss, player),
       logMessage: `${boss.name} slams with crushing stone weight!`,
@@ -1221,7 +1211,7 @@ export const decideMirrorSovereignAction: BossDecisionFn = (
   }
 
   // Adjacent: physical attack
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     return {
       ...attackPlayer(boss, player),
       logMessage: `${boss.name} strikes with a mirror shard!`,
@@ -1278,7 +1268,7 @@ export const decideStarvedVampirePawnAction: BossDecisionFn = (
   }
 
   // Always try to life-drain on adjacent
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     const drainResult = applyBossAbility(BossAbility.LIFE_DRAIN, p);
     return {
       type: "ability",
@@ -1356,7 +1346,7 @@ export const decidePaleArchivistAction: BossDecisionFn = (
     };
   }
 
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     return attackPlayer(boss, player);
   }
 
@@ -1410,7 +1400,7 @@ export const decideTwinMonarchsAction: BossDecisionFn = (
   }
 
   // Dusk DoT on adjacent hit
-  if (isAdjacent(boss, player)) {
+  if (isManhattanAdjacent(boss, player)) {
     const dotResult = applyBossAbility(BossAbility.DUSK_DOT, p);
     if (dotResult.dotApplied && dotResult.dotApplied.length > 0) {
       return {
@@ -1503,7 +1493,7 @@ export const decideEnthronedVoidAction: BossDecisionFn = (
         abilityResult: drainResult,
       };
     }
-    if (isAdjacent(boss, player)) {
+    if (isManhattanAdjacent(boss, player)) {
       return {
         ...attackPlayer(boss, player),
         logMessage: `${boss.name} coalesces and strikes with void force!`,

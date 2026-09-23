@@ -23,6 +23,7 @@
  */
 
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
+import { attractStopsBeforeStacking } from "./combatAdjacency.ts";
 
 /** A tile coordinate on the world grid. */
 export interface OccCell {
@@ -548,7 +549,7 @@ export function applyAttract(
   const sy = dy > 0 ? 1 : dy < 0 ? -1 : 0;
   for (let step = 0; step < distance; step++) {
     // Stop one tile short of `toward` so we never stack on it.
-    if (Math.abs(cur.x - toward.x) + Math.abs(cur.y - toward.y) <= 1) break;
+    if (attractStopsBeforeStacking(cur, toward)) break;
     const candidates: OccCell[] = [];
     if (Math.abs(dx) >= Math.abs(dy) && sx !== 0) {
       candidates.push({ x: cur.x + sx, y: cur.y });
