@@ -24,7 +24,8 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn / Sacrifice accumulators |
 | `src/frontend/src/utils/deathGuards.ts` | Death-realm timer + one-shot death guards |
 | `src/frontend/src/utils/deathPenalty.ts` | 20/40 death cut + localStorage replay (`pbv_pending_death_penalty_slotN`) |
-| `src/frontend/src/utils/dokaGameKey.ts` | Buy Doka GameKey format / email / consent (120-char single-use codes) |
+| `src/frontend/src/utils/dokaGameKey.ts` | Buy Doka GameKey format / email / consent (120-char single-use codes). Email rejects mailto metacharacters; `gameKeyMailtoHref` encodes the address |
+| `src/frontend/src/utils/enemyRegisterCopy.ts` | Enemy Register chrome — flavor lore, not the live spawn roster |
 | `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` (clamped to canister maxima) |
 | `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` leftover-XP threshold (bigint) |
 | `src/frontend/src/utils/versionGate.ts` | Version-bump wipe: keep spawn/level-up config and `*_inventory` |

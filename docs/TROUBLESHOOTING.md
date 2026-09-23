@@ -120,6 +120,10 @@ Debit `dokaBalanceRef` (live), not the click-time `dokaBalance - 100`. Recap is 
 
 Paid Doka is **Buy Doka** (`DokaGameKeyShop.tsx`): Mollie pay → `requestGameKeyPurchase` → admin approve → email 120-char GameKey → `redeemGameKey` while logged in. Credits the **caller**. Official persist is `redeemGameKeyThroughPersist`: commit the `#ok` granted amount onto a seeded lock (`shouldCommitGameKeyRedeem`). A follow-up `getCallerDokaBalance` can still be the pre-redeem wallet; committing only on that delta used to skip the credit after the key was already consumed, then `saveBattleStats` wiped the mint.
 
+Player email rejects mailto metacharacters (`validateGameKeyEmail` / Motoko `GameKey.validateEmail`). A raw `a@b.com?subject=` used to inject extra headers into the admin mailto href. `gameKeyMailtoHref` encodes email, subject, and body. How-to copy puts email before the Mollie QR (`IAP_SHOP_STEPS`).
+
+Admin approve must type the Mollie-confirmed Doka (`resolveAdminApproveDokaAmount`). Falling back to `hintedEuroCents` let a raw client pre-fill 10M. After `raw_rand` yields, the canister re-reads the request so a concurrent reject cannot mint a second redeemable key.
+
 `initiatePurchase` (nine positional Text args) always `#err`s: `"Doka purchases now use GameKey requests…"`. Passing a customer object still fails Candid, but even a well-formed call cannot mint. `processPendingPurchases` always returns `0`; remount still calls it, and `shouldCommitShopCredit` must refuse that no-op snapshot.
 
 Items (BuffShop potions) is a different store — do not send potion checkout through GameKey, or GameKey through `BuffShop`.
@@ -257,6 +261,12 @@ Viewport `< 768px` is a warning, not a hard block. **Continue anyway** writes `s
 
 `upgradeSpell` rejects a `usableByPlayer=false` spell the player never owned. Built-in ids cannot be deleted — retire them. Admin payloads that fail `adminGuard.mo` return `#err` before any store write.
 
+### Landing ads / changelog / Enemy Register
+
+Landing ads (`validateAdBox`) reject `javascript:` / `data:` / `vbscript:` / `file:` and require **https** for both image and link. `http:` and scheme-less URLs `#err`. `setChangelog` rejects a `ban#` version key (`isBanReasonKey`) so ban-reason storage cannot overwrite changelog text.
+
+The Enemy Register panel is flavor lore (`ENEMY_REGISTER_SUBTITLE` / `enemyRegisterCopy.ts`). Its MONSTERS / BOSSES arrays are not admin `EnemyConfig` spawn templates. Inspect a unit in combat for current stats. Do not wire Register names into spawn or telemetry.
+
 ### Recap never shows the in-battle feat unlock
 
 Unlocks must ride `BattleRecapData.newlyUnlockedAchievements` (`attachRecapUnlocks`). The recap mounts in `App.tsx`; a WorldExploration-only `useState` never reaches it.
@@ -326,6 +336,7 @@ The recap wrapper in `App.tsx` is `pointer-events: none` so HUD heal/shop stay l
 - Persist `currentRoom` on room clear **before** `applyRewards`, both on the persist lock. `persistRoomClear` must throw if `setBossRushProgress` / `resetBossRush` did not run — a swallowed progress error still ran `applyRewards` and a reload re-entered the same room. `completeBossRushRoom` no longer mints client-supplied Doka/XP. `setBossRushProgress` traps if `currentRoom` decreases — abort with `resetBossRush`. `completeBossRushRoom` accepts `roomIndex == currentRoom` or `currentRoom - 1`.
 - `createCharacter` / `deleteCharacter` clear slot-scoped progress. Lava/spike death must `abortBossRush` so a late room-clear write cannot resume mid-tree.
 - After a room clear, `setInBattle(false)` as well as `inBattleRef = false`. `cleanupBattle` only clears the ref; React `inBattle === true` blocks `checkBattleTrigger` and room 2 never starts.
+- Final room: `complete(9)` **while occupying room 9**, then `resetBossRush`. Reset-then-complete is `#err` and skips master-complete / `totalBossRushRuns`. `shouldCountBossRushRun` is only true when both are 9; a counted run zeros `currentRoom`.
 
 ### Last-hostile victory never fires / leftover AI kills the player
 

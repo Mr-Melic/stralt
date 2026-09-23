@@ -470,3 +470,11 @@ Lex order (never rename or delete a file; never edit a shipped `NewActor`):
 - After every successful Caffeine deploy, refresh `.old` byte-for-byte from that build's `src/backend/dist/backend.most` (or `caffeine projects clone` → `.old/`, or `dfx canister --network ic metadata <id> motoko:stable-types`, controller-only) and add the same file under `snapshots/deployed/`.
 
 A deployed canister still running the old 15-field `CharacterStats` (or pre-summon `SpellConfig`) will reject the new shapes until it is upgraded so these modules actually run.
+
+## Buy Doka, ads, Enemy Register, Boss Rush run-count
+
+- `requestGameKeyPurchase` email rejects mailto query separators (`? # & : / \ < > " ' , ; %`) so `mailto:${email}?subject=` cannot inject headers. `gameKeyMailtoHref` encodes address, subject, and body. How-to copy puts **email before** the Mollie QR (`IAP_SHOP_STEPS`). Helpers: `validateGameKeyEmail` / `gameKeyMailtoHref` / `resolveAdminApproveDokaAmount` in `utils/dokaGameKey.ts`.
+- `adminApproveGameKeyPurchase` uses the typed Mollie-confirmed Doka (`resolveAdminApproveDokaAmount`), not `hintedEuroCents`, and **re-reads** the request after `raw_rand` so a concurrent reject cannot mint a second redeemable key.
+- Landing ads: `unsafeUrl` also rejects `file:`; `requireHttpsUrl` requires **https** for image and link (`validateAdBox`). `http:` and scheme-less URLs `#err`. `setChangelog` rejects the `ban#` version namespace (`validateChangelog` / `isBanReasonKey`).
+- Enemy Register (`EnemyRegister.tsx` / `enemyRegisterCopy.ts`) is **flavor lore** — do not wire its MONSTERS / BOSSES arrays to admin `EnemyConfig` spawn templates.
+- Final Boss Rush room: `complete(9)` **while occupying room 9**, then `resetBossRush`. A counted run (`shouldCountBossRushRun`: both == 9) increments `totalBossRushRuns`, sets `bossRushMasterComplete`, and **zeros** `currentRoom`. Reset-then-complete never lands master-complete / `highestRoomCompleted=10`.
