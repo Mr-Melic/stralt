@@ -322,7 +322,6 @@ import {
 } from "../utils/challengeCompletion";
 import {
   addChallengeRewardDeltas,
-  challengeXpFromEntries,
   liveBattleChallengePersistEntries,
 } from "../utils/challengeRewards";
 import {
@@ -420,6 +419,7 @@ import {
   PORTAL_TRANSITION_XP,
   PREAPPLIED_REWARD_MULTIPLIER,
   buildBossRushPersistInput,
+  buildImmediateVictoryRecapGrant,
   clampApplyRewardsDeltas,
   computeVictoryExp,
   persistIncrementalRewards,
@@ -12315,9 +12315,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           liveChallenge,
           challengeCompleted,
         );
-        const challengeXpReward = challengeXpFromEntries(
-          challengePersistEntries,
-        );
         const _completedChallengeName = challengeCompleted
           ? liveChallenge?.description || liveChallenge?.id || "Challenge"
           : null;
@@ -12443,11 +12440,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // NOTE: Local state updated above; persistence is handled by resolveBattleRewards below.
           // Do NOT call updateCharacter here — rewards must ONLY persist via applyRewards.
 
-          // Build and show recap IMMEDIATELY — never block on persistence
-          const recapGrant = clampApplyRewardsDeltas(
-            totalDoka,
-            finalExp + challengeXpReward,
+          // Build and show recap IMMEDIATELY — never block on persistence.
+          // Same deltas as applyRewards: challenge Doka used to be omitted
+          // here while challenge XP was included, so the overlay under-showed
+          // 150–500 Doka on an accepted hard/legendary completion.
+          const recapGrantRaw = buildImmediateVictoryRecapGrant({
+            killDoka: totalDoka,
+            killXp: finalExp,
+            challenges: challengePersistEntries,
+          });
+          const recapClamped = clampApplyRewardsDeltas(
+            recapGrantRaw.dokaDelta,
+            recapGrantRaw.xpDelta,
           );
+          const recapGrant = {
+            ...recapGrantRaw,
+            dokaDelta: recapClamped.dokaDelta,
+            xpDelta: recapClamped.xpDelta,
+          };
           const recapXp = recapXpAfterGrant(
             characterStats.exp,
             characterStats.level,
@@ -12467,6 +12477,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             xpForNextLevel: recapXp.needed,
             dokaBreakdown: [],
             completedChallenges: challengeCompleted ? ["Battle Challenge"] : [],
+            dokaFromVictory: recapGrant.dokaFromVictory,
+            dokaFromChallenges: recapGrant.dokaFromChallenges,
             dungeonMultiplier: chainMult || 1,
             bossDefeated: currentBossConfigRef.current?.name || undefined,
           };
