@@ -3,8 +3,9 @@
  *
  * Pure overworld / dungeon enemy spawn policy extracted from
  * WorldExploration.generateEnemies. WorldExploration still owns placement
- * (quadrants, name pool, computeEnemyStats, Date.now) and the post-family
- * computeAITier re-roll. This module is React-free.
+ * (quadrants, computeEnemyStats, Date.now) and the post-family
+ * computeAITier re-roll. Unique `assignedName` picking lives here.
+ * This module is React-free.
  *
  * Distance metrics are intentionally different — do not merge them:
  *   - portal keep-clear: Manhattan <= 2
@@ -16,6 +17,13 @@
  *
  * generateEnemyScaleFactors keeps two unused Math.random draws before the
  * variation roll — they feed the later per-enemy RNG stream (level pick).
+ *
+ * Unique names: skip in-pool duplicates; empty admin query uses
+ * DEFAULT_ANCIENT_NAMES in catalog order then wraps via a page-session
+ * index. Exhausted *admin* pool leaves assignedName undefined (HUD piece
+ * type). DEFAULT_ANCIENT_NAMES is the client mock/query-miss list — it
+ * diverges from canister getEnemyNames() empty-list defaults after
+ * "Senvaris". Do not merge those lists in a modularity run.
  */
 
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
@@ -294,4 +302,102 @@ export function applyFamilyVariantsToRoster<T extends FamilySpawnTarget>(
   for (const en of enemies) {
     if (maybeApplyEnemyFamilyVariant(en, rng)) onApplied?.(en);
   }
+}
+
+/**
+ * Client-side names when `getEnemyNames` is empty (mock actor, query miss).
+ * Keep in lockstep with the former WorldExploration DEFAULT_ANCIENT_NAMES
+ * array — not with `main.mo` getEnemyNames empty-list defaults.
+ */
+export const DEFAULT_ANCIENT_NAMES: readonly string[] = [
+  "Malachar",
+  "Vorenth",
+  "Aethys",
+  "Zarvok",
+  "Kethara",
+  "Duskwyn",
+  "Voraxis",
+  "Nythera",
+  "Valdrek",
+  "Seramis",
+  "Thornvex",
+  "Golvak",
+  "Draveth",
+  "Sythion",
+  "Kaelthar",
+  "Norrax",
+  "Veluun",
+  "Drathis",
+  "Xarveth",
+  "Orvael",
+  "Tyranos",
+  "Belkoth",
+  "Senvaris",
+  "Rathvel",
+  "Mordaen",
+  "Sylvrath",
+  "Graveoch",
+  "Umbrath",
+  "Nocteus",
+  "Vesperis",
+  "Corvath",
+  "Duskaron",
+  "Morbeth",
+  "Soulvex",
+  "Wraitheon",
+  "Spectrael",
+  "Phantarax",
+  "Voidkaen",
+  "Abysseth",
+  "Netheron",
+];
+
+/** Page-session wrap. generateEnemies never resets this. */
+let fallbackAncientNameIndex = 0;
+
+/** Test isolation for the module-level DEFAULT_ANCIENT_NAMES wrap. */
+export function resetEnemyNameFallbackIndex(): void {
+  fallbackAncientNameIndex = 0;
+}
+
+export interface EnemyNamePicker {
+  next: () => string | undefined;
+}
+
+/**
+ * Per-map unique name picker. Shuffles admin names with the same
+ * comparator generateEnemies used (`rng() - 0.5`). Empty admin pool uses
+ * `fallbackNames` in catalog order, then wraps via fallbackAncientNameIndex.
+ * Exhausted admin pool returns undefined (piece-type HUD fallback).
+ */
+export function createEnemyNamePicker(
+  adminNames: readonly string[],
+  rng: Rng = Math.random,
+  fallbackNames: readonly string[] = DEFAULT_ANCIENT_NAMES,
+): EnemyNamePicker {
+  const availableNames = [...adminNames].sort(() => rng() - 0.5);
+  const useAncientFallback = availableNames.length === 0;
+  const namePool = useAncientFallback ? fallbackNames : availableNames;
+  const usedNamesOnThisMap = new Set<string>();
+  let nameIndex = 0;
+
+  return {
+    next(): string | undefined {
+      let assignedName: string | undefined;
+      while (nameIndex < namePool.length) {
+        const candidate = namePool[nameIndex++];
+        if (!usedNamesOnThisMap.has(candidate)) {
+          usedNamesOnThisMap.add(candidate);
+          assignedName = candidate;
+          break;
+        }
+      }
+      if (!assignedName) {
+        assignedName = useAncientFallback
+          ? fallbackNames[fallbackAncientNameIndex++ % fallbackNames.length]
+          : undefined;
+      }
+      return assignedName;
+    },
+  };
 }

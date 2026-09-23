@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import type { EnemyFamily } from "../types/gameTypes.ts";
 import {
+  DEFAULT_ANCIENT_NAMES,
   FAMILY_STAT_MULTS,
   FAMILY_TYPES,
   FAMILY_VARIANT_CHANCE,
@@ -14,6 +15,7 @@ import {
   applyEnemyFamilyStats,
   applyFamilyVariantsToRoster,
   collectValidEnemySpawnCells,
+  createEnemyNamePicker,
   dungeonScaledEnemyLevel,
   dungeonSpawnExtras,
   generateEnemyScaleFactors,
@@ -21,6 +23,7 @@ import {
   isSpawnAdjacentToPortal,
   isSpawnFarEnough,
   maybeApplyEnemyFamilyVariant,
+  resetEnemyNameFallbackIndex,
   rollOverworldEnemyCount,
 } from "./spawnPolicy.ts";
 
@@ -284,5 +287,74 @@ describe("applyFamilyVariantsToRoster", () => {
       "void_mirror",
     ];
     assert.deepEqual([...FAMILY_TYPES], expected);
+  });
+});
+
+describe("createEnemyNamePicker", () => {
+  it("keeps the 40-name client fallback (diverges from canister after Senvaris)", () => {
+    assert.equal(DEFAULT_ANCIENT_NAMES.length, 40);
+    assert.equal(DEFAULT_ANCIENT_NAMES[0], "Malachar");
+    assert.equal(DEFAULT_ANCIENT_NAMES[22], "Senvaris");
+    assert.equal(DEFAULT_ANCIENT_NAMES[23], "Rathvel");
+    assert.equal(DEFAULT_ANCIENT_NAMES[39], "Netheron");
+  });
+
+  it("walks DEFAULT_ANCIENT_NAMES in catalog order when the admin pool is empty", () => {
+    resetEnemyNameFallbackIndex();
+    const pick = createEnemyNamePicker([]);
+    assert.equal(pick.next(), "Malachar");
+    assert.equal(pick.next(), "Vorenth");
+    assert.equal(pick.next(), "Aethys");
+  });
+
+  it("skips in-pool duplicates and returns undefined after an admin pool is exhausted", () => {
+    resetEnemyNameFallbackIndex();
+    const pick = createEnemyNamePicker(["A", "A", "B"], () => 0);
+    const firstTwo = [pick.next(), pick.next()];
+    assert.deepEqual(new Set(firstTwo), new Set(["A", "B"]));
+    assert.equal(pick.next(), undefined);
+    assert.equal(pick.next(), undefined);
+  });
+
+  it("does not wrap DEFAULT_ANCIENT_NAMES when an admin pool runs out", () => {
+    resetEnemyNameFallbackIndex();
+    const admin = createEnemyNamePicker(["Only"], () => 0);
+    assert.equal(admin.next(), "Only");
+    assert.equal(admin.next(), undefined);
+    const wrap = createEnemyNamePicker([], () => 0, ["Z", "W"]);
+    assert.equal(wrap.next(), "Z");
+    assert.equal(wrap.next(), "W");
+    assert.equal(wrap.next(), "Z");
+  });
+
+  it("wraps fallback names via a page-session index after the empty-admin pool is spent", () => {
+    resetEnemyNameFallbackIndex();
+    const pick = createEnemyNamePicker([], () => 0, ["Alpha", "Beta"]);
+    assert.equal(pick.next(), "Alpha");
+    assert.equal(pick.next(), "Beta");
+    assert.equal(pick.next(), "Alpha");
+    assert.equal(pick.next(), "Beta");
+  });
+
+  it("keeps the wrap index across pickers (generateEnemies never resets it)", () => {
+    resetEnemyNameFallbackIndex();
+    const firstMap = createEnemyNamePicker([], () => 0, ["X", "Y"]);
+    assert.equal(firstMap.next(), "X");
+    assert.equal(firstMap.next(), "Y");
+    assert.equal(firstMap.next(), "X");
+    const secondMap = createEnemyNamePicker([], () => 0, ["X", "Y"]);
+    assert.equal(secondMap.next(), "X");
+    assert.equal(secondMap.next(), "Y");
+    assert.equal(secondMap.next(), "Y");
+  });
+
+  it("shuffles a non-empty admin pool with rng() - 0.5", () => {
+    let calls = 0;
+    const rng = (): number => {
+      calls += 1;
+      return 0.25;
+    };
+    createEnemyNamePicker(["A", "B", "C"], rng);
+    assert.ok(calls >= 1);
   });
 });
