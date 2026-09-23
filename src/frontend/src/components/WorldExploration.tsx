@@ -3176,6 +3176,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   committedBefore,
                   nextDoka,
                   progressPersistRef.current.isWalletSeeded(),
+                  progressPersistRef.current,
                 )
               ) {
                 progressPersistRef.current.commit({ doka: nextDoka });
