@@ -4,13 +4,17 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
 } from "./applyRewardsResult.ts";
 import {
+  HAZARD_LAVA_MAX,
   PLAYER_CREATE_INIT,
+  effectiveSpellRange,
   fightsToNextLevel,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
   firstLevelChcCanHit100,
   firstLevelFormulaApExceedsPersistCap,
+  firstLevelHazardMaxBelowHpPercent,
   firstLevelResCanHit100,
+  firstLevelSpellRangeHitsCap,
   firstSpellLevelCostExceeds,
   formulaAp,
   jackpotPersistIfHit,
@@ -119,5 +123,27 @@ assert.ok(
 );
 assert.equal(report.chcBreakpoints.bishop, 115);
 assert.equal(report.chcBreakpoints.king, 138);
+
+assert.equal(firstLevelHazardMaxBelowHpPercent(HAZARD_LAVA_MAX, 0.05), 42);
+assert.equal(firstLevelHazardMaxBelowHpPercent(HAZARD_LAVA_MAX, 0.01), 282);
+assert.equal(report.flatHazards.firstLevelLavaMaxBelow5PctHp, 42);
+assert.equal(report.flatHazards.firstLevelLavaMaxBelow1PctHp, 282);
+assert.ok((report.flatHazards.lavaMaxOverHpAt100000 ?? 1) < 0.0001);
+
+assert.equal(effectiveSpellRange(1, 1), 1);
+assert.equal(effectiveSpellRange(4, 10), 5);
+assert.equal(effectiveSpellRange(3, 20), 5);
+assert.equal(effectiveSpellRange(1, 40), 5);
+assert.equal(
+  effectiveSpellRange(0, 1),
+  1,
+  "spellRangeBase lifts stored 0 to 1",
+);
+assert.equal(firstLevelSpellRangeHitsCap(4), 10);
+assert.equal(firstLevelSpellRangeHitsCap(3), 20);
+assert.equal(firstLevelSpellRangeHitsCap(1), 40);
+assert.equal(report.spellRangeCap.firstLevelRange4HitsCap, 10);
+assert.equal(report.spellRangeCap.allStarterRangesAtCapBy, 40);
+assert.equal(report.xpRows.find((r) => r.level === 50)?.spellRangeStrike, 5);
 
 console.log("longHorizonSim.test: ok");

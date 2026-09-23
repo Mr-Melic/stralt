@@ -424,6 +424,62 @@ export function firstLevelExponentialHpNotJsonSafe(limit = 200_000): number {
   return limit + 1;
 }
 
+/** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
+export const HAZARD_LAVA_MIN = 8;
+export const HAZARD_LAVA_MAX = 15;
+/** Live spike step: `5 + floor(rng * 6)` (WorldExploration.tsx 11469). */
+export const HAZARD_SPIKE_MIN = 5;
+export const HAZARD_SPIKE_MAX = 10;
+/** Lava Burning DoT after the step (WorldExploration.tsx 11452). */
+export const HAZARD_LAVA_BURN_PER_TURN = 3;
+/** Poison Arrow tick (`starter-poison` dotDamagePerTurn). */
+export const POISON_ARROW_TICK = 4;
+
+/**
+ * Player lava/spike subtract HP directly — they do not enter
+ * `playerTakesDamage`, so create RES is not applied.
+ */
+export function firstLevelHazardMaxBelowHpPercent(
+  maxDamage: number,
+  percent: number,
+): number | null {
+  const pct = Math.max(0, percent);
+  for (let level = 1; level <= 200_000; level++) {
+    const hp = linearPlayerMaxHp(level);
+    if (hp > 0 && maxDamage / hp < pct) return level;
+  }
+  return null;
+}
+
+/**
+ * Live `getEffectiveSpellRange`: `min(base + floor(level / 10), 5)`.
+ * `spellRangeBase` feeds `Math.max(1, Number(spell.range))`, so a stored
+ * range of 0 (self Heal / Mirror / Timestep) starts at 1.
+ */
+export function effectiveSpellRange(
+  baseRange: number,
+  level: number,
+  growthEvery = DEFAULT_LEVELUP_CONFIG.spellRangeGrowthLevels,
+  cap = DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+): number {
+  const every = Math.max(1, Math.floor(Number(growthEvery) || 10));
+  const maxR = Math.max(1, Math.floor(Number(cap) || 5));
+  const base = Math.max(1, Math.floor(Number(baseRange) || 0));
+  const bonus = Math.floor(Math.max(1, Math.floor(level)) / every);
+  return Math.min(base + bonus, maxR);
+}
+
+export function firstLevelSpellRangeHitsCap(
+  baseRange: number,
+  cap = DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+): number | null {
+  const maxR = Math.max(1, Math.floor(Number(cap) || 5));
+  for (let level = 1; level <= 200; level++) {
+    if (effectiveSpellRange(baseRange, level) >= maxR) return level;
+  }
+  return null;
+}
+
 export function monteCarloEnemyLevels(
   playerLevel: number,
   samples = 4000,
@@ -581,6 +637,12 @@ export function runLongHorizonSim() {
       jackpotPersistIfHit: jackpotPersistIfHit(Math.round(meanEnemy)),
       persistApCap: maxPersistedAp(level, AP_EVERY),
       pPlayerWinsInitiative3: monteCarloPlayerWinsInitiative(level),
+      lavaMaxOverHp: HAZARD_LAVA_MAX / linearPlayerMaxHp(level),
+      spikeMaxOverHp: HAZARD_SPIKE_MAX / linearPlayerMaxHp(level),
+      poisonTickOverHp: POISON_ARROW_TICK / linearPlayerMaxHp(level),
+      spellRangeStrike: effectiveSpellRange(1, level),
+      spellRangeFrost: effectiveSpellRange(3, level),
+      spellRangePoison: effectiveSpellRange(4, level),
     };
   });
 
@@ -654,7 +716,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-21T00:05:00.000Z",
+    generatedAt: "2026-09-23T00:14:14.777Z",
     telemetry: {
       available: false,
       reason:
@@ -688,6 +750,18 @@ export function runLongHorizonSim() {
       saveBattleStatsCannotRaiseInit: true,
       firstLevelFormulaApExceedsPersistCap:
         firstLevelFormulaApExceedsPersistCap(),
+      firstLevelLavaMaxBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.01,
+      ),
+      firstLevelLavaMaxBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.05,
+      ),
+      firstLevelSpellRange1HitsCap: firstLevelSpellRangeHitsCap(1),
+      firstLevelSpellRange3HitsCap: firstLevelSpellRangeHitsCap(3),
+      firstLevelSpellRange4HitsCap: firstLevelSpellRangeHitsCap(4),
+      maxSpellRange: DEFAULT_LEVELUP_CONFIG.maxSpellRange,
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
@@ -719,6 +793,35 @@ export function runLongHorizonSim() {
       player1MaxEnemyOneShots:
         damageAfterPlayerResPasses(fallbackCrushRaw(80)) >=
         linearPlayerMaxHp(1),
+    },
+    flatHazards: {
+      lavaMin: HAZARD_LAVA_MIN,
+      lavaMax: HAZARD_LAVA_MAX,
+      spikeMin: HAZARD_SPIKE_MIN,
+      spikeMax: HAZARD_SPIKE_MAX,
+      lavaBurnPerTurn: HAZARD_LAVA_BURN_PER_TURN,
+      poisonTick: POISON_ARROW_TICK,
+      firstLevelLavaMaxBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.05,
+      ),
+      firstLevelLavaMaxBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.01,
+      ),
+      lavaMaxOverHpAt1: HAZARD_LAVA_MAX / linearPlayerMaxHp(1),
+      lavaMaxOverHpAt100: HAZARD_LAVA_MAX / linearPlayerMaxHp(100),
+      lavaMaxOverHpAt1000: HAZARD_LAVA_MAX / linearPlayerMaxHp(1000),
+      lavaMaxOverHpAt100000: HAZARD_LAVA_MAX / linearPlayerMaxHp(100_000),
+    },
+    spellRangeCap: {
+      maxSpellRange: DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+      growthEvery: DEFAULT_LEVELUP_CONFIG.spellRangeGrowthLevels,
+      firstLevelRange1HitsCap: firstLevelSpellRangeHitsCap(1),
+      firstLevelRange3HitsCap: firstLevelSpellRangeHitsCap(3),
+      firstLevelRange4HitsCap: firstLevelSpellRangeHitsCap(4),
+      range0Becomes1ThenCapsAt: firstLevelSpellRangeHitsCap(0),
+      allStarterRangesAtCapBy: firstLevelSpellRangeHitsCap(1),
     },
   };
 }
