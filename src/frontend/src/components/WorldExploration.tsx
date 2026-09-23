@@ -403,6 +403,7 @@ import {
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import {
+  cancelExclusiveMovementRaf,
   shouldAbortMovementRaf,
   shouldBlockPortalDuringVictoryPersist,
   shouldIgnoreWorldInputDuringRecap,
@@ -11233,7 +11234,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   useEffect(() => {
     if (!isMoving || movementPath.length === 0) return;
     const loopGen = movementGenRef.current;
+    let movementRafId = 0;
     const movePlayer = () => {
+      movementRafId = 0;
       if (
         shouldAbortMovementRaf({
           recapVisible: battleRecapOpenRef.current,
@@ -11498,9 +11501,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // FIX F: Removed untracked setTimeout portal check — timer was never cancelled
         // in cleanupMap, causing portal logic to fire on the new map after transition.
       }
-      requestAnimationFrame(movePlayer);
+      movementRafId = requestAnimationFrame(movePlayer);
     };
-    requestAnimationFrame(movePlayer);
+    movementRafId = requestAnimationFrame(movePlayer);
+    return () => {
+      cancelExclusiveMovementRaf(movementRafId);
+    };
   }, [
     isMoving,
     movementPath,
