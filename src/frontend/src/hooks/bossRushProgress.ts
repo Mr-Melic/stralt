@@ -8,6 +8,8 @@
  * re-enters room 0 and farms the same wallet credit.
  */
 
+import { noteUnseededVictoryKeepWriteSkip } from "../utils/unseededVictoryKeepWriteSkip.ts";
+
 export const BOSS_RUSH_ROOM_COUNT = 10;
 
 /**
@@ -142,13 +144,23 @@ export interface PersistBossRushRoomClearOptions {
 export async function persistBossRushRewardsThroughLock<T>(
   lock: {
     enqueue: <U>(fn: () => Promise<U>) => Promise<U>;
+    isWalletSeeded?: () => boolean;
+    seedWallet?: (doka: number) => void;
+    noteUnconfirmedCredit?: () => void;
   },
   persistRoomClear: () => Promise<void>,
   applyAndCommit: () => Promise<T>,
 ): Promise<T> {
   return lock.enqueue(async () => {
     await persistRoomClear();
-    return applyAndCommit();
+    try {
+      return await applyAndCommit();
+    } catch (err) {
+      // Unseeded applyRewards throw-after-add left the lock at placeholder 0.
+      // Recap heal then saveBattleStats-wrote a stale pre-credit wallet.
+      noteUnseededVictoryKeepWriteSkip(lock, err);
+      throw err;
+    }
   });
 }
 

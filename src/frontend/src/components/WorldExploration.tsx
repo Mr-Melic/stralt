@@ -451,6 +451,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { noteUnseededVictoryKeepWriteSkip } from "../utils/unseededVictoryKeepWriteSkip";
 import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
@@ -12609,6 +12610,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
             }
           } catch (persistErr) {
+            noteUnseededVictoryKeepWriteSkip(
+              progressPersistRef.current,
+              persistErr,
+            );
             logDebugInfo(
               "BATTLE",
               "Reward persistence failed (non-blocking)",
