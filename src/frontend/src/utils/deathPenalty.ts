@@ -428,6 +428,80 @@ export function applyUnpaidDeathPenaltyToWrite(
 }
 
 /**
+ * Doka is per-principal. Unpaid 20/40 markers are per-slot. Dying on slot 1,
+ * missing saveBattleStats, then Play on slot 2 used to write the uncut
+ * wallet (heal / shop / applyRewards / remount replay only read slot 2).
+ *
+ * Honour Doka from every unpaid marker. Honour XP only for the slot whose
+ * character record is being written — slot 2 leftover must not eat slot 1's
+ * 20% XP cut.
+ */
+export function applyUnpaidDeathPenaltiesToWrite(
+  currentSlot: number,
+  pendings: readonly PendingDeathPenalty[],
+  writeXp: number,
+  writeDoka: number,
+): { xp: number; doka: number } {
+  const slot = Math.max(1, Math.floor(Number(currentSlot) || 1));
+  let xp = Math.max(0, Math.floor(Number(writeXp) || 0));
+  let doka = Math.max(0, Math.floor(Number(writeDoka) || 0));
+  for (const pending of pendings) {
+    if (pending.cutConfirmed === true) continue;
+    if (pending.slot === slot) {
+      const next = applyUnpaidDeathPenaltyToWrite(pending, xp, doka);
+      xp = next.xp;
+      doka = next.doka;
+      continue;
+    }
+    // Foreign slot: pass afterXp so the XP axis looks absorbed.
+    doka = applyUnpaidDeathPenaltyToWrite(pending, pending.afterXp, doka).doka;
+  }
+  return { xp, doka };
+}
+
+/**
+ * After a principal-wallet write honoured another slot's unpaid Doka cut,
+ * zero that marker's Doka loss so a later return to the dead slot only
+ * persists leftover XP (otherwise a slot-2 earn is taxed twice).
+ */
+export function stampPendingDeathDokaAbsorbed(
+  storage: DeathPenaltyStorage,
+  pending: PendingDeathPenalty,
+  honouredDoka: number,
+): void {
+  const doka = Math.max(0, Math.floor(Number(honouredDoka) || 0));
+  writePendingDeathPenalty(storage, {
+    ...pending,
+    preDoka: doka,
+    afterDoka: doka,
+  });
+}
+
+export function stampForeignPendingDeathDokaAbsorbed(
+  storage: DeathPenaltyStorage,
+  currentSlot: number,
+  pendings: readonly PendingDeathPenalty[],
+  honouredDoka: number,
+): void {
+  const slot = Math.max(1, Math.floor(Number(currentSlot) || 1));
+  for (const pending of pendings) {
+    if (pending.slot === slot || pending.cutConfirmed === true) continue;
+    stampPendingDeathDokaAbsorbed(storage, pending, honouredDoka);
+  }
+}
+
+/** Respawn HP only when this slot still owes the death persist. */
+export function unpaidDeathPersistUsesRespawnHp(
+  currentSlot: number,
+  pendings: readonly PendingDeathPenalty[],
+): boolean {
+  const slot = Math.max(1, Math.floor(Number(currentSlot) || 1));
+  return pendings.some(
+    (pending) => pending.slot === slot && pending.cutConfirmed !== true,
+  );
+}
+
+/**
  * Reload / flush before saveBattleStats lands leaves the canister uncut.
  *
  * Apply the original unpaid 20/40 to the live snapshot unless that cut
@@ -453,6 +527,27 @@ export function resolvePendingDeathReplay(
     return { action: "clear" };
   }
   const next = applyUnpaidDeathPenaltyToWrite(pending, xp, doka);
+  if (next.xp === xp && next.doka === doka) {
+    return { action: "clear" };
+  }
+  return { action: "write", newXp: next.xp, newDoka: next.doka };
+}
+
+/**
+ * Same as {@link resolvePendingDeathReplay} but Doka is principal-wide.
+ * Slot 2's leftover XP is not reduced by slot 1's unpaid 20%.
+ */
+export function resolvePendingDeathReplayAcrossSlots(
+  currentSlot: number,
+  backendXp: number,
+  backendDoka: number,
+  pendings: readonly PendingDeathPenalty[],
+): PendingDeathReplay {
+  const live = pendings.filter((pending) => pending.cutConfirmed !== true);
+  if (live.length === 0) return { action: "clear" };
+  const xp = Math.max(0, Math.floor(Number(backendXp) || 0));
+  const doka = Math.max(0, Math.floor(Number(backendDoka) || 0));
+  const next = applyUnpaidDeathPenaltiesToWrite(currentSlot, live, xp, doka);
   if (next.xp === xp && next.doka === doka) {
     return { action: "clear" };
   }
@@ -506,6 +601,20 @@ export function readPendingDeathPenaltyAnywhere(
     return null;
   }
   return readPendingDeathPenalty(fallback, slot);
+}
+
+export function listPendingDeathPenalties(
+  primary: DeathPenaltyStorage = defaultDeathPenaltyStorage(),
+  fallback?: DeathPenaltyStorage,
+): PendingDeathPenalty[] {
+  const out: PendingDeathPenalty[] = [];
+  // Slots 1–3. Do not export a DEATH_PENALTY_CHARACTER_SLOTS const here —
+  // #385 already owns that name for principal-scoped pending keys.
+  for (const slot of [1, 2, 3] as const) {
+    const pending = readPendingDeathPenaltyAnywhere(slot, primary, fallback);
+    if (pending) out.push(pending);
+  }
+  return out;
 }
 
 export function clearPendingDeathPenaltyAnywhere(
@@ -572,20 +681,42 @@ export type FlushPendingDeathArgs = {
 export async function flushPendingDeathPenalty(
   args: FlushPendingDeathArgs,
 ): Promise<boolean> {
-  const pending = readPendingDeathPenalty(args.storage, args.slot);
-  if (!pending) return false;
+  const pendings = listPendingDeathPenalties(args.storage);
+  if (pendings.length === 0) return false;
   const snap = await args.fetchSnapshot();
   if (!snap) return false;
-  const decision = resolvePendingDeathReplay(snap.xp, snap.doka, pending);
+  const decision = resolvePendingDeathReplayAcrossSlots(
+    args.slot,
+    snap.xp,
+    snap.doka,
+    pendings,
+  );
   if (decision.action !== "write") {
-    clearPendingDeathPenalty(args.storage, args.slot);
+    if (readPendingDeathPenalty(args.storage, args.slot)) {
+      clearPendingDeathPenalty(args.storage, args.slot);
+    }
+    stampForeignPendingDeathDokaAbsorbed(
+      args.storage,
+      args.slot,
+      pendings,
+      snap.doka,
+    );
     return false;
   }
   await persistWithRetry(() =>
     args.writePenalty(decision.newXp, decision.newDoka),
   );
   args.persist.commit({ doka: decision.newDoka, xp: decision.newXp });
-  confirmAndClearPendingDeathPenalty(args.storage, pending);
+  const current = pendings.find((pending) => pending.slot === args.slot);
+  if (current) {
+    confirmAndClearPendingDeathPenalty(args.storage, current);
+  }
+  stampForeignPendingDeathDokaAbsorbed(
+    args.storage,
+    args.slot,
+    pendings,
+    decision.newDoka,
+  );
   return true;
 }
 
