@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Trophy, X } from "lucide-react";
 import type React from "react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   useClaimAchievementReward,
@@ -17,6 +17,7 @@ import {
   shouldInvalidateCallerDokaAfterClaim,
   shouldRollbackClaimFailure,
 } from "../utils/achievementReward";
+import { subscribeEscapeToDismiss } from "../utils/shopDialogDismiss";
 
 interface AchievementsPanelProps {
   userId?: string;
@@ -193,6 +194,11 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
     [configs],
   );
 
+  useEffect(() => {
+    if (!isOpen || !onClose) return;
+    return subscribeEscapeToDismiss(onClose);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
@@ -364,7 +370,7 @@ const AchievementsPanel: React.FC<AchievementsPanelProps> = ({
                       data-ocid={`achievements.claim_button.${i + 1}`}
                       onClick={() => handleClaim(cfg)}
                       disabled={claimMut.isPending || persistClaimPending}
-                      className="stone-btn-crimson"
+                      className="stone-btn-crimson stone-touch-target"
                       style={{
                         fontSize: 10,
                         padding: "4px 10px",
