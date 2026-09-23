@@ -518,11 +518,14 @@ export function generateSeededBossRushRoom(seed: number): SimWorld {
     WORLD_GRID_SIZE,
     WORLD_GRID_SIZE,
   );
+  const portals = world.portals.map((p, i) =>
+    i === 0 ? { ...p, x: placed.portal.x, y: placed.portal.y } : p,
+  );
   const finalized = finalizePlayableLayout({
     tiles: placed.tiles,
     voidTiles: world.voidTiles,
     playerSpawn: placed.playerSpawn,
-    portals: world.portals,
+    portals,
     spawns: placed.spawns,
     w: WORLD_GRID_SIZE,
     h: WORLD_GRID_SIZE,
@@ -613,11 +616,14 @@ export function simulateRestExitEncounter(
     WORLD_GRID_SIZE,
     WORLD_GRID_SIZE,
   );
+  const portals = world.portals.map((p, i) =>
+    i === 0 ? { ...p, x: punched.portal.x, y: punched.portal.y } : p,
+  );
   const finalized = finalizePlayableLayout({
     tiles: punched.tiles,
     voidTiles: world.voidTiles,
     playerSpawn: punched.playerSpawn,
-    portals: world.portals,
+    portals,
     spawns: punched.roster,
     w: WORLD_GRID_SIZE,
     h: WORLD_GRID_SIZE,
@@ -706,11 +712,14 @@ export function generateSeededBossPortalEncounter(seed: number): SimWorld {
     WORLD_GRID_SIZE,
     WORLD_GRID_SIZE,
   );
+  const portals = world.portals.map((p, i) =>
+    i === 0 ? { ...p, x: punched.portal.x, y: punched.portal.y } : p,
+  );
   const finalized = finalizePlayableLayout({
     tiles: punched.tiles,
     voidTiles: world.voidTiles,
     playerSpawn: punched.playerSpawn,
-    portals: world.portals,
+    portals,
     spawns: punched.roster,
     w: WORLD_GRID_SIZE,
     h: WORLD_GRID_SIZE,

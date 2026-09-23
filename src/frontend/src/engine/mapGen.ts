@@ -1189,9 +1189,19 @@ export function punchRosterReachability<T extends { x: number; y: number }>(
   portal: { x: number; y: number } | undefined,
   worldW: number,
   worldH: number,
-): { tiles: string[][]; roster: T[]; playerSpawn: { x: number; y: number } } {
+): {
+  tiles: string[][];
+  roster: T[];
+  playerSpawn: { x: number; y: number };
+  portal: { x: number; y: number };
+} {
   if (roster.length === 0) {
-    return { tiles, roster, playerSpawn: spawnPosition };
+    return {
+      tiles,
+      roster,
+      playerSpawn: spawnPosition,
+      portal: portal ?? spawnPosition,
+    };
   }
   // Missing portal used to no-op, leaving CA pocket hostiles that seal
   // isProgressionLocked. Gate through the player spawn like Boss Rush.
@@ -1199,6 +1209,7 @@ export function punchRosterReachability<T extends { x: number; y: number }>(
     tiles: nextTiles,
     spawns,
     playerSpawn,
+    portal: livePortal,
   } = ensureReachability(
     tiles,
     toVoidSet(voidTiles),
@@ -1211,7 +1222,12 @@ export function punchRosterReachability<T extends { x: number; y: number }>(
   const nextRoster = roster.map((e, i) =>
     spawns[i] ? { ...e, x: spawns[i].x, y: spawns[i].y } : e,
   );
-  return { tiles: nextTiles, roster: nextRoster, playerSpawn };
+  return {
+    tiles: nextTiles,
+    roster: nextRoster,
+    playerSpawn,
+    portal: livePortal,
+  };
 }
 
 export interface PlayablePortal {
@@ -1262,6 +1278,11 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
   );
   const portals = input.portals.map((p) => ({ ...p }));
   const requireExit = input.requireExit !== false;
+  // placeBossRushSpawns / punchRosterReachability copy tiles but callers
+  // (WX spawnBossRushRoom, rest-exit) keep the pre-punch portal object.
+  // A leftover portal *tile* is a battle wall (`isBattleWalkTileBlocked`)
+  // and can cut the fight graph even when the object sits on a floor.
+  reconcilePortalTiles(tiles, portals, input.w, input.h);
 
   let primary: { x: number; y: number } | null = portals[0] ?? null;
   if (requireExit && !primary) {
@@ -1359,7 +1380,7 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     input.w,
     input.h,
   );
-  stampPortalTiles(liveTiles, portals);
+  reconcilePortalTiles(liveTiles, portals, input.w, input.h);
 
   const takenPortals = new Set(portals.map((p) => `${p.x},${p.y}`));
   const takenHostiles = new Set(spawns.map((s) => `${s.x},${s.y}`));
@@ -1511,6 +1532,7 @@ export interface SolvabilityReport {
   stackedPortals: number;
   enemiesOnPortal: number;
   portalTileMismatch: number;
+  strayPortalTiles: number;
   leftoverIslands: number;
   outOfBounds: number;
   dumpCells: number;
@@ -1702,6 +1724,17 @@ export function evaluateSolvability(
   if (portalTileMismatch > 0) {
     failures.push(`portal-tile-mismatch:${portalTileMismatch}`);
   }
+  let strayPortalTiles = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if ((tiles[y]?.[x] as string) !== "portal") continue;
+      if (portalKeys.has(`${x},${y}`)) continue;
+      strayPortalTiles += 1;
+    }
+  }
+  if (strayPortalTiles > 0) {
+    failures.push(`stray-portal-tiles:${strayPortalTiles}`);
+  }
   if (
     playerSpawnLegal &&
     spawns.some((s) => s.x === playerSpawn.x && s.y === playerSpawn.y)
@@ -1766,6 +1799,7 @@ export function evaluateSolvability(
     stackedPortals,
     enemiesOnPortal,
     portalTileMismatch,
+    strayPortalTiles,
     leftoverIslands,
     outOfBounds,
     dumpCells: dump.dump,
@@ -1794,6 +1828,51 @@ export function stampPortalTiles<P extends { x: number; y: number }>(
   }
 }
 
+/** Portal tiles with no matching portal object. Battle treats them as walls. */
+export function countStrayPortalTiles(
+  tiles: string[][],
+  portals: { x: number; y: number }[],
+  w: number,
+  h: number,
+): number {
+  const keys = new Set(portals.map((p) => `${p.x},${p.y}`));
+  let n = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if ((tiles[y]?.[x] as string) !== "portal") continue;
+      if (keys.has(`${x},${y}`)) continue;
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/**
+ * Floor leftover portal tiles, then stamp every portal object.
+ * A prior ensureReachability pass (Boss Rush preferred cells, rest-exit
+ * punch) mutates tiles but callers often keep the pre-punch portal
+ * object; the orphan tile is a battle choke.
+ */
+export function reconcilePortalTiles<P extends { x: number; y: number }>(
+  tiles: string[][],
+  portals: P[],
+  w: number,
+  h: number,
+): number {
+  const keys = new Set(portals.map((p) => `${p.x},${p.y}`));
+  let cleared = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if ((tiles[y]?.[x] as string) !== "portal") continue;
+      if (keys.has(`${x},${y}`)) continue;
+      tiles[y][x] = "floor";
+      cleared += 1;
+    }
+  }
+  stampPortalTiles(tiles, portals);
+  return cleared;
+}
+
 function colocateWhitePortal<P extends { x: number; y: number }>(
   map: { tiles: string[][]; portals: P[] },
   spawn: { x: number; y: number },
@@ -1805,7 +1884,12 @@ function colocateWhitePortal<P extends { x: number; y: number }>(
   );
   if (existing >= 0) map.portals[existing] = placed;
   else map.portals.push(placed);
-  stampPortalTiles(map.tiles as string[][], map.portals);
+  reconcilePortalTiles(
+    map.tiles as string[][],
+    map.portals,
+    map.tiles[0]?.length ?? 0,
+    map.tiles.length,
+  );
 }
 
 /**
@@ -1887,7 +1971,7 @@ export function applyFinalizedLayout<
       }
     }
   }
-  stampPortalTiles(map.tiles as string[][], map.portals);
+  reconcilePortalTiles(map.tiles as string[][], map.portals, size, size);
   const nextRoster = roster.map((e, i) =>
     finalized.spawns[i]
       ? { ...e, x: finalized.spawns[i].x, y: finalized.spawns[i].y }
