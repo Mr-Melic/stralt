@@ -1587,6 +1587,9 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     input.w,
     input.h,
   );
+  stampPortalTiles(liveTiles, portals);
+  // Floor leftover punch tiles (WX keeps the pre-punch object) after the
+  // destack stamp so this hunk still auto-merges with #428's stamp line.
   reconcilePortalTiles(liveTiles, portals, input.w, input.h);
 
   const takenPortals = new Set(portals.map((p) => `${p.x},${p.y}`));
