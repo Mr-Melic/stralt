@@ -210,6 +210,7 @@ import {
   SPAWN_MIN_CHEBYSHEV,
   applyFamilyVariantsToRoster,
   collectValidEnemySpawnCells,
+  createEnemyNamePicker,
   dungeonScaledEnemyLevel,
   dungeonSpawnExtras,
   generateEnemyScaleFactors,
@@ -473,7 +474,6 @@ import StatusEffectBadge from "./StatusEffectBadge";
 /** Survives tab close. sessionStorage dropped the 20/40 cut on reload. */
 const DEATH_PENALTY_STORAGE = defaultDeathPenaltyStorage();
 
-let _fbNameIdx = 0;
 // Module-level divergence flag — warns ONCE per page load when persisted
 // character ap/mp diverge from the canonical progression formula at battle
 // start. Reset only on full reload (intentional: a single warn is enough).
@@ -5664,48 +5664,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     },
     [currentMap],
   );
-  const DEFAULT_ANCIENT_NAMES = [
-    "Malachar",
-    "Vorenth",
-    "Aethys",
-    "Zarvok",
-    "Kethara",
-    "Duskwyn",
-    "Voraxis",
-    "Nythera",
-    "Valdrek",
-    "Seramis",
-    "Thornvex",
-    "Golvak",
-    "Draveth",
-    "Sythion",
-    "Kaelthar",
-    "Norrax",
-    "Veluun",
-    "Drathis",
-    "Xarveth",
-    "Orvael",
-    "Tyranos",
-    "Belkoth",
-    "Senvaris",
-    "Rathvel",
-    "Mordaen",
-    "Sylvrath",
-    "Graveoch",
-    "Umbrath",
-    "Nocteus",
-    "Vesperis",
-    "Corvath",
-    "Duskaron",
-    "Morbeth",
-    "Soulvex",
-    "Wraitheon",
-    "Spectrael",
-    "Phantarax",
-    "Voidkaen",
-    "Abysseth",
-    "Netheron",
-  ];
   // Generate enemies with level assignment and enhanced movement properties
   // Generate enemies with level assignment, minimum spread, and quadrant coverage
   const generateEnemies = useCallback(
@@ -5748,15 +5706,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         (p: PlayerPosition) => p.x < 8 && p.y >= 8,
         (p: PlayerPosition) => p.x >= 8 && p.y >= 8,
       ];
-      // H4: Build a shuffled copy of the admin name pool for this map.
-      // A usedNames Set ensures no two enemies on the same map share a name.
-      const availableNames = [...enemyNamesFromQuery].sort(
-        () => Math.random() - 0.5,
-      );
-      const namePool =
-        availableNames.length > 0 ? availableNames : DEFAULT_ANCIENT_NAMES;
-      const usedNamesOnThisMap = new Set<string>();
-      let nameIndex = 0;
+      // H4: Unique assignedName per map (empty admin pool wraps ancient names).
+      const pickEnemyName = createEnemyNamePicker(enemyNamesFromQuery);
       // Try to place at least 1 enemy per quadrant first
       const tryPlaceEnemy = (candidates: PlayerPosition[]): boolean => {
         for (const pos of candidates) {
@@ -5785,26 +5736,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             Math.random() *
               (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
             ENEMY_MOVE_INTERVAL_MIN;
-          // H4: Pick the next name that hasn't been used on this map yet.
-          // Advance past duplicates, then mark as used so no two enemies share a name.
-          let assignedName: string | undefined;
-          while (nameIndex < namePool.length) {
-            const candidate = namePool[nameIndex++];
-            if (!usedNamesOnThisMap.has(candidate)) {
-              usedNamesOnThisMap.add(candidate);
-              assignedName = candidate;
-              break;
-            }
-          }
-          // Fallback if the pool is empty or all names are exhausted
-          if (!assignedName) {
-            assignedName =
-              availableNames.length === 0
-                ? DEFAULT_ANCIENT_NAMES[
-                    _fbNameIdx++ % DEFAULT_ANCIENT_NAMES.length
-                  ]
-                : undefined;
-          }
+          const assignedName = pickEnemyName.next();
           enemies.push({
             id: `enemy-${enemies.length}-${currentTime}`,
             x: pos.x,
