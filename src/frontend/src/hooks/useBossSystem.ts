@@ -11,6 +11,7 @@
  */
 
 import type React from "react";
+import { manhattanOnBoard } from "../engine/combatAdjacency";
 import {
   BossAbility,
   type BossAbilityParams,
@@ -57,13 +58,6 @@ function getAdjacentTiles(
 
 function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function manhattanDistance(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
 function getKnightMoves(
@@ -351,8 +345,8 @@ function applyKnightJumpIgnoreWalls(
     };
   }
   const best = moves.reduce((a, b) =>
-    manhattanDistance(a, params.playerEntry) <
-    manhattanDistance(b, params.playerEntry)
+    manhattanOnBoard(a, params.playerEntry) <
+    manhattanOnBoard(b, params.playerEntry)
       ? a
       : b,
   );
@@ -1077,7 +1071,7 @@ function applyVampiricAoe(params: BossAbilityParams): BossAbilityResult {
   // Drain from all enemies (minions, etc.) within 3 tiles of boss
   for (const e of allEnemies) {
     if (e.id === bossEntry.id) continue;
-    if (manhattanDistance(e, bossEntry) <= RADIUS) {
+    if (manhattanOnBoard(e, bossEntry) <= RADIUS) {
       damageToTargets[e.id] = drainAmount;
       msgs.push(`Vampiric drain hits ${e.name} for ${drainAmount} HP!`);
     }

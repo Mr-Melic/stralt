@@ -153,6 +153,14 @@ import {
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
 import {
+  ICE_SLOW_DURATION,
+  ICE_SLOW_MP_MODIFIER,
+  LAVA_BURN_DOT_PER_TURN,
+  LAVA_BURN_DURATION,
+  rollLavaStepDamage,
+  rollSpikeStepDamage,
+} from "../engine/hazardStep";
+import {
   applyFinalizedLayout,
   applySanctuaryLayout,
   applyVoidTiles,
@@ -11426,7 +11434,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           );
           if (hazardType) {
             if (hazardType === "lava") {
-              const rawDmg = 8 + Math.floor(Math.random() * 8); // 8-15
+              const rawDmg = rollLavaStepDamage();
               setCharacterStats((prev) => ({
                 ...prev,
                 hp: Math.max(0, prev.hp - rawDmg),
@@ -11446,10 +11454,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 effectName: "Burning",
                 type: "dot",
                 targetId: "player",
-                duration: 3,
+                duration: LAVA_BURN_DURATION,
                 iconEmoji: "🔥",
                 description: "Burning from lava",
-                dotDamagePerTurn: 3,
+                dotDamagePerTurn: LAVA_BURN_DOT_PER_TURN,
               });
             } else if (hazardType === "ice") {
               logBattleEntry("❌❄️ You stepped on ice! Slowed!", "#66ccff");
@@ -11460,13 +11468,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 type: "debuff",
                 targetId: "player",
                 stat: "mp",
-                modifier: -2,
-                duration: 2,
+                modifier: ICE_SLOW_MP_MODIFIER,
+                duration: ICE_SLOW_DURATION,
                 iconEmoji: "❄️",
                 description: "Slowed by ice: -2 MP",
               });
             } else if (hazardType === "spikes") {
-              const spikeDmg = 5 + Math.floor(Math.random() * 6); // 5-10
+              const spikeDmg = rollSpikeStepDamage();
               setCharacterStats((prev) => ({
                 ...prev,
                 hp: Math.max(0, prev.hp - spikeDmg),
@@ -16875,7 +16883,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             const enemyHazard = currentMap.hazardTiles?.get(`${newX},${newY}`);
             if (enemyHazard) {
               if (enemyHazard === "lava") {
-                const hDmg = 8 + Math.floor(Math.random() * 8);
+                const hDmg = rollLavaStepDamage();
                 const curEH = liveCombatantHp(
                   getLiveCombatants(combatantStoreCtx),
                   enemyId,
@@ -16905,10 +16913,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   effectName: "Burning",
                   type: "dot",
                   targetId: enemyId,
-                  duration: 3,
+                  duration: LAVA_BURN_DURATION,
                   iconEmoji: "\ud83d\udd25",
                   description: "Burning",
-                  dotDamagePerTurn: 3,
+                  dotDamagePerTurn: LAVA_BURN_DOT_PER_TURN,
                 });
               } else if (enemyHazard === "ice") {
                 logBattleEntry(
@@ -16921,13 +16929,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   type: "debuff",
                   targetId: enemyId,
                   stat: "mp",
-                  modifier: -2,
-                  duration: 2,
+                  modifier: ICE_SLOW_MP_MODIFIER,
+                  duration: ICE_SLOW_DURATION,
                   iconEmoji: "\u2744\ufe0f",
                   description: "Slowed by ice",
                 });
               } else if (enemyHazard === "spikes") {
-                const hsDmg = 5 + Math.floor(Math.random() * 6);
+                const hsDmg = rollSpikeStepDamage();
                 const curEHS = liveCombatantHp(
                   getLiveCombatants(combatantStoreCtx),
                   enemyId,
