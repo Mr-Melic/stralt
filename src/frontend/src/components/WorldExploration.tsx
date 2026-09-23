@@ -104,6 +104,7 @@ import {
   battleWalkMpCost,
   canAffordBattleWalk,
 } from "../engine/battleWalkMp";
+import { bossKitSpellPositionToCommit } from "../engine/bossKitSpell";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
   getAoETargets as getAoETargetsHelper,
@@ -16002,10 +16003,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 }, 0);
                 if (!cleanupRanRef.current)
                   pendingTimeoutsRef.current.add(bSpellTimer);
-                updateCombatant(combatantStoreCtx, enemyId, {
-                  x: bossSpellDest.x,
-                  y: bossSpellDest.y,
+                // targetX/Y is the victim tile, not a boss step. Committing
+                // it stacked the boss on the player after every kit cast.
+                const kitPos = bossKitSpellPositionToCommit({
+                  origin: { x: enemy.x, y: enemy.y },
+                  aim: bossSpellDest,
                 });
+                if (kitPos) {
+                  updateCombatant(combatantStoreCtx, enemyId, kitPos);
+                }
                 return;
               }
               // Spell lookup failed — fall through to abilityResult handling.
