@@ -8,6 +8,7 @@ import {
   type CompletedChallengeReward,
   addChallengeRewardDeltas,
 } from "./challengeRewards.ts";
+import { noteUnseededVictoryKeepWriteSkipOnActive } from "./unseededVictoryKeepWriteSkip.ts";
 import { xpForNextLevel } from "./xpCurve.ts";
 
 export type { ApplyRewardsOk } from "./applyRewardsResult.ts";
@@ -191,36 +192,43 @@ export async function resolveBattleRewards(
   } = input;
   const { dokaDelta, xpDelta, dokaFromChallenges } = computeRewardDeltas(input);
 
-  // Call backend atomic applyRewards
-  const result = await actor.applyRewards(
-    BigInt(selectedSlot),
-    BigInt(dokaDelta),
-    BigInt(xpDelta),
-  );
+  try {
+    // Call backend atomic applyRewards
+    const result = await actor.applyRewards(
+      BigInt(selectedSlot),
+      BigInt(dokaDelta),
+      BigInt(xpDelta),
+    );
 
-  const { newDoka, newXp, newLevel } = readApplyRewardsOk(result);
+    const { newDoka, newXp, newLevel } = readApplyRewardsOk(result);
 
-  // Build recap data
-  const recap: BattleRecapData = {
-    xpEarned: xpDelta,
-    dokaEarned: dokaDelta,
-    dokaFromVictory: victory
-      ? dungeonMultiplier === PREAPPLIED_REWARD_MULTIPLIER
-        ? baseDoka
-        : Math.floor(baseDoka * dungeonMultiplier)
-      : 0,
-    dokaFromChallenges: dokaFromChallenges,
-    completedChallenges: completedChallenges.map((c) => c.name),
-    enemiesDefeated: enemiesDefeated,
-    currentLevel: Number(newLevel),
-    currentXP: Number(newXp),
-    newDoka: Number(newDoka),
-    newXp: Number(newXp),
-    xpForNextLevel: xpForNextLevel(Number(newLevel)),
-    mapTitle: "",
-    hitsDealt: 0,
-    dokaBreakdown: [],
-  };
+    // Build recap data
+    const recap: BattleRecapData = {
+      xpEarned: xpDelta,
+      dokaEarned: dokaDelta,
+      dokaFromVictory: victory
+        ? dungeonMultiplier === PREAPPLIED_REWARD_MULTIPLIER
+          ? baseDoka
+          : Math.floor(baseDoka * dungeonMultiplier)
+        : 0,
+      dokaFromChallenges: dokaFromChallenges,
+      completedChallenges: completedChallenges.map((c) => c.name),
+      enemiesDefeated: enemiesDefeated,
+      currentLevel: Number(newLevel),
+      currentXP: Number(newXp),
+      newDoka: Number(newDoka),
+      newXp: Number(newXp),
+      xpForNextLevel: xpForNextLevel(Number(newLevel)),
+      mapTitle: "",
+      hitsDealt: 0,
+      dokaBreakdown: [],
+    };
 
-  return recap;
+    return recap;
+  } catch (err) {
+    // Unseeded throw-after-add left the lock at placeholder 0. Recap heal
+    // then saveBattleStats-wrote a stale pre-credit wallet.
+    noteUnseededVictoryKeepWriteSkipOnActive(err);
+    throw err;
+  }
 }

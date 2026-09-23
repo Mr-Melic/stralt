@@ -7,6 +7,10 @@ import {
   resolveCommittedDokaForAbsoluteWrite,
 } from "./progressPersist.ts";
 import {
+  PREAPPLIED_REWARD_MULTIPLIER,
+  resolveBattleRewards,
+} from "./rewardResolver.ts";
+import {
   ABSOLUTE_WRITE_UNSEEDED_VICTORY_KEEP,
   assertUnseededVictoryKeepAbsoluteWriteAllowed,
   clearUnseededVictoryKeepWriteSkip,
@@ -174,5 +178,34 @@ describe("unseeded victory / Boss Rush keep vs stale absolute-write fetch", () =
       /replica timeout/,
     );
     assert.equal(hasUnseededVictoryKeepWriteSkip(lock), false);
+  });
+
+  it("notes skip from resolveBattleRewards via the registered world persist", async () => {
+    const lock = createProgressPersist({ doka: 0, xp: 80, level: 4 });
+    await assert.rejects(
+      resolveBattleRewards(
+        {
+          applyRewards: async () => {
+            throw new Error("replica reject after add");
+          },
+        },
+        1,
+        {
+          victory: true,
+          enemiesDefeated: [{ name: "rat", level: 2 }],
+          completedChallenges: [],
+          dungeonMultiplier: PREAPPLIED_REWARD_MULTIPLIER,
+          baseDoka: 80,
+          baseXp: 40,
+        },
+      ),
+      /replica reject after add/,
+    );
+    assert.equal(hasUnseededVictoryKeepWriteSkip(lock), true);
+    const skipped = await resolveCommittedDokaForAbsoluteWrite(
+      lock,
+      async () => 200,
+    );
+    assert.equal(skipped, null);
   });
 });
