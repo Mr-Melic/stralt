@@ -56,8 +56,20 @@ import {
   toBackendLevelUpConfig,
 } from "../utils/adminContract";
 import {
+  adminAdClearFailedCopy,
+  adminAdSaveFailedCopy,
+  adminBossRushPublishConfirmBody,
+  adminNamePoolInitConfirmBody,
+  adminPaletteResetConfirmBody,
+} from "../utils/adminOwnerUx";
+import {
   KNOWN_ACHIEVEMENT_CONDITIONS,
   MAX_DOKA_GRANT,
+  achievementConditionTaken,
+  adBoxAt,
+  adminSpellCatalogStatus,
+  adminSpellDeleteBlockedReason,
+  isBuiltInSpellId,
   unsafeUrl,
   validateAchievementConfig,
   validateAdBox,
@@ -589,9 +601,12 @@ const EnemyPresets: React.FC<{
 }> = ({ currentConfig, onLoad }) => {
   const [presets, setPresets] = React.useState<EnemyPreset[]>(loadPresets);
   const [presetName, setPresetName] = React.useState("");
-  const handleSave = () => {
-    const name = presetName.trim();
-    if (!name) return;
+  const [confirmPresetId, setConfirmPresetId] = React.useState<string | null>(
+    null,
+  );
+  const [overwriteName, setOverwriteName] = React.useState<string | null>(null);
+  const pendingPreset = presets.find((p) => p.id === confirmPresetId);
+  const commitPreset = (name: string) => {
     const next = [
       ...presets.filter((p) => p.name !== name),
       { id: `preset_${Date.now()}`, name, config: { ...currentConfig } },
@@ -599,6 +614,16 @@ const EnemyPresets: React.FC<{
     setPresets(next);
     savePresets(next);
     setPresetName("");
+    setOverwriteName(null);
+  };
+  const handleSave = () => {
+    const name = presetName.trim();
+    if (!name) return;
+    if (presets.some((p) => p.name === name)) {
+      setOverwriteName(name);
+      return;
+    }
+    commitPreset(name);
   };
   const handleDelete = (id: string) => {
     const next = presets.filter((p) => p.id !== id);
@@ -616,6 +641,29 @@ const EnemyPresets: React.FC<{
         marginBottom: 16,
       }}
     >
+      {confirmPresetId && (
+        <ConfirmDialog
+          title={`Delete preset ${pendingPreset?.name || "preset"}?`}
+          body="This removes the browser-local enemy preset. Live enemy catalog rows are unchanged."
+          confirmLabel="Delete preset"
+          ocidPrefix="admin.enemy.preset.delete"
+          onCancel={() => setConfirmPresetId(null)}
+          onConfirm={() => {
+            handleDelete(confirmPresetId);
+            setConfirmPresetId(null);
+          }}
+        />
+      )}
+      {overwriteName && (
+        <ConfirmDialog
+          title={`Overwrite preset ${overwriteName}?`}
+          body="A browser-local preset already uses this name. Confirming replaces that draft. Live enemy catalog rows are unchanged."
+          confirmLabel="Overwrite preset"
+          ocidPrefix="admin.enemy.preset.overwrite"
+          onCancel={() => setOverwriteName(null)}
+          onConfirm={() => commitPreset(overwriteName)}
+        />
+      )}
       <p style={sectionHeadStyle}>Enemy Stat Presets</p>
       <div
         style={{
@@ -688,7 +736,7 @@ const EnemyPresets: React.FC<{
               <button
                 type="button"
                 data-ocid={`admin.enemy.preset.delete_button.${i + 1}`}
-                onClick={() => handleDelete(p.id)}
+                onClick={() => setConfirmPresetId(p.id)}
                 style={{
                   background: C.red,
                   border: "none",
@@ -2780,6 +2828,14 @@ const SpellEditor: React.FC<{
           >
             Player Can Use
           </label>
+          {isBuiltInSpellId(cfg.id) && (
+            <span
+              data-ocid="admin.spell.builtin_retire_hint"
+              style={{ color: C.dim, fontSize: 9, fontWeight: 500 }}
+            >
+              Built-in — uncheck and Save to retire. Delete is blocked.
+            </span>
+          )}
         </div>
         {/* Usable by Enemy */}
         <div
@@ -3642,6 +3698,8 @@ const SpellList: React.FC<{
         seeded on new drafts and saved when present, but this editor has no
         summon controls. Swap, Barrier, Trap, DoT, and buff numeric flags are
         frontend-only and drop on reload. minLevel is not enforced at hydrate.
+        Built-in spell ids cannot be deleted — use Retire, uncheck Player Can
+        Use, and Save.
       </CatalogNote>
 
       {loading && (
@@ -3692,102 +3750,166 @@ const SpellList: React.FC<{
         </div>
       )}
 
-      {visible.map((s, i) => (
-        <PanelCard key={s.id}>
-          <div
-            data-ocid={`admin.spells.item.${i + 1}`}
-            style={{
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              padding: "10px 14px",
-            }}
-          >
+      {visible.map((s, i) => {
+        const catalogStatus = adminSpellCatalogStatus({
+          id: s.id,
+          usableByPlayer: s.usableByPlayer,
+        });
+        return (
+          <PanelCard key={s.id}>
             <div
+              data-ocid={`admin.spells.item.${i + 1}`}
               style={{
-                width: 40,
-                height: 40,
-                background: `linear-gradient(135deg, ${C.bg3}, #2a0a1a)`,
-                border: `2px solid ${C.goldDim}`,
-                borderRadius: 8,
                 display: "flex",
+                gap: 12,
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: 20,
-                flexShrink: 0,
+                padding: "10px 14px",
               }}
             >
-              {s.iconEmoji || "⚡"}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
-                  color: "#c0ccd8",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  marginBottom: 2,
-                }}
-              >
-                {s.name || s.id}
-              </div>
-              <div
-                style={{
+                  width: 40,
+                  height: 40,
+                  background: `linear-gradient(135deg, ${C.bg3}, #2a0a1a)`,
+                  border: `2px solid ${C.goldDim}`,
+                  borderRadius: 8,
                   display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
                   alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 20,
+                  flexShrink: 0,
                 }}
               >
-                {[
-                  [s.effectType, C.gold],
-                  [`AP ${String(s.apCost)}`, C.blue],
-                  [`DMG ${String(s.damage)}`, C.red],
-                  [`RNG ${String(s.range)}`, C.green],
-                ].map(([label, color]) => (
-                  <span
-                    key={label as string}
-                    style={{
-                      background: `${color as string}18`,
-                      border: `1px solid ${color as string}44`,
-                      borderRadius: 20,
-                      padding: "1px 7px",
-                      fontSize: 10,
-                      color: color as string,
-                      letterSpacing: "0.04em",
-                    }}
+                {s.iconEmoji || "⚡"}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    color: "#c0ccd8",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    marginBottom: 2,
+                  }}
+                >
+                  {s.name || s.id}
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                  }}
+                >
+                  {[
+                    [s.effectType, C.gold],
+                    [`AP ${String(s.apCost)}`, C.blue],
+                    [`DMG ${String(s.damage)}`, C.red],
+                    [`RNG ${String(s.range)}`, C.green],
+                  ].map(([label, color]) => (
+                    <span
+                      key={label as string}
+                      style={{
+                        background: `${color as string}18`,
+                        border: `1px solid ${color as string}44`,
+                        borderRadius: 20,
+                        padding: "1px 7px",
+                        fontSize: 10,
+                        color: color as string,
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      {label}
+                    </span>
+                  ))}
+                  {catalogStatus === "retired" && (
+                    <span
+                      data-ocid={`admin.spells.retired_badge.${i + 1}`}
+                      style={{
+                        background: `${C.red}18`,
+                        border: `1px solid ${C.red}44`,
+                        borderRadius: 20,
+                        padding: "1px 7px",
+                        fontSize: 10,
+                        color: C.red,
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      Retired
+                    </span>
+                  )}
+                  {catalogStatus === "built-in" && (
+                    <span
+                      data-ocid={`admin.spells.builtin_badge.${i + 1}`}
+                      style={{
+                        background: `${C.gold}18`,
+                        border: `1px solid ${C.goldDim}`,
+                        borderRadius: 20,
+                        padding: "1px 7px",
+                        fontSize: 10,
+                        color: C.gold,
+                        letterSpacing: "0.04em",
+                      }}
+                    >
+                      Built-in
+                    </span>
+                  )}
+                  {s.description && (
+                    <span style={{ color: "#6a6070", fontSize: 10 }}>
+                      {s.description.slice(0, 40)}
+                      {s.description.length > 40 ? "…" : ""}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn
+                  variant="ghost"
+                  small
+                  onClick={() => onEdit(s.id)}
+                  ocid={`admin.spells.edit_button.${i + 1}`}
+                >
+                  Edit
+                </Btn>
+                {isBuiltInSpellId(s.id) ? (
+                  s.usableByPlayer === false ? (
+                    <span
+                      data-ocid={`admin.spells.retired_label.${i + 1}`}
+                      style={{
+                        color: C.dim,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: "0.04em",
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      Retired
+                    </span>
+                  ) : (
+                    <Btn
+                      variant="ghost"
+                      small
+                      onClick={() => onEdit(s.id)}
+                      ocid={`admin.spells.retire_button.${i + 1}`}
+                    >
+                      Retire
+                    </Btn>
+                  )
+                ) : (
+                  <Btn
+                    variant="red"
+                    small
+                    onClick={() => setConfirmId(s.id)}
+                    ocid={`admin.spells.delete_button.${i + 1}`}
                   >
-                    {label}
-                  </span>
-                ))}
-                {s.description && (
-                  <span style={{ color: "#6a6070", fontSize: 10 }}>
-                    {s.description.slice(0, 40)}
-                    {s.description.length > 40 ? "…" : ""}
-                  </span>
+                    ×
+                  </Btn>
                 )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn
-                variant="ghost"
-                small
-                onClick={() => onEdit(s.id)}
-                ocid={`admin.spells.edit_button.${i + 1}`}
-              >
-                Edit
-              </Btn>
-              <Btn
-                variant="red"
-                small
-                onClick={() => setConfirmId(s.id)}
-                ocid={`admin.spells.delete_button.${i + 1}`}
-              >
-                ×
-              </Btn>
-            </div>
-          </div>
-        </PanelCard>
-      ))}
+          </PanelCard>
+        );
+      })}
       {confirmId && (
         <ConfirmDialog
           title={`Delete ${pending?.name || pending?.id || "spell"}?`}
@@ -3795,6 +3917,12 @@ const SpellList: React.FC<{
           ocidPrefix="admin.spells.delete"
           onCancel={() => setConfirmId(null)}
           onConfirm={() => {
+            const blocked = adminSpellDeleteBlockedReason(confirmId);
+            if (blocked) {
+              toast.error(blocked);
+              setConfirmId(null);
+              return;
+            }
             onDelete(confirmId);
             setConfirmId(null);
           }}
@@ -3826,12 +3954,51 @@ const TierConfigTab: React.FC = () => {
     return DEFAULT_TIER_CFG;
   });
 
+  useEffect(() => {
+    if (!actor) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const remote = await (
+          actor as unknown as backendInterface
+        ).getTierSpawnConfig();
+        if (cancelled || !remote) return;
+        const next: TierSpawnConfig = {
+          tierSize: Number(remote.tierSize ?? DEFAULT_TIER_CFG.tierSize),
+          sameTierPercent: Number(
+            remote.sameTierPercent ?? DEFAULT_TIER_CFG.sameTierPercent,
+          ),
+          adjacentTierPercent: Number(
+            remote.adjacentTierPercent ?? DEFAULT_TIER_CFG.adjacentTierPercent,
+          ),
+          twoAwayPercent: Number(
+            remote.twoAwayPercent ?? DEFAULT_TIER_CFG.twoAwayPercent,
+          ),
+          threeOrMorePercent: Number(
+            remote.threeOrMorePercent ?? DEFAULT_TIER_CFG.threeOrMorePercent,
+          ),
+        };
+        if (cancelled) return;
+        setCfg(next);
+        localStorage.setItem("pbv_tier_spawn_config", JSON.stringify(next));
+      } catch {
+        /* keep localStorage draft */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [actor]);
+
   const total =
     cfg.sameTierPercent +
     cfg.adjacentTierPercent +
     cfg.twoAwayPercent +
     cfg.threeOrMorePercent;
-  const isValid = total === 100;
+  const remainderThreePlus = Math.max(
+    0,
+    100 - cfg.sameTierPercent - cfg.adjacentTierPercent - cfg.twoAwayPercent,
+  );
 
   const setNum = (k: keyof TierSpawnConfig, v: string) => {
     const n = Math.max(0, Number.parseInt(v) || 0);
@@ -3839,10 +4006,6 @@ const TierConfigTab: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!isValid) {
-      toast.error("Percentages must sum to exactly 100%");
-      return;
-    }
     const tierErr = validateTierSpawnConfig({
       tierSize: Number(cfg.tierSize),
       sameTierPercent: Number(cfg.sameTierPercent),
@@ -3906,7 +4069,7 @@ const TierConfigTab: React.FC = () => {
       adjHigh: `T${adjHigh + 1}`,
       twoLow: `T${twoLow + 1}`,
       twoHigh: `T${twoHigh + 1}`,
-      threePlus: `${cfg.threeOrMorePercent}%`,
+      threePlus: `${remainderThreePlus}%`,
     };
   });
 
@@ -3923,10 +4086,18 @@ const TierConfigTab: React.FC = () => {
       >
         Enemy Tier Spawn System
       </h3>
-      <p style={{ color: "#8a8090", fontSize: 11, margin: "0 0 20px" }}>
+      <p style={{ color: "#8a8090", fontSize: 11, margin: "0 0 12px" }}>
         Configure how likely players are to encounter same-tier vs
-        higher/lower-tier enemies. All percentages must sum to 100.
+        higher/lower-tier enemies. Canister default is 60/20/10/5 (95 total).
       </p>
+      <CatalogNote>
+        Live spawn does not require the four percents to sum to 100. It spends
+        same, then adjacent, then ±2, and puts leftover into ±3+. The stored
+        threeOrMorePercent is not the roll weight. ±1 tier variance is a
+        hardcoded 15% in combatMath, not a field here. Tier index still caps at
+        floor(999 / tierSize) — that is a spawn-band clamp, not a player career
+        cap.
+      </CatalogNote>
 
       {/* Config inputs */}
       <div
@@ -3980,7 +4151,7 @@ const TierConfigTab: React.FC = () => {
               value={cfg.sameTierPercent}
               onChange={(e) => setNum("sameTierPercent", e.target.value)}
               data-ocid="admin.tier.same_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
@@ -3997,7 +4168,7 @@ const TierConfigTab: React.FC = () => {
               value={cfg.adjacentTierPercent}
               onChange={(e) => setNum("adjacentTierPercent", e.target.value)}
               data-ocid="admin.tier.adjacent_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
@@ -4014,14 +4185,14 @@ const TierConfigTab: React.FC = () => {
               value={cfg.twoAwayPercent}
               onChange={(e) => setNum("twoAwayPercent", e.target.value)}
               data-ocid="admin.tier.twoaway_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
           {/* ±3+ tiers % */}
           <div style={{ marginBottom: 12 }}>
             <label htmlFor="tier.three" style={labelStyle}>
-              ±3+ Tiers % (default 5)
+              ±3+ Tiers % stored (default 5; live leftover is the roll)
             </label>
             <input
               id="tier.three"
@@ -4031,7 +4202,7 @@ const TierConfigTab: React.FC = () => {
               value={cfg.threeOrMorePercent}
               onChange={(e) => setNum("threeOrMorePercent", e.target.value)}
               data-ocid="admin.tier.threemore_input"
-              style={inputStyle(!isValid)}
+              style={inputStyle()}
             />
           </div>
 
@@ -4046,8 +4217,8 @@ const TierConfigTab: React.FC = () => {
           >
             <div
               style={{
-                background: isValid ? `${C.green}22` : `${C.red}22`,
-                border: `1px solid ${isValid ? C.green : C.red}`,
+                background: `${C.green}22`,
+                border: `1px solid ${C.green}`,
                 borderRadius: 6,
                 padding: "6px 14px",
                 width: "100%",
@@ -4056,12 +4227,13 @@ const TierConfigTab: React.FC = () => {
             >
               <span
                 style={{
-                  color: isValid ? C.green : C.red,
+                  color: C.green,
                   fontWeight: 800,
                   fontSize: 13,
                 }}
               >
-                Total: {total}%{isValid ? " ✔" : " ✘ must be 100"}
+                Total stored: {total}% · live ±3+ leftover: {remainderThreePlus}
+                %
               </span>
             </div>
           </div>
@@ -4228,10 +4400,10 @@ const SettingsTab: React.FC = () => {
         Manage admin permissions and game settings.
       </p>
       <CatalogNote>
-        Role transfer uses assignUserRole. Canister also has rollback
-        (LevelUp/Game/Tier/Palette/BossRush), getAdminAuditLog, setAppVersion /
-        setChangelog, and getBannedPrincipals — none of those have editors on
-        this tab.
+        Role transfer uses assignUserRole. Ban list is on Shop
+        (getBannedPrincipals). This tab has no editors for rollback
+        (LevelUp/Game/Tier/Palette/BossRush), getAdminAuditLog, or setAppVersion
+        / setChangelog.
       </CatalogNote>
 
       <p style={sectionHeadStyle}>Transfer Admin Role</p>
@@ -4348,6 +4520,7 @@ const LevelUpConfigPanel: React.FC = () => {
     return { ...DEFAULT_LEVEL_UP_DRAFT };
   });
   const [saved, setSaved] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (!actor) return;
@@ -4419,6 +4592,7 @@ const LevelUpConfigPanel: React.FC = () => {
       return;
     }
     try {
+      setSaving(true);
       const result = await (
         actor as unknown as backendInterface
       ).adminSetLevelUpConfig(payload);
@@ -4428,6 +4602,8 @@ const LevelUpConfigPanel: React.FC = () => {
       setTimeout(() => setSaved(false), 2000);
     } catch (_e) {
       toast.error("Failed to save level-up config to backend");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -4685,8 +4861,13 @@ const LevelUpConfigPanel: React.FC = () => {
           </p>
         </div>
       </div>
-      <Btn variant="gold" onClick={handleSave} ocid="admin.levelup.save_button">
-        {saved ? "Saved \u2713" : "Save Config"}
+      <Btn
+        variant="gold"
+        onClick={handleSave}
+        ocid="admin.levelup.save_button"
+        disabled={saving}
+      >
+        {saving ? "Saving…" : saved ? "Saved \u2713" : "Save Config"}
       </Btn>
     </div>
   );
@@ -4721,11 +4902,14 @@ const VisualsTab: React.FC = () => {
   );
   const [saved, setSaved] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  const [confirmReset, setConfirmReset] = React.useState(false);
 
   const handleSave = async () => {
     const palette = slots.filter((s) => s.enabled).map((s) => s.color);
     const blob = JSON.stringify(palette);
     try {
+      setSaving(true);
       const result = await (
         actor as unknown as backendInterface
       ).adminSetColorPalette(blob);
@@ -4739,6 +4923,8 @@ const VisualsTab: React.FC = () => {
       console.error("Failed to save color palette:", err);
       setSaveError("Save failed — check console");
       toast.error(`Failed to save color palette: ${String(err)}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -4763,6 +4949,12 @@ const VisualsTab: React.FC = () => {
       >
         Visuals
       </h3>
+      <CatalogNote>
+        This tab is the map paper-vertex color palette only — not enemy or
+        player sprite pools. Enemy stored URLs live on Enemies; facing URLs live
+        on Player Sprites. Empty custom visuals remain a valid Default Pixel
+        Visual.
+      </CatalogNote>
       <p
         style={{
           color: "#8a8090",
@@ -4905,18 +5097,33 @@ const VisualsTab: React.FC = () => {
         )}
       </div>
       <div style={{ display: "flex", gap: 10, flexDirection: "column" }}>
+        {confirmReset && (
+          <ConfirmDialog
+            title="Reset palette editor?"
+            body={adminPaletteResetConfirmBody()}
+            confirmLabel="Reset editor"
+            ocidPrefix="admin.visuals.reset"
+            onCancel={() => setConfirmReset(false)}
+            onConfirm={() => {
+              setConfirmReset(false);
+              handleReset();
+            }}
+          />
+        )}
         <div style={{ display: "flex", gap: 10 }}>
           <Btn
             variant="gold"
             onClick={handleSave}
             ocid="admin.visuals.save_button"
+            disabled={saving}
           >
-            {saved ? "Saved ✓" : "Save Palette"}
+            {saving ? "Saving…" : saved ? "Saved ✓" : "Save Palette"}
           </Btn>
           <Btn
             variant="ghost"
-            onClick={handleReset}
+            onClick={() => setConfirmReset(true)}
             ocid="admin.visuals.reset_button"
+            disabled={saving}
           >
             Reset editor to Random
           </Btn>
@@ -5406,6 +5613,9 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
     }
   });
   const [bossRushSaved, setBossRushSaved] = useState(false);
+  const [bossRushSaving, setBossRushSaving] = useState(false);
+  const [pendingBossRushPublish, setPendingBossRushPublish] = useState(false);
+  const [pendingInitNames, setPendingInitNames] = useState(false);
   const [shopGrantPrincipalId, setShopGrantPrincipalId] = useState("");
   const [shopBanPrincipalId, setShopBanPrincipalId] = useState("");
   const [shopDokaAmount, setShopDokaAmount] = useState<number>(0);
@@ -5425,6 +5635,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   const [nameQuery, setNameQuery] = useState("");
   const [bannedPrincipals, setBannedPrincipals] = useState<string[]>([]);
   const [bannedLoadError, setBannedLoadError] = useState<string | null>(null);
+  const [bossEditorOpen, setBossEditorOpen] = useState(false);
 
   const { actor: adminActor } = useActor();
 
@@ -5482,9 +5693,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
     dashState.editingSpellId != null ||
     dashState.editingModifierId != null ||
     dashState.editingAchievementId != null ||
-    dashState.editingSpriteId != null;
+    dashState.editingSpriteId != null ||
+    bossEditorOpen;
 
-  const applyTab = (tab: AdminDashboardState["tab"]) =>
+  const applyTab = (tab: AdminDashboardState["tab"]) => {
+    setBossEditorOpen(false);
     setDashState((p) => ({
       ...p,
       tab,
@@ -5495,6 +5708,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
       editingModifierId: null,
       editingAchievementId: null,
     }));
+  };
 
   const setTab = (tab: AdminDashboardState["tab"]) => {
     if (hasOpenEditor && tab !== dashState.tab) {
@@ -5635,7 +5849,14 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
     setSpellMut.isPending ||
     delSpellMut.isPending ||
     setModifierMut.isPending ||
-    delModifierMut.isPending;
+    delModifierMut.isPending ||
+    setGameConfigMut.isPending ||
+    setAchievementMut.isPending ||
+    delAchievementMut.isPending ||
+    addEnemyNameMut.isPending ||
+    delEnemyNameMut.isPending ||
+    initDefaultNamesMut.isPending ||
+    bossRushSaving;
 
   // ── dashboard ─────────────────────────────────────────────────────────────────
   return (
@@ -5716,6 +5937,56 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 onError: () => toast.error("Failed to remove name"),
               });
             }
+          }}
+        />
+      )}
+      {pendingInitNames && (
+        <ConfirmDialog
+          title="Load default enemy names?"
+          body={adminNamePoolInitConfirmBody()}
+          confirmLabel="Write name pool"
+          ocidPrefix="admin.names.init_defaults"
+          onCancel={() => setPendingInitNames(false)}
+          onConfirm={() => {
+            setPendingInitNames(false);
+            void initDefaultNamesMut
+              .mutateAsync()
+              .then(() => toast.success("Default enemy names written (live)"))
+              .catch(() => toast.error("Failed to load default names"));
+          }}
+        />
+      )}
+      {pendingBossRushPublish && (
+        <ConfirmDialog
+          title="Publish Boss Rush live?"
+          body={adminBossRushPublishConfirmBody()}
+          confirmLabel="Publish live"
+          ocidPrefix="admin.boss_rush.publish"
+          onCancel={() => setPendingBossRushPublish(false)}
+          onConfirm={() => {
+            setPendingBossRushPublish(false);
+            void (async () => {
+              setBossRushSaving(true);
+              try {
+                const blob = JSON.stringify(bossRushConfig);
+                const result = await (
+                  adminActor as unknown as backendInterface
+                ).adminSetBossRushConfig(blob);
+                assertAdminCmdOk(result, "adminSetBossRushConfig");
+                localStorage.setItem("bossRushConfig", blob);
+                toast.success("Boss Rush config published (live)");
+                setSaveStatus("Saved");
+                setTimeout(() => setSaveStatus(null), 3000);
+                setBossRushSaved(true);
+                setTimeout(() => setBossRushSaved(false), 2000);
+              } catch (err) {
+                console.error("Failed to save boss rush config:", err);
+                toast.error("Failed to save Boss Rush config");
+                setSaveStatus(`Save failed: ${String(err)}`);
+              } finally {
+                setBossRushSaving(false);
+              }
+            })();
           }}
         />
       )}
@@ -5938,6 +6209,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               ["Spells", spells.length],
               ["Achievements", (achievementQ.data ?? []).length],
               ["Modifiers", modifiers.length],
+              ["Names", enemyNames.length],
+              ["Bosses", BOSS_IDS.length],
             ].map(([label, count]) => (
               <div
                 key={label}
@@ -6162,9 +6435,19 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   setDashState((p) => ({ ...p, editingSpellId: id }))
                 }
                 onDelete={(id) => {
+                  const blocked = adminSpellDeleteBlockedReason(id);
+                  if (blocked) {
+                    toast.error(blocked);
+                    return;
+                  }
                   delSpellMut.mutate(id, {
                     onSuccess: () => toast.success("Spell deleted"),
-                    onError: () => toast.error("Failed to delete spell"),
+                    onError: (err) =>
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : "Failed to delete spell",
+                      ),
                   });
                 }}
               />
@@ -6675,6 +6958,13 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                   </Btn>
                 </div>
               </div>
+              <CatalogNote>
+                Canister rows are live: WorldExploration and AchievementsPanel
+                read getAchievementConfigs. Conditions must be in
+                KNOWN_ACHIEVEMENT_CONDITIONS. doka_1000 / doka_10000 / level_10
+                wait until applyRewards commits. level_10 is a feat, not a
+                career cap. Challenges have no admin tab.
+              </CatalogNote>
 
               {/* Editor */}
               {dashState.editingAchievementId && (
@@ -6687,7 +6977,24 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                           (a) => a.id === dashState.editingAchievementId,
                         ) ?? newAchievement())
                   }
-                  onSave={(cfg) =>
+                  onSave={(cfg) => {
+                    const taken = (achievementQ.data ?? []).find(
+                      (row) =>
+                        achievementConditionTaken({
+                          nextId: cfg.id,
+                          nextCondition: cfg.condition,
+                          nextActive: cfg.active,
+                          existingId: row.id,
+                          existingCondition: row.condition,
+                          existingActive: row.active,
+                        }) != null,
+                    );
+                    if (taken) {
+                      toast.error(
+                        "condition is already used by another achievement",
+                      );
+                      return;
+                    }
                     setAchievementMut.mutate(cfg, {
                       onSuccess: () => {
                         toast.success("Achievement saved");
@@ -6697,8 +7004,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                         }));
                       },
                       onError: () => toast.error("Failed to save achievement"),
-                    })
-                  }
+                    });
+                  }}
                   onCancel={() =>
                     setDashState((p) => ({ ...p, editingAchievementId: null }))
                   }
@@ -6866,7 +7173,9 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
 
           {/* ENEMY NAMES */}
 
-          {dashState.tab === "bosses" && <BossesTab spells={spells} />}
+          {dashState.tab === "bosses" && (
+            <BossesTab spells={spells} onEditorOpenChange={setBossEditorOpen} />
+          )}
 
           {dashState.tab === "ads" && (
             <div data-ocid="admin.ads_tab" style={{ padding: 20 }}>
@@ -6916,6 +7225,8 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 Players buy Doka with a Mollie payment + GameKey request.
                 Incoming requests live on the Purchases tab. Grant and ban use
                 separate principal fields and write live — there is no undo.
+                Canister ShopPackage CRUD and initiatePurchase remain unused by
+                this UI; do not delete them until a deployed DID prove-out.
               </CatalogNote>
               <div
                 style={{
@@ -7140,9 +7451,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               </h3>
               <CatalogNote>
                 Enable/reward toggles write opaque JSON. Live rooms come from
-                BOSS_RUSH_ROOMS; only parsed.rewardMultiplier is read. Room 10
-                lists Weeping Pawn; live room 9 uses weeping_pawn_2. Canister
-                save publishes immediately — this is not a browser draft.
+                BOSS_RUSH_ROOMS. parsed.rewardMultiplier is loaded into unused
+                state — it does not scale dokaReward/xpReward. Room 10 lists
+                Weeping Pawn; live room 9 uses weeping_pawn_2. Canister save
+                publishes immediately — this is not a browser draft.
               </CatalogNote>
               {[
                 { room: 1, a: "Pale Archbishop", b: "Weeping Pawn" },
@@ -7246,29 +7558,10 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 <Btn
                   variant="gold"
                   ocid="admin.boss_rush_save_button"
-                  onClick={() => {
-                    void (async () => {
-                      try {
-                        const blob = JSON.stringify(bossRushConfig);
-                        const result = await (
-                          adminActor as unknown as backendInterface
-                        ).adminSetBossRushConfig(blob);
-                        assertAdminCmdOk(result, "adminSetBossRushConfig");
-                        localStorage.setItem("bossRushConfig", blob);
-                        toast.success("Boss Rush config published (live)");
-                        setSaveStatus("Saved");
-                        setTimeout(() => setSaveStatus(null), 3000);
-                        setBossRushSaved(true);
-                        setTimeout(() => setBossRushSaved(false), 2000);
-                      } catch (err) {
-                        console.error("Failed to save boss rush config:", err);
-                        toast.error("Failed to save Boss Rush config");
-                        setSaveStatus(`Save failed: ${String(err)}`);
-                      }
-                    })();
-                  }}
+                  disabled={bossRushSaving}
+                  onClick={() => setPendingBossRushPublish(true)}
                 >
-                  Publish Boss Rush
+                  {bossRushSaving ? "Saving…" : "Publish Boss Rush"}
                 </Btn>
                 {bossRushSaved && (
                   <span
@@ -7344,14 +7637,24 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                     <Btn
                       variant="gold"
                       small
-                      onClick={() => initDefaultNamesMut.mutate()}
+                      onClick={() => setPendingInitNames(true)}
                       ocid="admin.names.init_defaults_button"
+                      disabled={initDefaultNamesMut.isPending}
                     >
-                      Load Defaults
+                      {initDefaultNamesMut.isPending
+                        ? "Saving…"
+                        : "Load Defaults"}
                     </Btn>
                   )}
                 </div>
               </div>
+              <CatalogNote>
+                Live. WorldExploration hydrates getEnemyNames and assigns a
+                unique name per enemy on each map (fallback
+                DEFAULT_ANCIENT_NAMES when the pool is empty). This is not the
+                Enemies catalog — those rows do not change encounter packs,
+                stats, or pixel visuals.
+              </CatalogNote>
               <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
                 <input
                   data-ocid="admin.names.input"
@@ -7507,7 +7810,7 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
   );
 };
 
-// ── BossesTab — admin editor for all 12 boss configurations ──────────────────
+// ── BossesTab — admin editor for all 19 boss kits (browser-local drafts) ──
 
 const ABILITY_LABELS: Record<BossAbility, string> = {
   [BossAbility.REFLECT_SHIELD]: "Reflect Shield (30% dmg reflect)",
@@ -7572,8 +7875,12 @@ function PhaseEditor({
   label: string;
 }) {
   const [abilityQuery, setAbilityQuery] = React.useState("");
+  const [spellQuery, setSpellQuery] = React.useState("");
   const visibleAbilities = ALL_ABILITIES.filter((a) =>
     matchesQuery(abilityQuery, a, ABILITY_LABELS[a]),
+  );
+  const visibleSpells = spells.filter((s) =>
+    matchesQuery(spellQuery, s.name, s.id, s.effectType, s.spellType),
   );
 
   const toggleAbility = (a: BossAbility) => {
@@ -7709,8 +8016,24 @@ function PhaseEditor({
       {spells.length > 0 && (
         <>
           <p style={{ ...labelStyle, marginBottom: 6 }}>Spell Pool</p>
+          <div style={{ marginBottom: 8 }}>
+            <ListSearch
+              value={spellQuery}
+              onChange={setSpellQuery}
+              placeholder="Filter spell pool…"
+              ocid="admin.bosses.spell_pool_search"
+            />
+          </div>
+          {spellQuery.trim() && visibleSpells.length === 0 && (
+            <p
+              data-ocid="admin.bosses.spell_pool_no_match"
+              style={{ color: C.dimmer, fontSize: 11, margin: "0 0 8px" }}
+            >
+              No spells match “{spellQuery}”
+            </p>
+          )}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {spells.map((s) => {
+            {visibleSpells.map((s) => {
               const active = phase.spellPoolIds.includes(s.id);
               return (
                 <button
@@ -7747,7 +8070,10 @@ const BOSS_PIECE_TYPES = [
   "queen",
 ] as const;
 
-const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
+const BossesTab: React.FC<{
+  spells: SpellConfig[];
+  onEditorOpenChange?: (open: boolean) => void;
+}> = ({ spells, onEditorOpenChange }) => {
   const { data: bossConfigs = DEFAULT_BOSS_CONFIGS, refetch } =
     useGetAllBossConfigs();
   const setBossConfig = useSetBossConfig();
@@ -7759,6 +8085,11 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
     null,
   );
   const [query, setQuery] = React.useState("");
+
+  React.useEffect(() => {
+    onEditorOpenChange?.(expandedId != null);
+    return () => onEditorOpenChange?.(false);
+  }, [expandedId, onEditorOpenChange]);
 
   const getDraft = (id: string): BossConfig => {
     if (drafts[id]) return drafts[id];
@@ -7834,9 +8165,11 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
             Boss Editor
           </h2>
           <p style={{ color: "#8a8090", margin: 0, fontSize: 11 }}>
-            Browser-local drafts only (pbv_boss_configs). Not canister-live. A
-            saved draft is not the live encounter until a backend writer exists.
-            Changes apply on this browser's next boss encounter.
+            Browser-local drafts only (pbv_boss_configs). WorldExploration reads
+            that key. Canister setBossConfig / getAllBossConfigs exist, but the
+            frontend shape (iconEmoji, loreText, chc) does not match Motoko
+            (defeated, adminNotes). Hooks do not call the actor. Empty custom
+            art is valid — default pixel visual.
           </p>
         </div>
       </div>
@@ -8096,8 +8429,9 @@ const BossesTab: React.FC<{ spells: SpellConfig[] }> = ({ spells }) => {
                     variant="gold"
                     onClick={() => handleSave(bossId)}
                     ocid={`admin.bosses.save_button.${idx + 1}`}
+                    disabled={setBossConfig.isPending}
                   >
-                    Save browser draft
+                    {setBossConfig.isPending ? "Saving…" : "Save browser draft"}
                   </Btn>
                   <Btn
                     variant="ghost"
@@ -8122,6 +8456,7 @@ function AdBoxEditor({ index }: { index: number }) {
   const [linkUrl, setLinkUrl] = React.useState("");
   const [status, setStatus] = React.useState("");
   const [confirmClear, setConfirmClear] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
   React.useEffect(() => {
     if (actor) {
       (
@@ -8131,10 +8466,9 @@ function AdBoxEditor({ index }: { index: number }) {
       )
         .getAdBoxes()
         .then((boxes) => {
-          if (boxes[index]) {
-            setImageUrl(boxes[index][0]);
-            setLinkUrl(boxes[index][1]);
-          }
+          const row = adBoxAt(boxes, index);
+          setImageUrl(row[0]);
+          setLinkUrl(row[1]);
         })
         .catch(() => {});
     }
@@ -8147,6 +8481,7 @@ function AdBoxEditor({ index }: { index: number }) {
       return;
     }
     try {
+      setSaving(true);
       const result = await (actor as unknown as backendInterface).adminSetAdBox(
         BigInt(index),
         imageUrl,
@@ -8155,12 +8490,16 @@ function AdBoxEditor({ index }: { index: number }) {
       assertAdminCmdOk(result, "adminSetAdBox");
       setStatus("Saved");
       setTimeout(() => setStatus(""), 2000);
-    } catch {
+    } catch (err) {
       setStatus("Error");
+      toast.error(`${adminAdSaveFailedCopy()}: ${String(err)}`);
+    } finally {
+      setSaving(false);
     }
   };
   const clear = async () => {
     try {
+      setSaving(true);
       const result = await (
         actor as unknown as backendInterface
       ).adminClearAdBox(BigInt(index));
@@ -8169,8 +8508,11 @@ function AdBoxEditor({ index }: { index: number }) {
       setLinkUrl("");
       setStatus("Hidden default");
       setTimeout(() => setStatus(""), 2000);
-    } catch {
+    } catch (err) {
       setStatus("Error");
+      toast.error(`${adminAdClearFailedCopy()}: ${String(err)}`);
+    } finally {
+      setSaving(false);
     }
   };
   const hasCustom = Boolean(imageUrl.trim() || linkUrl.trim());
@@ -8254,10 +8596,22 @@ function AdBoxEditor({ index }: { index: number }) {
           style={inputStyle()}
         />
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Btn variant="gold" small onClick={() => void save()}>
-            Save
+          <Btn
+            variant="gold"
+            small
+            onClick={() => void save()}
+            ocid={`admin.ads.save_button.${index + 1}`}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save"}
           </Btn>
-          <Btn variant="ghost" small onClick={() => setConfirmClear(true)}>
+          <Btn
+            variant="ghost"
+            small
+            onClick={() => setConfirmClear(true)}
+            ocid={`admin.ads.clear_button.${index + 1}`}
+            disabled={saving}
+          >
             Clear to default
           </Btn>
           {status && (

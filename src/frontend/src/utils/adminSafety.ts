@@ -327,6 +327,31 @@ export function knownAchievementCondition(condition: string): boolean {
   );
 }
 
+/**
+ * Failure: a second *active* catalog row with the same condition lets
+ * WorldExploration `.find()` unlock the new id, and a raw client can
+ * mark+claim both combat-trusted rows. Inactive rows may keep the
+ * condition so a replacement feat can be published after retirement.
+ */
+export function achievementConditionTaken(args: {
+  nextId: string;
+  nextCondition: string;
+  nextActive: boolean;
+  existingId: string;
+  existingCondition: string;
+  existingActive: boolean;
+}): string | null {
+  if (
+    args.nextActive &&
+    args.existingActive &&
+    args.existingId !== args.nextId &&
+    args.existingCondition === args.nextCondition
+  ) {
+    return "condition is already used by another achievement";
+  }
+  return null;
+}
+
 export function validateAchievementConfig(config: {
   id: string;
   name: string;
@@ -352,6 +377,21 @@ export function validateAchievementConfig(config: {
   }
   if ((config.description?.length ?? 0) > 500) {
     return "description exceeds maximum length";
+  }
+  return null;
+}
+
+/**
+ * Failure: raising dokaReward on a live achievement with unlocked-but-unclaimed
+ * progress made claimAchievementReward pay the new amount.
+ */
+export function achievementLiveRewardRejected(args: {
+  previousReward: number;
+  nextReward: number;
+  hasUnclaimed: boolean;
+}): string | null {
+  if (args.hasUnclaimed && args.previousReward !== args.nextReward) {
+    return "Cannot change dokaReward while unclaimed progress exists";
   }
   return null;
 }
@@ -722,7 +762,38 @@ export function isBuiltInSpellId(id: string): boolean {
   return (BUILT_IN_SPELL_IDS as readonly string[]).includes(id);
 }
 
+/** Mirrors adminDeleteSpellConfig — built-in ids must be retired, not deleted. */
+export const BUILT_IN_SPELL_DELETE_BLOCKED =
+  "Cannot delete a built-in spell; set usableByPlayer=false to retire it";
+
+export function adminSpellDeleteBlockedReason(id: string): string | null {
+  return isBuiltInSpellId(id) ? BUILT_IN_SPELL_DELETE_BLOCKED : null;
+}
+
+/** List-row lifecycle chip. Retired always wins so a saved retire is never shown as live. */
+export function adminSpellCatalogStatus(args: {
+  id: string;
+  usableByPlayer?: boolean;
+}): "retired" | "built-in" | "live" {
+  if (args.usableByPlayer === false) return "retired";
+  if (isBuiltInSpellId(args.id)) return "built-in";
+  return "live";
+}
+
 /** Ban must keep claimed flags; wiping them is the double-claim path. */
 export function shouldWipeAchievementsOnBan(): boolean {
   return false;
+}
+
+/**
+ * Fresh-install adBoxes is `[]`. Indexing missing slots must yield an inactive
+ * tuple so adminSetAdBox / getAdBoxes never trap or omit a landing slot.
+ */
+export function adBoxAt(
+  boxes: readonly (readonly [string, string, boolean])[],
+  index: number,
+): [string, string, boolean] {
+  const row = boxes[index];
+  if (row) return [row[0], row[1], row[2]];
+  return ["", "", false];
 }
