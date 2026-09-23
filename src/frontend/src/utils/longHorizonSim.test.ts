@@ -4,10 +4,17 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
 } from "./applyRewardsResult.ts";
 import {
+  HAZARD_LAVA_MAX,
+  PLAYER_CREATE_INIT,
+  effectiveSpellRange,
   fightsToNextLevel,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
+  firstLevelChcCanHit100,
+  firstLevelFormulaApExceedsPersistCap,
+  firstLevelHazardMaxBelowHpPercent,
   firstLevelResCanHit100,
+  firstLevelSpellRangeHitsCap,
   firstSpellLevelCostExceeds,
   formulaAp,
   jackpotPersistIfHit,
@@ -84,6 +91,11 @@ assert.equal(
 );
 assert.equal(report.xpRows.find((r) => r.level === 10_000)?.pBelowTier, 1);
 assert.equal(report.xpRows.find((r) => r.level === 50_000)?.pBelowTier, 1);
+assert.equal(
+  report.xpRows.some((r) => r.level === 100_000),
+  true,
+);
+assert.equal(report.xpRows.find((r) => r.level === 100_000)?.pBelowTier, 1);
 assert.equal(report.persistContract.saveBattleStatsCannotLowerLevel, true);
 assert.equal(report.persistContract.maxDokaGrant, 10_000_000);
 assert.equal(report.persistContract.gameKeyBypassesApplyRewardsCeiling, true);
@@ -93,5 +105,45 @@ assert.equal(firstSpellLevelCostExceeds(100_000), 14);
 assert.equal(firstSpellLevelCostExceeds(10_000_000), 20);
 assert.equal(report.persistContract.firstSpellLevelCombatDokaCannotBuy, 14);
 assert.equal(report.persistContract.firstSpellLevelGameKeyCannotBuy, 20);
+assert.equal(PLAYER_CREATE_INIT, 10);
+assert.equal(report.persistContract.playerCreateInit, 10);
+assert.equal(report.persistContract.saveBattleStatsCannotRaiseInit, true);
+assert.equal(report.persistContract.maxPersistedAp, 20);
+assert.equal(firstLevelFormulaApExceedsPersistCap(), 325);
+assert.equal(report.persistContract.firstLevelFormulaApExceedsPersistCap, 325);
+assert.equal(firstLevelChcCanHit100("bishop"), 115);
+assert.equal(firstLevelChcCanHit100("king"), 138);
+assert.ok(
+  (report.xpRows.find((r) => r.level === 25)?.pPlayerWinsInitiative3 ?? 1) <
+    0.15,
+);
+assert.ok(
+  (report.xpRows.find((r) => r.level === 100)?.pPlayerWinsInitiative3 ?? 1) <
+    0.05,
+);
+assert.equal(report.chcBreakpoints.bishop, 115);
+assert.equal(report.chcBreakpoints.king, 138);
+
+assert.equal(firstLevelHazardMaxBelowHpPercent(HAZARD_LAVA_MAX, 0.05), 42);
+assert.equal(firstLevelHazardMaxBelowHpPercent(HAZARD_LAVA_MAX, 0.01), 282);
+assert.equal(report.flatHazards.firstLevelLavaMaxBelow5PctHp, 42);
+assert.equal(report.flatHazards.firstLevelLavaMaxBelow1PctHp, 282);
+assert.ok((report.flatHazards.lavaMaxOverHpAt100000 ?? 1) < 0.0001);
+
+assert.equal(effectiveSpellRange(1, 1), 1);
+assert.equal(effectiveSpellRange(4, 10), 5);
+assert.equal(effectiveSpellRange(3, 20), 5);
+assert.equal(effectiveSpellRange(1, 40), 5);
+assert.equal(
+  effectiveSpellRange(0, 1),
+  1,
+  "spellRangeBase lifts stored 0 to 1",
+);
+assert.equal(firstLevelSpellRangeHitsCap(4), 10);
+assert.equal(firstLevelSpellRangeHitsCap(3), 20);
+assert.equal(firstLevelSpellRangeHitsCap(1), 40);
+assert.equal(report.spellRangeCap.firstLevelRange4HitsCap, 10);
+assert.equal(report.spellRangeCap.allStarterRangesAtCapBy, 40);
+assert.equal(report.xpRows.find((r) => r.level === 50)?.spellRangeStrike, 5);
 
 console.log("longHorizonSim.test: ok");
