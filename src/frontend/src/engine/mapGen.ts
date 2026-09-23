@@ -356,166 +356,6 @@ function largestBattleComponentFrom(
 }
 
 /**
- * Preferred fight-graph room inside the player's overworld flood.
- * Gates are floor out of battle, so a leftover pocket past a choke is the
- * same overworld component as the intended room. Spawn-on-exit only
- * relocates when the seed sits on the gate — standing on the pocket kept
- * the fight there. Pick the largest battle component (closer-to-center
- * on ties). Do not hop a portal-adjacent entrance or a room larger than
- * 2 tiles onto leftover CA past the gate (#430/#436/#444).
- */
-function largestBattleComponentInOverworld(
-  tiles: string[][],
-  vt: Set<string>,
-  portals: { x: number; y: number }[],
-  playerSpawn: { x: number; y: number },
-  w: number,
-  h: number,
-): { origin: { x: number; y: number }; reachable: Set<string> } | null {
-  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
-  const overworld = floodFillReachable(tiles, vt, playerSpawn, w, h);
-  if (overworld.size === 0) {
-    return largestBattleComponentFrom(
-      tiles,
-      vt,
-      playerSpawn,
-      w,
-      h,
-      portalBlock,
-    );
-  }
-  const center = { x: Math.floor(w / 2), y: Math.floor(h / 2) };
-  const seen = new Set<string>();
-  let best: {
-    origin: { x: number; y: number };
-    reachable: Set<string>;
-  } | null = null;
-  let bestDist = Number.POSITIVE_INFINITY;
-  for (const k of overworld) {
-    if (portalBlock.has(k) || seen.has(k)) continue;
-    const p = k.split(",");
-    const origin = { x: Number(p[0]), y: Number(p[1]) };
-    if (!isWalkable(tiles, vt, origin.x, origin.y, w, h, portalBlock)) continue;
-    const reachable = floodFillReachable(tiles, vt, origin, w, h, portalBlock);
-    for (const rk of reachable) seen.add(rk);
-    let nearest: { x: number; y: number } | null = null;
-    for (const rk of reachable) {
-      const rp = rk.split(",");
-      nearest = nearerWalkableCell(
-        nearest,
-        { x: Number(rp[0]), y: Number(rp[1]) },
-        center,
-      );
-    }
-    const dist = nearest
-      ? chebyshevDist(nearest, center)
-      : Number.POSITIVE_INFINITY;
-    if (
-      !best ||
-      reachable.size > best.reachable.size ||
-      (reachable.size === best.reachable.size && dist < bestDist)
-    ) {
-      best = { origin, reachable };
-      bestDist = dist;
-    }
-  }
-  return best;
-}
-
-/**
- * Snap a leftover far-island seed onto the largest fight-graph room.
- * White sanctuary gateways colocated with spawn stay put. A seed that
- * already sits on a battle-walkable cell adjacent to a blocking portal
- * is the intended entrance — do not hop onto a larger leftover past the
- * gate (destack punches must not gain a parallel corridor).
- */
-function snapSpawnOntoLargestBattleRoom(
-  tiles: string[][],
-  vt: Set<string>,
-  playerSpawn: { x: number; y: number },
-  portals: { x: number; y: number }[],
-  spawns: { x: number; y: number }[],
-  w: number,
-  h: number,
-): { x: number; y: number } {
-  if (
-    portals.some(
-      (p) =>
-        isWhitePortalFlag(p) && p.x === playerSpawn.x && p.y === playerSpawn.y,
-    )
-  ) {
-    return playerSpawn;
-  }
-  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
-  const onBlockingPortal = portals.some(
-    (p) =>
-      !isWhitePortalFlag(p) && p.x === playerSpawn.x && p.y === playerSpawn.y,
-  );
-  const takenHostiles = new Set(spawns.map((s) => `${s.x},${s.y}`));
-  const spawnKey = `${playerSpawn.x},${playerSpawn.y}`;
-  const onBattleFloor = isWalkable(
-    tiles,
-    vt,
-    playerSpawn.x,
-    playerSpawn.y,
-    w,
-    h,
-    portalBlock,
-  );
-  const adjacentToGate = portals.some(
-    (p) => !isWhitePortalFlag(p) && chebyshevDist(playerSpawn, p) <= 1,
-  );
-  const spawnBattle = largestBattleComponentFrom(
-    tiles,
-    vt,
-    playerSpawn,
-    w,
-    h,
-    portalBlock,
-  );
-  // Walkable entrance rooms stay put even when leftover CA past the gate
-  // is bigger. Only a tiny pocket that is not on the gate rim is a
-  // leftover seed destack would pile every rat onto.
-  if (
-    onBattleFloor &&
-    !onBlockingPortal &&
-    !takenHostiles.has(spawnKey) &&
-    (adjacentToGate || (spawnBattle?.reachable.size ?? 0) > 2)
-  ) {
-    return playerSpawn;
-  }
-  const room = largestBattleComponentInOverworld(
-    tiles,
-    vt,
-    portals,
-    playerSpawn,
-    w,
-    h,
-  );
-  if (!room || room.reachable.size === 0) return playerSpawn;
-  const takenPortals = new Set(portals.map((p) => `${p.x},${p.y}`));
-  if (
-    room.reachable.has(spawnKey) &&
-    !onBlockingPortal &&
-    !takenHostiles.has(spawnKey)
-  ) {
-    return playerSpawn;
-  }
-  const exclude = new Set<string>([...takenPortals, ...takenHostiles]);
-  const near = nearestReachableCell(playerSpawn, room.reachable, w, h, exclude);
-  if (near) return near;
-  const punched = punchAdjacentFloor(
-    tiles,
-    vt,
-    room.reachable,
-    new Set([...exclude, spawnKey]),
-    w,
-    h,
-  );
-  return punched ?? playerSpawn;
-}
-
-/**
  * Relocate hostiles that sit on the far side of a portal cut-vertex.
  * Overworld flood walks through portals; battle pathing does not. Leaving
  * a rat there keeps isProgressionLocked true with no legal melee approach.
@@ -1803,21 +1643,6 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     }
   }
 
-  // Spawn-on-exit only runs when the seed sits on the gate. A walkable
-  // far-island seed (void-spiral / wall legalize next to the pocket)
-  // stayed there, so destack piled every rat onto 2 tiles and a locked
-  // progression portal waited on the other side of a battle-impassable
-  // gate. Snap onto the preferred fight-graph room; do not carve around.
-  playerSpawn = snapSpawnOntoLargestBattleRoom(
-    liveTiles,
-    vt,
-    playerSpawn,
-    portals,
-    spawns,
-    input.w,
-    input.h,
-  );
-
   spawns = relocateBattleIsolatedHostiles(
     liveTiles,
     vt,
@@ -1843,14 +1668,6 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
   // 1-wide unique corridors have no dump cell. A corpse/summon on the
   // bridge then seals the unlocked portal with nowhere to relocate.
   ensureProgressionAlcove(
-    liveTiles,
-    vt,
-    playerSpawn,
-    portals,
-    input.w,
-    input.h,
-  );
-  ensureProgressionDumpFloor(
     liveTiles,
     vt,
     playerSpawn,
@@ -1928,7 +1745,6 @@ export interface SolvabilityReport {
   dumpCells: number;
   battleIsolatedPortals: number;
   clearingUnlocks: boolean;
-  spawnOnLargestBattleRoom: boolean;
   failures: string[];
 }
 
@@ -2188,44 +2004,6 @@ export function evaluateSolvability(
   if (dump.mandatory > 0 && dump.dump === 0) {
     failures.push("no-dump-cell");
   }
-  const onWhiteSpawn = portals.some(
-    (p) =>
-      isWhitePortalFlag(p) && p.x === playerSpawn.x && p.y === playerSpawn.y,
-  );
-  let spawnOnLargestBattleRoom = true;
-  if (!onWhiteSpawn && !opts?.allowSpawnOnPortal) {
-    const room = largestBattleComponentInOverworld(
-      tiles,
-      vt,
-      portals,
-      playerSpawn,
-      w,
-      h,
-    );
-    const spawnKey = `${playerSpawn.x},${playerSpawn.y}`;
-    const adjacentToGate = portals.some(
-      (p) => !isWhitePortalFlag(p) && chebyshevDist(playerSpawn, p) <= 1,
-    );
-    const spawnBattle = largestBattleComponentFrom(
-      tiles,
-      vt,
-      playerSpawn,
-      w,
-      h,
-      portalBlock,
-    );
-    if (
-      room &&
-      spawnBattle &&
-      spawnBattle.reachable.size <= 2 &&
-      room.reachable.size > spawnBattle.reachable.size &&
-      !adjacentToGate &&
-      !room.reachable.has(spawnKey)
-    ) {
-      spawnOnLargestBattleRoom = false;
-      failures.push("spawn-on-far-island");
-    }
-  }
   return {
     ok: failures.length === 0,
     playerSpawnLegal,
@@ -2243,7 +2021,6 @@ export function evaluateSolvability(
     dumpCells: dump.dump,
     battleIsolatedPortals,
     clearingUnlocks,
-    spawnOnLargestBattleRoom,
     failures,
   };
 }
@@ -2344,12 +2121,7 @@ export function applySanctuaryLayout<P extends { x: number; y: number }>(
 ): { spawn: { x: number; y: number } } {
   const applied = applyFinalizedLayout(map, [], spawn, size);
   colocateWhitePortal(map, applied.spawn, whitePortal);
-  // Stamping the gateway onto spawn is a new portal cut-vertex. Battle
-  // pathing cannot walk it; re-legalize so leftover hostiles cannot sit
-  // on the far island (production then resetCombatantStore, but dungeon-
-  // complete attach keeps a roster).
-  const relaid = applyFinalizedLayout(map, [], applied.spawn, size);
-  return { spawn: relaid.spawn };
+  return { spawn: applied.spawn };
 }
 
 /**
@@ -2372,7 +2144,7 @@ export function attachWhitePortalAfterLegalize<
 ): { spawn: { x: number; y: number }; roster: T[] } {
   const applied = applyFinalizedLayout(map, roster, spawn, size);
   colocateWhitePortal(map, applied.spawn, whitePortal);
-  return applyFinalizedLayout(map, applied.roster, applied.spawn, size);
+  return applied;
 }
 
 /**
@@ -2463,57 +2235,4 @@ export function canPlaceWalkBlocker(
     h,
     opts,
   ).ok;
-}
-
-/**
- * Living occupants that relocate off a unique player→exit bridge.
- * One dump cell is enough for a single corpse; a second summon still
- * sits on the only remaining path and seals the unlocked portal.
- */
-export const PROGRESSION_DUMP_FLOOR = 2;
-
-/**
- * One alcove is not enough when two living occupants sit on a unique
- * bridge. Punch additional fight-graph dead-ends until dump ≥ 2. Does
- * not join leftover islands or walk around a portal choke.
- */
-function ensureProgressionDumpFloor(
-  tiles: string[][],
-  vt: Set<string>,
-  playerSpawn: { x: number; y: number },
-  portals: { x: number; y: number }[],
-  w: number,
-  h: number,
-): void {
-  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
-  const battle = largestBattleComponentFrom(
-    tiles,
-    vt,
-    playerSpawn,
-    w,
-    h,
-    portalBlock,
-  );
-  const origin = battle?.origin ?? playerSpawn;
-  const reachable =
-    battle?.reachable ?? floodFillReachable(tiles, vt, origin, w, h);
-  const exclude = new Set<string>([
-    `${origin.x},${origin.y}`,
-    ...portals.map((p) => `${p.x},${p.y}`),
-  ]);
-  for (let n = 0; n < 8; n++) {
-    const counts = countProgressionDumpCells(
-      tiles,
-      vt,
-      playerSpawn,
-      portals,
-      w,
-      h,
-    );
-    if (counts.mandatory === 0 || counts.dump >= PROGRESSION_DUMP_FLOOR) {
-      return;
-    }
-    const punched = punchAdjacentFloor(tiles, vt, reachable, exclude, w, h);
-    if (!punched) return;
-  }
 }
