@@ -55,3 +55,5 @@ export function shouldAbortMovementRaf(opts: {
     opts.victoryPersistPending,
   );
 }
+
+export { cancelExclusiveMovementRaf } from "./movementStepperRaf";
