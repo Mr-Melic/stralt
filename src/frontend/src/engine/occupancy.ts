@@ -175,6 +175,58 @@ function floodPassable(
   return seen;
 }
 
+/**
+ * Battle-walkable island containing `seed`. Portal tiles are impassable in
+ * combat (`isCellFree`), so a Manhattan ring-scan from a unique near-bridge
+ * must not treat far-side floors as dump/spawn cells. When `seed` sits on a
+ * portal, pick the largest adjacent floor component (white-sanctuary spawn).
+ */
+export function floodBattleComponent(
+  ctx: OccupancyContext,
+  seed: OccCell,
+): Set<string> {
+  const blocked = new Set<string>([...ctx.barriers, ...ctx.portals]);
+  const direct = floodPassable(ctx.tiles, ctx.voidTiles, blocked, seed);
+  if (direct.size > 0) return direct;
+  let best = new Set<string>();
+  const seen = new Set<string>();
+  for (const [dx, dy] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ] as const) {
+    const next = { x: seed.x + dx, y: seed.y + dy };
+    const key = occKey(next.x, next.y);
+    if (seen.has(key)) continue;
+    const component = floodPassable(ctx.tiles, ctx.voidTiles, blocked, next);
+    for (const cell of component) seen.add(cell);
+    if (component.size > best.size) best = component;
+  }
+  return best;
+}
+
+/**
+ * `findNearestFreeCell` accept that stays on the player's fight graph.
+ * Missing `progressStart` still blocks a hop through a portal from `seed`.
+ */
+export function onBattleGraph(
+  ctx: OccupancyContext,
+  seed: OccCell,
+): ((cell: OccCell) => boolean) | undefined {
+  const graph = floodBattleComponent(ctx, ctx.progressStart ?? seed);
+  if (graph.size === 0) return undefined;
+  return (cell) => graph.has(occKey(cell.x, cell.y));
+}
+
+function composeAccept(
+  ...fns: Array<((cell: OccCell) => boolean) | undefined>
+): ((cell: OccCell) => boolean) | undefined {
+  const live = fns.filter((fn): fn is (cell: OccCell) => boolean => fn != null);
+  if (live.length === 0) return undefined;
+  return (cell) => live.every((fn) => fn(cell));
+}
+
 /** Manhattan radius that can reach any cell on this occupancy grid. */
 export function progressionSearchRadius(ctx: OccupancyContext): number {
   const h = ctx.tiles.length;
@@ -347,7 +399,7 @@ export function unsealProgressionOccupants(
       ctx,
       progressionSearchRadius(ctx),
       avoid,
-      (cell) => {
+      composeAccept(onBattleGraph(ctx, result[i]), (cell) => {
         return !occupantsSealProgression(
           tiles,
           voidTiles,
@@ -356,7 +408,7 @@ export function unsealProgressionOccupants(
           trial(cell),
           impassable,
         );
-      },
+      }),
     );
     if (found) result[i] = found;
   }
@@ -450,6 +502,7 @@ export function relocateOffMandatoryCells(
       ctx,
       progressionSearchRadius(ctx),
       avoid,
+      onBattleGraph(ctx, o),
     );
     if (next) {
       placed.add(occKey(next.x, next.y));

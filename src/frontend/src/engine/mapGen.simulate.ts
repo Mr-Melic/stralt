@@ -920,6 +920,21 @@ export function simulateCorpsesOnWorld(world: SimWorld): {
       if (k === `${world.playerSpawn.x},${world.playerSpawn.y}`) continue;
       if (world.tiles[y][x] === "wall") continue;
       if (world.voidTiles.has(k)) continue;
+      // Far-side floors beyond a portal choke are overworld-walkable but
+      // not a legal battle dump: relocate would teleport through the gate.
+      if (
+        !isEnemyWanderFloor(
+          world.tiles,
+          world.voidTiles,
+          world.portals,
+          world.playerSpawn,
+          { x, y },
+          size,
+          world.tiles.length,
+        )
+      ) {
+        continue;
+      }
       offPath += 1;
     }
   }
