@@ -1,6 +1,11 @@
 import type React from "react";
 import { memo } from "react";
 import type { MapModifierConfig } from "../types/gameTypes";
+import {
+  MAP_MODIFIERS_PANEL_TITLE,
+  MAP_MODIFIERS_PANEL_WHY,
+  shouldShowMapModifiersPanel,
+} from "../utils/mapModifiersPanelCopy";
 import DraggablePanel from "./DraggablePanel";
 
 interface MapModifiersPanelProps {
@@ -37,12 +42,14 @@ const MapModifiersPanel: React.FC<MapModifiersPanelProps> = ({
   modifiers,
   userId,
 }) => {
-  const activeModifiers = modifiers.filter((m) => m.active);
+  if (!shouldShowMapModifiersPanel(modifiers)) {
+    return null;
+  }
 
   return (
     <DraggablePanel
       panelId="map-modifiers"
-      title="Map Effects"
+      title={MAP_MODIFIERS_PANEL_TITLE}
       userId={userId}
       defaultPosition={{ x: Math.max(0, window.innerWidth - 230), y: 360 }}
       defaultFolded={false}
@@ -58,7 +65,6 @@ const MapModifiersPanel: React.FC<MapModifiersPanelProps> = ({
           overflow: "hidden",
         }}
       >
-        {/* Header */}
         <div
           style={{
             display: "flex",
@@ -79,82 +85,78 @@ const MapModifiersPanel: React.FC<MapModifiersPanelProps> = ({
               textTransform: "uppercase",
             }}
           >
-            Map Modifiers
+            {MAP_MODIFIERS_PANEL_TITLE}
           </span>
-          {activeModifiers.length > 0 && (
-            <span
-              style={{
-                marginLeft: "auto",
-                background: "rgba(220,30,30,0.3)",
-                border: "1px solid rgba(220,30,30,0.6)",
-                color: "#ff7675",
-                fontSize: 8,
-                fontWeight: 700,
-                padding: "1px 5px",
-                borderRadius: 3,
-              }}
-            >
-              {activeModifiers.length} active
-            </span>
-          )}
+          <span
+            style={{
+              marginLeft: "auto",
+              background: "rgba(220,30,30,0.3)",
+              border: "1px solid rgba(220,30,30,0.6)",
+              color: "#ff7675",
+              fontSize: 8,
+              fontWeight: 700,
+              padding: "1px 5px",
+              borderRadius: 3,
+            }}
+          >
+            {modifiers.length} this visit
+          </span>
         </div>
 
-        {/* Content */}
         <div style={{ padding: "5px 8px 7px" }}>
-          {activeModifiers.length === 0 ? (
-            <div
-              style={{
-                color: "rgba(255,255,255,0.25)",
-                fontSize: 9,
-                fontStyle: "italic",
-              }}
-            >
-              No active modifiers
-            </div>
-          ) : (
-            <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
-              {activeModifiers.map((mod) => (
-                <li
-                  key={mod.id}
+          <p
+            data-ocid="map_modifiers.why"
+            style={{
+              color: "rgba(255,200,200,0.55)",
+              fontSize: 8,
+              lineHeight: 1.35,
+              margin: "0 0 6px",
+            }}
+          >
+            {MAP_MODIFIERS_PANEL_WHY}
+          </p>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {modifiers.map((mod) => (
+              <li
+                key={mod.id}
+                style={{
+                  marginBottom: 4,
+                }}
+              >
+                <div
                   style={{
-                    marginBottom: 4,
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 4,
                   }}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 4,
-                    }}
-                  >
-                    <span style={{ flexShrink: 0, fontSize: 11 }}>
-                      {MODIFIER_EMOJI[mod.modifierType] ?? "\uD83C\uDF00"}
+                  <span style={{ flexShrink: 0, fontSize: 11 }}>
+                    {MODIFIER_EMOJI[mod.modifierType] ?? "\uD83C\uDF00"}
+                  </span>
+                  <div>
+                    <span
+                      style={{
+                        color: "rgba(255,118,117,0.95)",
+                        fontSize: 9,
+                        fontWeight: 700,
+                        display: "block",
+                      }}
+                    >
+                      {mod.name}
                     </span>
-                    <div>
-                      <span
-                        style={{
-                          color: "rgba(255,118,117,0.95)",
-                          fontSize: 9,
-                          fontWeight: 700,
-                          display: "block",
-                        }}
-                      >
-                        {mod.name}
-                      </span>
-                      <span
-                        style={{
-                          color: "rgba(255,200,200,0.5)",
-                          fontSize: 8,
-                        }}
-                      >
-                        {mod.description}
-                      </span>
-                    </div>
+                    <span
+                      style={{
+                        color: "rgba(255,200,200,0.5)",
+                        fontSize: 8,
+                      }}
+                    >
+                      {mod.description}
+                    </span>
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </DraggablePanel>
