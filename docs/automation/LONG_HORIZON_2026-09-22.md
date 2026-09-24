@@ -1,16 +1,15 @@
-# Long-Horizon Infinite Progression — 2026-09-24
+# Long-Horizon Infinite Progression — 2026-09-22
 
-Stralt has no character level cap in data or persist. This run re-simulated the **live formulas** at HEAD `0f5363f` (same commit `#357` / `#407` / `#475` inspected). Players are **not** assumed to reach these levels quickly. The mid-teens already exhaust intended XP income. Observed max level (unknown here) is not a cap.
+Stralt has no character level cap in data or persist. This run re-simulated the **live formulas** at HEAD `0f5363f` (same commit `#357` inspected on 2026-09-21). Players are **not** assumed to reach these levels quickly. The mid-teens already exhaust intended XP income. Observed max level (unknown here) is not a cap.
 
 Stress levels: 1, 10, 15, 25, 48, 50, 78, 100, 250, 325, 500, 1000, 2500, 5000, 1018, 1019, **10000, 50000, 100000**.
 
-**Telemetry:** none. No encounter / duration / death / discovery series. `#333` / `#395` / `#462` are still WAITING_FOR_TELEMETRY. Calibration is skipped. Real play would only check the synthetic model, not stop the horizon.
+**Telemetry:** none. No encounter / duration / death / discovery series. `#333` is still WAITING_FOR_TELEMETRY. Calibration is skipped. Real play would only check the synthetic model, not stop the horizon.
 
-**This run does not redesign progression.** Findings are ACTION_IDs only. Prior `LHIPS-2026-08-31-001..014`, `09-01-001..004`, `09-02-001..002`, queued `09-21-001..002` (`#357`), queued `09-22-001` (`#407`), and queued `09-23-001..002` (`#475`) stay NEW unless a formula moved. This file adds IDs only for live slopes the earlier harness never filed (flat Blood Mend vs linear HP; spell-fail linear decay to 0 at 201).
+**This run does not redesign progression.** Findings are ACTION_IDs only. Prior `LHIPS-2026-08-31-001..014`, `09-01-001..004`, `09-02-001..002`, and queued `09-21-001..002` (`#357`) stay NEW unless a formula moved. This file adds IDs only for a live combat one-shot slope the earlier harness never measured (fallback Crush).
 
 Harness: `src/frontend/src/utils/longHorizonSim.ts`  
-Ledger: [`ACTION_IDS_LHIPS_2026-09-24.md`](./ACTION_IDS_LHIPS_2026-09-24.md)  
-Stack: restacked onto `#475` (`#357` + `#407` ancestors). One export per helper — do not concatenate sibling copies.
+Ledger: [`ACTION_IDS_LHIPS_2026-09-22.md`](./ACTION_IDS_LHIPS_2026-09-22.md)
 
 ---
 
@@ -18,14 +17,14 @@ Stack: restacked onto `#475` (`#357` + `#407` ancestors). One export per helper 
 
 Authoritative sources (not comments, not `backend_extended`):
 
-| Topic | Live formula (2026-09-24) |
+| Topic | Live formula (2026-09-22) |
 | :--- | :--- |
 | XP threshold (persist) | `100n * (1n << (N-1))` — `xpCurve.ts` 24–26; Motoko twin `main.mo` 2126–2133 |
 | XP threshold (HUD / recap) | same, but `xpForNextLevel` saturates at `Number.MAX_SAFE_INTEGER` from **level 48** (`xpCurve.ts` 32–36) |
 | Kill XP | `sum(enemy.level * 20)` — `rewardResolver.ts` 89–101 |
 | Portal XP | 10 |
 | `applyRewards` ceilings | `dokaDelta > 100_000` / `xpDelta > 500_000` → `#err` (`main.mo` 2119–2120); client `clampApplyRewardsDeltas` |
-| `saveBattleStats` | cannot raise **or lower** level (`main.mo` 2092–2093); cannot raise atk/res/**init** (`2064–2066`); AP/MP `persistApWriteCap` = formula then `MAX_PERSISTED_AP` 20 |
+| `saveBattleStats` | cannot raise **or lower** level (`main.mo` 2092–2093); cannot raise atk/res/**init** (`2064–2066`); AP/MP `persistApWriteCap` = formula then `MAX_PERSISTED_AP` 20 (`adminGuard.mo` 649–658) |
 | GameKey | `redeemGameKey` credits `entry.dokaAmount` directly; max `MAX_DOKA_GRANT` 10_000_000 |
 | Spell upgrade | `baseCost * 2^currentLevel` (`main.mo` 1017–1023); default base 10 |
 | Enemy level | `pickEnemyLevelFromTiers`, `maxTier = floor(999 / tierSize)` (`combatMath.ts` 54–107) |
@@ -35,12 +34,6 @@ Authoritative sources (not comments, not `backend_extended`):
 | Player battle AP/MP | unbounded `getPlayerBaseStats` (`WorldExploration.tsx` 12105–12116) |
 | Player battle INIT | persisted `characterStats.init` (`WorldExploration.tsx` 11948); create value 10 |
 | Fallback melee | Crush 12 / Fire Bolt 8 × `max(1, enemy.level / 5)` (`WorldExploration.tsx` 16710–16728), then RES twice |
-| Lava / spikes | lava `8..15` then Burning 3/turn (`WorldExploration.tsx` 11428–11452); spikes `5..10` (`11469`). Direct HP subtract — no RES |
-| Spell range | `min(max(1, base) + floor(level / 10), 5)` (`WorldExploration.tsx` 3652–3664; `spellRangeBase` `targeting.ts` 111–115) |
-| Spell fail | `max(0, 20 - (L-1)*0.1)` (`WorldExploration.tsx` 3646–3649); player non-physical casts roll `rng()*100 < chance` (`spellEngine.ts` 642–651). Strike (`isPhysical`) bypasses |
-| Blood Mend | catalog `healAmount: 12` (`spellData.ts` 85–95); `resolvePlayerCast` uses that integer, optional `healRecv` mod, then crit ×2 (`spellEngine.ts` 655–663). No `1.03^upgrade` |
-| Shop potions | 30% / 70% of live `maxHp` (`WorldExploration.tsx` 3558–3571) |
-| Passive regen | `+1` HP / 10s out of battle (`WorldExploration.tsx` 3617–3624) |
 | AI tier | level table + 30% uniform 1–10 (`combatMath.ts` 36–51) |
 | Kits | `buildEnemyKit(piece, currentMap.levelZone)` — object, not number (`WorldExploration.tsx` 11920) |
 | Summoner | `0.12 + playerLevel * 0.02` (`WorldExploration.tsx` 11932–11934) |
@@ -52,22 +45,19 @@ Monte Carlo: 4000 rolls per level, default tier config, no `localStorage` overri
 
 ---
 
-## What moved since 2026-09-23
+## What moved since 2026-09-21
 
-HEAD did not move (`0f5363f`). Formulas that 09-23 measured did not change. `#357` (INIT / CHC), `#407` (Crush), and `#475` (hazards / range) are still open; this run **unions** that harness rather than overwriting it.
+HEAD did not move (`0f5363f`). Formulas that 09-21 measured did not change. `#357` (INIT / CHC harness + IDs) is still open; this run **unions** that harness rather than overwriting it.
 
 | Prior ID | Drift |
 | :--- | :--- |
-| LHIPS-2026-08-31-005 | Victory floor is still `50 + level*10` on this HEAD (150 > 145 at 10). Queued `#386` caps it at `scaledMaxHpForLevel`. Not re-filed as closed. Exact exponential-HP JSON-null is **14500**. |
-| LHIPS-2026-09-21-001 / 002 | Still NEW. Queued `#357`. Re-sim: P(player first) 0.161 at 1, 0.172 at 10, 0.048 at 15, 0.015 at 25, 0.001 at 48, 0 from 250. CHC breakpoints unchanged (bishop 115, king 138). |
-| LHIPS-2026-09-22-001 | Still NEW. Queued `#407`. Crush one-shot from enemy **52** at player 1 and **75** at player 10; recv at cap 1020 is 1983. |
-| LHIPS-2026-09-23-001 / 002 | Still NEW. Queued `#475`. Lava under 5% from 42 / under 1% from 282. Range cap 5 from 10 (base 4) / 40 (base 1). |
-| (new measurement) | Blood Mend 12 is 12% of HP at 1, under 5% from **30**, under 1% from **222**. Crit 24 drops under 5% from **78**. Shop potions stay 30/70% of `maxHp`. |
-| (new measurement) | Spell fail is 20% at 1, 18.6% at 15 (XP wall), 10% at 101, **0 at 201**. Strike bypasses the roll. |
+| LHIPS-2026-08-31-005 | Victory floor is still `50 + level*10` on this HEAD (150 > 145 at 10). Queued `#386` caps it at `scaledMaxHpForLevel`. Not re-filed as closed. Exact exponential-HP JSON-null is **14500**, not only the 50_000 stress row. |
+| LHIPS-2026-09-21-001 / 002 | Still NEW. Queued `#357`. Re-sim this run: P(player first) 0.165 at 1, 0.149 at 10, 0.050 at 15, 0.012 at 25, 0.002 at 48, 0 from 250. CHC breakpoints unchanged (bishop 115, king 138). |
+| (new measurement) | Live fallback Crush `12 * max(1, L/5)` one-shots the 003 over-level tail at player 1–10, then cannot reach linear HP once the 999 cap is below the crush-vs-HP crossing (~378). |
 
-Unchanged and still NEW: XP wall 001; HUD sat 09-01-001; IEEE 002; enemy 999 cap 003; RES/HP/AI/kits/discovery/summoner/boss/challenge 004–011; jackpot + 100k/500k 09-01-002; leftover Nat / pow2 09-01-004; GameKey 10M 09-02-001; spell `10*2^n` 09-02-002; INIT/CHC 09-21; Crush 09-22; lava/range 09-23; no telemetry 014.
+Unchanged and still NEW: XP wall 001; HUD sat 09-01-001; IEEE 002; enemy 999 cap 003; RES/HP/AI/kits/discovery/summoner/boss/challenge 004–011; jackpot + 100k/500k 09-01-002; leftover Nat / pow2 09-01-004; GameKey 10M 09-02-001; spell `10*2^n` 09-02-002; no telemetry 014.
 
-Line numbers in WorldExploration / `main.mo` match 09-23 on this HEAD.
+Line numbers in WorldExploration / `main.mo` match 09-21 on this HEAD.
 
 ---
 
@@ -76,16 +66,16 @@ Line numbers in WorldExploration / `main.mo` match 09-23 on this HEAD.
 | Level | Exact XP to next | HUD `xpForNextLevel` | Typical 3-kill XP | Fights to next |
 | ---: | ---: | ---: | ---: | ---: |
 | 1 | 100 | 100 | ~660 | 0.15 (mean enemy ~11) |
-| 10 | 51,200 | 51,200 | ~660 | ~78 |
+| 10 | 51,200 | 51,200 | ~600 | ~85 |
 | 15 | 1.64e6 | 1.64e6 | ~1,080 | ~1.5e3 |
-| 25 | 1.678e9 | 1.678e9 | ~1,620 | ~1.0e6 |
-| 48 | 1.407e16 | **MAX_SAFE 9.01e15** | ~2,820 | ~5.0e12 |
+| 25 | 1.678e9 | 1.678e9 | ~1,560 | ~1.1e6 |
+| 48 | 1.407e16 | **MAX_SAFE 9.01e15** | ~2,760 | ~5.1e12 |
 | 50 | 5.63e16 | MAX_SAFE | ~2,760 | ~2.0e13 |
-| 100 | 6.34e31 | MAX_SAFE | ~5,760 | ~1.1e28 |
-| 250 | 9.05e76 | MAX_SAFE | ~14,760 | ~6.1e72 |
+| 100 | 6.34e31 | MAX_SAFE | ~5,700 | ~1.1e28 |
+| 250 | 9.05e76 | MAX_SAFE | ~14,700 | ~6.2e72 |
 | 500 | 1.64e152 | MAX_SAFE | ~29,700 | ~5.5e147 |
 | 1000 | 5.36e302 | MAX_SAFE | ~59,520 | ~9.0e297 |
-| 1018 | 1.40e308 | MAX_SAFE | ~59,640 | ~2.4e303 |
+| 1018 | 1.40e308 | MAX_SAFE | ~59,580 | ~2.4e303 |
 | 1019 | **Infinity** (IEEE) | MAX_SAFE | ~59,580 | never |
 | 2500 | Infinity | MAX_SAFE | ~59,580 | never |
 | 10000 | Infinity | MAX_SAFE | ~59,580 | never |
@@ -104,13 +94,13 @@ Default weights: 60% same tier, 20% ±1, 10% ±2, leftover 10% ±3..6. `threeOrM
 
 | Player | Mean enemy | Min | Max | P(below tier) | P(same) | P(above) |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 10.9 | 1 | **77** | 0 | 0.72 | 0.28 |
-| 10 | 11.0 | 1 | 78 | 0 | 0.71 | 0.29 |
-| 25 | 26.9 | 1 | 100 | 0.27 | 0.45 | 0.28 |
-| 100 | 95.8 | 21 | 170 | 0.27 | 0.45 | 0.28 |
-| 500 | 495.0 | 421 | 569 | 0.28 | 0.45 | 0.27 |
-| 1000 | 991.7 | 921 | **1020** | 0.30 | 0.58 | 0.13 |
-| 2500 | 993.5 | 931 | 1020 | **1.00** | 0 | 0 |
+| 1 | 10.9 | 1 | **80** | 0 | 0.72 | 0.28 |
+| 10 | 10.4 | 1 | 79 | 0 | 0.73 | 0.27 |
+| 25 | 26.3 | 1 | 98 | 0.28 | 0.46 | 0.26 |
+| 100 | 95.0 | 24 | 169 | 0.28 | 0.44 | 0.27 |
+| 500 | 495.4 | 421 | 570 | 0.28 | 0.44 | 0.28 |
+| 1000 | 992.1 | 922 | **1020** | 0.28 | 0.58 | 0.14 |
+| 2500 | 993.1 | 931 | 1020 | **1.00** | 0 | 0 |
 | 10000 | ~993 | 931 | 1020 | **1.00** | 0 | 0 |
 | 50000 | ~993 | 931 | 1020 | **1.00** | 0 | 0 |
 | 100000 | ~993 | 931 | 1020 | **1.00** | 0 | 0 |
@@ -147,93 +137,37 @@ First level a **max** CHC roll can reach 100 (always crit): bishop 115, queen 12
 
 ---
 
-## Flat heals (new measurement)
+## Fallback melee (new measurement)
 
-Blood Mend is a catalog integer 12. `resolvePlayerCast` does **not** run `calcScaledDamage` / `1.03^upgrade` on it. Crit (create CHC 5%) doubles to 24. Out-of-battle regen is +1 / 10s. Shop potions are the only official heal that tracks live `maxHp` (30% / 70%).
-
-| Player | HP | Blood Mend 12 / HP | Crit 24 / HP |
-| ---: | ---: | ---: | ---: |
-| 1 | 100 | **12%** | 24% |
-| 10 | 145 | 8.3% | 16.6% |
-| 25 | 220 | 5.5% | 10.9% |
-| **30** | 245 | **under 5%** | 9.8% |
-| 100 | 595 | 2.0% | 4.0% |
-| **222** | 1,205 | **under 1%** | 2.0% |
-| 1000 | 5,095 | 0.24% | 0.47% |
-| 100000 | 500,095 | 0.002% | 0.005% |
-
-Crit Mend drops under 5% of HP from **78**. Crush recv at the spawn cap is still 1983 (09-22-001); a 12-HP mend cannot close that gap at any simulated level where Crush still one-shots (1–10), and cannot matter after Crush is a chip (~378). Player Life Drain’s live return is `0.5 * scaled(10)` (`castHelpers.ts` 474–478), ~5 at upgrade 0, ~15 at spell 14 — the same collapse class.
-
-**LHIPS-2026-09-24-001.**
-
----
-
-## Spell fail (new measurement)
-
-`spellFailChance = max(0, 20 - (L-1)*0.1)`. Player non-physical casts fizzle when `rng()*100 < chance` (`spellEngine.ts` 642–651). Strike sets `isPhysical: true` and skips the roll.
-
-| Level | Fail % | Note |
-| ---: | ---: | :--- |
-| 1 | 20.0 | tutorial |
-| 15 | 18.6 | practical XP wall (001) |
-| 48 | 15.3 | HUD sat |
-| 101 | 10.0 | half the start |
-| **201** | **0** | and stays 0 through 100000 |
-
-At official income the wall is ~15–22, so fail is still ~18%. The zero is a synthetic infinite-horizon collapse of a live gate, not a claim that players are at 201.
-
-**LHIPS-2026-09-24-002.**
-
----
-
-## Flat hazards / DoT (queued 09-23, re-sim)
-
-| Player | HP | Lava max 15 / HP | Spike max 10 / HP |
-| ---: | ---: | ---: | ---: |
-| 1 | 100 | **15%** | 10% |
-| **42** | 305 | **under 5%** | 3.3% |
-| **282** | 1,505 | **under 1%** | 0.7% |
-| 100000 | 500,095 | 0.003% | 0.002% |
-
-**LHIPS-2026-09-23-001 (still, `#475`).**
-
----
-
-## Spell range cap (queued 09-23, re-sim)
-
-| Base range | Example | Hits cap 5 at |
-| ---: | :--- | ---: |
-| 4 | Poison Arrow | **10** |
-| 3 | Frost Bolt | **20** |
-| 1 / 0 | Strike / self | **40** |
-
-**LHIPS-2026-09-23-002 (still, `#475`).**
-
----
-
-## Fallback melee (queued 09-22, re-sim)
+Live combat fallback is Crush 12 / Fire Bolt 8 × `max(1, enemy.level / 5)`, then create RES 10 twice.
 
 | Player | HP | Crush one-shot from enemy | This run max enemy | One-shot at max? |
 | ---: | ---: | ---: | ---: | :--- |
-| 1 | 100 | **52** | 77 | **yes** (recv 156 at 80) |
-| 10 | 145 | **75** | 78 | **yes** |
-| 15 | 170 | 88 | 90 | yes at this run’s max |
-| 25 | 220 | 113 | 100 | no |
+| 1 | 100 | **52** | 80 | **yes** (recv 156) |
+| 10 | 145 | **75** | 79 | **yes** (recv 154) |
+| 15 | 170 | 88 | 82 | no |
+| 25 | 220 | 113 | 98 | no |
+| 100 | 595 | 306 | 169 | no |
 | 1000 | 5,095 | never (cap 1020 recv 1983) | 1020 | no |
+| 2500+ | 12,595+ | never | 1020 | no |
 
-**LHIPS-2026-09-22-001 (still, `#407`).**
+Spawn placeholder `L*2+3` (011 / challenge) is a different slope and is overwritten for HP at battle start.
+
+**LHIPS-2026-09-22-001.**
 
 ---
 
 ## Initiative (queued 09-21, re-sim)
 
+Create-time INIT is 10. Battle uses `characterStats.init`. `saveBattleStats` writes `_minNat(initiative, stored)`. Enemy INIT is `roll(3, 6+level*1.2, piece.mult)`.
+
 | Player | P(player first) |
 | ---: | ---: |
-| 1 | 0.161 |
-| 10 | 0.172 |
-| 15 | 0.048 |
-| 25 | 0.015 |
-| 48 | 0.001 |
+| 1 | 0.165 |
+| 10 | 0.149 |
+| 15 | 0.050 |
+| 25 | 0.012 |
+| 48 | 0.002 |
 | 250+ | **0** |
 
 **LHIPS-2026-09-21-001 (still, `#357`).**
@@ -244,11 +178,11 @@ At official income the wall is ~15–22, so fail is still ~18%. The zero is a sy
 
 | Enemy level | Mean tier | P(tier 10 / betrayal gate) | P(tier ≥ 5 / erratic gate) |
 | ---: | ---: | ---: | ---: |
-| 1 | 2.3 | 0.027 | 0.179 |
-| 10 | 2.3 | 0.031 | 0.179 |
-| 101 | 5.2 | 0.033 | 0.885 |
-| 901 | 8.6 | 0.730 | 0.880 |
-| 1000 | 8.7 | 0.740 | 0.886 |
+| 1 | 2.4 | 0.026 | 0.186 |
+| 10 | 2.4 | 0.028 | 0.185 |
+| 101 | 5.1 | 0.029 | 0.881 |
+| 901 | 8.6 | 0.723 | 0.872 |
+| 1000 | 8.7 | 0.732 | 0.888 |
 
 Gates: erratic `aiTier >= 5`; betrayal `>= 10` and 5%. `instantKill` (gate 9) is unused. Summoner chance = 100% at player 44. Extra combatants + AI work stay saturated from 44 through 100000.
 
@@ -269,7 +203,7 @@ Passing the live `LevelZone` object into `buildEnemyKit` (`WorldExploration.tsx`
 | queen | Frost | **Inferno + Heal** |
 | king | Frost | **Inferno + Rally** |
 
-All 32 frontend spells are `starterSpells` and are `baseSpells` at create (`WorldExploration.tsx` 2396–2408). `shouldIncludeBackendSpellInLibrary` (`adminSafety.ts` 712–719) only hides **retired** catalog rows. No rarity, no duplicate-discovery path. Combined with 09-23-002, the player kit is owned on create and then loses range identity by 40. Combined with 09-24-001, the owned heal is already a chip from the 30s.
+All 32 frontend spells are `starterSpells` and are `baseSpells` at create (`WorldExploration.tsx` 2396–2408). `shouldIncludeBackendSpellInLibrary` (`adminSafety.ts` 712–719) only hides **retired** catalog rows. No rarity, no duplicate-discovery path.
 
 **LHIPS-2026-08-31-007, 008 (still).**
 
@@ -310,23 +244,21 @@ Combat boss HP stays 350 (Pale Archbishop sample) at every player level includin
 | `saveBattleStats.level` | Frozen to stored value |
 | `saveBattleStats` AP/MP | Formula then 20; battle AP unbounded (21 at 325) |
 | `saveBattleStats` INIT | Frozen at create 10 |
-| Spell fail | **0 at 201** (Strike never rolled) |
-| Spell range | Cap 5 from **10** (base 4) / **40** (base 1) |
-| Blood Mend | Flat 12; no Number overflow; collapses vs linear HP |
+| Spell fail | 0 at 201 |
+| Spell range | Capped at 5 by the teens |
 | Spell upgrade cost | `10 * 2^n` Nat; Number-inexact at spell 50+ |
 | GameKey / admin grant | 10M Nat, bypasses 100k combat ceiling |
 | Fallback Crush | Number-safe at the spawn cap; would be 240000 raw at a hypothetical enemy 100000 that cannot spawn |
-| Lava / spikes | Always 8–15 / 5–10 Integer; no overflow; no RES |
 | Enemy id | `enemy-${i}-${currentTime}` — not a level issue |
 | UI leftover bar | `leftover / hudNeed`; at 48+ the denominator is 9.01e15 while persist need is 1.41e16 |
 
-**LHIPS-2026-09-01-001, 003, 004 (still).** **LHIPS-2026-09-02-001, 002 (still).** **LHIPS-2026-09-21-001 (still).** **LHIPS-2026-09-22-001 (still).** **LHIPS-2026-09-23-001, 002 (still).** **LHIPS-2026-09-24-001, 002.**
+**LHIPS-2026-09-01-001, 003, 004 (still).** **LHIPS-2026-09-02-001, 002 (still).** **LHIPS-2026-09-21-001 (still).** **LHIPS-2026-09-22-001.**
 
 ---
 
 ## Telemetry / calibration
 
-No series to compare XP rate, relative-level mix, battle length, death rate, discovery, advanced-AI, elite, or wallet growth. Combat elite flags do not exist (`elite_patrol` is a world-feature design row only). Family 30% is cosmetic after battle-start overwrite. Open TBC PRs do not add collectors.
+No series to compare XP rate, relative-level mix, battle length, death rate, discovery, advanced-AI, elite, or wallet growth. Combat elite flags do not exist (`elite_patrol` is a world-feature design row only). Family 30% is cosmetic after battle-start overwrite. `#333` does not add collectors.
 
 **LHIPS-2026-08-31-014 (still).**
 
@@ -335,7 +267,7 @@ No series to compare XP rate, relative-level mix, battle length, death rate, dis
 ## What this run did not do
 
 - No change to RAF, map generation, turn logic, or damage math.
-- No curve / spawn / kit / jackpot / GameKey / hazard / range / heal / fail retune.
+- No curve / spawn / kit / jackpot / GameKey retune.
 - No claim that current live players are at any of these levels.
-- No reopen of unchanged 2026-08-31, 2026-09-01, 2026-09-02, 2026-09-21, 2026-09-22, or 2026-09-23 IDs.
-- No merge of queued `#357`, `#386`, `#407`, or `#475`.
+- No reopen of unchanged 2026-08-31, 2026-09-01, 2026-09-02, or 2026-09-21 IDs.
+- No merge of queued `#357` or `#386`.

@@ -7,7 +7,7 @@ Harness: `src/frontend/src/utils/longHorizonSim.ts`.
 
 Do not implement gameplay from this file unless a later human or orchestrator explicitly picks an ID. This run ships **observation only** — no curve redesign.
 
-HEAD inspected: `0f5363f` (same as queued `#357` / `#407` / `#475`). Stress includes 10000 / 50000 / 100000. Harness **unions** `#357` (INIT / CHC), `#407` (Crush), and `#475` (hazards / range) rather than overwriting those files.
+HEAD inspected: `0f5363f` (same as queued `#357` / `#407` / `#475`). Stress includes 10000 / 50000 / 100000. Harness **unions** `#357` (INIT / CHC), `#407` (Crush), and `#475` (hazards / range) rather than overwriting those files. This branch restacks onto `#475` (which already contains `#357` and `#407`) so oldest-first merge-tree stays clean.
 
 ## Still-open IDs (not re-filed)
 
