@@ -13,7 +13,6 @@
  *   minLevel, usableByPlayer, usableByEnemy, healAmount, iconEmoji
  */
 
-import { applyPlayerDamageHitDebuff } from "./playerDamageDebuff.ts";
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import { isActiveHostile } from "./battleSetup";
@@ -1047,3 +1046,5 @@ function calcScaledDamageInline(
 ): number {
   return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
 }
+
+import { applyPlayerDamageHitDebuff } from "./playerDamageDebuff.ts";
