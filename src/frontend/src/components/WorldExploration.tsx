@@ -152,6 +152,7 @@ import {
 } from "../engine/enemyPixelPatterns";
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
+import { shouldAbortInFlightWalkAfterSummon } from "../engine/inFlightWalk";
 import {
   applyFinalizedLayout,
   applySanctuaryLayout,
@@ -1150,6 +1151,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   } = useBossRush(actor, characterSlot, userId);
   const [isMoving, setIsMoving] = useState(false);
   const [movementPath, setMovementPath] = useState<PlayerPosition[]>([]);
+  // Live leftover-walk tiles. playerSpellContext omits movementPath from
+  // deps, so spawn occupancy/abort must read this ref, not closed-over state.
+  const movementPathRef = useRef<PlayerPosition[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [clickedTile, setClickedTile] = useState<{
     x: number;
@@ -9148,6 +9152,18 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies: stable refs and exhaustive dep list is intentionally curated
   const playerSpellContext = useCallback(() => {
+    const abortLeftoverPlayerWalkForSummon = () => {
+      if (!shouldAbortInFlightWalkAfterSummon(movementPathRef.current.length)) {
+        return;
+      }
+      // Leftover rAF survives setIsMoving(false). Bump gen before spawn so
+      // the stepper cannot walk onto the new summon (same class as Swap).
+      movementGenRef.current += 1;
+      movementPathRef.current = [];
+      setIsMoving(false);
+      setMovementPath([]);
+      setCurrentStepIndex(0);
+    };
     return createPlayerSpellContext({
       // --- scalars (PlayerSpellContextDeps) ---
       characterName,
@@ -9229,6 +9245,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           });
           return;
         }
+        abortLeftoverPlayerWalkForSummon();
         const { summon } = spawnSummonUnit(
           cell,
           { ...spell, summonUnitDef: unitDef, summonLifespan: lifespan },
@@ -9580,6 +9597,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         barrierTilesRef.current.set(`${cell.x},${cell.y}`, turns);
       },
       spawnPlayerSummon: (gridPos: { x: number; y: number }, spell: any) => {
+        abortLeftoverPlayerWalkForSummon();
         const { summon } = spawnSummonUnit(
           gridPos,
           spell,
@@ -10554,6 +10572,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
           setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
+          movementPathRef.current = path;
           setMovementPath(path);
           setCurrentStepIndex(0);
           setIsMoving(true);
@@ -11138,6 +11157,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           setCurrentBattleMp((prev) => Math.max(0, prev - cost));
           markFirstAction();
           setClickedTile({ x: gridPos.x, y: gridPos.y, timestamp: Date.now() });
+          movementPathRef.current = path;
           setMovementPath(path);
           setCurrentStepIndex(0);
           setIsMoving(true);
@@ -11517,6 +11537,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     onDokaBalanceChange,
     setPlayerPositionSynced,
   ]);
+  useEffect(() => {
+    movementPathRef.current = movementPath;
+  }, [movementPath]);
   // FIXED: Check portal interaction whenever player position changes
   // EDIT 3 — Edge-trigger: only fire checkPortalInteraction() on the actual
   // isMoving false-transition (moving → stopped), NOT on every
