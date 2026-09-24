@@ -27,7 +27,9 @@ See also: [`ENEMY_FORMATIONS_2026-08-31.md`](./ENEMY_FORMATIONS_2026-08-31.md) (
 - Do **not** pack `act_sexton` with `bell_sexton` / `fuse_binder` as a PAIR (two delayed clocks). `FSN-BELL-CUT` / `FSN-WICK-STEP` stay execute-clock / tile fuse.
 - Drop 4–6 laws still stand (no coup+bell PAIR; no two cones; no two evades; no two self-teleports; no two posts; no two scribes; no two censors).
 
-Wave 7 SPELL_PROPOSALS (`SPELL_PROPOSALS_2026-09-24.md`, open as PR #525: Wall Sting, File Brand, Boot Sting, Shove Face, Knight Slip, Pivot Foe, Triple Span, Cadence Crack, Must Pace, Once Verse, Tick Hood, Flank Share, Spare Pace, Pit Wick, Exit Boon, Court Shove) have **no family sheets yet**. This drop does **not** mint `FSN-*` ids for them. The next formation drop packs those families after elite-evolution stamps them.
+Wave 7 **families** now exist as [`ENEMY_ELITE_EVOLUTION_2026-09-24.md`](../automation/ENEMY_ELITE_EVOLUTION_2026-09-24.md) (open as PR #535: `post_stinger`, `purse_scribe`, `corner_bishop`, `hinge_squire`, `file_reeler`, `twin_span`, `veil_cantor`, `cadence_breaker`, `cadence_lender`, `purse_splitter`, `tithe_mason`, `hinge_mason`, `spark_chanter`, `cap_warder`). They consume Wave 6 SPELL_PROPOSALS (PR #463), not this catalog’s Wave 6 family pack. This drop does **not** mint `FSN-*` ids for those fourteen families — drop 8 writes Post Tithe, Purse Court, Corner Fog, Hinge Cover, Reel Tithe, Twin Plug, Veil Corner, Break Choir, Lend Fan, Spark Purse, Hinge Trap, Cap Veil, Reel Corner, Split Spark.
+
+Same-day SPELL_PROPOSALS Wave 7 (`SPELL_PROPOSALS_2026-09-24.md`, open as PR #525: Wall Sting, File Brand, Boot Sting, Shove Face, Knight Slip, Pivot Foe, Triple Span, Cadence Crack, Must Pace, Once Verse, Tick Hood, Flank Share, Spare Pace, Pit Wick, Exit Boon, Court Shove) still have **no family sheets**. Elite-evolution Wave 7 left those verbs for Wave 8. Do not mint `FSN-*` ids that require Wave 7 spell verbs until that family pass exists.
 
 Mute Thread / Queue Cut / False Cut stay **boss / closed-class**.
 
@@ -1210,9 +1212,30 @@ Cross-catalog prereqs (relative mastery, not XP):
 
 A run may skip a **branch**. It must not skip a **grade**.
 
-### Deferred — Wave 7 leftover spell verbs (not this drop)
+### Deferred — Wave 7 families (PR #535) and leftover spell verbs (not this drop)
 
-Sibling [`docs/automation/SPELL_PROPOSALS_2026-09-24.md`](../automation/SPELL_PROPOSALS_2026-09-24.md) (open as PR #525) stamped ids that **still have no family**. Elite-evolution Wave 6 §9 held boss/closed-class Mute Thread / Queue Cut / False Cut. This catalog does **not** mint `FSN-*` ids that require Wave 7 verbs. The next formation drop should write those combinations after a Wave 7 family sheet exists.
+Sibling [`docs/automation/ENEMY_ELITE_EVOLUTION_2026-09-24.md`](../automation/ENEMY_ELITE_EVOLUTION_2026-09-24.md) (open as PR #535) stamped fourteen world-pack families that consume Wave 6 SPELL_PROPOSALS (PR #463). This catalog already packed Wave 6 families from PR #452. Drop 8 owns the Wave 7 packs; do **not** duplicate those family ids here.
+
+| Named pack (PR #535 §3) | Members | Lesson |
+| :--- | :--- | :--- |
+| Post Tithe | `post_stinger` + `tithe_mason` + `axis_locksmith` | Camp the tax cell; walk-off pays and drops the +10 |
+| Purse Court | `purse_scribe` + `act_teller` + `gait_muter` | Cut the loaded bar they cannot spend on a 3-AP nuke |
+| Corner Fog | `corner_bishop` + `smoke_thurifer` + `span_warder` | Place the block, then cash the +12 |
+| Hinge Cover | `hinge_squire` + `cover_squire` + `glance_ward` | Swing behind the pivot, then redirect / Glance the new front |
+| Reel Tithe | `file_reeler` + `tithe_mason` + `oncoming_knight` | Pull onto the tax; they face the charger or pay to leave |
+| Twin Plug | `twin_span` + `lintel_mason` + `glass_sniper` | Walking two-cell plug + healthy bodies cannot bypass |
+| Veil Corner | `veil_cantor` + `corner_bishop` + `goad_herald` | Forced Strike into a veiled body; spells must AoE or skip |
+| Break Choir | `cadence_breaker` + `ignite_alchemist` + `tempo_precentor` | Reset Inferno once; gift AP so the second cash lands |
+| Lend Fan | `cadence_lender` + `gale_deacon` + `font_cantor` | Shave Gale CD; pulse keeps the gun standing |
+| Spark Purse | `spark_chanter` + `purse_splitter` + `cadence_breaker` | Transfer 1, detonate +1 on **their** turn, reset the follow-up |
+| Hinge Trap | `hinge_mason` + `fuse_binder` + `pit_mason` | Enter-swap onto a wick / hole |
+| Cap Veil | `cap_warder` + `veil_cantor` + `goad_herald` | Forced swing caps at 12; spells cannot primary the veil |
+| Reel Corner | `file_reeler` + `corner_bishop` + `pylon_prelate` | Pull them behind the post, then shoot the blocked LoS |
+| Split Spark | `purse_splitter` + `spark_chanter` + `act_sexton` | Gift leftover AP, then arm a turn-start 14 they want to keep |
+
+Drop 8 PAIR bans (from PR #535; COURT later is fine): no `post_stinger`+`stride_hunter`/`far_stinger`/`glass_sniper` without a tithe/lock third; no `purse_scribe`+`ledger_siphon`/`surplus_warder`; no `corner_bishop`+second gun without a smoke/span/pylon third; no `hinge_squire`+vault/hook/shove/mist/morrow/blink; no `file_reeler`+`void_anchoret`/`sink_chanter`/`pair_binder`; no `twin_span`+span body or stationary post; no `veil_cantor`+`smoke_thurifer`/`sidestep_warder` PAIR; no `cadence_breaker`+`cadence_thief`; no `cadence_lender`+`tempo_precentor` PAIR; no `purse_splitter`+`tempo_precentor`/`ledger_siphon`; no `tithe_mason`+`tax_scribe`/`origin_mason`/`glyph_sower`; no `hinge_mason`+`rift_hook`/`pawn_broker`/`twin_porter`/`trip_mason`; no `spark_chanter`+`cinder_martyr`/`brood_chanter` PAIR; no `cap_warder`+`plate_warden`/`surplus_warder`/`cover_squire` PAIR. Twin Span fills `ENEMY_SUMMON_CAP`. Twin Plug / Reel Corner need a file plus an adjacent free cell.
+
+Sibling [`docs/automation/SPELL_PROPOSALS_2026-09-24.md`](../automation/SPELL_PROPOSALS_2026-09-24.md) (open as PR #525) stamped Wave 7 verbs that **still have no family**. Elite-evolution Wave 7 left those for Wave 8. Wave 6 §9 held boss/closed-class Mute Thread / Queue Cut / False Cut. This catalog does **not** mint `FSN-*` ids that require Wave 7 verbs.
 
 | Leftover verb | Nearest older overlay | Why that is not enough |
 | :--- | :--- | :--- |
@@ -1291,6 +1314,7 @@ They do **not** need new pixel patterns, RAF edits, map-generation rewrites, tur
 - Wave 6 families / packs: `docs/automation/ENEMY_ELITE_EVOLUTION_2026-09-23.md` (PR #452) §3–§4
 - Wave 5 verbs consumed: `docs/automation/SPELL_PROPOSALS_2026-09-22.md` (PR #411)
 - Wave 7 leftover (deferred): `docs/automation/SPELL_PROPOSALS_2026-09-24.md` (PR #525)
+- Wave 7 families (deferred to drop 8): `docs/automation/ENEMY_ELITE_EVOLUTION_2026-09-24.md` (PR #535)
 - Drop 6 (do not reuse ids): `docs/design/ENEMY_FORMATIONS_2026-09-23.md` (PR #459)
 - Drop 5: `docs/design/ENEMY_FORMATIONS_2026-09-22.md` (PR #401)
 - Drop 4: `docs/design/ENEMY_FORMATIONS_2026-09-21.md` (PR #348)
