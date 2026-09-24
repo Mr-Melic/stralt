@@ -452,6 +452,23 @@ module {
         null
     };
 
+    /// Failure: Admin Range StatRow writes legacy `range` while Min/Max Range
+    /// writes `maxRange`. Player clicks use spellRangeBase → maxRange;
+    /// enemy AI uses Number(spell.range) from the backend catalog
+    /// (WorldExploration assigns usableByEnemy rows). range=10 with
+    /// maxRange=3 is valid today and lets hostiles outrange the player.
+    /// Shipped reflect_barrier is range=1 / maxRange=0 (self buff); keep
+    /// that one-tile leftover so an admin re-save of the built-in does not
+    /// #err. A map-wide leftover on a self row (range>1, maxRange=0) is not
+    /// grandfathered.
+    public func spellLegacyRangeRejected(range : Nat, maxRange : Nat) : ?Text {
+        if (range > maxRange) {
+            if (maxRange == 0 and range <= 1) { return null };
+            return ?"range cannot exceed maxRange";
+        };
+        null
+    };
+
     public func validateBossPortalAssignment(portalId : Text, bossId : Text) : ?Text {
         switch (requireId(portalId, "Portal")) { case (?e) { return ?e }; case null {} };
         switch (requireId(bossId, "Boss")) { case (?e) { return ?e }; case null {} };

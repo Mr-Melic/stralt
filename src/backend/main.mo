@@ -870,6 +870,10 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.spellLegacyRangeRejected(config.range, config.maxRange)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         switch (AdminGuard.validateSpellConfig(config)) {
             case (?e) { return #err(e) };
             case null {};
