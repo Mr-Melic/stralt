@@ -9062,6 +9062,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           combatantStoreCtx.battleStartIds.size > 0 &&
           inBattle
         ) {
+          // Leftover MP-walk rAF captured loopGen before this death. Bump
+          // so the next step cannot land lava/spikes before handleBattleEnd
+          // runs cleanupBattle (that would set deathTriggered and skip
+          // applyRewards).
+          movementGenRef.current += 1;
           logDebugInfo("BATTLE", "recheckVictory observed last hostile down", {
             attributed: battleDefeatedRef.current.length,
           });
@@ -11240,6 +11245,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           victoryPersistPending: victoryPersistPendingRef.current,
           movementGen: movementGenRef.current,
           loopGen,
+          inBattle: inBattleRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
         })
       ) {
         movementGenRef.current += 1;
