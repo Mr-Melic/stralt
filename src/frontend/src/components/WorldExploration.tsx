@@ -86,6 +86,7 @@ import {
   hpAfterIncomingDamage,
   isActiveHostile,
   isAliveCombatant,
+  kitHealAfterBuff,
   liveCombatantHp,
   persistBattleEndGuardAfterCleanup,
   playerTurnStartModifierTarget,
@@ -9203,6 +9204,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             amount,
             "heal",
           );
+        } else {
+          const live = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.id === combatantId,
+          );
+          if (!live) return;
+          const nextHp = hpAfterHeal(live.hp, live.maxHp ?? live.hp, amount);
+          updateCombatant(combatantStoreCtx, combatantId, { hp: nextHp });
+          setEnemyHpMap((prev) => ({ ...prev, [combatantId]: nextHp }));
+          spawnDamageAtTile(
+            effectsManagerRef.current,
+            tileCenterRef.current,
+            live.x,
+            live.y,
+            Math.max(0, nextHp - live.hp),
+            "heal",
+          );
         }
       },
       applyEffect: (effect: ActiveEffectLike) => {
@@ -9885,6 +9902,28 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         updateCombatant(combatantStoreCtx, summon.id, {
           currentAp: plan.remainingAp,
         });
+        {
+          const amount = kitHealAfterBuff(plan.spell, 0);
+          const live = getLiveCombatants(combatantStoreCtx).find(
+            (e) => e.id === targetEnemy.id,
+          );
+          if (amount > 0 && live && !isPlayerHealTargetId(targetEnemy.id)) {
+            const nextHp = hpAfterHeal(live.hp, live.maxHp ?? live.hp, amount);
+            updateCombatant(combatantStoreCtx, targetEnemy.id, { hp: nextHp });
+            setEnemyHpMap((prev) => ({
+              ...prev,
+              [targetEnemy.id]: nextHp,
+            }));
+            spawnDamageAtTile(
+              effectsManagerRef.current,
+              tileCenterRef.current,
+              live.x,
+              live.y,
+              Math.max(0, nextHp - live.hp),
+              "heal",
+            );
+          }
+        }
         logBattleEntry(
           `${summon.pieceType} casts ${plan.spell.name ?? plan.spell.id}`,
           "#a855f7",
@@ -15021,6 +15060,26 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 pos.x,
                 pos.y,
                 amount,
+                "heal",
+              );
+            } else {
+              const live = getLiveCombatants(combatantStoreCtx).find(
+                (e) => e.id === combatantId,
+              );
+              if (!live) return;
+              const nextHp = hpAfterHeal(
+                live.hp,
+                live.maxHp ?? live.hp,
+                amount,
+              );
+              updateCombatant(combatantStoreCtx, combatantId, { hp: nextHp });
+              setEnemyHpMap((prev) => ({ ...prev, [combatantId]: nextHp }));
+              spawnDamageAtTile(
+                effectsManagerRef.current,
+                tileCenterRef.current,
+                live.x,
+                live.y,
+                Math.max(0, nextHp - live.hp),
                 "heal",
               );
             }
