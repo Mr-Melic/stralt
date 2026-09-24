@@ -28,6 +28,10 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` (clamped to canister maxima) |
 | `src/frontend/src/utils/xpCurve.ts` | Shared `100 * 2^(N-1)` leftover-XP threshold (bigint) |
 | `src/frontend/src/utils/versionGate.ts` | Version-bump wipe: keep spawn/level-up config and `*_inventory` |
+| `src/frontend/src/utils/playerCastGate.ts` | Sprite / Attack Nearest / keyboard S: require the live player turn-order row |
+| `src/frontend/src/utils/adminVisualStatus.ts` | Admin sprite URL honesty — stored, not rendered in world |
+| `src/frontend/src/utils/vitalsOrbCaps.ts` | Side-panel HP/AP/MP jewel caps from the live character max |
+| `src/frontend/src/engine/enemyPixelPatterns.ts` | Boss / family pixel tables (world draw; not catalog URLs) |
 | `backend_extended/` | Legacy actor (15-field stats). Not the caffeine/mops build |
 | `declarations/backend/` | Stale Candid snapshot (still lists `wp`/`wr`/`scp`) |
 
