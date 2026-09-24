@@ -712,4 +712,21 @@ module {
     public func truncateSummary(text : Text) : Text {
         if (text.size() <= 200) { text } else { "(truncated)" }
     };
+
+    /// Failure: validateSpellConfig caps minRange/maxRange at 20 but left the
+    /// legacy `range` field (and hitTiles offsets) unbounded. Official enemy
+    /// AI uses `Number(spell.range)` from the backend catalog, so
+    /// adminSetSpellConfig(range=1_000_000) made hostiles map-wide.
+    /// Player clicks use maxRange; this bound matches that cap.
+    public func spellTargetingRejected(range : Nat, hitTiles : [(Int, Int)]) : ?Text {
+        if (range > 20) {
+            return ?"range must be at most 20";
+        };
+        for ((dx, dy) in hitTiles.values()) {
+            if (dx < -20 or dx > 20 or dy < -20 or dy > 20) {
+                return ?"hitTiles offsets must be between -20 and 20";
+            };
+        };
+        null
+    };
 };
