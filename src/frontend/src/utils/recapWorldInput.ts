@@ -39,19 +39,66 @@ export function shouldHaltInFlightMoveDuringRecap(
 }
 
 /**
+ * Last-hostile death is observed in `recheckVictory` before the
+ * `[inBattle, enemies]` victory useEffect runs handleBattleEnd /
+ * cleanupBattle. A leftover MP walk that is already past the recap
+ * gate can still step lava/spikes in that window, set deathTriggered,
+ * and make shouldAwardVictory refuse — persistDeathPenalty instead of
+ * applyRewards.
+ *
+ * Halt as soon as the live roster is empty while the fight is still
+ * open. After setInBattle(false) the player can walk to the portal.
+ *
+ * Union with #546 — keep one implementation; do not concatenate a second
+ * copy of this helper.
+ */
+export function shouldHaltInFlightMoveOnLastHostile(opts: {
+  inBattle: boolean;
+  hostilesRemaining: number;
+}): boolean {
+  return opts.inBattle === true && opts.hostilesRemaining === 0;
+}
+
+/**
  * In-flight rAF closures survive `setIsMoving(false)`. Bump a generation
  * (or honor an abort flag) so the leftover loop cannot apply another
  * hazard / loot / shrine step.
+ *
+ * Optional `inBattle` / `hostilesRemaining` are #546's last-hostile halt.
+ * They do not abort leftover *overworld* walks when a fight starts
+ * (hostilesRemaining > 0) — `checkBattleTrigger` must still bump gen.
  */
 export function shouldAbortMovementRaf(opts: {
   recapVisible: boolean;
   victoryPersistPending: boolean;
   movementGen: number;
   loopGen: number;
+  inBattle?: boolean;
+  hostilesRemaining?: number;
 }): boolean {
   if (opts.movementGen !== opts.loopGen) return true;
+  if (
+    shouldHaltInFlightMoveOnLastHostile({
+      inBattle: opts.inBattle === true,
+      hostilesRemaining:
+        opts.hostilesRemaining == null ? -1 : opts.hostilesRemaining,
+    })
+  ) {
+    return true;
+  }
   return shouldHaltInFlightMoveDuringRecap(
     opts.recapVisible,
     opts.victoryPersistPending,
   );
+}
+
+/**
+ * Overworld leftover rAF does not read `inBattle` as a start-of-fight abort
+ * (in-battle MP walks stay live while hostiles remain). `checkBattleTrigger`
+ * must bump this counter before battle-start teleport, or remaining
+ * world-path steps yank the player off the spaced cell onto lava /
+ * occupants. Same contract as cleanupBattle / room-clear.
+ */
+export function nextMovementGenOnBattleStart(movementGen: number): number {
+  return movementGen + 1;
 }

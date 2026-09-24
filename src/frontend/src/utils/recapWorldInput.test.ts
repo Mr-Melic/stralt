@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  nextMovementGenOnBattleStart,
   shouldAbortMovementRaf,
   shouldBlockPortalDuringVictoryPersist,
   shouldHaltInFlightMoveDuringRecap,
+  shouldHaltInFlightMoveOnLastHostile,
   shouldIgnoreWorldInputDuringRecap,
 } from "./recapWorldInput.ts";
 
@@ -90,6 +92,100 @@ describe("shouldAbortMovementRaf", () => {
         loopGen: 1,
       }),
       false,
+    );
+  });
+
+  it("halts a leftover MP walk as soon as the last hostile is gone, before recap", () => {
+    // Kill last hostile while a walk is mid-path. Recap / victoryPersistPending
+    // are still false until the victory useEffect; lava on the next tile
+    // would set deathTriggered and skip applyRewards.
+    assert.equal(
+      shouldHaltInFlightMoveOnLastHostile({
+        inBattle: true,
+        hostilesRemaining: 0,
+      }),
+      true,
+    );
+    assert.equal(
+      shouldAbortMovementRaf({
+        recapVisible: false,
+        victoryPersistPending: false,
+        movementGen: 1,
+        loopGen: 1,
+        inBattle: true,
+        hostilesRemaining: 0,
+      }),
+      true,
+    );
+  });
+
+  it("does not halt an in-combat walk while a hostile is still alive", () => {
+    assert.equal(
+      shouldHaltInFlightMoveOnLastHostile({
+        inBattle: true,
+        hostilesRemaining: 1,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAbortMovementRaf({
+        recapVisible: false,
+        victoryPersistPending: false,
+        movementGen: 1,
+        loopGen: 1,
+        inBattle: true,
+        hostilesRemaining: 1,
+      }),
+      false,
+    );
+  });
+
+  it("lets post-victory overworld walks continue once inBattle is false", () => {
+    assert.equal(
+      shouldHaltInFlightMoveOnLastHostile({
+        inBattle: false,
+        hostilesRemaining: 0,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAbortMovementRaf({
+        recapVisible: false,
+        victoryPersistPending: false,
+        movementGen: 1,
+        loopGen: 1,
+        inBattle: false,
+        hostilesRemaining: 0,
+      }),
+      false,
+    );
+  });
+
+  it("does not treat a started battle as an rAF abort — start must bump gen", () => {
+    // Overworld leftover walk: inBattle becomes true with hostiles still
+    // alive. Last-hostile halt (#546) stays false; without a gen bump the
+    // remaining world-path steps yank the player off the spaced cell.
+    assert.equal(
+      shouldAbortMovementRaf({
+        recapVisible: false,
+        victoryPersistPending: false,
+        movementGen: 1,
+        loopGen: 1,
+        inBattle: true,
+        hostilesRemaining: 3,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAbortMovementRaf({
+        recapVisible: false,
+        victoryPersistPending: false,
+        movementGen: nextMovementGenOnBattleStart(1),
+        loopGen: 1,
+        inBattle: true,
+        hostilesRemaining: 3,
+      }),
+      true,
     );
   });
 });
