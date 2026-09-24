@@ -20,7 +20,7 @@ Sibling design that already exists — **do not re-propose as new families / roo
 | ENC-* rooms | `docs/encounters/ENCOUNTER_EVOLUTION_*` — PROPOSED. Ley/Fan/Pit/Font = open **#479** |
 | Spell verbs (push, attract, root, trap, delayed execute, …) | `SPELL_PROPOSALS_*` — PROPOSED. Wave 6 = open **#463** / SDE **#480** |
 | World features (`WF-*`) | `engine/worldFeatures.ts` — **52** ids, unit-tested, **not imported by WX**. Wave 4–7 TypeScript dumps: **#344 / #399 / #454 / #503** |
-| Boss Rush tables C–E | Design PRs **#367 / #406 / #474**. Live `BOSS_RUSH_ROOMS.length` still **10** |
+| Boss Rush tables C–F | Design PRs **#367 / #406 / #474 / #518**. Live `BOSS_RUSH_ROOMS.length` still **10** |
 | Owner encounter pack | `WORLD_ENCOUNTER_ADMIN_DESIGN_*` — WDEAD ids still NEW |
 
 **Do not recommend** HP/damage reskins, Register-only families (Crimson Spawn / Shadow Lurker / Storm Caller), a fifth reflect, a 53rd (or 117th) `WF-*`, Wave-7 `EnemyFamily` members, or extra `BOSS_RUSH_ROOMS`.
@@ -265,6 +265,8 @@ These PRs must not be mistaken for shipped content. **Docs are fine. TypeScript 
 | #399 | 2026-09-22 | Wave-5 `worldFeatures.ts` | 018 |
 | #344 | 2026-09-21 | Wave-4 `worldFeatures.ts` | 018 |
 | #474 | 2026-09-23 | Wave 7 boss sheets + Rush **Table E** (docs only) | 019 — may land as docs; not as `BOSS_RUSH_ROOMS` rows |
+| #518 | 2026-09-24 | Wave 8 boss sheets + Rush **Table F** (docs only) | 019 — same: docs only |
+| #519 | 2026-09-24 | Gale/Twin/Pincer ENC catalog (docs) | 019 / 014 |
 | #506 | 2026-09-24 | Enemy AI evolution increment (docs) | Do not add `EnemyFamily` / live AI ids |
 | #479 | 2026-09-23 | Ley/Fan/Pit/Font ENC catalog (docs) | 019 / 014 |
 | #452 | 2026-09-23 | Wave 6 elite sheets (docs) | 013 / 003 |
