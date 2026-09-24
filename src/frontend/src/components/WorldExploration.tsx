@@ -250,6 +250,10 @@ import {
 import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
+  abortInFlightWalkAfterSwap,
+  resolveSwapTeleport,
+} from "../engine/swapTeleport";
+import {
   type TileCastableResult,
   attackNearestLiveCasterPos,
   canAttackNearestAgainstLive,
@@ -9391,14 +9395,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           (e: any) => e.id === targetEnemyId,
         );
         if (!target) return;
-        const oldPlayerPos = { ...playerPosition };
-        setPlayerPositionSynced({ x: target.x, y: target.y });
+        // Live tile: range already used playerPositionRef. React
+        // playerPosition lags the first walk RAF step, so closing over it
+        // sent the enemy to the walk-start cell.
+        const swapped = resolveSwapTeleport({
+          livePlayerPos: playerPositionRef.current,
+          targetPos: { x: target.x, y: target.y },
+        });
+        setPlayerPositionSynced(swapped.playerDest);
         // Route the enemy position swap through the combatant store so the
         // ref mirrors stay atomically in sync (replaces a setEnemies map).
         updateCombatant(combatantStoreCtx, targetEnemyId, {
-          x: oldPlayerPos.x,
-          y: oldPlayerPos.y,
+          x: swapped.enemyDest.x,
+          y: swapped.enemyDest.y,
         });
+        // Official Swap is a teleport. Spending the last MP on a walk
+        // flips the HUD to attack while leftover rAF still owns the
+        // pre-swap path. Bump generation like cleanupBattle so that
+        // stepper cannot walk the player off the swapped tile.
+        const abort = abortInFlightWalkAfterSwap(movementGenRef.current);
+        movementGenRef.current = abort.nextMovementGen;
+        setIsMoving(abort.isMoving);
+        setMovementPath(abort.movementPath);
+        setCurrentStepIndex(abort.currentStepIndex);
       },
       placeMark: (cell: { x: number; y: number }) => {
         markedTilesRef.current.add(`${cell.x},${cell.y}`);
