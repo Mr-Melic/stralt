@@ -14,8 +14,13 @@
  */
 
 import type { SpellConfig } from "../types/gameTypes";
-import { logDebugInfo } from "../utils/debugLogger";
-import { isActiveHostile } from "./battleSetup";
+import { logDebugInfo } from "../utils/debugLogger.ts";
+import { isActiveHostile } from "./battleSetup.ts";
+import {
+  playerMirrorResolvesOnTile,
+  playerShieldBuffResolves,
+  playerTimestepResolvesOnTile,
+} from "./playerSpecialCast.ts";
 
 export type Side = "player" | "enemy";
 
@@ -604,6 +609,7 @@ export function resolveSpellCast(
   ctx.log(`${spell.name} cast with no effect.`, "#9ca3af");
 }
 
+import { shouldAbortPlayerDrainForMissingHostile } from "./playerDrainCast.ts";
 /**
  * Player-cast resolver — byte-identical replication of the inline player cast
  * path in WorldExploration.tsx (handleCanvasClick spell branch, lines 8186-8966).
@@ -622,6 +628,8 @@ export function resolveSpellCast(
  * inline path exactly. The existing resolveSpellCast (used by enemy/summon-AI)
  * is NOT modified.
  */
+import { decidePlayerDebuffOnlyCast } from "./playerStatusCast.ts";
+
 export function resolvePlayerCast(
   spell: any,
   gridPos: { x: number; y: number },
@@ -631,9 +639,11 @@ export function resolvePlayerCast(
   const isHealSpell =
     spell.targetType === "self" && spell.effectType === "heal";
   const isDrainSpell = spell.effectType === "drain";
-  const isShieldSpell =
-    (spell.targetType === "self" || spell.targetType === "ally") &&
-    spell.effectType === "buff";
+  // Shield is self/ally + buff + buffStat. Timestep is also self+buff
+  // but has no buffStat — the old predicate returned "cast" here and
+  // never reached restoreApMp, so a highlighted caster tile executed
+  // without the advertised AP/MP reset.
+  const isShieldSpell = playerShieldBuffResolves(spell);
   const isSwapSpell = spell.isSwap === true;
   const isPlayerTile =
     gridPos.x === ctx.playerPosition.x && gridPos.y === ctx.playerPosition.y;
@@ -719,7 +729,16 @@ export function resolvePlayerCast(
   }
 
   // ── Timestep: restore AP and MP to full once per battle (inline line 8326) ──
+  // Same caster-tile gate as highlight (`targetType === "self"`). Off-tile
+  // used to fall through after the shield steal and still consume.
   if (spell.isTimestep) {
+    if (!playerTimestepResolvesOnTile(spell, isPlayerTile)) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "timestep requires caster tile"}`,
+      );
+      return "abort";
+    }
     if (ctx.consumeTimestep()) {
       logDebugInfo(
         "RESOLVER",
@@ -731,6 +750,26 @@ export function resolvePlayerCast(
     ctx.restoreApMp();
     ctx.log("Timestep! AP and MP restored to full", "#22d3ee");
     return "no_ap"; // caller must NOT deduct AP — timestep restored it
+  }
+
+  // ── Mirror: activate on the caster tile. Lived inside the
+  // `targetEnemy || hitsMultiple` loop, so a highlighted self tile
+  // returned "cast" without activateMirror.
+  if (spell.isMirror) {
+    if (!playerMirrorResolvesOnTile(spell, isPlayerTile)) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "mirror requires caster tile"}`,
+      );
+      return "abort";
+    }
+    ctx.activateMirror();
+    ctx.log(
+      "Mirror active! Next single-target damage spell cast at you reflects back!",
+      "#c084fc",
+    );
+    ctx.recordSpellType(spell.effectType ?? "damage");
+    return "cast";
   }
 
   // ── Check if an enemy is on clicked tile (inline line 8349) ──
@@ -864,7 +903,12 @@ export function resolvePlayerCast(
   // getAoETargets cannot build a target list without targetEnemy (drain is
   // not hitsMultiple). Surface the reason here and abort explicitly so the
   // caller does NOT deduct AP and the log names the cause.
-  if (isDrainSpell && !targetEnemy) {
+  // Hits-multiple drain (Lifesteal Nova) is the exception: highlight paints
+  // empty area anchors and getAoETargets builds the list from the click.
+  if (
+    isDrainSpell &&
+    shouldAbortPlayerDrainForMissingHostile(spell, targetEnemy)
+  ) {
     logDebugInfo(
       "RESOLVER",
       `abort {spellId: "${spell.id}", reason: "drain requires enemy target on tile (targetEnemy=undefined)"}`,
@@ -873,12 +917,34 @@ export function resolvePlayerCast(
     return "abort";
   }
 
+  // ── Debuff-only (Weaken / Slow): highlight paints the hostile, but the
+  // damage loop used calcScaledDamageInline(0) → 1 dmg and never applied
+  // debuffStat. Enemy AI / summon 0-damage casts already applyEffect.
+  // Empty / corpse tiles abort (same as drain) so they cannot spend AP.
+  const debuffOnly = decidePlayerDebuffOnlyCast(spell, targetEnemy);
+  if (debuffOnly.action === "abort") {
+    logDebugInfo(
+      "RESOLVER",
+      `abort {spellId: "${spell.id}", reason: "debuff-only requires enemy target on tile"}`,
+    );
+    ctx.log(`No enemy on target tile for ${spell.name}!`, "#94a3b8");
+    return "abort";
+  }
+  if (debuffOnly.action === "apply") {
+    ctx.applyEffect(debuffOnly.effect);
+    ctx.log(debuffOnly.logLine, "#f87171");
+    ctx.onHit();
+    ctx.recordSpellType(spell.effectType ?? "debuff");
+    return "cast";
+  }
+
   // ── Damage loop (inline line 8456) ──
   // Guard: enter the loop when there is an explicit enemy target OR the spell
   // is multi-target (hitsMultiple) so getAoETargets can build the list from the
   // enemies-in-range filter. The previous `isDrainSpell && !isPlayerTile`
   // fallback is removed — drain spells now require targetEnemy (handled by the
-  // guard above) and never enter the loop without one.
+  // guard above) and never enter the loop without one. Hits-multiple drain
+  // still enters via `spell.hitsMultiple` from an empty highlighted anchor.
   if (targetEnemy || spell.hitsMultiple) {
     const baseDamage = Number(spell.damage);
     const rawDmg = calcScaledDamageInline(
@@ -912,17 +978,6 @@ export function resolvePlayerCast(
         ctx.recordSpellType(spell.effectType ?? "damage");
         return "cast";
       }
-    }
-
-    // Mirror spell — activate mirror shield on the player (inline line 8522)
-    if (spell.isMirror) {
-      ctx.activateMirror();
-      ctx.log(
-        "Mirror active! Next single-target damage spell cast at you reflects back!",
-        "#c084fc",
-      );
-      ctx.recordSpellType(spell.effectType ?? "damage");
-      return "cast";
     }
 
     // Mark spell (inline line 8577)
