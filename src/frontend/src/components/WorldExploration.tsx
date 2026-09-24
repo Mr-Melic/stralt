@@ -328,7 +328,9 @@ import {
 import {
   armDeathGuards,
   isDeathRealmTransitionPending,
+  nextMovementGenOnDeathRealmPending,
   shouldBlockPortalDuringPendingDeathRealm,
+  shouldIgnoreCanvasWalkDuringDeath,
 } from "../utils/deathGuards";
 import {
   applyUnpaidDeathPenaltyToWrite,
@@ -10019,8 +10021,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       )
         return;
       if (
-        (inBattleRef.current &&
-          (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)) ||
+        shouldIgnoreCanvasWalkDuringDeath({
+          inBattle: inBattleRef.current,
+          deathTriggered: deathTriggeredRef.current,
+          hp: characterStatsRef.current.hp,
+          deathRealmTimerPending: deathRealmTimerRef.current !== null,
+        }) ||
         shouldIgnoreClickAfterTouch(Date.now(), lastCanvasTouchEndRef.current)
       ) {
         return;
@@ -10720,8 +10726,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       )
         return;
       if (
-        inBattleRef.current &&
-        (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)
+        shouldIgnoreCanvasWalkDuringDeath({
+          inBattle: inBattleRef.current,
+          deathTriggered: deathTriggeredRef.current,
+          hp: characterStatsRef.current.hp,
+          deathRealmTimerPending: deathRealmTimerRef.current !== null,
+        })
       ) {
         return;
       }
@@ -13359,7 +13369,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
         // Drop the live path so a dismissed recap cannot queue another walk
         // onto an enemy during the 1.5s Death Realm wait. checkBattleTrigger
-        // also blocks while the timer is pending.
+        // also blocks while the timer is pending. Bump movementGen so leftover
+        // rAF cannot land lava / shrine / ground Doka (cleanupBattle does this
+        // on the in-battle path; this HP-watch never calls it).
+        movementGenRef.current = nextMovementGenOnDeathRealmPending(
+          movementGenRef.current,
+        );
         setIsMoving(false);
         setMovementPath([]);
         setCurrentStepIndex(0);

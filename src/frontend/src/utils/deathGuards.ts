@@ -54,3 +54,41 @@ export function shouldBlockPortalDuringPendingDeathRealm(
 ): boolean {
   return isDeathRealmTransitionPending(deathTriggered, deathRealmTimerPending);
 }
+
+/**
+ * Canvas walk / cast while Death Realm is pending.
+ *
+ * persistDeathPenalty restores HP in the same death tick, and both the
+ * exploration HP-watch and in-battle lava path set inBattle false before
+ * the timer fires. Click/touch used to require
+ * `inBattle && (deathTriggered || hp<=0)`, so after the defeat recap is
+ * dismissed a new walk could step lava / shrine / ground Doka during the
+ * wait. Portals and encounters already use isDeathRealmTransitionPending.
+ *
+ * Keep the original in-battle gate (Game Over / mid-fight death) and also
+ * block while the Death Realm timer is pending after HP restore.
+ */
+export function shouldIgnoreCanvasWalkDuringDeath(opts: {
+  inBattle: boolean;
+  deathTriggered: boolean;
+  hp: number;
+  deathRealmTimerPending: boolean;
+}): boolean {
+  if (opts.inBattle && (opts.deathTriggered || opts.hp <= 0)) return true;
+  return isDeathRealmTransitionPending(
+    opts.deathTriggered,
+    opts.deathRealmTimerPending,
+  );
+}
+
+/**
+ * Leftover movement rAF captured loopGen before exploration death.
+ * Clearing the React path without bumping this counter lets the next
+ * rAF step land lava / loot / shrine during the Death Realm wait
+ * (cleanupBattle already bumps on the in-battle path).
+ */
+export function nextMovementGenOnDeathRealmPending(
+  movementGen: number,
+): number {
+  return movementGen + 1;
+}
