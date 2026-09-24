@@ -13,10 +13,10 @@
  *   minLevel, usableByPlayer, usableByEnemy, healAmount, iconEmoji
  */
 
+import { applyPlayerDamageHitDebuff } from "./playerDamageDebuff.ts";
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import { isActiveHostile } from "./battleSetup";
-import { applyPlayerDamageHitDebuff } from "./playerDamageDebuff.ts";
 
 export type Side = "player" | "enemy";
 
@@ -1014,10 +1014,6 @@ export function resolvePlayerCast(
         preCritDmgBM,
         i === 0,
       );
-      // Damage+debuff catalog spells (Frost Bolt, Frost Nova, Cursed Wound)
-      // advertised a control half that the damage loop never wrote. 0-damage
-      // Weaken/Slow stay on the dedicated path — this helper requires damage > 0.
-      applyPlayerDamageHitDebuff(spell, hitTarget.id, ctx.applyEffect);
       // Detect death from the pre-damage hp snapshot minus the applied damage.
       // applyDamageToEnemy returns void and updates enemyHpMap asynchronously,
       // so the synchronous hp - finalDmg check is the reliable death signal here.
@@ -1026,6 +1022,10 @@ export function resolvePlayerCast(
         killedThisCast.add(hitTarget.id);
       }
       ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");
+      // After the hit log so this stays off #382's Shell Armor death hunk.
+      // Damage+debuff catalog (Frost Bolt, Frost Nova, Cursed Wound) advertised
+      // a control half the loop never wrote. 0-damage Weaken/Slow stay on #528.
+      applyPlayerDamageHitDebuff(spell, hitTarget.id, ctx.applyEffect);
     }
   }
 
