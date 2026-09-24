@@ -14,3 +14,21 @@ export function shouldDismissShopDialogOnBackdrop(
 export function shouldDismissShopDialogOnKey(key: string): boolean {
   return key === "Escape";
 }
+
+/**
+ * Overlay `onKeyDown` only fires when that node is focused. Native
+ * `<dialog>.showModal()` handles Escape; these overlays are plain divs /
+ * `open` dialogs, so bind the window while the overlay is mounted.
+ */
+export function subscribeEscapeToDismiss(
+  onClose: () => void,
+  target: EventTarget = window,
+): () => void {
+  const onKey = (event: Event) => {
+    const key =
+      "key" in event && typeof event.key === "string" ? event.key : "";
+    if (shouldDismissShopDialogOnKey(key)) onClose();
+  };
+  target.addEventListener("keydown", onKey);
+  return () => target.removeEventListener("keydown", onKey);
+}
