@@ -39,6 +39,24 @@ export function shouldHaltInFlightMoveDuringRecap(
 }
 
 /**
+ * Last-hostile death is observed in `recheckVictory` before the
+ * `[inBattle, enemies]` victory useEffect runs handleBattleEnd /
+ * cleanupBattle. A leftover MP walk that is already past the recap
+ * gate can still step lava/spikes in that window, set deathTriggered,
+ * and make shouldAwardVictory refuse — persistDeathPenalty instead of
+ * applyRewards.
+ *
+ * Halt as soon as the live roster is empty while the fight is still
+ * open. After setInBattle(false) the player can walk to the portal.
+ */
+export function shouldHaltInFlightMoveOnLastHostile(opts: {
+  inBattle: boolean;
+  hostilesRemaining: number;
+}): boolean {
+  return opts.inBattle === true && opts.hostilesRemaining === 0;
+}
+
+/**
  * In-flight rAF closures survive `setIsMoving(false)`. Bump a generation
  * (or honor an abort flag) so the leftover loop cannot apply another
  * hazard / loot / shrine step.
@@ -48,8 +66,19 @@ export function shouldAbortMovementRaf(opts: {
   victoryPersistPending: boolean;
   movementGen: number;
   loopGen: number;
+  inBattle?: boolean;
+  hostilesRemaining?: number;
 }): boolean {
   if (opts.movementGen !== opts.loopGen) return true;
+  if (
+    shouldHaltInFlightMoveOnLastHostile({
+      inBattle: opts.inBattle === true,
+      hostilesRemaining:
+        opts.hostilesRemaining == null ? -1 : opts.hostilesRemaining,
+    })
+  ) {
+    return true;
+  }
   return shouldHaltInFlightMoveDuringRecap(
     opts.recapVisible,
     opts.victoryPersistPending,
