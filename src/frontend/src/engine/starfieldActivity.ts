@@ -47,3 +47,64 @@ export function planStarfieldLoop(input: {
   if (input.documentHidden) return "pause_keep_buffer";
   return "run";
 }
+
+/** Floor CSS pixels before comparing to canvas backing-store integers. */
+export function starfieldBackingSize(
+  nextWidth: number,
+  nextHeight: number,
+): { width: number; height: number } {
+  return {
+    width: Math.max(0, Math.floor(Number(nextWidth) || 0)),
+    height: Math.max(0, Math.floor(Number(nextHeight) || 0)),
+  };
+}
+
+/**
+ * Assigning `canvas.width`/`height` clears the 2D buffer. Duplicate
+ * window.resize + ResizeObserver callbacks on landing/select must not
+ * wipe a just-drawn frame when the integer size did not change.
+ */
+export function shouldAssignStarfieldBacking(
+  canvasWidth: number,
+  canvasHeight: number,
+  nextWidth: number,
+  nextHeight: number,
+): boolean {
+  const next = starfieldBackingSize(nextWidth, nextHeight);
+  return canvasWidth !== next.width || canvasHeight !== next.height;
+}
+
+/**
+ * Landing / character-select used to `createStars()` (~250+ objects plus
+ * milky-way clusters) on every window resize. Mobile URL-bar chrome fires
+ * that often while Starfield + BloodParticles already run. After PERF-049
+ * GPU release the list is empty / backing is 1×1 — those still rebuild.
+ * A real size change rescales existing star positions instead.
+ */
+export function shouldRebuildStarfieldStars(input: {
+  prevWidth: number;
+  prevHeight: number;
+  nextWidth: number;
+  nextHeight: number;
+  starCount: number;
+}): boolean {
+  if (input.starCount <= 0) return true;
+  if (input.prevWidth <= 1 || input.prevHeight <= 1) return true;
+  const next = starfieldBackingSize(input.nextWidth, input.nextHeight);
+  if (next.width <= 1 || next.height <= 1) return true;
+  return false;
+}
+
+export function starfieldPositionScale(
+  prevWidth: number,
+  prevHeight: number,
+  nextWidth: number,
+  nextHeight: number,
+): { sx: number; sy: number } {
+  const pw = prevWidth > 0 ? prevWidth : 1;
+  const ph = prevHeight > 0 ? prevHeight : 1;
+  const next = starfieldBackingSize(nextWidth, nextHeight);
+  const nw = next.width > 0 ? next.width : 1;
+  const nh = next.height > 0 ? next.height : 1;
+  return { sx: nw / pw, sy: nh / ph };
+}
