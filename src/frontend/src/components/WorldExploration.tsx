@@ -403,6 +403,7 @@ import {
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
 import {
+  nextMovementGenOnBattleStart,
   shouldAbortMovementRaf,
   shouldBlockPortalDuringVictoryPersist,
   shouldIgnoreWorldInputDuringRecap,
@@ -9062,6 +9063,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           combatantStoreCtx.battleStartIds.size > 0 &&
           inBattle
         ) {
+          // Leftover MP-walk rAF captured loopGen before this death. Bump
+          // so the next step cannot land lava/spikes before handleBattleEnd
+          // runs cleanupBattle (that would set deathTriggered and skip
+          // applyRewards). Union with #546.
+          movementGenRef.current += 1;
           logDebugInfo("BATTLE", "recheckVictory observed last hostile down", {
             attributed: battleDefeatedRef.current.length,
           });
@@ -11240,6 +11246,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           victoryPersistPending: victoryPersistPendingRef.current,
           movementGen: movementGenRef.current,
           loopGen,
+          inBattle: inBattleRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
         })
       ) {
         movementGenRef.current += 1;
@@ -11823,6 +11831,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Reset stale AI flag immediately (synchronously, before any React update)
       enemyTurnInProgressRef.current = false;
       battleReadyRef.current = false;
+      // Overworld leftover rAF ignores inBattle. Bump gen before teleport
+      // so remaining world-path steps cannot yank the player off the
+      // battle-start cell (lava / occupancy / range). Same as cleanupBattle.
+      movementGenRef.current = nextMovementGenOnBattleStart(
+        movementGenRef.current,
+      );
+      setIsMoving(false);
+      setMovementPath([]);
+      setCurrentStepIndex(0);
 
       // ── S3: battle-start placement via the SHARED occupancy engine ──
       // Build an OccupancyContext mirroring the summon-spawn pattern at
@@ -11859,7 +11876,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // findBattleStartCell picks the best-spaced cell (ties broken NEAREST
       // to origin) and falls back to a ring scan when the map is cramped.
       const newPlayerPos = findBattleStartCell(
-        playerPosition,
+        playerPositionRef.current,
         enemyPositions.map((p) => ({ ...p, minDist: 3 })),
         3,
         occCtx,
