@@ -259,6 +259,22 @@ export function hpAfterHeal(
 }
 
 /**
+ * resolveSpellCast returns on buffStat before healAmount. Official Wisp
+ * kit spells (Blood Mend, Rallying Cry) set both, so a controlled Wisp
+ * spent AP for CHC and never restored HP. Player Blood Mend still heals
+ * via resolvePlayerCast. Compute the skipped restore here.
+ */
+export function kitHealAfterBuff(
+  spell: { healAmount?: unknown },
+  casterSp: number,
+): number {
+  const healAmt = Number(spell.healAmount ?? 0);
+  if (!Number.isFinite(healAmt) || healAmt <= 0) return 0;
+  const sp = Number.isFinite(casterSp) ? casterSp : 0;
+  return Math.round(healAmt * (1 + sp / 100));
+}
+
+/**
  * Phase-2 HP / maxHp after the boss stat multiplier.
  *
  * Same contract as {@link hpAfterHeal}: `updateCombatant` must receive
