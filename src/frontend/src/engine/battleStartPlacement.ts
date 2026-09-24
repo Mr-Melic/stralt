@@ -33,13 +33,26 @@ function occupancyGridSize(ctx: OccupancyContext): { w: number; h: number } {
   return { h: ctx.tiles.length, w: ctx.tiles[0]?.length ?? 0 };
 }
 
-/** Walkable island containing `origin` (tiles + void + barriers + portals). */
+const ORIGIN_DIRS = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+] as const;
+
+/**
+ * Walkable island containing `origin` (tiles + void + barriers + portals).
+ * A white sanctuary / dungeon-complete gateway colocates spawn on a portal
+ * tile; battle pathing treats that cell as a wall, so destack used to see
+ * an empty component and leave the player stuck on the gateway. Same
+ * contract as mapGen `largestBattleComponentFrom`: if the seed is a battle
+ * wall, flood the largest adjacent floor island (not a 2-tile far crumb).
+ */
 function floodOriginComponent(
   origin: { x: number; y: number },
   ctx: OccupancyContext,
 ): Set<string> {
   const { w, h } = occupancyGridSize(ctx);
-  const seen = new Set<string>();
   const walk = (x: number, y: number) => {
     if (x < 0 || y < 0 || x >= w || y >= h) return false;
     if (!ctx.tiles[y]?.[x]) return false;
@@ -49,26 +62,37 @@ function floodOriginComponent(
     }
     return true;
   };
-  if (!walk(origin.x, origin.y)) return seen;
-  const q = [{ x: origin.x, y: origin.y }];
-  seen.add(occKey(origin.x, origin.y));
-  while (q.length > 0) {
-    const cur = q.shift()!;
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ] as const) {
-      const nx = cur.x + dx;
-      const ny = cur.y + dy;
-      const k = occKey(nx, ny);
-      if (seen.has(k) || !walk(nx, ny)) continue;
-      seen.add(k);
-      q.push({ x: nx, y: ny });
+  const floodFrom = (start: { x: number; y: number }): Set<string> => {
+    const seen = new Set<string>();
+    if (!walk(start.x, start.y)) return seen;
+    const q = [{ x: start.x, y: start.y }];
+    seen.add(occKey(start.x, start.y));
+    while (q.length > 0) {
+      const cur = q.shift()!;
+      for (const [dx, dy] of ORIGIN_DIRS) {
+        const nx = cur.x + dx;
+        const ny = cur.y + dy;
+        const k = occKey(nx, ny);
+        if (seen.has(k) || !walk(nx, ny)) continue;
+        seen.add(k);
+        q.push({ x: nx, y: ny });
+      }
     }
+    return seen;
+  };
+  if (walk(origin.x, origin.y)) return floodFrom(origin);
+  let best = new Set<string>();
+  const claimed = new Set<string>();
+  for (const [dx, dy] of ORIGIN_DIRS) {
+    const nx = origin.x + dx;
+    const ny = origin.y + dy;
+    const sk = occKey(nx, ny);
+    if (claimed.has(sk) || !walk(nx, ny)) continue;
+    const component = floodFrom({ x: nx, y: ny });
+    for (const k of component) claimed.add(k);
+    if (component.size > best.size) best = component;
   }
-  return seen;
+  return best;
 }
 
 /**
