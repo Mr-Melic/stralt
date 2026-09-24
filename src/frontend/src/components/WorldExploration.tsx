@@ -151,7 +151,10 @@ import {
   getEnemyFamilyPixelPattern,
 } from "../engine/enemyPixelPatterns";
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
-import { shouldTickEnemyWander } from "../engine/enemyWander";
+import {
+  pickRandomWanderTarget,
+  shouldTickEnemyWander,
+} from "../engine/enemyWander";
 import {
   applyFinalizedLayout,
   applySanctuaryLayout,
@@ -159,7 +162,6 @@ import {
   attachWhitePortalAfterLegalize,
   checkVoidConnectivity,
   countWalkableVoid,
-  isEnemyWanderFloor,
   pickMapArchetype,
   pickProgressionPortalCell,
   placeBossRushSpawns,
@@ -5624,46 +5626,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     },
     [],
   );
-  // NEW: Generate a random walkable position for enemy wandering
-  const generateRandomWalkablePosition = useCallback(
-    (
-      tiles: TileType[][],
-      currentX: number,
-      currentY: number,
-      range: number,
-    ): PlayerPosition | null => {
-      const attempts = 50;
-      for (let i = 0; i < attempts; i++) {
-        const deltaX = Math.floor(Math.random() * (range * 2 + 1)) - range;
-        const deltaY = Math.floor(Math.random() * (range * 2 + 1)) - range;
-        const newX = currentX + deltaX;
-        const newY = currentY + deltaY;
-        // Check bounds and walkability
-        if (
-          newX >= 0 &&
-          newX < WORLD_GRID_SIZE &&
-          newY >= 0 &&
-          newY < WORLD_GRID_SIZE &&
-          tiles[newY][newX] === "floor" &&
-          !currentMap?.voidTiles?.has(`${newX},${newY}`) &&
-          (newX !== currentX || newY !== currentY) &&
-          isEnemyWanderFloor(
-            tiles as unknown as string[][],
-            currentMap?.voidTiles,
-            currentMap?.portals ?? [],
-            { x: currentX, y: currentY },
-            { x: newX, y: newY },
-            WORLD_GRID_SIZE,
-            WORLD_GRID_SIZE,
-          )
-        ) {
-          return { x: newX, y: newY };
-        }
-      }
-      return null;
-    },
-    [currentMap],
-  );
   const DEFAULT_ANCIENT_NAMES = [
     "Malachar",
     "Vorenth",
@@ -6944,11 +6906,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Check if it's time to start a new movement
       if (currentTime >= enemy.nextMoveTime && enemy.isWandering) {
         // Generate a random target within movement range
-        const target = generateRandomWalkablePosition(
+        const target = pickRandomWanderTarget(
           currentMap.tiles,
           enemy.x,
           enemy.y,
           enemy.movementRange!,
+          {
+            voidTiles: currentMap.voidTiles,
+            portals: currentMap.portals,
+          },
         );
 
         if (target) {
@@ -6986,14 +6952,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (hasChanged) {
       syncCombatants(combatantStoreCtx, nextEnemies);
     }
-  }, [
-    showShop,
-    currentMap,
-    generateRandomWalkablePosition,
-    findPath,
-    combatantStoreCtx,
-    enemies,
-  ]);
+  }, [showShop, currentMap, findPath, combatantStoreCtx, enemies]);
 
   // SECTION 2c — getActiveCasterPos: returns the controlled summon's tile when
   // activeControlledSummonId is set, else the player's tile. Used by the
