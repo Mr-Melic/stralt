@@ -874,6 +874,10 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
+        switch (AdminGuard.spellTargetingRejected(config.range, config.hitTiles)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         spellConfigs.add(config.id, config);
         _recordAdminAudit(caller, "setSpellConfig", config.id, "previous", config.name);
         #ok;
