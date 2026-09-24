@@ -21,7 +21,6 @@ import {
   playerShieldBuffResolves,
   playerTimestepResolvesOnTile,
 } from "./playerSpecialCast.ts";
-import { decidePlayerDebuffOnlyCast } from "./playerStatusCast.ts";
 
 export type Side = "player" | "enemy";
 
@@ -628,6 +627,8 @@ export function resolveSpellCast(
  * inline path exactly. The existing resolveSpellCast (used by enemy/summon-AI)
  * is NOT modified.
  */
+import { decidePlayerDebuffOnlyCast } from "./playerStatusCast.ts";
+
 export function resolvePlayerCast(
   spell: any,
   gridPos: { x: number; y: number },
