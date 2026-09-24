@@ -16,6 +16,7 @@
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import { isActiveHostile } from "./battleSetup";
+import { decidePlayerDebuffOnlyCast } from "./playerStatusCast.ts";
 
 export type Side = "player" | "enemy";
 
@@ -871,6 +872,27 @@ export function resolvePlayerCast(
     );
     ctx.log(`No enemy on target tile for ${spell.name}!`, "#94a3b8");
     return "abort";
+  }
+
+  // ── Debuff-only (Weaken / Slow): highlight paints the hostile, but the
+  // damage loop used calcScaledDamageInline(0) → 1 dmg and never applied
+  // debuffStat. Enemy AI / summon 0-damage casts already applyEffect.
+  // Empty / corpse tiles abort (same as drain) so they cannot spend AP.
+  const debuffOnly = decidePlayerDebuffOnlyCast(spell, targetEnemy);
+  if (debuffOnly.action === "abort") {
+    logDebugInfo(
+      "RESOLVER",
+      `abort {spellId: "${spell.id}", reason: "debuff-only requires enemy target on tile"}`,
+    );
+    ctx.log(`No enemy on target tile for ${spell.name}!`, "#94a3b8");
+    return "abort";
+  }
+  if (debuffOnly.action === "apply") {
+    ctx.applyEffect(debuffOnly.effect);
+    ctx.log(debuffOnly.logLine, "#f87171");
+    ctx.onHit();
+    ctx.recordSpellType(spell.effectType ?? "debuff");
+    return "cast";
   }
 
   // ── Damage loop (inline line 8456) ──
