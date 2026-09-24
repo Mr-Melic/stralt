@@ -172,6 +172,10 @@ Spellbook summon UI shows `SUMMON_UPGRADE_COST_MULTIPLIER * 10 * 2^level` (100 a
 
 `Character.experience` is leftover in the current level, not lifetime total. Subtracting `cumulativeXpToReachLevel` zeroes the selection / top-bar / recap fill. Use `xpHudProgress(experience, level)`. Level 48+ thresholds exceed `MAX_SAFE_INTEGER` — persist math must use `xpThresholdBigInt`.
 
+### Side-panel HP/AP/MP orbs overflow after level-up
+
+Jewels used hardcoded 100 / 6 / 4. Caps are `vitalsOrbCaps` from the live character max; `vitalsOrbFillPct` clamps fill at 100%. Do not change combat AP/MP floors to “fix” the HUD.
+
 ### `killCount` never increments in the client
 
 `useSaveKillCount` is defined in `useLeaderboardQueries.ts` and is unused. World saves only **preserve** the current count. Leaderboard kill totals will stall until a caller invokes `saveKillCount`. The canister now requires `#user`, not banned, and `kills <= 64` (single-battle bound).
@@ -283,6 +287,12 @@ Changing `APP_VERSION` in `App.tsx` clears almost all `localStorage` and reloads
 | `types/common.mo` `EnemyConfig` | `damage`, `res`, `sp`, `sr`, `chc`, `init`, rewards, `side` | Runtime combat template |
 
 Do not pass one into an API expecting the other.
+
+Admin `spriteUrl` / player `frontUrl` on those templates are **catalog storage**. `WorldExploration` never calls `getEnemyConfigs` / `getPlayerSpriteConfigs`, and `src/` has no `ctx.drawImage`. Filling a URL does not change world pixels (`adminVisualStatus.ts`: “Stored URL — not rendered”). Units paint from `chessPiecePatterns` / `enemyPixelPatterns`. `Character.pixelPattern` is persisted and also unused on the canvas. Do not bind those URLs into combat.
+
+### Off-turn Attack Nearest / sprite click spends AP
+
+Tile clicks already require the current turn-order entry to be `"player"`. Sprite-first hits, Attack Nearest, and keyboard S must call `shouldAllowPlayerCastEntry` (`playerCastGate.ts`) with the live turn-order row, `inBattleRef`, death flag, and HP. Skipping it lets a leftover selected spell fire during an enemy turn.
 
 ### Spell bar silently shrinks
 

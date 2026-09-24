@@ -440,6 +440,20 @@ Write lava/spikes, plague/DoT, player-spell damage, enemy self-heal, and boss ph
 
 Player Mirror uses the token `"player"` (`activatePlayerMirror` / `consumePlayerMirror`) — the same key the enemy-cast path consumes. Writing the player's tile key made Mirror a 4-AP no-op.
 
+### Player-turn cast gate
+
+Tile clicks already require the current turn-order entry to be `"player"`. Sprite-first hits, Attack Nearest, and keyboard S used to skip that check, so a leftover selected spell spent AP during an enemy turn or on an overworld wanderer.
+
+`shouldAllowPlayerCastEntry` (`utils/playerCastGate.ts`) is true only when `inBattle`, the live turn-order entry is `"player"`, death has not fired, and HP > 0. Call it before `executeCastAttempt` / `planPlayerCastAttempt` on those paths.
+
+### World visuals (pixels, not catalog URLs)
+
+`WorldExploration` never loads `getEnemyConfigs` or `getPlayerSpriteConfigs` (those hooks are AdminDashboard-only). `src/` has no `ctx.drawImage`. Combatants paint from `chessPiecePatterns[pieceType]` (player) and `engine/enemyPixelPatterns.ts` (boss / family tables). `Character.pixelPattern` is saved at create/update and unused on the world canvas.
+
+`EnemyConfig.spriteUrl` and `PlayerSpriteConfig.*Url` are optional catalog strings. Admin copy is `adminVisualStatus.ts`: empty → Default Pixel Visual; filled → Stored URL — not rendered. Do not wire a pasted URL into `drawCombatant` to make the copy true. `createCharacter` / `updateCharacter` accept only `king|queen|pawn|rook|bishop|knight` (`_isKnownPieceType`) and cap `pixelPattern` at 16_384 bytes.
+
+Side-panel jewels use `vitalsOrbCaps` / `vitalsOrbFillPct` from the live character max (not hardcoded 100/6/4). Combat AP/MP floors stay in `progression.getPlayerBaseStats`.
+
 ## Auth, admin, debug
 
 - Actor hook: `hooks/useActor.ts`. `VITE_USE_MOCK=true` returns the shared `mocks/backend.ts` singleton.
