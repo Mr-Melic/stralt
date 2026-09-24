@@ -3,6 +3,9 @@ import { useEffect, useRef } from "react";
 import {
   isStarfieldPaused,
   planStarfieldLoop,
+  shouldAssignStarfieldBacking,
+  shouldRebuildStarfieldStars,
+  starfieldPositionScale,
   subscribeStarfieldPaused,
 } from "../engine/starfieldActivity";
 
@@ -38,16 +41,14 @@ const StarfieldBackground: React.FC = () => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const resizeCanvas = () => {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-    };
+    const visibleCssSize = () => ({
+      width: canvas.clientWidth || window.innerWidth,
+      height: canvas.clientHeight || window.innerHeight,
+    });
 
     const createStars = () => {
       const stars: Star[] = [];
-      const densityStars = Math.floor(
-        (window.innerWidth * window.innerHeight) / 8000,
-      );
+      const densityStars = Math.floor((canvas.width * canvas.height) / 8000);
       const numStars = Math.max(250, densityStars); // At least 250 stars
 
       // Create regular stars
@@ -120,6 +121,34 @@ const StarfieldBackground: React.FC = () => {
       }
 
       starsRef.current = stars;
+    };
+
+    const applyBackingSize = (nextWidth: number, nextHeight: number) => {
+      const w = Math.max(1, Math.floor(Number(nextWidth) || 0) || 1);
+      const h = Math.max(1, Math.floor(Number(nextHeight) || 0) || 1);
+      const prevW = canvas.width;
+      const prevH = canvas.height;
+      if (!shouldAssignStarfieldBacking(prevW, prevH, w, h)) return;
+      canvas.width = w;
+      canvas.height = h;
+      if (
+        shouldRebuildStarfieldStars({
+          prevWidth: prevW,
+          prevHeight: prevH,
+          nextWidth: w,
+          nextHeight: h,
+          starCount: starsRef.current.length,
+        })
+      ) {
+        createStars();
+        return;
+      }
+      const { sx, sy } = starfieldPositionScale(prevW, prevH, w, h);
+      if (sx === 1 && sy === 1) return;
+      for (const star of starsRef.current) {
+        star.x *= sx;
+        star.y *= sy;
+      }
     };
 
     const myGen = ++starGenRef.current;
@@ -202,8 +231,13 @@ const StarfieldBackground: React.FC = () => {
       animationFrameRef.current = requestAnimationFrame(animate);
     };
 
-    resizeCanvas();
-    createStars();
+    const applyVisibleSize = () => {
+      const size = visibleCssSize();
+      applyBackingSize(size.width, size.height);
+    };
+
+    applyVisibleSize();
+    if (starsRef.current.length === 0) createStars();
 
     // M-6: while the starfield is visible, keep the backing store in sync
     // with CSS size. While WorldExploration covers it, skip this poke so a
@@ -212,11 +246,7 @@ const StarfieldBackground: React.FC = () => {
     const resizeObserver = new ResizeObserver(() => {
       if (!canvasRef.current) return;
       if (currentPlan() !== "run") return;
-      const { clientWidth, clientHeight } = canvasRef.current;
-      if (clientWidth > 0 && clientHeight > 0) {
-        canvasRef.current.width = clientWidth;
-        canvasRef.current.height = clientHeight;
-      }
+      applyVisibleSize();
     });
     resizeObserver.observe(starfieldCanvas!);
 
@@ -251,15 +281,14 @@ const StarfieldBackground: React.FC = () => {
         stopLoop();
         return;
       }
-      resizeCanvas();
+      applyVisibleSize();
       if (starsRef.current.length === 0) createStars();
       startLoop();
     };
 
     const handleResize = () => {
       if (currentPlan() !== "run") return;
-      resizeCanvas();
-      createStars();
+      applyVisibleSize();
     };
 
     window.addEventListener("resize", handleResize);
