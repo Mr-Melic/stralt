@@ -14,8 +14,8 @@
  */
 
 import type { SpellConfig } from "../types/gameTypes";
-import { logDebugInfo } from "../utils/debugLogger";
-import { isActiveHostile } from "./battleSetup";
+import { logDebugInfo } from "../utils/debugLogger.ts";
+import { isActiveHostile } from "./battleSetup.ts";
 
 export type Side = "player" | "enemy";
 
@@ -622,6 +622,8 @@ export function resolveSpellCast(
  * inline path exactly. The existing resolveSpellCast (used by enemy/summon-AI)
  * is NOT modified.
  */
+import { playerMarkResolvesOnTile } from "./playerMarkCast.ts";
+
 export function resolvePlayerCast(
   spell: any,
   gridPos: { x: number; y: number },
@@ -855,6 +857,27 @@ export function resolvePlayerCast(
     return "cast";
   }
 
+  // ── Mark: advertised as a tile mark. Lived inside the
+  // `targetEnemy || hitsMultiple` loop, so a highlighted empty tile
+  // returned "cast" without placeMark (AP spent, no x2 later).
+  // Same empty-tile hoist as Barrier / Summon. Caster tile stays illegal.
+  if (spell.isMark) {
+    if (!playerMarkResolvesOnTile(spell, isPlayerTile)) {
+      logDebugInfo(
+        "RESOLVER",
+        `abort {spellId: "${spell.id}", reason: "mark requires a non-caster tile"}`,
+      );
+      return "abort";
+    }
+    ctx.placeMark(gridPos);
+    ctx.log(
+      `Mark placed at tile (${gridPos.x},${gridPos.y}). Next hit deals x2 damage!`,
+      "#fcd34d",
+    );
+    ctx.recordSpellType(spell.effectType ?? "damage");
+    return "cast";
+  }
+
   // ── Drain target guard (Pattern B fix) ──
   // Drain spells are single-target enemy-only (targetType: "enemy"). The
   // damage-loop guard below previously let drain enter via
@@ -920,17 +943,6 @@ export function resolvePlayerCast(
       ctx.log(
         "Mirror active! Next single-target damage spell cast at you reflects back!",
         "#c084fc",
-      );
-      ctx.recordSpellType(spell.effectType ?? "damage");
-      return "cast";
-    }
-
-    // Mark spell (inline line 8577)
-    if (spell.isMark) {
-      ctx.placeMark(gridPos);
-      ctx.log(
-        `Mark placed at tile (${gridPos.x},${gridPos.y}). Next hit deals x2 damage!`,
-        "#fcd34d",
       );
       ctx.recordSpellType(spell.effectType ?? "damage");
       return "cast";
