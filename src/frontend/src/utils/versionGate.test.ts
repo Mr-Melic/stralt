@@ -12,11 +12,25 @@ describe("versionGate", () => {
     assert.equal(shouldPreserveVersionGateKey("aaaaa-aa_inventory"), true);
     assert.equal(shouldPreserveVersionGateKey("pbv_app_version"), false);
     assert.equal(shouldPreserveVersionGateKey("pbv_show_changelog"), false);
+    assert.equal(
+      shouldPreserveVersionGateKey("pbv_pending_death_penalty_slot1"),
+      true,
+    );
+    assert.equal(
+      shouldPreserveVersionGateKey("pbv_pending_death_penalty_aaaaa-aa_slot2"),
+      true,
+    );
+    assert.equal(
+      shouldPreserveVersionGateKey("pbv_panel_layout_aaaaa-aa"),
+      false,
+    );
 
     const store: Record<string, string> = {
       pbv_tier_spawn_config: "{}",
       "aaaaa-aa_inventory": '{"health_potion":2}',
       pbv_app_version: "v162",
+      pbv_pending_death_penalty_slot1: '{"slot":1,"afterXp":80}',
+      "pbv_pending_death_penalty_prin-a_slot2": '{"slot":2}',
       other: "drop",
     };
     assert.deepEqual(
@@ -27,6 +41,8 @@ describe("versionGate", () => {
       {
         pbv_tier_spawn_config: "{}",
         "aaaaa-aa_inventory": '{"health_potion":2}',
+        pbv_pending_death_penalty_slot1: '{"slot":1,"afterXp":80}',
+        "pbv_pending_death_penalty_prin-a_slot2": '{"slot":2}',
       },
     );
   });
