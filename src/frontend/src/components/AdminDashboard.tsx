@@ -4767,13 +4767,20 @@ const VisualsTab: React.FC = () => {
         style={{
           color: "#8a8090",
           fontSize: 11,
-          marginBottom: 20,
+          marginBottom: 12,
           lineHeight: 1.5,
         }}
       >
-        Control the visual theme of the paper vertex landscape around the
-        isometric map.
+        Persist up to four hex colors on adminSetColorPalette. This is a
+        canister catalog plus local cache — not a live landscape painter.
       </p>
+      <CatalogNote>
+        Save dual-writes paperVertexPalette (legacy) and pbv_color_palette
+        (world hydrate key). WorldExploration caches getColorPalette into
+        pbv_color_palette only — map walls still pick from hardcoded
+        WALL_PALETTES. Custom artwork is not required; empty sprite URLs keep
+        the Default Pixel Visual.
+      </CatalogNote>
       <p style={sectionHeadStyle}>Map Paper Vertex Colors</p>
       <p
         style={{
@@ -4783,8 +4790,8 @@ const VisualsTab: React.FC = () => {
           lineHeight: 1.5,
         }}
       >
-        Up to 4 colors for the folded paper landscape around maps. Leave all
-        unchecked for true random colors.
+        Up to 4 stored colors. Unchecked slots are omitted from the saved blob.
+        Map walls still use hardcoded WALL_PALETTES regardless.
       </p>
       <div
         style={{
