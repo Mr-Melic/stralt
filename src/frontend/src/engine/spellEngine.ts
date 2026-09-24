@@ -1021,6 +1021,10 @@ export function resolvePlayerCast(
         killedThisCast.add(hitTarget.id);
       }
       ctx.log(`${hitTarget.pieceType} takes ${finalDmg} damage`, "#ef4444");
+      // After the hit log so this stays off #382's Shell Armor death hunk.
+      // Damage+debuff catalog (Frost Bolt, Frost Nova, Cursed Wound) advertised
+      // a control half the loop never wrote. 0-damage Weaken/Slow stay on #528.
+      applyPlayerDamageHitDebuff(spell, hitTarget.id, ctx.applyEffect);
     }
   }
 
@@ -1042,3 +1046,5 @@ function calcScaledDamageInline(
 ): number {
   return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
 }
+
+import { applyPlayerDamageHitDebuff } from "./playerDamageDebuff.ts";
