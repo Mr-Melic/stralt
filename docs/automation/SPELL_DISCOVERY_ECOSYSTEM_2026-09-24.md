@@ -34,7 +34,7 @@ ACTION_IDs: [`ACTION_IDS_SDE_2026-09-24.md`](./ACTION_IDS_SDE_2026-09-24.md).
 | Tactical gap-fillers W4 | #342 | Gale Fan … Eclipse Fold |
 | Tactical gap-fillers W5 | still-open #411 | Oncoming … Act Bell |
 | Tactical gap-fillers W6 | still-open #463 | Post Sting … About Face |
-| Tactical gap-fillers W7 | **none at audit** (2026-09-24 ~00:13 UTC) | If a same-day `docs: Wave 7 tactical spell proposals` PR opens before merge, **stamp, do not clone** |
+| Tactical gap-fillers W7 | still-open #525 — `SPELL_PROPOSALS_2026-09-24.md` | Wall Sting … Court Shove. **Stamp, do not clone** |
 | Family sheets | #136 + #349 + #405 + #452 | #452 Wave-6 families consume **#411** as CORE. Do not put unique §11 ids there |
 | Boss adaptations | #137 / #197 / #367 / #406 / #474 / same-day #518 | Extra doors claimed through Wave 8 (`gaze_beadle` … `lintel_sacrist`) |
 | World dynamics Wave 7 | same-day #503 | `WF-ELT-EVEN_PICKET`, `WF-TEL-FILE_SLIDE`, … — **not** grant tags |
@@ -70,19 +70,36 @@ ACTION_IDs: [`ACTION_IDS_SDE_2026-09-24.md`](./ACTION_IDS_SDE_2026-09-24.md).
 
 **Wave 6 SDE (#480):** `spell-choir-verse`, `spell-bias-step`, `spell-wick-bite`, `spell-empty-purse`, `spell-crowd-tax`, `spell-pet-swap`, `spell-corner-lens`, `spell-face-away`, `spell-dull-edge`, `spell-pet-sill`, `spell-late-purse`, `spell-pet-share`, `spell-short-leash`, `spell-axis-veil`, `spell-safe-fall`, `spell-bare-lens`, `spell-gap-ward`, `spell-pack-ledger`, `spell-court-fold`.
 
-**Do not alias** `spell-even-stride` ↔ `spell-bias-step` / `spell-misstep` / `spell-rank-lock` / `spell-split-pace` / `spell-spent-stride` / `spell-last-stride` / `WF-ELT-EVEN_PICKET`, `spell-strike-hold` ↔ `spell-oath-blade` / `spell-dull-edge` / `spell-oath-bind`, `spell-ground-oath` ↔ `spell-aim-veil` / `spell-axis-veil` / `spell-ward-cell` / `spell-open-pit`, `spell-walk-toll` ↔ `spell-ley-toll` / `spell-hex-toll` / `spell-crowd-tax` / `spell-exit-tithe` / `spell-glyph-tax` / `spell-camp-tax`, `spell-purse-lock` ↔ `spell-empty-purse` / `spell-late-purse` / `spell-purse-cut` / `spell-split-purse` / `spell-ap-sip`, `spell-ally-reel` ↔ `spell-file-reel` / `spell-draw-together` / `spell-undertow` / `spell-leash-hook`, `spell-echo-paint` ↔ `spell-cinder-tile` / `spell-echo-cast` / `spell-false-echo` / `spell-wick-bite` / `spell-ash-sill`, `spell-blink-seal` ↔ `spell-claim-ward` / `spell-grounded-lock` / `spell-phase-slip` / `spell-self-anchor`, `spell-gift-sill` ↔ `spell-pet-sill` / `spell-ash-sill` / `spell-whelp-sill` / `spell-gaze-sill` / `spell-last-stride`, `spell-split-fang` ↔ `spell-split-mark` / `spell-split-pace` / `spell-split-purse` / `spell-sated-fang` / `starter-blast`, `spell-wall-bite` ↔ `spell-wick-bite` / `spell-corner-lens` / `spell-pit-sight`, `spell-cast-mark` ↔ `spell-split-mark` / `spell-debt-mark` / `spell-twice-mark` / `spell-stride-brand`, `spell-still-leash` ↔ `spell-short-leash` / `spell-keep-kennel` / `spell-still-brand` / `spell-leash-hook`, `spell-pet-verse` ↔ `spell-choir-verse` / `spell-stolen-verse` / `spell-after-verse` / `spell-cadence-theft` / `spell-pet-share`, `spell-ghost-step` ↔ `spell-mist-step` / `spell-soft-step` / `spell-bias-step` / `spell-hinge-step` / `spell-cover-step` / `spell-ember-step` / `spell-morrow-step` / `spell-second-shadow`, `spell-thin-ward` ↔ `spell-turn-cap` / `spell-bloodless-plate` / `spell-ward-plate` / `spell-surplus-ward`, `spell-clean-blood` ↔ `spell-wounded-lens` / `spell-corner-lens` / `spell-gate-sight` / `spell-bloodless-plate`, `spell-pack-still` ↔ `spell-pack-ledger` / `spell-pack-tempo` / `spell-pack-howl` / `spell-pack-cover` / `spell-aim-veil`, `spell-file-fold` ↔ `spell-court-fold` / `spell-sovereign-fold` / `spell-eclipse-fold` / `spell-file-reel` / `WF-TEL-FILE_SLIDE`. Those are sibling-owned fantasies.
+**#525 tactical Wave 7:** `spell-wall-sting`, `spell-file-brand`, `spell-boot-sting`, `spell-shove-face`, `spell-knight-slip`, `spell-pivot-foe`, `spell-triple-span`, `spell-cadence-crack`, `spell-must-pace`, `spell-once-verse`, `spell-tick-hood`, `spell-flank-share`, `spell-spare-pace`, `spell-pit-wick`, `spell-exit-boon`, `spell-court-shove`.
+
+**Do not alias** `spell-even-stride` ↔ `spell-bias-step` / `spell-misstep` / `spell-rank-lock` / `spell-split-pace` / `spell-spent-stride` / `spell-last-stride` / `WF-ELT-EVEN_PICKET`, `spell-strike-hold` ↔ `spell-oath-blade` / `spell-dull-edge` / `spell-oath-bind` / `spell-must-pace`, `spell-ground-oath` ↔ `spell-aim-veil` / `spell-axis-veil` / `spell-ward-cell` / `spell-open-pit`, `spell-walk-toll` ↔ `spell-ley-toll` / `spell-hex-toll` / `spell-crowd-tax` / `spell-exit-tithe` / `spell-glyph-tax` / `spell-camp-tax` / `spell-spare-pace` / `spell-exit-boon` / `spell-must-pace`, `spell-purse-lock` ↔ `spell-empty-purse` / `spell-late-purse` / `spell-purse-cut` / `spell-split-purse` / `spell-ap-sip`, `spell-ally-reel` ↔ `spell-file-reel` / `spell-draw-together` / `spell-undertow` / `spell-leash-hook` / `spell-shove-face` / `spell-pivot-foe`, `spell-echo-paint` ↔ `spell-cinder-tile` / `spell-echo-cast` / `spell-false-echo` / `spell-wick-bite` / `spell-ash-sill` / `spell-pit-wick`, `spell-blink-seal` ↔ `spell-claim-ward` / `spell-grounded-lock` / `spell-phase-slip` / `spell-self-anchor`, `spell-gift-sill` ↔ `spell-pet-sill` / `spell-ash-sill` / `spell-whelp-sill` / `spell-gaze-sill` / `spell-last-stride` / `spell-spare-pace` / `spell-exit-boon`, `spell-split-fang` ↔ `spell-split-mark` / `spell-split-pace` / `spell-split-purse` / `spell-sated-fang` / `starter-blast` / `spell-flank-share` / `spell-boot-sting` / `spell-wall-sting`, `spell-wall-bite` ↔ `spell-wick-bite` / `spell-corner-lens` / `spell-pit-sight` / `spell-wall-sting`, `spell-cast-mark` ↔ `spell-split-mark` / `spell-debt-mark` / `spell-twice-mark` / `spell-stride-brand` / `spell-file-brand`, `spell-still-leash` ↔ `spell-short-leash` / `spell-keep-kennel` / `spell-still-brand` / `spell-leash-hook`, `spell-pet-verse` ↔ `spell-choir-verse` / `spell-stolen-verse` / `spell-after-verse` / `spell-cadence-theft` / `spell-pet-share` / `spell-once-verse` / `spell-cadence-crack`, `spell-ghost-step` ↔ `spell-mist-step` / `spell-soft-step` / `spell-bias-step` / `spell-hinge-step` / `spell-cover-step` / `spell-ember-step` / `spell-morrow-step` / `spell-second-shadow` / `spell-knight-slip` / `spell-triple-span`, `spell-thin-ward` ↔ `spell-turn-cap` / `spell-bloodless-plate` / `spell-ward-plate` / `spell-surplus-ward` / `spell-tick-hood`, `spell-clean-blood` ↔ `spell-wounded-lens` / `spell-corner-lens` / `spell-gate-sight` / `spell-bloodless-plate`, `spell-pack-still` ↔ `spell-pack-ledger` / `spell-pack-tempo` / `spell-pack-howl` / `spell-pack-cover` / `spell-aim-veil` / `spell-flank-share`, `spell-file-fold` ↔ `spell-court-fold` / `spell-sovereign-fold` / `spell-eclipse-fold` / `spell-file-reel` / `WF-TEL-FILE_SLIDE` / `spell-court-shove`. Those are sibling-owned fantasies.
 
 Hex Toll (`spell-hex-toll`) remains a Quiet Hex near-clone. **Do not** attach it in SDE pools.
 
-### 0.2 Same-day tactical Wave 7 (none at audit)
+### 0.2 Same-day tactical Wave 7 (#525 — stamp, do not clone)
 
-No `docs: Wave 7 tactical spell proposals` PR existed at HEAD-audit time (`0f5363f`, open queue through #508). This catalog therefore **authors** the G≥7 holes in §10 / §11.
+Still-open #525 (`docs: Wave 7 tactical spell proposals`, `SPELL_PROPOSALS_2026-09-24.md`) opened after HEAD-audit (`0f5363f`, queue through #508) and **owns** the G≥7 tactical holes below. Unique §11 ids in this document stay this catalog’s. Do **not** clone #525 ids as unique §11 rows. Do **not** rename §11 to match #525. Do **not** restamp #525 feat / boss / MULTI doors.
 
-If a tactical Wave-7 PR opens before this branch merges:
+| Id | Acquisition | Stamp, do not clone |
+| :--- | :--- | :--- |
+| `spell-wall-sting` | ENEMY_DISCOVERY | Barrier-adjacent damage. Distinct from Wall Bite (caster adj block) |
+| `spell-file-brand` | ENEMY_DISCOVERY | Shared rank XOR file damage bonus |
+| `spell-boot-sting` | ENEMY_DISCOVERY | Caster-walked damage bonus (Post Sting inverse) |
+| `spell-shove-face` | ENEMY_DISCOVERY | Push 1 then write `currentView`. Fail closed until a battle facing writer exists |
+| `spell-knight-slip` | MULTI_SOURCE | (2,1) self teleport **or** `slip_castellan` first-win |
+| `spell-pivot-foe` | ENEMY_DISCOVERY | Rotate target 90° around caster |
+| `spell-triple-span` | ELITE | Three-cell occupy **or** `span_triune`. Not Twin / Triune / Twin Span tables |
+| `spell-cadence-crack` | ENEMY_DISCOVERY | Hostile highest remaining CD → 0, once/battle |
+| `spell-must-pace` | BOSS | `pace_prelate` first-win. Next spell fizzles unless they walked. Not Strike Hold |
+| `spell-once-verse` | ENEMY_DISCOVERY | Cannot recast last resolved id |
+| `spell-tick-hood` | ENEMY_DISCOVERY | Next DoT tick deals 0 |
+| `spell-flank-share` | ELITE | Next hit 50/50 with adjacent ally. Not Split Fang / Pack Still |
+| `spell-spare-pace` | ENEMY_DISCOVERY | +1 current walk MP now. Not Gift Sill / Walk Toll |
+| `spell-pit-wick` | MULTI_SOURCE | Delayed pit occupancy **or** `wick_mason`. Not Echo Paint |
+| `spell-exit-boon` | ENEMY_DISCOVERY | Walk-exit refunds 1 MP. Not Walk Toll |
+| `spell-court-shove` | NOT_PLAYER_LEARNABLE | `court_usher` kit only. Mass shove + facing. Never owned. Not File Fold |
 
-1. **Stamp** those ids onto family overlays. Do **not** clone them as unique §11 rows.
-2. Unique §11 ids in this document stay this catalog’s. Do not rename them to match the tactical PR.
-3. Do not restamp that PR’s feat / boss / MULTI doors.
+`span_triune` is **not** `span_chamberlain` (#518). `court_usher` is **not** `file_regent`. `pace_prelate` is **not** File Fold.
 
 ### 0.3 Held holes (still not this pass)
 
@@ -141,7 +158,7 @@ Wave 1 §2 still applies in full. Restated only where Wave 7 adds a clause:
 4. **Tactical patience** is a real decision. G≥7 rares make it sharper: a CHAMPION may hold the generation-7 verb until leftover AP / walk MP is already committed.
 5. **Not every ability is player-learnable.** `ENEMY_ONLY` / `BOSS_ONLY` / `SYSTEM_ONLY` remain closed.
 6. **Never assign a spell an AI cannot use.** Missing `aiProfile` / `aiHint` = drop from resolve.
-7. **Expand, do not replace.** Wave 7 fills holes Waves 1–6, memory Wave 5, #120, #185, #282, #342, #411, #463, and **#480** left open (see §10). It does not clone Shield, Quiet Hex, Bias Step, Empty Purse, Aim Veil, Cadence Theft, Short Leash, Court Fold, or Hex of Silence.
+7. **Expand, do not replace.** Wave 7 fills holes Waves 1–6, memory Wave 5, #120, #185, #282, #342, #411, #463, **#480**, and **#525** left open for this unique catalog (see §10). It does not clone Shield, Quiet Hex, Bias Step, Empty Purse, Aim Veil, Cadence Theft, Short Leash, Court Fold, Wall Sting, Triple Span, Must Pace, Court Shove, or Hex of Silence.
 8. **No last tier.** `G = floor(max(0, R) / T)` is unbounded. Wave 7 stamps `generationMin: 7`. When the next designer needs a verb, they stamp `generationMin = currentPublishedMax(family) + 1`.
 9. **Backend-authoritative, idempotent.** Same writers as Wave 1 §8. No Doka/XP from the grant. No `upgradeSpell`. No `updateCharacter`.
 10. **Single recap.** `NEW SPELL DISCOVERED` on root `PostBattleRecap` only.
@@ -247,6 +264,7 @@ Every live feat and challenge from Waves 1–6, #120 / #185 / #282 / #342 / #411
 | `oath_censor` / `hinge_porter` / `exit_mason` / `about_regent` | #463 **proposed Wave-7 extra doors** — do not restamp |
 | `mill_seneschal` / `counter_chaplain` / `wedge_prior` / `levy_rector` | #474 Wave-7 extra doors — do not restamp. File Fold uses `file_regent`, not these four |
 | `gaze_beadle` / `span_chamberlain` / `cover_hospitaller` / `lintel_sacrist` | #518 Wave-8 extra doors (Facing Pin / Span Guard / Cover Step / Low Lintel) — do not restamp |
+| `span_triune` / `wick_mason` / `slip_castellan` / `court_usher` / `pace_prelate` | #525 Wave-7 tactical extra doors — Triple Span / Pit Wick / Knight Slip / Court Shove / Must Pace. Do not restamp. File Fold stays `file_regent` |
 | `choir_gallery` | Wave 6 Choir Verse MULTI child |
 | **`hard_1`** | **this wave** Thin Ward MULTI child (`no_healing_under_30_damage`). Not Bloodless Plate |
 | **`legendary_1`** | **this wave** Clean Blood MULTI child (`no_damage_taken`). Not Bloodless Plate / easy_3 |
@@ -435,7 +453,7 @@ Power bands unchanged (Wave 1 §10). Signature 6 AP stays `ENEMY_ONLY` / `BOSS_O
 
 ## 11. Proposed spells (Wave 7)
 
-All rows: `STATUS: PROPOSED`. `isBaseSpell: false`. None of these ids exist in `spellData.ts`, `SPELL_ID_CATALOG`, Waves 1–4, memory Wave 5, Wave 6, #120, #137, #185, #282, #342, #411, or #463.
+All rows: `STATUS: PROPOSED`. `isBaseSpell: false`. None of these ids exist in `spellData.ts`, `SPELL_ID_CATALOG`, Waves 1–4, memory Wave 5, Wave 6, #120, #137, #185, #282, #342, #411, #463, or **#525**.
 
 `SCALING` follows existing `spellDmgGrowthPercent` / `upgradeSpell` unless marked fixed.
 
@@ -964,7 +982,7 @@ ROLE: POSITION — fold two player-side bodies on a shared file/rank
 ACQUISITION_SOURCE: BOSS_ONLY  
 PLAYER_LEARNABLE: false  
 OBSERVATION_REQUIRED: false  
-MINIMUM_ELIGIBILITY: Proposed later extra kit `file_regent` / phase 2. Not a world pack. **Do not** restamp #474 `mill_seneschal` / `counter_chaplain` / `wedge_prior` / `levy_rector`, #463 `about_regent`, or #518 `gaze_beadle` / `span_chamberlain` / `cover_hospitaller` / `lintel_sacrist`  
+MINIMUM_ELIGIBILITY: Proposed later extra kit `file_regent` / phase 2. Not a world pack. **Do not** restamp #474 `mill_seneschal` / `counter_chaplain` / `wedge_prior` / `levy_rector`, #463 `about_regent`, #518 `gaze_beadle` / `span_chamberlain` / `cover_hospitaller` / `lintel_sacrist`, or #525 `span_triune` / `wick_mason` / `slip_castellan` / `court_usher` / `pace_prelate`  
 ENEMY_FAMILIES: none (boss id `file_regent`)  
 RELATIVE_DIFFICULTY_REQUIREMENT: Boss signature. Not a G table  
 RARITY: UNIQUE  
@@ -1025,7 +1043,9 @@ Add these ids to the **named** family pools in a later data PR. Do not grab rand
 
 Empty slot → skip. Empty kit → `[physical_attack]`.
 
-Do not pool #282 `spell-hex-toll`. Do not assign Face Away / Oncoming / Glance Cut until the battle facing writer exists. Do not assign Twin Span to a kit whose AI cannot walk two posts independently. Do not assign Ally Reel without an `applyAttract` cast caller. Do not assign Pack Still on `hex_chorister`.
+**Stamp #525 onto piece-type overlays (do not clone as §11):** Wall Sting → rook/pawn G≥7; File Brand → rook/bishop G≥7; Boot Sting → knight/pawn G≥7; Shove Face → knight G≥7 (fail closed without battle `currentView`); Knight Slip → knight G≥2 extra **or** `slip_castellan`; Pivot Foe → queen/bishop G≥7; Triple Span → elite rook G≥2 **or** `span_triune`; Cadence Crack → bishop/queen G≥7; Must Pace → `pace_prelate` only; Once Verse → bishop/queen G≥7; Tick Hood → bishop/pawn G≥7; Flank Share → elite rook/king G≥2; Spare Pace → knight/bishop G≥7; Pit Wick → rook G≥1 **or** `wick_mason`; Exit Boon → bishop/knight G≥7; Court Shove → `court_usher` SIGNATURE, never owned.
+
+Do not pool #282 `spell-hex-toll`. Do not assign Face Away / Oncoming / Glance Cut / Shove Face until the battle facing writer exists. Do not assign Twin Span / Triple Span to a kit whose AI cannot walk those posts independently. Do not assign Ally Reel without an `applyAttract` cast caller. Do not assign Pack Still on `hex_chorister`. Do not put #525 ids in unique §11 rows.
 
 ---
 
@@ -1044,19 +1064,19 @@ Same recipe as Wave 6 §13:
 9. `STATUS: PROPOSED` until a human/orchestrator picks the ACTION_ID.
 10. Do not restamp any door in §4.1. Do not add a fourth `mpCost > 0` walk-positioning snipe. Do not pool Hex Toll. Do not gate on `unstoppable`. Do not resurrect memory Wave-5 ids. Do not stamp `survivor` unless Last Ember / Last Ward are retired.
 
-Suggested Wave-8 holes (do not fill today): mid-RAF splice (**hold**); a fourth pure `mpCost > 0` walk snipe (**hold**); player-owned Hex of Silence (**hold**); leftover doors `survivor` / `leader_slayer` / `jackpot` / `spell_master`; a same-day tactical Wave-7 catalog if one opens (stamp, do not clone). File Fold stays `BOSS_ONLY` on `file_regent` — do not also grant Thin Ward / Clean Blood from that fight, and do not restamp #518 extra doors (`gaze_beadle` / `span_chamberlain` / `cover_hospitaller` / `lintel_sacrist`).
+Suggested Wave-8 holes (do not fill today): mid-RAF splice (**hold**); a fourth pure `mpCost > 0` walk snipe (**hold**); player-owned Hex of Silence (**hold**); leftover doors `survivor` / `leader_slayer` / `jackpot` / `spell_master`. File Fold stays `BOSS_ONLY` on `file_regent` — do not also grant Thin Ward / Clean Blood from that fight, and do not restamp #518 extra doors (`gaze_beadle` / `span_chamberlain` / `cover_hospitaller` / `lintel_sacrist`) or #525 extra doors (`span_triune` / `wick_mason` / `slip_castellan` / `court_usher` / `pace_prelate`).
 
 ---
 
 ## 14. Implementation slices (later PRs — not this change)
 
-Wave-1 slices A–D **before** any Wave-2 data. Wave-2 **before** Wave-3. Wave-3 **before** Wave-4. Wave-4 **before** Wave-6. Wave-6 **before** any Wave-7 data. Coordinate #411 / #463 / #480 so those catalogs land **once**.
+Wave-1 slices A–D **before** any Wave-2 data. Wave-2 **before** Wave-3. Wave-3 **before** Wave-4. Wave-4 **before** Wave-6. Wave-6 **before** any Wave-7 data. Coordinate #411 / #463 / #480 / **#525** so those catalogs land **once**.
 
 | Slice | Touches | Must not touch |
 | :--- | :--- | :--- |
 | W7-A. G≥7 extra slot | Kit resolver | `pickEnemyLevelFromTiers` percents; `combatMath.ts` |
 | W7-B. New `aiHint` predicates | `decide*` helpers | Name fallbacks; RAF |
-| W7-C. Wave-7 **unique** data | `spellData.ts` + kits + catalog | Name heuristics; cloning #411 / #463 / #480 / memory Wave-5 ids |
+| W7-C. Wave-7 **unique** data | `spellData.ts` + kits + catalog | Name heuristics; cloning #411 / #463 / #480 / **#525** / memory Wave-5 ids |
 | W7-D. Special rooms | Encounter tag table | `mapGen.ts` algorithms; `fog_of_war` stub; retagging `ENC-*` / `WF-*` as grants; retagging `WF-ELT-EVEN_PICKET` as `even_gallery` |
 | W7-E. `hard_1` / `legendary_1` MULTI | Challenge complete → `unlockOwnedSpell` | Restamping Bloodless Plate / easy_3; pooling Hex Toll; `upgradeSpell` |
 | W7-F. Ally Reel attract caller | `applyAttract` toward ally cell | Damage-math rewrite; RAF |
@@ -1097,7 +1117,7 @@ Cast Mark detonation, Ghost Step occupancy, and Pack Still veil read flags at wr
 | W7-22 | Loaner / `WF-SPL-*` | No `ownedSpellIds` / `spellLevelKeys` / `upgradeSpell` |
 | W7-23 | G=6 Tide | No Walk Toll (`generationMin: 7`) |
 | W7-24 | Duplicate victory / duplicate `hard_1` | One owned row; levels untouched; no Doka from the grant |
-| W7-25 | No cloned ids | Unique §11 ids absent from #411 / #463 / #480 catalogs |
+| W7-25 | No cloned ids | Unique §11 ids absent from #411 / #463 / #480 / **#525** catalogs |
 | W7-26 | No fourth `mpCost > 0` | Unique §11 rows are all 0. Walk Toll / Gift Sill are flags |
 | W7-27 | Hex Toll | Still not in any SDE pool |
 | W7-28 | Memory Wave-5 / Wave-6 unique ids | Not re-proposed. Absent from `spellData.ts` |
@@ -1109,7 +1129,7 @@ Cast Mark detonation, Ghost Step occupancy, and Pack Still veil read flags at wr
 
 - Production TypeScript / Motoko / Candid in this PR
 - RAF, map generation, turn logic, or damage math
-- Re-authoring Waves 1–6, memory Wave 5, #120, #137, #185, #282, #342, #411, #463, or **#480** cards
+- Re-authoring Waves 1–6, memory Wave 5, #120, #137, #185, #282, #342, #411, #463, **#480**, or **#525** cards
 - Gating on `unstoppable` / `level_10`
 - Implementing the `fog_of_war` map-modifier stub
 - Reading `CharacterStats.evasion` in `combatMath.ts`
@@ -1121,6 +1141,7 @@ Cast Mark detonation, Ghost Step occupancy, and Pack Still veil read flags at wr
 - Resurrecting `SPELL_DISCOVERY_ECOSYSTEM_2026-09-22.md` unique ids
 - Restamping #474 extra doors `mill_seneschal` / `counter_chaplain` / `wedge_prior` / `levy_rector`
 - Restamping #518 extra doors `gaze_beadle` / `span_chamberlain` / `cover_hospitaller` / `lintel_sacrist`
+- Restamping #525 extra doors `span_triune` / `wick_mason` / `slip_castellan` / `court_usher` / `pace_prelate`
 - Mid-RAF splice of the current actor
 - Player-owned Hex of Silence
 - Stamping `survivor` / `leader_slayer` / `jackpot` / `spell_master`
@@ -1133,7 +1154,7 @@ Cast Mark detonation, Ghost Step occupancy, and Pack Still veil read flags at wr
 
 **Unique SDE ids (19):** even-stride, strike-hold, ground-oath, walk-toll, purse-lock, ally-reel, echo-paint, blink-seal, gift-sill, split-fang, wall-bite, cast-mark, still-leash, pet-verse, ghost-step, thin-ward, clean-blood, pack-still, file-fold.
 
-**No same-day tactical stamps at audit.** If a Wave-7 tactical PR opens, stamp those ids in a follow-up; do not clone them here.
+**#525 stamps (do not clone):** Wall Sting, File Brand, Boot Sting, Shove Face, Knight Slip, Pivot Foe, Triple Span, Cadence Crack, Must Pace, Once Verse, Tick Hood, Flank Share, Spare Pace, Pit Wick, Exit Boon, Court Shove.
 
 | SPELL_ID | Source | Learnable | Family / gate | Hole |
 | :--- | :--- | :--- | :--- | :--- |
