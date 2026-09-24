@@ -16,6 +16,7 @@
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import { isActiveHostile } from "./battleSetup";
+import { applyPlayerDamageHitDebuff } from "./playerDamageDebuff.ts";
 
 export type Side = "player" | "enemy";
 
@@ -1013,6 +1014,10 @@ export function resolvePlayerCast(
         preCritDmgBM,
         i === 0,
       );
+      // Damage+debuff catalog spells (Frost Bolt, Frost Nova, Cursed Wound)
+      // advertised a control half that the damage loop never wrote. 0-damage
+      // Weaken/Slow stay on the dedicated path — this helper requires damage > 0.
+      applyPlayerDamageHitDebuff(spell, hitTarget.id, ctx.applyEffect);
       // Detect death from the pre-damage hp snapshot minus the applied damage.
       // applyDamageToEnemy returns void and updates enemyHpMap asynchronously,
       // so the synchronous hp - finalDmg check is the reliable death signal here.
