@@ -30,6 +30,7 @@ import {
 import {
   shouldDismissShopDialogOnBackdrop,
   shouldDismissShopDialogOnKey,
+  subscribeEscapeToDismiss,
 } from "../utils/shopDialogDismiss";
 import {
   type ShopCreditPersistLock,
@@ -100,6 +101,8 @@ const DokaGameKeyShop: React.FC<DokaGameKeyShopProps> = ({
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
+
+  useEffect(() => subscribeEscapeToDismiss(onClose), [onClose]);
 
   const hintCents = euroTextToCents(euroHint);
   const suggested =

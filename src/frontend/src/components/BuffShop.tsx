@@ -9,6 +9,7 @@ import {
   tryConsumeBuffItem,
   tryPurchaseBuffItem,
 } from "../utils/itemShop";
+import { subscribeEscapeToDismiss } from "../utils/shopDialogDismiss";
 
 // ── Item Definitions ──────────────────────────────────────────────────────────
 export type BuffItemType =
@@ -206,6 +207,11 @@ const BuffShop: React.FC<BuffShopProps> = ({
     saveInventory(storageKey, inventory);
   }, [inventory, storageKey]);
 
+  useEffect(() => {
+    if (!isBuffShopOpen(isOpen) || !onClose) return;
+    return subscribeEscapeToDismiss(onClose);
+  }, [isOpen, onClose]);
+
   const handleBuy = useCallback(
     (item: BuffItem) => {
       const wallet = liveDokaForShopSpend(
@@ -377,9 +383,9 @@ const BuffShop: React.FC<BuffShopProps> = ({
             <button
               type="button"
               data-ocid="buff_shop.shop_tab"
-              className={
+              className={`${
                 activeTab === "shop" ? "stone-btn-crimson" : "stone-btn-slate"
-              }
+              } stone-touch-target`}
               style={tabButtonStyle(activeTab === "shop")}
               onClick={() => setActiveTab("shop")}
             >
@@ -388,11 +394,11 @@ const BuffShop: React.FC<BuffShopProps> = ({
             <button
               type="button"
               data-ocid="buff_shop.inventory_tab"
-              className={
+              className={`${
                 activeTab === "inventory"
                   ? "stone-btn-crimson"
                   : "stone-btn-slate"
-              }
+              } stone-touch-target`}
               style={tabButtonStyle(activeTab === "inventory")}
               onClick={() => setActiveTab("inventory")}
             >
@@ -500,11 +506,11 @@ const BuffShop: React.FC<BuffShopProps> = ({
                     <button
                       type="button"
                       data-ocid={`buff_shop.buy_button.${item.id}`}
-                      className={
+                      className={`${
                         canAfford && !atMax
                           ? "stone-btn-crimson"
                           : "stone-btn-slate"
-                      }
+                      } stone-touch-target`}
                       style={buyBtnStyle(canAfford && !atMax)}
                       disabled={!canAfford || atMax}
                       onClick={() => handleBuy(item)}
@@ -605,9 +611,9 @@ const BuffShop: React.FC<BuffShopProps> = ({
                           <button
                             type="button"
                             data-ocid={`buff_shop.use_button.${item.id}`}
-                            className={
+                            className={`${
                               canUse ? "stone-btn-crimson" : "stone-btn-slate"
-                            }
+                            } stone-touch-target`}
                             style={{
                               ...getBtnStyle(canUse),
                               width: 38,
@@ -622,6 +628,13 @@ const BuffShop: React.FC<BuffShopProps> = ({
                                 : !isPlayerTurn
                                   ? "Wait for your turn"
                                   : "Use item"
+                            }
+                            aria-label={
+                              !inBattle
+                                ? "Only usable in battle"
+                                : !isPlayerTurn
+                                  ? "Wait for your turn"
+                                  : `Use ${item.name}`
                             }
                           >
                             Use

@@ -360,10 +360,11 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
 
   return (
     <div
+      className="min-h-app-viewport"
       style={{
         background: "#0d0f1a",
-        minHeight: "100%",
-        padding: "28px 20px 36px",
+        padding:
+          "max(28px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(36px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px))",
         boxSizing: "border-box",
         position: "relative",
         zIndex: 20,
@@ -504,6 +505,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                         key={view}
                         onClick={() => setCurrentView(view)}
                         data-ocid={`character_creation.view_${view}`}
+                        className="stone-touch-target"
                         style={{
                           padding: "7px 4px",
                           borderRadius: 6,
@@ -539,6 +541,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                     type="button"
                     onClick={rotateView}
                     data-ocid="character_creation.rotate_button"
+                    className="stone-touch-target"
                     style={{
                       flex: 1,
                       padding: "9px",
@@ -572,6 +575,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                     type="button"
                     onClick={randomizePattern}
                     data-ocid="character_creation.randomize_button"
+                    className="stone-touch-target"
                     style={{
                       flex: 1,
                       padding: "9px",
@@ -684,6 +688,8 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                           }))
                         }
                         data-ocid={`character_creation.${key}_color`}
+                        aria-label={`${label} color`}
+                        className="stone-touch-target"
                         style={{
                           width: 28,
                           height: 28,
@@ -949,6 +955,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                 }}
                 disabled={isSaving}
                 data-ocid="character_creation.cancel_button"
+                className="stone-touch-target"
                 style={{
                   flex: 1,
                   padding: "13px",
@@ -997,6 +1004,7 @@ const CharacterCreation: React.FC<CharacterCreationProps> = ({
                           : "Save this champion, then Play from your slots"
                 }
                 data-ocid="character_creation.save_button"
+                className="stone-touch-target"
                 style={{
                   flex: 2,
                   padding: "13px",

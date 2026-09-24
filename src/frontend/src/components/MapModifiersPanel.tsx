@@ -49,8 +49,15 @@ const MapModifiersPanel: React.FC<MapModifiersPanelProps> = ({
       zIndex={110}
       style={{ width: 200 }}
     >
-      <div
+      <section
         data-ocid="map_modifiers.panel"
+        aria-label={
+          activeModifiers.length === 0
+            ? "Map modifiers, none active"
+            : `Map modifiers, ${activeModifiers.length} active: ${activeModifiers
+                .map((mod) => mod.name)
+                .join(", ")}`
+        }
         style={{
           width: 200,
           background: "linear-gradient(180deg, #0d0610 0%, #0a0414 100%)",
@@ -156,7 +163,7 @@ const MapModifiersPanel: React.FC<MapModifiersPanelProps> = ({
             </ul>
           )}
         </div>
-      </div>
+      </section>
     </DraggablePanel>
   );
 };

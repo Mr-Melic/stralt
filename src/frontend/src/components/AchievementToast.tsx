@@ -65,6 +65,7 @@ const AchievementToast: React.FC<AchievementToastProps> = ({
       type="button"
       data-ocid="achievement_toast"
       aria-live="polite"
+      aria-label={`${achievement.name} unlocked. Dismiss notification.`}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       style={{
