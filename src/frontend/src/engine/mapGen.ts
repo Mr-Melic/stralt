@@ -67,6 +67,126 @@ export function pickMapArchetype(rng: Rng = Math.random) {
   return MAP_ARCHETYPES[0];
 }
 
+/**
+ * Dump floors a living hostile already occupies cannot host a corpse/summon.
+ * `countProgressionDumpCells` still counts those cells, so a unique corridor
+ * with occupied alcoves skipped `ensureProgressionAlcove`.
+ */
+export function countFreeProgressionDumpCells(
+  tiles: string[][],
+  voidTiles: Set<string> | Map<string, unknown> | undefined,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  occupied: { x: number; y: number }[],
+  w: number,
+  h: number,
+): { free: number; dump: number; mandatory: number } {
+  const counts = countProgressionDumpCells(
+    tiles,
+    voidTiles,
+    playerSpawn,
+    portals,
+    w,
+    h,
+  );
+  if (counts.dump === 0) {
+    return { free: 0, dump: 0, mandatory: counts.mandatory };
+  }
+  const vt = toVoidSet(voidTiles);
+  const portalSet = new Set(portals.map((p) => `${p.x},${p.y}`));
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const origin = battle?.origin ?? playerSpawn;
+  const mandatory = collectMandatoryProgressionCells(
+    occupancyTiles(tiles),
+    vt,
+    portalSet,
+    origin,
+  );
+  const blocked = new Set<string>([
+    `${origin.x},${origin.y}`,
+    ...portalSet,
+    ...mandatory,
+    ...occupied.map((o) => `${o.x},${o.y}`),
+  ]);
+  let free = 0;
+  const consider = (k: string) => {
+    if (blocked.has(k)) return;
+    const p = k.split(",");
+    const x = Number(p[0]);
+    const y = Number(p[1]);
+    if (!isWalkable(tiles, vt, x, y, w, h, portalBlock)) return;
+    free += 1;
+  };
+  if (battle?.reachable) {
+    for (const k of battle.reachable) consider(k);
+  } else {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!isWalkable(tiles, vt, x, y, w, h)) continue;
+        consider(`${x},${y}`);
+      }
+    }
+  }
+  return { free, dump: counts.dump, mandatory: counts.mandatory };
+}
+
+/** One unoccupied dump cell is enough for a corpse to leave the unique bridge. */
+const PROGRESSION_FREE_DUMP_FLOOR = 1;
+
+/**
+ * Punch until at least one dump cell is empty. Runs before the alcove pass
+ * so occupied alcoves cannot fake a free dump (alcove only checks dump>0).
+ */
+function ensureFreeProgressionDump(
+  tiles: string[][],
+  vt: Set<string>,
+  playerSpawn: { x: number; y: number },
+  portals: { x: number; y: number }[],
+  spawns: { x: number; y: number }[],
+  w: number,
+  h: number,
+): void {
+  const portalBlock = collectPortalBlockers(tiles, portals, w, h);
+  const battle = largestBattleComponentFrom(
+    tiles,
+    vt,
+    playerSpawn,
+    w,
+    h,
+    portalBlock,
+  );
+  const origin = battle?.origin ?? playerSpawn;
+  const reachable =
+    battle?.reachable ?? floodFillReachable(tiles, vt, origin, w, h);
+  const exclude = new Set<string>([
+    `${origin.x},${origin.y}`,
+    ...portals.map((p) => `${p.x},${p.y}`),
+    ...spawns.map((s) => `${s.x},${s.y}`),
+  ]);
+  for (let i = 0; i < 8; i++) {
+    const counts = countFreeProgressionDumpCells(
+      tiles,
+      vt,
+      playerSpawn,
+      portals,
+      spawns,
+      w,
+      h,
+    );
+    if (counts.mandatory === 0) return;
+    if (counts.free >= PROGRESSION_FREE_DUMP_FLOOR) return;
+    if (!punchAdjacentFloor(tiles, vt, reachable, exclude, w, h)) return;
+  }
+}
+
 /** Rest/Death Realm maps still store voids as `Map`. Reachability only needs `.has`. */
 export function toVoidSet(
   vt: Set<string> | Map<string, unknown> | undefined | null,
@@ -1437,6 +1557,18 @@ export function finalizePlayableLayout<P extends { x: number; y: number }>(
     input.h,
   );
 
+  // Occupied alcoves still count as dump, so skip the alcove pass and leave
+  // a summon on the unique bridge. Punch a free cell before that check.
+  ensureFreeProgressionDump(
+    liveTiles,
+    vt,
+    playerSpawn,
+    portals,
+    spawns,
+    input.w,
+    input.h,
+  );
+
   // 1-wide unique corridors have no dump cell. A corpse/summon on the
   // bridge then seals the unlocked portal with nowhere to relocate.
   ensureProgressionAlcove(
@@ -1729,6 +1861,18 @@ export function evaluateSolvability(
       : sequentialClearUnlocks(tiles, vt, playerSpawn, portals, spawns, w, h);
   if (portals.length > 0 && !clearingUnlocks) {
     failures.push("clearing-locked");
+  }
+  const freeDump = countFreeProgressionDumpCells(
+    tiles,
+    vt,
+    playerSpawn,
+    portals,
+    spawns,
+    w,
+    h,
+  );
+  if (freeDump.mandatory > 0 && freeDump.free === 0) {
+    failures.push("no-free-dump-cell");
   }
   let leftoverIslands = 0;
   for (let y = 0; y < h; y++) {
