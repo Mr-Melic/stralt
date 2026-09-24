@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { completeRun } from "../engine/portalRules.ts";
 import {
   applyShopCreditDeltaToUi,
   createProgressPersist,
@@ -181,6 +182,74 @@ describe("persistBossRushRoomClear", () => {
     await persistBossRushRoomClear(actor, 1, 9);
     assert.equal(runs, 1, "repeat complete(9) after reset must not farm runs");
     assert.equal(currentRoom, 0);
+  });
+
+  it("jackpot completeRun abort-before-persist drops master; HUD-only then persist lands", async () => {
+    const makeCanister = () => {
+      let currentRoom = 9;
+      let master = false;
+      let runs = 0;
+      let highest = 9;
+      return {
+        snapshot: () => ({ currentRoom, master, runs, highest }),
+        resetBossRush: async () => {
+          currentRoom = 0;
+        },
+        completeBossRushRoom: async (_slot: bigint, roomIndex: bigint) => {
+          const ri = Number(roomIndex);
+          if (ri !== currentRoom && ri + 1 !== currentRoom) {
+            return { err: "roomIndex must match current Boss Rush room" };
+          }
+          if (ri === 9 && currentRoom === 9) {
+            master = true;
+            runs += 1;
+            highest = 10;
+            currentRoom = 0;
+          }
+          return { ok: null };
+        },
+      };
+    };
+
+    const aborted = makeCanister();
+    completeRun({
+      bossRushActiveRef: { current: true },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {
+        await aborted.resetBossRush();
+      },
+    });
+    await persistBossRushRoomClear(aborted, 1, 9);
+    assert.equal(
+      aborted.snapshot().master,
+      false,
+      "completeRun→abort resetBossRush before complete(9) #errs",
+    );
+    assert.equal(aborted.snapshot().runs, 0);
+    assert.equal(aborted.snapshot().highest, 9);
+
+    const hudOnly = makeCanister();
+    let uiCleared = 0;
+    completeRun({
+      bossRushActiveRef: { current: true },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {
+        await hudOnly.resetBossRush();
+      },
+      endBossRushUi: () => {
+        uiCleared += 1;
+      },
+    });
+    await persistBossRushRoomClear(hudOnly, 1, 9);
+    assert.equal(uiCleared, 1);
+    assert.equal(hudOnly.snapshot().master, true);
+    assert.equal(hudOnly.snapshot().runs, 1);
+    assert.equal(hudOnly.snapshot().highest, 10);
+    assert.equal(hudOnly.snapshot().currentRoom, 0);
   });
 
   it("re-resets currentRoom when death aborts the run during the persist", async () => {

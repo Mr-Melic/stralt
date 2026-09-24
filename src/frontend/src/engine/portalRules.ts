@@ -138,6 +138,14 @@ export interface RunStateRefs {
   dungeonChainMaxDepthRef: { current: number };
   /** Aborts an in-progress boss rush (no-op when no rush is active). */
   abortBossRush: () => Promise<void>;
+  /**
+   * Successful Boss Rush complete: drop the HUD / `active` flag without
+   * `resetBossRush`. `abortBossRush` zeros canister `currentRoom` before
+   * `persistRoomClear` can `complete(9)`, and that call #errs — master
+   * complete, run count, and `highestRoomCompleted=10` never land.
+   * Death / flee still use {@link resetRunState} → `abortBossRush`.
+   */
+  endBossRushUi?: () => void;
   /** React HUD / multiplier state — refs alone leave these stale after death. */
   setDungeonChainActive?: (active: boolean) => void;
   setDungeonChainDepth?: (depth: number) => void;
@@ -222,11 +230,7 @@ export function decideDungeonChainPortal(
  * flag and aborts the rush, then clears the dungeon-chain flag and zeroes its
  * depth/max-depth counters. Safe to call when no run is active.
  */
-export function resetRunState(refs: RunStateRefs): void {
-  if (refs.bossRushActiveRef.current) {
-    refs.bossRushActiveRef.current = false;
-    void refs.abortBossRush();
-  }
+function clearDungeonChainState(refs: RunStateRefs): void {
   refs.dungeonChainActiveRef.current = false;
   refs.dungeonChainDepthRef.current = 0;
   refs.dungeonChainMaxDepthRef.current = 0;
@@ -238,23 +242,45 @@ export function resetRunState(refs: RunStateRefs): void {
   }
 }
 
+export function resetRunState(refs: RunStateRefs): void {
+  if (refs.bossRushActiveRef.current) {
+    refs.bossRushActiveRef.current = false;
+    void refs.abortBossRush();
+  }
+  clearDungeonChainState(refs);
+}
+
 /**
  * Complete a run successfully (player cleared the final boss-rush room or the
  * last dungeon-chain depth). This is the NON-penalty counterpart to the
- * death-flow reset: it reuses `resetRunState` to clear the boss-rush flag,
- * abort the rush, and zero the dungeon-chain flag/depth/max-depth counters —
- * but it does NOT apply the death penalty (XP 20% / Doka 40%). Rewards earned
- * during the run stay with the player. After this call the world is back in
- * free-exploration mode so the next map can generate normally.
+ * death-flow reset: it clears run flags and the dungeon Doka multiplier so
+ * the next map is free exploration, but it does NOT apply the death penalty
+ * (XP 20% / Doka 40%). Rewards earned during the run stay with the player.
  *
- * Flags reset (delegated to resetRunState):
- *  - bossRushActiveRef → false (and abortBossRush() invoked)
+ * Boss Rush: when `endBossRushUi` is provided, only the HUD/`active` flag is
+ * cleared. `abortBossRush` must not run here — it `resetBossRush`es
+ * `currentRoom` to 0 before `persistRoomClear` can `complete(9)`, and the
+ * canister #errs (master complete never lands). Death still uses
+ * {@link resetRunState}. Without `endBossRushUi`, abort is kept so older
+ * callers / tests still end the rush actor.
+ *
+ * Flags reset:
+ *  - bossRushActiveRef → false (HUD-only when `endBossRushUi` is set)
  *  - dungeonChainActiveRef → false
  *  - dungeonChainDepthRef → 0
  *  - dungeonChainMaxDepthRef → 0
  */
 export function completeRun(refs: RunStateRefs): void {
-  resetRunState(refs);
+  const wasBossRush = refs.bossRushActiveRef.current;
+  refs.bossRushActiveRef.current = false;
+  if (wasBossRush) {
+    if (refs.endBossRushUi) {
+      refs.endBossRushUi();
+    } else {
+      void refs.abortBossRush();
+    }
+  }
+  clearDungeonChainState(refs);
 }
 
 /**

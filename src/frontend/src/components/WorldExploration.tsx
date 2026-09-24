@@ -1144,6 +1144,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    endBossRushUi,
     persistRoomClear,
     BOSS_RUSH_ROOMS,
     subscribeRunComplete,
@@ -1300,11 +1301,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Idempotency guard for run completion (else branch + subscribeRunComplete).
   const runCompleteHandledRef = useRef(false);
   // Register a single run-complete handler with useBossRush. When the boss-rush
-  // state flips to `complete`, this fires once to call completeRun (same refs as
-  // resetRunState) and spawn a white sanctuary portal. Guarded by
-  // runCompleteHandledRef so the else-branch completion path and this
-  // subscription cannot double-fire. Completion (unlike fleeing/death) keeps
-  // rewards — no death penalty, no Death Realm reset.
+  // state flips to `complete`, this fires once to call completeRun (HUD-only
+  // via endBossRushUi so persistRoomClear can still complete(9)) and spawn a
+  // white sanctuary portal. Guarded by runCompleteHandledRef so the else-branch
+  // completion path and this subscription cannot double-fire. Completion
+  // (unlike fleeing/death) keeps rewards — no death penalty, no Death Realm.
   useEffect(() => {
     subscribeRunComplete(() => {
       if (runCompleteHandledRef.current) return;
@@ -1315,6 +1316,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         dungeonChainDepthRef,
         dungeonChainMaxDepthRef,
         abortBossRush,
+        endBossRushUi,
       });
       const { map: whiteMap, spawnPosition: whiteSpawn } = generateRandomMap();
       if (whiteMap) {
@@ -1340,7 +1342,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return () => {
       subscribeRunComplete(null);
     };
-  }, [subscribeRunComplete, abortBossRush, setPlayerPositionSynced]);
+  }, [
+    subscribeRunComplete,
+    abortBossRush,
+    endBossRushUi,
+    setPlayerPositionSynced,
+  ]);
   useEffect(() => {
     dungeonChainActiveRef.current = dungeonChainActive;
   }, [dungeonChainActive]);
@@ -12696,14 +12703,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     const nextRoomDef = BOSS_RUSH_ROOMS[nextRoomIndex];
     if (!nextRoomDef) {
       // Final boss-rush room cleared — complete the run and open a white
-      // gateway to sanctuary. Completion (unlike fleeing/death) keeps rewards;
-      // no death penalty, no Death Realm reset.
+      // gateway to sanctuary. HUD-only (endBossRushUi): abortBossRush would
+      // resetBossRush currentRoom to 0 before persistRoomClear complete(9).
+      // Completion keeps rewards — no death penalty, no Death Realm reset.
       completeRun({
         bossRushActiveRef,
         dungeonChainActiveRef,
         dungeonChainDepthRef,
         dungeonChainMaxDepthRef,
         abortBossRush,
+        endBossRushUi,
       });
       const { map: whiteMap, spawnPosition: whiteSpawn } = generateRandomMap();
       if (whiteMap) {

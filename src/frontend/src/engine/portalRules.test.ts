@@ -4,6 +4,7 @@ import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import { activeHostilesRemaining } from "./battleSetup.ts";
 import { isCellFree } from "./occupancy.ts";
 import {
+  completeRun,
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
@@ -111,6 +112,104 @@ describe("dungeonDokaMultiplierFor", () => {
     assert.equal(dungeonDokaMultiplierFor(true, 1), 1.5);
     assert.equal(dungeonDokaMultiplierFor(true, 3), 2.5);
     assert.equal(dungeonDokaMultiplierFor(true, 5), 4);
+  });
+});
+
+describe("completeRun", () => {
+  it("clears the dungeon multiplier on success so overworld kills cannot stay inflated", () => {
+    let aborted = 0;
+    let active = true;
+    let depth = 4;
+    let maxDepth = 4;
+    const multiplier = { current: 3 };
+    completeRun({
+      bossRushActiveRef: { current: false },
+      dungeonChainActiveRef: { current: true },
+      dungeonChainDepthRef: { current: 4 },
+      dungeonChainMaxDepthRef: { current: 4 },
+      abortBossRush: async () => {
+        aborted += 1;
+      },
+      setDungeonChainActive: (next) => {
+        active = next;
+      },
+      setDungeonChainDepth: (next) => {
+        depth = next;
+      },
+      setDungeonChainMaxDepth: (next) => {
+        maxDepth = next;
+      },
+      dungeonDokaMultiplierRef: multiplier,
+    });
+    assert.equal(active, false);
+    assert.equal(depth, 0);
+    assert.equal(maxDepth, 0);
+    assert.equal(multiplier.current, 1);
+    assert.equal(aborted, 0, "dungeon-only complete must not abort a rush");
+    assert.equal(dungeonDokaMultiplierFor(active, depth), 1);
+  });
+
+  it("aborts an active Boss Rush when endBossRushUi is omitted", () => {
+    let aborted = 0;
+    const multiplier = { current: 4 };
+    const refs = {
+      bossRushActiveRef: { current: true },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {
+        aborted += 1;
+      },
+      dungeonDokaMultiplierRef: multiplier,
+    };
+    completeRun(refs);
+    assert.equal(refs.bossRushActiveRef.current, false);
+    assert.equal(multiplier.current, 1);
+    assert.equal(aborted, 1, "legacy completeRun still aborts the rush actor");
+  });
+
+  it("clears the rush HUD without abort when endBossRushUi is provided", () => {
+    let aborted = 0;
+    let uiCleared = 0;
+    const refs = {
+      bossRushActiveRef: { current: true },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {
+        aborted += 1;
+      },
+      endBossRushUi: () => {
+        uiCleared += 1;
+      },
+    };
+    completeRun(refs);
+    assert.equal(refs.bossRushActiveRef.current, false);
+    assert.equal(uiCleared, 1);
+    assert.equal(
+      aborted,
+      0,
+      "jackpot complete must not resetBossRush before complete(9)",
+    );
+  });
+
+  it("death reset still aborts even when endBossRushUi is present", () => {
+    let aborted = 0;
+    let uiCleared = 0;
+    resetRunState({
+      bossRushActiveRef: { current: true },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {
+        aborted += 1;
+      },
+      endBossRushUi: () => {
+        uiCleared += 1;
+      },
+    });
+    assert.equal(aborted, 1);
+    assert.equal(uiCleared, 0);
   });
 });
 

@@ -350,6 +350,12 @@ export function useBossRush(
     }
   }, [actor, characterSlot]);
 
+  // Jackpot / run-complete HUD only. abortBossRush zeros currentRoom and
+  // bumps persistEpoch before persistRoomClear can complete(9).
+  const endBossRushUi = useCallback(() => {
+    setBossRushState(INITIAL_STATE);
+  }, []);
+
   const getCurrentRoom = useCallback((): BossRushRoom | null => {
     if (!bossRushState.active) return null;
     return BOSS_RUSH_ROOMS[bossRushState.currentRoom] ?? null;
@@ -360,6 +366,7 @@ export function useBossRush(
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    endBossRushUi,
     persistRoomClear,
     getCurrentRoom,
     BOSS_RUSH_ROOMS,
