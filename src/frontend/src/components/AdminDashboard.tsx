@@ -55,6 +55,7 @@ import {
   readPrincipalListResult,
   toBackendLevelUpConfig,
 } from "../utils/adminContract";
+import { interceptAdminLivePublishClick } from "../utils/adminLivePublishPortal";
 import {
   KNOWN_ACHIEVEMENT_CONDITIONS,
   MAX_DOKA_GRANT,
@@ -70,6 +71,10 @@ import {
   validateWalkFrameUrls,
 } from "../utils/adminSafety";
 import {
+  MAX_SPELL_TARGETING,
+  spellTargetingRejected,
+} from "../utils/adminSafety.spellTargeting";
+import {
   ENEMY_SPRITE_URL_FIELD_LABEL,
   ENEMY_SPRITE_URL_HELP,
   ENEMY_SPRITE_URL_PLACEHOLDER,
@@ -78,6 +83,10 @@ import {
   spriteUrlIsStored,
 } from "../utils/adminVisualStatus";
 import { logDebugWarn } from "../utils/debugLogger";
+import {
+  shouldDismissShopDialogOnBackdrop,
+  shouldDismissShopDialogOnKey,
+} from "../utils/shopDialogDismiss";
 import AdminGameKeyPurchases from "./AdminGameKeyPurchases";
 
 // ── defaults ─────────────────────────────────────────────────────────────────
@@ -322,7 +331,10 @@ function Btn({
   return (
     <button
       type={type}
-      onClick={onClick}
+      onClick={() => {
+        if (interceptAdminLivePublishClick(ocid, onClick)) return;
+        onClick?.();
+      }}
       data-ocid={ocid}
       className={cls}
       disabled={disabled}
@@ -348,9 +360,33 @@ function ConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (shouldDismissShopDialogOnKey(event.key)) {
+        event.preventDefault();
+        onCancel();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel]);
   return (
     <div
       data-ocid={`${ocidPrefix}.dialog`}
+      role="presentation"
+      onClick={(event) => {
+        if (
+          shouldDismissShopDialogOnBackdrop(event.target, event.currentTarget)
+        ) {
+          onCancel();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (shouldDismissShopDialogOnKey(event.key)) {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
       style={{
         position: "fixed",
         inset: 0,
@@ -2656,6 +2692,10 @@ const SpellEditor: React.FC<{
           ocid="admin.spell.cooldown_input"
         />
       </div>
+      <p style={{ color: "#6a6070", fontSize: 10, margin: "0 0 10px" }}>
+        Range is the enemy-AI targeting field (max {MAX_SPELL_TARGETING}).
+        Player clicks use minRange/maxRange.
+      </p>
 
       {/* Spell Type + Heal Amount + Physical */}
       <p style={{ ...sectionHeadStyle, marginTop: 4 }}>Spell Type</p>
@@ -3560,6 +3600,27 @@ const SpellEditor: React.FC<{
             });
             if (spellErr) {
               toast.error(spellErr);
+              return;
+            }
+            const targetingErr = spellTargetingRejected({
+              range: Number(cfg.range),
+              hitTiles: cfg.hitTiles,
+            });
+            if (targetingErr) {
+              toast.error(targetingErr);
+              return;
+            }
+            const minR = Number(cfg.minRange ?? 0);
+            const maxR = Number(cfg.maxRange ?? cfg.range ?? 0);
+            if (
+              !Number.isFinite(minR) ||
+              !Number.isFinite(maxR) ||
+              minR < 0 ||
+              maxR > MAX_SPELL_TARGETING
+            ) {
+              toast.error(
+                `minRange/maxRange must be between 0 and ${MAX_SPELL_TARGETING}`,
+              );
               return;
             }
             onSave(cfg);
