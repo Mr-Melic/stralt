@@ -106,6 +106,27 @@ assert.equal(
   false,
 );
 
+assert.equal(
+  shouldStartDokaHeal({
+    currentHp: 50,
+    maxHp: 100,
+    liveDoka: 40,
+    deathRealmPending: true,
+  }),
+  false,
+  "Doka heal during Death Realm pending overwrites persistDeathPenalty respawn HP",
+);
+assert.equal(
+  shouldStartDokaHeal({
+    currentHp: 50,
+    maxHp: 100,
+    liveDoka: 40,
+    deathRealmPending: false,
+  }),
+  true,
+  "Death Realm already loaded must still allow overworld Doka heal",
+);
+
 // Heal then buy before re-render: render still shows 55, potion costs 50.
 assert.equal(shouldAllowShopSpend(55, 50), true);
 assert.equal(shouldAllowShopSpend(45, 50), false);
@@ -390,6 +411,84 @@ assert.equal(
     syncLiveDokaFromProp({ propDoka: 150, prevPropDoka: 100, liveDoka: 100 }),
     { liveDoka: 150, prevPropDoka: 150 },
     "unmutated live still adopts the new authoritative prop",
+  );
+}
+
+{
+  // Chronology: overworld lava → persistDeathPenalty restores HP to 50% of
+  // max (hp < max, wallet still has Doka) → defeat recap is
+  // pointer-events: none → HUD heal / Items buy used to persist extra HP
+  // or a potion before the 1.5s Death Realm timer fired.
+  const restoredHp = 50;
+  const maxHp = 100;
+  const liveDoka = 40;
+  assert.equal(
+    shouldStartDokaHeal({
+      currentHp: restoredHp,
+      maxHp,
+      liveDoka,
+    }),
+    true,
+    "post-penalty 50% HP would otherwise enable the heal button",
+  );
+  assert.equal(
+    shouldStartDokaHeal({
+      currentHp: restoredHp,
+      maxHp,
+      liveDoka,
+      deathRealmPending: true,
+    }),
+    false,
+    "pending Death Realm must not start a Doka-to-HP spend",
+  );
+  assert.equal(
+    resolveOverworldHealSpend({
+      currentHp: restoredHp,
+      maxHp,
+      liveDoka,
+      jackpot: false,
+      deathRealmPending: true,
+    }),
+    null,
+    "jackpot-false spend must also refuse during the 1.5s wait",
+  );
+  assert.equal(
+    resolveOverworldHealSpend({
+      currentHp: restoredHp,
+      maxHp,
+      liveDoka,
+      jackpot: true,
+      deathRealmPending: true,
+    }),
+    null,
+    "jackpot full-heal must not land extra HP before Death Realm loads",
+  );
+  assert.equal(
+    shouldAllowShopSpend(liveDoka, 50, true),
+    false,
+    "Items buy must not debit the penalized wallet during the wait",
+  );
+  assert.equal(
+    tryPurchaseBuffItem({
+      wallet: liveDoka,
+      cost: 50,
+      owned: 0,
+      maxStack: 5,
+      inBattle: false,
+      deathRealmPending: true,
+    }),
+    null,
+    "BuffShop Buy must not grant a stack that survives the realm load",
+  );
+  assert.equal(
+    shouldStartDokaHeal({
+      currentHp: restoredHp,
+      maxHp,
+      liveDoka,
+      deathRealmPending: false,
+    }),
+    true,
+    "Death Realm already loaded (timer cleared) may heal again",
   );
 }
 

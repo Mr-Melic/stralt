@@ -17909,6 +17909,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           dokaBalance={dokaBalance}
           getLiveDoka={() => dokaBalanceRef.current}
           onDeductDoka={(amount) => {
+            if (
+              isDeathRealmTransitionPending(
+                deathTriggeredRef.current,
+                deathRealmTimerRef.current !== null,
+              )
+            ) {
+              return false;
+            }
             if (!canSpendLiveDoka(dokaBalanceRef.current, amount)) {
               return false;
             }
@@ -17943,6 +17951,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           principalId={userId}
           isOpen={itemShopOpen}
           onClose={onItemShopClose}
+          deathRealmPending={isDeathRealmTransitionPending(
+            deathTriggeredRef.current,
+            deathRealmTimerRef.current !== null,
+          )}
         />
 
         {/* Achievement toast — world explorer only (not during battle) */}
@@ -18379,12 +18391,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               {(() => {
                 const liveHp = characterStatsRef.current.hp;
                 const liveDoka = dokaBalanceRef.current;
+                const deathRealmPending = isDeathRealmTransitionPending(
+                  deathTriggeredRef.current,
+                  deathRealmTimerRef.current !== null,
+                );
                 const hpNeeded = maxHp - liveHp;
                 const cost = Math.ceil(hpNeeded / 3);
                 const canAfford = shouldStartDokaHeal({
                   currentHp: liveHp,
                   maxHp,
                   liveDoka,
+                  deathRealmPending,
                 });
                 const healHp = Math.min(hpNeeded, Math.floor(liveDoka * 3));
                 const actualCost = Math.ceil(healHp / 3);
@@ -18394,9 +18411,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                     data-ocid="stats.heal_with_doka_button"
                     disabled={!canAfford}
                     title={
-                      canAfford
-                        ? `Heal ${hpNeeded} HP (costs ${cost} Doka)`
-                        : "Not enough Doka"
+                      deathRealmPending
+                        ? "Death Realm is loading"
+                        : canAfford
+                          ? `Heal ${hpNeeded} HP (costs ${cost} Doka)`
+                          : "Not enough Doka"
                     }
                     onClick={() => {
                       if (
@@ -18405,6 +18424,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                           maxHp,
                           liveDoka: dokaBalanceRef.current,
                           inFlight: dokaHealInFlightRef.current,
+                          deathRealmPending: isDeathRealmTransitionPending(
+                            deathTriggeredRef.current,
+                            deathRealmTimerRef.current !== null,
+                          ),
                         })
                       ) {
                         return;
@@ -18414,6 +18437,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                         maxHp,
                         liveDoka: dokaBalanceRef.current,
                         jackpot: Math.random() < 0.005,
+                        deathRealmPending: isDeathRealmTransitionPending(
+                          deathTriggeredRef.current,
+                          deathRealmTimerRef.current !== null,
+                        ),
                       });
                       if (!resolved) return;
 
@@ -18501,9 +18528,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                       letterSpacing: "0.04em",
                     }}
                   >
-                    {canAfford
-                      ? `♥ Heal ${healHp} HP → ${actualCost} Doka (1:3)`
-                      : "♥ Heal (Need Doka)"}
+                    {deathRealmPending
+                      ? "♥ Heal (Death Realm loading)"
+                      : canAfford
+                        ? `♥ Heal ${healHp} HP → ${actualCost} Doka (1:3)`
+                        : "♥ Heal (Need Doka)"}
                   </button>
                 );
               })()}
