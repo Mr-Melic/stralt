@@ -372,6 +372,17 @@ module {
             or t == "bomber" or t == "wisp"
     };
 
+    /// Failure: Admin Linear + Diagonal are independent checkboxes.
+    /// isTileCastableLive requires a cardinal axis AND |dx|==|dy|, so only
+    /// (0,0) survives. Damage rows default minRange>=1, so the previous
+    /// valid catalog row is replaced with an uncastable spell. Spells have
+    /// no last-good rollback — reject before spellConfigs.add.
+    public func spellAxisFlagsRejected(linear : Bool, diagonal : Bool) : ?Text {
+        if (linear and diagonal) {
+            ?"linear and diagonal cannot both be set"
+        } else { null }
+    };
+
     /// Extends the existing apCost/range/damage caps with enum and relationship checks.
     /// minRange > maxRange is a stale/malformed targeting payload.
     public func validateSpellConfig(config : Types.SpellConfig) : ?Text {
@@ -446,6 +457,10 @@ module {
             case null {};
         };
         switch (finiteInRange("summonUnitDef.damageScale", config.summonUnitDef.damageScale, 0.0, 10.0)) {
+            case (?e) { return ?e };
+            case null {};
+        };
+        switch (spellAxisFlagsRejected(config.linear, config.diagonal)) {
             case (?e) { return ?e };
             case null {};
         };

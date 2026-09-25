@@ -15,6 +15,7 @@ import {
   toBackendSpellConfig,
 } from "../utils/adminContract";
 import { validateSpellConfig } from "../utils/adminSafety";
+import { spellAxisFlagsRejected } from "../utils/adminSafety.spellAxisFlags";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,6 +80,11 @@ export function useAdminSetSpellConfig() {
         damageScale: config.summonUnitDef?.damageScale,
       });
       if (spellErr) throw new Error(spellErr);
+      const axisErr = spellAxisFlagsRejected({
+        linear: config.linear === true,
+        diagonal: config.diagonal === true,
+      });
+      if (axisErr) throw new Error(axisErr);
       const result = await (actor as ActorAny).adminSetSpellConfig(
         toBackendSpellConfig(config),
       );
