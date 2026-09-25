@@ -151,7 +151,11 @@ import {
   getEnemyFamilyPixelPattern,
 } from "../engine/enemyPixelPatterns";
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
-import { shouldTickEnemyWander } from "../engine/enemyWander";
+import {
+  advanceEnemyWander,
+  pickRandomWanderTarget,
+  shouldTickEnemyWander,
+} from "../engine/enemyWander";
 import {
   applyFinalizedLayout,
   applySanctuaryLayout,
@@ -159,7 +163,6 @@ import {
   attachWhitePortalAfterLegalize,
   checkVoidConnectivity,
   countWalkableVoid,
-  isEnemyWanderFloor,
   pickMapArchetype,
   pickProgressionPortalCell,
   placeBossRushSpawns,
@@ -5624,46 +5627,6 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     },
     [],
   );
-  // NEW: Generate a random walkable position for enemy wandering
-  const generateRandomWalkablePosition = useCallback(
-    (
-      tiles: TileType[][],
-      currentX: number,
-      currentY: number,
-      range: number,
-    ): PlayerPosition | null => {
-      const attempts = 50;
-      for (let i = 0; i < attempts; i++) {
-        const deltaX = Math.floor(Math.random() * (range * 2 + 1)) - range;
-        const deltaY = Math.floor(Math.random() * (range * 2 + 1)) - range;
-        const newX = currentX + deltaX;
-        const newY = currentY + deltaY;
-        // Check bounds and walkability
-        if (
-          newX >= 0 &&
-          newX < WORLD_GRID_SIZE &&
-          newY >= 0 &&
-          newY < WORLD_GRID_SIZE &&
-          tiles[newY][newX] === "floor" &&
-          !currentMap?.voidTiles?.has(`${newX},${newY}`) &&
-          (newX !== currentX || newY !== currentY) &&
-          isEnemyWanderFloor(
-            tiles as unknown as string[][],
-            currentMap?.voidTiles,
-            currentMap?.portals ?? [],
-            { x: currentX, y: currentY },
-            { x: newX, y: newY },
-            WORLD_GRID_SIZE,
-            WORLD_GRID_SIZE,
-          )
-        ) {
-          return { x: newX, y: newY };
-        }
-      }
-      return null;
-    },
-    [currentMap],
-  );
   const DEFAULT_ANCIENT_NAMES = [
     "Malachar",
     "Vorenth",
@@ -6889,111 +6852,29 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // a cascade of React re-renders even when all enemies were stationary.
     let hasChanged = false;
     const nextEnemies = enemies.map((enemy) => {
-      // Skip if enemy is already moving
-      if (enemy.isMoving) {
-        // Check if current movement is complete
-        const elapsed = currentTime - enemy.movementStartTime!;
-        const stepDuration =
-          enemy.movementSpeed! / Math.max(enemy.movementPath.length, 1);
-        const targetStepIndex = Math.floor(elapsed / stepDuration);
-        if (targetStepIndex >= enemy.movementPath.length) {
-          // Movement complete - update position and reset movement state
-          const finalPosition =
-            enemy.movementPath[enemy.movementPath.length - 1];
-          const nextMoveDelay =
-            Math.random() *
-              (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
-            ENEMY_MOVE_INTERVAL_MIN;
-          hasChanged = true;
-          return {
-            ...enemy,
-            x: finalPosition.x,
-            y: finalPosition.y,
-            isMoving: false,
-            movementPath: [],
-            currentStepIndex: 0,
-            nextMoveTime: currentTime + nextMoveDelay,
-            lastMoveTime: currentTime,
-            wanderTarget: null,
-          };
-        }
-        if (targetStepIndex > enemy.currentStepIndex!) {
-          // Update current step and position during movement
-          const newPosition = enemy.movementPath[targetStepIndex];
-          // Update view direction based on movement
-          let newView = enemy.currentView;
-          if (targetStepIndex > 0) {
-            const prev = enemy.movementPath[targetStepIndex - 1];
-            const current = enemy.movementPath[targetStepIndex];
-            if (current.x > prev.x) newView = "right";
-            else if (current.x < prev.x) newView = "left";
-            else if (current.y > prev.y) newView = "front";
-            else if (current.y < prev.y) newView = "back";
-          }
-          hasChanged = true;
-          return {
-            ...enemy,
-            x: newPosition.x,
-            y: newPosition.y,
-            currentView: newView,
-            currentStepIndex: targetStepIndex,
-          };
-        }
-        return enemy;
-      }
-      // Check if it's time to start a new movement
-      if (currentTime >= enemy.nextMoveTime && enemy.isWandering) {
-        // Generate a random target within movement range
-        const target = generateRandomWalkablePosition(
-          currentMap.tiles,
-          enemy.x,
-          enemy.y,
-          enemy.movementRange!,
-        );
-
-        if (target) {
-          // Find path to target
-          const path = findPath({ x: enemy.x, y: enemy.y }, target);
-
-          if (path.length > 0) {
-            // Start movement
-            hasChanged = true;
-            return {
-              ...enemy,
-              isMoving: true,
-              movementPath: path,
-              currentStepIndex: 0,
-              movementStartTime: currentTime,
-              wanderTarget: target,
-            };
-          }
-        }
-
-        // If no valid target found, schedule next attempt
-        const nextMoveDelay =
-          Math.random() * (ENEMY_MOVE_INTERVAL_MAX - ENEMY_MOVE_INTERVAL_MIN) +
-          ENEMY_MOVE_INTERVAL_MIN;
-        hasChanged = true;
-        return {
-          ...enemy,
-          nextMoveTime: currentTime + nextMoveDelay,
-        };
-      }
-
-      return enemy;
+      const stepped = advanceEnemyWander(enemy, {
+        now: currentTime,
+        pickTarget: (unit) =>
+          pickRandomWanderTarget(
+            currentMap.tiles,
+            unit.x,
+            unit.y,
+            unit.movementRange!,
+            {
+              voidTiles: currentMap.voidTiles,
+              portals: currentMap.portals,
+            },
+          ),
+        findPath,
+      });
+      if (stepped.changed) hasChanged = true;
+      return stepped.enemy;
     });
     // H3: skip store update if nothing changed
     if (hasChanged) {
       syncCombatants(combatantStoreCtx, nextEnemies);
     }
-  }, [
-    showShop,
-    currentMap,
-    generateRandomWalkablePosition,
-    findPath,
-    combatantStoreCtx,
-    enemies,
-  ]);
+  }, [showShop, currentMap, findPath, combatantStoreCtx, enemies]);
 
   // SECTION 2c — getActiveCasterPos: returns the controlled summon's tile when
   // activeControlledSummonId is set, else the player's tile. Used by the
