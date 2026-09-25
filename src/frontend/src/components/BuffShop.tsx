@@ -115,6 +115,8 @@ export interface BuffShopProps {
   principalId?: string;
   isOpen?: boolean;
   onClose?: () => void;
+  /** Block buys while the 1.5s Death Realm timer is pending after HP restore. */
+  deathRealmPending?: boolean;
 }
 
 const sectionStyle: React.CSSProperties = {
@@ -173,6 +175,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
   principalId,
   isOpen,
   onClose,
+  deathRealmPending = false,
 }) => {
   const storageKey = principalId ?? userId ?? "guest";
   const [inventory, setInventory] = useState<Inventory>(() =>
@@ -218,6 +221,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
         owned: inventoryRef.current[item.id] ?? 0,
         maxStack: item.maxStack,
         inBattle,
+        deathRealmPending,
       });
       if (!purchase) return;
       liveWalletRef.current = purchase.nextWallet;
@@ -247,7 +251,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
         }));
       });
     },
-    [getLiveDoka, inBattle, onDeductDoka],
+    [getLiveDoka, inBattle, deathRealmPending, onDeductDoka],
   );
 
   const handleUse = useCallback(
@@ -429,6 +433,7 @@ const BuffShop: React.FC<BuffShopProps> = ({
                       liveShopWallet(dokaBalance, getLiveDoka),
                     ),
                     item.cost,
+                    deathRealmPending,
                   ) && !inBattle;
                 const atMax = owned >= item.maxStack;
                 return (
