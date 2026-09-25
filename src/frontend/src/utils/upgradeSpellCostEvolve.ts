@@ -1,8 +1,13 @@
 /**
- * upgradeSpell cost doubling is Motoko Nat multiply without a saturating
- * helper. At high spell levels `cost := cost * 2` wraps; a wrapped small
- * cost undercharges. Distinct from applyRewards pow2 (SDEG-2026-09-21-004)
- * and GameKey serial wrap (SDEG-2026-09-02-005).
+ * upgradeSpell cost doubling is Motoko Nat multiply with no instruction
+ * short-circuit (`main.mo` 1018–1023). Motoko `Nat` is unbounded — `cost *
+ * 2` does **not** wrap to a cheap upgrade the way Nat64 / JS Number would.
+ * Distinct from applyRewards pow2 (SDEG-2026-09-21-004) and the GameKey
+ * serial wrap (SDEG-2026-09-02-005), which *does* reuse gk_1.
+ *
+ * Extreme spell levels still burn IC instructions on the while-loop and
+ * produce a huge candid debit. Frontend preflight refuses past a conservative
+ * bit-width so official UI never invokes that update.
  */
 
 export function upgradeSpellCostDoublesInNat(): boolean {
@@ -10,6 +15,11 @@ export function upgradeSpellCostDoublesInNat(): boolean {
 }
 
 export function upgradeSpellCostHasOverflowGuard(): boolean {
+  return false;
+}
+
+/** Motoko Nat is arbitrary-precision; doubling cannot wrap to a small cost. */
+export function motokoNatDoublingWraps(): boolean {
   return false;
 }
 

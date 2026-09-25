@@ -23,13 +23,13 @@ PRIORITY: P0
 CONFIDENCE: HIGH  
 EVIDENCE: Pre-fix `versionGate.ts` **7–13** kept only spawn/levelup/`*_inventory`. `App.tsx` **297–317** clears everything else. Official feat progress for `explore_25_maps` / `loot_10_doka` is `localStorage` only (`WorldExploration.tsx` **2193–2200**, **6471–6477**, **11398–11406**). Covenant maps + shrine feat counts: **1373–1403**, **11330–11352**. Canister `markAchievementUnlocked` only fires after the counter crosses the threshold — a wipe mid-grind resets progress. Already-unlocked `achievementProgress` rows are unaffected. #508 preserves unpaid death only; #490 rekeys counters by principal but does not survive version wipe.  
 SYSTEMS_AFFECTED: `versionGate.ts`; `App.tsx` wipe; feat unlock path; shrine/covenant UX  
-RECOMMENDED_ACTION: Landed this run (union #508 unpaid-death prefix + feat/covenant/shrine keys). Do not preserve `*_pbv_active_spells` / `*_pbv_spell_levels` while #388 empty-keys hydrate is open.  
-AUTONOMY: IMPLEMENT  
-DEPENDENCIES: Union with #508 `versionGate.ts`  
+RECOMMENDED_ACTION: Helper `shouldPreserveFeatSessionVersionGateKey` (`versionGateFeatEvolve.ts`) landed this run. Do **not** edit `versionGate.ts` here — #508 owns unpaid-death preserve and stack-compat conflicts on that file. After #508: OR the helper into `shouldPreserveVersionGateKey`. Do not preserve `*_pbv_active_spells` / `*_pbv_spell_levels` while #388 empty-keys hydrate is open.  
+AUTONOMY: IMPLEMENT (helper); HUMAN (OR into versionGate after #508)  
+DEPENDENCIES: Union with #508 `versionGate.ts` — do not overwrite  
 MIGRATION_REQUIREMENT: None (browser cache policy)  
 REGRESSION_RISK: LOW  
-VALIDATION_REQUIRED: Fixture keys for maps/ground-doka/covenant/shrine/unpaid-death survive `collectPreservedLocalStorage`; panel layout and active_spells still drop.  
-STATUS: IMPLEMENTED  
+VALIDATION_REQUIRED: Fixture feat/covenant/shrine keys keep via the helper; inventory/panel/active_spells stay false. After #508 union, `collectPreservedLocalStorage` keeps unpaid death + feat keys.  
+STATUS: NEW  
 
 ---
 
@@ -125,16 +125,52 @@ STATUS: NEW
 
 ACTION_ID: SDEG-2026-09-25-007  
 SOURCE_AUTOMATION: Save/Data Evolution Guardian  
-TITLE: upgradeSpell cost Nat doubling can wrap  
-CATEGORY: overflow  
+TITLE: upgradeSpell cost Nat doubling is unguarded (Motoko Nat does not wrap)  
+CATEGORY: unbounded-progression  
 PRIORITY: P2  
 CONFIDENCE: HIGH  
-EVIDENCE: `main.mo` **1018–1023** `cost := cost * 2` in a loop with no saturation. Distinct from applyRewards pow2 and GameKey wrap.  
+EVIDENCE: `main.mo` **1018–1023** `cost := cost * 2` in a loop with no short-circuit. Motoko `Nat` is arbitrary-precision — this cannot wrap to a cheap upgrade (unlike GameKey `999_999_999 → 1`). Extreme levels still burn IC instructions and produce a huge debit. Helper `motokoNatDoublingWraps()` is false; frontend still refuses past a 128-bit preflight. Distinct from applyRewards pow2 (09-21-004).  
 SYSTEMS_AFFECTED: `upgradeSpell` pricing  
-RECOMMENDED_ACTION: Frontend refuse past safe exponent (`upgradeSpellCostEvolve.ts`); Motoko saturating mul or `#err` later.  
+RECOMMENDED_ACTION: Keep frontend refuse (`upgradeSpellCostEvolve.ts`). Motoko: `#err` past a documented max spell rank after older persist PRs release `main.mo`. Do not add a saturating mul that undercharges.  
 AUTONOMY: IMPLEMENT (helper); HUMAN (Motoko)  
 DEPENDENCIES: main.mo queue  
 MIGRATION_REQUIREMENT: None  
-REGRESSION_RISK: LOW if refuse-only on absurd levels  
-VALIDATION_REQUIRED: level 3 OK; level ≥130 flagged.  
+REGRESSION_RISK: LOW if refuse-only on absurd levels; HIGH if Motoko wraps/saturates the debit  
+VALIDATION_REQUIRED: level 3 OK; level ≥130 flagged; `motokoNatDoublingWraps() === false`.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-09-25-008  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Persist explore/loot feat counters on the canister; server-check every canister-observable condition  
+CATEGORY: achievements  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `achievementUnlockRejected` (`adminGuard.mo` **677–694**; `adminSafety.ts` **363–382**) only rejects `level_10` / `doka_1000` / `doka_10000` / `spell_level_5`. `explore_25_maps` and `loot_10_doka` return null at level 1 / 0 Doka / spell 0 (`featConditionAuthorityEvolve.ts`). Official counters are `localStorage` only (`WorldExploration.tsx` **2193–2200**). `spell_master_8` is canister-observable via `_slotBestSpellLevel` but is not checked. Distinct from 001 (same-browser version wipe) and from SDEG-008 (claim reward snapshot). A six-month player on a new device mid-grind starts at 0; a raw client can `markAchievementUnlocked` those ids.  
+SYSTEMS_AFFECTED: `markAchievementUnlocked`; feat counters; future discovery/unlocks  
+RECOMMENDED_ACTION: Optional `mapsVisited` / `groundDokaPickups` principal#slot map in a **later** file after `20260901` (`OldActor = {}`). Server-check `spell_master_8` now (no schema). Do not treat version-gate preserve as cross-device persist. Combat feats may stay client-trusted.  
+AUTONOMY: IMPLEMENT (contract helper this run); HUMAN (Motoko later file + spell_master_8 check)  
+DEPENDENCIES: SDEG-2026-08-31-001 for new stables; do not edit `main.mo` while older persist PRs queue  
+MIGRATION_REQUIREMENT: YES — optional/defaulted counters only; empty = 0. Idempotent. Replay must not increment.  
+REGRESSION_RISK: MEDIUM if a later file is stuffed onto 20260901; LOW for adding `spell_master_8` to the existing reject list  
+VALIDATION_REQUIRED: New device + stored explore_25 progress 17 does not unlock until 25 on that account; raw mark of explore_25_maps `#err`s after counters exist; L1 spell_master_8 `#err`s.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDEG-2026-09-25-009  
+SOURCE_AUTOMATION: Save/Data Evolution Guardian  
+TITLE: Achievement ids have no alias table — rename-by-recreate orphans principal#id progress  
+CATEGORY: content-id-stability  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Progress key is `caller.toText() # "#" # achievementId` (`main.mo` **2495**, **2528**). `adminDeleteAchievementConfig` soft-retires when any progress exists (**2389–2405**) — id stays. `adminSetAchievementConfig` with a new id inserts a second row and leaves `principal#oldId` in `achievementProgress`. `getAchievementConfigs` then omits the old id, so the Feats panel cannot claim a six-month unlock. Same class as spell-id purge (SDEG-003) without the every-upgrade delete. Helper: `achievementIdAliasEvolve.ts`.  
+SYSTEMS_AFFECTED: `achievementProgress`; `achievementConfigs`; Feats claim  
+RECOMMENDED_ACTION: Renames keep `id`. Do not add a required alias map until a later chain file. Soft-retire is the only safe retire path.  
+AUTONOMY: IMPLEMENT (contract); HUMAN (alias map only after SDEG-001)  
+DEPENDENCIES: None for the keep-id rule  
+MIGRATION_REQUIREMENT: YES if an alias map is added (later file, empty default)  
+REGRESSION_RISK: HIGH if existing progress rows are rewritten without a generation  
+VALIDATION_REQUIRED: Unlock explore_25_maps, admin-create `explore_25_maps_v2`, old `principal#explore_25_maps` still claimable or catalog still lists the old id.  
 STATUS: NEW  
