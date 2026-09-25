@@ -97,6 +97,7 @@ import {
   shouldDispatchEnemyAiAfterTurnStart,
   shouldTriggerOverworldEncounter,
 } from "../engine/battleSetup";
+import { ensureDumpFloorAfterBattleStart } from "../engine/battleStartDumpFloor";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
   battleWalkCostPerTile,
@@ -11902,6 +11903,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           chc: stats.chc,
         };
       });
+
+      // Destack can occupy one of two generate-time dump alcoves. Punch
+      // until the fight graph has two dump cells so a second corpse/summon
+      // cannot seal the unlocked portal. Unique vs destack dump=0 (#589).
+      const destackSpawn = newPlayerPos ?? playerPositionRef.current;
+      ensureDumpFloorAfterBattleStart(
+        currentMap.tiles as unknown as string[][],
+        currentMap.voidTiles,
+        destackSpawn,
+        currentMap.portals,
+        WORLD_GRID_SIZE,
+        WORLD_GRID_SIZE,
+      );
 
       // Clear dust motes at battle start so ambient particles don't accumulate
       dustMotesRef.current = [];
