@@ -5,6 +5,7 @@
  */
 
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
+import { ensureDumpAfterBattleStart } from "./battleStartDump.ts";
 import { findBattleStartCell } from "./battleStartPlacement.ts";
 import {
   BOSS_RUSH_PREFERRED_CELLS,
@@ -1063,6 +1064,16 @@ export function simulateBattleStartOnWorld(world: SimWorld): {
     placed.add(`${cell.x},${cell.y}`);
     nextSpawns.push(cell);
   }
+  // Destack can sit the player on the generate-time dump alcove.
+  // Punch a replacement so corpses/summons still have a legal cell.
+  ensureDumpAfterBattleStart(
+    world.tiles,
+    world.voidTiles,
+    player,
+    world.portals,
+    size,
+    world.tiles.length,
+  );
   const report = evaluateSolvability(
     world.tiles,
     world.voidTiles,

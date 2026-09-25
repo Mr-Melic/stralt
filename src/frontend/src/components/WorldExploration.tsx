@@ -97,6 +97,7 @@ import {
   shouldDispatchEnemyAiAfterTurnStart,
   shouldTriggerOverworldEncounter,
 } from "../engine/battleSetup";
+import { ensureDumpAfterBattleStart } from "../engine/battleStartDump";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
   battleWalkCostPerTile,
@@ -11910,6 +11911,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       // Apply teleports
       if (newPlayerPos) setPlayerPositionSynced(newPlayerPos);
+      // Destack can sit the player on the only generate-time dump alcove.
+      // Punch a replacement so a corpse/summon cannot seal the unlocked exit.
+      const destackSpawn = newPlayerPos ?? playerPositionRef.current;
+      ensureDumpAfterBattleStart(
+        currentMap.tiles as unknown as string[][],
+        currentMap.voidTiles,
+        destackSpawn,
+        currentMap.portals,
+        WORLD_GRID_SIZE,
+        WORLD_GRID_SIZE,
+      );
 
       // Build initiative-sorted turn order
       // 4b: Assign 10 random spells per enemy from usableByEnemy pool
