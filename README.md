@@ -10,6 +10,9 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | :--- | :--- |
 | `src/backend/main.mo` | Canonical Motoko actor (characters, Doka, admin config, rewards) |
 | `src/backend/lib/adminGuard.mo` | Admin input / URL / retirement / rollback guards (authoritative) |
+| `src/frontend/src/utils/adminContract.ts` | Admin UI ↔ Candid adapters (`hitsMultiple`↔`multiTarget`, 9-field `LevelUpConfig`, `{ __kind__: "err" }` is not success) |
+| `src/frontend/src/utils/legacyPurchaseCredit.ts` | Sanitize `processPendingPurchases` HUD pair unless the stub minted |
+| `src/frontend/src/utils/pointerParity.ts` | Shared mouse/touch world-move + 400ms synthetic-click guard |
 | `src/backend/migrations/` | Stable-memory chain: `20260801` genesis, `20260803_185500` name-only, `20260827` drop-transients, `20260831` summon + rollback (frozen, the 2026-08-31 deployed tail, no GameKey), `20260901` GameKey maps (frozen, `OldActor = {}`). `snapshots/` = recorded `.most` baselines |
 | `src/backend/types/` | Shared Motoko types (`common.mo` combat, `admin.mo` config + summon fields) |
 | `src/frontend/src/` | React + Vite client |

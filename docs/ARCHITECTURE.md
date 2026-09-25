@@ -59,7 +59,7 @@ Frontend `localStorage` is cache or UI-only. Backend wins on conflict:
 | `pbv_panel_layout_{userId}` | `UserProfile.uiLayout` via `saveUserUiLayout` |
 | `pbv_tier_spawn_config` | `getTierSpawnConfig` (hydrated on world mount) |
 
-Exceptions still living only in `localStorage`: `pbv_boss_configs` (admin hook comment), some achievement counters, chat channel prefs, and **`${principal}_inventory`** (BuffShop potions paid in Doka). The canister also has `buffInventories` (`purchaseBuff` / `useBuffItem`); the live shop UI does not write that map. A version-bump wipe must keep keys ending `_inventory` or paid potions vanish while the Doka spend stays.
+Exceptions still living only in `localStorage`: `pbv_boss_configs` (admin hook comment), some achievement counters, chat channel prefs, **`pbv_levelup_config`**, and **`${principal}_inventory`** (BuffShop potions paid in Doka). The canister also has `buffInventories` (`purchaseBuff` / `useBuffItem`); the live shop UI does not write that map. A version-bump wipe must keep keys ending `_inventory` or paid potions vanish while the Doka spend stays. World combat hydrates `pbv_levelup_config` once at mount (`DEFAULT_LEVELUP_CONFIG` + JSON parse; empty `useMemo` deps) and never calls `getLevelUpConfig()`. Admin Settings hydrates and writes the canister (`toBackendLevelUpConfig` — always all nine Candid fields). `upgradeSpell` charges canister `spellLevelingBaseCost`. Frontend drafts use `apMpGrowthEveryNLevels`; Motoko / bindgen use `apMpLevelThreshold` (the adapter maps either name). Do not treat a Settings save as live combat growth until the world remounts.
 
 ## Character contract
 
@@ -230,7 +230,7 @@ Paid Doka flow:
 3. Admin copies/emails the code, then `adminMarkGameKeyEmailed` wipes the plaintext reveal. The canister cannot send email.
 4. Player `redeemGameKey(code)` while logged in. Credits the **caller**, not the original requester. Single-use. Official client enqueues `redeemGameKeyThroughPersist` and commits the `#ok` delta onto a seeded lock (`shouldCommitGameKeyRedeem`). Do not wait on a second wallet query.
 
-`initiatePurchase` (nine positional Text args) always returns `#err` pointing at GameKey. `processPendingPurchases` always returns `0`. Official `WorldExploration` may still call the no-op on remount; `shouldCommitShopCredit` prevents committing that snapshot. Shop-credit timers live in `shopCreditTimersRef` — `cleanupBattle` clears `pendingTimeoutsRef` on every portal/death/victory.
+`initiatePurchase` (nine positional Text args) always returns `#err` pointing at GameKey. `processPendingPurchases` always returns `0`. Official `WorldExploration` may still call the no-op on remount; `shouldCommitShopCredit` / `shouldCommitLegacyPurchaseCredit` prevent committing that snapshot. The HUD still applied `creditedDokaDelta(previous, credited)` from two `getCallerDokaBalance` queries that can disagree on IC, then a Doka-to-HP heal spent Doka the lock did not have. `creditPendingPurchases` sanitizes with `legacyPurchaseCreditForHud` (`utils/legacyPurchaseCredit.ts`): unless the stub actually minted **and** the pair gained, return `credited = previous`. Shop-credit timers live in `shopCreditTimersRef` — `cleanupBattle` clears `pendingTimeoutsRef` on every portal/death/victory.
 
 `BuffShop` is hosted in `WorldExploration` (not `GameFlow`). A GameFlow-only local deduct + no-op `onUseItem` refunds the spend on the next wallet refetch and makes bought items unusable. Bought potions persist only in `${principal}_inventory` — not `buffInventories`. Consume from `inventoryRef` (`tryConsumeBuffItem`) so a double-click cannot spend one stack twice. Jackpot heal spends **1 Doka from the live wallet** (`nextDokaAfterJackpotHeal`), not the render snapshot. Overworld Doka-to-HP uses `shouldStartDokaHeal` (live ref + in-flight) and `nextHpAfterDokaHeal` (do not re-read `characterStatsRef` after the eager updater). Copy GameFlow's `dokaBalance` prop onto the live ref only when the prop actually changed (`syncLiveDokaFromProp`) — a child-only HP update used to restore a stale-high wallet and refund the spend.
 
@@ -251,7 +251,7 @@ UI is lazy-loaded (`AdminDashboard.tsx`) and shown only when `isAdmin && onOpenA
 | Audit | `getAdminAuditLog` | Capped at 100 entries |
 | Spell catalog | `adminSetSpellConfig` / `adminDeleteSpellConfig` | Full `AdminTypes.SpellConfig` including `isSummon` / `summonAI` / `summonLifespan` / `summonUnitDef`. Built-in ids cannot be deleted — retire with `usableByPlayer=false`. Rejects unknown `summonAI`, `summonLifespan > 20`, `summonUnitDef.level > 99`, non-finite / out-of-range scales (0–10) so `getSummonBaseStats` cannot mint Inf-HP units |
 
-Password admin is removed. First non-anonymous caller of `getUserRole` becomes `#admin`. Invalid admin payloads return `#err` **before** any store write (`adminGuard.mo`). Boss portal ids cap at 64 chars (`requireId` / `MAX_ID`).
+Password admin is removed. First non-anonymous caller of `getUserRole` becomes `#admin`. Invalid admin payloads return `#err` **before** any store write (`adminGuard.mo`). Boss portal ids cap at 64 chars (`requireId` / `MAX_ID`). Dashboard draft types do not match Candid — saves go through `utils/adminContract.ts` (`toBackendSpellConfig` maps `hitsMultiple` → `multiTarget` and always sends summon fields / cooldown; `toBackendLevelUpConfig` always sends all nine fields). Parse `{ #ok | #err }` with `readAdminCmdResult`: `{ __kind__: "err" }` is a failure, not success.
 
 ### OQL
 
@@ -356,7 +356,7 @@ Ten rooms (`BOSS_RUSH_ROOMS` in `hooks/useBossRush.ts`), indexes 0–9. Room 9 i
 
 ### Portals
 
-`engine/portalRules.ts` `filterRunPortals`: free exploration keeps generator candidates; dungeon / boss-rush keeps only `"progression"` and only when the map is cleared. Portal checks must read `inBattleRef`, not stale `inBattle` state.
+`engine/portalRules.ts` `filterRunPortals`: free exploration keeps generator candidates; dungeon / boss-rush keeps only `"progression"` and only when the map is cleared. Portal checks must read `inBattleRef`, not stale `inBattle` state. In-battle world-mode mouse and touch must not path onto a portal tile (`shouldBlockWorldMoveOntoPortal` in `utils/pointerParity.ts` — same 400ms synthetic-click window as `pointerGesture.ts`).
 
 ### Dungeon chain
 
