@@ -4,13 +4,21 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
 } from "./applyRewardsResult.ts";
 import {
+  BETRAYAL_ENRAGE_MULT,
   BLOOD_MEND_CRIT_HEAL,
   BLOOD_MEND_HEAL,
   HAZARD_LAVA_MAX,
+  HEALTH_POTION_COST,
   LIFE_DRAIN_HEAL,
   PLAYER_CREATE_INIT,
+  SHIELD_CHARM_ABSORB,
+  damageAfterPlayerResPasses,
+  deathDokaLost,
   effectiveSpellRange,
+  fallbackCrushRawEnraged,
   fightsToNextLevel,
+  firstEnemyLevelCrushExceedsShield,
+  firstEnemyLevelEnragedCrushOneShots,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
   firstLevelChcCanHit100,
@@ -19,8 +27,11 @@ import {
   firstLevelResCanHit100,
   firstLevelSpellFailHitsZero,
   firstLevelSpellRangeHitsCap,
+  firstPlayerLevelSurvivesCrushRecv,
   firstSpellLevelCostExceeds,
   formulaAp,
+  healthPotionDokaPerHp,
+  healthPotionHpRestored,
   jackpotPersistIfHit,
   jackpotUnclampedMean,
   kitForZoneInput,
@@ -168,5 +179,23 @@ assert.equal(spellFailChance(101), 10);
 assert.equal(report.spellFail.firstLevelHitsZero, 201);
 assert.equal(report.spellFail.chanceAt201, 0);
 assert.equal(report.spellFail.physicalBypassesFail, true);
+
+assert.equal(BETRAYAL_ENRAGE_MULT, 6);
+assert.equal(firstEnemyLevelEnragedCrushOneShots(1), 9);
+assert.equal(SHIELD_CHARM_ABSORB, 20);
+assert.equal(firstEnemyLevelCrushExceedsShield(), 11);
+assert.equal(HEALTH_POTION_COST, 50);
+assert.equal(healthPotionHpRestored(1), 30);
+assert.ok(healthPotionDokaPerHp(1000) < healthPotionDokaPerHp(1));
+assert.equal(deathDokaLost(10_000_000), 4_000_000);
+assert.equal(report.betrayalEnrage.mult, 6);
+assert.equal(report.buffShop.firstEnemyLevelCrushExceedsShield, 11);
+assert.equal(report.buffShop.deathDokaLostOnMaxGameKey, 4_000_000);
+assert.equal(
+  report.persistContract.firstPlayerLevelSurvivesEnragedCrushAt1020,
+  firstPlayerLevelSurvivesCrushRecv(
+    damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+  ),
+);
 
 console.log("longHorizonSim.test: ok");

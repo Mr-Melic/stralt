@@ -10,6 +10,8 @@ import {
   ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE,
   PLAYER_BASE_AP,
   PLAYER_BASE_MP,
+  SUMMON_BASE_HP,
+  SUMMON_BASE_HP_DEFAULT,
 } from "../data/gameConstants.ts";
 import { starterSpells } from "../data/spellData.ts";
 import {
@@ -35,6 +37,7 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
   clampApplyRewardsDeltas,
 } from "./applyRewardsResult.ts";
+import { DEATH_DOKA_PENALTY_RATE } from "./deathPenalty.ts";
 import { startingChampionStats } from "./startingChampionStats.ts";
 import { applyXpDelta, xpForNextLevel, xpThresholdBigInt } from "./xpCurve.ts";
 
@@ -413,6 +416,98 @@ export function firstEnemyLevelFallbackCrushOneShots(
 }
 
 /**
+ * Betrayal-kill enrage (`WorldExploration.tsx` 16257, 15638–15646):
+ * Crush raw ×6 and betrayer HP ×6.
+ */
+export const BETRAYAL_ENRAGE_MULT = 6;
+
+export function fallbackCrushRawEnraged(enemyLevel: number): number {
+  return fallbackCrushRaw(enemyLevel) * BETRAYAL_ENRAGE_MULT;
+}
+
+export function firstEnemyLevelEnragedCrushOneShots(
+  playerLevel: number,
+  resPasses = 2,
+): number | null {
+  const hp = linearPlayerMaxHp(playerLevel);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    const recv = damageAfterPlayerResPasses(
+      fallbackCrushRawEnraged(enemyLevel),
+      PLAYER_CREATE_RES,
+      resPasses,
+    );
+    if (recv >= hp) return enemyLevel;
+  }
+  return null;
+}
+
+/** First player level whose linear max HP strictly exceeds Crush recv. */
+export function firstPlayerLevelSurvivesCrushRecv(recv: number): number | null {
+  const need = Math.max(1, Math.floor(Number(recv) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (linearPlayerMaxHp(level) > need) return level;
+  }
+  return null;
+}
+
+/** Shield Charm absorb (`WorldExploration.tsx` 3583–3585). */
+export const SHIELD_CHARM_ABSORB = 20;
+/** BuffShop `health_potion` / `greater_health_potion` Doka costs. */
+export const HEALTH_POTION_COST = 50;
+export const GREATER_POTION_COST = 120;
+export const HEALTH_POTION_HP_FRAC = 0.3;
+export const GREATER_POTION_HP_FRAC = 0.7;
+
+/** First enemy level whose Crush recv (two RES passes) exceeds Shield Charm. */
+export function firstEnemyLevelCrushExceedsShield(
+  absorb = SHIELD_CHARM_ABSORB,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(absorb) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (damageAfterPlayerResPasses(fallbackCrushRaw(enemyLevel)) > cap) {
+      return enemyLevel;
+    }
+  }
+  return null;
+}
+
+export function healthPotionHpRestored(level: number): number {
+  return Math.floor(linearPlayerMaxHp(level) * HEALTH_POTION_HP_FRAC);
+}
+
+export function greaterPotionHpRestored(level: number): number {
+  return Math.floor(linearPlayerMaxHp(level) * GREATER_POTION_HP_FRAC);
+}
+
+/** Doka spent per HP restored by a 50-Doka health potion. */
+export function healthPotionDokaPerHp(level: number): number {
+  const hp = healthPotionHpRestored(level);
+  if (hp <= 0) return Number.POSITIVE_INFINITY;
+  return HEALTH_POTION_COST / hp;
+}
+
+export function deathDokaLost(doka: number): number {
+  return Math.floor(
+    Math.max(0, Math.floor(Number(doka) || 0)) * DEATH_DOKA_PENALTY_RATE,
+  );
+}
+
+export const SUMMON_HUNTER_HP = SUMMON_BASE_HP.hunter ?? SUMMON_BASE_HP_DEFAULT;
+export const SUMMON_GUARDIAN_HP = SUMMON_BASE_HP.guardian ?? 120;
+export const SUMMON_BOMBER_HP = SUMMON_BASE_HP.bomber ?? 50;
+
+/**
+ * Fallback vs a summon applies RES once (`WorldExploration.tsx` 16722–16728),
+ * not the player double-pass. Summon `res` defaults to 0.
+ */
+export function fallbackCrushVsSummon(
+  enemyLevel: number,
+  summonRes = 0,
+): number {
+  return damageAfterPlayerResPasses(fallbackCrushRaw(enemyLevel), summonRes, 1);
+}
+
+/**
  * Unused exponential `getPlayerBaseStats` HP becomes IEEE Inf (JSON null)
  * once `100 * 1.05^(L-1)` overflows Number.
  */
@@ -736,7 +831,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-24T00:02:49.565Z",
+    generatedAt: "2026-09-25T00:08:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -795,6 +890,20 @@ export function runLongHorizonSim() {
         BLOOD_MEND_CRIT_HEAL,
         0.05,
       ),
+      betrayalEnrageMult: BETRAYAL_ENRAGE_MULT,
+      firstEnemyLevelEnragedCrushOneShotsPlayer1:
+        firstEnemyLevelEnragedCrushOneShots(1),
+      firstEnemyLevelEnragedCrushOneShotsPlayer10:
+        firstEnemyLevelEnragedCrushOneShots(10),
+      firstPlayerLevelSurvivesEnragedCrushAt1020:
+        firstPlayerLevelSurvivesCrushRecv(
+          damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+        ),
+      firstEnemyLevelCrushExceedsShieldCharm:
+        firstEnemyLevelCrushExceedsShield(),
+      healthPotionCost: HEALTH_POTION_COST,
+      greaterPotionCost: GREATER_POTION_COST,
+      deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
@@ -891,6 +1000,48 @@ export function runLongHorizonSim() {
       chanceAt101: spellFailChance(101),
       chanceAt201: spellFailChance(201),
       physicalBypassesFail: true,
+    },
+    betrayalEnrage: {
+      mult: BETRAYAL_ENRAGE_MULT,
+      crushRawAt80: fallbackCrushRawEnraged(80),
+      crushRecvAt80: damageAfterPlayerResPasses(fallbackCrushRawEnraged(80)),
+      crushRawAt1020: fallbackCrushRawEnraged(1020),
+      crushRecvAt1020: damageAfterPlayerResPasses(
+        fallbackCrushRawEnraged(1020),
+      ),
+      firstEnemyLevelOneShotsPlayer1: firstEnemyLevelEnragedCrushOneShots(1),
+      firstEnemyLevelOneShotsPlayer10: firstEnemyLevelEnragedCrushOneShots(10),
+      firstPlayerLevelSurvivesAt1020: firstPlayerLevelSurvivesCrushRecv(
+        damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+      ),
+      enemyHpAt1020Enraged: linearEnemyMaxHp(1020) * BETRAYAL_ENRAGE_MULT,
+      hunterSummonHp: SUMMON_HUNTER_HP,
+      guardianSummonHp: SUMMON_GUARDIAN_HP,
+      bomberSummonHp: SUMMON_BOMBER_HP,
+      crushVsHunterAt80: fallbackCrushVsSummon(80),
+      crushVsGuardianAt80: fallbackCrushVsSummon(80),
+      enragedCrushVsGuardianAt80:
+        fallbackCrushVsSummon(80) * BETRAYAL_ENRAGE_MULT,
+    },
+    buffShop: {
+      shieldAbsorb: SHIELD_CHARM_ABSORB,
+      firstEnemyLevelCrushExceedsShield: firstEnemyLevelCrushExceedsShield(),
+      healthPotionCost: HEALTH_POTION_COST,
+      greaterPotionCost: GREATER_POTION_COST,
+      healthPotionHpAt1: healthPotionHpRestored(1),
+      healthPotionHpAt100: healthPotionHpRestored(100),
+      healthPotionHpAt1000: healthPotionHpRestored(1000),
+      healthPotionHpAt100000: healthPotionHpRestored(100_000),
+      healthPotionDokaPerHpAt1: healthPotionDokaPerHp(1),
+      healthPotionDokaPerHpAt100: healthPotionDokaPerHp(100),
+      healthPotionDokaPerHpAt1000: healthPotionDokaPerHp(1000),
+      healthPotionDokaPerHpAt100000: healthPotionDokaPerHp(100_000),
+      greaterPotionHpAt1: greaterPotionHpRestored(1),
+      jackpotsToBuyHealthPotion: Math.floor(
+        APPLY_REWARDS_MAX_DOKA_DELTA / HEALTH_POTION_COST,
+      ),
+      deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
+      deathDokaRate: DEATH_DOKA_PENALTY_RATE,
     },
   };
 }
