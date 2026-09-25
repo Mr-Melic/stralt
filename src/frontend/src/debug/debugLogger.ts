@@ -8,6 +8,14 @@
  * backwards compatibility with existing import sites.
  */
 
+import {
+  DEBUG_BUFFER_CAP,
+  clearDebugLogRing,
+  createDebugLogRing,
+  pushDebugLogEntry,
+  snapshotDebugLogRing,
+} from "./debugLogRing";
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type LogCategory =
   | "MAP"
@@ -40,9 +48,10 @@ export interface DebugLogEntry {
  * In-memory ring buffer for the debug overlay.
  * SECTION 1 (build #325): cap raised from 200 to 2000 lines so the export
  * report can include a much larger history window.
+ * PERF-2026-09-25-108: overflow overwrites the oldest slot in place instead
+ * of `slice(-cap)` allocating a new 2000-entry array on every subsequent log.
  */
-const DEBUG_BUFFER_CAP = 2000;
-let _buffer: DebugLogEntry[] = [];
+const _ring = createDebugLogRing<DebugLogEntry>(DEBUG_BUFFER_CAP);
 
 /** Subscribers that want to be notified when a new log arrives. */
 const _subscribers: Array<(entry: DebugLogEntry) => void> = [];
@@ -106,9 +115,7 @@ export function logDebug(
   // SECTION 2: when paused, drop the new entry from the persisted buffer
   // (subscribers still get the live event for transient display).
   if (!_paused) {
-    _buffer.push(entry);
-    if (_buffer.length > DEBUG_BUFFER_CAP)
-      _buffer = _buffer.slice(-DEBUG_BUFFER_CAP);
+    pushDebugLogEntry(_ring, entry);
   }
 
   // Notify overlay subscribers
@@ -167,12 +174,12 @@ export function subscribeDebugLogs(
   };
 }
 
-/** Get the current buffer snapshot. */
+/** Get the current buffer snapshot (oldest-first). */
 export function getDebugLogBuffer(): readonly DebugLogEntry[] {
-  return _buffer;
+  return snapshotDebugLogRing(_ring);
 }
 
 /** Clear the buffer. */
 export function clearDebugLogBuffer(): void {
-  _buffer = [];
+  clearDebugLogRing(_ring);
 }
