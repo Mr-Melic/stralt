@@ -20,6 +20,7 @@ describe("iapShopCopy how-to steps", () => {
     assert.equal(IAP_SHOP_HOW_TO_HEADING, "How to buy");
     assert.equal(IAP_SHOP_STEPS.length, 4);
     assert.match(IAP_SHOP_STEPS[0], /email/i);
+    assert.match(IAP_SHOP_STEPS[1], /After you submit/i);
     assert.match(IAP_SHOP_STEPS[1], /Mollie/i);
     assert.match(IAP_SHOP_STEPS[2], /Approved/i);
     assert.match(IAP_SHOP_STEPS[3], /120-character GameKey/i);
