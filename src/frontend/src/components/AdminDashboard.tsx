@@ -79,6 +79,7 @@ import {
 } from "../utils/adminVisualStatus";
 import { logDebugWarn } from "../utils/debugLogger";
 import AdminGameKeyPurchases from "./AdminGameKeyPurchases";
+import { SpellSummonFields } from "./SpellSummonFields";
 
 // ── defaults ─────────────────────────────────────────────────────────────────
 
@@ -2735,6 +2736,8 @@ const SpellEditor: React.FC<{
           </label>
         </div>
       </div>
+
+      <SpellSummonFields cfg={cfg} onChange={setCfg} />
 
       {/* Usability + Level + Effect Category + Params */}
       <p style={{ ...sectionHeadStyle, marginTop: 4 }}>Usage &amp; Targeting</p>
