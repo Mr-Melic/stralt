@@ -106,6 +106,27 @@ assert.equal(
   false,
 );
 
+assert.equal(
+  shouldStartDokaHeal({
+    currentHp: 50,
+    maxHp: 100,
+    liveDoka: 40,
+    deathRealmPending: true,
+  }),
+  false,
+  "Doka heal during Death Realm pending overwrites persistDeathPenalty respawn HP",
+);
+assert.equal(
+  shouldStartDokaHeal({
+    currentHp: 50,
+    maxHp: 100,
+    liveDoka: 40,
+    deathRealmPending: false,
+  }),
+  true,
+  "Death Realm already loaded must still allow overworld Doka heal",
+);
+
 // Heal then buy before re-render: render still shows 55, potion costs 50.
 assert.equal(shouldAllowShopSpend(55, 50), true);
 assert.equal(shouldAllowShopSpend(45, 50), false);
