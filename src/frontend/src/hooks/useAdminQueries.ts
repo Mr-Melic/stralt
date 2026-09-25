@@ -59,6 +59,11 @@ export function useGetUserRole() {
     enabled: !!actor && !actorFetching,
     staleTime: 60000,
     gcTime: 300000,
+    // PERF-2026-09-25-109: App always mounts this query. Default focus refetch
+    // after 60s re-rendered App → GameFlow under the live canvas / starfield.
+    // Role mutations still invalidate `userRole`. Distinct from catalog 061
+    // (WorldExploration) and profile 095 (useGetCallerUserProfile).
+    refetchOnWindowFocus: false,
   });
 }
 
