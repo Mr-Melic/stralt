@@ -4,12 +4,34 @@ import {
   APPLY_REWARDS_MAX_XP_DELTA,
 } from "./applyRewardsResult.ts";
 import {
+  BETRAYAL_ENRAGE_MULT,
+  BLOOD_MEND_CRIT_HEAL,
+  BLOOD_MEND_HEAL,
+  HAZARD_LAVA_MAX,
+  HEALTH_POTION_COST,
+  LIFE_DRAIN_HEAL,
+  PLAYER_CREATE_INIT,
+  SHIELD_CHARM_ABSORB,
+  damageAfterPlayerResPasses,
+  deathDokaLost,
+  effectiveSpellRange,
+  fallbackCrushRawEnraged,
   fightsToNextLevel,
+  firstEnemyLevelCrushExceedsShield,
+  firstEnemyLevelEnragedCrushOneShots,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
+  firstLevelChcCanHit100,
+  firstLevelFormulaApExceedsPersistCap,
+  firstLevelHazardMaxBelowHpPercent,
   firstLevelResCanHit100,
+  firstLevelSpellFailHitsZero,
+  firstLevelSpellRangeHitsCap,
+  firstPlayerLevelSurvivesCrushRecv,
   firstSpellLevelCostExceeds,
   formulaAp,
+  healthPotionDokaPerHp,
+  healthPotionHpRestored,
   jackpotPersistIfHit,
   jackpotUnclampedMean,
   kitForZoneInput,
@@ -84,6 +106,11 @@ assert.equal(
 );
 assert.equal(report.xpRows.find((r) => r.level === 10_000)?.pBelowTier, 1);
 assert.equal(report.xpRows.find((r) => r.level === 50_000)?.pBelowTier, 1);
+assert.equal(
+  report.xpRows.some((r) => r.level === 100_000),
+  true,
+);
+assert.equal(report.xpRows.find((r) => r.level === 100_000)?.pBelowTier, 1);
 assert.equal(report.persistContract.saveBattleStatsCannotLowerLevel, true);
 assert.equal(report.persistContract.maxDokaGrant, 10_000_000);
 assert.equal(report.persistContract.gameKeyBypassesApplyRewardsCeiling, true);
@@ -93,5 +120,82 @@ assert.equal(firstSpellLevelCostExceeds(100_000), 14);
 assert.equal(firstSpellLevelCostExceeds(10_000_000), 20);
 assert.equal(report.persistContract.firstSpellLevelCombatDokaCannotBuy, 14);
 assert.equal(report.persistContract.firstSpellLevelGameKeyCannotBuy, 20);
+assert.equal(PLAYER_CREATE_INIT, 10);
+assert.equal(report.persistContract.playerCreateInit, 10);
+assert.equal(report.persistContract.saveBattleStatsCannotRaiseInit, true);
+assert.equal(report.persistContract.maxPersistedAp, 20);
+assert.equal(firstLevelFormulaApExceedsPersistCap(), 325);
+assert.equal(report.persistContract.firstLevelFormulaApExceedsPersistCap, 325);
+assert.equal(firstLevelChcCanHit100("bishop"), 115);
+assert.equal(firstLevelChcCanHit100("king"), 138);
+assert.ok(
+  (report.xpRows.find((r) => r.level === 25)?.pPlayerWinsInitiative3 ?? 1) <
+    0.15,
+);
+assert.ok(
+  (report.xpRows.find((r) => r.level === 100)?.pPlayerWinsInitiative3 ?? 1) <
+    0.05,
+);
+assert.equal(report.chcBreakpoints.bishop, 115);
+assert.equal(report.chcBreakpoints.king, 138);
+
+assert.equal(firstLevelHazardMaxBelowHpPercent(HAZARD_LAVA_MAX, 0.05), 42);
+assert.equal(firstLevelHazardMaxBelowHpPercent(HAZARD_LAVA_MAX, 0.01), 282);
+assert.equal(report.flatHazards.firstLevelLavaMaxBelow5PctHp, 42);
+assert.equal(report.flatHazards.firstLevelLavaMaxBelow1PctHp, 282);
+assert.ok((report.flatHazards.lavaMaxOverHpAt100000 ?? 1) < 0.0001);
+
+assert.equal(effectiveSpellRange(1, 1), 1);
+assert.equal(effectiveSpellRange(4, 10), 5);
+assert.equal(effectiveSpellRange(3, 20), 5);
+assert.equal(effectiveSpellRange(1, 40), 5);
+assert.equal(
+  effectiveSpellRange(0, 1),
+  1,
+  "spellRangeBase lifts stored 0 to 1",
+);
+assert.equal(firstLevelSpellRangeHitsCap(4), 10);
+assert.equal(firstLevelSpellRangeHitsCap(3), 20);
+assert.equal(firstLevelSpellRangeHitsCap(1), 40);
+assert.equal(report.spellRangeCap.firstLevelRange4HitsCap, 10);
+assert.equal(report.spellRangeCap.allStarterRangesAtCapBy, 40);
+assert.equal(report.xpRows.find((r) => r.level === 50)?.spellRangeStrike, 5);
+
+assert.equal(BLOOD_MEND_HEAL, 12);
+assert.equal(BLOOD_MEND_CRIT_HEAL, 24);
+assert.equal(LIFE_DRAIN_HEAL, 5);
+assert.equal(firstLevelHazardMaxBelowHpPercent(BLOOD_MEND_HEAL, 0.05), 30);
+assert.equal(firstLevelHazardMaxBelowHpPercent(BLOOD_MEND_HEAL, 0.01), 222);
+assert.equal(firstLevelHazardMaxBelowHpPercent(BLOOD_MEND_CRIT_HEAL, 0.05), 78);
+assert.equal(firstLevelHazardMaxBelowHpPercent(LIFE_DRAIN_HEAL, 0.05), 2);
+assert.equal(report.flatHeals.firstLevelBloodMendBelow5PctHp, 30);
+assert.equal(report.flatHeals.firstLevelBloodMendBelow1PctHp, 222);
+assert.equal(report.flatHeals.shopPotionScalesWithMaxHp, true);
+assert.ok((report.flatHeals.bloodMendOverHpAt100000 ?? 1) < 0.0001);
+
+assert.equal(firstLevelSpellFailHitsZero(), 201);
+assert.equal(spellFailChance(15) > 18, true);
+assert.equal(spellFailChance(101), 10);
+assert.equal(report.spellFail.firstLevelHitsZero, 201);
+assert.equal(report.spellFail.chanceAt201, 0);
+assert.equal(report.spellFail.physicalBypassesFail, true);
+
+assert.equal(BETRAYAL_ENRAGE_MULT, 6);
+assert.equal(firstEnemyLevelEnragedCrushOneShots(1), 9);
+assert.equal(SHIELD_CHARM_ABSORB, 20);
+assert.equal(firstEnemyLevelCrushExceedsShield(), 11);
+assert.equal(HEALTH_POTION_COST, 50);
+assert.equal(healthPotionHpRestored(1), 30);
+assert.ok(healthPotionDokaPerHp(1000) < healthPotionDokaPerHp(1));
+assert.equal(deathDokaLost(10_000_000), 4_000_000);
+assert.equal(report.betrayalEnrage.mult, 6);
+assert.equal(report.buffShop.firstEnemyLevelCrushExceedsShield, 11);
+assert.equal(report.buffShop.deathDokaLostOnMaxGameKey, 4_000_000);
+assert.equal(
+  report.persistContract.firstPlayerLevelSurvivesEnragedCrushAt1020,
+  firstPlayerLevelSurvivesCrushRecv(
+    damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+  ),
+);
 
 console.log("longHorizonSim.test: ok");

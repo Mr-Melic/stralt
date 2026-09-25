@@ -10,6 +10,8 @@ import {
   ENEMY_SUMMONER_CHANCE_PER_LEVEL_ZONE,
   PLAYER_BASE_AP,
   PLAYER_BASE_MP,
+  SUMMON_BASE_HP,
+  SUMMON_BASE_HP_DEFAULT,
 } from "../data/gameConstants.ts";
 import { starterSpells } from "../data/spellData.ts";
 import {
@@ -25,12 +27,18 @@ import {
 } from "../engine/progression.ts";
 import type { ChessPieceType } from "../types/gameTypes.ts";
 import { DEFAULT_LEVELUP_CONFIG } from "../types/gameTypes.ts";
-import { MAX_DOKA_GRANT } from "./adminSafety.ts";
+import {
+  MAX_DOKA_GRANT,
+  MAX_PERSISTED_AP,
+  maxPersistedAp,
+} from "./adminSafety.ts";
 import {
   APPLY_REWARDS_MAX_DOKA_DELTA,
   APPLY_REWARDS_MAX_XP_DELTA,
   clampApplyRewardsDeltas,
 } from "./applyRewardsResult.ts";
+import { DEATH_DOKA_PENALTY_RATE } from "./deathPenalty.ts";
+import { startingChampionStats } from "./startingChampionStats.ts";
 import { applyXpDelta, xpForNextLevel, xpThresholdBigInt } from "./xpCurve.ts";
 
 /** Mirrors rewardResolver.computeVictoryExp — kept local so Node can run this file. */
@@ -78,11 +86,14 @@ function buildEnemyKit(
   return (kits[pieceType] ?? kits.pawn)(z);
 }
 
-/** Requested horizon plus HUD-sat, AP-cap, IEEE, post-cap, and 10k/50k stress. */
+/** Requested horizon plus HUD-sat, AP-cap, IEEE, post-cap, and 10k/50k/100k stress. */
 export const STRESS_LEVELS = [
   1, 10, 15, 25, 48, 50, 78, 100, 250, 325, 500, 1000, 2500, 5000, 1018, 1019,
-  10_000, 50_000,
+  10_000, 50_000, 100_000,
 ] as const;
+
+/** Create-time INIT. saveBattleStats cannot raise it. */
+export const PLAYER_CREATE_INIT = Number(startingChampionStats().init);
 
 const GROWTH = (DEFAULT_LEVELUP_CONFIG.statGrowthPercent ?? 5) / 100;
 const AP_EVERY = DEFAULT_LEVELUP_CONFIG.apMpGrowthEveryNLevels ?? 25;
@@ -296,11 +307,289 @@ export function firstLevelSrCanHit100(piece: ChessPieceType): number | null {
   return null;
 }
 
+export function firstLevelChcCanHit100(piece: ChessPieceType): number | null {
+  for (let level = 1; level <= 400; level++) {
+    if (enemyStatBounds(level, piece).chc.max >= 100) return level;
+  }
+  return null;
+}
+
+export function firstLevelFormulaApExceedsPersistCap(
+  persistCap = MAX_PERSISTED_AP,
+  every = AP_EVERY,
+): number | null {
+  for (let level = 1; level <= 2000; level++) {
+    if (formulaAp(level) > maxPersistedAp(level, every)) return level;
+    if (formulaAp(level) > persistCap) return level;
+  }
+  return null;
+}
+
+/**
+ * Share of 3-enemy packs where the frozen create-time player INIT is strictly
+ * higher than every enemy INIT (player wins the sort `b.init - a.init`).
+ */
+export function monteCarloPlayerWinsInitiative(
+  playerLevel: number,
+  playerInit = PLAYER_CREATE_INIT,
+  enemiesPerFight = 3,
+  samples = 4000,
+): number {
+  let wins = 0;
+  for (let i = 0; i < samples; i++) {
+    let playerFirst = true;
+    for (let e = 0; e < enemiesPerFight; e++) {
+      const lvl = pickEnemyLevelFromTiers(playerLevel);
+      const piece = PIECES[e % PIECES.length];
+      const stats = getEnemyBaseStats(lvl, piece, i * 31 + e * 17 + lvl);
+      if (stats.init >= playerInit) {
+        playerFirst = false;
+        break;
+      }
+    }
+    if (playerFirst) wins += 1;
+  }
+  return wins / samples;
+}
+
 export function kitForZoneInput(
   piece: ChessPieceType,
   zone: unknown,
 ): string[] {
   return buildEnemyKit(piece, zone as number);
+}
+
+/** Create-time RES. saveBattleStats cannot raise it (`_minNat` vs stored). */
+export const PLAYER_CREATE_RES = Number(startingChampionStats().res);
+
+/** Live fallback melee pool (`WorldExploration.tsx` Crush 12 / Fire Bolt 8). */
+export const FALLBACK_CRUSH_BASE = 12;
+export const FALLBACK_FIREBOLT_BASE = 8;
+
+/** Fallback Crush raw before RES. Mirrors WorldExploration fallback melee. */
+export function fallbackCrushRaw(enemyLevel: number): number {
+  return Math.max(
+    1,
+    Math.round(FALLBACK_CRUSH_BASE * Math.max(1, enemyLevel / 5)),
+  );
+}
+
+export function fallbackFireboltRaw(enemyLevel: number): number {
+  return Math.max(
+    1,
+    Math.round(FALLBACK_FIREBOLT_BASE * Math.max(1, enemyLevel / 5)),
+  );
+}
+
+/**
+ * Fallback melee applies RES once, then `playerTakesDamage` applies RES
+ * again — two 10% cuts on create RES.
+ */
+export function damageAfterPlayerResPasses(
+  raw: number,
+  res = PLAYER_CREATE_RES,
+  passes = 2,
+): number {
+  let dmg = raw;
+  const factor = Math.max(0, 1 - res / 100);
+  for (let i = 0; i < passes; i++) {
+    dmg = Math.max(1, Math.round(dmg * factor));
+  }
+  return dmg;
+}
+
+/** First enemy level whose Crush fallback one-shots linear player max HP. */
+export function firstEnemyLevelFallbackCrushOneShots(
+  playerLevel: number,
+  resPasses = 2,
+): number | null {
+  const hp = linearPlayerMaxHp(playerLevel);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    const recv = damageAfterPlayerResPasses(
+      fallbackCrushRaw(enemyLevel),
+      PLAYER_CREATE_RES,
+      resPasses,
+    );
+    if (recv >= hp) return enemyLevel;
+  }
+  return null;
+}
+
+/**
+ * Betrayal-kill enrage (`WorldExploration.tsx` 16257, 15638–15646):
+ * Crush raw ×6 and betrayer HP ×6.
+ */
+export const BETRAYAL_ENRAGE_MULT = 6;
+
+export function fallbackCrushRawEnraged(enemyLevel: number): number {
+  return fallbackCrushRaw(enemyLevel) * BETRAYAL_ENRAGE_MULT;
+}
+
+export function firstEnemyLevelEnragedCrushOneShots(
+  playerLevel: number,
+  resPasses = 2,
+): number | null {
+  const hp = linearPlayerMaxHp(playerLevel);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    const recv = damageAfterPlayerResPasses(
+      fallbackCrushRawEnraged(enemyLevel),
+      PLAYER_CREATE_RES,
+      resPasses,
+    );
+    if (recv >= hp) return enemyLevel;
+  }
+  return null;
+}
+
+/** First player level whose linear max HP strictly exceeds Crush recv. */
+export function firstPlayerLevelSurvivesCrushRecv(recv: number): number | null {
+  const need = Math.max(1, Math.floor(Number(recv) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (linearPlayerMaxHp(level) > need) return level;
+  }
+  return null;
+}
+
+/** Shield Charm absorb (`WorldExploration.tsx` 3583–3585). */
+export const SHIELD_CHARM_ABSORB = 20;
+/** BuffShop `health_potion` / `greater_health_potion` Doka costs. */
+export const HEALTH_POTION_COST = 50;
+export const GREATER_POTION_COST = 120;
+export const HEALTH_POTION_HP_FRAC = 0.3;
+export const GREATER_POTION_HP_FRAC = 0.7;
+
+/** First enemy level whose Crush recv (two RES passes) exceeds Shield Charm. */
+export function firstEnemyLevelCrushExceedsShield(
+  absorb = SHIELD_CHARM_ABSORB,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(absorb) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (damageAfterPlayerResPasses(fallbackCrushRaw(enemyLevel)) > cap) {
+      return enemyLevel;
+    }
+  }
+  return null;
+}
+
+export function healthPotionHpRestored(level: number): number {
+  return Math.floor(linearPlayerMaxHp(level) * HEALTH_POTION_HP_FRAC);
+}
+
+export function greaterPotionHpRestored(level: number): number {
+  return Math.floor(linearPlayerMaxHp(level) * GREATER_POTION_HP_FRAC);
+}
+
+/** Doka spent per HP restored by a 50-Doka health potion. */
+export function healthPotionDokaPerHp(level: number): number {
+  const hp = healthPotionHpRestored(level);
+  if (hp <= 0) return Number.POSITIVE_INFINITY;
+  return HEALTH_POTION_COST / hp;
+}
+
+export function deathDokaLost(doka: number): number {
+  return Math.floor(
+    Math.max(0, Math.floor(Number(doka) || 0)) * DEATH_DOKA_PENALTY_RATE,
+  );
+}
+
+export const SUMMON_HUNTER_HP = SUMMON_BASE_HP.hunter ?? SUMMON_BASE_HP_DEFAULT;
+export const SUMMON_GUARDIAN_HP = SUMMON_BASE_HP.guardian ?? 120;
+export const SUMMON_BOMBER_HP = SUMMON_BASE_HP.bomber ?? 50;
+
+/**
+ * Fallback vs a summon applies RES once (`WorldExploration.tsx` 16722–16728),
+ * not the player double-pass. Summon `res` defaults to 0.
+ */
+export function fallbackCrushVsSummon(
+  enemyLevel: number,
+  summonRes = 0,
+): number {
+  return damageAfterPlayerResPasses(fallbackCrushRaw(enemyLevel), summonRes, 1);
+}
+
+/**
+ * Unused exponential `getPlayerBaseStats` HP becomes IEEE Inf (JSON null)
+ * once `100 * 1.05^(L-1)` overflows Number.
+ */
+export function firstLevelExponentialHpNotJsonSafe(limit = 200_000): number {
+  for (let n = 1; n <= limit; n += n < 2000 ? 1 : 100) {
+    const hp = getPlayerBaseStats(n, DEFAULT_LEVELUP_CONFIG).hp;
+    if (!Number.isFinite(hp)) return n;
+  }
+  return limit + 1;
+}
+
+/** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
+export const HAZARD_LAVA_MIN = 8;
+export const HAZARD_LAVA_MAX = 15;
+/** Live spike step: `5 + floor(rng * 6)` (WorldExploration.tsx 11469). */
+export const HAZARD_SPIKE_MIN = 5;
+export const HAZARD_SPIKE_MAX = 10;
+/** Lava Burning DoT after the step (WorldExploration.tsx 11452). */
+export const HAZARD_LAVA_BURN_PER_TURN = 3;
+/** Poison Arrow tick (`starter-poison` dotDamagePerTurn). */
+export const POISON_ARROW_TICK = 4;
+
+/**
+ * Player lava/spike subtract HP directly — they do not enter
+ * `playerTakesDamage`, so create RES is not applied.
+ */
+export function firstLevelHazardMaxBelowHpPercent(
+  maxDamage: number,
+  percent: number,
+): number | null {
+  const pct = Math.max(0, percent);
+  for (let level = 1; level <= 200_000; level++) {
+    const hp = linearPlayerMaxHp(level);
+    if (hp > 0 && maxDamage / hp < pct) return level;
+  }
+  return null;
+}
+
+/**
+ * Live `getEffectiveSpellRange`: `min(base + floor(level / 10), 5)`.
+ * `spellRangeBase` feeds `Math.max(1, Number(spell.range))`, so a stored
+ * range of 0 (self Heal / Mirror / Timestep) starts at 1.
+ */
+export function effectiveSpellRange(
+  baseRange: number,
+  level: number,
+  growthEvery = DEFAULT_LEVELUP_CONFIG.spellRangeGrowthLevels,
+  cap = DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+): number {
+  const every = Math.max(1, Math.floor(Number(growthEvery) || 10));
+  const maxR = Math.max(1, Math.floor(Number(cap) || 5));
+  const base = Math.max(1, Math.floor(Number(baseRange) || 0));
+  const bonus = Math.floor(Math.max(1, Math.floor(level)) / every);
+  return Math.min(base + bonus, maxR);
+}
+
+export function firstLevelSpellRangeHitsCap(
+  baseRange: number,
+  cap = DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+): number | null {
+  const maxR = Math.max(1, Math.floor(Number(cap) || 5));
+  for (let level = 1; level <= 200; level++) {
+    if (effectiveSpellRange(baseRange, level) >= maxR) return level;
+  }
+  return null;
+}
+
+/** Blood Mend `healAmount` (`spellData.ts` starter-heal). Upgrade +3% is not applied. */
+export const BLOOD_MEND_HEAL = 12;
+/** Life Drain self-heal (`spellData.ts` starter-drain). */
+export const LIFE_DRAIN_HEAL = 5;
+/** Blood Mend crit is ×2 on the flat amount (`spellEngine.ts` resolvePlayerCast). */
+export const BLOOD_MEND_CRIT_HEAL = BLOOD_MEND_HEAL * 2;
+/** Out-of-battle passive regen (`WorldExploration.tsx` +1 HP / 10s). */
+export const PASSIVE_REGEN_PER_TICK = 1;
+
+/** First level where `20 - (L-1)*0.1` hits 0 (`DEFAULT_LEVELUP_CONFIG`). */
+export function firstLevelSpellFailHitsZero(limit = 1000): number | null {
+  for (let level = 1; level <= limit; level++) {
+    if (spellFailChance(level) <= 0) return level;
+  }
+  return null;
 }
 
 export function monteCarloEnemyLevels(
@@ -458,6 +747,17 @@ export function runLongHorizonSim() {
       stackedXpTruncated: stackedVoidBoost > APPLY_REWARDS_MAX_XP_DELTA,
       jackpotUnclampedMean: jackpotUnclampedMean(Math.round(meanEnemy)),
       jackpotPersistIfHit: jackpotPersistIfHit(Math.round(meanEnemy)),
+      persistApCap: maxPersistedAp(level, AP_EVERY),
+      pPlayerWinsInitiative3: monteCarloPlayerWinsInitiative(level),
+      lavaMaxOverHp: HAZARD_LAVA_MAX / linearPlayerMaxHp(level),
+      spikeMaxOverHp: HAZARD_SPIKE_MAX / linearPlayerMaxHp(level),
+      poisonTickOverHp: POISON_ARROW_TICK / linearPlayerMaxHp(level),
+      spellRangeStrike: effectiveSpellRange(1, level),
+      spellRangeFrost: effectiveSpellRange(3, level),
+      spellRangePoison: effectiveSpellRange(4, level),
+      bloodMendOverHp: BLOOD_MEND_HEAL / linearPlayerMaxHp(level),
+      lifeDrainHealOverHp: LIFE_DRAIN_HEAL / linearPlayerMaxHp(level),
+      potion30OverHp: 0.3,
     };
   });
 
@@ -473,6 +773,9 @@ export function runLongHorizonSim() {
   );
   const srBreakpoints = Object.fromEntries(
     PIECES.map((p) => [p, firstLevelSrCanHit100(p)]),
+  );
+  const chcBreakpoints = Object.fromEntries(
+    PIECES.map((p) => [p, firstLevelChcCanHit100(p)]),
   );
 
   const sampleStats = getEnemyBaseStats(80, "rook", "sim-rook-80");
@@ -528,7 +831,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-02T00:06:35.128Z",
+    generatedAt: "2026-09-25T00:08:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -557,12 +860,57 @@ export function runLongHorizonSim() {
       firstSpellLevelCostExceedsMaxSafe: firstSpellLevelCostExceeds(
         Number.MAX_SAFE_INTEGER,
       ),
+      maxPersistedAp: MAX_PERSISTED_AP,
+      playerCreateInit: PLAYER_CREATE_INIT,
+      saveBattleStatsCannotRaiseInit: true,
+      firstLevelFormulaApExceedsPersistCap:
+        firstLevelFormulaApExceedsPersistCap(),
+      firstLevelLavaMaxBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.01,
+      ),
+      firstLevelLavaMaxBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.05,
+      ),
+      firstLevelSpellRange1HitsCap: firstLevelSpellRangeHitsCap(1),
+      firstLevelSpellRange3HitsCap: firstLevelSpellRangeHitsCap(3),
+      firstLevelSpellRange4HitsCap: firstLevelSpellRangeHitsCap(4),
+      maxSpellRange: DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+      firstLevelSpellFailHitsZero: firstLevelSpellFailHitsZero(),
+      firstLevelBloodMendBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.05,
+      ),
+      firstLevelBloodMendBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.01,
+      ),
+      firstLevelBloodMendCritBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_CRIT_HEAL,
+        0.05,
+      ),
+      betrayalEnrageMult: BETRAYAL_ENRAGE_MULT,
+      firstEnemyLevelEnragedCrushOneShotsPlayer1:
+        firstEnemyLevelEnragedCrushOneShots(1),
+      firstEnemyLevelEnragedCrushOneShotsPlayer10:
+        firstEnemyLevelEnragedCrushOneShots(10),
+      firstPlayerLevelSurvivesEnragedCrushAt1020:
+        firstPlayerLevelSurvivesCrushRecv(
+          damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+        ),
+      firstEnemyLevelCrushExceedsShieldCharm:
+        firstEnemyLevelCrushExceedsShield(),
+      healthPotionCost: HEALTH_POTION_COST,
+      greaterPotionCost: GREATER_POTION_COST,
+      deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
     aiRows,
     resBreakpoints,
     srBreakpoints,
+    chcBreakpoints,
     sampleRookStatsAt80: sampleStats,
     kitsNumeric,
     kitsLiveCallSite,
@@ -572,6 +920,129 @@ export function runLongHorizonSim() {
     applyXpAt1019,
     updateCharacterApCap: 20,
     saveBattleStatsLevelUnconstrained: false,
+    fallbackMelee: {
+      playerCreateRes: PLAYER_CREATE_RES,
+      crushBase: FALLBACK_CRUSH_BASE,
+      firstEnemyLevelCrushOneShotsPlayer1:
+        firstEnemyLevelFallbackCrushOneShots(1),
+      firstEnemyLevelCrushOneShotsPlayer10:
+        firstEnemyLevelFallbackCrushOneShots(10),
+      crushRawAt80: fallbackCrushRaw(80),
+      crushRecvAt80: damageAfterPlayerResPasses(fallbackCrushRaw(80)),
+      crushRawAt1020: fallbackCrushRaw(1020),
+      crushRecvAt1020: damageAfterPlayerResPasses(fallbackCrushRaw(1020)),
+      firstLevelExponentialHpNotJsonSafe: firstLevelExponentialHpNotJsonSafe(),
+      player1MaxEnemyOneShots:
+        damageAfterPlayerResPasses(fallbackCrushRaw(80)) >=
+        linearPlayerMaxHp(1),
+    },
+    flatHazards: {
+      lavaMin: HAZARD_LAVA_MIN,
+      lavaMax: HAZARD_LAVA_MAX,
+      spikeMin: HAZARD_SPIKE_MIN,
+      spikeMax: HAZARD_SPIKE_MAX,
+      lavaBurnPerTurn: HAZARD_LAVA_BURN_PER_TURN,
+      poisonTick: POISON_ARROW_TICK,
+      firstLevelLavaMaxBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.05,
+      ),
+      firstLevelLavaMaxBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        HAZARD_LAVA_MAX,
+        0.01,
+      ),
+      lavaMaxOverHpAt1: HAZARD_LAVA_MAX / linearPlayerMaxHp(1),
+      lavaMaxOverHpAt100: HAZARD_LAVA_MAX / linearPlayerMaxHp(100),
+      lavaMaxOverHpAt1000: HAZARD_LAVA_MAX / linearPlayerMaxHp(1000),
+      lavaMaxOverHpAt100000: HAZARD_LAVA_MAX / linearPlayerMaxHp(100_000),
+    },
+    spellRangeCap: {
+      maxSpellRange: DEFAULT_LEVELUP_CONFIG.maxSpellRange,
+      growthEvery: DEFAULT_LEVELUP_CONFIG.spellRangeGrowthLevels,
+      firstLevelRange1HitsCap: firstLevelSpellRangeHitsCap(1),
+      firstLevelRange3HitsCap: firstLevelSpellRangeHitsCap(3),
+      firstLevelRange4HitsCap: firstLevelSpellRangeHitsCap(4),
+      range0Becomes1ThenCapsAt: firstLevelSpellRangeHitsCap(0),
+      allStarterRangesAtCapBy: firstLevelSpellRangeHitsCap(1),
+    },
+    flatHeals: {
+      bloodMend: BLOOD_MEND_HEAL,
+      bloodMendCrit: BLOOD_MEND_CRIT_HEAL,
+      lifeDrain: LIFE_DRAIN_HEAL,
+      passiveRegenPerTick: PASSIVE_REGEN_PER_TICK,
+      firstLevelBloodMendBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.05,
+      ),
+      firstLevelBloodMendBelow1PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_HEAL,
+        0.01,
+      ),
+      firstLevelBloodMendCritBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        BLOOD_MEND_CRIT_HEAL,
+        0.05,
+      ),
+      firstLevelLifeDrainBelow5PctHp: firstLevelHazardMaxBelowHpPercent(
+        LIFE_DRAIN_HEAL,
+        0.05,
+      ),
+      bloodMendOverHpAt1: BLOOD_MEND_HEAL / linearPlayerMaxHp(1),
+      bloodMendOverHpAt100: BLOOD_MEND_HEAL / linearPlayerMaxHp(100),
+      bloodMendOverHpAt1000: BLOOD_MEND_HEAL / linearPlayerMaxHp(1000),
+      bloodMendOverHpAt100000: BLOOD_MEND_HEAL / linearPlayerMaxHp(100_000),
+      shopPotionScalesWithMaxHp: true,
+    },
+    spellFail: {
+      baseChance: DEFAULT_LEVELUP_CONFIG.spellFailBaseChance,
+      reductionPerLevel: DEFAULT_LEVELUP_CONFIG.spellFailReductionPerLevel,
+      firstLevelHitsZero: firstLevelSpellFailHitsZero(),
+      chanceAt15: spellFailChance(15),
+      chanceAt101: spellFailChance(101),
+      chanceAt201: spellFailChance(201),
+      physicalBypassesFail: true,
+    },
+    betrayalEnrage: {
+      mult: BETRAYAL_ENRAGE_MULT,
+      crushRawAt80: fallbackCrushRawEnraged(80),
+      crushRecvAt80: damageAfterPlayerResPasses(fallbackCrushRawEnraged(80)),
+      crushRawAt1020: fallbackCrushRawEnraged(1020),
+      crushRecvAt1020: damageAfterPlayerResPasses(
+        fallbackCrushRawEnraged(1020),
+      ),
+      firstEnemyLevelOneShotsPlayer1: firstEnemyLevelEnragedCrushOneShots(1),
+      firstEnemyLevelOneShotsPlayer10: firstEnemyLevelEnragedCrushOneShots(10),
+      firstPlayerLevelSurvivesAt1020: firstPlayerLevelSurvivesCrushRecv(
+        damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
+      ),
+      enemyHpAt1020Enraged: linearEnemyMaxHp(1020) * BETRAYAL_ENRAGE_MULT,
+      hunterSummonHp: SUMMON_HUNTER_HP,
+      guardianSummonHp: SUMMON_GUARDIAN_HP,
+      bomberSummonHp: SUMMON_BOMBER_HP,
+      crushVsHunterAt80: fallbackCrushVsSummon(80),
+      crushVsGuardianAt80: fallbackCrushVsSummon(80),
+      enragedCrushVsGuardianAt80:
+        fallbackCrushVsSummon(80) * BETRAYAL_ENRAGE_MULT,
+    },
+    buffShop: {
+      shieldAbsorb: SHIELD_CHARM_ABSORB,
+      firstEnemyLevelCrushExceedsShield: firstEnemyLevelCrushExceedsShield(),
+      healthPotionCost: HEALTH_POTION_COST,
+      greaterPotionCost: GREATER_POTION_COST,
+      healthPotionHpAt1: healthPotionHpRestored(1),
+      healthPotionHpAt100: healthPotionHpRestored(100),
+      healthPotionHpAt1000: healthPotionHpRestored(1000),
+      healthPotionHpAt100000: healthPotionHpRestored(100_000),
+      healthPotionDokaPerHpAt1: healthPotionDokaPerHp(1),
+      healthPotionDokaPerHpAt100: healthPotionDokaPerHp(100),
+      healthPotionDokaPerHpAt1000: healthPotionDokaPerHp(1000),
+      healthPotionDokaPerHpAt100000: healthPotionDokaPerHp(100_000),
+      greaterPotionHpAt1: greaterPotionHpRestored(1),
+      jackpotsToBuyHealthPotion: Math.floor(
+        APPLY_REWARDS_MAX_DOKA_DELTA / HEALTH_POTION_COST,
+      ),
+      deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
+      deathDokaRate: DEATH_DOKA_PENALTY_RATE,
+    },
   };
 }
 
