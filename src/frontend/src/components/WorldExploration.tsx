@@ -2105,6 +2105,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const handleRenameCharacter = async () => {
     const newName = renameInput.trim();
     if (!newName || newName.length > 20) return;
+    if (
+      isDeathRealmTransitionPending(
+        deathTriggeredRef.current,
+        deathRealmTimerRef.current !== null,
+      )
+    ) {
+      return;
+    }
     if (!beginRename(renameInFlightRef, dokaBalanceRef.current)) {
       if (dokaBalanceRef.current < RENAME_DOKA_COST) {
         toast.error("Insufficient Doka (need 100)");
@@ -3139,6 +3147,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const spellUpgradeInFlightRef = useRef<Set<string>>(new Set());
   const handleUpgradeSpell = useCallback(
     (spellId: string, cost: number) => {
+      if (
+        isDeathRealmTransitionPending(
+          deathTriggeredRef.current,
+          deathRealmTimerRef.current !== null,
+        )
+      ) {
+        return;
+      }
       if (spellUpgradeInFlightRef.current.has(spellId)) return;
       if (dokaBalanceRef.current < cost) return;
       if (!actor?.upgradeSpell) return;
