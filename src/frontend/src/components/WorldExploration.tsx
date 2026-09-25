@@ -239,6 +239,13 @@ import {
   tickNonDotEffects,
 } from "../engine/statusEffects";
 import {
+  clearSummonDuration1ResourceCarry,
+  consumeSummonDuration1Resource,
+  isPlayerSummonCombatant,
+  nextSummonTurnBudget,
+  recordSummonDuration1Resource,
+} from "../engine/summonBattleResource";
+import {
   type SummonExecutorHelpers,
   executeSummonAction,
 } from "../engine/summonExecutor";
@@ -449,7 +456,6 @@ import {
   shouldRouteCanvasToSummonControl,
   summonControlCastFailMessage,
   summonControlIdAfterAdvance,
-  summonTurnBudget,
 } from "../utils/summonControlCast";
 import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
@@ -1917,6 +1923,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           color,
         );
       }
+      // Duration-1 AP/MP on a player summon expires at their next tick
+      // before budget. Carry the delta so Haste/Frost still move the pool
+      // (Slow duration 2 stays on the remaining list — not recorded here).
+      const liveTarget = combatantsRef.current.find(
+        (e) => e.id === effect.targetId,
+      );
+      recordSummonDuration1Resource(
+        effect,
+        isPlayerSummonCombatant(liveTarget),
+      );
     },
     [logBattleEntry],
   );
@@ -12191,6 +12207,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       deathTriggeredRef.current = false;
       deathPenaltyAppliedRef.current = false;
       battleEndedRef.current = resetBattleEndGuardForNewBattle();
+      clearSummonDuration1ResourceCarry();
       // Overworld fights do not call syncCombatants({ resetBattle: true }).
       // Leaving this list intact credits fight-1 kills again on fight 2.
       battleDefeatedRef.current = [];
@@ -14520,8 +14537,25 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 // spawnSummonUnit seeds AP/MP once. The AI path resets them
                 // at handleSummonTurn; control mode never entered that path,
                 // so a 2-AP Archer that spent Poison Arrow stayed at 0 AP
-                // and later lifespan turns auto-ended.
-                const budget = summonTurnBudget(_summon);
+                // and later lifespan turns auto-ended. Remaining Slow / Haste
+                // must move this pool the same way player restore does.
+                const duration1 = consumeSummonDuration1Resource(
+                  nextCombatant.id,
+                );
+                const budget = nextSummonTurnBudget(_summon, {
+                  ap:
+                    getStatModifier(
+                      nextCombatant.id,
+                      "ap",
+                      activeEffectsRef.current,
+                    ) + duration1.ap,
+                  mp:
+                    getStatModifier(
+                      nextCombatant.id,
+                      "mp",
+                      activeEffectsRef.current,
+                    ) + duration1.mp,
+                });
                 (
                   _summon as { currentAp?: number; currentMp?: number }
                 ).currentAp = budget.currentAp;
