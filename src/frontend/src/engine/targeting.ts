@@ -28,6 +28,7 @@
 
 import type { Enemy, SpellConfig } from "../types/gameTypes";
 import { isActiveHostile } from "./battleSetup.ts";
+import { playerCastEffectLiveResult } from "./playerCastVictimLive.ts";
 
 /**
  * #19 Pacifist Run: flip `battleOnlyHealBuffSpellsRef` false when an
@@ -82,6 +83,88 @@ export function applyHealBuffSideEffect(
  */
 export function shouldApplyHealBuffSideEffectOnRangePreview(): boolean {
   return false;
+}
+
+/**
+ * Weaken / Slow / DoT / Swap need a living hostile on the click.
+ * Sits after the Pacifist preview gate so #389 (castStatus / occupancy)
+ * and #562 (playerCastVictimLive import + drain wraps) stay unique hunks.
+ */
+export type PlayerOccupantRequiredSpell = {
+  damage?: unknown;
+  debuffStat?: string;
+  debuffDuration?: unknown;
+  hitsMultiple?: boolean;
+  aoe?: boolean;
+  isDotSpell?: boolean;
+  effectType?: string;
+  isMark?: boolean;
+  isSwap?: boolean;
+  isSacrifice?: boolean;
+  isBarrier?: boolean;
+  isSummon?: boolean;
+  isTimestep?: boolean;
+  isMirror?: boolean;
+};
+
+export type PlayerOccupantRequiredOccupant = {
+  x: number;
+  y: number;
+  hp?: number;
+  isSummon?: boolean;
+  side?: "player" | "enemy";
+  id?: string;
+};
+
+export function playerOccupantRequiredOnClick(
+  spell: PlayerOccupantRequiredSpell,
+): boolean {
+  if (spell.hitsMultiple === true || spell.aoe === true) return false;
+  if (spell.isMark === true) return false;
+  if (spell.isBarrier === true) return false;
+  if (spell.isSummon === true) return false;
+  if (spell.isSacrifice === true) return false;
+  if (spell.isTimestep === true || spell.isMirror === true) return false;
+  if (Number(spell.damage) > 0) return false;
+  if (spell.isDotSpell === true || spell.effectType === "dot") return true;
+  if (spell.isSwap === true) return true;
+  const duration = Math.floor(Number(spell.debuffDuration) || 0);
+  return Boolean(spell.debuffStat) && duration > 0;
+}
+
+export function playerOccupantRequiredTargetType(targetType: string): boolean {
+  return targetType === "enemy" || targetType === "chain";
+}
+
+export function playerOccupantLiveHostileAt(
+  tile: { x: number; y: number },
+  combatants: readonly PlayerOccupantRequiredOccupant[],
+): boolean {
+  return combatants.some(
+    (e) =>
+      e.x === tile.x &&
+      e.y === tile.y &&
+      isActiveHostile({
+        hp: e.hp ?? 0,
+        isSummon: e.isSummon,
+        side: e.side,
+        id: e.id,
+      }),
+  );
+}
+
+export function playerOccupantRequiredLiveRejectReason(args: {
+  spell: PlayerOccupantRequiredSpell;
+  targetType: string;
+  tile: { x: number; y: number };
+  combatants: readonly PlayerOccupantRequiredOccupant[];
+}): string | null {
+  if (!playerOccupantRequiredTargetType(args.targetType)) return null;
+  if (!playerOccupantRequiredOnClick(args.spell)) return null;
+  if (!playerOccupantLiveHostileAt(args.tile, args.combatants)) {
+    return "occupant_required";
+  }
+  return null;
 }
 
 /** Tile cell kind used by the world grid. */
@@ -524,6 +607,22 @@ export function isTileCastableLive(
     return { ok: false, reason: "caster_tile_hostile" };
   }
 
+  // Weaken / Slow / DoT / Swap need a living hostile on the click.
+  // Empty rings used to highlight while execute applied nothing (or
+  // aborted after #528). Strike / Mark empty stay legal. Drain /
+  // hitsMultiple stay on playerCastVictimLive (#562).
+  {
+    const occupantReject = playerOccupantRequiredLiveRejectReason({
+      spell,
+      targetType,
+      tile,
+      combatants: liveCombatants,
+    });
+    if (occupantReject) {
+      return { ok: false, reason: occupantReject };
+    }
+  }
+
   // ── ally: caster tile OR a player-side summon within Chebyshev range.
   if (targetType === "ally") {
     if (tx === casterPos.x && ty === casterPos.y) {
@@ -680,10 +779,17 @@ export function isTileCastableLive(
     } else if (destBarrier && targetType !== "area") {
       return { ok: false, reason: "barrier_tile" };
     } else if (!destBarrier) {
-      return {
-        ok: true,
-        reason: targetType === "area" ? "area_anchor" : targetType,
-      };
+      // Single-target drain and hitsMultiple with nobody in the
+      // getAoETargets radius already abort at resolve (no AP). Keep
+      // that extra check here so a painted tile is executable.
+      return playerCastEffectLiveResult({
+        geometryReason: targetType === "area" ? "area_anchor" : targetType,
+        spell,
+        tile: { x: tx, y: ty },
+        caster: casterPos,
+        combatants: liveCombatants,
+        radius: range,
+      });
     }
   }
 
@@ -719,7 +825,14 @@ export function isTileCastableLive(
         if (playerSpellRequiresLos(spell) && !hasLoS(axN, ayN)) continue;
         // Is the clicked tile within areaRadius of this anchor?
         if (chebyshevOnBoard(tile, { x: axN, y: ayN }) <= areaRadius) {
-          return { ok: true, reason: "area_expansion" };
+          return playerCastEffectLiveResult({
+            geometryReason: "area_expansion",
+            spell,
+            tile,
+            caster: casterPos,
+            combatants: liveCombatants,
+            radius: range,
+          });
         }
       }
     }
