@@ -28,6 +28,7 @@
 
 import type { Enemy, SpellConfig } from "../types/gameTypes";
 import { isActiveHostile } from "./battleSetup.ts";
+import { playerCastEffectLiveResult } from "./playerCastVictimLive.ts";
 
 /**
  * #19 Pacifist Run: flip `battleOnlyHealBuffSpellsRef` false when an
@@ -680,10 +681,17 @@ export function isTileCastableLive(
     } else if (destBarrier && targetType !== "area") {
       return { ok: false, reason: "barrier_tile" };
     } else if (!destBarrier) {
-      return {
-        ok: true,
-        reason: targetType === "area" ? "area_anchor" : targetType,
-      };
+      // Single-target drain and hitsMultiple with nobody in the
+      // getAoETargets radius already abort at resolve (no AP). Keep
+      // that extra check here so a painted tile is executable.
+      return playerCastEffectLiveResult({
+        geometryReason: targetType === "area" ? "area_anchor" : targetType,
+        spell,
+        tile: { x: tx, y: ty },
+        caster: casterPos,
+        combatants: liveCombatants,
+        radius: range,
+      });
     }
   }
 
@@ -719,7 +727,14 @@ export function isTileCastableLive(
         if (playerSpellRequiresLos(spell) && !hasLoS(axN, ayN)) continue;
         // Is the clicked tile within areaRadius of this anchor?
         if (chebyshevOnBoard(tile, { x: axN, y: ayN }) <= areaRadius) {
-          return { ok: true, reason: "area_expansion" };
+          return playerCastEffectLiveResult({
+            geometryReason: "area_expansion",
+            spell,
+            tile,
+            caster: casterPos,
+            combatants: liveCombatants,
+            radius: range,
+          });
         }
       }
     }
