@@ -377,6 +377,69 @@ export function isCasterTile(
 }
 
 /**
+ * Sacrifice (`isSacrifice`) spends 20% HP and only deals 3× that when a
+ * living hostile occupies the click. Preview painted every in-range enemy
+ * tile, so an empty / corpse / ally cell was highlighted, then execute
+ * still returned `"cast"` (AP + HP, no damage).
+ *
+ * Sits after {@link isCasterTile} so #389 (castStatus / living occupancy
+ * after `playerSpellAllowsCasterTile`) and #601 (Weaken/Slow/DoT/Swap
+ * occupant list after the Pacifist preview helper) keep unique hunks.
+ * Strike / Mark empty rings stay legal — this predicate is Sacrifice only.
+ */
+export type PlayerSacrificeLiveSpell = {
+  isSacrifice?: boolean;
+};
+
+export type PlayerSacrificeLiveOccupant = {
+  x: number;
+  y: number;
+  hp?: number;
+  isSummon?: boolean;
+  side?: "player" | "enemy";
+  id?: string;
+};
+
+export function playerSacrificeRequiresOccupant(
+  spell: PlayerSacrificeLiveSpell,
+): boolean {
+  return spell.isSacrifice === true;
+}
+
+export function playerSacrificeLiveHostileAt(
+  tile: { x: number; y: number },
+  combatants: readonly PlayerSacrificeLiveOccupant[],
+): boolean {
+  return combatants.some(
+    (e) =>
+      e.x === tile.x &&
+      e.y === tile.y &&
+      isActiveHostile({
+        hp: e.hp ?? 0,
+        isSummon: e.isSummon,
+        side: e.side,
+        id: e.id,
+      }),
+  );
+}
+
+/**
+ * Extra live reject after walls/bounds already passed. `null` = keep the
+ * later geometric result. Must never reject a tile execute already damages.
+ */
+export function playerSacrificeLiveRejectReason(args: {
+  spell: PlayerSacrificeLiveSpell;
+  tile: { x: number; y: number };
+  combatants: readonly PlayerSacrificeLiveOccupant[];
+}): string | null {
+  if (!playerSacrificeRequiresOccupant(args.spell)) return null;
+  if (!playerSacrificeLiveHostileAt(args.tile, args.combatants)) {
+    return "sacrifice_no_enemy";
+  }
+  return null;
+}
+
+/**
  * Compute the set of `"x,y"` tile keys that the given spell can target from
  * `casterPos` on the supplied grid.
  *
@@ -498,6 +561,19 @@ export function isTileCastableLive(
   // Wall tiles are never castable (every branch rejects them).
   if (mapTiles[ty][tx] === "wall") {
     return { ok: false, reason: "wall_tile" };
+  }
+
+  // Sacrifice: unique vs #601 occupant-required (Weaken/Slow/DoT/Swap
+  // after caster_tile_hostile). Empty rings spent AP + HP with no damage.
+  {
+    const sacrificeReject = playerSacrificeLiveRejectReason({
+      spell,
+      tile: { x: tx, y: ty },
+      combatants: liveCombatants,
+    });
+    if (sacrificeReject) {
+      return { ok: false, reason: sacrificeReject };
+    }
   }
 
   // ── self: only the caster tile.
