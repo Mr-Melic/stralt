@@ -228,7 +228,7 @@ function SpellSlot({
       aria-label={`${spell.name}, AP cost ${spell.apCost}${
         disabled ? ", insufficient AP" : ""
       }`}
-      className={`group flex w-20 flex-col items-center gap-1 rounded-md border p-1.5 transition-all ${
+      className={`stone-touch-target group flex w-20 flex-col items-center gap-1 rounded-md border p-1.5 transition-all ${
         disabled
           ? "cursor-not-allowed border-border/50 bg-muted/30 opacity-40"
           : "cursor-pointer border-primary/50 bg-card hover:border-primary hover:bg-primary/10 hover:shadow-[0_0_8px_rgba(220,38,38,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1 focus-visible:ring-offset-background"
@@ -354,7 +354,7 @@ export default function SummonControlPanel({
             data-ocid="summon_panel.end_turn_button"
             onClick={onEndTurn}
             aria-label="End the summon's turn"
-            className="flex items-center gap-1.5 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-3 py-2 font-display text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px"
+            className="stone-touch-target flex items-center gap-1.5 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-3 py-2 font-display text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px"
           >
             <Square className="h-3.5 w-3.5" aria-hidden="true" />
             End Turn
