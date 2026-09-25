@@ -1867,6 +1867,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     [addBattleLogEntry],
   );
 
+  // Filled after currentBattleAp/Mp setters exist (those hooks are below).
+  const applyPlayerBattleResourceRef = useRef<(effect: ActiveEffect) => void>(
+    () => {},
+  );
+
   // Helper: apply or refresh an active effect
   const applyActiveEffect = useCallback(
     (effect: ActiveEffect) => {
@@ -1891,6 +1896,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         activeEffectsRef.current = next;
         return next;
       });
+      // Haste / Drain Courage: duration 1 expires at next turn start
+      // before restore, so the live AP/MP pool must move now.
+      applyPlayerBattleResourceRef.current(effect);
       // Log effect application with explicit stat, magnitude, and duration
       const effectType = effect.type;
       const stat = effect.stat;
@@ -2048,6 +2056,21 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     currentBattleApRef.current = next;
   }, []);
   const [currentBattleMp, setCurrentBattleMp] = useState(3);
+  applyPlayerBattleResourceRef.current = (effect: ActiveEffect) => {
+    const delta = playerBattleResourceDelta(effect);
+    if (delta.ap !== 0) {
+      setCurrentBattleApSynced((prev) =>
+        nextBattleResourceAfterDelta(prev, delta.ap),
+      );
+    }
+    if (delta.mp !== 0) {
+      // Functional updater matches Swift Boots; currentBattleMpRef lags
+      // until the mirroring useEffect and would miss a same-tick spend.
+      setCurrentBattleMp((prev) =>
+        nextBattleResourceAfterDelta(prev, delta.mp),
+      );
+    }
+  };
   // Turn tracking
   const [battleTurn, setBattleTurn] = useState(0);
   // 30-second turn timer
@@ -19211,3 +19234,10 @@ const WorldExploration = memo((props: WorldExplorationProps) => (
 WorldExploration.displayName = "WorldExploration";
 
 export default WorldExploration;
+
+// Trailing so Biome does not sort this into the occupancy/playerCastPlan
+// import cluster (#340) or the #369 statusEffects import.
+import {
+  nextBattleResourceAfterDelta,
+  playerBattleResourceDelta,
+} from "../engine/playerBattleResource.ts";
