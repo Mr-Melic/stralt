@@ -86,6 +86,12 @@ The field was removed from the Motoko `Character` type. Frontend `gameTypes.Char
 
 Fix: run the credit on the persist lock and `commit` the post-credit Doka. Add the granted delta onto the live UI (`applyShopCreditDeltaToUi`). Do not `invalidateQueries(['callerDokaBalance'])` after a persist-lock claim (`shouldInvalidateCallerDokaAfterClaim`). Once the world is hydrated, `shouldApplyCallerDokaHydrate` must stay false — window-focus refetch is the same class of bug.
 
+### Shop remount HUD credits Doka the persist lock does not have
+
+`processPendingPurchases` is a no-op (`0`). World remount still calls it and used to credit `dokaBalanceRef` from `creditedDokaDelta(previous, credited)` of two `getCallerDokaBalance` queries. Replica jitter looks like a gain; the lock stays put (`shouldCommitShopCredit` is already false); the next Doka-to-HP heal then `saveBattleStats`-writes extra HP.
+
+Sanitize the HUD pair with `legacyPurchaseCreditForHud` unless the stub minted **and** the pair gained. Distinct from GameKey redeem.
+
 ### First-map death / idle hydrate writes Doka 0
 
 The persist lock starts at `doka = 0` until an authoritative read or credit seeds it. GameFlow's pre-query state is also 0. A lava/combat death that penalizes that placeholder and `saveBattleStats`s it wipes the canister.
@@ -267,6 +273,10 @@ Wallet/level feats (`doka_1000`, `doka_10000`, `level_10`) wait until `applyRewa
 
 Changing `APP_VERSION` in `App.tsx` clears almost all `localStorage` and reloads. Preserve via `shouldPreserveVersionGateKey`: `pbv_tier_spawn_config`, `pbv_levelup_config`, and keys ending `_inventory`. A blanket `clear()` drops paid BuffShop potions (`${principal}_inventory`) while the canister Doka spend stays. Bump `CHANGELOG_ITEMS` in the same change.
 
+### Combat AP/MP growth ignores a just-saved LevelUpConfig
+
+`WorldExploration` never calls `getLevelUpConfig()`. Combat fail/range and AP/MP growth hydrate `pbv_levelup_config` once at mount (`DEFAULT_LEVELUP_CONFIG` merge). Admin Settings hydrates and writes the canister (`toBackendLevelUpConfig`, all nine Candid fields). `upgradeSpell` already uses canister `spellLevelingBaseCost`. Frontend drafts name the AP/MP divisor `apMpGrowthEveryNLevels`; Motoko / bindgen use `apMpLevelThreshold`. A Settings save is not live combat until the world remounts. Do not point `progression.getPlayerBaseStats` at a partial Candid record.
+
 ### First user is admin
 
 `getUserRole` calls `_ensureRegistered` → `AccessControl.initialize`. The first non-anonymous Internet Identity principal becomes `#admin`. Later callers are `#user`. `assignUserRole` is admin-only and rate-limited to once per 30 seconds.
@@ -274,6 +284,10 @@ Changing `APP_VERSION` in `App.tsx` clears almost all `localStorage` and reloads
 ### Circular hook imports
 
 `hooks/useQueries.ts` is a barrel. Importing it from another file under `hooks/` creates a cycle. Import the specific hook file instead.
+
+### Admin save looks successful but the canister `#err`d
+
+Dashboard drafts use `hitsMultiple`, `walkFramesFront`, and Motoko-style opt tuples. Bindgen wants `multiTarget`, `frontWalkFrames`, and a full 9-field `LevelUpConfig`. Saves must go through `adminContract.ts`. `{ __kind__: "err" }` is a failure — `readAdminCmdResult` / `assertAdminCmdOk`. Treating that object as success used to skip the toast and leave the store unchanged.
 
 ### Two `EnemyConfig` types
 
@@ -299,6 +313,7 @@ On the world stage, press **Shift+D** (ignored while typing in an input). The De
 - Player death uses `deathTriggeredRef` so the death-realm flow cannot run twice.
 - Re-arm both death guards (`armDeathGuards`) after Death Realm entry or Respawn. Leaving them set skips the next exploration death (0 HP, no penalty, no Game Over).
 - While the 1.5s Death Realm timer is pending, block **portals and encounters**. `persistDeathPenalty` already restored HP, so an `hp <= 0` check is false. A new fight resets the guards without clearing the timer; the leftover callback aborts the battle.
+- In-battle world-mode clicks (mouse and touch) must not path onto a portal tile (`shouldBlockWorldMoveOntoPortal`). Forking that check per input used to let touch walk onto the gateway mid-fight.
 
 ### Dungeon chain drops after a progression portal
 
