@@ -458,6 +458,35 @@ module {
         null
     };
 
+    /// Live engine hooks in src/frontend/src/engine/mapModifiers.ts
+    /// (MODIFIER_BY_ID). Legacy lava_fields / ice_fields / spike_pit / custom
+    /// have no hook — storing them as active looks live and is a no-op.
+    public func knownMapModifierId(id : Text) : Bool {
+        id == "slime_flood" or id == "frozen_terrain" or id == "thorned_ground"
+            or id == "void_rift" or id == "arcane_surge" or id == "time_warp"
+            or id == "plague_zone" or id == "paper_windstorm" or id == "blood_moon"
+            or id == "mirror_field" or id == "gravity_well" or id == "fog_of_war"
+            or id == "titans_vigor" or id == "arcane_overflow" or id == "glass_realm"
+            or id == "mending_mist" or id == "swift_winds" or id == "iron_curse"
+            or id == "vampiric_ground" or id == "null_field" or id == "chaos_initiative"
+            or id == "doka_fever"
+    };
+
+    /// Failure: official Add sets id=mod_<timestamp> and type=slime_flood.
+    /// rollActiveModifiers keys the engine hook by config.id ∩ MODIFIER_BY_ID;
+    /// visibleMapModifiers filters the HUD by modifierType. A mismatch
+    /// replaces an aligned live row with a silent hook or a dead catalog
+    /// row. Map modifiers have no last-good rollback — reject before add.
+    public func mapModifierIdentityRejected(id : Text, modifierType : Text) : ?Text {
+        if (id != modifierType) {
+            return ?"modifierType must match id so the live roll and HUD stay aligned";
+        };
+        if (not knownMapModifierId(id)) {
+            return ?"modifierType is not a recognized live modifier";
+        };
+        null
+    };
+
     public func validateMapModifier(config : Types.MapModifierConfig) : ?Text {
         switch (requireId(config.id, "Map modifier")) { case (?e) { return ?e }; case null {} };
         switch (requireName(config.name, "Map modifier")) { case (?e) { return ?e }; case null {} };
@@ -466,6 +495,10 @@ module {
         };
         if (config.triggerChance > 100) {
             return ?"Invalid chance value: triggerChance must be between 0 and 100";
+        };
+        switch (mapModifierIdentityRejected(config.id, config.modifierType)) {
+            case (?e) { return ?e };
+            case null {};
         };
         null
     };
