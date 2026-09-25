@@ -6209,6 +6209,12 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
                 }}
               >
                 <p style={sectionHeadStyle}>Ground Doka &amp; Leader Config</p>
+                <CatalogNote>
+                  Live world config. WorldExploration hydrates getGameConfig
+                  into ground Doka spawn chance/value and leaderBoostPercent.
+                  Save writes adminSetGameConfig immediately — not a catalog
+                  draft. Zero spawn chance is legal (no ground Doka).
+                </CatalogNote>
                 <div
                   style={{
                     display: "grid",
@@ -6881,6 +6887,11 @@ const AdminDashboard: React.FC<{ onBack: () => void; isAdmin?: boolean }> = ({
               >
                 Advertisement Boxes
               </h3>
+              <CatalogNote>
+                Live landing-page slots. LandingPage reads getAdBoxes. Empty
+                image + empty link hides the box. Save publishes immediately.
+                Custom ad artwork is optional and is not required for play.
+              </CatalogNote>
               <p
                 style={{
                   color: C.dim,
