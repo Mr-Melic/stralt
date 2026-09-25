@@ -26,7 +26,7 @@ export const IAP_SHOP_HOW_TO_HEADING = "How to buy";
 
 export const IAP_SHOP_STEPS = [
   "Submit your email so we can send the GameKey.",
-  "Pay any euro amount on Mollie (scan the QR or open the link).",
+  "After you submit, pay any euro amount on Mollie (scan the QR or open the link).",
   "Wait until this panel says Approved, then check that email.",
   "Paste the 120-character GameKey below. It credits this login once.",
 ] as const;
