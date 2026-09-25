@@ -137,6 +137,19 @@ const IRON_CURSE_RES_MULT = 1.3;
 const VAMPIRIC_LIFESTEAL_FRACTION = 0.15;
 // arcane_overflow: extra effect-application fail chance.
 const ARCANE_OVERFLOW_FAIL_CHANCE = 0.1;
+
+/**
+ * Arcane Surge / Overflow: −1 AP, never below 1 for a paid spell.
+ * A 0-AP catalog cost (Timestep) must stay 0 — `Math.max(1, 0 - 1)` used
+ * to raise it to 1 so empty-wallet preview/execute/Attack Nearest gated
+ * the only free player spell (MIMA-2026-09-25-001).
+ */
+export function discountedApCostMinus1Min1(baseCost: number): number {
+  const base = Math.max(0, Math.floor(Number(baseCost) || 0));
+  if (base === 0) return 0;
+  return Math.max(1, base - 1);
+}
+
 // doka_fever: enemy HP multiplier and reward multiplier.
 const DOKA_FEVER_HP_MULT = 1.25;
 const DOKA_FEVER_REWARD_MULT = 2;
@@ -212,8 +225,8 @@ export const MAP_MODIFIERS: MapModifierDefinition[] = [
     announceText: "Arcane Surge: AP costs reduced by 1 (min 1).",
     color: "#d2a8ff",
     hooks: {
-      // Inline WX: AP -1, min 1 (WX 8413, 8635, 12870).
-      onApCost: (baseCost) => Math.max(1, baseCost - 1),
+      // Inline WX: AP -1, min 1 for paid costs (WX 8413, 8635, 12870).
+      onApCost: discountedApCostMinus1Min1,
     },
   },
   {
@@ -321,7 +334,7 @@ export const MAP_MODIFIERS: MapModifierDefinition[] = [
     announceText: "Arcane Overflow: AP cheaper, but spells fizzle 10% more.",
     color: "#a371f7",
     hooks: {
-      onApCost: (baseCost) => Math.max(1, baseCost - 1),
+      onApCost: discountedApCostMinus1Min1,
       onEffectApplication: (effectType, ctx) => {
         // +10% fail chance for spell-driven effects (not pure DoTs).
         if (effectType === "dot") return true;
