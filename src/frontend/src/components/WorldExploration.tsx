@@ -379,6 +379,7 @@ import {
   syncLiveDokaFromProp,
   writeLiveDoka,
 } from "../utils/itemShop";
+import { shouldIgnoreBattleInputAfterLastHostile } from "../utils/lastHostileBattleInput";
 import { shouldAllowPlayerCastEntry } from "../utils/playerCastGate";
 import {
   activatePlayerMirror,
@@ -3544,6 +3545,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // biome-ignore lint/correctness/useExhaustiveDependencies: setCharacterStats is a stable useCallback (empty deps)
   const handleUseItem = useCallback(
     (itemType: BuffItemType) => {
+      // Last hostile is already gone; handleBattleEnd has not run. A potion
+      // Use here flips challengeHealUsedRef and recap then drops no-heal.
+      if (
+        shouldIgnoreBattleInputAfterLastHostile({
+          inBattle: inBattleRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+        })
+      ) {
+        return;
+      }
       const logItem = (msg: string, color = "#22c55e") => {
         if (addBattleLogEntry)
           addBattleLogEntry({
@@ -10019,6 +10030,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       )
         return;
       if (
+        shouldIgnoreBattleInputAfterLastHostile({
+          inBattle: inBattleRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+        })
+      )
+        return;
+      if (
         (inBattleRef.current &&
           (deathTriggeredRef.current || characterStatsRef.current.hp <= 0)) ||
         shouldIgnoreClickAfterTouch(Date.now(), lastCanvasTouchEndRef.current)
@@ -10717,6 +10735,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           battleRecapOpen,
           victoryPersistPendingRef.current,
         )
+      )
+        return;
+      if (
+        shouldIgnoreBattleInputAfterLastHostile({
+          inBattle: inBattleRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+        })
       )
         return;
       if (
@@ -17105,6 +17130,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
           deathTriggered: deathTriggeredRef.current,
           hp: characterStatsRef.current.hp,
+        })
+      ) {
+        return { castResult: "abort", apCost: 0 };
+      }
+      if (
+        shouldIgnoreBattleInputAfterLastHostile({
+          inBattle: inBattleRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
         })
       ) {
         return { castResult: "abort", apCost: 0 };
