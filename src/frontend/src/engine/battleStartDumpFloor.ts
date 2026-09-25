@@ -7,6 +7,11 @@
  * different spawn cells. This is the destack-time floor restore: punch
  * until the fight graph has two dump cells. Punches that would join a
  * leftover island or a corridor around a portal choke are skipped.
+ *
+ * WorldExploration destack should call this after `ensureDumpAfterBattleStart`
+ * (#589). This PR does not import it from WX — that adjacent destack hunk
+ * 3-way conflicts on the oldest-first prefix. Property tests apply it after
+ * `simulateBattleStartOnWorld`.
  */
 
 import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
