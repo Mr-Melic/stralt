@@ -504,14 +504,18 @@ export function resolveSpellCast(
     return;
   }
 
-  // Buff (self)
+  // Buff. targetType "ally" must land on the clicked occupant — Sentinel
+  // Shield / Iron Skin are advertised ally casts (pickSummonControlClickTarget
+  // already resolved the wolf/wisp). Stamping caster.id spent AP and put
+  // RES on the Sentinel while enemyTakesDamage(getStatModifier(allyId, "res"))
+  // never saw the 1.3×. Self/other kits still use caster.id (Blood Mend).
   if (spell.buffStat) {
     const pct = Math.round((spell.buffModifier - 1) * 100);
     const duration = spell.buffDuration ?? 3;
     const effect: ActiveEffectLike = {
       effectName: spell.name,
       type: "buff",
-      targetId: caster.id,
+      targetId: resolveSpellCastBuffTargetId(spell, caster.id, target.id),
       stat: spell.buffStat,
       modifier: spell.buffModifier,
       duration,
@@ -1042,3 +1046,8 @@ function calcScaledDamageInline(
 ): number {
   return Math.max(1, Math.floor(baseDamage * 1.03 ** spellUpgradeLevel));
 }
+
+// Trailing so Biome does not sort this into the playerSpecialCast /
+// playerStatusCast / playerDrainCast / playerMarkCast import cluster
+// (#496 / #528 / #543 / #551).
+import { resolveSpellCastBuffTargetId } from "./kitAllyBuffTarget.ts";
