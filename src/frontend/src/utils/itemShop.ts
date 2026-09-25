@@ -42,7 +42,16 @@ export function shouldStartDokaHeal(args: {
   maxHp: number;
   liveDoka: number;
   inFlight?: boolean;
+  /**
+   * persistDeathPenalty restores respawn HP in the same death tick, then
+   * waits 1.5s / 300ms before Death Realm loads. The App-root recap overlay
+   * is pointer-events: none so HUD heal stays live during victory persist.
+   * Defeat recap uses that same overlay: a Doka heal then saveBattleStats
+   * overwrites the respawn HP the death write just committed.
+   */
+  deathRealmPending?: boolean;
 }): boolean {
+  if (args.deathRealmPending === true) return false;
   if (args.inFlight === true) return false;
   const hp = Math.max(0, Math.floor(Number(args.currentHp) || 0));
   const max = Math.max(0, Math.floor(Number(args.maxHp) || 0));
