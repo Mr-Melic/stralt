@@ -90,8 +90,12 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 | [docs/automation/ACTION_IDS_TADD_2026-09-01.md](docs/automation/ACTION_IDS_TADD_2026-09-01.md) | Telemetry dashboard designer ACTION_IDs (2026-09-01) |
 | [docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md](docs/automation/TELEMETRY_DASHBOARD_2026-09-02.md) | Owner Health dashboard support matrix (design only; refresh after GameKey + audit bindgen) |
 | [docs/automation/ACTION_IDS_TADD_2026-09-02.md](docs/automation/ACTION_IDS_TADD_2026-09-02.md) | Telemetry dashboard designer ACTION_IDs (2026-09-02) |
-| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md) | Current owner-facing aggregate telemetry design (no production instrumentation) |
-| [docs/automation/ACTION_IDS_GTAD_2026-09-01.md](docs/automation/ACTION_IDS_GTAD_2026-09-01.md) | GTAD-2026-09-01 ACTION_ID ledger (supersedes 08-31 GTAD ids for implementers) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-01.md) | 2026-09-01 owner-facing aggregate telemetry design (merged PR #203; line numbers stale vs `0f5363f`) |
+| [docs/automation/ACTION_IDS_GTAD_2026-09-01.md](docs/automation/ACTION_IDS_GTAD_2026-09-01.md) | GTAD-2026-09-01 ACTION_ID ledger (supersedes 08-31 GTAD ids for implementers; Phase 0/1 tickets still NEW) |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-02.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-02.md) | Merged 2026-09-02 telemetry design (PR #295; GameKey shop increment site) |
+| [docs/automation/ACTION_IDS_GTAD_2026-09-02.md](docs/automation/ACTION_IDS_GTAD_2026-09-02.md) | GTAD-2026-09-02 ACTION_ID ledger |
+| [docs/automation/TELEMETRY_ARCHITECTURE_2026-09-25.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-09-25.md) | Current owner-facing aggregate telemetry design (HEAD `0f5363f` re-read 2026-09-25; still no production instrumentation). Unmerged 09-21/09-22/09-23/09-24: PRs #352/#422/#450/#527 |
+| [docs/automation/ACTION_IDS_GTAD_2026-09-25.md](docs/automation/ACTION_IDS_GTAD_2026-09-25.md) | GTAD-2026-09-25 ACTION_ID ledger (247-PR stack fence; no new metric IDs) |
 | [docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md](docs/automation/TELEMETRY_ARCHITECTURE_2026-08-31.md) | Prior telemetry architecture (PR #130; still valid policy, stale line numbers) |
 | [docs/design/ENEMY_FORMATIONS_2026-08-31.md](docs/design/ENEMY_FORMATIONS_2026-08-31.md) | Proposed enemy synergy packs (design only) |
 | [docs/ENEMY_AI_EVOLUTION.md](docs/ENEMY_AI_EVOLUTION.md) | Proposed unbounded enemy AI modules (design only; no production AI in that doc) |
