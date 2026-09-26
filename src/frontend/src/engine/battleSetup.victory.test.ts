@@ -62,6 +62,30 @@ assert.equal(
 );
 
 assert.equal(
+  shouldAwardVictory({
+    inBattle: true,
+    deathTriggered: false,
+    battleStartIdsSize: 1,
+    hostilesRemaining: 0,
+    liveHp: 0,
+  }),
+  false,
+  "lethal Void Mirror / reflect / hitsAllies on the killing blow must not award while deathTriggered is still false",
+);
+
+assert.equal(
+  shouldAwardVictory({
+    inBattle: true,
+    deathTriggered: false,
+    battleStartIdsSize: 1,
+    hostilesRemaining: 0,
+    liveHp: 8,
+  }),
+  true,
+  "drain that saves the player after reflect must still award victory",
+);
+
+assert.equal(
   shouldAllowBattleTrigger({
     inBattle: true,
     inBattleRef: false,

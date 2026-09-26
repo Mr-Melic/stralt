@@ -13877,6 +13877,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         deathTriggered: deathTriggeredRef.current,
         battleStartIdsSize: combatantStoreCtx.battleStartIds.size,
         hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+        liveHp: characterStatsRef.current.hp,
       })
     ) {
       dumpStateSync("victory-gate", combatantStoreCtx);

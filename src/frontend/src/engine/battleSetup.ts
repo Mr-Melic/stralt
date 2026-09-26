@@ -99,6 +99,14 @@ export function activeHostilesRemaining(enemies: Combatant[]): number {
  * not already lose. `_handlePlayerDeath` used to leave `inBattle` true, so a
  * later last-hostile death (DoT tick, leftover AI turn) could still enter
  * handleBattleEnd / applyRewards and race the death-penalty save.
+ *
+ * Void Mirror / Reflect Shield / Mirror Field / hitsAllies only
+ * `setCharacterStats` — they do not set `deathTriggered` (melee / enemy
+ * spell / DoT / plague call `_handlePlayerDeath` in the same stack).
+ * `characterStatsRef` is updated during render; the `[inBattle, enemies]`
+ * victory useEffect can still see `deathTriggered === false` with live
+ * HP already 0. Drain in the same `applyDamageToEnemy` runs before paint,
+ * so pass the post-drain live HP: a lifesteal save must still award.
  */
 export function shouldAwardVictory(opts: {
   inBattle: boolean;
@@ -106,7 +114,13 @@ export function shouldAwardVictory(opts: {
   /** Must be the battle-open snapshot size, not the living roster. */
   battleStartIdsSize: number;
   hostilesRemaining: number;
+  /**
+   * Live player HP after the killing-blow batch (reflect then drain).
+   * Omit when unknown — same as the deathTriggered-only gate.
+   */
+  liveHp?: number;
 }): boolean {
+  if (opts.liveHp !== undefined && opts.liveHp <= 0) return false;
   return (
     opts.inBattle &&
     !opts.deathTriggered &&
