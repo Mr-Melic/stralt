@@ -361,6 +361,12 @@ export interface TargetGridState {
   effectiveRange: number;
   /** Active barrier tiles → turns remaining (impassable, treated as walls). */
   barrierTiles: TileKeySet;
+  /**
+   * Map-gen void holes (not a TileType). Walk already rejects these;
+   * ground placement must share that set so a highlighted hole cannot
+   * execute. Unique vs queued #619 portal (`tileType === "portal"`).
+   */
+  voidTiles?: TileKeySet | null;
 }
 
 /** Caster position on the grid. */
@@ -396,6 +402,9 @@ export function computeTargetableTiles(
 ): Set<string> {
   const { tiles, enemies, worldGridSize, effectiveRange, barrierTiles } =
     gridState;
+  if (gridState.voidTiles !== undefined) {
+    bindPlayerCastVoidTiles(gridState.voidTiles);
+  }
   const out = new Set<string>();
   const size = Math.max(0, Math.floor(Number(worldGridSize) || 0));
   for (let y = 0; y < size; y++) {
@@ -569,6 +578,16 @@ export function isTileCastableLive(
     }
     if (playerSpellRequiresLos(spell) && !hasLoS(tx, ty)) {
       return { ok: false, reason: "ground_los_blocked" };
+    }
+    // Unique vs #619 portal (after occupied, tileType). Void is a Set.
+    {
+      const voidReject = playerGroundVoidLiveRejectReason({
+        spell,
+        destKey,
+      });
+      if (voidReject) {
+        return { ok: false, reason: voidReject };
+      }
     }
     return { ok: true, reason: "ground" };
   }
@@ -1197,3 +1216,11 @@ export function collectHighlightLiveMismatches(
   }
   return { highlightOnly, liveOnly };
 }
+
+// Unique vs #562 (playerCastVictimLive after battleSetup) and #619 (no extra
+// targeting import). ESM hoists this; keep it after collectHighlightLiveMismatches
+// so oldest-first 3-way stays clean.
+import {
+  bindPlayerCastVoidTiles,
+  playerGroundVoidLiveRejectReason,
+} from "./playerGroundVoid.ts";

@@ -34,6 +34,7 @@ describe("playerFacingRejectReason", () => {
     assert.equal(playerFacingRejectReason("barrier_tile"), "Blocked");
     assert.equal(playerFacingRejectReason("line_blocked_barrier"), "Blocked");
     assert.equal(playerFacingRejectReason("ground_barrier"), "Blocked");
+    assert.equal(playerFacingRejectReason("ground_void"), "Blocked");
     assert.equal(playerFacingRejectReason("out_of_range"), "Out of range");
     assert.equal(
       playerFacingRejectReason("line_los_blocked"),

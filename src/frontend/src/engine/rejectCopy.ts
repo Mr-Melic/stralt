@@ -13,6 +13,7 @@ const REJECT_COPY: Record<string, string> = {
   ground_occupied: "Occupied",
   ground_barrier: "Blocked",
   ground_los_blocked: "No line of sight",
+  ground_void: "Blocked",
   line_off_axis: "Must be in a line",
   line_out_of_range: "Out of range",
   line_below_min_range: "Too close",
