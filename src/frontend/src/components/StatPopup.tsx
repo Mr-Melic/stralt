@@ -1,4 +1,7 @@
 import type React from "react";
+import { useEffect } from "react";
+import { clampInspectPopupPosition } from "../utils/inspectPopupPosition";
+import { subscribeEscapeToDismiss } from "../utils/shopDialogDismiss";
 
 interface StatPopupProps {
   combatant: any;
@@ -26,6 +29,11 @@ export default function StatPopup({
   style,
   anchorRect,
 }: StatPopupProps) {
+  useEffect(() => {
+    if (!combatant) return;
+    return subscribeEscapeToDismiss(onClose);
+  }, [combatant, onClose]);
+
   if (!combatant) return null;
   const stats = unitStats[combatant.id] || {};
   const effects = unitEffects[combatant.id] || [];
@@ -41,49 +49,43 @@ export default function StatPopup({
     { key: "CHC", label: "CHC", value: stats.chc ?? 0 },
   ];
 
-  // Compute fixed position with viewport clamping
   const popupWidth = 248;
-  const popupHeight = 320; // approximate max height
-  const margin = 12;
-
-  let left = 0;
-  let top = 0;
-
-  if (anchorRect) {
-    // Center horizontally on the anchor
-    left = anchorRect.left + anchorRect.width / 2 - popupWidth / 2;
-    // Position above the anchor
-    top = anchorRect.top - popupHeight - 10;
-
-    // Clamp to viewport edges
-    left = Math.max(
-      margin,
-      Math.min(left, window.innerWidth - popupWidth - margin),
-    );
-    top = Math.max(
-      margin,
-      Math.min(top, window.innerHeight - popupHeight - margin),
-    );
-  }
+  const popupHeight = 320;
+  const { left, top } = clampInspectPopupPosition({
+    anchorRect,
+    popupWidth,
+    popupHeight,
+    viewportWidth: typeof window !== "undefined" ? window.innerWidth : 800,
+    viewportHeight: typeof window !== "undefined" ? window.innerHeight : 600,
+    margin: 12,
+  });
 
   return (
-    <div
+    <dialog
+      open
       className="stone-popup-portal stone-popup-portal-animate"
       style={{
+        ...style,
         position: "fixed",
         left,
         top,
         zIndex: 9999,
-        ...style,
+        margin: 0,
+        padding: 0,
+        border: "none",
+        background: "transparent",
       }}
       aria-label="Combatant stats"
-      tabIndex={-1}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           onClose();
         }
+      }}
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
       }}
     >
       <div className="stone-popup-arrow-portal" />
@@ -131,8 +133,8 @@ export default function StatPopup({
             type="button"
             onClick={onClose}
             aria-label="Close inspect"
-            className="stone-btn-slate stone-modal-close"
-            style={{ width: 28, height: 28, padding: 0, borderRadius: 6 }}
+            className="stone-btn-slate stone-modal-close stone-touch-target"
+            style={{ minWidth: 44, minHeight: 44, padding: 0, borderRadius: 6 }}
           >
             ✕
           </button>
@@ -251,6 +253,6 @@ export default function StatPopup({
           )}
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }
