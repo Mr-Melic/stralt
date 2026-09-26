@@ -220,6 +220,7 @@ import {
   type PlayerSpellContextDeps,
   createPlayerSpellContext,
 } from "../engine/spellContext";
+import { spellIsDrain } from "../engine/spellDrain";
 import {
   type ActiveEffectLike,
   type PlayerCastEnemy,
@@ -9453,7 +9454,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         isFirstTarget: boolean,
       ) => {
         const isPhysical = spell?.isPhysical ?? false;
-        const isDrainSpell = spell?.effectType === "drain";
+        const isDrainSpell = spellIsDrain(spell);
         applyDamageToEnemyHelper({
           hitTarget: target as any,
           isFirstTarget,
