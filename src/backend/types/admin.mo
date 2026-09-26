@@ -145,7 +145,8 @@ module {
         spellRangeGrowthLevels      : Nat;
         /// Base spell fail chance at level 1 (e.g. 20.0 = 20%).
         spellFailBaseChance         : Float;
-        /// Fail chance reduction per player level (e.g. 0.1 = -0.1% per level, reaches 0 at level 200).
+        /// Fail chance reduction per player level (e.g. 0.1 = -0.1% per level).
+        /// Floors at 0%. Not a player career cap — Stralt has no max level.
         spellFailReductionPerLevel  : Float;
     };
 
@@ -164,9 +165,12 @@ module {
 
     /// A map modifier that alters gameplay rules for a session.
     ///
-    /// modifierType values:
-    ///   "slime_flood"      — movement costs double MP per tile cell.
-    ///   "paper_windstorm"  — ranged spells (target > 1 tile away) have 50% chance to miss.
+    /// modifierType is free Text matching a live engine registry id
+    /// (`MAP_MODIFIERS` in the frontend — currently 22 ids). The canister
+    /// default seed is still only slime_flood / paper_windstorm. Legacy ids
+    /// (lava_fields, ice_fields, spike_pit, custom) may exist in stored rows
+    /// and have no engine hook. This record has no globalTriggerChance /
+    /// secondModifierChance fields.
     ///
     /// triggerChance: percentage chance (0–100) that this modifier is applied when
     /// the player passes through a portal into a new map. Default is 20.
@@ -174,7 +178,7 @@ module {
         id            : Text;
         name          : Text;
         description   : Text;
-        modifierType  : Text;  // "slime_flood" | "paper_windstorm"
+        modifierType  : Text;
         active        : Bool;
         triggerChance : Nat;   // 0–100, default 20
     };
