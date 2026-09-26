@@ -365,6 +365,7 @@ import {
   tryClaimFlag,
   tryClaimPickupId,
 } from "../utils/dokaPersist";
+import { shouldIgnoreFleeAfterLastHostile } from "../utils/fleeAfterLastHostile";
 import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
@@ -18916,6 +18917,22 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           maxBattleAp={characterStats.maxAp}
           maxBattleMp={characterStats.maxMp}
           onEndBattle={() => {
+            // Last-hostile death is in the live store before the
+            // [inBattle, enemies] victory useEffect. Flee's confirm()
+            // blocks that effect; _handlePlayerDeath then sets
+            // deathTriggered and persistDeathPenalty wins over applyRewards.
+            if (
+              shouldIgnoreFleeAfterLastHostile({
+                inBattle: inBattleRef.current,
+                hostilesRemaining: activeHostilesRemaining(
+                  combatantsRef.current,
+                ),
+                battleStartIdsSize: combatantStoreCtx.battleStartIds.size,
+                battleEnded: battleEndedRef.current,
+              })
+            ) {
+              return;
+            }
             // ── S2: RUN-THEMED FLEE CONFIRM ────────────────────────────────
             // Fleeing a battle inside an active dungeon or boss-rush run ends
             // the run (the player "falls"). Show a themed confirm dialog before
