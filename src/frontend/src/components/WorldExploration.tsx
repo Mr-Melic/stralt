@@ -180,6 +180,7 @@ import {
   playerCastAttemptResult,
   shouldRejectCastForMissingAp,
 } from "../engine/playerCastPlan";
+import { effectiveResistancePercent } from "../engine/playerIncomingRes";
 import {
   PROGRESSION_PORTAL_KIND,
   type RunMode,
@@ -16721,7 +16722,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               );
               const meleeRes = isSummonTarget
                 ? Math.max(0, Number(resolvedTarget?.res ?? 0))
-                : Math.max(0, Number(characterStats.res));
+                : effectiveResistancePercent(
+                    Number(characterStats.res),
+                    "player",
+                    activeEffectsRef.current,
+                  );
               const dmgFB = Math.max(
                 1,
                 Math.round(rawFB * (1 - meleeRes / 100)),
