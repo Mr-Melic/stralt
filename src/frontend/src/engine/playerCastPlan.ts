@@ -10,6 +10,7 @@
 
 import type { Enemy, SpellConfig } from "../types/gameTypes.ts";
 import { isSpellOnCooldown } from "../utils/challengeCompletion.ts";
+import { bindPlayerCastVoidTiles } from "./playerGroundVoid.ts";
 import {
   type BarrierTiles,
   type CasterPosition,
@@ -72,7 +73,12 @@ export function planPlayerCastAttempt(args: {
   baseApCost: number;
   cooldownTurnsRemaining: unknown;
   applyApCost?: (base: number) => number;
+  /** Map-gen void holes. Bind so ground placement cannot spend AP on a hole. */
+  voidTiles?: { has(key: string): boolean } | null;
 }): PlayerCastAttemptPlan {
+  if (args.voidTiles !== undefined) {
+    bindPlayerCastVoidTiles(args.voidTiles);
+  }
   const resources = planPlayerCastResources({
     currentAp: args.currentAp,
     baseApCost: args.baseApCost,

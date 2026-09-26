@@ -7154,6 +7154,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       worldGridSize: WORLD_GRID_SIZE,
       effectiveRange: playerSpellEffectiveRange(spell, getEffectiveSpellRange),
       barrierTiles: barrierTilesRef.current,
+      voidTiles: currentMap.voidTiles ?? null,
     });
     // M5: store computed result in cache
     spellRangeCacheRef.current.set(cacheKey, result);
@@ -17123,6 +17124,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           getEffectiveSpellRange,
         ),
         barrierTiles: barrierTilesRef.current,
+        voidTiles: currentMapRef.current?.voidTiles ?? null,
         currentAp: currentBattleApRef.current,
         baseApCost: Number(spell.apCost),
         cooldownTurnsRemaining: spellCooldownsRef.current.get(spell.id),
