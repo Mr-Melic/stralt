@@ -16,6 +16,7 @@
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import { isActiveHostile } from "./battleSetup";
+import { spellIsDrain } from "./spellDrain";
 
 export type Side = "player" | "enemy";
 
@@ -446,10 +447,7 @@ export function resolveSpellCast(
   }
 
   // Drain / Lifesteal
-  const isDrain =
-    spell.spellType === "drain" ||
-    (spell.effectType &&
-      String(spell.effectType).toLowerCase().includes("drain"));
+  const isDrain = spellIsDrain(spell);
 
   if (spell.damage > 0 && isDrain) {
     const { finalDamage } = computeDamage({
@@ -630,7 +628,7 @@ export function resolvePlayerCast(
   const isPhysical = spell.isPhysical ?? false;
   const isHealSpell =
     spell.targetType === "self" && spell.effectType === "heal";
-  const isDrainSpell = spell.effectType === "drain";
+  const isDrainSpell = spellIsDrain(spell);
   const isShieldSpell =
     (spell.targetType === "self" || spell.targetType === "ally") &&
     spell.effectType === "buff";
