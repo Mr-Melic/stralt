@@ -13,6 +13,7 @@ import {
   validateEnemyName,
   validateMapModifierChance,
 } from "../utils/adminSafety";
+import { mapModifierLastLiveRejected } from "../utils/adminSafety.mapModifierLastLive";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
@@ -163,6 +164,16 @@ export function useAdminSetMapModifier() {
   return useMutation({
     mutationFn: async (config: MapModifierConfig) => {
       if (!actor) throw new Error("Actor not available");
+      const cached = queryClient.getQueryData<MapModifierConfig[]>([
+        "mapModifiers",
+      ]);
+      if (Array.isArray(cached) && cached.length > 0) {
+        const liveErr = mapModifierLastLiveRejected({
+          incoming: config,
+          existing: cached,
+        });
+        if (liveErr) throw new Error(liveErr);
+      }
       const result = await (actor as ActorAny).adminSetMapModifier(config);
       assertAdminCmdOk(result, "adminSetMapModifier");
       return result;

@@ -494,6 +494,36 @@ module {
         null
     };
 
+    /// Failure: official Admin unchecks "Eligible for portal modifier roll"
+    /// on Slime Flood then Paper Windstorm (or sets the last remaining
+    /// triggerChance to 0). Seeded delete is a different helper; this is
+    /// the active=false path. rollActiveModifiers keeps only active ids in
+    /// MODIFIER_BY_ID with weight > 0 — an empty live pool never rolls.
+    /// Custom / gravity_well rows may still be deactivated. Keep at least
+    /// one of slime_flood / paper_windstorm active with triggerChance > 0.
+    public func mapModifierLastLiveRejected(
+        incoming : Types.MapModifierConfig,
+        existing : [Types.MapModifierConfig],
+    ) : ?Text {
+        switch (requireId(incoming.id, "Map modifier")) { case (?e) { return ?e }; case null {} };
+        let seeded = incoming.id == "slime_flood" or incoming.id == "paper_windstorm";
+        if (not seeded) { return null };
+        if (incoming.active and incoming.triggerChance > 0) { return null };
+        var otherLive : Nat = 0;
+        for (c in existing.values()) {
+            if (c.id != incoming.id) {
+                if ((c.id == "slime_flood" or c.id == "paper_windstorm")
+                    and c.active and c.triggerChance > 0) {
+                    otherLive += 1;
+                };
+            };
+        };
+        if (otherLive == 0) {
+            return ?"Cannot empty the live built-in map-modifier pool";
+        };
+        null
+    };
+
     public func validateShopPackage(pkg : Types.ShopPackage) : ?Text {
         switch (requireId(pkg.id, "Shop package")) { case (?e) { return ?e }; case null {} };
         if (pkg.dokaAmount < 1 or pkg.dokaAmount > 2_000_000) {
