@@ -915,6 +915,10 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
+        switch (AdminGuard.mapModifierLastLiveRejected(config, mapModifierConfigs.values().toArray())) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         mapModifierConfigs.add(config.id, config);
         _recordAdminAudit(caller, "setMapModifier", config.id, "previous", config.name);
         #ok;
