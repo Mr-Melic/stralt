@@ -5,6 +5,10 @@
 import type React from "react";
 import { memo, useState } from "react";
 import { soundEngine } from "../engine/soundEngine";
+import {
+  SETTINGS_MUTE_HINT,
+  SETTINGS_PANEL_TITLE,
+} from "../utils/settingsPanelCopy";
 import DraggablePanel from "./DraggablePanel";
 
 interface SettingsPanelProps {
@@ -35,7 +39,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ userId }) => {
   return (
     <DraggablePanel
       panelId="settings"
-      title="Settings"
+      title={SETTINGS_PANEL_TITLE}
       userId={userId}
       defaultPosition={{ x: 24, y: 200 }}
       defaultFolded={true}
@@ -63,7 +67,9 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ userId }) => {
             pointerEvents: "auto",
           }}
         >
-          <span style={{ fontSize: 11 }}>⚙️</span>
+          <span style={{ fontSize: 11 }} aria-hidden="true">
+            🔊
+          </span>
           <span
             style={{
               color: "#ff7675",
@@ -73,25 +79,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ userId }) => {
               textTransform: "uppercase",
             }}
           >
-            Settings
+            {SETTINGS_PANEL_TITLE}
           </span>
         </div>
 
-        {/* Sound section */}
         <div style={{ padding: "8px 10px 10px", pointerEvents: "auto" }}>
-          <div
-            style={{
-              color: "rgba(192,57,43,0.8)",
-              fontSize: 8,
-              fontWeight: 800,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              marginBottom: 6,
-            }}
-          >
-            Sound
-          </div>
-
           {/* Volume slider */}
           <label
             htmlFor="settings.volume_input"
@@ -132,13 +124,16 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ userId }) => {
           <button
             type="button"
             data-ocid="settings.mute_toggle"
+            className="stone-touch-target"
             onClick={handleMute}
             aria-pressed={muted}
             aria-label={muted ? "Unmute sound" : "Mute sound"}
+            aria-describedby="settings.mute_hint"
             style={{
               marginTop: 10,
               width: "100%",
-              padding: "5px 0",
+              minHeight: 44,
+              padding: "10px 0",
               borderRadius: 4,
               border: muted
                 ? "1px solid rgba(192,57,43,0.7)"
@@ -159,6 +154,18 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ userId }) => {
           >
             {muted ? "🔇 Muted" : "🔊 Sound On"}
           </button>
+          <p
+            id="settings.mute_hint"
+            data-ocid="settings.mute_hint"
+            style={{
+              margin: "8px 0 0",
+              color: "rgba(255,255,255,0.45)",
+              fontSize: 9,
+              lineHeight: 1.45,
+            }}
+          >
+            {SETTINGS_MUTE_HINT}
+          </p>
         </div>
       </div>
     </DraggablePanel>
