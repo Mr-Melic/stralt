@@ -15,6 +15,7 @@ import {
 } from "../data/gameConstants.ts";
 import { starterSpells } from "../data/spellData.ts";
 import {
+  calcScaledDamage,
   computeAITier,
   pickEnemyLevelFromTiers,
 } from "../engine/combatMath.ts";
@@ -365,6 +366,41 @@ export const PLAYER_CREATE_RES = Number(startingChampionStats().res);
 /** Live fallback melee pool (`WorldExploration.tsx` Crush 12 / Fire Bolt 8). */
 export const FALLBACK_CRUSH_BASE = 12;
 export const FALLBACK_FIREBOLT_BASE = 8;
+
+/**
+ * Catalog kit damages. `calcScaledDamage` ignores caster level, so these
+ * stay flat while Crush scales `base * max(1, L/5)`. Inferno / Poison /
+ * Venom are `damage: 0` and `pickBestDamageSpell` skips them.
+ */
+export const KIT_STRIKE_DAMAGE = 10;
+export const KIT_FROST_DAMAGE = 20;
+export const KIT_INFERNO_DIRECT_DAMAGE = 0;
+export const PASSIVE_REGEN_INTERVAL_MS = 10_000;
+
+/** Enemy kit cast raw. Mirrors WX `calcScaledDamage(spellDmg, enemy.level, 0)`. */
+export function kitCastRaw(baseDamage: number, enrage = 1): number {
+  return Math.max(1, Math.round(calcScaledDamage(baseDamage, 1, 0) * enrage));
+}
+
+export function crushOverKitRatio(enemyLevel: number, kitBase: number): number {
+  const kit = kitCastRaw(kitBase);
+  if (kit <= 0) return Number.POSITIVE_INFINITY;
+  return fallbackCrushRaw(enemyLevel) / kit;
+}
+
+/** First enemy level whose Crush raw strictly exceeds the flat kit spell. */
+export function firstEnemyLevelCrushExceedsKit(kitBase: number): number | null {
+  const kit = kitCastRaw(kitBase);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (fallbackCrushRaw(enemyLevel) > kit) return enemyLevel;
+  }
+  return null;
+}
+
+/** Out-of-battle +1 HP / 10s (`WorldExploration.tsx` 3618–3625). */
+export function passiveRegenSecondsToFull(level: number): number {
+  return linearPlayerMaxHp(level) * (PASSIVE_REGEN_INTERVAL_MS / 1000);
+}
 
 /** Fallback Crush raw before RES. Mirrors WorldExploration fallback melee. */
 export function fallbackCrushRaw(enemyLevel: number): number {
@@ -758,6 +794,15 @@ export function runLongHorizonSim() {
       bloodMendOverHp: BLOOD_MEND_HEAL / linearPlayerMaxHp(level),
       lifeDrainHealOverHp: LIFE_DRAIN_HEAL / linearPlayerMaxHp(level),
       potion30OverHp: 0.3,
+      crushOverFrost: crushOverKitRatio(
+        Math.round(meanEnemy),
+        KIT_FROST_DAMAGE,
+      ),
+      crushOverStrike: crushOverKitRatio(
+        Math.round(meanEnemy),
+        KIT_STRIKE_DAMAGE,
+      ),
+      regenSecondsToFull: passiveRegenSecondsToFull(level),
     };
   });
 
@@ -831,7 +876,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-25T00:08:00.000Z",
+    generatedAt: "2026-09-26T00:15:11.858Z",
     telemetry: {
       available: false,
       reason:
@@ -904,6 +949,18 @@ export function runLongHorizonSim() {
       healthPotionCost: HEALTH_POTION_COST,
       greaterPotionCost: GREATER_POTION_COST,
       deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
+      firstEnemyLevelCrushExceedsFrost:
+        firstEnemyLevelCrushExceedsKit(KIT_FROST_DAMAGE),
+      firstEnemyLevelCrushExceedsStrike:
+        firstEnemyLevelCrushExceedsKit(KIT_STRIKE_DAMAGE),
+      crushOverFrostAt1020: crushOverKitRatio(1020, KIT_FROST_DAMAGE),
+      crushOverStrikeAt1020: crushOverKitRatio(1020, KIT_STRIKE_DAMAGE),
+      kitFrostRaw: kitCastRaw(KIT_FROST_DAMAGE),
+      kitStrikeRaw: kitCastRaw(KIT_STRIKE_DAMAGE),
+      kitInfernoDirectDamage: KIT_INFERNO_DIRECT_DAMAGE,
+      regenSecondsToFullAt1: passiveRegenSecondsToFull(1),
+      regenSecondsToFullAt1000: passiveRegenSecondsToFull(1000),
+      regenSecondsToFullAt100000: passiveRegenSecondsToFull(100_000),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
@@ -1042,6 +1099,35 @@ export function runLongHorizonSim() {
       ),
       deathDokaLostOnMaxGameKey: deathDokaLost(MAX_DOKA_GRANT),
       deathDokaRate: DEATH_DOKA_PENALTY_RATE,
+    },
+    kitVsCrush: {
+      strike: KIT_STRIKE_DAMAGE,
+      frost: KIT_FROST_DAMAGE,
+      infernoDirect: KIT_INFERNO_DIRECT_DAMAGE,
+      calcScaledDamageIgnoresCasterLevel: true,
+      pickBestDamageSpellRequiresDamageGt0: true,
+      kitStrikeRaw: kitCastRaw(KIT_STRIKE_DAMAGE),
+      kitFrostRaw: kitCastRaw(KIT_FROST_DAMAGE),
+      firstEnemyLevelCrushExceedsFrost:
+        firstEnemyLevelCrushExceedsKit(KIT_FROST_DAMAGE),
+      firstEnemyLevelCrushExceedsStrike:
+        firstEnemyLevelCrushExceedsKit(KIT_STRIKE_DAMAGE),
+      crushRawAt9: fallbackCrushRaw(9),
+      crushRawAt80: fallbackCrushRaw(80),
+      crushRawAt1020: fallbackCrushRaw(1020),
+      crushOverFrostAt9: crushOverKitRatio(9, KIT_FROST_DAMAGE),
+      crushOverFrostAt80: crushOverKitRatio(80, KIT_FROST_DAMAGE),
+      crushOverFrostAt1020: crushOverKitRatio(1020, KIT_FROST_DAMAGE),
+      crushOverStrikeAt1020: crushOverKitRatio(1020, KIT_STRIKE_DAMAGE),
+    },
+    passiveRegen: {
+      intervalMs: PASSIVE_REGEN_INTERVAL_MS,
+      hpPerTick: PASSIVE_REGEN_PER_TICK,
+      secondsToFullAt1: passiveRegenSecondsToFull(1),
+      secondsToFullAt10: passiveRegenSecondsToFull(10),
+      secondsToFullAt100: passiveRegenSecondsToFull(100),
+      secondsToFullAt1000: passiveRegenSecondsToFull(1000),
+      secondsToFullAt100000: passiveRegenSecondsToFull(100_000),
     },
   };
 }

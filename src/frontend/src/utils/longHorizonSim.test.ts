@@ -9,14 +9,20 @@ import {
   BLOOD_MEND_HEAL,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
+  KIT_FROST_DAMAGE,
+  KIT_INFERNO_DIRECT_DAMAGE,
+  KIT_STRIKE_DAMAGE,
   LIFE_DRAIN_HEAL,
   PLAYER_CREATE_INIT,
   SHIELD_CHARM_ABSORB,
+  crushOverKitRatio,
   damageAfterPlayerResPasses,
   deathDokaLost,
   effectiveSpellRange,
+  fallbackCrushRaw,
   fallbackCrushRawEnraged,
   fightsToNextLevel,
+  firstEnemyLevelCrushExceedsKit,
   firstEnemyLevelCrushExceedsShield,
   firstEnemyLevelEnragedCrushOneShots,
   firstEnemyLevelXpClampHits,
@@ -34,9 +40,11 @@ import {
   healthPotionHpRestored,
   jackpotPersistIfHit,
   jackpotUnclampedMean,
+  kitCastRaw,
   kitForZoneInput,
   linearPlayerMaxHp,
   officialStackedXp,
+  passiveRegenSecondsToFull,
   runLongHorizonSim,
   spawnPlaceholderDamage,
   spellFailChance,
@@ -197,5 +205,21 @@ assert.equal(
     damageAfterPlayerResPasses(fallbackCrushRawEnraged(1020)),
   ),
 );
+
+assert.equal(kitCastRaw(KIT_STRIKE_DAMAGE), 10);
+assert.equal(kitCastRaw(KIT_FROST_DAMAGE), 20);
+assert.equal(KIT_INFERNO_DIRECT_DAMAGE, 0);
+assert.equal(firstEnemyLevelCrushExceedsKit(KIT_FROST_DAMAGE), 9);
+assert.equal(firstEnemyLevelCrushExceedsKit(KIT_STRIKE_DAMAGE), 1);
+assert.equal(fallbackCrushRaw(9), 22);
+assert.ok(crushOverKitRatio(80, KIT_FROST_DAMAGE) > 9);
+assert.ok(crushOverKitRatio(1020, KIT_FROST_DAMAGE) > 120);
+assert.equal(report.kitVsCrush.firstEnemyLevelCrushExceedsFrost, 9);
+assert.equal(report.kitVsCrush.calcScaledDamageIgnoresCasterLevel, true);
+assert.equal(passiveRegenSecondsToFull(1), 1000);
+assert.equal(passiveRegenSecondsToFull(10), 1450);
+assert.ok(passiveRegenSecondsToFull(1000) > 50_000);
+assert.equal(report.passiveRegen.secondsToFullAt1, 1000);
+assert.equal(report.passiveRegen.intervalMs, 10_000);
 
 console.log("longHorizonSim.test: ok");
