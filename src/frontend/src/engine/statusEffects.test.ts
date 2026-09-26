@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { ActiveEffect } from "../types/gameTypes";
 import {
   applyOrRefreshNonDotEffect,
+  effectStatMatchesQuery,
   formatBattleEffectMagnitude,
   getStatModifier,
   isAdditiveResourceStat,
@@ -145,6 +146,35 @@ describe("getStatModifier", () => {
     ];
     assert.equal(getStatModifier("player", "dmg", effects), 1);
     assert.equal(getStatModifier("player", "ap", effects), 0);
+  });
+
+  it("applies catalog res_sp shreds to both RES and SP queries", () => {
+    const effects = [
+      fx({
+        effectName: "Expose",
+        type: "debuff",
+        targetId: "player",
+        stat: "res_sp",
+        modifier: 0.8,
+      }),
+    ];
+    assert.equal(getStatModifier("player", "res", effects), 0.8);
+    assert.equal(getStatModifier("player", "sp", effects), 0.8);
+    assert.equal(getStatModifier("player", "sr", effects), 1);
+    assert.equal(getStatModifier("player", "dmg", effects), 1);
+    assert.equal(getStatModifier("e1", "res", effects), 1);
+  });
+});
+
+describe("effectStatMatchesQuery", () => {
+  it("matches exact keys and maps res_sp onto res and sp only", () => {
+    assert.equal(effectStatMatchesQuery("res", "res"), true);
+    assert.equal(effectStatMatchesQuery("sp", "sp"), true);
+    assert.equal(effectStatMatchesQuery("res_sp", "res"), true);
+    assert.equal(effectStatMatchesQuery("res_sp", "sp"), true);
+    assert.equal(effectStatMatchesQuery("res_sp", "sr"), false);
+    assert.equal(effectStatMatchesQuery("res_sp", "res_sp"), true);
+    assert.equal(effectStatMatchesQuery(undefined, "res"), false);
   });
 });
 
