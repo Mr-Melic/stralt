@@ -33,6 +33,21 @@ export function isAdditiveResourceStat(stat: string): boolean {
 }
 
 /**
+ * Catalog Expose / Shadow Veil persist one row with `stat: "res_sp"`.
+ * Combat mitigation queries `"res"` and `"sp"` separately. Strict
+ * equality left the advertised shred as a log-only no-op (boss kits
+ * already write that row on main; player damage+debuff is #555).
+ */
+export function effectStatMatchesQuery(
+  effectStat: string | undefined,
+  query: string,
+): boolean {
+  if (!effectStat) return false;
+  if (effectStat === query) return true;
+  return effectStat === "res_sp" && (query === "res" || query === "sp");
+}
+
+/**
  * Combined buff/debuff modifier for `stat` on `targetId`.
  *
  * - AP/MP: sum of matching modifiers (missing modifier counts as 0).
@@ -50,7 +65,9 @@ export function getStatModifier(
   let multiplier = 1;
   let additive = 0;
   for (const eff of effects) {
-    if (eff.targetId !== targetId || eff.stat !== stat) continue;
+    if (eff.targetId !== targetId || !effectStatMatchesQuery(eff.stat, stat)) {
+      continue;
+    }
     if (eff.type === "buff" || eff.type === "debuff") {
       if (isAdditiveResourceStat(stat)) {
         additive += eff.modifier ?? 0;
