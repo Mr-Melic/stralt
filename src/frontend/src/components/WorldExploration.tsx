@@ -153,6 +153,13 @@ import {
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
 import {
+  type IsoView,
+  buildIsoTileCenterCache,
+  isoApproxGrid,
+  isoTileTopVertexRounded,
+  pickIsoTileFromPoint,
+} from "../engine/isoGrid";
+import {
   applyFinalizedLayout,
   applySanctuaryLayout,
   applyVoidTiles,
@@ -3768,6 +3775,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     new Map(),
   );
 
+  // CSS-space iso view. Desktop cam is forced to 0 here — same gate the
+  // old inline origin used. Camera refs are read at call time.
+  const isoViewNow = useCallback((): IsoView => {
+    return {
+      canvasWidth: canvasSize.width,
+      canvasHeight: canvasSize.height,
+      tileW: effectiveTileW,
+      tileH: effectiveTileH,
+      camX: isDesktop ? 0 : cameraRef.current.x,
+      camY: isDesktop ? 0 : cameraRef.current.y,
+    };
+  }, [canvasSize, effectiveTileW, effectiveTileH, isDesktop]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: isDesktop is stable (never changes at runtime) and cameraRef is intentionally excluded to avoid re-creating this on every camera move
   const gridToScreen = useCallback(
     (gridX: number, gridY: number) => {
@@ -3776,20 +3796,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const cached = tileScreenCacheRef.current.get(key);
       if (cached) return cached;
 
-      const mapH = WORLD_GRID_SIZE * effectiveTileH;
-      const camX = isDesktop ? 0 : cameraRef.current.x;
-      const camY = isDesktop ? 0 : cameraRef.current.y;
-      const originX = canvasSize.width / 2 + camX;
-      const originY =
-        (canvasSize.height - mapH) / 2 + effectiveTileH / 2 + camY;
-      const screenX = (gridX - gridY) * (effectiveTileW / 2) + originX;
-      const screenY = (gridX + gridY) * (effectiveTileH / 2) + originY;
-      const result = { x: Math.round(screenX), y: Math.round(screenY) };
+      const result = isoTileTopVertexRounded(isoViewNow(), gridX, gridY);
       tileScreenCacheRef.current.set(key, result);
       return result;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canvasSize, effectiveTileW, effectiveTileH],
+    [canvasSize, effectiveTileW, effectiveTileH, isoViewNow],
   );
 
   // Invalidate tile cache whenever layout inputs change (same deps as gridToScreen).
@@ -3818,23 +3830,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // To hit-test correctly, we must offset the click by -tH/2 in Y (treating click as aimed at tile center).
   const _screenToGrid = useCallback(
     (screenX: number, screenY: number) => {
-      const mapH = WORLD_GRID_SIZE * effectiveTileH;
-      const camX = isDesktop ? 0 : cameraRef.current.x;
-      const camY = isDesktop ? 0 : cameraRef.current.y;
-      const originX = canvasSize.width / 2 + camX;
-      const originY =
-        (canvasSize.height - mapH) / 2 + effectiveTileH / 2 + camY;
-      const hW = effectiveTileW / 2;
-      const hH = effectiveTileH / 2;
-      // Adjust y: clicks aim at tile center, which is hH below the top vertex
-      const dx = screenX - originX;
-      const dy = screenY - hH - originY;
-      const gridX = Math.round((dx / hW + dy / hH) / 2);
-      const gridY = Math.round((dy / hH - dx / hW) / 2);
-      return { x: gridX, y: gridY };
+      // Unclamped inverse — live helper never clamped off-board guesses.
+      return isoApproxGrid(isoViewNow(), screenX, screenY);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canvasSize, effectiveTileW, effectiveTileH, isDesktop],
+    [isoViewNow],
   );
 
   // FIXED: Draw pixel pattern with perfect tile alignment - patterns now match tile dimensions exactly
@@ -8840,26 +8839,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   );
 
   const rebuildTileCornerCache = useCallback(() => {
-    const mapH = WORLD_GRID_SIZE * effectiveTileH;
-    const camX = isDesktop ? 0 : cameraRef.current.x;
-    const camY = isDesktop ? 0 : cameraRef.current.y;
-    const halfW = effectiveTileW / 2;
-    const halfH = effectiveTileH / 2;
-    // originX/Y in CSS space — MUST use canvasSize (same as gridToScreen)
-    const originX = canvasSize.width / 2 + camX;
-    const originY = (canvasSize.height - mapH) / 2 + halfH + camY;
-    const cache = new Map<string, { cx: number; cy: number }>();
-    for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-      for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-        // gridToScreen top-vertex + halfH = tile visual center
-        const topX = (gx - gy) * halfW + originX;
-        const topY = (gx + gy) * halfH + originY;
-        cache.set(`${gx},${gy}`, { cx: topX, cy: topY + halfH });
-      }
-    }
-    tileCornerCacheRef.current = cache;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasSize, effectiveTileW, effectiveTileH, isDesktop]);
+    // Unrounded centers — do not feed rounded gridToScreen tops into the
+    // click cache (inverse-formula drift). Same algebra as live rebuild.
+    tileCornerCacheRef.current = buildIsoTileCenterCache(isoViewNow());
+  }, [isoViewNow]);
 
   // Rebuild cache whenever the dependencies change
   useEffect(() => {
@@ -8932,60 +8915,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       const px = (clientX - rect.left) * (cssW / rect.width);
       const py = (clientY - rect.top) * (cssH / rect.height);
 
-      const halfW = effectiveTileW / 2;
-      const halfH = effectiveTileH / 2;
-      const cache = tileCornerCacheRef.current;
-
-      // Fast path: approximate grid position using inverse isometric formula,
-      // then test a 5×5 neighborhood with the exact cached diamond centers.
-      const mapH = WORLD_GRID_SIZE * effectiveTileH;
-      const camX = isDesktop ? 0 : cameraRef.current.x;
-      const camY = isDesktop ? 0 : cameraRef.current.y;
-      const originY = (cssH - mapH) / 2 + halfH + camY;
-      const originX = canvasSize.width / 2 + camX;
-      const dx0 = px - originX;
-      const dy0 = py - halfH - originY;
-      // H6: Clamp the approximate grid position so the 5×5 neighborhood
-      // search never wanders outside the valid grid range on map-edge clicks.
-      const approxX = Math.max(
-        0,
-        Math.min(
-          WORLD_GRID_SIZE - 1,
-          Math.round((dx0 / halfW + dy0 / halfH) / 2),
-        ),
+      // Inverse + 5×5 diamond pick against the unrounded center cache.
+      // pointerToRenderSpace / getBoundingClientRect stay in this file.
+      return pickIsoTileFromPoint(
+        isoViewNow(),
+        px,
+        py,
+        tileCornerCacheRef.current,
       );
-      const approxY = Math.max(
-        0,
-        Math.min(
-          WORLD_GRID_SIZE - 1,
-          Math.round((dy0 / halfH - dx0 / halfW) / 2),
-        ),
-      );
-
-      // Search 5×5 neighborhood using pre-computed centers from cache
-      for (let gy = approxY - 2; gy <= approxY + 2; gy++) {
-        for (let gx = approxX - 2; gx <= approxX + 2; gx++) {
-          if (
-            gx < 0 ||
-            gx >= WORLD_GRID_SIZE ||
-            gy < 0 ||
-            gy >= WORLD_GRID_SIZE
-          )
-            continue;
-          const entry = cache.get(`${gx},${gy}`);
-          if (!entry) continue;
-          // Point-in-diamond test against cached center
-          const ndx = Math.abs(px - entry.cx) / halfW;
-          const ndy = Math.abs(py - entry.cy) / halfH;
-          if (ndx + ndy <= 1.0) {
-            return { x: gx, y: gy };
-          }
-        }
-      }
-      return null;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canvasSize, effectiveTileW, effectiveTileH, isDesktop],
+    [canvasSize, isoViewNow],
   );
 
   // Pointer-to-render-space helper: converts a pointer event into the renderer's LOGICAL (CSS) pixel space.
