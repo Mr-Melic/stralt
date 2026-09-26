@@ -30,7 +30,6 @@ import {
   setGeometryOverlayEnabled,
   subscribeGeometryOverlayEnabled,
 } from "../debug/geometryOverlayState";
-import { raceWithTimeout } from "../engine/promiseTimeout";
 import { useActor } from "../hooks/useActor";
 import type { ActiveEffect, BattleLogEntry } from "../types/gameTypes";
 import {
@@ -878,16 +877,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
 
   const fetchMessages = useCallback(async () => {
     if (!actor) return;
-    // M4: 5-second timeout prevents slow responses from cascading into queued requests.
-    // PERF-2026-09-26-114: clear the race timer when getMessages wins (the
-    // previous Promise.race setTimeout was never cleared). Keep fold/channel
-    // unread counting here; poll identity is PERF-063.
+    // M4: 5-second timeout prevents slow responses from cascading into queued requests
+    let didTimeout = false;
+    const timeoutId = setTimeout(() => {
+      didTimeout = true;
+    }, 5000);
     try {
-      const raw = await raceWithTimeout(
+      const raw = await Promise.race([
         (actor as ActorAny).getMessages(),
-        5000,
-        "chat poll timed out",
-      );
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("chat poll timed out")), 5000),
+        ),
+      ]);
+      clearTimeout(timeoutId);
       if (!Array.isArray(raw)) return;
       const next = raw as ChatMessage[];
       setMessages((prev) => {
@@ -916,7 +918,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
         );
       }
     } catch {
-      // Silently ignore timeout and other errors
+      clearTimeout(timeoutId);
+      if (didTimeout) return; // skip silently on timeout
+      // Silently ignore other errors
     }
   }, [actor, isFolded, activeChannel]);
 

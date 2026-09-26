@@ -1,7 +1,7 @@
 # ACTION_IDs — 2026-09-26 Performance Auditor
 
-Implemented this increment: PERF-2026-09-26-114, 115, 118.
-Reported only: PERF-2026-09-26-116, 117.
+Implemented this increment: PERF-2026-09-26-115, 118.
+Reported only: PERF-2026-09-26-114, 116, 117.
 
 Did **not** change WorldExploration, the world RAF schedule, or gameplay timing.
 Did **not** re-file PERF-2026-08-31-001..010, 09-01-011..036, 09-02-037..060,
@@ -9,13 +9,15 @@ Did **not** re-file PERF-2026-08-31-001..010, 09-01-011..036, 09-02-037..060,
 
 Did **not** implement previously reported PERF-081 (skip ChatPanel body while
 folded): wrapping children forces Biome to reindent ~900 lines and would
-overwrite union with open ChatPanel PRs #350 / #392 / #447. Helper-only was
-not wired. Default remains unfolded (PERF-103, HUMAN).
+overwrite union with open ChatPanel PRs #350 / #392 / #447. Default remains
+unfolded (PERF-103, HUMAN).
 
-ChatPanel hunk is only `fetchMessages` timeout (keep fold/channel unread
-deps for #350's 063). `sonner.tsx` and `smallScreenActivity.ts` are new or
-disjoint from open perf PRs #350 / #392 / #412 / #429 / #447 / #511 / #594.
-`App.tsx` only changes the small-screen resize updater.
+Did **not** wire ChatPanel `fetchMessages` (PERF-114): that file is in the
+oldest-first ChatPanel stack (#350 / #392 / #447 and later combat PRs). A
+`raceWithTimeout` helper was dropped so this PR stays merge-clean. `sonner.tsx`
+and `smallScreenActivity.ts` are new or disjoint from open perf PRs #350 /
+#392 / #412 / #429 / #447 / #511 / #594. `App.tsx` only changes the
+small-screen resize updater.
 
 ## Residual on HEAD (already ledgered; still open in older PRs)
 
@@ -25,6 +27,7 @@ disjoint from open perf PRs #350 / #392 / #412 / #429 / #447 / #511 / #594.
 | 062 | `playNoise` still allocates a buffer per hit | #350 |
 | 009 / 070 | `callerDokaBalance` staleTime 0; global QC default | HUMAN |
 | 081 | Folded chat still evaluates 500-row JSX | older ChatPanel PRs |
+| 114 | Chat poll 5s race timer never cleared | ChatPanel stack; this increment reports only |
 | 083 | `[FEATS] UNLOCK/CLAIM` `console.log` | #392 |
 | 085 | Leaderboard focus refetch | #392 |
 | 094–096 | useIsMobile equality, profile focus, debug mount copy | #447 |
@@ -39,16 +42,16 @@ TITLE: Chat getMessages poll leaves a 5s timer running after the canister return
 CATEGORY: runtime-performance
 PRIORITY: medium
 CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/engine/promiseTimeout.ts; src/frontend/src/components/ChatPanel.tsx (fetchMessages)
-CURRENT_BEHAVIOUR: Every 2s explore poll `Promise.race`d `getMessages()` against `setTimeout(..., 5000)` and never `clearTimeout` when the actor won. A successful poll still occupied a timer until 5s. Distinct from PERF-101 (10s `withTimeout` in React Query hooks) and PERF-063 (poll identity vs fold/channel).
-DESIRED_BEHAVIOUR: `raceWithTimeout` clears the timer in `finally` when either side settles. Timeouts still reject hung replica calls. Fold/channel unread counting unchanged.
-EVIDENCE: ChatPanel.tsx fetchMessages previously created two 5s timers (didTimeout flag + race reject) and only cleared the flag timer.
-RECOMMENDED_ACTION: Keep `raceWithTimeout`. Do not change 2s interval, hidden-tab skip, or in-battle pause.
+FILES_OR_SYSTEMS: src/frontend/src/components/ChatPanel.tsx (fetchMessages)
+CURRENT_BEHAVIOUR: Every 2s explore poll `Promise.race`s `getMessages()` against `setTimeout(..., 5000)` and never `clearTimeout` when the actor wins. A successful poll still occupies a timer until 5s. Distinct from PERF-101 (10s `withTimeout` in React Query hooks) and PERF-063 (poll identity vs fold/channel).
+DESIRED_BEHAVIOUR: Race helper clears the timer in `finally` when either side settles. Timeouts still reject hung replica calls. Fold/channel unread counting unchanged.
+EVIDENCE: ChatPanel.tsx fetchMessages creates two 5s timers (didTimeout flag + race reject) and only clears the flag timer.
+RECOMMENDED_ACTION: After older ChatPanel PRs land, wrap getMessages in a finally-cleared timeout. Do not change 2s interval, hidden-tab skip, or in-battle pause. Do not restack ChatPanel in this increment — open-pr-stack-compat conflicts on that file through the oldest-first prefix.
 AUTONOMY:
-- SAFE_TO_AUTO_IMPLEMENT
-REGRESSION_RISK: Hung getMessages must still fail closed at 5s so polls do not queue.
-VALIDATION_REQUIRED: node --experimental-strip-types --test src/frontend/src/engine/promiseTimeout.test.ts; fold chat; send a line; poll continues; no growing timer list in DevTools.
-STATUS: IMPLEMENTED
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: Hung getMessages must still fail closed at 5s so polls do not queue. ChatPanel is in #350/#392/#447 plus later combat PRs.
+VALIDATION_REQUIRED: fold chat; send a line; poll continues; no growing timer list in DevTools.
+STATUS: NEW
 
 ---
 
