@@ -6,11 +6,11 @@ Design contract: [`SPELL_ADMIN_DESIGN_2026-09-26.md`](./SPELL_ADMIN_DESIGN_2026-
 
 **First-cuts live on unmerged [#473](https://github.com/Mr-Melic/stralt/pull/473):** `SDA-2026-09-23-001` … `028`. Treat those as the current 001–028. **Do not implement a second 09-26 copy.** 09-21 IDs live on [#353](https://github.com/Mr-Melic/stralt/pull/353); 09-22 IDs live on [#398](https://github.com/Mr-Melic/stralt/pull/398); 09-24 queue-union IDs `029` … `040` live on [#515](https://github.com/Mr-Melic/stralt/pull/515); 09-25 queue-union IDs `041` … `055` live on [#570](https://github.com/Mr-Melic/stralt/pull/570). Prior IDs `SDA-2026-08-31-001` … `013`, `SDA-2026-09-01-001` … `014`, and `SDA-2026-09-02-001` … `015` remain OPEN, PARTIAL, or LANDED as tabulated in the 09-23 design §9 — do not close them from this file except 09-01-002 (bindgen) and the empty-AI half of 09-02-006, which **landed**.
 
-This run only adds **056–068** (queue after #570). Do not implement gameplay from this file unless a later human or orchestrator explicitly picks an ID. This run ships **docs only**.
+This run only adds **056–069** (queue after #570, plus same-morning #625). Do not implement gameplay from this file unless a later human or orchestrator explicitly picks an ID. This run ships **docs only**.
 
 HEAD: `0f5363f` (unchanged since 09-21).
 
-Older still-open PRs (union, do not overwrite): **#327** then **#331**, then #333+. SDA-relevant additions since #570: **#572** (Wave-9 bosses / Table G), **#574** (Face/Mute/Span/Brand encounters), **#577** (version-gate feat keep + spell-level array alignment), **#578** / **#613** (WDD waves 8–9), **#580** / **#599** (seeded `saveBattleStats` skip), **#581** (0-AP Timestep under Arcane Surge), **#585** (AdminDashboard Ground Doka / ads), **#590** (Wave-8 SDE), **#591** (enemyWander extract), **#592** (summon kit a11y), **#596** / **#598** (Haste/Slow pools), **#597** / **#601** / **#607** (ally / occupant / Sacrifice live gates), **#602** (Death Realm skip upgradeSpell), **#604** (Death Realm skip feat claim), **#605** (map-modifier identity), **#606** (last-hostile battle input), **#611** (recap `victoryPersistPending`). Keep one `export function` per name.
+Older still-open PRs (union, do not overwrite): **#327** then **#331**, then #333+. SDA-relevant additions since #570: **#572** (Wave-9 bosses / Table G), **#574** (Face/Mute/Span/Brand encounters), **#577** (version-gate feat keep + spell-level array alignment), **#578** / **#613** (WDD waves 8–9), **#580** / **#599** (seeded `saveBattleStats` skip), **#581** (0-AP Timestep under Arcane Surge), **#585** (AdminDashboard Ground Doka / ads), **#590** (Wave-8 SDE), **#591** (enemyWander extract), **#592** (summon kit a11y), **#596** / **#598** (Haste/Slow pools), **#597** / **#601** / **#607** (ally / occupant / Sacrifice live gates), **#602** (Death Realm skip upgradeSpell), **#604** (Death Realm skip feat claim), **#605** (map-modifier identity), **#606** (last-hostile battle input), **#611** (recap `victoryPersistPending`), **#625** (Wave-9 elite families). Keep one `export function` per name.
 
 ---
 
@@ -231,4 +231,21 @@ AUTONOMY: IMPLEMENT_AFTER_HUMAN — with 09-23-009.
 DEPENDENCIES: SDA-2026-09-23-009; SDA-2026-09-24-035; SDA-2026-09-25-051; PRs #604 / #611  
 REGRESSION_RISK: MEDIUM — a Feat Unlocked-styled spell toast double-signals; claiming a feat during Death Realm must not also grant a spell. LOW if recap waits correctly.  
 VALIDATION_REQUIRED: Victory with a new feat and a discovered spell shows one recap containing both after persist. Observe toast is not “Feat Unlocked”. Feat claim during Death Realm is skipped; discovery is not claimed via that skip helper. Duplicate victory empty grant.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: SDA-2026-09-26-069  
+SOURCE_AUTOMATION: Spell, Discovery & Achievement Admin Designer  
+TITLE: Wave-9 elite families are CORE stamps, not a fourth ENEMY_KITS  
+CATEGORY: enemy-pools  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: Open [#625](https://github.com/Mr-Melic/stralt/pull/625) (`ENEMY_ELITE_EVOLUTION_2026-09-26.md`) is Wave-9 family paper that landed the same morning as this run. 09-25-050 already required Wave-8 families to be rows on the admin-authored CORE–SIGNATURE store, not a fourth `ENEMY_KITS` table. Live `ENEMY_KITS` is still a hardcoded `Record<ChessPieceType, …>` (`enemyAI.ts` 163–185). Admin `EnemyConfig` has no spell list. `buildEnemyKit(enemy.pieceType, currentMap.levelZone)` (`WorldExploration.tsx` 11920) still passes a LevelZone object so every kit stays zone 0. Copying Wave-9 family verbs into `starterSpells` pre-owns them via WX 2395–2408.  
+SYSTEMS_AFFECTED: future `enemyKits` store; Admin Kits tab; `buildEnemyKit` call site; Wave-9 family stamps  
+RECOMMENDED_ACTION: When 09-23-010 lands, Wave-9 families are rows on the same `EnemyKit` store (ids only, numeric zone). Honour #625 CORE stamps. Do not append a second `ENEMY_KITS` table. Pass `minLevel` or a numeric zone — never the LevelZone object. Extract the WX call site; do not grow WX. Coordinate with 056 / 057 / 09-25-050.  
+AUTONOMY: HUMAN_APPROVE — with 09-23-010.  
+DEPENDENCIES: SDA-2026-09-23-010; SDA-2026-09-23-007; SDA-2026-09-25-050; SDA-2026-09-26-056; PR #625  
+REGRESSION_RISK: MEDIUM — empty kit must not leave enemies unarmed. Fixing zone NaN will suddenly enable ADVANCED ids — confirm those ids exist in the catalog first (007) and are not name-tombstoned (`Inferno` is still in `OLD_SPELL_NAMES_SET`). HIGH if Wave-9 CORE ids land in `starterSpells`.  
+VALIDATION_REQUIRED: Zone 0 pawn kit matches today’s ids including Strike after 007. A Wave-9 family kit resolves stamped ids only. Missing id skipped and logged. No `starterSpells.find(id === "summon-dire-wolf")`.  
 STATUS: NEW  

@@ -14,7 +14,7 @@ This is a **delta** on [`SPELL_ADMIN_DESIGN_2026-08-31.md`](./SPELL_ADMIN_DESIGN
 
 What changed is the **oldest-first queue after #570** (created 2026-09-25T00:21Z). Sibling PRs are about to: stamp Wave-8 SDE (`generationMin: 8`) and Wave-9 boss sheets onto the same 32-id pre-owned catalog; keep 0-AP Timestep free under Arcane Surge while Admin still rejects `apCost < 1`; preserve feat/session caches across version wipe without a matching observed/owned key family; add more WDD attune/loan/glyph paper that must not call `upgradeSpell`; make ally-summon / occupant / Sacrifice / Haste-on-summon **live combat** that Admin still cannot persist.
 
-ACTION_IDs: [`ACTION_IDS_SDA_2026-09-26.md`](./ACTION_IDS_SDA_2026-09-26.md) (`SDA-2026-09-26-056` … `068`).
+ACTION_IDs: [`ACTION_IDS_SDA_2026-09-26.md`](./ACTION_IDS_SDA_2026-09-26.md) (`SDA-2026-09-26-056` … `069`).
 
 Do not implement those IDs unless a human or orchestrator picks one. Do not grow `WorldExploration.tsx` (19 213 lines). Do not grow `AdminDashboard.tsx` (8 280 lines) until activate exists on the canister. Never introduce spell-name heuristics.
 
@@ -95,6 +95,7 @@ Oldest-first merge order still starts at **#327**, then **#331**, then **#333+**
 | [#564](https://github.com/Mr-Melic/stralt/pull/564) / [#568](https://github.com/Mr-Melic/stralt/pull/568) / [#539](https://github.com/Mr-Melic/stralt/pull/539) | Still open from 09-25 | Honour 053 / 055 / 049. Do not recopy. |
 | [#574](https://github.com/Mr-Melic/stralt/pull/574) | Face/Mute/Span/Brand encounter catalog | `SPECIAL_ENCOUNTER` stamps. Do not grant on the tag (056). |
 | [#565](https://github.com/Mr-Melic/stralt/pull/565) | Enemy AI evolution increment (SYS/FUT honesty) | Hints, not grants. Never name-match (062). |
+| [#625](https://github.com/Mr-Melic/stralt/pull/625) | Wave-9 elite families (docs, same morning as this run) | CORE stamps on the same kit store as 09-23-010 / 09-25-050. Not a fourth `ENEMY_KITS` (069). |
 
 WX / AdminDashboard / `adminSafety.ts` / `adminGuard.mo` / `main.mo` / `summonSpawn.ts` / `spellEngine.ts` / `worldFeatures.ts` / `mapModifiers.ts` / `targeting.ts` are the overlap set. Concatenating two copies of the same helper fails `vite build`.
 
@@ -131,7 +132,7 @@ Never key Timestep off `spell.name`.
 
 `spellEngine.ts` still documents that combat reads the **frontend** fields. Saving from Admin today: mechanic flags vanish; `targetType` is never collected.
 
-09-23-005 remains the persist slice. 056–068 do not re-specify it; they forbid restacking combat extracts as a **second** metadata source (`kitAllyBuffTarget` is not a kit catalog; `playerSacrificeLive` is not a `SpellConfig`).
+09-23-005 remains the persist slice. 056–069 do not re-specify it; they forbid restacking combat extracts as a **second** metadata source (`kitAllyBuffTarget` is not a kit catalog; `playerSacrificeLive` is not a `SpellConfig`).
 
 Never key Sentinel Shield / Sacrifice / Haste off `spell.name`.
 
@@ -210,9 +211,9 @@ Unchanged from 09-25 §9 / 09-24 §7 / 09-23 §9:
 - Empty-AI half of 09-02-006 **LANDED**.
 - 08-31-005 / 09-01-001 remain **PARTIAL / WRONG FIELD** (`usableByPlayer=false`).
 - Everything else **OPEN**.
-- 09-21 / 09-22 / 09-23 / 09-24 / 09-25 docs unmerged. **09-23-001 … 020** are the same first-cuts as 09-22-00N. **09-23-021 … 028**, **09-24-029 … 040**, and **09-25-041 … 055** are prior queue-union IDs. **09-26-056 … 068** are this run.
+- 09-21 / 09-22 / 09-23 / 09-24 / 09-25 docs unmerged. **09-23-001 … 020** are the same first-cuts as 09-22-00N. **09-23-021 … 028**, **09-24-029 … 040**, and **09-25-041 … 055** are prior queue-union IDs. **09-26-056 … 069** are this run.
 
-**Next implementer:** **09-23-001** (lifecycle), then **09-23-007** (live Strike missing from kits), then **09-23-003 + 023** (hydrate **and** `upgradeSpell` grant). Persist `targetType` + complete summon def + AP 0 before player-facing unlock UX. Honour 09-23-016 for any new stable. Honour 09-23-017–028, 09-24-029–040, 09-25-041–055, and 09-26-056–068 when those siblings land — union, do not concatenate. Do not land WDD attune (029 / 060) before 003. Do not land Wave-7/8/9 catalog rows before 003.
+**Next implementer:** **09-23-001** (lifecycle), then **09-23-007** (live Strike missing from kits), then **09-23-003 + 023** (hydrate **and** `upgradeSpell` grant). Persist `targetType` + complete summon def + AP 0 before player-facing unlock UX. Honour 09-23-016 for any new stable. Honour 09-23-017–028, 09-24-029–040, 09-25-041–055, and 09-26-056–069 when those siblings land — union, do not concatenate. Do not land WDD attune (029 / 060) before 003. Do not land Wave-7/8/9 catalog rows before 003.
 
 ---
 
@@ -252,3 +253,4 @@ Unchanged from 09-25 §9 / 09-24 §7 / 09-23 §9:
 | SDA-2026-09-26-066 | Seeded `saveBattleStats` skip-after-keep PRs are not a grant path | P0 |
 | SDA-2026-09-26-067 | Death Realm skip `upgradeSpell` is a spend gate, not a grant writer | P0 |
 | SDA-2026-09-26-068 | Death Realm skip feat claim; discovery waits on recap persist | P1 |
+| SDA-2026-09-26-069 | Wave-9 elite families are CORE stamps, not a fourth `ENEMY_KITS` | P1 |
