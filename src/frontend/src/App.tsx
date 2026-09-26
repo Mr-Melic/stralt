@@ -6,6 +6,10 @@ import type { BattleRecapData } from "./components/PostBattleRecap";
 import PostBattleRecap from "./components/PostBattleRecap";
 import ProfileSetup from "./components/ProfileSetup";
 import StarfieldBackground from "./components/StarfieldBackground";
+import {
+  isSmallScreenViewport,
+  shouldCommitIsSmallScreen,
+} from "./engine/smallScreenActivity";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { useGetCallerUserProfile, useGetUserRole } from "./hooks/useQueries";
 import { collectPreservedLocalStorage } from "./utils/versionGate";
@@ -337,14 +341,23 @@ function App() {
   // Small screen guard state. Bypass once the player continues or the
   // session has already rendered at a supported width so a landscape→portrait
   // rotate cannot unmount the live game tree.
-  const [isSmallScreen, setIsSmallScreen] = useState(
-    () => window.innerWidth < 768,
+  const [isSmallScreen, setIsSmallScreen] = useState(() =>
+    isSmallScreenViewport(window.innerWidth),
   );
   const [smallScreenBypass, setSmallScreenBypass] = useState(
     readSmallScreenContinue,
   );
   useEffect(() => {
-    const check = () => setIsSmallScreen(window.innerWidth < 768);
+    // PERF-2026-09-26-115: URL-bar chrome fires resize without crossing 768.
+    // Same boolean must not re-render App → GameFlow under the live canvas.
+    const check = () => {
+      const width = window.innerWidth;
+      setIsSmallScreen((prev) =>
+        shouldCommitIsSmallScreen(prev, width)
+          ? isSmallScreenViewport(width)
+          : prev,
+      );
+    };
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
