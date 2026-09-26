@@ -5,6 +5,7 @@ import {
   SYNTHETIC_CLICK_GUARD_MS,
   isAttackNearestHotkey,
   shouldBlockWorldMoveOntoPortal,
+  shouldIgnoreCanvasTouchEndUnlessSingleFinger,
   shouldIgnoreSyntheticClickAfterTouch,
 } from "./pointerParity.ts";
 
@@ -60,6 +61,32 @@ describe("shouldBlockWorldMoveOntoPortal", () => {
     assert.equal(
       shouldBlockWorldMoveOntoPortal(false, portals, { x: 3, y: 4 }),
       false,
+    );
+  });
+});
+
+describe("shouldIgnoreCanvasTouchEndUnlessSingleFinger", () => {
+  it("accepts a one-finger tap and ignores extra fingers still down", () => {
+    assert.equal(
+      shouldIgnoreCanvasTouchEndUnlessSingleFinger({
+        changedTouches: { length: 1 },
+        touches: { length: 0 },
+      }),
+      false,
+    );
+    assert.equal(
+      shouldIgnoreCanvasTouchEndUnlessSingleFinger({
+        changedTouches: { length: 1 },
+        touches: { length: 1 },
+      }),
+      true,
+    );
+    assert.equal(
+      shouldIgnoreCanvasTouchEndUnlessSingleFinger({
+        changedTouches: { length: 2 },
+        touches: { length: 0 },
+      }),
+      true,
     );
   });
 });

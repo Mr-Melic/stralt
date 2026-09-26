@@ -19,6 +19,18 @@ export function shouldIgnoreSyntheticClickAfterTouch(
   return now - lastTouchEndAt < windowMs;
 }
 
+/**
+ * Ignore pinch / two-finger lifts so only a true one-finger tap walks or
+ * casts. The last finger of a pinch still looks like a tap (touches.length
+ * is 0); WorldExploration wiring waits on the older WX queue.
+ */
+export function shouldIgnoreCanvasTouchEndUnlessSingleFinger(event: {
+  touches: { length: number };
+  changedTouches: { length: number };
+}): boolean {
+  return event.changedTouches.length !== 1 || event.touches.length !== 0;
+}
+
 export function shouldBlockWorldMoveOntoPortal(
   inBattle: boolean,
   portals: ReadonlyArray<{ x: number; y: number }>,
