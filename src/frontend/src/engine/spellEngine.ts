@@ -775,9 +775,14 @@ export function resolvePlayerCast(
   }
 
   // ── DoT spell (inline line 8412) ──
+  // Skip a 0 dmg/turn early-return (seeded Soul Rend: effectType "dot"
+  // + damage 25, no dotDamage) so the damage loop can still land.
+  // Keep this predicate in-file (no new import) so sibling combat PRs
+  // that restack the import cluster are not concatenated. Contract:
+  // playerDotShouldEarlyReturn in engine/playerDotCast.ts.
   const isDotSpell = spell.isDotSpell === true || spell.effectType === "dot";
-  if (isDotSpell && targetEnemy) {
-    const dotPpt = spell.dotDamagePerTurn ?? spell.dotDamage ?? 0;
+  const dotPpt = spell.dotDamagePerTurn ?? spell.dotDamage ?? 0;
+  if (isDotSpell && targetEnemy && dotPpt > 0) {
     const dotDur = spell.dotDuration ?? 3;
     const dotIcon =
       spell.dotType === "burn"
