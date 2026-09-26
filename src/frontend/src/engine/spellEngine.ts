@@ -835,6 +835,21 @@ export function resolvePlayerCast(
     return "summon";
   }
 
+  // Unique vs #496 playerSpecialCast (top imports) / #551 Mark (after Barrier).
+  // AI resolveSpellCast already places a 3-turn barrier; player execute
+  // had no branch (AP spent, empty no-op or occupied min-1).
+  {
+    const trapResult = applyPlayerTrapCast({
+      spell,
+      isPlayerTile,
+      gridPos,
+      placeBarrierTile: ctx.placeBarrierTile,
+      log: ctx.log,
+      recordSpellType: ctx.recordSpellType,
+    });
+    if (trapResult !== null) return trapResult;
+  }
+
   // ── Barrier spell — place an impassable tile for 3 turns (inline line 8540) ──
   // HOISTED out of the damage-loop guard (build #308): barrier spells target
   // EMPTY ground tiles by design (targetType "ground", see targeting.ts line
@@ -1027,6 +1042,9 @@ export function resolvePlayerCast(
   ctx.recordSpellType(spell.effectType ?? "damage");
   return "cast";
 }
+
+// Unique vs #496 top imports, #528 before resolvePlayerCast, #555 EOF.
+import { applyPlayerTrapCast } from "./playerTrapCast.ts";
 
 /**
  * Inline copy of calcScaledDamage — the inline path calls the module-level
