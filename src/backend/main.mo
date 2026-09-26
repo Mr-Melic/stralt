@@ -924,6 +924,10 @@ actor {
         if (not AccessControl.hasPermission(accessControlState, caller, #admin)) {
             return #err("Unauthorized: admin only");
         };
+        switch (AdminGuard.mapModifierHardDeleteRejected(id)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         mapModifierConfigs.remove(id);
         _recordAdminAudit(caller, "deleteMapModifier", id, "present", "removed");
         #ok;
