@@ -13,6 +13,7 @@ import {
   validateEnemyName,
   validateMapModifierChance,
 } from "../utils/adminSafety";
+import { mapModifierHardDeleteRejected } from "../utils/adminSafety.mapModifierDelete";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
@@ -180,6 +181,8 @@ export function useAdminDeleteMapModifier() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
+      const delErr = mapModifierHardDeleteRejected(id);
+      if (delErr) throw new Error(delErr);
       const result = await (actor as ActorAny).adminDeleteMapModifier(id);
       assertAdminCmdOk(result, "adminDeleteMapModifier");
       return result;

@@ -478,6 +478,26 @@ module {
         null
     };
 
+    /// Seeded on first run (`AdminLib.defaultMapModifiers`). Not the full
+    /// frontend registry — gravity_well and later rows are optional.
+    public func isBuiltInMapModifierId(id : Text) : Bool {
+        id == "slime_flood" or id == "paper_windstorm"
+    };
+
+    /// Failure: official Admin × on Slime Flood calls
+    /// adminDeleteMapModifier("slime_flood"). Seed only runs when the map is
+    /// empty, so deleting one seeded row while the other remains never
+    /// restores it. rollActiveModifiers keys hooks by config.id ∩
+    /// MODIFIER_BY_ID; an empty live pool never rolls. Built-in spells
+    /// already #err on delete — same for these ids. Retire with active=false.
+    public func mapModifierHardDeleteRejected(id : Text) : ?Text {
+        switch (requireId(id, "Map modifier")) { case (?e) { return ?e }; case null {} };
+        if (isBuiltInMapModifierId(id)) {
+            return ?"Cannot delete a built-in map modifier; set active=false to retire it";
+        };
+        null
+    };
+
     /// adminAddDokaToUser used to credit target A and mark any purchaseId
     /// completed, including a pending record owned by B.
     public func purchaseCreditRejected(
