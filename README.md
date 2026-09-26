@@ -23,6 +23,7 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/utils/dokaPersist.ts` | One-shot ground / shrine / dungeon-complete credits before `applyRewards` |
 | `src/frontend/src/utils/challengeCompletion.ts` | Challenge predicates + damage / AP / opening-turn / Sacrifice accumulators |
 | `src/frontend/src/utils/deathGuards.ts` | Death-realm timer + one-shot death guards |
+| `src/frontend/src/utils/recapWorldInput.ts` | Recap overlay + leftover walk RAF: ignore canvas / portals / next fight while `applyRewards` is queued (`victoryPersistPending`) |
 | `src/frontend/src/utils/deathPenalty.ts` | 20/40 death cut + localStorage replay (`pbv_pending_death_penalty_slotN`) |
 | `src/frontend/src/utils/dokaGameKey.ts` | Buy Doka GameKey format / email / consent (120-char single-use codes) |
 | `src/frontend/src/utils/rewardResolver.ts` | Victory / boss-rush / challenge deltas → `applyRewards` (clamped to canister maxima) |

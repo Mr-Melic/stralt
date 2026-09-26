@@ -320,6 +320,10 @@ Double-click: `shouldBeginAchievementClaim` (in-flight set). The second click hi
 
 The recap wrapper in `App.tsx` is `pointer-events: none` so HUD heal/shop stay live. Canvas mouse/touch must still ignore the world while `battleRecapOpen` is true (`shouldIgnoreWorldInputDuringRecap`). A portal swap has no overlay. If lava/spikes still fire during `applyRewards`, the death write already penalized the post-credit committed snapshot. Applying the post-await live hydrate (`shouldApplyVictoryLiveHydrate`, including death-epoch mismatch) restores HP and unpenalized XP; `hydrateWhenIdle` then copies that into committed and the next persist refunds the death.
 
+### Leftover walk / dismiss recap during applyRewards
+
+Dismissing recap zeros `battleRecapOpen` while `victoryPersistPendingRef` is still true. `shouldIgnoreWorldInputDuringRecap(recap, pending)` must get the second arg at both canvas gates (`WorldExploration` ~10015 / ~10716). Portals use `shouldBlockPortalDuringVictoryPersist`. `shouldAllowBattleTrigger` refuses a new fight. In-flight movement rAF must `shouldAbortMovementRaf` (generation mismatch or pending) — `setIsMoving(false)` does not stop a leftover closure, so lava/spikes used to fire exploration death and replace the recap. Victory / room-clear must `despawnSummons` leftover player summons or a walk onto the wolf starts a 0-hostile fight that `applyRewards`s again.
+
 ### Boss rush resume / farm / stuck between rooms
 
 - `getBossRushState` requires `userId == caller` as a **principal**. Pass the II identity text (`isPrincipalText`), not the profile display name.

@@ -203,6 +203,8 @@ Unpaid 20/40 after a replica reject lives in `localStorage` (`pbv_pending_death_
 | `readRenameCharacterResult` / `shouldDebitRenameDoka` | `utils/renameCharacter.ts` |
 | `fetchPlayerAchievements` | `utils/playerAchievements.ts` |
 | `shouldPreserveVersionGateKey` | `utils/versionGate.ts` |
+| `shouldIgnoreWorldInputDuringRecap` / `shouldBlockPortalDuringVictoryPersist` / `shouldAbortMovementRaf` | `utils/recapWorldInput.ts` |
+| `shouldAllowBattleTrigger` / `despawnSummons` | `engine/battleSetup.ts` |
 
 ### Wallet seeding (placeholder 0)
 
@@ -284,6 +286,7 @@ Password admin is removed. First non-anonymous caller of `getUserRole` becomes `
 5. Recap popup is only mounted in `App.tsx` (z-index 9999) so it survives the battle → exploration transition. The full-screen wrapper is `pointer-events: none` (the card itself is `auto`) so HUD heal/shop stay clickable. Canvas walk / hazard clicks are ignored while `battleRecapOpen` is true (`shouldIgnoreWorldInputDuringRecap`). In-battle feat unlocks travel on `BattleRecapData.newlyUnlockedAchievements` (`attachRecapUnlocks`) — a WorldExploration-only list never reaches the dialog. Wallet/level feats (`doka_1000`, `doka_10000`, `level_10`) wait until `applyRewards` commits (`shouldDeferAchievementUnlockUntilRewardsPersist` / `thresholdAchievementConditionsFromPersist`). `markAchievementUnlocked` rejects projected recap totals against the pre-credit canister snapshot, and `achievementsShownRef` would block the post-credit retry.
 6. Both React `inBattle` **and** `inBattleRef` must be false after `handleBattleEnd` / room clear / death. `cleanupBattle` only clears the ref; leaving React state true blocks the next fight (`shouldAllowBattleTrigger`).
 7. Canvas `onTouchEnd` + `onClick`: drop the synthetic click for 400ms (`shouldIgnoreClickAfterTouch`). One physical tap used to fire two casts.
+8. Recap dismiss zeros `battleRecapOpen` while `victoryPersistPendingRef` stays true until the persist `finally` (`handleBattleEnd` ~12524 / ~12618; Boss Rush ~12812). Mouse and touch must pass **both** flags into `shouldIgnoreWorldInputDuringRecap`. Portals use `shouldBlockPortalDuringVictoryPersist`. `shouldAllowBattleTrigger` refuses a new fight. Leftover walk rAF must `shouldAbortMovementRaf` (`setIsMoving(false)` does not stop a captured closure — lava/spikes used to replace the recap with exploration death). Victory / room-clear `despawnSummons` leftover player summons so they cannot occupy the portal walk or become the next 0-hostile collision.
 
 ### Battle challenges
 
@@ -401,7 +404,7 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `castHelpers.ts` | AoE target list + `applyDamageToEnemy` (Void Mirror / Reflect Shield call `onPlayerReflectedDamage`) |
 | `targeting.ts` | Preview + live cast gate from **explicit** spell metadata (`isTileCastableLive`) |
 | `occupancy.ts` | Tile passability, pushback, attract. `collectMandatoryProgressionCells` = unique player→exit bridges — spawn/relocate must not sit on them |
-| `battleSetup.ts` | Liveness / remaining-hostile predicates + store-HP helpers (`hpAfterIncomingDamage`, `hpAfterHeal`, `hpAfterBossPhase2`, `battleWalkHazardDamages`) |
+| `battleSetup.ts` | Liveness / remaining-hostile predicates + store-HP helpers (`hpAfterIncomingDamage`, `hpAfterHeal`, `hpAfterBossPhase2`, `battleWalkHazardDamages`). `shouldAllowBattleTrigger` also refuses a fight while `victoryPersistPending`. `despawnSummons` drops leftover player summons on victory / room-clear |
 | `combatMath.ts` | Spawn clustering, damage helpers |
 | `progression.ts` | Level-derived base stats (player / enemy / summon) |
 | `mapGen.ts` | Archetypes + solvability finalize (do not casually rewrite) |
