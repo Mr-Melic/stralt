@@ -11,6 +11,7 @@ const REJECT_COPY: Record<string, string> = {
   ally_no_summon_at_tile: "No ally there",
   ground_out_of_range: "Out of range",
   ground_occupied: "Occupied",
+  ground_portal: "Blocked",
   ground_barrier: "Blocked",
   ground_los_blocked: "No line of sight",
   line_off_axis: "Must be in a line",

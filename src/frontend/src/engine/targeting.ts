@@ -208,6 +208,44 @@ export function groundTileInRange(
   return adx + ady <= range;
 }
 
+/**
+ * Summon / Barrier / Trap / `targetType: "ground"` must land on a tile
+ * `isCellFree` would accept. Preview treated `"portal"` as floor, so a
+ * highlighted portal was executable — then `spawnSummonUnit` slid off it
+ * and Attack Nearest / keyboard S never picked the empty ring at all.
+ *
+ * After {@link groundTileInRange} so #607 (Sacrifice after `isCasterTile`)
+ * and #601 (occupant-required after `caster_tile_hostile`) keep unique
+ * hunks. Strike / Mark / Poison still treat portals as floor.
+ */
+export type PlayerGroundPlacementSpell = {
+  targetType?: string;
+  isBarrier?: boolean;
+  isSummon?: boolean;
+  isTrap?: boolean;
+};
+
+export function playerGroundPlacementRequiresWalkableTile(
+  spell: PlayerGroundPlacementSpell,
+): boolean {
+  const t = (spell.targetType ?? "enemy") as string;
+  return (
+    t === "ground" ||
+    spell.isBarrier === true ||
+    spell.isSummon === true ||
+    spell.isTrap === true
+  );
+}
+
+export function playerGroundPlacementLiveRejectReason(args: {
+  spell: PlayerGroundPlacementSpell;
+  tileType: TileType;
+}): string | null {
+  if (!playerGroundPlacementRequiresWalkableTile(args.spell)) return null;
+  if (args.tileType === "portal") return "ground_portal";
+  return null;
+}
+
 /** Chebyshev distance shared by highlight, live, Attack Nearest, and AoE. */
 export function chebyshevOnBoard(
   a: { x: number; y: number },
@@ -564,6 +602,17 @@ export function isTileCastableLive(
     if (occupied) {
       return { ok: false, reason: "ground_occupied" };
     }
+    // Unique vs #389 living occupancy (the occupied scan above) and #607
+    // Sacrifice (after wall). Portal is walkable-as-floor for Strike.
+    {
+      const placementReject = playerGroundPlacementLiveRejectReason({
+        spell,
+        tileType: mapTiles[ty][tx],
+      });
+      if (placementReject) {
+        return { ok: false, reason: placementReject };
+      }
+    }
     if (hasBarrierTile(barrierTiles, tx, ty)) {
       return { ok: false, reason: "ground_barrier" };
     }
@@ -860,6 +909,19 @@ export function pickAttackNearestTile(
     );
     return shouldExecuteLiveCast(live) ? tile : null;
   }
+  // After the self/ally caster-tile branch so #340 / #496 keep that hunk.
+  // Hostile-only search left Barrier / Summon Attack Nearest null while
+  // the blue ring already painted empty floor.
+  if (attackNearestResolvesOnEmptyGround(spell)) {
+    return pickNearestLiveOkTile(
+      spell,
+      caster,
+      liveCombatants,
+      mapTiles,
+      effectiveRange,
+      barrierTiles,
+    );
+  }
   const search = hostiles ?? liveHostilesForAttackNearest(liveCombatants);
   return pickNearestLiveHostileTile(
     spell,
@@ -893,6 +955,55 @@ export function canAttackNearestLive(
       hostiles,
     ) != null
   );
+}
+
+/**
+ * Barrier / Summon / Trap / ground kits resolve on empty walkable tiles.
+ * Attack Nearest used to search hostiles only, so a highlighted legal
+ * floor cell could not execute via the button or keyboard S.
+ */
+export function attackNearestResolvesOnEmptyGround(
+  spell: PlayerGroundPlacementSpell,
+): boolean {
+  return playerGroundPlacementRequiresWalkableTile(spell);
+}
+
+/**
+ * Nearest live-ok tile under the same gate as the highlight set.
+ * Chebyshev tie-break matches {@link pickNearestLiveHostileTile}.
+ */
+export function pickNearestLiveOkTile(
+  spell: SpellConfig,
+  caster: CasterPosition,
+  liveCombatants: Enemy[],
+  mapTiles: TileType[][],
+  effectiveRange: number,
+  barrierTiles: BarrierTiles = EMPTY_BARRIER_TILES,
+): { x: number; y: number } | null {
+  let nearest: { x: number; y: number } | null = null;
+  let nearestDist = Number.POSITIVE_INFINITY;
+  const size = mapTiles.length;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const tile = { x, y };
+      const live = isTileCastableLive(
+        spell,
+        caster,
+        tile,
+        liveCombatants,
+        mapTiles,
+        effectiveRange,
+        barrierTiles,
+      );
+      if (!shouldExecuteLiveCast(live)) continue;
+      const dist = chebyshevOnBoard(tile, caster);
+      if (dist < nearestDist) {
+        nearest = tile;
+        nearestDist = dist;
+      }
+    }
+  }
+  return nearest;
 }
 
 /**
