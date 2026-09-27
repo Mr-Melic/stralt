@@ -152,6 +152,7 @@ import {
 } from "../engine/enemyPixelPatterns";
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
+import { playerCastContextPosition } from "../engine/livePlayerCastTile";
 import {
   applyFinalizedLayout,
   applySanctuaryLayout,
@@ -9152,7 +9153,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // --- scalars (PlayerSpellContextDeps) ---
       characterName,
       characterStats,
-      playerPosition,
+      // Leftover-walk RAF writes playerPositionRef before React commits.
+      // Attack Nearest / self live-gate already target the ref; a React
+      // snapshot here spent AP on Blood Mend with 0 HP restored.
+      playerPosition: playerCastContextPosition(playerPositionRef.current),
       spellFailChance,
       spellLevels,
       chc: characterStats.chc,
