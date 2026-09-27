@@ -6,6 +6,8 @@ Do not implement gameplay from this file unless a later human or orchestrator ex
 
 **2026-08-31 director note:** Status of these IDs was re-evaluated in [`ACTION_IDS_2026-08-31.md`](./ACTION_IDS_2026-08-31.md) and [`MASTER_ROADMAP.md`](./MASTER_ROADMAP.md). AQA-004 is SUPERSEDED (stack merged). AQA-006 is BROKEN (#110 on `main`). AQA-003 is PARTIAL. All others remain OPEN. New work uses MTD-2026-08-31-* or the reused ID — do not open a second PR for the same theme.
 
+**2026-09-27 auditor note:** Re-evaluation in [`QUALITY_AUDIT_2026-09-27.md`](./QUALITY_AUDIT_2026-09-27.md) and [`ACTION_IDS_2026-09-27.md`](./ACTION_IDS_2026-09-27.md). `main` frozen since #332 (2026-09-03). AQA-004 remains SUPERSEDED (replace queue triage with AQA-2026-09-27-001). AQA-001/006/007/009/010 still OPEN/BROKEN with new evidence. Do not mint twins.
+
 ---
 
 ACTION_ID: AQA-2026-08-30-001  
