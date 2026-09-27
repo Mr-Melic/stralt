@@ -1,7 +1,13 @@
 import type React from "react";
 import { useEffect, useRef } from "react";
 import type { AchievementConfig } from "../types/gameTypes";
+import { FEATS_UNLOCKED_RECAP_TITLE } from "../utils/featsCopy";
 import { recapUnlocksFromData } from "../utils/recapUnlocks";
+import {
+  overlaySafeAreaPadding,
+  recapCardPaddingStyle,
+  shouldDismissRecapOnKey,
+} from "../utils/viewportInsets";
 
 export interface BattleRecapData {
   mapTitle: string;
@@ -61,12 +67,11 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
     panelRef.current?.focus();
   }, []);
 
-  // Close on Escape
+  // Close on Escape. Space/Enter stay with the overflow panel so a long
+  // feats list can scroll instead of dismissing.
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onClose();
-      }
+      if (shouldDismissRecapOnKey(e.key)) onClose();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
@@ -76,6 +81,7 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
     <dialog
       open
       data-ocid="post_battle_recap.dialog"
+      aria-modal="true"
       aria-label={data.isDefeat ? "Defeat recap" : "Battle complete"}
       className="fixed inset-0 flex items-center justify-center"
       style={{
@@ -89,6 +95,9 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
         background: "rgba(0,0,0,0.75)",
         backdropFilter: "blur(3px)",
         animation: "fadeIn 0.3s ease",
+        boxSizing: "border-box",
+        padding: overlaySafeAreaPadding(),
+        overscrollBehavior: "contain",
       }}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
@@ -96,19 +105,7 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
         }
       }}
       onKeyDown={(e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
-        const target = e.target;
-        if (
-          target instanceof HTMLElement &&
-          (target.tagName === "BUTTON" ||
-            target.tagName === "A" ||
-            target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable)
-        ) {
-          return;
-        }
-        onClose();
+        if (shouldDismissRecapOnKey(e.key)) onClose();
       }}
     >
       <div
@@ -122,11 +119,11 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
           borderRadius: 10,
           boxShadow:
             "0 0 40px oklch(var(--dofus-border-gold) / 0.35), inset 0 1px 0 oklch(var(--dofus-border-gold) / 0.15)",
-          width: "min(480px, 94vw)",
+          width: "min(480px, 100%)",
           maxHeight: "min(90vh, 90dvh)",
-          paddingBottom: "env(safe-area-inset-bottom, 0px)",
           overflowY: "auto",
-          padding: 0,
+          overscrollBehavior: "contain",
+          ...recapCardPaddingStyle(),
           animation: "slideUpFadeIn 0.35s cubic-bezier(0.34,1.56,0.64,1)",
         }}
       >
@@ -536,9 +533,9 @@ const PostBattleRecap: React.FC<PostBattleRecapProps> = ({
             )}
           </RecapSection>
 
-          {/* Newly Unlocked Achievements */}
+          {/* Newly unlocked feats */}
           {unlockedAchievements.length > 0 && (
-            <RecapSection icon="🏆" title="Achievements Unlocked">
+            <RecapSection icon="🏆" title={FEATS_UNLOCKED_RECAP_TITLE}>
               <div
                 className="dofus-scrollbar"
                 style={{ maxHeight: 120, overflowY: "auto" }}
