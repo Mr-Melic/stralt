@@ -241,6 +241,10 @@ Do not `dfx deploy` expecting the current game actor unless `dfx.json` is pointe
 
 `caffeineai-oql@0.4.0` is a real dependency and **is imported** at the bottom of `main.mo`. Some `caffeine check` toolchains fail with `M0010 package not defined` even when `mops sources` resolves the package. If check fails on OQL only, it is a toolchain mismatch — do not delete the `Expose` block without a replacement plan.
 
+### Map modifier announce / admin copy vs live hooks
+
+`mapModifierRegistry` (`engine/mapModifiers.ts`) is the AP/MP/reward/damage authority. Announce text and Motoko comments lag: Paper Windstorm copy says reach halved while player casts miss 30% and enemy ranged casts miss 50% in WorldExploration — `targeting.ts` has no windstorm branch. `blood_moon` / `mirror_field` / `gravity_well` / `fog_of_war` are placeholders. Titan’s Vigor / Glass `onDamageDealt` runs only on `enemyTakesDamage`, not `applyDamageToEnemy`. Do not “fix” targeting or damage math from announce/admin sentences. Canister `MapModifierConfig` has no `globalTriggerChance` — extra frontend fields never round-trip.
+
 ### Chat vanished after upgrade
 
 Expected. `sendMessage` / `getMessages` are in-memory (`main.mo` comment at the chat block).
