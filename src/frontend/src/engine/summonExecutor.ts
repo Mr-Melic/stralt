@@ -32,6 +32,7 @@ import {
   resolveProgressionSafeOccupantCell,
 } from "./occupancy.ts";
 import type { SpellContext } from "./spellEngine.ts";
+import { kitCastStatusEffect } from "./summonKitStatusEffect.ts";
 
 export interface SummonExecutorResult {
   /** New grid position after movement (clamped to grid bounds). */
@@ -188,19 +189,7 @@ export function executeSummonAction(
       );
       return true;
     }
-    summonCtx.applyEffect({
-      effectName: spell.name ?? spell.effectType,
-      type: (spell.effectType === "buff"
-        ? "buff"
-        : spell.effectType === "debuff"
-          ? "debuff"
-          : "dot") as "buff" | "debuff" | "dot",
-      targetId,
-      duration:
-        spell.buffDuration ?? spell.debuffDuration ?? spell.dotDuration ?? 1,
-      iconEmoji: spell.iconEmoji ?? "✨",
-      description: spell.description ?? "",
-    });
+    summonCtx.applyEffect(kitCastStatusEffect(spell, targetId));
     currentAp -= apCost;
     logLines.push(
       `[cast] ${summonLabel} ${spell.name} → ${targetId} applied effect`,
