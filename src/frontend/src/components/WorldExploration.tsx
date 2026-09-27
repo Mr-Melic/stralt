@@ -99,10 +99,12 @@ import {
 } from "../engine/battleSetup";
 import { findBattleStartCell } from "../engine/battleStartPlacement";
 import {
+  type BattleWalkReachable,
   battleWalkCostPerTile,
   battleWalkMpBudget,
   battleWalkMpCost,
-  canAffordBattleWalk,
+  computeBattleWalkReachable,
+  hoverBattleWalkMpCost,
 } from "../engine/battleWalkMp";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
@@ -271,6 +273,7 @@ import {
 } from "../engine/turnQueue";
 import {
   classifyWalkReject,
+  isBattleWalkDestinationOccupied,
   isBattleWalkTileBlocked,
   playerFacingWalkReject,
   shouldFloatWorldUnreachable,
@@ -7020,13 +7023,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     );
   }, [activeMapModifierTypes]);
 
-  // BFS flood-fill for MP reachable tiles
-  const getMpReachableTiles = useCallback((): Set<string> => {
+  // BFS flood-fill for MP reachable tiles. Occupied dests are omitted so a
+  // green tile matches mouse/touch/summon execute ("Occupied").
+  const getBattleWalkReachable = useCallback((): BattleWalkReachable => {
     const controllingId = activeControlledSummonIdRef.current;
+    const liveCombatants = getLiveCombatants(combatantStoreCtx);
     const controlledSummon = controllingId
-      ? getLiveCombatants(combatantStoreCtx).find(
-          (e: { id: string }) => e.id === controllingId,
-        )
+      ? liveCombatants.find((e: { id: string }) => e.id === controllingId)
       : undefined;
     const mpBudget = battleWalkMpBudget({
       playerMp: currentBattleMp,
@@ -7034,64 +7037,34 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       summonMp: (controlledSummon as { currentMp?: number } | undefined)
         ?.currentMp,
     });
-    if (!currentMap || !inBattleRef.current || mpBudget <= 0) return new Set();
-    // SECTION 2c — origin is the active caster's tile (controlled summon or
-    // player) so movement-range previews render from the summon's position.
-    const origin = getActiveCasterPos();
-    // FIX 1 — Build a set of portal positions to exclude from movement targets in battle
-    const portalKeys = new Set(currentMap.portals.map((p) => `${p.x},${p.y}`));
-    const visited = new Map<string, number>(); // key -> best steps used
-    const queue: { x: number; y: number; steps: number }[] = [
-      {
-        x: origin.x,
-        y: origin.y,
-        steps: 0,
-      },
-    ];
-    visited.set(`${origin.x},${origin.y}`, 0);
-    const reachable = new Set<string>();
-    // Movement cost per tile — delegated to the modifier registry (Slime
-    // Flood / Frozen Terrain double the cost via their onMpCost hooks).
-    // Same helper as player/summon execute so leftover 1-MP slices cannot
-    // exceed the highlighted ring.
-    const moveCostPerTile = walkMpCostPerTile();
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      const nextSteps = current.steps + moveCostPerTile;
-      if (nextSteps > mpBudget) continue;
-      const dirs = [
-        { x: 1, y: 0 },
-        { x: -1, y: 0 },
-        { x: 0, y: 1 },
-        { x: 0, y: -1 },
-      ];
-      for (const d of dirs) {
-        const nx = current.x + d.x;
-        const ny = current.y + d.y;
-        const key = `${nx},${ny}`;
-        if (nx < 0 || nx >= WORLD_GRID_SIZE || ny < 0 || ny >= WORLD_GRID_SIZE)
-          continue;
-        if (
-          isBattleWalkTileBlocked({
-            tileKind: currentMap.tiles[ny]?.[nx],
-            key,
-            inBattle: true,
-            portals: portalKeys,
-            barriers: barrierTilesRef.current,
-            voidTiles: currentMap.voidTiles,
-          })
-        )
-          continue;
-        const prevBest = visited.get(key);
-        if (prevBest !== undefined && prevBest <= nextSteps) continue;
-        visited.set(key, nextSteps);
-        reachable.add(key);
-        if (nextSteps < mpBudget) {
-          queue.push({ x: nx, y: ny, steps: nextSteps });
-        }
-      }
+    if (!currentMap || !inBattleRef.current || mpBudget <= 0) {
+      return { tiles: new Set(), costByKey: new Map() };
     }
-    return reachable;
+    const origin = getActiveCasterPos();
+    const portalKeys = new Set(currentMap.portals.map((p) => `${p.x},${p.y}`));
+    const playerPos = playerPositionRef.current;
+    return computeBattleWalkReachable({
+      origin,
+      mpBudget,
+      costPerTile: walkMpCostPerTile(),
+      worldGridSize: WORLD_GRID_SIZE,
+      isBlocked: (x, y) =>
+        isBattleWalkTileBlocked({
+          tileKind: currentMap.tiles[y]?.[x],
+          key: `${x},${y}`,
+          inBattle: true,
+          portals: portalKeys,
+          barriers: barrierTilesRef.current,
+          voidTiles: currentMap.voidTiles,
+        }),
+      isOccupiedDest: (x, y) =>
+        isBattleWalkDestinationOccupied({
+          dest: { x, y },
+          walker: origin,
+          livingOccupants: liveCombatants,
+          extraOccupied: controllingId ? [playerPos] : [],
+        }),
+    });
   }, [
     currentMap,
     currentBattleMp,
@@ -7099,6 +7072,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     getActiveCasterPos,
     walkMpCostPerTile,
   ]);
+
+  const getMpReachableTiles = useCallback((): Set<string> => {
+    return getBattleWalkReachable().tiles;
+  }, [getBattleWalkReachable]);
 
   // Get tiles in spell range (Chebyshev) for blue highlights
   // STRUCTURAL FIX: read LIVE combatant truth at invocation via
@@ -7338,10 +7315,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
     // Compute highlight tile sets for battle mode
     // inBattle intentionally read via inBattleRef to prevent animation loop restart
-    const mpTiles =
+    const walkReachable =
       inBattleRef.current && battleActionModeRef.current === "walk"
-        ? getMpReachableTiles()
-        : new Set<string>();
+        ? getBattleWalkReachable()
+        : { tiles: new Set<string>(), costByKey: new Map<string, number>() };
+    const mpTiles = walkReachable.tiles;
     const spellTiles =
       inBattleRef.current &&
       battleActionModeRef.current === "attack" &&
@@ -8510,7 +8488,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // Draw the player's "now" label — only if NOT drawn by the row loop above
     // (The row loop handles player drawing per-row; this vignette block follows)
 
-    // Tile hover movement cost (player turn, walk mode, in battle)
+    // Tile hover movement cost (player turn, walk mode, in battle).
+    // BFS cost from the active caster — Manhattan-from-player used to
+    // disagree with execute when the path wrapped a wall or a summon walked.
     const hoveredTile = hoveredTileRef.current;
     if (
       inBattleRef.current &&
@@ -8518,17 +8498,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       hoveredTile
     ) {
       const hoverScreen = gridToScreen(hoveredTile.x, hoveredTile.y);
-      const dist =
-        Math.abs(hoveredTile.x - playerPositionRef.current.x) +
-        Math.abs(hoveredTile.y - playerPositionRef.current.y);
-      const mpCost =
-        dist *
-        mapModifierRegistry.applyMpCost(1, activeMapModifierTypes, {
-          log: (msg: string) => logDebugInfo("MODIFIER", msg),
-          rng: Math.random,
-        });
+      const mpCost = hoverBattleWalkMpCost(
+        walkReachable.costByKey,
+        hoveredTile,
+      );
       if (
-        dist > 0 &&
+        mpCost != null &&
+        mpCost > 0 &&
         currentMap.tiles[hoveredTile.y]?.[hoveredTile.x] === "floor"
       ) {
         ctx.save();
@@ -8542,8 +8518,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           hoverScreen.x,
           hoverScreen.y + effectiveTileH / 2 - 4,
         );
-        ctx.fillStyle =
-          mpCost <= currentBattleMpRef.current ? "#4ade80" : "#f87171";
+        ctx.fillStyle = "#4ade80";
         ctx.fillText(
           costLabel,
           hoverScreen.x,
@@ -8709,7 +8684,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // callback to prevent the animation loop from restarting (and producing a black
     // frame) every time battle starts or a spell is selected. See inBattleRef,
     // battleActionModeRef, selectedSpellIdRef patterns above.
-    getMpReachableTiles,
+    getBattleWalkReachable,
     getSpellRangeTiles,
     characterStats.level,
   ]);
@@ -10076,29 +10051,44 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               castControlledSummonSpell(summon as any, targetEnemy);
             }
           } else {
-            const path = findPath(
-              { x: summon.x, y: summon.y },
-              { x: gridPos.x, y: gridPos.y },
-            );
-            if (path && path.length > 0) {
-              const reachable = getMpReachableTiles();
-              if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
-                logBattleEntry("Can't reach", "#ef4444");
-              } else {
-                const costPerTile = walkMpCostPerTile();
-                const moveCost = battleWalkMpCost(path.length, costPerTile);
-                if (
-                  canAffordBattleWalk(
-                    summon.currentMp ?? 0,
-                    path.length,
-                    costPerTile,
-                  )
-                ) {
-                  applyControlledSummonWalk(summon, gridPos, moveCost);
-                } else {
-                  logBattleEntry("Not enough MP", "#ef4444");
-                }
-              }
+            const liveCombatants = getLiveCombatants(combatantStoreCtx);
+            const walkOccupied = isBattleWalkDestinationOccupied({
+              dest: gridPos,
+              walker: { x: summon.x, y: summon.y },
+              livingOccupants: liveCombatants,
+              extraOccupied: [playerPositionRef.current],
+            });
+            const walkBlocked = isBattleWalkTileBlocked({
+              tileKind: currentMap.tiles[gridPos.y]?.[gridPos.x],
+              key: `${gridPos.x},${gridPos.y}`,
+              inBattle: true,
+              portals: new Set(currentMap.portals.map((p) => `${p.x},${p.y}`)),
+              barriers: barrierTilesRef.current,
+              voidTiles: currentMap.voidTiles,
+            });
+            const reachable = getMpReachableTiles();
+            const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
+            const path =
+              !walkOccupied && !walkBlocked && walkReachable
+                ? findPath({ x: summon.x, y: summon.y }, gridPos)
+                : [];
+            const costPerTile = walkMpCostPerTile();
+            const walkReject = classifyWalkReject({
+              currentMp: summon.currentMp ?? 0,
+              isBlocked: walkBlocked,
+              reachable: walkReachable,
+              pathLength: path.length,
+              costPerTile,
+              occupied: walkOccupied,
+            });
+            if (walkReject) {
+              logBattleEntry(playerFacingWalkReject(walkReject), "#ef4444");
+            } else {
+              applyControlledSummonWalk(
+                summon,
+                gridPos,
+                battleWalkMpCost(path.length, costPerTile),
+              );
             }
           }
           return;
@@ -10498,25 +10488,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // handler's walk body, including Thorned Ground / Void Rift debits
         // (applyBattleWalkHazards — both input paths must charge the same HP).
         else if (battleActionMode === "walk") {
-          // FIX 1a (mouse walk-mode single-occupancy): reject the move if a
-          // LIVING combatant occupies the target tile. Mirrors the entity-first
-          // cast targeting at ~9519. Dead combatants are already dropped from
-          // the live list (drawQueue skip at 7649), so corpse tiles the player
-          // just stepped onto are correctly treated as free. This prevents the
-          // player from pathing onto a tile a living enemy/summon stands on.
-          const _walkOccupantMouse = getLiveCombatants(combatantStoreCtx).find(
-            (e) =>
-              e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
-          );
-          if (_walkOccupantMouse) {
-            const _screen = tileCenter(gridPos.x, gridPos.y);
-            effectsManagerRef.current?.spawnFloatText(
-              _screen.x,
-              _screen.y,
-              "Occupied",
-            );
-            return;
-          }
+          // Occupancy + wall/void/barrier/portal live in classifyWalkReject
+          // so highlight (getMpReachableTiles) and execute share one dest rule.
+          const walkOccupied = isBattleWalkDestinationOccupied({
+            dest: gridPos,
+            walker: playerPositionRef.current,
+            livingOccupants: getLiveCombatants(combatantStoreCtx),
+          });
           const walkBlocked = isBattleWalkTileBlocked({
             tileKind: currentMap.tiles[gridPos.y]?.[gridPos.x],
             key: `${gridPos.x},${gridPos.y}`,
@@ -10528,7 +10506,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const reachable = getMpReachableTiles();
           const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
           const path =
-            currentBattleMp > 0 && !walkBlocked && walkReachable
+            currentBattleMp > 0 &&
+            !walkOccupied &&
+            !walkBlocked &&
+            walkReachable
               ? findPath(playerPositionRef.current, gridPos)
               : [];
           const costPerTile = walkMpCostPerTile();
@@ -10538,6 +10519,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             reachable: walkReachable,
             pathLength: path.length,
             costPerTile,
+            occupied: walkOccupied,
           });
           if (walkReject) {
             const _screen = tileCenter(gridPos.x, gridPos.y);
@@ -10775,29 +10757,44 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               castControlledSummonSpell(summon as any, targetEnemy);
             }
           } else {
-            const path = findPath(
-              { x: summon.x, y: summon.y },
-              { x: gridPos.x, y: gridPos.y },
-            );
-            if (path && path.length > 0) {
-              const reachable = getMpReachableTiles();
-              if (!reachable.has(`${gridPos.x},${gridPos.y}`)) {
-                logBattleEntry("Can't reach", "#ef4444");
-              } else {
-                const costPerTile = walkMpCostPerTile();
-                const moveCost = battleWalkMpCost(path.length, costPerTile);
-                if (
-                  canAffordBattleWalk(
-                    summon.currentMp ?? 0,
-                    path.length,
-                    costPerTile,
-                  )
-                ) {
-                  applyControlledSummonWalk(summon, gridPos, moveCost);
-                } else {
-                  logBattleEntry("Not enough MP", "#ef4444");
-                }
-              }
+            const liveCombatants = getLiveCombatants(combatantStoreCtx);
+            const walkOccupied = isBattleWalkDestinationOccupied({
+              dest: gridPos,
+              walker: { x: summon.x, y: summon.y },
+              livingOccupants: liveCombatants,
+              extraOccupied: [playerPositionRef.current],
+            });
+            const walkBlocked = isBattleWalkTileBlocked({
+              tileKind: currentMap.tiles[gridPos.y]?.[gridPos.x],
+              key: `${gridPos.x},${gridPos.y}`,
+              inBattle: true,
+              portals: new Set(currentMap.portals.map((p) => `${p.x},${p.y}`)),
+              barriers: barrierTilesRef.current,
+              voidTiles: currentMap.voidTiles,
+            });
+            const reachable = getMpReachableTiles();
+            const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
+            const path =
+              !walkOccupied && !walkBlocked && walkReachable
+                ? findPath({ x: summon.x, y: summon.y }, gridPos)
+                : [];
+            const costPerTile = walkMpCostPerTile();
+            const walkReject = classifyWalkReject({
+              currentMp: summon.currentMp ?? 0,
+              isBlocked: walkBlocked,
+              reachable: walkReachable,
+              pathLength: path.length,
+              costPerTile,
+              occupied: walkOccupied,
+            });
+            if (walkReject) {
+              logBattleEntry(playerFacingWalkReject(walkReject), "#ef4444");
+            } else {
+              applyControlledSummonWalk(
+                summon,
+                gridPos,
+                battleWalkMpCost(path.length, costPerTile),
+              );
             }
           }
           return;
@@ -11085,23 +11082,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         // WALK branch — only runs with NO spell selected. Mirrors the mouse
         // handler's walk body, including Thorned Ground / Void Rift debits.
         else if (battleActionMode === "walk") {
-          // FIX 1b (touch walk-mode single-occupancy): mirror of the mouse
-          // handler's occupancy check. Reject the move if a LIVING combatant
-          // occupies the target tile. Dead combatants are already dropped from
-          // the live list, so corpse tiles are correctly free.
-          const _walkOccupantTouch = getLiveCombatants(combatantStoreCtx).find(
-            (e) =>
-              e.x === gridPos.x && e.y === gridPos.y && isAliveCombatant(e),
-          );
-          if (_walkOccupantTouch) {
-            const _screen = tileCenter(gridPos.x, gridPos.y);
-            effectsManagerRef.current?.spawnFloatText(
-              _screen.x,
-              _screen.y,
-              "Occupied",
-            );
-            return;
-          }
+          // Occupancy + wall/void/barrier/portal live in classifyWalkReject
+          // so highlight (getMpReachableTiles) and execute share one dest rule.
+          const walkOccupied = isBattleWalkDestinationOccupied({
+            dest: gridPos,
+            walker: playerPositionRef.current,
+            livingOccupants: getLiveCombatants(combatantStoreCtx),
+          });
           const walkBlocked = isBattleWalkTileBlocked({
             tileKind: currentMap.tiles[gridPos.y]?.[gridPos.x],
             key: `${gridPos.x},${gridPos.y}`,
@@ -11113,7 +11100,10 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           const reachable = getMpReachableTiles();
           const walkReachable = reachable.has(`${gridPos.x},${gridPos.y}`);
           const path =
-            currentBattleMp > 0 && !walkBlocked && walkReachable
+            currentBattleMp > 0 &&
+            !walkOccupied &&
+            !walkBlocked &&
+            walkReachable
               ? findPath(playerPositionRef.current, gridPos)
               : [];
           const costPerTile = walkMpCostPerTile();
@@ -11123,6 +11113,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             reachable: walkReachable,
             pathLength: path.length,
             costPerTile,
+            occupied: walkOccupied,
           });
           if (walkReject) {
             const _screen = tileCenter(gridPos.x, gridPos.y);

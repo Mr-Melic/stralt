@@ -8,7 +8,8 @@ export type WalkRejectReason =
   | "no_mp"
   | "blocked"
   | "unreachable"
-  | "not_enough_mp";
+  | "not_enough_mp"
+  | "occupied";
 
 type KeySet = { has(key: string): boolean };
 
@@ -56,12 +57,41 @@ export function playerFacingWalkReject(reason: WalkRejectReason): string {
       return "No MP";
     case "not_enough_mp":
       return "Not enough MP";
+    case "occupied":
+      return "Occupied";
     case "blocked":
     case "unreachable":
       return "Can't reach";
     default:
       return "Can't reach";
   }
+}
+
+/**
+ * Dest occupancy shared by the walk highlight BFS and mouse/touch/summon
+ * execute. The walker tile is never occupied-as-dest. Corpses (`hp <= 0`)
+ * are free. Extra keys cover the player tile while a summon is walking.
+ */
+export function isBattleWalkDestinationOccupied(args: {
+  dest: { x: number; y: number };
+  walker?: { x: number; y: number };
+  livingOccupants: ReadonlyArray<{
+    x: number;
+    y: number;
+    hp?: number;
+  }>;
+  extraOccupied?: ReadonlyArray<{ x: number; y: number }>;
+}): boolean {
+  const { dest } = args;
+  if (args.walker && args.walker.x === dest.x && args.walker.y === dest.y) {
+    return false;
+  }
+  for (const extra of args.extraOccupied ?? []) {
+    if (extra.x === dest.x && extra.y === dest.y) return true;
+  }
+  return args.livingOccupants.some(
+    (e) => (e.hp ?? 0) > 0 && e.x === dest.x && e.y === dest.y,
+  );
 }
 
 export function classifyWalkReject(input: {
@@ -71,7 +101,10 @@ export function classifyWalkReject(input: {
   pathLength: number;
   /** Frozen Terrain / Slime Flood tile cost. Default 1 matches unmodified maps. */
   costPerTile?: number;
+  /** Living occupant on dest. Checked first — same order as the canvas handlers. */
+  occupied?: boolean;
 }): WalkRejectReason | null {
+  if (input.occupied === true) return "occupied";
   const mp = Math.max(0, Math.floor(Number(input.currentMp) || 0));
   const pathLength = Math.max(0, Math.floor(Number(input.pathLength) || 0));
   const costPerTile = Math.max(1, Math.floor(Number(input.costPerTile) || 1));

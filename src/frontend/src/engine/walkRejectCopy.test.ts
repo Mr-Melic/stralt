@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   classifyWalkReject,
+  isBattleWalkDestinationOccupied,
   isBattleWalkTileBlocked,
   playerFacingWalkReject,
   shouldFloatWorldUnreachable,
@@ -90,6 +91,7 @@ describe("playerFacingWalkReject", () => {
     assert.equal(playerFacingWalkReject("not_enough_mp"), "Not enough MP");
     assert.equal(playerFacingWalkReject("blocked"), "Can't reach");
     assert.equal(playerFacingWalkReject("unreachable"), "Can't reach");
+    assert.equal(playerFacingWalkReject("occupied"), "Occupied");
   });
 });
 
@@ -196,6 +198,62 @@ describe("classifyWalkReject", () => {
         costPerTile: 2,
       }),
       "not_enough_mp",
+    );
+  });
+
+  it("rejects an occupied dest before MP or reachability", () => {
+    assert.equal(
+      classifyWalkReject({
+        currentMp: 0,
+        isBlocked: false,
+        reachable: true,
+        pathLength: 2,
+        occupied: true,
+      }),
+      "occupied",
+    );
+  });
+});
+
+describe("isBattleWalkDestinationOccupied", () => {
+  it("treats living combatants as occupied dests and corpses as free", () => {
+    const dest = { x: 3, y: 3 };
+    assert.equal(
+      isBattleWalkDestinationOccupied({
+        dest,
+        walker: { x: 1, y: 1 },
+        livingOccupants: [{ x: 3, y: 3, hp: 12 }],
+      }),
+      true,
+    );
+    assert.equal(
+      isBattleWalkDestinationOccupied({
+        dest,
+        walker: { x: 1, y: 1 },
+        livingOccupants: [{ x: 3, y: 3, hp: 0 }],
+      }),
+      false,
+    );
+    assert.equal(
+      isBattleWalkDestinationOccupied({
+        dest,
+        walker: dest,
+        livingOccupants: [{ x: 3, y: 3, hp: 12 }],
+      }),
+      false,
+      "walker tile is never occupied-as-dest",
+    );
+  });
+
+  it("counts the player tile while a summon is walking", () => {
+    assert.equal(
+      isBattleWalkDestinationOccupied({
+        dest: { x: 2, y: 2 },
+        walker: { x: 5, y: 5 },
+        livingOccupants: [],
+        extraOccupied: [{ x: 2, y: 2 }],
+      }),
+      true,
     );
   });
 });
