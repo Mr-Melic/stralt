@@ -139,6 +139,7 @@ describe("world feature catalog contract", () => {
     assert.equal(getWorldFeature("WF-HAZ-RIME_HEEL")?.name, "Rime Heel");
     assert.equal(getWorldFeature("WF-HAZ-BOG_SILT")?.name, "Bog Silt");
     assert.equal(getWorldFeature("WF-HAZ-LECTERN_ASH")?.name, "Lectern Ash");
+    assert.equal(getWorldFeature("WF-HAZ-RETRACE_DUST")?.name, "Retrace Dust");
     assert.equal(getWorldFeature("missing"), undefined);
   });
 
@@ -304,7 +305,6 @@ describe("world feature catalog contract", () => {
   });
 
   it("keeps wave 9 as an additive catalog, one feature per requested category", () => {
-    assert.equal(LATEST_CATALOG_WAVE, 9);
     const wave9 = featuresInCatalogWave(9);
     assert.equal(wave9.length, 16);
     const wave9Cats = new Set(wave9.map((f) => f.category));
@@ -329,6 +329,40 @@ describe("world feature catalog contract", () => {
     );
     for (const f of wave9) {
       assert.equal(priorIds.has(f.id), false, `wave 9 reused ${f.id}`);
+    }
+  });
+
+  it("keeps wave 10 as an additive catalog, one feature per requested category", () => {
+    assert.equal(LATEST_CATALOG_WAVE, 10);
+    const wave10 = featuresInCatalogWave(10);
+    assert.equal(wave10.length, 16);
+    const wave10Cats = new Set(wave10.map((f) => f.category));
+    for (const cat of REQUIRED_CATEGORIES) {
+      assert.equal(
+        wave10Cats.has(cat),
+        true,
+        `wave 10 missing category ${cat}`,
+      );
+    }
+    for (const f of wave10) {
+      assert.equal(featureCatalogWave(f), 10, f.id);
+      assert.equal(f.catalogWave, 10, f.id);
+    }
+    const priorIds = new Set(
+      [
+        ...featuresInCatalogWave(1),
+        ...featuresInCatalogWave(2),
+        ...featuresInCatalogWave(3),
+        ...featuresInCatalogWave(4),
+        ...featuresInCatalogWave(5),
+        ...featuresInCatalogWave(6),
+        ...featuresInCatalogWave(7),
+        ...featuresInCatalogWave(8),
+        ...featuresInCatalogWave(9),
+      ].map((f) => f.id),
+    );
+    for (const f of wave10) {
+      assert.equal(priorIds.has(f.id), false, `wave 10 reused ${f.id}`);
     }
   });
 });
@@ -376,7 +410,7 @@ describe("run-mode and placement guards", () => {
     );
   });
 
-  it("keeps flicker gates, gambit chests, echo gates, pilgrim banners, latch gates, wager gates, pact gates, twilight gates, ash gates, hearth gates, and wane gates out of runs", () => {
+  it("keeps flicker gates, gambit chests, echo gates, pilgrim banners, latch gates, wager gates, pact gates, twilight gates, ash gates, hearth gates, wane gates, and clean gates out of runs", () => {
     const flicker = getWorldFeature("WF-PRT-FLICKER_GATE");
     const gambit = getWorldFeature("WF-RSK-GAMBIT_CHEST");
     const echo = getWorldFeature("WF-PRT-ECHO_GATE");
@@ -388,6 +422,7 @@ describe("run-mode and placement guards", () => {
     const ash = getWorldFeature("WF-PRT-ASH_GATE");
     const hearth = getWorldFeature("WF-PRT-HEARTH_GATE");
     const wane = getWorldFeature("WF-PRT-WANE_GATE");
+    const clean = getWorldFeature("WF-PRT-CLEAN_GATE");
     assert.ok(
       flicker &&
         gambit &&
@@ -399,7 +434,8 @@ describe("run-mode and placement guards", () => {
         twilight &&
         ash &&
         hearth &&
-        wane,
+        wane &&
+        clean,
     );
     for (const f of [
       flicker,
@@ -413,6 +449,7 @@ describe("run-mode and placement guards", () => {
       ash,
       hearth,
       wane,
+      clean,
     ]) {
       assert.equal(
         isFeatureAllowedInContext(f, { runMode: "dungeon" }),
@@ -553,6 +590,16 @@ describe("run-mode and placement guards", () => {
     assert.ok(lectern);
     const lecternHaz = extraHazardRoll(lectern, () => 0.99);
     assert.ok(lecternHaz >= 4 && lecternHaz <= 8);
+    const column = getWorldFeature("WF-INV-RETREAT_COLUMN");
+    assert.ok(column);
+    assert.equal(
+      extraEnemyRoll(column, () => 0.5),
+      3,
+    );
+    const retrace = getWorldFeature("WF-HAZ-RETRACE_DUST");
+    assert.ok(retrace);
+    const retraceHaz = extraHazardRoll(retrace, () => 0.99);
+    assert.ok(retraceHaz >= 4 && retraceHaz <= 8);
   });
 });
 
@@ -569,7 +616,7 @@ describe("pickWeightedFeatures", () => {
 
   it("can still surface rare ids across many rarity-weighted rolls", () => {
     const seen = new Set<string>();
-    for (let seed = 1; seed <= 600; seed++) {
+    for (let seed = 1; seed <= 700; seed++) {
       for (const f of pickWeightedFeatures(mulberry32(seed), {
         runMode: "none",
       })) {
@@ -615,6 +662,10 @@ describe("pickWeightedFeatures", () => {
     assert.ok(
       [...seen].some((id) => featureCatalogWave(getWorldFeature(id)!) === 9),
       "rarity weights never produced a wave-9 feature",
+    );
+    assert.ok(
+      [...seen].some((id) => featureCatalogWave(getWorldFeature(id)!) === 10),
+      "rarity weights never produced a wave-10 feature",
     );
   });
 
