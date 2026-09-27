@@ -152,6 +152,7 @@ import {
 } from "../engine/enemyPixelPatterns";
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
+import { planGroundDokaLoot } from "../engine/groundDokaSpawn";
 import {
   applyFinalizedLayout,
   applySanctuaryLayout,
@@ -6745,59 +6746,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // ── #18 Always read Doka spawn config from ref (never stale closure) ──
       const { dokaSpawnChance: spawnChance, dokaSpawnBaseValue: spawnBase } =
         dokaSpawnConfigRef.current;
-      if (
-        !newMap.isDeathRealm &&
-        Math.random() * 100 < spawnChance &&
-        newEnemies.length > 0
-      ) {
-        const avgLevel =
-          newEnemies.reduce((s, e) => s + Number(e.level), 0) /
-          newEnemies.length;
-        const lootCount = Math.max(1, Math.ceil(newEnemies.length / 3));
-        // Collect walkable tiles not occupied by player/enemies
-        const walkable: { x: number; y: number }[] = [];
-        for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-          for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-            if (
-              newMap.tiles[gy]?.[gx] === "floor" &&
-              !newMap.voidTiles?.has(`${gx},${gy}`) &&
-              !(gx === spawnPosition.x && gy === spawnPosition.y) &&
-              !newEnemies.some((e) => e.x === gx && e.y === gy)
-            ) {
-              walkable.push({ x: gx, y: gy });
-            }
-          }
-        }
-        // Shuffle and pick lootCount tiles
-        for (let i = walkable.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [walkable[i], walkable[j]] = [walkable[j], walkable[i]];
-        }
-        const lootItems: DokaLootItem[] = walkable
-          .slice(0, lootCount)
-          .map((tile) => ({
-            id: `doka-${Date.now()}-${tile.x}-${tile.y}`,
-            tileX: tile.x,
-            tileY: tile.y,
-            value: Math.max(
-              1,
-              Math.round(
-                (spawnBase + avgLevel * 2) * (0.8 + Math.random() * 0.4),
-              ),
-            ),
-            collected: false,
-          }));
-        claimedGroundLootIdsRef.current = new Set();
-        setDokaLoot(lootItems);
-        if (lootItems.length > 0) {
-          logBattleEntry(
-            `\uD83D\uDCB0 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
-            "#f1c40f",
-          );
-        }
-      } else {
-        claimedGroundLootIdsRef.current = new Set();
-        setDokaLoot([]);
+      const lootItems = planGroundDokaLoot({
+        isDeathRealm: newMap.isDeathRealm,
+        spawnChance,
+        spawnBase,
+        enemies: newEnemies,
+        spawnPosition,
+        tiles: newMap.tiles,
+        voidTiles: newMap.voidTiles,
+        rng: Math.random,
+        now: Date.now,
+      });
+      claimedGroundLootIdsRef.current = new Set();
+      setDokaLoot(lootItems);
+      if (lootItems.length > 0) {
+        logBattleEntry(
+          `\uD83D\uDCB0 You notice ${lootItems.length} Doka coin${lootItems.length !== 1 ? "s" : ""} scattered on the ground!`,
+          "#f1c40f",
+        );
       }
       // Portal +10 XP must not touch the HUD before applyRewards commits.
       // Optimistic leftover + failed persist lets hydrateWhenIdle copy the
