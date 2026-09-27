@@ -19,6 +19,13 @@ import { isActiveHostile } from "./battleSetup";
 
 export type Side = "player" | "enemy";
 
+// Unique vs #496 top imports, #528 before resolvePlayerCast, #555 EOF,
+// #649 after resolvePlayerCast. ESM hoists this.
+import {
+  applyPlayerHealAdvertisedBuff,
+  playerCastIsSelfHeal,
+} from "./playerHealCast.ts";
+
 export interface SummonUnitDef {
   pieceType: string;
   level: number;
@@ -628,8 +635,7 @@ export function resolvePlayerCast(
   ctx: PlayerSpellContext,
 ): PlayerCastResult {
   const isPhysical = spell.isPhysical ?? false;
-  const isHealSpell =
-    spell.targetType === "self" && spell.effectType === "heal";
+  const isHealSpell = playerCastIsSelfHeal(spell);
   const isDrainSpell = spell.effectType === "drain";
   const isShieldSpell =
     (spell.targetType === "self" || spell.targetType === "ally") &&
@@ -666,6 +672,7 @@ export function resolvePlayerCast(
       `${isCrit ? "CRITICAL! " : ""}You healed ${finalHeal} HP with ${spell.name}`,
       isCrit ? "#FFD700" : "#22c55e",
     );
+    applyPlayerHealAdvertisedBuff(spell, ctx, "player");
     ctx.onHit();
     ctx.triggerVfx("player", "heal");
     ctx.recordSpellType(spell.effectType ?? "damage");
