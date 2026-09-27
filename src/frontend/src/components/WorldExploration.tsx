@@ -379,6 +379,10 @@ import {
   syncLiveDokaFromProp,
   writeLiveDoka,
 } from "../utils/itemShop";
+import {
+  kitResolvedCastBreaksPacifist,
+  pacifistAfterResolvedCast,
+} from "../utils/pacifistRun";
 import { shouldAllowPlayerCastEntry } from "../utils/playerCastGate";
 import {
   activatePlayerMirror,
@@ -9870,6 +9874,15 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           playerSpellContext() as any,
           { getStatModifier, calcScaledDamage } as any,
         );
+        // resolveSpellCast never calls recordSpellType. Kit Poison /
+        // Inferno / Strike used to leave battleOnlyHealBuffSpellsRef
+        // true so pacifist_run (500 Doka) unlocked after a summon kill.
+        if (kitResolvedCastBreaksPacifist(plan.spell)) {
+          battleOnlyHealBuffSpellsRef.current = pacifistAfterResolvedCast(
+            battleOnlyHealBuffSpellsRef.current,
+            String(plan.spell.effectType ?? "damage"),
+          );
+        }
         {
           const nextDirect = applyChallengeDirectHit(
             {
@@ -17017,20 +17030,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       ...playerSpellTypeHistoryRef.current.slice(-4),
       effectType,
     ];
-    // #19 pacifist run: flip if any offensive effect type used
-    const offCats = [
-      "damage",
-      "drain",
-      "aoe",
-      "dot",
-      "pushback",
-      "attract",
-      "cc",
-      "teleport",
-    ];
-    if (offCats.includes((effectType ?? "").toLowerCase())) {
-      battleOnlyHealBuffSpellsRef.current = false;
-    }
+    // #19 pacifist run: same categories as kitResolvedCastBreaksPacifist
+    battleOnlyHealBuffSpellsRef.current = pacifistAfterResolvedCast(
+      battleOnlyHealBuffSpellsRef.current,
+      effectType,
+    );
   }, []);
   // ── Trigger leader death particle burst + text overlay ─────────────────────
   const triggerLeaderDeathAnimation = useCallback(

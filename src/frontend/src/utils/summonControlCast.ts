@@ -13,6 +13,10 @@
  * (including fizzle) so a 2-AP Archer cannot wipe the room in one turn.
  * Optional `liveGate` applies the same highlight/live geometry as the
  * player (LoS, barriers, minRange) without changing the AP debit.
+ *
+ * `resolveSpellCast` does not call `recordSpellType`. After a resolved
+ * kit cast, WorldExploration must run `pacifistAfterResolvedCast` or
+ * Poison / Inferno / Strike leave `pacifist_run` unlocked.
  */
 
 import { isActiveHostile } from "../engine/battleSetup.ts";
