@@ -18,6 +18,9 @@ export function getCameraFollowSpeed(
   return 0.08; // Much slower for large screens
 }
 
+/** Canonical implementation: engine/groundDokaSpawn.ts */
+export { planGroundDokaLoot } from "./groundDokaSpawn.ts";
+
 export function getSessionVersion(): number {
   try {
     return Number.parseInt(
