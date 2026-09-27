@@ -30,6 +30,7 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/utils/versionGate.ts` | Version-bump wipe: keep spawn/level-up config and `*_inventory` |
 | `backend_extended/` | Legacy actor (15-field stats). Not the caffeine/mops build |
 | `declarations/backend/` | Stale Candid snapshot (still lists `wp`/`wr`/`scp`) |
+| `src/frontend/src/engine/mapModifiers.ts` | Live map-modifier registry (`mapModifierRegistry.apply*`). Do not add parallel `if (modifierId)` AP/MP/reward/damage branches in WorldExploration. Four ids are announce-only placeholders |
 
 Canonical build entry: root `mops.toml` → `src/backend/main.mo`.  
 `dfx.json` points at missing `src/backend_extended/main.mo`; the legacy tree is root `backend_extended/`. Do not treat dfx as the source of truth.

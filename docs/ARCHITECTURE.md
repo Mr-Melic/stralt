@@ -428,6 +428,14 @@ Generated maps must stay player-solvable across seeds. After `generateEnemies`, 
 
 Do not change archetype fill/smooth weights to "fix" a stuck map — run the finalize pass.
 
+### Map modifier registry
+
+`engine/mapModifiers.ts` is the live hook table (22 ids). WorldExploration must call `mapModifierRegistry.applyApCost` / `applyMpCost` / `applyDamageDealt` / `applyRewardMultiplier` / `applyBattleStart` / `applyTurnStart` / `applyTurnOrderSort` / `applyEffectApplication` / `rollActiveModifiers` rather than new `if (modifierId)` cost branches.
+
+`blood_moon`, `mirror_field`, `gravity_well`, and `fog_of_war` are announce-only (empty hooks). Paper Windstorm announce says “reach halved” and the registry hook is a no-op marker; live miss is still inline in WorldExploration (player `paperWindstormMiss` 30%, enemy `range > 1` at 50%). Do not teach `targeting.ts` a 0.5 range from that copy. Titan’s Vigor `onBattleStart` +1000 HP and 1–5× `onDamageDealt` is live, but `applyDamageDealt` runs only from `enemyTakesDamage` — the main player bar (`applyDamageToEnemy`) skips it. Do not thread that hook through combat math to “fix” the split.
+
+Canister `MapModifierConfig` is `id` / `name` / `description` / `modifierType` / `active` / `triggerChance` only (Motoko comment still names just `slime_flood` / `paper_windstorm`). Frontend `globalTriggerChance` / `secondModifierChance` are client-side; `rollActiveModifiers` defaults 20 / 50. Those extras do not round-trip.
+
 ### Combatant-store HP and last-hostile victory
 
 `isActiveHostile` / `shouldAwardVictory` read **store** HP. Strip-only or React-`enemyHpMap` writes leave `hp > 0`, so the last lava/DoT/minion tick never awards victory and the "dead" unit takes another turn (including a lethal hit that persists a death penalty instead).
