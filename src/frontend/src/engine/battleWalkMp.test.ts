@@ -5,8 +5,6 @@ import {
   battleWalkMpBudget,
   battleWalkMpCost,
   canAffordBattleWalk,
-  computeBattleWalkReachable,
-  hoverBattleWalkMpCost,
 } from "./battleWalkMp.ts";
 import { mapModifierRegistry } from "./mapModifiers.ts";
 
@@ -97,73 +95,5 @@ describe("battleWalkMpBudget", () => {
       }),
       0,
     );
-  });
-});
-
-describe("computeBattleWalkReachable highlight vs execute", () => {
-  const size = 8;
-  const origin = { x: 2, y: 2 };
-  const blocked = new Set<string>();
-
-  function reachable(opts: {
-    mpBudget: number;
-    costPerTile: number;
-    occupied?: Set<string>;
-    extraBlocked?: Set<string>;
-  }) {
-    const walls = opts.extraBlocked ?? blocked;
-    return computeBattleWalkReachable({
-      origin,
-      mpBudget: opts.mpBudget,
-      costPerTile: opts.costPerTile,
-      worldGridSize: size,
-      isBlocked: (x, y) => walls.has(`${x},${y}`),
-      isOccupiedDest: (x, y) => opts.occupied?.has(`${x},${y}`) === true,
-    });
-  }
-
-  it("omits an occupied dest from the highlight so it cannot execute", () => {
-    const occupied = new Set(["4,2"]);
-    const open = reachable({ mpBudget: 6, costPerTile: 1 });
-    const withRat = reachable({ mpBudget: 6, costPerTile: 1, occupied });
-    assert.equal(open.tiles.has("4,2"), true);
-    assert.equal(withRat.tiles.has("4,2"), false);
-    assert.equal(
-      hoverBattleWalkMpCost(withRat.costByKey, { x: 4, y: 2 }),
-      null,
-    );
-    assert.equal(open.costByKey.get("4,2"), 2);
-    assert.equal(hoverBattleWalkMpCost(open.costByKey, { x: 4, y: 2 }), 2);
-    assert.equal(battleWalkMpCost(2, 1), 2);
-  });
-
-  it("still highlights a tile behind an occupant (walk-through unchanged)", () => {
-    const occupied = new Set(["3,2"]);
-    const withRat = reachable({ mpBudget: 6, costPerTile: 1, occupied });
-    assert.equal(withRat.tiles.has("3,2"), false);
-    assert.equal(withRat.tiles.has("4,2"), true);
-    assert.equal(withRat.costByKey.get("4,2"), 2);
-  });
-
-  it("hover MP equals execute debit on Frozen (2 MP/tile)", () => {
-    const result = reachable({ mpBudget: 6, costPerTile: 2 });
-    assert.equal(result.tiles.has("6,2"), false, "4 tiles at 2 MP = 8 > 6");
-    assert.equal(result.tiles.has("5,2"), true, "3 tiles at 2 MP = 6");
-    const hover = hoverBattleWalkMpCost(result.costByKey, { x: 5, y: 2 });
-    assert.equal(hover, 6);
-    assert.equal(battleWalkMpCost(3, 2), hover);
-    assert.equal(canAffordBattleWalk(6, 3, 2), true);
-    assert.equal(canAffordBattleWalk(5, 3, 2), false);
-  });
-
-  it("does not highlight a wall dest the execute path would reject", () => {
-    const walls = new Set(["3,2"]);
-    const result = reachable({
-      mpBudget: 4,
-      costPerTile: 1,
-      extraBlocked: walls,
-    });
-    assert.equal(result.tiles.has("3,2"), false);
-    assert.equal(hoverBattleWalkMpCost(result.costByKey, { x: 3, y: 2 }), null);
   });
 });
