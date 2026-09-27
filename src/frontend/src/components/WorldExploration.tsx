@@ -388,6 +388,7 @@ import {
   rememberTouchEnd,
   shouldIgnoreClickAfterTouch,
 } from "../utils/pointerGesture";
+import { shouldDispatchDeferredAdvanceTurn } from "../utils/deferredAdvanceTurn";
 import {
   isAttackNearestHotkey,
   shouldBlockWorldMoveOntoPortal,
@@ -15314,15 +15315,52 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           // after the first summon turn.
           enemyTurnInProgressRef.current = false;
           turnEndReasonRef.current = "action-complete";
-          setTimeout(() => advanceTurnRef.current(), 600);
+          // Track + re-gate: a bare 600ms timer survived cleanupBattle when
+          // this summon was the last hostile, then advanced mid next fight.
+          {
+            const deferredGen = aiGenerationRef.current;
+            const deferredAdvance = setTimeout(() => {
+              pendingTimeoutsRef.current.delete(deferredAdvance);
+              if (
+                !shouldDispatchDeferredAdvanceTurn({
+                  inBattle: inBattleRef.current,
+                  cleanupRan: cleanupRanRef.current,
+                  deathTriggered: deathTriggeredRef.current,
+                  hostilesRemaining: activeHostilesRemaining(
+                    combatantsRef.current,
+                  ),
+                  scheduledGeneration: deferredGen,
+                  currentGeneration: aiGenerationRef.current,
+                })
+              ) {
+                return;
+              }
+              turnEndReasonRef.current = "action-complete";
+              advanceTurnRef.current();
+            }, 600);
+            if (!cleanupRanRef.current) {
+              pendingTimeoutsRef.current.add(deferredAdvance);
+            }
+          }
           advanced = true;
         } finally {
           // Unconditionally reset the ref so the next enemy-phase gate is open.
           enemyTurnInProgressRef.current = false;
           // If the try threw before its own advance, advance exactly once here.
+          // Skip when this kill emptied the roster — same gate as the apply
+          // finally below so player DoT/plague cannot race applyRewards.
           if (!advanced) {
-            turnEndReasonRef.current = "action-complete";
-            advanceTurnRef.current();
+            if (
+              shouldAdvanceAfterEnemyTurn({
+                deathTriggered: deathTriggeredRef.current,
+                hostilesRemaining: activeHostilesRemaining(
+                  combatantsRef.current,
+                ),
+              })
+            ) {
+              turnEndReasonRef.current = "action-complete";
+              advanceTurnRef.current();
+            }
             advanced = true;
           }
         }
@@ -16398,7 +16436,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             enemySummonCooldownRef.current.set(enemyId, battleTurn);
             enemyTurnInProgressRef.current = false;
             turnEndReasonRef.current = "action-complete";
-            setTimeout(advanceTurnRef.current, 600);
+            {
+              const deferredGen = aiGenerationRef.current;
+              const deferredAdvance = setTimeout(() => {
+                pendingTimeoutsRef.current.delete(deferredAdvance);
+                if (
+                  !shouldDispatchDeferredAdvanceTurn({
+                    inBattle: inBattleRef.current,
+                    cleanupRan: cleanupRanRef.current,
+                    deathTriggered: deathTriggeredRef.current,
+                    hostilesRemaining: activeHostilesRemaining(
+                      combatantsRef.current,
+                    ),
+                    scheduledGeneration: deferredGen,
+                    currentGeneration: aiGenerationRef.current,
+                  })
+                ) {
+                  return;
+                }
+                turnEndReasonRef.current = "action-complete";
+                advanceTurnRef.current();
+              }, 600);
+              if (!cleanupRanRef.current) {
+                pendingTimeoutsRef.current.add(deferredAdvance);
+              }
+            }
             // SECTION 4: mark advanced so the outer try/finally does not double-advance.
             advanced = true;
             return;
@@ -16991,9 +17053,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     }
     // H2 fix: watchdog assigned here after timeout is scheduled
     watchdog = setTimeout(() => {
-      if (cleanupPhaseRef.current !== "idle" || cleanupRanRef.current) return;
-      if (aiGenerationRef.current !== myAIGeneration) return;
       pendingTimeoutsRef.current.delete(watchdog);
+      // Same call-site gate as the 600ms summon handoff: the apply-layer
+      // finally already checks shouldAdvanceAfterEnemyTurn, but this
+      // watchdog used to skip that and could flushSync into player DoT
+      // after the last hostile died (or after cleanup started a new fight).
+      if (
+        !shouldDispatchDeferredAdvanceTurn({
+          inBattle: inBattleRef.current,
+          cleanupRan: cleanupRanRef.current,
+          deathTriggered: deathTriggeredRef.current,
+          hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+          scheduledGeneration: myAIGeneration,
+          currentGeneration: aiGenerationRef.current,
+        })
+      ) {
+        return;
+      }
+      if (cleanupPhaseRef.current !== "idle") return;
       // EDIT 3e: record why the turn ended before advancing.
       turnEndReasonRef.current = "timer-expiry";
       advanceTurnRef.current();
