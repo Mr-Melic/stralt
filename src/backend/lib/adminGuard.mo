@@ -700,6 +700,37 @@ module {
         roomIndex == 9 and currentRoom == 9
     };
 
+    /// Failure: adminSetMapModifierChance(last seeded id, 0) empties the live
+    /// pool. Full-row adminSetMapModifier last-live is a different path.
+    /// rollActiveModifiers keeps active registry ids; pickWeighted with
+    /// total weight 0 never rolls. Custom / gravity_well chance-0 is allowed.
+    /// Keep at least one of slime_flood / paper_windstorm active with
+    /// triggerChance > 0.
+    public func mapModifierLastLiveChanceRejected(
+        id : Text,
+        chance : Nat,
+        existing : Types.MapModifierConfig,
+        all : [Types.MapModifierConfig],
+    ) : ?Text {
+        switch (requireId(id, "Map modifier")) { case (?e) { return ?e }; case null {} };
+        if (chance > 0) { return null };
+        if (not existing.active) { return null };
+        if (id != "slime_flood" and id != "paper_windstorm") { return null };
+        var otherLive : Nat = 0;
+        for (c in all.values()) {
+            if (c.id != id) {
+                if ((c.id == "slime_flood" or c.id == "paper_windstorm")
+                    and c.active and c.triggerChance > 0) {
+                    otherLive += 1;
+                };
+            };
+        };
+        if (otherLive == 0) {
+            return ?"Cannot empty the live built-in map-modifier pool";
+        };
+        null
+    };
+
     public func validateAdBox(index : Nat, imageUrl : Text, linkUrl : Text) : ?Text {
         if (index >= 3) { return ?"index out of range: must be 0, 1, or 2" };
         switch (validateRequiredUrl("imageUrl", imageUrl)) { case (?e) { return ?e }; case null {} };
