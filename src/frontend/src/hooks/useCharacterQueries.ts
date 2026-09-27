@@ -5,6 +5,7 @@ import type {
   CharacterSlots,
   UserProfile,
 } from "../types/gameTypes";
+import { clearSlotReuseBrowserCaches } from "../utils/slotReusePersistEvolve.ts";
 import { clearBossRushForSlot } from "./bossRushProgress";
 import { useActor } from "./useActor";
 
@@ -181,6 +182,9 @@ export function useDeleteCharacter() {
       );
       if (result.__kind__ === "err")
         throw new Error(result.err || "Failed to delete character");
+      // Unpaid death / feat counters are slot-keyed, not character identity.
+      // A new occupant must not inherit the previous occupant's pending 20/40.
+      clearSlotReuseBrowserCaches(Number(slot));
       try {
         await clearBossRushForSlot(actor as ActorAny, slot);
       } catch {
