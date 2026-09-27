@@ -152,7 +152,6 @@ import {
 } from "../engine/enemyPixelPatterns";
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
-import { planGroundDokaLoot } from "../engine/groundDokaSpawn";
 import {
   applyFinalizedLayout,
   applySanctuaryLayout,
@@ -280,6 +279,7 @@ import {
   getCameraFollowSpeed,
   getSessionVersion,
   nowTimestamp,
+  planGroundDokaLoot,
 } from "../engine/worldHelpers";
 import { persistBossRushRewardsThroughLock } from "../hooks/bossRushProgress";
 import { useBossAI } from "../hooks/useBossAI";
