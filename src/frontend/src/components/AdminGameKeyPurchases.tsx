@@ -1,8 +1,14 @@
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useActor } from "../hooks/useActor";
 import { readAdminCmdResult } from "../utils/adminContract";
+import {
+  createGameKeyAdminLock,
+  endGameKeyAdminOp,
+  shouldBlockGameKeyAdminControls,
+  tryBeginGameKeyAdminOp,
+} from "../utils/adminOwnerUx.gameKeyBusy";
 import { validateDokaGrant } from "../utils/adminSafety";
 import {
   type GameKeyRequestView,
@@ -171,6 +177,7 @@ const AdminGameKeyPurchases: React.FC = () => {
     code: string;
   } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const gameKeyOpLockRef = useRef(createGameKeyAdminLock());
   const [confirm, setConfirm] = useState<
     | null
     | { kind: "approve"; rec: GameKeyRequestView; amount: number }
@@ -222,6 +229,9 @@ const AdminGameKeyPurchases: React.FC = () => {
       toast.error("Approve is not available");
       return;
     }
+    if (!tryBeginGameKeyAdminOp(gameKeyOpLockRef.current, "approve")) {
+      return;
+    }
     setBusyId(rec.id);
     try {
       const cmd = readGameKeyCmdResult(
@@ -238,6 +248,7 @@ const AdminGameKeyPurchases: React.FC = () => {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
+      endGameKeyAdminOp(gameKeyOpLockRef.current);
       setBusyId(null);
     }
   };
@@ -246,6 +257,9 @@ const AdminGameKeyPurchases: React.FC = () => {
     const fn = actor?.adminRejectGameKeyPurchase;
     if (typeof fn !== "function") {
       toast.error("Reject is not available");
+      return;
+    }
+    if (!tryBeginGameKeyAdminOp(gameKeyOpLockRef.current, "reject")) {
       return;
     }
     setBusyId(rec.id);
@@ -263,6 +277,7 @@ const AdminGameKeyPurchases: React.FC = () => {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
+      endGameKeyAdminOp(gameKeyOpLockRef.current);
       setBusyId(null);
     }
   };
@@ -271,6 +286,9 @@ const AdminGameKeyPurchases: React.FC = () => {
     const fn = actor?.adminGetGameKeyReveal;
     if (typeof fn !== "function") {
       toast.error("Reveal is not available");
+      return;
+    }
+    if (!tryBeginGameKeyAdminOp(gameKeyOpLockRef.current, "reveal")) {
       return;
     }
     setBusyId(rec.id);
@@ -287,6 +305,7 @@ const AdminGameKeyPurchases: React.FC = () => {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
+      endGameKeyAdminOp(gameKeyOpLockRef.current);
       setBusyId(null);
     }
   };
@@ -295,6 +314,9 @@ const AdminGameKeyPurchases: React.FC = () => {
     const fn = actor?.adminMarkGameKeyEmailed;
     if (typeof fn !== "function") {
       toast.error("Mark emailed is not available");
+      return;
+    }
+    if (!tryBeginGameKeyAdminOp(gameKeyOpLockRef.current, "emailed")) {
       return;
     }
     setBusyId(id);
@@ -313,6 +335,7 @@ const AdminGameKeyPurchases: React.FC = () => {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
+      endGameKeyAdminOp(gameKeyOpLockRef.current);
       setBusyId(null);
     }
   };
@@ -625,7 +648,12 @@ const AdminGameKeyPurchases: React.FC = () => {
                             <button
                               type="button"
                               data-ocid={`admin.purchases.approve_button.${i + 1}`}
-                              disabled={busyId === rec.id}
+                              disabled={
+                                busyId != null ||
+                                shouldBlockGameKeyAdminControls(
+                                  gameKeyOpLockRef.current,
+                                )
+                              }
                               onClick={() => {
                                 const parsed = resolveAdminApproveDokaAmount(
                                   dokaDraft[rec.id],
@@ -662,7 +690,12 @@ const AdminGameKeyPurchases: React.FC = () => {
                             <button
                               type="button"
                               data-ocid={`admin.purchases.reject_button.${i + 1}`}
-                              disabled={busyId === rec.id}
+                              disabled={
+                                busyId != null ||
+                                shouldBlockGameKeyAdminControls(
+                                  gameKeyOpLockRef.current,
+                                )
+                              }
                               onClick={() =>
                                 setConfirm({ kind: "reject", rec })
                               }
@@ -686,7 +719,12 @@ const AdminGameKeyPurchases: React.FC = () => {
                           <button
                             type="button"
                             data-ocid={`admin.purchases.reveal_button.${i + 1}`}
-                            disabled={busyId === rec.id}
+                            disabled={
+                              busyId != null ||
+                              shouldBlockGameKeyAdminControls(
+                                gameKeyOpLockRef.current,
+                              )
+                            }
                             onClick={() => void showReveal(rec)}
                             style={{
                               minHeight: 36,
@@ -802,6 +840,10 @@ const AdminGameKeyPurchases: React.FC = () => {
               <button
                 type="button"
                 data-ocid="admin.purchases.mark_emailed_button"
+                disabled={
+                  busyId != null ||
+                  shouldBlockGameKeyAdminControls(gameKeyOpLockRef.current)
+                }
                 onClick={() => setConfirm({ kind: "emailed", id: reveal.id })}
                 style={{
                   minHeight: 44,
