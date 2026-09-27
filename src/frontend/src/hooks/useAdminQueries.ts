@@ -13,6 +13,7 @@ import {
   validateEnemyName,
   validateMapModifierChance,
 } from "../utils/adminSafety";
+import { mapModifierLastLiveChanceRejected } from "../utils/adminSafety.mapModifierLastLiveChance";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
@@ -199,6 +200,17 @@ export function useAdminSetMapModifierChance() {
       if (!actor) throw new Error("Actor not available");
       const chanceErr = validateMapModifierChance(id, chance);
       if (chanceErr) throw new Error(chanceErr);
+      const cached = queryClient.getQueryData<MapModifierConfig[]>([
+        "mapModifiers",
+      ]);
+      if (Array.isArray(cached) && cached.length > 0) {
+        const liveErr = mapModifierLastLiveChanceRejected({
+          id,
+          chance,
+          existing: cached,
+        });
+        if (liveErr) throw new Error(liveErr);
+      }
       const result = await (actor as ActorAny).adminSetMapModifierChance(
         id,
         BigInt(Math.round(chance)),

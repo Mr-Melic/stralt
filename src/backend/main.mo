@@ -943,10 +943,20 @@ actor {
             case (?e) { return #err(e) };
             case null {};
         };
-        let prevChance = switch (mapModifierConfigs.get(id)) {
+        let existing = switch (mapModifierConfigs.get(id)) {
             case null { return #err("Map modifier '" # id # "' not found") };
-            case (?existing) { existing.triggerChance.toText() };
+            case (?c) { c };
         };
+        switch (AdminGuard.mapModifierLastLiveChanceRejected(
+            id,
+            chance,
+            existing,
+            mapModifierConfigs.values().toArray(),
+        )) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
+        let prevChance = existing.triggerChance.toText();
         switch (AdminLib.setMapModifierChance(mapModifierConfigs, id, chance)) {
             case (#err e) { #err(e) };
             case (#ok) {
