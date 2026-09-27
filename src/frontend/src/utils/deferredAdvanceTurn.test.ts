@@ -88,4 +88,34 @@ describe("shouldDispatchDeferredAdvanceTurn", () => {
       false,
     );
   });
+
+  it("refuses after cleanup even if a stale roster still lists hostiles", () => {
+    assert.equal(
+      shouldDispatchDeferredAdvanceTurn({
+        inBattle: false,
+        cleanupRan: true,
+        deathTriggered: false,
+        hostilesRemaining: 2,
+        scheduledGeneration: 5,
+        currentGeneration: 5,
+      }),
+      false,
+      "inBattleRef is false in cleanupBattle before React drops the roster",
+    );
+  });
+
+  it("refuses player-summon 0-AP auto-end after the last hostile dies", () => {
+    assert.equal(
+      shouldDispatchDeferredAdvanceTurn({
+        inBattle: true,
+        cleanupRan: false,
+        deathTriggered: false,
+        hostilesRemaining: 0,
+        scheduledGeneration: 8,
+        currentGeneration: 8,
+      }),
+      false,
+      "wolf dumps last AP on the last kill; 500ms auto-end must not start player DoT",
+    );
+  });
 });

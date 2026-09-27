@@ -14753,13 +14753,37 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       (summon.currentAp ?? 0) === 0 &&
       (summon.currentMp ?? 0) === 0
     ) {
+      // Same class as the 600ms enemy-summon handoff: this timer was not on
+      // pendingTimeoutsRef. cleanupBattle only drops it after the async
+      // setActiveControlledSummonId(null) commit, so a fast portal could
+      // let auto-end flushSync into the next fight.
+      const deferredGen = aiGenerationRef.current;
       const t = setTimeout(() => {
+        pendingTimeoutsRef.current.delete(t);
+        if (
+          !shouldDispatchDeferredAdvanceTurn({
+            inBattle: inBattleRef.current,
+            cleanupRan: cleanupRanRef.current,
+            deathTriggered: deathTriggeredRef.current,
+            hostilesRemaining: activeHostilesRemaining(combatantsRef.current),
+            scheduledGeneration: deferredGen,
+            currentGeneration: aiGenerationRef.current,
+          })
+        ) {
+          return;
+        }
         setActiveControlledSummonId(null);
         activeControlledSummonIdRef.current = null;
         setSelectedSummonSpellId(null);
         advanceTurn();
       }, 500);
-      return () => clearTimeout(t);
+      if (!cleanupRanRef.current) {
+        pendingTimeoutsRef.current.add(t);
+      }
+      return () => {
+        pendingTimeoutsRef.current.delete(t);
+        clearTimeout(t);
+      };
     }
   }, [activeControlledSummonId, combatantStoreCtx, advanceTurn]);
 

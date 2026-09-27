@@ -1,11 +1,17 @@
 /**
- * Deferred enemy / summon turn handoffs (600ms AI delay, 5s watchdog).
+ * Deferred enemy / summon turn handoffs (600ms AI delay, 5s watchdog,
+ * 500ms player-summon 0-AP auto-end).
  *
  * Several apply-layer branches used bare `setTimeout(() => advanceTurn())`
  * without tracking the timer or re-checking battle liveness. After the last
  * hostile dies, victory cleanup clears `pendingTimeoutsRef` — an untracked
  * timer survived, and a fast portal → new encounter could let that callback
  * run `advanceTurn` mid-fight (skip a slot / fade the wrong summon).
+ *
+ * The player-summon 0-AP auto-end is the same class: 500ms, not on
+ * `pendingTimeoutsRef`, and cleanupBattle only clears it via async
+ * `setActiveControlledSummonId(null)` → effect teardown. A fast portal
+ * can start the next fight before that paint.
  *
  * Gate every deferred handoff with the same predicate before calling
  * `advanceTurn`. `advanceTurn` still has `shouldAdvanceAfterEnemyTurn` at
