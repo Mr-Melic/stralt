@@ -248,6 +248,7 @@ import {
   resolveEnemyApMp,
 } from "../engine/summonIntegration";
 import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
+import { summonOutgoingCasterId } from "../engine/summonOutgoingDmg";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
 import {
   type TileCastableResult,
@@ -9846,6 +9847,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       }
       summonCastCommittedRef.current = true;
       try {
+        const kitCtx = playerSpellContext();
         resolveSpellCast(
           plan.spell as any,
           {
@@ -9867,7 +9869,23 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             effects: [],
             stats: { res: 0, sp: 0 },
           } as any,
-          playerSpellContext() as any,
+          {
+            ...kitCtx,
+            dealDamage: (
+              targetId: string,
+              amount: number,
+              _opts?: { isPhysical?: boolean },
+            ) => {
+              enemyTakesDamage(
+                targetId,
+                amount,
+                summonOutgoingCasterId(summon.id),
+                String(plan.spell.name ?? plan.spell.id ?? ""),
+                false,
+              );
+              return amount;
+            },
+          } as any,
           { getStatModifier, calcScaledDamage } as any,
         );
         {
@@ -9900,6 +9918,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       combatantStoreCtx,
       currentMap,
       logBattleEntry,
+      enemyTakesDamage,
     ],
   );
 
@@ -14999,7 +15018,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             amount: number,
             _opts?: { isPhysical?: boolean },
           ) => {
-            enemyTakesDamage(targetId, amount, "player", "", false);
+            enemyTakesDamage(
+              targetId,
+              amount,
+              summonOutgoingCasterId(summonEnemy.id),
+              "",
+              false,
+            );
             return amount;
           },
           heal: (combatantId: string, amount: number) => {
