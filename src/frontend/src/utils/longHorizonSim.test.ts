@@ -15,6 +15,11 @@ import {
   LIFE_DRAIN_HEAL,
   PLAYER_CREATE_INIT,
   SHIELD_CHARM_ABSORB,
+  SUMMON_ARCHER_HP_SCALE,
+  SUMMON_BOMBER_HP_SCALE,
+  SUMMON_GUARDIAN_HP_SCALE,
+  SUMMON_HUNTER_HP_SCALE,
+  catalogSummonMaxHp,
   crushOverKitRatio,
   damageAfterPlayerResPasses,
   deathDokaLost,
@@ -24,7 +29,10 @@ import {
   fightsToNextLevel,
   firstEnemyLevelCrushExceedsKit,
   firstEnemyLevelCrushExceedsShield,
+  firstEnemyLevelCrushOneShotsSummonHp,
   firstEnemyLevelEnragedCrushOneShots,
+  firstEnemyLevelFrostTurnsAtLeast,
+  firstEnemyLevelGroundDokaExceedsShrine,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
   firstLevelChcCanHit100,
@@ -36,6 +44,7 @@ import {
   firstPlayerLevelSurvivesCrushRecv,
   firstSpellLevelCostExceeds,
   formulaAp,
+  groundDokaMean,
   healthPotionDokaPerHp,
   healthPotionHpRestored,
   jackpotPersistIfHit,
@@ -45,6 +54,9 @@ import {
   linearPlayerMaxHp,
   officialStackedXp,
   passiveRegenSecondsToFull,
+  playerFrostCastsPerTurn,
+  playerFrostRaw,
+  playerFrostTurnsToKill,
   runLongHorizonSim,
   spawnPlaceholderDamage,
   spellFailChance,
@@ -221,5 +233,35 @@ assert.equal(passiveRegenSecondsToFull(10), 1450);
 assert.ok(passiveRegenSecondsToFull(1000) > 50_000);
 assert.equal(report.passiveRegen.secondsToFullAt1, 1000);
 assert.equal(report.passiveRegen.intervalMs, 10_000);
+
+assert.equal(playerFrostRaw(0), 21);
+assert.equal(playerFrostRaw(14), 32);
+assert.equal(playerFrostCastsPerTurn(formulaAp(1)), 2);
+assert.equal(playerFrostCastsPerTurn(formulaAp(1000)), 16);
+assert.equal(playerFrostTurnsToKill(1020, 1), 62);
+assert.equal(playerFrostTurnsToKill(1020, 1000), 8);
+assert.equal(playerFrostTurnsToKill(1020, 10_000), 1);
+assert.equal(firstEnemyLevelFrostTurnsAtLeast(10, 1, 0, formulaAp(1)), 133);
+assert.equal(report.playerFrostTtk.frostRaw, 21);
+assert.equal(report.playerFrostTtk.turnsVs1020At1, 62);
+assert.equal(report.playerFrostTtk.turnsVs1020At10000, 1);
+assert.equal(report.playerFrostTtk.turnsVs1020At1000Persist20, 21);
+
+assert.equal(catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE), 80);
+assert.equal(catalogSummonMaxHp("archer", SUMMON_ARCHER_HP_SCALE), 42);
+assert.equal(catalogSummonMaxHp("bomber", SUMMON_BOMBER_HP_SCALE), 25);
+assert.equal(catalogSummonMaxHp("guardian", SUMMON_GUARDIAN_HP_SCALE), 180);
+assert.equal(firstEnemyLevelCrushOneShotsSummonHp(80), 34);
+assert.equal(firstEnemyLevelCrushOneShotsSummonHp(42), 18);
+assert.equal(firstEnemyLevelCrushOneShotsSummonHp(25), 11);
+assert.equal(firstEnemyLevelCrushOneShotsSummonHp(180), 75);
+assert.equal(report.summonVsCrush.firstEnemyLevelHunter, 34);
+assert.equal(report.summonVsCrush.summonerChanceAt44, 1);
+
+assert.equal(groundDokaMean(1), 7);
+assert.equal(groundDokaMean(148), 301);
+assert.equal(groundDokaMean(1020), 2045);
+assert.equal(firstEnemyLevelGroundDokaExceedsShrine(), 148);
+assert.equal(report.secondaryDoka.firstEnemyLevelGroundExceedsShrine, 148);
 
 console.log("longHorizonSim.test: ok");

@@ -19,12 +19,16 @@ import {
   computeAITier,
   pickEnemyLevelFromTiers,
 } from "../engine/combatMath.ts";
-import { dungeonDokaMultiplierFor } from "../engine/portalRules.ts";
+import {
+  dungeonChainCompletionBonus,
+  dungeonDokaMultiplierFor,
+} from "../engine/portalRules.ts";
 import {
   BOSS_LEVEL_DIFF_STEP,
   getBossEffectiveStats,
   getEnemyBaseStats,
   getPlayerBaseStats,
+  getSummonBaseStats,
 } from "../engine/progression.ts";
 import type { ChessPieceType } from "../types/gameTypes.ts";
 import { DEFAULT_LEVELUP_CONFIG } from "../types/gameTypes.ts";
@@ -543,6 +547,129 @@ export function fallbackCrushVsSummon(
   return damageAfterPlayerResPasses(fallbackCrushRaw(enemyLevel), summonRes, 1);
 }
 
+/** Create SP. saveBattleStats cannot raise it. Live Frost then `floor(scaled * (1+SP/100))`. */
+export const PLAYER_CREATE_SP = Number(startingChampionStats().sp);
+/** Catalog Frost Bolt AP (`spellData.ts` starter-frost). */
+export const FROST_AP_COST = 3;
+export const PLAYER_FROST_BASE = KIT_FROST_DAMAGE;
+
+/**
+ * Player Frost raw after upgrade +3%/spell-level and create SP.
+ * `calcScaledDamage` still ignores character level (`combatMath.ts` 130–137).
+ * Mirrors WorldExploration `computeDamage` (`3308–3322`) with no mark/crit/RES.
+ */
+export function playerFrostRaw(
+  spellUpgradeLevel = 0,
+  sp = PLAYER_CREATE_SP,
+): number {
+  const scaled = calcScaledDamage(
+    PLAYER_FROST_BASE,
+    1,
+    Math.max(0, Math.floor(Number(spellUpgradeLevel) || 0)),
+  );
+  return Math.max(1, Math.floor(scaled * (1 + Math.max(0, sp) / 100)));
+}
+
+export function playerFrostCastsPerTurn(ap: number): number {
+  return Math.max(0, Math.floor(Math.max(0, ap) / FROST_AP_COST));
+}
+
+export function playerFrostDamagePerTurn(
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number {
+  return playerFrostRaw(spellUpgradeLevel) * playerFrostCastsPerTurn(ap);
+}
+
+/** Optimistic TTK (no enemy RES/SR). Live rook RES 100 is chip-1 (004). */
+export function playerFrostTurnsToKill(
+  enemyLevel: number,
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number {
+  const dpt = playerFrostDamagePerTurn(playerLevel, spellUpgradeLevel, ap);
+  if (dpt <= 0) return Number.POSITIVE_INFINITY;
+  return Math.ceil(linearEnemyMaxHp(enemyLevel) / dpt);
+}
+
+export function firstEnemyLevelFrostTurnsAtLeast(
+  minTurns: number,
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minTurns) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (
+      playerFrostTurnsToKill(enemyLevel, playerLevel, spellUpgradeLevel, ap) >=
+      need
+    ) {
+      return enemyLevel;
+    }
+  }
+  return null;
+}
+
+/** Catalog `hpScale` from `spellData.ts` summonUnitDef. */
+export const SUMMON_HUNTER_HP_SCALE = 1.0;
+export const SUMMON_GUARDIAN_HP_SCALE = 1.5;
+export const SUMMON_ARCHER_HP_SCALE = 0.7;
+export const SUMMON_BOMBER_HP_SCALE = 0.5;
+export const SUMMON_WISP_HP_SCALE = 0.6;
+
+export function catalogSummonMaxHp(
+  summonAI: string,
+  hpScale: number,
+  spellLevel = 0,
+): number {
+  return getSummonBaseStats(
+    spellLevel,
+    { pieceType: "pawn", level: 1, hpScale },
+    summonAI,
+  ).maxHp;
+}
+
+export function firstEnemyLevelCrushOneShotsSummonHp(
+  summonHp: number,
+  summonRes = 0,
+): number | null {
+  const hp = Math.max(1, Math.floor(Number(summonHp) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (fallbackCrushVsSummon(enemyLevel, summonRes) >= hp) return enemyLevel;
+  }
+  return null;
+}
+
+/** Shrine altar persist (`WorldExploration.tsx` 11308) is a flat 300. */
+export const SHRINE_DOKA = 300;
+/** `dokaSpawnBaseValue` default (`gameTypes.ts` DEFAULT_GAME_CONFIG). */
+export const GROUND_DOKA_SPAWN_BASE = 5;
+/** Ground coin `spawnBase + avgLevel * 2` before the 0.8–1.2 jitter. */
+export const GROUND_DOKA_PER_ENEMY_LEVEL = 2;
+
+export function groundDokaMean(
+  enemyLevel: number,
+  spawnBase = GROUND_DOKA_SPAWN_BASE,
+): number {
+  return (
+    Math.max(1, spawnBase) +
+    Math.max(1, enemyLevel) * GROUND_DOKA_PER_ENEMY_LEVEL
+  );
+}
+
+export function firstEnemyLevelGroundDokaExceedsShrine(
+  shrine = SHRINE_DOKA,
+  spawnBase = GROUND_DOKA_SPAWN_BASE,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(shrine) || 0));
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (groundDokaMean(enemyLevel, spawnBase) > cap) return enemyLevel;
+  }
+  return null;
+}
+
 /**
  * Unused exponential `getPlayerBaseStats` HP becomes IEEE Inf (JSON null)
  * once `100 * 1.05^(L-1)` overflows Number.
@@ -803,6 +930,30 @@ export function runLongHorizonSim() {
         KIT_STRIKE_DAMAGE,
       ),
       regenSecondsToFull: passiveRegenSecondsToFull(level),
+      frostRaw: playerFrostRaw(0),
+      frostCastsFormulaAp: playerFrostCastsPerTurn(formulaAp(level)),
+      frostCastsPersistAp: playerFrostCastsPerTurn(
+        maxPersistedAp(level, AP_EVERY),
+      ),
+      frostTurnsVsMeanEnemy: dist
+        ? playerFrostTurnsToKill(Math.round(meanEnemy), level)
+        : null,
+      frostTurnsVsMeanEnemyPersistAp: dist
+        ? playerFrostTurnsToKill(
+            Math.round(meanEnemy),
+            level,
+            0,
+            maxPersistedAp(level, AP_EVERY),
+          )
+        : null,
+      frostTurnsVsCap1020: playerFrostTurnsToKill(1020, level),
+      crushVsHunter: fallbackCrushVsSummon(Math.round(meanEnemy)),
+      groundDokaMean: dist
+        ? groundDokaMean(Math.round(meanEnemy))
+        : groundDokaMean(level),
+      shrineOverGround: dist
+        ? SHRINE_DOKA / groundDokaMean(Math.round(meanEnemy))
+        : SHRINE_DOKA / groundDokaMean(level),
     };
   });
 
@@ -876,7 +1027,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-26T00:15:11.858Z",
+    generatedAt: "2026-09-27T00:02:39.097Z",
     telemetry: {
       available: false,
       reason:
@@ -961,6 +1112,66 @@ export function runLongHorizonSim() {
       regenSecondsToFullAt1: passiveRegenSecondsToFull(1),
       regenSecondsToFullAt1000: passiveRegenSecondsToFull(1000),
       regenSecondsToFullAt100000: passiveRegenSecondsToFull(100_000),
+      playerCreateSp: PLAYER_CREATE_SP,
+      playerFrostRaw: playerFrostRaw(0),
+      playerFrostRawSpell14: playerFrostRaw(14),
+      frostApCost: FROST_AP_COST,
+      frostCastsAt1: playerFrostCastsPerTurn(formulaAp(1)),
+      frostCastsAt1000: playerFrostCastsPerTurn(formulaAp(1000)),
+      frostCastsAt1000PersistAp: playerFrostCastsPerTurn(
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      frostTurnsVs1020At1: playerFrostTurnsToKill(1020, 1),
+      frostTurnsVs1020At1000: playerFrostTurnsToKill(1020, 1000),
+      frostTurnsVs1020At1000PersistAp: playerFrostTurnsToKill(
+        1020,
+        1000,
+        0,
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      frostTurnsVs1020At10000: playerFrostTurnsToKill(1020, 10_000),
+      firstEnemyLevelFrost10TurnsAtAp8: firstEnemyLevelFrostTurnsAtLeast(
+        10,
+        1,
+        0,
+        formulaAp(1),
+      ),
+      hunterSummonCatalogHp: catalogSummonMaxHp(
+        "hunter",
+        SUMMON_HUNTER_HP_SCALE,
+      ),
+      archerSummonCatalogHp: catalogSummonMaxHp(
+        "archer",
+        SUMMON_ARCHER_HP_SCALE,
+      ),
+      bomberSummonCatalogHp: catalogSummonMaxHp(
+        "bomber",
+        SUMMON_BOMBER_HP_SCALE,
+      ),
+      guardianSummonCatalogHp: catalogSummonMaxHp(
+        "guardian",
+        SUMMON_GUARDIAN_HP_SCALE,
+      ),
+      firstEnemyLevelCrushOneShotsHunter: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      ),
+      firstEnemyLevelCrushOneShotsArcher: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("archer", SUMMON_ARCHER_HP_SCALE),
+      ),
+      firstEnemyLevelCrushOneShotsBomber: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("bomber", SUMMON_BOMBER_HP_SCALE),
+      ),
+      firstEnemyLevelCrushOneShotsGuardian:
+        firstEnemyLevelCrushOneShotsSummonHp(
+          catalogSummonMaxHp("guardian", SUMMON_GUARDIAN_HP_SCALE),
+        ),
+      shrineDoka: SHRINE_DOKA,
+      dungeonCompleteAtDepth5: dungeonChainCompletionBonus(5),
+      groundDokaMeanAt1: groundDokaMean(1),
+      groundDokaMeanAt148: groundDokaMean(148),
+      groundDokaMeanAt1020: groundDokaMean(1020),
+      firstEnemyLevelGroundDokaExceedsShrine:
+        firstEnemyLevelGroundDokaExceedsShrine(),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
@@ -1128,6 +1339,69 @@ export function runLongHorizonSim() {
       secondsToFullAt100: passiveRegenSecondsToFull(100),
       secondsToFullAt1000: passiveRegenSecondsToFull(1000),
       secondsToFullAt100000: passiveRegenSecondsToFull(100_000),
+    },
+    playerFrostTtk: {
+      createSp: PLAYER_CREATE_SP,
+      frostBase: PLAYER_FROST_BASE,
+      frostApCost: FROST_AP_COST,
+      frostRaw: playerFrostRaw(0),
+      frostRawSpell14: playerFrostRaw(14),
+      calcScaledDamageIgnoresCharacterLevel: true,
+      castsAt1: playerFrostCastsPerTurn(formulaAp(1)),
+      castsAt325: playerFrostCastsPerTurn(formulaAp(325)),
+      castsAt1000: playerFrostCastsPerTurn(formulaAp(1000)),
+      castsAt10000: playerFrostCastsPerTurn(formulaAp(10_000)),
+      castsAt1000Persist20: playerFrostCastsPerTurn(
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      turnsVs1020At1: playerFrostTurnsToKill(1020, 1),
+      turnsVs1020At100: playerFrostTurnsToKill(1020, 100),
+      turnsVs1020At1000: playerFrostTurnsToKill(1020, 1000),
+      turnsVs1020At10000: playerFrostTurnsToKill(1020, 10_000),
+      turnsVs1020At1000Persist20: playerFrostTurnsToKill(
+        1020,
+        1000,
+        0,
+        maxPersistedAp(1000, AP_EVERY),
+      ),
+      firstEnemyLevel10TurnsAtAp8: firstEnemyLevelFrostTurnsAtLeast(
+        10,
+        1,
+        0,
+        formulaAp(1),
+      ),
+    },
+    summonVsCrush: {
+      hunterHp: catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      archerHp: catalogSummonMaxHp("archer", SUMMON_ARCHER_HP_SCALE),
+      bomberHp: catalogSummonMaxHp("bomber", SUMMON_BOMBER_HP_SCALE),
+      guardianHp: catalogSummonMaxHp("guardian", SUMMON_GUARDIAN_HP_SCALE),
+      wispHp: catalogSummonMaxHp("healer", SUMMON_WISP_HP_SCALE),
+      unitDefLevel: 1,
+      firstEnemyLevelHunter: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("hunter", SUMMON_HUNTER_HP_SCALE),
+      ),
+      firstEnemyLevelArcher: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("archer", SUMMON_ARCHER_HP_SCALE),
+      ),
+      firstEnemyLevelBomber: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("bomber", SUMMON_BOMBER_HP_SCALE),
+      ),
+      firstEnemyLevelGuardian: firstEnemyLevelCrushOneShotsSummonHp(
+        catalogSummonMaxHp("guardian", SUMMON_GUARDIAN_HP_SCALE),
+      ),
+      crushVsHunterAt44: fallbackCrushVsSummon(44),
+      crushVsHunterAt1020: fallbackCrushVsSummon(1020),
+      summonerChanceAt44: Math.min(1, summonerChance(44)),
+    },
+    secondaryDoka: {
+      shrine: SHRINE_DOKA,
+      dungeonCompleteAtDepth5: dungeonChainCompletionBonus(5),
+      groundMeanAt1: groundDokaMean(1),
+      groundMeanAt148: groundDokaMean(148),
+      groundMeanAt1020: groundDokaMean(1020),
+      firstEnemyLevelGroundExceedsShrine:
+        firstEnemyLevelGroundDokaExceedsShrine(),
     },
   };
 }
