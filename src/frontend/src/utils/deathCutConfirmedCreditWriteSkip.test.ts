@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
+import { PORTAL_TRANSITION_XP } from "./applyRewardsResult.ts";
 import {
   flushPendingDeathPenaltyThroughDeathCutCredit,
   resolveCommittedDokaAfterDeathCutCredit,
@@ -21,6 +22,7 @@ import {
   resolveCommittedDokaForAbsoluteWrite,
 } from "./progressPersist.ts";
 import { committedDokaAfterGameKeyRedeem } from "./shopPurchase.ts";
+import { committedDokaAfterSpellUpgrade } from "./spellUpgrade.ts";
 
 function memStorage(): DeathPenaltyStorage {
   const storage = new Map<string, string>();
@@ -125,6 +127,62 @@ describe("shouldSkipDeathCutConfirmedCreditWrite", () => {
         pendingAfterDoka: 120,
       }),
       true,
+    );
+  });
+
+  it("skips stale pre-death XP after catch-cut then portal +10", () => {
+    assert.equal(
+      shouldSkipDeathCutConfirmedCreditWrite({
+        liveDoka: 200,
+        committedDoka: 120,
+        pendingPreDoka: 200,
+        pendingAfterDoka: 120,
+        liveXp: 100,
+        committedXp: 100 + PORTAL_TRANSITION_XP,
+        pendingPreXp: 100,
+        pendingAfterXp: 80,
+      }),
+      true,
+    );
+  });
+
+  it("allows a live XP rise past unpaid pre after portal +10", () => {
+    assert.equal(
+      shouldSkipDeathCutConfirmedCreditWrite({
+        liveDoka: 200,
+        committedDoka: 120,
+        pendingPreDoka: 200,
+        pendingAfterDoka: 120,
+        liveXp: 100 + PORTAL_TRANSITION_XP,
+        committedXp: 100 + PORTAL_TRANSITION_XP,
+        pendingPreXp: 100,
+        pendingAfterXp: 80,
+      }),
+      false,
+    );
+  });
+
+  it("skips stale uncut Doka after catch-cut then a confirmed upgrade spend", () => {
+    assert.equal(
+      shouldSkipDeathCutConfirmedCreditWrite({
+        liveDoka: 200,
+        committedDoka: committedDokaAfterSpellUpgrade(120, 190, 10),
+        pendingPreDoka: 200,
+        pendingAfterDoka: 120,
+      }),
+      true,
+    );
+  });
+
+  it("allows a fresh post-spend wallet below unpaid pre so honour can land", () => {
+    assert.equal(
+      shouldSkipDeathCutConfirmedCreditWrite({
+        liveDoka: 190,
+        committedDoka: committedDokaAfterSpellUpgrade(120, 190, 10),
+        pendingPreDoka: 200,
+        pendingAfterDoka: 120,
+      }),
+      false,
     );
   });
 });
@@ -396,6 +454,149 @@ describe("death-fail catch-commit then confirmed credit vs leftover absolute wri
     const spent = applySpendToCommitted(guarded.snapshot().doka, 10);
     guarded.commit({ doka: spent });
     assert.equal(spent, 190);
+  });
+
+  it("leftover portal flush writes XP 80 over canister 110", async () => {
+    // Chronology:
+    // 1. World hydrated. Lock doka=200 / XP 100 seeded. Canister 200/100.
+    // 2. Death saveBattleStats rejects. Catch commits lock 120 / XP 80.
+    // 3. Death Realm timer fires; white portal persistIncrementalRewards
+    //    +10 commits XP 110. Doka stays 120. Canister XP 110 / Doka 200.
+    // 4. Recap heal leftover flush fetches stale 100/200 and writes 80/120.
+    const leftover = createProgressPersist({ doka: 200, xp: 100, level: 4 });
+    leftover.commit({ doka: 120, xp: 80 });
+    leftover.commit({ xp: 100 + PORTAL_TRANSITION_XP });
+    assert.equal(leftover.snapshot().doka, 120);
+    assert.equal(leftover.snapshot().xp, 110);
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    let backendXp = 110;
+    let backendDoka = 200;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: leftover,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendXp, 80, "stale pre-death flush wiped portal +10");
+    assert.equal(backendDoka, 120);
+  });
+
+  it("does not flush-wipe portal +10 after a gated stale snapshot", async () => {
+    const guarded = createProgressPersist({ doka: 200, xp: 100, level: 4 });
+    guarded.commit({ doka: 120, xp: 80 });
+    guarded.commit({ xp: 100 + PORTAL_TRANSITION_XP });
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    let backendXp = 110;
+    let backendDoka = 200;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCredit({
+      storage,
+      slot: 1,
+      persist: guarded,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(skipped, false);
+    assert.equal(backendXp, 110);
+    assert.equal(backendDoka, 200);
+    assert.deepEqual(readPendingDeathPenalty(storage, 1), UNPAID);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCredit({
+      storage,
+      slot: 1,
+      persist: guarded,
+      fetchSnapshot: async () => ({ xp: 110, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendXp, 90, "unpaid 20 applied on top of portal +10");
+    assert.equal(backendDoka, 120);
+  });
+
+  it("leftover upgrade flush writes 120 over canister 190", async () => {
+    // Chronology:
+    // 1. World hydrated. Lock doka=200 seeded. Canister 200.
+    // 2. Death catch-commits 120. Pending preDoka=200. Canister 200.
+    // 3. upgradeSpell advertised 10. Canister 190. Leftover commits 110
+    //    (stale query 190 is not below lock 120, so advertised spend).
+    // 4. Recap heal leftover flush fetches stale 200 and writes 120.
+    const leftover = createProgressPersist({ doka: 200, xp: 100, level: 4 });
+    leftover.commit({ doka: 120, xp: 80 });
+    leftover.commit({
+      doka: committedDokaAfterSpellUpgrade(leftover.snapshot().doka, 190, 10),
+    });
+    assert.equal(leftover.snapshot().doka, 110);
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    let backendDoka = 190;
+    let backendXp = 100;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: leftover,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120, "stale pre-death flush refunded upgrade");
+    assert.equal(backendXp, 80);
+  });
+
+  it("does not flush-refund upgrade after a gated stale snapshot", async () => {
+    const guarded = createProgressPersist({ doka: 200, xp: 100, level: 4 });
+    guarded.commit({ doka: 120, xp: 80 });
+    guarded.commit({
+      doka: committedDokaAfterSpellUpgrade(guarded.snapshot().doka, 190, 10),
+    });
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    let backendDoka = 190;
+    let backendXp = 100;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCredit({
+      storage,
+      slot: 1,
+      persist: guarded,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(skipped, false);
+    assert.equal(backendDoka, 190);
+    assert.equal(readPendingDeathPenalty(storage, 1)?.preDoka, 200);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCredit({
+      storage,
+      slot: 1,
+      persist: guarded,
+      fetchSnapshot: async () => ({ xp: 100, doka: 190 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 110, "unpaid 80 applied on top of the 10 spend");
+    assert.equal(backendXp, 80);
+    const spent = applySpendToCommitted(guarded.snapshot().doka, 10);
+    guarded.commit({ doka: spent });
+    assert.equal(spent, 100);
   });
 
   it("death-fail without a later credit still flushes the unpaid 20/40 onto 200", async () => {
