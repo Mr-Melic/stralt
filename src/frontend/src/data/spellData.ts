@@ -5,6 +5,9 @@
  */
 
 import type { SpellConfig } from "../types/gameTypes";
+import { spellCardDescriptionWithCooldown } from "../utils/spellCooldownCopy.ts";
+
+const INFERNO_COOLDOWN_TURNS = 3;
 
 export const physicalAttackSpell: SpellConfig = {
   id: "physical_attack",
@@ -501,7 +504,10 @@ export const starterSpells: SpellConfig[] = [
   {
     id: "spell-inferno",
     name: "Inferno",
-    description: "Intense fire blast — burns target for 8 dmg/turn for 3 turns",
+    description: spellCardDescriptionWithCooldown(
+      "Intense fire blast — burns target for 8 dmg/turn for 3 turns",
+      INFERNO_COOLDOWN_TURNS,
+    ),
     iconEmoji: "\uD83D\uDD25",
     apCost: BigInt(5),
     mpCost: BigInt(0),
@@ -516,7 +522,7 @@ export const starterSpells: SpellConfig[] = [
     dotDuration: 3,
     usableByPlayer: true,
     usableByEnemy: true,
-    cooldown: 3,
+    cooldown: INFERNO_COOLDOWN_TURNS,
     targetType: "enemy",
     areaShape: "single",
     areaRadius: 0,
