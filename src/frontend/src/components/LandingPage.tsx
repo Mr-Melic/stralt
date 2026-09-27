@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useMemo, useRef } from "react";
 import { shouldRunDecorativeCanvasLoop } from "../engine/canvasLoopActivity";
+import { applyDecorativeCssPlayState } from "../engine/decorativeMotionActivity";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { safeExternalHref, unsafeUrl } from "../utils/adminSafety";
@@ -285,6 +286,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
   const adminTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isLoggingIn = loginStatus === "logging-in";
+  const chessDriftLayerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const syncDrift = () =>
+      applyDecorativeCssPlayState(chessDriftLayerRef.current, document.hidden);
+    syncDrift();
+    document.addEventListener("visibilitychange", syncDrift);
+    return () => document.removeEventListener("visibilitychange", syncDrift);
+  }, []);
 
   useEffect(() => {
     if (actor) {
@@ -400,8 +410,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
         }}
       />
 
-      {/* Floating chess pieces */}
+      {/* Floating chess pieces. Hidden-tab pause is inherited play-state. */}
       <div
+        ref={chessDriftLayerRef}
         aria-hidden="true"
         style={{
           position: "absolute",
