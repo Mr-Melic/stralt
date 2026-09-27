@@ -354,6 +354,7 @@ import {
   logDebugInfo,
   logDebugWarn,
 } from "../utils/debugLogger";
+import { shouldDispatchDeferredAdvanceTurn } from "../utils/deferredAdvanceTurn";
 import {
   type DokaCreditActor,
   persistDokaCreditResult,
@@ -388,7 +389,6 @@ import {
   rememberTouchEnd,
   shouldIgnoreClickAfterTouch,
 } from "../utils/pointerGesture";
-import { shouldDispatchDeferredAdvanceTurn } from "../utils/deferredAdvanceTurn";
 import {
   isAttackNearestHotkey,
   shouldBlockWorldMoveOntoPortal,

@@ -24,9 +24,6 @@ export function shouldDispatchDeferredAdvanceTurn(opts: {
   if (opts.cleanupRan === true) return false;
   if (opts.deathTriggered === true) return false;
   if (opts.scheduledGeneration !== opts.currentGeneration) return false;
-  const hostiles = Math.max(
-    0,
-    Math.floor(Number(opts.hostilesRemaining) || 0),
-  );
+  const hostiles = Math.max(0, Math.floor(Number(opts.hostilesRemaining) || 0));
   return hostiles > 0;
 }
