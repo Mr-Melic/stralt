@@ -5,6 +5,7 @@ import {
   battleWalkMpBudget,
   battleWalkMpCost,
   canAffordBattleWalk,
+  remainingMpAfterBattleWalk,
 } from "./battleWalkMp.ts";
 import { mapModifierRegistry } from "./mapModifiers.ts";
 
@@ -60,6 +61,47 @@ describe("battleWalkMpCost / canAffordBattleWalk", () => {
     assert.equal(battleWalkMpCost(1, 2), 2);
     assert.equal(canAffordBattleWalk(1, 1, 2), false);
     assert.equal(canAffordBattleWalk(2, 1, 2), true);
+  });
+});
+
+describe("remainingMpAfterBattleWalk live-wallet double-click", () => {
+  it("rejects a second Frozen 3-tile click after the live wallet hits 0", () => {
+    // Render snapshot stays 6 until paint. Both clicks of a double-click
+    // used that snapshot; Thorned Ground then ticked twice on one spend.
+    const staleRenderMp = 6;
+    let liveMp = 6;
+    const first = remainingMpAfterBattleWalk(liveMp, 3, 2);
+    assert.equal(first, 0);
+    liveMp = first ?? liveMp;
+
+    assert.equal(
+      remainingMpAfterBattleWalk(staleRenderMp, 3, 2),
+      0,
+      "stale render MP would still afford the second walk",
+    );
+    assert.equal(
+      remainingMpAfterBattleWalk(liveMp, 3, 2),
+      null,
+      "live debit must refuse the second path",
+    );
+  });
+
+  it("rejects a second unmodified 3-tile click after spending 3 of 3 MP", () => {
+    let liveMp = 3;
+    const first = remainingMpAfterBattleWalk(liveMp, 3, 1);
+    assert.equal(first, 0);
+    liveMp = first ?? liveMp;
+    assert.equal(remainingMpAfterBattleWalk(liveMp, 3, 1), null);
+    assert.equal(remainingMpAfterBattleWalk(liveMp, 1, 1), null);
+  });
+
+  it("still allows a leftover 1-tile walk when 3 of 6 MP remain", () => {
+    let liveMp = 6;
+    const first = remainingMpAfterBattleWalk(liveMp, 3, 1);
+    assert.equal(first, 3);
+    liveMp = first ?? liveMp;
+    assert.equal(remainingMpAfterBattleWalk(liveMp, 3, 1), 0);
+    assert.equal(remainingMpAfterBattleWalk(liveMp, 1, 1), 2);
   });
 });
 

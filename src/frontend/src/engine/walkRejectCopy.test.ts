@@ -198,6 +198,21 @@ describe("classifyWalkReject", () => {
       "not_enough_mp",
     );
   });
+
+  it("uses live MP 0 so a stale highlight cannot queue a second Frozen walk", () => {
+    // After the first 6-cost Frozen walk, BFS still lists the dest until
+    // paint. classifyWalkReject must see the live 0, not render-state 6.
+    assert.equal(
+      classifyWalkReject({
+        currentMp: 0,
+        isBlocked: false,
+        reachable: true,
+        pathLength: 3,
+        costPerTile: 2,
+      }),
+      "no_mp",
+    );
+  });
 });
 
 describe("shouldFloatWorldUnreachable", () => {

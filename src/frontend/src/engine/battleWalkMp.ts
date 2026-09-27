@@ -36,6 +36,26 @@ export function canAffordBattleWalk(
 }
 
 /**
+ * Remaining MP after a legal walk, or `null` when the live wallet cannot pay.
+ *
+ * Mouse/touch execute used React `currentBattleMp`. AP already writes
+ * `currentBattleApRef` in the same tick; MP only mirrored after paint.
+ * A double-click (or touch + a second click outside the 400ms ghost window)
+ * still saw the pre-walk snapshot, queued a second path, and applied
+ * Thorned Ground twice. Frozen 6 MP / 3 tiles costs 6 — the second click
+ * must read 0, not 6.
+ */
+export function remainingMpAfterBattleWalk(
+  liveMp: number,
+  pathLength: number,
+  costPerTile: number,
+): number | null {
+  const mp = Math.max(0, Math.floor(Number(liveMp) || 0));
+  if (!canAffordBattleWalk(mp, pathLength, costPerTile)) return null;
+  return mp - battleWalkMpCost(pathLength, costPerTile);
+}
+
+/**
  * Highlight BFS budget. Origin is already the controlled summon tile;
  * using leftover player MP made a 2-MP player / 3-MP wolf paint 2 green
  * tiles and then walk 3.
