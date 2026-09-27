@@ -16,6 +16,7 @@
 import type { SpellConfig } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger";
 import { isActiveHostile } from "./battleSetup";
+import { kitBuffStatusRow } from "./kitBuffTarget";
 
 export type Side = "player" | "enemy";
 
@@ -504,23 +505,17 @@ export function resolveSpellCast(
     return;
   }
 
-  // Buff (self)
+  // Buff: self-click stays on the caster; ally kits (Shield) use the click.
   if (spell.buffStat) {
     const pct = Math.round((spell.buffModifier - 1) * 100);
-    const duration = spell.buffDuration ?? 3;
-    const effect: ActiveEffectLike = {
-      effectName: spell.name,
-      type: "buff",
-      targetId: caster.id,
-      stat: spell.buffStat,
-      modifier: spell.buffModifier,
-      duration,
-      iconEmoji: spell.iconEmoji || "✨",
-      description: `${spell.name} buff`,
-    };
+    const effect: ActiveEffectLike = kitBuffStatusRow(
+      spell,
+      caster.id,
+      target.id,
+    );
     ctx.applyEffect(effect);
     ctx.log(
-      `${spell.name}: +${pct}% ${spell.buffStat.toUpperCase()} for ${duration} turns!`,
+      `${spell.name}: +${pct}% ${spell.buffStat.toUpperCase()} for ${effect.duration} turns!`,
       "#4ade80",
     );
     return;
