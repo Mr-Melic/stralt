@@ -12,6 +12,7 @@ import {
   PLAYER_BASE_MP,
   SUMMON_BASE_HP,
   SUMMON_BASE_HP_DEFAULT,
+  WORLD_GRID_SIZE,
 } from "../data/gameConstants.ts";
 import { starterSpells } from "../data/spellData.ts";
 import {
@@ -671,6 +672,123 @@ export function firstEnemyLevelGroundDokaExceedsShrine(
 }
 
 /**
+ * Boss Rush spawn (`WorldExploration.tsx` 5330): `level: player + 2`.
+ * Overworld `pickEnemyLevelFromTiers` caps `maxTier = floor(999/tierSize)`.
+ * Rush does not.
+ */
+export const BOSS_RUSH_LEVEL_OFFSET = 2;
+/** Pale Archbishop sample `baseStats.hp` (`bossDefaults.ts`). */
+export const CATALOG_BOSS_HP_SAMPLE = 350;
+/** Highest overworld roll: last tier 99 is 991–1000, +variance/dungeon boost. */
+export const OVERWORLD_ENEMY_LEVEL_CAP = 1020;
+/** Room-clear Doka (`WorldExploration.tsx` 12749–12753). Catalog `dokaReward` is unused. */
+export const BOSS_RUSH_DOKA_PER_LEVEL = 1.5;
+export const BOSS_RUSH_DOKA_MIN = 5;
+/** Room 0 catalog `dokaReward` (`useBossRush.ts`). Persist ignores it. */
+export const BOSS_RUSH_ROOM0_CATALOG_DOKA = 500;
+/** Jackpot room 9 catalog `dokaReward`. */
+export const BOSS_RUSH_ROOM9_CATALOG_DOKA = 5000;
+/** 4-dir BFS (`getMpReachableTiles`). (8,8) to a corner on a 16-grid. */
+export const BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN = WORLD_GRID_SIZE;
+/** Opposite-corner Manhattan on `WORLD_GRID_SIZE`. */
+export const BATTLE_GRID_MANHATTAN_DIAMETER = WORLD_GRID_SIZE * 2 - 2;
+
+export function bossRushEnemyLevel(playerLevel: number): number {
+  return Math.max(
+    1,
+    Math.floor(Number(playerLevel) || 1) + BOSS_RUSH_LEVEL_OFFSET,
+  );
+}
+
+export function bossRushCombatHp(playerLevel: number): number {
+  return linearEnemyMaxHp(bossRushEnemyLevel(playerLevel));
+}
+
+export function bossRushDokaPerEnemy(playerLevel: number): number {
+  const lvl = Math.max(1, Math.floor(Number(playerLevel) || 1));
+  return Math.max(
+    BOSS_RUSH_DOKA_MIN,
+    Math.floor(lvl * BOSS_RUSH_DOKA_PER_LEVEL),
+  );
+}
+
+export function bossRushRoomDoka(playerLevel: number, bosses = 2): number {
+  return bosses * bossRushDokaPerEnemy(playerLevel);
+}
+
+export function bossRushRoomXp(playerLevel: number, bosses = 2): number {
+  return bosses * bossRushEnemyLevel(playerLevel) * 20;
+}
+
+export function firstPlayerLevelBossRushHpExceedsCatalog(
+  catalogHp = CATALOG_BOSS_HP_SAMPLE,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(catalogHp) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushCombatHp(level) > need) return level;
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushCrushOneShots(
+  enrage = 1,
+): number | null {
+  const mult = Math.max(1, Math.floor(Number(enrage) || 1));
+  for (let level = 1; level <= 200_000; level++) {
+    const raw = fallbackCrushRaw(bossRushEnemyLevel(level)) * mult;
+    const recv = damageAfterPlayerResPasses(raw);
+    if (recv >= linearPlayerMaxHp(level)) return level;
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+  catalogDoka: number,
+  bosses = 2,
+): number | null {
+  const need = Math.max(0, Math.floor(Number(catalogDoka) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushRoomDoka(level, bosses) > need) return level;
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushRoomDokaHitsClamp(
+  bosses = 2,
+): number | null {
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushRoomDoka(level, bosses) > APPLY_REWARDS_MAX_DOKA_DELTA) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function firstPlayerLevelBossRushRoomXpHitsClamp(
+  bosses = 2,
+): number | null {
+  for (let level = 1; level <= 200_000; level++) {
+    if (bossRushRoomXp(level, bosses) > APPLY_REWARDS_MAX_XP_DELTA) {
+      return level;
+    }
+  }
+  return null;
+}
+
+export function firstLevelFormulaMpAtLeast(need: number): number | null {
+  const cap = Math.max(0, Math.floor(Number(need) || 0));
+  for (let level = 1; level <= 2000; level++) {
+    if (formulaMp(level) >= cap) return level;
+  }
+  return null;
+}
+
+/** Display-name pieceTypes miss ENEMY_KITS and fall back to pawn. */
+export function kitForPieceName(pieceName: string, zone: unknown): string[] {
+  return buildEnemyKit(pieceName as ChessPieceType, zone);
+}
+
+/**
  * Unused exponential `getPlayerBaseStats` HP becomes IEEE Inf (JSON null)
  * once `100 * 1.05^(L-1)` overflows Number.
  */
@@ -954,6 +1072,24 @@ export function runLongHorizonSim() {
       shrineOverGround: dist
         ? SHRINE_DOKA / groundDokaMean(Math.round(meanEnemy))
         : SHRINE_DOKA / groundDokaMean(level),
+      bossRushEnemyLevel: bossRushEnemyLevel(level),
+      bossRushCombatHp: bossRushCombatHp(level),
+      bossRushCrushRaw: fallbackCrushRaw(bossRushEnemyLevel(level)),
+      bossRushEnragedCrushRecv: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(level)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      bossRushEnragedOneShots:
+        damageAfterPlayerResPasses(
+          fallbackCrushRaw(bossRushEnemyLevel(level)) * BETRAYAL_ENRAGE_MULT,
+        ) >= linearPlayerMaxHp(level),
+      bossRushRoomDoka: bossRushRoomDoka(level),
+      bossRushRoomXp: bossRushRoomXp(level),
+      frostTurnsVsBossRush: playerFrostTurnsToKill(
+        bossRushEnemyLevel(level),
+        level,
+      ),
+      formulaMpCoversCenterToCorner:
+        formulaMp(level) >= BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
     };
   });
 
@@ -1027,7 +1163,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-27T00:02:39.097Z",
+    generatedAt: "2026-09-28T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -1172,6 +1308,39 @@ export function runLongHorizonSim() {
       groundDokaMeanAt1020: groundDokaMean(1020),
       firstEnemyLevelGroundDokaExceedsShrine:
         firstEnemyLevelGroundDokaExceedsShrine(),
+      bossRushLevelOffset: BOSS_RUSH_LEVEL_OFFSET,
+      overworldEnemyLevelCap: OVERWORLD_ENEMY_LEVEL_CAP,
+      catalogBossHpSample: CATALOG_BOSS_HP_SAMPLE,
+      firstPlayerLevelBossRushHpExceedsCatalog:
+        firstPlayerLevelBossRushHpExceedsCatalog(),
+      firstPlayerLevelBossRushCrushOneShots:
+        firstPlayerLevelBossRushCrushOneShots(1),
+      firstPlayerLevelBossRushEnragedCrushOneShots:
+        firstPlayerLevelBossRushCrushOneShots(BETRAYAL_ENRAGE_MULT),
+      firstPlayerLevelBossRushRoom0DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM0_CATALOG_DOKA,
+        ),
+      firstPlayerLevelBossRushRoom9DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM9_CATALOG_DOKA,
+        ),
+      firstPlayerLevelBossRushRoomDokaHitsClamp:
+        firstPlayerLevelBossRushRoomDokaHitsClamp(),
+      firstPlayerLevelBossRushRoomXpHitsClamp:
+        firstPlayerLevelBossRushRoomXpHitsClamp(),
+      bossRushKitFallbackIsPawn: kitForPieceName("Pale Archbishop", 0).join(
+        ",",
+      ),
+      battleGridSize: WORLD_GRID_SIZE,
+      battleGridCenterToCornerManhattan: BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      battleGridManhattanDiameter: BATTLE_GRID_MANHATTAN_DIAMETER,
+      firstLevelMpCoversCenterToCorner: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      ),
+      firstLevelMpCoversDiameter: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_MANHATTAN_DIAMETER,
+      ),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
@@ -1402,6 +1571,89 @@ export function runLongHorizonSim() {
       groundMeanAt1020: groundDokaMean(1020),
       firstEnemyLevelGroundExceedsShrine:
         firstEnemyLevelGroundDokaExceedsShrine(),
+    },
+    bossRushUncapped: {
+      levelOffset: BOSS_RUSH_LEVEL_OFFSET,
+      overworldCap: OVERWORLD_ENEMY_LEVEL_CAP,
+      catalogHpSample: CATALOG_BOSS_HP_SAMPLE,
+      spawnPlaceholderHp: 100,
+      combatHpUsesLinearEnemyHp: true,
+      kitFallbackPiece: "pawn",
+      kitAtDisplayName: kitForPieceName("Pale Archbishop", 0),
+      pawnKitZone0: kitForZoneInput("pawn", 0),
+      hpAt1: bossRushCombatHp(1),
+      hpAt120: bossRushCombatHp(120),
+      hpAt1000: bossRushCombatHp(1000),
+      hpAt10000: bossRushCombatHp(10_000),
+      hpAt100000: bossRushCombatHp(100_000),
+      crushRawAt1000: fallbackCrushRaw(bossRushEnemyLevel(1000)),
+      crushRawAt10000: fallbackCrushRaw(bossRushEnemyLevel(10_000)),
+      crushRawAt100000: fallbackCrushRaw(bossRushEnemyLevel(100_000)),
+      enragedRecvAt1000: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(1000)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      enragedRecvAt10000: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(10_000)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      enragedRecvAt100000: damageAfterPlayerResPasses(
+        fallbackCrushRaw(bossRushEnemyLevel(100_000)) * BETRAYAL_ENRAGE_MULT,
+      ),
+      firstPlayerLevelUnenragedOneShot:
+        firstPlayerLevelBossRushCrushOneShots(1),
+      firstPlayerLevelEnragedOneShot:
+        firstPlayerLevelBossRushCrushOneShots(BETRAYAL_ENRAGE_MULT),
+      firstPlayerLevelHpExceedsCatalog350:
+        firstPlayerLevelBossRushHpExceedsCatalog(),
+      frostTurnsAt1: playerFrostTurnsToKill(bossRushEnemyLevel(1), 1),
+      frostTurnsAt1000: playerFrostTurnsToKill(bossRushEnemyLevel(1000), 1000),
+      frostTurnsAt10000: playerFrostTurnsToKill(
+        bossRushEnemyLevel(10_000),
+        10_000,
+      ),
+      frostTurnsAt100000: playerFrostTurnsToKill(
+        bossRushEnemyLevel(100_000),
+        100_000,
+      ),
+      room0CatalogDoka: BOSS_RUSH_ROOM0_CATALOG_DOKA,
+      room9CatalogDoka: BOSS_RUSH_ROOM9_CATALOG_DOKA,
+      liveDokaAt1: bossRushRoomDoka(1),
+      liveDokaAt167: bossRushRoomDoka(167),
+      liveDokaAt1000: bossRushRoomDoka(1000),
+      liveDokaAt100000: bossRushRoomDoka(100_000),
+      liveXpAt1: bossRushRoomXp(1),
+      liveXpAt1000: bossRushRoomXp(1000),
+      liveXpAt100000: bossRushRoomXp(100_000),
+      firstPlayerLevelRoom0DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM0_CATALOG_DOKA,
+        ),
+      firstPlayerLevelRoom9DokaExceedsCatalog:
+        firstPlayerLevelBossRushRoomDokaExceedsCatalog(
+          BOSS_RUSH_ROOM9_CATALOG_DOKA,
+        ),
+      firstPlayerLevelDokaHitsClamp:
+        firstPlayerLevelBossRushRoomDokaHitsClamp(),
+      firstPlayerLevelXpHitsClamp: firstPlayerLevelBossRushRoomXpHitsClamp(),
+      completeBossRushRoomIgnoresClientRewards: true,
+    },
+    battleMpVsGrid: {
+      gridSize: WORLD_GRID_SIZE,
+      centerToCornerManhattan: BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      diameterManhattan: BATTLE_GRID_MANHATTAN_DIAMETER,
+      walkIsFourDir: true,
+      mpAt1: formulaMp(1),
+      mpAt100: formulaMp(100),
+      mpAt300: formulaMp(300),
+      mpAt400: formulaMp(400),
+      mpAt10000: formulaMp(10_000),
+      mpAt100000: formulaMp(100_000),
+      persistMpCap: MAX_PERSISTED_AP,
+      firstLevelCoversCenterToCorner: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      ),
+      firstLevelCoversDiameter: firstLevelFormulaMpAtLeast(
+        BATTLE_GRID_MANHATTAN_DIAMETER,
+      ),
     },
   };
 }

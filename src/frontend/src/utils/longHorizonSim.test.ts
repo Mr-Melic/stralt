@@ -7,6 +7,9 @@ import {
   BETRAYAL_ENRAGE_MULT,
   BLOOD_MEND_CRIT_HEAL,
   BLOOD_MEND_HEAL,
+  BOSS_RUSH_ROOM0_CATALOG_DOKA,
+  BOSS_RUSH_ROOM9_CATALOG_DOKA,
+  CATALOG_BOSS_HP_SAMPLE,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
   KIT_FROST_DAMAGE,
@@ -19,6 +22,10 @@ import {
   SUMMON_BOMBER_HP_SCALE,
   SUMMON_GUARDIAN_HP_SCALE,
   SUMMON_HUNTER_HP_SCALE,
+  bossRushCombatHp,
+  bossRushEnemyLevel,
+  bossRushRoomDoka,
+  bossRushRoomXp,
   catalogSummonMaxHp,
   crushOverKitRatio,
   damageAfterPlayerResPasses,
@@ -37,19 +44,27 @@ import {
   firstHudSaturationLevel,
   firstLevelChcCanHit100,
   firstLevelFormulaApExceedsPersistCap,
+  firstLevelFormulaMpAtLeast,
   firstLevelHazardMaxBelowHpPercent,
   firstLevelResCanHit100,
   firstLevelSpellFailHitsZero,
   firstLevelSpellRangeHitsCap,
+  firstPlayerLevelBossRushCrushOneShots,
+  firstPlayerLevelBossRushHpExceedsCatalog,
+  firstPlayerLevelBossRushRoomDokaExceedsCatalog,
+  firstPlayerLevelBossRushRoomDokaHitsClamp,
+  firstPlayerLevelBossRushRoomXpHitsClamp,
   firstPlayerLevelSurvivesCrushRecv,
   firstSpellLevelCostExceeds,
   formulaAp,
+  formulaMp,
   groundDokaMean,
   healthPotionDokaPerHp,
   healthPotionHpRestored,
   jackpotPersistIfHit,
   jackpotUnclampedMean,
   kitCastRaw,
+  kitForPieceName,
   kitForZoneInput,
   linearPlayerMaxHp,
   officialStackedXp,
@@ -263,5 +278,41 @@ assert.equal(groundDokaMean(148), 301);
 assert.equal(groundDokaMean(1020), 2045);
 assert.equal(firstEnemyLevelGroundDokaExceedsShrine(), 148);
 assert.equal(report.secondaryDoka.firstEnemyLevelGroundExceedsShrine, 148);
+
+assert.equal(bossRushEnemyLevel(1), 3);
+assert.equal(bossRushCombatHp(1), 55);
+assert.equal(bossRushCombatHp(120), 352);
+assert.equal(firstPlayerLevelBossRushHpExceedsCatalog(), 120);
+assert.equal(firstPlayerLevelBossRushCrushOneShots(1), null);
+assert.equal(firstPlayerLevelBossRushCrushOneShots(BETRAYAL_ENRAGE_MULT), 11);
+assert.deepEqual(kitForPieceName("Pale Archbishop", 0), ["physical_attack"]);
+assert.deepEqual(kitForZoneInput("pawn", 0), ["physical_attack"]);
+assert.equal(playerFrostTurnsToKill(bossRushEnemyLevel(10_000), 10_000), 9);
+assert.equal(playerFrostTurnsToKill(bossRushEnemyLevel(100_000), 100_000), 9);
+assert.equal(bossRushRoomDoka(1), 10);
+assert.equal(bossRushRoomDoka(167), BOSS_RUSH_ROOM0_CATALOG_DOKA);
+assert.equal(firstPlayerLevelBossRushRoomDokaExceedsCatalog(500), 168);
+assert.equal(
+  firstPlayerLevelBossRushRoomDokaExceedsCatalog(BOSS_RUSH_ROOM9_CATALOG_DOKA),
+  1668,
+);
+assert.equal(firstPlayerLevelBossRushRoomDokaHitsClamp(), 33334);
+assert.equal(firstPlayerLevelBossRushRoomXpHitsClamp(), 12499);
+assert.ok(bossRushRoomXp(100_000) > APPLY_REWARDS_MAX_XP_DELTA);
+assert.equal(CATALOG_BOSS_HP_SAMPLE, 350);
+assert.equal(report.bossRushUncapped.firstPlayerLevelEnragedOneShot, 11);
+assert.equal(report.bossRushUncapped.hpAt100000, 250052);
+assert.equal(
+  report.bossRushUncapped.completeBossRushRoomIgnoresClientRewards,
+  true,
+);
+
+assert.equal(formulaMp(1), 4);
+assert.equal(formulaMp(300), 16);
+assert.equal(firstLevelFormulaMpAtLeast(16), 300);
+assert.equal(firstLevelFormulaMpAtLeast(30), 650);
+assert.equal(report.battleMpVsGrid.gridSize, 16);
+assert.equal(report.battleMpVsGrid.firstLevelCoversCenterToCorner, 300);
+assert.equal(report.battleMpVsGrid.mpAt100000, 4004);
 
 console.log("longHorizonSim.test: ok");
