@@ -693,6 +693,37 @@ module {
         } else { null }
     };
 
+    /// Failure: adminSetAchievementConfig(active=false) and
+    /// adminDeleteAchievementConfig (hard-delete or retire) on the last live
+    /// row empty the feats catalog. markAchievementUnlocked then #err
+    /// "Achievement is retired" / "Unknown achievement", so first-win and
+    /// wallet feats never grant. Inactive drafts may exist (DRAFT → VALIDATE
+    /// → ACTIVATE). Already-inactive rows may still be edited. Claim of an
+    /// unlocked retired row stays (claim does not require active).
+    /// Do not recopy #437 live-reward / #460 condition-taken.
+    public func achievementLastLiveRejected(
+        id : Text,
+        nextActive : Bool,
+        all : [Types.AchievementConfig],
+    ) : ?Text {
+        switch (requireId(id, "Achievement")) { case (?e) { return ?e }; case null {} };
+        if (nextActive) { return null };
+        var currentlyLive = false;
+        var otherLive : Nat = 0;
+        for (c in all.values()) {
+            if (c.id == id) {
+                if (c.active) { currentlyLive := true };
+            } else if (c.active) {
+                otherLive += 1;
+            };
+        };
+        if (not currentlyLive) { return null };
+        if (otherLive == 0) {
+            return ?"Cannot empty the live achievement catalog";
+        };
+        null
+    };
+
     /// completeBossRushRoom used to increment totalBossRushRuns on every
     /// roomIndex=9 while currentRoom stayed 9. Official final-room persist
     /// resets currentRoom first, then complete(9) (already a no-op).
