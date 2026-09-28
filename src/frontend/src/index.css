@@ -679,14 +679,9 @@ button,
   backdrop-filter: blur(4px);
 }
 
-/* Responsive grid adjustments */
+/* Responsive touch targets */
 @media (max-width: 768px) {
-  .dungeon-grid {
-    grid-template-columns: 1fr;
-  }
-
   /* Improve touch targets on mobile */
-  .tool-button,
   .stone-nav-btn,
   .stone-touch-target,
   .stone-battle-action,
@@ -708,12 +703,6 @@ button,
   /* Prevent zoom on double tap without allowing canvas pan/zoom */
   canvas:not(.touch-none) {
     touch-action: manipulation;
-  }
-}
-
-@media (min-width: 1280px) {
-  .dungeon-grid {
-    grid-template-columns: 1fr 2fr 1fr;
   }
 }
 

@@ -25,7 +25,7 @@ Internet Identity
 | :--- | :--- |
 | `src/backend/main.mo` | Root `backend_extended/main.mo` (15-field stats). `dfx.json` points at missing `src/backend_extended/main.mo` |
 | `src/frontend/src/backend.ts` + `src/frontend/src/declarations/` | Root `declarations/backend/backend.did` (still has `wp`/`wr`/`scp`). Bindgen can also lag Motoko `SpellConfig` summon fields until `pnpm bindgen` |
-| Root `mops.toml` (moc 1.11.2, migrations chain, `check-limit = 4`, `.old` empty-canister baseline) | `src/backend/mops.toml` (older moc 1.9.0, no migrations) |
+| Root `mops.toml` (moc 1.11.2, migrations chain, `check-limit = 5`, `.old` = Caffeine Aug-31 deployed signature) | `src/backend/mops.toml` (older moc 1.9.0, no migrations) |
 | Frontend `EnemyConfig` in `types/gameTypes.ts` (admin spawn template) | `src/backend/types/common.mo` `EnemyConfig` (runtime combat template — different fields) |
 
 `src/backend/mixins/*` are unused scaffolds. `src/backend/lib/admin.mo` is the live helper for default configs and admin CRUD. `src/backend/lib/adminGuard.mo` is the live input / URL / retirement / rollback guard.
