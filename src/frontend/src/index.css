@@ -847,6 +847,17 @@ body {
   animation: bounceCaret 1s ease-in-out infinite;
 }
 
+/* PERF-2026-09-28-126: infinite class-based HUD CSS must not keep compositing
+   in a backgrounded tab. One-shot banners (popIn, fadeOut, boss/jackpot) are
+   not listed so they can finish while the player is away. Inline chessDrift
+   is PERF-121 (#687). */
+html[data-pbv-hidden="1"] .stone-battle-caret,
+html[data-pbv-hidden="1"] .animate-pulse,
+html[data-pbv-hidden="1"] .animate-spin,
+html[data-pbv-hidden="1"] .animate-pulse-glow {
+  animation-play-state: paused !important;
+}
+
 @keyframes bounceCaret {
   0%,
   100% {
