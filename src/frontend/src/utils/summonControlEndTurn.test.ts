@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { shouldAllowSummonControlEndTurn } from "./summonControlEndTurn.ts";
+import {
+  beginSummonControlEndTurn,
+  shouldAllowSummonControlEndTurn,
+} from "./summonControlEndTurn.ts";
 
 describe("shouldAllowSummonControlEndTurn", () => {
   const wolf = {
     id: "summon-wolf-1",
-    type: "enemy",
+    type: "summon",
     isSummon: true,
     side: "player",
   };
@@ -73,6 +76,21 @@ describe("shouldAllowSummonControlEndTurn", () => {
     );
   });
 
+  it("rejects a late tap after the 30s timer already advanced the row", () => {
+    assert.equal(
+      shouldAllowSummonControlEndTurn({
+        inBattle: true,
+        controlledSummonId: "summon-wolf-1",
+        turnEntry: {
+          id: "player",
+          type: "player",
+          isSummon: false,
+        },
+      }),
+      false,
+    );
+  });
+
   it("rejects out-of-battle or cleared control id", () => {
     assert.equal(
       shouldAllowSummonControlEndTurn({
@@ -89,6 +107,19 @@ describe("shouldAllowSummonControlEndTurn", () => {
         turnEntry: wolf,
       }),
       false,
+    );
+  });
+});
+
+describe("beginSummonControlEndTurn", () => {
+  it("marks the ref so a same-tick double-click cannot advance twice", () => {
+    const lock = { current: false };
+    assert.equal(beginSummonControlEndTurn(lock), true);
+    assert.equal(lock.current, true);
+    assert.equal(
+      beginSummonControlEndTurn(lock),
+      false,
+      "double-click must not call advanceTurn a second time",
     );
   });
 });

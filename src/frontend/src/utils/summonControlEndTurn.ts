@@ -21,7 +21,8 @@ export type SummonControlEndTurnEntry = {
 /**
  * True when the live turn-order entry is the controlled player-side summon.
  * After the first advance, the entry is no longer that summon — a trailing
- * synthetic click must no-op.
+ * synthetic click must no-op. The 30s timer can also advance first; a late
+ * tap must not skip the next row.
  */
 export function shouldAllowSummonControlEndTurn(opts: {
   inBattle: boolean;
@@ -39,5 +40,18 @@ export function shouldAllowSummonControlEndTurn(opts: {
   if (entry.isSummon !== true) return false;
   // Enemy-side minions must never take the player control End Turn path.
   if (entry.side === "enemy") return false;
+  return true;
+}
+
+/**
+ * Panel-local same-tick lock. setState unmount is async, so a double-click
+ * (or touch + synthetic click) can invoke onEndTurn twice while the live
+ * row is still this summon. Mark before calling the parent.
+ */
+export function beginSummonControlEndTurn(lock: {
+  current: boolean;
+}): boolean {
+  if (lock.current) return false;
+  lock.current = true;
   return true;
 }

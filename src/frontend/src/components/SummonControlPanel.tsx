@@ -1,4 +1,6 @@
 import { Footprints, Heart, Hourglass, Square, Sword } from "lucide-react";
+import { useRef, useState } from "react";
+import { beginSummonControlEndTurn } from "../utils/summonControlEndTurn";
 
 /**
  * Props for the SummonControlPanel.
@@ -256,6 +258,9 @@ function SpellSlot({
  * the bottom of the battle screen. Renders the summon's portrait + name,
  * lifespan pips, AP/MP orbs, kit spell slots (with disabled state when AP is
  * insufficient), and an END TURN button.
+ *
+ * Parent must `key={summon.id}` so the same-tick End Turn lock remounts
+ * when control passes to another summon.
  */
 export default function SummonControlPanel({
   summonName,
@@ -272,6 +277,8 @@ export default function SummonControlPanel({
   onSpellSelect,
   onEndTurn,
 }: SummonControlPanelProps) {
+  const endTurnLock = useRef(false);
+  const [endTurnCommitted, setEndTurnCommitted] = useState(false);
   return (
     <section
       data-ocid="summon_panel.panel"
@@ -352,9 +359,14 @@ export default function SummonControlPanel({
           <button
             type="button"
             data-ocid="summon_panel.end_turn_button"
-            onClick={onEndTurn}
+            disabled={endTurnCommitted}
+            onClick={() => {
+              if (!beginSummonControlEndTurn(endTurnLock)) return;
+              setEndTurnCommitted(true);
+              onEndTurn();
+            }}
             aria-label="End the summon's turn"
-            className="flex items-center gap-1.5 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-3 py-2 font-display text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px"
+            className="flex items-center gap-1.5 rounded-md border-2 border-primary bg-gradient-to-b from-primary to-red-900 px-3 py-2 font-display text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-[0_0_10px_rgba(220,38,38,0.5)] transition-all hover:from-red-500 hover:to-red-900 hover:shadow-[0_0_14px_rgba(220,38,38,0.7)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Square className="h-3.5 w-3.5" aria-hidden="true" />
             End Turn
