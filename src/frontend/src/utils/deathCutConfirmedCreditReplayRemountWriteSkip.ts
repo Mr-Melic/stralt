@@ -35,24 +35,39 @@
  * (#698) does not commit off `after`; this helper does not extra-skip that.
  * #705 flush/resolve and #710 same-lock replay stay on those PRs.
  *
+ * Unique leftover vs remount *replay* skip: after the skip the unpaid
+ * marker remains. Production remount lock is HUD 120 === `afterDoka`, so
+ * #705 `lockMoved` is false. Recap heal `beforeEach` leftover
+ * `flushPendingDeathPenalty` fetches stale 200 and writes **120** over
+ * canister 250. If flush misses, leftover `resolveCommittedDoka` returns
+ * remount 120 immediately (seeded, unconfirmed-clear); honour unpaid then
+ * `saveBattleStats`-writes **110**.
+ *
  * `WorldExploration.tsx`, `progressPersist.ts`, `deathPenalty.ts`, and
  * `deathCutConfirmedCreditReplayWriteSkip.ts` (#710) are occupied /
  * unmerged, so this PR does not restack them. Tests reproduce the call
  * site. Restack remount replay onto
- * `persistDeathReplayThroughDeathCutCreditRemount` and wrap session
- * `commit` after those PRs land.
+ * `persistDeathReplayThroughDeathCutCreditRemount`, wrap session
+ * `commit`, and restack heal/shop `beforeEach` / resolve onto
+ * `flushPendingDeathPenaltyThroughDeathCutCreditRemount` /
+ * `resolveCommittedDokaAfterDeathCutCreditRemount` after those PRs land.
  */
 
 import {
   type DeathPenaltyStorage,
+  type FlushPendingDeathArgs,
   type PendingDeathPenalty,
   type PendingDeathReplay,
+  flushPendingDeathPenalty,
   readPendingDeathPenalty,
   resolvePendingDeathReplay,
 } from "./deathPenalty.ts";
-import type {
-  CommittedProgress,
-  ProgressPersistEnqueueOptions,
+import {
+  ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
+  type AbsoluteWritePersist,
+  type CommittedProgress,
+  type ProgressPersistEnqueueOptions,
+  resolveCommittedDokaForAbsoluteWrite,
 } from "./progressPersist.ts";
 
 function toNat(n: number | null | undefined): number {
@@ -319,4 +334,93 @@ export async function persistDeathReplayThroughDeathCutCreditRemount(args: {
     },
     { skipBeforeEach: true },
   );
+}
+
+function readWalletNumber(raw: unknown): number | null {
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function refuseStaleDeathCutCreditRemountWrite(): never {
+  throw new Error(ABSOLUTE_WRITE_UNCONFIRMED_CREDIT);
+}
+
+/**
+ * Heal/shop `beforeEach` leftover flush after a remount lock reset used
+ * the stale pre-death wallet as `fetchSnapshot` and wrote 120/80 over the
+ * credited canister. #705 skip requires `snapshot()` already off `after`;
+ * remount HUD 120 === `afterDoka`. Skip while the session stamp exists
+ * and live still looks unpaid `pre`. Leave the marker so a later fresh
+ * snapshot still honours 20/40 on top of the mutation.
+ */
+export async function flushPendingDeathPenaltyThroughDeathCutCreditRemount(
+  args: Omit<FlushPendingDeathArgs, "persist"> & {
+    persist: FlushPendingDeathArgs["persist"] & {
+      snapshot: () => { doka: number; xp: number };
+    };
+  },
+): Promise<boolean> {
+  const pending = readPendingDeathPenalty(args.storage, args.slot);
+  if (!pending) return false;
+  const stamp = readDeathCutCreditRemountStamp(args.storage, pending.slot);
+  if (stamp) {
+    const snap = await args.fetchSnapshot();
+    if (
+      !snap ||
+      shouldSkipDeathCutCreditRemountReplay({
+        stamp,
+        liveDoka: snap.doka,
+        liveXp: snap.xp,
+      })
+    ) {
+      return false;
+    }
+  }
+  const wrote = await flushPendingDeathPenalty(args);
+  if (wrote) clearDeathCutCreditRemountStamp(args.storage, args.slot);
+  return wrote;
+}
+
+/**
+ * Remount lock is HUD catch-cut 120, seeded and unconfirmed-clear, so
+ * leftover `resolveCommittedDokaForAbsoluteWrite` returns 120 with no
+ * fetch. Honour unpaid then writes 110 over canister 250.
+ *
+ * Fetch-first while a session stamp exists. Stale live ≤ `pre` throws.
+ * A rise above `pre` seeds once so honour unpaid keeps the credit.
+ */
+export async function resolveCommittedDokaAfterDeathCutCreditRemount(
+  persist: AbsoluteWritePersist,
+  readWallet: () => Promise<unknown>,
+  storage: DeathPenaltyStorage,
+  slot: number,
+): Promise<number | null> {
+  const stamp = readDeathCutCreditRemountStamp(storage, slot);
+  if (!stamp) {
+    return resolveCommittedDokaForAbsoluteWrite(persist, readWallet);
+  }
+  let live: number | null = null;
+  try {
+    live = readWalletNumber(await readWallet());
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      err.message === ABSOLUTE_WRITE_UNCONFIRMED_CREDIT
+    ) {
+      throw err;
+    }
+    refuseStaleDeathCutCreditRemountWrite();
+  }
+  if (
+    shouldSkipDeathCutCreditRemountReplay({
+      stamp,
+      liveDoka: live,
+    })
+  ) {
+    refuseStaleDeathCutCreditRemountWrite();
+  }
+  if (live == null) refuseStaleDeathCutCreditRemountWrite();
+  persist.seedWallet(live);
+  return live;
 }

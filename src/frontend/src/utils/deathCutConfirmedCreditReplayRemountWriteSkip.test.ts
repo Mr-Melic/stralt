@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import { committedDokaAfterAchievementCredit } from "./achievementReward.ts";
 import { PORTAL_TRANSITION_XP } from "./applyRewardsResult.ts";
 import {
+  flushPendingDeathPenaltyThroughDeathCutCreditRemount,
   persistDeathReplayThroughDeathCutCreditRemount,
   readDeathCutCreditRemountStamp,
+  resolveCommittedDokaAfterDeathCutCreditRemount,
   resolveDeathReplayAfterDeathCutCreditRemount,
   shouldSkipDeathCutCreditRemountReplay,
   shouldStampDeathCutConfirmedCreditRemount,
@@ -13,13 +15,18 @@ import {
 import {
   type DeathPenaltyStorage,
   type PendingDeathPenalty,
+  applyUnpaidDeathPenaltyToWrite,
+  flushPendingDeathPenalty,
   readPendingDeathPenalty,
   resolvePendingDeathReplay,
   writePendingDeathPenalty,
 } from "./deathPenalty.ts";
 import {
+  ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
   applySpendToCommitted,
+  clampAbsoluteProgressWrite,
   createProgressPersist,
+  resolveCommittedDokaForAbsoluteWrite,
 } from "./progressPersist.ts";
 import { committedDokaAfterGameKeyRedeem } from "./shopPurchase.ts";
 import { committedDokaAfterSpellUpgrade } from "./spellUpgrade.ts";
@@ -48,6 +55,17 @@ const UNPAID: PendingDeathPenalty = {
 /** Production remount lock: HUD catch-cut Doka + Play-entry leftover XP. */
 function remountLock() {
   return createProgressPersist({ doka: 120, xp: 100, level: 4 });
+}
+
+function honourHealWrite(
+  pending: PendingDeathPenalty,
+  committedXp: number,
+  dokaBase: number,
+  spend: number,
+): number {
+  const spent = applySpendToCommitted(dokaBase, spend);
+  const honoured = applyUnpaidDeathPenaltyToWrite(pending, committedXp, spent);
+  return clampAbsoluteProgressWrite(honoured.doka, dokaBase);
 }
 
 describe("shouldStampDeathCutConfirmedCreditRemount", () => {
@@ -663,5 +681,536 @@ describe("death-fail catch-commit then confirmed credit vs leftover remount lock
       },
     );
     assert.equal(decision.action, "clear");
+  });
+});
+
+describe("death-fail catch-commit then confirmed credit vs remount heal/shop flush", () => {
+  it("leftover remount beforeEach flush writes 120 over canister 250", async () => {
+    // Chronology:
+    // 1. World hydrated. Lock doka=200 / XP 100 seeded. Canister 200.
+    // 2. Death saveBattleStats rejects. Catch commits lock 120 / XP 80.
+    // 3. Ground Doka applyRewards +50 succeeds. Settle commit 250.
+    // 4. Actor reconnect remounts. New lock HUD 120 === afterDoka, so
+    //    #705 lockMoved is false. Leftover remount replay skip leaves
+    //    the unpaid marker. Heal beforeEach flush fetches stale 200.
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ doka: 250 });
+    const remount = remountLock();
+    assert.equal(remount.snapshot().doka, UNPAID.afterDoka);
+    let backendXp = 100;
+    let backendDoka = 250;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120, "stale remount flush wiped the 50 pickup");
+    assert.equal(backendXp, 80);
+    assert.equal(remount.snapshot().doka, 120);
+    assert.equal(session.snapshot().doka, 250);
+  });
+
+  it("does not flush-wipe the confirmed pickup after a stamped remount", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ doka: 250 });
+    const remount = remountLock();
+    let backendXp = 100;
+    let backendDoka = 250;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(skipped, false);
+    assert.equal(backendDoka, 250);
+    assert.equal(backendXp, 100);
+    assert.equal(remount.snapshot().doka, 120);
+    assert.deepEqual(readPendingDeathPenalty(storage, 1), UNPAID);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 250 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 170, "unpaid 80 applied on top of the 50 pickup");
+    assert.equal(backendXp, 80);
+    assert.equal(remount.snapshot().doka, 170);
+    assert.equal(readDeathCutCreditRemountStamp(storage, 1), null);
+    const spent = applySpendToCommitted(remount.snapshot().doka, 10);
+    remount.commit({ doka: spent });
+    assert.equal(spent, 160);
+  });
+
+  it("leftover remount resolve returns HUD 120 and honour writes 110", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ doka: 250 });
+    const remount = remountLock();
+    const stale = await resolveCommittedDokaForAbsoluteWrite(
+      remount,
+      async () => 250,
+    );
+    assert.equal(stale, 120, "seeded remount resolve never fetches 250");
+    const wrote = honourHealWrite(
+      UNPAID,
+      remount.snapshot().xp,
+      stale ?? 0,
+      10,
+    );
+    remount.commit({ doka: wrote });
+    assert.equal(wrote, 110);
+  });
+
+  it("does not saveBattleStats-wipe the pickup after a gated remount resolve", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ doka: 250 });
+    const remount = remountLock();
+    await assert.rejects(
+      () =>
+        resolveCommittedDokaAfterDeathCutCreditRemount(
+          remount,
+          async () => 200,
+          storage,
+          1,
+        ),
+      new RegExp(ABSOLUTE_WRITE_UNCONFIRMED_CREDIT),
+    );
+    assert.equal(remount.snapshot().doka, 120);
+
+    const fetched = await resolveCommittedDokaAfterDeathCutCreditRemount(
+      remount,
+      async () => 250,
+      storage,
+      1,
+    );
+    assert.equal(fetched, 250);
+    const wrote = honourHealWrite(
+      UNPAID,
+      remount.snapshot().xp,
+      fetched ?? 0,
+      10,
+    );
+    remount.commit({ doka: wrote });
+    assert.equal(wrote, 160, "pickup + unpaid 20/40 + heal spend");
+    assert.equal(wrote > 110, true);
+  });
+
+  it("leftover remount feat flush writes 120 over canister 300", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({
+      doka: committedDokaAfterAchievementCredit(session.snapshot().doka, 100),
+    });
+    const remount = remountLock();
+    let backendDoka = 300;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120, "stale remount flush wiped the feat grant");
+  });
+
+  it("does not flush-wipe the feat grant after a stamped remount", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({
+      doka: committedDokaAfterAchievementCredit(session.snapshot().doka, 100),
+    });
+    const remount = remountLock();
+    let backendDoka = 300;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async () => {
+        throw new Error("must not write");
+      },
+    });
+    assert.equal(skipped, false);
+    assert.equal(session.snapshot().doka, 220);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 300 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 220, "unpaid 80 applied on top of the 100 grant");
+  });
+
+  it("leftover remount GameKey flush writes 120 over canister 1200", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({
+      doka: committedDokaAfterGameKeyRedeem(session.snapshot().doka, 1000),
+    });
+    const remount = remountLock();
+    let backendDoka = 1200;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120, "stale remount flush wiped the GameKey");
+  });
+
+  it("does not flush-wipe GameKey after a stamped remount", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({
+      doka: committedDokaAfterGameKeyRedeem(session.snapshot().doka, 1000),
+    });
+    const remount = remountLock();
+    let backendDoka = 1200;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async () => {
+        throw new Error("must not write");
+      },
+    });
+    assert.equal(skipped, false);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 1200 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 1120, "unpaid 80 applied on top of the 1000");
+  });
+
+  it("leftover remount victory flush writes 120 over canister 280", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ doka: 280, xp: 24, level: 5 });
+    const remount = remountLock();
+    let backendDoka = 280;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120, "stale remount flush wiped victory Doka");
+  });
+
+  it("does not flush-wipe victory after a stamped remount", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ doka: 280, xp: 24, level: 5 });
+    const remount = remountLock();
+    let backendDoka = 280;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async () => {
+        throw new Error("must not write");
+      },
+    });
+    assert.equal(skipped, false);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 24, doka: 280 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 200, "unpaid 80 applied on top of victory 80");
+  });
+
+  it("leftover remount portal flush writes XP 80 over canister 110", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ xp: 100 + PORTAL_TRANSITION_XP });
+    const remount = remountLock();
+    assert.equal(remount.snapshot().xp, 100);
+    let backendXp = 110;
+    let backendDoka = 200;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendXp, 80, "stale remount flush wiped portal +10");
+    assert.equal(backendDoka, 120);
+  });
+
+  it("does not flush-wipe portal +10 after a stamped remount", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({ xp: 100 + PORTAL_TRANSITION_XP });
+    const remount = remountLock();
+    let backendXp = 110;
+    let backendDoka = 200;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async () => {
+        throw new Error("must not write");
+      },
+    });
+    assert.equal(skipped, false);
+    assert.equal(session.snapshot().xp, 110);
+    assert.equal(remount.snapshot().xp, 100);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 110, doka: 200 }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendXp, 90, "unpaid 20 applied on top of portal +10");
+    assert.equal(backendDoka, 120);
+  });
+
+  it("leftover remount upgrade flush writes 120 over canister 190", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({
+      doka: committedDokaAfterSpellUpgrade(session.snapshot().doka, 190, 10),
+    });
+    const remount = remountLock();
+    let backendDoka = 190;
+    const flushed = await flushPendingDeathPenalty({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120, "stale remount flush refunded upgrade");
+  });
+
+  it("does not flush-refund upgrade after a stamped remount", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.commit({
+      doka: committedDokaAfterSpellUpgrade(session.snapshot().doka, 190, 10),
+    });
+    const remount = remountLock();
+    let backendDoka = 190;
+    const skipped = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async () => {
+        throw new Error("must not write");
+      },
+    });
+    assert.equal(skipped, false);
+    assert.equal(session.snapshot().doka, 110);
+
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 190 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 110, "unpaid 80 applied on top of the 10 spend");
+  });
+
+  it("death-fail remount without a later credit still flushes unpaid 20/40 onto 200", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const remount = remountLock();
+    let backendDoka = 200;
+    let backendXp = 100;
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: backendXp, doka: backendDoka }),
+      writePenalty: async (newXp, newDoka) => {
+        backendXp = newXp;
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120);
+    assert.equal(backendXp, 80);
+  });
+
+  it("keep-only remount (no stamp) still flushes unpaid 20/40 onto 200", async () => {
+    const storage = memStorage();
+    writePendingDeathPenalty(storage, UNPAID);
+    const session = wrapPersistCommitForDeathCutCreditRemount(
+      createProgressPersist({ doka: 200, xp: 100, level: 4 }),
+      storage,
+      1,
+    );
+    session.commit({ doka: 120, xp: 80 });
+    session.noteUnconfirmedCredit();
+    assert.equal(readDeathCutCreditRemountStamp(storage, 1), null);
+    const remount = remountLock();
+    let backendDoka = 200;
+    const flushed = await flushPendingDeathPenaltyThroughDeathCutCreditRemount({
+      storage,
+      slot: 1,
+      persist: remount,
+      fetchSnapshot: async () => ({ xp: 100, doka: 200 }),
+      writePenalty: async (_newXp, newDoka) => {
+        backendDoka = newDoka;
+      },
+    });
+    assert.equal(flushed, true);
+    assert.equal(backendDoka, 120, "#698 keep-only remount must still flush");
   });
 });
