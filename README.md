@@ -15,6 +15,7 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/` | React + Vite client |
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit; can lag Motoko public types |
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
+| `src/frontend/src/engine/spellEngine.ts` | Player/enemy spell resolution. Blood Moon ×1.25 and Mirror Field 20% reflect live here (`ctx.isBloodMoon` / `mirrorFieldReflect`), not in empty `mapModifierRegistry` hooks |
 | `src/frontend/src/engine/portalRules.ts` | Run-mode portals + dungeon-chain snapshot (before `cleanupMap`) |
 | `src/frontend/src/engine/mapGen.ts` | Archetypes + `finalizePlayableLayout` (spawn / exit / hostile reachability) |
 | `src/frontend/src/engine/spawnPolicy.ts` | Overworld spawn filters + family variants + dungeon extras (not placement) |
