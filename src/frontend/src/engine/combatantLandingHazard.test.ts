@@ -9,10 +9,22 @@ import {
 
 describe("lavaLandingHpDamage / spikeLandingHpDamage", () => {
   it("matches the enemy apply ranges (lava 8–15, spikes 5–10)", () => {
-    assert.equal(lavaLandingHpDamage(() => 0), 8);
-    assert.equal(lavaLandingHpDamage(() => 0.999), 15);
-    assert.equal(spikeLandingHpDamage(() => 0), 5);
-    assert.equal(spikeLandingHpDamage(() => 0.999), 10);
+    assert.equal(
+      lavaLandingHpDamage(() => 0),
+      8,
+    );
+    assert.equal(
+      lavaLandingHpDamage(() => 0.999),
+      15,
+    );
+    assert.equal(
+      spikeLandingHpDamage(() => 0),
+      5,
+    );
+    assert.equal(
+      spikeLandingHpDamage(() => 0.999),
+      10,
+    );
   });
 });
 
