@@ -249,6 +249,11 @@ import {
 } from "../engine/summonIntegration";
 import { expireSummonsAtTurnStart } from "../engine/summonLifespan";
 import { spawnEnemySummonUnit, spawnSummonUnit } from "../engine/summonSpawn";
+import { planSwapLandings } from "../engine/swapLandingHazards";
+import {
+  abortInFlightWalkAfterSwap,
+  resolveSwapTeleport,
+} from "../engine/swapTeleport";
 import {
   type TileCastableResult,
   attackNearestLiveCasterPos,
@@ -9391,14 +9396,158 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           (e: any) => e.id === targetEnemyId,
         );
         if (!target) return;
-        const oldPlayerPos = { ...playerPosition };
-        setPlayerPositionSynced({ x: target.x, y: target.y });
+        // Live tile: range already used playerPositionRef. React
+        // playerPosition lags the first walk RAF step, so closing over it
+        // sent the enemy to the walk-start cell.
+        const swapped = resolveSwapTeleport({
+          livePlayerPos: playerPositionRef.current,
+          targetPos: { x: target.x, y: target.y },
+        });
+        setPlayerPositionSynced(swapped.playerDest);
         // Route the enemy position swap through the combatant store so the
         // ref mirrors stay atomically in sync (replaces a setEnemies map).
         updateCombatant(combatantStoreCtx, targetEnemyId, {
-          x: oldPlayerPos.x,
-          y: oldPlayerPos.y,
+          x: swapped.enemyDest.x,
+          y: swapped.enemyDest.y,
         });
+        // Official Swap is a teleport. Spending the last MP on a walk
+        // flips the HUD to attack while leftover rAF still owns the
+        // pre-swap path. Bump generation like cleanupBattle so that
+        // stepper cannot walk the player off the swapped tile.
+        const abort = abortInFlightWalkAfterSwap(movementGenRef.current);
+        movementGenRef.current = abort.nextMovementGen;
+        setIsMoving(abort.isMoving);
+        setMovementPath(abort.movementPath);
+        setCurrentStepIndex(abort.currentStepIndex);
+
+        // Arrival tax: same lava/spikes/ice as walk + enemy AI landing;
+        // Void Rift on the player dest only (applyBattleWalkHazards).
+        const landings = planSwapLandings({
+          playerDest: swapped.playerDest,
+          enemyDest: swapped.enemyDest,
+          hazardTiles: currentMapRef.current?.hazardTiles,
+          voidRiftActive: isVoidRift,
+          riftTile: voidRiftTile,
+        });
+        const playerLand = landings.player;
+        if (playerLand.hpLoss > 0) {
+          setCharacterStats((prev) => ({
+            ...prev,
+            hp: Math.max(0, prev.hp - playerLand.hpLoss),
+          }));
+        }
+        if (playerLand.lavaDmg > 0 || playerLand.spikeDmg > 0) {
+          challengeTotalDamageRef.current = recordInBattleChallengeDamage(
+            inBattleRef.current,
+            challengeTotalDamageRef.current,
+            playerLand.lavaDmg + playerLand.spikeDmg,
+          );
+        }
+        if (playerLand.riftDmg > 0) {
+          challengeTotalDamageRef.current = recordChallengeWalkHazardDamage(
+            challengeTotalDamageRef.current,
+            { thornDmg: 0, riftDmg: playerLand.riftDmg },
+          );
+        }
+        if (playerLand.burning) {
+          applyActiveEffect({
+            id: `hazard-burn-${Date.now()}`,
+            effectName: "Burning",
+            type: "dot",
+            targetId: "player",
+            duration: 3,
+            iconEmoji: "🔥",
+            description: "Burning from lava",
+            dotDamagePerTurn: 3,
+          });
+          logBattleEntry(
+            `🌋 You stepped on lava! -${playerLand.lavaDmg} HP`,
+            "#ff4400",
+          );
+        }
+        if (playerLand.frozen) {
+          logBattleEntry("❌❄️ You stepped on ice! Slowed!", "#66ccff");
+          applyActiveEffect({
+            id: `hazard-frozen-${Date.now()}`,
+            effectName: "Frozen",
+            type: "debuff",
+            targetId: "player",
+            stat: "mp",
+            modifier: -2,
+            duration: 2,
+            iconEmoji: "❄️",
+            description: "Slowed by ice: -2 MP",
+          });
+        }
+        if (playerLand.spikeDmg > 0) {
+          logBattleEntry(
+            `⚔️ You stepped on spikes! -${playerLand.spikeDmg} HP`,
+            "#cc8800",
+          );
+        }
+        if (playerLand.riftDmg > 0) {
+          logBattleEntry("🌀 Void rift! -3 HP", "#6600cc");
+        }
+
+        const enemyLand = landings.enemy;
+        if (enemyLand.hpLoss > 0 || enemyLand.frozen || enemyLand.burning) {
+          if (enemyLand.hpLoss > 0) {
+            const curEH = liveCombatantHp(
+              getLiveCombatants(combatantStoreCtx),
+              targetEnemyId,
+              target.hp ?? 0,
+            );
+            const { newHp: newEH, lethal } = enemyHpAfterHazardDamage(
+              curEH,
+              enemyLand.hpLoss,
+            );
+            setEnemyHpMap((h) => ({ ...h, [targetEnemyId]: newEH }));
+            setTurnOrder((to) =>
+              to.map((c) => (c.id === targetEnemyId ? { ...c, hp: newEH } : c)),
+            );
+            updateCombatant(combatantStoreCtx, targetEnemyId, { hp: newEH });
+            if (lethal) {
+              processCombatantDeathCb(targetEnemyId);
+            }
+          }
+          if (enemyLand.burning) {
+            applyActiveEffect({
+              id: `enemy-burn-${Date.now()}`,
+              effectName: "Burning",
+              type: "dot",
+              targetId: targetEnemyId,
+              duration: 3,
+              iconEmoji: "🔥",
+              description: "Burning",
+              dotDamagePerTurn: 3,
+            });
+            logBattleEntry(
+              `🌋 ${target.pieceType} walked on lava! -${enemyLand.lavaDmg} HP`,
+              "#ff4400",
+            );
+          } else if (enemyLand.frozen) {
+            logBattleEntry(
+              `❄️ ${target.pieceType} stepped on ice! Slowed!`,
+              "#66ccff",
+            );
+            applyActiveEffect({
+              id: `enemy-frozen-${Date.now()}`,
+              effectName: "Frozen",
+              type: "debuff",
+              targetId: targetEnemyId,
+              stat: "mp",
+              modifier: -2,
+              duration: 2,
+              iconEmoji: "❄️",
+              description: "Slowed by ice",
+            });
+          } else if (enemyLand.spikeDmg > 0) {
+            logBattleEntry(
+              `⚔️ ${target.pieceType} hit spikes! -${enemyLand.spikeDmg} HP`,
+              "#cc8800",
+            );
+          }
+        }
       },
       placeMark: (cell: { x: number; y: number }) => {
         markedTilesRef.current.add(`${cell.x},${cell.y}`);
@@ -9697,6 +9846,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     spawnSummonUnit,
     computeEnemyStats,
     setCurrentBattleApSynced,
+    isVoidRift,
+    voidRiftTile,
+    processCombatantDeathCb,
   ]);
   // [CLICK-TRACE] Builds ClickTraceInput from refs and records the click.
   // Debug-only; the recordClickTrace module itself is pure. Compact: ~30 lines.
