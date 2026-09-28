@@ -365,6 +365,7 @@ import {
   tryClaimFlag,
   tryClaimPickupId,
 } from "../utils/dokaPersist";
+import { shouldAllowEndTurnDuringBattleWalk } from "../utils/endTurnWalkGate";
 import {
   applyHealHpToLiveStats,
   canSpendLiveDoka,
@@ -451,6 +452,7 @@ import {
   summonControlIdAfterAdvance,
   summonTurnBudget,
 } from "../utils/summonControlCast";
+import { shouldAllowSummonControlEndTurn } from "../utils/summonControlEndTurn";
 import { clientTrustedVictoryAchievementConditions } from "../utils/victoryAchievements";
 import { vitalsOrbCaps, vitalsOrbFillPct } from "../utils/vitalsOrbCaps";
 import {
@@ -18944,6 +18946,14 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             const _entry = turnOrderRef.current[currentTurnIndexRef.current];
             if (_entry?.type !== "player") return;
             if (battlePhase !== "player") return;
+            if (
+              !shouldAllowEndTurnDuringBattleWalk({
+                inBattle: inBattleRef.current,
+                isMoving,
+              })
+            ) {
+              return;
+            }
             advanceTurn();
           }}
           spellCooldowns={
@@ -18961,6 +18971,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
             if (!summon) return null;
             return (
               <SummonControlPanel
+                key={summon.id}
                 summonName={summon.pieceType}
                 summonPieceType={summon.pieceType}
                 lifespan={summon.turnsRemaining ?? 0}
@@ -19000,6 +19011,17 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   setSelectedSummonSpellId(spellId)
                 }
                 onEndTurn={() => {
+                  const _entry =
+                    turnOrderRef.current[currentTurnIndexRef.current];
+                  if (
+                    !shouldAllowSummonControlEndTurn({
+                      inBattle: inBattleRef.current,
+                      controlledSummonId: activeControlledSummonIdRef.current,
+                      turnEntry: _entry,
+                    })
+                  ) {
+                    return;
+                  }
                   setActiveControlledSummonId(null);
                   activeControlledSummonIdRef.current = null;
                   setSelectedSummonSpellId(null);
