@@ -30,6 +30,7 @@ import {
   type DeathPipelineCtx,
   processCombatantDeath,
 } from "./deathPipeline.ts";
+import { shouldApplyChainBounceOnHit } from "./shouldApplyChainBounceOnHit.ts";
 import type { PlayerCastEnemy, PlayerCastTarget } from "./spellEngine";
 import {
   hitsAlliesIncludesPlayer,
@@ -427,13 +428,18 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     commitEnemyHp?.(hitTarget.id, enemyNewHp);
   }
 
-  // Chain Lightning bounce
+  // Chain Lightning bounce — once per cast, from the clicked primary.
+  // Drain already heals once (`targetsToHit[0]`). Bounce used to retrigger
+  // on every hitsMultiple occupant (starter-blast is both flags).
   if (
-    spell.bounces &&
-    spell.bounces > 0 &&
-    hitTarget &&
-    hitTarget.id &&
-    hitTarget.id !== "__player__"
+    shouldApplyChainBounceOnHit({
+      bounceCount: spell.bounces,
+      hitId: hitTarget?.id,
+      hitX: hitTarget?.x,
+      hitY: hitTarget?.y,
+      clickX: _gridPos.x,
+      clickY: _gridPos.y,
+    })
   ) {
     const otherEnemies = enemies.filter(
       (e) => e.id !== hitTarget.id && isActiveHostile(e),
