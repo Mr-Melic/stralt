@@ -1149,6 +1149,8 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     subscribeRunComplete,
   } = useBossRush(actor, characterSlot, userId);
   const [isMoving, setIsMoving] = useState(false);
+  const isMovingRef = useRef(false);
+  isMovingRef.current = isMoving;
   const [movementPath, setMovementPath] = useState<PlayerPosition[]>([]);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [clickedTile, setClickedTile] = useState<{
@@ -10131,6 +10133,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
               deathTriggered: deathTriggeredRef.current,
               hp: characterStatsRef.current.hp,
+              isMoving: isMovingRef.current,
             });
             const _tile = { x: _hit.logicalX, y: _hit.logicalY };
             const _selectedId = selectedSpellIdRef.current;
@@ -10823,6 +10826,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
               deathTriggered: deathTriggeredRef.current,
               hp: characterStatsRef.current.hp,
+              isMoving: isMovingRef.current,
             });
             const _tile = { x: _hit.logicalX, y: _hit.logicalY };
             const _selectedId = selectedSpellIdRef.current;
@@ -17105,6 +17109,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
           turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
           deathTriggered: deathTriggeredRef.current,
           hp: characterStatsRef.current.hp,
+          isMoving: isMovingRef.current,
         })
       ) {
         return { castResult: "abort", apCost: 0 };
@@ -17229,6 +17234,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
         deathTriggered: deathTriggeredRef.current,
         hp: characterStatsRef.current.hp,
+        isMoving: isMovingRef.current,
       })
     )
       return;
@@ -18856,6 +18862,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
               turnEntry: turnOrderRef.current[currentTurnIndexRef.current],
               deathTriggered: deathTriggeredRef.current,
               hp: characterStatsRef.current.hp,
+              isMoving: isMovingRef.current,
             }) &&
             battleActionMode === "attack" &&
             !!selectedSpellIdRef.current &&
