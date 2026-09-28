@@ -2378,7 +2378,16 @@ actor {
         };
         switch (AdminGuard.validateAchievementConfig(config)) {
             case (?e) { return #err(e) };
-            case null {};
+            case null {
+                switch (AdminGuard.achievementLastLiveRejected(
+                    config.id,
+                    config.active,
+                    achievementConfigs.values().toArray(),
+                )) {
+                    case (?e) { return #err(e) };
+                    case null {};
+                };
+            };
         };
         achievementConfigs.add(config.id, config);
         _recordAdminAudit(caller, "setAchievementConfig", config.id, "previous", config.name);
@@ -2393,6 +2402,14 @@ actor {
         var hasProgress = false;
         for (p in achievementProgress.values()) {
             if (p.achievementId == id) { hasProgress := true };
+        };
+        switch (AdminGuard.achievementLastLiveRejected(
+            id,
+            false,
+            achievementConfigs.values().toArray(),
+        )) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         if (hasProgress) {
             switch (achievementConfigs.get(id)) {

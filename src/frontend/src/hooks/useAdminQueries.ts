@@ -13,6 +13,7 @@ import {
   validateEnemyName,
   validateMapModifierChance,
 } from "../utils/adminSafety";
+import { achievementLastLiveRejected } from "../utils/adminSafety.achievementLastLive";
 import { normalizeCallerDokaBalance } from "../utils/dokaBalanceQuery";
 import { fetchPlayerAchievements } from "../utils/playerAchievements";
 import { useActor } from "./useActor";
@@ -407,6 +408,17 @@ export function useAdminSetAchievementConfig() {
       if (!actor) throw new Error("Actor not available");
       const guardErr = validateAchievementConfig(config);
       if (guardErr) throw new Error(guardErr);
+      const cached = queryClient.getQueryData<AchievementConfig[]>([
+        "achievementConfigs",
+      ]);
+      if (Array.isArray(cached) && cached.length > 0) {
+        const liveErr = achievementLastLiveRejected({
+          id: config.id,
+          nextActive: config.active === true,
+          existing: cached,
+        });
+        if (liveErr) throw new Error(liveErr);
+      }
       const result = await (actor as ActorAny).adminSetAchievementConfig({
         ...config,
         dokaReward: BigInt(Math.round(config.dokaReward)),
@@ -427,6 +439,17 @@ export function useAdminDeleteAchievementConfig() {
   return useMutation({
     mutationFn: async (id: string) => {
       if (!actor) throw new Error("Actor not available");
+      const cached = queryClient.getQueryData<AchievementConfig[]>([
+        "achievementConfigs",
+      ]);
+      if (Array.isArray(cached) && cached.length > 0) {
+        const liveErr = achievementLastLiveRejected({
+          id,
+          nextActive: false,
+          existing: cached,
+        });
+        if (liveErr) throw new Error(liveErr);
+      }
       const result = await (actor as ActorAny).adminDeleteAchievementConfig(id);
       assertAdminCmdOk(result, "adminDeleteAchievementConfig");
       return result;
