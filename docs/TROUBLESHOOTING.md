@@ -80,6 +80,10 @@ Fix: always send the full record. Carry `character.stats.killCount` or `0n` on c
 
 The field was removed from the Motoko `Character` type. Frontend `gameTypes.Character.dokaBalance` is a convenience alias. Bindgen drops unknown fields. Balance APIs: `getCallerDokaBalance`, `applyRewards`, admin grants.
 
+### `oneShotCredit.ts` vs live claims
+
+`utils/oneShotCredit.ts` is tests-only (`oneShotCredit.test.ts`). WorldExploration claims through `dokaPersist.ts` (`tryClaimPickupId` / `settleOneShotAfterCredit`). Do not wire a second claim set into the movement RAF.
+
 ### Recap heal refunds a just-claimed or just-won wallet
 
 `saveBattleStats` is an absolute write. After victory / shop credit / feat claim, the recap is already clickable. A heal that reconstructs from the pre-credit snapshot (or from `getCallerDokaBalance` after a query invalidate) persists the old balance.
@@ -157,6 +161,10 @@ Attack Nearest and sprite-click Strike must pick from `getLiveCombatants` + `isA
 ### Touch tap casts twice
 
 Canvas listens to `onTouchEnd` and `onClick`. Mobile browsers still dispatch a synthetic click after `touchend`. Drop it for 400ms (`shouldIgnoreClickAfterTouch`). One physical tap with leftover AP used to fire two casts.
+
+### Challenge persist vs `evaluateChallenges` debug log
+
+`handleBattleEnd` logs `evaluateChallenges` (`utils/battleFixes.ts`) then persists with `isChallengeCompleted` (`utils/challengeCompletion.ts`). The debug helper is a different catalog (`survive_with_50_hp`, `deal_500_damage`) and is not the reward funnel. Do not persist Doka/XP from `evaluateChallenges`, and do not “fix” `battleFixes.ts` to match the live ids.
 
 ### Spell upgrade debit is 10× too large (summons)
 
@@ -244,6 +252,10 @@ Do not `dfx deploy` expecting the current game actor unless `dfx.json` is pointe
 ### Chat vanished after upgrade
 
 Expected. `sendMessage` / `getMessages` are in-memory (`main.mo` comment at the chat block).
+
+### Blood Moon / Mirror Field look unused in the registry
+
+Empty `mapModifierRegistry` hooks for `blood_moon` / `mirror_field` do not mean the modifiers are flavor. `spellEngine.ts` still applies Blood Moon ×1.25 to non-heals (`ctx.isBloodMoon`) and Mirror Field 20% reflect (`mirrorFieldReflect` in WorldExploration). Do not delete `isBloodMoon` / `isMirrorField` to match the placeholder, and do not add those multipliers on `onDamageDealt`. `gravity_well` / `fog_of_war` (`_isGravityWell` / `_isFogOfWar`) really are unused. Live Plague Zone is 2 HP (`PLAGUE_ZONE_TICK`), not the registry’s `onTurnStart` −1.
 
 ### Chat shows the wrong name
 

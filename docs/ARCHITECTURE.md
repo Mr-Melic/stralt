@@ -202,6 +202,8 @@ Unpaid 20/40 after a replica reject lives in `localStorage` (`pbv_pending_death_
 | `persistBossRushRoomClear` / `resolveBossRushQueryPrincipalText` | `hooks/bossRushProgress.ts` |
 | `readRenameCharacterResult` / `shouldDebitRenameDoka` | `utils/renameCharacter.ts` |
 | `fetchPlayerAchievements` | `utils/playerAchievements.ts` |
+| `isChallengeCompleted` | `utils/challengeCompletion.ts`. `evaluateChallenges` in `battleFixes.ts` is a debug log of a different catalog — do not persist from it |
+| Live one-shot claims | `utils/dokaPersist.ts`. `oneShotCredit.ts` is tests-only — do not wire WorldExploration to it |
 | `shouldPreserveVersionGateKey` | `utils/versionGate.ts` |
 
 ### Wallet seeding (placeholder 0)
@@ -397,7 +399,7 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `combatantStore.ts` | Atomic add/remove/patch/sync of combatants + turn order. `combatantTurnEntryType`: player-side summons are `"summon"`; enemy-side summons are `"enemy"` |
 | `turnQueue.ts` | Index-safe removal; advance from the **live** queue index (`nextTurnIndex` / `liveTurnOrder`) |
 | `deathPipeline.ts` | Idempotent death sequence + optional reconcile hook |
-| `spellEngine.ts` | Pure player / enemy spell resolution |
+| `spellEngine.ts` | Pure player / enemy spell resolution. Blood Moon ×1.25 and Mirror Field 20% reflect live here (`ctx.isBloodMoon` / `isMirrorField`), not in empty `mapModifierRegistry` hooks |
 | `castHelpers.ts` | AoE target list + `applyDamageToEnemy` (Void Mirror / Reflect Shield call `onPlayerReflectedDamage`) |
 | `targeting.ts` | Preview + live cast gate from **explicit** spell metadata (`isTileCastableLive`) |
 | `occupancy.ts` | Tile passability, pushback, attract. `collectMandatoryProgressionCells` = unique player→exit bridges — spawn/relocate must not sit on them |
@@ -416,6 +418,12 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 Spell targeting source of truth: `SpellConfig.targetType`, `minRange` / `maxRange`, `lineOfSight`, `linear`, `diagonal`, `freeCells`, `areaRadius`, `isBarrier`. `spell.name` is UI/log only. Sprite-click Strike and Attack Nearest must use the same live gate (`isTileCastableLive` / `isActiveHostile` on `getLiveCombatants`) — a React `enemies` snapshot misses enemy minions and leftover corpses. Attack Nearest range/LoS uses the **player** tile (`attackNearestLiveCasterPos`), not a controlled summon.
 
 `engine/worldFeatures.ts` is the world-dynamics catalog (rarity + relative difficulty). It is **not** wired into map gen — same status as `docs/WORLD_DYNAMICS.md`.
+
+### Live map-modifier flags in spellEngine
+
+`mapModifierRegistry` hooks for `blood_moon` and `mirror_field` are empty, but the effects are live in `spellEngine.ts` via WorldExploration flags. Blood Moon is ×1.25 on non-heals (`ctx.isBloodMoon`). Mirror Field is a 20% single-target reflect (`ctx.isMirrorField` + `mirrorFieldReflect`). Do not delete those flags to match the placeholder hooks, and do not add a second 1.25× on `onDamageDealt`. `gravity_well` and `fog_of_war` really are unused (`_isGravityWell` / `_isFogOfWar`). Time Warp’s 15s timer is `isTimeWarp` in WorldExploration (registry hook is a no-op marker). Live Plague Zone damage is `PLAGUE_ZONE_TICK` (2) through `hpAfterIncomingDamage` — the registry `onTurnStart` −1 is not the player/store write.
+
+Regular enemy walks must `updateCombatant` the clamped dest (`enemyDestToCommit`). The apply layer used dest only for range/hazard math, so non-boss units stayed frozen while boss/erratic paths already committed.
 
 ### Map solvability
 
