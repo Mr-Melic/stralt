@@ -71,6 +71,7 @@ import type { SpriteRect } from "../debug/clickTrace";
 // [CLICK-TRACE] Shared geometry-overlay toggle (read each frame by the render
 // post-pass and at click time to arm lastClickOverlayRef).
 import { getGeometryOverlayEnabled } from "../debug/geometryOverlayState";
+import { buildAmbientOcclusionMask } from "../engine/ambientOcclusion";
 import { drawBarrierTower } from "../engine/barrierRender";
 import {
   PLAGUE_ZONE_TICK,
@@ -7277,34 +7278,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     // ── Pre-compute ambient occlusion mask when map changes ───────────────────
     if (aoMapIdRef.current !== currentMap.id) {
       aoMapIdRef.current = currentMap.id;
-      const size = WORLD_GRID_SIZE * WORLD_GRID_SIZE;
-      const mask = new Uint8Array(size);
-      for (let gy = 0; gy < WORLD_GRID_SIZE; gy++) {
-        for (let gx = 0; gx < WORLD_GRID_SIZE; gx++) {
-          if (currentMap.tiles[gy][gx] === "wall") continue;
-          let bits = 0;
-          // top-right neighbor (gx+1, gy-1 in iso = wall to the upper-right)
-          if (
-            gx + 1 < WORLD_GRID_SIZE &&
-            gy > 0 &&
-            currentMap.tiles[gy - 1][gx + 1] === "wall"
-          )
-            bits |= 1;
-          // top-left neighbor (gx-1, gy-1 in iso = wall to the upper-left)
-          if (gx > 0 && gy > 0 && currentMap.tiles[gy - 1][gx - 1] === "wall")
-            bits |= 2;
-          // right neighbor in grid
-          if (
-            gx + 1 < WORLD_GRID_SIZE &&
-            currentMap.tiles[gy][gx + 1] === "wall"
-          )
-            bits |= 4;
-          // left neighbor in grid
-          if (gx > 0 && currentMap.tiles[gy][gx - 1] === "wall") bits |= 8;
-          mask[gy * WORLD_GRID_SIZE + gx] = bits;
-        }
-      }
-      aoMaskRef.current = mask;
+      aoMaskRef.current = buildAmbientOcclusionMask(currentMap.tiles);
       // Seed dust motes on first map
       // Hard cap: dust motes must never exceed 40 at any time
       const DUST_MOTE_CAP = 40;
