@@ -212,13 +212,16 @@ const SkateStyleTitle: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex justify-center mb-8">
-      <canvas
-        ref={canvasRef}
-        className="max-w-full h-auto"
-        style={{ imageRendering: "pixelated" }}
-      />
-    </div>
+    <>
+      <h1 className="sr-only">ÆSTRALTØ</h1>
+      <div className="flex justify-center mb-8" aria-hidden="true">
+        <canvas
+          ref={canvasRef}
+          className="max-w-full h-auto"
+          style={{ imageRendering: "pixelated" }}
+        />
+      </div>
+    </>
   );
 };
 
@@ -381,6 +384,9 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
         justifyContent: "center",
         zIndex: 20,
         overflow: "hidden",
+        boxSizing: "border-box",
+        padding:
+          "max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px))",
       }}
     >
       {/* Ambient radial glow */}
@@ -422,6 +428,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
           width: "100%",
           maxWidth: "100%",
           padding: "0 16px",
+          boxSizing: "border-box",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -586,6 +593,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
               type="button"
               onClick={handleLogin}
               disabled={isLoggingIn}
+              className="stone-touch-target"
               onMouseEnter={() => setHovered(true)}
               onMouseLeave={() => setHovered(false)}
               style={{
@@ -594,6 +602,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onAdminLogin }) => {
                 justifyContent: "center",
                 gap: 10,
                 width: "100%",
+                minHeight: 44,
                 padding: "14px 24px",
                 borderRadius: 8,
                 fontSize: 15,

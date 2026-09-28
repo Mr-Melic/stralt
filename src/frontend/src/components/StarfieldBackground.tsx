@@ -280,11 +280,17 @@ const StarfieldBackground: React.FC = () => {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
+    <div
+      aria-hidden="true"
       className="fixed inset-0 pointer-events-none"
       style={{ zIndex: 1, background: "transparent" }}
-    />
+    >
+      <canvas
+        ref={canvasRef}
+        className="h-full w-full"
+        style={{ background: "transparent" }}
+      />
+    </div>
   );
 };
 
