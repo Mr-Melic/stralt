@@ -7,12 +7,6 @@ import {
   computeDeathPenalty,
 } from "./deathPenalty.ts";
 import {
-  ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
-  applySpendToCommitted,
-  clampAbsoluteProgressWrite,
-  createProgressPersist,
-} from "./progressPersist.ts";
-import {
   clearPortalXpKeepRemount,
   hasPortalXpKeepRemount,
   notePortalXpKeepRemount,
@@ -23,6 +17,12 @@ import {
   shouldRefusePortalXpKeepRemountStaleXp,
   xpForPortalXpKeepRemountHonour,
 } from "./portalXpKeepRemountWriteSkip.ts";
+import {
+  ABSOLUTE_WRITE_UNCONFIRMED_CREDIT,
+  applySpendToCommitted,
+  clampAbsoluteProgressWrite,
+  createProgressPersist,
+} from "./progressPersist.ts";
 
 function memStorage(): DeathPenaltyStorage {
   const storage = new Map<string, string>();
