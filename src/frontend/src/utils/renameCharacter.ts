@@ -82,3 +82,15 @@ export function committedDokaAfterRename(committedDoka: number): number {
 export function shouldCommitRenameDokaSpend(walletSeeded: boolean): boolean {
   return walletSeeded;
 }
+
+/**
+ * `#ok` on an unseeded placeholder must not seed at `committed-100` (that
+ * is 0). Block idle hydrate from copying the pre-rename query, or the next
+ * death/heal skips the live fetch and saveBattleStats-writes the uncut wallet.
+ */
+export function shouldNoteUnseededRenameCredit(
+  walletSeeded: boolean,
+  parsed: { ok: true } | { err: string },
+): boolean {
+  return shouldDebitRenameDoka(parsed) && !walletSeeded;
+}

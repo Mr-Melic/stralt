@@ -332,7 +332,6 @@ import {
 } from "../utils/deathGuards";
 import {
   applyUnpaidDeathPenaltyToWrite,
-  clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
   confirmAndClearPendingDeathPenaltyAnywhere,
   defaultDeathPenaltyStorage,
@@ -343,7 +342,7 @@ import {
   raiseUiAfterDeathPersist,
   readDeathReplayBackendSnapshot,
   readPendingDeathPenaltyAnywhere,
-  resolvePendingDeathReplay,
+  replayPendingDeathPenaltyOnLock,
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
   writePendingDeathPenalty,
@@ -398,7 +397,7 @@ import {
   clampAbsoluteProgressWrite,
   createProgressPersist,
   resolveCommittedDokaForAbsoluteWrite,
-  shouldPersistAbsoluteDokaSpend,
+  shouldEnqueueAbsoluteProgressWrite,
   spendFromUiBalance,
 } from "../utils/progressPersist";
 import { appendRecapUnlock, attachRecapUnlocks } from "../utils/recapUnlocks";
@@ -415,6 +414,7 @@ import {
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
+  shouldNoteUnseededRenameCredit,
 } from "../utils/renameCharacter";
 import {
   PORTAL_TRANSITION_XP,
@@ -1144,6 +1144,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    endBossRushLocally,
     persistRoomClear,
     BOSS_RUSH_ROOMS,
     subscribeRunComplete,
@@ -1315,6 +1316,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         dungeonChainDepthRef,
         dungeonChainMaxDepthRef,
         abortBossRush,
+        endBossRushLocally,
       });
       const { map: whiteMap, spawnPosition: whiteSpawn } = generateRandomMap();
       if (whiteMap) {
@@ -1340,7 +1342,12 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     return () => {
       subscribeRunComplete(null);
     };
-  }, [subscribeRunComplete, abortBossRush, setPlayerPositionSynced]);
+  }, [
+    subscribeRunComplete,
+    abortBossRush,
+    endBossRushLocally,
+    setPlayerPositionSynced,
+  ]);
   useEffect(() => {
     dungeonChainActiveRef.current = dungeonChainActive;
   }, [dungeonChainActive]);
@@ -1442,6 +1449,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       level: character?.level != null ? Number(character.level) : 1,
     }),
   );
+  const persistAbsoluteProgressRef = useRef<
+    (
+      newHp: number,
+      newDoka: number,
+      options?: { allowZeroSpendHp?: boolean },
+    ) => Promise<boolean>
+  >(async () => false);
   progressPersistRef.current.setBeforeEach(async () => {
     const liveActor = persistActorRef.current;
     if (!liveActor?.saveBattleStats) return;
@@ -2132,6 +2146,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 progressPersistRef.current.snapshot().doka,
               ),
             });
+          } else if (
+            shouldNoteUnseededRenameCredit(
+              progressPersistRef.current.isWalletSeeded(),
+              result,
+            )
+          ) {
+            progressPersistRef.current.noteUnseededCredit();
           }
           return result;
         });
@@ -3597,6 +3618,11 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         challengeHealUsedRef.current = recordChallengeItemHealUsed(
           inBattleRef.current,
           challengeHealUsedRef.current,
+        );
+        void persistAbsoluteProgressRef.current(
+          characterStatsRef.current.hp,
+          dokaBalanceRef.current,
+          { allowZeroSpendHp: true },
         );
       }
     },
@@ -12698,12 +12724,16 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       // Final boss-rush room cleared — complete the run and open a white
       // gateway to sanctuary. Completion (unlike fleeing/death) keeps rewards;
       // no death penalty, no Death Realm reset.
+      // Local flags/HUD only. abortBossRush would resetBossRush before
+      // persistRoomClear's complete(9) and drop master complete / run count.
+      runCompleteHandledRef.current = true;
       completeRun({
         bossRushActiveRef,
         dungeonChainActiveRef,
         dungeonChainDepthRef,
         dungeonChainMaxDepthRef,
         abortBossRush,
+        endBossRushLocally,
       });
       const { map: whiteMap, spawnPosition: whiteSpawn } = generateRandomMap();
       if (whiteMap) {
@@ -13107,12 +13137,24 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   // Doka — it only replaces the Character record, which no longer stores a
   // wallet field.
   const persistAbsoluteProgress = useCallback(
-    (newHp: number, newDoka: number): Promise<boolean> => {
+    (
+      newHp: number,
+      newDoka: number,
+      options?: { allowZeroSpendHp?: boolean },
+    ): Promise<boolean> => {
       if (!actor) return Promise.resolve(false);
       const spend = spendFromUiBalance(dokaBalanceRef.current, newDoka);
       // A stale-prop double-click computes spend 0. Writing anyway persists
       // the unpaid HP / leaves the extra shop item on a 0-debit snapshot.
-      if (!shouldPersistAbsoluteDokaSpend(spend)) return Promise.resolve(false);
+      // Potion use is the exception: HP changed with no Doka debit.
+      if (
+        !shouldEnqueueAbsoluteProgressWrite({
+          spend,
+          allowZeroSpendHp: options?.allowZeroSpendHp,
+        })
+      ) {
+        return Promise.resolve(false);
+      }
       return progressPersistRef.current
         .enqueue(async () => {
           const committed = progressPersistRef.current.snapshot();
@@ -13181,9 +13223,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     },
     [actor, character, characterSlot, onDokaBalanceChange],
   );
+  persistAbsoluteProgressRef.current = persistAbsoluteProgress;
 
   // Reload before saveBattleStats lands leaves the canister unpenalized.
-  // Replay only when the backend still matches the pre-penalty snapshot.
+  // Fetch + decide + write must share the persist lock. A snapshot taken
+  // outside the queue used to enqueue a stale absolute write after death
+  // persist already cut, raising committed Doka/XP so the next heal
+  // saveBattleStats refunded the 20/40.
   useEffect(() => {
     if (!actor) return;
     const pending = readPendingDeathPenaltyAnywhere(
@@ -13193,60 +13239,53 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
     if (!pending) return;
     let cancelled = false;
     void (async () => {
-      const snap = await readDeathReplayBackendSnapshot({
-        fetchDoka: () =>
-          (
-            actor as { getCallerDokaBalance?: () => Promise<unknown> }
-          ).getCallerDokaBalance?.() ?? Promise.resolve(null),
-        fetchCharacter: () =>
-          (
-            actor as { getCharacter?: (slot: bigint) => Promise<unknown> }
-          ).getCharacter?.(BigInt(characterSlot)) ?? Promise.resolve(null),
-      });
-      if (cancelled || !snap) return;
-      const decision = resolvePendingDeathReplay(snap.xp, snap.doka, pending);
-      if (decision.action !== "write") {
-        clearPendingDeathPenaltyAnywhere(characterSlot, DEATH_PENALTY_STORAGE);
-        return;
-      }
       try {
-        await progressPersistRef.current.enqueue(
-          async () => {
-            const committed = progressPersistRef.current.snapshot();
-            await persistWithRetry(() =>
-              persistAbsoluteStats(actor, {
-                slot: characterSlot,
-                level: committed.level,
-                hp: respawnHpAfterDeath(committed.level),
-                maxHp: characterStatsRef.current.maxHp ?? 0,
-                ap: characterStatsRef.current.ap ?? 0,
-                maxAp: characterStatsRef.current.maxAp ?? 0,
-                mp: characterStatsRef.current.mp ?? 0,
-                maxMp: characterStatsRef.current.maxMp ?? 0,
-                attack: Number(character?.stats?.atk ?? 0),
-                defense: characterStatsRef.current.res ?? 0,
-                initiative: characterStatsRef.current.init ?? 0,
-                newXp: decision.newXp,
-                newDoka: decision.newDoka,
-                spellLevels: spellLevelsRef.current,
+        const flushed = await replayPendingDeathPenaltyOnLock(
+          progressPersistRef.current,
+          {
+            storage: DEATH_PENALTY_STORAGE,
+            slot: characterSlot,
+            fetchSnapshot: () =>
+              readDeathReplayBackendSnapshot({
+                fetchDoka: () =>
+                  (
+                    actor as { getCallerDokaBalance?: () => Promise<unknown> }
+                  ).getCallerDokaBalance?.() ?? Promise.resolve(null),
+                fetchCharacter: () =>
+                  (
+                    actor as {
+                      getCharacter?: (slot: bigint) => Promise<unknown>;
+                    }
+                  ).getCharacter?.(BigInt(characterSlot)) ??
+                  Promise.resolve(null),
               }),
-            );
-            progressPersistRef.current.commit({
-              doka: decision.newDoka,
-              xp: decision.newXp,
-              level: committed.level,
-            });
+            writePenalty: (newXp, newDoka) => {
+              const committed = progressPersistRef.current.snapshot();
+              return persistWithRetry(() =>
+                persistAbsoluteStats(actor, {
+                  slot: characterSlot,
+                  level: committed.level,
+                  hp: respawnHpAfterDeath(committed.level),
+                  maxHp: characterStatsRef.current.maxHp ?? 0,
+                  ap: characterStatsRef.current.ap ?? 0,
+                  maxAp: characterStatsRef.current.maxAp ?? 0,
+                  mp: characterStatsRef.current.mp ?? 0,
+                  maxMp: characterStatsRef.current.maxMp ?? 0,
+                  attack: Number(character?.stats?.atk ?? 0),
+                  defense: characterStatsRef.current.res ?? 0,
+                  initiative: characterStatsRef.current.init ?? 0,
+                  newXp,
+                  newDoka,
+                  spellLevels: spellLevelsRef.current,
+                }),
+              );
+            },
           },
-          { skipBeforeEach: true },
         );
-        if (cancelled) return;
-        confirmAndClearPendingDeathPenaltyAnywhere(
-          characterSlot,
-          pending,
-          DEATH_PENALTY_STORAGE,
-        );
-        onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, decision.newDoka));
-        setCharacterStats((prev) => ({ ...prev, exp: decision.newXp }));
+        if (cancelled || !flushed) return;
+        const committed = progressPersistRef.current.snapshot();
+        onDokaBalanceChange(writeLiveDoka(dokaBalanceRef, committed.doka));
+        setCharacterStats((prev) => ({ ...prev, exp: committed.xp }));
       } catch (err) {
         console.error("[death-save] replay failed:", err);
       }

@@ -589,6 +589,32 @@ export async function flushPendingDeathPenalty(
   return true;
 }
 
+export type DeathReplayPersistLock = FlushPendingDeathArgs["persist"] & {
+  enqueue: <T>(
+    fn: () => Promise<T>,
+    options?: { skipBeforeEach?: boolean },
+  ) => Promise<T>;
+};
+
+/**
+ * Remount replay used to fetch + decide outside the persist lock, then
+ * enqueue that stale absolute write. A concurrent death persist could
+ * already have cut the canister and committed the lock; the late write
+ * then raised committed Doka/XP so the next heal skipped the live fetch
+ * and saveBattleStats refunded the cut.
+ *
+ * Fetch, decide, and write must run inside one enqueue (skipBeforeEach:
+ * beforeEach is this same flush).
+ */
+export async function replayPendingDeathPenaltyOnLock(
+  persist: DeathReplayPersistLock,
+  args: Omit<FlushPendingDeathArgs, "persist">,
+): Promise<boolean> {
+  return persist.enqueue(() => flushPendingDeathPenalty({ ...args, persist }), {
+    skipBeforeEach: true,
+  });
+}
+
 export const DEATH_PERSIST_RETRY_COUNT = DEATH_PENALTY_PERSIST_ATTEMPTS;
 
 /**

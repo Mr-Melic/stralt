@@ -6,6 +6,7 @@ import {
   clearPendingDeathPenalty,
   clearPendingDeathPenaltyAnywhere,
   computeDeathPenalty,
+  confirmAndClearPendingDeathPenalty,
   confirmPendingDeathPenalty,
   experienceFromCharacterRecord,
   flushPendingDeathPenalty,
@@ -16,6 +17,7 @@ import {
   readDeathReplayBackendSnapshot,
   readPendingDeathPenalty,
   readPendingDeathPenaltyAnywhere,
+  replayPendingDeathPenaltyOnLock,
   resolvePendingDeathReplay,
   respawnHpAfterDeath,
   shouldApplyVictoryLiveHydrate,
@@ -849,6 +851,68 @@ function memStorage(): import("./deathPenalty.ts").DeathPenaltyStorage {
   assert.equal(readPendingDeathPenalty(local, 1), null);
   assert.equal(readPendingDeathPenalty(session, 1), null);
   assert.equal(readPendingDeathPenaltyAnywhere(1, local, session), null);
+}
+
+{
+  // Chronology (stale remount replay):
+  // 1. Death UI pending is the pre-credit snapshot (200 Doka).
+  // 2. applyRewards already committed 1000. Death persist cuts to 600.
+  // 3. Replay fetched 1000 outside the lock and decided write 920.
+  // 4. That write ran after death persist and raised committed Doka.
+  // 5. Next heal skipped the live fetch and saveBattleStats refunded the cut.
+  const pendingUi = {
+    slot: 1,
+    preXp: 100,
+    preDoka: 200,
+    afterXp: 80,
+    afterDoka: 120,
+  };
+  const stale = resolvePendingDeathReplay(1000, 1000, pendingUi);
+  assert.deepEqual(stale, { action: "write", newXp: 980, newDoka: 920 });
+  const refunded = createProgressPersist({ doka: 600, xp: 160, level: 4 });
+  if (stale.action === "write") {
+    refunded.commit({ doka: stale.newDoka, xp: stale.newXp });
+  }
+  assert.equal(refunded.snapshot().doka, 920);
+
+  const mem = memStorage();
+  writePendingDeathPenalty(mem, pendingUi);
+  const lock = createProgressPersist({ doka: 1000, xp: 200, level: 4 });
+  let backendXp = 1000;
+  let backendDoka = 1000;
+  const death = lock.enqueue(
+    async () => {
+      const after = computeDeathPenalty(
+        lock.snapshot().xp,
+        lock.snapshot().doka,
+      );
+      backendXp = after.newXp;
+      backendDoka = after.newDoka;
+      lock.commit({ doka: after.newDoka, xp: after.newXp });
+      confirmAndClearPendingDeathPenalty(mem, {
+        slot: 1,
+        preXp: lock.snapshot().xp,
+        preDoka: 1000,
+        afterXp: after.newXp,
+        afterDoka: after.newDoka,
+      });
+    },
+    { skipBeforeEach: true },
+  );
+  const flushed = replayPendingDeathPenaltyOnLock(lock, {
+    storage: mem,
+    slot: 1,
+    fetchSnapshot: async () => ({ xp: backendXp, doka: backendDoka }),
+    writePenalty: async (newXp, newDoka) => {
+      backendXp = newXp;
+      backendDoka = newDoka;
+    },
+  });
+  await death;
+  assert.equal(await flushed, false);
+  assert.equal(lock.snapshot().doka, 600);
+  assert.equal(lock.snapshot().xp, 160);
+  assert.equal(backendDoka, 600);
 }
 
 console.log("deathPenalty.test: ok");

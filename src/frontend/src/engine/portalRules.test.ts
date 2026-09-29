@@ -4,6 +4,7 @@ import { WORLD_GRID_SIZE } from "../data/gameConstants.ts";
 import { activeHostilesRemaining } from "./battleSetup.ts";
 import { isCellFree } from "./occupancy.ts";
 import {
+  completeRun,
   decideDungeonChainPortal,
   dungeonChainCompletionBonus,
   dungeonDokaMultiplierFor,
@@ -143,6 +144,49 @@ describe("resetRunState", () => {
     assert.equal(depth, 0);
     assert.equal(maxDepth, 0);
     assert.equal(dungeonDokaMultiplierFor(active, depth), 1);
+  });
+});
+
+describe("completeRun", () => {
+  it("does not abortBossRush so persistRoomClear can still complete(9)", () => {
+    let aborted = false;
+    let localEnded = false;
+    const refs = {
+      bossRushActiveRef: { current: true },
+      dungeonChainActiveRef: { current: false },
+      dungeonChainDepthRef: { current: 0 },
+      dungeonChainMaxDepthRef: { current: 0 },
+      abortBossRush: async () => {
+        aborted = true;
+      },
+      endBossRushLocally: () => {
+        localEnded = true;
+      },
+    };
+    completeRun(refs);
+    assert.equal(refs.bossRushActiveRef.current, false);
+    assert.equal(localEnded, true);
+    assert.equal(
+      aborted,
+      false,
+      "resetBossRush before complete(9) drops master complete / run count",
+    );
+  });
+
+  it("still zeros dungeon-chain flags so sanctuary generates as free exploration", () => {
+    const refs = {
+      bossRushActiveRef: { current: true },
+      dungeonChainActiveRef: { current: true },
+      dungeonChainDepthRef: { current: 4 },
+      dungeonChainMaxDepthRef: { current: 4 },
+      abortBossRush: async () => {
+        throw new Error("completeRun must not abortBossRush");
+      },
+    };
+    completeRun(refs);
+    assert.equal(refs.dungeonChainActiveRef.current, false);
+    assert.equal(refs.dungeonChainDepthRef.current, 0);
+    assert.equal(refs.dungeonChainMaxDepthRef.current, 0);
   });
 });
 

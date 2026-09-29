@@ -66,6 +66,19 @@ export function shouldPersistAbsoluteDokaSpend(spend: number): boolean {
   return Math.max(0, toNat(spend, 0)) > 0;
 }
 
+/**
+ * Recap heal / shop still skip a 0-spend snapshot (stale-prop double-click).
+ * Potion use restores HP with no Doka debit — that HP must still join the
+ * persist lock or a queued heal's min(live, clickHp) write wipes it.
+ */
+export function shouldEnqueueAbsoluteProgressWrite(args: {
+  spend: number;
+  allowZeroSpendHp?: boolean;
+}): boolean {
+  if (shouldPersistAbsoluteDokaSpend(args.spend)) return true;
+  return args.allowZeroSpendHp === true;
+}
+
 /** Never mint Doka through saveBattleStats. */
 
 /** Alias: never-raise clamp for Doka absolute writes (same as clampAbsoluteProgressWrite). */

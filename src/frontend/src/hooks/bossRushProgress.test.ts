@@ -183,6 +183,38 @@ describe("persistBossRushRoomClear", () => {
     assert.equal(currentRoom, 0);
   });
 
+  it("drops master complete when abortBossRush reset races ahead of complete(9)", async () => {
+    let currentRoom = 9;
+    let master = false;
+    let runs = 0;
+    const actor = {
+      resetBossRush: async () => {
+        currentRoom = 0;
+      },
+      completeBossRushRoom: async (_slot: bigint, roomIndex: bigint) => {
+        const ri = Number(roomIndex);
+        if (ri !== currentRoom && ri + 1 !== currentRoom) {
+          return { err: "roomIndex must match current Boss Rush room" };
+        }
+        if (ri === 9 && currentRoom === 9) {
+          master = true;
+          runs += 1;
+          currentRoom = 0;
+        }
+        return { ok: null };
+      },
+    };
+    await actor.resetBossRush();
+    await persistBossRushRoomClear(actor, 1, 9);
+    assert.equal(
+      master,
+      false,
+      "completeRun used to abortBossRush before persistRoomClear",
+    );
+    assert.equal(runs, 0);
+    assert.equal(currentRoom, 0);
+  });
+
   it("re-resets currentRoom when death aborts the run during the persist", async () => {
     const calls: string[] = [];
     let aborted = false;
