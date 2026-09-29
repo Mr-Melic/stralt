@@ -104,6 +104,7 @@ import {
   battleWalkMpCost,
   canAffordBattleWalk,
 } from "../engine/battleWalkMp";
+import { stepCameraFollow } from "../engine/cameraFollow";
 import {
   applyDamageToEnemy as applyDamageToEnemyHelper,
   getAoETargets as getAoETargetsHelper,
@@ -637,12 +638,13 @@ export interface CharacterStats {
 
 const _CAMERA_DEADZONE = 30;
 const _CAMERA_MAX_OFFSET = 150;
-const CAMERA_SMOOTHING_FACTOR = 0.85;
 
 const _ENEMY_MOVEMENT_RANGE = 3; // Maximum tiles an enemy can move in one action
 const _ENEMY_MOVEMENT_SPEED = 800; // Duration of enemy movement animation
 
-// Adaptive camera follow speed imported from ../engine/worldHelpers
+// Adaptive camera follow step: engine/cameraFollow.ts. Speed stays in
+// worldHelpers (getCameraFollowSpeed). WX still owns rest/Death Realm snap,
+// desktop lock, shouldFollowPlayer, and the RAF 0.18 lerp.
 
 // ── Tier-based enemy spawn system ─────────────────────────────────────────
 // Tiers are `tierSize` levels wide. Player tier = floor((level-1)/tierSize).
@@ -5903,51 +5905,19 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
       playerPositionRef.current.x,
       playerPositionRef.current.y,
     );
-    const centerX = canvasSize.width / 2;
-    const centerY = canvasSize.height / 2;
-    const cam = cameraRef.current;
-    const desiredOffsetX = centerX - playerScreenPos.x + cam.x;
-    const desiredOffsetY = centerY - playerScreenPos.y + cam.y;
-    const distanceFromCenter = Math.sqrt(
-      (playerScreenPos.x - centerX) ** 2 + (playerScreenPos.y - centerY) ** 2,
-    );
-    if (distanceFromCenter > effectiveDeadzone) {
-      const adaptiveCameraSpeed = getCameraFollowSpeed(
-        canvasSize.width,
-        isMobile,
-      );
-      const currentVelocity = cameraVelocityRef.current;
-      const smoothedTargetX =
-        cam.x + (desiredOffsetX - cam.x) * adaptiveCameraSpeed;
-      const smoothedTargetY =
-        cam.y + (desiredOffsetY - cam.y) * adaptiveCameraSpeed;
-      currentVelocity.x =
-        currentVelocity.x * CAMERA_SMOOTHING_FACTOR +
-        (smoothedTargetX - cam.x) * (1 - CAMERA_SMOOTHING_FACTOR);
-      currentVelocity.y =
-        currentVelocity.y * CAMERA_SMOOTHING_FACTOR +
-        (smoothedTargetY - cam.y) * (1 - CAMERA_SMOOTHING_FACTOR);
-      const maxVelocity =
-        canvasSize.width < 768 ? 8 : canvasSize.width < 1200 ? 6 : 4;
-      currentVelocity.x = Math.max(
-        -maxVelocity,
-        Math.min(maxVelocity, currentVelocity.x),
-      );
-      currentVelocity.y = Math.max(
-        -maxVelocity,
-        Math.min(maxVelocity, currentVelocity.y),
-      );
-      const newOffsetX = cam.x + currentVelocity.x;
-      const newOffsetY = cam.y + currentVelocity.y;
-      const clampedOffsetX = Math.max(
-        -effectiveMaxOffset,
-        Math.min(effectiveMaxOffset, newOffsetX),
-      );
-      const clampedOffsetY = Math.max(
-        -effectiveMaxOffset,
-        Math.min(effectiveMaxOffset, newOffsetY),
-      );
-      targetCameraRef.current = { x: clampedOffsetX, y: clampedOffsetY };
+    const nextCam = stepCameraFollow({
+      camera: cameraRef.current,
+      velocity: cameraVelocityRef.current,
+      playerScreen: playerScreenPos,
+      canvasWidth: canvasSize.width,
+      canvasHeight: canvasSize.height,
+      deadzone: effectiveDeadzone,
+      maxOffset: effectiveMaxOffset,
+      followSpeed: getCameraFollowSpeed(canvasSize.width, isMobile),
+    });
+    cameraVelocityRef.current = nextCam.velocity;
+    if (nextCam.target) {
+      targetCameraRef.current = nextCam.target;
     }
   }, [
     isDesktop,
