@@ -8,6 +8,7 @@ import Time "mo:core/Time";
 import AdminTypes "types/admin";
 import AdminLib "lib/admin";
 import AdminGuard "lib/adminGuard";
+import SecurityAudit "lib/securityAudit";
 import Array "mo:core/Array";
 import Nat "mo:core/Nat";
 import Int "mo:core/Int";
@@ -77,6 +78,10 @@ actor {
         // here so a raw client cannot store an unbounded display name.
         if (profile.name.size() > 50) {
             return;
+        };
+        switch (SecurityAudit.displayNameRejected(profile.name)) {
+            case (?_) { return };
+            case null {};
         };
         if (profile.uiLayout.size() > 65_536) {
             return;
@@ -309,6 +314,10 @@ actor {
         if (character.name.size() == 0 or character.name.size() > 20) {
             return #err("Name must be 1-20 characters");
         };
+        switch (SecurityAudit.displayNameRejected(character.name)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
         if (not _isKnownPieceType(character.pieceType)) {
             return #err("Invalid pieceType");
         };
@@ -388,6 +397,10 @@ actor {
         };
         if (character.name.size() == 0 or character.name.size() > 20) {
             return #err("Name must be 1-20 characters");
+        };
+        switch (SecurityAudit.displayNameRejected(character.name)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
         if (not _isKnownPieceType(character.pieceType)) {
             return #err("Invalid pieceType");
@@ -739,10 +752,10 @@ actor {
         };
     };
 
-    /// Shared guards for assignUserRole and the Candid-compatible
-    /// assignCallerUserRole replacement. Failure: MixinAuthorization.assignRole
-    /// allowed self-demotion and #guest, which permanently locks out the
-    /// last admin because adminAssigned stays true.
+    /// Shared guards for assignUserRole. MixinAuthorization.assignCallerUserRole
+    /// cannot be redeclared (Caffeine lint). Failure: the mixin allowed
+    /// self-demotion and #guest, which permanently locks out the last admin
+    /// because adminAssigned stays true.
     func _roleAssignRejected(
         caller : Principal,
         target : Principal,
@@ -1012,6 +1025,10 @@ actor {
                     return #err("Spell is retired");
                 };
             };
+        };
+        switch (SecurityAudit.spellLevelCapRejected(currentLevel)) {
+            case (?e) { return #err(e) };
+            case null {};
         };
 
         let baseCost = levelUpConfig.spellLevelingBaseCost;
@@ -1851,6 +1868,10 @@ actor {
         if (newName.size() == 0 or newName.size() > 20) {
             return #err("Name must be 1-20 characters");
         };
+        switch (SecurityAudit.displayNameRejected(newName)) {
+            case (?e) { return #err(e) };
+            case null {};
+        };
 
         let existingSlots = switch (characterSlots.get(caller)) {
             case null { return #err("No characters found") };
@@ -2617,6 +2638,10 @@ actor {
         if (text.size() == 0 or text.size() > 200) {
             return;
         };
+        switch (SecurityAudit.chatTextRejected(text)) {
+            case (?_) { return };
+            case null {};
+        };
         let nowChat = Time.now();
         let chatKey = caller.toText();
         switch (chatLastSent.get(chatKey)) {
@@ -2817,6 +2842,21 @@ actor {
         };
         if (slot < 1 or slot > 3) { return #err("Invalid slot") };
 
+        let slotsForBuff = switch (characterSlots.get(caller)) {
+            case null { return #err("No characters found") };
+            case (?s) { s };
+        };
+        let occupiedBuff = switch (slot) {
+            case 1 { slotsForBuff.slot1 };
+            case 2 { slotsForBuff.slot2 };
+            case 3 { slotsForBuff.slot3 };
+            case _ { null };
+        };
+        switch (occupiedBuff) {
+            case null { return #err("Slot " # slot.toText() # " is empty") };
+            case (?_) {};
+        };
+
         let cost = switch (_buffItemCost(itemId)) {
             case null { return #err("Unknown item: " # itemId) };
             case (?c) { c };
@@ -2830,9 +2870,6 @@ actor {
             return #err("Not enough Doka. Need " # cost.toText() # ", have " # callerDoka.toText());
         };
 
-        // Deduct Doka.
-        dokaBalances.add(caller, Nat.sub(callerDoka, cost));
-
         // Update inventory.
         let key = _buffKey(caller, slot);
         let existing : AdminTypes.BuffInventory = switch (buffInventories.get(key)) {
@@ -2843,10 +2880,24 @@ actor {
         let existingEntry = existing.find(func(item : AdminTypes.BuffInventoryItem) : Bool {
             item.itemId == itemId
         });
+        // Reject a full stack before debiting. Returning #err after
+        // dokaBalances.add would burn the cost.
+        switch (existingEntry) {
+            case (?item) {
+                switch (SecurityAudit.buffStackRejected(item.quantity)) {
+                    case (?e) { return #err(e) };
+                    case null {};
+                };
+            };
+            case null {};
+        };
+
+        dokaBalances.add(caller, Nat.sub(callerDoka, cost));
+
         let newInv : AdminTypes.BuffInventory = switch (existingEntry) {
-            case (?_) {
-                existing.map(func(item) {
-                    if (item.itemId == itemId) { { item with quantity = item.quantity + 1 } } else { item }
+            case (?item) {
+                existing.map(func(row) {
+                    if (row.itemId == itemId) { { row with quantity = item.quantity + 1 } } else { row }
                 })
             };
             case null {
