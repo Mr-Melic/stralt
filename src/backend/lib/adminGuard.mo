@@ -23,6 +23,23 @@ module {
             or id == "reflect_barrier" or id == "thunder_clap" or id == "void_collapse"
     };
 
+    /// Failure: adminSetSpellConfig(usableByPlayer=false) on a built-in, then
+    /// upgradeSpell, treats innate starters as unowned. createCharacter /
+    /// _starterCharacter persist empty spellLevelKeys; official play still
+    /// shows starters from frontend baseSpells. Retirement must not block
+    /// first upgrade of an innate id. Catalog extras the player never owned
+    /// stay rejected.
+    public func retiredSpellUpgradeRejected(
+        usableByPlayer : Bool,
+        alreadyOwned : Bool,
+        spellId : Text,
+    ) : ?Text {
+        if (usableByPlayer) { return null };
+        if (alreadyOwned) { return null };
+        if (isBuiltInSpellId(spellId)) { return null };
+        ?"Spell is retired"
+    };
+
     func nan(x : Float) : Bool { x != x };
 
     func finiteInRange(lbl : Text, x : Float, lo : Float, hi : Float) : ?Text {
