@@ -288,6 +288,10 @@ Do not pass one into an API expecting the other.
 
 `setSpellBarOrder` drops ids not present in `spellLevelKeys`. It does not return an error for unknown ids. Max 8.
 
+### Starfield / decorative loops keep running in-world or in a hidden tab
+
+The world canvas fill is opaque `#0a0c18`. Root starfield must `planStarfieldLoop` → `pause_release_gpu` while WorldExploration is mounted (`setStarfieldPaused(true)` on the game RAF effect; `false` on cleanup). Tab-hidden landing/select uses `pause_keep_buffer`. Decorative landing logo and character-select drips use `shouldRunDecorativeCanvasLoop` (`document.hidden` → skip). Do not change the world game RAF to “fix” this, and do not keep the starfield RAF under the play canvas.
+
 ### Debug overlay missing
 
 On the world stage, press **Shift+D** (ignored while typing in an input). The Debug channel is hidden from the default channel list but the panel is always mounted. Canvas crash UI (`CanvasErrorBoundary`) has its own “Copy Debug Report” at z-index 99999.

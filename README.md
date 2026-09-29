@@ -12,6 +12,8 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/backend/lib/adminGuard.mo` | Admin input / URL / retirement / rollback guards (authoritative) |
 | `src/backend/migrations/` | Stable-memory chain: `20260801` genesis, `20260803_185500` name-only, `20260827` drop-transients, `20260831` summon + rollback (frozen, the 2026-08-31 deployed tail, no GameKey), `20260901` GameKey maps (frozen, `OldActor = {}`). `snapshots/` = recorded `.most` baselines |
 | `src/backend/types/` | Shared Motoko types (`common.mo` combat, `admin.mo` config + summon fields) |
+| `src/frontend/src/engine/starfieldActivity.ts` | Root starfield RAF plan (`planStarfieldLoop`): `pause_release_gpu` while WorldExploration is mounted |
+| `src/frontend/src/engine/canvasLoopActivity.ts` | Decorative landing/select loops — skip while `document.hidden`. Distinct from the world game RAF |
 | `src/frontend/src/` | React + Vite client |
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit; can lag Motoko public types |
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
@@ -118,3 +120,4 @@ This container typically has no `dfx`. Use `caffeine check --fix` / `caffeine bu
 - Spell targeting uses explicit `SpellConfig` metadata (`targetType`, range, LoS flags). Never name-based heuristics. Admin catalog spells carry explicit summon fields — do not infer from the name.
 - Admin and debug tools stay gated. Do not ship them to normal players as first-class UI.
 - Recap UI mounts once, at app root (`App.tsx` → `PostBattleRecap`).
+- Decorative landing/select loops (`canvasLoopActivity.ts`) skip while the tab is hidden. Root starfield (`starfieldActivity.ts` `planStarfieldLoop`) **releases GPU** while WorldExploration is mounted (opaque `#0a0c18` fill). Do not keep that RAF under the world canvas, and do not change the world game RAF to “fix” it.

@@ -447,6 +447,20 @@ Player Mirror uses the token `"player"` (`activatePlayerMirror` / `consumePlayer
 - Feats: `useGetPlayerAchievements` must pass `identity.getPrincipal()`. Omitting the Principal throws at Candid encode (caught → `[]`) or fails `caller == player` and returns `[]` — every feat stays locked and Claim never renders. Double-click: `shouldBeginAchievementClaim` (in-flight set). A second click that hits "already claimed" after the first `#ok` must **not** rollback (`shouldRollbackClaimFailure`).
 - Debug overlay lives in `ChatPanel` (always mounted on the world stage). **Shift+D** opens the Debug channel. Ring buffer (`debug/debugLogger.ts`) runs in production; console output is dev-only. Click-trace / geometry overlay are `import.meta.env.DEV`.
 
+### Decorative loops vs world RAF
+
+Landing logo and character-select blood drips use `shouldRunDecorativeCanvasLoop` (`engine/canvasLoopActivity.ts`): skip 2D work while `document.hidden`. That helper is **not** the world game RAF — combat timing stays on WorldExploration’s loop and must not change to “fix” landing perf.
+
+Root starfield (`engine/starfieldActivity.ts` `planStarfieldLoop`):
+
+| Plan | When |
+| :--- | :--- |
+| `pause_release_gpu` | WorldExploration mounted (`setStarfieldPaused(true)`). Game canvas fill is opaque `#0a0c18` — the starfield is invisible then, but previously kept a full 2D RAF + star list |
+| `pause_keep_buffer` | Tab hidden on landing/select — stop RAF, keep the star list so resume is one frame |
+| `run` | Landing/select, tab visible |
+
+Do not re-enable the starfield RAF under the play canvas unless that fill is made transparent on purpose.
+
 ## Migrations
 
 `mops.toml` `[canisters.backend.migrations] chain = "src/backend/migrations"`, `check-limit = 5`. Caffeine builds the backend with exactly `mops build` (`src/backend/caffeine.toml` `[build]`), so this chain is what the replica runs. Baseline `.old/src/backend/dist/backend.most` (directory gitignored; file force-tracked) is **Caffeine-owned**: the byte-identical `.most` of the last build Caffeine deployed successfully — the 2026-08-31 import (PR #181 merge `f8aa05e`), latest applied `20260831_000000`, 42 stables, **no GameKey**. Caffeine compares every import against its own copy of that file (PR #311 committed a hand-made `.old` with GameKey and Caffeine still failed M0263), so the repo copy exists only to make local `mops check` behave like Caffeine's. Other recorded shapes: `src/backend/migrations/snapshots/deployed/*.most`; documented non-upgradable shapes: `snapshots/unsupported/` (PR #258 GameKey-on-`20260831`, Caffeine #340 legacy); fresh import: `snapshots/empty-canister.most` (see `snapshots/README.md`). `python3 scripts/check-eop-stables.py` freezes NewActor field lists through 20260901, requires every recorded tail name to remain a chain file, rejects a blank or unrecorded `.old`, and applies the runtime upgrade rule to every snapshot (`--verdict <file.most>`).
