@@ -57,7 +57,9 @@ export function pickEnemyLevelFromTiers(playerLevel: number): number {
   const playerTier = Math.floor((playerLevel - 1) / ts);
   const maxTier = Math.floor(999 / ts); // cap for reasonable range
 
-  // Level variance roll — 15% default chance to shift tier ±1 (admin-configurable)
+  // Level variance roll — 15% default chance to shift tier ±1.
+  // Optional engine-only field: Candid TierSpawnConfig and the Tiers tab do
+  // not persist it. Missing values default here. Not a player level cap.
   const _lvlVarChance = (cfg.levelVarianceChance ?? 15) / 100;
   const _lvlVarRoll = Math.random();
   let _tierAdj = 0;
