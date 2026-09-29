@@ -10,8 +10,11 @@
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <!-- PERF-2026-09-29-133: preconnect the CSS host (was only gstatic) and
+         drop unused Share Tech Mono. JetBrains Mono is self-hosted. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&amp;family=Saira:wght@300;400;500;600;700&amp;family=Share+Tech+Mono&amp;display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700;800&amp;family=Saira:wght@300;400;500;600;700&amp;display=swap" />
 </head>
   <body>
     <div id="root"></div>
