@@ -10,6 +10,7 @@ import {
   BOSS_RUSH_ROOM0_CATALOG_DOKA,
   BOSS_RUSH_ROOM9_CATALOG_DOKA,
   CATALOG_BOSS_HP_SAMPLE,
+  DOKA_HEAL_HP_PER_DOKA,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
   KIT_FROST_DAMAGE,
@@ -22,6 +23,8 @@ import {
   SUMMON_BOMBER_HP_SCALE,
   SUMMON_GUARDIAN_HP_SCALE,
   SUMMON_HUNTER_HP_SCALE,
+  WORLD_BOSS_LEVEL_OFFSET,
+  WORLD_BOSS_SPAWN_RES_CLAMP,
   bossRushCombatHp,
   bossRushEnemyLevel,
   bossRushRoomDoka,
@@ -30,6 +33,7 @@ import {
   crushOverKitRatio,
   damageAfterPlayerResPasses,
   deathDokaLost,
+  dokaHealCostToFillFrom,
   effectiveSpellRange,
   fallbackCrushRaw,
   fallbackCrushRawEnraged,
@@ -54,7 +58,10 @@ import {
   firstPlayerLevelBossRushRoomDokaExceedsCatalog,
   firstPlayerLevelBossRushRoomDokaHitsClamp,
   firstPlayerLevelBossRushRoomXpHitsClamp,
+  firstPlayerLevelDokaHealFromOneExceeds,
+  firstPlayerLevelPotionBeatsFlatDokaHeal,
   firstPlayerLevelSurvivesCrushRecv,
+  firstPlayerLevelWorldBossStatCanHit100,
   firstSpellLevelCostExceeds,
   formulaAp,
   formulaMp,
@@ -72,12 +79,15 @@ import {
   playerFrostCastsPerTurn,
   playerFrostRaw,
   playerFrostTurnsToKill,
+  playerFrostTurnsToKillHp,
   runLongHorizonSim,
   spawnPlaceholderDamage,
   spellFailChance,
   spellUpgradeCostBigInt,
   summonerChance,
   victoryHpFloor,
+  worldBossChip1FrostTurns,
+  worldBossEnemyLevel,
   xpNeedExactAsNumber,
 } from "./longHorizonSim.ts";
 import { applyXpDelta, xpForNextLevel } from "./xpCurve.ts";
@@ -314,5 +324,37 @@ assert.equal(firstLevelFormulaMpAtLeast(30), 650);
 assert.equal(report.battleMpVsGrid.gridSize, 16);
 assert.equal(report.battleMpVsGrid.firstLevelCoversCenterToCorner, 300);
 assert.equal(report.battleMpVsGrid.mpAt100000, 4004);
+
+assert.equal(WORLD_BOSS_LEVEL_OFFSET, 5);
+assert.equal(WORLD_BOSS_SPAWN_RES_CLAMP, 50);
+assert.equal(worldBossEnemyLevel(1), 6);
+assert.equal(worldBossEnemyLevel(73), 78);
+assert.equal(firstPlayerLevelWorldBossStatCanHit100("rook", "res"), 73);
+assert.equal(firstPlayerLevelWorldBossStatCanHit100("bishop", "chc"), 110);
+assert.equal(firstLevelResCanHit100("rook"), 78);
+assert.equal(playerFrostTurnsToKillHp(CATALOG_BOSS_HP_SAMPLE, 1), 9);
+assert.equal(worldBossChip1FrostTurns(73), 117);
+assert.equal(worldBossChip1FrostTurns(100_000), 1);
+assert.equal(report.catalogWorldBossStatsScale.firstPlayerLevelRookRes100, 73);
+assert.equal(
+  report.catalogWorldBossStatsScale.battleStartOverwritesCatalogRes,
+  true,
+);
+
+assert.equal(DOKA_HEAL_HP_PER_DOKA, 3);
+assert.equal(dokaHealCostToFillFrom(1, 1), 33);
+assert.equal(firstPlayerLevelPotionBeatsFlatDokaHeal(), 82);
+assert.equal(
+  firstPlayerLevelDokaHealFromOneExceeds(APPLY_REWARDS_MAX_DOKA_DELTA),
+  59982,
+);
+assert.equal(
+  report.dokaHealVsLinearHp.firstPlayerLevelPotionBeatsFlat50Doka,
+  82,
+);
+assert.equal(
+  report.dokaHealVsLinearHp.firstPlayerLevelFromOneExceedsCombatClamp,
+  59982,
+);
 
 console.log("longHorizonSim.test: ok");

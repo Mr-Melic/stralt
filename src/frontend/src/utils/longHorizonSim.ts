@@ -789,6 +789,97 @@ export function kitForPieceName(pieceName: string, zone: unknown): string[] {
 }
 
 /**
+ * Catalog world-boss spawn (`WorldExploration.tsx` 6537): `level: player + 5`.
+ * Combat HP uses `boss_` + `baseStats.hp` (~350). Battle-start still runs
+ * `computeEnemyStats(level, pieceType)` and overwrites catalog RES/SR/CHC/SP
+ * (`11872–11903`). Spawn `Math.min(50, baseStats.res)` is thrown away.
+ */
+export const WORLD_BOSS_LEVEL_OFFSET = 5;
+/** Spawn clamp (`WorldExploration.tsx` 6559). Not the combat RES. */
+export const WORLD_BOSS_SPAWN_RES_CLAMP = 50;
+/** Shop Doka-to-HP (`itemShop.ts` `paidHealFromLiveWallet`: `floor(doka * 3)`). */
+export const DOKA_HEAL_HP_PER_DOKA = 3;
+
+export function worldBossEnemyLevel(playerLevel: number): number {
+  return Math.max(
+    1,
+    Math.floor(Number(playerLevel) || 1) + WORLD_BOSS_LEVEL_OFFSET,
+  );
+}
+
+export function firstPlayerLevelWorldBossStatCanHit100(
+  piece: ChessPieceType,
+  stat: "res" | "sr" | "chc",
+): number | null {
+  for (let level = 1; level <= 400; level++) {
+    const bounds = enemyStatBounds(worldBossEnemyLevel(level), piece);
+    if (bounds[stat].max >= 100) return level;
+  }
+  return null;
+}
+
+/** Optimistic Frost TTK vs a fixed HP pool (catalog world-boss HP, no RES). */
+export function playerFrostTurnsToKillHp(
+  hp: number,
+  playerLevel: number,
+  spellUpgradeLevel = 0,
+  ap = formulaAp(playerLevel),
+): number {
+  const pool = Math.max(1, Math.floor(Number(hp) || 0));
+  const dpt = playerFrostDamagePerTurn(playerLevel, spellUpgradeLevel, ap);
+  if (dpt <= 0) return Number.POSITIVE_INFINITY;
+  return Math.ceil(pool / dpt);
+}
+
+/**
+ * RES 100 reduces every hit to the chip-1 floor (`computeDamage` max(1, …)).
+ * TTK is then catalog HP / Frost casts per turn.
+ */
+export function worldBossChip1FrostTurns(
+  playerLevel: number,
+  catalogHp = CATALOG_BOSS_HP_SAMPLE,
+): number {
+  const casts = playerFrostCastsPerTurn(formulaAp(playerLevel));
+  if (casts <= 0) return Number.POSITIVE_INFINITY;
+  return Math.ceil(Math.max(1, Math.floor(Number(catalogHp) || 0)) / casts);
+}
+
+export function dokaHealCostToFillFrom(
+  currentHp: number,
+  level: number,
+): number {
+  const max = linearPlayerMaxHp(level);
+  const missing = Math.max(
+    0,
+    max - Math.max(0, Math.floor(Number(currentHp) || 0)),
+  );
+  if (missing <= 0) return 0;
+  return Math.ceil(missing / DOKA_HEAL_HP_PER_DOKA);
+}
+
+export function firstPlayerLevelDokaHealFromOneExceeds(
+  limit: number,
+): number | null {
+  const cap = Math.max(0, Math.floor(Number(limit) || 0));
+  for (let level = 1; level <= 200_000; level++) {
+    if (dokaHealCostToFillFrom(1, level) > cap) return level;
+  }
+  return null;
+}
+
+/**
+ * First level where a 50-Doka 30% potion restores more HP than spending
+ * those same 50 Doka on the 3 HP/Doka shop converter.
+ */
+export function firstPlayerLevelPotionBeatsFlatDokaHeal(): number | null {
+  const flatHp = DOKA_HEAL_HP_PER_DOKA * HEALTH_POTION_COST;
+  for (let level = 1; level <= 200_000; level++) {
+    if (healthPotionHpRestored(level) > flatHp) return level;
+  }
+  return null;
+}
+
+/**
  * Unused exponential `getPlayerBaseStats` HP becomes IEEE Inf (JSON null)
  * once `100 * 1.05^(L-1)` overflows Number.
  */
@@ -1163,7 +1254,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-28T00:20:00.000Z",
+    generatedAt: "2026-09-29T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -1654,6 +1745,52 @@ export function runLongHorizonSim() {
       firstLevelCoversDiameter: firstLevelFormulaMpAtLeast(
         BATTLE_GRID_MANHATTAN_DIAMETER,
       ),
+    },
+    catalogWorldBossStatsScale: {
+      levelOffset: WORLD_BOSS_LEVEL_OFFSET,
+      catalogHpSample: CATALOG_BOSS_HP_SAMPLE,
+      spawnResClamp: WORLD_BOSS_SPAWN_RES_CLAMP,
+      battleStartOverwritesCatalogRes: true,
+      combatHpUsesCatalogBaseStats: true,
+      paleArchbishopPiece: "bishop",
+      rookTypedPiece: "rook",
+      firstPlayerLevelRookRes100: firstPlayerLevelWorldBossStatCanHit100(
+        "rook",
+        "res",
+      ),
+      firstPlayerLevelBishopChc100: firstPlayerLevelWorldBossStatCanHit100(
+        "bishop",
+        "chc",
+      ),
+      firstPlayerLevelBishopRes100: firstPlayerLevelWorldBossStatCanHit100(
+        "bishop",
+        "res",
+      ),
+      optimisticFrostTurnsAt1: playerFrostTurnsToKillHp(
+        CATALOG_BOSS_HP_SAMPLE,
+        1,
+      ),
+      optimisticFrostTurnsAt73: playerFrostTurnsToKillHp(
+        CATALOG_BOSS_HP_SAMPLE,
+        73,
+      ),
+      chip1FrostTurnsAt73: worldBossChip1FrostTurns(73),
+      chip1FrostTurnsAt1000: worldBossChip1FrostTurns(1000),
+      chip1FrostTurnsAt10000: worldBossChip1FrostTurns(10_000),
+      chip1FrostTurnsAt100000: worldBossChip1FrostTurns(100_000),
+    },
+    dokaHealVsLinearHp: {
+      hpPerDoka: DOKA_HEAL_HP_PER_DOKA,
+      costFromOneAt1: dokaHealCostToFillFrom(1, 1),
+      costFromOneAt1000: dokaHealCostToFillFrom(1, 1000),
+      costFromOneAt50000: dokaHealCostToFillFrom(1, 50_000),
+      costFromOneAt100000: dokaHealCostToFillFrom(1, 100_000),
+      firstPlayerLevelFromOneExceedsCombatClamp:
+        firstPlayerLevelDokaHealFromOneExceeds(APPLY_REWARDS_MAX_DOKA_DELTA),
+      firstPlayerLevelPotionBeatsFlat50Doka:
+        firstPlayerLevelPotionBeatsFlatDokaHeal(),
+      potionHpAt1: healthPotionHpRestored(1),
+      flat50DokaHp: DOKA_HEAL_HP_PER_DOKA * HEALTH_POTION_COST,
     },
   };
 }
