@@ -13,6 +13,7 @@ import {
   readRenameCharacterResult,
   shouldCommitRenameDokaSpend,
   shouldDebitRenameDoka,
+  shouldNoteUnseededRenameCredit,
   shouldStartRename,
 } from "./renameCharacter.ts";
 
@@ -159,6 +160,31 @@ describe("liveDokaAfterRename / committedDokaAfterRename", () => {
     ) {
       lock.commit({ doka: committedDokaAfterRename(lock.snapshot().doka) });
     }
+    assert.equal(lock.isWalletSeeded(), false);
+    assert.equal(lock.snapshot().doka, 0);
+  });
+
+  it("blocks idle hydrate after an unseeded rename #ok so death cannot write the uncut wallet", () => {
+    const parsed = readRenameCharacterResult({ __kind__: "ok", ok: null });
+    assert.equal(shouldNoteUnseededRenameCredit(true, parsed), false);
+    assert.equal(shouldNoteUnseededRenameCredit(false, parsed), true);
+    assert.equal(
+      shouldNoteUnseededRenameCredit(false, { err: "Name already in use" }),
+      false,
+    );
+
+    const lock = createProgressPersist({ doka: 0, xp: 0, level: 1 });
+    assert.equal(lock.isWalletSeeded(), false);
+    if (shouldNoteUnseededRenameCredit(lock.isWalletSeeded(), parsed)) {
+      lock.noteUnseededCredit();
+    }
+    assert.equal(
+      lock.hydrateWhenIdle(
+        { doka: 1000, xp: 0, level: 1 },
+        { walletReady: true },
+      ),
+      true,
+    );
     assert.equal(lock.isWalletSeeded(), false);
     assert.equal(lock.snapshot().doka, 0);
   });

@@ -350,6 +350,14 @@ export function useBossRush(
     }
   }, [actor, characterSlot]);
 
+  /**
+   * Successful final-room complete. Local HUD only. Calling abortBossRush
+   * here raced resetBossRush ahead of persistRoomClear's complete(9).
+   */
+  const endBossRushLocally = useCallback(() => {
+    setBossRushState(INITIAL_STATE);
+  }, []);
+
   const getCurrentRoom = useCallback((): BossRushRoom | null => {
     if (!bossRushState.active) return null;
     return BOSS_RUSH_ROOMS[bossRushState.currentRoom] ?? null;
@@ -360,6 +368,7 @@ export function useBossRush(
     startBossRush,
     advanceBossRushRoom,
     abortBossRush,
+    endBossRushLocally,
     persistRoomClear,
     getCurrentRoom,
     BOSS_RUSH_ROOMS,

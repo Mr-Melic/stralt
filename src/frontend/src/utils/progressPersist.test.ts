@@ -11,6 +11,7 @@ import {
   resolveCommittedDokaForAbsoluteWrite,
   resolveHydratedXp,
   shouldCopyIdleWalletDoka,
+  shouldEnqueueAbsoluteProgressWrite,
   shouldPersistAbsoluteDokaSpend,
   shouldSkipAbsoluteDokaWrite,
   spendFromUiBalance,
@@ -66,6 +67,23 @@ describe("spend math", () => {
     assert.equal(shouldPersistAbsoluteDokaSpend(-4), false);
     assert.equal(shouldPersistAbsoluteDokaSpend(Number.NaN), false);
     assert.equal(shouldPersistAbsoluteDokaSpend(1), true);
+  });
+
+  it("enqueues a 0-spend HP snapshot for potion use, not a stale heal click", () => {
+    assert.equal(
+      shouldEnqueueAbsoluteProgressWrite({ spend: 0 }),
+      false,
+      "heal double-click spend 0 must still skip",
+    );
+    assert.equal(
+      shouldEnqueueAbsoluteProgressWrite({ spend: 0, allowZeroSpendHp: true }),
+      true,
+      "potion HP must join the persist lock",
+    );
+    assert.equal(
+      shouldEnqueueAbsoluteProgressWrite({ spend: 10, allowZeroSpendHp: true }),
+      true,
+    );
   });
 });
 
