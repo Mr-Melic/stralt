@@ -1005,11 +1005,13 @@ actor {
 
         // Failure: upgradeSpell added any catalog id to spellLevelKeys.
         // A player who never owned a retired spell could acquire it by paying.
+        // Built-in ids are innate: empty spellLevelKeys is not "unowned".
         switch (spellConfigs.get(spellId)) {
             case null { return #err("Spell not found: " # spellId) };
             case (?cfg) {
-                if (not cfg.usableByPlayer and not found) {
-                    return #err("Spell is retired");
+                switch (AdminGuard.retiredSpellUpgradeRejected(cfg.usableByPlayer, found, spellId)) {
+                    case (?e) { return #err(e) };
+                    case null {};
                 };
             };
         };
