@@ -1,0 +1,76 @@
+# Mechanic interaction matrix — 2026-10-21
+
+**Auditor:** Mechanic Interaction Matrix Auditor  
+**HEAD:** `0f5363f` (unchanged since #332 / prior 09-21…09-29 memory runs)  
+**Gameplay code:** not modified.
+
+Hunt A: summons / range / MP / portals occupancy (001–003).  
+Hunt B: rewards / persistence / death / achievements / challenges / portals / dungeons / spell discovery (004–005).  
+Hunt C: live `resolvePlayerCast` damage/heal consume (006–009).  
+Skip list honored (08-31 / 09-01 / 09-02 / 09-21…09-29 + prompt ALREADY FILED + in-flight #443/#491/#536/#577/#606/#629/#652/#714/#728/#754/#763/#765/#790/#800/#803).
+
+## New ACTION_IDs
+
+| ID | Pair | Severity |
+| :--- | :--- | :--- |
+| [001](./ACTION_IDS_MIMA_2026-10-21.md) | Summon kit select × walk greens / missing cast ring | P1 |
+| [002](./ACTION_IDS_MIMA_2026-10-21.md) | Summon-control hover MP × player origin/wallet | P1 |
+| [003](./ACTION_IDS_MIMA_2026-10-21.md) | Controlled-summon unseal slide × green click / MP debit | P1 |
+| [004](./ACTION_IDS_MIMA_2026-10-21.md) | Boss Rush room-clear applyRewards × threshold feats | P1 |
+| [005](./ACTION_IDS_MIMA_2026-10-21.md) | explore_25_maps × portal mapsVisited++ effect deps | P2 |
+| [006](./ACTION_IDS_MIMA_2026-10-21.md) | Crit ×2 + spell-upgrade scale applied twice on HP commit | P0 |
+| [007](./ACTION_IDS_MIMA_2026-10-21.md) | Mark ×2 consumed before applyDamageToEnemy recalc | P1 |
+| [008](./ACTION_IDS_MIMA_2026-10-21.md) | Spell Power documented for heal; player Blood Mend skips it | P2 |
+| [009](./ACTION_IDS_MIMA_2026-10-21.md) | Sacrifice skips Mirror Field / Windstorm / Blood Moon / SP / SR / crit | P1 |
+
+## Hunt verdicts (no new file)
+
+| Pair | Result |
+| :--- | :--- |
+| Blink / Swap landing × hazards | Already 08-31-001 / #754 |
+| Timestep × DoT / lava / status / challenge AP | No new hole; Surge floor = 09-25-001 |
+| Enemy summon × portals / hazards / victory leftover | Closed on this HEAD |
+| Rest-exit × summons leftover | Closed (`inBattleRef` portal gate + roster replace) |
+| Boss phase × live summon HP | Closed (boss/illusion only) |
+| LoS through allied summons | No unit opacity for anyone — not a consume asymmetry |
+| Range/LoS enemy vs player policy | Documented (`playerSpellRequiresLos` vs `enemySpellRequiresLos`) |
+| Push/pull | Unwired REPORT_ONLY — not re-filed |
+| Challenge AP from summon-control | Skipped per product note |
+
+## Hunt B verdicts (rewards / persist — no extra file)
+
+| Pair | Result |
+| :--- | :--- |
+| Spell discovery unlock × death / reload | No live observe path — do not invent |
+| saveKillCount 64 × killCount achievements | No killCount conditions; UI never calls saveKillCount (SDEG) |
+| Challenge applyRewards × unpaid death | 09-26-004 |
+| Flee × rewards after last hostile | In-flight #629 |
+| Boss Rush complete(9) × reset | In-flight #803 / #536 |
+| Challenge Doka missing on victory recap | In-flight #491 |
+| One-shot Doka × reload / remount keep wipe | Intentional keep; remount #800 |
+| Shrine covenant × combat readers | Incomplete content — not scored |
+| Spell observation × battle failure | No live observe path — do not invent |
+| Fury × Attack Nearest | Wired (shares 006/007 via resolvePlayerCast) |
+| Bounce × Mark / second RES | Not scored as a new ID; bounce still uses primary finalDmg |
+
+## Hunt C verdicts (damage / heal consume)
+
+| Pair | Result |
+| :--- | :--- |
+| Crit × computeDamage | **006** — preCrit already ×2, computeDamage ×2 again |
+| Spell upgrade × computeDamage | **006** — `1.03^N` applied before and inside computeDamage |
+| Mark × HP commit | **007** — first calculatePlayerDamage deletes; HP recalc unmarked |
+| SP × player heal | **008** — AI resolveSpellCast applies; Blood Mend does not |
+| Sacrifice × Mirror Field / Windstorm / Blood Moon / SP / SR / crit | **009** — dealDamage early-return (Mark/Fury remain 09-29) |
+
+## Missing tests (for new IDs)
+
+1. Kit select ⇒ cast-range highlight non-empty; walk greens suppressed.  
+2. Hover affordance under `controllingSummon` with player MP 0 / summon MP > 0.  
+3. Unique-bridge click ⇒ landed cell and MP debit agree (or cell not green).  
+4. Boss Rush room-clear crossing doka_1000 unlocks inside applyAndCommit; deathEpoch during persist still unlocks from persisted snapshot.  
+5. Portal-only mapsVisited 24→25 with stable dokaBalance unlocks explore_25 once.  
+6. `computeDamage` / shared helper: upgradeLevel 0 and 5 × isCrit false/true equals one scale and one crit, not two.  
+7. Marked tile: first hit HP includes ×2 and mark is gone; death and store HP agree.  
+8. Blood Mend 12 HP + SP 8 ⇒ 13 (or documented damage-only SP).  
+9. Sacrifice under Mirror Field can reflect; under Windstorm can miss; Blood Moon 1.25× on the 3× packet.
