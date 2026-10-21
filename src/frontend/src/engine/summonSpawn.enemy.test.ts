@@ -10,10 +10,22 @@ import {
   spawnEnemySummonUnit,
 } from "./summonSpawn.ts";
 
-const wolfDef = { pieceType: "pawn", level: 1 };
+const wolfDef = {
+  pieceType: "wolf",
+  level: 1,
+  summonKit: ["physical_attack", "spell-venom-strike"],
+};
+const venom = { id: "spell-venom-strike", name: "Venom Strike" };
+const strike = { id: "physical_attack", name: "Strike" };
 const catalog = [
-  { id: "summon-dire-wolf", summonUnitDef: wolfDef },
+  {
+    id: "summon-dire-wolf",
+    summonAI: "hunter",
+    summonUnitDef: wolfDef,
+  },
   { id: "no-summon" },
+  strike,
+  venom,
 ];
 
 function emptyStore() {
@@ -92,6 +104,24 @@ describe("spawnEnemySummonUnit", () => {
     assert.equal(spawned.summon.isSummon, true);
     assert.equal(spawned.turnOrderEntry.type, "enemy");
     assert.equal(summonControlIdAfterAdvance(spawned.turnOrderEntry), null);
+  });
+
+  it("keeps hunter AI and copies the wolf kit so decideSummonAction can cast", () => {
+    const spawned = spawnEnemySummonUnit(
+      { x: 3, y: 3 },
+      { id: "summon-dire-wolf" },
+      catalog,
+      4,
+      () => {},
+      () => ({ init: 5 }),
+    );
+    assert.ok(spawned);
+    assert.equal(spawned.summon.summonAI, "hunter");
+    assert.deepEqual(
+      (spawned.summon.spells ?? []).map((s: { id: string }) => s.id),
+      ["physical_attack", "spell-venom-strike"],
+    );
+    assert.equal(spawned.turnOrderEntry.summonAI, "hunter");
   });
 
   it("commits through addCombatant the way the summoner short-circuit must", () => {

@@ -11,6 +11,10 @@ import { SUMMON_LIFESPAN_PER_HALF_LEVEL } from "../data/gameConstants.ts";
 import type { Enemy } from "../types/gameTypes";
 import { logDebugInfo } from "../utils/debugLogger.ts";
 import {
+  attachEnemySummonKit,
+  resolveEnemySummonAI,
+} from "./enemySummonKit.ts";
+import {
   type OccupancyContext,
   findNearestFreeCell,
   progressionSearchRadius,
@@ -255,9 +259,14 @@ export function spawnEnemySummonUnit(
   cell: { x: number; y: number },
   spell: {
     id?: string;
+    summonAI?: string;
     summonUnitDef?: SummonUnitDef;
   } | null,
-  catalog: ReadonlyArray<{ id: string; summonUnitDef?: SummonUnitDef }>,
+  catalog: ReadonlyArray<{
+    id: string;
+    summonAI?: string;
+    summonUnitDef?: SummonUnitDef;
+  }>,
   level: number,
   log: (msg: string, color?: string, isSummon?: boolean) => void,
   computeEnemyStats: (level: number, pieceType: string, seedKey: string) => any,
@@ -265,14 +274,14 @@ export function spawnEnemySummonUnit(
 ): SpawnSummonResult | null {
   const unitDef = resolveEnemySummonUnitDef(spell, catalog);
   if (!unitDef) return null;
-  return spawnSummonUnit(
+  const spawned = spawnSummonUnit(
     cell,
     {
       id: `enemy-summon-${unitDef.pieceType}`,
       name: `Enemy Summon ${unitDef.pieceType}`,
       summonUnitDef: unitDef,
       summonLifespan: 0,
-      summonAI: unitDef.pieceType,
+      summonAI: resolveEnemySummonAI(spell, unitDef, catalog),
     },
     "enemy",
     level,
@@ -282,6 +291,8 @@ export function spawnEnemySummonUnit(
     occupancyCtx,
     "enemy",
   );
+  attachEnemySummonKit(spawned.summon, unitDef, catalog);
+  return spawned;
 }
 
 /**

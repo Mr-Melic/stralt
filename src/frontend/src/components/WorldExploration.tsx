@@ -141,7 +141,6 @@ import {
   type DecideEnemyContext,
   type EnemyAction,
   buildEnemyKit,
-  decideEnemyAction,
   decideSummonAction,
   decideSummonerAction,
 } from "../engine/enemyAI";
@@ -150,6 +149,10 @@ import {
   getEnemyFamilyColors,
   getEnemyFamilyPixelPattern,
 } from "../engine/enemyPixelPatterns";
+import {
+  decideHostileCombatantAction,
+  shouldApplyEnemyCastDotOnly,
+} from "../engine/enemySummonKit";
 import { enemyWalkCostPerTile } from "../engine/enemyWalkMp";
 import { shouldTickEnemyWander } from "../engine/enemyWander";
 import {
@@ -16381,7 +16384,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                 },
                 aiCtx,
               )
-            : decideEnemyAction(enemy, aiCtx);
+            : decideHostileCombatantAction(enemy, aiCtx);
           // 3e: short-circuit the enemy turn when a summoner casts a summon
           // spell — the spawn is applied via spawnEnemySummonRef, the turn
           // is handed off to the next combatant, and we return before the
@@ -16637,6 +16640,31 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
                   });
                 }
               }
+              if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
+                const cdm =
+                  enemyCooldownsRef.current.get(enemyId) ??
+                  new Map<string, number>();
+                cdm.set(chosenSpell.id, chosenSpell.cooldown);
+                enemyCooldownsRef.current.set(enemyId, cdm);
+              }
+              didAct = true;
+            } else if (inRange && shouldApplyEnemyCastDotOnly(chosenSpell)) {
+              const dotPptE =
+                chosenSpell.dotDamagePerTurn ?? chosenSpell.dotDamage ?? 0;
+              applyActiveEffect({
+                id: `edot-${Date.now()}`,
+                effectName: `${chosenSpell.name} DoT`,
+                type: "dot",
+                targetId: resolvedTargetId,
+                dotDamagePerTurn: dotPptE,
+                duration: chosenSpell.dotDuration ?? 0,
+                iconEmoji: "\u2620\uFE0F",
+                description: `${dotPptE} dmg/turn`,
+              });
+              logBattleEntry(
+                `${enemy.pieceType} uses ${chosenSpell.name}!`,
+                "#ef4444",
+              );
               if (chosenSpell.cooldown && chosenSpell.cooldown > 0) {
                 const cdm =
                   enemyCooldownsRef.current.get(enemyId) ??
