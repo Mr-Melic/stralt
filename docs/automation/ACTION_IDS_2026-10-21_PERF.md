@@ -1,260 +1,150 @@
-# ACTION_IDs — 2026-10-21 Performance Auditor (React / subscriptions)
+# ACTION_IDs — 2026-10-21 Performance Auditor
 
-Report-only audit (no SAFE implement this run). Focus: files outside WorldExploration
-(GameFlow, ChatPanel, App, AdminDashboard, CharacterSelection, PostBattleRecap,
-DraggablePanel, hooks, debugLogger).
+Implemented this increment: PERF-2026-10-21-137.
+Reported only: PERF-2026-10-21-138 through 142.
 
-Already ledgered (do not re-file): PERF 001–136 (summaries in automation prompt /
-memories). Sibling same-day canvas ledger: `ACTION_IDS_2026-10-21_PERF_CANVAS.md`
-(146+). Still-present but out of scope to re-open: SFX noise buffer (now also
-canvas 147), catalog focus refetch defaults, doka staleTime:0, Chat poll 5s race
-(114), folded-chat 500-row JSX (085 — children now gated by DraggablePanel fold).
+Did **not** change WorldExploration, the world RAF schedule, or gameplay timing.
+Did **not** re-file PERF-2026-08-31-001..010, 09-01-011..036, 09-02-037..060,
+09-21-061..070, 09-22-071..085, 09-23-086..101, 09-24-102..107, 09-25-108..113,
+09-26-114..118, 09-27-119..125, 09-28-126..132, 09-29-133..136.
+
+`clickTrace.prod.ts` and `clickTraceBundle.ts` are new. `vite.config.js` is
+disjoint from open perf PRs #350 / #392 / #412 / #429 / #447 / #511 / #594 /
+#643 / #687 / #745 / #797.
+
+Did **not** restack WorldExploration (136, 089, 120, 128, 129) or ChatPanel
+(114, 081, 103) or soundEngine (062, 127, 130) or App.tsx (115, 135). Prefer
+landing already-open SAFE PRs #350, #392/#412, #429, #447, #511, #594, #643,
+#687, #745, #797.
+
+Draft ledgers that duplicated 082/115/063/062/067/079/090/119 were discarded.
+
+## Residual on HEAD (already ledgered; still open in older PRs)
+
+| ID | Still on HEAD | Where it lives |
+|---|---|---|
+| 061 | Catalog `refetchOnWindowFocus` default true | #350 |
+| 062 | `playNoise` still allocates a buffer per hit | #350 |
+| 009 / 070 | `callerDokaBalance` staleTime 0; global QC default | HUMAN |
+| 081 | Folded chat still evaluates 500-row JSX | older ChatPanel PRs |
+| 114 | Chat poll 5s race timer never cleared | ChatPanel stack |
+| 083 | `[FEATS] UNLOCK/CLAIM` `console.log` | #392 |
+| 085 | Leaderboard focus refetch | #392 |
+| 094–096 | useIsMobile equality, profile focus, debug mount copy | #447 |
+| 102 | Starfield resize rebuild | #511 |
+| 108–109 | debug ring overflow; userRole focus | #594 |
+| 115 / 118 | App small-screen equality; toaster theme | #643 |
+| 121 | landing chessDrift CSS while hidden | #687 |
+| 126 | pause class-based infinite HUD CSS while hidden | #745 |
+| 133 | unused Share Tech Mono + fonts preconnect | #797 |
+| 127–132 | AudioContext, HP regen React, attack mousemove, volume localStorage, refetchOnReconnect, EffectsManager survivors | #745 report |
+| 134–136 | unused font weights; eager GameFlow; WX clickTrace static import | #797 report |
+| 005–008, 013, 016, 019, 027, 032, 035, 037–041, 054–055, 057, 060, 065–068, 071, 077, 082, 086–093, 097–101, 103–107, 110–113, 116–117, 119–120, 122–125 | Reported earlier | Do not re-file |
 
 ---
 
 ACTION_ID: PERF-2026-10-21-137
-TITLE: Each DraggablePanel independently fetches the same getUserUiLayout blob
+TITLE: Production Vite build still parses the click-trace recorder
 CATEGORY: runtime-performance
-PRIORITY: high
+PRIORITY: medium
 CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/components/DraggablePanel.tsx (~L452–550)
-CURRENT_BEHAVIOUR: On mount (and whenever `actor` identity changes), every panel
-calls `getUserUiLayout()`, JSON.parses the full blob, and may rewrite
-localStorage. World entry mounts Chat + Battle UI + Stats + Settings +
-MapModifiers → five identical canister queries in parallel before play settles.
-DESIRED_BEHAVIOUR: One shared in-flight/cached layout fetch per principal;
-panels subscribe to the result.
-EVIDENCE: useEffect deps `[panelId, userId, actor]` always invoke
-`(actor as UiLayoutActor).getUserUiLayout()` when actor is non-null.
-RECOMMENDED_ACTION: Module-level promise cache keyed by principal (or
-React Query key `["userUiLayout"]`). Keep localStorage instant paint.
+FILES_OR_SYSTEMS: src/frontend/vite.config.js; src/frontend/src/debug/clickTrace.prod.ts; src/frontend/src/engine/clickTraceBundle.ts; src/frontend/src/components/WorldExploration.tsx; src/frontend/src/components/ChatPanel.tsx
+CURRENT_BEHAVIOUR: `clickTrace.ts` is documented as never shipping to players. Call sites gate `recordClickTrace` with `import.meta.env.DEV`, but WorldExploration and ChatPanel static-import the module, so the production world chunk still parses ~800 lines of geometry/invariant code (and ChatPanel's Debug Clicks getter). Distinct from PERF-136 (change the WX import, blocked by the combat/map stack).
+DESIRED_BEHAVIOUR: Production `vite build` aliases `debug/clickTrace` to a tiny stub. Dev server and node tests keep the real recorder. Export .txt still works; click-trace tables stay empty in production (they were empty already).
+EVIDENCE: WorldExploration.tsx static import; ChatPanel.tsx `getClickTraceBuffer`; `vite.config.js` had no production alias; recordClickOutcome returns immediately when `!DEV` after the module is linked.
+RECOMMENDED_ACTION: Keep the production stub plugin. Do not restack WorldExploration. Do not stub `debugExport.ts` (player-facing Debug Export of logs).
 AUTONOMY:
 - SAFE_TO_AUTO_IMPLEMENT
-REGRESSION_RISK: Stale layout if one panel's save races a shared cache without
-invalidation; fold/position must still reconcile after backend blob arrives.
-VALIDATION_REQUIRED: Enter world; Network shows one getUserUiLayout; drag/fold
-chat and battle panels; reload; positions persist.
-STATUS: NEW
-WHY_NOT_DUPLICATE: Distinct from PERF-011/012 (pointer listeners / drag rAF).
-Those never touched the backend layout fetch fan-out.
+REGRESSION_RISK: Production Debug → Clicks stays empty (same as today). DEV `vite` serve and unit tests must still record. A too-broad `./clickTrace` match could stub a different module (none exists).
+VALIDATION_REQUIRED: `node --experimental-strip-types --test src/frontend/src/engine/clickTraceBundle.test.ts`; production `vite build` chunk has no Layer-A/invariant recorder source; `vite` serve still records a DEV click; targeting unchanged.
+STATUS: IMPLEMENTED
 
 ---
 
 ACTION_ID: PERF-2026-10-21-138
-TITLE: App small-screen resize listener keeps setState after Continue bypass
+TITLE: Production Vite build leaves JavaScript unminified
 CATEGORY: runtime-performance
 PRIORITY: high
 CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/App.tsx (~L346–355)
-CURRENT_BEHAVIOUR: After the player Continues on a narrow viewport,
-`smallScreenBypass` is true and the game tree mounts — but `resize` still calls
-`setIsSmallScreen(window.innerWidth < 768)` on every resize/orientation change.
-That re-renders App → GameFlow → WorldExploration/Chat during live play.
-DESIRED_BEHAVIOUR: Once bypassed (or once width has been ≥768 this session),
-stop updating `isSmallScreen`, or only update when it would change the guard
-overlay decision.
-EVIDENCE: `useEffect` always attaches `check = () => setIsSmallScreen(...)`;
-bypass effect only sets bypass true when not small — it never removes the
-listener or gates setState.
-RECOMMENDED_ACTION: Early-return in `check` when `smallScreenBypassRef.current`
-is true, or remove the listener after first bypass.
+FILES_OR_SYSTEMS: src/frontend/vite.config.js (`build.minify: false`)
+CURRENT_BEHAVIOUR: `vite build` (Caffeine frontend `[build]`) sets `minify: false`. The player download is full identifier names plus the ~19k-line WorldExploration chunk (PERF-135) and ChatPanel. Mobile TTI and parse cost stay high even after 137's stub. Distinct from 135 (split the graph) and from sourcemap (already false).
+DESIRED_BEHAVIOUR: Production minify (`esbuild` default) unless Caffeine/IC stack traces require unminified output.
+EVIDENCE: vite.config.js `build.minify: false`. No prior PERF ID covered minify.
+RECOMMENDED_ACTION: Product/Caffeine call. Do not flip in a perf-only PR if canister error stacks depend on readable names.
 AUTONOMY:
-- SAFE_TO_AUTO_IMPLEMENT
-REGRESSION_RISK: Must not remount the game when rotating after Continue
-(already protected by bypass); must still show the guard on a fresh narrow
-session before Continue.
-VALIDATION_REQUIRED: Narrow → Continue → rotate phone; no full React tree
-reconcile spike; fresh session still shows the guard.
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: Minify can obscure Caffeine/IC exception messages and break code that depends on Function.name.
+VALIDATION_REQUIRED: Production bundle size before/after; Play + Admin still boot; a thrown persist error remains diagnosable.
 STATUS: NEW
-WHY_NOT_DUPLICATE: PERF-115 is the small-screen warning UX itself, not the
-post-bypass resize → setState churn into the live game tree.
 
 ---
 
 ACTION_ID: PERF-2026-10-21-139
-TITLE: Chat poll interval restarts whenever fold or channel changes
+TITLE: Authenticated character select still parses WorldExploration before Play
 CATEGORY: runtime-performance
-PRIORITY: medium
+PRIORITY: high
 CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/components/ChatPanel.tsx (~L878–957)
-CURRENT_BEHAVIOUR: `fetchMessages` closes over `isFolded` and `activeChannel`
-for unread bookkeeping, so its identity changes on every tab/fold toggle.
-The poll effect depends on `fetchMessages`, so it clears the 2s interval,
-immediately invokes `getMessages()`, and starts a new interval — even while
-exploring (not paused).
-DESIRED_BEHAVIOUR: Keep poll callback identity stable; read fold/channel from
-refs inside the fetch; only restart the interval on actor / isPaused changes.
-EVIDENCE: `useCallback(..., [actor, isFolded, activeChannel])` +
-`useEffect(..., [fetchMessages, isPaused])`.
-RECOMMENDED_ACTION: `isFoldedRef` / `activeChannelRef` (pattern already used
-for `isPausedRef` / `tabVisibleRef`).
+FILES_OR_SYSTEMS: src/frontend/src/components/GameFlow.tsx; src/frontend/src/components/WorldExploration.tsx; src/frontend/src/components/CharacterSelection.tsx
+CURRENT_BEHAVIOUR: PERF-135 covers unauthenticated landing (`App` static-imports GameFlow). After Sign In, GameFlow still top-level-imports WorldExploration (~19k lines + pieceArt + DokaGameKeyShop PNG + EnemyRegister) while CharacterSelection mounts Starfield + per-slot BloodParticles (041). Distinct from 135 (landing) and 041 (drip RAF count).
+DESIRED_BEHAVIOUR: `React.lazy` WorldExploration until `currentStage === "world"`. Character select keeps Starfield + slot cards. Persist/identity unchanged.
+EVIDENCE: GameFlow.tsx `import WorldExploration from "./WorldExploration"`; world branch is `if (isGameMode && selectedCharacter !== null)` after the module already evaluated.
+RECOMMENDED_ACTION: Product-approved Suspense fallback on Play. GameFlow is in older persist/UX PRs — restack. Do not lazy Starfield.
 AUTONOMY:
-- SAFE_TO_AUTO_IMPLEMENT
-REGRESSION_RISK: Unread badges for general channel must still increment when
-folded or on another tab; battle pause must still clear the interval.
-VALIDATION_REQUIRED: Explore; switch chat tabs rapidly; fold/unfold; Network
-does not spam getMessages; unread still works.
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: First Play can flash a fallback; recap overlay must stay on the game graph; identity refetch must not remount the world.
+VALIDATION_REQUIRED: After login, Network panel has no WorldExploration chunk until Play; Play hydrates Doka/spells; recap still mounts.
 STATUS: NEW
-WHY_NOT_DUPLICATE: PERF-114 is the 5s Promise.race timeout / timer race inside
-a single fetch. This is interval teardown/restart from React dependency churn.
 
 ---
 
 ACTION_ID: PERF-2026-10-21-140
-TITLE: Character slots query always refetches on every CharacterSelection mount
+TITLE: ChatPanel statically imports debugExport into the world chunk
 CATEGORY: runtime-performance
 PRIORITY: medium
 CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/hooks/useCharacterQueries.ts
-(`useGetCharacterSlots`); src/frontend/src/components/CharacterSelection.tsx
-CURRENT_BEHAVIOUR: `staleTime: 0` + `refetchOnMount: "always"` forces a canister
-`getCharacterSlots` + `deepNormalizeBigInts` of three full character records
-every time the player returns from creation/edit to selection (GameFlow stage
-swap remounts the screen).
-DESIRED_BEHAVIOUR: Modest staleTime (e.g. 10–30s); rely on mutation
-`invalidateQueries(["characterSlots"])` after create/update/delete; keep
-`refetchOnWindowFocus: false`.
-EVIDENCE: useCharacterQueries.ts L83–85; CharacterSelection L848–853.
-RECOMMENDED_ACTION: Drop `refetchOnMount: "always"`; set staleTime ≥ 10_000.
-Confirm create/edit/delete mutations already invalidate the key.
+FILES_OR_SYSTEMS: src/frontend/src/components/ChatPanel.tsx; src/frontend/src/debug/debugExport.ts
+CURRENT_BEHAVIOUR: ChatPanel always imports `buildDebugReportHtml` / `buildDebugReportText` (~700 lines of HTML/text assembly). That module is only needed when the player clicks Export. Distinct from 137 (clickTrace stub) and from 003 (React mirror of the log ring).
+DESIRED_BEHAVIOUR: Dynamic `import()` on Export click. Debug tab list still uses `getDebugLogBuffer`. Do not stub debugExport in production (bug-report Export is player-facing).
+EVIDENCE: ChatPanel.tsx static import of debugExport; Export handlers call `buildDebugReportText` / `buildDebugReportHtml`.
+RECOMMENDED_ACTION: Restack after older ChatPanel PRs (#350 / #392 / #447). Keep blob URL revoke (073).
 AUTONOMY:
-- SAFE_TO_AUTO_IMPLEMENT
-REGRESSION_RISK: Selection list could briefly show pre-create slots if a
-mutation forgets to invalidate — audit those onSuccess paths.
-VALIDATION_REQUIRED: Create character → back to selection shows new slot
-without manual refresh; revisit selection within stale window does not
-refetch.
+- HUMAN_APPROVAL_REQUIRED
+REGRESSION_RISK: First Export pays a chunk fetch; PDF/print path must still see the same report. ChatPanel is in the oldest-first stack.
+VALIDATION_REQUIRED: Folded chat does not fetch debugExport; Export .txt and print still include logs after a battle.
 STATUS: NEW
-WHY_NOT_DUPLICATE: PERF-061 catalog focus refetch covers spell/enemy/gameConfig
-focus paths on WorldExploration, not the character-slot mount policy.
 
 ---
 
 ACTION_ID: PERF-2026-10-21-141
-TITLE: AdminDashboard fires every catalog query on open regardless of tab
+TITLE: Every combatant HP write drops the spell-range cache
 CATEGORY: runtime-performance
-PRIORITY: medium
+PRIORITY: high
 CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/components/AdminDashboard.tsx (~L5364–5385)
-CURRENT_BEHAVIOUR: Opening Admin (lazy) immediately runs
-useGetEnemyConfigs / Region / Sprite / Spell / MapModifiers / GameConfig /
-AchievementConfigs / EnemyNames in parallel — each deep-normalizing large
-Candid trees — even if the admin stays on the default Enemies tab.
-DESIRED_BEHAVIOUR: Enable queries per active tab (or prefetch on tab hover).
-EVIDENCE: All hooks called unconditionally at the top of the dashboard
-component; tab bodies are gated with `dashState.tab === …` but hooks are not.
-RECOMMENDED_ACTION: Pass `enabled: dashState.tab === "spells"` (etc.), keeping
-shared deps (e.g. spells for BossesTab) enabled when those tabs are active.
+FILES_OR_SYSTEMS: src/frontend/src/engine/combatantStore.ts (`onMutation`); src/frontend/src/components/WorldExploration.tsx (~1658–1661)
+CURRENT_BEHAVIOUR: `initCombatantStore` sets `onMutation` to bump `battleWorldVersion` and `spellRangeCacheRef.current = new Map()`. Lava/DoT/plague `updateCombatant` HP ticks therefore discard the walk/spell tile cache every damage number. Walk-mode RAF then rebuilds MP-reachable tiles (PERF-006) on the next frame. Distinct from 120 (React `enemyHpMap` setState) and from 006 (the cache itself).
+DESIRED_BEHAVIOUR: Invalidate spell-range only on position / occupancy / death / spawn / barrier changes — not on HP-only updates. Combat death/victory gates stay store-authoritative.
+EVIDENCE: combatantStore comment at ~1653; `updateCombatant` used for lava/DoT HP; onMutation always `new Map()`.
+RECOMMENDED_ACTION: Do not land in a perf-only PR. WorldExploration + store are in the oldest-first combat stack. Pair with a targeting fixture so a kill still clears illegal tiles.
 AUTONOMY:
 - HUMAN_APPROVAL_REQUIRED
-REGRESSION_RISK: Cross-tab editors that need another catalog in memory can
-break if `enabled` is too narrow; boss tab needs spells.
-VALIDATION_REQUIRED: Open Admin on Enemies; Network shows only enemy-related
-reads; switch to Spells loads spellConfigs once.
+REGRESSION_RISK: Stale range after a death/summon/knockback if the invalidation set is incomplete.
+VALIDATION_REQUIRED: DoT on two enemies while walk highlight is open; kill one; highlight and click targeting match canvas; plague last-hostile still wins.
 STATUS: NEW
-WHY_NOT_DUPLICATE: PERF-061 is world-session catalog focus refetch. This is
-admin mount-time fan-out before any tab interaction.
 
 ---
 
 ACTION_ID: PERF-2026-10-21-142
-TITLE: Folded ChatPanel still re-renders on every battle-log append
+TITLE: Portal map generation runs up to 100 CA attempts plus per-portal floods on the main thread
 CATEGORY: runtime-performance
 PRIORITY: medium
 CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/components/GameFlow.tsx (~L103–110, L272–276);
-src/frontend/src/components/ChatPanel.tsx (memo + unread effects)
-CURRENT_BEHAVIOUR: DraggablePanel no longer mounts children while folded (fixes
-085 JSX cost), but GameFlow still `setBattleLogEntries` with a new array every
-log line. `memo(ChatPanel)` sees a new `battleLogEntries` prop, re-runs the
-chat hook tree, summon memo, and unread effects during battle.
-DESIRED_BEHAVIOUR: Keep log on a ref; push React state only when the Battle /
-Summons channel is open, or expose length/unread via a narrow store.
-EVIDENCE: addBattleLogEntry always allocates `[...prev, entry]`; ChatPanel
-props include the full array; unread effect depends on
-`battleLogEntries.length`.
-RECOMMENDED_ACTION: Mirror PERF-016 Status-tab gating for battle log identity.
+FILES_OR_SYSTEMS: src/frontend/src/components/WorldExploration.tsx (generateRandomMap ~4689–5120); src/frontend/src/engine/mapGen.ts (`finalizePlayableLayout`, `ensureReachability`, `floodFillReachable`)
+CURRENT_BEHAVIOUR: Each portal synchronously retries cellular automata (50, or 100 when fillDensity ≥ 0.4), flood-fills for connectivity, then `finalizePlayableLayout` calls `ensureReachability` per portal. Player-visible hitch on map change. Distinct from 005 (tile draw cache) and from map-integrity PRs that keep the solvability pass (do not skip `finalizePlayableLayout`).
+DESIRED_BEHAVIOUR: Keep solvability; reuse one flood; avoid `queue.shift` on larger grids; optional worker. Do not change occupancy/portal rules.
+EVIDENCE: WX `maxAttempts = 100` for dense archetypes; mapGen `floodFillReachable` uses `q.shift()`; `finalizePlayableLayout` after generateEnemies is mandatory (AGENTS.md).
+RECOMMENDED_ACTION: Human + map fixture. mapGen.ts is in the oldest-first map stack. Do not skip the playable-layout pass.
 AUTONOMY:
 - HUMAN_APPROVAL_REQUIRED
-REGRESSION_RISK: Folded unread badge and open-channel virtualization can miss
-lines if the gate is wrong.
-VALIDATION_REQUIRED: Folded chat during a long fight; unread increments; open
-Battle tab shows full capped log.
+REGRESSION_RISK: Skipping a flood or lowering attempts can ship an unsolvable map (portal unreachable).
+VALIDATION_REQUIRED: Portal into dungeon, rest-exit, Boss Rush, white sanctuary; maps stay solvable; hitch duration measured.
 STATUS: NEW
-WHY_NOT_DUPLICATE: PERF-085 was building ≤500 battle-log DOM nodes while
-folded. Fold children are gone; remaining cost is prop-identity React work.
-
----
-
-ACTION_ID: PERF-2026-10-21-143
-TITLE: debugLogger allocates and notifies subscribers on every prod log line
-CATEGORY: runtime-performance
-PRIORITY: medium
-CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/debug/debugLogger.ts (~L91–121);
-ChatPanel subscribeDebugLogs; WorldExploration ~69 logDebug* call sites
-CURRENT_BEHAVIOUR: Even in production builds, every `logDebug*` allocates a
-`DebugLogEntry`, pushes into a 2000-cap buffer (slice when over), and walks
-`_subscribers`. ChatPanel always subscribes (setState gated to Debug tab), so
-combat logging still pays object churn + subscriber dispatch on the hot path.
-DESIRED_BEHAVIOUR: Buffer/notify only when the Debug channel has been opened
-this session, or when `import.meta.env.DEV` — unless product requires always-on
-prod export history.
-EVIDENCE: Comment at L105–107 explicitly keeps the buffer in prod; ChatPanel
-L709–720 subscribes for the panel lifetime.
-RECOMMENDED_ACTION: Gate buffer+notify behind a `debugCaptureEnabled` flag set
-when the Debug tab is first selected; keep DEV always-on.
-AUTONOMY:
-- HUMAN_APPROVAL_REQUIRED
-REGRESSION_RISK: Prod Debug Export / PDF may miss history before the tab was
-opened — product call.
-VALIDATION_REQUIRED: Battle with Debug closed (no buffer growth); open Debug
-then fight; export still useful.
-STATUS: NEW
-WHY_NOT_DUPLICATE: PERF-003 / early debug-log items were React re-renders from
-mirroring the buffer into state. This is allocation + subscriber walk with
-setState already gated.
-
----
-
-ACTION_ID: PERF-2026-10-21-144
-TITLE: Ads tab mounts three AdBoxEditors each fetching getAdBoxes
-CATEGORY: runtime-performance
-PRIORITY: low
-CONFIDENCE: high
-FILES_OR_SYSTEMS: src/frontend/src/components/AdminDashboard.tsx
-(AdBoxEditor ~L8119–8141; ads tab ~L6896–6898)
-CURRENT_BEHAVIOUR: Opening the Ads tab mounts three editors; each useEffect
-calls `getAdBoxes()` and indexes `[index]` — triple identical canister reads.
-DESIRED_BEHAVIOUR: One parent fetch (or shared query) passed as props.
-EVIDENCE: Three `<AdBoxEditor index={0|1|2} />`; each effect calls getAdBoxes.
-RECOMMENDED_ACTION: Lift fetch into the ads tab body; pass row props.
-AUTONOMY:
-- SAFE_TO_AUTO_IMPLEMENT
-REGRESSION_RISK: Save/clear per slot must still refresh the right row.
-VALIDATION_REQUIRED: Open Ads tab; one getAdBoxes; save slot 1; UI updates.
-STATUS: NEW
-WHY_NOT_DUPLICATE: No prior AdBox / ads-tab fetch fan-out ID in 001–136.
-
----
-
-ACTION_ID: PERF-2026-10-21-145
-TITLE: PostBattleRecap applies full-viewport backdrop-filter blur
-CATEGORY: runtime-performance
-PRIORITY: low
-CONFIDENCE: medium
-FILES_OR_SYSTEMS: src/frontend/src/components/PostBattleRecap.tsx (~L90)
-CURRENT_BEHAVIOUR: Root dialog uses `backdropFilter: "blur(3px)"` over the
-full viewport while the world canvas/HUD remain composited underneath — a
-known mobile GPU tax at the moment rewards appear.
-DESIRED_BEHAVIOUR: Opaque dim overlay without blur (or blur only the modal
-card chrome), matching other stone dialogs that skip backdrop-filter.
-EVIDENCE: `style={{ … background: "rgba(0,0,0,0.75)", backdropFilter: "blur(3px)" }}`.
-RECOMMENDED_ACTION: Drop blur; keep dim + animation. Visual sign-off.
-AUTONOMY:
-- HUMAN_APPROVAL_REQUIRED
-REGRESSION_RISK: Recap mood lighting changes on desktop.
-VALIDATION_REQUIRED: Win/defeat recap on mobile width; dismiss; no hitch.
-STATUS: NEW
-WHY_NOT_DUPLICATE: Not covered by 001–136 (those hit starfield/vignette/HUD
-CSS, not the app-root recap overlay).
