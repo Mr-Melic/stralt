@@ -880,6 +880,75 @@ export function firstPlayerLevelPotionBeatsFlatDokaHeal(): number | null {
 }
 
 /**
+ * Initiative overlay AP/MP for a regular (non-summon) enemy.
+ * Mirrors `resolveEnemyApMp` (`summonIntegration.ts` 206–209):
+ *   ap = enemy.level, mp = max(1, floor(level / 2)).
+ * AI still takes one action per turn — this is display-only.
+ */
+export function overlayEnemyAp(level: number): number {
+  return Math.max(1, Math.floor(Number(level) || 1));
+}
+
+export function overlayEnemyMp(level: number): number {
+  return Math.max(1, Math.floor(overlayEnemyAp(level) / 2));
+}
+
+/** Overlay ATK (`WorldExploration.tsx` 17405): `e.level * 2`. */
+export function overlayEnemyAtk(level: number): number {
+  return overlayEnemyAp(level) * 2;
+}
+
+/**
+ * Hardcoded overlay combat stats (`WorldExploration.tsx` 17406–17408).
+ * Battle-start `computeEnemyStats` RES/SP/CHC are thrown away here.
+ */
+export const INITIATIVE_OVERLAY_ENEMY_RES = 0;
+export const INITIATIVE_OVERLAY_ENEMY_SP = 0;
+export const INITIATIVE_OVERLAY_ENEMY_CHC = 2;
+
+export function firstEnemyLevelOverlayApExceedsPlayerFormulaAp(
+  playerLevel = 1,
+): number | null {
+  const playerAp = formulaAp(playerLevel);
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (overlayEnemyAp(enemyLevel) > playerAp) return enemyLevel;
+  }
+  return null;
+}
+
+/**
+ * First enemy level whose unenraged Crush raw exceeds a crit kit hit
+ * (`raw * 2` from `Math.random()*100 < enemy.chc`). Bishop CHC 100 at 115
+ * always crits Frost 20 → 40; Crush still wins from 17.
+ */
+export function firstEnemyLevelCrushExceedsCritKit(
+  kitBase: number,
+): number | null {
+  const critKit = kitCastRaw(kitBase) * 2;
+  for (let enemyLevel = 1; enemyLevel <= 2000; enemyLevel++) {
+    if (fallbackCrushRaw(enemyLevel) > critKit) return enemyLevel;
+  }
+  return null;
+}
+
+/** Create-time evasion / resilience / SR. saveBattleStats never writes them. */
+export const PLAYER_CREATE_EVASION = Number(startingChampionStats().evasion);
+export const PLAYER_CREATE_RESILIENCE = Number(
+  startingChampionStats().resilience,
+);
+export const PLAYER_CREATE_SR = Number(startingChampionStats().sr);
+export const PLAYER_CREATE_CHC = Number(startingChampionStats().chc);
+
+/**
+ * Live linear HP is `100 + 5*(L-1)`. First level where that integer is
+ * strictly greater than MAX_SAFE_INTEGER (IEEE can no longer count HP).
+ */
+export function firstLevelLinearHpNotSafeInteger(): number {
+  const t = Number.MAX_SAFE_INTEGER;
+  return Math.floor((t - 100) / 5) + 2;
+}
+
+/**
  * Unused exponential `getPlayerBaseStats` HP becomes IEEE Inf (JSON null)
  * once `100 * 1.05^(L-1)` overflows Number.
  */
@@ -1181,6 +1250,18 @@ export function runLongHorizonSim() {
       ),
       formulaMpCoversCenterToCorner:
         formulaMp(level) >= BATTLE_GRID_CENTER_TO_CORNER_MANHATTAN,
+      overlayEnemyApAtMean: dist
+        ? overlayEnemyAp(Math.round(meanEnemy))
+        : overlayEnemyAp(level),
+      overlayEnemyMpAtMean: dist
+        ? overlayEnemyMp(Math.round(meanEnemy))
+        : overlayEnemyMp(level),
+      overlayEnemyAtkAtMean: dist
+        ? overlayEnemyAtk(Math.round(meanEnemy))
+        : overlayEnemyAtk(level),
+      overlayHardcodedRes: INITIATIVE_OVERLAY_ENEMY_RES,
+      overlayHardcodedChc: INITIATIVE_OVERLAY_ENEMY_CHC,
+      worldBossOverlayAp: overlayEnemyAp(worldBossEnemyLevel(level)),
     };
   });
 
@@ -1254,7 +1335,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-09-29T00:20:00.000Z",
+    generatedAt: "2026-10-21T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -1432,6 +1513,19 @@ export function runLongHorizonSim() {
       firstLevelMpCoversDiameter: firstLevelFormulaMpAtLeast(
         BATTLE_GRID_MANHATTAN_DIAMETER,
       ),
+      overlayEnemyApAt1020: overlayEnemyAp(1020),
+      overlayHardcodedEnemyChc: INITIATIVE_OVERLAY_ENEMY_CHC,
+      overlayHardcodedEnemyRes: INITIATIVE_OVERLAY_ENEMY_RES,
+      firstEnemyLevelOverlayApExceedsPlayerAp1:
+        firstEnemyLevelOverlayApExceedsPlayerFormulaAp(1),
+      firstEnemyLevelCrushExceedsCritFrost:
+        firstEnemyLevelCrushExceedsCritKit(KIT_FROST_DAMAGE),
+      playerCreateEvasion: PLAYER_CREATE_EVASION,
+      playerCreateResilience: PLAYER_CREATE_RESILIENCE,
+      playerCreateSr: PLAYER_CREATE_SR,
+      combatReadsEvasion: false,
+      incomingEnemySpellUsesPlayerSpAsSr: true,
+      firstLevelLinearHpNotSafeInteger: firstLevelLinearHpNotSafeInteger(),
     },
     dungeonMultiplierAtDepth5: dungeonDokaMultiplierFor(true, 5),
     xpRows,
@@ -1791,6 +1885,44 @@ export function runLongHorizonSim() {
         firstPlayerLevelPotionBeatsFlatDokaHeal(),
       potionHpAt1: healthPotionHpRestored(1),
       flat50DokaHp: DOKA_HEAL_HP_PER_DOKA * HEALTH_POTION_COST,
+    },
+    initiativeOverlayLevelAsAp: {
+      formula: "ap=level, mp=floor(level/2), atk=level*2",
+      hardcodedRes: INITIATIVE_OVERLAY_ENEMY_RES,
+      hardcodedSp: INITIATIVE_OVERLAY_ENEMY_SP,
+      hardcodedChc: INITIATIVE_OVERLAY_ENEMY_CHC,
+      hidesBattleStartResChc: true,
+      aiStillOneActionPerTurn: true,
+      apAt1: overlayEnemyAp(1),
+      apAt9: overlayEnemyAp(9),
+      apAt78: overlayEnemyAp(78),
+      apAt1020: overlayEnemyAp(1020),
+      apAt100005: overlayEnemyAp(100_005),
+      mpAt1020: overlayEnemyMp(1020),
+      atkAt1020: overlayEnemyAtk(1020),
+      firstEnemyLevelApExceedsPlayerAp1:
+        firstEnemyLevelOverlayApExceedsPlayerFormulaAp(1),
+      worldBossOverlayApAt73: overlayEnemyAp(worldBossEnemyLevel(73)),
+      worldBossOverlayApAt100000: overlayEnemyAp(worldBossEnemyLevel(100_000)),
+      crushExceedsCritFrostAt:
+        firstEnemyLevelCrushExceedsCritKit(KIT_FROST_DAMAGE),
+      critFrostRaw: kitCastRaw(KIT_FROST_DAMAGE) * 2,
+    },
+    unusedCreateDefenses: {
+      evasion: PLAYER_CREATE_EVASION,
+      resilience: PLAYER_CREATE_RESILIENCE,
+      sr: PLAYER_CREATE_SR,
+      chc: PLAYER_CREATE_CHC,
+      saveBattleStatsWritesEvasion: false,
+      saveBattleStatsWritesResilience: false,
+      saveBattleStatsWritesSr: false,
+      saveBattleStatsWritesChc: false,
+      combatReadsEvasion: false,
+      combatReadsResilience: false,
+      combatReadsPlayerSr: false,
+      incomingEnemySpellUsesPlayerSpAsSr: true,
+      critRollSubtractsEvasion: false,
+      firstLevelLinearHpNotSafeInteger: firstLevelLinearHpNotSafeInteger(),
     },
   };
 }

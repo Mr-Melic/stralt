@@ -13,11 +13,16 @@ import {
   DOKA_HEAL_HP_PER_DOKA,
   HAZARD_LAVA_MAX,
   HEALTH_POTION_COST,
+  INITIATIVE_OVERLAY_ENEMY_CHC,
+  INITIATIVE_OVERLAY_ENEMY_RES,
   KIT_FROST_DAMAGE,
   KIT_INFERNO_DIRECT_DAMAGE,
   KIT_STRIKE_DAMAGE,
   LIFE_DRAIN_HEAL,
+  PLAYER_CREATE_EVASION,
   PLAYER_CREATE_INIT,
+  PLAYER_CREATE_RESILIENCE,
+  PLAYER_CREATE_SR,
   SHIELD_CHARM_ABSORB,
   SUMMON_ARCHER_HP_SCALE,
   SUMMON_BOMBER_HP_SCALE,
@@ -38,18 +43,21 @@ import {
   fallbackCrushRaw,
   fallbackCrushRawEnraged,
   fightsToNextLevel,
+  firstEnemyLevelCrushExceedsCritKit,
   firstEnemyLevelCrushExceedsKit,
   firstEnemyLevelCrushExceedsShield,
   firstEnemyLevelCrushOneShotsSummonHp,
   firstEnemyLevelEnragedCrushOneShots,
   firstEnemyLevelFrostTurnsAtLeast,
   firstEnemyLevelGroundDokaExceedsShrine,
+  firstEnemyLevelOverlayApExceedsPlayerFormulaAp,
   firstEnemyLevelXpClampHits,
   firstHudSaturationLevel,
   firstLevelChcCanHit100,
   firstLevelFormulaApExceedsPersistCap,
   firstLevelFormulaMpAtLeast,
   firstLevelHazardMaxBelowHpPercent,
+  firstLevelLinearHpNotSafeInteger,
   firstLevelResCanHit100,
   firstLevelSpellFailHitsZero,
   firstLevelSpellRangeHitsCap,
@@ -75,6 +83,9 @@ import {
   kitForZoneInput,
   linearPlayerMaxHp,
   officialStackedXp,
+  overlayEnemyAp,
+  overlayEnemyAtk,
+  overlayEnemyMp,
   passiveRegenSecondsToFull,
   playerFrostCastsPerTurn,
   playerFrostRaw,
@@ -356,5 +367,37 @@ assert.equal(
   report.dokaHealVsLinearHp.firstPlayerLevelFromOneExceedsCombatClamp,
   59982,
 );
+
+assert.equal(overlayEnemyAp(1), 1);
+assert.equal(overlayEnemyAp(9), 9);
+assert.equal(overlayEnemyAp(1020), 1020);
+assert.equal(overlayEnemyMp(1020), 510);
+assert.equal(overlayEnemyAtk(1020), 2040);
+assert.equal(overlayEnemyAp(worldBossEnemyLevel(100_000)), 100_005);
+assert.equal(firstEnemyLevelOverlayApExceedsPlayerFormulaAp(1), 9);
+assert.equal(INITIATIVE_OVERLAY_ENEMY_RES, 0);
+assert.equal(INITIATIVE_OVERLAY_ENEMY_CHC, 2);
+assert.equal(firstEnemyLevelCrushExceedsCritKit(KIT_FROST_DAMAGE), 17);
+assert.equal(kitCastRaw(KIT_FROST_DAMAGE) * 2, 40);
+assert.equal(fallbackCrushRaw(17), 41);
+assert.equal(PLAYER_CREATE_EVASION, 5);
+assert.equal(PLAYER_CREATE_RESILIENCE, 8);
+assert.equal(PLAYER_CREATE_SR, 5);
+assert.equal(firstLevelLinearHpNotSafeInteger(), 1_801_439_850_948_180);
+assert.equal(report.initiativeOverlayLevelAsAp.apAt1020, 1020);
+assert.equal(report.initiativeOverlayLevelAsAp.hardcodedRes, 0);
+assert.equal(report.initiativeOverlayLevelAsAp.hardcodedChc, 2);
+assert.equal(report.initiativeOverlayLevelAsAp.hidesBattleStartResChc, true);
+assert.equal(report.initiativeOverlayLevelAsAp.aiStillOneActionPerTurn, true);
+assert.equal(report.initiativeOverlayLevelAsAp.crushExceedsCritFrostAt, 17);
+assert.equal(report.unusedCreateDefenses.evasion, 5);
+assert.equal(report.unusedCreateDefenses.combatReadsEvasion, false);
+assert.equal(report.unusedCreateDefenses.combatReadsPlayerSr, false);
+assert.equal(
+  report.unusedCreateDefenses.incomingEnemySpellUsesPlayerSpAsSr,
+  true,
+);
+assert.equal(report.persistContract.overlayEnemyApAt1020, 1020);
+assert.equal(report.persistContract.playerCreateEvasion, 5);
 
 console.log("longHorizonSim.test: ok");
