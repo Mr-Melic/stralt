@@ -3,6 +3,11 @@
  * Still localStorage-backed: canister getAllBossConfigs / setBossConfig exist,
  * but frontend BossConfig (iconEmoji, loreText, chc) does not match the
  * Motoko record (defeated, adminNotes). Do not import from useQueries.ts (E4).
+ *
+ * Live kits are `data/bossKits.ts` (spellData ids: starter-frost, spell-inferno).
+ * Canister `defaultBossConfigs` still seed retired ids (fireball, cursed_gust)
+ * and stay unused until these hooks call `setBossConfig`. Custom art is not
+ * required — Default Pixel Visual is the live path.
  */
 
 import { useQuery } from "@tanstack/react-query";
