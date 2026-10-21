@@ -2,6 +2,10 @@ import { fileURLToPath, URL } from "url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import environment from "vite-plugin-environment";
+import {
+  isClickTraceRecorderImport,
+  shouldStubClickTraceRecorder,
+} from "./src/engine/clickTraceBundle.ts";
 
 const ii_url =
   process.env.DFX_NETWORK === "local"
@@ -12,7 +16,23 @@ process.env.II_URL = process.env.II_URL || ii_url;
 process.env.STORAGE_GATEWAY_URL =
   process.env.STORAGE_GATEWAY_URL || "https://blob.caffeine.ai";
 
-export default defineConfig({
+const clickTraceProdStub = fileURLToPath(
+  new URL("./src/debug/clickTrace.prod.ts", import.meta.url),
+);
+
+function clickTraceProdStubPlugin() {
+  return {
+    name: "pbv-prod-click-trace-stub",
+    apply: "build",
+    enforce: "pre",
+    resolveId(source) {
+      if (!isClickTraceRecorderImport(source)) return null;
+      return clickTraceProdStub;
+    },
+  };
+}
+
+export default defineConfig(({ command, mode }) => ({
   logLevel: "error",
   build: {
     emptyOutDir: true,
@@ -43,6 +63,9 @@ export default defineConfig({
     environment(["II_URL"]),
     environment(["STORAGE_GATEWAY_URL"]),
     react(),
+    ...(shouldStubClickTraceRecorder({ command, mode })
+      ? [clickTraceProdStubPlugin()]
+      : []),
   ],
   resolve: {
     alias: [
@@ -55,6 +78,6 @@ export default defineConfig({
         replacement: fileURLToPath(new URL("./src", import.meta.url)),
       },
     ],
-    dedupe: ["@dfinity/agent"]
+    dedupe: ["@dfinity/agent"],
   },
-});
+}));
