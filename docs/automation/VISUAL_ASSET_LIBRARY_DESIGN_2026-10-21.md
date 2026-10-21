@@ -23,7 +23,7 @@ This document re-derives every size from the **live** renderer on `0f5363f`. Inv
 | Empty library == today’s look? | **Yes, by default** — combat never reads custom bytes. |
 | Can owners upload and assign art that appears in combat? | **No.** Admin URL stubs persist; WorldExploration never reads them. |
 | Did recommended dimensions change? | **No.** Tile 80×40, cell 3px, draw point = rounded iso top + 9, standard 24×24, squash max 1.5 → elite rec 36, portal boss **live** chess 8×8 × 1.4 ≈ 34×34, hit test **80×41**. |
-| Did `origin/main` move since 09-21? | **No.** Newest GitHub PR is **#813** (2026-09-29T21:24Z). This cron is the first VAL run after a **22-day** queue freeze. |
+| Did `origin/main` move since 09-21? | **No.** `origin/main` is still `0f5363f`. The open-PR queue was frozen after **#813** (2026-09-29T21:24Z) until **2026-10-21**, when sibling automations resumed (#815+). |
 | Only implemented VAL id? | **VAL-2026-09-01-001** (admin URL honesty). All other VAL-* remain NEW. |
 
 Do **not** implement by wiring `EnemyConfig.spriteUrl` or `PlayerSpriteConfig.frontUrl` into `drawCombatant`. That path has no decode, no size contract, no spawn-stable bind, and WorldExploration does not load `getEnemyConfigs` / `getPlayerSpriteConfigs`. `useGetEnemyConfigs` (`hooks/useSpellQueries.ts` 111–138) is admin React Query, not combat.
@@ -37,7 +37,7 @@ The 09-29 fact sheet ([PR #782](https://github.com/Mr-Melic/stralt/pull/782), br
 | Topic | 2026-09-29 | 2026-10-21 |
 | :--- | :--- | :--- |
 | HEAD / WX | `0f5363f`, WX **19213** lines | **identical** |
-| Newest GitHub PR | #782 created 00:15Z; queue still moving that day | **#813** (09-29 21:24Z). **No PRs 09-30 … 10-21.** |
+| Newest GitHub PR | #782 created 00:15Z; queue still moving that day | Frozen after **#813** (09-29). **2026-10-21** sibling automations resumed (#815+). This VAL run adds unique dated files only. |
 | VAL docs on main | 08-31 … 09-02 only | same |
 | [#798](https://github.com/Mr-Melic/stralt/pull/798) `engine/cameraFollow.ts` | **Not cited** (created 00:25Z, ten minutes after #782) | Extracts the **mobile follow step only**. Comment: WX still owns Rest/Death snap, desktop lock, `shouldFollowPlayer`, RAF 0.18 lerp. Tests: “Live WX never calls this on desktop.” |
 | [#795](https://github.com/Mr-Melic/stralt/pull/795) pointer contracts | **Not cited** (created 00:22Z) | Source test locks mouse pad **10** / touch pad **14**, 400 ms ghost-click, shared `decideSpriteCastClick` / `decideTileCastClick`. MAA-011: `useIsMobile` is **width-only**. |
@@ -348,7 +348,7 @@ Warn: clipping vs name/status/badge, padding vs 80×41+10/14, scale vs squash, n
 ## 7. Architecture / stack
 
 - New modules + tests: `engine/visualAssets.ts`, `engine/visualPreview.ts`. Do not grow the rAF body (WX 19213).
-- WX extracts still OPEN: #427 hit-test, #514/#591 wander, #639 isoGrid, #683 ground Doka, #730 AO, **#798 cameraFollow**. Union overlapping files; **one** `export function` per name.
+- WX extracts still OPEN: #427 hit-test, #514/#591 wander, #639 isoGrid, #683 ground Doka, #730 AO, **#798 cameraFollow**, **#831 dust-mote seed/recycle**. Union overlapping files; **one** `export function` per name. #831 already conflicts with the older WX prefix — VAL must not grow that file.
 - #724 owner UX TS: import after that PR; do not concatenate `customVisualPoolCopy`. Combat spec sheet uses a **distinct** name from `visualUploadRequirementsBeforeSelect`.
 - This docs PR adds **only** the two dated files below so it stays merge-clean vs `origin/main` and vs older VAL docs PRs.
 

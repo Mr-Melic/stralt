@@ -114,8 +114,8 @@ TITLE: Extend the WX extract sibling list with #798; keep #639 import-not-copy
 CATEGORY: architecture  
 PRIORITY: P1  
 CONFIDENCE: HIGH  
-EVIDENCE: VAL-2026-09-29-007 listed #427 / #514 / #591 / #683 / #639 / #730. Additional OPEN WX-touching extract: [#798](https://github.com/Mr-Melic/stralt/pull/798) `cameraFollow.ts`. `isoGrid.ts` is still **absent** on `0f5363f`; #639 remains OPEN (rounded top ≠ unrounded center). WX is 19213 lines. AGENTS.md forbids growing the rAF body. Duplicate iso projectors fail Caffeine esbuild and desync Rest/Death cam.  
-SYSTEMS_AFFECTED: WX; `engine/visualAssets.ts`; `engine/isoGrid.ts` on #639; `engine/cameraFollow.ts` on #798; `engine/ambientOcclusion.ts` on #730  
+EVIDENCE: VAL-2026-09-29-007 listed #427 / #514 / #591 / #683 / #639 / #730. Additional OPEN WX-touching extracts: [#798](https://github.com/Mr-Melic/stralt/pull/798) `cameraFollow.ts` and [#831](https://github.com/Mr-Melic/stralt/pull/831) dust-mote seed/recycle (already a pre-existing WX conflict vs the oldest-first prefix). `isoGrid.ts` is still **absent** on `0f5363f`; #639 remains OPEN (rounded top ≠ unrounded center). WX is 19213 lines. AGENTS.md forbids growing the rAF body. Duplicate iso projectors fail Caffeine esbuild and desync Rest/Death cam.  
+SYSTEMS_AFFECTED: WX; `engine/visualAssets.ts`; `engine/isoGrid.ts` on #639; `engine/cameraFollow.ts` on #798; `engine/ambientOcclusion.ts` on #730; dust-mote helper on #831  
 RECOMMENDED_ACTION: New modules + tests. WX at most: pass resolver into `DrawCombatantOptions` and the player `drawPixelPattern` site (8315–8326). Import #639 / #798 helpers after those PRs; until then call live functions. Union overlapping files.  
 AUTONOMY: IMPLEMENT_WITH VAL-2026-08-31-017 / VAL-2026-09-29-007  
 DEPENDENCIES: VAL-2026-08-31-017; VAL-2026-09-28-001; VAL-2026-09-29-007; VAL-2026-10-21-001  
@@ -131,7 +131,7 @@ TITLE: Do not wait for VAL docs PRs #355–#782 — implement from merged 08-31 
 CATEGORY: process  
 PRIORITY: P1  
 CONFIDENCE: HIGH  
-EVIDENCE: `origin/main` is still `0f5363f` (PR #332, 2026-09-21). Nine open VAL docs PRs (#355 … #782) never merged. Newest repo PR is #813 (2026-09-29). 22 days produced no combat `drawImage`. Merged actionable contract is `VAL-2026-08-31-001`…`019` plus implemented copy-honesty `VAL-2026-09-01-001`. Later VAL IDs are evidence refreshes (phones Continue, portal boss 34×34, squash 1.5, sibling extracts). Oldest-first merge of nine markdown PRs is not a prerequisite for `engine/visualAssets.ts`.  
+EVIDENCE: `origin/main` is still `0f5363f` (PR #332, 2026-09-21). Nine open VAL docs PRs (#355 … #782) never merged. The queue was frozen after #813 (2026-09-29) until 2026-10-21 sibling automations resumed. 22 days produced no combat `drawImage`. Merged actionable contract is `VAL-2026-08-31-001`…`019` plus implemented copy-honesty `VAL-2026-09-01-001`. Later VAL IDs are evidence refreshes (phones Continue, portal boss 34×34, squash 1.5, sibling extracts). Oldest-first merge of nine markdown PRs is not a prerequisite for `engine/visualAssets.ts`.  
 SYSTEMS_AFFECTED: first implementation PR (new TS only); do not restack all VAL markdown  
 RECOMMENDED_ACTION: First implementer PR ships `resolveRuntimeVisual` + tests that `[]` / inactive / corrupt → `{ kind: "builtin" }`. Read the 08-31 design + this fact sheet’s viewport matrix. Do not block on merging #355–#782. Do not concatenate nine copies of `RENDER_PROFILES`.  
 AUTONOMY: IMPLEMENT_WITH_TESTS — helper first; no RAF / mapGen / combat math.  
@@ -238,7 +238,7 @@ SYSTEMS_AFFECTED: `docs/automation/VISUAL_ASSET_LIBRARY_DESIGN_2026-10-21.md`, `
 RECOMMENDED_ACTION: Keep these two files. Do not edit prior VAL markdown. Run `bash scripts/open-pr-stack-compat.sh --self`. Union ≠ concatenate if a future implementation PR touches overlapping TS.  
 AUTONOMY: DOCUMENT_ONLY  
 DEPENDENCIES: none  
-REGRESSION_RISK: LOW for this docs PR; HIGH for an implementation PR that concatenates helpers with #724 / #639 / #631 / #730 / #798 / #795.  
+REGRESSION_RISK: LOW for this docs PR; HIGH for an implementation PR that concatenates helpers with #724 / #639 / #631 / #730 / #798 / #795 / #831.  
 VALIDATION_REQUIRED: `bash scripts/open-pr-stack-compat.sh --self` exit 0. `git diff origin/main --name-only` is only the two new dated files.  
 STATUS: NEW  
 
