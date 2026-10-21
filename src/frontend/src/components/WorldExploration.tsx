@@ -134,6 +134,13 @@ import {
   shouldApplyLeaderDeathBoost,
 } from "../engine/deathPipeline";
 import { type DotTickResult, tickDotStacks } from "../engine/dotStacks";
+import {
+  DUST_MOTE_CAP,
+  type DustMote,
+  clipDustMotesKeepLast,
+  recycleDustMote,
+  resolveDustMotesOnMapChange,
+} from "../engine/dustMotes";
 import { EffectsManager } from "../engine/effects";
 import {
   type AICell,
@@ -1076,18 +1083,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
   const jackpotHealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
-  // Dust mote particles — updated in render loop, stored in ref to skip re-renders
-  // Dust mote particles — updated in render loop, stored in ref to skip re-renders
-  interface DustMote {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    size: number;
-    alpha: number;
-    life: number;
-    maxLife: number;
-  }
+  // Dust mote particles — updated in render loop, stored in ref to skip re-renders.
+  // Seed / recycle / cap live in engine/dustMotes.ts; WX owns the map-id gate,
+  // RAF physics/draw, and clearing on cleanupMap / battle start.
   const dustMotesRef = useRef<DustMote[]>([]);
   const dustFrameRef = useRef(0);
   // Ambient occlusion mask — pre-computed when map generates; grid of flags
@@ -7305,35 +7303,13 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         }
       }
       aoMaskRef.current = mask;
-      // Seed dust motes on first map
-      // Hard cap: dust motes must never exceed 40 at any time
-      const DUST_MOTE_CAP = 40;
-      if (dustMotesRef.current.length === 0) {
-        const mapPxW = WORLD_GRID_SIZE * effectiveTileW;
-        const mapPxH = WORLD_GRID_SIZE * effectiveTileH;
-        const motes: DustMote[] = [];
-        const count = Math.min(
-          DUST_MOTE_CAP,
-          18 + Math.floor(Math.random() * 8),
-        );
-        for (let i = 0; i < count; i++) {
-          const maxLife = 180 + Math.floor(Math.random() * 120);
-          motes.push({
-            x: (Math.random() - 0.5) * mapPxW,
-            y: (Math.random() - 0.5) * mapPxH,
-            vx: (Math.random() - 0.5) * 0.3,
-            vy: (Math.random() - 0.5) * 0.3,
-            size: 1.5 + Math.random() * 1.5,
-            alpha: 0,
-            life: Math.floor(Math.random() * maxLife),
-            maxLife,
-          });
-        }
-        dustMotesRef.current = motes;
-      } else if (dustMotesRef.current.length > DUST_MOTE_CAP) {
-        // Trim any excess that may have accumulated
-        dustMotesRef.current = dustMotesRef.current.slice(0, DUST_MOTE_CAP);
-      }
+      // Seed dust motes on first map. Map-change cap keeps the FIRST 40;
+      // the RAF path keeps the LAST 40 — do not merge those.
+      dustMotesRef.current = resolveDustMotesOnMapChange(
+        dustMotesRef.current,
+        WORLD_GRID_SIZE * effectiveTileW,
+        WORLD_GRID_SIZE * effectiveTileH,
+      );
     }
 
     // Compute highlight tile sets for battle mode
@@ -8428,14 +8404,7 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
         } else if (m.life < m.maxLife) {
           m.alpha = 0.35 * (1 - (m.life - peak) / fadeOut);
         } else {
-          m.x = (Math.random() - 0.5) * mapPxW;
-          m.y = (Math.random() - 0.5) * mapPxH;
-          m.vx = (Math.random() - 0.5) * 0.3;
-          m.vy = (Math.random() - 0.5) * 0.3;
-          m.size = 1.5 + Math.random() * 1.5;
-          m.alpha = 0;
-          m.life = 0;
-          m.maxLife = 180 + Math.floor(Math.random() * 120);
+          recycleDustMote(m, mapPxW, mapPxH);
         }
         if (Math.abs(m.x) > mapPxW / 2) m.vx *= -1;
         if (Math.abs(m.y) > mapPxH / 2) m.vy *= -1;
@@ -8792,8 +8761,9 @@ const WorldExplorationInner: React.FC<WorldExplorationProps> = ({
 
       // H-3: Hard cap on dust motes enforced EVERY frame (not just on map change).
       // Rapid portal clicks could let motes pile up between cleanupMap() calls.
-      if (dustMotesRef.current.length > 40) {
-        dustMotesRef.current = dustMotesRef.current.slice(-40);
+      // Keep LAST 40 — map-change uses keep-first. Do not merge.
+      if (dustMotesRef.current.length > DUST_MOTE_CAP) {
+        dustMotesRef.current = clipDustMotesKeepLast(dustMotesRef.current);
       }
     } catch (err) {
       // M2: Count consecutive errors. After 3 in a row, restart the loop cleanly
