@@ -4,21 +4,22 @@
 **Status:** PROPOSED — no production code in this pass  
 **HEAD audited:** `0f5363f` (`Merge pull request #332` — report-findings orchestration)  
 **Sibling systems:**
-- Dynamic Spell Discovery — Wave 1 law [`SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md`](./SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md) through still-open Wave 12 [`SPELL_DISCOVERY_ECOSYSTEM_2026-09-29.md`](https://github.com/Mr-Melic/stralt/blob/cursor/spell-discovery-and-evolution-bd29/docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-09-29.md) (#802)
+- Dynamic Spell Discovery — Wave 1 law [`SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md`](./SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md) through still-open Wave 13 [`SPELL_DISCOVERY_ECOSYSTEM_2026-10-21.md`](https://github.com/Mr-Melic/stralt/blob/cursor/spell-discovery-and-evolution-8100/docs/automation/SPELL_DISCOVERY_ECOSYSTEM_2026-10-21.md) (**#837**, opened during this run)
 - Spell, Discovery & Achievement Admin — still-open #677 / #729 / #791 / same-day **#815** (ACTION_IDs only; no unique spell ids)
 - Prior tactical passes — [`SPELL_PROPOSALS_2026-08-31.md`](./SPELL_PROPOSALS_2026-08-31.md) … still-open Wave 12 [`SPELL_PROPOSALS_2026-09-29.md`](https://github.com/Mr-Melic/stralt/blob/cursor/stralt-spell-mechanics-ad8f/docs/automation/SPELL_PROPOSALS_2026-09-29.md) (#787)
-- Boss sheets — [`../design/BOSS_AND_SPELL_DISCOVERY.md`](../design/BOSS_AND_SPELL_DISCOVERY.md); extra doors through #367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / **#808** (Wave 13 bosses); tactical extras #463 / #525 / #563 / #636 / #695 / #726 / #787
+- Boss sheets — [`../design/BOSS_AND_SPELL_DISCOVERY.md`](../design/BOSS_AND_SPELL_DISCOVERY.md); extra doors through #367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / **#808** (Wave 13 bosses) / **#836** (Wave 14 bosses); tactical extras #463 / #525 / #563 / #636 / #695 / #726 / #787
 
 This is **Wave 13** of the tactical catalog. No tactical-proposal PR opened after #787 (2026-09-29). Cron did not land Waves in the 2026-10-01…2026-10-20 window. Live HEAD is unchanged. Wave 12 (#787) filled leftover-MP=0 tools, remaining-CD copy, six-cell occupy, odd-Chebyshev hood, leftover-AP=0-and-leftover-MP≥1 poke, and a mass Imprint signature.
 
-**Wave 12 explicitly deferred eight holes.** Same-day Discovery Wave 12 (#802, opened after #787) claimed **one** of those eight as a unique SDE id. This pass fills three leftovers and leaves the rest held:
+**Wave 12 explicitly deferred eight holes.** Discovery Wave 12 (#802) claimed leftover-MP=0 heal. Same-day Discovery Wave 13 (**#837**, opened while this catalog was in progress) claimed two more leftovers. **SDE wins** those holes. This pass fills the remaining leftovers plus one replacement CD verb:
 
-| Wave-12 leftover | Owner after #802 | This pass |
+| Wave-12 leftover | Owner after #802 / #837 | This pass |
 | :--- | :--- | :--- |
-| Heal if **both leftover MP = 0** | **#802 Dry Gait** (`spell-dry-gait`). #787 Parched Mend (`spell-parched-mend`) is **dropped** — SDE wins. Do **not** ship Parched Mend. | Stamp Dry Gait. Do **not** mint `spell-both-parched` / `spell-parched-mend` |
-| Heal if **both leftover AP = 0 and leftover MP = 0** | Still open. Dry Mend (#747) is leftover **AP = 0** only. Dry Gait is leftover **MP = 0** only. | **This pass:** Gaunt Mend |
-| Eight-cell occupy | Still open. Twin=2 … Six=6, Sept=7 | **This pass:** Oct Span (hollow 3×3 ring, counts as **eight**) |
-| Swap remaining CDs caster ↔ target | Still open. Imprint **copies** (target keeps). Theft **steals**. Grace skips **starting** the next own CD. | **This pass:** Cadence Trade (matching ids; both keep the spells) |
+| Heal if **both leftover MP = 0** | **#802 Dry Gait** (`spell-dry-gait`). #787 Parched Mend is **dropped**. | Stamp Dry Gait. Do **not** ship `spell-parched-mend` |
+| Heal if **one target leftover AP and leftover MP are both 0** | **#837 Hollow Gift** (`spell-hollow-gift`) — **target only** | Stamp Hollow Gift. Do **not** mint `spell-hollow-mend` |
+| Heal if **caster and target** both leftover AP = 0 **and** leftover MP = 0 | Still open. Hollow Gift is **one body**. Dry Mend is both units leftover **AP** only. Dry Gait is both units leftover **MP** only. | **This pass:** Gaunt Mend (four leftover-0 reads) |
+| Eight-cell occupy | #837 **held** (cap 2). Twin=2 … Six=6, Sept=7 | **This pass:** Oct Span (hollow 3×3 ring, counts as **eight**) |
+| Swap remaining CDs caster ↔ target | **#837 Cadence Swap** (`spell-cadence-swap`) — full remaining maps; unknown ids dropped | Stamp Cadence Swap. Do **not** mint `spell-cadence-trade` / `spell-cadence-swap`. **This pass replacement:** Cadence Lag (remaining `n>0` → `n+2`) |
 | Mid-RAF splice | Held (AGENTS.md) | Still held |
 | Fourth `mpCost > 0` walk snipe | Held (Ley Toll / Undertow / Sanguine Toll) | Still held |
 | Sixth echo id | Held | Still held |
@@ -27,9 +28,9 @@ This is **Wave 13** of the tactical catalog. No tactical-proposal PR opened afte
 
 **This pass does not reuse any reserved id.** Every card below fills a hole that is still empty after the reserved set **and** after #726 / #747 / #787 / #802. Every proposed spell is **data-only**: it must resolve from explicit `SpellConfig` / `effectParams` fields. `spell.name` is UI and battle-log copy. Targeting and effects must never branch on name.
 
-Same-day Discovery Wave 13 had **not** opened at authoring (`created:>=2026-10-21` SDE search returned 0 PRs; #815 is admin ACTION_IDs). If a later SDE Wave-13 catalog claims a unique §11 id that matches one below, **SDE wins**; rename is not this pass’s job. Do **not** clone #747 / #802 unique ids (including Dry Mend / Dry Gait). Do **not** ship `spell-parched-mend`. Stamp family / observe metadata onto Wave-13 **tactical** ids only.
+Same-day Discovery Wave 13 **did** open during this run as **#837** (`createdAt` 2026-10-21T00:18:01Z). **SDE wins** unique §11 holes it claimed: Hollow Gift (target both-pools-empty heal) and Cadence Swap (full remaining-CD map exchange). Do **not** clone #747 / #802 / #837 unique ids. Do **not** ship `spell-parched-mend`. Stamp family / observe metadata onto Wave-13 **tactical** ids only. #837 §12.3 says a 2026-10-21 tactical catalog stamps as **Wave 14 family CORE**.
 
-Do **not** mint `spell-both-dry` (Dry Mend owns both-leftover-AP heal), `spell-both-parched` / `spell-parched-mend` (Dry Gait owns both-leftover-MP heal), `spell-hex-span` / `spell-octa-span` / `spell-ring-span` / `spell-eight-span` (Oct Span owns eight-cell), `spell-cadence-copy` / `spell-cadence-swap` / `spell-cd-trade` (Cadence Trade owns the swap), or `spell-even-fold` / `spell-even-plate` (Even Hood owns even-Chebyshev miss; do **not** retag `even_gallery`).
+Do **not** mint `spell-both-dry` (Dry Mend owns both-leftover-AP heal), `spell-both-parched` / `spell-parched-mend` (Dry Gait owns both-leftover-MP heal), `spell-hollow-mend` / `spell-hollow-gift` (Hollow Gift owns **target-only** both-pools heal), `spell-hex-span` / `spell-octa-span` / `spell-ring-span` / `spell-eight-span` (Oct Span owns eight-cell), `spell-cadence-copy` / `spell-cadence-swap` / `spell-cadence-trade` / `spell-cd-trade` (Cadence Swap owns the map exchange; Cadence Lag owns `n>0` → `n+2`), `spell-court-trade` (Court Lag is the mass signature), or `spell-even-fold` / `spell-even-plate` (Even Hood owns even-Chebyshev miss; do **not** retag `even_gallery`).
 
 ---
 
@@ -107,12 +108,12 @@ Six ids, still **not** in `SPELL_ID_CATALOG`. They carry targeting flags. All si
 | `areaShape` cone / cross / line | Typed, **unread**. Area = Chebyshev (`targeting.ts` 690–727) | Unused | Fan Bolt / Cross Cut reserved |
 | `targetType: "line"` | Implemented 8-dir ray (`targeting.ts` 576–617) | **No spell** | File Lance |
 | `applyPushback` / `applyAttract` | Implemented (`occupancy.ts` 482 / 537), **no cast callers** (tests only) | Unused | Shoulder Bash, Hook Line, Gaunt Step relocates the **caster** onto a free Chebyshev-1 of a both-leftover-0 ally — occupancy dest, not `isSwap` |
-| `isSwap` | Caster ↔ one enemy (`spellEngine.ts` 637, 767–768 → WX `swapPositions` 9389–9401) | Swap | Pawn Trade / Ward Interpose / Cadence Trade is **not** `isSwap` (cooldown maps, not tiles) |
+| `isSwap` | Caster ↔ one enemy (`spellEngine.ts` 637, 767–768 → WX `swapPositions` 9389–9401) | Swap | Pawn Trade / Ward Interpose / Cadence Lag is **not** `isSwap` (cooldown remaining, not tiles) |
 | Map `portals` set | Occupancy treats portal tiles as **impassable** (`occupancy.ts` 13–14, 40) | World transitions | Twin Gate uses `gatePads`, never this set |
 | `isTrap` | Still `placeBarrier(..., 3)` (`spellEngine.ts` 442–445) | No trap row | Tripwire |
-| Walk / leftover / force flags | Paper `walkMpSpentThisTurn` (Waves 6–10). Paper `forcedMovedThisTurn` (Wave 9). Leftover AP/MP die at turn end unless Dual Keep / Purse Keep / Stride Keep | Haste grants **now**; Timestep is full **now** | **This pass: Gaunt Mend / Gaunt Hold / Gaunt* / Must Gaunt / Verse Gaunt / Odd Hold / Court Trade** |
+| Walk / leftover / force flags | Paper `walkMpSpentThisTurn` (Waves 6–10). Paper `forcedMovedThisTurn` (Wave 9). Leftover AP/MP die at turn end unless Dual Keep / Purse Keep / Stride Keep | Haste grants **now**; Timestep is full **now** | **This pass: Gaunt Mend / Gaunt Hold / Gaunt* / Must Gaunt / Verse Gaunt / Odd Hold / Court Lag** |
 | Eight-cell occupy | Twin=2; Triple=3; Quad=4; Penta=5; Six=6; Sept=7 | Absent | **This pass: Oct Span** (hollow 3×3 = 8) |
-| Swap remaining CDs | Theft **steals**; Imprint **copies** (target keeps); Rest skips **own** tick; Halve **÷2**; Grace skips **starting** the next own CD | Inferno CD 3 is the only live lock | **This pass: Cadence Trade (swap matching remaining; both keep the spells)** |
+| Remaining CD rewrite | Theft **steals**; Imprint **copies**; Swap (#837) **exchanges full maps**; Rest skips **own** tick; Halve **÷2**; Grace skips **starting** the next own CD; Stall **+1** | Inferno CD 3 is the only live lock | **This pass: Cadence Lag (remaining n>0 → n+2; zeros stay 0)** |
 | Even-Chebyshev miss | Near ≤ 1; Mid **exactly 2**; Far **≥ 3**; Odd **odd** | Unused live | **This pass: Even Hood (even Chebyshev)** |
 
 ### 1.4 Reserved id tombstone (do not collide)
@@ -192,10 +193,13 @@ Six ids, still **not** in `SPELL_ID_CATALOG`. They carry targeting flags. All si
 **Discovery Wave 12 (#802 — still open; never re-propose / never clone):**  
 `spell-orth-stride`, `spell-tri-oath`, `spell-brick-reel`, `spell-lone-bite`, `spell-wake-mark`, `spell-gait-plate`, `spell-glyph-skip`, `spell-full-gait`, `spell-summon-gait`, `spell-still-gift`, `spell-cadence-grace`, `spell-cast-debt`, `spell-brick-orbit`, `spell-watch-alms`, `spell-pair-gait`, `spell-leash-cut`, `spell-dry-gait`, `spell-pack-cap`, `spell-reach-fold`.
 
+**Discovery Wave 13 (#837 — opened during this run; never re-propose / never clone):**  
+`spell-knight-stride`, `spell-quad-oath`, `spell-pit-reel`, `spell-axis-bite`, `spell-shove-mark`, `spell-spent-plate`, `spell-rime-skip`, `spell-full-sting`, `spell-summon-cast`, `spell-hollow-gift`, `spell-cadence-swap`, `spell-strike-debt`, `spell-brick-nudge`, `spell-watch-sip`, `spell-lone-gait`, `spell-hazard-cut`, `spell-drift-gift`, `spell-pack-file`, `spell-diag-fold`.
+
 **Known same-id collisions already on paper (not this pass’s job to rename):**  
 `spell-file-lance` (tactical W2 **and** Discovery W2); `spell-blood-tithe` (tactical W2 pet sacrifice **versus** Discovery W2 HP→AP). Wave 13 does not add a third.
 
-**Do not alias** Gaunt Mend ↔ Dry Mend / Dry Gait / Still Mend / Still Gift / Both Mend / Heave Mend / Shove Mend / Gait Mend / Chase Mend / Clash Mend / Bar Mend / Blood Mend / Parched Mend; Cadence Trade ↔ Cadence Theft / Rest / Grace / Halve / Trim / Shave / Stall / Flush / Stretch / Crack / Break / Lend / Brand / Pin / Imprint; Oct Span ↔ Twin Span / Triple Span / Quad Span / Penta Span / Six Span / Sept Span / Span Guard / Span Pylon / Void Span; Even Hood ↔ Odd Hood / Near Hood / Mid Hood / Far Hood / Fog Hood / Tick Hood / Own Plate / Off Plate / Gait Plate / Sidestep Ward; Gaunt Sting ↔ Dry Sting / Damp Sting / Ready Sting / Lean Sting / Pair Gait / Full Purse / Lone Purse / Pair Purse / Post Sting / Boot Sting / Shove Sting; Gaunt Step ↔ Home Step / Ally Step / Heave Step / Parched Step / Hinge Step / Cover Step / Ghost Step / Soft Step / Bias Step; Gaunt Sill ↔ Quiet Sill / Cast Sill / Drift Sill / Parched Sill / Gift Sill / Wake Mark / Ingress Mark / Dwell Mark; Odd Hold ↔ Dry Hold / Drift Hold / Tool Hold / Boot Hold / Cast Hold / Strike Hold / Hold Ground / Odd Stride / Even Stride; Gaunt Lend ↔ Spent Lend / Boot Lend / Drift Lend / Lean Lend / Leftover Lend / Cadence Lend / Tempo Gift / Watch Lend / Watch Alms; Bare Sip ↔ Gait Sip / Soul Sip / Ap Sip / Drift Sip / Parched Sip / Drain Courage; Gaunt Post ↔ Dummy Post / Drift Post / Lean Post / Bait Pylon / Spark Whelp / Ingress Mark / Dwell Mark / Wake Mark; Gaunt Bounce ↔ Chain Lightning / Ricochet Mark / Split Fang / Heave Bounce / Parched Bounce; Must Gaunt ↔ Must Step / Must Span / Must Pace / Must Drift / Must Lean / Rank Lock / Inch Stride / Cast Hold / Tool Hold; Verse Gaunt ↔ Verse Tax / Verse Pace / Verse Lean / Verse First / Last Mute / Once Verse / Stolen Verse / After Verse / Cast Hold; Gaunt Hold ↔ Strike Hold / Rite First / Tool Hold / Oath Blade / Boot Hold / Lean Hold; Court Trade ↔ Court Dual / Court Keep / Court Stretch / Court Hinge / Court Shove / Court Fold / Court Imprint / Adj Fold / Reach Fold.
+**Do not alias** Gaunt Mend ↔ Hollow Gift / Dry Mend / Dry Gait / Still Mend / Still Gift / Drift Gift / Both Mend / Heave Mend / Shove Mend / Gait Mend / Chase Mend / Clash Mend / Bar Mend / Blood Mend / Parched Mend; Cadence Lag ↔ Cadence Theft / Rest / Grace / Halve / Trim / Shave / Stall / Flush / Stretch / Crack / Break / Lend / Brand / Pin / Imprint / Swap; Oct Span ↔ Twin Span / Triple Span / Quad Span / Penta Span / Six Span / Sept Span / Span Guard / Span Pylon / Void Span; Even Hood ↔ Odd Hood / Near Hood / Mid Hood / Far Hood / Fog Hood / Tick Hood / Own Plate / Off Plate / Gait Plate / Spent Plate / Sidestep Ward; Gaunt Sting ↔ Dry Sting / Damp Sting / Ready Sting / Lean Sting / Full Sting / Pair Gait / Lone Gait / Full Purse / Lone Purse / Pair Purse / Post Sting / Boot Sting / Shove Sting; Gaunt Step ↔ Home Step / Ally Step / Heave Step / Parched Step / Hinge Step / Cover Step / Ghost Step / Soft Step / Bias Step; Gaunt Sill ↔ Quiet Sill / Cast Sill / Drift Sill / Parched Sill / Gift Sill / Wake Mark / Ingress Mark / Dwell Mark / Shove Mark; Odd Hold ↔ Dry Hold / Drift Hold / Tool Hold / Boot Hold / Cast Hold / Strike Hold / Hold Ground / Odd Stride / Even Stride; Gaunt Lend ↔ Spent Lend / Boot Lend / Drift Lend / Lean Lend / Leftover Lend / Cadence Lend / Tempo Gift / Watch Lend / Watch Alms; Bare Sip ↔ Watch Sip / Gait Sip / Soul Sip / Ap Sip / Drift Sip / Parched Sip / Drain Courage; Gaunt Post ↔ Dummy Post / Drift Post / Lean Post / Bait Pylon / Spark Whelp / Ingress Mark / Dwell Mark / Wake Mark / Shove Mark; Gaunt Bounce ↔ Chain Lightning / Ricochet Mark / Split Fang / Heave Bounce / Parched Bounce; Must Gaunt ↔ Must Step / Must Span / Must Pace / Must Drift / Must Lean / Rank Lock / Inch Stride / Cast Hold / Tool Hold; Verse Gaunt ↔ Verse Tax / Verse Pace / Verse Lean / Verse First / Last Mute / Once Verse / Stolen Verse / After Verse / Cast Hold; Gaunt Hold ↔ Strike Hold / Rite First / Tool Hold / Oath Blade / Boot Hold / Lean Hold; Court Lag ↔ Court Dual / Court Keep / Court Stretch / Court Hinge / Court Shove / Court Fold / Court Imprint / Adj Fold / Reach Fold / Diag Fold.
 
 **Duplicates still forbidden to clone:** Shield ≈ Iron Skin; Blood Mend ≈ Rallying Cry; Poison ≈ Venom; Expose ≈ Shadow Veil; Mirror ≈ Reflect Barrier.
 
@@ -205,8 +209,8 @@ Six ids, still **not** in `SPELL_ID_CATALOG`. They carry targeting flags. All si
 
 | Family | Still missing (this pass) | Not this pass (already reserved, live, or still held) |
 | :--- | :--- | :--- |
-| SUPPORT gaunt heal | Heal iff **caster and target** both have leftover **AP = 0 and leftover MP = 0** | Dry Mend is leftover **AP = 0**. Dry Gait / dropped Parched Mend is leftover **MP = 0**. Still Mend is caster **walk MP spent = 0**. Still Gift is **target** spent 0 walk MP. Both Mend is **both walked**. Heave Mend is **both force-moved**. |
-| CONTROL CD trade | Swap remaining CDs on **ids both know**; both keep the spells | Cadence Theft **steals**. Cadence Imprint **copies** (target keeps). Cadence Rest skips **own** tick. Cadence Grace skips **starting** the next own CD. Halve **÷2**. Trim **−1**. Pin **freezes one**. |
+| SUPPORT gaunt heal | Heal iff **caster and target** both have leftover **AP = 0 and leftover MP = 0** | Hollow Gift (#837) is **target only** both pools. Dry Mend is leftover **AP = 0** on both units. Dry Gait is leftover **MP = 0** on both units. Still Mend is caster **walk MP spent = 0**. Still Gift is **target** spent 0 walk MP. Drift Gift is **target force-moved**. Both Mend is **both walked**. Heave Mend is **both force-moved**. |
+| CONTROL CD lag | Remaining `n>0` → `n+2`; zeros stay 0 | Cadence Swap (#837) **exchanges full remaining maps** (unknown ids dropped). Theft **steals**. Imprint **copies** (target keeps). Rest skips **own** tick. Grace skips **starting** the next own CD. Stall **+1**. Stretch **×2**. Halve **÷2**. Trim **−1**. Pin **freezes one**. |
 | SUMMONS eight-cell | Hollow 3×3 ring, counts as **eight**; center hole stays unoccupied | Twin=2. Triple=3. Quad=2×2=4. Penta=plus=5. Six=2×3=6. Sept=stretched plus=7. |
 | DEFENSE even hood | Next applied hit from **even** Chebyshev → 0 | Odd is **odd**. Near is **≤ 1**. Mid is **exactly 2**. Far is **≥ 3**. Gait Plate is leftover **MP ≥ 1**, any range. |
 | DAMAGE gaunt sting | Bonus iff leftover **AP = 0 and leftover MP = 0** | Dry Sting is leftover **AP = 0** (no MP gate). Lean Sting is leftover **AP = 0 and MP ≥ 1**. Ready is leftover **AP ≥ 1 and MP ≥ 1**. Pair Gait is leftover MP **exactly 2**. |
@@ -220,7 +224,7 @@ Six ids, still **not** in `SPELL_ID_CATALOG`. They carry targeting flags. All si
 | CONTROL must-gaunt | Remaining **non-Strike** spells illegal unless leftover MP = 0 **and** this spell spends last AP | Must Lean is leftover **MP = 0** only. Cast Hold bans **all** spells until they **walk**. Tool Hold bans tools until **Strike**. Must Drift is walk **dir**. |
 | CONTROL verse gaunt | Last resolved id is **illegal until leftover AP = 0 and leftover MP = 0** | Verse Lean is until leftover **MP = 0**. Verse Pace is until they **walk**. Last Mute is duration. Verse Tax is legal but **+1 AP**. |
 | CONTROL gaunt hold | Strike illegal unless leftover MP = 0 **and** leftover AP before Strike equals Strike’s AP cost | Lean Hold is leftover **MP = 0** only. Strike Hold is until they **walk**. Rite First is until a **spell**. Tool Hold is cannot-tool-until-Strike. |
-| SUPPORT mass trade | Signature: Cadence Trade on **every other** body (chained, init order) | Court Imprint is mass Imprint. Reach Fold is Chebyshev-exactly-2 **position** swap, `BOSS_ONLY`. Player never owns this. |
+| SUPPORT mass lag | Signature: Cadence Lag on **every other** body (init order) | Court Imprint is mass Imprint. Cadence Swap is a **two-body** map exchange. Reach Fold / Diag Fold are **position** swaps, `BOSS_ONLY`. Player never owns this. |
 | RESOURCE fourth MP snipe | — | **Held forever** with Ley Toll / Undertow / Sanguine Toll |
 | Sixth echo | — | Held for Discovery |
 | Full-bar silence | — | Hex of Silence stays `BOSS_ONLY` |
@@ -228,13 +232,13 @@ Six ids, still **not** in `SPELL_ID_CATALOG`. They carry targeting flags. All si
 | Nine-cell occupy | — | **Skipped**. Wave 14 (solid 3×3). |
 | Remaining CDs floor to 1 | — | **Skipped**. Wave 14 Cadence Floor. |
 
-**Still open after this wave (do not fill today):** mid-RAF splice of the current actor; a fourth `mpCost > 0` walk snipe; a sixth echo id; player-owned Hex of Silence; player-owned About Hinge (stays `BOSS_ONLY`); nine-cell occupy; remaining CDs `max(1)` floor; heal-if leftover AP **equals** leftover MP (including both nonzero); invert leftover AP with leftover MP on one body. Those stay Wave 14 / Discovery so this pass stays discrete.
+**Still open after this wave (do not fill today):** mid-RAF splice of the current actor; a fourth `mpCost > 0` walk snipe; a sixth echo id; player-owned Hex of Silence; player-owned About Hinge (stays `BOSS_ONLY`); nine-cell occupy; remaining CDs `max(1)` floor; heal-if leftover AP **equals** leftover MP (including both nonzero); invert leftover AP with leftover MP on one body. Cadence Swap / Hollow Gift stay #837. Those stay Wave 14 / Discovery so this pass stays discrete.
 
 ---
 
 ## 3. Contract with Dynamic Spell Discovery
 
-Coordinate with Discovery (`c26e5a83-…`) and Admin (`4efa22ec-…`). This pass only stamps acquisition so those layers can filter **by field**. Same-day Discovery Wave 13 had not opened at authoring — **do not mint or clone #747 / #802 unique §11 ids**. If SDE Wave 13 later claims one of this catalog’s ids, **SDE wins**.
+Coordinate with Discovery (`c26e5a83-…`) and Admin (`4efa22ec-…`). This pass only stamps acquisition so those layers can filter **by field**. Same-day Discovery Wave 13 **opened as #837 during this run** — **do not mint or clone #747 / #802 / #837 unique §11 ids**. **SDE already won** Hollow Gift and Cadence Swap. If a later SDE catalog claims another unique id below, **SDE wins**.
 
 ### 3.1 Discovery is still inert (reconfirmed @ `0f5363f`)
 
@@ -257,11 +261,11 @@ Coordinate with Discovery (`c26e5a83-…`) and Admin (`4efa22ec-…`). This pass
 - Enemy AI selects by **id** in `assignedSpells` / `summonKit` / `aiHint`, never `spell.name.includes(...)`. New `summonAI: "octspan"` and `"gauntpost"` are **string enums on the config**.
 - `NOT_PLAYER_LEARNABLE` may appear in kits so the player can *see* them. Witness without grant. Maps to Discovery `ENEMY_ONLY` / `BOSS_ONLY` for persist (never written to owned ids).
 - Default observe path (Discovery §3): hostile **uses** the id (WX `kind: "cast"` + AP spend) → persist observation → **same-encounter win** → `commitSpellDiscoveries`. Possession is not observation. Hit is not required. Fizzle that spent AP **does** observe.
-- Gaunt Mend / Cadence Trade / Even Hood / Gaunt Sting / Odd Hold / Gaunt Lend / Bare Sip / Must Gaunt / Verse Gaunt / Gaunt Hold **arming** (AP spent) **is** observation, including a blocked / unmoved / no-last-id / leftover-gate fizzle after AP. Later consume / convert / peel is **not** a second observe.
+- Gaunt Mend / Cadence Lag / Even Hood / Gaunt Sting / Odd Hold / Gaunt Lend / Bare Sip / Must Gaunt / Verse Gaunt / Gaunt Hold **arming** (AP spent) **is** observation, including a blocked / unmoved / no-last-id / leftover-gate fizzle after AP. Later consume / convert / peel is **not** a second observe.
 - Gaunt Sill **paint** is observation. Later start-turn tax is not a second observe.
 - Gaunt Step / Gaunt Bounce **cast** (AP spent) **is** observation, including a bounce that finds no second body.
 - Oct Span / Gaunt Post **summon** is observation. Later occupy / detonate / death / hole-trap is not a second observe.
-- Court Trade **arm** is observation for witness-only kits. Never written to owned ids.
+- Court Lag **arm** is observation for witness-only kits. Never written to owned ids.
 - Do not require “see it N times” except where a boss adaptation already does. Wave 13 defaults `allowLaterVictory: false`.
 - Do not gate on `unstoppable` / `level_10`.
 - Do not stamp `survivor` (Last Ember / Last Ward). #646 / #679 / #747 / #802 left that feat leftover on purpose.
@@ -289,20 +293,22 @@ Coordinate with Discovery (`c26e5a83-…`) and Admin (`4efa22ec-…`). This pass
 
 **Wave-13 boss extra doors (#808 — do not restamp):** `flush_psalmist`, `lone_lector`, `plate_bursar`, `lend_proctor`. `CHOIR_FLUSH` / `CHOIR_LONE` / `NAVE_PLATE` / `CHOIR_LEND` stay `BOSS_ONLY`.
 
+**Wave-14 boss extra doors (#836 — do not restamp):** `effigy_clerk`, `enter_deacon`, `split_acolyte`, `quiet_chorister`. `CHOIR_EFFIGY` / `NAVE_THRESHOLD` / `CHOIR_SPLIT` / `NAVE_QUIET` stay `BOSS_ONLY`.
+
 **Wave-6…12 tactical extra doors — do not restamp:** `oath_censor`, `hinge_porter`, `exit_mason`, `about_regent`, `pace_prelate`, `span_triune`, `wick_mason`, `slip_castellan`, `court_usher`, `gait_cantor`, `pair_usher`, `flush_precentor`, `dummy_castellan`, `court_hinge_regent`, `shove_cantor`, `stretch_precentor`, `span_quad`, `keep_bursar`, `court_stretch_regent`, `both_cantor`, `stride_bursar`, `span_penta`, `trim_precentor`, `court_keep_regent`, `heave_cantor`, `dual_bursar`, `span_sept`, `halve_precentor`, `court_dual_regent`, `parched_cantor`, `imprint_precentor`, `span_six`, `court_imprint_regent`. `parched_cantor` is **not** Dry Gait’s door and **not** Gaunt Mend’s door.
 
-**Wave-8…12 SDE extras — do not restamp:** `about_hinge_regent`, `odd_gallery`, `rebate_nave`, `wipe_gallery`, `mark_court`, `stall_nave`, `pair_gallery`, `knight_fold_regent`, `inch_gallery`, `rite_nave`, `reach_nave`, `ash_aisle`, `pin_nave`, `close_precentor`, `mid_fold_regent`, `diag_gallery`, `mid_nave`, `void_aisle`, `dwell_pulpit`, `crack_nave`, `long_precentor`, `adj_fold_regent`, `orth_gallery`, `tri_nave`, `brick_aisle`, `wake_pulpit`, `orbit_nave`, `cap_precentor`, `reach_fold_regent`. Do **not** retag `even_gallery` as Even Hood.
+**Wave-8…13 SDE extras — do not restamp:** `about_hinge_regent`, `odd_gallery`, `rebate_nave`, `wipe_gallery`, `mark_court`, `stall_nave`, `pair_gallery`, `knight_fold_regent`, `inch_gallery`, `rite_nave`, `reach_nave`, `ash_aisle`, `pin_nave`, `close_precentor`, `mid_fold_regent`, `diag_gallery`, `mid_nave`, `void_aisle`, `dwell_pulpit`, `crack_nave`, `long_precentor`, `adj_fold_regent`, `orth_gallery`, `tri_nave`, `brick_aisle`, `wake_pulpit`, `orbit_nave`, `cap_precentor`, `reach_fold_regent`, `knight_gallery`, `quad_nave`, `pit_aisle`, `shunt_pulpit`, `nudge_nave`, `file_precentor`, `diag_fold_regent`. Do **not** retag `even_gallery` as Even Hood. Do **not** consume #826 `ENC-*` rooms.
 
 **New proposed extra doors for the boss designer (Wave 14 sheets; not live `BOSS_IDS`):**
 
 | Door | Spell |
 | :--- | :--- |
-| `gaunt_cantor` first-win | Gaunt Mend MULTI child (observe+win still grants). `parched_cantor` stays the dropped Parched Mend slot — **do not reuse**. Dry Mend / Dry Gait have **no** extra door — do not invent `dry_cantor` / `gait_cantor` (the latter is Wave-8 Gait Mend). |
-| `trade_precentor` first-win | Cadence Trade MULTI child. `imprint_precentor` stays Imprint. `halve_precentor` stays Halve. `cap_precentor` stays Pack Cap (`ENEMY_ONLY`). |
+| `gaunt_cantor` first-win | Gaunt Mend MULTI child (observe+win still grants). `parched_cantor` stays the dropped Parched Mend slot — **do not reuse**. Hollow Gift (#837) has **no** extra door — do not invent `hollow_cantor`. Dry Mend / Dry Gait have **no** extra door — do not invent `dry_cantor` / `gait_cantor` (the latter is Wave-8 Gait Mend). |
+| `lag_precentor` first-win | Cadence Lag MULTI child. `imprint_precentor` stays Imprint. `halve_precentor` stays Halve. `cap_precentor` stays Pack Cap. `file_precentor` stays Pack File (`ENEMY_ONLY`). Do **not** mint `trade_precentor`. |
 | `span_oct` first-win | Oct Span MULTI child. `span_six` stays Six Span. `span_sept` stays Sept Span. `span_penta` stays Penta Span. `span_quad` stays Quad Span. `span_triune` stays Triple Span. |
-| `court_trade_regent` kit only | Court Trade (`NOT_PLAYER_LEARNABLE`). `court_imprint_regent` stays Court Imprint. `reach_fold_regent` stays Reach Fold. `adj_fold_regent` stays Adj Fold. |
+| `court_lag_regent` kit only | Court Lag (`NOT_PLAYER_LEARNABLE`). `court_imprint_regent` stays Court Imprint. `reach_fold_regent` stays Reach Fold. `diag_fold_regent` stays Diag Fold. `adj_fold_regent` stays Adj Fold. Do **not** mint `court_trade_regent`. |
 
-Piece-type observe paths (not feat doors): cantors / bishops for Gaunt Mend; scribes / tempo for Cadence Trade; masons / rooks ELITE for Oct Span; lurkers / knights for Even Hood; lurkers / pawns for Gaunt Sting; porters / queens for Gaunt Step; masons / rooks for Gaunt Sill; hex / knights for Odd Hold; buffers / bishops for Gaunt Lend; hex / pawns for Bare Sip; masons / pawns for Gaunt Post; queens / bishops for Gaunt Bounce; knights / pawns for Must Gaunt; hex / bishops for Verse Gaunt; knights / pawns for Gaunt Hold.
+Piece-type observe paths (not feat doors): cantors / bishops for Gaunt Mend; scribes / tempo for Cadence Lag; masons / rooks ELITE for Oct Span; lurkers / knights for Even Hood; lurkers / pawns for Gaunt Sting; porters / queens for Gaunt Step; masons / rooks for Gaunt Sill; hex / knights for Odd Hold; buffers / bishops for Gaunt Lend; hex / pawns for Bare Sip; masons / pawns for Gaunt Post; queens / bishops for Gaunt Bounce; knights / pawns for Must Gaunt; hex / bishops for Verse Gaunt; knights / pawns for Gaunt Hold.
 
 ### 3.5 New `effectParams` keys for this pass
 
@@ -315,7 +321,7 @@ Parsers whitelist. Unknown keys ignored. Missing key → effect does not fire. D
 ```text
 requireCasterLeftoverApEq0, requireCasterLeftoverMpEq0,
 requireTargetLeftoverApEq0, requireTargetLeftoverMpEq0, gauntMendAmount,   // Gaunt Mend
-tradeMatchingCds,                                                         // Cadence Trade — swap matching remaining; both keep spells
+lagRemainingCdsPlus2,                                                     // Cadence Lag — remaining n>0 → n+2; zeros stay 0
 octSpanCells, octSpanHole,                                                // Oct Span — 8; hollow 3×3, center unoccupied
 evenHoodNextHit,                                                          // Even Hood — next hit even Chebyshev → 0
 gauntLeftoverApEq0, gauntLeftoverMpEq0, gauntStingBonus,                  // Gaunt Sting
@@ -329,12 +335,12 @@ gauntBounceNeedBothLeftoverEq0, gauntBounceSearchRadius, gauntBounceCount, // Ga
 mustNonStrikeUnlessLeftoverMpEq0AndSpendsLastAp,                          // Must Gaunt
 verseGauntUntilBothLeftoverEq0,                                           // Verse Gaunt
 gauntHoldStrikeUnlessLeftoverMpEq0AndSpendsLastAp,                        // Gaunt Hold — Strike only as last AP of a dry-walk turn
-courtTradeExcludeCaster                                                   // Court Trade
+courtLagExcludeCaster                                                     // Court Lag
 ```
 
 If a key is missing, the rider does not fire.
 
-Nested kit-only id (not a player card): none new besides Court Trade itself. Gaunt Post’s detonate is **not** a second spell id (the summon row carries `gauntPostDetonateDamage`). Do not mint `spell-gaunt-burst`.
+Nested kit-only id (not a player card): none new besides Court Lag itself. Gaunt Post’s detonate is **not** a second spell id (the summon row carries `gauntPostDetonateDamage`). Do not mint `spell-gaunt-burst`.
 
 Leftover AP / leftover MP are **current remaining after this spell’s AP is paid**, read from the same pools the HUD uses. Walk spends must write leftover MP. Spell spends must write leftover AP. Missing leftover → the gate fails closed (fizzle rider, AP spent, observe). Dual Keep / Purse Keep / Stride Keep leftover that **survives** turn start **does** count as leftover for these gates.
 
@@ -351,7 +357,7 @@ Do not touch damage formulas. Numbers are base `SpellConfig.damage` / effect par
 | Heavy | 4–5 | AoE / delayed / summon, CD 2–3 | Chain / Inferno |
 | Signature | 6 + CD 4+ | Multi-axis; usually not player-learnable | Do not copy Void Collapse 12/80 |
 
-Conditional riders stay small so the **decision** is the power. Cadence Trade’s swap is paid in **matching remaining locks**, not in extra AP. Gaunt Mend’s 8 is paid in **two empty bars on two bodies**.
+Conditional riders stay small so the **decision** is the power. Cadence Lag’s +2 is paid in **already-running remaining**, not in extra AP. Gaunt Mend’s 8 is paid in **two empty bars on two bodies** (Hollow Gift is the one-body cousin).
 
 Do **not** put Must Gaunt and Gaunt Hold in the same CORE: together they force every last AP packet of a dry-walk turn onto a single verb.
 
@@ -373,15 +379,15 @@ RANGE: 3
 TARGET_TYPE: ally  
 LOS: false  
 COOLDOWN: 2  
-EFFECT: `effectParams: {"requireCasterLeftoverApEq0":true,"requireCasterLeftoverMpEq0":true,"requireTargetLeftoverApEq0":true,"requireTargetLeftoverMpEq0":true,"gauntMendAmount":8}`. If **both** caster and target have leftover AP **= 0** **and** leftover walk MP **= 0** at resolve (after this spell’s 3 AP is paid), heal the target 8 through the existing heal helper. If any of the four leftover reads is ≥ 1, fizzle rider (AP spent, no HP). Walk / force-move flags do **not** substitute. Distinct from Dry Mend (#747, both leftover **AP = 0**, MP unconstrained), Dry Gait (#802, both leftover **MP = 0**, AP unconstrained), dropped Parched Mend (same hole as Dry Gait — **do not ship**), Still Mend (#747, caster **spent 0 walk MP**), Still Gift (#802, **target** spent 0 walk MP), Both Mend (#695, both **walked**), Heave Mend (#726, both **force-moved**). The decision: two bodies dump **both** pools, then 8 — Dual Keep / Stride Keep / Purse Keep **block** this until the bank is spent. `healAmount` stays 0 on the row so `inferArchetype` (`enemyAI.ts` 447–452) does not treat a kit that only *carries* this id as healer unless the resolver actually wrote HP; **healer CORE only** when the row is in a live pool.  
+EFFECT: `effectParams: {"requireCasterLeftoverApEq0":true,"requireCasterLeftoverMpEq0":true,"requireTargetLeftoverApEq0":true,"requireTargetLeftoverMpEq0":true,"gauntMendAmount":8}`. If **both** caster and target have leftover AP **= 0** **and** leftover walk MP **= 0** at resolve (after this spell’s 3 AP is paid), heal the target 8 through the existing heal helper. If any of the four leftover reads is ≥ 1, fizzle rider (AP spent, no HP). Walk / force-move flags do **not** substitute. Distinct from Hollow Gift (#837, **target only** leftover AP=0 **and** leftover MP=0 — caster leftover unconstrained), Dry Mend (#747, both leftover **AP = 0**, MP unconstrained), Dry Gait (#802, both leftover **MP = 0**, AP unconstrained), dropped Parched Mend (same hole as Dry Gait — **do not ship**), Still Mend (#747, caster **spent 0 walk MP**), Still Gift (#802, **target** spent 0 walk MP), Drift Gift (#837, **target force-moved**), Both Mend (#695, both **walked**), Heave Mend (#726, both **force-moved**). The decision: two bodies dump **both** pools, then 8 — Dual Keep / Stride Keep / Purse Keep **block** this until the bank is spent. `healAmount` stays 0 on the row so `inferArchetype` (`enemyAI.ts` 447–452) does not treat a kit that only *carries* this id as healer unless the resolver actually wrote HP; **healer CORE only** when the row is in a live pool.  
 DURATION: instant  
 SCALING: 8 follows heal% if any; amount otherwise fixed.  
 SYNERGIES: Walk Toll / Must Step / Drain Courage to dump both bars; Dual Keep / Stride Keep / Purse Keep **blocks** this until they spend the bank; Bare Sip / Parched Sip to land a leftover 0.  
 COUNTERPLAY: Keep 1 leftover AP **or** 1 leftover MP; Cursed Wound; kill the cantor first.  
-POWER_BUDGET: Standard heal, gated on **four** leftover-0 flags. Blood Mend is 12 ungated self. Dry Mend and Dry Gait are single-resource twins — do not stack Gaunt Mend with either in the same CORE.  
+POWER_BUDGET: Standard heal, gated on **four** leftover-0 flags. Blood Mend is 12 ungated self. Hollow Gift is 12 on **one** empty body. Dry Mend and Dry Gait are single-resource twins — do not stack Gaunt Mend with Hollow Gift in the same CORE.  
 AI_USAGE: `aiHint: "heal_if_both_bodies_leftover_ap_eq_0_and_leftover_mp_eq_0"`. Cantors / bishops. Skip if any leftover ≥ 1. **Healer CORE only.** Do not dump leftover **only** to enable this if a Strike would kill.  
 DISCOVERY_ELIGIBILITY: `discoveryEligible: true`, `discoveryWeight: 10`, `discoverySources: { pieceTypes: ["bishop","queen"], levelZoneMin: 1 }`. MULTI child `gaunt_cantor`.  
-EDGE_CASES: Targeting ally already allows self (`targeting.ts` 184–189). Self-cast requires the caster’s leftover AP and leftover MP are both 0 (one body, four keys, two reads). Player-side HP actually increased → `challengeHealUsedRef`. Missing keys → no heal. Do not clone Dry Mend or Dry Gait. Do not ship Parched Mend.  
+EDGE_CASES: Targeting ally already allows self (`targeting.ts` 184–189). Self-cast requires the caster’s leftover AP and leftover MP are both 0 (one body, four keys, two reads) — that self-cast **collides with Hollow Gift’s window**; do not CORE both. Player-side HP actually increased → `challengeHealUsedRef`. Missing keys → no heal. Do not clone Hollow Gift / Dry Mend / Dry Gait. Do not ship Parched Mend.  
 IMPLEMENTATION_COMPLEXITY: LOW — four leftover reads + existing heal helper.  
 STATUS: PROPOSED
 
@@ -409,32 +415,32 @@ effectParams: {"requireCasterLeftoverApEq0":true,"requireCasterLeftoverMpEq0":tr
 
 ---
 
-### SPELL_ID: `spell-cadence-trade`
+### SPELL_ID: `spell-cadence-lag`
 
-NAME: Cadence Trade  
-ROLE: CONTROL — swap remaining CDs on matching ids  
+NAME: Cadence Lag  
+ROLE: CONTROL — remaining CDs `n>0` become `n+2`  
 ACQUISITION: MULTI_SOURCE  
 AP_COST: 3  
 RANGE: 3  
 TARGET_TYPE: enemy  
 LOS: true  
 COOLDOWN: 2  
-EFFECT: No damage. `effectParams: {"tradeMatchingCds":true}`. For each spell id that appears in **both** remaining-CD maps, swap the two remaining integers (0 included). Target **keeps every spell**; caster **keeps every spell**; only the remaining numbers move. Ids only one side owns are ignored (no stolen kit, no gifted kit). Once/battle flags and spell levels are **not** CDs. Distinct from Cadence Theft (#411, **steals** remaining — target loses the lock), Cadence Imprint (#787, **copies** `max(caster, n)` onto the caster; target keeps), Cadence Rest (#747, **own** remaining do not tick), Cadence Grace (#802, **next own spell does not start** its cooldown), Cadence Halve (#726, **÷2** on the hostile), Cadence Trim (−1 on the hostile). The decision: give them your Inferno 0 and take their Inferno 3 — or skip because you wanted that id this turn.  
-DURATION: instant rewrite of both matching remaining maps  
+EFFECT: No damage. `effectParams: {"lagRemainingCdsPlus2":true}`. For each spell id in the **target’s** remaining-CD map with `n > 0`, write `n+2`. Zeros stay 0 (ready ids stay ready). Target **keeps every spell**. Once/battle flags and spell levels are **not** CDs. Distinct from Cadence Swap (#837, **exchange full remaining maps**; unknown ids dropped — **SDE owns that leftover**), Cadence Stall (#590, remaining `n>0` → `n+1`), Cadence Stretch (#636, remaining ×2), Cadence Theft (#411, **steals** remaining), Cadence Imprint (#787, **copies** onto the caster; target keeps), Cadence Rest (#747, **own** remaining do not tick), Cadence Grace (#802, **next own spell does not start** its cooldown), Cadence Halve (#726, **÷2** on the hostile), Cadence Trim (−1 on the hostile). The decision: Inferno 3 becomes 5 — skip the recast for two extra turns — or Crack it to 0 first. Do **not** mint `spell-cadence-trade`.  
+DURATION: instant rewrite of remaining `n>0`  
 SCALING: none.  
-SYNERGIES: Verse Gaunt / Must Gaunt after you took a 3-lock; Halve them **before** Trade if you do not want a 3; Imprint is the one-way cousin — do not stack both in the same CORE.  
-COUNTERPLAY: Do not hold a 3-lock against a tempo bishop if your matching id is at 0; recast the locked id **before** Trade; Cadence Crack their highest to 0 before they swap.  
-POWER_BUDGET: Standard control, 0 damage, CD 2. Power is **exchanged downtime**, not a steal and not a copy.  
-AI_USAGE: `aiHint: "trade_if_target_matching_remaining_minus_caster_matching_remaining_ge_2"`. Scribes / tempo. Skip if no shared id where `|their remaining − our remaining| ≥ 2`, or if the caster’s next intended id would lock after the swap.  
-DISCOVERY_ELIGIBILITY: true. MULTI child `trade_precentor`. `pieceTypes: ["bishop","queen"]`, `levelZoneMin: 1`  
-EDGE_CASES: Missing key → no rewrite. Do not write `spellLevelValues`. Do not reset Dual Keep’s once/battle. Preview must show **both** maps after the swap. Empty intersection → fizzle rider (AP spent, observe). Swapping 0 with 0 is a legal no-op that still observes.  
-IMPLEMENTATION_COMPLEXITY: MEDIUM — intersect two cooldown maps by id and swap integers.  
+SYNERGIES: Verse Gaunt after you padded their last id; Stall is the +1 cousin — do not CORE both; Swap (#837) is the exchange cousin — do not CORE both.  
+COUNTERPLAY: Recast the locked id **before** Lag (zero stays zero); Cadence Crack their highest to 0; wait the extra 2.  
+POWER_BUDGET: Standard control, 0 damage, CD 2. Power is **padded downtime**, not a steal, copy, or map swap.  
+AI_USAGE: `aiHint: "lag_if_target_has_remaining_cd_ge_2"`. Scribes / tempo. Skip if every remaining is 0, or if the only lock is already ≥ 4 and a Strike would kill.  
+DISCOVERY_ELIGIBILITY: true. MULTI child `lag_precentor`. `pieceTypes: ["bishop","queen"]`, `levelZoneMin: 1`  
+EDGE_CASES: Missing key → no rewrite. Do not write `spellLevelValues`. Do not reset Dual Keep’s once/battle. Preview must show which remaining increase. All-zero remaining → fizzle rider (AP spent, observe).  
+IMPLEMENTATION_COMPLEXITY: LOW — walk remaining map, add 2 when n>0.  
 STATUS: PROPOSED
 
 **SpellConfig sketch**
 
 ```text
-id: spell-cadence-trade
+id: spell-cadence-lag
 effectType: debuff
 effectCategory: control
 targetType: enemy
@@ -448,7 +454,7 @@ usableByPlayer: true
 usableByEnemy: true
 minLevel: 1
 isBaseSpell: false
-effectParams: {"tradeMatchingCds":true}
+effectParams: {"lagRemainingCdsPlus2":true}
 ```
 
 ---
@@ -511,7 +517,7 @@ RANGE: 0
 TARGET_TYPE: self  
 LOS: false  
 COOLDOWN: 2  
-EFFECT: `effectParams: {"evenHoodNextHit":true}`. The next **applied** damaging hit whose Chebyshev distance from the attacker’s tile to this unit is **even** (0, 2, 4, …) deals 0 and consumes the charge. Odd-Chebyshev hits (1, 3, 5, …) land and **do not** consume. Distinct from Odd Hood (#787, **odd**), Near Hood (≤ 1 — consumes on 1, which is odd), Mid Hood (**exactly 2**, even — a subset), Far Hood (**≥ 3**, mixed), Gait Plate (#802, leftover **MP ≥ 1**, any range), Own Plate (next hit on **your turn**, any range), Sidestep Ward (next hit any range). The decision: stand at odd range against a bishop’s range-2, or bait the mid-file poke into a 0.  
+EFFECT: `effectParams: {"evenHoodNextHit":true}`. The next **applied** damaging hit whose Chebyshev distance from the attacker’s tile to this unit is **even** (0, 2, 4, …) deals 0 and consumes the charge. Odd-Chebyshev hits (1, 3, 5, …) land and **do not** consume. Distinct from Odd Hood (#787, **odd**), Near Hood (≤ 1 — consumes on 1, which is odd), Mid Hood (**exactly 2**, even — a subset), Far Hood (**≥ 3**, mixed), Gait Plate (#802, leftover **MP ≥ 1**, any range), Spent Plate (#837, leftover **AP ≥ 1**, any range), Own Plate (next hit on **your turn**, any range), Sidestep Ward (next hit any range). The decision: stand at odd range against a bishop’s range-2, or bait the mid-file poke into a 0.  
 DURATION: until consumed or this unit’s next turn start (whichever first)  
 SCALING: none.  
 SYNERGIES: Must Step forces Chebyshev-1 walks (odd — they **land**); Odd Hood stacks poorly (parity split). Mid Hood is the exact-2 subset — do not CORE both.  
@@ -535,7 +541,7 @@ RANGE: 3
 TARGET_TYPE: enemy  
 LOS: true  
 COOLDOWN: 1  
-EFFECT: Deal 10. If the target’s leftover AP **= 0** **and** leftover walk MP **= 0** at resolve, deal an extra 8 as a second existing `dealDamage` call (`effectParams: {"gauntLeftoverApEq0":true,"gauntLeftoverMpEq0":true,"gauntStingBonus":8}`). Otherwise 10 only. Distinct from Dry Sting (leftover **AP = 0**, no MP gate), Lean Sting (#787, leftover **AP = 0 and MP ≥ 1**), Ready Sting (leftover **AP ≥ 1 and MP ≥ 1**), Damp Sting (leftover **MP ≥ 2**), Pair Gait (#802, leftover MP **exactly 2**), Pair Purse (leftover AP **exactly 2**). The decision: dump **both** bars and you are the Gaunt Sting window; keep a 1-MP chip and Lean Sting is the cousin, not this.  
+EFFECT: Deal 10. If the target’s leftover AP **= 0** **and** leftover walk MP **= 0** at resolve, deal an extra 8 as a second existing `dealDamage` call (`effectParams: {"gauntLeftoverApEq0":true,"gauntLeftoverMpEq0":true,"gauntStingBonus":8}`). Otherwise 10 only. Distinct from Dry Sting (leftover **AP = 0**, no MP gate), Lean Sting (#787, leftover **AP = 0 and MP ≥ 1**), Full Sting (#837, leftover **AP ≥ 3** on the **caster**), Ready Sting (leftover **AP ≥ 1 and MP ≥ 1**), Damp Sting (leftover **MP ≥ 2**), Pair Gait (#802, leftover MP **exactly 2**), Lone Gait (#837, leftover MP **exactly 1**), Pair Purse (leftover AP **exactly 2**). The decision: dump **both** bars and you are the Gaunt Sting window; keep a 1-MP chip and Lean Sting is the cousin, not this.  
 DURATION: instant  
 SCALING: both numbers follow dmg%.  
 SYNERGIES: Drain Courage + Walk Toll to land both leftover 0; Dual Keep / Stride Keep **blocks** the bonus; Gaunt Mend wants the same window on allies.  
@@ -583,7 +589,7 @@ RANGE: 3
 TARGET_TYPE: ground  
 LOS: true  
 COOLDOWN: 2  
-EFFECT: Paint one free cell 2 turns. `effectParams: {"gauntSillNeedBothLeftoverEq0":true,"gauntSillDamage":8,"gauntSillDuration":2}`. When a body **starts their turn** occupying the cell, if leftover AP **= 0** **and** leftover MP **= 0**, deal 8 through `dealDamage` and keep the paint (can tax again next start). If either leftover ≥ 1 (Dual Keep / Purse Keep / Stride Keep / unspent last turn), no damage, paint remains. Walk-on, force-move, swap, blink onto or off are legal. Distinct from Wake Mark (#802, start-turn detonate **any leftover** and is a one-shot mark), Ingress Mark (walk **enter**), Dwell Mark (end-turn occupy, **any leftover**), Lean Post (summon leftover **AP = 0**), Parched Sill (occupant cannot **spend walk MP**). The decision: camp fully spent on the tile and eat 8, or keep a 1-chip bank and the tax misses.  
+EFFECT: Paint one free cell 2 turns. `effectParams: {"gauntSillNeedBothLeftoverEq0":true,"gauntSillDamage":8,"gauntSillDuration":2}`. When a body **starts their turn** occupying the cell, if leftover AP **= 0** **and** leftover MP **= 0**, deal 8 through `dealDamage` and keep the paint (can tax again next start). If either leftover ≥ 1 (Dual Keep / Purse Keep / Stride Keep / unspent last turn), no damage, paint remains. Walk-on, force-move, swap, blink onto or off are legal. Distinct from Wake Mark (#802, start-turn detonate **any leftover** and is a one-shot mark), Shove Mark (#837, **force-move landing**), Ingress Mark (walk **enter**), Dwell Mark (end-turn occupy, **any leftover**), Lean Post (summon leftover **AP = 0**), Parched Sill (occupant cannot **spend walk MP**). The decision: camp fully spent on the tile and eat 8, or keep a 1-chip bank and the tax misses.  
 DURATION: 2 turns  
 SCALING: 8 follows dmg% if the painter’s SP applies to tile ticks; otherwise fixed.  
 SYNERGIES: Walk Toll / Drain Courage to empty them **before** their turn start; Dual Keep **saves** them; Gaunt Sting wants the same window on your turn, this tax wants it on **theirs**.  
@@ -655,7 +661,7 @@ RANGE: 3
 TARGET_TYPE: enemy  
 LOS: true  
 COOLDOWN: 1  
-EFFECT: Deal 8. If the target’s leftover walk MP **= 0** and leftover AP **≥ 1**, steal 1 leftover AP (their current AP −1, caster current AP +1, clamp at 0 / kit max). `effectParams: {"bareSipAp":1,"requireTargetLeftoverMpEq0Sip":true}`. If leftover MP ≥ 1 or leftover AP = 0, 8 only (no steal). Distinct from Parched Sip (#787, steal leftover **MP** iff leftover **AP = 0** — the inverse window), Gait Sip (MP iff they **walked**), Drift Sip (leftover AP iff **forced**), Soul Sip (ungated MP), Drain Courage (ungated AP debit + drain). The decision: dump walk and keep spell chips — you are the Bare Sip window. Lean Sting is leftover AP=0 **and** leftover MP≥1, the other diagonal.  
+EFFECT: Deal 8. If the target’s leftover walk MP **= 0** and leftover AP **≥ 1**, steal 1 leftover AP (their current AP −1, caster current AP +1, clamp at 0 / kit max). `effectParams: {"bareSipAp":1,"requireTargetLeftoverMpEq0Sip":true}`. If leftover MP ≥ 1 or leftover AP = 0, 8 only (no steal). Distinct from Watch Sip (#837, **overwatch snap** steals leftover AP from a **walker**), Parched Sip (#787, steal leftover **MP** iff leftover **AP = 0** — the inverse window), Gait Sip (MP iff they **walked**), Drift Sip (leftover AP iff **forced**), Soul Sip (ungated MP), Drain Courage (ungated AP debit + drain). The decision: dump walk and keep spell chips — you are the Bare Sip window. Lean Sting is leftover AP=0 **and** leftover MP≥1, the other diagonal.  
 DURATION: instant  
 SCALING: 8 follows dmg%. Stolen AP is 1, unscaled.  
 SYNERGIES: Walk Toll to land leftover MP 0 while they still hold AP; Odd Hold wants leftover AP odd — stealing 1 flips parity.  
@@ -754,7 +760,7 @@ COOLDOWN: 2
 EFFECT: `effectParams: {"verseGauntUntilBothLeftoverEq0":true}`. Remember the target’s **last resolved spell id** at arm (id match). That id’s confirm fails until leftover AP **= 0** **and** leftover MP **= 0**. Other ids remain legal. Distinct from Verse Lean (#787, until leftover **MP = 0** only), Verse Pace (until they **walk**), Last Mute (duration silence of last id), Verse Tax (legal but +1 AP), Verse First (must spell before Strike). The decision: dump **both** bars to recast Inferno, or switch ids and keep a chip.  
 DURATION: until both leftover 0 **or** the target’s next turn end, whichever first  
 SCALING: none.  
-SYNERGIES: Cadence Trade to put a 3-lock on the last id **and** this lock; Dual Keep **blocks** the unlock.  
+SYNERGIES: Cadence Lag to pad the last id **and** this lock; Dual Keep **blocks** the unlock.  
 COUNTERPLAY: Switch ids; Dual Keep then wait the turn end peel; dump both bars.  
 POWER_BUDGET: Standard 3 / CD 2 / 0 damage. Last-id lock with a two-resource key.  
 AI_USAGE: `aiHint: "verse_gaunt_if_target_last_id_is_their_best_and_they_hold_leftover"`. Hex / bishops. Skip if they have no last id or last id is Strike.  
@@ -789,32 +795,32 @@ STATUS: PROPOSED
 
 ---
 
-### SPELL_ID: `spell-court-trade`
+### SPELL_ID: `spell-court-lag`
 
-NAME: Court Trade  
-ROLE: SUPPORT — Cadence Trade against **every other** body  
+NAME: Court Lag  
+ROLE: SUPPORT — Cadence Lag on **every other** body  
 ACQUISITION: NOT_PLAYER_LEARNABLE  
 AP_COST: 6  
 RANGE: 0  
 TARGET_TYPE: self  
 LOS: false  
 COOLDOWN: 4  
-EFFECT: `effectParams: {"tradeMatchingCds":true,"courtTradeExcludeCaster":true}`. In **live initiative order**, for each other combatant, swap matching remaining CDs with the **current** caster map (chained). Both sides keep their spells. Preview must show the **final** remaining maps. Distinct from Court Imprint (#787, mass **copy** onto the caster; targets keep), Court Dual / Court Keep (mass leftover banks), Reach Fold (#802, Chebyshev-exactly-2 **position** swap, `BOSS_ONLY` on `reach_fold_regent`). Player never owns this. Witness-only.  
-DURATION: instant chained rewrites  
+EFFECT: `effectParams: {"lagRemainingCdsPlus2":true,"courtLagExcludeCaster":true}`. In **live initiative order**, for each other combatant, remaining `n>0` become `n+2` (zeros stay 0). Preview must show the **final** remaining maps. Distinct from Court Imprint (#787, mass **copy** onto the caster; targets keep), Court Dual / Court Keep (mass leftover banks), Cadence Swap (#837, two-body **map exchange**), Reach Fold (#802) / Diag Fold (#837) (**position** swaps, `BOSS_ONLY`). Player never owns this. Witness-only. Do **not** mint `spell-court-trade`.  
+DURATION: instant remaining rewrite on every other body  
 SCALING: none.  
-SYNERGIES: Kit with Inferno / other CD-3 ids so the court can dump a 3 onto the player and pick up 0s. Do not kit with Cadence Trade as a second player-learnable door.  
-COUNTERPLAY: Do not share CD-bearing ids with the court caster; recast before the arm; Cadence Crack the court’s highest to 0.  
-POWER_BUDGET: Signature 6 / CD 4 / 0 damage. Kit-only because chained swaps scramble the board.  
-AI_USAGE: `aiHint: "court_trade_if_any_other_body_matching_remaining_minus_ours_ge_2"`. Kit-only on `court_trade_regent`. Skip if no shared id with |Δ remaining| ≥ 2.  
+SYNERGIES: Kit with Inferno / other CD-3 ids so the court pads the player’s running locks. Do not kit with Cadence Lag as a second player-learnable door on the same body.  
+COUNTERPLAY: Recast before the arm so remaining is 0 (zeros stay 0); Cadence Crack the highest to 0; wait the extra 2.  
+POWER_BUDGET: Signature 6 / CD 4 / 0 damage. Kit-only because a mass +2 scramble is a mechanic, not a farmable spell.  
+AI_USAGE: `aiHint: "court_lag_if_any_other_body_has_remaining_cd_ge_2"`. Kit-only on `court_lag_regent`. Skip if every other remaining map is all-zero.  
 DISCOVERY_ELIGIBILITY: `discoveryEligible: false`. `NOT_PLAYER_LEARNABLE`. Observe still logs for dim `UNKNOWN TECHNIQUE`. Never `ownedSpellIds`.  
-EDGE_CASES: Arm is observation. Missing `courtTradeExcludeCaster` → do not self-swap. Empty field besides caster → fizzle (AP spent, observe). Do not write `spellLevelValues`.  
-IMPLEMENTATION_COMPLEXITY: HIGH — chained remaining-map swaps + preview. Same class as Court Imprint.  
+EDGE_CASES: Arm is observation. Missing `courtLagExcludeCaster` → do not pad the caster. Empty field besides caster → fizzle (AP spent, observe). Do not write `spellLevelValues`.  
+IMPLEMENTATION_COMPLEXITY: MEDIUM — walk remaining maps, add 2 when n>0. Same class as Court Imprint.  
 STATUS: PROPOSED
 
 **SpellConfig sketch**
 
 ```text
-id: spell-court-trade
+id: spell-court-lag
 effectType: debuff
 effectCategory: control
 targetType: self
@@ -829,7 +835,7 @@ usableByEnemy: true
 minLevel: 8
 isBaseSpell: false
 acquisitionModel: NOT_PLAYER_LEARNABLE
-effectParams: {"tradeMatchingCds":true,"courtTradeExcludeCaster":true}
+effectParams: {"lagRemainingCdsPlus2":true,"courtLagExcludeCaster":true}
 ```
 
 ---
@@ -843,7 +849,7 @@ effectParams: {"tradeMatchingCds":true,"courtTradeExcludeCaster":true}
 | Leftover MP = 0, leftover AP ≥ 1 | Bare Sip (steal AP). Lean Sting / Parched Sip / Dry Gait are **sibling** windows — not this pass |
 | Leftover AP odd | Odd Hold blocks walk |
 | Last AP packet of a dry-walk turn | Must Gaunt (non-Strike) **or** Gaunt Hold (Strike) — not both in one CORE |
-| Shared remaining CD id | Cadence Trade / Court Trade |
+| Remaining CD n>0 on a hostile | Cadence Lag / Court Lag |
 | Hollow 3×3 ring free, hole occupied | Oct Span cages the hole |
 | Next hit even Chebyshev | Even Hood blanks it |
 
@@ -855,7 +861,7 @@ Dual Keep / Purse Keep / Stride Keep leftover that survives turn start **blocks*
 
 1. Discovery ownership split (`SDE-2026-08-31-001`) — without it every Wave-13 id forced into `starterSpells` becomes always-owned.
 2. Leftover AP / leftover MP writers (HUD pools after each spend). Dual Keep / Purse Keep / Stride Keep must write surviving leftover at turn start.
-3. Cadence remaining-CD maps (already required by Waves 5–12). Trade is intersect-and-swap.
+3. Cadence remaining-CD maps (already required by Waves 5–12). Cadence Swap (#837) is full remaining-map exchange. Cadence Lag is remaining `n>0` → `n+2`.
 4. Occupy-weight **before** Oct Span (cap 2 cannot host weight 8).
 5. Confirm gates for Must Gaunt / Gaunt Hold / Odd Hold / Verse Gaunt.
 6. Hollow multi-cell occupy (`octspan`) and empty-kit mine (`gauntpost`).
@@ -871,15 +877,15 @@ Do not implement production code in this pass.
 | :--- | :--- |
 | W13-1 | No Wave-13 id appears in `spellData.ts` / `SPELL_ID_CATALOG` / §1.4 tombstone |
 | W13-2 | `spell-parched-mend` is **not** shipped; Dry Gait owns leftover-MP=0 heal |
-| W13-3 | `spell-gaunt-mend` requires **four** leftover-0 reads, not Dry Mend / Dry Gait |
-| W13-4 | Cadence Trade **swaps** matching remaining; does not steal; does not copy-max |
+| W13-3 | `spell-gaunt-mend` requires **four** leftover-0 reads (two bodies). Hollow Gift (#837) is **target only**. Not Dry Mend / Dry Gait |
+| W13-4 | Cadence Lag is remaining `n>0` → `n+2`; zeros stay 0. Does **not** clone Cadence Swap (#837) |
 | W13-5 | Oct Span is hollow 3×3, counts as **eight**, center unoccupied |
 | W13-6 | Even Hood does **not** retag `even_gallery`; odd hits land and do not consume |
 | W13-7 | Gaunt Sting bonus is leftover AP=0 **and** leftover MP=0, not Lean Sting’s MP≥1 |
 | W13-8 | Bare Sip is leftover **AP** steal iff leftover **MP = 0** (inverse of Parched Sip) |
 | W13-9 | Must Gaunt and Gaunt Hold are **not** in the same CORE |
-| W13-10 | Court Trade is `NOT_PLAYER_LEARNABLE`; `court_trade_regent` is kit-only |
-| W13-11 | Extra doors `gaunt_cantor` / `trade_precentor` / `span_oct` / `court_trade_regent` do not restamp #808 / #787 / #802 |
+| W13-10 | Court Lag is `NOT_PLAYER_LEARNABLE`; `court_lag_regent` is kit-only |
+| W13-11 | Extra doors `gaunt_cantor` / `lag_precentor` / `span_oct` / `court_lag_regent` do not restamp #808 / #836 / #787 / #802 / #837 |
 | W13-12 | `mpCost` is 0 on every Wave-13 row |
 | W13-13 | `summonAI` values are `"octspan"` / `"gauntpost"` enums, never parsed names |
 | W13-14 | Oct Span does not ship against `ENEMY_SUMMON_CAP === 2` without occupy-weight |
@@ -889,11 +895,11 @@ Do not implement production code in this pass.
 ## 9. Out of scope
 
 - Production TypeScript / Motoko / bindgen / PocketIC.
-- Editing `BOSS_AND_SPELL_DISCOVERY.md` (#367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / **#808** own extra doors).
+- Editing `BOSS_AND_SPELL_DISCOVERY.md` (#367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / **#808** / **#836** own extra doors).
 - Restamping any door in §3.4.
 - A fourth `mpCost > 0` walk snipe; Hex of Silence; About Hinge; mid-RAF splice; sixth echo; nine-cell occupy; Cadence Floor.
-- Cloning Shield / Iron Skin, Blood Mend / Rally, Poison / Venom, Expose / Shadow Veil, Mirror / Reflect, Lens / Overcast, Short Sight / Paper Wind, Tempo Gift / Loan Tempo, Goad / Taunt Oath, Rime Tile / Rime Sheet, File Lance, Blood Tithe, Hex of Silence, Dry Mend, Dry Gait, Parched Mend.
-- Putting unique #802 §11 ids in this catalog.
+- Cloning Shield / Iron Skin, Blood Mend / Rally, Poison / Venom, Expose / Shadow Veil, Mirror / Reflect, Lens / Overcast, Short Sight / Paper Wind, Tempo Gift / Loan Tempo, Goad / Taunt Oath, Rime Tile / Rime Sheet, File Lance, Blood Tithe, Hex of Silence, Dry Mend, Dry Gait, Parched Mend, Hollow Gift, Cadence Swap.
+- Putting unique #802 / #837 §11 ids in this catalog.
 
 ---
 
@@ -902,7 +908,7 @@ Do not implement production code in this pass.
 | SPELL_ID | NAME | ROLE | ACQUISITION | AP | CD | Door |
 | :--- | :--- | :--- | :--- | ---: | ---: | :--- |
 | `spell-gaunt-mend` | Gaunt Mend | SUPPORT | MULTI_SOURCE | 3 | 2 | `gaunt_cantor` |
-| `spell-cadence-trade` | Cadence Trade | CONTROL | MULTI_SOURCE | 3 | 2 | `trade_precentor` |
+| `spell-cadence-lag` | Cadence Lag | CONTROL | MULTI_SOURCE | 3 | 2 | `lag_precentor` |
 | `spell-oct-span` | Oct Span | SUMMONS | MULTI_SOURCE | 4 | 3 | `span_oct` |
 | `spell-even-hood` | Even Hood | DEFENSE | ELITE | 2 | 2 | (piece observe) |
 | `spell-gaunt-sting` | Gaunt Sting | DAMAGE | ENEMY_DISCOVERY | 2 | 1 | (piece observe) |
@@ -916,6 +922,6 @@ Do not implement production code in this pass.
 | `spell-must-gaunt` | Must Gaunt | CONTROL | ELITE | 3 | 2 | (piece observe) |
 | `spell-verse-gaunt` | Verse Gaunt | CONTROL | ENEMY_DISCOVERY | 3 | 2 | (piece observe) |
 | `spell-gaunt-hold` | Gaunt Hold | CONTROL | ELITE | 3 | 2 | (piece observe) |
-| `spell-court-trade` | Court Trade | SUPPORT | NOT_PLAYER_LEARNABLE | 6 | 4 | `court_trade_regent` (kit) |
+| `spell-court-lag` | Court Lag | SUPPORT | NOT_PLAYER_LEARNABLE | 6 | 4 | `court_lag_regent` (kit) |
 
 STATUS: PROPOSED — no production code.
