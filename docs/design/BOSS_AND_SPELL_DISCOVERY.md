@@ -1,15 +1,48 @@
 # Stralt Boss & Boss-Spell Discovery Design
 
 **Author:** Boss and Boss-Spell Designer (automation)  
-**Date:** 2026-09-29 (iterates 2026-09-28 Wave 12 / 2026-09-27 Wave 11 / 2026-09-26 Wave 10 / 2026-09-25 Wave 9 / 2026-09-24 Wave 8 / 2026-09-23 Wave 7 / 2026-09-22 Wave 6 / 2026-09-21 Wave 5 / 2026-09-02 Wave 4 / 2026-09-01 Wave 3 / 2026-08-31 / #137)  
+**Date:** 2026-10-21 (iterates 2026-09-29 Wave 13 / 2026-09-28 Wave 12 / 2026-09-27 Wave 11 / 2026-09-26 Wave 10 / 2026-09-25 Wave 9 / 2026-09-24 Wave 8 / 2026-09-23 Wave 7 / 2026-09-22 Wave 6 / 2026-09-21 Wave 5 / 2026-09-02 Wave 4 / 2026-09-01 Wave 3 / 2026-08-31 / #137)  
 **Status:** PROPOSED (design only — no production code in this change)  
-**Scope:** All 19 shipped bosses, Wave-2 through Wave-12 quartets, and Wave-13 quartet. Every special ability classified. Indefinite progression, no level cap.
+**Scope:** All 19 shipped bosses, Wave-2 through Wave-13 quartets, and Wave-14 quartet. Every special ability classified. Indefinite progression, no level cap.
 
 This document is the design contract for later implementation. It does **not** change combat math, the RAF loop, map generation, turn order, or any runtime module. Implementers must follow the constraints in §2 and the per-boss `STATUS: PROPOSED` sheets.
 
 ---
 
-## 0. Changelog — 2026-09-29 cron
+## 0. Changelog — 2026-10-21 cron
+
+`BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; open #753 holds Wave 12 + Table J; open #808 holds Wave 13 + Table K; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 14 + Rush **Table L**.
+
+Live audit against `0f5363f` (`Merge pull request #332`) — same facts as §0.1–§0.10, re-read on 2026-10-21:
+
+| Fact | Still true |
+| :--- | :--- |
+| `getBossEffectiveStats` multiplies catalog HP by `1.08^diff` only | Slice A not implemented. Even-match HP is still 60–600. `progression.ts` 308–338. |
+| Final Pawn `phase2.statMultiplier: 999`, `summonCount: 11` | `bossDefaults.ts` 475–481 |
+| Rush room 9 `boss2Id: "weeping_pawn_2"` | Still not a `BossId`. Wave 3 remap to `second_lament` is still spec-only. `useBossRush.ts` 127. |
+| `pickBossKitSpell` first-off-cooldown | `useBossAI.ts` 38–54; decide fns still pass `new Map()` (e.g. 172) so cooldown is unused |
+| Backend `defaultBossConfigs()` stale 12-boss seed | `admin.mo` 350; still `fireball` / `cursed_gust` |
+| Frontend catalog forced innate | `WorldExploration.tsx` still maps every `starterSpells` row `isBaseSpell: true`. File is now **18,749** lines (was 19,213 on 2026-09-29). `adminSafety.ts` 711–719 is library-retire include, not a discovery path. |
+| `applyAttract` / `applyPushback` unused by casts | `occupancy.ts` 482 / 537; tests only. MIMA-2026-08-31-005 still OPEN (#336). |
+| Swap × hazards | `spellEngine.ts` 768 calls `swapPositions`; WX still copies coords only. MIMA-2026-08-31-001 still OPEN. |
+| Line targeting exists, unread by data | `targeting.ts` 580. `areaShape` still unread (Chebyshev `areaRadius`, 690–727). Fan Bolt’s cone wire is still unbuilt. Facing (`currentView`) still has no battle-walk writer — #411 fail-closed until that writer exists. |
+| Seeded feats | Still 15 in `defaultAchievements()` (`admin.mo` 309–326). No boss-discovery feats. |
+
+**This pass adds:**
+
+1. Union of Wave 5 (`ram_castellan`, `fosse_warden`, `stride_censor`, `morrow_herald`) + Table C from open #367, Wave 6 (`lock_marshal`, `bait_vicar`, `font_abbess`, `surplus_auditor`) + Table D from open #406, Wave 7 (`mill_seneschal`, `counter_chaplain`, `wedge_prior`, `levy_rector`) + Table E from open #474, Wave 8 (`gaze_beadle`, `span_chamberlain`, `cover_hospitaller`, `lintel_sacrist`) + Table F from open #518, Wave 9 (`toll_ostiary`, `hinge_precentor`, `veil_verger`, `oath_dean`) + Table G from open #572, Wave 10 (`crypt_sexton`, `march_prefect`, `aisle_canon`, `orbit_succentor`) + Table H from open #638, Wave 11 (`sole_thurifer`, `bias_prebendary`, `brick_cellarer`, `rebound_almoner`) + Table I from open #663, Wave 12 (`infirm_chanter`, `yoke_subchanter`, `salve_wicker`, `brand_curate`) + Table J from open #753, **and** Wave 13 (`flush_psalmist`, `lone_lector`, `plate_bursar`, `lend_proctor`) + Table K from open #808.
+2. Wave 14: `effigy_clerk`, `enter_deacon`, `split_acolyte`, `quiet_chorister`. Not in `BOSS_IDS`. Primary holes: **1-HP empty-kit taunt post** (Goad / Taunt Oath are *unit-targeted, no body*; Bait Pylon intercepts the next *hostile spell*; Bastion / Span Pylon occupy without a cast-target filter; Dummy Post is a 1-HP pawn, empty kit, Chebyshev ≤ 1 damaging-cast filter), **first-enter heal pad** (Font is a *stationary pulse*; Mend Wick heals the occupant *at tick*; Gait Mend heals iff the *caster walked*; Gift Sill is enter *+MP*; Enter Mend paints a public cell that heals 6 on the first walk **or** forced enter, then expires), **heal 12 split 50/50 with an adjacent ally** (Rally / Blood Mend are *self*; Flank Share splits *damage*; Choir Hymn is W1; Split Mend heals the target 6 and the nearest other ally at Chebyshev ≤ 1 for 6 — isolated target receives the full 12), **tile forbids Strike / `isPhysical`** (Oath Blade *requires* Strike; Strike Hold is *unit-scoped until they walk*; Verse First blocks Strike until a *spell*; Quiet Hex is W1 unit; Quiet Sill paints a cell so the occupant cannot resolve `isPhysical === true` or id `physical_attack` — other spells stay legal).
+3. Extra doors on leftover **#563** Dummy Post / Enter Mend / Split Mend **and** one unused **#636** Quiet Sill. **No new #137 spell ids.** Spectacular `CHOIR_EFFIGY` / `NAVE_THRESHOLD` / `CHOIR_SPLIT` / `NAVE_QUIET` stay `BOSS_ONLY`. Court Hinge stays `NOT_PLAYER_LEARNABLE`. Remaining #636 (`spell-shove-mend` … except Quiet Sill), #695, #726, and #787 stay off these sheets.
+4. Rush **Table L** (§10.11): four post-Table-K rooms. Does **not** rewrite rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, or Table K.
+5. #563 stub `dummy_castellan` belongs to Dummy Post MULTI on the tactical sheet — **not** remapped to `effigy_clerk`. Enter Mend / Split Mend / Quiet Sill have **no** stub. First grant wins if a stub ever ships. Do **not** remap `flush_precentor` / `gait_cantor` / `pair_usher` / `court_hinge_regent` / `shove_cantor` / `stretch_precentor` / `span_quad` / `keep_bursar` / `court_stretch_regent`.
+
+Shipped + Wave-2–13 sheets remain `STATUS: PROPOSED`. Table B/C/D/E/F/G/H/I/J/K holds still apply. `rime_margrave` / `sinkhole_dowager` stay solo (MIMA-005).
+
+Do **not** extra-door remaining leftover #563 id `spell-court-hinge` from these sheets. Court Hinge stays `NOT_PLAYER_LEARNABLE`. Do **not** extra-door remaining #636 Wave-9 tactical ids (`spell-shove-mend` … `spell-court-stretch` except Quiet Sill), #695 Wave-10 tactical ids (`spell-both-mend` … `spell-court-keep`), #726 Wave-11 tactical ids (`spell-heave-mend` … `spell-court-dual`), or #787 Wave-12 tactical ids (`spell-parched-mend` … `spell-court-imprint`). Do **not** grant Goad / Bait Pylon / Font / Mend Wick / Gait Mend / Oath Blade / Quiet Hex from Effigy / Enter / Split / Quiet. Do **not** restamp Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend as Wave-14-only doors.
+
+---
+
+## 0.1 Changelog — 2026-09-29 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; open #753 holds Wave 12 + Table J; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 13 + Rush **Table K**.
 
@@ -43,7 +76,7 @@ Do **not** extra-door remaining leftover #563 ids (`spell-dummy-post` / `spell-e
 
 ---
 
-## 0.1 Changelog — 2026-09-28 cron (kept)
+## 0.2 Changelog — 2026-09-28 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; open #663 holds Wave 11 + Table I; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 12 + Rush **Table J**.
 
@@ -77,7 +110,7 @@ Do **not** extra-door remaining leftover #563 ids (`spell-cadence-flush` / `spel
 
 ---
 
-## 0.2 Changelog — 2026-09-27 cron (kept)
+## 0.3 Changelog — 2026-09-27 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; open #638 holds Wave 10 + Table H; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 11 + Rush **Table I**.
 
@@ -111,7 +144,7 @@ Do **not** extra-door remaining #563 ids (`spell-gait-mend` / `spell-pair-hinge`
 
 ---
 
-## 0.3 Changelog — 2026-09-26 cron (kept)
+## 0.4 Changelog — 2026-09-26 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; open #572 holds Wave 9 + Table G; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 10 + Rush **Table H**.
 
@@ -145,7 +178,7 @@ Do **not** extra-door remaining #525 ids (`spell-wall-sting` / `spell-file-brand
 
 ---
 
-## 0.4 Changelog — 2026-09-25 cron (kept)
+## 0.5 Changelog — 2026-09-25 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; open #518 holds Wave 8 + Table F; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 9 + Rush **Table G**.
 
@@ -179,7 +212,7 @@ Do **not** extra-door #525 Wave-7 tactical ids (`spell-wall-sting` … `spell-co
 
 ---
 
-## 0.5 Changelog — 2026-09-24 cron (kept)
+## 0.6 Changelog — 2026-09-24 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; open #474 holds Wave 7 + Table E; none of those are on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 8 + Rush **Table F**.
 
@@ -212,7 +245,7 @@ Do **not** extra-door #463 Wave-6 tactical ids (`spell-post-sting` … `spell-ab
 
 ---
 
-## 0.6 Changelog — 2026-09-23 cron (kept)
+## 0.7 Changelog — 2026-09-23 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f`. Open #367 holds Wave 5 + Table C; open #406 holds Wave 6 + Table D; neither is on `main`. This file **unions** those drafts (does not overwrite them) and adds Wave 7 + Rush **Table E**.
 
@@ -245,7 +278,7 @@ Do **not** extra-door #411 Wave-5 tactical ids (`spell-oncoming` … `spell-act-
 
 ---
 
-## 0.7 Changelog — 2026-09-22 cron (kept)
+## 0.8 Changelog — 2026-09-22 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. `origin/main` is still `0f5363f` (no merge since the 2026-09-21 Wave-5 pass). Open #367 holds Wave 5 + Table C and is **not** on `main`; that file **unioned** that draft (did not overwrite it) and added Wave 6 + Rush **Table D**.
 
@@ -276,7 +309,7 @@ Shipped + Wave-2–5 sheets remain `STATUS: PROPOSED`. Table B/C holds still app
 
 ---
 
-## 0.8 Changelog — 2026-09-21 cron (kept)
+## 0.9 Changelog — 2026-09-21 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) are **still unchanged** since #137. Nineteen days of merges (`58302bc` → `0f5363f`, through #332) did not add a boss id, a `BossAbility` member, or a live catalog spell. That run did **not** duplicate shipped or Wave-2–4 sheets. It re-audited live gaps at `0f5363f`, aligned with same-day tactical Wave 4 (`SPELL_PROPOSALS_2026-09-21.md`, open #342), filled four remaining **primary-mechanic** holes, and wrote Rush **Table C**.
 
@@ -309,7 +342,7 @@ Shipped + Wave-2–4 sheets remain `STATUS: PROPOSED`. Wave-4 Table B still hold
 
 ---
 
-## 0.9 Changelog — 2026-09-02 cron (kept)
+## 0.10 Changelog — 2026-09-02 cron (kept)
 
 `BOSS_IDS` (19), `BossAbility` (46), and `spellData.ts` (32 frontend ids) were unchanged since #137. That run did **not** duplicate shipped, Wave-2, or Wave-3 sheets. It re-audited live gaps, aligned with tactical Wave 2 (#133), filled four **primary-mechanic** holes, and wrote Rush **Table B**.
 
@@ -551,7 +584,7 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `AP_DRAIN_PASSIVE` | `BOSS_ONLY` | Aura. Would brick the 20 AP cap on the player bar. | — |
 | `DAMAGE_IMMUNE` | `BOSS_ONLY` | Fight-structure. | — |
 
-**Count:** 46 shipped specials. Player-facing **#137 adaptations: 10** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum. Wave 4 adds four more. Wave 5 adds four more. Wave 6 adds four more. Wave 7 adds four more. Wave 8 adds four more. Wave 9 adds four more. Wave 10 adds four more. Wave 11 adds four more. Wave 12 adds four more. Tactical Wave 2 (#133) supplies Wave-4 player doors. Wave 5 reuses #120 / #282 / #342. Wave 6 reuses #282 / #342. Wave 7 reuses **#282 only**. Wave 8 reuses **#411 only**. Wave 9 reuses **#463 only**. Wave 10 reuses **#525 only**. Wave 11 reuses **#563** Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 reuses **remaining #563** Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend — **no new #137 ids**.
+**Count:** 46 shipped specials. Player-facing **#137 adaptations: 10** (`PLAYER_LEARNABLE` 5 + `ACHIEVEMENT_UNLOCK` 3 + `CHALLENGE_UNLOCK` 2). #120 adds three first-victory `BOSS` grants (Pain Link, Glyph Tax, Blood Familiar) and one witness-only signature (Void Anchor). Wave 3 adds four **design-named** specials, not yet in the enum. Wave 4 adds four more. Wave 5 adds four more. Wave 6 adds four more. Wave 7 adds four more. Wave 8 adds four more. Wave 9 adds four more. Wave 10 adds four more. Wave 11 adds four more. Wave 12 adds four more. Tactical Wave 2 (#133) supplies Wave-4 player doors. Wave 5 reuses #120 / #282 / #342. Wave 6 reuses #282 / #342. Wave 7 reuses **#282 only**. Wave 8 reuses **#411 only**. Wave 9 reuses **#463 only**. Wave 10 reuses **#525 only**. Wave 11 reuses **#563** Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 reuses **remaining #563** Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Wave 14 reuses leftover #563 Dummy Post / Enter Mend / Split Mend **and** #636 Quiet Sill — **no new #137 ids**.
 
 | Proposed special | Class | Player adaptation |
 | :--- | :--- | :--- |
@@ -599,6 +632,10 @@ Kit spells (`spell-inferno`, `starter-drain`, …) are **already player-usable**
 | `CHOIR_LONE` (isolation radius 2 / bonus always if you are alone) | `BOSS_ONLY` | Bounded #563 `spell-lone-sting` |
 | `NAVE_PLATE` (plate himself **and** one extra next turn) | `BOSS_ONLY` | Bounded #563 `spell-morrow-plate` |
 | `CHOIR_LEND` (dump leftover AP onto every living extra) | `BOSS_ONLY` | Bounded #563 `spell-leftover-lend` |
+| `CHOIR_EFFIGY` (two posts / radius-2 filter / Mannequin director) | `BOSS_ONLY` | Bounded #563 `spell-dummy-post` |
+| `NAVE_THRESHOLD` (3-pad enter-heal lattice) | `BOSS_ONLY` | Bounded #563 `spell-enter-mend` |
+| `CHOIR_SPLIT` (split to every living extra) | `BOSS_ONLY` | Bounded #563 `spell-split-mend` |
+| `NAVE_QUIET` (3-cell Strike-forbid file) | `BOSS_ONLY` | Bounded #636 `spell-quiet-sill` |
 
 Most spectacular mechanics stay boss-only on purpose.
 
@@ -755,10 +792,18 @@ These are names for a later achievement PR. They are **not** in `defaultAchievem
 | `yoke_unspun` | `pair_hinge_zero_player_moves` | Optional mastery for Yoke Subchanter (never be one of the two rotated bodies). |
 | `salve_unsipped` | `mend_wick_zero_ticks_on_you` | Optional mastery for Salve Wicker (never occupy a pad at tick). |
 | `brand_unamped` | `body_mark_zero_amped_hits` | Optional mastery for Brand Curate (never take an amped hit while marked). |
+| `flush_unspent` | `cadence_flush_zero_success` | Optional mastery for Flush Psalmist (he never zeroes a remaining CD). |
+| `lone_clustered` | `lone_sting_zero_isolation_bonus` | Optional mastery for Lone Lector (never take the isolated +8). |
+| `plate_unarmored` | `morrow_plate_zero_absorbed` | Optional mastery for Plate Bursar (he never absorbs > 0 from your hits). |
+| `lend_unfunded` | `leftover_lend_zero_n` | Optional mastery for Lend Proctor (he never lends `n > 0`). |
+| `effigy_unposted` | `dummy_post_zero_plants` | Optional mastery for Effigy Clerk (he never successfully plants a living Dummy Post). |
+| `narthex_stolen` | `enter_mend_zero_boss_heals` | Optional mastery for Enter Deacon (you or a player-side summon claim every enter-heal). |
+| `pyx_isolated` | `split_mend_zero_shared` | Optional mastery for Split Acolyte (every mend found no adjacent ally). |
+| `muffler_offstep` | `quiet_sill_zero_occupied_resolves` | Optional mastery for Quiet Chorister (never occupy a Quiet Sill when you resolve a damaging id). |
 
 Do not mint Doka from these until `claimAchievementReward` is wired. Suggested feat Doka: 150–300, in line with `leader_slayer` / `critical_striker`.
 
-### 5.4 Sibling contracts (2026-09-28)
+### 5.4 Sibling contracts (2026-10-21)
 
 Same-week design PRs own adjacent surfaces. This bible does not rewrite them.
 
@@ -772,14 +817,15 @@ Same-week design PRs own adjacent surfaces. This bible does not rewrite them.
 | Tactical Wave 5 (open #411, `SPELL_PROPOSALS_2026-09-22.md`) | `spell-oncoming` … `spell-act-bell` | Wave 8 extra-doors Facing Pin / Span Guard / Cover Step / Low Lintel. Do **not** extra-door Oncoming / Glance Cut / Mute Thread / Queue Cut / File Vault / False Cut from Wave-8 sheets — #411 already stamps Mute Thread on Weeping, Queue Cut on Eternal, File Vault MULTI on Enthroned Void; False Cut stays Lament kit-only. Cover Step is **not** Bait. Span Guard is **not** Twin Span (#463). |
 | Tactical Wave 6 (open #463, `SPELL_PROPOSALS_2026-09-23.md`) | `spell-post-sting` … `spell-about-face` | Wave 9 extra-doors Exit Tithe / Hinge Tile / Aim Veil / Oath Blade. Do **not** extra-door Post Sting / Purse Cut / Blind Corner / Hinge Step / File Reel / Twin Span / Cadence Break / Cadence Lend / Split Purse / Spark Whelp / Turn Cap / About Face from these sheets. Twin Span stays ELITE independently-walking posts. About Face stays `NOT_PLAYER_LEARNABLE`. #463 stubs `exit_mason` / `hinge_porter` / `oath_censor` / `about_regent` are **not** these encounter ids — first grant wins if those stubs ship. |
 | Tactical Wave 7 (open #525, `SPELL_PROPOSALS_2026-09-24.md`) | `spell-wall-sting` … `spell-court-shove` | Wave 10 extra-doors Pit Wick / Must Pace / Triple Span / Pivot Foe. Do **not** extra-door Wall Sting / File Brand / Boot Sting / Shove Face / Knight Slip / Cadence Crack / Once Verse / Tick Hood / Flank Share / Spare Pace / Exit Boon / Court Shove from these sheets. Court Shove stays `NOT_PLAYER_LEARNABLE`. #525 stubs `wick_mason` / `pace_prelate` / `span_triune` / `slip_castellan` are **not** these encounter ids — first grant wins if those stubs ship. |
-| Tactical Wave 8 (open #563, `SPELL_PROPOSALS_2026-09-25.md`) | `spell-gait-mend` … `spell-court-hinge` | Wave 11 extra-doors Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 extra-doors **remaining** Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 extra-doors leftover Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Do **not** extra-door Dummy Post / Enter Mend / Split Mend / Court Hinge from Wave-13 sheets. Court Hinge stays `NOT_PLAYER_LEARNABLE`. Cadence Flush is **not** Cadence Crack / Break / Timestep. Lone Sting is **not** Boot / Wall / Far Sting. Morrow Plate is **not** Ward Plate / Morrow Step. Leftover Lend is **not** Surplus / Purse Cut. #563 stub `flush_precentor` is **not** remapped to `flush_psalmist`; `gait_cantor` / `pair_usher` stay Wave-12 doors — first grant wins if those stubs ship. |
-| Tactical Wave 9 (open #636, `SPELL_PROPOSALS_2026-09-26.md`) | `spell-shove-mend` … `spell-court-stretch` | Do **not** extra-door those ids from Wave-11 / Wave-12 / Wave-13 sheets. Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quad Span is not Brick / Triple Span. Gait Wick is not Gait Seal / Gait Mend. Pair Slide is not Pair Hinge / Brick Shift. Shove Mend is not Gait Mend (force-moved ≠ walk MP). |
-| Tactical Wave 10 (open #695, `SPELL_PROPOSALS_2026-09-27.md`) | `spell-both-mend` … `spell-court-keep` | Do **not** extra-door those ids from Wave-12 / Wave-13 sheets. |
-| Tactical Wave 11 (open #726, `SPELL_PROPOSALS_2026-09-28.md`) | `spell-heave-mend` … `spell-court-dual` | Do **not** extra-door those ids from Wave-12 / Wave-13 sheets. |
+| Tactical Wave 8 (open #563, `SPELL_PROPOSALS_2026-09-25.md`) | `spell-gait-mend` … `spell-court-hinge` | Wave 11 extra-doors Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 extra-doors **remaining** Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 extra-doors leftover Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Wave 14 extra-doors leftover Dummy Post / Enter Mend / Split Mend. Court Hinge stays `NOT_PLAYER_LEARNABLE` and is **not** a Wave-14 door. Dummy Post is **not** Goad / Bait. Enter Mend is **not** Font / Mend Wick / Gait Mend. Split Mend is **not** Rally / Flank Share. #563 stub `dummy_castellan` is **not** remapped to `effigy_clerk`; `flush_precentor` / `gait_cantor` / `pair_usher` / `court_hinge_regent` stay earlier doors — first grant wins if those stubs ship. |
+| Tactical Wave 9 (open #636, `SPELL_PROPOSALS_2026-09-26.md`) | `spell-shove-mend` … `spell-court-stretch` | Wave 14 extra-doors **Quiet Sill only**. Do **not** extra-door remaining #636 ids from Wave-14 sheets. Court Stretch stays `NOT_PLAYER_LEARNABLE`. Quiet Sill is **not** Oath Blade / Strike Hold / Quiet Hex. Quad Span is not Brick / Triple Span. Gait Wick is not Gait Seal / Gait Mend. Pair Slide is not Pair Hinge / Brick Shift. Shove Mend is not Gait Mend (force-moved ≠ walk MP). #636 stubs `shove_cantor` / `stretch_precentor` / `span_quad` / `keep_bursar` / `court_stretch_regent` are **not** these encounter ids. |
+| Tactical Wave 10 (open #695, `SPELL_PROPOSALS_2026-09-27.md`) | `spell-both-mend` … `spell-court-keep` | Do **not** extra-door those ids from Wave-12 / Wave-13 / Wave-14 sheets. |
+| Tactical Wave 11 (open #726, `SPELL_PROPOSALS_2026-09-28.md`) | `spell-heave-mend` … `spell-court-dual` | Do **not** extra-door those ids from Wave-12 / Wave-13 / Wave-14 sheets. |
+| Tactical Wave 12 (open #787, `SPELL_PROPOSALS_2026-09-29.md`) | `spell-parched-mend` … `spell-court-imprint` | Do **not** extra-door those ids from Wave-14 sheets. Court Imprint stays `NOT_PLAYER_LEARNABLE` if so stamped. |
 | #116 Spell Admin | Persist `ownedSpellIds` / `observedSpellIds`, soft-retire | Observation counters in §5.2 belong next to `achievementProgress`, not `localStorage`. |
 | Long Horizon 2026-09-01 | Live formulas still leave boss HP static; HUD XP saturates at 48 | Confirms §3.1 is still the unbuilt no-cap fix. Do not “fix” XP curve from this doc. |
 | MIMA 2026-09-21 (#336) | Swap × hazards, push/pull × hazards still OPEN; new Dawn-MP / modifier-HP items | Wave-4/5 **position** may ship; hazard ticks on forced move wait on MIMA-001 / 005. Do not pair Ram / Mill with pits until 005. Pawn Trade landing ticks wait on 001. |
-| Encounter Evolution 2026-09-01 / 2026-09-21 | ENC-BOSS-02 / ENC-RUSH-04… remix **existing** rooms | Table B / Table C / Table D / Table E / Table F / Table G / Table H / Table I / Table J / Table K are **new** post-clear tables, not a rewrite of those remixes. |
+| Encounter Evolution 2026-09-01 / 2026-09-21 | ENC-BOSS-02 / ENC-RUSH-04… remix **existing** rooms | Table B / Table C / Table D / Table E / Table F / Table G / Table H / Table I / Table J / Table K / Table L are **new** post-clear tables, not a rewrite of those remixes. |
 
 **Default vs boss-adaptation observation**
 
@@ -847,8 +893,18 @@ A boss may grant **both** a #137 adaptation and a #120 / #133 `BOSS` (or extra-d
 | — | `spell-triple-span` | Wave 10 Aisle extra door (`ELITE`; #525 stub `span_triune` — first grant wins). `NAVE_TRISPAN` (4-post occupy / Rood director) stays `BOSS_ONLY`. Player Triple Span is three 1-HP posts, cardinal line of 3, chain walk filter. Do **not** grant Span Guard, Twin Span, or Span Pylon. |
 | — | `spell-pivot-foe` | Wave 10 Orbit extra door. `CHOIR_ORBIT` (pivot around Ambit, not the caster / Ambit director) stays `BOSS_ONLY`. Player Pivot Foe is 90° clockwise around the **caster**, dest must be `isCellFree`, occupancy teleport not `isSwap`. Do **not** grant Hinge Tile, Hinge Step, Pawn Trade, Pair Hinge, or Court Hinge. |
 | — | `spell-wall-sting` / `spell-file-brand` / `spell-boot-sting` / `spell-shove-face` / `spell-knight-slip` / `spell-cadence-crack` / `spell-once-verse` / `spell-tick-hood` / `spell-flank-share` / `spell-spare-pace` / `spell-exit-boon` / `spell-court-shove` | #525 remaining. **Not** Wave-10 grants. Court Shove stays `NOT_PLAYER_LEARNABLE`. `slip_castellan` stays Knight Slip’s MULTI child, not Cavalier and not Orbit. |
+| — | `spell-gait-seal` / `spell-diag-lock` / `spell-brick-shift` / `spell-return-sting` | Wave 11 extra doors. `CHOIR_SOLE` / `NAVE_BIAS` / `NAVE_MASONRY` / `CHOIR_REBOUND` stay `BOSS_ONLY`. |
+| — | `spell-gait-mend` / `spell-pair-hinge` / `spell-mend-wick` / `spell-body-mark` | Wave 12 extra doors. `CHOIR_INFIRM` / `COURT_YOKE` / `NAVE_SALVE` / `CHOIR_BRAND` stay `BOSS_ONLY`. |
+| — | `spell-cadence-flush` / `spell-lone-sting` / `spell-morrow-plate` / `spell-leftover-lend` | Wave 13 extra doors. `CHOIR_FLUSH` / `CHOIR_LONE` / `NAVE_PLATE` / `CHOIR_LEND` stay `BOSS_ONLY`. |
+| — | `spell-dummy-post` | Wave 14 Effigy extra door (`ELITE`; #563 stub `dummy_castellan` — first grant wins). `CHOIR_EFFIGY` (two posts / radius-2 / Mannequin director) stays `BOSS_ONLY`. Player Dummy Post is one 1-HP empty-kit pawn, lifespan 3, Chebyshev ≤ 1 damaging-cast filter. Do **not** grant Goad, Bait Pylon, or Cover Step. |
+| — | `spell-enter-mend` | Wave 14 Enter extra door. `NAVE_THRESHOLD` (3-pad lattice / Narthex director) stays `BOSS_ONLY`. Player Enter Mend is one cell, 2 turns or first enter, heal 6. Occupant already standing does **not** trigger. Forced-move **does**. Do **not** grant Font, Mend Wick, or Gait Mend. |
+| — | `spell-split-mend` | Wave 14 Split extra door. `CHOIR_SPLIT` (split to every extra / Pyx director) stays `BOSS_ONLY`. Player Split Mend is one ally (not self), 12 split 50/50 with the nearest other ally at Chebyshev ≤ 1 — isolated target gets 12. Dummy Post **can** eat 6; AI should skip that. Do **not** grant Rally, Font, or Flank Share. |
+| — | `spell-quiet-sill` | Wave 14 Quiet extra door. `NAVE_QUIET` (3-cell file / Muffler director) stays `BOSS_ONLY`. Player Quiet Sill is one cell, 2 turns, occupant cannot resolve `isPhysical` / `physical_attack`. Do **not** grant Oath Blade, Strike Hold, or Quiet Hex. |
+| — | `spell-court-hinge` | #563 leftover. **Not** a Wave-14 grant. Stays `NOT_PLAYER_LEARNABLE`. |
+| — | `spell-shove-mend` … `spell-court-stretch` except Quiet Sill | #636 remaining. **Not** Wave-14 grants. Court Stretch stays `NOT_PLAYER_LEARNABLE`. |
+| — | `spell-both-mend` … `spell-court-keep` / `spell-heave-mend` … `spell-court-dual` / `spell-parched-mend` … `spell-court-imprint` | #695 / #726 / #787 remaining. **Not** Wave-14 grants. |
 
-#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. #133 Wave-2 ids stay on `SPELL_PROPOSALS_2026-09-01.md`. #282 Wave-3 ids stay on `SPELL_PROPOSALS_2026-09-02.md`. #342 Wave-4 ids stay on `SPELL_PROPOSALS_2026-09-21.md`. #411 Wave-5 ids stay on `SPELL_PROPOSALS_2026-09-22.md`. #463 Wave-6 ids stay on `SPELL_PROPOSALS_2026-09-23.md`. #525 Wave-7 ids stay on `SPELL_PROPOSALS_2026-09-24.md`. Do not reuse them as #137 ids.
+#156 Wave-1 ids (`spell-quiet-hex` …) stay on the ecosystem doc. #133 Wave-2 ids stay on `SPELL_PROPOSALS_2026-09-01.md`. #282 Wave-3 ids stay on `SPELL_PROPOSALS_2026-09-02.md`. #342 Wave-4 ids stay on `SPELL_PROPOSALS_2026-09-21.md`. #411 Wave-5 ids stay on `SPELL_PROPOSALS_2026-09-22.md`. #463 Wave-6 ids stay on `SPELL_PROPOSALS_2026-09-23.md`. #525 Wave-7 ids stay on `SPELL_PROPOSALS_2026-09-24.md`. #563 / #636 / #695 / #726 / #787 stay on their dated files. Do not reuse them as #137 ids.
 
 ---
 
@@ -3137,6 +3193,143 @@ They stay out of rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table
 **QA:** Observation counts his lend cast, including `n = 0`. Coffer / Wisp 0 XP. No turn-queue splice. Enrage −1 AP hits `recordChallengeApSpend` in a challenge. Cap at target max AP.  
 **STATUS:** PROPOSED
 
+
+## 8.12 Encounter sheets — Wave 14 (not in `BOSS_IDS`)
+
+Primary-mechanic holes after Wave 13: **1-HP empty-kit taunt post** (Goad / Taunt Oath = *unit-targeted, no body*; Bait Pylon intercepts the next *hostile spell* aimed at the owner; Bastion / Span Pylon occupy without a cast-target filter; Dummy Post is a 1-HP pawn, 0 AP / 0 MP, empty kit, lifespan 3 — while it lives, a hostile at Chebyshev ≤ 1 who casts a damaging id must choose the post as primary **if** the post is inside that spell’s current range/LoS), **first-enter heal pad** (Font = *stationary pulse*; Mend Wick heals the occupant *at tick*; Gait Mend heals iff the *caster walked*; Gift Sill is enter *+MP*; Enter Mend paints a walkable cell for 2 turns — the first living combatant who **walks or is forced** onto it heals 6, then the paint expires; an occupant already standing when painted does **not** trigger), **heal 12 split 50/50 with an adjacent ally** (Rally / Blood Mend are *self*; Flank Share splits *damage*; Choir Hymn is W1; Split Mend heals the target 6 and the nearest living **other** ally at Chebyshev ≤ 1 for 6 — if no adjacent ally, the target receives the full 12; primary is never the caster), **tile forbids Strike / `isPhysical`** (Oath Blade *requires* Strike and fizzles other ids; Strike Hold is *unit-scoped until they walk*; Verse First blocks Strike until a *spell*; Quiet Hex is W1 unit; Quiet Sill paints a cell for 2 turns — the occupant cannot resolve `isPhysical === true` or id `physical_attack`; other spells stay legal; walk on/off is legal).
+
+Do **not** add these ids to `BOSS_IDS` in this change. Proposed specials below are **design names**, not `BossAbility` enum members until an implementation PR adds them with explicit metadata.
+
+Wave-14 learnables reuse leftover **#563** Dummy Post / Enter Mend / Split Mend **and** one unused **#636** Quiet Sill. No new #137 spell ids. No remaining #636 / #695 / #726 / #787 extra doors. Court Hinge stays closed.
+
+They stay out of rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, and Table K. Pairing is **Table L** only (§10.11).
+
+**Stub note:** `SPELL_PROPOSALS_2026-09-25.md` already names `dummy_castellan` (Dummy Post MULTI). That stub is **not** remapped to `effigy_clerk`. Enter Mend / Split Mend / Quiet Sill have **no** stub. Do **not** remap `flush_precentor` / `gait_cantor` / `pair_usher` / `court_hinge_regent` / `shove_cantor` / `stretch_precentor` / `span_quad` / `keep_bursar` / `court_stretch_regent`. First grant wins if a stub ships.
+
+---
+
+### BOSS_ID: `effigy_clerk`
+
+**NAME:** The Effigy Clerk  
+**RELATIVE_DIFFICULTY:** 6  
+**THEME:** A pawn of the straw ledger. He does not swing for the choir. He files a body that the verse must address.  
+**CORE_MECHANIC:** **1-HP empty-kit taunt post.** Every 3 turns he plants one Dummy Post on a free cell at range ≤ 2 (prefer Chebyshev-1 from the player). The post is a pawn, 1 HP, 0 AP / 0 MP, empty kit, lifespan 3, `summonAI: "dummypost"`. While it lives, any hostile at Chebyshev ≤ 1 who casts a damaging id (`damage > 0` or `isDotSpell`) must choose the post as primary **if** the post is inside that spell’s current range/LoS; otherwise they may cast as normal. Non-damaging ids (Slow / Swap / Mark) ignore the filter. Attack Nearest origin stays the **player** tile. Distinct from Goad (no body), Bait Pylon (next *spell* intercept), Cover (redirect a hit already aimed). The learnable is **one post, 1 HP, radius 1, lifespan 3**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Plant every 3 turns if no Dummy Post lives. Kit: Physical / Barrier / Weaken. One destructible **Mannequin**; breaking it **skips the next plant**. |
+| 2 | ≤ 45% | `CHOIR_EFFIGY`: may keep **two** posts (still one plant per cadence; skip only if two already live). Filter radius becomes Chebyshev ≤ **2**. Iron Skin + Sentinel. Mannequin, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 20 | Plant resolves same turn as telegraph. Mannequin, if alive, breaks itself. Overlay +8%. |
+
+**SPELLS (proposed kit):** `physical_attack`, `spell-barrier`, `spell-weaken`, `spell-iron-skin` (P2), `summon-sentinel` (P2). Unique vs Fortress (physical / iron / shield / barrier / nova), Weeping (physical / slow / weaken / iron / rally), Bone (physical / haste / enrage / expose), Flush (haste / rally / weaken / mirror / sentinel).  
+**DISCOVERABLE_SPELLS:** #563 `spell-dummy-post` (`PLAYER_LEARNABLE` / extra `ELITE` / `ENEMY_DISCOVERY` door: add `bossIds: ["effigy_clerk"]`). Observation = he **plants** (`kind: "cast"`), including a skip if a post already lives in P1. `CHOIR_EFFIGY` (two posts / radius-2 / Mannequin director) is `BOSS_ONLY`. Do **not** grant Goad, Bait Pylon, Cover Step, or Bastion Pylon from this fight. #563 stub `dummy_castellan` is **not** this id.
+
+**AI:** Plant when the player is Chebyshev ≤ 2 and no legal post lives (P1) or fewer than two live (P2). Skip if Mannequin was broken this cycle. Skip if the only free cell is spawn / portal. Sentinel recast only under cap. Never treat the post as a victory target.  
+**ARENA_RULES:** Mannequin HP = `0.15 * playerMaxHp`. The post **occupies**. 0 AP means it never walks. Taunt is a **cast target filter**, not `tauntNextHit`. Pacifist: the post dealing 0 damage does not fail the feat; a later enemy hitting the post is not a player-side summon kill. Challenge: a player hit that pops the 1 HP **is** a spell/weapon hit, not `recordChallengeDamageTaken` on the player.  
+**SUMMONS:** 1 Dummy Post (P1) / up to 2 (P2) + 1 sentinel in P2. Cap 4. Post / Sentinel 0 XP. Post death ≠ victory.  
+**PLAYER_COUNTERPLAY:** Pop the 1 HP; step Chebyshev ≥ 2 (P1) / ≥ 3 (P2); cast a non-damaging id; out-range the post; break the Mannequin; do not dump Sacrifice into straw.  
+**MASTERY_OBJECTIVE:** He never successfully plants a living post (`effigy_unposted`). A Mannequin skip / no-free-cell fizzle is the pass. A plant that dies the same turn still fails it (the body existed).  
+**REWARDS:** 6 / 4 when shipped. Dummy Post is the prize (first grant wins if `dummy_castellan` already taught it).  
+**SCALING_BEHAVIOUR:** hpRatio 1.80, atkRatio 1.05, offset +0, Phase-2 1.20. Post HP **1** (fixed). Body count **fixed**. Filter radius is the only P2 / enrage widen.  
+**BALANCE_RISKS:** Dummy + Goad / Bait / Cover / Counter / Grandmaster is two taunt / intercept / decoy directors — illegal. Dummy + Quiet Sill is the intended “force melee onto a spell-only tile” exam — **held** (two Wave-14 cores). Table L pairs with Lock: Compass / dummy dest **never** occupies the Mannequin. Off-axis walks are already illegal under Rank Lock — do not also plant off-axis. Player Dummy Post cannot taunt friendly casts.  
+**QA:** Observation counts his plant cast, not the filter and not player Dummy Post. Mannequin / post / Sentinel 0 XP. Missing `summonAI` **fail closed** (no plant). Attack Nearest origin stays the player tile. Two posts in P2 still share cap 4.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `enter_deacon`
+
+**NAME:** The Enter Deacon  
+**RELATIVE_DIFFICULTY:** 5  
+**THEME:** A rook of the open door. The blessing is public. Whoever steps first drinks.  
+**CORE_MECHANIC:** **First-enter heal pad.** Every 3 turns he paints one free walkable cell at range ≤ 3 (prefer a cell the player can reach this turn **and** a cell an extra can reach). The first living combatant who **walks or is forced** onto the cell heals 6 through existing `heal`, then the paint expires. Duration 2 turns or first enter. Occupant already standing when painted does **not** trigger. Swap onto the cell must tick (MIMA-001 — until that lands, treat Swap-enter as **legal position**, heal **blocked**). Distinct from Font (pulse now), Mend Wick (tick heal), Gait Mend (caster walked). The learnable is **one cell, heal 6, first enter**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Paint every 3 turns. Kit: Heal / Mark / Barrier. One destructible **Narthex**; breaking it **skips the next paint** (does not wipe a live pad). |
+| 2 | ≤ 45% | `NAVE_THRESHOLD`: paints a **3-pad** cardinal lattice (origin + 2 adjacent; last-writer per cell). Frost Nova + Wisp. Narthex, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 19 | Paint resolves same turn as telegraph. Narthex, if alive, breaks itself. Overlay +8%. |
+
+**SPELLS (proposed kit):** `starter-heal`, `spell-mark`, `spell-barrier`, `spell-frost-nova` (P2), `summon-wisp` (P2). Unique vs Font (heal / barrier / wisp / iron / shield), Infirm (heal / haste / physical / iron / wisp), Plate (shield / iron / slow / heal / sentinel), Salve (delayed *tick* heal — different verb).  
+**DISCOVERABLE_SPELLS:** #563 `spell-enter-mend` (`PLAYER_LEARNABLE` / extra `ENEMY_DISCOVERY` door: add `bossIds: ["enter_deacon"]`). Observation = he **paints** (`kind: "cast"`). The heal apply is not a second observe. `NAVE_THRESHOLD` (3-pad lattice / Narthex director) is `BOSS_ONLY`. Do **not** grant Font, Mend Wick, Gait Mend, Gift Sill, or Exit Boon from this fight.
+
+**AI:** Paint a cell the player can enter this turn **unless** the player is already closer to a live pad than his extra — then paint on the extra’s path. Skip if Narthex was broken this cycle. Skip if no free walkable cell in range. Wisp recast only under cap.  
+**ARENA_RULES:** Narthex HP = `0.15 * playerMaxHp`. Pad table is **not** `hazardTiles`. Last writer on a cell wins (Barrier replaces pad). `no_healing`: a player-side HP up on enter **fails** the challenge. Forced-move counts as enter. Challenge heal is not `recordChallengeDamageTaken`.  
+**SUMMONS:** 1 wisp in P2, cap 4. 0 XP. The wisp is the intended thief if you refuse the pad.  
+**PLAYER_COUNTERPLAY:** Step on the pad first (steal the 6); break the Narthex; Barrier the cell; Cursed Wound him before he drinks; do not let the wisp beat you to the door.  
+**MASTERY_OBJECTIVE:** He (and his extras) never receive the 6 (`narthex_stolen`). A stolen pad / Narthex skip / expired paint is the pass. A boss-side enter that heals 6 fails it.  
+**REWARDS:** 5 / 3 when shipped. Enter Mend is the prize.  
+**SCALING_BEHAVIOUR:** hpRatio 1.60, atkRatio 1.00, offset +0, Phase-2 1.20. Heal **flat 6** (healRecv). Pad count **1** until P2 lattice **3**.  
+**BALANCE_RISKS:** Enter + Font / Salve / Infirm / Mend Wick is two heal-pad / heal directors — illegal. Enter + Crypt / Fosse is two occupancy-tile directors — illegal. Table L pairs with Stride: Ledger **never** occupies the Narthex. Walk-MP tithe applies to a *steal walk*; forced-move enter is still free of walk MP (Stride does not tax it). Player Enter Mend cannot paint under a body (his card is `freeCells: true`).  
+**QA:** Observation counts his paint, not the heal and not player Enter Mend. Narthex / Wisp 0 XP. Standing occupant does not trigger. Forced-move does. Swap-enter heal waits on MIMA-001. Barrier last-writer. `no_healing` fails on player-side HP up.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `split_acolyte`
+
+**NAME:** The Split Acolyte  
+**RELATIVE_DIFFICULTY:** 5  
+**THEME:** A bishop of the shared cup. Twelve drops. Two mouths — or one, if you leave him alone.  
+**CORE_MECHANIC:** **Heal 12 split 50/50 with an adjacent ally.** Every 3 turns he targets one living same-side extra at range ≤ 3 (never himself). Heal the target 6 and the nearest living **other** ally at Chebyshev ≤ 1 for 6 (4-adj, then diagonal, then lowest id — same order as Pair Hinge). If no adjacent ally, the target receives the full 12. Distinct from Rally (self), Font (totem pulse), Flank Share (damage). The learnable is **one ally, 12, split if a neighbor lives**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | One **cup clerk** extra (Heal only) so a split partner exists. Mend every 3 turns. Kit: Heal / Slow / Expose. One destructible **Pyx**; breaking it **skips the next mend**. |
+| 2 | ≤ 45% | `CHOIR_SPLIT`: mend **every** living extra (each extra is a primary once, left-to-right by lowest id; a body may receive 6 as neighbor and 6 as primary in the same cadence). Rally + Wisp. Pyx, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 19 | Isolated primaries still get 12 **and** he also Rallies himself (kit Rally, 1 turn). Pyx, if alive, breaks itself. Overlay +8%. |
+
+**SPELLS (proposed kit):** `starter-heal`, `spell-slow`, `spell-expose`, `spell-rallying-cry` (P2), `summon-wisp` (P2). Unique vs Cover (heal / mirror / haste / wisp / rally), Font (heal / barrier / wisp / iron / shield), Flush (haste / rally / weaken / mirror / sentinel), Enter (heal / mark / barrier / nova / wisp).  
+**DISCOVERABLE_SPELLS:** #563 `spell-split-mend` (`PLAYER_LEARNABLE` / extra `ELITE` / `ENEMY_DISCOVERY` door: add `bossIds: ["split_acolyte"]`). Observation = he **casts** the mend (`kind: "cast"`), including isolated full-12. `CHOIR_SPLIT` (every extra / self-Rally enrage / Pyx director) is `BOSS_ONLY`. Do **not** grant Rally, Font, Flank Share, Gait Mend, or Enter Mend from this fight.
+
+**AI:** Prefer two wounded extras that are already adjacent. If only one extra lives, still mend (full 12) unless Pyx was broken this cycle. Skip if no extra lives. Never primary the player. AI skips a Dummy Post as the *only* adjacent ally (empty-kit pawn eating 6 is a mistake).  
+**ARENA_RULES:** Pyx HP = `0.15 * playerMaxHp`. `healAmount: 12` fires healer-inference — CORE only on healer profiles. `no_healing`: any player-side HP up fails the challenge (his mend is boss-side). Player card forbids self as primary (`playerSpellAllowsCasterTile` stays false for `ally`).  
+**SUMMONS:** 1 cup clerk from pull (Heal-only, 0 XP, not a victory target) + 1 wisp in P2. Cap 4. Clerk death ≠ victory. The clerk / wisp is the intended neighbor.  
+**PLAYER_COUNTERPLAY:** Kill the extra before the glow; isolate so he wastes 12 on one full body; break the Pyx; Cursed Wound both mouths; Mute the primary.  
+**MASTERY_OBJECTIVE:** He never successfully splits 6+6 (`pyx_isolated`). An isolated 12 / Pyx skip / no-extra fizzle is the pass. P2 cadence that shares ≥ 1 HP to a neighbor fails it.  
+**REWARDS:** 5 / 3 when shipped. Split Mend is the prize.  
+**SCALING_BEHAVIOUR:** hpRatio 1.60, atkRatio 1.00, offset +0, Phase-2 1.20. 12 is **flat** (healRecv per recipient). Body count **fixed**.  
+**BALANCE_RISKS:** Split + Font / Cover / Infirm / Lend / Enter is two support-heal / ally dumps — illegal. Table L pairs with Cord: the familiar is the intended neighbor; Cord’s summon-gate **never** occupies the Pyx. Dummy Post extras are not preferred neighbors. Player Split Mend cannot primary the caster.  
+**QA:** Observation counts his mend cast, including isolated 12. Pyx / clerk / Wisp 0 XP. Self primary illegal. Dummy Post neighbor skip. `no_healing` is about *player-side* HP, not his extras.  
+**STATUS:** PROPOSED
+
+---
+
+### BOSS_ID: `quiet_chorister`
+
+**NAME:** The Quiet Chorister  
+**RELATIVE_DIFFICULTY:** 6  
+**THEME:** A rook of the muted stall. The stone does not forbid the hymn. It forbids the fist.  
+**CORE_MECHANIC:** **Tile forbids Strike / `isPhysical`.** Every 3 turns he paints one cell at range ≤ 3 (prefer the player’s cell, else the cell they can melee from). Duration 2 turns. `freeCells: false` (may paint under a body). While a combatant occupies it, they cannot resolve `isPhysical === true` **or** id `physical_attack`. Other spells stay legal. Walk on/off is legal. Attack Nearest that would resolve Strike from this cell **must** refuse. Distinct from Oath Blade (other ids fizzle, Strike *hurts*), Strike Hold (unit, until they walk), Quiet Hex (W1). The learnable is **one cell, 2 turns, spell-only tile**.
+
+**PHASES:**
+
+| Phase | HP | Beat |
+| :--- | :--- | :--- |
+| 1 | 100% → 45% | Paint every 3 turns. Kit: Frost / Barrier / Slow. One destructible **Muffler**; breaking it **skips the next paint** (does not wipe a live sill). |
+| 2 | ≤ 45% | `NAVE_QUIET`: paints a **3-cell file** toward the player (origin + 2 in the current file; last-writer per cell). Inferno + Mark. Muffler, if down, may rebuild once (4-turn cadence). |
+| Enrage | turn 20 | Paint resolves same turn as telegraph. Muffler, if alive, breaks itself. Overlay +8%. |
+
+**SPELLS (proposed kit):** `starter-frost`, `spell-barrier`, `spell-slow`, `spell-inferno` (P2), `spell-mark` (P2). Unique vs Queen (blast / nova / mark / veil), Static (blast / haste / nova / expose), Enter (heal / mark / barrier / nova / wisp), Bone (physical / haste / enrage / expose — the pairing exam). He has **no** `physical_attack` in kit.  
+**DISCOVERABLE_SPELLS:** #636 `spell-quiet-sill` (`PLAYER_LEARNABLE` / extra `ENEMY_DISCOVERY` door: add `bossIds: ["quiet_chorister"]`). Observation = he **paints** (`kind: "cast"`). Occupancy is not a second observe. `NAVE_QUIET` (3-cell file / Muffler director) is `BOSS_ONLY`. Do **not** grant Oath Blade, Strike Hold, Quiet Hex, Verse First, or Ward Cell from this fight.
+
+**AI:** Paint the player’s cell if they are adjacent (melee threat) **or** the cell they can step to for Strike this turn. Skip if Muffler was broken this cycle. Skip if the only in-range cell is spawn / portal. Never paint under himself unless the player is already on him (illegal occupy).  
+**ARENA_RULES:** Muffler HP = `0.15 * playerMaxHp`. Filter by `isPhysical` / id `physical_attack`, **never** by name `"Strike"`. Sill table is **not** `hazardTiles`. Brick Shift does not move paint. Challenge: a refused Attack Nearest spends 0 AP (same gate as a range fail). A fizzled Strike from the sill **does** spend AP if they forced the id.  
+**SUMMONS:** None required. Cap 4 still holds if a later pairing adds a body.  
+**PLAYER_COUNTERPLAY:** Step off; cast Frost / Inferno / Mark from the cell; break the Muffler; Vault off (once/battle); do not Attack Nearest from the stall.  
+**MASTERY_OBJECTIVE:** Never occupy a Quiet Sill when you resolve a damaging id (`muffler_offstep`). A paint you stepped off before resolving is the pass. A refused Attack Nearest from the sill is the pass. Resolving Inferno from the sill is the pass (not physical). Resolving Strike / a physical from the sill fails it.  
+**REWARDS:** 6 / 4 when shipped. Quiet Sill is the prize.  
+**SCALING_BEHAVIOUR:** hpRatio 1.80, atkRatio 1.05, offset +0, Phase-2 1.20. Forbid is **boolean**. Pad count **1** until P2 file **3**.  
+**BALANCE_RISKS:** Quiet + Oath is a brick (must Strike + cannot Strike) — illegal. Quiet + Dummy / Goad is the intended force-melee-onto-sill exam — **held** (Dummy is a Wave-14 core; Goad is a second taunt). Table L pairs with Bone: spike-on-land dest **never** occupies the Muffler; Quiet never paints the knight-landing telegraph. Player Quiet Sill cannot last longer than 2 turns.  
+**QA:** Observation counts his paint, not occupancy and not player Quiet Sill. Muffler 0 XP. Attack Nearest from the sill refuses. Filter is `isPhysical` / `physical_attack` only. Brick Shift does not move paint.  
+**STATUS:** PROPOSED
+
 ---
 ## 9. Roster map
 
@@ -3209,6 +3402,10 @@ They stay out of rooms 0–9, Table B, Table C, Table D, Table E, Table F, Table
 | `lone_lector` | 5 | Isolated-target bonus | Lone Sting (#563) | — (Wave 13 / Table K) |
 | `plate_bursar` | 6 | Delayed next-turn absorb | Morrow Plate (#563) | — (Wave 13 / Table K) |
 | `lend_proctor` | 5 | Dump leftover AP to ally | Leftover Lend (#563) | — (Wave 13 / Table K) |
+| `effigy_clerk` | 6 | 1-HP empty-kit taunt post | Dummy Post (#563) | — (Wave 14 / Table L) |
+| `enter_deacon` | 5 | First-enter heal pad | Enter Mend (#563) | — (Wave 14 / Table L) |
+| `split_acolyte` | 5 | Split heal with adjacent ally | Split Mend (#563) | — (Wave 14 / Table L) |
+| `quiet_chorister` | 6 | Tile forbids Strike | Quiet Sill (#636) | — (Wave 14 / Table L) |
 
 Live rush room 9 still stores `weeping_pawn_2`. Implementation remaps that string to `second_lament`. Do **not** spawn a second `weeping_pawn`.
 
@@ -3233,7 +3430,7 @@ Existing `BOSS_RUSH_ROOMS` combined mechanics stay. This spec changes how **each
 
 Rush Doka/XP in `BOSS_RUSH_ROOMS` are already large flat numbers (500–5000). Do **not** also multiply by `rewardDokaMultiplier` or by player level. Persist through `buildBossRushPersistInput` → `applyRewards` only.
 
-Wave-2 through Wave-13 bosses stay out of the 10-room table except `second_lament` (room-9 remap). Pairings below are **Table B** (Wave 2–4), **Table C** (Wave 5), **Table D** (Wave 6), **Table E** (Wave 7), **Table F** (Wave 8), **Table G** (Wave 9), **Table H** (Wave 10), **Table I** (Wave 11), **Table J** (Wave 12), and **Table K** (Wave 13). Do not pair `hook_regent` with Countess, Static, or Rime. Do not pair `ivory_palisade` with Fortress. Do not pair `sinkhole_dowager` with Hook (two attract verbs). Do not pair `ram_castellan` with Fosse / Hook / Rime / Dowager. Do not pair `lock_marshal` with Fosse / Hex / Palisade / Ram / Hook / Rime. Do not pair `bait_vicar` with Goad. Do not pair `font_abbess` with Lament / Archbishop. Do not pair `surplus_auditor` with Eternal / Stride. Do not pair `mill_seneschal` with Ram / Hook / Rime / Dowager / Countess / Fosse / Lock. Do not pair `counter_chaplain` with Grandmaster / Bait / Cord. Do not pair `wedge_prior` with Queen / Ram. Do not pair `levy_rector` with Archivist / Surplus / Eternal / Conductor. Do not pair `gaze_beadle` with Wedge / Queen. Do not pair `span_chamberlain` with Palisade / Fosse / Lock / Mill. Do not pair `cover_hospitaller` with Bait / Goad / Sovereign / Cord. Do not pair `lintel_sacrist` with Fosse / Palisade / Lock / Ram / Mill. Do not pair `toll_ostiary` with Levy / Hex / Stride / Surplus / Eternal / Lintel / Fosse / Palisade / Lock. Do not pair `hinge_precentor` with Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram. Do not pair `veil_verger` with Bait / Cover / Goad / Sovereign / Conductor. Do not pair `oath_dean` with Conductor / Levy / Surplus / Gaze. Do not pair `crypt_sexton` with Fosse / Lintel / Palisade / Lock / Wick / Ram / Hook / Dowager / Mill / Rime / Countess. Do not pair `march_prefect` with Stride / Oath / Gaze / Levy / Surplus / Lintel / Fosse / Lock / Palisade / Crypt / Goad. Do not pair `aisle_canon` with Span / Palisade / Fosse / Lock / Mill / Cover / Cord / Crypt. Do not pair `orbit_succentor` with Hinge / Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram / Crypt / Fosse / Wick / Rime / Countess / Gaze / Wedge. Do not pair `sole_thurifer` with Lock / Stride / March / Hex / Goad / Fosse / Palisade / Crypt / Lintel / Wedge / Gaze / Conductor. Do not pair `bias_prebendary` with Lock / Sole / March / Fosse / Palisade / Crypt / Lintel / Rime. Do not pair `brick_cellarer` with Palisade / Fortress / Fosse / Crypt / Lock / Lintel / Aisle / Span / Mill / Rime / Dowager / Hook. Do not pair `rebound_almoner` with Cover / Sovereign / Archbishop / Fortress / Wick / Countess / Crypt. Do not pair `infirm_chanter` with Sole / March / Stride / Hex / Lock / Bias / Font / Lament. Do not pair `yoke_subchanter` with Hinge / Orbit / Counter / Grandmaster / Morrow / Hook / Dowager / Mill / Ram / Cord. Do not pair `salve_wicker` with Wick / Crypt / Font / Infirm / Lament. Do not pair `brand_curate` with Hexed / Archivist / Goad / Veil / Rebound. Do not pair `flush_psalmist` with Surplus / Lend / Grandmaster / Conductor. Do not pair `lone_lector` with Brand / Hexed / Archivist / Veil / Goad. Do not pair `plate_bursar` with Morrow / Rebound / Cover / Wick / Crypt / Salve. Do not pair `lend_proctor` with Flush / Surplus / Font / Conductor.
+Wave-2 through Wave-14 bosses stay out of the 10-room table except `second_lament` (room-9 remap). Pairings below are **Table B** (Wave 2–4), **Table C** (Wave 5), **Table D** (Wave 6), **Table E** (Wave 7), **Table F** (Wave 8), **Table G** (Wave 9), **Table H** (Wave 10), **Table I** (Wave 11), **Table J** (Wave 12), **Table K** (Wave 13), and **Table L** (Wave 14). Do not pair `hook_regent` with Countess, Static, or Rime. Do not pair `ivory_palisade` with Fortress. Do not pair `sinkhole_dowager` with Hook (two attract verbs). Do not pair `ram_castellan` with Fosse / Hook / Rime / Dowager. Do not pair `lock_marshal` with Fosse / Hex / Palisade / Ram / Hook / Rime. Do not pair `bait_vicar` with Goad. Do not pair `font_abbess` with Lament / Archbishop. Do not pair `surplus_auditor` with Eternal / Stride. Do not pair `mill_seneschal` with Ram / Hook / Rime / Dowager / Countess / Fosse / Lock. Do not pair `counter_chaplain` with Grandmaster / Bait / Cord. Do not pair `wedge_prior` with Queen / Ram. Do not pair `levy_rector` with Archivist / Surplus / Eternal / Conductor. Do not pair `gaze_beadle` with Wedge / Queen. Do not pair `span_chamberlain` with Palisade / Fosse / Lock / Mill. Do not pair `cover_hospitaller` with Bait / Goad / Sovereign / Cord. Do not pair `lintel_sacrist` with Fosse / Palisade / Lock / Ram / Mill. Do not pair `toll_ostiary` with Levy / Hex / Stride / Surplus / Eternal / Lintel / Fosse / Palisade / Lock. Do not pair `hinge_precentor` with Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram. Do not pair `veil_verger` with Bait / Cover / Goad / Sovereign / Conductor. Do not pair `oath_dean` with Conductor / Levy / Surplus / Gaze. Do not pair `crypt_sexton` with Fosse / Lintel / Palisade / Lock / Wick / Ram / Hook / Dowager / Mill / Rime / Countess. Do not pair `march_prefect` with Stride / Oath / Gaze / Levy / Surplus / Lintel / Fosse / Lock / Palisade / Crypt / Goad. Do not pair `aisle_canon` with Span / Palisade / Fosse / Lock / Mill / Cover / Cord / Crypt. Do not pair `orbit_succentor` with Hinge / Grandmaster / Counter / Morrow / Hook / Dowager / Mill / Ram / Crypt / Fosse / Wick / Rime / Countess / Gaze / Wedge. Do not pair `sole_thurifer` with Lock / Stride / March / Hex / Goad / Fosse / Palisade / Crypt / Lintel / Wedge / Gaze / Conductor. Do not pair `bias_prebendary` with Lock / Sole / March / Fosse / Palisade / Crypt / Lintel / Rime. Do not pair `brick_cellarer` with Palisade / Fortress / Fosse / Crypt / Lock / Lintel / Aisle / Span / Mill / Rime / Dowager / Hook. Do not pair `rebound_almoner` with Cover / Sovereign / Archbishop / Fortress / Wick / Countess / Crypt. Do not pair `infirm_chanter` with Sole / March / Stride / Hex / Lock / Bias / Font / Lament. Do not pair `yoke_subchanter` with Hinge / Orbit / Counter / Grandmaster / Morrow / Hook / Dowager / Mill / Ram / Cord. Do not pair `salve_wicker` with Wick / Crypt / Font / Infirm / Lament. Do not pair `brand_curate` with Hexed / Archivist / Goad / Veil / Rebound. Do not pair `flush_psalmist` with Surplus / Lend / Grandmaster / Conductor. Do not pair `lone_lector` with Brand / Hexed / Archivist / Veil / Goad. Do not pair `plate_bursar` with Morrow / Rebound / Cover / Wick / Crypt / Salve. Do not pair `lend_proctor` with Flush / Surplus / Font / Conductor. Do not pair `effigy_clerk` with Goad / Bait / Cover / Counter / Grandmaster / Quiet. Do not pair `enter_deacon` with Font / Salve / Infirm / Mend Wick / Crypt / Fosse. Do not pair `split_acolyte` with Font / Cover / Infirm / Lend / Enter. Do not pair `quiet_chorister` with Oath / Dummy / Goad.
 
 ### 10.1 Rush Table B (post-first-clear, design only)
 
@@ -3527,6 +3724,33 @@ Flat rewards continue the live jackpot curve without a player-level exponent. Pe
 
 `rime_margrave` / `sinkhole_dowager` remain **solo portal / dungeon capstone**. Encounter Evolution may still attach a single Wave-13 id as ENC-BOSS-02 only if a human picks that id — this bible does not rewrite ENC-BOSS-02.
 
+### 10.11 Rush Table L (post-Table-K, design only)
+
+Unlock: one complete clear of Table K (K0–K3). **New table**, new `roomIndex` namespace `L0`–`L3`. Do **not** overwrite `BOSS_RUSH_ROOMS`, Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, or Table K. Do **not** collide ENC-RUSH remixes.
+
+Flat rewards continue the live jackpot curve without a player-level exponent. Persist through `applyRewards` only. Shared 4-extra cap per room.
+
+| Room | Pair | Combined question | Hard rule |
+| :--- | :--- | :--- | :--- |
+| L0 | `effigy_clerk` + `lock_marshal` | Plant straw on a **legal axis**; pop it without walking off-axis. | Compass / dummy dest **never** occupies the Mannequin. Off-axis walks already reject (0 MP). Post is not a Rank Lock target. Not Goad / Bait / Cover / Counter / Grandmaster / Quiet / Fosse / Hex / Palisade / Ram / Hook / Rime. |
+| L1 | `enter_deacon` + `stride_censor` | Pay walk-MP to **steal** the public 6, or let the extra drink. | Ledger **never** occupies the Narthex. Forced-move enter is free of walk MP (Stride does not tax it) and **does** consume the pad. Not Font / Salve / Infirm / Mend Wick / Crypt / Fosse. |
+| L2 | `split_acolyte` + `cord_familiar` | Isolate the cup, or the **familiar** is the neighbor. | Cord’s summon-gate **never** occupies the Pyx. Familiar death ≠ victory. Dummy Post extras are not preferred neighbors. Not Font / Cover / Infirm / Lend / Enter / Counter. |
+| L3 | `quiet_chorister` + `bone_cavalier` | Land the knight **off** the stall, or Strike from a legal cell. | Spike-on-land dest **never** occupies the Muffler. Quiet never paints the knight-landing telegraph. Vault once/battle still answers. Not Oath / Dummy / Goad. |
+
+**Held (illegal until a later pass):**
+
+| Pair | Why illegal now |
+| :--- | :--- |
+| `effigy_clerk` + `goad_pretender` / `bait_vicar` / `cover_hospitaller` / `counter_chaplain` / `void_grandmaster` | Two taunt / intercept / decoy directors. |
+| `effigy_clerk` + `quiet_chorister` | Intended force-melee-onto-sill exam; two Wave-14 cores. |
+| `enter_deacon` + `font_abbess` / `salve_wicker` / `infirm_chanter` / `crypt_sexton` / `fosse_warden` | Two heal-pad or occupancy-tile directors. |
+| `split_acolyte` + `font_abbess` / `cover_hospitaller` / `infirm_chanter` / `lend_proctor` / `enter_deacon` | Two support-heal / ally dumps. |
+| `quiet_chorister` + `oath_dean` | Must Strike + cannot Strike — a brick. |
+| `quiet_chorister` + `goad_pretender` | Force melee onto a spell-only tile — held with Dummy. |
+| Wave-14 ids in rooms 0–9, B0–B3, C0–C3, D0–D3, E0–E3, F0–F3, G0–G3, H0–H3, I0–I3, J0–J3, or K0–K3 | Table A stays the shipped 19 + lament remap. Tables B–K stay their waves. |
+
+`rime_margrave` / `sinkhole_dowager` remain **solo portal / dungeon capstone**. Encounter Evolution may still attach a single Wave-14 id as ENC-BOSS-02 only if a human picks that id — this bible does not rewrite ENC-BOSS-02.
+
 ---
 ## 11. Implementation contract (later PRs)
 
@@ -3573,6 +3797,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | AK. Wave 13 kits | New `BossId`s + kits only when `spellData` already has the verbs **or** the kit stays on the live 32 | Do not add Wave 13 ids to `BOSS_IDS` without kits. No new #137 spell ids. Flush cannot target the caster. Isolation is same-side only. Plate delay is *his* next turn start. Lend does not splice the turn queue. |
 | AL. Rush Table K | New 4-room table after Table J clear | Do not rewrite rooms 0–9, B0–B3, C0–C3, D0–D3, E0–E3, F0–F3, G0–G3, H0–H3, I0–I3, or J0–J3 |
 | AM. #563 Wave-13 extra doors | `bossIds` on Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend | Do not extra-door Dummy Post / Enter Mend / Split Mend / Court Hinge or any #636 / #695 / #726 ids; do not grant Cadence Crack / Break / Timestep / Surplus / Ward Plate / Morrow Step / Purse Cut from Flush / Lone / Plate / Lend; do not remap `flush_precentor` / `gait_cantor` / `pair_usher` / `dummy_castellan`; first grant wins |
+| AN. Wave 14 kits | New `BossId`s + kits only when `spellData` already has the verbs **or** the kit stays on the live 32 | Do not add Wave 14 ids to `BOSS_IDS` without kits. No new #137 spell ids. Dummy taunt is a cast-target filter, not Goad. Enter occupant-already-there does not trigger. Split primary is never the caster. Quiet filter is `isPhysical` / `physical_attack` only. |
+| AO. Rush Table L | New 4-room table after Table K clear | Do not rewrite rooms 0–9, B0–B3, C0–C3, D0–D3, E0–E3, F0–F3, G0–G3, H0–H3, I0–I3, J0–J3, or K0–K3 |
+| AP. Wave-14 extra doors | `bossIds` on Dummy Post / Enter Mend / Split Mend / Quiet Sill | Do not extra-door Court Hinge or remaining #636 / any #695 / #726 / #787 ids; do not grant Goad / Bait / Font / Mend Wick / Gait Mend / Oath / Quiet Hex from Effigy / Enter / Split / Quiet; do not remap `dummy_castellan` / `flush_precentor` / `gait_cantor` / `pair_usher` / `shove_cantor` / `keep_bursar`; first grant wins |
 
 **Spell metadata checklist** for every new discoverable:
 
@@ -3628,6 +3855,8 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | 33 | Wave-12 objects | Infirmary / Yoke-pin / Salver / Stylus are not enemies, 0 XP. Forced-move ≠ walk MP. Pair hinge is not `swapPositions`. Pad tick is heal. Body Mark amp is the challenge debit. Decoy death ≠ victory. |
 | 34 | Table K | Crosier never on Psalter. Posts never on Ambo. Brace never on Aumbry. Mortar never on Coffer. |
 | 35 | Wave-13 objects | Psalter / Ambo / Aumbry / Coffer are not enemies, 0 XP. Cannot self-flush. Isolation is same-side only. Absorb ≠ heal. Lend `n = 0` still observes. Enrage −1 AP hits `recordChallengeApSpend`. |
+| 36 | Table L | Compass never on Mannequin. Ledger never on Narthex. Gate never on Pyx. Spike dest never on Muffler. |
+| 37 | Wave-14 objects | Mannequin / Narthex / Pyx / Muffler are not enemies, 0 XP. Post death ≠ victory. Standing occupant does not trigger Enter. Split self-primary illegal. Quiet Attack Nearest from the sill refuses. |
 
 ---
 
@@ -3636,9 +3865,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 - Production TypeScript / Motoko for any of the above.
 - New CharacterStats fields.
 - Changing `xpForNextLevel`.
-- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I). Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, and Table K are additive.
+- Rewriting Boss Rush room order (except the room-9 **id remap** in slice I). Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, and Table L are additive.
 - Making every spectacular mechanic player-usable.
-- New #137 spell ids (Wave 3 reuses #120; Wave 4 reuses #133; Wave 5 reuses #120 / #282 / #342; Wave 6 reuses #282 / #342; Wave 7 reuses #282; Wave 8 reuses #411; Wave 9 reuses #463; Wave 10 reuses #525; Wave 11 reuses #563 Gait Seal / Diag Lock / Brick Shift / Return Sting; Wave 12 reuses remaining #563 Gait Mend / Pair Hinge / Mend Wick / Body Mark; Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend).
+- New #137 spell ids (Wave 3 reuses #120; Wave 4 reuses #133; Wave 5 reuses #120 / #282 / #342; Wave 6 reuses #282 / #342; Wave 7 reuses #282; Wave 8 reuses #411; Wave 9 reuses #463; Wave 10 reuses #525; Wave 11 reuses #563 Gait Seal / Diag Lock / Brick Shift / Return Sting; Wave 12 reuses remaining #563 Gait Mend / Pair Hinge / Mend Wick / Body Mark; Wave 13 reuses leftover #563 Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend; Wave 14 reuses leftover #563 Dummy Post / Enter Mend / Split Mend and #636 Quiet Sill).
 - Deploying or “fixing” `backend_extended/`.
 - Wiring Swap × hazards or push/pull × hazards (MIMA owns those PRs).
 - Granting Gale Fan, Twin Gate, Cut In, After Verse, Sanguine Toll, Draw Together, or Eclipse Fold from Wave-5 / Wave-6 / Wave-7 / Wave-8 sheets (#342 already stamped those doors on shipped bosses).
@@ -3650,7 +3879,9 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 - Extra-dooring remaining #525 ids (Wall Sting / File Brand / Boot Sting / Shove Face / Knight Slip / Cadence Crack / Once Verse / Tick Hood / Flank Share / Spare Pace / Exit Boon / Court Shove) or any #563 ids from Wave-10 sheets.
 - Granting Open Pit / Fuse Tile / Span Guard / Twin Span / Hinge Tile / Knight Slip from Crypt / March / Aisle / Orbit, or remapping `wick_mason` / `pace_prelate` / `span_triune` / `slip_castellan` onto these sheets.
 - Extra-dooring leftover #563 ids (Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend / Dummy Post / Enter Mend / Split Mend / Court Hinge) or any #636 / #695 / #726 ids **from Wave-12 sheets**.
-- Extra-dooring remaining leftover #563 ids (Dummy Post / Enter Mend / Split Mend / Court Hinge) or any #636 / #695 / #726 ids from Wave-13 sheets.
+- Extra-dooring remaining leftover #563 ids (Dummy Post / Enter Mend / Split Mend / Court Hinge) or any #636 / #695 / #726 ids **from Wave-13 sheets**.
+- Extra-dooring Court Hinge or remaining #636 (except Quiet Sill) / any #695 / #726 / #787 ids from Wave-14 sheets.
+- Granting Goad / Bait Pylon / Font / Mend Wick / Gait Mend / Oath Blade / Quiet Hex from Effigy / Enter / Split / Quiet, or remapping `dummy_castellan` / `flush_precentor` / `gait_cantor` / `pair_usher` / `shove_cantor` / `keep_bursar` / `court_hinge_regent` onto Wave-14 sheets.
 - Granting Rank Lock / Must Pace / Gait Mend / Mirror / Cover / Palisade from Sole / Bias / Brick / Rebound, or remapping `gait_cantor` / `pair_usher` / `flush_precentor` / `dummy_castellan` / `court_hinge_regent` onto Wave-11 sheets.
 - Granting Font / Fuse / Sole / March / Pivot / Hinge Tile / Pawn Trade / tile Mark from Infirm / Yoke / Salve / Brand, or remapping `gait_cantor` / `pair_usher` onto Wave-12 sheets.
 - Granting Cadence Crack / Cadence Break / Timestep / Surplus / Ward Plate / Morrow Step / Purse Cut from Flush / Lone / Plate / Lend, or remapping `flush_precentor` / `dummy_castellan` / `gait_cantor` / `pair_usher` onto Wave-13 sheets.
@@ -3684,14 +3915,15 @@ When someone implements this, split work. Do not land it as one combat rewrite.
 | Tactical ids Wave 5 | `docs/automation/SPELL_PROPOSALS_2026-09-22.md` (#411) | Wave 8 extra-doors Facing Pin / Span Guard / Cover Step / Low Lintel. Mute Thread / Queue Cut / File Vault are shipped-id roster notes. False Cut stays Lament kit-only. |
 | Tactical ids Wave 6 | `docs/automation/SPELL_PROPOSALS_2026-09-23.md` (#463) | Wave 9 extra-doors Exit Tithe / Hinge Tile / Aim Veil / Oath Blade. Twin Span / About Face / File Reel / Hinge Step stay off these sheets. |
 | Tactical ids Wave 7 | `docs/automation/SPELL_PROPOSALS_2026-09-24.md` (#525) | Wave 10 extra-doors Pit Wick / Must Pace / Triple Span / Pivot Foe. Remaining #525 ids stay off these sheets. |
-| Tactical ids Wave 8 | `docs/automation/SPELL_PROPOSALS_2026-09-25.md` (#563) | Wave 11 extra-doors Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 extra-doors Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 extra-doors Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Dummy Post / Enter Mend / Split Mend / Court Hinge stay off these sheets. |
-| Tactical ids Wave 9 | `docs/automation/SPELL_PROPOSALS_2026-09-26.md` (#636) | Not Wave-11, Wave-12, or Wave-13 doors. |
-| Tactical ids Wave 10 | `docs/automation/SPELL_PROPOSALS_2026-09-27.md` (#695) | Not Wave-12 or Wave-13 doors. |
-| Tactical ids Wave 11 | `docs/automation/SPELL_PROPOSALS_2026-09-28.md` (#726) | Not Wave-12 or Wave-13 doors. |
+| Tactical ids Wave 8 | `docs/automation/SPELL_PROPOSALS_2026-09-25.md` (#563) | Wave 11 extra-doors Gait Seal / Diag Lock / Brick Shift / Return Sting. Wave 12 extra-doors Gait Mend / Pair Hinge / Mend Wick / Body Mark. Wave 13 extra-doors Cadence Flush / Lone Sting / Morrow Plate / Leftover Lend. Wave 14 extra-doors Dummy Post / Enter Mend / Split Mend. Court Hinge stays closed. |
+| Tactical ids Wave 9 | `docs/automation/SPELL_PROPOSALS_2026-09-26.md` (#636) | Wave 14 extra-doors Quiet Sill only. Remaining #636 ids stay off Wave-14 sheets. |
+| Tactical ids Wave 10 | `docs/automation/SPELL_PROPOSALS_2026-09-27.md` (#695) | Not Wave-12, Wave-13, or Wave-14 doors. |
+| Tactical ids Wave 11 | `docs/automation/SPELL_PROPOSALS_2026-09-28.md` (#726) | Not Wave-12, Wave-13, or Wave-14 doors. |
+| Tactical ids Wave 12 | `docs/automation/SPELL_PROPOSALS_2026-09-29.md` (#787) | Not Wave-14 doors. |
 | Long horizon | `docs/automation/LONG_HORIZON_2026-09-01.md` | Live boss HP still static; HUD sat at 48 |
 | MIMA | `docs/automation/MECHANIC_INTERACTION_MATRIX_2026-09-21.md` (#336) | Swap × hazards, push/pull × hazards still OPEN |
-| Encounter rooms | `docs/encounters/ENCOUNTER_EVOLUTION_2026-09-01.md` | ENC-RUSH remixes Table A; Table B / C / D / E / F / G / H / I / J / K are separate |
+| Encounter rooms | `docs/encounters/ENCOUNTER_EVOLUTION_2026-09-01.md` | ENC-RUSH remixes Table A; Table B / C / D / E / F / G / H / I / J / K / L are separate |
 
 ---
 
-**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 + 4 Wave-4 + 4 Wave-5 + 4 Wave-6 + 4 Wave-7 + 4 Wave-8 + 4 Wave-9 + 4 Wave-10 + 4 Wave-11 + 4 Wave-12 + 4 Wave-13 sheets. Rush Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, and Table K are additive. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
+**Document status:** PROPOSED. 19 shipped + 4 Wave-2 + 4 Wave-3 + 4 Wave-4 + 4 Wave-5 + 4 Wave-6 + 4 Wave-7 + 4 Wave-8 + 4 Wave-9 + 4 Wave-10 + 4 Wave-11 + 4 Wave-12 + 4 Wave-13 + 4 Wave-14 sheets. Rush Table B, Table C, Table D, Table E, Table F, Table G, Table H, Table I, Table J, Table K, and Table L are additive. Safe to review, iterate, and implement in sliced PRs. Not a license to land combat code in the same change as this spec.
