@@ -46,7 +46,10 @@ describe("shouldCloseChallengeOfferOnTurnYield", () => {
   const challengeAfterYield = afterYield ? null : { id: "keep" };
   assert.equal(challengeAfterYield, null);
 
-  assert.equal(shouldCloseChallengeOfferOnTurnYield({ accepted: true }), false);
+  assert.equal(
+    shouldCloseChallengeOfferOnTurnYield({ accepted: true }),
+    false,
+  );
 }
 
 console.log("challengeOfferTurnYield.test: ok");
