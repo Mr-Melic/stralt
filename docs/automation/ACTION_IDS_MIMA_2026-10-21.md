@@ -68,6 +68,44 @@ STATUS: NEW
 
 ---
 
+ACTION_ID: MIMA-2026-10-21-004  
+SOURCE_AUTOMATION: Mechanic Interaction Matrix Auditor  
+TITLE: Boss Rush room-clear applyRewards never fires thresholdAchievementConditionsFromPersist  
+CATEGORY: rewards + achievements + Boss Rush + death  
+PRIORITY: P1  
+CONFIDENCE: HIGH  
+EVIDENCE: `handleBattleEnd` unlocks `doka_1000` / `doka_10000` / `level_10` inside the persist enqueue from `applyRewards` return values (`WorldExploration.tsx` 12546–12558) via `thresholdAchievementConditionsFromPersist` (`adminSafety.ts` 403–414), then may re-show the recap (12563–12575). Comment notes a queued death cut can land as soon as the enqueue returns — unlocks must use the post-credit snapshot, not live hydrate. `handleBossRushRoomClear` `applyAndCommit` only `resolveBattleRewards` + `progressPersist.commit` (12817–12835); no threshold loop. Live doka/level hydrate is gated by `shouldApplyVictoryLiveHydrate` (12838–12861). Outside-battle doka/level effects (2260–2284, 3630–3643) only see UI after that hydrate. Lava/spike death during room-clear persist ⇒ feats stay locked this session despite canister credit. Distinct from “wallet/level feats wait until applyRewards commits” (deferral rule), 09-26-004 (unpaid death honour on applyRewards), 09-29-004 (Fever), #803/#536 (complete(9) vs reset).  
+EXPECTED_INTERACTION: After Boss Rush room-clear `applyRewards` commits, fire the same threshold unlocks as victory (and attach to recap), even if death then skips live hydrate.  
+ACTUAL_INTERACTION: Boss Rush path never calls `thresholdAchievementConditionsFromPersist`; death-during-persist skips the only UI path into the outside effects.  
+SYSTEMS_AFFECTED: Boss Rush, applyRewards, achievements (doka_1000/doka_10000/level_10), death  
+RECOMMENDED_ACTION: Inside Boss Rush `applyAndCommit` after commit, mirror victory’s threshold loop + optional recap re-show. Tests: room-clear crossing 1000 Doka fires unlock; deathEpoch bump during persist still unlocks from `persisted.newDoka`/`currentLevel`.  
+AUTONOMY: IMPLEMENT_WX_BRANCH  
+DEPENDENCIES: None. Do not fold into #803.  
+REGRESSION_RISK: LOW — same helper as victory; avoid double-fire via `achievementsShownRef`.  
+VALIDATION_REQUIRED: Unit on persist callback; playtest jackpot room clear past doka_1000 with leftover lava.  
+STATUS: NEW  
+
+---
+
+ACTION_ID: MIMA-2026-10-21-005  
+SOURCE_AUTOMATION: Mechanic Interaction Matrix Auditor  
+TITLE: explore_25_maps world check never schedules on portal mapsVisited++  
+CATEGORY: achievements + portals  
+PRIORITY: P2  
+CONFIDENCE: HIGH  
+EVIDENCE: Portal path increments `mapsVisitedCountRef` and writes localStorage (`WorldExploration.tsx` 6470–6477). Outside-battle achievement effect reads that ref for `explore_25_maps` (2275–2276) but deps are only `[dokaBalance, inBattle, checkAndFireAchievement]` (2284) — a ref bump does not re-run the effect. Unlock waits for a later victory (`clientTrustedVictoryAchievementConditions` includes explore_25 at 12483–12496 / 12902–12915) or an incidental dokaBalance/inBattle edge. Distinct from loot_10 09-27-004 (pickup counter ticks before persist; world check nested under mapsVisited branch).  
+EXPECTED_INTERACTION: Crossing 25 maps via portal unlocks explore_25 (toast) without requiring a later battle win or Doka credit.  
+ACTUAL_INTERACTION: Portal mapsVisited++ alone never schedules the world check.  
+SYSTEMS_AFFECTED: achievements (explore_25_maps), portals, localStorage feat counter  
+RECOMMENDED_ACTION: Drive the mapsVisited check from a state/counter the effect depends on, or call `checkAndFireAchievement("explore_25_maps", false)` at the portal increment site when `>= 25`. Tests: portal-only bump 24→25 with stable dokaBalance unlocks once.  
+AUTONOMY: IMPLEMENT_ONE_CALL_SITE  
+DEPENDENCIES: None. Do not re-file 09-27-004.  
+REGRESSION_RISK: LOW — `achievementsShownRef` / alreadyUnlocked guard double-fire.  
+VALIDATION_REQUIRED: Effect or portal-site unit test.  
+STATUS: NEW  
+
+---
+
 ## Verified closed / non-findings (this hunt)
 
 | Pair | Verdict |
