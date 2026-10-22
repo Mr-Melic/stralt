@@ -406,6 +406,7 @@ These modules are React-free. `WorldExploration.tsx` remains the orchestrator an
 | `progression.ts` | Level-derived base stats (player / enemy / summon) |
 | `mapGen.ts` | Archetypes + solvability finalize (do not casually rewrite) |
 | `portalRules.ts` | Run-mode portal filter + dungeon-chain snapshot / `decideDungeonChainPortal` |
+| `portalWhirlpool.ts` | Portal whirlpool paint (palette, rest rings, boss star, dungeon spikes, spirals). WX still chooses rest-override color, screen anchor, and dungeon-chain labels |
 | `summonSpawn.ts` / `summonExecutor.ts` / `summonIntegration.ts` | Summon lifecycle. Hostile minions: `spawnEnemySummonUnit`. Kit casts: `utils/summonControlCast.ts` (catalog `summonKit`, not `summon.spells`). `summonAI.ts` exists but `runSummonAI` is unused; live summon turns use `enemyAI.ts` |
 | `summonLifespan.ts` | Lifespan tick against the **live** combatant store; drop expired ids through `removeCombatant` |
 | `dotStacks.ts` | Same-name DoT append + independent per-stack duration tick (RES applied by damage helpers, not here) |
