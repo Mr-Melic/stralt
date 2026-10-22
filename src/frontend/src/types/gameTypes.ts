@@ -351,6 +351,7 @@ export interface DokaLootItem {
 // ── Admin game config (from backend getGameConfig) ─────────────────────────
 
 export interface AdminGameConfig {
+  /** Persisted; combat ignores it (hardcoded +0.25 into unread state). */
   leaderBoostPercent: number;
   dokaSpawnChance: number;
   dokaSpawnBaseValue: number;
