@@ -57,6 +57,7 @@ function PaginationLink({
           variant: isActive ? "outline" : "ghost",
           size,
         }),
+        "min-h-[44px] min-w-[44px]",
         className,
       )}
       {...props}
