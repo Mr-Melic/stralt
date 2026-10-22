@@ -70,7 +70,7 @@ Balance analyst and `longHorizonSim.telemetry.available` must stay **WAITING_FOR
 | Topic | 2026-10-21 (#816) | 2026-10-22 (this run) |
 | :--- | :--- | :--- |
 | `main` HEAD | `0f5363f` | **Same SHA.** No sidecar landed. EVENT_SOURCE lines **re-verified identical**. |
-| Open PRs targeting `main` | 482 | **538** (GitHub search `is:pr is:open base:main`). Oldest still **#327** then **#331**. Latest **#869** (2026-10-21). |
+| Open PRs targeting `main` | 482 | **543** (`open-pr-stack-compat.sh --self`, `gh pr list --limit 1000`). Oldest still **#327** then **#331**. Latest **#874** (2026-10-22). |
 | Unmerged GTAD siblings | #352, #422, #450, #527, #583, #641, #682, #722, #806 | Those nine plus **#816**. This PR adds **unique 10-22 files only**. README left untouched. |
 | Extra persist PRs (not EVENT_SOURCE) | #742, #759, #764, #767, #774, #800, #807, #811, #812, #813 | Plus 2026-10-21 **#847, #854, #860, #864, #866, #869**. Also still-open #445/#497/#653/#710 and earlier unseeded-keep PRs. Q-018 helper still **absent** on `main`. |
 | Combat kit-parity burst | Not present | Open **#850–#868** class (share boss/summon kit execute with advertised metadata). **Not** S-007 / E-006 EVENT_SOURCE until merged. |
@@ -80,7 +80,7 @@ Balance analyst and `longHorizonSim.telemetry.available` must stay **WAITING_FOR
 | Boss Rush **#803** | Not N-002 until merged | Still **OPEN**. |
 | Q-018 (`unseeded*KeepWriteSkip`) | Deferred; helper **not** on `main` | Still **absent** (`rg` zero hits under `src/`). Q-016’s `shouldSkipAbsoluteDokaWrite` (**202–212**) **is** on `main`. |
 | Family-roll citation | spawnPolicy + WX **5864**; some older siblings still cite WX **5940** | **Still camera at 5940.** Use `spawnPolicy.ts` + WX **5864**. |
-| Sibling TADD / TBC | #801 / #768 (09-29) | 2026-10-21 **#827** (skip tenth Health matrix) and **#833** (WAITING_FOR_TELEMETRY). Stay WAITING. |
+| Sibling TADD / TBC | #801 / #768 (09-29); 10-21 **#827** / **#833** | Same-day **#871** WAITING_FOR_TELEMETRY. Stay WAITING. |
 
 Merged-on-`main` telemetry PRs remain docs only (#130 architecture, #203 09-01, #295 09-02). **No increment sidecar shipped.** 49 days of `main` freeze is **not** a player regression.
 

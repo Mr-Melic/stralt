@@ -8,7 +8,7 @@ Design contract: [`TELEMETRY_ARCHITECTURE_2026-10-22.md`](./TELEMETRY_ARCHITECTU
 **Do not re-implement from stale line numbers.** Phase 0/1 tickets remain  
 `GTAD-2026-09-01-001`…`014` in [`ACTION_IDS_GTAD_2026-09-01.md`](./ACTION_IDS_GTAD_2026-09-01.md)  
 (policy still NEW, not shipped). This run adds **deltas only** (49-day freeze,  
-538-PR queue, remount-keep burst, kit-parity fence). EVENT_SOURCE lines on  
+543-PR queue, remount-keep burst, kit-parity fence). EVENT_SOURCE lines on  
 `0f5363f` match the 2026-10-21 contract and were re-verified.
 
 This run ships **docs only**. Do not implement gameplay from this file unless a later human or orchestrator explicitly picks an ID.
@@ -21,7 +21,7 @@ TITLE: Privacy fence and unique-file stack — do not overwrite older GTAD sibli
 CATEGORY: privacy  
 PRIORITY: P0  
 CONFIDENCE: HIGH  
-EVIDENCE: `main` HEAD `0f5363f` still has no sidecar (49 days frozen). Open queue **538** PRs; oldest **#327** then **#331**. Latest **#869**. Unmerged GTAD siblings #352/#422/#450/#527/#583/#641/#682/#722/#806/#816 already own dated architecture files. `getAllCharacters` (`main.mo` 532), `getLeaderboard` (3390), OQL `gameKeyRequests` email (3780–3796), `GameKeyRequest.email` / `redeemedBy` (`types/admin.mo` 221–234), `chatMessages` (2610), Purchases tab emails. Mandate forbids identifiable Intelligence cells. README left untouched so sibling index rows are not overwritten.  
+EVIDENCE: `main` HEAD `0f5363f` still has no sidecar (49 days frozen). Open queue **543** PRs; oldest **#327** then **#331**. Latest **#874**. Unmerged GTAD siblings #352/#422/#450/#527/#583/#641/#682/#722/#806/#816 already own dated architecture files. `getAllCharacters` (`main.mo` 532), `getLeaderboard` (3390), OQL `gameKeyRequests` email (3780–3796), `GameKeyRequest.email` / `redeemedBy` (`types/admin.mo` 221–234), `chatMessages` (2610), Purchases tab emails. Mandate forbids identifiable Intelligence cells. README left untouched so sibling index rows are not overwritten.  
 SYSTEMS_AFFECTED: future telemetry maps; Admin Intelligence tab; OQL (do not add owner-keyed event entities); do not call `getAllCharacters` / `adminListGameKeyRequests` / `adminGetGameKeyReveal` from Intelligence  
 RECOMMENDED_ACTION: Keep this PR’s unique files (`TELEMETRY_ARCHITECTURE_2026-10-22.md`, `ACTION_IDS_GTAD_2026-10-22.md`). Phase 0 GameKey snapshot may return **status histogram only**. Never persist chat text, GameKey codes, emails, `uiLayout`, pixel patterns, click traces, or purchase KYC. Never reuse leaderboard / OQL / `getAllCharacters` as an analytics wire format. Union overlapping files if restacking; do not concatenate duplicate `export function` copies.  
 AUTONOMY: HUMAN_APPROVE  
@@ -68,7 +68,7 @@ STATUS: NEW
 
 ACTION_ID: GTAD-2026-10-22-004  
 SOURCE_AUTOMATION: Gameplay Telemetry Architecture Director  
-TITLE: Telemetry Motoko maps need their own later migration — #259 is merged; do not hitchhike #327/#331 or the 538-PR queue  
+TITLE: Telemetry Motoko maps need their own later migration — #259 is merged; do not hitchhike #327/#331 or the 543-PR queue  
 CATEGORY: process  
 PRIORITY: P1  
 CONFIDENCE: HIGH  
@@ -89,7 +89,7 @@ TITLE: Point Quality Auditor, Balance Analyst, Dashboard Designer, and longHoriz
 CATEGORY: prompt-architecture  
 PRIORITY: P2  
 CONFIDENCE: HIGH  
-EVIDENCE: `longHorizonSim.ts` 532–536 still sets `telemetry.available: false`. No sidecar in `src/`. Admin tabs (`gameTypes.ts` 483–498; `AdminDashboard.tsx` 5610–5626) have no intelligence/health. Cursor Cloud Automations have no prompt write API. TBC/TADD sibling docs remain WAITING / skipped Health matrices (#827 / #833 on 2026-10-21). `main` has been frozen at `0f5363f` since 2026-09-03; 49 days without a collector is not a player regression. Queue growth 482→538 in one day is open-PR traffic, not telemetry.  
+EVIDENCE: `longHorizonSim.ts` 532–536 still sets `telemetry.available: false`. No sidecar in `src/`. Admin tabs (`gameTypes.ts` 483–498; `AdminDashboard.tsx` 5610–5626) have no intelligence/health. Cursor Cloud Automations have no prompt write API. TBC/TADD sibling docs remain WAITING / skipped Health matrices (#827 / #833 on 2026-10-21; same-day **#871**). `main` has been frozen at `0f5363f` since 2026-09-03; 49 days without a collector is not a player regression. Queue growth 482→543 is open-PR traffic, not telemetry.  
 SYSTEMS_AFFECTED: Quality Auditor prompt; Balance Analyst; Dashboard Designer; `utils/longHorizonSim.ts` (do not flip `available` in this docs PR)  
 RECOMMENDED_ACTION: UPDATE_PROMPT (human, dashboard): read `docs/automation/TELEMETRY_ARCHITECTURE_2026-10-22.md`. If increment/snapshot APIs are absent, repeat INCONCLUSIVE / WAITING. If present, cite persist-ok/fail, victory-paid, death-penalty, recap open/dismiss, GameKey redeem, death-replay, oneshot settle, absolute-skip, and snapshot level histogram. Never treat a missing increment as a player regression. Never require persist-lock enqueue. Never treat `processPendingPurchases` volume as shop health. Keep `longHorizonSim.telemetry.available = false` until APIs exist and are populated.  
 AUTONOMY: HUMAN_APPROVE  
@@ -106,7 +106,7 @@ Implementers should execute these 09-01 IDs against **10-22 line numbers**:
 
 | ID | Title (short) | 10-22 note |
 | :--- | :--- | :--- |
-| GTAD-2026-09-01-001 | Aggregates only; no principals | Extended by 09-02-001 / 10-21-001 / 10-22-001 (GameKey email + 538-PR stack) |
+| GTAD-2026-09-01-001 | Aggregates only; no principals | Extended by 09-02-001 / 10-21-001 / 10-22-001 (GameKey email + 543-PR stack) |
 | GTAD-2026-09-01-002 | Fail-open sidecar; not on persist lock | Includes `beforeEach`. AQA enqueue clause still superseded |
 | GTAD-2026-09-01-003 | Phase 0 snapshot buckets | `getAllCharacters` now `main.mo` 532; optional GameKey **status** histogram |
 | GTAD-2026-09-01-004 | Phase 1 outcome + quality hooks | Shop hook = `shouldCommitGameKeyRedeem`; recap dismiss five `onClose` sites, one increment |
