@@ -36,7 +36,7 @@ ACTION_IDs: [`ACTION_IDS_SDE_2026-10-22.md`](./ACTION_IDS_SDE_2026-10-22.md).
 | Tactical gap-fillers W13 | still-open **#849** — `SPELL_PROPOSALS_2026-10-21.md` | Gaunt Mend … Court Lag. **Stamp onto Wave-14 family CORE, do not clone**. Extra doors `gaunt_cantor` / `lag_precentor` / `span_oct` / `court_lag_regent` — do not restamp. **SDE already won** Hollow Gift and Cadence Swap on #837; #849 stamped those and filled four-body gaunt / CD lag / Oct Span instead |
 | Tactical gap-fillers W14 | still-open **#890** — `SPELL_PROPOSALS_2026-10-22.md` | Poise Mend … Court Floor. **Stamp as Wave 15 family CORE, do not clone**. Extra doors `poise_cantor` / `floor_precentor` / `span_nine` / `court_floor_regent` — do not restamp. **SDE wins** `spell-cadence-floor` (same hole and id); #890 must not ship that duplicate. Equal Gift is **target** leftover AP==MP≥1; Poise Mend is **both bodies**. Nine Span owns solid 3×3 occupy |
 | Family sheets | #136 + #349 + #405 + #452 + #535 + #558 + #625 + #686 + #752 + #796 + #840 + **#899** | #840 Wave-13 families consume unique **#747** Wave-11 verbs **and** **#787**. **#899** Wave-14 families consume unique **#802** Wave-12 verbs (minus Dry Gait / Pack Cap / Reach Fold) **and** **#849** (minus Court Lag). Do **not** put unique §11 ids in #899 CORE. Wave 15 families consume unique **#837** Wave-13 verbs **and** **#890** (except Cadence Floor) |
-| Boss adaptations | #137 / #197 / #367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / #808 / **#836** | Extra doors claimed through Wave 14 (`effigy_clerk` / `enter_deacon` / `split_acolyte` / `quiet_chorister`). Do not restamp |
+| Boss adaptations | #137 / #197 / #367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / #808 / **#836** / **#903** | Extra doors claimed through Wave 14 (`effigy_clerk` / `enter_deacon` / `split_acolyte` / `quiet_chorister`) and Wave 15 (`jostle_subdeacon` / `peel_friar` / `dilate_organist` / `hood_recluse`). Do not restamp |
 | Same-day encounter primer | #771 — Bash/Dry/Hood catalog | Room ids `ENC-BASH-*` / `ENC-DRY-*` / `ENC-HOOD-*`. Not a spell catalog. Do not consume |
 | Prior-day encounter catalog | still-open **#826** — `ENCOUNTER_EVOLUTION_2026-10-21.md` | Room ids `ENC-TEACH-13` / `ENC-HAZ-25` / `ENC-SPELL-25` / `ENC-SPELL-26` / `ENC-BOTH-01` / `ENC-NEAR-01` / `ENC-DAMP-01` and the rest of that day’s ENC-* table. Not a spell catalog. Do not consume |
 | Same-day encounter catalog | still-open **#885** — `ENCOUNTER_EVOLUTION_2026-10-22.md` | Room ids `ENC-TEACH-14` / `ENC-HAZ-27` / `ENC-HAZ-28` / `ENC-SPELL-27` / `ENC-SPELL-28` / `ENC-HEAVE-01` / `ENC-READY-01` / `ENC-MID-01` / `ENC-SPIKE-01` / `ENC-INCH-01` / `ENC-FOLD-01` and the rest of that day’s ENC-* table. Not a spell catalog. Do not consume. `ENC-SPIKE-01` teaches Spike Skip, **not** Spike Reel. `ENC-INCH-01` teaches Inch Stride, **not** Rank Stride. `ENC-FOLD-01` is a wall fold, **not** Rank Fold |
@@ -349,6 +349,7 @@ Every door listed in Wave 13 §4.1, plus:
 | `ENC-TEACH-14` / `ENC-HAZ-27` / `ENC-HAZ-28` / `ENC-SPELL-27` / `ENC-SPELL-28` / `ENC-HEAVE-01` / `ENC-READY-01` / `ENC-MID-01` / `ENC-SPIKE-01` / `ENC-INCH-01` / `ENC-FOLD-01` / other 2026-10-22 ENC-* | #885 encounter catalog |
 | `poise_cantor` / `floor_precentor` / `span_nine` / `court_floor_regent` | #890 |
 | `gaunt_mender` / `cadence_lagger` / `oct_prelate` / `orth_warder` / `axis_cutter` / other #899 `ENEMY_ID`s | #899 Wave-14 families |
+| `jostle_subdeacon` / `peel_friar` / `dilate_organist` / `hood_recluse` | #903 Wave-15 extra boss doors |
 
 ### 4.2 Leftover doors (not this pass)
 
@@ -1204,6 +1205,7 @@ Rank Stride consume, Swap Mark detonate, Odd Plate consume, Mire Skip consume, a
 | W14-30c | #836 extra doors | `effigy_clerk` / `enter_deacon` / `split_acolyte` / `quiet_chorister` not restamped |
 | W14-30d | #890 extra doors | `poise_cantor` / `floor_precentor` / `span_nine` / `court_floor_regent` not restamped |
 | W14-30e | #899 family ids | Unique §11 not CORE on `gaunt_mender` … `axis_cutter`. `rank_precentor` / `rank_fold_regent` not #899 ids |
+| W14-30f | #903 extra doors | `jostle_subdeacon` / `peel_friar` / `dilate_organist` / `hood_recluse` not restamped |
 | W14-31 | Typecheck | `pnpm typecheck` / `pnpm check` clean when code lands |
 
 ---
@@ -1220,9 +1222,9 @@ Rank Stride consume, Swap Mark detonate, Odd Plate consume, Mire Skip consume, a
 - Pooling Hex Toll
 - Restamping any door in §4.1
 - New `AchievementConfig` rows
-- Editing `BOSS_AND_SPELL_DISCOVERY.md` (#367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / #808 / **#836** own extra doors)
+- Editing `BOSS_AND_SPELL_DISCOVERY.md` (#367 / #406 / #474 / #518 / #572 / #638 / #663 / #753 / #808 / **#836** / **#903** own extra doors)
 - Resurrecting `SPELL_DISCOVERY_ECOSYSTEM_2026-09-22.md` unique ids
-- Restamping #474 / #518 / #525 / #563 / #572 / #625 / #636 / #638 / #646 / #663 / #679 / #695 / #726 / #747 / #753 / #787 / #802 / #808 / **#836** / **#837** / **#849** / **#890** extra doors or **#899** family ids
+- Restamping #474 / #518 / #525 / #563 / #572 / #625 / #636 / #638 / #646 / #663 / #679 / #695 / #726 / #747 / #753 / #787 / #802 / #808 / **#836** / **#837** / **#849** / **#890** / **#903** extra doors or **#899** family ids
 - Consuming #771 `ENC-BASH-*` / `ENC-DRY-*` / `ENC-HOOD-*` as spell grants
 - Consuming #826 `ENC-TEACH-13` / `ENC-SPELL-25` / `ENC-NEAR-01` / other 2026-10-21 ENC-* as spell grants
 - Consuming #885 `ENC-TEACH-14` / `ENC-SPELL-27` / `ENC-SPIKE-01` / `ENC-INCH-01` / `ENC-FOLD-01` / other 2026-10-22 ENC-* as spell grants

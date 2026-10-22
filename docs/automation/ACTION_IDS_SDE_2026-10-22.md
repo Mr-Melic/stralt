@@ -7,7 +7,7 @@ Wave-1 law (still blocking): [`SPELL_DISCOVERY_ECOSYSTEM_2026-08-31.md`](./SPELL
 Wave-2…13 generation stamps (still blocking): `SDE-2026-09-01-001`…`008` through `SDE-2026-10-21-001`…`008`.  
 Do not implement gameplay from this file unless a later human or orchestrator explicitly picks an ID. This run ships **docs only**.
 
-Sibling ledgers (do not re-open): tactical ids in PRs #120 / #185 / #282 / #342 / #411 / #463 / #525 / #563 / #636 / #695 / #726 / #787 / **#849** / **#890**; family sheets through **#840** and same-day **#899**; boss extras through **#836**; Wave-1…13 SDE ids including memory-reserved Wave 5; encounter rooms in **#771**, **#826**, and same-day **#885**; same-day roadmap **#870**. **SDE wins** `spell-cadence-floor` vs #890.
+Sibling ledgers (do not re-open): tactical ids in PRs #120 / #185 / #282 / #342 / #411 / #463 / #525 / #563 / #636 / #695 / #726 / #787 / **#849** / **#890**; family sheets through **#840** and same-day **#899**; boss extras through **#836** and same-day **#903**; Wave-1…13 SDE ids including memory-reserved Wave 5; encounter rooms in **#771**, **#826**, and same-day **#885**; same-day roadmap **#870**. **SDE wins** `spell-cadence-floor` vs #890.
 
 ---
 
@@ -81,13 +81,13 @@ STATUS: NEW
 
 ACTION_ID: SDE-2026-10-22-005  
 SOURCE_AUTOMATION: Dynamic Spell Discovery and Enemy Spell Evolution Designer  
-TITLE: Do not restamp feat / challenge / #849 / #837 / #836 extra doors  
+TITLE: Do not restamp feat / challenge / #849 / #837 / #836 / #890 / #899 / #903 extra doors  
 CATEGORY: feat-challenge-boss  
 PRIORITY: P1  
 CONFIDENCE: HIGH  
-EVIDENCE: Achievements still Doka-only (`admin.mo` 309–326). All 15 feat doors are claimed or leftover. `survivor` stays leftover (Last Ember / Last Ward). #849 already claimed `gaunt_cantor` / `lag_precentor` / `span_oct` / `court_lag_regent`. #837 already claimed `knight_gallery` / `quad_nave` / `pit_aisle` / `shunt_pulpit` / `nudge_nave` / `file_precentor` / `diag_fold_regent`. #836 already claimed `effigy_clerk` / `enter_deacon` / `split_acolyte` / `quiet_chorister`. #890 already claimed `poise_cantor` / `floor_precentor` / `span_nine` / `court_floor_regent`. #899 already claimed `gaunt_mender` … `axis_cutter`. Do not use `unstoppable` / `level_10`.  
+EVIDENCE: Achievements still Doka-only (`admin.mo` 309–326). All 15 feat doors are claimed or leftover. `survivor` stays leftover (Last Ember / Last Ward). #849 already claimed `gaunt_cantor` / `lag_precentor` / `span_oct` / `court_lag_regent`. #837 already claimed `knight_gallery` / `quad_nave` / `pit_aisle` / `shunt_pulpit` / `nudge_nave` / `file_precentor` / `diag_fold_regent`. #836 already claimed `effigy_clerk` / `enter_deacon` / `split_acolyte` / `quiet_chorister`. #890 already claimed `poise_cantor` / `floor_precentor` / `span_nine` / `court_floor_regent`. #899 already claimed `gaunt_mender` … `axis_cutter`. #903 already claimed `jostle_subdeacon` / `peel_friar` / `dilate_organist` / `hood_recluse`. Do not use `unstoppable` / `level_10`.  
 SYSTEMS_AFFECTED: `AchievementConfig`; challenge persist; boss-clear persist  
-RECOMMENDED_ACTION: Unique Wave-14 grants are observe+win / ELITE / `rank_gallery` only. Do not restamp `survivor` / `jackpot` / `leader_slayer` / `spell_master`. Do not restamp #849 extra doors. Do not restamp #837 rooms or Pack File / Diag Fold doors. Do not restamp #836 extra doors. Do not restamp #890 extra doors. Do not restamp #899 family ids. Pack Rank / Rank Fold never write `ownedSpellIds`.  
+RECOMMENDED_ACTION: Unique Wave-14 grants are observe+win / ELITE / `rank_gallery` only. Do not restamp `survivor` / `jackpot` / `leader_slayer` / `spell_master`. Do not restamp #849 extra doors. Do not restamp #837 rooms or Pack File / Diag Fold doors. Do not restamp #836 extra doors. Do not restamp #890 extra doors. Do not restamp #899 family ids. Do not restamp #903 extra doors. Pack Rank / Rank Fold never write `ownedSpellIds`.  
 AUTONOMY: HUMAN_APPROVE  
 DEPENDENCIES: SDE-2026-08-31-007; SDE-2026-10-21-005; SDE-2026-10-22-001  
 REGRESSION_RISK: MEDIUM — remount must not double-grant; first MULTI child wins.  
