@@ -10,6 +10,8 @@
  * until applyRewards commits — do not add them here.
  */
 
+import { bossDefeatAchievementCondition } from "./achievementConditionIds.ts";
+
 export interface ClientTrustedVictoryFeatSnapshot {
   hp: number;
   mapsVisited: number;
@@ -39,8 +41,9 @@ export function clientTrustedVictoryAchievementConditions(
   if (snap.doubleBetrayal) conditions.push("double_betrayal");
   if (snap.leaderSlain) conditions.push("leader_slayer");
   const bossId = snap.bossId;
-  if (typeof bossId === "string" && bossId.length > 0) {
-    conditions.push(`boss_defeated_${bossId}`);
+  if (typeof bossId === "string") {
+    const bossCondition = bossDefeatAchievementCondition(bossId);
+    if (bossCondition.length > 0) conditions.push(bossCondition);
   }
   return conditions;
 }
