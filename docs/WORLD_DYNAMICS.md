@@ -1,10 +1,10 @@
 # World Dynamics Catalog
 
 **Role:** World Dynamics Designer  
-**Date:** 2026-10-21 (wave 13)  
+**Date:** 2026-10-22 (wave 14)  
 **Canonical IDs:** `src/frontend/src/engine/worldFeatures.ts`  
 **Status:** Designed. Not wired into map generation, the RAF loop, turn advance, or combat damage formulas.  
-**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13)
+**ACTION_IDs:** `WDD-2026-08-31-001` (wave 1) · `WDD-2026-09-01-001` (wave 2) · `WDD-2026-09-02-001` (wave 3) · `WDD-2026-09-21-001` (wave 4) · `WDD-2026-09-22-001` (wave 5) · `WDD-2026-09-23-001` (wave 6) · `WDD-2026-09-24-001` (wave 7) · `WDD-2026-09-25-001` (wave 8) · `WDD-2026-09-26-001` (wave 9) · `WDD-2026-09-27-001` (wave 10) · `WDD-2026-09-28-001` (wave 11) · `WDD-2026-09-29-001` (wave 12) · `WDD-2026-10-21-001` (wave 13) · `WDD-2026-10-22-001` (wave 14)
 
 These features exist so a long-lived character still meets new spatial and risk decisions after the 22 live map modifiers and lava / ice / spikes have been seen many times. Variation comes from **rarity weights** and **relative difficulty versus same-tier content**, not from “unlocks at level N”.
 
@@ -40,7 +40,7 @@ Hard product rules this catalog must not break:
 | HP taxes | fraction of **current max HP** so a seam still matters at 1000 HP |
 | Slots per map | tile 55% · encounter 25% · event 15% · max 3 features |
 | Death Realm | no features |
-| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate (portal-filter + run integrity) |
+| Dungeon / Boss Rush | no Flicker Gate, no Gambit Chest, no Echo Gate, no Pilgrim Banners, no Latch Gate, no Wager Gate, no Pact Gate, no Twilight Gate, no Ash Gate, no Hearth Gate, no Wane Gate, no Clean Gate, no Still Gate, no Tally Gate, no Mercy Bell, no Mark Gate, no Incant Gate (portal-filter + run integrity) |
 | Live modifiers | the existing 22 still roll on their own two-roll; this catalog does not replace them |
 
 `pickWeightedFeatures` never receives player level.
@@ -73,7 +73,8 @@ New seams, clouds, and bars use **% max HP** so they stay relevant beside those 
 13. Maps that cannot fit 1 extra enemy skip Horn Relay.
 14. Maps that cannot fit 4 extra enemies skip Hollow File.
 15. Maps with no floor cell that has fewer than 3 empty orthogonal floor neighbors skip Open Draft (no shelter).
-16. Maps that cannot fit 2 extra enemies skip Paired File.
+16. Maps that cannot fit 2 extra enemies skip Paired File and Gap File.
+17. Maps that would start with zero enemy-side units skip Hunt Draft (no hunt ring).
 
 ## Visual language
 
@@ -2911,6 +2912,214 @@ SOLVABILITY: Skip if the map has no floor cell with fewer than 3 empty orthogona
 COMBAT_RULES: End-of-turn challenge HP. Summons pay it. Orthogonal neighbors only. No skipped turns.  
 COUNTERPLAY: End turns on hatched cells; pay to hold an open angle.
 
+### WF-HAZ-EVEN_SEAM
+
+WORLD_FEATURE_ID: WF-HAZ-EVEN_SEAM  
+NAME: Even Seam  
+MECHANIC: Cracked moss-ochre seams. Stepping on them costs 4% of the unit’s current max HP only on even rounds. On odd rounds they are free floor. Walkable. Inverse of Odd Seam. Does not replace lava / ember / late / odd seams.  
+PLAYER_DECISION: Cut through on odd rounds, pay the even-round tax, or spend MP to path around.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: common (weight 40)  
+VISUAL: Moss-ochre seam, `#2a3020` wash, even-round pip.  
+SOLVABILITY: Floor only. Never on spawn±3 or portals. Never the only cell in a corridor (does not block).  
+COMBAT_RULES: Challenge HP recorders. Round parity is the shared combat round index. Wounded AI treats an even-round step like lava. Counts toward `MAX_HAZARD_TILES` (4–8 tiles).  
+COUNTERPLAY: Cross on odd; walk around; teleport (ground/self metadata); send a summon to spend the even tax.
+
+### WF-HAZ-HURT_CINDER
+
+WORLD_FEATURE_ID: WF-HAZ-HURT_CINDER  
+NAME: Hurt Cinder  
+MECHANIC: A single cinder orb. At round start it steps one tile toward the living unit with the lowest current HP% (painted wound-chevron; ties break toward the player). Landing tax is 5% max HP. Distinct from Hunting Lantern (last MP spender), Still Cinder (0-MP spender), and Shy Cinder (away from the nearest body).  
+PLAYER_DECISION: Keep a healthier body between you and the orb, dip a summon so it hunts the pet, or step off its facing.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare  
+VISUAL: Wound-seeking ember, `#4a1818` wash, wound chevron.  
+SOLVABILITY: Never starts on spawn±3 or portals. A floor path around the orb remains. Not a wall.  
+COMBAT_RULES: Round-start step. Challenge HP. No skipped turns. Occupies 1 hazard budget.  
+COUNTERPLAY: Heal so you are not the lowest HP%; park a wounded summon as bait; end off the chevron; push a foe onto the next cell.
+
+### WF-TRP-ECHO_PLATE
+
+WORLD_FEATURE_ID: WF-TRP-ECHO_PLATE  
+NAME: Echo Plate  
+MECHANIC: A visible rune plate. The first unit to step on it arms the plate (no tax). The next unit to step on the armed plate takes 8% max HP once; then the plate becomes floor. Distinct from Glyph Plate (first stepper taxes) and Pressure Mosaic (two occupants at end of turn).  
+PLAYER_DECISION: Arm it yourself and walk around, send a summon to spend the echo, or bait an enemy onto the armed pip.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Echo rune, `#3a1020` wash, unarmed then armed pip.  
+SOLVABILITY: Walkable before, while armed, and after. Never hidden. Never on spawn/portals.  
+COMBAT_RULES: Arm on first step with no HP debit. Second step triggers once. Challenge HP. No name-based trap lookup.  
+COUNTERPLAY: Arm and leave; send a summon for the second step; shove a foe onto the armed pip; ignore it.
+
+### WF-TER-SLIDE_SCREEN
+
+WORLD_FEATURE_ID: WF-TER-SLIDE_SCREEN  
+NAME: Slide Screen  
+MECHANIC: A carved lattice occupies a cell: units may walk through it, but it blocks line of sight. Adjacent 1 AP slides it one cardinal into empty floor. Adjacent 2 AP smashes it to floor. Distinct from Frost Pane (smash only), Cinder Barrel (blocks walk; roll taxes), and Fold Wall (blocks walk).  
+PLAYER_DECISION: Spend 1 AP to relocate cover, spend 2 AP to smash it, hide behind it, or walk through.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Sliding lattice, `#2a3230` wash.  
+SOLVABILITY: Does not block walk. Slide destination must be empty floor, not spawn±3, not a portal. Smash is optional.  
+COMBAT_RULES: Slide and smash are AP occupancy actions, not spells. No damage. Counts as a wall for LoS until smashed.  
+COUNTERPLAY: Walk through; slide it to block or free a line; smash when the cell is worth 2 AP; stand behind it against linear spells.
+
+### WF-OBS-RETREAT_SILL
+
+WORLD_FEATURE_ID: WF-OBS-RETREAT_SILL  
+NAME: Retreat Sill  
+MECHANIC: A short-path corridor cell starts as a wall. It becomes floor for the rest of the map after the player ends a turn at Chebyshev 5 or farther from that cell. Distinct from Latch Sill (end-turn adjacent), Far Picket (elite at ≥6), Spell Sill (cast), and Kill Sill (any death).  
+PLAYER_DECISION: Back off and end a turn far from the sill to open the short path, take the long way, or wait until you were already repositioning.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Retreat latch, `#1a2428` wash, 5-tile ring.  
+SOLVABILITY: Place only when a second spawn→portal route already exists. Evaluate solvability as if the sill were already a wall. Never the only exit.  
+COMBAT_RULES: Wall occupancy until a player end-of-turn at Chebyshev ≥ 5. No damage. No AP spend.  
+COUNTERPLAY: Take the long path; open it with a far end-turn you already wanted; teleport past if metadata allows.
+
+### WF-ZON-ALONE_FONT
+
+WORLD_FEATURE_ID: WF-ZON-ALONE_FONT  
+NAME: Alone Font  
+MECHANIC: A quiet teal basin. The first unit to end a turn here this map heals 8% max HP only if no other living unit is within Chebyshev 3; then the tile dries. Inverse of Rival Font (needs an enemy within 2). Distinct from Shrine Pool (unconditional) and Isolation Chill (tax if alone).  
+PLAYER_DECISION: Peel off to drink alone, deny the enemy the basin, or ignore it.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Quiet basin, `#1a2a28` wash, empty-ring pip.  
+SOLVABILITY: Walkable. Optional. Never on spawn/portals.  
+COMBAT_RULES: Zone tick, not a spell. Neighbor means any other living unit, any side, Chebyshev ≤ 3. Player HP persist via `saveBattleStats` on the progress lock.  
+COUNTERPLAY: Drink after peeling to 4 tiles; shove neighbors out of the ring; shove the enemy off; ignore when healthy.
+
+### WF-TEL-FULL_STEP
+
+WORLD_FEATURE_ID: WF-TEL-FULL_STEP  
+NAME: Full Step  
+MECHANIC: Two linked gold-cyan pads. Entering one for 1 MP exits the other only if the traveler’s current HP is at least 80% of max. Otherwise the MP is not spent and you stay. Inverse of Wound Step (below 50%). Distinct from Clear Step (empty dest) and Full Cache (≥90% to open).  
+PLAYER_DECISION: Keep HP high and spend 1 MP, walk the long way, or leave the pair as a healthy-enemy escape.  
+RELATIVE_DIFFICULTY: soft  
+RARITY: uncommon  
+VISUAL: Full-pad pair, `#1a2a20` wash, 80% pip.  
+SOLVABILITY: Both on floor, not on spawn/portals. The map is solvable without using them.  
+COMBAT_RULES: 1 MP from the unit’s current MP only on a successful ≥80% landing. Not a teleport spell — do not key off `effectCategory`.  
+COUNTERPLAY: Stand on the exit to force a swap; ignore the pair; use it before you take a hit.
+
+### WF-PRT-INCANT_GATE
+
+WORLD_FEATURE_ID: WF-PRT-INCANT_GATE  
+NAME: Incant Gate  
+MECHANIC: An extra glyph-rim portal. It is not an exit until the player has cast at least one `SpellConfig` spell this map. Then entering rolls a random eligible overworld map and pays a hard `applyRewards` grant. Attack Nearest and summon kits do not arm it. It is never the only portal. Distinct from Spell Sill (opens a short-path wall), Mark Gate (deal HP), Tally Gate (4 AP spent), and Cast Oath (voluntary flag).  
+PLAYER_DECISION: Cast a spell this map to arm a bonus gamble exit, or take the stable portal you can already see.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic (weight 3)  
+VISUAL: Glyph-rim portal, `#281a38` wash, incant pip.  
+SOLVABILITY: Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm. Unarmed it does not count as an exit.  
+COMBAT_RULES: Arm keys off a player `SpellConfig` spend. Bonus via `applyRewards` on the persist lock. Death-realm guards still block entry.  
+COUNTERPLAY: Ignore it. The stable exit always works.
+
+### WF-INV-GAP_FILE
+
+WORLD_FEATURE_ID: WF-INV-GAP_FILE  
+NAME: Gap File  
+MECHANIC: Two extra same-tier elites share a painted spacing. While they are Chebyshev 4 or farther apart they use hard threat; while closer they use medium threat. Victory always pays hard reward multiplier. Distinct from Paired File (−20% incoming while both live) and Duelist Circle (world-map bleed).  
+PLAYER_DECISION: Clump them to soften the fight, keep them split and burst one, or walk to a portal and leave.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Spaced pennants, `#3a2818` wash, 4-tile gap thread.  
+SOLVABILITY: Add enemies only up to `MAX_ENEMIES`. Skip if the roster cannot fit 2. In dungeon / boss rush they count as hostiles for map-clear.  
+COMBAT_RULES: Threat switches at Chebyshev 4 using same-tier templates × `THREAT_MULT`. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: Leave without engaging (exploration); shove them together to drop threat; kite with summons.
+
+### WF-ELT-MID_PICKET
+
+WORLD_FEATURE_ID: WF-ELT-MID_PICKET  
+NAME: Mid Picket  
+MECHANIC: One elite (same-tier × hard) occupies a painted post only while the player is Chebyshev 4 or 5 from that cell (the band between Near Picket ≤3 and Far Picket ≥6). Step to ≤3 or ≥6 and the post is empty floor (exploration: they leave, no purse). Touch to fight (hard purse). Dungeon / boss rush: they stand from map start — required for map-clear.  
+PLAYER_DECISION: Close in or back off and walk past (exploration), stand in the 4–5 band and fight, or (in a run) fight them because they already stand.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: rare  
+VISUAL: Mid post, `#283018` wash, 4–5 ring.  
+SOLVABILITY: Post is floor. Exit reachable without touching. Counts as 1 enemy. In a run they are present from the start.  
+COMBAT_RULES: Appearance keys off Chebyshev 4 or 5 to the player. World contact starts a normal battle. Extra spells from `usableByEnemy` only. Victory → `applyRewards`.  
+COUNTERPLAY: In exploration, walk in or back off and pass; stand at 4–5 when you want the purse; in a run, fight them.
+
+### WF-TRS-CLASH_CACHE
+
+WORLD_FEATURE_ID: WF-TRS-CLASH_CACHE  
+NAME: Clash Cache  
+MECHANIC: A visible chest with a crossed-blade lock. 1 AP adjacent opens it only while a living hostile is Chebyshev ≤ 1 from the player: a medium `applyRewards` grant and no guardian. Inverse of Watch Cache (open when hostiles are far). Distinct from Hire Cache (allied summon adjacent to the chest).  
+PLAYER_DECISION: Open in melee, pull a foe next to you then spend 1 AP, or walk past.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: uncommon  
+VISUAL: Clash chest, `#3a2010` wash, crossed-blade lock.  
+SOLVABILITY: Adjacent-open, not a wall. Optional.  
+COMBAT_RULES: AP cost, not a spell. Hostile means living enemy-side Chebyshev ≤ 1 from the player. Credits via persist-lock `applyRewards`. Failed open spends AP only.  
+COUNTERPLAY: Skip; open after you already closed; ignore when you cannot spare a melee.
+
+### WF-SPL-CLOSE_TUTOR
+
+WORLD_FEATURE_ID: WF-SPL-CLOSE_TUTOR  
+NAME: Close Tutor  
+MECHANIC: One same-tier enemy (medium threat) carries 1 extra `usableByEnemy` spell. If the player ends a turn at Chebyshev 1 or closer from them while they still live, the player gains that spell id as a **single remaining cast** this map. Killing them before that close teach grants the purse but not the one-cast. Inverse of Range Tutor (end turn 4+ away). Distinct from Mark Tutor (adjacent 1 AP then LoS) and Grimoire Stalker (one-cast on death).  
+PLAYER_DECISION: End a turn next to them for a one-shot, burst-kill for the purse, or ignore them.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Enemy with a close orb, `#1a2030` wash.  
+SOLVABILITY: Prefer replacing one existing spawn; else +1 if under the enemy cap. Must stay reachable. In a run they count as hostiles for map-clear.  
+COMBAT_RULES: Metadata only (`usableByEnemy`, `targetType`, costs). One-cast does not call `upgradeSpell` and does not persist `spellLevel*` arrays.  
+COUNTERPLAY: Kite and ignore; plant adjacent for the teach then leave; burst-kill if you want the purse more than the cast.
+
+### WF-RSK-SCAR_OATH
+
+WORLD_FEATURE_ID: WF-RSK-SCAR_OATH  
+NAME: Scar Oath  
+MECHANIC: End a turn on the cracked crimson inlay to flag this map. If the next `applyRewards` happens while the player’s current HP is strictly below 50% of max, that credit uses the hard multiplier. If they are at or above 50% at credit, the flag pays nothing extra. Distinct from Last Stand (≤30% cash-out), Harvest Moon (stay ≥70%), and Wound Cache (below 50% to open a chest).  
+PLAYER_DECISION: Flag a fight you will finish wounded, or stay unflagged and keep HP high.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: epic  
+VISUAL: Scar inlay, `#2a1018` wash, 50% pip.  
+SOLVABILITY: Optional floor tile. Map is solvable if never used.  
+COMBAT_RULES: HP check is current/max at the `applyRewards` enqueue. Multiplier on the next enqueue only. Death still uses `saveBattleStats`.  
+COUNTERPLAY: Skip unless you expect to be below 50% at credit and still survive.
+
+### WF-MOD-FILE_WALK
+
+WORLD_FEATURE_ID: WF-MOD-FILE_WALK  
+NAME: File Walk  
+MECHANIC: After a unit spends MP on their first walk tile of the turn, further walk tiles that turn must keep that same cardinal (no turning, no diagonals). Stopping is legal. Remaining MP may still pay teleport tiles. Distinct from One Stride (at most 1 MP walk), Orth Step (diagonal 2 MP), and Crosswind (slide after a paid step).  
+PLAYER_DECISION: Commit a facing and walk a file, stop after one tile then act, spend leftover MP on pads, or skip the fight.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: File-walk overlay, `#242428` wash, facing chevron after the first step.  
+SOLVABILITY: No tile change. One-tile walks, Attack Nearest, and spells remain usable.  
+COMBAT_RULES: Reads MP spent on occupancy walks only. Teleport tiles are not walks. Attack Nearest is not a walk. No damage rewrite.  
+COUNTERPLAY: Step once then act; walk a straight file; use a 1 MP pad; summon a walker; refuse the fight.
+
+### WF-EVT-FAR_HOUR
+
+WORLD_FEATURE_ID: WF-EVT-FAR_HOUR  
+NAME: Far Hour  
+MECHANIC: This map only: if the player never ended a turn at Chebyshev ≤ 1 from a living hostile, the next `applyRewards` uses the hard multiplier. Ending adjacent to a hostile locks normal rewards. Distinct from Harvest Moon (HP ≥70%), Clean Hands (no challenge ticks), Long Watch (victory on round 4+), and Exposed Line (LoS to two bodies).  
+PLAYER_DECISION: Kite and never plant adjacent for a hard purse, or take melee and accept normal rewards.  
+RELATIVE_DIFFICULTY: medium  
+RARITY: rare  
+VISUAL: Far-hour overlay, `#1a2028` wash, empty-melee ring.  
+SOLVABILITY: No blocks. Leaving is always legal.  
+COMBAT_RULES: Adjacent means Chebyshev ≤ 1 from a living enemy-side combatant at player end-of-turn. Multipliers on persist-lock `applyRewards` only. Does not rewrite `combatMath`.  
+COUNTERPLAY: Leave without planting adjacent; kite with summons as the front line; ignore the overlay and take melee.
+
+### WF-ENV-HUNT_DRAFT
+
+WORLD_FEATURE_ID: WF-ENV-HUNT_DRAFT  
+NAME: Hunt Draft  
+MECHANIC: At the end of each combatant turn, if no living enemy-side unit is within Chebyshev 3 they pay 3% max HP. Painted hunt rings of radius 3 sit around every living hostile. Allied summons do not count as shelter. Distinct from Isolation Chill (any living unit within 3), Open Draft (empty orthogonal neighbors), and Exit Draft (near a portal).  
+PLAYER_DECISION: Close to a hostile to stay in the hunt ring, hold a kite and pay, or shove a foe to 3 tiles.  
+RELATIVE_DIFFICULTY: hard  
+RARITY: uncommon  
+VISUAL: Hunt-draft wash `#182028`, rings around hostiles.  
+SOLVABILITY: Skip if the map would start with zero enemy-side units so a hunt ring cannot exist. Tax is not a wall.  
+COMBAT_RULES: End-of-turn challenge HP. Enemy-side only — player-side summons do not shelter. No skipped turns.  
+COUNTERPLAY: End turns inside a hunt ring; shove a foe to 3 tiles; pay to hold a kite.
+
 ---
 
 ## Composition examples (same level, different maps)
@@ -2979,10 +3188,15 @@ COUNTERPLAY: End turns on hatched cells; pay to hold an open angle.
 62. Still Cinder + Rival Font + Open Draft — bait a stillness hunter, drink next to a foe, hug a wall.  
 63. Kill Sill + Wound Step — take a kill to open the short path vs 1 MP below-50% skip.  
 64. Paired File + Cast Oath — burst a bonded pair plus a must-cast reward wager.  
-65. Turn Cache + Summon Bell — open on even, then keep a pet alive for a hard purse.
+65. Turn Cache + Summon Bell — open on even, then keep a pet alive for a hard purse.  
+66. Even Seam + Mid Picket + File Walk — odd-round free path, stand at 4–5 to fight an elite, committed-facing walks.  
+67. Hurt Cinder + Alone Font + Hunt Draft — bait a wound hunter, drink in isolation, close to a hostile or pay.  
+68. Retreat Sill + Full Step — back off to open the short path vs 1 MP ≥80% skip.  
+69. Gap File + Scar Oath — clump a spaced pair plus a finish-wounded reward wager.  
+70. Clash Cache + Far Hour — open in melee, or kite and never plant adjacent for a hard purse.
 
 None of these require a higher character level. The warband is scarier because it is a larger same-tier pack, not because it is “level 40 content”.
 
 ## Implementation gate
 
-Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, or **WDD-2026-10-21-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.
+Do not wire this into `mapGen.ts`, `WorldExploration.tsx` RAF / turn / damage, or the live 22-modifier registry until a human or orchestrator picks **WDD-2026-08-31-001**, **WDD-2026-09-01-001**, **WDD-2026-09-02-001**, **WDD-2026-09-21-001**, **WDD-2026-09-22-001**, **WDD-2026-09-23-001**, **WDD-2026-09-24-001**, **WDD-2026-09-25-001**, **WDD-2026-09-26-001**, **WDD-2026-09-27-001**, **WDD-2026-09-28-001**, **WDD-2026-09-29-001**, **WDD-2026-10-21-001**, or **WDD-2026-10-22-001**. The catalog and `pickWeightedFeatures` are safe to import from tests and future overlay helpers.

@@ -10,7 +10,7 @@
  * Wave 7: WDD-2026-09-24-001. Wave 8: WDD-2026-09-25-001.
  * Wave 9: WDD-2026-09-26-001. Wave 10: WDD-2026-09-27-001.
  * Wave 11: WDD-2026-09-28-001. Wave 12: WDD-2026-09-29-001.
- * Wave 13: WDD-2026-10-21-001.
+ * Wave 13: WDD-2026-10-21-001. Wave 14: WDD-2026-10-22-001.
  *
  * This module does NOT generate maps, advance turns, or change combat damage
  * formulas. Placement must run after `evaluateSolvability` / finalize and
@@ -66,7 +66,21 @@ export type RelativeDifficulty = "soft" | "medium" | "hard" | "extreme";
 export type WorldFeatureSlot = "tile" | "encounter" | "event";
 
 /** Catalog generation. Omitted `catalogWave` on a feature is wave 1. */
-export type CatalogWave = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13;
+export type CatalogWave =
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6
+  | 7
+  | 8
+  | 9
+  | 10
+  | 11
+  | 12
+  | 13
+  | 14;
 
 /** Exploration is `RunMode "none"`. Death Realm is always quiet. */
 export type WorldFeatureRunMode = "exploration" | "dungeon" | "bossRush";
@@ -117,7 +131,7 @@ export interface WorldFeature {
 }
 
 /** Newest designed wave. Overlay wiring still requires a human ACTION_ID pick. */
-export const LATEST_CATALOG_WAVE = 13 as const;
+export const LATEST_CATALOG_WAVE = 14 as const;
 
 export const RARITY_WEIGHT: Record<WorldFeatureRarity, number> = {
   common: 40,
@@ -6455,6 +6469,483 @@ export const WORLD_FEATURES: WorldFeature[] = [
     slot: "event",
     hpTaxPctOfMax: 0.03,
     catalogWave: 13,
+  },
+  {
+    id: "WF-HAZ-EVEN_SEAM",
+    name: "Even Seam",
+    category: "hazard",
+    mechanic:
+      "Cracked moss-ochre seams. Stepping on them costs a fraction of current max HP only on even rounds. On odd rounds they are free floor. Walkable. Inverse of Odd Seam (odd-round tax). Distinct from Ember Vein (always taxes), Gutter Steam (end-turn even vents), Tide Door (odd-round wall), and Late Seam (first step of the turn free).",
+    playerDecision:
+      "Cut through on odd rounds, pay the even-round tax, or spend MP to path around.",
+    relativeDifficulty: "medium",
+    rarity: "common",
+    visual: visual(
+      "even-seam",
+      "#2a3020",
+      "#a8c070",
+      "Even Seam — step tax as % max HP on even rounds; odd rounds free",
+    ),
+    solvability:
+      "Never on spawn±3 or portals. Never the only walkable cell in a corridor — seams occupy floor but do not block.",
+    combatRules:
+      "HP via recordChallengeDamageTaken (explore) or recordInBattleChallengeDamage (in battle). Round parity is the shared combat round index. Wounded AI treats an even-round step like lava. Counts toward MAX_HAZARD_TILES.",
+    counterplay:
+      "Cross on odd, walk around, teleport (metadata targetType ground/self), or send a summon to spend the even tax.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.04,
+    extraHazardCount: { min: 4, max: 8 },
+    catalogWave: 14,
+  },
+  {
+    id: "WF-HAZ-HURT_CINDER",
+    name: "Hurt Cinder",
+    category: "moving_hazard",
+    mechanic:
+      "A single cinder orb. At round start it steps one tile toward the living unit with the lowest current HP as a fraction of max (painted wound-chevron; ties break toward the player, then lowest id). Landing on a unit costs a max-HP tax. Out of battle it still hunts the most wounded body on wander ticks. Distinct from Hunting Lantern (last MP spender), Still Cinder (0-MP spender), Shy Cinder (away from the nearest body), and Orbiting Cinder (clockwise square).",
+    playerDecision:
+      "Keep a healthier body between you and the orb, dip a summon so it hunts the pet, or step off its painted facing.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "hurt-cinder",
+      "#4a1818",
+      "#e06050",
+      "Hurt Cinder — steps 1 toward the living unit with the lowest HP%",
+    ),
+    solvability:
+      "Never starts on spawn±3 or portals. A floor path around the orb always remains. The cinder is not a wall.",
+    combatRules:
+      "Advances on round start (not mid-turn). Prefers the cardinal that decreases Chebyshev distance to the lowest HP% living unit. Tax uses challenge HP recorders. Does not skip turns or spend AP/MP. Occupies 1 hazard budget.",
+    counterplay:
+      "Heal so you are not the lowest HP%, park a wounded summon as bait, end off its wound-chevron, or push/attract a foe onto that cell.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.05,
+    extraHazardCount: { min: 1, max: 1 },
+    catalogWave: 14,
+  },
+  {
+    id: "WF-TRP-ECHO_PLATE",
+    name: "Echo Plate",
+    category: "trap",
+    mechanic:
+      "A visible rune plate with an unarmed pip. The first unit to step on it arms the plate (pip flips, no tax). The next unit to step on the armed plate — any side — takes a max-HP tax once; then the plate becomes floor. Distinct from Glyph Plate (first stepper taxes), Pressure Mosaic (two occupants at end of turn), Spent Plate (0 AP first action), and Idle Pin (end-turn idle tax).",
+    playerDecision:
+      "Arm it yourself and walk around, send a summon to spend the echo, or bait an enemy onto the armed pip.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "echo-plate",
+      "#3a1020",
+      "#e07080",
+      "Echo Plate — first step arms; second step one-shot %HP, then floor",
+    ),
+    solvability:
+      "Walkable before, while armed, and after. Never on spawn±3 or portals. Does not seal a path. Always visible from adjacent tiles.",
+    combatRules:
+      "Arm on first step with no HP debit. Second step triggers once. Uses challenge HP recorders. No hidden tiles. Does not change spell damage math.",
+    counterplay:
+      "Arm it and leave, send a summon for the second step, shove a foe onto the armed pip, or ignore it.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: 0.08,
+    extraHazardCount: { min: 1, max: 2 },
+    catalogWave: 14,
+  },
+  {
+    id: "WF-TER-SLIDE_SCREEN",
+    name: "Slide Screen",
+    category: "destructible_terrain",
+    mechanic:
+      "A carved lattice occupies a cell: units may walk through it, but it blocks line of sight. Adjacent 1 AP (no spell) slides it one cardinal into empty floor (cover relocates). Adjacent 2 AP smashes it to clear floor. Distinct from Frost Pane (smash only, no slide), Cinder Barrel (blocks walk; roll taxes a unit), Fold Wall (blocks walk; 1 AP fold / 2 AP smash), and Reed Screen (no slide).",
+    playerDecision:
+      "Spend 1 AP to relocate cover, spend 2 AP to smash it, hide behind it, or walk through and accept the blind.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "slide-screen",
+      "#2a3230",
+      "#90b8b0",
+      "Slide Screen — walkable LoS block; 1 AP slide, 2 AP smash",
+    ),
+    solvability:
+      "Does not block walk. Never on spawn±3 or portals. Slide destination must be empty floor, not spawn±3, not a portal, and not another blocksWalk feature. Smash is optional — the map is solvable with the screen intact.",
+    combatRules:
+      "Slide and smash are AP occupancy actions, not spells (no name heuristics). No damage. Counts as a wall for LoS until smashed. Walk occupancy is floor. Cannot slide onto occupied cells.",
+    counterplay:
+      "Walk through; slide it to block a linear shot or free one; smash when the cell is worth 2 AP; stand behind it against linear spells.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-OBS-RETREAT_SILL",
+    name: "Retreat Sill",
+    category: "temporary_obstacle",
+    mechanic:
+      "A short-path corridor cell starts as a wall. It becomes floor for the rest of the map after the player ends a turn at Chebyshev 5 or farther from that cell. Distinct from Latch Sill (end-turn adjacent), Far Picket (elite stands at ≥6), Near Picket (elite stands within 3), Spell Sill (cast), Kill Sill (any death), Heal Sill (heal), Coin Sill (1 AP), Tithe Sill (HP tax), and Stride Sill (MP spend).",
+    playerDecision:
+      "Back off and end a turn far from the sill to open the short path, take the long way, or wait until you were already repositioning.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "retreat-sill",
+      "#1a2428",
+      "#70a0b0",
+      "Retreat Sill — wall until you end a turn 5+ tiles away; then floor",
+    ),
+    solvability:
+      "Place only when a second spawn→portal route already exists. Evaluate solvability as if the sill were already a wall. Never the only exit. Never on spawn±3 or portals.",
+    combatRules:
+      "Wall occupancy until a player end-of-turn at Chebyshev ≥ 5 from the cell. Does not deal damage or spend AP. Do not place on the same cell as another blocksWalk feature.",
+    counterplay:
+      "Take the long path; open it with a far end-turn you already wanted; teleport past if metadata allows.",
+    rewardPath: "none",
+    blocksWalk: true,
+    requiresBypass: true,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-ZON-ALONE_FONT",
+    name: "Alone Font",
+    category: "heal_buff_zone",
+    mechanic:
+      "A quiet teal basin. The first unit to end a turn here this map heals 8% max HP only if no other living unit is within Chebyshev 3; then the tile dries. Ending here with a neighbor in that ring does nothing and does not dry it. Enemies can drink it. Inverse of Rival Font (needs an enemy within 2). Distinct from Shrine Pool (unconditional first drink), Isolation Chill (tax if alone), and Labor Font (2+ AP then heal).",
+    playerDecision:
+      "Peel off to drink alone, deny the enemy the basin, or ignore it.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "alone-font",
+      "#1a2a28",
+      "#56d3a0",
+      "Alone Font — first end-turn here with no unit within 3 heals 8% max HP",
+    ),
+    solvability:
+      "Walkable floor. Never on spawn or portals. Does not block exits.",
+    combatRules:
+      "Heal is a zone tick, not a spell. Neighbor means any other living unit, any side, Chebyshev ≤ 3. If the drinker is the player, persist the new HP through saveBattleStats on the progress lock. Does not call applyRewards. Null Field does not strip it.",
+    counterplay:
+      "Step on it after peeling to 4 tiles, shove neighbors out of the ring then drink, shove the enemy off before their end-turn, or ignore when healthy.",
+    rewardPath: "saveBattleStats",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    hpTaxPctOfMax: -0.08,
+    catalogWave: 14,
+  },
+  {
+    id: "WF-TEL-FULL_STEP",
+    name: "Full Step",
+    category: "teleport_tile",
+    mechanic:
+      "Two linked gold-cyan pads. Entering one for 1 MP exits the other only if the traveler's current HP is at least 80% of max. Otherwise the MP is not spent and you stay. If the exit is occupied, the travelers swap. Inverse of Wound Step (below 50%). Distinct from Clear Step (empty dest, no HP gate), High Picket (elite stands at ≥80% HP), and Full Cache (≥90% to open).",
+    playerDecision:
+      "Keep HP high and spend 1 MP, walk the long way, or leave the pair as a healthy-enemy escape.",
+    relativeDifficulty: "soft",
+    rarity: "uncommon",
+    visual: visual(
+      "full-pads",
+      "#1a2a20",
+      "#80d090",
+      "Full Step — 1 MP to the pair only while at or above 80% max HP",
+    ),
+    solvability:
+      "Both on floor, mutually reachable, never on spawn/portals. The pair is optional — the map is solvable without using it.",
+    combatRules:
+      "Costs 1 MP from the unit's current MP only on a successful ≥80% landing. Occupancy: destination free, or swap with the unit on the exit. Not a teleport spell — do not key off effectCategory.",
+    counterplay:
+      "Stand on the exit to force a swap, ignore the pair, or use it before you take a hit.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "tile",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-PRT-INCANT_GATE",
+    name: "Incant Gate",
+    category: "unstable_portal",
+    mechanic:
+      "An extra glyph-rim portal. It is not an exit until the player has cast at least one SpellConfig spell this map (painted incant pip). Then entering rolls a random eligible overworld map and pays a hard applyRewards grant. Attack Nearest and summon kits do not arm it. It is never the only portal. Distinct from Spell Sill (opens a short-path wall), Mark Gate (deal HP), Tally Gate (4 AP spent), Kindled Hour (map-wide reward), and Cast Oath (voluntary flag).",
+    playerDecision:
+      "Cast a spell this map to arm a bonus gamble exit, or take the stable portal you can already see.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "incant-portal",
+      "#281a38",
+      "#c090e0",
+      "Incant Gate — extra exit after you cast a spell; unknown map + hard bonus",
+    ),
+    solvability:
+      "Always in addition to a reachable stable portal. Forbidden in dungeon, boss rush, and Death Realm (portalRules filter). Never at spawn. Unarmed it does not count as an exit.",
+    combatRules:
+      "Arm keys off a player SpellConfig spend (apCost / mpCost metadata). Attack Nearest and summons do not count. Entry is a portal transition, not a combat action. Bonus XP/Doka via applyRewards on the persist lock. Death-realm guards still block entry while armed.",
+    counterplay:
+      "Ignore it. The stable exit always works. Do not enter while a Death Realm timer is pending.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: true,
+    allowedRunModes: EXPLORATION_ONLY,
+    slot: "event",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-INV-GAP_FILE",
+    name: "Gap File",
+    category: "rare_invasion",
+    mechanic:
+      "Two extra same-tier elites share a painted spacing. While they are Chebyshev 4 or farther apart they use hard threat; while closer they use medium threat. Victory always pays hard reward multiplier. Distinct from Paired File (−20% incoming while both live, no spacing gate), Duelist Circle (world-map bleed), and Hollow File (many soft bodies).",
+    playerDecision:
+      "Clump them to soften the fight, keep them split and burst one, or walk to a portal and leave.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "gap-file",
+      "#3a2818",
+      "#d09060",
+      "Gap File — two elites; hard threat while 4+ tiles apart, medium when closer",
+    ),
+    solvability:
+      "Adds enemies only up to MAX_ENEMIES. Every extra spawn must stay on the flood-fill from player spawn. Skip the roll if the roster cannot fit 2. In dungeon / boss rush they count as hostiles for map-clear.",
+    combatRules:
+      "Threat multiplier switches at Chebyshev 4 using same-tier templates × THREAT_MULT.hard or .medium — it does not replace combatMath. Extra spells from usableByEnemy only. Victory → applyRewards. Death Realm / pending death guards still block the encounter start.",
+    counterplay:
+      "Leave through a portal without engaging (exploration), shove them together to drop threat, or kite with summons.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 2, max: 2 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-ELT-MID_PICKET",
+    name: "Mid Picket",
+    category: "elite_patrol",
+    mechanic:
+      "One elite (same-tier × hard) occupies a painted post only while the player is Chebyshev 4 or 5 from that cell (the band between Near Picket ≤3 and Far Picket ≥6). Step to ≤3 or ≥6 and the post is empty floor (exploration: they leave, no purse). Touch to fight (hard purse). Dungeon / boss rush: they stand from map start — required for map-clear.",
+    playerDecision:
+      "Close in or back off and walk past (exploration), stand in the 4–5 band and fight for the hard purse, or (in a run) fight them because they already stand.",
+    relativeDifficulty: "hard",
+    rarity: "rare",
+    visual: visual(
+      "mid-picket",
+      "#283018",
+      "#b0c070",
+      "Mid Picket — elite stands while you are 4–5 tiles away; close or flee to skip",
+    ),
+    solvability:
+      "Post is floor. Exit reachable without touching. Counts as 1 enemy. In a run they are present from the start.",
+    combatRules:
+      "Appearance keys off Chebyshev distance to the player (exactly 4 or 5). World contact starts a normal battle (inBattleRef + death guards). Extra spells from usableByEnemy only. Victory → applyRewards. Vanishing in exploration does not call applyRewards.",
+    counterplay:
+      "In exploration, walk in or back off and pass; stand at 4–5 when you want the purse; in a run, fight them.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 1, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-TRS-CLASH_CACHE",
+    name: "Clash Cache",
+    category: "treasure_encounter",
+    mechanic:
+      "A visible chest with a crossed-blade lock. 1 AP adjacent opens it only while a living hostile is Chebyshev ≤ 1 from the player: a medium applyRewards grant and no guardian. If no hostile is adjacent the AP is spent and the chest stays closed. Inverse of Watch Cache (open when hostiles are far). Distinct from Hire Cache (allied summon adjacent to the chest) and Relic Cache (2 AP, maybe a guardian).",
+    playerDecision:
+      "Open in melee, pull a foe next to you then spend 1 AP, or walk past.",
+    relativeDifficulty: "medium",
+    rarity: "uncommon",
+    visual: visual(
+      "clash-cache",
+      "#3a2010",
+      "#d49050",
+      "Clash Cache — 1 AP while a hostile is adjacent; medium purse, no guardian",
+    ),
+    solvability:
+      "Chest occupies a floor cell but is walkable-adjacent, not a wall. Optional. Never on spawn/portals.",
+    combatRules:
+      "Open cost is AP, not a spell. Hostile means living enemy-side combatant Chebyshev ≤ 1 from the player. Credits via applyRewards on the persist lock. Failed open spends AP only. Do not write Doka with updateCharacter.",
+    counterplay:
+      "Skip the chest; open after you already closed; ignore when you cannot spare a melee.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-SPL-CLOSE_TUTOR",
+    name: "Close Tutor",
+    category: "spell_bearing_enemy",
+    mechanic:
+      "One same-tier enemy (medium threat) carries 1 extra SpellConfig row with usableByEnemy === true. If the player ends a turn at Chebyshev 1 or closer from them while they still live, the player gains that spell id as a single remaining cast this map. Killing them before that close teach grants the purse but not the one-cast. They stay hostile after the teach. Inverse of Range Tutor (end turn 4+ away). Distinct from Mark Tutor (adjacent 1 AP then LoS), Mercy Scribe (≤30% HP alive), Live Tutor (once per round while they live), and Grimoire Stalker (one-cast on death).",
+    playerDecision:
+      "End a turn next to them for a one-shot, burst-kill for the purse, or ignore them.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "close-tutor",
+      "#1a2030",
+      "#70a0e0",
+      "Close Tutor — end a turn adjacent while they live for one remaining cast",
+    ),
+    solvability:
+      "Prefer replacing one existing spawn; otherwise +1 if under MAX_ENEMIES. Must remain reachable. In dungeon / boss rush they count as hostiles for map-clear.",
+    combatRules:
+      "Spell list is metadata-only (usableByEnemy, targetType, costs). The one-cast does not call upgradeSpell and does not persist spellLevel arrays. Victory rewards still applyRewards. Teach does not pacify them.",
+    counterplay:
+      "Kite and ignore, plant adjacent for the teach then leave, or burst-kill if you want the purse more than the cast.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    extraEnemyCount: { min: 0, max: 1 },
+    spellSource: "enemyUsableCatalog",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-RSK-SCAR_OATH",
+    name: "Scar Oath",
+    category: "risk_reward",
+    mechanic:
+      "A cracked crimson inlay. Voluntarily ending a turn on it flags this map. If the next applyRewards happens while the player's current HP is strictly below 50% of max, that credit uses the hard multiplier. If they are at or above 50% at credit, the flag pays nothing extra. Distinct from Last Stand (≤30% cash-out), Harvest Moon (stay ≥70% this map), Wound Cache (below 50% to open a chest), Open Vein (HP tax that needs a fight), and Band Oath (mid-HP band).",
+    playerDecision:
+      "Flag a fight you will finish wounded, or stay unflagged and keep HP high.",
+    relativeDifficulty: "hard",
+    rarity: "epic",
+    visual: visual(
+      "scar-oath",
+      "#2a1018",
+      "#e07080",
+      "Scar Oath — next rewards × hard only if you are below 50% HP at credit",
+    ),
+    solvability:
+      "Optional floor tile. Map remains solvable if never used. Never on spawn/portals.",
+    combatRules:
+      "HP check is current/max at the applyRewards enqueue. Multiplier applies to the next applyRewards enqueue only. Death still uses saveBattleStats. Not a buff spell (Null Field does not strip the flag).",
+    counterplay:
+      "Skip it. Use it only when you expect to be below 50% at credit and still survive.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "encounter",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-MOD-FILE_WALK",
+    name: "File Walk",
+    category: "map_modifier",
+    mechanic:
+      "This map only: after a unit spends MP on their first walk tile of the turn, further walk tiles that turn must keep that same cardinal (no turning, no diagonals). Stopping is legal. Remaining MP may still pay teleport tiles. Ice / slime MP doublers still apply to each paid step. Spells, Attack Nearest, and summons are unchanged. Distinct from One Stride (at most 1 MP walk), Orth Step (diagonal 2 MP), Crosswind (slide after a paid step), and Tight Grip (0-MP spells cost 1).",
+    playerDecision:
+      "Commit a facing and walk a file, stop after one tile then act, spend leftover MP on pads, or skip the fight.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "file-walk",
+      "#242428",
+      "#c0c0b8",
+      "File Walk — after the first paid step, further walks this turn keep that cardinal",
+    ),
+    solvability:
+      "Does not alter tiles. Exits unchanged. One-tile walks, Attack Nearest, and spells remain fully usable.",
+    combatRules:
+      "Reads MP spent on occupancy walks only. Facing is the cardinal of the first paid walk tile. Teleport tiles are not walks. Attack Nearest is not a walk. Does not rewrite SpellConfig or damage.",
+    counterplay:
+      "Step once then act; walk a straight file; use a 1 MP pad; summon a walker; refuse the fight.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-EVT-FAR_HOUR",
+    name: "Far Hour",
+    category: "world_event",
+    mechanic:
+      "This map only: if the player never ended a turn at Chebyshev ≤ 1 from a living hostile, the next applyRewards uses the hard multiplier. Ending adjacent to a hostile (player turn or any later check of that flag) locks normal rewards. Distinct from Harvest Moon (HP ≥70%), Clean Hands (no challenge ticks), Long Watch (victory on round 4+), Exposed Line (LoS to two bodies), and Range Tutor (end-turn 4+ from one enemy).",
+    playerDecision:
+      "Kite and never plant adjacent for a hard purse, or take melee and accept normal rewards.",
+    relativeDifficulty: "medium",
+    rarity: "rare",
+    visual: visual(
+      "far-hour",
+      "#1a2028",
+      "#80b0d0",
+      "Far Hour — never end adjacent to a hostile this map for hard rewards",
+    ),
+    solvability: "No tile blocks. Portals unchanged. Leaving is always legal.",
+    combatRules:
+      "Adjacent means Chebyshev ≤ 1 from a living enemy-side combatant at player end-of-turn. Multiplier applies only to persist-lock applyRewards. Does not rewrite combatMath. Death still uses saveBattleStats. Optional — never forces a fight.",
+    counterplay:
+      "Leave without planting adjacent, kite with summons as the front line, or ignore the overlay and take melee.",
+    rewardPath: "applyRewards",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    catalogWave: 14,
+  },
+  {
+    id: "WF-ENV-HUNT_DRAFT",
+    name: "Hunt Draft",
+    category: "environmental_combat",
+    mechanic:
+      "At the end of each combatant turn, if no living enemy-side unit is within Chebyshev 3 they pay 3% max HP. Painted hunt rings of radius 3 sit around every living hostile. Allied summons do not count as shelter. Distinct from Isolation Chill (any living unit within 3), Open Draft (empty orthogonal neighbors), Crowd Press (too many units nearby), and Exit Draft (near a portal).",
+    playerDecision:
+      "Close to a hostile to stay in the hunt ring, hold a kite and pay, or shove a foe to 3 tiles.",
+    relativeDifficulty: "hard",
+    rarity: "uncommon",
+    visual: visual(
+      "hunt-draft",
+      "#182028",
+      "#70a0c0",
+      "Hunt Draft — 3% max HP unless an enemy is within 3 tiles at end of turn",
+    ),
+    solvability:
+      "Does not add walls. Skip if the map would start with zero enemy-side units so a hunt ring cannot exist. Tax is not a wall.",
+    combatRules:
+      "End-of-turn tax via challenge HP recorders. Enemy-side means living hostile combatants only — player-side summons do not shelter. Does not skip turns. Does not alter spell damage.",
+    counterplay:
+      "End turns inside a hunt ring, shove a foe to 3 tiles, or accept the tax to hold a kite.",
+    rewardPath: "none",
+    blocksWalk: false,
+    requiresBypass: false,
+    allowedRunModes: ALL_RUNS,
+    slot: "event",
+    hpTaxPctOfMax: 0.03,
+    catalogWave: 14,
   },
 ];
 
