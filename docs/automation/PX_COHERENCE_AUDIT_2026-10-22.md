@@ -30,7 +30,7 @@ Closed (do not re-open): `PXA-2026-08-31-006` (Blood HUD), `PXA-2026-09-02-002` 
 Queued sibling, not a close: [PR #696](https://github.com/Mr-Melic/stralt/pull/696) names Inferno’s cooldown — that is 09-27-002, still unmerged.  
 New records: [`ACTION_IDS_PXA_2026-10-22.md`](./ACTION_IDS_PXA_2026-10-22.md) (`PXA-2026-10-22-001` … `003`).
 
-Sibling IDs already own: kit-zone NaN (EBA-013), `computeAITier` 30% noise, LHIPS XP-wall / 1e9 Doka clamp, FAIL×Windstorm (09-22-001), Windstorm dual rate (09-02-003), one-sided modifier store **including Vampiric throwaway** (09-26-002), player-sheet SR inbound (09-26-003), `maxSpellRange` 5 (09-25-003), unread AP/MP/HP cadence (09-27-001), Inferno silent CD (09-27-002), hit-log SP vs math SR (09-27-003), leader crown inverse (09-28-001), default-bar / default-win feats (09-28-002), post-mod float (09-28-003), hardcoded 1.03 vs admin spell-dmg % (09-29-001), Rest/Sanctuary hub with no rest (09-29-002), named-event lava/ice/spike painter (09-29-003), three fire DoT names (10-21-001), Windstorm miss starts Inferno CD (10-21-002), forge AP 10 / MP 5 vs battle 8 / 4 (10-21-003), missing juice on `applyDamageToEnemy` (GFCF-003), family HP wipe (PREREQ-H), Blood Mend / Rally **CHC** rider (EBMA), victory HP floor vs persist (SDEG). This run does not twin those. PX still agrees: **scale combat grants; do not add a level cap.**
+Sibling IDs already own: kit-zone NaN (EBA-013), `computeAITier` 30% noise, LHIPS XP-wall / 1e9 Doka clamp, FAIL×Windstorm (09-22-001), Windstorm dual rate (09-02-003), one-sided modifier store **including Vampiric throwaway** (09-26-002), player-sheet SR inbound (09-26-003), `maxSpellRange` 5 (09-25-003), unread AP/MP/HP cadence (09-27-001), Inferno silent CD (09-27-002), hit-log SP vs math SR (09-27-003), leader crown inverse (09-28-001), default-bar / default-win feats (09-28-002), post-mod float (09-28-003), hardcoded 1.03 vs admin spell-dmg % (09-29-001), Rest/Sanctuary hub with no rest (09-29-002), named-event lava/ice/spike painter (09-29-003), three fire DoT names (10-21-001), Windstorm miss starts Inferno CD (10-21-002), forge AP 10 / MP 5 vs battle 8 / 4 (10-21-003), missing juice on `applyDamageToEnemy` (GFCF-003), family HP wipe (PREREQ-H), Blood Mend / Rally **CHC** rider (EBMA), player `debuffStat` never applying (EBMA-004 / **#528** / **#555**), summon Slow without `stat` (**#878** / EBMA-006), drain `healUsed` (EBMA-005), victory HP floor vs persist (SDEG). This run does not twin those. PX still agrees: **scale combat grants; do not add a level cap.**
 
 ---
 
@@ -75,11 +75,11 @@ Sibling IDs already own: kit-zone NaN (EBA-013), `computeAITier` 30% noise, LHIP
 
 What **did not** change for identity: discovery is still a gifted 32-id book; encounter copy still disagrees with the engine; secondary rewards are still flat on `100 * 2^(N-1)`.
 
-**New this run** (same bytes, unread last cycle):
+**New this run** (same bytes, unread last cycle). Player Slow/Weaken apply is **already** EBMA-004 / **#528** / **#555**; summon Slow `stat` is **#878**. Do not re-file those.
 
-1. **The gifted book’s unique riders do not fire on the player path.** `resolvePlayerCast`’s damage loop (`spellEngine.ts` 876–1028) deals damage, crit, Blood Moon, Fury, Mirror Field, and Windstorm — then returns `"cast"`. It never writes `debuffStat`. `calcScaledDamageInline` floors at 1 (`1038–1044`), so Slow and Weaken (`damage: 0`) become **1-damage pokes**. Drain heals through `drainPercent || 0.5` of the first target’s damage (`castHelpers.ts` 473–488), not the card’s `healAmount`, and not “10 per hit” on Lifesteal Nova. The **enemy** path *does* apply `debuffStat` (`WX` 16594–16607). Summon Slow/Weaken apply a nametag with **no** `stat` (`summonExecutor.ts` 191–203). `res_sp` would not match `getStatModifier(..., "res")` / `"sp"` even if it were written (WX 3347–3358). Blood Mend / Rally CHC stays EBMA. PXA-002’s KEEP list (Cursed Wound, Weaken, Frost Nova) assumed those riders exist.
+1. **Expose / Shadow Veil `res_sp` and drain `healAmount` still would not fight after that wire.** `getStatModifier` is an exact `stat` match (`statusEffects.ts` 45–62). Player→enemy combat reads `"res"` and `"sr"` (`WX` 3347–3358); enemy→player reads `"res"` and `"sp"` (`WX` 16475–16540). Neither path reads `"res_sp"`. Expose and Shadow Veil both set `debuffStat: "res_sp"` (`spellData.ts` 373–393, 480–500). Enemy casts already write that dead key (`WX` 16594–16607) — the queued player wire copies it. Drain cards print `healAmount` 5 / 9 / “10 per hit”; the bar tooltip says `Heals: N` (`BattleUIPanel.tsx` 631–633); player drain uses `drainPercent || 0.5` of the **first** hit once (`castHelpers.ts` 473–488). Enemy drain uses `healAmount` (`WX` 16626–16637). Blood Mend / Rally CHC stays EBMA. Drain `healUsed` stays EBMA-005. PXA-002 MERGE of Expose ≡ Veil / three drains is blocked while the unique question is unread.
 2. **Barrier, a protected signature, disagrees with itself about duration.** Card: “for 2 turns” (`spellData.ts` 179–196). Engine: `placeBarrierTile(gridPos, 3)` and log “for 3 turns” (`spellEngine.ts` 848–852). Ticks decrement on **player** turn start only (`WX` 14297–14308). That is a first-hour wall-clock lie on a KEEP spell.
-3. **Movement tax is three stacking names.** Tide melee writes `effectName: "slow"`, −1 MP / 2 (`WX` 16805–16816). Ice tiles write `"Frozen"`, −2 MP / 2, log “Slowed!” with a stale “−50% MP” comment (`WX` 11454–11467). Enemy Slow writes `"Slow"` with `stat: "mp"` (`WX` 16594–16607). `getStatModifier` **sums** MP modifiers (`statusEffects.ts` 31–62); replace-or-refresh keys `effectName` (`76`). `"slow" !== "Slow" !== "Frozen"` → they stack. Frozen Terrain’s honest MP ×2 stays 09-29-003 / PXA-008. This is the fire-DoT finding (10-21-001) for **walk**, not burn.
+3. **Movement tax is three stacking names.** Tide melee writes `effectName: "slow"`, −1 MP / 2 (`WX` 16805–16816). Ice tiles write `"Frozen"`, −2 MP / 2, log “Slowed!” with a stale “−50% MP” comment (`WX` 11454–11467). Enemy Slow writes `"Slow"` with `stat: "mp"` (`WX` 16594–16607). `getStatModifier` **sums** MP modifiers (`statusEffects.ts` 31–62); replace-or-refresh keys `effectName` (`76`). `"slow" !== "Slow" !== "Frozen"` → they stack. Frozen Terrain’s honest MP ×2 stays 09-29-003 / PXA-008. Landing EBMA-004 without this ID makes gifted Slow a fifth stack. This is the fire-DoT finding (10-21-001) for **walk**, not burn.
 
 ---
 
@@ -89,11 +89,11 @@ The **core identity is still sound**: AP spends actions, MP spends movement, exp
 
 The game still does **not** play as one loop. The same three fractures dominate:
 
-1. **Discovery is not a system.** The book is gifted. A helper named like a gate does not gate. **Worse:** half the gifted cards print a unique question the player path never asks.
-2. **Rules on the box are not rules in the engine.** Register, rush pairs, several map events, Windstorm rates, resist words, Inferno’s hidden CD, leader crown copy, post-mod floats, secret floor hazards, three fire DoT names, a miss that starts cooldown, **Barrier 2 vs 3, rider cards that only work when the enemy casts them, and three MP-slow names that stack.**
+1. **Discovery is not a system.** The book is gifted. A helper named like a gate does not gate. **Worse:** Expose / Veil print a RES+SP shred combat never reads (`res_sp`), and drain cards print a heal the player path does not pay.
+2. **Rules on the box are not rules in the engine.** Register, rush pairs, several map events, Windstorm rates, resist words, Inferno’s hidden CD, leader crown copy, post-mod floats, secret floor hazards, three fire DoT names, a miss that starts cooldown, **Barrier 2 vs 3, a `res_sp` key even enemy Expose already writes as a no-op, drain tooltip vs 50%-once, and three MP-slow names that stack.**
 3. **Most secondary rewards are flat** on an unbounded `2^(N-1)` curve. Live enemy kits never leave band 0. The forge still teaches a 10/5 action budget the fight overwrites.
 
-Until PXA-001 / 003 / 007 / 008 / 013 and the still-open dated IDs are designed, adding World Dynamics tiles, Wave-N catalogs, or more admin SKUs will make the identity *less* readable. **Do not add more rider clones until 10-22-001 makes the existing riders fight.**
+Until PXA-001 / 003 / 007 / 008 / 013 and the still-open dated IDs are designed, adding World Dynamics tiles, Wave-N catalogs, or more admin SKUs will make the identity *less* readable. **Do not add more Expose/drain clones until 10-22-001 makes `res_sp` and printed heals fight. Do not twin Slow/Weaken apply (EBMA-004 / #528 / #555 / #878).**
 
 ---
 
@@ -102,16 +102,16 @@ Until PXA-001 / 003 / 007 / 008 / 013 and the still-open dated IDs are designed,
 | System | Class | One-line why |
 | :--- | :--- | :--- |
 | **Combat AP/MP split** | KEEP | AP = actions, MP = movement; book `mpCost` is ~0. The Dofus-like decision. The **L1 stamp must match the floor** (10-21-003). |
-| **Explicit spell targeting metadata** | KEEP | `targetType` / range / LoS — not name heuristics. Protect this. **Wire the same metadata on the player damage loop** (10-22-001). |
-| **8-slot bar as loadout** | KEEP (noisy until clones merge **and riders live**) | Picking 8 of 32 is a decision only if the eight tools differ (PXA-002, 09-28-002, 10-22-001). |
+| **Explicit spell targeting metadata** | KEEP | `targetType` / range / LoS — not name heuristics. Protect this. Player `debuffStat` **write** is EBMA-004 / #528 / #555 — not this run. **Keys combat actually reads** (`res` / `sr` / `sp`, not `res_sp`) are 10-22-001. |
+| **8-slot bar as loadout** | KEEP (noisy until clones merge **and unique keys fight**) | Picking 8 of 32 is a decision only if the eight tools differ (PXA-002, 09-28-002, 10-22-001 `res_sp` / drain numbers). |
 | **Atomic reward funnel + root recap mount** | KEEP | `applyRewards` / `saveBattleStats` + `PostBattleRecap` at app root. Contents still lie (09-25-001/002). |
 | **Death 20% XP / 40% Doka + Death Realm** | KEEP | Percentage cost stays meaningful with no cap. 1.5s guards are a real rule. Realm is a quiet map. |
 | **Solo boss kits + `BossAbility` tags** | KEEP | Unique phase kits; real specials. Boss Guide is closer to truth than EnemyRegister. |
 | **Enemy / summon AI engine** | KEEP | Archetypes, lethal lookahead, LoS step, backline guard. Do not add toggles. |
-| **Summon five-pack + player control panel** | KEEP | Hunter / guardian / archer / bomber / healer are distinct; the panel is the mastery surface. Lifespan is taught. Kit Slow must carry `stat` (10-22-001). |
+| **Summon five-pack + player control panel** | KEEP | Hunter / guardian / archer / bomber / healer are distinct; the panel is the mastery surface. Lifespan is taught. Kit Slow `stat` is **#878** / EBMA-006, not 10-22-001. |
 | **Signature spells** | KEEP | Swap, Mark, Barrier, Mirror, Timestep, Sacrifice each ask a question the clones do not. **Barrier’s duration must be one number** (10-22-002). |
 | **CHC ×2 / INIT turn order** | KEEP | Live. Print them; they fight. |
-| **SP outbound multiplier** | KEEP | WX 3318–3322. Do not teach it as inbound (09-27-003). Life Drain’s SP shred is 10-22-001, not 09-27-003. |
+| **SP outbound multiplier** | KEEP | WX 3318–3322. Do not teach it as inbound (09-27-003). Life Drain’s printed “reduce SP” on an **enemy** is that vocabulary. 10-22-001 is the `res_sp` compound key plus drain **heal numbers**. |
 | **30s shot clock + Time Warp 15s** | KEEP | Panel shows `{turnTimeLeft}s`; announce matches the **player** timer. Do not rename Timestep in this ID (PXA-012 owns the Time- word). |
 | **Attack Nearest on the selected spell** | KEEP | Same metadata as a click. Do not make it a second verb. |
 | **Physical Strike skipping FAIL** | KEEP **if named** | The exemption is the only spendable answer to 20% fizzle (09-22-001). |
@@ -129,8 +129,8 @@ Until PXA-001 / 003 / 007 / 008 / 013 and the still-open dated IDs are designed,
 | **Ember / Tide / Void family melee hooks** | MERGE into kits | Real but name-heuristic. Ember’s DoT name is 10-21-001. Tide’s `"slow"` name is 10-22-003. |
 | **Fire DoTs (Inferno / lava Burning / Ember burn)** | MERGE to one burn language | 10-21-001. |
 | **MP slows (Tide `slow` / spell `Slow` / ice `Frozen`)** | MERGE to one walk-tax language | New: 10-22-003. Frozen Terrain MP ×2 stays 09-29-003. |
-| **Spell catalog (full `starterSpells`)** | MERGE **after riders live** | Shield ≡ Iron Skin; Poison ≡ Venom; two heals+CHC; Expose ≡ Shadow Veil; three drains. Unique KEEP tools are fake until 10-22-001. |
-| **Gifted damage/drain riders** | REWORK the player path | New: 10-22-001. |
+| **Spell catalog (full `starterSpells`)** | MERGE **after unique keys fight** | Shield ≡ Iron Skin; Poison ≡ Venom; two heals+CHC; Expose ≡ Shadow Veil; three drains. Unique KEEP tools are fake until 10-22-001 maps `res_sp` and drain heals. Slow/Weaken apply is EBMA-004, not this row. |
+| **Expose / Veil `res_sp` + drain printed heals** | REWORK keys and numbers | New: 10-22-001. Do not twin EBMA-004 / #528 / #555 / #878. |
 | **Crush / Fire Bolt fallback** | MERGE | Uncatalogued `e-crush` / `e-firebolt` (WX 16711–16712; 09-21-003). |
 | **Slime Flood + Frozen Terrain** | MERGE | Same `onMpCost * 2`. Frozen also plants ice tiles (09-29-003). |
 | **Arcane Surge + Overflow AP −1** | MERGE | Both `onApCost` −1. Overflow’s extra fizzle is effects-only (09-01-002). |
@@ -164,11 +164,11 @@ Until PXA-001 / 003 / 007 / 008 / 013 and the still-open dated IDs are designed,
 | **“Rest, hero” copy until the map rests** | DEPRECATE or EXPAND a real rest | 09-29-002. |
 | **40% random extra hazard stamp** | DEPRECATE | 09-29-003. |
 | **Forge AP 10 / MP 5 until they match battle 8 / 4** | DEPRECATE the extra two points | 10-21-003. |
-| **`debuffStat: "res_sp"` until split or mapped** | DEPRECATE the compound key | New: 10-22-001. Admin dropdown still offers it (`AdminDashboard.tsx` 3280). |
+| **`debuffStat: "res_sp"` until split or mapped** | DEPRECATE the compound key | New: 10-22-001. Admin dropdown still offers it (`AdminDashboard.tsx` 3280). Enemy Expose already writes it as a no-op. |
 | **Spell discovery** | REWORK | Innate 32-id book. No observe → win → unlock. |
 | **Battle challenges** | REWORK offer + predicates | Random 9 including legendary; `hard_3` free until L25 (09-26-001). Pacifist feat vs `easy_1` no-heal stays PXA-009. |
 | **Boss-rush combined mechanics** | REWORK | Copy-only. PXA-003 / 004 still own pair rules and scaling. |
-| **Admin-enabled catalogs** | REWORK | Live book, `bossKits.ts`, `admin.mo` seeds are three truths. `res_sp` in the editor is a fourth (10-22-001). |
+| **Admin-enabled catalogs** | REWORK | Live book, `bossKits.ts`, `admin.mo` seeds are three truths. `res_sp` in the editor is a fourth unread key (10-22-001). |
 | **Map modifiers / world events** | SIMPLIFY + MERGE | 22 entries. Twins, placeholders, Titan lottery, one-sided store, Windstorm two rates, secret floor hazards, **three fire names, three slow names**. Plague registry −1 vs WX log “2” stays 09-01-002 / 09-26-002 — do not twin. |
 | **EnemyRegister / family lore** | REWORK copy; SIMPLIFY HUD | FLAVOR LORE chip is honest; world-HUD **Enemies** button is not (09-21-001, 09-01-001). Tide “adjacent slow” is closer to truth than Ember tiles; the **name** is 10-22-003. |
 | **Dungeon chain** | EXPAND | Reward skin on the overworld. Needs a rule free roam does not have. |
@@ -194,13 +194,13 @@ The **30% family overlay** still paints HP/dmg/RES and pixels, then battle start
 
 `decideEnemyAction` is still the best expression of identity. `computeAITier` still has a 30% full-random 1–10. Do not rewrite `enemyAI.ts` to add verbs. Betrayal 6× is 09-24-002. Erratic-after-leader is a real verb — teach it. Enemy turns use an 800ms executor + 5s watchdog; do not invent a player-facing enemy clock.
 
-Enemy casts **do** apply `debuffStat`. That is the honest half of 10-22-001. Do not “fix” it by deleting the enemy rider.
+Enemy casts **do** apply `debuffStat` (EBMA-004’s honest half). That write still uses `res_sp` as a dead key (10-22-001). Do not “fix” Slow by deleting the enemy rider. Do not “fix” Expose by deleting the enemy write.
 
-### Spells — MERGE clones after riders live; KEEP signatures; SIMPLIFY Barrier duration; MERGE slow names
+### Spells — MERGE clones after unique keys fight; KEEP signatures; SIMPLIFY Barrier duration; MERGE slow names
 
 `starterSpells` is still the 32-id book including Strike. Almost every spell has `mpCost: 0`. **Keep that.** Inferno is still the only starter with `cooldown: 3` (09-27-002). Strike still skips FAIL and talks RES vs SP (09-27-003).
 
-**New:** the player damage loop is a damage-only funnel. Unique questions printed on Frost Bolt, Frost Nova, Slow, Weaken, Expose, Shadow Veil, Cursed Wound, Life Drain, Drain Courage, and Lifesteal Nova do not execute for the caster who owns the gifted book. Enemy kits using the same ids do. Summon kits using Slow apply a badge without `stat`. That is 10-22-001.
+Player `debuffStat` **write** is already queued (EBMA-004 / #528 / #555; summon Slow `stat` #878). **New this run:** that write is not enough. Expose / Shadow Veil still set `debuffStat: "res_sp"`, which `getStatModifier` never matches to `"res"` / `"sr"` / `"sp"`. Enemy Expose already writes the dead key today. Drain cards print `healAmount` 5 / 9 / 10-per-hit and the tooltip says `Heals: N`; the player path pays 50% of the first hit once. That is 10-22-001. Slow/Weaken 1-damage pokes are **not** this ID.
 
 **New:** Barrier card 2 vs engine 3 (10-22-002). Do not “fix” by hiding the card; pick one duration and one tick clock (player-turn decrement is the live clock).
 
@@ -210,7 +210,7 @@ Book power from upgrades is live and **good** as a no-cap sink. The number is no
 
 ### Spell discovery — REWORK (unchanged class)
 
-Innate 32. Admin extras with `usableByPlayer = true` still union into the book. Recap still cannot grant a spell. Do not ship Rune Bearer attune as a substitute. Do not add more catalog rows until 10-22-001 / PXA-002 settle what a “row” even does.
+Innate 32. Admin extras with `usableByPlayer = true` still union into the book. Recap still cannot grant a spell. Do not ship Rune Bearer attune as a substitute. Do not add more catalog rows until 10-22-001 maps `res_sp` / drain heals and PXA-002 settles what a “row” even does. Slow/Weaken apply is EBMA-004, not a discovery ID.
 
 ### Achievements (Feats) — SIMPLIFY + keep Spell Scholar
 
@@ -264,14 +264,14 @@ DoT tick log names the **first** stack and ticks the **sum** (`WX` 1943–1991).
 
 ### Admin-enabled content — REWORK
 
-CRUD still public-read. Default bosses still retired ids. Admin spells without targeting metadata still save (PXA-015). **LevelUpConfig** rewrites FAIL/range/AP-MP/HP from `pbv_levelup_config` with no in-session rules card (09-27-001) and an “all stats grow %” sentence that does not fight (10-21-003). **Leader Boost per Death (%)** has no combat reader (09-28-001). **Spell Damage Growth %** has no combat reader (09-29-001). The spell editor still offers `debuffStat: "res_sp"` (`AdminDashboard.tsx` 3280) — a compound key combat never reads (10-22-001). Legacy `lava_fields` / `ice_fields` / `spike_pit` are labeled unused **and** still paint floors (09-29-003). Do not treat a silent slider as live ops content.
+CRUD still public-read. Default bosses still retired ids. Admin spells without targeting metadata still save (PXA-015). **LevelUpConfig** rewrites FAIL/range/AP-MP/HP from `pbv_levelup_config` with no in-session rules card (09-27-001) and an “all stats grow %” sentence that does not fight (10-21-003). **Leader Boost per Death (%)** has no combat reader (09-28-001). **Spell Damage Growth %** has no combat reader (09-29-001). The spell editor still offers `debuffStat: "res_sp"` (`AdminDashboard.tsx` 3280) — a compound key combat never reads, including on **enemy** Expose (10-22-001). Legacy `lava_fields` / `ice_fields` / `spike_pit` are labeled unused **and** still paint floors (09-29-003). Do not treat a silent slider as live ops content.
 
 ---
 
 ## What already fits (do not “fix”)
 
 - AP for spells / MP for walk (**once create stamps 8 / 4**).
-- Eight-slot bar as a **commitment** (once the book is earned — or once clones merge **and riders live** — and once the default is not an auto-stamp).
+- Eight-slot bar as a **commitment** (once the book is earned — or once clones merge **and `res_sp` / drain heals fight** — and once the default is not an auto-stamp). Slow/Weaken apply is EBMA-004.
 - Summon archetypes, lifespan-on-own-turn, and the control panel.
 - Persist lock + recap **mount** at root.
 - Death Realm as a place. Flee as death, not a second exit.
@@ -294,9 +294,9 @@ CRUD still public-read. Default bosses still retired ids. Admin spells without t
 
 ## Recommended sequence (human, not this automation)
 
-1. **Honesty of rules the player can read today** — Register, modifier announce, Windstorm single rate, rush pair copy, resist words, Inferno CD, career cadence, leader crown sentence, post-mod floats, spell-dmg % = live math, floor hazards = the named event, **one fire name**, **one miss/lock rule**, **forge AP/MP = battle floor**, **player riders = enemy riders**, **Barrier one duration**, **one slow name**. (09-01-001/002, 09-02-003, 09-22-001, 09-27-001/002/003, 09-28-001/003, 09-29-001/003, 10-21-001/002/003, 10-22-001/002/003, PXA-003)
+1. **Honesty of rules the player can read today** — Register, modifier announce, Windstorm single rate, rush pair copy, resist words, Inferno CD, career cadence, leader crown sentence, post-mod floats, spell-dmg % = live math, floor hazards = the named event, **one fire name**, **one miss/lock rule**, **forge AP/MP = battle floor**, **`res_sp` maps or splits**, **drain number on the card is the drain number in the engine**, **Barrier one duration**, **one slow name**. Player Slow/Weaken **write** stays EBMA-004 / #528 / #555. (09-01-001/002, 09-02-003, 09-22-001, 09-27-001/002/003, 09-28-001/003, 09-29-001/003, 10-21-001/002/003, 10-22-001/002/003, PXA-003)
 2. **Keep accepted challenge HUD; land click-through (#364).** Then reshape the offer and predicates. (09-22-003, 09-26-001, PXA-009)
-3. **Discovery contract** — innate 2–4, find the rest. Then rewrite default-bar / default-win feats. Do not ship Rune Bearer first. Merge clones **after** 10-22-001. (PXA-001, PXA-002, 09-01-003, 09-21-002, 09-28-002)
+3. **Discovery contract** — innate 2–4, find the rest. Then rewrite default-bar / default-win feats. Do not ship Rune Bearer first. Merge clones **after** 10-22-001 makes Expose/drain numbers honest. (PXA-001, PXA-002, 09-01-003, 09-21-002, 09-28-002)
 4. **NaN kit adapter, then one enemy poster + kits past zone 2.** (EBA-013, PXA-007, PXA-013)
 5. **Unbounded grants** including victory XP and a non-lottery Doka function. (PXA-004, 09-23-001, 09-25-001, LHIPS-001)
 6. **HUD / shop / words.** GameKey off the tactical bar; one resist word; Feats everywhere; Enemies off the leftover-XP row; Rest/Sanctuary/Safe Zone as one noun that matches the map. (09-02-001, 09-21-001, 09-29-002, PXA-011, PXA-012)
