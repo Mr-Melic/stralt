@@ -16,6 +16,7 @@ Visual language lives in [`DESIGN.md`](DESIGN.md). Agent/ops constraints live in
 | `src/frontend/src/backend.ts` | Generated bindgen client — do not hand-edit; can lag Motoko public types |
 | `src/frontend/src/engine/` | Pure combat helpers extracted from `WorldExploration.tsx` |
 | `src/frontend/src/engine/portalRules.ts` | Run-mode portals + dungeon-chain snapshot (before `cleanupMap`) |
+| `src/frontend/src/engine/portalWhirlpool.ts` | Portal whirlpool paint (palette / rest rings / boss star / dungeon spikes) |
 | `src/frontend/src/engine/mapGen.ts` | Archetypes + `finalizePlayableLayout` (spawn / exit / hostile reachability) |
 | `src/frontend/src/engine/spawnPolicy.ts` | Overworld spawn filters + family variants + dungeon extras (not placement) |
 | `src/frontend/src/engine/worldFeatures.ts` | World-dynamics catalog (tests only — not wired into map gen) |
