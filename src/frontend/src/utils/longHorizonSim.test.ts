@@ -39,9 +39,13 @@ import {
   damageAfterPlayerResPasses,
   deathDokaLost,
   dokaHealCostToFillFrom,
+  dungeonMaxEnemyLevel,
   effectiveSpellRange,
   fallbackCrushRaw,
   fallbackCrushRawEnraged,
+  familyCatalogRes,
+  familyCatalogSpRes,
+  familySpawnHp,
   fightsToNextLevel,
   firstEnemyLevelCrushExceedsCritKit,
   firstEnemyLevelCrushExceedsKit,
@@ -55,6 +59,7 @@ import {
   firstHudSaturationLevel,
   firstLevelChcCanHit100,
   firstLevelFormulaApExceedsPersistCap,
+  firstLevelFormulaFrostCastsAtLeast,
   firstLevelFormulaMpAtLeast,
   firstLevelHazardMaxBelowHpPercent,
   firstLevelLinearHpNotSafeInteger,
@@ -71,6 +76,7 @@ import {
   firstPlayerLevelSurvivesCrushRecv,
   firstPlayerLevelWorldBossStatCanHit100,
   firstSpellLevelCostExceeds,
+  firstStressLevelFullyUnderDungeonCap,
   formulaAp,
   formulaMp,
   groundDokaMean,
@@ -86,6 +92,7 @@ import {
   overlayEnemyAp,
   overlayEnemyAtk,
   overlayEnemyMp,
+  overworldPickMaxLevel,
   passiveRegenSecondsToFull,
   playerFrostCastsPerTurn,
   playerFrostRaw,
@@ -93,8 +100,10 @@ import {
   playerFrostTurnsToKillHp,
   runLongHorizonSim,
   spawnPlaceholderDamage,
+  spawnPlaceholderHp,
   spellFailChance,
   spellUpgradeCostBigInt,
+  starterFrostCooldownTurns,
   summonerChance,
   victoryHpFloor,
   worldBossChip1FrostTurns,
@@ -399,5 +408,48 @@ assert.equal(
 );
 assert.equal(report.persistContract.overlayEnemyApAt1020, 1020);
 assert.equal(report.persistContract.playerCreateEvasion, 5);
+
+assert.equal(familyCatalogRes("iron_golem"), 0.75);
+assert.equal(familyCatalogRes("plague_rat"), 0.05);
+assert.equal(familyCatalogSpRes("iron_golem"), 0.6);
+assert.equal(spawnPlaceholderHp(1020), 8180);
+assert.equal(familySpawnHp(1020, "iron_golem"), 20_450);
+assert.equal(familySpawnHp(1020, "plague_rat"), 3272);
+assert.ok(
+  familySpawnHp(1020, "iron_golem") >
+    report.familyCombatIdentity.combatHpAt1020,
+);
+assert.equal(report.familyCombatIdentity.variantChance, 0.3);
+assert.equal(report.familyCombatIdentity.catalogResIsFractionNotPercent, true);
+assert.equal(report.familyCombatIdentity.battleStartOverwritesHpToLinear, true);
+assert.equal(report.familyCombatIdentity.combatReadsFamilyRes, false);
+assert.equal(report.familyCombatIdentity.combatReadsFamilyHpMult, false);
+
+assert.equal(overworldPickMaxLevel(), 1000);
+assert.equal(dungeonMaxEnemyLevel(), 1030);
+assert.equal(firstStressLevelFullyUnderDungeonCap(), 2500);
+assert.equal(report.dungeonPostCapBoost.overworldPickMaxLevel, 1000);
+assert.equal(report.dungeonPostCapBoost.dungeonMaxEnemyLevel, 1030);
+assert.equal(
+  report.dungeonPostCapBoost.firstStressLevelFullyUnderDungeonCap,
+  2500,
+);
+assert.equal(
+  report.dungeonPostCapBoost.player1000CanStillRollDungeonAbove,
+  true,
+);
+
+assert.equal(starterFrostCooldownTurns(), 0);
+assert.equal(playerFrostCastsPerTurn(formulaAp(325)), 7);
+assert.equal(playerFrostCastsPerTurn(formulaAp(100_000)), 1336);
+assert.equal(firstLevelFormulaFrostCastsAtLeast(7), 325);
+assert.equal(firstLevelFormulaFrostCastsAtLeast(100), 7300);
+assert.equal(report.battleApFrostDump.starterFrostCooldownTurns, 0);
+assert.equal(report.battleApFrostDump.formulaCastsAt325, 7);
+assert.equal(report.battleApFrostDump.formulaCastsAt100000, 1336);
+assert.equal(report.battleApFrostDump.formulaApAt100000, 4008);
+assert.equal(report.battleApFrostDump.firstLevelFormulaCastsExceedPersist, 325);
+assert.equal(report.battleApFrostDump.firstLevel100FormulaCasts, 7300);
+assert.equal(report.battleApFrostDump.aiStillOneActionPerTurn, true);
 
 console.log("longHorizonSim.test: ok");

@@ -31,6 +31,14 @@ import {
   getPlayerBaseStats,
   getSummonBaseStats,
 } from "../engine/progression.ts";
+import {
+  DUNGEON_SPAWN_DEPTH_CAP,
+  FAMILY_STAT_MULTS,
+  FAMILY_TYPES,
+  FAMILY_VARIANT_CHANCE,
+  dungeonScaledEnemyLevel,
+  dungeonSpawnExtras,
+} from "../engine/spawnPolicy.ts";
 import type { ChessPieceType } from "../types/gameTypes.ts";
 import { DEFAULT_LEVELUP_CONFIG } from "../types/gameTypes.ts";
 import {
@@ -960,6 +968,74 @@ export function firstLevelExponentialHpNotJsonSafe(limit = 200_000): number {
   return limit + 1;
 }
 
+/** Last overworld tier is `maxTier = floor(999 / tierSize)` → levels `maxTier*ts+1 .. (maxTier+1)*ts`. */
+export function overworldPickMaxLevel(tierSize = 10): number {
+  const ts = Math.max(1, Math.floor(Number(tierSize) || 10));
+  const maxTier = Math.floor(999 / ts);
+  return (maxTier + 1) * ts;
+}
+
+/** Depth-5 boost is +3 tiers. Applied *after* the 999-cap pick. */
+export function dungeonMaxEnemyLevel(
+  dungeonDepth = DUNGEON_SPAWN_DEPTH_CAP,
+  tierSize = 10,
+): number {
+  const extras = dungeonSpawnExtras(dungeonDepth);
+  return dungeonScaledEnemyLevel(
+    overworldPickMaxLevel(tierSize),
+    extras.tierBoost,
+    tierSize,
+  );
+}
+
+/** First requested stress level above the spawnable dungeon max (100% under-level even in depth 5). */
+export function firstStressLevelFullyUnderDungeonCap(): number | null {
+  const cap = dungeonMaxEnemyLevel();
+  for (const level of STRESS_LEVELS) {
+    if (level > cap) return level;
+  }
+  return null;
+}
+
+export type SimFamily = (typeof FAMILY_TYPES)[number];
+
+/** Spawn placeholder `round(L*8+20)` × family `hpMult`. Battle-start then replaces HP with linear `50*(1+0.05*(L-1))`. */
+export function familySpawnHp(level: number, family: SimFamily): number {
+  const m = FAMILY_STAT_MULTS[family];
+  return Math.max(1, Math.round(spawnPlaceholderHp(level) * m.hpMult));
+}
+
+export function familyCatalogRes(family: SimFamily): number {
+  return FAMILY_STAT_MULTS[family].res;
+}
+
+export function familyCatalogSpRes(family: SimFamily): number {
+  return FAMILY_STAT_MULTS[family].spRes;
+}
+
+export const FAMILY_VARIANT_CHANCE_SIM = FAMILY_VARIANT_CHANCE;
+
+/**
+ * Catalog Frost cooldown. `starter-frost` has no `cooldown` field, so
+ * `nextSpellCooldownTurns` treats it as 0 and AP becomes a cast multiplier.
+ */
+export function starterFrostCooldownTurns(): number {
+  const frost = starterSpells.find((s) => s.id === "starter-frost");
+  const n = Math.floor(Number(frost?.cooldown) || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+export function firstLevelFormulaFrostCastsAtLeast(
+  minCasts: number,
+  limit = 200_000,
+): number | null {
+  const need = Math.max(1, Math.floor(Number(minCasts) || 0));
+  for (let level = 1; level <= limit; level++) {
+    if (playerFrostCastsPerTurn(formulaAp(level)) >= need) return level;
+  }
+  return null;
+}
+
 /** Live lava step: `8 + floor(rng * 8)` (WorldExploration.tsx 11428–11429). */
 export const HAZARD_LAVA_MIN = 8;
 export const HAZARD_LAVA_MAX = 15;
@@ -1335,7 +1411,7 @@ export function runLongHorizonSim() {
   };
 
   return {
-    generatedAt: "2026-10-21T00:20:00.000Z",
+    generatedAt: "2026-10-22T00:20:00.000Z",
     telemetry: {
       available: false,
       reason:
@@ -1923,6 +1999,52 @@ export function runLongHorizonSim() {
       incomingEnemySpellUsesPlayerSpAsSr: true,
       critRollSubtractsEvasion: false,
       firstLevelLinearHpNotSafeInteger: firstLevelLinearHpNotSafeInteger(),
+    },
+    familyCombatIdentity: {
+      variantChance: FAMILY_VARIANT_CHANCE_SIM,
+      families: FAMILY_TYPES,
+      catalogResIsFractionNotPercent: true,
+      ironGolemCatalogRes: familyCatalogRes("iron_golem"),
+      plagueRatCatalogRes: familyCatalogRes("plague_rat"),
+      ironGolemCatalogSpRes: familyCatalogSpRes("iron_golem"),
+      spawnHpAt1020: spawnPlaceholderHp(1020),
+      ironGolemSpawnHpAt1020: familySpawnHp(1020, "iron_golem"),
+      plagueRatSpawnHpAt1020: familySpawnHp(1020, "plague_rat"),
+      combatHpAt1020: linearEnemyMaxHp(1020),
+      ironGolemSpawnOverCombatAt1020:
+        familySpawnHp(1020, "iron_golem") / linearEnemyMaxHp(1020),
+      battleStartOverwritesHpToLinear: true,
+      battleStartOverwritesResSpInitChc: true,
+      combatReadsFamilyRes: false,
+      combatReadsFamilyHpMult: false,
+    },
+    dungeonPostCapBoost: {
+      overworldPickMaxLevel: overworldPickMaxLevel(),
+      dungeonDepthCap: DUNGEON_SPAWN_DEPTH_CAP,
+      dungeonTierBoostAtDepth5: dungeonSpawnExtras(DUNGEON_SPAWN_DEPTH_CAP)
+        .tierBoost,
+      dungeonMaxEnemyLevel: dungeonMaxEnemyLevel(),
+      firstStressLevelFullyUnderDungeonCap:
+        firstStressLevelFullyUnderDungeonCap(),
+      player1000CanStillRollDungeonAbove: dungeonMaxEnemyLevel() > 1000,
+      player2500DungeonMax: dungeonMaxEnemyLevel(),
+    },
+    battleApFrostDump: {
+      starterFrostCooldownTurns: starterFrostCooldownTurns(),
+      frostApCost: FROST_AP_COST,
+      persistCastsAt20: playerFrostCastsPerTurn(MAX_PERSISTED_AP),
+      formulaCastsAt1: playerFrostCastsPerTurn(formulaAp(1)),
+      formulaCastsAt325: playerFrostCastsPerTurn(formulaAp(325)),
+      formulaCastsAt1000: playerFrostCastsPerTurn(formulaAp(1000)),
+      formulaCastsAt2500: playerFrostCastsPerTurn(formulaAp(2500)),
+      formulaCastsAt10000: playerFrostCastsPerTurn(formulaAp(10_000)),
+      formulaCastsAt100000: playerFrostCastsPerTurn(formulaAp(100_000)),
+      formulaApAt100000: formulaAp(100_000),
+      firstLevelFormulaCastsExceedPersist: firstLevelFormulaFrostCastsAtLeast(
+        playerFrostCastsPerTurn(MAX_PERSISTED_AP) + 1,
+      ),
+      firstLevel100FormulaCasts: firstLevelFormulaFrostCastsAtLeast(100),
+      aiStillOneActionPerTurn: true,
     },
   };
 }
