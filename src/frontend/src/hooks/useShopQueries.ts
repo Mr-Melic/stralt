@@ -4,20 +4,11 @@ import {
   readPurchasesResult,
 } from "../utils/adminContract";
 import { buildInitiatePurchaseArgs } from "../utils/shopPurchase";
+import { withTimeout } from "../utils/withTimeout";
 import { useActor } from "./useActor";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ActorAny = Record<string, any>;
-
-/** Wraps a backend promise with a 10-second timeout so slow responses never hang UI */
-function withTimeout<T>(promise: Promise<T>, ms = 10000): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`Query timed out after ${ms}ms`)), ms),
-    ),
-  ]);
-}
 
 export interface ShopPackage {
   id: string;
