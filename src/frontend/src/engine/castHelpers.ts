@@ -25,6 +25,12 @@ import type { CharacterStats } from "../components/WorldExploration";
 import type { SoundEvent } from "../hooks/useSoundHooks";
 import type { ActiveEffect } from "../types/gameTypes";
 import type { Enemy } from "../types/gameTypes";
+import {
+  playerHpAfterIncoming,
+  reflectShieldAmount,
+  shouldApplyDrainHeal,
+  voidMirrorReflectAmount,
+} from "../utils/drainHealAfterLethal.ts";
 import { isActiveHostile } from "./battleSetup.ts";
 import {
   type DeathPipelineCtx,
@@ -314,6 +320,8 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     commitEnemyHp,
   } = deps;
 
+  let playerHpAfterSameCast = characterStats.hp;
+
   const targetEnemy =
     hitTarget.id === "__player__" ? undefined : (hitTarget as Enemy);
   let finalDmg: number;
@@ -334,8 +342,12 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
 
   // Void Mirror reflect — synchronous, no timers
   if ((hitTarget as Enemy)?.family === "void_mirror") {
-    const voidReflect = Math.floor(preCritDmgBM * 0.25);
+    const voidReflect = voidMirrorReflectAmount(preCritDmgBM);
     if (voidReflect > 0) {
+      playerHpAfterSameCast = playerHpAfterIncoming(
+        playerHpAfterSameCast,
+        voidReflect,
+      );
       setCharacterStats((prev) => ({
         ...prev,
         hp: Math.max(0, prev.hp - voidReflect),
@@ -361,8 +373,12 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
   }
   // ISSUE 2 — Reflect shield (AoE path)
   if (isBossTarget && bossStateRef.current?.reflectShieldActive === true) {
-    const reflectAmtBM = Math.floor(finalDmg * 0.3);
+    const reflectAmtBM = reflectShieldAmount(finalDmg);
     if (reflectAmtBM > 0) {
+      playerHpAfterSameCast = playerHpAfterIncoming(
+        playerHpAfterSameCast,
+        reflectAmtBM,
+      );
       setCharacterStats((s) => ({
         ...s,
         hp: Math.max(0, s.hp - reflectAmtBM),
@@ -462,6 +478,10 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
 
   // hitsAllies player-sentinel: deduct damage from the player's own HP
   if (hitTarget.id === "__player__") {
+    playerHpAfterSameCast = playerHpAfterIncoming(
+      playerHpAfterSameCast,
+      finalDmg,
+    );
     setCharacterStats((prev) => ({
       ...prev,
       hp: Math.max(0, prev.hp - finalDmg),
@@ -470,8 +490,15 @@ export function applyDamageToEnemy(args: ApplyDamageToEnemyArgs): void {
     processCombatantDeath(hitTarget.id);
   }
 
-  // Drain: heal player too (once per cast, not per target)
-  if (isDrainSpell && hitTarget === targetsToHit[0]) {
+  // Drain: heal player too (once per cast, not per target). Skip when this
+  // same hit already reduced the player to 0 (lethal Void Mirror / Reflect
+  // Shield) — otherwise the heal resurrects before HP-watch and victory
+  // still awards.
+  if (
+    isDrainSpell &&
+    hitTarget === targetsToHit[0] &&
+    shouldApplyDrainHeal(playerHpAfterSameCast)
+  ) {
     const drainPercent = (spell as any).drainPercent || 0.5;
     const healAmt = Math.min(
       maxHp - characterStats.hp,
