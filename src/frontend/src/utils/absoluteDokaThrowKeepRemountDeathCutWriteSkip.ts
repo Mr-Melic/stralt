@@ -154,9 +154,7 @@ export function dokaFromAbsoluteDokaThrowDeathCutWallet(
 ): number | null {
   if (raw == null) return null;
   if (typeof raw === "object" && raw !== null && "ok" in raw) {
-    return dokaFromAbsoluteDokaThrowDeathCutWallet(
-      (raw as { ok: unknown }).ok,
-    );
+    return dokaFromAbsoluteDokaThrowDeathCutWallet((raw as { ok: unknown }).ok);
   }
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;

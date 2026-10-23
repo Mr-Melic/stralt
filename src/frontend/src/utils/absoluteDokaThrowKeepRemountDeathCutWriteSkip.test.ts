@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { clampSaveBattleStatsWrite } from "./absoluteStatsClamp.ts";
 import {
   absoluteDokaThrowKeepRemountDeathCutKey,
   clearAbsoluteDokaThrowKeepRemountDeathCut,
@@ -14,6 +13,7 @@ import {
   resolveCommittedDokaAfterAbsoluteDokaThrowKeepRemountDeathCut,
   shouldRefuseAbsoluteDokaThrowKeepRemountDeathCutStaleDoka,
 } from "./absoluteDokaThrowKeepRemountDeathCutWriteSkip.ts";
+import { clampSaveBattleStatsWrite } from "./absoluteStatsClamp.ts";
 import {
   type DeathPenaltyStorage,
   applyUnpaidDeathPenaltyToWrite,
